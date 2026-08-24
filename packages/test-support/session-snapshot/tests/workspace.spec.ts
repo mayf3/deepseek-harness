@@ -26,13 +26,13 @@ describe('workspace snapshots', () => {
     await writeFile(join(directory, 'a.txt'), 'hello\n')
     await writeFile(join(directory, 'b.bin'), Buffer.from([0xff, 0x01]))
     await mkdir(join(directory, 'empty'))
-    if (process.platform !== 'win32') await symlink('a.txt', join(directory, 'link'))
+    await symlink('a.txt', join(directory, 'link'))
 
     expect(await captureWorkspaceSnapshot(directory)).toEqual([
       { path: 'a.txt', kind: 'text', content: 'hello\n' },
       { path: 'b.bin', kind: 'binary', base64: '/wE=' },
       { path: 'empty', kind: 'empty-directory' },
-      ...process.platform === 'win32' ? [] : [{ path: 'link', kind: 'symlink', target: 'a.txt' }],
+      { path: 'link', kind: 'symlink', target: 'a.txt' },
     ])
   })
 
