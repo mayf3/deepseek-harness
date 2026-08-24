@@ -21,7 +21,8 @@ import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-e
 import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
-import { httpErrorCode, resolveRequestImagePolicy } from '../src/adapter.ts'
+import { httpErrorCode } from '../src/adapter.ts'
+import { resolveRequestImagePolicy } from '../src/request-pricing.ts'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 import type { Behavior } from './mock-server.ts'
@@ -156,6 +157,17 @@ describe('request image policy', () => {
     ],
   ])('resolves route-owned defaults and overrides for %s', (model, expected) => {
     expect(resolveRequestImagePolicy(model)).toEqual(expected)
+  })
+
+  it('answers image request pricing from the current connection snapshot', () => {
+    const adapter = adapterOf({
+      models: [{ id: 'vision', inputModalities: ['text', 'image'] }],
+    })
+    const priced = adapter.imageRequestPricing('deepseek-official', 'vision')?.priceImages([imageRef])
+    expect(priced).toHaveLength(1)
+    expect(priced?.[0]!.visualTokens).toBeGreaterThan(0)
+    const textOnly = adapter.imageRequestPricing('deepseek-official', 'unlisted')?.priceImages([imageRef])
+    expect(textOnly?.[0]!.visualTokens).toBe(0)
   })
 })
 
