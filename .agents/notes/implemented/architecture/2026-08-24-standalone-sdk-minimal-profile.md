@@ -44,7 +44,7 @@ The bundle test pins the exact row and dependency roster. Profile-template and c
 
 ## Alternatives considered
 
-**Keep the minimal mode as an overlay on `sdk`.** Rejected because filtering model-visible tools does not remove base services, prompt contributors, persistence choices, or later runtime behavior. It also makes the minimal application depend on controls in shared SDK server and system-prompt interfaces.
+**Keep the minimal mode as an overlay on `sdk`.** Rejected because filtering model-visible tools does not remove base services, prompt contributors, persistence choices, or later runtime behavior. It also required root-tool filtering in the shared SDK server and a complete-persona shortcut in the system-prompt config; neither shared interface carries those composition controls.
 
 **Restore a Python `cordis` argument or environment-selected complete config.** Rejected because it recreates a Python-owned application composition and bypasses profile plugin management and launcher lifecycle.
 
