@@ -1,7 +1,8 @@
 /** Node-half composition diagnostics for package metadata and built client bundles. */
 
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { SourceMap } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -15,6 +16,8 @@ import type { ClientModuleLoaderTarget, WebBootEntry, WebBootGraph } from '../sr
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
 const UI_RENDERER_ID = '@deepseek-ai/dsh-client-ui-renderer'
+const BOOTSTRAP_URL = '/plugins/_batch/bootstrap/boot/client.js'
+const APPLICATION_URL = '/plugins/_batch/application/app/client.js'
 
 let root: string | undefined
 
@@ -81,6 +84,30 @@ function construct(packageNames: string[]): ClientModuleRegistry {
   return constructWithRoute(packageNames).service
 }
 
+/** Invoke the registered plugin route and capture status, headers, and bytes. */
+async function routeRequest(route: WebRoute, url: string, method = 'GET'): Promise<{
+  status: number
+  headers: Record<string, string> | undefined
+  body: Buffer
+}> {
+  let status = 0
+  let headers: Record<string, string> | undefined
+  let body = Buffer.alloc(0)
+  const response = {
+    writeHead(nextStatus: number, nextHeaders?: Record<string, string>) {
+      status = nextStatus
+      headers = nextHeaders
+      return response
+    },
+    end(chunk?: Uint8Array) {
+      body = chunk === undefined ? Buffer.alloc(0) : Buffer.from(chunk)
+      return response
+    },
+  } as unknown as ServerResponse
+  await route.handler({ method, url } as IncomingMessage, response)
+  return { status, headers, body }
+}
+
 /** Execute the exact first inline script emitted by the Host boot rows. */
 function injectedFacade(graph: WebBootGraph): { html: string; target: ClientModuleLoaderTarget } {
   const html = renderIndexInjections(
@@ -101,6 +128,20 @@ const bootGraph = (): WebBootGraph => ({
     { id: MODULES_ID, url: '/plugins/modules.js?rev=m', rev: 'm' },
     { id: UI_RENDERER_ID, url: '/plugins/ui-renderer.js?rev=r', rev: 'r' },
   ],
+  batches: [
+    {
+      phase: 'bootstrap',
+      url: BOOTSTRAP_URL,
+      rev: 'boot',
+      entries: [MODULES_ID],
+    },
+    {
+      phase: 'application',
+      url: APPLICATION_URL,
+      rev: 'app',
+      entries: [UI_RENDERER_ID],
+    },
+  ],
 })
 
 describe('HTML bootstrap facade', () => {
@@ -108,17 +149,25 @@ describe('HTML bootstrap facade', () => {
     const graph = bootGraph()
     const { html, target } = injectedFacade(graph)
     const facadeAt = html.indexOf('window.__ModuleLoader__=')
-    const modulesAt = html.indexOf('<script src="/plugins/modules.js?rev=m"></script>')
+    const applicationAt = html.indexOf(
+      `<link rel="preload" as="script" href="${APPLICATION_URL}">`,
+    )
+    const bootstrapAt = html.indexOf(`<script src="${BOOTSTRAP_URL}"></script>`)
     const graphAt = html.indexOf('globalThis["__DSH_BOOT__"] = ')
     const entryAt = html.indexOf('<script type="module" src="/index.js"></script>')
-    expect(html).not.toContain('<script src="/plugins/ui-renderer.js?rev=r"></script>')
-    expect([facadeAt, modulesAt, graphAt, entryAt]).toEqual([...new Set([
-      facadeAt, modulesAt, graphAt, entryAt,
+    expect([facadeAt, applicationAt, bootstrapAt, graphAt, entryAt]).toEqual([...new Set([
+      facadeAt, applicationAt, bootstrapAt, graphAt, entryAt,
     ])].sort((a, b) => a - b))
 
     target.load({ id: MODULES_ID, factory: () => modulesClient })
-    target.load({ id: UI_RENDERER_ID, factory: () => ({ marker: 'ui-renderer' }) })
-    const system = target.create({ boot: graph, staticModules: {} })
+    const system = target.create({
+      boot: graph,
+      staticModules: {},
+      loadBundle: async (url) => {
+        expect(url).toBe(APPLICATION_URL)
+        target.load({ id: UI_RENDERER_ID, factory: () => ({ marker: 'ui-renderer' }) })
+      },
+    })
 
     expect(target.mode).toBe('live')
     expect(target.pendingQueue).toEqual([])
@@ -209,40 +258,201 @@ describe('client bundle activation', () => {
     expect(String(thrown)).not.toContain('pnpm run build')
   })
 
+  it('omits a torn or malformed source map without blocking composition', async () => {
+    const packageName = '@fixture/malformed-source-map'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    writeFileSync(`${clientPath}.map`, '{')
+    const torn = constructWithRoute([packageName])
+    const tornRow = torn.service.graph().entries[0]!
+    expect((await routeRequest(torn.route, tornRow.url)).body.toString('utf8'))
+      .not.toContain('sourceMappingURL')
+    expect((await routeRequest(torn.route, `${torn.service.graph().batches[0]!.url}.map`)).status).toBe(404)
+
+    writeFileSync(`${clientPath}.map`, '{"version":3,"sources":[null]}\n')
+    expect(() => construct([packageName])).not.toThrow()
+  })
+
+  it('retains one prior immutable batch generation across rebuild recomposition', async () => {
+    const packageName = '@fixture/batch-rebuild-race'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = { generation: 1 }\n')
+    const { service, route } = constructWithRoute([packageName])
+    const first = service.graph().batches[0]!.url
+    const firstSize = service.artifactBaseline(packageName)!.size
+
+    writeFileSync(clientPath, 'module.exports = { generation: 200 }\n')
+    service.rebuilt(packageName)
+    const second = service.graph().batches[0]!.url
+    expect(second).not.toBe(first)
+    expect(service.artifactBaseline(packageName)!.size).toBeGreaterThan(firstSize)
+    expect((await routeRequest(route, first)).status).toBe(200)
+    expect((await routeRequest(route, second)).status).toBe(200)
+
+    writeFileSync(clientPath, 'module.exports = { generation: 3 }\n')
+    service.rebuilt(packageName)
+    const third = service.graph().batches[0]!.url
+    expect((await routeRequest(route, first)).status).toBe(404)
+    expect((await routeRequest(route, second)).status).toBe(200)
+    expect((await routeRequest(route, third)).status).toBe(200)
+  })
+
+  it('assigns opaque startup revisions instead of deriving them from artifact content', () => {
+    const firstName = '@fixture/startup-revision-first'
+    const secondName = '@fixture/startup-revision-second'
+    writeBuiltPackage(firstName, {})
+    writeBuiltPackage(secondName, {})
+
+    const service = construct([firstName, secondName])
+    const [first, second] = service.graph().entries
+    const firstMatch = /^(?<nonce>[a-f\d]{16})-(?<sequence>\d+)$/.exec(first!.rev)
+    const secondMatch = /^(?<nonce>[a-f\d]{16})-(?<sequence>\d+)$/.exec(second!.rev)
+    expect(firstMatch?.groups).toMatchObject({ sequence: '0' })
+    expect(secondMatch?.groups).toMatchObject({ nonce: firstMatch?.groups?.nonce, sequence: '1' })
+    const firstPath = service.clientPath(firstName)!
+    const firstStat = statSync(firstPath)
+    expect(service.artifactBaseline(firstName)).toEqual({
+      path: firstPath,
+      mtimeMs: firstStat.mtimeMs,
+      size: firstStat.size,
+      mapMtimeMs: null,
+      mapSize: null,
+    })
+    expect(service.artifactBaseline('@fixture/unknown')).toBeUndefined()
+  })
+
   it('serves the source map beside a registered client bundle', async () => {
     const packageName = '@fixture/source-map'
     const clientPath = writePackage(packageName)
     mkdirSync(dirname(clientPath), { recursive: true })
-    writeFileSync(clientPath, 'module.exports = {}\n')
-    const map = '{"version":3,"sources":["src/client/index.tsx"]}\n'
+    writeFileSync(clientPath, 'module.exports = {}\n//# sourceMappingURL=client.js.map')
+    const map = '{"version":3,"names":[],"mappings":"AAAA","sources":["../../../packages/client/demo/src/index.tsx","https://cdn.example.test/library.js"]}\n'
     writeFileSync(`${clientPath}.map`, map)
-    const { route } = constructWithRoute([packageName])
-    let status = 0
-    let headers: Record<string, string> | undefined
-    let body = ''
-    const response = {
-      writeHead(nextStatus: number, nextHeaders?: Record<string, string>) {
-        status = nextStatus
-        headers = nextHeaders
-        return response
-      },
-      end(chunk?: Uint8Array) {
-        body = chunk === undefined ? '' : Buffer.from(chunk).toString('utf8')
-        return response
-      },
-    } as unknown as ServerResponse
-
-    await route.handler({
-      method: 'GET',
-      url: `/plugins/${packageName}/client.js.map`,
-    } as IncomingMessage, response)
-
-    expect(status).toBe(200)
-    expect(headers).toEqual({
+    const { service, route } = constructWithRoute([packageName])
+    const row = service.graph().entries[0]!
+    const individualScript = await routeRequest(route, row.url)
+    expect(individualScript.body.toString('utf8')).toContain(`sourceMappingURL=client.js.map?rev=${row.rev}`)
+    const individual = await routeRequest(route, row.url.replace('/client.js?', '/client.js.map?'))
+    expect(individual.status).toBe(200)
+    expect(individual.headers).toEqual({
       'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-cache',
+      'cache-control': 'public, max-age=31536000, immutable',
     })
-    expect(body).toBe(map)
+    expect(individual.body.toString('utf8')).toBe(map)
+
+    const batch = service.graph().batches[0]!
+    expect(batch).toMatchObject({ phase: 'application', entries: [packageName] })
+    const batchScript = await routeRequest(route, batch.url)
+    expect(batchScript.status).toBe(200)
+    expect(batchScript.headers?.['cache-control']).toBe('public, max-age=31536000, immutable')
+    expect(batchScript.body.toString('utf8')).toContain('//# sourceMappingURL=client.js.map')
+    expect(batchScript.body.toString('utf8')).not.toContain('sourceMappingURL=client.js.map?rev=')
+    expect((await routeRequest(route, batch.url, 'HEAD')).body).toHaveLength(0)
+    expect((await routeRequest(route, batch.url, 'POST')).status).toBe(405)
+    const batchMap = await routeRequest(route, `${batch.url}.map`)
+    const parsedBatchMap = JSON.parse(batchMap.body.toString('utf8')) as unknown
+    const parsedIndividualMap = JSON.parse(map) as Record<string, unknown>
+    expect(parsedBatchMap).toMatchObject({
+      version: 3,
+      file: 'client.js',
+      sections: [{
+        offset: { line: 0, column: 0 },
+        map: {
+          ...parsedIndividualMap,
+          sources: ['/packages/client/demo/src/index.tsx', 'https://cdn.example.test/library.js'],
+        },
+      }],
+    })
+    expect((await routeRequest(route, `${row.url}&stale=1`.replace(`rev=${row.rev}`, 'rev=stale'))).status).toBe(404)
+
+    writeFileSync(`${clientPath}.map`, '{"version":3,"names":[],"mappings":"AAAA","sources":["src/changed.tsx"]}\n')
+    const nextRev = service.rebuilt(packageName)
+    expect(nextRev).not.toBe(row.rev)
+    const nextMap = await routeRequest(route, `/plugins/${packageName}/client.js.map?rev=${String(nextRev)}`)
+    expect(JSON.parse(nextMap.body.toString('utf8'))).toMatchObject({ sources: ['src/changed.tsx'] })
+  })
+
+  it('applies sourceRoot before relocating absolute-looking section sources', async () => {
+    const packageName = '@fixture/source-root'
+    const clientPath = writePackage(packageName)
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    writeFileSync(`${clientPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sourceRoot: '../root',
+      sources: ['/absolute.ts'],
+    }))
+    const { service, route } = constructWithRoute([packageName])
+    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const map = JSON.parse(response.body.toString('utf8')) as {
+      sections: { map: { sourceRoot?: string; sources: string[] } }[]
+    }
+    expect(map.sections[0]?.map).toMatchObject({
+      sources: ['/plugins/@fixture/root/absolute.ts'],
+    })
+    expect(map.sections[0]?.map).not.toHaveProperty('sourceRoot')
+  })
+
+  it('maps a non-zero second batch section through a standard source-map consumer', async () => {
+    const firstName = '@fixture/offset-first'
+    const secondName = '@fixture/offset-second'
+    const firstPath = writePackage(firstName)
+    const secondPath = writePackage(secondName)
+    for (const [path, source] of [
+      [firstPath, '../../../packages/demo/first.ts'],
+      [secondPath, '../../../packages/demo/second.ts'],
+    ] as const) {
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, 'window.first = true\nwindow.second = true\n')
+      writeFileSync(`${path}.map`, JSON.stringify({
+        version: 3,
+        names: [],
+        mappings: 'AAAA',
+        sources: [source],
+        sourcesContent: ['export {}\n'],
+      }))
+    }
+    const { service, route } = constructWithRoute([firstName, secondName])
+    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
+    const sections = (payload as unknown as {
+      sections: { offset: { line: number; column: number } }[]
+    }).sections
+    expect(sections.map(section => section.offset)).toEqual([
+      { line: 0, column: 0 },
+      { line: 3, column: 0 },
+    ])
+    const consumer = new SourceMap(payload)
+    expect(consumer.findEntry(0, 0)).toMatchObject({ originalSource: '/packages/demo/first.ts' })
+    expect(consumer.findEntry(3, 0)).toMatchObject({ originalSource: '/packages/demo/second.ts' })
+  })
+
+  it('keeps a later source-map section usable when an earlier bundle has no map', async () => {
+    const unmappedName = '@fixture/unmapped-first'
+    const mappedName = '@fixture/mapped-second'
+    const unmappedPath = writePackage(unmappedName)
+    const mappedPath = writePackage(mappedName)
+    mkdirSync(dirname(unmappedPath), { recursive: true })
+    mkdirSync(dirname(mappedPath), { recursive: true })
+    writeFileSync(unmappedPath, 'window.unmapped = true\n')
+    writeFileSync(mappedPath, 'window.mapped = true\n')
+    writeFileSync(`${mappedPath}.map`, JSON.stringify({
+      version: 3,
+      names: [],
+      mappings: 'AAAA',
+      sources: ['../../../packages/demo/mapped.ts'],
+      sourcesContent: ['export {}\n'],
+    }))
+
+    const { service, route } = constructWithRoute([unmappedName, mappedName])
+    const response = await routeRequest(route, `${service.graph().batches[0]!.url}.map`)
+    const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
+    const consumer = new SourceMap(payload)
+    expect(consumer.findEntry(2, 0)).toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
   })
 })
 

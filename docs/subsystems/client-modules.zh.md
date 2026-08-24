@@ -2,13 +2,13 @@
 
 [English](client-modules.md) | 中文
 
-Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client 模块系统的 Node 半，以 `ctx.clientModules`（`ClientModuleRegistry`）形式提供。它扫描宿主 Loader 的 entry，找出声明了 `dsh.client` 的包，组合出 `window.__DSH_BOOT__` entry 图，在 `/plugins/<id>/client.js` 提供各个 bundle，并以启动 manifest（元数据清单）行回应每次 index 注入收集——这是同一个服务的四个面。它是 Web GUI 栈的一项可选能力，不属于 agent loop（智能体循环）主干，并且是 [dsh-host-webserver](../../packages/host/webserver) 的消费方：[web-server.md](web-server.zh.md) 所述的载体提供本服务注册的前缀路由与其回应的 `webserver/index-inject` 事件。同一个包的浏览器半（`ctx.modules`，即拉取并物化这些 bundle 的 lazy CJS 模块表）属于内核机件，记录在[包 README](../../packages/client/modules/README.zh.md)中，不在本页。
+Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client 模块系统的 Node 半，以 `ctx.clientModules`（`ClientModuleRegistry`）形式提供。它扫描宿主 Loader 的 entry，找出声明了 `dsh.client` 的包，组合出 `window.__DSH_BOOT__` entry 图，在 `/plugins` 下提供按内容寻址的启动批次与 HMR 独立脚本，并以启动协议行回应每次 index 注入收集——这是同一个服务的四个面。它是 Web GUI 栈的一项可选能力，不属于 agent loop（智能体循环）主干，并且是 [dsh-host-webserver](../../packages/host/webserver) 的消费方：[web-server.md](web-server.zh.md) 所述的载体提供本服务注册的前缀路由与其回应的 `webserver/index-inject` 事件。同一个包的浏览器半（`ctx.modules`，即拉取并物化这些 bundle 的 lazy CJS 模块表）属于内核机件，记录在[包 README](../../packages/client/modules/README.zh.md)中，不在本页。
 
 源码：[`packages/client/modules/src/client/manifest.ts`](../../packages/client/modules/src/client/manifest.ts)
 
 ## wire
 
-图是 Node 半与浏览器半之间协议层的唯一真源：宿主从扫描到的包组合出 `WebBootEntry` 行，把图发布为一条 `global` 注入行、渲染在后续 script 行之前（`globalThis["__DSH_BOOT__"]`，其中 `<` 已转义，插件可控的字符串因此无法逃出 script 元素），壳则在启动任何东西之前先解析它。没有有效 manifest 的页面无法启动——浏览器侧的解析器在图缺失或畸形时大声抛错。
+图是 Node 半与浏览器半之间协议层的唯一真源。宿主从扫描到的包组合出 `WebBootEntry` 行与 `WebBootBatch` 描述，随后在 Vite entry 之前向结构化 index 注入表贡献 registration facade、application preload、bootstrap 脚本与图全局量。`global` 行渲染为 `globalThis["__DSH_BOOT__"]`，其中 `<` 已转义，插件可控的字符串因此无法逃出 script 元素。没有有效 manifest 的页面无法启动：浏览器解析器会拒绝畸形 row 或批次、重复 phase 名、未知成员，以及未恰好归属一个初始批次的 entry。
 
 ```ts type-equiv
 /**
@@ -22,9 +22,9 @@ Web 插件表：[dsh-client-modules](../../packages/client/modules) 中 client �
 interface WebBootEntry {
   /** Entry name == package name. */
   id: string
-  /** Bundle endpoint, '/plugins/<id>/client.js?rev=<rev>'. */
+  /** Revisioned individual endpoint used by HMR. */
   url: string
-  /** Bundle content hash (cache-busting consistency anchor). */
+  /** Opaque individual-artifact revision used for HMR cache busting. */
   rev: string
   /** Package-name dependency edges used for factory arrival and plugin composition. */
   inject?: string[]
@@ -32,6 +32,25 @@ interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+}
+```
+
+```ts type-equiv
+/** Initial script-delivery phase for one content-addressed bundle batch. */
+type WebBootBatchPhase = 'bootstrap' | 'application'
+```
+
+```ts type-equiv
+/** One initial-load script containing the factory registrations for several graph rows. */
+interface WebBootBatch {
+  /** Parser-blocking bootstrap or preloaded application delivery. */
+  phase: WebBootBatchPhase
+  /** Content-addressed batch script endpoint. */
+  url: string
+  /** Hash over the batch script and indexed source map. */
+  rev: string
+  /** Graph entry ids whose factories the script registers, in execution order. */
+  entries: string[]
 }
 ```
 
@@ -46,10 +65,12 @@ interface WebBootGraph {
    * unrelated and remains owned by fiber service waiting.
    */
   entries: WebBootEntry[]
+  /** Initial-load batches; every entry belongs to exactly one batch. */
+  batches: WebBootBatch[]
 }
 ```
 
-每一行的 `rev` 是该 bundle 的内容哈希，并作为使缓存失效的查询参数附在 URL 上；图的 `rev` 对组合后的各行做哈希，因此任何一行的变化都会改变它。`immediately` 标记第一阶段预取档位（在模块面启动期间 fetch 并执行，只做登记）；惰性行在首次 import 时才拉取。
+每个初始 row 的 `rev` 都是不透明的进程 nonce 加序号，因此组合图时不会哈希每个独立产物。HMR 观察到变化后，该 row 的 revision 才改为新 bundle 及其可用 sourcemap 的哈希。Bootstrap 批次包含 modules row；预加载的 application 批次包含其他全部 row。批次 revision 对生成的脚本与 indexed sourcemap 求哈希，图 revision 则对 row 与批次描述一并求哈希。`immediately` 标记第一阶段的 registration barrier；即使只有部分 application row 携带该标记，它们仍共享一次脚本传输。
 
 ## 扫描
 
@@ -61,13 +82,29 @@ interface WebBootGraph {
 
 ## bundle 路由与 index 注入
 
-`GET`/`HEAD /plugins/<id>/client.js` 以 `no-cache` 从磁盘提供已注册的 bundle（锚定一致性的是 rev 查询参数，而非 HTTP 缓存）；其他方法返回 405。未知 id——或已注册、但 bundle 因尚未构建而不可读的行——回应一个大声的 404，因此不可读 bundle 不会表现为成功的 JavaScript 响应。注入行在每次 index 渲染时携带当前图，因此刷新页面总是针对实时组合启动。
+`GET`／`HEAD /plugins/_batch/<phase>/<rev>/client.js` 提供生成的启动脚本，并在相邻路径提供 indexed map。`GET`／`HEAD /plugins/<id>/client.js?rev=<rev>` 为 HMR 提供已快照的独立产物，并把同一 revision 写入其 map 请求。所有版本化响应都使用长期 immutable 缓存。未知路径、缺失 map、缺少 revision 及陈旧 revision 都返回 404，绝不在旧 URL 下提供当前字节，也不会让 SPA fallback 把 HTML 当作 JavaScript 返回；其他方法返回 405。注入行在每次 index 渲染时携带当前图，因此重新加载总是基于实时组合启动。
 
 ## 服务
 
-`ClientModuleRegistry`（`ctx.clientModules`，定义于 [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)）暴露读取面与重建面；签名见生成的[服务目录](#ctxclientmodules--clientmoduleregistry)。`graph()` 返回当前组合出的图（两次变更之间是同一个稳定对象），`clientPath(id)` 返回该 bundle 的绝对路径。`rebuilt(id)` 是 bundle 内容到达图的唯一入口：它对文件重新哈希，只有 rev 真正变化才会重新组合图并发出通知。`onRebuilt` 按发生变化的 bundle 逐个触发并携带新 rev；`onGraphChanged` 在任何一次重新组合了图的 flush 之后触发（行的增删，或 rebuilt 带来的 rev 变化），并采用拉取模型——监听器自行重读 `graph()`。两条通知路径都会兜住监听器异常，因此一个抛错的订阅者既不能让后续订阅者被跳过，也不能杀死触发这次 flush 的一方。
+```ts type-equiv
+/** Filesystem baseline captured before a client artifact snapshot is read. */
+interface ClientArtifactBaseline {
+  /** Absolute path of the client bundle. */
+  readonly path: string
+  /** Bundle modification time in milliseconds. */
+  readonly mtimeMs: number
+  /** Bundle size in bytes. */
+  readonly size: number
+  /** Source-map modification time, or null when no map was observable. */
+  readonly mapMtimeMs: number | null
+  /** Source-map size in bytes, or null when no map was observable. */
+  readonly mapSize: number | null
+}
+```
 
-开发环境下，[dsh-client-hmr](../../packages/client/hmr/README.zh.md) 是注册表的监视驱动：它的 Node 半从同步取得的基线出发，对图中每一行的 bundle 做 stat 轮询，变化时调用 `rebuilt(id)`，经 `onGraphChanged` 重新同步监视集合，并通过 SSE（Server-Sent Events）把 rev 变化广播给浏览器半。生产环境的图完全不含 HMR（热模块替换）行；模块宿主自身从不监视文件。
+`ClientModuleRegistry`（`ctx.clientModules`，定义于 [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)）暴露读取面与重建面；签名见生成的[服务目录](#ctxclientmodules--clientmoduleregistry)。`graph()` 返回当前组合出的图（两次变更之间是同一个稳定对象），`clientPath(id)` 返回 bundle 的绝对路径，`artifactBaseline(id)` 返回读取当前快照前捕获的 bundle/map stat 值。`rebuilt(id)` 是变化后的 bundle 内容到达图的唯一入口：它只对该产物重新哈希，只有 rev 真正变化才会重新组合图并发出通知。`onRebuilt` 按发生变化的 bundle 逐个触发并携带新 rev；`onGraphChanged` 在任何一次重新组合了图的 flush 之后触发（行的增删，或 rebuilt 带来的 rev 变化），并采用拉取模型——监听器自行重读 `graph()`。两条通知路径都会兜住监听器异常，因此一个抛错的订阅者既不能让后续订阅者被跳过，也不能杀死触发这次 flush 的一方。
+
+开发环境下，[dsh-client-hmr](../../packages/client/hmr/README.zh.md) 是注册表的监视驱动：它的 Node 半从 module host 读文件前记录的基线出发，对图中每一行的 bundle 与可选 map 做 stat 轮询，只为变化或标脏的 row 调用 `rebuilt(id)`，经 `onGraphChanged` 重新同步监视集合，并通过 SSE（Server-Sent Events）把 rev 变化广播给浏览器半。生产环境的图完全不含 HMR（热模块替换）行；module host 自身从不监视文件。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -96,6 +133,16 @@ graph(): WebBootGraph
  * @returns the path, or undefined for an unknown id.
  */
 clientPath(id: string): string | undefined
+
+/**
+ * Filesystem baseline captured before an entry's current bytes were read.
+ * HMR compares it with the live files when installing a watch, so a write
+ * between startup composition and watch installation cannot disappear into
+ * the watcher's initial state.
+ * @param id - entry id (package name).
+ * @returns the path and baseline, or undefined for an unknown id.
+ */
+artifactBaseline(id: string): ClientArtifactBaseline | undefined
 
 /**
  * Re-hash one bundle (the HMR watch's registration hook — the only entry

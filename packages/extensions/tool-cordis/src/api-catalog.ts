@@ -520,6 +520,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the path, or undefined for an unknown id.',
       },
       {
+        signature: 'artifactBaseline(id: string): ClientArtifactBaseline | undefined',
+        description: 'Filesystem baseline captured before an entry\'s current bytes were read. HMR compares it with the live files when installing a watch, so a write between startup composition and watch installation cannot disappear into the watcher\'s initial state.',
+        parameters: [{ name: 'id', description: 'entry id (package name).' }],
+        returns: 'the path and baseline, or undefined for an unknown id.',
+      },
+      {
         signature: 'rebuilt(id: string): string | undefined',
         description: 'Re-hash one bundle (the HMR watch\'s registration hook — the only entry point through which bundle content changes reach the graph).',
         parameters: [{ name: 'id', description: 'entry id (package name).' }],
@@ -3304,6 +3310,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'ClientArtifactBaseline',
+    declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n    readonly mapMtimeMs: number | null;\n    readonly mapSize: number | null;\n}',
+  },
+  {
     name: 'CodeBindingErrorClass',
     declaration: 'export interface CodeBindingErrorClass {\n    name: string;\n    memberNameProperty: string;\n}',
   },
@@ -3765,7 +3775,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'IndexInjection',
-    declaration: 'export type IndexInjection = {\n    kind: \'global\';\n    name: string;\n    value: unknown;\n} | {\n    kind: \'script\';\n    placement: IndexInjectionPlacement;\n    text: string;\n} | {\n    kind: \'script-src\';\n    placement: IndexInjectionPlacement;\n    src: string;\n} | {\n    kind: \'style\';\n    text: string;\n} | {\n    kind: \'html\';\n    placement: IndexInjectionPlacement;\n    html: string;\n};',
+    declaration: 'export type IndexInjection = {\n    kind: \'global\';\n    name: string;\n    value: unknown;\n} | {\n    kind: \'script\';\n    placement: IndexInjectionPlacement;\n    text: string;\n} | {\n    kind: \'script-src\';\n    placement: IndexInjectionPlacement;\n    src: string;\n} | {\n    kind: \'script-preload\';\n    src: string;\n} | {\n    kind: \'style\';\n    text: string;\n} | {\n    kind: \'html\';\n    placement: IndexInjectionPlacement;\n    html: string;\n};',
   },
   {
     name: 'IndexInjectionPlacement',
@@ -5444,12 +5454,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface VerifiedWebhookDelivery<K extends string = string> {\n    readonly kind: K;\n    readonly source: WebhookSourceId;\n    readonly deliveryId: WebhookDeliveryId;\n    readonly event: WebhookEventOf<K>;\n    readonly receivedAt: number;\n}',
   },
   {
+    name: 'WebBootBatch',
+    declaration: 'export interface WebBootBatch {\n    phase: WebBootBatchPhase;\n    url: string;\n    rev: string;\n    entries: string[];\n}',
+  },
+  {
+    name: 'WebBootBatchPhase',
+    declaration: 'export type WebBootBatchPhase = \'bootstrap\' | \'application\';',
+  },
+  {
     name: 'WebBootEntry',
     declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n}',
   },
   {
     name: 'WebBootGraph',
-    declaration: 'export interface WebBootGraph {\n    rev: string;\n    entries: WebBootEntry[];\n}',
+    declaration: 'export interface WebBootGraph {\n    rev: string;\n    entries: WebBootEntry[];\n    batches: WebBootBatch[];\n}',
   },
   {
     name: 'WebFetchBody',
