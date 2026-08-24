@@ -261,6 +261,13 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-bash-local",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-subprocess-local"
       ]
     },
     "packages/lsp/lsp-stdio": {
@@ -296,6 +303,14 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/cordis-plugin-logger-console",
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-bash-local",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-subprocess-local"
       ]
     },
     "packages/util/brand": {
@@ -347,6 +362,13 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-bash-local",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-subprocess-local"
       ]
     },
     "packages/session-query/session-query-sqlite": {
@@ -531,6 +553,12 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-tool-subagent"
       ]
     },
     "packages/subagent/subagent-codex": {
@@ -542,6 +570,12 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-tool-subagent"
       ]
     },
     "packages/subagent/subagent-claude-code": {
@@ -553,6 +587,13 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-subagent-codex",
+        "@deepseek-ai/dsh-tool-subagent"
       ]
     },
     "packages/fs/tool-fs": {
@@ -642,6 +683,14 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
+      ],
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-agent-instructions",
+        "@deepseek-ai/dsh-agent-spine-demo",
+        "@deepseek-ai/dsh-llm-deepseek",
+        "@deepseek-ai/dsh-session-checkpoint-policy",
+        "@deepseek-ai/dsh-session-persistence-jsonl",
+        "@deepseek-ai/dsh-tool-subagent"
       ]
     },
     "packages/shell/tool-pwsh": {
