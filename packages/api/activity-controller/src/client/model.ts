@@ -128,10 +128,15 @@ export class ClientActivityModel {
    */
   observeOpened(id: ActivityId, frame: Extract<ActivityObserveFrame, { type: 'opened' }>): void {
     const existing = this.observedStates.get(String(id))
+    // A fresh view anchored past offset zero starts after an evicted head
+    // (fresh observations anchor at the registry's earliest retained byte), so
+    // it owes the same gap mark a live observer earned from lossy reads. A
+    // resume that already accumulated text keeps its recorded gap state.
+    const freshPastHead = (existing === undefined || existing.view.text === '') && frame.from > 0
     const view: ObservedActivity = {
       activityId: id,
       text: existing?.view.text ?? '',
-      gapBefore: (existing?.view.gapBefore ?? false) || frame.from < frame.earliest,
+      gapBefore: (existing?.view.gapBefore ?? false) || frame.from < frame.earliest || freshPastHead,
       status: frame.status,
       ...frame.detail !== undefined ? { detail: frame.detail } : {},
       streaming: true,

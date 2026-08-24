@@ -155,6 +155,43 @@ describe('ActivityListAction rows and observation', () => {
     expect(screen.getAllByText(zh['status.completed']).length).toBeGreaterThan(0)
   })
 
+  it('shifts an overflowing popover back inside the viewport and follows resizes', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(440)
+    vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 344 } as DOMRect)
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true, writable: true })
+    try {
+      render(<ActivityListAction {...props({ rowsBySession: { [SESSION]: [row()] } })} />)
+      openList()
+      const menu = screen.getByRole('list', { name: zh['list.aria'] })
+      // 700 - 12 - 440 - 344 = -96: the popover moves left to keep the margin.
+      expect(menu.style.left).toBe('-96px')
+
+      window.innerWidth = 900
+      fireEvent(window, new Event('resize'))
+      // 900 - 12 - 440 - 344 = 104 > 0: the anchored position fits again.
+      expect(menu.style.left).toBe('0px')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true })
+    }
+  })
+
+  it('never crosses the left viewport margin for an oversized popover', () => {
+    vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800)
+    vi.spyOn(HTMLDivElement.prototype, 'getBoundingClientRect').mockReturnValue({ left: 4 } as DOMRect)
+    const originalWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true, writable: true })
+    try {
+      render(<ActivityListAction {...props({ rowsBySession: { [SESSION]: [row()] } })} />)
+      openList()
+      const menu = screen.getByRole('list', { name: zh['list.aria'] })
+      // max(12 - 4, min(0, 700 - 12 - 800 - 4)) = 8: clamped at the left margin.
+      expect(menu.style.left).toBe('8px')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: originalWidth, configurable: true, writable: true })
+    }
+  })
+
   it('ignores other keys while open and closes once the roster empties', () => {
     const settledPair = [
       row({ id: 'bash-1' as ActivityId, status: 'completed', finishedAt: 2 }),

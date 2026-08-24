@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type {
   ActivityFeedSnapshot, ActivityId, ActivityRow, ObservedActivity,
 } from '@deepseek-ai/dsh-api-activity-controller/client'
@@ -35,6 +35,9 @@ export type ActivityListActionProps =
 
 /** Stable empty list so a session with no activities keeps one array identity. */
 const NO_ROWS: readonly ActivityRow[] = []
+
+/** Minimum gap kept between the popover and the viewport edges (the Menu primitive's portal margin). */
+const VIEWPORT_MARGIN = 12
 
 /** Height cap for one live output panel inside the popover. */
 const PANEL_MAX_LINES = 16
@@ -170,11 +173,41 @@ export function ActivityListAction({ sessionId, useActivity, observe, t }: Activ
   const [expandedId, setExpandedId] = useState<string | undefined>(undefined)
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLUListElement>(null)
+  // Horizontal shift applied to the trigger-anchored popover so it stays
+  // inside the viewport (the stylesheet alone cannot see the anchor offset).
+  const [menuShift, setMenuShift] = useState(0)
 
   const rows = useMemo(() => ordered([...owned, ...unowned]), [owned, unowned])
   const liveCount = useMemo(() => rows.filter(isLive).length, [rows])
 
   useDismissOnOutsidePointer(rootRef, open, setOpen)
+
+  // Fit the open popover to the viewport: shift left when the anchored width
+  // would cross the right edge, never past the left margin.
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuShift(0)
+      return
+    }
+    const fit = (): void => {
+      const root = rootRef.current
+      const menu = menuRef.current
+      /* v8 ignore next -- both refs are attached while the open popover renders. */
+      if (root === null || menu === null) return
+      const width = menu.offsetWidth
+      // Unlaid-out nodes (and jsdom) measure 0: keep the pure CSS anchor.
+      if (width === 0) return
+      const anchorLeft = root.getBoundingClientRect().left
+      setMenuShift(Math.max(
+        VIEWPORT_MARGIN - anchorLeft,
+        Math.min(0, window.innerWidth - VIEWPORT_MARGIN - width - anchorLeft),
+      ))
+    }
+    fit()
+    window.addEventListener('resize', fit)
+    return () => { window.removeEventListener('resize', fit) }
+  }, [open])
 
   // Observation follows visibility: the stream opens when a panel expands and
   // closes when it collapses, unmounts, or the popover closes.
@@ -229,7 +262,7 @@ export function ActivityListAction({ sessionId, useActivity, observe, t }: Activ
       {/* jscpd:ignore-end */}
       {open
         ? (
-          <ul className={css.menu} aria-label={t('list.aria')}>
+          <ul ref={menuRef} className={css.menu} style={{ left: menuShift }} aria-label={t('list.aria')}>
             {rows.map(row => (
               <ActivityItem
                 key={row.id}

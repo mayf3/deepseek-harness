@@ -106,6 +106,21 @@ describe('ClientActivityModel observation', () => {
     expect(lossy.getSnapshot().observed[String(ID)]?.gapBefore).toBe(true)
   })
 
+  it('marks a fresh observation anchored past the evicted head', () => {
+    // Fresh observations anchor at the registry's earliest retained byte, so
+    // from === earliest > 0 means the head was already discarded.
+    const fresh = new ClientActivityModel()
+    opened(fresh, { from: 60_240, earliest: 60_240, total: 321_328 })
+    expect(fresh.getSnapshot().observed[String(ID)]?.gapBefore).toBe(true)
+
+    // A retry that accumulated no text yet earns the mark the same way.
+    const retried = new ClientActivityModel()
+    opened(retried)
+    expect(retried.getSnapshot().observed[String(ID)]?.gapBefore).toBe(false)
+    opened(retried, { from: 6, earliest: 6, total: 6 })
+    expect(retried.getSnapshot().observed[String(ID)]?.gapBefore).toBe(true)
+  })
+
   it('bounds the render tail without splitting a surrogate pair', () => {
     const model = new ClientActivityModel()
     opened(model)
