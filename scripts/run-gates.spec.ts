@@ -169,13 +169,14 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
-    expect(byId.get('coverage-exempt-heavy')?.after).toContain('coverage')
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
       const completeGate = byId.get(gate.id)
       expect(completeGate?.allowFailure).toBe(true)
-      expect(completeGate?.after).toContain('coverage')
-      expect(completeGate?.after).not.toContain('coverage-exempt-heavy')
+      expect(completeGate?.after).toEqual(expect.arrayContaining([
+        'coverage',
+        'coverage-exempt-heavy',
+      ]))
       expect(completeGate?.needs).toEqual(gate.needs)
     }
   })

@@ -1,5 +1,6 @@
-# Unattended coding-agent deployment for the bundled dsh-jsonrpc-agent runtime.
-# stdout is reserved for JSON-RPC; do not add a console logger or terminal UI.
+# Complete JSON-RPC composition fixture for lower-level Loader and SDK tests.
+# Python users launch `dsh --profile sdk` and apply patches instead.
+# Stdout is reserved for JSON-RPC; do not add a console logger or terminal UI.
 
 - id: sdk-jsonrpc-server
   name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
@@ -68,6 +69,7 @@
   config:
     provider: spawn
     toolName: subagent
+    enableModelSelection: true
     enableRunInBackground: false
 
 - id: tool-todo

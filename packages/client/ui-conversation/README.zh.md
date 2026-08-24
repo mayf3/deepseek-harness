@@ -20,6 +20,8 @@ View 选择规则固定：有效且已注册的持久化选择优先，其次是
 
 常驻 composer 在无 Session 与有 Session 之间保持挂载。无 Session 时，同一个编辑器表面保持 inert，Workspace picker 连接 blank Session。该表面是 shell 所有的 Lexical 编辑器：引用 chip 是携带 owner 序列化身份的原子 decorator 节点（提交时经 owner codec 展开），已认领的 slash command 保持为带样式的行首文本，文件夹文本引用以图标前缀携带文件夹图形，草稿的剪贴板投影镜像到逐 Session Conversation store。Queue 操作通过 scoped `ctx.conversation` service 寻址准确的 queue occurrence；queue 预览经 `ui-primitives` 的共享行内引用投影渲染已发送文本（wire 会话形式折叠为其标签），编辑态则展示字面发送文本。繁忙时 Enter 行为保存在 Host-backed `ui-conversation` settings namespace。
 
+普通 composer 运行期间，草稿为空或 owner block 使输入不可用时，主指针操作保持为 Stop。可提交文字或附件会把同一位置切换为 Queue Send；清空或成功提交草稿后恢复 Stop。键盘 Queue/Steer 选择仍由繁忙态 Enter 设置决定，可继续 subagent 则保留相互独立的 Send 与 Stop 操作（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-20-running-draft-primary-send.zh.md)）。
+
 ## 临时 composer entry
 
 `conversation.composer` 是通用 chain，其完整 owner currency 为：
