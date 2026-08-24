@@ -97,7 +97,8 @@ describe('WorkspaceBrowser.module.css list', () => {
     }
   })
 
-  it('uses the error token for the armed archive control', () => {
+  it('keeps the archive control at the trailing edge and colors its armed state', () => {
+    expect(rowDeclarations('.sessionRow .rowActions')?.get('margin-left')).toBe('auto')
     expect(rowDeclarations('.archiveConfirm')?.get('color')).toBe('var(--dsw-alias-state-error-primary)')
     expect(rowDeclarations('.archiveConfirm:hover')?.get('color')).toBe('var(--dsw-alias-state-error-primary)')
   })
