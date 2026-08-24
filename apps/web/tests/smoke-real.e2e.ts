@@ -125,7 +125,7 @@ async function sessionCursor(baseUrl: string, sessionId: string): Promise<number
           }
           const value = frame.value
           if (frame.type === 'item' && isRecord(value)
-            && value.type === 'opened' && Number.isSafeInteger(value.cursor)) {
+            && value.type === 'snapshot' && Number.isSafeInteger(value.cursor)) {
             finish(undefined, value.cursor as number)
           }
         } catch (error) {
