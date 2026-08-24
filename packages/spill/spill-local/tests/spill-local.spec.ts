@@ -11,7 +11,8 @@
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
+import { realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, normalize } from 'node:path'
 import { CallId } from '@deepseek-ai/dsh-llm'
@@ -465,7 +466,7 @@ describe('startup cleanup sweep', () => {
     const old = join(dir, 'old.txt'); writeAged(old, 'x', 40)
     try {
       const roots = await gatherSweepRoots(alias, () => {}, fakeTmp)
-      expect(roots).toEqual([{ path: realpathSync(activeDefault), pruneWhenEmpty: false }])
+      expect(roots).toEqual([{ path: await realpath(activeDefault), pruneWhenEmpty: false }])
       await sweepSpillRoots({ roots, cutoffMs: Date.now() - 30 * DAY_MS, warn: () => {} })
       expect(existsSync(old)).toBe(false)
       expect(existsSync(activeDefault)).toBe(true)
@@ -552,7 +553,7 @@ describe('discoverDefaultRoots', () => {
       writeFileSync(join(base, `${DEFAULT_ROOT_PREFIX}file01`), 'x') // matches shape but is a file
       symlinkSync(realRoot, join(base, `${DEFAULT_ROOT_PREFIX}link01`)) // matches shape but is a symlink
       const found = await discoverDefaultRoots(() => {}, base)
-      expect(found).toEqual([realpathSync(realRoot)])
+      expect(found).toEqual([await realpath(realRoot)])
     } finally {
       rmSync(base, { recursive: true, force: true })
     }
