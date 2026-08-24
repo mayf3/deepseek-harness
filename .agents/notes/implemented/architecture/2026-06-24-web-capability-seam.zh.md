@@ -240,7 +240,7 @@ export type WebFetchBody =
 fetch 提供方的资源控制：
 
 - 仅接受 `http:` 和 `https:` URL；拒绝 URL 中的凭证。
-- 字面 IP 地址或 hostname 一次解析得到的完整结果只能包含全球可达的单播 IPv4 或 IPv6 目的地址。loopback、私有、link-local、运营商级 NAT、多播、保留、过渡、转换和映射到私有 IPv4 的 IPv6 地址都会被拒绝。
+- 字面 IP 地址或 hostname 一次解析得到的完整结果只能包含全球可达的单播 IPv4 或 IPv6 目的地址。IPv6 解析还会发现当前 DNS64 前缀，并拒绝转换到非公开 IPv4 的 NAT64 地址。loopback、私有、link-local、运营商级 NAT、多播、保留、过渡、转换和映射到私有 IPv4 的 IPv6 地址都会被拒绝。
 - 请求通过 Undici lookup 回调保留这一组已验证地址，不会再次解析 hostname。原 hostname 仍作为 HTTP Host 与 TLS SNI 值，而 DNS rebinding 无法在验证后替换连接目的地址。
 - 强制执行最大 URL 长度、响应字节上限、解码正文字符上限、超时和重定向跳数上限。
 - Abort 信号传播到网络获取和高开销解码。
@@ -249,7 +249,7 @@ fetch 提供方的资源控制：
 
 只要 DNS 完整解析结果中存在任一非公开地址，提供方就会拒绝整个结果，而不是静默过滤不安全成员。该 fail-closed 规则可防止连接的地址族选择或回退触及未满足公开网络策略的地址。
 
-`dsh-web-fetch-approval-policy` 负责用户同意决策，而不会把它移入提供方或工具 schema。它委托 `danger-full-access`；在 `read-only` 与 `workspace-write` 中，它拒绝审批策略 `never`，否则执行提供方的公开目的地址预检，并且只在下游策略允许后返回 `ask`。现有审批服务把请求关联到精确的 call id，只有 `allowed-once` 会运行该次调用。预检 DNS 结果绝不是授权令牌：提供方会独立解析并固定实际连接。Plan mode 保持独立的协作状态，采用产品与其组合的 sandbox 和审批策略。
+`dsh-web-fetch-approval-policy` 负责用户同意决策，而不会把它移入提供方或工具 schema。它会先计算下游策略并委托 `danger-full-access`；在 `read-only` 与 `workspace-write` 中，它拒绝审批策略 `never`，否则在返回 `ask` 前执行不产生网络活动的 URL 语法、长度、凭据与 IP 字面量校验。现有审批服务把请求关联到精确的 call id，只有 `allowed-once` 会运行该次调用。随后，提供方才会独立解析、校验并固定实际连接，因此拒绝不会产生 DNS 查询，用户同意也不能绕过 SSRF 强制校验。Plan mode 保持独立的协作状态，采用产品与其组合的 sandbox 和审批策略。
 
 ## 工具消费方行为
 
@@ -261,7 +261,7 @@ fetch 提供方的资源控制：
 
 提供方可用性变化影响执行结果和诊断信息，而非面向模型的 schema 是否存在。如果产品完全不需要 web 工具，在配置中禁用 `dsh-tool-web` 或单个 web 工具即可；如果需要 web 工具但后端配置有误，模型在执行时看到结构化的工具错误。
 
-提示词引导解释了语义分工——`web_search` 用于发现和获取当前信息，`web_fetch` 用于模型需要特定 URL 内容的场景——提示词和工具结果告诉模型用 Markdown 链接引用相关 URL。
+提示词引导解释了语义分工——`web_search` 用于发现和获取当前信息，`web_fetch` 用于模型需要特定 URL 内容的场景——提示词和工具结果告诉模型用 Markdown 链接引用相关 URL。每个成功结果都会把提供方控制的文本标记为外部不可信数据。抓取转换会移除主动内容与隐藏 HTML 内容；无法安全转换时返回固定省略标记，而非原始 HTML。
 
 面向模型的输出以文本为先，因为工具结果是 `ContentBlock[]`，但 seam 的产出保持结构化，以便 UI 展示和未来的适配器无需解析渲染后的文本。
 

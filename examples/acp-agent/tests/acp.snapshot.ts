@@ -368,11 +368,18 @@ const SCENARIOS: Scenario[] = [
     prepareWorkspace: prepareEditingCordisSkillWorkspace,
   },
   { name: 'lsp-definition', hasModelTurn: true, recorded: false, pinsHeader: true, headerClass: 'lsp', configPath: LSP_CONFIG },
-  // web_fetch non-public-address rejection end to end: the permission policy
-  // resolves the recorded loopback target before asking and the result pins the
-  // failed tool call. The fixed URL is part of the recorded transcript; replay
-  // re-executes the real network policy without opening a connection.
-  { name: 'web-fetch', hasModelTurn: true, recorded: true, pinsHeader: true, headerClass: 'web', configPath: WEB_CONFIG },
+  // The real Loader composition asks once, receives the scripted allow-once,
+  // resolves only after consent, pins the deterministic endpoint, and returns
+  // sanitized, explicitly untrusted content to the model transcript.
+  {
+    name: 'web-fetch',
+    hasModelTurn: true,
+    recorded: true,
+    pinsHeader: true,
+    headerClass: 'web',
+    configPath: WEB_CONFIG,
+    env: { DSH_PERMISSION_MODE: 'workspace-write' },
+  },
   {
     name: 'workspace-edit',
     hasModelTurn: true,

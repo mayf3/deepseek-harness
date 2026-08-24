@@ -7,10 +7,18 @@ import { HttpFetchProvider, LOCAL_FETCH_PROVIDER_ID } from '@deepseek-ai/dsh-web
 import type { HttpFetchLimits } from '@deepseek-ai/dsh-web-fetch-http'
 import * as fetchPlugin from '@deepseek-ai/dsh-web-fetch-http'
 import { createPinnedLookup, isPublicIpAddress, publicHttpNetwork, requestPinned, resolvePublicAddresses } from '../src/network.ts'
-import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, parseFetchUrl, validateFetchUrl } from '../src/policy.ts'
+import {
+  classifyContentType,
+  decoderForCharset,
+  isSameOrigin,
+  parseCharset,
+  parseFetchUrl,
+  validateFetchUrl,
+  WEB_FETCH_MAX_URL_LENGTH,
+} from '../src/policy.ts'
+import { validateFetchApprovalUrl } from '../src/preflight.ts'
 
 const limits: HttpFetchLimits = {
-  maxUrlLength: 2048,
   maxResponseBytes: 5_000_000,
   maxBodyChars: 100_000,
   timeoutMs: 5_000,
@@ -48,11 +56,23 @@ function provider(overrides: Partial<HttpFetchLimits> = {}): HttpFetchProvider {
 describe('policy helpers', () => {
   it('validates scheme, credentials, and length', () => {
     expect(parseFetchUrl('https://example.com/preflight').pathname).toBe('/preflight')
-    expect(validateFetchUrl('https://example.com/x', 2048).hostname).toBe('example.com')
-    expect(() => validateFetchUrl('ftp://example.com', 2048)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
-    expect(() => validateFetchUrl('not a url', 2048)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
-    expect(() => validateFetchUrl('https://user:pass@example.com', 2048)).toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
-    expect(() => validateFetchUrl(`https://example.com/${'a'.repeat(3000)}`, 2048)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
+    expect(validateFetchUrl('https://example.com/x').hostname).toBe('example.com')
+    expect(() => validateFetchUrl('ftp://example.com')).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
+    expect(() => validateFetchUrl('not a url')).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
+    expect(() => validateFetchUrl('https://user:pass@example.com')).toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+    const prefix = 'https://example.com/'
+    const exact = `${prefix}${'a'.repeat(WEB_FETCH_MAX_URL_LENGTH - prefix.length)}`
+    expect(validateFetchUrl(exact).href).toBe(exact)
+    expect(() => validateFetchUrl(`${exact}a`)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
+  })
+
+  it('validates literal approval targets without DNS', () => {
+    expect(validateFetchApprovalUrl('https://example.com/path').hostname).toBe('example.com')
+    expect(validateFetchApprovalUrl('https://8.8.8.8/path').hostname).toBe('8.8.8.8')
+    expect(validateFetchApprovalUrl('https://[2001:4860:4860::8888]/path').hostname)
+      .toBe('[2001:4860:4860::8888]')
+    expect(() => validateFetchApprovalUrl('http://127.0.0.1/private'))
+      .toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
   })
 
   it('classifies content types', () => {
@@ -141,11 +161,48 @@ describe('public-network policy', () => {
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_ERROR' }))
   })
 
-  it('validates bracketed IPv6 literals without invoking DNS', async () => {
-    const resolver = vi.fn(async () => [])
+  it('validates bracketed IPv6 literals after checking for an active DNS64 prefix', async () => {
+    const resolver = vi.fn(async () => [{ address: '192.0.0.170', family: 4 }])
     await expect(resolvePublicAddresses('[2001:4860:4860::8888]', new AbortController().signal, resolver))
       .resolves.toEqual([{ address: '2001:4860:4860::8888', family: 6 }])
-    expect(resolver).not.toHaveBeenCalled()
+    expect(resolver).toHaveBeenCalledWith('ipv4only.arpa', { all: true, order: 'verbatim' })
+  })
+
+  it('rejects a network-specific NAT64 address that translates to private IPv4', async () => {
+    const resolver = vi.fn(async (hostname: string) => hostname === 'ipv4only.arpa'
+      ? [{ address: '2001:4860:64:64::c000:aa', family: 6 }]
+      : [{ address: '2001:4860:64:64::7f00:1', family: 6 }])
+
+    await expect(resolvePublicAddresses('nat64.test', new AbortController().signal, resolver))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+  })
+
+  it('accepts a network-specific NAT64 address that translates to public IPv4', async () => {
+    const resolver = vi.fn(async (hostname: string) => hostname === 'ipv4only.arpa'
+      ? [{ address: '2001:4860:64:64::c000:aa', family: 6 }]
+      : [{ address: '2001:4860:64:64::808:808', family: 6 }])
+
+    await expect(resolvePublicAddresses('nat64.test', new AbortController().signal, resolver))
+      .resolves.toEqual([{ address: '2001:4860:64:64::808:808', family: 6 }])
+  })
+
+  it('deduplicates discovered prefixes and ignores addresses outside their translation layout', async () => {
+    const resolver = vi.fn(async (hostname: string) => hostname === 'ipv4only.arpa'
+      ? [
+        { address: '2001:4860:64:64::c000:aa', family: 6 },
+        { address: '2001:4860:64:64::c000:ab', family: 6 },
+        { address: '2001:4860:64:64:c0:0:aa00:0', family: 6 },
+      ]
+      : [
+        { address: '2001:4860:65:64::808:808', family: 6 },
+        { address: '2001:4860:64:64:100::1', family: 6 },
+      ])
+
+    await expect(resolvePublicAddresses('native-v6.test', new AbortController().signal, resolver))
+      .resolves.toEqual([
+        { address: '2001:4860:65:64::808:808', family: 6 },
+        { address: '2001:4860:64:64:100::1', family: 6 },
+      ])
   })
 
   it('stops waiting for DNS when the request is aborted', async () => {

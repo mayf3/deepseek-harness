@@ -166,7 +166,6 @@ describe('tool-call timeout returns TOOL_TIMEOUT (deadline wins over a slow fetc
     // A direct provider caller bypasses tools/execute, so a short configured backstop
     // must produce provider-owned WEB_FETCH_TIMEOUT rather than TOOL_TIMEOUT.
     const direct = new WebFetchLocal.HttpFetchProvider({
-      maxUrlLength: 2048,
       maxResponseBytes: 5_000_000,
       maxBodyChars: 100_000,
       timeoutMs: 50,

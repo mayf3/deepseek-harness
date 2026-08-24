@@ -2,25 +2,25 @@
 
 English | [中文](README.zh.md)
 
-A `tools/pre-execute` policy for one-shot `web_fetch` permission decisions. It combines the calling session's sandbox mode with its approval policy and uses [`dsh-web-fetch-http`](../web-fetch-http/README.md) to reject non-public destinations before asking the user.
+A `tools/pre-execute` policy for one-shot `web_fetch` permission decisions. It combines the calling session's sandbox mode with its approval policy and uses [`dsh-web-fetch-http`](../web-fetch-http/README.md) for network-free validation before asking the user.
 
 ## Decisions
 
 | Sandbox mode | Approval policy | `web_fetch` decision |
 |---|---|---|
 | `danger-full-access` | any | Delegate without asking. |
-| `read-only` or `workspace-write` | `ask` | Resolve and require a public destination, then request one-shot approval. |
+| `read-only` or `workspace-write` | `ask` | Validate the URL without network activity, then request one-shot approval. |
 | `read-only` or `workspace-write` | `never` | Deny without DNS or a prompt. |
 
-An agentless restricted call is denied because it has no session for policy lookup or approval audit. Malformed arguments delegate to the tool's own schema validation. This plugin never grants a call itself: unrestricted calls delegate to later policies, and restricted calls preserve any downstream `ask` or `deny` result.
+An agentless restricted call is denied because it has no session for policy lookup or approval audit; agentless `danger-full-access` calls delegate. Malformed arguments and unknown tools delegate to the registry's own validation. This plugin never grants a call itself: it evaluates downstream policies first, unrestricted calls preserve their result, and restricted calls ask only after downstream policies allow.
 
 The approval request carries the exact tool `callId` and a reason containing the complete normalized URL, sandbox mode, and single-call scope. Only the existing `allowed-once` outcome permits execution; rejection, cancellation, or an unavailable answerer fails closed. Session/domain persistence and permanent grants are outside this package.
 
 ## SSRF separation
 
-Permission preflight parses the URL and resolves its complete address set before displaying a prompt. A non-public destination is always rejected and cannot be authorized through `allowed-once`.
+Before displaying a prompt, permission validation checks URL syntax, the fixed length limit, embedded credentials, and any literal IP address. It performs no DNS lookup, so rejecting or cancelling a prompt cannot disclose model-controlled hostname data through the resolver.
 
-Preflight is not a network authorization token. The HTTP provider resolves the hostname again immediately before each connection, rejects any non-public answer, pins the validated addresses, and repeats the check for every followed same-origin redirect. Cross-origin redirects require a new `web_fetch` call and a new permission decision.
+After `allowed-once`, the HTTP provider resolves the hostname immediately before each connection, rejects any non-public answer, pins the validated addresses, and repeats the check for every followed same-origin redirect. A user cannot authorize a private destination, and cross-origin redirects require a new `web_fetch` call and permission decision.
 
 ## Model Experience
 

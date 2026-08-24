@@ -32,6 +32,16 @@ export interface PinnedResponse {
 /** Resolver signature used to test public-address policy without process DNS changes. */
 export type AddressResolver = (hostname: string, options: { all: true; order: 'verbatim' }) => Promise<LookupAddress[]>
 
+/** RFC 6052 prefix lengths that may carry an IPv4 destination through NAT64. */
+const RFC6052_PREFIX_LENGTHS = [32, 40, 48, 56, 64, 96] as const
+const IPV4ONLY_DISCOVERY_HOST = 'ipv4only.arpa'
+const IPV4ONLY_SENTINELS = new Set(['192.0.0.170', '192.0.0.171'])
+
+interface Nat64Prefix {
+  readonly bytes: readonly number[]
+  readonly length: typeof RFC6052_PREFIX_LENGTHS[number]
+}
+
 /**
  * Return whether an address is globally reachable unicast. IPv4-mapped IPv6 is
  * classified by its embedded IPv4 address; transition and translation prefixes
@@ -76,6 +86,11 @@ export async function resolvePublicAddresses(
     throw new WebError(`hostname "${hostname}" resolved to no addresses`, 'WEB_PROVIDER_ERROR')
   }
 
+  const hasIpv6 = resolved.some(entry => entry.family === 6 && isIP(entry.address) === 6)
+  const nat64Prefixes = hasIpv6
+    ? await discoverNat64Prefixes(signal, resolver)
+    : []
+
   const addresses: PublicAddress[] = []
   for (const entry of resolved) {
     if ((entry.family !== 4 && entry.family !== 6) || isIP(entry.address) !== entry.family) {
@@ -84,9 +99,62 @@ export async function resolvePublicAddresses(
     if (!isPublicIpAddress(entry.address)) {
       throw new WebError(`URL hostname "${hostname}" resolves to a non-public IP address`, 'WEB_BLOCKED_URL')
     }
+    const translatedIpv4 = translatedIpv4Address(entry.address, nat64Prefixes)
+    if (translatedIpv4 !== undefined && !isPublicIpAddress(translatedIpv4)) {
+      throw new WebError(`URL hostname "${hostname}" resolves through NAT64 to a non-public IPv4 address`, 'WEB_BLOCKED_URL')
+    }
     addresses.push({ address: entry.address, family: entry.family })
   }
   return addresses
+}
+
+/** Discover the active DNS64 prefix set using RFC 7050's reserved hostname. */
+async function discoverNat64Prefixes(signal: AbortSignal, resolver: AddressResolver): Promise<Nat64Prefix[]> {
+  const discovered = await raceWithSignal(
+    resolver(IPV4ONLY_DISCOVERY_HOST, { all: true, order: 'verbatim' }),
+    signal,
+  )
+  const prefixes: Nat64Prefix[] = []
+  const seen = new Set<string>()
+  for (const entry of discovered) {
+    if (entry.family !== 6 || isIP(entry.address) !== 6) continue
+    const bytes = ipaddr.parse(entry.address).toByteArray()
+    for (const length of RFC6052_PREFIX_LENGTHS) {
+      const embedded = embeddedIpv4Address(bytes, length)
+      if (embedded === undefined || !IPV4ONLY_SENTINELS.has(embedded)) continue
+      const prefixBytes = bytes.slice(0, length / 8)
+      const key = `${String(length)}:${prefixBytes.join('.')}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      prefixes.push({ bytes: prefixBytes, length })
+    }
+  }
+  return prefixes
+}
+
+/** Return the RFC 6052-embedded IPv4 address when an IPv6 address matches a discovered prefix. */
+function translatedIpv4Address(input: string, prefixes: readonly Nat64Prefix[]): string | undefined {
+  if (isIP(input) !== 6) return undefined
+  const bytes = ipaddr.parse(input).toByteArray()
+  for (const prefix of prefixes) {
+    if (!prefix.bytes.every((byte, index) => bytes[index] === byte)) continue
+    const embedded = embeddedIpv4Address(bytes, prefix.length)
+    if (embedded !== undefined) return embedded
+  }
+  return undefined
+}
+
+/** Extract one IPv4 address from an RFC 6052 IPv6 layout. */
+function embeddedIpv4Address(bytes: readonly number[], prefixLength: Nat64Prefix['length']): string | undefined {
+  if (prefixLength === 96) return bytes.slice(12, 16).join('.')
+  if (bytes[8] !== 0) return undefined
+  const prefixBytes = prefixLength / 8
+  const beforeReservedOctet = 8 - prefixBytes
+  const ipv4 = [
+    ...bytes.slice(prefixBytes, prefixBytes + beforeReservedOctet),
+    ...bytes.slice(9, 9 + 4 - beforeReservedOctet),
+  ]
+  return ipv4.join('.')
 }
 
 /**

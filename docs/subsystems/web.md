@@ -126,9 +126,9 @@ Selection never depends on registration, config, or HMR order: a capability has 
 
 ## Fetch permission
 
-[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) listens on `tools/pre-execute` without changing the web service or tool schemas. `danger-full-access` delegates to later policies without asking. `read-only` and `workspace-write` require approval policy `ask`, validate that the current URL resolves only to public addresses, preserve any downstream denial, and return `ask` with the exact call id and full normalized URL. Approval policy `never` and agentless restricted calls deny without DNS or a prompt. Only `allowed-once` grants the pending call; there is no persistent domain or session authorization.
+[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) listens on `tools/pre-execute` without changing the web service or tool schemas. It evaluates downstream policies first. `danger-full-access` delegates without asking; `read-only` and `workspace-write` with approval policy `ask` validate URL syntax, length, credentials, and literal IPs without network activity, then return `ask` with the exact call id and full normalized URL. Approval policy `never` and agentless restricted calls deny without DNS or a prompt. Only `allowed-once` grants the pending call; there is no persistent domain or session authorization.
 
-Permission preflight and provider enforcement are separate. Preflight prevents a blocked destination from appearing in an approval prompt, but its DNS result is not reused as authorization. The HTTP provider resolves again for the actual request, pins that validated address set, and repeats enforcement for each same-origin redirect; a cross-origin redirect requires a new tool call and permission decision. `plan` remains collaboration state rather than a network mode, so products combine plan work with the desired sandbox and approval policies.
+Permission validation and provider enforcement are separate. DNS runs only after consent: the HTTP provider resolves for the actual request, rejects non-public answers including private IPv4 reached through the active DNS64 prefix, pins that validated address set, and repeats enforcement for each same-origin redirect. A cross-origin redirect requires a new tool call and permission decision. `plan` remains collaboration state rather than a network mode, so products combine plan work with the desired sandbox and approval policies.
 
 ## Errors
 
@@ -136,7 +136,7 @@ Permission preflight and provider enforcement are separate. Preflight prevents a
 
 ## The service
 
-`WebRuntime` registers search and fetch providers, rejects duplicate ids with `WEB_DUPLICATE_PROVIDER`, and resolves providers at execution time with structured selection errors. The local fetch backend accepts only HTTP(S), rejects credentials, resolves each hostname once, rejects any answer set containing a non-public IPv4 or IPv6 destination, pins the request connection to the validated addresses, repeats those checks for every same-origin redirect hop, caps redirects, bytes, characters, and time, and decodes the body; the tool owns presentation.
+`WebRuntime` registers search and fetch providers, rejects duplicate ids with `WEB_DUPLICATE_PROVIDER`, and resolves providers at execution time with structured selection errors. The local fetch backend accepts only HTTP(S), rejects credentials, resolves each hostname once, rejects any answer set containing a non-public IPv4 or IPv6 destination or an active-prefix NAT64 translation to non-public IPv4, pins the request connection to the validated addresses, repeats those checks for every same-origin redirect hop, caps redirects, bytes, characters, and time, and decodes the body; the tool owns presentation.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

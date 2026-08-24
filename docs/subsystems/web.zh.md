@@ -126,9 +126,9 @@ type WebFetchBody =
 
 ## 抓取权限
 
-[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) 监听 `tools/pre-execute`，不改变 web 服务或工具 schema。`danger-full-access` 不询问并委托后续策略。`read-only` 与 `workspace-write` 要求审批策略为 `ask`，验证当前 URL 只解析到公开地址，保留下游拒绝，并返回携带精确 call id 与完整标准化 URL 的 `ask`。审批策略 `never` 和受限模式下的无 agent 调用不进行 DNS 解析或提示，直接拒绝。只有 `allowed-once` 允许该次 pending 调用；不存在按域名或 session 持久化的授权。
+[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) 监听 `tools/pre-execute`，不改变 web 服务或工具 schema。它会先计算下游策略。`danger-full-access` 不询问并继续委托；`read-only` 与 `workspace-write` 在审批策略为 `ask` 时，会在不产生网络活动的情况下校验 URL 语法、长度、凭据和 IP 字面量，再返回携带精确 call id 与完整标准化 URL 的 `ask`。审批策略 `never` 和受限模式下的无 agent 调用不进行 DNS 解析或提示，直接拒绝。只有 `allowed-once` 允许该次 pending 调用；不存在按域名或 session 持久化的授权。
 
-权限预检与提供方强制执行彼此独立。预检防止被阻断的目的地址出现在审批提示中，但其 DNS 结果不会被复用为授权。HTTP 提供方为实际请求重新解析、固定该组已验证地址，并对每个同源重定向重复强制校验；跨源重定向需要新的工具调用与权限决策。`plan` 仍是协作状态，而不是网络 mode，因此产品应将 plan 工作与所需的 sandbox 和审批策略组合。
+权限校验与提供方强制执行彼此独立。DNS 只会在用户同意后运行：HTTP 提供方为实际请求执行解析，拒绝包括通过当前 DNS64 前缀抵达私有 IPv4 在内的非公开结果，固定该组已验证地址，并对每个同源重定向重复强制校验。跨源重定向需要新的工具调用与权限决策。`plan` 仍是协作状态，而不是网络 mode，因此产品应将 plan 工作与所需的 sandbox 和审批策略组合。
 
 ## 错误
 
@@ -136,7 +136,7 @@ type WebFetchBody =
 
 ## 服务
 
-`WebRuntime` 注册搜索与抓取提供方，以 `WEB_DUPLICATE_PROVIDER` 拒绝重复 id，并在执行时以结构化的选择错误解析提供方。本地抓取后端仅接受 HTTP(S)、拒绝凭证、对每个 hostname 只解析一次、拒绝包含任一非公开 IPv4 或 IPv6 目的地址的解析结果、把请求连接固定到已验证地址、对每一次同源重定向跳转重复这些校验、限制重定向次数、字节数、字符数和时间，并解码正文；展示由工具负责。
+`WebRuntime` 注册搜索与抓取提供方，以 `WEB_DUPLICATE_PROVIDER` 拒绝重复 id，并在执行时以结构化的选择错误解析提供方。本地抓取后端仅接受 HTTP(S)、拒绝凭证、对每个 hostname 只解析一次、拒绝包含任一非公开 IPv4／IPv6 目的地址或经当前前缀转换到非公开 IPv4 的 NAT64 地址的解析结果、把请求连接固定到已验证地址、对每一次同源重定向跳转重复这些校验、限制重定向次数、字节数、字符数和时间，并解码正文；展示由工具负责。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

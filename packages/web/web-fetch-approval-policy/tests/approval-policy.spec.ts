@@ -7,6 +7,7 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineTool, type PreToolDecision } from '@deepseek-ai/dsh-tools'
 import ApprovalService, { type ApprovalOutcome, type ApprovalRequest } from '@deepseek-ai/dsh-user-approval'
 import * as approvalPolicy from '../src/index.ts'
+import { WEB_FETCH_MAX_URL_LENGTH } from '../../web-fetch-http/src/policy.ts'
 import { publicHttpNetwork } from '../../web-fetch-http/src/network.ts'
 
 const signal = new AbortController().signal
@@ -73,9 +74,9 @@ function executeFetch(ctx: Context, agent: Agent | null = fakeAgent(), arguments
 }
 
 describe('web_fetch approval policy', () => {
-  it.each(['read-only', 'workspace-write'] as const)('asks once after public-address preflight in %s mode', async (mode) => {
+  it.each(['read-only', 'workspace-write'] as const)('asks once without DNS in %s mode', async (mode) => {
     const { ctx, calls } = await setup(mode)
-    const resolve = vi.spyOn(publicHttpNetwork, 'resolve').mockResolvedValue([{ address: '8.8.8.8', family: 4 }])
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
     const requests: ApprovalRequest[] = []
     ctx.on('approval/request', (request) => {
       requests.push(request)
@@ -84,7 +85,7 @@ describe('web_fetch approval policy', () => {
 
     await expect(executeFetch(ctx)).resolves.toMatchObject({ isError: false, value: 'fetched' })
 
-    expect(resolve).toHaveBeenCalledWith('example.com', signal)
+    expect(resolve).not.toHaveBeenCalled()
     expect(requests).toHaveLength(1)
     expect(requests[0]).toMatchObject({
       toolName: 'web_fetch',
@@ -92,18 +93,18 @@ describe('web_fetch approval policy', () => {
       reason: `Allow web_fetch to access https://example.com/path?q=1 in ${mode} mode? This permission applies only to this tool call.`,
     })
     expect(calls.count).toBe(1)
-    resolve.mockRestore()
   })
 
   it('does not dispatch when the user rejects the one-shot request', async () => {
     const { ctx, calls } = await setup()
-    vi.spyOn(publicHttpNetwork, 'resolve').mockResolvedValue([{ address: '8.8.8.8', family: 4 }])
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('rejected'))
 
     await expect(executeFetch(ctx)).resolves.toMatchObject({
       isError: true,
       content: [{ type: 'text', text: 'Error: the user rejected tool "web_fetch"' }],
     })
+    expect(resolve).not.toHaveBeenCalled()
     expect(calls.count).toBe(0)
   })
 
@@ -134,8 +135,9 @@ describe('web_fetch approval policy', () => {
     expect(calls.count).toBe(0)
   })
 
-  it('rejects a non-public destination before presenting approval', async () => {
+  it('rejects a non-public literal without DNS or approval', async () => {
     const { ctx, calls } = await setup()
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
     const approval = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
     ctx.on('approval/request', approval)
 
@@ -144,13 +146,14 @@ describe('web_fetch approval policy', () => {
       isError: true,
       error: { info: { code: 'WEB_BLOCKED_URL' } },
     })
+    expect(resolve).not.toHaveBeenCalled()
     expect(approval).not.toHaveBeenCalled()
     expect(calls.count).toBe(0)
   })
 
-  it('preserves a downstream denial after preflight', async () => {
+  it('preserves a downstream denial without DNS or approval', async () => {
     const { ctx, calls } = await setup()
-    vi.spyOn(publicHttpNetwork, 'resolve').mockResolvedValue([{ address: '8.8.8.8', family: 4 }])
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
     const approval = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
     ctx.on('approval/request', approval)
     ctx.on('tools/pre-execute', async (_exec, _next): Promise<PreToolDecision> => ({
@@ -162,6 +165,7 @@ describe('web_fetch approval policy', () => {
       isError: true,
       content: [{ type: 'text', text: 'Error: denied downstream' }],
     })
+    expect(resolve).not.toHaveBeenCalled()
     expect(approval).not.toHaveBeenCalled()
     expect(calls.count).toBe(0)
   })
@@ -192,30 +196,45 @@ describe('web_fetch approval policy', () => {
     expect(calls.count).toBe(0)
   })
 
-  it('maps resolver and aborted preflight failures to structured web errors', async () => {
-    const { ctx } = await setup()
-    const resolve = vi.spyOn(publicHttpNetwork, 'resolve').mockRejectedValueOnce(new Error('dns failed'))
+  it('rejects a URL over the shared limit before approval', async () => {
+    const { ctx, calls } = await setup()
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
+    const approval = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
+    ctx.on('approval/request', approval)
+    const prefix = 'https://example.com/'
+    const exact = `${prefix}${'a'.repeat(WEB_FETCH_MAX_URL_LENGTH - prefix.length)}`
+    const over = `${exact}a`
 
-    await expect(executeFetch(ctx)).resolves.toMatchObject({
+    await expect(executeFetch(ctx, fakeAgent(), { url: exact })).resolves.toMatchObject({ isError: false })
+    await expect(executeFetch(ctx, fakeAgent(), { url: over })).resolves.toMatchObject({
       isError: true,
-      error: { info: { code: 'WEB_PROVIDER_ERROR' } },
+      error: { info: { code: 'WEB_INVALID_URL' } },
     })
+    expect(approval).toHaveBeenCalledTimes(1)
+    expect(resolve).not.toHaveBeenCalled()
+    expect(calls.count).toBe(1)
+  })
 
-    const controller = new AbortController()
-    resolve.mockImplementationOnce(async () => {
-      controller.abort('stop')
-      throw new Error('aborted')
-    })
-    await expect(ctx.tools.execute({
-      callId: CallId('aborted-preflight'),
-      name: 'web_fetch',
-      arguments: { url: 'https://example.com/' },
-      agent: fakeAgent(),
-      signal: controller.signal,
-    })).resolves.toMatchObject({
+  it('delegates an agentless danger-full-access call', async () => {
+    const { ctx, calls } = await setup('danger-full-access')
+    await expect(executeFetch(ctx, null)).resolves.toMatchObject({ isError: false, value: 'fetched' })
+    expect(calls.count).toBe(1)
+  })
+
+  it('does not ask for an unknown web_fetch tool', async () => {
+    const bare = new Context()
+    await bare.plugin(SystemPrompt)
+    await bare.plugin(ToolRuntime)
+    await bare.plugin(SandboxPolicyService, { mode: 'workspace-write' })
+    await bare.plugin(ApprovalService, { policy: 'ask' })
+    await bare.plugin(approvalPolicy)
+    const approval = vi.fn(() => Promise.resolve<ApprovalOutcome>('allowed-once'))
+    bare.on('approval/request', approval)
+    await expect(executeFetch(bare)).resolves.toMatchObject({
       isError: true,
-      error: { info: { code: 'WEB_ABORTED' } },
+      error: { info: { code: 'UNKNOWN_TOOL' } },
     })
+    expect(approval).not.toHaveBeenCalled()
   })
 
   it('ignores unrelated tools', async () => {

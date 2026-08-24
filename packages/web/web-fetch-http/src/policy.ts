@@ -8,6 +8,9 @@
 
 import { WebError } from '@deepseek-ai/dsh-web'
 
+/** Maximum accepted request URL length across permission and transport checks. */
+export const WEB_FETCH_MAX_URL_LENGTH = 2048
+
 /** The body kinds this provider decodes. */
 export type FetchableKind = 'html' | 'text'
 
@@ -41,12 +44,11 @@ export function parseFetchUrl(input: string): URL {
  * Public-address resolution and connection pinning run after this check.
  *
  * @param input - the raw URL string from the fetch request.
- * @param maxUrlLength - inclusive upper bound on `input`'s length.
  * @returns the parsed `URL`.
  */
-export function validateFetchUrl(input: string, maxUrlLength: number): URL {
-  if (input.length > maxUrlLength) {
-    throw new WebError(`URL exceeds the maximum length of ${maxUrlLength}`, 'WEB_INVALID_URL')
+export function validateFetchUrl(input: string): URL {
+  if (input.length > WEB_FETCH_MAX_URL_LENGTH) {
+    throw new WebError(`URL exceeds the maximum length of ${WEB_FETCH_MAX_URL_LENGTH}`, 'WEB_INVALID_URL')
   }
   return parseFetchUrl(input)
 }

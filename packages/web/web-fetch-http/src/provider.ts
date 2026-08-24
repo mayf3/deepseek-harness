@@ -15,8 +15,6 @@ import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, val
 
 /** Resolved provider limits (the plugin's schemastery Config supplies defaults). */
 export interface HttpFetchLimits {
-  /** Maximum accepted request URL length. */
-  maxUrlLength: number
   /** Maximum response body size in bytes (read is aborted past this). */
   maxResponseBytes: number
   /** Maximum decoded body length in characters (truncated past this). */
@@ -54,7 +52,7 @@ export class HttpFetchProvider implements WebFetchProvider {
 
   /** Follow same-origin redirects up to the hop cap, then read the final response. */
   private async followAndRead(initialUrl: string, signal: AbortSignal): Promise<WebFetchResult> {
-    let currentUrl = validateFetchUrl(initialUrl, this.limits.maxUrlLength)
+    let currentUrl = validateFetchUrl(initialUrl)
     let redirectsFollowed = 0
 
     for (;;) {
@@ -80,7 +78,7 @@ export class HttpFetchProvider implements WebFetchProvider {
           // that validateFetchUrl would reject.
           let validatedTarget: URL
           try {
-            validatedTarget = validateFetchUrl(target.toString(), this.limits.maxUrlLength)
+            validatedTarget = validateFetchUrl(target.toString())
             if (!isSameOrigin(validatedTarget, currentUrl)) {
               throw new WebError(
                 `cross-origin redirect to ${validatedTarget.origin} is not followed automatically; retry against that URL directly`,

@@ -240,7 +240,7 @@ The provider owns safe resource retrieval: URL validation, HTTP transport, redir
 The fetch provider's resource controls:
 
 - Only `http:` and `https:` URLs are accepted; credentials in URLs are rejected.
-- A literal address or the complete result of one hostname lookup must contain only globally reachable unicast IPv4 or IPv6 destinations. Loopback, private, link-local, carrier-grade NAT, multicast, reserved, transition, translation, and private IPv4-mapped IPv6 addresses are rejected.
+- A literal address or the complete result of one hostname lookup must contain only globally reachable unicast IPv4 or IPv6 destinations. IPv6 resolution also discovers the active DNS64 prefix and rejects NAT64 addresses that translate to non-public IPv4. Loopback, private, link-local, carrier-grade NAT, multicast, reserved, transition, translation, and private IPv4-mapped IPv6 addresses are rejected.
 - The request retains that validated address set in an Undici lookup callback instead of resolving the hostname again. The original hostname remains the HTTP Host and TLS SNI value, while DNS rebinding cannot replace the connection destination after validation.
 - Maximum URL length, response byte cap, decoded body character cap, timeout, and redirect hop cap are enforced.
 - Abort signals propagate through network fetches and expensive decoding.
@@ -249,7 +249,7 @@ The fetch provider's resource controls:
 
 The provider rejects an entire DNS answer set when any address is not public instead of silently filtering the unsafe members. This fail-closed rule prevents connection-family selection or fallback from reaching an address that did not satisfy the public-network policy.
 
-`dsh-web-fetch-approval-policy` owns user-consent decisions without moving them into the provider or tool schema. It delegates `danger-full-access`; in `read-only` and `workspace-write` it denies approval policy `never`, otherwise performs the provider's public-destination preflight and returns `ask` only after downstream policies allow. The existing approval service correlates the request to the exact call id, and only `allowed-once` runs that call. The preflight DNS result is never an authorization token: the provider independently resolves and pins the actual connection. Plan mode stays an independent collaboration state and uses whichever sandbox and approval policies the product composes with it.
+`dsh-web-fetch-approval-policy` owns user-consent decisions without moving them into the provider or tool schema. It evaluates downstream policies first and delegates `danger-full-access`; in `read-only` and `workspace-write` it denies approval policy `never`, otherwise performs network-free URL syntax, length, credentials, and literal-IP checks before returning `ask`. The existing approval service correlates the request to the exact call id, and only `allowed-once` runs that call. The provider then independently resolves, validates, and pins the actual connection, so rejection causes no DNS query and consent cannot bypass SSRF enforcement. Plan mode stays an independent collaboration state and uses whichever sandbox and approval policies the product composes with it.
 
 ## Tool consumer behavior
 
@@ -261,7 +261,7 @@ Tool registration is a minimal stable sync: on plugin startup the `dsh-tool-web`
 
 Provider availability changes affect execution results and diagnostics, not whether the model-facing schema exists. If a product wants no web tools at all, it disables `dsh-tool-web` or the individual web tool in config; if it wants web tools but the backend is misconfigured, the model sees a structured tool error at execution time.
 
-The prompt guidance explains the semantic split — `web_search` for discovery and current information, `web_fetch` when the model needs the content of a specific URL — and the prompt and tool result tell the model to cite relevant URLs with markdown links.
+The prompt guidance explains the semantic split — `web_search` for discovery and current information, `web_fetch` when the model needs the content of a specific URL — and the prompt and tool result tell the model to cite relevant URLs with markdown links. Every successful result labels provider-controlled text as external untrusted data. Fetch conversion removes active and hidden HTML content; unsafe conversion returns a fixed omission marker rather than raw HTML.
 
 The model-facing output is text-first because tool results are `ContentBlock[]`, but the seam outcome stays structured so UI presentation and future adapters do not have to scrape rendered text.
 

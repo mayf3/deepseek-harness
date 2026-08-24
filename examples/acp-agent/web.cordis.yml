@@ -1,7 +1,11 @@
 # Web-fetch composition for the web-fetch snapshot scenario. The base bundle
 # supplies the web seam, public HTTP provider, and fetch permission policy; this
-# overlay narrows the model-facing tools to fetch only. The recorded loopback
-# target is rejected during permission preflight without opening a connection.
+# overlay narrows the model-facing tools to fetch only. A snapshot-only network
+# plugin serves one deterministic endpoint after one-shot approval.
+- insert:
+    - id: web-fetch-snapshot-network
+      name: './tests/fixtures/web-fetch-network.ts'
+
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
   config:

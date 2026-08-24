@@ -1,32 +1,31 @@
 /**
- * Public-destination preflight shared with permission consumers. This check is
- * advisory: the provider independently resolves and pins the actual request.
+ * Network-free URL validation shared with permission consumers.
  *
  * @module @deepseek-ai/dsh-web-fetch-http/preflight
  */
 
+import { isIP } from 'node:net'
 import { WebError } from '@deepseek-ai/dsh-web'
-import { publicHttpNetwork } from './network.ts'
-import { parseFetchUrl } from './policy.ts'
+import { isPublicIpAddress } from './network.ts'
+import { validateFetchUrl } from './policy.ts'
 
 /**
- * Parse an HTTP(S) URL and require its current DNS answer set to contain only
- * public unicast addresses. A successful result does not authorize a later
- * connection; callers must use a provider that repeats and enforces the check.
+ * Validate an HTTP(S) URL before permission is requested without causing
+ * network activity. Literal IP destinations must already be public; hostnames
+ * are resolved and enforced only by the provider after consent.
  * @param rawUrl - URL proposed for a public fetch.
- * @param signal - cancellation for hostname resolution.
- * @returns the parsed URL after successful public-address resolution.
+ * @returns the parsed URL after network-free validation.
  */
-export async function preflightPublicFetchUrl(rawUrl: string, signal: AbortSignal): Promise<URL> {
-  const url = parseFetchUrl(rawUrl)
-  try {
-    await publicHttpNetwork.resolve(url.hostname, signal)
-  } catch (error: unknown) {
-    if (error instanceof WebError) throw error
-    if (signal.aborted) {
-      throw new WebError('web fetch aborted during permission preflight', 'WEB_ABORTED', { cause: error })
-    }
-    throw new WebError(`web fetch hostname resolution failed: ${String(error)}`, 'WEB_PROVIDER_ERROR', { cause: error })
+export function validateFetchApprovalUrl(rawUrl: string): URL {
+  const url = validateFetchUrl(rawUrl)
+  const hostname = stripIpv6Brackets(url.hostname)
+  if (isIP(hostname) !== 0 && !isPublicIpAddress(hostname)) {
+    throw new WebError(`URL hostname "${url.hostname}" is a non-public IP address`, 'WEB_BLOCKED_URL')
   }
   return url
+}
+
+/** WHATWG URL retains brackets around IPv6 hostnames; IP parsers do not. */
+function stripIpv6Brackets(hostname: string): string {
+  return hostname.startsWith('[') ? hostname.slice(1, -1) : hostname
 }

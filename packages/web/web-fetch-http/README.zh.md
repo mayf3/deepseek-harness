@@ -4,7 +4,7 @@
 
 一个匿名公共 HTTP(S) `WebFetchProvider`，用于 harness [web 能力 seam](../web/README.zh.md)（`ctx.web`）。它获取具体 URL，返回状态码和长度受限的解码内容。
 
-这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。独立的 [`dsh-web-fetch-approval-policy`](../web-fetch-approval-policy/README.zh.md) 插件会在询问用户是否允许受限的 `web_fetch` 调用前，使用此包的公开目的地址预检。
+这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。独立的 [`dsh-web-fetch-approval-policy`](../web-fetch-approval-policy/README.zh.md) 插件会在询问用户是否允许受限的 `web_fetch` 调用前，复用此包不产生网络活动的 URL 校验。
 
 ## 职责拆分
 
@@ -16,28 +16,27 @@
 
 ## 传输卫生
 
-- 只接受 `http:` 和 `https:` URL；拒绝 URL 中的凭据（`WEB_BLOCKED_URL`）以及过长／格式错误的 URL（`WEB_INVALID_URL`）。
-- 每个 hostname 只解析一次；如果完整解析结果中任一 IPv4 或 IPv6 目的地址不是公开单播地址，则以 `WEB_BLOCKED_URL` 拒绝；连接只使用这一组已验证地址。该策略会阻断 loopback、私有、link-local、运营商级 NAT、多播、保留、过渡、转换和映射到私有 IPv4 的 IPv6 地址，且不会进行第二次 DNS 解析。
-- 强制执行 URL 最大长度、响应字节上限（`WEB_FETCH_TOO_LARGE`）、解码主体字符上限、超时（`WEB_FETCH_TIMEOUT`）和重定向跳数上限。
+- 只接受 `http:` 和 `https:` URL；拒绝 URL 中的凭据（`WEB_BLOCKED_URL`），也拒绝超过固定 2,048 字符安全上限或格式错误的 URL（`WEB_INVALID_URL`）。
+- 每个 hostname 只解析一次；如果完整解析结果中任一 IPv4 或 IPv6 目的地址不是公开单播地址，则以 `WEB_BLOCKED_URL` 拒绝；连接只使用这一组已验证地址。对于 IPv6 结果，它通过 `ipv4only.arpa` 发现当前 DNS64 前缀，并拒绝转换到非公开 IPv4 的 NAT64 地址。该策略会阻断 loopback、私有、link-local、运营商级 NAT、多播、保留、过渡、转换和映射到私有 IPv4 的 IPv6 地址，且不会对目标 hostname 进行第二次解析。
+- 强制执行 URL 上限、响应字节上限（`WEB_FETCH_TOO_LARGE`）、解码主体字符上限、超时（`WEB_FETCH_TIMEOUT`）和重定向跳数上限。
 - 把调用方的中止信号（`WEB_ABORTED`）传播到网络请求与流式读取。
 - 只跟随**同源**重定向；每个跟随的跳转都会再次执行公开地址解析与连接固定，跨源重定向则以 `WEB_REDIRECT_BLOCKED` 失败并要求发起新的工具调用（沿用 Claude Code 的 WebFetch 模式）。
 - 发送显式的产品 `User-Agent`，绝不伪装成浏览器。
 - 不受支持的内容类型（例如二进制）以 `WEB_UNSUPPORTED_CONTENT_TYPE` 拒绝。
 
-`preflightPublicFetchUrl()` 向权限消费方暴露 URL 语法和公开地址校验。其结果只供预检，不构成授权：提供方始终会重新解析并固定实际连接，因此从审批到执行之间的 DNS 变化无法绕过目的地址策略。
+`validateFetchApprovalUrl()` 向权限消费方暴露不产生网络活动的 URL 语法、长度、凭据与 IP 字面量校验。hostname 解析只会在用户同意后由提供方执行；提供方会强制校验并固定解析结果，而不会把它当作可复用的授权令牌。
 
 ## 配置
 
 | 配置键 | 默认值 | 含义 |
 |---|---|---|
-| `maxUrlLength` | `2048` | 接受的请求 URL 最大长度。 |
 | `maxResponseBytes` | `5_000_000` | 响应主体最大字节数。 |
 | `maxBodyChars` | `100_000` | 解码主体最大字符数。 |
 | `timeoutMs` | `30_000` | Node 定时器范围内的抓取超时：直接 `ctx.web.fetch()` 调用方的资源兜底，而非面向模型的工具调用预算（后者属于 `dsh-tool-call-timeout-policy`）。 |
 | `maxRedirects` | `5` | 同源重定向最大跳数（`0` 表示完全不跟随）。 |
 | `userAgent` | `deepseek-harness/…` | `User-Agent` 标头。 |
 
-数值限制会在插件构造时验证：除 `maxRedirects` 外，每个上限都必须是正的有限数；`maxRedirects` 必须是非负整数。无效值会抛出异常，不会静默构造限制荒谬的提供方。
+可配置的数值限制会在插件构造时验证：除 `maxRedirects` 外，每个上限都必须是正的有限数；`maxRedirects` 必须是非负整数。无效值会抛出异常，不会静默构造限制荒谬的提供方。
 
 ## 模型体验
 
