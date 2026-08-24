@@ -110,20 +110,21 @@ function rowHalf(e: { clientY: number; currentTarget: HTMLElement }): 'before' |
  * `containsCurrent` arrives on the node (derivation fact, no renderer scan).
  * @param props.group - derived group node.
  * @param props.onToggle - expand/collapse the group.
- * @param props.onCreate - start a frontend Session inside this Workspace.
+ * @param props.onCreate - start a Session from this Workspace or user group's first task.
  * @param props.drag - optional workspace-row drag wiring.
  * @param props.home - host account home for POSIX hover-path abbreviation.
  * @param props.t - the browser root's locale seat.
  * @returns the row element.
  */
-export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteGroup, drag, dropTarget, home, t }: {
+export function ProjectRowItem({ group, onToggle, onCreate, actions, onArchiveGroup, drag, dropTarget, home, t }: {
   group: GroupNode
   onToggle: () => void
-  onCreate: () => void
+  /** Start from a real Workspace or the first displayed task's Workspace; absent when neither exists. */
+  onCreate?: (() => void) | undefined
   /** Real-Workspace actions; absent for the ungrouped bucket (no menu shown). */
   actions?: { rename: () => void; delete: () => void } | undefined
-  /** Delete the whole user group (group-view sections only). */
-  onDeleteGroup?: (() => void) | undefined
+  /** Archive the whole user group (group-view sections only). */
+  onArchiveGroup?: (() => void) | undefined
   /** Present only for real Workspace rows in the grouped view. */
   drag?: WorkspaceRowDragProps | undefined
   /** Group-view drop target: dropping a session on the section header moves it into/out of that group. */
@@ -141,14 +142,14 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteGro
         : row.label
   const active = group.expanded && group.containsCurrent
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null)
   const workspaceMenuItems = [
     { id: 'rename', label: t('rename'), icon: <IconEditOutline16 /> },
     { id: 'delete', label: t('delete.workspace'), icon: <IconTrashOutline16 />, danger: true },
   ]
-  const groupMenuItems = onDeleteGroup === undefined ? [] : [
-    { id: 'deleteGroup', label: t('menu.deleteGroup'), icon: <IconTrashOutline16 />, danger: true },
+  const groupMenuItems = onArchiveGroup === undefined ? [] : [
+    { id: 'archiveGroup', label: t('menu.archiveGroup', { name: label }), icon: <IconArchiveOutline20 size={16} /> },
   ]
-  const menuItems = actions !== undefined ? workspaceMenuItems : groupMenuItems
   const ownRow = (
     <div
       className={clsx(css.projectRow, menuOpen && css.menuOpen, dropTarget?.active && css.dropTarget)}
@@ -156,7 +157,9 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteGro
       aria-expanded={row.expanded}
       onClick={onToggle}
       onContextMenu={(e) => {
+        if (actions === undefined && onArchiveGroup === undefined) return
         e.preventDefault()
+        if (actions === undefined) setMenuAt({ x: e.clientX, y: e.clientY })
         setMenuOpen(true)
       }}
       draggable={drag !== undefined}
@@ -191,16 +194,15 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteGro
         <span className={css.title}>{label}</span>
       </span>
       <span className={css.rowActions}>
-        {(actions !== undefined || onDeleteGroup !== undefined) && (
+        {actions !== undefined && (
           <Menu
             open={menuOpen}
             onClose={() => { setMenuOpen(false) }}
-            items={menuItems}
+            items={workspaceMenuItems}
             onSelect={(id) => {
               setMenuOpen(false)
-              if (actions !== undefined && id === 'rename') actions.rename()
-              else if (actions !== undefined && id === 'delete') actions.delete()
-              else if (onDeleteGroup !== undefined && id === 'deleteGroup') onDeleteGroup()
+              if (id === 'rename') actions.rename()
+              else if (id === 'delete') actions.delete()
             }}
             portal
             closeOnPointerLeave
@@ -216,14 +218,30 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, onDeleteGro
             )}
           />
         )}
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={t('actions.newSession.aria', { name: label })}
-          onClick={(e) => { e.stopPropagation(); onCreate() }}
-        >
-          <IconPlusOutline16 />
-        </button>
+        {onArchiveGroup !== undefined && (
+          <Menu
+            open={menuOpen}
+            onClose={() => { setMenuOpen(false) }}
+            items={groupMenuItems}
+            onSelect={(id) => {
+              setMenuOpen(false)
+              if (id === 'archiveGroup') onArchiveGroup()
+            }}
+            portal
+            anchor={<span aria-hidden="true" />}
+            getAnchorRect={() => menuAt === null ? null : new DOMRect(menuAt.x, menuAt.y, 0, 0)}
+          />
+        )}
+        {onCreate !== undefined && (
+          <button
+            type="button"
+            className={css.iconButton}
+            aria-label={t('actions.newSession.aria', { name: label })}
+            onClick={(e) => { e.stopPropagation(); onCreate() }}
+          >
+            <IconPlusOutline16 />
+          </button>
+        )}
       </span>
     </div>
   )

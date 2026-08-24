@@ -62,6 +62,8 @@ export interface GroupNode {
   containsCurrent: boolean
   /** Visible session rows (empty while the group is folded). */
   sessions: readonly SessionNode[]
+  /** Backing Workspace of the first displayed task, retained while a user group is folded. */
+  firstSessionWorkspaceId?: WorkspaceId
   /** User-group flavor; absent for workspace groups and the ungrouped bucket. */
   kind?: 'group' | 'unassigned'
 }
@@ -397,6 +399,10 @@ export function deriveUserGroups(
     const members = orderedUngrouped(byGroup.get(name) ?? [], view.sessionOrderByAccount?.[key] ?? [])
     if (unreadOnly && members.length === 0) continue
     const expanded = expandedGroups.has(key)
+    const displayed = waitingOrder(members, meta)
+    const firstSessionWorkspaceId = displayed[0] === undefined
+      ? undefined
+      : workspaceBySession.get(displayed[0].session.id)
     groups.push({
       key,
       workspaceId: undefined,
@@ -407,15 +413,20 @@ export function deriveUserGroups(
       expanded,
       containsCurrent: members.some(session => session.id === list.current),
       sessions: expanded
-        ? waitingOrder(members, meta).map(row =>
+        ? displayed.map(row =>
           sessionNode(row.session, descendants, row.depth, meta, workspaceBySession.get(row.session.id)))
         : [],
+      ...(firstSessionWorkspaceId === undefined ? {} : { firstSessionWorkspaceId }),
       kind: 'group',
     })
   }
   if (unassigned.length > 0) {
     const members = orderedUngrouped(unassigned, view.sessionOrderByAccount?.[UNASSIGNED_GROUP_KEY] ?? [])
     const expanded = expandedGroups.has(UNASSIGNED_GROUP_KEY)
+    const displayed = waitingOrder(members, meta)
+    const firstSessionWorkspaceId = displayed[0] === undefined
+      ? undefined
+      : workspaceBySession.get(displayed[0].session.id)
     groups.push({
       key: UNASSIGNED_GROUP_KEY,
       workspaceId: undefined,
@@ -426,9 +437,10 @@ export function deriveUserGroups(
       expanded,
       containsCurrent: members.some(session => session.id === list.current),
       sessions: expanded
-        ? waitingOrder(members, meta).map(row =>
+        ? displayed.map(row =>
           sessionNode(row.session, descendants, row.depth, meta, workspaceBySession.get(row.session.id)))
         : [],
+      ...(firstSessionWorkspaceId === undefined ? {} : { firstSessionWorkspaceId }),
       kind: 'unassigned',
     })
   }

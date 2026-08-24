@@ -292,7 +292,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().sessionMeta.two?.group).toBeUndefined()
   })
 
-  it('deletes a whole tag from the tag-section row menu', async () => {
+  it('archives a whole group from the group-header cursor menu', async () => {
     const sessions = sessionState([summary('one', 3), summary('two', 2)])
     const b = mount({
       useSessions: hook(sessions),
@@ -307,13 +307,48 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '按分组' }))
     const header = screen.getByText('前端').closest('[role="treeitem"]') as HTMLElement
-    fireEvent.contextMenu(header)
-    fireEvent.click(screen.getByRole('menuitem', { name: '删除分组' }))
+    fireEvent.contextMenu(header, { clientX: 25, clientY: 40 })
+    expect(screen.queryByRole('button', { name: '工作区“前端”的操作' })).toBeNull()
+    fireEvent.click(screen.getByRole('menuitem', { name: '归档分组“前端”' }))
     // The group is cleared from every session, knownGroups, and its expansion key.
     expect(b.store.getSnapshot().sessionMeta.one?.group).toBeUndefined()
     expect(b.store.getSnapshot().sessionMeta.two?.group).toBeUndefined()
     expect(b.store.getSnapshot().knownGroups).toEqual([])
     expect(b.store.getSnapshot().groupExpansion).not.toHaveProperty('group:前端')
+  })
+
+  it('starts the folded group-header session in the first displayed task Workspace and assigns its group', async () => {
+    const sessions = sessionState([summary('one', 3), { ...summary('blank', 1), blank: true }])
+    const startSession = vi.fn(async () => sid('blank'))
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['one', 'blank'])])),
+      startSession,
+    })
+    act(() => { b.store.actions.setSessionGroup('one', '前端') })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按分组' }))
+    expect(screen.queryByText('one')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '在“前端”中新建会话' }))
+    await waitFor(() => {
+      expect(b.store.getSnapshot().sessionMeta.blank?.group).toBe('前端')
+    })
+    expect(startSession).toHaveBeenCalledWith(wid('alpha'))
+  })
+
+  it('omits the group-header plus when the first displayed task has no Workspace', () => {
+    const sessions = sessionState([summary('first', 3), summary('second', 2)])
+    const b = mount({
+      useSessions: hook(sessions),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['second'])])),
+    })
+    act(() => {
+      b.store.actions.setSessionGroup('first', '前端')
+      b.store.actions.setSessionGroup('second', '前端')
+    })
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '按分组' }))
+    expect(screen.queryByRole('button', { name: '在“前端”中新建会话' })).toBeNull()
   })
 
   it('assigns the session returned by the row action to the source group', async () => {

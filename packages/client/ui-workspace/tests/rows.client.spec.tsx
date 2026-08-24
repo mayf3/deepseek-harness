@@ -279,23 +279,35 @@ describe('workspace browser rows', () => {
     expect(screen.queryByRole('menu')).toBeNull()
   })
 
-  it('tag section row menu deletes the whole tag', () => {
-    const onDeleteGroup = vi.fn()
+  it('user-group row keeps only plus inline and archives from the cursor menu', () => {
+    const onArchiveGroup = vi.fn()
+    const onCreate = vi.fn()
     const group: GroupNode = {
-      key: 'tag:前端', workspaceId: undefined, cwd: undefined, createdAt: undefined, label: '前端',
+      key: 'group:前端', workspaceId: undefined, cwd: undefined, createdAt: undefined, label: '前端',
       sessionCount: 2, expanded: false, containsCurrent: false, sessions: [], kind: 'group',
     }
-    render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={vi.fn()} onDeleteGroup={onDeleteGroup} t={t} />)
+    render(<ProjectRowItem group={group} onToggle={vi.fn()} onCreate={onCreate}
+      onArchiveGroup={onArchiveGroup} t={t} />)
+    expect(screen.queryByRole('button', { name: '工作区“前端”的操作' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: '在“前端”中新建会话' }))
+    expect(onCreate).toHaveBeenCalledOnce()
     const row = screen.getByRole('treeitem')
-    fireEvent.contextMenu(row)
-    const item = screen.getByRole('menuitem', { name: '删除分组' })
-    expect(item.className).toMatch(/danger/)
+    fireEvent.contextMenu(row, { clientX: 41, clientY: 73 })
+    const item = screen.getByRole('menuitem', { name: '归档分组“前端”' })
     fireEvent.click(item)
-    expect(onDeleteGroup).toHaveBeenCalledOnce()
+    expect(onArchiveGroup).toHaveBeenCalledOnce()
     expect(screen.queryByRole('menu')).toBeNull()
-    // No workspace verbs on a tag section.
     expect(screen.queryByRole('menuitem', { name: '重命名' })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '删除工作区' })).toBeNull()
+  })
+
+  it('user-group row without a first-task Workspace shows no plus', () => {
+    const group: GroupNode = {
+      key: 'group:空', workspaceId: undefined, cwd: undefined, createdAt: undefined, label: '空',
+      sessionCount: 0, expanded: false, containsCurrent: false, sessions: [], kind: 'group',
+    }
+    render(<ProjectRowItem group={group} onToggle={vi.fn()} onArchiveGroup={vi.fn()} t={t} />)
+    expect(screen.queryByRole('button', { name: '在“空”中新建会话' })).toBeNull()
   })
 
   it('workspace hover card shows its details and copies the full directory path', async () => {
