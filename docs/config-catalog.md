@@ -958,7 +958,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:114`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:124`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2850,6 +2850,14 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
+  /** Let the model discover and select the child LLM route (default false). */
+  enableModelSelection?: boolean
+  /**
+   * Sample the Host `subagent-model-selection` user setting for each new
+   * top-level session and inherit that decision in its child sessions. Mutually
+   * exclusive with `enableModelSelection`.
+   */
+  modelSelectionSettings?: boolean
   /**
    * Expose `run_in_background` (default true). Disabled instances omit the
    * parameter and reject forced background calls.
@@ -2897,7 +2905,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:29`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:48`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 

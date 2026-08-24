@@ -69,6 +69,7 @@
   config:
     provider: spawn
     toolName: subagent
+    enableModelSelection: true
     enableRunInBackground: false
 
 - id: tool-todo

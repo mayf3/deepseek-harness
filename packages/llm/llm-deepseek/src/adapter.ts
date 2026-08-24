@@ -163,13 +163,33 @@ const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
 const MAX_REASONING_EFFORT = ReasoningEffortId('max')
 const REASONING_EFFORTS = [
-  { id: OFF_REASONING_EFFORT, name: 'Off' },
-  { id: LOW_REASONING_EFFORT, name: 'Low' },
-  { id: HIGH_REASONING_EFFORT, name: 'High' },
-  { id: MAX_REASONING_EFFORT, name: 'Max' },
+  {
+    id: OFF_REASONING_EFFORT,
+    name: 'Off',
+    description: 'Use for simple tasks that do not need reasoning.',
+  },
+  {
+    id: LOW_REASONING_EFFORT,
+    name: 'Low',
+    description: 'Prefer for routine or latency-sensitive tasks.',
+  },
+  {
+    id: HIGH_REASONING_EFFORT,
+    name: 'High',
+    description: 'The default balance for most tasks.',
+  },
+  {
+    id: MAX_REASONING_EFFORT,
+    name: 'Max',
+    description: 'Reserve for the hardest quality-first tasks.',
+  },
 ] as const
 const OFF_ONLY_REASONING_EFFORTS = [
-  { id: OFF_REASONING_EFFORT, name: 'Off' },
+  {
+    id: OFF_REASONING_EFFORT,
+    name: 'Off',
+    description: 'Use for simple tasks that do not need reasoning.',
+  },
 ] as const
 
 /** Marks a failed file-id resolution that may be retried as an inline request. */

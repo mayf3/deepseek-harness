@@ -153,6 +153,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
   // The shipped preset compositions travel inside the roster package.
   '@deepseek-ai/dsh-agent-presets': ['presets'],
+  // The Web Host mounts the default-off settings owner independently of each
+  // Agent-scoped delegation-tool instance.
+  '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],
   // The argv-prefix runner entry ships beside the lib as its own bundle;
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.

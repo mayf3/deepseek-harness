@@ -100,6 +100,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   spillStore: 'spill.md',
   storage: 'storage.md',
   storageDomain: 'storage.md',
+  subagentModelSelection: 'subagent.md',
   subagents: 'subagent.md',
   subprocess: 'subprocess.md',
   systemPrompt: 'system-prompt.md',

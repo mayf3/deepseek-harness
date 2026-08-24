@@ -71,6 +71,9 @@ const SUBAGENT_DURABILITY_FAILURE_CONFIG = fileURLToPath(
 const SUBAGENT_CONTINUABLE_INHERITANCE_CONFIG = fileURLToPath(
   new URL('../subagent-continuable-inheritance.cordis.yml', import.meta.url),
 )
+const SUBAGENT_CONFIGURED_EFFORT_CONFIG = fileURLToPath(
+  new URL('../subagent-configured-effort.cordis.yml', import.meta.url),
+)
 const LSP_CONFIG = fileURLToPath(new URL('./lsp.cordis.yml', import.meta.url))
 const WEB_CONFIG = fileURLToPath(new URL('../web.cordis.yml', import.meta.url))
 const FS_SEARCH_CONFIG = fileURLToPath(new URL('./fs-search.cordis.yml', import.meta.url))
@@ -202,6 +205,10 @@ const SCENARIOS: Scenario[] = [
     hasModelTurn: true,
     recorded: false,
     overridden: true,
+    pinsHeader: true,
+    headerClass: 'session-title',
+    systemPromptSource: 'text-turn',
+    toolSchemasSource: 'text-turn',
     configPath: SESSION_TITLE_CONFIG,
   },
   { name: 'tool-call-turn', hasModelTurn: true, recorded: true },
@@ -415,8 +422,8 @@ const SCENARIOS: Scenario[] = [
   // An overwrite whose replacement is at/above the configured diff-basis bound:
   // the persisted result meta carries no contextual hunks and presentation
   // falls back to the whole-file diff. The overlay leaves the prompt and tool
-  // sequence identical to text-turn, but the freshly recorded header carries
-  // the current adapter capability fields, so the scenario pins its own class.
+  // sequence identical to text-turn. The scenario pins its own header class
+  // for config fields while sharing the unchanged prompt and tool schema.
   {
     name: 'fs-write-overwrite-bounded',
     hasModelTurn: true,
@@ -571,6 +578,20 @@ const SCENARIOS: Scenario[] = [
     recorded: false,
     overridden: true,
     configPath: DEPTH_TWO_CONFIG,
+  },
+  // Authored keyless replay first discovers the exact child route through the
+  // assembled directory tool, then proves a configured effort is validated
+  // before child creation through the same live replay LLM registry.
+  {
+    name: 'subagent-configured-effort-rejection',
+    hasModelTurn: true,
+    recorded: false,
+    overridden: true,
+    pinsHeader: true,
+    headerClass: 'subagent-configured-effort',
+    systemPromptSource: 'text-turn',
+    toolSchemasSource: 'text-turn',
+    configPath: SUBAGENT_CONFIGURED_EFFORT_CONFIG,
   },
   // Authored keyless replay through the assembled app: a one-shot child calls
   // the real ask_user_question tool, the runtime-ownership guard rejects before
