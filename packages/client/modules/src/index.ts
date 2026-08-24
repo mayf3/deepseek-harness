@@ -138,7 +138,7 @@ interface WebPluginRecord {
   bundle: Buffer
   /** Pre-read filesystem baseline handed to the HMR watcher. */
   baseline: ClientArtifactBaseline
-  /** Optional parsed and original source map snapshot for immutable delivery. */
+  /** Optional authored source map snapshot; generated-file identity mapping is the fallback. */
   sourceMap?: { body: Buffer; parsed: Record<string, unknown> }
 }
 
@@ -151,10 +151,10 @@ interface ComboArtifactBase {
 }
 
 /** One generated combo response over an ordered list of plugin resources. */
-type ComboArtifact = ComboArtifactBase & (
-  | { sourceMap: Buffer; sourceMapUrl: string }
-  | { sourceMap?: undefined; sourceMapUrl?: undefined }
-)
+interface ComboArtifact extends ComboArtifactBase {
+  sourceMap: Buffer
+  sourceMapUrl: string
+}
 
 /** One generated initial-load response and its wire descriptor. */
 type BatchArtifact = ComboArtifact & { descriptor: WebBootBatch }
@@ -168,6 +168,8 @@ const COMBO_REVISION_PLACEHOLDER = '0'.repeat(HASH_REVISION_LENGTH)
 
 /** Source-map trailer emitted by tsdown at the end of every client bundle. */
 const SOURCE_MAP_TRAILER = /(?:\r?\n)?\/\/# sourceMappingURL=[^\r\n]*(?:\r?\n)?$/
+/** Debugger source name appended to page bundles in the WebWorker image. */
+const SOURCE_URL_TRAILER = /(?:\r?\n)?\/\/# sourceURL=([^\r\n]+)(?:\r?\n)?$/
 
 /** Narrow an unknown parsed JSON value to the `dsh.client` declaration, throwing on malformed fields. */
 function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration | undefined {
@@ -264,10 +266,22 @@ function partitionComboRecords(records: readonly WebPluginRecord[]): WebPluginRe
   return chunks
 }
 
-/** Remove a bundle-local source-map trailer and retain one final newline. */
-function withoutSourceMapTrailer(input: Buffer): string {
-  const stripped = input.toString('utf8').replace(SOURCE_MAP_TRAILER, '')
-  return stripped.endsWith('\n') ? stripped : `${stripped}\n`
+/** Executable source plus the generated-file name used when no authored map exists. */
+interface ComboSource {
+  source: string
+  fallbackSource: string
+}
+
+/** Remove bundle-local debug directives and retain their stable generated-file name. */
+function comboSource(record: WebPluginRecord): ComboSource {
+  let source = record.bundle.toString('utf8')
+  const sourceUrl = SOURCE_URL_TRAILER.exec(source)?.[1]
+  source = source.replace(SOURCE_URL_TRAILER, '').replace(SOURCE_MAP_TRAILER, '')
+  if (!source.endsWith('\n')) source += '\n'
+  const fallbackSource = sourceUrl === undefined
+    ? `/plugins/${record.entry.id}/client.js`
+    : /^(?:[A-Za-z][A-Za-z\d+.-]*:|\/)/.test(sourceUrl) ? sourceUrl : `/${sourceUrl}`
+  return { source, fallbackSource }
 }
 
 /** Stamp a combo script's absolute indexed-map URL onto its executable bytes. */
@@ -327,27 +341,39 @@ function comboSectionMap(record: WebPluginRecord): Record<string, unknown> {
   return section
 }
 
+/** Map each generated line to the same line in a bundled JavaScript source. */
+function identitySectionMap(source: string, sourceUrl: string): Record<string, unknown> {
+  const mappings = Array.from({ length: newlineCount(source) }, (_, index) => index === 0 ? 'AAAA' : 'AACA')
+    .join(';')
+  return {
+    version: 3,
+    names: [],
+    sources: [sourceUrl],
+    sourcesContent: [source],
+    mappings,
+  }
+}
+
 /** Concatenate one or more factory registrations and compose their maps as indexed sections. */
 function buildCombo(records: readonly WebPluginRecord[], revision?: string): ComboArtifact {
   let source = ''
   const sections: { offset: { line: number; column: 0 }; map: Record<string, unknown> }[] = []
   let line = 0
   for (const record of records) {
-    if (record.sourceMap !== undefined) {
-      sections.push({ offset: { line, column: 0 }, map: comboSectionMap(record) })
-    }
-    const bundle = `${withoutSourceMapTrailer(record.bundle)};\n`
+    const prepared = comboSource(record)
+    const section = record.sourceMap === undefined
+      ? identitySectionMap(prepared.source, prepared.fallbackSource)
+      : comboSectionMap(record)
+    sections.push({ offset: { line, column: 0 }, map: section })
+    const bundle = `${prepared.source};\n`
     source += bundle
     line += newlineCount(bundle)
   }
-  const sourceMap = sections.length === 0
-    ? undefined
-    : Buffer.from(`${JSON.stringify({ version: 3, file: 'client.js', sections })}\n`)
+  const sourceMap = Buffer.from(`${JSON.stringify({ version: 3, file: 'client.js', sections })}\n`)
   const sourceBytes = Buffer.from(source)
-  const rev = revision ?? framedHash('combo', sourceMap === undefined ? [sourceBytes] : [sourceBytes, sourceMap])
+  const rev = revision ?? framedHash('combo', [sourceBytes, sourceMap])
   const entries = records.map(record => record.entry.id)
   const url = comboUrl(entries, rev)
-  if (sourceMap === undefined) return { url, rev, entries, script: comboScript(source) }
   const sourceMapUrl = comboUrl(entries, rev, true)
   return { url, rev, entries, script: comboScript(source, sourceMapUrl), sourceMap, sourceMapUrl }
 }
@@ -658,12 +684,10 @@ export class ClientModuleRegistry extends Service {
         body: artifact.script,
         contentType: 'text/javascript; charset=utf-8',
       })
-      if (artifact.sourceMap !== undefined) {
-        batchResponses.set(artifact.sourceMapUrl, {
-          body: artifact.sourceMap,
-          contentType: 'application/json; charset=utf-8',
-        })
-      }
+      batchResponses.set(artifact.sourceMapUrl, {
+        body: artifact.sourceMap,
+        contentType: 'application/json; charset=utf-8',
+      })
     }
     const responses = new Map(batchResponses)
     for (const record of this.table.values()) {
@@ -672,12 +696,10 @@ export class ClientModuleRegistry extends Service {
         body: artifact.script,
         contentType: 'text/javascript; charset=utf-8',
       })
-      if (artifact.sourceMap !== undefined) {
-        responses.set(artifact.sourceMapUrl, {
-          body: artifact.sourceMap,
-          contentType: 'application/json; charset=utf-8',
-        })
-      }
+      responses.set(artifact.sourceMapUrl, {
+        body: artifact.sourceMap,
+        contentType: 'application/json; charset=utf-8',
+      })
     }
     this.previousBatchResponses = this.batchResponses
     this.batchResponses = batchResponses
@@ -781,7 +803,7 @@ export class ClientModuleRegistry extends Service {
     }
   }
 
-  /** Treat a missing, torn, or malformed development map as an unmapped artifact revision. */
+  /** Treat a missing, torn, or malformed development map as an identity-mapped artifact revision. */
   private readSourceMapSnapshot(clientPath: string): WebPluginRecord['sourceMap'] {
     try {
       return sourceMapSnapshot(clientPath)

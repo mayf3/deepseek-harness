@@ -272,7 +272,7 @@ describe('client bundle activation', () => {
     expect(String(thrown)).not.toContain('pnpm run build')
   })
 
-  it('omits a torn or malformed source map without blocking composition', async () => {
+  it('falls back to a generated-file map when an authored map is malformed', async () => {
     const packageName = '@fixture/malformed-source-map'
     const clientPath = writePackage(packageName)
     mkdirSync(dirname(clientPath), { recursive: true })
@@ -281,11 +281,58 @@ describe('client bundle activation', () => {
     const torn = constructWithRoute([packageName])
     const tornRow = torn.service.graph().entries[0]!
     expect((await routeRequest(torn.route, tornRow.url)).body.toString('utf8'))
-      .not.toContain('sourceMappingURL')
-    expect((await routeRequest(torn.route, mapUrl(torn.service.graph().batches[0]!.url))).status).toBe(404)
+      .toContain(`sourceMappingURL=${mapUrl(tornRow.url)}`)
+    const fallback = await routeRequest(torn.route, mapUrl(torn.service.graph().batches[0]!.url))
+    expect(JSON.parse(fallback.body.toString('utf8'))).toMatchObject({
+      sections: [{ map: { sources: [`/plugins/${packageName}/client.js`] } }],
+    })
 
     writeFileSync(`${clientPath}.map`, '{"version":3,"sources":[null]}\n')
     expect(() => construct([packageName])).not.toThrow()
+  })
+
+  it('maps packed combo sections back to each generated client bundle', async () => {
+    const names = ['@fixture/generated-first', '@fixture/generated-second']
+    for (const [index, packageName] of names.entries()) {
+      const clientPath = writePackage(packageName)
+      mkdirSync(dirname(clientPath), { recursive: true })
+      writeFileSync(
+        clientPath,
+        `window.generation = ${String(index)}\n//# sourceURL=packages/client/generated-${String(index)}/lib/client.js`,
+      )
+    }
+
+    const { service, route } = constructWithRoute(names)
+    const batch = service.graph().batches[0]!
+    const script = (await routeRequest(route, batch.url)).body.toString('utf8')
+    expect(script).not.toContain('//# sourceURL=')
+    expect(script).toContain(`//# sourceMappingURL=${mapUrl(batch.url)}`)
+    const payload = JSON.parse((await routeRequest(route, mapUrl(batch.url))).body.toString('utf8')) as {
+      sections: { map: { mappings: string; sources: string[]; sourcesContent: string[] } }[]
+    }
+    expect(payload.sections.map(section => section.map)).toEqual([
+      {
+        version: 3,
+        names: [],
+        mappings: 'AAAA',
+        sources: ['/packages/client/generated-0/lib/client.js'],
+        sourcesContent: ['window.generation = 0\n'],
+      },
+      {
+        version: 3,
+        names: [],
+        mappings: 'AAAA',
+        sources: ['/packages/client/generated-1/lib/client.js'],
+        sourcesContent: ['window.generation = 1\n'],
+      },
+    ])
+    const consumer = new SourceMap(payload as unknown as ConstructorParameters<typeof SourceMap>[0])
+    expect(consumer.findEntry(0, 0)).toMatchObject({
+      originalSource: '/packages/client/generated-0/lib/client.js',
+    })
+    expect(consumer.findEntry(2, 0)).toMatchObject({
+      originalSource: '/packages/client/generated-1/lib/client.js',
+    })
   })
 
   it('retains one prior immutable batch generation across rebuild recomposition', async () => {
@@ -491,7 +538,7 @@ describe('client bundle activation', () => {
     expect(consumer.findEntry(3, 0)).toMatchObject({ originalSource: '/packages/demo/second.ts' })
   })
 
-  it('keeps a later source-map section usable when an earlier bundle has no map', async () => {
+  it('combines a generated-file fallback with a later authored map', async () => {
     const unmappedName = '@fixture/unmapped-first'
     const mappedName = '@fixture/mapped-second'
     const unmappedPath = writePackage(unmappedName)
@@ -512,6 +559,9 @@ describe('client bundle activation', () => {
     const response = await routeRequest(route, mapUrl(service.graph().batches[0]!.url))
     const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
     const consumer = new SourceMap(payload)
+    expect(consumer.findEntry(0, 0)).toMatchObject({
+      originalSource: `/plugins/${unmappedName}/client.js`,
+    })
     expect(consumer.findEntry(2, 0)).toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
   })
 })

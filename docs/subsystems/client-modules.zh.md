@@ -82,7 +82,7 @@ interface WebBootGraph {
 
 ## bundle 路由与 index 注入
 
-`GET`／`HEAD /plugins/??<package-a>/client.js,<package-b>/client.js&rev=<rev>` 提供精确生成的 combo 脚本；单资源请求采用同一形式，也是 HMR 路径。其绝对 `sourceMappingURL` 平行改写每个资源后缀，得到 `/plugins/??<package-a>/client.js.map,<package-b>/client.js.map&rev=<rev>`。即使只有一个资源，map 仍采用 Indexed Source Map v3；有组件 map 的资源形成 section，没有 map 的组件区间保持未映射。每条生成的请求 URL 按 UTF-8 字节计算都不超过 3 KiB；即使某组没有 map，切分仍按更长的 map 形式计算。所有 application URL 都会预加载，所有 bootstrap URL 都会在图全局量与 Vite entry 之前执行。所有已发布响应都使用长期 immutable 缓存。未知或被修改的资源列表、缺失 map、缺少 revision 及陈旧 revision 都返回 404，绝不提供其他字节，也不会让 SPA fallback 把 HTML 当作 JavaScript 返回；其他方法返回 405。注入行在每次 index 渲染时携带当前图，因此重新加载总是基于实时组合启动。
+`GET`／`HEAD /plugins/??<package-a>/client.js,<package-b>/client.js&rev=<rev>` 提供精确生成的 combo 脚本；单资源请求采用同一形式，也是 HMR 路径。其绝对 `sourceMappingURL` 平行改写每个资源后缀，得到 `/plugins/??<package-a>/client.js.map,<package-b>/client.js.map&rev=<rev>`。即使只有一个资源，map 仍采用 Indexed Source Map v3。组件有自带 map 时直接用于对应 section；没有时则获得 identity section，其 `sourcesContent` 是构建后 bundle，source 名取打包后的 `sourceURL` 或插件路由。每条启动请求 URL 按 UTF-8 字节计算都不超过 3 KiB；切分按更长的 map 形式计算。所有 application URL 都会预加载，所有 bootstrap URL 都会在图全局量与 Vite entry 之前执行。所有已发布响应都使用长期 immutable 缓存。未知或被修改的资源列表、缺少 revision 及陈旧 revision 都返回 404，绝不提供其他字节，也不会让 SPA fallback 把 HTML 当作 JavaScript 返回；其他方法返回 405。注入行在每次 index 渲染时携带当前图，因此重新加载总是基于实时组合启动。
 
 ## 服务
 
