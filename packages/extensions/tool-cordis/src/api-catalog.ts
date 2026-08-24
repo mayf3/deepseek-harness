@@ -195,7 +195,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async recompose(agentCtx: Context, id: string): Promise<AgentPreset>',
-        description: 'Re-link one agent to a different preset\'s standing composition.\n\nOnly valid while the agent has produced nothing: swapping tools mid conversation would leave logged tool calls the new composition cannot make. The CALLER owns that check — this method does not read session history.\n\nThe swap is a parent re-link, not an unmount: standing mounts are shared and permanent, so the old composition stays for its other agents and the new one is ensured BEFORE the link moves. An unknown or unusable preset therefore throws with the agent exactly as it was — there is no torn-down state to restore. The re-link runs through the binding this roster kept from the agent\'s mount — dsh-scope\'s only re-link authority. An agent that never composed one has nothing to re-link: the switch is then the agent\'s first bind, exactly a mount.',
+        description: 'Re-link one agent to a different preset\'s standing composition.\n\nOnly valid while the agent has produced nothing: swapping tools mid conversation would leave logged tool calls the new composition cannot make. The CALLER owns that check — this method does not read session history.\n\nThe swap is a parent re-link, not an unmount: standing mounts are shared and permanent, so the old composition stays for its other agents and the new one is ensured BEFORE the link moves. An unknown or unusable preset therefore throws with the agent exactly as it was — there is no torn-down state to restore. The re-link runs through the binding this roster kept from the agent\'s mount — dsh-scope\'s only re-link authority. An agent that never composed one has nothing to re-link: the switch is then the agent\'s first bind, exactly a mount. A committed re-link emits `tools/change` because changing the parent scope changes the Agent\'s resolved tool set without adding or removing registry entries.',
         parameters: [{ name: 'agentCtx', description: 'the agent\'s scope context.' }, { name: 'id', description: 'the preset to compose the agent from instead.' }],
         returns: 'the preset now installed.',
         throws: ['when the preset is unknown or its composition is unusable.'],
@@ -450,9 +450,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['the signal reason when aborted, or a storage error when verification fails.'],
       },
       {
+        signature: 'imageHostPath(ref: ImageAttachmentRef): string | undefined',
+        description: 'Locate the provider-owned normalized object in the harness host filesystem.',
+        parameters: [{ name: 'ref', description: 'durable normalized attachment reference.' }],
+        returns: 'an absolute host path, or undefined when this backend is not host-file-backed.',
+        throws: ['an AttachmentError when the durable reference is invalid.'],
+      },
+      {
         signature: 'readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
         description: 'Generate or read one deterministic model-request version from the stored normalized image.',
-        parameters: [{ name: 'ref', description: 'durable provider-independent normalized attachment reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
+        parameters: [{ name: 'ref', description: 'durable provider-independent normalized attachment reference.' }, { name: 'policy', description: 'exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.' }, { name: 'signal', description: 'optional cancellation.' }],
         returns: 'request bytes and the cache/upload identity covering every transform input.',
       },
     ],
@@ -762,6 +769,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Return the canonical absolute path a subprocess in this filesystem\'s execution world can open. The path is deliberately separate from FsTarget.targetKey: consumers may pass this value to another OS capability, but must continue treating the target key as opaque.',
         parameters: [{ name: 'target', description: 'the resolved target whose process path is required.' }],
         returns: 'an absolute path in the backend\'s execution world.',
+      },
+      {
+        signature: 'processPathFromHostPath(hostPath: string): string | undefined',
+        description: 'Map an absolute path from the harness host into this filesystem\'s execution world when both paths identify the same file. The base provider exposes no mapping; host-backed or explicitly shared backends override it.',
+        parameters: [{ name: 'hostPath', description: 'absolute path in the harness host filesystem.' }],
+        returns: 'the process path for the same file, or undefined when this execution world cannot read that host file.',
       },
       {
         signature: 'abstract fileUrl(target: FsTarget): string',
@@ -1890,6 +1903,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Close every domain still open on this facility. The unmount path for consumers that never called `Domain.close()` themselves; closing is idempotent, so double-closing an already-closed domain is harmless.',
         parameters: [],
         returns: 'resolution after every unit is released.',
+      },
+    ],
+  },
+  {
+    key: 'subagentModelSelection',
+    summary: 'Singleton settings owner read by delegation tools when an Agent is published.',
+    description: 'Singleton settings owner read by delegation tools when an Agent is published.',
+    methods: [
+      {
+        signature: 'currentEnabled(): boolean',
+        description: 'Read the preference for the next eligible Agent publication.',
+        parameters: [],
+        returns: 'whether that Agent should receive model-selectable delegation.',
       },
     ],
   },
@@ -3111,7 +3137,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentOptions',
-    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    maxTokens?: number;\n}',
+    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    reasoningEffort?: ReasoningEffortId;\n    maxTokens?: number;\n}',
   },
   {
     name: 'AgentPreset',
@@ -3403,7 +3429,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ContinuableSubagentDescriptorData',
-    declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
+    declaration: 'export interface ContinuableSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'continuable\';\n    readonly label: string;\n    readonly agentProvider?: string;\n    readonly agentModel?: string;\n    readonly agentReasoningEffort?: ReasoningEffortId;\n    readonly persona?: string;\n    readonly toolFilter?: ToolRestriction;\n}',
   },
   {
     name: 'CordisDynamicPackageId',
@@ -4915,7 +4941,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentCapabilities',
-    declaration: 'export interface SubagentCapabilities {\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
+    declaration: 'export interface SubagentCapabilities {\n    readonly agentOptions: boolean;\n    readonly outputSchema: boolean;\n    readonly depthLimit: boolean;\n    readonly toolFilter: boolean;\n    readonly persona: boolean;\n}',
   },
   {
     name: 'SubagentDescendantListEntry',
