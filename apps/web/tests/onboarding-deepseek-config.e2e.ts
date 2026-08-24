@@ -234,7 +234,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     // trigger — on the page; the scaffold boots without one.
     await connectFreshWorkspaceZh(page, scaffold.workspaceCwd, 'model-fallback-e2e')
 
-    const modelTrigger = page.getByRole('button', { name: '选择模型', exact: true })
+    const modelTrigger = page.getByRole('button', { name: /^选择模型/ })
     await modelTrigger.waitFor({ timeout: 10_000 })
     await modelTrigger.click()
     await page.getByRole('menuitem', { name: /模型/ }).click()
