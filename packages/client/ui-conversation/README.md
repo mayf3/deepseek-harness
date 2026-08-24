@@ -20,6 +20,8 @@ View selection is deterministic: a registered persisted selection wins, otherwis
 
 The resident composer survives no-Session and Session transitions. The no-Session state keeps the same textarea mounted but inert while the Workspace picker connects a blank Session. Draft text is mirrored into the per-Session Conversation store. Queue operations address exact queue occurrences through the scoped `ctx.conversation` service. Busy Enter behavior is stored in the Host-backed `ui-conversation` settings namespace.
 
+An ordinary running composer keeps Stop as its primary pointer action while its draft is empty or an owner block makes input unavailable. Actionable text or attachments switch the same seat to Queue Send; clearing or successfully submitting the draft restores Stop. Keyboard Queue/Steer selection remains governed by the busy-Enter setting, while continuable subagents keep independent Send and Stop actions ([decision](../../../.agents/notes/implemented/bug-fix/2026-08-20-running-draft-primary-send.md)).
+
 ## Temporary composer entries
 
 `conversation.composer` is a generic chain. Its complete owner currency is:
