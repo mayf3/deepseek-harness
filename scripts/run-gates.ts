@@ -473,9 +473,10 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
-    ? { ...gate, needs: [...new Set(['build', ...(gate.needs ?? [])])] }
-    : gate)
+  const coverage = coverageGates().map(gate => ({
+    ...gate,
+    needs: [...new Set(['build', ...(gate.needs ?? [])])],
+  }))
   const coverageAfter = coverage.map(gate => gate.id)
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
