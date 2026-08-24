@@ -305,7 +305,7 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     // The hero's workspace picker is the client tree's first interactive
     // surface, so it appears only once the startup chain completed over the
     // tunnel.
-    await page.getByRole('textbox', { name: 'Choose workspace' }).waitFor({ timeout: HERO_TIMEOUT_MS })
+    await page.getByRole('button', { name: 'Choose workspace' }).waitFor({ timeout: HERO_TIMEOUT_MS })
     const continueButton = page.getByRole('button', { name: 'Continue' })
     await continueButton.waitFor({ timeout: 30_000 })
     await continueButton.click()

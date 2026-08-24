@@ -92,11 +92,15 @@ describe('the shipped preset root', () => {
   it('enables web_fetch in each tool-bearing Web app preset', async () => {
     for (const id of ['cordis', 'code', 'standard']) {
       const source = await readFile(join(SHIPPED_PRESET_ROOT, id, 'agent.cordis.yml'), 'utf8')
-      const entries = yaml.load(source, { schema: entryListSchema })
+      const entries: unknown = yaml.load(source, { schema: entryListSchema })
       if (!Array.isArray(entries)) throw new TypeError(`${id} preset must contain a Cordis entry list`)
-      const toolWeb = entries.find((entry): entry is { id: string; config: { fetch?: boolean } } =>
-        typeof entry === 'object' && entry !== null && entry.id === 'tool-web')
-      expect(toolWeb?.config.fetch, id).toBe(true)
+      const toolWeb: unknown = entries.find((entry: unknown) =>
+        typeof entry === 'object' && entry !== null && 'id' in entry && entry.id === 'tool-web')
+      if (typeof toolWeb !== 'object' || toolWeb === null || !('config' in toolWeb)
+        || typeof toolWeb.config !== 'object' || toolWeb.config === null || !('fetch' in toolWeb.config)) {
+        throw new TypeError(`${id} preset must configure tool-web.fetch`)
+      }
+      expect(toolWeb.config.fetch, id).toBe(true)
     }
   })
 })

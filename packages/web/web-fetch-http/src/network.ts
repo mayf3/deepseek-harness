@@ -9,7 +9,6 @@
 import { lookup as systemLookup } from 'node:dns/promises'
 import type { LookupAddress, LookupOptions } from 'node:dns'
 import { isIP } from 'node:net'
-import { Agent, fetch } from 'undici'
 import type { Response } from 'undici'
 import ipaddr from 'ipaddr.js'
 import { WebError } from '@deepseek-ai/dsh-web'
@@ -106,6 +105,10 @@ export async function requestPinned(
   headers: Record<string, string>,
   signal: AbortSignal,
 ): Promise<PinnedResponse> {
+  // Keep the Node-only transport out of browser-worker startup. The preview
+  // can load the provider and fail loud at its DNS stub without evaluating
+  // Undici; a real request on Node resolves this maintained dependency here.
+  const { Agent, fetch } = await import('undici')
   const dispatcher = new Agent({
     autoSelectFamily: true,
     connect: { lookup: createPinnedLookup(addresses) },
