@@ -247,9 +247,9 @@ describe('web e2e: agent-preset selection', () => {
     const onMinimal = await menuOptions(page)
     expect(onMinimal.some(option => option.startsWith('compact'))).toBe(false)
     expect(onMinimal.some(option => option.startsWith('plan'))).toBe(false)
-    // The host-plane commands and the client's own contribution are the
-    // floor: they belong to no preset and never move.
-    expect(onMinimal.some(option => option.startsWith('goal'))).toBe(true)
+    // Preset-scoped commands follow the switch; the client's own model command
+    // remains outside every preset.
+    expect(onMinimal.some(option => option.startsWith('goal'))).toBe(false)
     expect(onMinimal.some(option => option.startsWith('model'))).toBe(true)
     await composer.fill('')
 
@@ -266,6 +266,7 @@ describe('web e2e: agent-preset selection', () => {
       .toEqual(expect.arrayContaining([expect.stringContaining(SKILL_NAME)]))
     const onStandard = await menuOptions(page)
     expect(onStandard.some(option => option.startsWith('compact'))).toBe(true)
+    expect(onStandard.some(option => option.startsWith('goal'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('plan'))).toBe(true)
     await composer.fill('')
   }, 90_000)
