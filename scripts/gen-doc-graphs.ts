@@ -206,6 +206,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the web gateway serves redacted layered descriptors and writes the user layer.',
   },
   {
+    key: 'subagentModelSelection',
+    pkg: 'tool-subagent',
+    title: 'Subagent model-selection preference',
+    mode: 'core',
+    consumers: ['tool-subagent'],
+    note: 'Owns the default-off settings namespace that Agent-scoped delegation tools sample when composing a new top-level Session.',
+  },
+  {
     key: 'credentials',
     pkg: 'credentials',
     title: 'Credential seam',
@@ -763,7 +771,7 @@ const APP_EXAMPLES = [
     title: 'DSH Base Composition',
     label: 'packages/bundle/base/cordis.patch.yml',
     config: 'packages/bundle/base/cordis.patch.yml',
-    summary: 'The dsh-base bundle patch every profile applies first; mode bundles (dsh-web-app, dsh-headless) and the user\'s profile layer patch over it.',
+    summary: 'The dsh-base bundle patch shared by the web, headless, sdk, and acp profiles; their mode bundles and user layers patch over it, while sdk-minimal owns a separate standalone tree.',
   },
   {
     id: 'headless',

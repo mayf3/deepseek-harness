@@ -30,7 +30,7 @@ import type {
   AgentSetupCommit,
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
-import { boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -417,14 +417,17 @@ export class SubagentContinuationManager {
     const childDepth = resolveChildDepth(parent, request.maxDepth)
     // Snapshot before any await: invalid descriptor JSON rejects the call
     // before a child exists, and the detached value is what reaches the log.
-    const agentProvider = request.agentOptions?.provider ?? parent.options.provider
-    const agentModel = request.agentOptions?.model ?? parent.options.model
+    const agentOptions = resolveChildAgentOptions(parent, request.agentOptions, childDepth)
+    const agentProvider = agentOptions.provider
+    const agentModel = agentOptions.model
+    const agentReasoningEffort = agentOptions.reasoningEffort
     const descriptor = snapshotSubagentDescriptor({
       mode: 'continuable',
       provider: spec.provider,
       label: spec.label,
       ...agentProvider !== undefined ? { agentProvider } : {},
       ...agentModel !== undefined ? { agentModel } : {},
+      ...agentReasoningEffort !== undefined ? { agentReasoningEffort } : {},
       ...request.persona !== undefined ? { persona: request.persona } : {},
       ...request.toolFilter !== undefined ? { toolFilter: request.toolFilter } : {},
     })
@@ -460,7 +463,7 @@ export class SubagentContinuationManager {
         provider: spec.provider,
         parent,
         create: { seed, meta: childSessionMeta(parent, childDepth, lineageSeedLength), delegatedPolicies },
-        agentOptions: resolveChildAgentOptions(parent, request.agentOptions, childDepth),
+        agentOptions,
         composition: { persona: request.persona, toolFilter: request.toolFilter },
         signal: spec.signal,
       })
@@ -981,6 +984,9 @@ export class SubagentContinuationManager {
         agentOptions: {
           ...descriptor.agentProvider !== undefined ? { provider: descriptor.agentProvider } : {},
           ...descriptor.agentModel !== undefined ? { model: descriptor.agentModel } : {},
+          ...descriptor.agentReasoningEffort !== undefined
+            ? { reasoningEffort: ReasoningEffortId(descriptor.agentReasoningEffort) }
+            : {},
         },
         composition: { persona: descriptor.persona, toolFilter: descriptor.toolFilter },
         signal: options.signal,

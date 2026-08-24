@@ -74,12 +74,14 @@ describe('application entrypoints', () => {
     ])
   })
 
-  it('accepts the temporary private Python carrier source without an npm bin', () => {
+  it('rejects a private Python application carrier outside dsh', () => {
     const root = fixture()
-    write(root, 'packages/sdk/python-runtime/package.json', JSON.stringify({ private: true }))
-    write(root, 'packages/sdk/python-runtime/src/packaged-bin.ts', '#!/usr/bin/env node\n')
+    write(root, 'packages/sdk/rogue-python-runtime/package.json', JSON.stringify({ private: true }))
+    write(root, 'packages/sdk/rogue-python-runtime/src/bin.ts', '#!/usr/bin/env node\n')
 
-    expect(applicationEntrypointViolations(root)).toEqual([])
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'packages/sdk/rogue-python-runtime/src/bin.ts: executable source has no application/build/test classification',
+    ])
   })
 
   it('rejects a classified demo wrapper that launches a package entry', () => {

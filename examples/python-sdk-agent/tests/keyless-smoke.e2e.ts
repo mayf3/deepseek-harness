@@ -8,8 +8,7 @@ import { zstdDecompress } from 'node:zlib'
 import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
-const binScript = fileURLToPath(new URL('../../../packages/sdk/python-runtime/src/packaged-bin.ts', import.meta.url))
-const configPath = fileURLToPath(new URL('../cordis.yml', import.meta.url))
+const binScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const decompress = promisify(zstdDecompress)
 
@@ -45,7 +44,7 @@ function waitForLine(
   })
 }
 
-describe('Python SDK runtime carrier keyless smoke', () => {
+describe('Python SDK dsh profile keyless smoke', () => {
   it.each([
     { label: 'reports max-token turns with the default mapping config', envValue: undefined },
     { label: 'reports max-token turns with mapping enabled through env', envValue: 'true' },
@@ -73,16 +72,18 @@ describe('Python SDK runtime carrier keyless smoke', () => {
     // execa owns spawn, the deadline, and exit settlement around it.
     const child = execa(process.execPath, [
       '--import',
-      'tsx',
+      'tsx/esm',
       binScript,
-      configPath,
+      '--profile',
+      'sdk',
     ], {
       cwd: repoRoot,
       env: {
+        DSH_HOME: join(root, '.dsh'),
+        DSH_PERMISSION_MODE: 'danger-full-access',
+        DSH_TELEMETRY_DISABLED: '1',
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
         DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
-        DSH_CWD: root,
-        DSH_SESSION_ROOT: join(root, '.sessions'),
         ...(envValue === undefined ? {} : { DSH_MAX_TOKENS_AS_SUCCESS: envValue }),
       },
       timeout: 35_000,
@@ -145,21 +146,14 @@ describe('Python SDK runtime carrier keyless smoke', () => {
       })
       const tools = modelRequests[0]?.tools as { function?: { name?: string } }[]
       expect(modelRequests[0]?.max_tokens).toBe(1234)
-      expect(tools.map(tool => tool.function?.name).sort()).toEqual([
-        'bash',
-        'edit',
-        'read',
-        'subagent',
-        'todo_write',
-        'write',
-      ])
+      expect(tools.map(tool => tool.function?.name)).toContain('list_subagent_models')
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
       const shutdown = await waitForLine(lines, value => value.id === 3, () => stderr)
       expect(shutdown).toMatchObject({ jsonrpc: '2.0', id: 3, result: {} })
       const exit = await child
       expect(exit.exitCode, `signal=${String(exit.signal)}; stderr=${stderr}`).toBe(0)
-      const sessionsRoot = join(root, '.sessions')
+      const sessionsRoot = join(root, '.dsh', 'sessions')
       const files = await readdir(sessionsRoot, { recursive: true })
       const log = files.find(file => file.endsWith('.jsonl.zstd'))
       expect(log).toBeDefined()
@@ -175,28 +169,130 @@ describe('Python SDK runtime carrier keyless smoke', () => {
     }
   }, 40_000)
 
-  it('rejects an invalid max-token success env value', async () => {
-    const { exitCode, stdout, stderr } = await execa(process.execPath, [
+  it('boots the standalone minimal profile with its exact model-facing roster', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-minimal-'))
+    const modelRequests: Record<string, unknown>[] = []
+    const modelServer = createServer((request, response) => {
+      let body = ''
+      request.setEncoding('utf8')
+      request.on('data', (chunk: string) => { body += chunk })
+      request.on('end', () => {
+        modelRequests.push(JSON.parse(body) as Record<string, unknown>)
+        response.writeHead(200, { 'content-type': 'text/event-stream' })
+        response.write('data: {"choices":[{"delta":{"role":"assistant","content":null}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
+        response.write('data: {"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":1}}\n\n')
+        response.end('data: [DONE]\n\n')
+      })
+    })
+    await new Promise<void>(resolve => modelServer.listen(0, '127.0.0.1', resolve))
+    const address = modelServer.address()
+    if (address === null || typeof address === 'string') throw new Error('model server did not bind a TCP port')
+    const child = execa(process.execPath, [
       '--import',
-      'tsx',
+      'tsx/esm',
       binScript,
-      configPath,
+      '--profile',
+      'sdk-minimal',
     ], {
       cwd: repoRoot,
       env: {
+        DSH_HOME: join(root, '.dsh'),
+        DSH_SYSTEM_PROMPT: 'Minimal allowlist prompt.',
         DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
-        DSH_MAX_TOKENS_AS_SUCCESS: 'sometimes',
+        DEEPSEEK_BASE_URL: `http://127.0.0.1:${address.port}`,
       },
-      stdin: 'ignore',
-      timeout: 25_000,
+      timeout: 35_000,
       killSignal: 'SIGKILL',
       reject: false,
     })
+    const lines: string[] = []
+    let stdoutBuffer = ''
+    let stderr = ''
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString('utf8')
+      const parts = stdoutBuffer.split('\n')
+      stdoutBuffer = parts.pop() ?? ''
+      lines.push(...parts)
+    })
+    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
 
-    expect(exitCode, stderr).toBe(1)
-    expect(stdout).toBe('')
-    expect(stderr).toContain('plugin tree failed to load')
-    expect(stderr).toContain('failed to apply loader entry sdk-jsonrpc-server (@deepseek-ai/dsh-sdk-jsonrpc-server)')
-    expect(stderr).toContain('sometimes')
+    try {
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: { cwd: root, provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+      })}\n`)
+      await waitForLine(lines, value => value.id === 1, () => stderr)
+      child.stdin.write(`${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/prompt',
+        params: { sessionId: 'minimal', contentBlocks: [{ type: 'text', text: 'inspect tools' }] },
+      })}\n`)
+      await waitForLine(lines, (value) => {
+        const params = value.params as Record<string, unknown> | undefined
+        const event = params?.event as Record<string, unknown> | undefined
+        return params?.sessionId === 'minimal' && event?.type === 'turn/end'
+      }, () => stderr)
+
+      const request = modelRequests[0] as {
+        messages?: Array<{ role?: string; content?: unknown }>
+        tools?: Array<{ function?: { name?: string } }>
+      }
+      expect(request.messages?.[0]).toMatchObject({ role: 'system', content: 'Minimal allowlist prompt.' })
+      const shellTool = process.platform === 'win32' ? 'pwsh' : 'bash'
+      expect(request.tools?.map(tool => tool.function?.name).sort()).toEqual([shellTool, 'str_replace_editor'].sort())
+      const profile = JSON.parse(
+        await readFile(join(root, '.dsh', 'profiles', 'sdk-minimal', 'package.json'), 'utf8'),
+      ) as { dsh?: { profile?: { bundles?: string[]; patchReload?: string } } }
+      expect(profile.dsh?.profile).toEqual({
+        bundles: ['@deepseek-ai/dsh-sdk-minimal'],
+        patchReload: 'startup',
+      })
+
+      child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
+      await waitForLine(lines, value => value.id === 3, () => stderr)
+      const exit = await child
+      expect(exit.exitCode, `signal=${String(exit.signal)}; stderr=${stderr}`).toBe(0)
+    } finally {
+      child.kill('SIGKILL')
+      await child
+      await new Promise<void>(resolve => modelServer.close(() => { resolve() }))
+      await rm(root, { recursive: true, force: true })
+    }
+  }, 40_000)
+
+  it('rejects an invalid max-token success env value', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-runtime-invalid-'))
+    try {
+      const { exitCode, stdout, stderr } = await execa(process.execPath, [
+        '--import',
+        'tsx/esm',
+        binScript,
+        '--profile',
+        'sdk',
+      ], {
+        cwd: repoRoot,
+        env: {
+          DSH_HOME: join(root, '.dsh'),
+          DEEPSEEK_API_KEY: 'keyless-smoke-no-call',
+          DSH_MAX_TOKENS_AS_SUCCESS: 'sometimes',
+        },
+        stdin: 'ignore',
+        timeout: 25_000,
+        killSignal: 'SIGKILL',
+        reject: false,
+      })
+
+      expect(exitCode, stderr).toBe(1)
+      expect(stdout).toBe('')
+      expect(stderr).toContain('plugin tree failed to load')
+      expect(stderr).toContain('failed to apply loader entry sdk-jsonrpc-server (@deepseek-ai/dsh-sdk-jsonrpc-server)')
+      expect(stderr).toContain('sometimes')
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   }, 30_000)
 })
