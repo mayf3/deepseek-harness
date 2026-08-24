@@ -247,6 +247,7 @@ describe('dsh-tool-subagent', () => {
     }))
     await ctx.plugin(tool, {
       provider: 'capture',
+      enableModelSelection: true,
       agentOptions: { reasoningEffort: ReasoningEffortId('high'), maxTokens: 321 },
       maxDepth: 'provider-managed',
     })
@@ -290,7 +291,11 @@ describe('dsh-tool-subagent', () => {
       },
     })
     ctx.llm.registerAdapter(['alpha'], new MockAdapter([]))
-    await ctx.plugin(tool, { provider: 'provider-defaults', maxDepth: 'provider-managed' })
+    await ctx.plugin(tool, {
+      provider: 'provider-defaults',
+      enableModelSelection: true,
+      maxDepth: 'provider-managed',
+    })
     const parent = {
       ...fakeAgent('same-route-parent'),
       options: {
@@ -1002,7 +1007,11 @@ describe('dsh-tool-subagent background mode', () => {
       agentRouteDefaults: { provider: 'alpha', model: 'selected-model' },
       start: oldStart,
     })
-    await ctx.plugin(tool, { provider: 'swapped', maxDepth: 'provider-managed' })
+    await ctx.plugin(tool, {
+      provider: 'swapped',
+      enableModelSelection: true,
+      maxDepth: 'provider-managed',
+    })
     const adapter = new MockAdapter([])
     let releasePreflight!: () => void
     const preflightGate = new Promise<void>((resolve) => { releasePreflight = resolve })

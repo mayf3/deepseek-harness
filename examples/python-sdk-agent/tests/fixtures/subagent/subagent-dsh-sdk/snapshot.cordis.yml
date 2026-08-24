@@ -1,51 +1,54 @@
-# JSON-RPC snapshot root: a deterministic parent model selects a route for a
-# separate SDK child runtime. Both runtimes persist their own request headers.
-- id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+# SDK-profile patch for a deterministic parent model that selects a route for
+# a separate SDK child runtime. Both runtimes persist their request headers.
 
-- id: mock-llm
-  name: './mock-delegating-llm.ts'
-
-- id: subagent
-  name: '@deepseek-ai/dsh-subagent'
-
-- id: subagent-dsh-sdk
-  name: '@deepseek-ai/dsh-subagent-dsh-sdk'
-  config:
-    profile: sdk
-    patches: !!js JSON.parse(process.env.DSH_TEST_CHILD_PATCHES ?? '[]')
-    dshHome: !!js process.env.DSH_TEST_CHILD_HOME
-    provider: unavailable-default
-    model: unavailable-default
-    env:
-      DSH_TELEMETRY_DISABLED: '1'
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  disabled: true
 
 - id: tool-subagent
   name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: dsh-sdk
-    toolName: subagent
-    enableRunInBackground: false
-    agentOptions:
-      maxTokens: 777
-    maxDepth: 'provider-managed'
+  disabled: true
 
-- id: agent-spine
-  name: '@deepseek-ai/dsh-agent-spine-demo'
-  config:
-    persona: 'Test SDK subagent dynamic routing.'
-    workspaceContext: false
-    skills:
-      enabled: false
-    toolBash:
-      enableRunInBackground: false
-    toolJobs: false
+- id: sdk-jsonrpc-server
+  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+  disabled: true
 
-- id: sessions
+- id: session-persistence-jsonl
   name: '@deepseek-ai/dsh-session-persistence-jsonl'
   config:
-    root: !!js process.env.DSH_SESSION_ROOT
+    root: !!js dshHomePath('sessions')
     compression: none
 
-- id: session-checkpoints
-  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+- insert:
+    - id: mock-llm
+      name: './mock-delegating-llm.ts'
+      disabled: !!js process.env.DSH_SNAPSHOT !== 'record'
+
+    - id: subagent-dsh-sdk
+      name: '@deepseek-ai/dsh-subagent-dsh-sdk'
+      config:
+        profile: sdk
+        patches: !!js JSON.parse(process.env.DSH_TEST_CHILD_PATCHES ?? '[]')
+        dshHome: !!js process.env.DSH_TEST_CHILD_HOME
+        provider: mock
+        model: mock-routed
+        env:
+          DSH_TELEMETRY_DISABLED: '1'
+
+    - id: tool-subagent-dsh-sdk
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: dsh-sdk
+        toolName: subagent
+        enableModelSelection: true
+        enableRunInBackground: false
+        agentOptions:
+          maxTokens: 777
+        maxDepth: 'provider-managed'
+
+    - id: sdk-jsonrpc-server-dynamic-live
+      name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
+      inject: [sdkAppStartup, loader]
+      disabled: !!js process.env.DSH_SNAPSHOT !== 'record'
+      config:
+        maxTokensAsSuccess: true

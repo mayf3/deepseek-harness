@@ -47,8 +47,16 @@ const replayPlugin = fileURLToPath(new URL(
 ))
 const dshSdkFixtureDir = join(testsDir, 'fixtures', 'subagent', 'subagent-dsh-sdk')
 const dshSdkSnapshotConfig = join(dshSdkFixtureDir, 'snapshot.cordis.yml')
+const dshSdkSnapshotReplayConfig = join(dshSdkFixtureDir, 'snapshot.replay.cordis.yml')
 const dshSdkChildConfig = join(dshSdkFixtureDir, 'child.cordis.yml')
 const dshSdkChildMockPath = join(dshSdkFixtureDir, 'child-mock-llm.ts')
+const dshSdkParentMockPath = join(dshSdkFixtureDir, 'mock-delegating-llm.ts')
+const dshSdkProviderPlugin = fileURLToPath(new URL(
+  exampleMode === 'lib'
+    ? '../../../packages/subagent/subagent-dsh-sdk/lib/index.js'
+    : '../../../packages/subagent/subagent-dsh-sdk/src/index.ts',
+  import.meta.url,
+))
 
 const MINIMAL_SYSTEM_PROMPT = 'You are the environment-selected minimal software engineer.'
 const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
@@ -127,8 +135,9 @@ const SCENARIOS: SdkScenario[] = [
     prompt: 'Delegate once using the requested child route.',
     sessionId: 'sdk-snapshot-dsh-sdk',
     children: 1,
-    configs: { live: dshSdkSnapshotConfig, replay: dshSdkSnapshotConfig },
-    sdkRoute: { provider: 'mock', model: 'mock-delegate' },
+    configs: { live: dshSdkSnapshotConfig, replay: dshSdkSnapshotReplayConfig },
+    environment: { DSH_TEST_PARENT_PROVIDER: 'deepseek-official' },
+    sdkRoute: { provider: 'deepseek-official', model: 'mock-delegate' },
     dshSdkChild: {
       config: dshSdkChildConfig,
       sessionRoot: '.child-dsh/sessions',
@@ -272,6 +281,16 @@ async function materializeReplayPatch(source: string, cwd: string): Promise<stri
   return target
 }
 
+/** Materialize the DSH SDK scenario patch with absolute test and provider modules. */
+async function materializeDshSdkPatch(source: string, cwd: string): Promise<string> {
+  const target = join(cwd, `.sdk-${basename(source)}`)
+  const content = (await readFile(source, 'utf8'))
+    .replaceAll("'@deepseek-ai/dsh-subagent-dsh-sdk'", JSON.stringify(pathToFileURL(dshSdkProviderPlugin).href))
+    .replaceAll("'./mock-delegating-llm.ts'", JSON.stringify(pathToFileURL(dshSdkParentMockPath).href))
+  await writeFile(target, content)
+  return target
+}
+
 /**
  * Normalize the SDK-visible notification stream: embedded `session.event`
  * envelopes get the session-log treatment (times zeroed, headers tokenized),
@@ -317,6 +336,9 @@ async function runScenario(scenario: SdkScenario): Promise<{
   const sessionsRoot = join(dshHome, 'sessions')
   const replayFixtures = recording ? [] : await hydrateReplayFixtures(scenario, cwd)
   const livePatch = scenario.configs?.live ?? liveConfig
+  const resolvedLivePatch = scenario.dshSdkChild === undefined
+    ? livePatch
+    : await materializeDshSdkPatch(livePatch, cwd)
   const replayPatch = scenario.configs?.replay ?? replayConfig
   const resolvedReplayPatch = recording ? undefined : await materializeReplayPatch(replayPatch, cwd)
   const additionalPatches = recording
@@ -351,7 +373,7 @@ async function runScenario(scenario: SdkScenario): Promise<{
   const harness = new DeepSeekHarness({
     profile: 'sdk',
     patches: [
-      livePatch,
+      resolvedLivePatch,
       ...resolvedReplayPatch === undefined ? [] : [resolvedReplayPatch],
       ...additionalPatches,
     ],

@@ -29,6 +29,7 @@
   config:
     provider: dsh-sdk
     toolName: subagent
+    enableModelSelection: true
     agentOptions:
       maxTokens: 777
     # The SDK backend advertises no depthLimit: the child harness owns its own
