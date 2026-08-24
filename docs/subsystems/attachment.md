@@ -190,6 +190,7 @@ abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<Store
  * Resolve provider-specific model-tool access without adding host facts to session history.
  * @param ref - durable normalized attachment reference.
  * @returns current-provider access facts, or undefined when this backend exposes no local path.
+ * @throws an AttachmentError when the durable reference is invalid.
  */
 imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess | undefined
 

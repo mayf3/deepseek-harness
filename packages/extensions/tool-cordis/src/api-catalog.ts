@@ -454,6 +454,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Resolve provider-specific model-tool access without adding host facts to session history.',
         parameters: [{ name: 'ref', description: 'durable normalized attachment reference.' }],
         returns: 'current-provider access facts, or undefined when this backend exposes no local path.',
+        throws: ['an AttachmentError when the durable reference is invalid.'],
       },
       {
         signature: 'readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
@@ -768,6 +769,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Return the canonical absolute path a subprocess in this filesystem\'s execution world can open. The path is deliberately separate from FsTarget.targetKey: consumers may pass this value to another OS capability, but must continue treating the target key as opaque.',
         parameters: [{ name: 'target', description: 'the resolved target whose process path is required.' }],
         returns: 'an absolute path in the backend\'s execution world.',
+      },
+      {
+        signature: 'processPathFromHostPath(hostPath: string): string | undefined',
+        description: 'Map an absolute path from the harness host into this filesystem\'s execution world when both paths identify the same file. The base provider exposes no mapping; host-backed or explicitly shared backends override it.',
+        parameters: [{ name: 'hostPath', description: 'absolute path in the harness host filesystem.' }],
+        returns: 'the process path for the same file, or undefined when this execution world cannot read that host file.',
       },
       {
         signature: 'abstract fileUrl(target: FsTarget): string',

@@ -10,7 +10,7 @@ An uploaded image becomes an opaque durable `ImageAttachmentRef`. Image-capable 
 
 ## Decision
 
-`ImageAttachmentRef` remains portable session data and contains no host path. `AttachmentStore.imageAccess(ref)` resolves optional access facts from the current provider. The local provider derives an absolute immutable-object path from the resolved `DSH_HOME`, attachment storage version, and validated digest. A request version carries these facts transiently for serialization. A provider without model-readable local storage returns no access facts.
+`ImageAttachmentRef` remains portable session data and contains no host path. `AttachmentStore.imageAccess(ref)` resolves optional access facts from the current provider. The local provider derives an absolute object path from the resolved `DSH_HOME`, attachment storage version, and validated digest, then asks the mounted `ctx.fs` to map that host file into its execution world. `FileSystem.processPathFromHostPath(hostPath)` returns no mapping by default; the host-backed provider returns the absolute process path, while E2B and other remote providers return no access facts. A request version carries available facts transiently for serialization.
 
 The shared LLM image descriptor names the display name or full attachment id, the exact request-preview dimensions, and the provider-resolved normalized path when available. Local access text includes normalized dimensions and media type, identifies the object as read-only, directs the model to copy it to a writable path with the matching extension before editing, and states that normalization or request projection may have resized or re-encoded the upload. DeepSeek Files and pi-ai inline requests use the same descriptor.
 
@@ -18,7 +18,7 @@ Request-size offload requires a per-image placeholder function; the previous sha
 
 Descriptor identity comes from each occurrence's own durable reference, not from the prepared request version: versions are deduplicated per attachment id, so two uploads of the same content under different names share one version while each occurrence keeps its own display name. Access resolution validates the logged attachment id; a malformed reference in durable history fails the request at assembly, the earliest point that resolves it.
 
-Absolute paths stay out of session events. Model-visible path text is reconstructed from the logged attachment reference and the provider mounted for the current process. Restoring the same session with a different `DSH_HOME` therefore produces the path that is valid on that host. The attachment object remains immutable; model instructions require a writable copy for modifications.
+Absolute paths stay out of session events. Model-visible path text is reconstructed from the logged attachment reference and the providers mounted for the current process. Restoring the same session with a different `DSH_HOME` produces the path valid on that host; restoring it with a remote execution world that has no shared mount produces no path. Published attachment objects use owner-read-only mode, including deduplicated objects, and model instructions require a writable copy for modifications.
 
 ## Alternatives considered
 
@@ -26,12 +26,14 @@ Absolute paths stay out of session events. Model-visible path text is reconstruc
 
 **Teach each LLM adapter the `~/.dsh` layout.** Explicit `dshHome` and `$DSH_HOME` can select another root, and non-local providers may expose no path. The attachment provider owns this fact.
 
+**Infer path sharing from the filesystem provider's package or class name.** Provider identity does not establish that a host file is mounted into its execution world. The filesystem provider instead answers the exact mapping question and can support an explicit shared mount without changing the attachment provider.
+
 **Add a dedicated crop or recovery tool.** Standard filesystem and image tools can operate after copying the normalized object. A new tool adds a model schema and access-policy surface without being necessary for path discovery.
 
 ## Verification
 
-Package tests cover provider access defaults, local digest-to-path resolution, request-version access propagation, retained-image descriptions, per-image nested offload placeholders, source-property warnings, and matching extensions. A keyless assembled ACP snapshot checks the exact local object path in both a retained DeepSeek Files image handle and an offloaded image placeholder.
+Package tests cover provider access defaults, host-backed path mapping, absence without a mapped filesystem, digest-to-path resolution, owner-read-only publication and deduplication, request-version access propagation, retained-image descriptions, per-image nested offload placeholders, source-property warnings, and matching extensions. A keyless assembled ACP snapshot checks the exact local object path in both a retained DeepSeek Files image handle and an offloaded image placeholder.
 
 ## Consequences
 
-The selected model provider receives a host path that was previously local-only. This disclosure is required for the model to operate on the stored image and is limited to normalized attachment objects already in that request's authorized history. Descriptor text adds tokens for every retained or offloaded image. Paths change when the provider root changes, while deterministic image bytes and session references remain unchanged. A missing local object still fails when a model tool attempts to read it.
+When the execution world maps the attachment object, the selected model provider receives its path. This disclosure lets the model operate on the stored image and is limited to normalized attachment objects already in that request's authorized history. Descriptor text adds tokens for every retained or offloaded image. Paths change when the provider root changes, while deterministic image bytes and session references remain unchanged. Remote execution worlds without a shared mount receive the existing no-path recovery text. A missing local object still fails when a model tool attempts to read it.

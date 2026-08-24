@@ -222,6 +222,9 @@ export async function commitPreparedImageFile(
       const existing = new Uint8Array(await readFile(target))
       if (digest(existing) !== sha256) throw new AttachmentError('Stored attachment failed integrity verification.', 'ATTACHMENT_CORRUPT')
     }
+    // The hard link and staging entry share one inode, so this applies to both
+    // names until cleanup and also enforces read-only mode on deduplicated objects.
+    await chmod(target, 0o400)
     // Persist the target entry and close a concurrent bucket-creation window
     // before the reference can reach a session checkpoint. The dedup path
     // repeats both syncs because it may observe another writer's link before

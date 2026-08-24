@@ -195,6 +195,9 @@ export type ResolvedDeepSeekOptions = DeepSeekConnectionOptions
 function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): DeepSeekCatalogModel[] {
   const seen = new Set<string>()
   return (models ?? DEFAULT_MODELS).map((model) => {
+    if (Object.hasOwn(model, 'imageDetail')) {
+      throw new Error('llm-deepseek: catalog model imageDetail is no longer supported; use imagePixelBudget')
+    }
     if (model.id.length === 0) throw new Error('llm-deepseek: catalog model ids must be non-empty')
     if (model.name !== undefined && model.name.length === 0) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" has an empty name`)

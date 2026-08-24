@@ -1895,6 +1895,20 @@ describe('plugin registration and config', () => {
     expect(() => resolveAdapterOptions({ models: [...models] })).toThrow(message)
   })
 
+  it('rejects the removed imageDetail model setting through schema and direct construction', async () => {
+    const legacyModel = { id: 'vision', inputModalities: ['image'], imageDetail: 'low' } as unknown as
+      LlmDeepSeek.DeepSeekCatalogModel
+    expect(() => resolveAdapterOptions({ models: [legacyModel] })).toThrow(/imageDetail is no longer supported/)
+
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await expect(ctx.plugin(LlmDeepSeek, {
+      baseURL: 'http://127.0.0.1:1',
+      models: [legacyModel],
+    })).rejects.toThrow(/imageDetail is no longer supported/)
+    expect(ctx.llm.listProviders()).toEqual([])
+  })
+
   it.each([0, 1.5])('rejects a per-model output cap of %s', (maxTokens) => {
     expect(() => resolveAdapterOptions({ models: [{ id: 'bad-cap', maxTokens }] }))
       .toThrow(/maxTokens must be a positive integer/)

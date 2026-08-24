@@ -13,6 +13,7 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-fs'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter } from './compression-limiter.ts'
@@ -208,8 +209,10 @@ export class LocalAttachmentStore extends AttachmentStore {
     return readImageFile(this.root, ref, signal)
   }
 
-  override imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess {
-    return { readonlyPath: normalizedImagePath(this.root, ref) }
+  override imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess | undefined {
+    const hostPath = normalizedImagePath(this.root, ref)
+    const readonlyPath = this.ctx.get('fs')?.processPathFromHostPath(hostPath)
+    return readonlyPath === undefined ? undefined : { readonlyPath }
   }
 
   override async readImageRequest(
@@ -235,15 +238,16 @@ export class LocalAttachmentStore extends AttachmentStore {
       operation = undefined
     }
     if (operation === undefined) {
-      const shared = new SharedRequest<RequestImageAttachment>(sharedSignal => this.compression.run(async () => ({
-        ...await readRequestImageFile(
+      const shared = new SharedRequest<RequestImageAttachment>(sharedSignal => this.compression.run(async () => {
+        const request = await readRequestImageFile(
           this.root,
           stored ?? await this.readImage(ref, sharedSignal),
           policy,
           sharedSignal,
-        ),
-        access: this.imageAccess(ref),
-      })))
+        )
+        const access = this.imageAccess(ref)
+        return { ...request, ...(access === undefined ? {} : { access }) }
+      }))
       operation = shared
       this.requestInflight.set(key, shared)
       void shared.promise.finally(() => {
