@@ -26,6 +26,8 @@
 
 `validateFetchApprovalUrl()` 向权限消费方暴露不产生网络活动的 URL 语法、长度、凭据与 IP 字面量校验。hostname 解析只会在用户同意后由提供方执行；提供方会强制校验并固定解析结果，而不会把它当作可复用的授权令牌。
 
+直接构造 `HttpFetchProvider` 时，可以为受信任的替代装配和确定性测试注入 `HttpFetchResolver`。该 resolver 必须先拒绝所有非公开目的地址，再返回地址；随产品交付的插件始终使用内置的公开地址 resolver。
+
 ## 配置
 
 | 配置键 | 默认值 | 含义 |

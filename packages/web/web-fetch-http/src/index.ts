@@ -17,7 +17,7 @@ export {
   LOCAL_FETCH_PROVIDER_ID,
   HttpFetchProvider,
 } from './provider.ts'
-export type { HttpFetchLimits } from './provider.ts'
+export type { HttpFetchLimits, HttpFetchResolver } from './provider.ts'
 export { validateFetchApprovalUrl } from './preflight.ts'
 export { WEB_FETCH_MAX_URL_LENGTH } from './policy.ts'
 

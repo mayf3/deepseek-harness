@@ -11,6 +11,7 @@ import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } 
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { Response } from 'undici'
 import { publicHttpNetwork } from './network.ts'
+import type { PublicAddress } from './network.ts'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
 
 /** Resolved provider limits (the plugin's schemastery Config supplies defaults). */
@@ -27,6 +28,9 @@ export interface HttpFetchLimits {
   userAgent: string
 }
 
+/** Resolve one hostname to an already policy-validated address set. */
+export type HttpFetchResolver = (hostname: string, signal: AbortSignal) => Promise<PublicAddress[]>
+
 /** Stable id this provider registers under. */
 export const LOCAL_FETCH_PROVIDER_ID = 'http'
 
@@ -34,7 +38,14 @@ export const LOCAL_FETCH_PROVIDER_ID = 'http'
 export class HttpFetchProvider implements WebFetchProvider {
   readonly id = LOCAL_FETCH_PROVIDER_ID
 
-  constructor(private readonly limits: HttpFetchLimits) {}
+  /**
+   * @param limits - resolved transport and response limits.
+   * @param resolveAddresses - resolver that rejects non-public destinations before returning.
+   */
+  constructor(
+    private readonly limits: HttpFetchLimits,
+    private readonly resolveAddresses: HttpFetchResolver = publicHttpNetwork.resolve,
+  ) {}
 
   /** No credentials to check — an anonymous public fetcher is always usable. */
   available(): boolean {
@@ -104,7 +115,7 @@ export class HttpFetchProvider implements WebFetchProvider {
 
   private async requestOnce(url: URL, signal: AbortSignal) {
     try {
-      const addresses = await publicHttpNetwork.resolve(url.hostname, signal)
+      const addresses = await this.resolveAddresses(url.hostname, signal)
       return await publicHttpNetwork.request(url, addresses, {
         'user-agent': this.limits.userAgent,
         'accept': 'text/html,application/xhtml+xml,text/*;q=0.9,application/json;q=0.8',

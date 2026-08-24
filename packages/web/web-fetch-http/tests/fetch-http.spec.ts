@@ -4,7 +4,7 @@ import { AddressInfo } from 'node:net'
 import { Context } from '@deepseek-ai/cordis'
 import WebRuntime from '@deepseek-ai/dsh-web'
 import { HttpFetchProvider, LOCAL_FETCH_PROVIDER_ID } from '@deepseek-ai/dsh-web-fetch-http'
-import type { HttpFetchLimits } from '@deepseek-ai/dsh-web-fetch-http'
+import type { HttpFetchLimits, HttpFetchResolver } from '@deepseek-ai/dsh-web-fetch-http'
 import * as fetchPlugin from '@deepseek-ai/dsh-web-fetch-http'
 import { createPinnedLookup, isPublicIpAddress, publicHttpNetwork, requestPinned, resolvePublicAddresses } from '../src/network.ts'
 import {
@@ -280,6 +280,14 @@ describe('HttpFetchProvider success', () => {
     handler = (_req, res) => { res.writeHead(200, { 'content-type': 'text/html' }); res.end('<h1>hi</h1>') }
     const result = await provider().fetch({ url: base })
     expect(result.body).toEqual({ kind: 'html', content: '<h1>hi</h1>' })
+  })
+
+  it('uses an explicitly injected validated-address resolver', async () => {
+    const resolveAddresses = vi.fn<HttpFetchResolver>(async () => [{ address: '127.0.0.1', family: 4 }])
+    const result = await new HttpFetchProvider(limits, resolveAddresses).fetch({ url: base })
+    expect(result.statusCode).toBe(200)
+    expect(resolveAddresses).toHaveBeenCalledWith('127.0.0.1', expect.any(AbortSignal))
+    expect(publicHttpNetwork.resolve).not.toHaveBeenCalled()
   })
 
   it('sends the configured user agent', async () => {

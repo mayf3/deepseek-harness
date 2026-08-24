@@ -26,6 +26,8 @@ A shipping web-tool deployment sets the provider backstop above the tool budget,
 
 `validateFetchApprovalUrl()` exposes network-free URL syntax, length, credentials, and literal-IP checks to permission consumers. Hostname resolution remains exclusively in the provider after consent, where the result is enforced and pinned rather than reused as an authorization token.
 
+Direct `HttpFetchProvider` construction may inject an `HttpFetchResolver` for alternate trusted assemblies and deterministic tests. That resolver must reject every non-public destination before returning addresses; the shipped plugin always uses the built-in public-address resolver.
+
 ## Config
 
 | Key | Default | Meaning |
