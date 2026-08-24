@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-20-unified-image-request-pipeline.md
-2026-08-20-unified-image-request-pipeline.md: ada15d540539977c631e359ffdc7baa4fa84c78e
-2026-08-20-unified-image-request-pipeline.zh.md: 85c9a1f837d82cba2bc62b30402433f50c873cbe
+2026-08-20-unified-image-request-pipeline.md: 85296f1d8bd7d6ee458f8bc4230e52f1d3128bff
+2026-08-20-unified-image-request-pipeline.zh.md: bcbc0110001e9f974e57a456140e9ecdf4eb888c
