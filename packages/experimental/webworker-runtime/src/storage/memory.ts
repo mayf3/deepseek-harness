@@ -22,6 +22,8 @@ interface FileNode {
   mode: number
   /** Stable identity shared by hard links and retained by open descriptors. */
   identity?: bigint
+  /** One path normally, a Set only for hard links, or undefined after the final unlink. */
+  paths: string | Set<string> | undefined
 }
 
 /** Creation default for files, Node's `0o666` under the classic `022` umask. */
@@ -309,7 +311,7 @@ export class MemoryVfs implements Vfs {
         : fail('ENOENT', 'stat', target)
     const identity = node === undefined ? this.identityOf(target) : this.identityOfFile(node)
     return options?.bigint === true
-      ? bigIntStatsOf(size, mtimeMs, directory, identity, mode, node === undefined ? 1 : this.pathsOf(node).length)
+      ? bigIntStatsOf(size, mtimeMs, directory, identity, mode, node === undefined ? 1 : this.fileLinkCount(node))
       : statsOf(size, mtimeMs, directory, identity, mode)
   }
 
@@ -335,23 +337,70 @@ export class MemoryVfs implements Vfs {
     return node.identity
   }
 
-  /** @returns Every currently linked path for one file node. */
-  private pathsOf(node: FileNode): string[] {
-    const paths: string[] = []
-    for (const [path, candidate] of this.files) {
-      if (candidate === node) paths.push(path)
+  /** @returns The number of names currently linked to one file node. */
+  private fileLinkCount(node: FileNode): number {
+    return typeof node.paths === 'string' ? 1 : node.paths?.size ?? 0
+  }
+
+  /** Add one map name, promoting the rare hard-link case to a Set. */
+  private addFilePath(node: FileNode, path: string): void {
+    if (node.paths === undefined) {
+      node.paths = path
+    } else if (typeof node.paths === 'string') {
+      node.paths = new Set([node.paths, path])
+    } else {
+      node.paths.add(path)
     }
-    return paths
+  }
+
+  /** Remove one map name, collapsing a remaining single link back to a string. */
+  private removeFilePath(node: FileNode, path: string): void {
+    if (typeof node.paths === 'string') {
+      node.paths = undefined
+      return
+    }
+    if (node.paths === undefined) return
+    node.paths.delete(path)
+    if (node.paths.size === 1) {
+      const [remaining] = node.paths
+      node.paths = remaining
+    }
+  }
+
+  /** Set one file-map entry while maintaining both nodes' reverse path indexes. */
+  private setFile(path: string, node: FileNode): void {
+    const previous = this.files.get(path)
+    if (previous === node) return
+    if (previous !== undefined) this.removeFilePath(previous, path)
+    this.files.set(path, node)
+    this.addFilePath(node, path)
+  }
+
+  /** Delete one file-map entry while retaining an unlinked node held by a descriptor. */
+  private deleteFile(path: string): FileNode | undefined {
+    const node = this.files.get(path)
+    if (node === undefined) return undefined
+    this.files.delete(path)
+    this.removeFilePath(node, path)
+    return node
+  }
+
+  /** Publish one linked name after a content or metadata write. */
+  private publishFilePath(node: FileNode, path: string, appendedFrom?: number): void {
+    this.publish({
+      kind: 'write', path, bytes: node.bytes, mode: node.mode, entryChanged: false,
+      ...appendedFrom === undefined ? {} : { appendedFrom },
+    })
   }
 
   /** Publish a content or metadata write for every hard link to one node. */
   private publishFile(node: FileNode, appendedFrom?: number): void {
-    for (const path of this.pathsOf(node)) {
-      this.publish({
-        kind: 'write', path, bytes: node.bytes, mode: node.mode, entryChanged: false,
-        ...appendedFrom === undefined ? {} : { appendedFrom },
-      })
+    if (typeof node.paths === 'string') {
+      this.publishFilePath(node, node.paths, appendedFrom)
+      return
     }
+    if (node.paths === undefined) return
+    for (const path of node.paths) this.publishFilePath(node, path, appendedFrom)
   }
 
   /** Replace bytes on one file identity and notify all linked paths. */
@@ -517,8 +566,8 @@ export class MemoryVfs implements Vfs {
       this.replaceFile(previous, bytes)
       return
     }
-    const node: FileNode = { bytes, mtimeMs: this.touch(target), mode }
-    this.files.set(target, node)
+    const node: FileNode = { bytes, mtimeMs: this.touch(target), mode, paths: undefined }
+    this.setFile(target, node)
     this.touchDirectory(dirname(target))
     this.publish({ kind: 'write', path: target, bytes, mode, entryChanged: true })
   }
@@ -688,8 +737,9 @@ export class MemoryVfs implements Vfs {
     if (node !== undefined) {
       if (this.directories.has(destination)) fail('EISDIR', 'rename', destination)
       if (!this.directories.has(dirname(destination))) fail('ENOENT', 'rename', destination)
-      this.files.delete(source)
-      this.files.set(destination, node)
+      if (this.files.get(destination) === node) return
+      this.deleteFile(source)
+      this.setFile(destination, node)
       this.forgetIdentity(source)
       this.forgetIdentity(destination)
       this.touchDirectory(dirname(source))
@@ -711,9 +761,9 @@ export class MemoryVfs implements Vfs {
     const movedFiles: Array<{ path: string; bytes: Uint8Array; mode: number }> = []
     for (const [candidate, value] of [...this.files]) {
       if (!candidate.startsWith(prefix)) continue
-      this.files.delete(candidate)
+      this.deleteFile(candidate)
       const target = join(destination, candidate.slice(prefix.length))
-      this.files.set(target, value)
+      this.setFile(target, value)
       movedFiles.push({ path: target, bytes: value.bytes, mode: value.mode })
     }
     const movedDirectories: Array<{ path: string; mode: number }> = []
@@ -760,7 +810,7 @@ export class MemoryVfs implements Vfs {
     if (node === undefined) fail('ENOENT', 'link', source)
     if (this.files.has(target) || this.directories.has(target)) fail('EEXIST', 'link', target)
     if (!this.directories.has(dirname(target))) fail('ENOENT', 'link', target)
-    this.files.set(target, node)
+    this.setFile(target, node)
     this.touchDirectory(dirname(target))
     this.publish({ kind: 'write', path: target, bytes: node.bytes, mode: node.mode, entryChanged: true })
   }
@@ -787,7 +837,11 @@ export class MemoryVfs implements Vfs {
     const node = this.files.get(target)
     if (node !== undefined) {
       node.mode = mode & 0o777
-      for (const path of this.pathsOf(node)) this.publish({ kind: 'chmod', path, mode: node.mode })
+      if (typeof node.paths === 'string') {
+        this.publish({ kind: 'chmod', path: node.paths, mode: node.mode })
+      } else if (node.paths !== undefined) {
+        for (const path of node.paths) this.publish({ kind: 'chmod', path, mode: node.mode })
+      }
       return
     }
     if (this.directories.has(target)) {
@@ -805,7 +859,7 @@ export class MemoryVfs implements Vfs {
    */
   unlinkSync(path: string): void {
     const target = this.key(path)
-    if (!this.files.delete(target)) fail('ENOENT', 'unlink', target)
+    if (this.deleteFile(target) === undefined) fail('ENOENT', 'unlink', target)
     this.forgetIdentity(target)
     this.touchDirectory(dirname(target))
     this.publish({ kind: 'remove', path: target })
@@ -818,7 +872,7 @@ export class MemoryVfs implements Vfs {
    */
   rmSync(path: string, options?: { recursive?: boolean; force?: boolean }): void {
     const target = this.key(path)
-    if (this.files.delete(target)) {
+    if (this.deleteFile(target) !== undefined) {
       this.forgetIdentity(target)
       this.touchDirectory(dirname(target))
       this.publish({ kind: 'remove', path: target })
@@ -827,7 +881,7 @@ export class MemoryVfs implements Vfs {
     if (this.directories.has(target)) {
       if (options?.recursive !== true) fail('ERR_FS_EISDIR', 'rm', target)
       const prefix = `${target}${SEP}`
-      for (const candidate of [...this.files.keys()]) if (candidate.startsWith(prefix)) this.files.delete(candidate)
+      for (const candidate of [...this.files.keys()]) if (candidate.startsWith(prefix)) this.deleteFile(candidate)
       for (const candidate of [...this.directories]) {
         if (!candidate.startsWith(prefix)) continue
         this.directories.delete(candidate)
@@ -866,10 +920,11 @@ export class MemoryVfs implements Vfs {
   seed(path: string, data: string | Uint8Array, options: VfsSeedOptions = {}): void {
     const target = this.key(path)
     this.seedDirectory(dirname(target))
-    this.files.set(target, {
+    this.setFile(target, {
       bytes: typeof data === 'string' ? encoder.encode(data) : data,
       mtimeMs: options.mtimeMs ?? this.touch(target),
       mode: (options.mode ?? DEFAULT_FILE_MODE) & 0o777,
+      paths: undefined,
     })
     this.touchDirectory(dirname(target))
   }

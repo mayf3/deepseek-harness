@@ -17,6 +17,9 @@ import type { VfsBigIntStats, VfsMutation, VfsMutationSink, VfsStats } from '../
 const identity = (vfs: MemoryVfs, path: string): bigint =>
   (vfs.statSync(path, { bigint: true }) as VfsBigIntStats).ino
 
+const linkCount = (vfs: MemoryVfs, path: string): bigint =>
+  (vfs.statSync(path, { bigint: true }) as VfsBigIntStats).nlink
+
 const modified = (vfs: MemoryVfs, path: string): number => (vfs.statSync(path) as VfsStats).mtimeMs
 
 afterEach(() => { vi.restoreAllMocks() })
@@ -262,18 +265,75 @@ describe('hard links', () => {
     const vfs = new MemoryVfs()
     vfs.seed('/dsh/session.jsonl', 'committed\n')
     vfs.linkSync('/dsh/session.jsonl', '/dsh/session-latest.jsonl')
+    vfs.linkSync('/dsh/session-latest.jsonl', '/dsh/session-archive.jsonl')
     expect(identity(vfs, '/dsh/session-latest.jsonl')).toBe(identity(vfs, '/dsh/session.jsonl'))
+    expect(linkCount(vfs, '/dsh/session.jsonl')).toBe(3n)
     expect(vfs.readFileSync('/dsh/session-latest.jsonl', 'utf8')).toBe('committed\n')
     const changedPaths: string[] = []
     vfs.subscribe((mutation) => { changedPaths.push(mutation.path) })
     vfs.appendFileSync('/dsh/session.jsonl', 'appended\n')
-    expect(changedPaths).toEqual(['/dsh/session.jsonl', '/dsh/session-latest.jsonl'])
+    expect(changedPaths).toEqual([
+      '/dsh/session.jsonl',
+      '/dsh/session-latest.jsonl',
+      '/dsh/session-archive.jsonl',
+    ])
     expect(vfs.readFileSync('/dsh/session.jsonl', 'utf8')).toBe('committed\nappended\n')
     expect(vfs.readFileSync('/dsh/session-latest.jsonl', 'utf8')).toBe('committed\nappended\n')
     vfs.chmodSync('/dsh/session-latest.jsonl', 0o600)
     expect((vfs.statSync('/dsh/session.jsonl') as VfsStats).mode & 0o777).toBe(0o600)
     vfs.unlinkSync('/dsh/session-latest.jsonl')
+    expect(linkCount(vfs, '/dsh/session.jsonl')).toBe(2n)
+    vfs.unlinkSync('/dsh/session-archive.jsonl')
+    expect(linkCount(vfs, '/dsh/session.jsonl')).toBe(1n)
     expect(vfs.readFileSync('/dsh/session.jsonl', 'utf8')).toBe('committed\nappended\n')
+  })
+
+  it('treats rename between names of the same node as a no-op', () => {
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/source', 'value')
+    vfs.linkSync('/dsh/source', '/dsh/alias')
+    const mutations: VfsMutation[] = []
+    vfs.subscribe((mutation) => { mutations.push(mutation) })
+
+    vfs.renameSync('/dsh/source', '/dsh/alias')
+
+    expect(vfs.readFileSync('/dsh/source', 'utf8')).toBe('value')
+    expect(vfs.readFileSync('/dsh/alias', 'utf8')).toBe('value')
+    expect(linkCount(vfs, '/dsh/source')).toBe(2n)
+    expect(mutations).toEqual([])
+  })
+
+  it('retargets linked names through file replacement and directory moves', () => {
+    const vfs = new MemoryVfs()
+    vfs.seed('/dsh/replacement', 'replacement')
+    vfs.seed('/dsh/target', 'old')
+    vfs.linkSync('/dsh/target', '/dsh/target-alias')
+    const replaced = vfs.openFileSync('/dsh/target', 'r+')
+    vfs.renameSync('/dsh/replacement', '/dsh/target')
+    const mutations: VfsMutation[] = []
+    vfs.subscribe((mutation) => { mutations.push(mutation) })
+
+    replaced.write(0, new TextEncoder().encode('changed'))
+    expect(mutations.map(mutation => mutation.path)).toEqual(['/dsh/target-alias'])
+    expect(vfs.readFileSync('/dsh/target', 'utf8')).toBe('replacement')
+    expect(vfs.readFileSync('/dsh/target-alias', 'utf8')).toBe('changed')
+    expect(linkCount(vfs, '/dsh/target-alias')).toBe(1n)
+
+    vfs.seed('/dsh/tree/file', 'tree')
+    vfs.linkSync('/dsh/tree/file', '/dsh/outside')
+    const moved = vfs.openFileSync('/dsh/tree/file', 'r+')
+    vfs.renameSync('/dsh/tree', '/dsh/moved')
+    mutations.length = 0
+    moved.write(0, new TextEncoder().encode('moved'))
+    expect(mutations.map(mutation => mutation.path)).toEqual(['/dsh/outside', '/dsh/moved/file'])
+    expect(linkCount(vfs, '/dsh/moved/file')).toBe(2n)
+
+    vfs.rmSync('/dsh/moved', { recursive: true })
+    mutations.length = 0
+    moved.write(0, new TextEncoder().encode('kept!'))
+    expect(mutations.map(mutation => mutation.path)).toEqual(['/dsh/outside'])
+    expect(vfs.readFileSync('/dsh/outside', 'utf8')).toBe('kept!')
+    expect(linkCount(vfs, '/dsh/outside')).toBe(1n)
   })
 
   it('rejects renaming a file over an existing directory', () => {
