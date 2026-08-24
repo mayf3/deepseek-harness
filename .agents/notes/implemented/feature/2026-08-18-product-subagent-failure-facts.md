@@ -28,7 +28,7 @@ Successful results and local cancellation expose no failure fact. Raw product er
 
 ### Claude Code facts
 
-The [minimal-diagnostics decision](../simplification/2026-08-21-product-subagent-minimal-diagnostics.md) exclusively owns Claude Code categories, stages, process facts, permission ordering, and verification for Agent SDK 0.3.237 and Claude Code 2.1.237. This note carries no separate Claude category contract.
+The [minimal-diagnostics decision](../simplification/2026-08-21-product-subagent-minimal-diagnostics.md) exclusively owns Claude Code categories, stages, process facts, permission ordering, and verification for Agent SDK 0.3.241 and Claude Code 2.1.241. This note carries no separate Claude category contract.
 
 ### Codex facts
 

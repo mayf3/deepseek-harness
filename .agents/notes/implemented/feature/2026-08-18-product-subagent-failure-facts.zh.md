@@ -28,7 +28,7 @@ Product subagent failure (product: <product>; stage: <stage>; category: <categor
 
 ### Claude Code 事实
 
-[最小诊断决策](../simplification/2026-08-21-product-subagent-minimal-diagnostics.zh.md)独占负责 Agent SDK 0.3.237 与 Claude Code 2.1.237 的 Claude Code 类别、阶段、进程事实、权限顺序与验证。本说明不再承载独立的 Claude 类别约定。
+[最小诊断决策](../simplification/2026-08-21-product-subagent-minimal-diagnostics.zh.md)独占负责 Agent SDK 0.3.241 与 Claude Code 2.1.241 的 Claude Code 类别、阶段、进程事实、权限顺序与验证。本说明不再承载独立的 Claude 类别约定。
 
 ### Codex 事实
 

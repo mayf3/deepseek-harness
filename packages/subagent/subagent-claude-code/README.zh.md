@@ -40,7 +40,7 @@ SDK 接收由文本块原样拼接成的任务。提供方会完整迭代 SDK �
 | `plan` | 使用原生规划模式，拒绝执行审批，并把完整计划作为最终答案返回。 |
 | `bypassPermissions` | 显式设置 SDK 的危险确认并跳过权限检查。 |
 
-生产环境会省略 `pathToClaudeCodeExecutable`，因此 Agent SDK 0.3.237 会从自己的平台包中选择匹配的原生 `claude` 或 `claude.exe`，再通过 custom-spawn 钩子把该绝对命令交给 `dsh-subprocess`。提供方不会检查 `PATH`、重复实现平台选择，也不会回退到宿主 `claude`。已配置的 `model` 是由提供方实例拥有的直接 SDK 覆盖；提供方不会发现模型名称、改写别名或设置 fallback，省略该字段会保留原生模型选择。其余产品选择仍以原生设置与身份验证为权威来源。本插件不会创建产品主目录、执行登录或探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承；`PATH` 不参与选择 Claude 可执行文件。
+生产环境会省略 `pathToClaudeCodeExecutable`，因此 Agent SDK 0.3.241 会从自己的平台包中选择匹配的原生 `claude` 或 `claude.exe`，再通过 custom-spawn 钩子把该绝对命令交给 `dsh-subprocess`。提供方不会检查 `PATH`、重复实现平台选择，也不会回退到宿主 `claude`。已配置的 `model` 是由提供方实例拥有的直接 SDK 覆盖；提供方不会发现模型名称、改写别名或设置 fallback，省略该字段会保留原生模型选择。其余产品选择仍以原生设置与身份验证为权威来源。本插件不会创建产品主目录、执行登录或探测账户。具有凭证特征的环境变量会在显式 `env` 覆盖生效前被清除，因此供子进程使用的 API 密钥或 token 必须在该配置中显式提供。除非被覆盖，`ANTHROPIC_BASE_URL` 等非凭证端点变量以及 `PATH` 和 `HOME` 等普通环境变量仍会被继承；`PATH` 不参与选择 Claude 可执行文件。
 
 本包是可选的 Profile Bundle。将它安装进目标 Profile 后重启该 Profile；安装会把锁定的 Agent SDK 与一个兼容的平台 CLI 载荷带入该 Profile，而包所声明的 `cordis.patch.yml` 层只注册休眠的 `claude-code` Host provider，不会启动 Claude 进程。移除该包后，下一次 Profile 启动会撤回这一 provider 及其私有运行时闭包。
 
@@ -101,7 +101,7 @@ dsh --profile <name>
 
 ## 产品兼容性与证据
 
-运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.237`，其八个平台包都携带 Claude Code 2.1.237。普通安装会按当前操作系统、CPU 及 Linux libc 选择一个载荷。对于当前 darwin-arm64 载荷，`npm pack --dry-run --json` 报告压缩包为 88,589,191 字节、解包后为 317,110,872 字节；其他平台可能不同，这些数值只用于披露而不是安装阈值。无密钥真实产品测试会让 SDK 选择 CLI，通过回环 Messages fixture 运行它，并断言共享子进程 argv 的首项就是该平台包的原生可执行文件；它还证明省略 model 时使用原生设置，两个命名实例则发送各自配置的模型。Loader 组合证明安装该 Bundle 只会注册休眠的 Claude Code provider，不会启动产品进程。
+运行时依赖精确锁定为 `@anthropic-ai/claude-agent-sdk@0.3.241`，其八个平台包都携带 Claude Code 2.1.241。普通安装会按当前操作系统、CPU 及 Linux libc 选择一个载荷。对于当前 darwin-arm64 载荷，`npm pack --dry-run --json` 报告压缩包为 92,295,035 字节、解包后为 325,056,216 字节；其他平台可能不同，这些数值只用于披露而不是安装阈值。无密钥真实产品测试会让 SDK 选择 CLI，通过回环 Messages fixture 运行它，并断言共享子进程 argv 的首项就是该平台包的原生可执行文件；它还证明省略 model 时使用原生设置，两个命名实例则发送各自配置的模型。Loader 组合证明安装该 Bundle 只会注册休眠的 Claude Code provider，不会启动产品进程。
 
 如果安装时省略 optional dependencies、当前平台不受支持，或所选载荷缺失，提供方注册仍保持休眠，但第一次委派会在 SDK 启动边界失败。调用方只会收到安全的 `query-start` / `unknown` 失败事实；原生载荷错误只保留在内部 cause 链和提供方 Host 日志中。提供方既不会探测宿主 CLI，也不会用它重试。
 

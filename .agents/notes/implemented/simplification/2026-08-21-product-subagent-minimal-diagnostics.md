@@ -40,7 +40,7 @@ Codex currently retains the version-pinned categories documented by the [structu
 
 ## Verification
 
-Claude Code package tests cover every coarse category, all four stages, unknown structured values, permission ordering, raw-text exclusion, success and cancellation omission, concurrent-run isolation, and independent exit code and signal fields. The real Agent SDK 0.3.237 and Claude Code 2.1.237 fixture produces an actual max-turns limit, process failure, permission denial, strict final answer, cancellation, and whole-tree quiescence. Loader and keyless product compositions continue to expose static tools without a diagnostic parser or model-visible category input.
+Claude Code package tests cover every coarse category, all four stages, unknown structured values, permission ordering, raw-text exclusion, success and cancellation omission, concurrent-run isolation, and independent exit code and signal fields. The real Agent SDK 0.3.241 and Claude Code 2.1.241 fixture produces an actual max-turns limit, process failure, permission denial, strict final answer, cancellation, and whole-tree quiescence. Loader and keyless product compositions continue to expose static tools without a diagnostic parser or model-visible category input.
 
 ## Alternatives considered
 
