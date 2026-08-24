@@ -20,6 +20,22 @@
       }
     },
     {
+      "at": 1,
+      "entry": {
+        "kind": "chunks",
+        "chunks": [
+          { "type": "block-start", "index": 0, "blockType": "reasoning" },
+          { "type": "reasoning-delta", "index": 0, "text": "There's a `packages` directory. Let me look inside to see what packages are available." },
+          { "type": "block-end", "index": 0, "block": { "type": "reasoning", "text": "There's a `packages` directory. Let me look inside to see what packages are available." } },
+          { "type": "block-start", "index": 1, "blockType": "tool-call" },
+          { "type": "tool-call-delta", "index": 1, "id": "call_00_XlYaTHoKielffCybfcXb9253", "name": "bash", "argumentsDelta": "{\"command\":\"find packages -mindepth 1 -maxdepth 1 -type d | sed 's#^packages/##' | sort && echo '---' && find packages -maxdepth 2 -type d | sort\",\"description\":\"List packages directory contents\"}" },
+          { "type": "block-end", "index": 1, "block": { "type": "tool-call", "id": "call_00_XlYaTHoKielffCybfcXb9253", "name": "bash", "arguments": "{\"command\":\"find packages -mindepth 1 -maxdepth 1 -type d | sed 's#^packages/##' | sort && echo '---' && find packages -maxdepth 2 -type d | sort\",\"description\":\"List packages directory contents\"}" } },
+          { "type": "usage", "usage": { "inputTokens": 363, "outputTokens": 99, "cacheReadTokens": 8064, "reasoningTokens": 20 } },
+          { "type": "finish", "reason": { "kind": "tool-calls" } }
+        ]
+      }
+    },
+    {
       "at": 2,
       "entry": {
         "kind": "chunks",
