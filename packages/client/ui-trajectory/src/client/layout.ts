@@ -12,6 +12,7 @@ import type {
   ToolCallBlock,
   ToolResultNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
   TrajectoryCellProps,
   TrajectorySourceBlock,
@@ -108,7 +109,7 @@ function layoutEntryOrder(entry: OrderedLayoutEntry): number {
     : entry.seq
 }
 
-function inputCellDetail(node: InputNode): Pick<
+function inputCellDetail(node: InputNode, t: TrajectoryTranslate): Pick<
   TrajectoryCellProps,
   | 'text'
   | 'previewMarkdown'
@@ -120,8 +121,11 @@ function inputCellDetail(node: InputNode): Pick<
   | 'startedAt'
 > {
   const previewMarkdown = previewContent(node.content)
+  const images = imageBlockCount(node.content)
   return {
-    text: '',
+    text: previewMarkdown === undefined && images > 0
+      ? t('layout.imageOnly', { count: images })
+      : '',
     ...(previewMarkdown === undefined ? {} : { previewMarkdown }),
     sourceSeq: node.seq,
     messageSource: node.source,
@@ -368,7 +372,7 @@ export function deriveTrajectoryLayout(
         cell: {
           index: ++index,
           kind: 'user',
-          ...inputCellDetail(node),
+          ...inputCellDetail(node, t),
           opensTurn: true,
         },
       })
@@ -387,7 +391,7 @@ export function deriveTrajectoryLayout(
         cell: {
           index: ++index,
           kind: 'user' as const,
-          ...inputCellDetail(node),
+          ...inputCellDetail(node, t),
         },
       }
       if (placement.step === undefined) pushMessage(placement.turn, laid)
@@ -415,7 +419,7 @@ export function deriveTrajectoryLayout(
         cell: {
           index: ++index,
           kind: 'context',
-          ...inputCellDetail(node),
+          ...inputCellDetail(node, t),
         },
       })
       prevAbsTime = finiteTime(node.time) ?? prevAbsTime
@@ -788,6 +792,8 @@ function summarizeAssistantActivity(
   if (tools.size > 0) {
     return t('layout.toolCallOnly')
   }
+  const images = imageBlockCount(blocks.map(block => ({ type: block.kind })))
+  if (images > 0) return t('layout.imageOnly', { count: images })
   return ''
 }
 
@@ -808,12 +814,7 @@ function assistantSourceBlock(block: AssistantBlock): TrajectorySourceBlock {
       callId: block.callId,
       toolName: block.name,
     }
-    // Attachment refs carry no fetchable bytes, so the record shows the
-    // durable metadata instead of an inline preview.
-    case 'image': return {
-      type: 'image',
-      content: stringifySourceValue(block.attachment),
-    }
+    case 'image': return { type: 'image', content: '', attachment: block.attachment }
     case 'other': return sourceBlock(block.block)
   }
 }
@@ -827,47 +828,16 @@ function sourceBlock(value: unknown): TrajectorySourceBlock {
   if (typeof block.text === 'string') {
     return { type: type === 'reasoning' ? 'thinking' : type, content: block.text }
   }
-  const imageSrc = sourceImage(block)
-  const imageAlt = typeof block.alt === 'string' ? block.alt : undefined
-  return {
-    type,
-    content: imageSrc === undefined ? stringifySourceValue(value) : '',
-    ...(imageSrc !== undefined ? { imageSrc } : {}),
-    ...(imageAlt !== undefined ? { imageAlt } : {}),
+  if (type === 'image' && typeof block.attachment === 'object' && block.attachment !== null) {
+    // Typed content only reaches here as a core ImageBlock; wire-shaped
+    // 'other' blocks never define `attachment`.
+    return { type, content: '', attachment: block.attachment as ImageAttachmentRef }
   }
+  return { type, content: stringifySourceValue(value) }
 }
 
-function sourceImage(block: Record<string, unknown>): string | undefined {
-  if (typeof block.type !== 'string' || !block.type.toLowerCase().includes('image')) return undefined
-  for (const candidate of [block.url, block.image_url]) {
-    if (typeof candidate === 'string') return safeImageSource(candidate)
-  }
-  if (typeof block.data === 'string') {
-    const mediaType = [block.mimeType, block.mediaType, block.media_type]
-      .find((candidate): candidate is string => typeof candidate === 'string')
-      ?? 'image/png'
-    return safeImageSource(
-      block.data.startsWith('data:')
-        ? block.data
-        : `data:${mediaType};base64,${block.data}`,
-    )
-  }
-  if (typeof block.source !== 'object' || block.source === null) return undefined
-  const source = block.source as Record<string, unknown>
-  if (typeof source.url === 'string') return safeImageSource(source.url)
-  if (typeof source.data !== 'string') return undefined
-  const mediaType = typeof source.media_type === 'string' ? source.media_type : 'image/png'
-  return safeImageSource(`data:${mediaType};base64,${source.data}`)
-}
-
-function safeImageSource(value: string): string | undefined {
-  if (value.startsWith('data:image/') || value.startsWith('blob:')) return value
-  try {
-    const protocol = new URL(value).protocol
-    return protocol === 'http:' || protocol === 'https:' ? value : undefined
-  } catch {
-    return undefined
-  }
+function imageBlockCount(content: readonly { type: string }[]): number {
+  return content.filter(block => block.type === 'image').length
 }
 
 function stringifySourceValue(value: unknown): string {
@@ -1087,6 +1057,8 @@ function summarizeResult(
       return { result: '', resultPreviewMarkdown: block.text }
     }
   }
+  const images = imageBlockCount(node.content)
+  if (images > 0) return { result: t('layout.imageOnly', { count: images }) }
   return { result: t('record.noOutput') }
 }
 
@@ -1112,6 +1084,8 @@ function detailResult(node: ToolResultNode, t: TrajectoryTranslate): string {
     .map(block => block.type === 'text' ? block.text : '')
     .join('\n')
   if (text !== '') return text
+  const images = imageBlockCount(node.content)
+  if (images > 0) return t('layout.imageOnly', { count: images })
   if (
     node.content.length === 0
     || node.content.every(block =>
