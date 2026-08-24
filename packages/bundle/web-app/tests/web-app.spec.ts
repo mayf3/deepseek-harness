@@ -216,6 +216,24 @@ describe('web-app runtime glue', () => {
     await ctx.fiber.dispose()
   })
 
+  it('does not publish readiness again when Connection reloads', async () => {
+    stageDist()
+    const ctx = new Context()
+    ctx.provide('webServer', fakeHttpServer().server)
+    const first = ctx.plugin((connectionCtx: Context) => { provideConnection(connectionCtx) })
+    await first
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    apply(ctx, new Config({ openBrowser: false, printUrl: true, surfaceContext: true, trustedHosts: [] }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(log).toHaveBeenCalledTimes(1)
+
+    await first.dispose()
+    await ctx.plugin((connectionCtx: Context) => { provideConnection(connectionCtx) })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(log).toHaveBeenCalledTimes(1)
+    await ctx.fiber.dispose()
+  })
+
   it.each([
     ['SSH_CONNECTION', '10.0.0.2 55000 10.0.0.9 22'],
     ['SSH_TTY', '/dev/pts/3'],

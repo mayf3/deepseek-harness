@@ -33,6 +33,7 @@ export const name = 'web-app'
 
 /** This dsh installation's root, from either this package's source or built entry. */
 const SOURCE_ROOT = fileURLToPath(new URL('../../../..', import.meta.url))
+const ANNOUNCED_ROOTS = new WeakSet<Context>()
 
 /** Runtime service that releases Web rows after bind-dependent values resolve. */
 const WEB_RUNTIME_SERVICE = 'webRuntime'
@@ -266,6 +267,7 @@ export function apply(ctx: Context, config: Config): void {
       // route owner are still mounting. Await Loader settlement first; a
       // hand-built tree without a Loader is already the complete tree.
       const announceReady = (): void => {
+        if (ANNOUNCED_ROOTS.has(connectionCtx.root)) return
         const webUrl = localWebUrl(connectionCtx)
         const authenticatedUrl = connectionCtx.connection.authenticatedUrl(webUrl)
         // Reuse the exact LAN snapshot provided to the /api trust fence.
@@ -274,6 +276,7 @@ export function apply(ctx: Context, config: Config): void {
         const lanUrl = lanCandidate === undefined
           ? undefined
           : connectionCtx.connection.authenticatedUrl(`http://${lanCandidate}:${String(port)}`)
+        ANNOUNCED_ROOTS.add(connectionCtx.root)
         if (config.printUrl) {
           console.log(`dsh web: ${authenticatedUrl}${lanUrl === undefined ? '' : ` (LAN: ${lanUrl})`}`)
         }

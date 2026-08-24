@@ -74,6 +74,14 @@ function credentials(store: RecordCredentials): CredentialProvider {
   return store as unknown as CredentialProvider
 }
 
+function createAuth(
+  store: RecordCredentials,
+  maxAgeDays = 30,
+  processOwner: object = {},
+): Promise<BrowserAuth> {
+  return BrowserAuth.create(processOwner, credentials(store), maxAgeDays)
+}
+
 function request(url: string, authority = '127.0.0.1:3080', init?: {
   cookie?: string
   method?: string
@@ -108,7 +116,8 @@ afterEach(() => {
 describe('BrowserAuth', () => {
   it('mints one process token and a persistent authority-bound cookie', async () => {
     const store = new RecordCredentials()
-    const first = await BrowserAuth.create(credentials(store), 30)
+    const processOwner = {}
+    const first = await createAuth(store, 30, processOwner)
     const login = await exchange(first)
 
     expect(login.state).toMatchObject({
@@ -129,14 +138,33 @@ describe('BrowserAuth', () => {
     expect(await first.isAuthenticated(request('/', 'localhost:3080', { cookie: login.cookie }))).toBe(false)
     expect(await first.isAuthenticated(request('/', '127.0.0.1:3081', { cookie: login.cookie }))).toBe(false)
 
-    const restarted = await BrowserAuth.create(credentials(store), 30)
+    const reloaded = await createAuth(store, 30, processOwner)
+    expect(reloaded.authenticatedUrl('http://127.0.0.1:3080')).toBe(login.launchUrl)
+    expect(await reloaded.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
+
+    const restarted = await createAuth(store)
     expect(new URL(restarted.authenticatedUrl('http://127.0.0.1:3080')).searchParams.get('token'))
       .not.toBe(new URL(login.launchUrl).searchParams.get('token'))
     expect(await restarted.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
+    const staleUrl = new URL(login.launchUrl)
+    const redirected = response()
+    expect(await restarted.authorizeIndex(request(
+      `${staleUrl.pathname}${staleUrl.search}`,
+      '127.0.0.1:3080',
+      { cookie: login.cookie },
+    ), redirected.value)).toBe(false)
+    expect(redirected.state).toEqual({
+      status: 303,
+      headers: {
+        'cache-control': 'no-store',
+        'location': '/',
+        'referrer-policy': 'no-referrer',
+      },
+    })
   })
 
   it('accepts the cookie for index serving and gives every unauthenticated request one response', async () => {
-    const auth = await BrowserAuth.create(credentials(new RecordCredentials()), 30)
+    const auth = await createAuth(new RecordCredentials())
     const { cookie } = await exchange(auth)
     const allowed = response()
     expect(await auth.authorizeIndex(request('/index.html', '127.0.0.1:3080', { cookie }), allowed.value)).toBe(true)
@@ -166,7 +194,7 @@ describe('BrowserAuth', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
     const store = new RecordCredentials()
-    const auth = await BrowserAuth.create(credentials(store), 30)
+    const auth = await createAuth(store)
     const { cookie } = await exchange(auth)
     const [name, value] = cookie.split('=') as [string, string]
 
@@ -194,7 +222,7 @@ describe('BrowserAuth', () => {
       }))).toBe(false)
     }
 
-    const shorter = await BrowserAuth.create(credentials(store), 1)
+    const shorter = await createAuth(store, 1)
     expect(await shorter.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
     vi.setSystemTime(new Date('2026-09-24T00:00:00.000Z'))
     expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
@@ -204,7 +232,7 @@ describe('BrowserAuth', () => {
 
   it('revokes on record deletion and creates a new secret on the next token exchange', async () => {
     const store = new RecordCredentials()
-    const auth = await BrowserAuth.create(credentials(store), 30)
+    const auth = await createAuth(store)
     const first = await exchange(auth)
     await store.deleteRecord()
     expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(false)
@@ -218,21 +246,21 @@ describe('BrowserAuth', () => {
   it('fails loud on an invalid owner record instead of replacing it', async () => {
     const unsupported = new RecordCredentials()
     unsupported.record = { kind: 'api-key', key: 'not-a-cookie-secret' }
-    await expect(BrowserAuth.create(credentials(unsupported), 30)).rejects.toThrow(/unsupported format/u)
+    await expect(createAuth(unsupported)).rejects.toThrow(/unsupported format/u)
 
     const malformed = new RecordCredentials()
     malformed.record = { kind: 'grant', payload: { version: 1, secret: 'short' } }
-    await expect(BrowserAuth.create(credentials(malformed), 30)).rejects.toThrow(/invalid secret/u)
+    await expect(createAuth(malformed)).rejects.toThrow(/invalid secret/u)
 
     const nonString = new RecordCredentials()
     nonString.record = { kind: 'grant', payload: { version: 1, secret: 42 } }
-    await expect(BrowserAuth.create(credentials(nonString), 30)).rejects.toThrow(/invalid secret/u)
+    await expect(createAuth(nonString)).rejects.toThrow(/invalid secret/u)
 
     const discarded = new RecordCredentials()
     discarded.discardWrites = true
-    await expect(BrowserAuth.create(credentials(discarded), 30)).rejects.toThrow(/was not created/u)
+    await expect(createAuth(discarded)).rejects.toThrow(/was not created/u)
 
-    await expect(BrowserAuth.create(credentials(new RecordCredentials()), Number.MAX_SAFE_INTEGER))
+    await expect(createAuth(new RecordCredentials(), Number.MAX_SAFE_INTEGER))
       .rejects.toThrow(/safe timestamp range/u)
   })
 })

@@ -17,6 +17,7 @@ const COOKIE_PREFIX = 'dsh-auth-'
 const COOKIE_PAYLOAD_VERSION = 1
 const STORED_SECRET_VERSION = 1
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]*$/
+const PROCESS_LAUNCH_TOKENS = new WeakMap<object, string>()
 
 interface StoredSecretPayload {
   readonly version: typeof STORED_SECRET_VERSION
@@ -46,6 +47,14 @@ function decodeBase64Url(value: string): Buffer | undefined {
   const padding = '='.repeat((4 - value.length % 4) % 4)
   const decoded = Buffer.from(value.replaceAll('-', '+').replaceAll('_', '/') + padding, 'base64')
   return encodeBase64Url(decoded) === value ? decoded : undefined
+}
+
+function processLaunchToken(owner: object): string {
+  const existing = PROCESS_LAUNCH_TOKENS.get(owner)
+  if (existing !== undefined) return existing
+  const created = encodeBase64Url(randomBytes(SECRET_BYTES))
+  PROCESS_LAUNCH_TOKENS.set(owner, created)
+  return created
 }
 
 function header(
@@ -156,13 +165,15 @@ function decodeCookie(value: string, secret: Buffer): BrowserCookiePayload | und
  * process restart.
  */
 export class BrowserAuth {
-  private readonly launchToken = encodeBase64Url(randomBytes(SECRET_BYTES))
+  private readonly launchToken: string
   private readonly maxAgeMilliseconds: number
 
   private constructor(
+    processOwner: object,
     private readonly credentials: CredentialProvider,
     maxAgeDays: number,
   ) {
+    this.launchToken = processLaunchToken(processOwner)
     this.maxAgeMilliseconds = maxAgeDays * DAY_MILLISECONDS
     if (!Number.isSafeInteger(this.maxAgeMilliseconds)
       || !Number.isSafeInteger(Date.now() + this.maxAgeMilliseconds)) {
@@ -173,12 +184,17 @@ export class BrowserAuth {
   /**
    * Initialize browser authentication and create its durable signing secret
    * when this Harness home has none.
+   * @param processOwner - root application context retaining one token across Connection reloads.
    * @param credentials - persistent credential provider for the Web profile.
    * @param maxAgeDays - positive absolute browser-cookie lifetime in days.
    * @returns initialized authentication owner with a fresh process token.
    */
-  static async create(credentials: CredentialProvider, maxAgeDays: number): Promise<BrowserAuth> {
-    const auth = new BrowserAuth(credentials, maxAgeDays)
+  static async create(
+    processOwner: object,
+    credentials: CredentialProvider,
+    maxAgeDays: number,
+  ): Promise<BrowserAuth> {
+    const auth = new BrowserAuth(processOwner, credentials, maxAgeDays)
     await auth.ensureSecret()
     return auth
   }
@@ -228,6 +244,15 @@ export class BrowserAuth {
           'set-cookie': sessionCookie(
             cookieName(authority), value, expiresAt, Math.floor(this.maxAgeMilliseconds / 1000),
           ),
+        })
+        res.end()
+        return false
+      }
+      if (req.method === 'GET' && url.pathname === '/' && await this.isAuthenticated(req)) {
+        res.writeHead(303, {
+          'cache-control': 'no-store',
+          'location': '/',
+          'referrer-policy': 'no-referrer',
         })
         res.end()
         return false
