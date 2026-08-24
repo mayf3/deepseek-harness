@@ -46,7 +46,7 @@ const dshBin = join(repoRoot, 'apps/cli/src/bin.ts')
 const tsconfigPath = join(repoRoot, 'tsconfig.json')
 const editingCordisSkill = join(
   repoRoot,
-  'apps/cli/config/agent-presets/cordis/skills/editing-cordis-compositions/SKILL.md',
+  'packages/preset/agent-presets/presets/cordis/skills/editing-cordis-compositions/SKILL.md',
 )
 
 type SnapshotMode = 'replay' | 'record' | 'refresh'
