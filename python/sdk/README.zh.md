@@ -63,4 +63,4 @@ with DeepSeekHarness(
 
 所选 home 保存 profile、插件与每个 profile 自有的持久资源。完整 `sdk` profile 使用其中的凭据、设置与会话存储；`sdk-minimal` 只使用自己的 JSONL 会话存储。需要隔离这些资源时应使用新的 home；独立工作应使用新的 session id。同时复用 harness 与 session id 会延续持久对话和会话资源。
 
-另见 [Python 教程](../../docs/user/guide/python-sdk.zh.md)、[`python-sdk-agent` 示例](../../examples/python-sdk-agent/README.zh.md)和[运行时 wheel 参考](../sdk-runtime/README.zh.md)。
+另见 [Python 教程](../../docs/user/guide/python-sdk.zh.md)、[可运行示例](examples/README.zh.md)和[运行时 wheel 参考](../sdk-runtime/README.zh.md)。

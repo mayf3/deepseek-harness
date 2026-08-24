@@ -16,7 +16,7 @@ import { describe, expect, it } from 'vitest'
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const BUILT_BIN = join(REPO_ROOT, 'apps/cli/lib/bin.js')
 const OVERLAY = fileURLToPath(new URL(
-  '../../../examples/web-github-review/tests/fixtures/real-cli/cordis.yml',
+  './fixtures/github-webhook/cordis.yml',
   import.meta.url,
 ))
 const SECRET = 'github-webhook-real-e2e-secret'
