@@ -8,7 +8,6 @@ import type { JsonValue, RpcResponse, SettingsNamespaceView } from '@deepseek-ai
 import {
   ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
-import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
 import {
@@ -328,72 +327,6 @@ describe('ModelsSection', () => {
     expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
     expect(cardSeatCalls(renderSlot).some(([provider]) => provider === 'anthropic')).toBe(false)
   })
-
-  it('persists the default-off subagent model-selection switch for new sessions', async () => {
-    const enabledNamespace: SettingsNamespaceView = {
-      ...wireNamespaces().find(view => view.ns === 'subagent-model-selection')!,
-      value: { enabled: true },
-      user: { enabled: true },
-      revision: 5,
-    }
-    const update = vi.fn(() => Promise.resolve(remoteOk(enabledNamespace)))
-    await mountSection({ update })
-
-    const toggle = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
-    expect(toggle.getAttribute('aria-checked')).toBe('false')
-    fireEvent.click(toggle)
-
-    await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
-    expect(update).toHaveBeenCalledWith(
-      'subagent-model-selection',
-      { enabled: true },
-      4,
-    )
-    expect(screen.getByRole('status').textContent).toBe(en.subagentModelSelectionSaved)
-  })
-
-  it('reports rejected subagent model-selection updates and permits a retry', async () => {
-    const update = vi.fn()
-      .mockResolvedValueOnce(remoteFail('revision changed', 'settings-rejected'))
-      .mockResolvedValueOnce(remoteOk({
-        ...wireNamespaces().find(view => view.ns === 'subagent-model-selection')!,
-        value: { enabled: true },
-        revision: 5,
-      }))
-    await mountSection({ update })
-
-    const toggle = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
-    fireEvent.click(toggle)
-    expect((await screen.findByRole('alert')).textContent).toBe('revision changed')
-
-    fireEvent.click(toggle)
-    await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
-    expect(screen.queryByRole('alert')).toBeNull()
-  })
-
-  it('keeps malformed and read-only subagent preferences off', () => {
-    const namespace = {
-      ...wireNamespaces().find(view => view.ns === 'subagent-model-selection')!,
-      value: null,
-    } as unknown as SettingsNamespaceView
-    const mutate = vi.fn()
-    render(
-      <SubagentModelSelectionCard
-        namespace={namespace}
-        writable={false}
-        api={{ settings: { mutate } } as never}
-        controller={{ acceptNamespace: vi.fn(), load: vi.fn() } as never}
-        t={t}
-      />,
-    )
-
-    const toggle = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
-    expect(toggle.getAttribute('aria-checked')).toBe('false')
-    expect((toggle as HTMLButtonElement).disabled).toBe(true)
-    fireEvent.click(toggle)
-    expect(mutate).not.toHaveBeenCalled()
-  })
-
   it('renders the unkeyed whole-section provider as an open setup card in the first-run posture', async () => {
     await mountFirstRun()
     // Nothing is reachable yet, and DeepSeek has no configured credential and

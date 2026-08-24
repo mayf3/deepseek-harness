@@ -12,6 +12,8 @@ import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx
 import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
+import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
+import type { SubagentModelSelectionCardProps } from '../src/client/SubagentModelSelectionCard.tsx'
 import { WebSearchCard } from '../src/client/WebSearchCard.tsx'
 import type { WebSearchCardProps } from '../src/client/WebSearchCard.tsx'
 import type { AgentLoopCardState } from '../src/client/agent-loop-card-controller.ts'
@@ -19,6 +21,7 @@ import type { BashCardState } from '../src/client/bash-card-controller.ts'
 import type { CardFieldState, CardShell } from '../src/client/card-form.ts'
 import type { ConfigurablePluginsTabState } from '../src/client/tab-store.ts'
 import type { WebSearchCardState } from '../src/client/web-search-card-controller.ts'
+import type { SubagentModelSelectionCardState } from '../src/client/subagent-model-selection-card-controller.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -77,6 +80,26 @@ function renderBash(state: Partial<BashCardState> = {}) {
   const props = { ...actions, t, useBashCard: bindSnapshotSelector(store) } as unknown as BashCardProps
   render(<BashCard {...props} />)
   return actions
+}
+
+function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardState> = {}) {
+  const store = createSnapshotStore<SubagentModelSelectionCardState>({
+    available: true,
+    writable: true,
+    enabled: false,
+    saving: false,
+    saved: false,
+    failed: false,
+    ...state,
+  })
+  const toggle = vi.fn()
+  const props = {
+    t,
+    toggle,
+    useSubagentModelSelectionCard: bindSnapshotSelector(store),
+  } as unknown as SubagentModelSelectionCardProps
+  render(<SubagentModelSelectionCard {...props} />)
+  return toggle
 }
 
 describe('PluginsSettingsSection', () => {
@@ -291,6 +314,40 @@ describe('BashCard', () => {
     fireEvent.click(screen.getByText(en.bashTitle))
 
     expect(screen.queryByLabelText(en.bashTimeoutMs)).toBeNull()
+  })
+})
+
+describe('SubagentModelSelectionCard', () => {
+  it('renders the default-off preference directly in the Plugins list', () => {
+    const toggle = renderSubagentModelSelection()
+
+    const control = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
+    expect(control.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(control)
+
+    expect(toggle).toHaveBeenCalledOnce()
+  })
+
+  it('reports successful and rejected writes', () => {
+    renderSubagentModelSelection({ enabled: true, saved: true })
+    expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+    expect(screen.getByRole('status').textContent).toBe(en.subagentModelSelectionSaved)
+
+    cleanup()
+    renderSubagentModelSelection({ failed: true })
+    expect(screen.getByRole('alert').textContent).toBe(en.subagentModelSelectionSaveFailed)
+  })
+
+  it('stays hidden when unavailable and disables writes when read-only', () => {
+    renderSubagentModelSelection({ available: false })
+    expect(screen.queryByText(en.subagentModelSelectionTitle)).toBeNull()
+
+    cleanup()
+    const toggle = renderSubagentModelSelection({ writable: false })
+    const control = screen.getByRole('switch') as HTMLButtonElement
+    expect(control.disabled).toBe(true)
+    fireEvent.click(control)
+    expect(toggle).not.toHaveBeenCalled()
   })
 })
 

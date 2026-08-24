@@ -470,7 +470,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(ToolSubagent, { provider: 'mock', enableModelSelection: true })
     },
     note:
-      'The registered delegation name is the load-time `toolName` config (default `subagent`); the schema above shows static model selection enabled for reference. Model selection defaults off. Web presets sample the default-off Models preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Explicit compositions may instead use static `enableModelSelection`. Each instance independently controls model selection, discovery ownership, and background behavior through `enableModelSelection`, `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
+      'The registered delegation name is the load-time `toolName` config (default `subagent`); the schema above shows static model selection enabled for reference. Model selection defaults off. Web presets sample the default-off Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Explicit compositions may instead use static `enableModelSelection`. Each instance independently controls model selection, discovery ownership, and background behavior through `enableModelSelection`, `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-control',

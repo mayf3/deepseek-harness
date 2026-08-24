@@ -18,7 +18,7 @@ Status: implemented
 
 显式或配置的提供方、模型或强度会在提供方基线与请求优先级完成后，通过 `ctx.llm.resolveCallConfig()` 解析。具有静态路由默认值的提供方会在请求省略强度时禁止继承父级强度，从而保留所选模型的默认值。LLM 查询负责提供方注册、精确模型元数据、推理强度校验和 adapter 默认值。异步查询完成后、创建子级或后台 job 之前，工具会再次检查取消状态，并确认同一个提供方实例仍处于注册状态，因此 HMR 不会把一个提供方的默认值与另一个提供方的进程组合。既没有面向模型的选择、也没有配置路由字段的调用会保留原有提供方路径，不要求可选 LLM 服务存在。
 
-启用的定义会注册 `list_subagent_models`。无参数调用列出已注册提供方；提供 `provider` 时调用该适配器的建议性模型目录；同时提供 `provider` 与 `model` 时解析精确模型，并返回其推理强度和默认值。因为发现工具使用全局名称，一个工具作用域最多由一个实例启用选择。随附产品组合在 Agent 作用域的主 `subagent` 实例上设置 `modelSelectionSettings: true`，并注册默认 `enabled: false` 的 Host 自有 `subagent-model-selection` settings namespace。新的顶层 Session 会在组合期间读取该偏好，并在任何模型请求之前把启用决定记录为 `subagent/model-selection-enabled`。子 Session 继承在线父级的决定；恢复的 Session 使用已有标记，而不是当前偏好。因此，设置修改只影响之后组合的顶层 Session。即使缺少可选 LLM 服务，固定发现定义仍保持可用；发现调用和所选路由调用会在该服务出现前失败。只要适配器接受某个未列出的模型 ID，仍可选择该模型。
+启用的定义会注册 `list_subagent_models`。无参数调用列出已注册提供方；提供 `provider` 时调用该适配器的建议性模型目录；同时提供 `provider` 与 `model` 时解析精确模型，并返回其推理强度和默认值。因为发现工具使用全局名称，一个工具作用域最多由一个实例启用选择。随附产品组合在 Agent 作用域的主 `subagent` 实例上设置 `modelSelectionSettings: true`，并注册默认 `enabled: false` 的 Host 自有 `subagent-model-selection` settings namespace。插件设置页将该命名空间显示为直接开关。新的顶层 Session 会在组合期间读取该偏好，并在任何模型请求之前把启用决定记录为 `subagent/model-selection-enabled`。子 Session 继承在线父级的决定；恢复的 Session 使用已有标记，而不是当前偏好。因此，设置修改只影响之后组合的顶层 Session。即使缺少可选 LLM 服务，固定发现定义仍保持可用；发现调用和所选路由调用会在该服务出现前失败。只要适配器接受某个未列出的模型 ID，仍可选择该模型。
 
 随附的 `subagent_fork` 实例不会启用 `enableModelSelection`，即使进程内 fork 提供方支持 `agentOptions` 也是如此。fork 会继承父级生效的提供方与模型，使复制的对话前缀仍可供提供方侧 KV Cache 复用。更改任一路由组件都会要求新路由重新预填充继承的历史，而这项重算成本可能超过委派任务本身。该限制与发现工具的全局名称无关：分离发现工具的持有权可以让配置生效，却无法保留复用。只有在路由变化仍能保留前缀复用，或调用方可以显式限制并接受重算成本时，才重新考虑 fork 路由选择。
 

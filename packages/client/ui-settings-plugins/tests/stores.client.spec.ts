@@ -12,6 +12,9 @@ import {
   SettingsDescribeMirror, type SettingsMirrorSnapshot,
 } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ConfigurablePluginsTabController } from '../src/client/tab-store.ts'
+import {
+  SubagentModelSelectionCardController, type SubagentModelSelectionSettings,
+} from '../src/client/subagent-model-selection-card-controller.ts'
 import { WebSearchCardController, type WebSearchSettings } from '../src/client/web-search-card-controller.ts'
 
 /** Make the stub behave like a Host that accepts every write. */
@@ -380,6 +383,86 @@ describe('AgentLoopCardController', () => {
     host.publish({ status: 'ready', writable: false, value: { maxParallelToolCalls: 10 } })
 
     expect(controller.inject().hooks.agentLoopCard.getSnapshot().writable).toBe(false)
+  })
+})
+
+describe('SubagentModelSelectionCardController', () => {
+  it('immediately writes a switch gesture and reports the accepted value', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    acceptWrites(host)
+    const controller = new SubagentModelSelectionCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: { enabled: false }, user: {} })
+    const face = controller.inject()
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot().enabled).toBe(false)
+    face.toggle()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('enabled', true) })
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      enabled: true,
+      saving: false,
+      saved: true,
+      failed: false,
+    })
+  })
+
+  it('keeps the Host value and reports a rejected write', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const controller = new SubagentModelSelectionCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: { enabled: false }, user: {} })
+    const face = controller.inject()
+
+    face.toggle()
+    await vi.waitFor(() => {
+      expect(face.hooks.subagentModelSelectionCard.getSnapshot().failed).toBe(true)
+    })
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      enabled: false,
+      saving: false,
+      saved: false,
+    })
+  })
+
+  it('ignores writes while read-only and scope notifications after disposal', () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const controller = new SubagentModelSelectionCardController(host.scope)
+    host.publish({ status: 'ready', writable: false, value: { enabled: false }, user: {} })
+    const face = controller.inject()
+
+    face.toggle()
+    expect(host.set).not.toHaveBeenCalled()
+
+    controller.dispose()
+    face.toggle()
+    host.publish({ value: { enabled: true } })
+    expect(host.set).not.toHaveBeenCalled()
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot().enabled).toBe(false)
+  })
+
+  it('publishes no settlement after disposal interrupts an in-flight write', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    let settle = (): void => {}
+    const pending = new Promise<void>((resolve) => { settle = () => { resolve() } })
+    host.set.mockReturnValue(pending)
+    const controller = new SubagentModelSelectionCardController(host.scope)
+    host.publish({ status: 'ready', writable: true, value: { enabled: false }, user: {} })
+    const face = controller.inject()
+
+    face.toggle()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('enabled', true) })
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot().saving).toBe(true)
+
+    controller.dispose()
+    settle()
+    await Promise.resolve()
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      enabled: false,
+      saving: true,
+      saved: false,
+      failed: false,
+    })
   })
 })
 

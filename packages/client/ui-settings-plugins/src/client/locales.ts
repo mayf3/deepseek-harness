@@ -11,6 +11,8 @@ export type PluginsSettingsLocaleKey =
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
+  | 'subagentModelSelectionTitle' | 'subagentModelSelectionDescription'
+  | 'subagentModelSelectionToggle' | 'subagentModelSelectionSaved' | 'subagentModelSelectionSaveFailed'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -51,6 +53,11 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  subagentModelSelectionTitle: 'Subagent model selection',
+  subagentModelSelectionDescription: 'Allow new sessions to choose a provider, model, and reasoning effort for subagents. Running sessions do not change.',
+  subagentModelSelectionToggle: 'Allow subagents to choose models',
+  subagentModelSelectionSaved: 'Saved. New sessions use this setting.',
+  subagentModelSelectionSaveFailed: 'The setting could not be saved. Try again.',
 }
 
 /** Simplified Chinese copy. */
@@ -92,4 +99,9 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  subagentModelSelectionTitle: 'Subagent 自选模型',
+  subagentModelSelectionDescription: '允许新会话为 subagent 选择提供方、模型和推理强度。运行中的会话不会改变。',
+  subagentModelSelectionToggle: '允许 subagent 自选模型',
+  subagentModelSelectionSaved: '已保存，新会话将使用此设置。',
+  subagentModelSelectionSaveFailed: '设置保存失败，请重试。',
 }

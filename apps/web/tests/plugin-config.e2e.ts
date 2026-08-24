@@ -75,8 +75,10 @@ describe('web e2e: plugin configuration section', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-cards'))
     const dialog = await openPlugins()
 
-    // Every card the shipped web composition exposes: the shell executor, the
-    // agent loop, and the DeepSeek search provider.
+    // Every card the shipped web composition exposes: subagent selection, the
+    // shell executor, the agent loop, and the DeepSeek search provider.
+    await dialog.getByText('Subagent 自选模型', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await dialog.getByRole('switch', { name: '允许 subagent 自选模型' }).getAttribute('aria-checked')).toBe('false')
     await dialog.getByText('终端', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByText('Agent 循环', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('网页搜索', { exact: true }).count()).toBe(1)
@@ -85,6 +87,21 @@ describe('web e2e: plugin configuration section', () => {
 
     const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SECTION_EXPECTED, snapshot, MODE)
+    expect(tripwire.pageErrors).toEqual([])
+  }, 60_000)
+
+  it('immediately persists the subagent model-selection preference', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-subagent-model-selection'))
+    const dialog = await openPlugins()
+    const toggle = dialog.getByRole('switch', { name: '允许 subagent 自选模型' })
+
+    await toggle.click()
+
+    await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(async () => (await settingsDocument()).includes('subagent-model-selection:'), { timeout: 10_000 })
+      .toBe(true)
+    expect(await settingsDocument()).toContain('enabled: true')
+    expect(await dialog.getByRole('status').textContent()).toBe('已保存，新会话将使用此设置。')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
