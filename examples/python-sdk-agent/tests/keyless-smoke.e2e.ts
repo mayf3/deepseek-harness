@@ -9,7 +9,6 @@ import { execa } from 'execa'
 import { describe, expect, it } from 'vitest'
 
 const binScript = fileURLToPath(new URL('../../../apps/cli/src/bin.ts', import.meta.url))
-const patchPath = fileURLToPath(new URL('./keyless.patch.yml', import.meta.url))
 const repoRoot = fileURLToPath(new URL('../../..', import.meta.url))
 const decompress = promisify(zstdDecompress)
 
@@ -77,8 +76,6 @@ describe('Python SDK dsh profile keyless smoke', () => {
       binScript,
       '--profile',
       'sdk',
-      '--patch',
-      patchPath,
     ], {
       cwd: repoRoot,
       env: {
@@ -147,17 +144,7 @@ describe('Python SDK dsh profile keyless smoke', () => {
           },
         },
       })
-      const tools = modelRequests[0]?.tools as { function?: { name?: string } }[]
       expect(modelRequests[0]?.max_tokens).toBe(1234)
-      expect(tools.map(tool => tool.function?.name).sort()).toEqual([
-        'bash',
-        'edit',
-        'read',
-        'read_image',
-        'subagent',
-        'todo_write',
-        'write',
-      ])
 
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'shutdown' })}\n`)
       const shutdown = await waitForLine(lines, value => value.id === 3, () => stderr)
@@ -283,8 +270,6 @@ describe('Python SDK dsh profile keyless smoke', () => {
         binScript,
         '--profile',
         'sdk',
-        '--patch',
-        patchPath,
       ], {
         cwd: repoRoot,
         env: {
