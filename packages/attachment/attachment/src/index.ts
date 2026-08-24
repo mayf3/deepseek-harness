@@ -4,7 +4,6 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentError } from './error.ts'
 import type {
   ImageAttachmentLimits,
-  ImageAttachmentAccess,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
@@ -19,7 +18,6 @@ export { admitEncodedImages } from './admission.ts'
 export type {
   AttachmentId as AttachmentIdType,
   EncodedImageAttachment,
-  ImageAttachmentAccess,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
@@ -110,12 +108,12 @@ export abstract class AttachmentStore extends Service {
   abstract readImage(ref: ImageAttachmentRef, signal?: AbortSignal): Promise<StoredImageAttachment>
 
   /**
-   * Resolve provider-specific model-tool access without adding host facts to session history.
+   * Locate the provider-owned normalized object in the harness host filesystem.
    * @param ref - durable normalized attachment reference.
-   * @returns current-provider access facts, or undefined when this backend exposes no local path.
+   * @returns an absolute host path, or undefined when this backend is not host-file-backed.
    * @throws an AttachmentError when the durable reference is invalid.
    */
-  imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess | undefined {
+  imageHostPath(ref: ImageAttachmentRef): string | undefined {
     void ref
     return undefined
   }

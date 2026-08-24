@@ -2,8 +2,42 @@
 
 import type { ContentBlock } from './types.ts'
 import type { Message } from './message.ts'
-import type { ImageAttachmentAccess, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { assertNever } from './never.ts'
+
+/** Execution-world path that model tools can use to read one normalized attachment. */
+export interface ImageAttachmentAccess {
+  /** Absolute path to immutable normalized bytes; callers must treat it as read-only. */
+  readonlyPath: string
+}
+
+/**
+ * Resolve current execution-world access for one durable image reference.
+ * @param ref - durable normalized attachment reference.
+ * @returns a read-only execution-world path, or undefined when unavailable.
+ */
+export type ImageAttachmentAccessResolver = (ref: ImageAttachmentRef) => ImageAttachmentAccess | undefined
+
+/**
+ * Bridge one attachment provider's host object location into the mounted
+ * tool execution world. The consumer supplies the current filesystem
+ * provider's mapping without making attachment or LLM definitions depend on it.
+ * @param attachments - provider that owns the normalized attachment object.
+ * @param mapHostPath - map one absolute host path into the current tool execution world.
+ * @param ref - durable normalized attachment reference.
+ * @returns a read-only execution-world path, or undefined when either provider exposes no mapping.
+ * @throws an attachment error when the durable reference is invalid.
+ */
+export function resolveImageAttachmentAccess(
+  attachments: AttachmentStore,
+  mapHostPath: (hostPath: string) => string | undefined,
+  ref: ImageAttachmentRef,
+): ImageAttachmentAccess | undefined {
+  const hostPath = attachments.imageHostPath(ref)
+  if (hostPath === undefined) return undefined
+  const readonlyPath = mapHostPath(hostPath)
+  return readonlyPath === undefined ? undefined : { readonlyPath }
+}
 
 function quoted(value: string): string {
   return JSON.stringify(value)
@@ -48,13 +82,18 @@ export function textOnlyImageText(ref: ImageAttachmentRef): string {
  * names differ.
  * @param ref - the occurrence's durable normalized attachment.
  * @param version - exact request image shown beside the text.
+ * @param access - optional path resolved for the current tool execution world.
  * @returns attachment handle and request-image dimensions.
  */
-export function requestImageHandleText(ref: ImageAttachmentRef, version: RequestImageAttachment): string {
+export function requestImageHandleText(
+  ref: ImageAttachmentRef,
+  version: RequestImageAttachment,
+  access?: ImageAttachmentAccess,
+): string {
   const preview = `Image ${imageIdentity(ref)}; request preview ${version.width}x${version.height}px.`
-  return version.access === undefined
+  return access === undefined
     ? `${preview} It may be resized or re-encoded; source dimensions, format, and byte size may differ.`
-    : preview + normalizedAccessText(ref, version.access)
+    : preview + normalizedAccessText(ref, access)
 }
 
 /**

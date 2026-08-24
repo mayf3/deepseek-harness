@@ -12,6 +12,7 @@ import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isCo
 import type {
   ContentBlock,
   GenerateOptions,
+  ImageAttachmentAccess,
   LlmModelInfo,
   LlmProviderInfo,
   PreparedAdapterCall,
@@ -125,6 +126,8 @@ export interface DeepSeekAdapterOptions {
   resolveUserId: () => AnonymousUserId
   /** Resolve the current durable attachment service; absence rejects image input. */
   resolveAttachments?: () => AttachmentStore | undefined
+  /** Bridge one attachment reference into the current model-tool execution world. */
+  resolveImageAccess?: (attachments: AttachmentStore, ref: ImageAttachmentRef) => ImageAttachmentAccess | undefined
   /** Resolve the process-wide upload reuse store. */
   resolveFiles?: () => DeepSeekFileStore
   /** Prepare the official API's plugin-contributed top-level fields for one exact wire request. */
@@ -538,6 +541,10 @@ export class DeepSeekAdapter extends LlmAdapter {
     const fileConnection = { baseURL: connection.baseURL, apiKey }
     const model = connection.models.find(entry => entry.id === options.model)
     const policy = model === undefined ? undefined : resolveRequestImagePolicy(model)
+    const resolveImageAccess = attachments === undefined
+      ? undefined
+      : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
+    const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
     const requestMessages = policy === undefined ? options.messages : offloadRequestImagesWithPolicy(options.messages, {
       representation: 'raw',
       maxBytes: connection.maxRequestFilesBytes,
@@ -545,7 +552,7 @@ export class DeepSeekAdapter extends LlmAdapter {
       byteQuantum: connection.imageOffloadByteQuantum,
       countQuantum: connection.imageOffloadCountQuantum,
       byteLength: ref => Math.min(ref.bytes, policy.maxBytes),
-      placeholder: ref => offloadedImageText(ref, attachments?.imageAccess(ref)),
+      placeholder: ref => offloadedImageText(ref, resolveImageAccess?.(ref)),
     })
     const requestOptions = requestMessages === options.messages ? options : { ...options, messages: [...requestMessages] }
     const requestImages = attachments === undefined || model === undefined
@@ -562,6 +569,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         body = await serializeRequestWithImages(requestOptions, {
           representation: { kind: 'base64' },
           requestImages,
+          ...imageAccessOptions,
           maxRequestImageBytes: connection.maxInlineRequestImageBytes,
           maxImagesPerRequest: connection.maxImagesPerRequest,
           byteQuantum: connection.inlineImageOffloadByteQuantum,
@@ -592,6 +600,7 @@ export class DeepSeekAdapter extends LlmAdapter {
               },
             },
             requestImages,
+            ...imageAccessOptions,
             maxRequestImageBytes: connection.maxRequestFilesBytes,
             maxImagesPerRequest: connection.maxImagesPerRequest,
             byteQuantum: connection.imageOffloadByteQuantum,

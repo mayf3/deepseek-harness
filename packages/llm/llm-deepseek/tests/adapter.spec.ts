@@ -109,7 +109,7 @@ function attachmentStoreOf(
 } {
   const readImageRequest = vi.fn(project)
   return {
-    store: { readImageRequest, imageAccess: () => undefined } as unknown as AttachmentStore,
+    store: { readImageRequest, imageHostPath: () => undefined } as unknown as AttachmentStore,
     readImageRequest,
   }
 }

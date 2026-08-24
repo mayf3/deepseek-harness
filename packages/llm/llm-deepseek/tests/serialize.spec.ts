@@ -57,7 +57,7 @@ function imageOptions(
   refs: readonly ImageAttachmentRef[],
   resolveFileId: FileResolver = fileResolver(),
   maxRequestImageBytes = 20 * 1024 * 1024,
-) {
+): ImageSerializationOptions {
   return {
     representation: { kind: 'file' as const, resolveFileId },
     requestImages: new Map(refs.map(ref => [ref.attachmentId, requestVersion(ref)])),
@@ -426,7 +426,7 @@ describe('image serialization', () => {
     const version = images.requestImages.get(ref.attachmentId) as RequestImageAttachment
     version.width = 1130
     version.height = 565
-    version.access = { readonlyPath: '/tmp/dsh/objects/aa/object' }
+    images.resolveImageAccess = () => ({ readonlyPath: '/tmp/dsh/objects/aa/object' })
     const wire = await serializeRequestWithImages(request({
       model: 'deepseek-v4-flash-vision-exp',
       messages: [createUserMessage({
@@ -594,8 +594,9 @@ describe('image serialization', () => {
     const png = imageRef('image/png', 3)
     const jpeg = imageRef('image/jpeg', 3)
     const images = imageOptions([png, jpeg], resolveFileId, 4)
-    const pngVersion = images.requestImages.get(png.attachmentId) as RequestImageAttachment
-    pngVersion.access = { readonlyPath: '/tmp/dsh/objects/png' }
+    images.resolveImageAccess = ref => ref.mediaType === 'image/png'
+      ? { readonlyPath: '/tmp/dsh/objects/png' }
+      : undefined
     const wire = await serializeRequestWithImages(request({
       model: 'deepseek-v4-flash-vision-exp',
       messages: [createUserMessage({

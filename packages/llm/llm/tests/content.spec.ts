@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
-import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import {
   CallId,
   createUserMessage,
   offloadedImageText,
   offloadRequestImagesWithPolicy,
   projectImagesForTextModel,
+  resolveImageAttachmentAccess,
   requestImageHandleText,
 } from '../src/index.ts'
 import type { ContentBlock, Message } from '../src/index.ts'
@@ -186,10 +187,10 @@ describe('model-facing image access', () => {
       height: 1536,
       name: 'source "map".png',
     }
+    const access = { readonlyPath: '/tmp/.dsh/attachments/v1/objects/bb/object' }
     const version = {
       variantId: ImageVariantId(`sha256:${'c'.repeat(64)}`),
       attachment,
-      access: { readonlyPath: '/tmp/.dsh/attachments/v1/objects/bb/object' },
       data: Uint8Array.of(1),
       mediaType: 'image/png' as const,
       bytes: 1,
@@ -199,12 +200,37 @@ describe('model-facing image access', () => {
       space: 'srgb' as const,
       hasAlpha: true,
     }
-    expect(requestImageHandleText(attachment, version)).toBe(
+    expect(requestImageHandleText(attachment, version, access)).toBe(
       `Image "source \\"map\\".png" (${attachment.attachmentId}); request preview 923x692px.`
       + ' Normalized copy (read-only; may be resized or re-encoded): "/tmp/.dsh/attachments/v1/objects/bb/object" (2048x1536px, image/png).'
       + ' Source dimensions, format, and byte size may differ.'
       + ' Copy to a writable path ending in .png before editing.',
     )
+  })
+
+  it('bridges a provider host object only through the mounted filesystem mapping', () => {
+    const attachment = image(1).attachment
+    const attachments = {
+      imageHostPath: () => '/host/.dsh/attachments/object',
+    } as unknown as AttachmentStore
+    const mapped = (hostPath: string): string | undefined => hostPath === '/host/.dsh/attachments/object'
+      ? '/workspace/.attachments/object'
+      : undefined
+    expect(resolveImageAttachmentAccess(
+      attachments,
+      mapped,
+      attachment,
+    )).toEqual({ readonlyPath: '/workspace/.attachments/object' })
+    expect(resolveImageAttachmentAccess(
+      attachments,
+      () => undefined,
+      attachment,
+    )).toBeUndefined()
+    expect(resolveImageAttachmentAccess(
+      { imageHostPath: () => undefined } as unknown as AttachmentStore,
+      mapped,
+      attachment,
+    )).toBeUndefined()
   })
 
   it('names each occurrence from its own reference when one prepared version is shared', () => {

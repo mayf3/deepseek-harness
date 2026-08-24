@@ -9,6 +9,7 @@ import type {
 import { CallId, createMessage, createUserMessage, offloadedImageText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { toPiContext } from '../src/context.ts'
+import type { PiImageRequestContext } from '../src/context.ts'
 import { toPiAssistant } from '../src/replay.ts'
 
 const ref: ImageAttachmentRef = {
@@ -43,10 +44,17 @@ function projectionStore(
     Promise.resolve(requestImage(value, Uint8Array.of(1)))
   )),
 ): AttachmentStore {
-  return { readImageRequest, imageAccess: () => undefined } as unknown as AttachmentStore
+  return { readImageRequest, imageHostPath: () => undefined } as unknown as AttachmentStore
 }
 
 const attachments = projectionStore()
+
+function imageContext(
+  store: AttachmentStore,
+  overrides: Partial<Omit<PiImageRequestContext, 'attachments'>> = {},
+): PiImageRequestContext {
+  return { attachments: store, resolveImageAccess: () => undefined, ...overrides }
+}
 
 function request(messages: GenerateOptions['messages']): GenerateOptions {
   return {
@@ -138,7 +146,7 @@ describe('pi-ai request context conversion', () => {
           { type: 'image', attachment: ref },
         ],
       }]),
-    ]), attachments)
+    ]), imageContext(attachments))
 
     expect(context.messages).toEqual([
       { role: 'user', content: '', timestamp: 0 },
@@ -180,9 +188,10 @@ describe('pi-ai request context conversion', () => {
       ...requestImage(value, Uint8Array.of(1)),
       width: 1130,
       height: 565,
-      access: { readonlyPath: '/tmp/dsh/objects/aa/object' },
     }))
-    const context = await toPiContext(request([user([{ type: 'image', attachment: named }])]), store)
+    const context = await toPiContext(request([user([{ type: 'image', attachment: named }])]), imageContext(store, {
+      resolveImageAccess: () => ({ readonlyPath: '/tmp/dsh/objects/aa/object' }),
+    }))
     expect(context.messages[0]).toMatchObject({
       role: 'user',
       content: [
@@ -211,7 +220,7 @@ describe('pi-ai request context conversion', () => {
           content: [{ type: 'image', attachment: ref }],
         },
       ],
-    }])]), attachments)
+    }])]), imageContext(attachments))
 
     expect(context.messages).toEqual([{
       role: 'toolResult',
@@ -265,7 +274,7 @@ describe('pi-ai request context conversion', () => {
       }]),
       user([{ type: 'image', attachment: sized }, { type: 'text', text: 'newer' }]),
       user([{ type: 'image', attachment: sized }]),
-    ]), store, undefined, 8)
+    ]), imageContext(store, { maxRequestImageBytes: 8 }))
 
     expect(context.messages).toEqual([
       {
@@ -308,7 +317,7 @@ describe('pi-ai request context conversion', () => {
     const context = await toPiContext(request([user([
       { type: 'image', attachment: old },
       { type: 'image', attachment: recent },
-    ])]), projectionStore(readImageRequest), undefined, 4)
+    ])]), imageContext(projectionStore(readImageRequest), { maxRequestImageBytes: 4 }))
 
     expect(context.messages[0]).toMatchObject({
       role: 'user',
@@ -322,17 +331,19 @@ describe('pi-ai request context conversion', () => {
     expect(readImageRequest.mock.calls[0]?.[0]).toEqual(recent)
   })
 
-  it('uses the generated request access when exact encoded bytes require offload', async () => {
+  it('uses independently resolved access when exact encoded bytes require offload', async () => {
     const sized: ImageAttachmentRef = { ...ref, bytes: 3 }
     const access = { readonlyPath: '/tmp/dsh-normalized-image' }
     const readImageRequest = vi.fn((value: ImageAttachmentRef) => Promise.resolve({
       ...requestImage(value, Uint8Array.of(1, 2, 3, 4)),
-      access,
     }))
 
     const context = await toPiContext(request([
       user([{ type: 'image', attachment: sized }]),
-    ]), projectionStore(readImageRequest), undefined, 4)
+    ]), imageContext(projectionStore(readImageRequest), {
+      maxRequestImageBytes: 4,
+      resolveImageAccess: () => access,
+    }))
 
     expect(context.messages).toEqual([{
       role: 'user',
@@ -347,7 +358,7 @@ describe('pi-ai request context conversion', () => {
     const exact = await toPiContext(request([
       user([{ type: 'image', attachment: sized }]),
       user([{ type: 'image', attachment: sized }]),
-    ]), attachments, undefined, 8)
+    ]), imageContext(attachments, { maxRequestImageBytes: 8 }))
     expect(exact.messages).toEqual([
       {
         role: 'user',
@@ -367,7 +378,7 @@ describe('pi-ai request context conversion', () => {
     const store = projectionStore(readImageRequest)
     const oversized = await toPiContext(request([
       user([{ type: 'image', attachment: { ...ref, bytes: 300 } }]),
-    ]), store, undefined, 8)
+    ]), imageContext(store, { maxRequestImageBytes: 8 }))
     // All-text content collapses to the string form; the placeholder still reaches the model.
     expect(oversized.messages).toEqual([
       { role: 'user', content: offloadedImageText({ ...ref, bytes: 300 }), timestamp: 0 },
@@ -382,11 +393,14 @@ describe('pi-ai request context conversion', () => {
       Promise.resolve(requestImage(value, Uint8Array.of(1, 2, 3)))
     ))
     const store = projectionStore(readImageRequest)
-    const aliased = await toPiContext(request([user([shared, shared])]), store, undefined, 4)
+    const aliased = await toPiContext(
+      request([user([shared, shared])]),
+      imageContext(store, { maxRequestImageBytes: 4 }),
+    )
     const replayed = await toPiContext(request([user([
       { type: 'image', attachment: { ...sized } },
       { type: 'image', attachment: { ...sized } },
-    ])]), store, undefined, 4)
+    ])]), imageContext(store, { maxRequestImageBytes: 4 }))
 
     const expected = [{
       role: 'user',
@@ -430,7 +444,7 @@ describe('pi-ai request context conversion', () => {
       const store = projectionStore(readImageRequest)
       await expect(toPiContext(request([
         history(role, [{ type: 'image', attachment: ref }]),
-      ]), store, undefined, 1)).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
+      ]), imageContext(store, { maxRequestImageBytes: 1 }))).rejects.toMatchObject({ code: 'UNSUPPORTED_CONTENT' })
       expect(readImageRequest).not.toHaveBeenCalled()
     }
 
@@ -438,7 +452,7 @@ describe('pi-ai request context conversion', () => {
       history('system', [{ type: 'text', text: 'history system' }]),
       history('assistant', [{ type: 'text', text: 'answer' }]),
       user([{ type: 'text', text: 'plain' }]),
-    ]), attachments)).resolves.toMatchObject({
+    ]), imageContext(attachments))).resolves.toMatchObject({
       messages: [
         { role: 'user', content: 'history system' },
         { role: 'assistant' },

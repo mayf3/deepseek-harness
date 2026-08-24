@@ -1,6 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import { existsSync } from 'node:fs'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -46,8 +45,13 @@ describe('local attachment service', () => {
       width: 1,
       height: 1,
     }
-    expect(service.imageAccess(ref)).toBeUndefined()
-    expect(() => service.imageAccess({ ...ref, attachmentId: AttachmentId('invalid') }))
+    expect(service.imageHostPath(ref)).toBe(join(
+      service.root,
+      'objects',
+      'aa',
+      'a'.repeat(64),
+    ))
+    expect(() => service.imageHostPath({ ...ref, attachmentId: AttachmentId('invalid') }))
       .toThrow(expect.objectContaining({ code: 'INVALID_ATTACHMENT_REF' }))
   })
 
@@ -61,20 +65,16 @@ describe('local attachment service', () => {
 
   it('saves and reads through the service boundary', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-service-'))
-    const ctx = new Context()
-    new LocalFileSystem(ctx, { cwd: dshHome, diffBasisMaxBytes: 10 * 1024 * 1024 })
     try {
-      const service = new LocalAttachmentStore(ctx, { dshHome })
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
       const data = Uint8Array.from(Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
       const ref = await service.saveImage({ data, mediaType: 'image/png' })
       await expect(service.readImage(ref)).resolves.toEqual({ ref, data })
-      const access = service.imageAccess(ref)
-      expect(access).toBeDefined()
-      if (access === undefined) throw new Error('expected a host-path mapping from fs-local')
-      expect(access.readonlyPath).toBe(join(
+      const hostPath = service.imageHostPath(ref)
+      expect(hostPath).toBe(join(
         dshHome,
         'attachments',
         'v1',
@@ -82,9 +82,9 @@ describe('local attachment service', () => {
         String(ref.attachmentId).slice('sha256:'.length, 'sha256:'.length + 2),
         String(ref.attachmentId).slice('sha256:'.length),
       ))
-      await expect(readFile(access.readonlyPath)).resolves.toEqual(Buffer.from(data))
+      await expect(readFile(hostPath)).resolves.toEqual(Buffer.from(data))
       const request = await service.readImageRequest(ref, { maxPixels: 1, maxBytes: 1024 })
-      expect(request.access).toEqual(access)
+      expect(request).not.toHaveProperty('access')
     } finally {
       await rm(dshHome, { recursive: true, force: true })
     }

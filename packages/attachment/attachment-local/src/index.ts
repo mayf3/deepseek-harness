@@ -5,7 +5,6 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type {
-  ImageAttachmentAccess,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
@@ -13,7 +12,6 @@ import type {
   SaveImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import type {} from '@deepseek-ai/dsh-fs'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import type { NormalizationPolicy } from './normalization.ts'
 import { CompressionLimiter } from './compression-limiter.ts'
@@ -209,10 +207,8 @@ export class LocalAttachmentStore extends AttachmentStore {
     return readImageFile(this.root, ref, signal)
   }
 
-  override imageAccess(ref: ImageAttachmentRef): ImageAttachmentAccess | undefined {
-    const hostPath = normalizedImagePath(this.root, ref)
-    const readonlyPath = this.ctx.get('fs')?.processPathFromHostPath(hostPath)
-    return readonlyPath === undefined ? undefined : { readonlyPath }
+  override imageHostPath(ref: ImageAttachmentRef): string {
+    return normalizedImagePath(this.root, ref)
   }
 
   override async readImageRequest(
@@ -245,8 +241,7 @@ export class LocalAttachmentStore extends AttachmentStore {
           policy,
           sharedSignal,
         )
-        const access = this.imageAccess(ref)
-        return { ...request, ...(access === undefined ? {} : { access }) }
+        return request
       }))
       operation = shared
       this.requestInflight.set(key, shared)
