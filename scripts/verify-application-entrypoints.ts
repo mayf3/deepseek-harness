@@ -1,7 +1,7 @@
 /**
  * Enforce dsh profiles as the only supported Node application launcher.
- * Vendor CLIs, build tools, test tools, and the temporary private Python
- * runtime carrier are explicit classifications rather than implicit holes.
+ * Vendor CLIs, build tools, and test tools are explicit classifications
+ * rather than implicit holes.
  */
 
 import { existsSync, globSync, readFileSync } from 'node:fs'
@@ -43,7 +43,6 @@ const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
   ['packages/experimental/webworker-packer/bin.js', 'private build-only wrapper'],
   ['packages/experimental/webworker-packer/src/bin.ts', 'private build-only implementation'],
   ['packages/sdk/client/tests/fake-runtime.ts', 'test-only SDK runtime peer'],
-  ['packages/sdk/python-runtime/src/packaged-bin.ts', 'temporary private Python runtime carrier'],
   ['packages/test-support/llm-mock-server/src/bin.ts', 'test-only model server'],
 ])
 
@@ -194,6 +193,6 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(resolve(p
     for (const failure of failures) console.error(`  ${failure}`)
     process.exitCode = 1
   } else {
-    console.log('verify-application-entrypoints: dsh is the only supported Node application launcher; the private Python carrier remains the temporary exception.')
+    console.log('verify-application-entrypoints: dsh is the only supported Node application launcher.')
   }
 }

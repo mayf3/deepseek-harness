@@ -150,7 +150,7 @@ def copy_package(source: Path, destination: Path) -> None:
             "*.pyc",
             "dist",
             "node_modules",
-            "dsh-jsonrpc-agent-pkg-*",
+            "deepseek-harness-sdk-runtime-*",
         ),
     )
 
@@ -246,7 +246,7 @@ def verify_wheel(
                 f"{wheel} has license files {license_files}, expected {expected_license_files}"
             )
         runtime_files = [
-            name for name in archive.namelist() if "/runtime/dsh-jsonrpc-agent-pkg-" in name
+            name for name in archive.namelist() if "/runtime/deepseek-harness-sdk-runtime-" in name
         ]
         if package == "runtime":
             assert platform is not None

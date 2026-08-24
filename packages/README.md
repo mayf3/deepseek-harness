@@ -50,7 +50,7 @@ Groups hold `packages/<group>/<pkg>/`; names stay `@deepseek-ai/dsh-<pkg>`. **Gr
 | [`credentials/`](credentials/README.md) | Credential reference/record seam + env-over-`.env` provider + authorization flows | Product — stable API |
 | [`storage/`](storage/README.md) | Non-session storage hub + backends + domain form | Product — stable API |
 | [`workspace/`](workspace/README.md) | Workspace entity | Product — stable API |
-| [`sdk/`](sdk/README.md) | Out-of-process SDK: JSON-RPC protocol, TypeScript client/server, and private Python carrier | Product — stable API |
+| [`sdk/`](sdk/README.md) | Out-of-process SDK: JSON-RPC protocol and TypeScript client/server | Product — stable API |
 | [`acp/`](acp/README.md) | Automation-only Agent Client Protocol server | Product — stable API |
 | [`interaction/`](interaction/README.md) | Human-collaboration plane: approval/interaction seams, permission preset, commands, ask-user tool | Product — stable API |
 | [`boot/`](boot/README.md) | Shared app-bin boot glue | Product — stable API |

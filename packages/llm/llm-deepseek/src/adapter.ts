@@ -61,7 +61,7 @@ export interface DeepSeekCatalogModel {
   inputModalities?: ModelModality[]
   /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
   imagePixelBudget?: number | 'low'
-  /** Encoded-byte cap for one deterministic request preview. */
+  /** Encoded-byte target for one deterministic request preview; the smallest quality-ladder output is used when no quality fits. */
   imageMaxBytes?: number
 }
 
@@ -150,7 +150,7 @@ export const DEFAULT_MAX_IMAGES_PER_REQUEST = 600
 export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 640_000
 /** Total-pixel budget matching provider low-detail image input. */
 export const DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET = 512 * 512
-/** Encoded-byte cap for one deterministic model-request image. */
+/** Encoded-byte target for one deterministic model-request image; the smallest quality-ladder output is used when no quality fits. */
 export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 /** Deterministic raw-byte removal step. */
 export const DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM = 64 * 1024 * 1024
@@ -173,13 +173,33 @@ const LOW_REASONING_EFFORT = ReasoningEffortId('low')
 const HIGH_REASONING_EFFORT = ReasoningEffortId('high')
 const MAX_REASONING_EFFORT = ReasoningEffortId('max')
 const REASONING_EFFORTS = [
-  { id: OFF_REASONING_EFFORT, name: 'Off' },
-  { id: LOW_REASONING_EFFORT, name: 'Low' },
-  { id: HIGH_REASONING_EFFORT, name: 'High' },
-  { id: MAX_REASONING_EFFORT, name: 'Max' },
+  {
+    id: OFF_REASONING_EFFORT,
+    name: 'Off',
+    description: 'Use for simple tasks that do not need reasoning.',
+  },
+  {
+    id: LOW_REASONING_EFFORT,
+    name: 'Low',
+    description: 'Prefer for routine or latency-sensitive tasks.',
+  },
+  {
+    id: HIGH_REASONING_EFFORT,
+    name: 'High',
+    description: 'The default balance for most tasks.',
+  },
+  {
+    id: MAX_REASONING_EFFORT,
+    name: 'Max',
+    description: 'Reserve for the hardest quality-first tasks.',
+  },
 ] as const
 const OFF_ONLY_REASONING_EFFORTS = [
-  { id: OFF_REASONING_EFFORT, name: 'Off' },
+  {
+    id: OFF_REASONING_EFFORT,
+    name: 'Off',
+    description: 'Use for simple tasks that do not need reasoning.',
+  },
 ] as const
 
 /** Marks a failed file-id resolution that may be retried as an inline request. */

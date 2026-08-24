@@ -15,6 +15,7 @@ import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controlle
 import { TypertLookupFailure } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
+import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionPromptRequest, SessionRequestId } from '../src/types.ts'
@@ -448,7 +449,11 @@ describe('subagent ownership fence', () => {
         type: 'subagent/descriptor',
         seq: 2,
         time: 3,
-        data: { version: 2, mode: 'continuable', provider: 'spawn', label: 'child' },
+        data: snapshotSubagentDescriptor({
+          mode: 'continuable',
+          provider: 'spawn',
+          label: 'child',
+        }),
       },
       { type: 'turn/end', seq: 3, time: 4, data: { turn: 1, reason: { kind: 'completed' } } },
     ] as SessionEvent[]

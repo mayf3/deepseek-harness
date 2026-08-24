@@ -9,6 +9,7 @@ import sharp from 'sharp'
 import LocalAttachmentStore, {
   DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
   DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
+  DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
   DEFAULT_IMAGE_COMPRESSION_CONCURRENCY,
   DEFAULT_MAX_IMAGE_BYTES,
   DEFAULT_MAX_IMAGE_DIMENSION,
@@ -34,6 +35,7 @@ describe('local attachment service', () => {
       mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
     })
     expect(service.normalizationPolicy).toEqual({
+      maxPixels: DEFAULT_NORMALIZED_IMAGE_MAX_PIXELS,
       maxDimension: DEFAULT_NORMALIZED_IMAGE_MAX_DIMENSION,
       maxBytes: DEFAULT_NORMALIZED_IMAGE_MAX_BYTES,
     })
@@ -136,15 +138,15 @@ describe('local attachment service', () => {
   it('prepares every batch member before any write', async () => {
     const dshHome = await mkdtemp(join(tmpdir(), 'dsh-attachment-batch-'))
     try {
-      const service = new LocalAttachmentStore(new Context(), { dshHome, normalizedImageMaxBytes: 1 })
+      const service = new LocalAttachmentStore(new Context(), { dshHome })
       const valid = Uint8Array.from(Buffer.from(
         'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADElEQVQImWNgZGIGAAAOAAeCcsnOAAAAAElFTkSuQmCC',
         'base64',
       ))
       await expect(service.saveImages([
         { data: valid, mediaType: 'image/png' },
-        { data: valid, mediaType: 'image/png' },
-      ])).rejects.toMatchObject({ code: 'IMAGE_TOO_LARGE' })
+        { data: Uint8Array.of(1, 2, 3), mediaType: 'image/png' },
+      ])).rejects.toThrow(/Unsupported or malformed image data/)
       expect(existsSync(service.root)).toBe(false)
     } finally {
       await rm(dshHome, { recursive: true, force: true })

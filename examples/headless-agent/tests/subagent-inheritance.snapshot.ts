@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { normalizeSessionSnapshot, type NormalizeContext } from '@deepseek-ai/dsh-acp-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
@@ -26,7 +26,7 @@ const sessionId = SessionId('subagent-inheritance-parent')
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
 const task = 'Delegate the write probe to a subagent.'
 
-/** Seed a completed parent turn with the only read-only fact in the app. */
+/** Seed a completed parent turn with its read-only policy and current LLM selection. */
 async function seedReadOnlyParent(root: string, cwd: string): Promise<void> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -42,7 +42,22 @@ async function seedReadOnlyParent(root: string, cwd: string): Promise<void> {
     { type: 'turn/start', seq: 0, time: 10, data: { turn: 1 } },
     { type: 'user/message', seq: 1, time: 11, data: createUserMessage({ content: [{ type: 'text', text: 'Tighten this session to read-only.' }], source: { kind: 'user' } }), surfaceOp: 'append' },
     { type: 'sandbox/mode', seq: 2, time: 12, data: { mode: 'read-only' } },
-    { type: 'turn/end', seq: 3, time: 13, data: { turn: 1, reason: { kind: 'completed' } } },
+    {
+      type: 'request/header',
+      seq: 3,
+      time: 13,
+      data: {
+        header: {
+          config: {
+            provider: 'deepseek-official',
+            model: 'deepseek-v4-flash',
+            reasoningEffort: ReasoningEffortId('low'),
+          },
+        },
+        reason: 'initial',
+      },
+    },
+    { type: 'turn/end', seq: 4, time: 14, data: { turn: 1, reason: { kind: 'completed' } } },
   ]
   try {
     await ctx.sessionPersistence.create(meta)

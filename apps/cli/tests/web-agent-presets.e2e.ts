@@ -11,6 +11,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import { resolveSessionPreset, SETTINGS_NAMESPACE, SHIPPED_PRESET_ROOT } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
 import { CallId } from '@deepseek-ai/dsh-llm'
@@ -107,7 +108,7 @@ async function bootWeb(
   // upward walk. The flat fallback the preset boot maintains is what makes
   // them resolvable — the same mechanism, not a test-only shim.
   const home = dirname(settingsFile)
-  healProfilesModuleFallback(INSTALL_ANCHOR, home)
+  await healProfilesModuleFallback(INSTALL_ANCHOR, home)
   const profileDir = join(home, 'profiles', 'spec')
   await mkdir(profileDir, { recursive: true })
   // Product Bundles are installed into the Profile, not the dsh app. Model
@@ -237,6 +238,34 @@ describe('the shipped Web composition', () => {
       expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
     } finally {
       await handle.dispose()
+    }
+  })
+
+  it('applies the default-off subagent model-selection preference only to new sessions', async () => {
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
+    const disabled = await ctx.agents.create({
+      sessionId: SessionId('preset-model-selection-disabled'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
+    const enabled = await ctx.agents.create({
+      sessionId: SessionId('preset-model-selection-enabled'),
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
+    })
+    try {
+      expect(toolNames(ctx, disabled.agent)).not.toContain('list_subagent_models')
+      expect(toolParameterNames(ctx, disabled.agent, 'subagent')).not.toEqual(expect.arrayContaining([
+        'model', 'provider', 'reasoning_effort',
+      ]))
+      expect(toolNames(ctx, enabled.agent)).toContain('list_subagent_models')
+      expect(toolParameterNames(ctx, enabled.agent, 'subagent')).toEqual(expect.arrayContaining([
+        'model', 'provider', 'reasoning_effort',
+      ]))
+      expect(toolNames(ctx, disabled.agent)).not.toContain('list_subagent_models')
+    } finally {
+      await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
+      await enabled.dispose()
+      await disabled.dispose()
     }
   })
 

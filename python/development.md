@@ -31,10 +31,10 @@ That suite drives fake runtime peers. `scripts/smoke-python-runtime.py` drives t
 
 ```sh
 uv run --project python/sdk python scripts/smoke-python-runtime.py \
-  --scenario sdk-minimal --exe dist-exe/dsh-jsonrpc-agent-pkg-macos-arm64
+  --scenario sdk-minimal --exe dist-exe/deepseek-harness-sdk-runtime-macos-arm64
 ```
 
-Three scenarios compare committed expected output under `scripts/snapshots/python-sdk-single-exe/`. `minimal/model-visible.json` pins the checked-in minimal composition's assembled system prompts, advertised tool schemas, and model-visible messages, so a plugin that contributes an unintended system section or user message fails the job; it drops the dynamic runtime-context snapshot, which the same composition emits on macOS and not on Linux ([#2488](https://github.com/deepseek-harness/deepseek-harness/issues/2488)). `advanced/` pins one complex process's SDK result and parent/child session logs. `restart/` launches two complete SDK runtime processes against one persistence root and snapshots their isolated model histories, high-level results, and separate durable logs. Rerun the owning scenario with `--update-snapshots` and review that diff before committing it.
+Three scenarios compare committed expected output under `scripts/snapshots/python-sdk-single-exe/`. `minimal/model-visible.json` pins the shipped `sdk-minimal` profile's assembled system prompts, advertised tool schemas, and model-visible messages, so a plugin that contributes an unintended system section or user message fails the job. `advanced/` pins one complex process's SDK result and parent/child session logs. `restart/` launches two complete SDK runtime processes against one persistence root and snapshots their isolated model histories, high-level results, and separate durable logs. Rerun the owning scenario with `--update-snapshots` and review that diff before committing it.
 
 Trusted pull requests also run `--scenario sdk-live --installed-wheel` on every native target. That scenario performs two tool-using turns against `https://api.deepseek.com`, verifies the created file externally, and fails when the repository secret is absent instead of self-skipping. Fork and Dependabot pull requests run the complete keyless installed-wheel path but receive no key.
 
@@ -43,18 +43,20 @@ An interactive smoke test needs `DEEPSEEK_API_KEY` in the environment or reposit
 ```python
 from deepseek_harness import DeepSeekHarness
 
-with DeepSeekHarness() as harness:
+with DeepSeekHarness(dsh_home="/absolute/path/to/test-dsh-home") as harness:
     print(harness.run("say hi").final_response)
 ```
 
+Alternatively export a non-empty `DSH_HOME`. The SDK rejects a launch that would silently use `~/.dsh`.
+
 ## Run against Node source
 
-Repository contributors can select either development carrier:
+Repository contributors can select either development route; both execute the normal `dsh --profile sdk` launcher:
 
 - Set `DSH_RUNTIME_MODE=node` to use the built Node carrier on system Node `>=22.19`. The build script refreshes this carrier, but distributions never include or auto-select it.
-- Set `launch_args_override=("./node_modules/.bin/tsx", "packages/sdk/python-runtime/src/packaged-bin.ts")` with the repository root as `cwd` to run the private carrier's unbuilt TypeScript source. Supply `cordis=...` when the default configuration is not suitable.
+- Set `dsh_bin` to the absolute built `apps/cli/lib/bin.js` path to exercise the checkout's CLI directly. Supply an explicit `dsh_home`, plus `profile` and ordered `patches` as needed.
 
-See `python/sdk/tests/manual_sdk_agent_smoke.py` for a complete source-mode invocation.
+`python/sdk/tests/manual_sdk_agent_smoke.py` uses the internal `_launch_args` test adapter to exercise the unbuilt TypeScript CLI under tsx. Arbitrary argv replacement is intentionally absent from the public SDK.
 
 ## Build distributions
 
@@ -71,7 +73,7 @@ print(release["pep440_version"](release["repository_version"]()))
 PY
 )"
 python scripts/build-python-release.py --package sdk --output-dir dist-python
-python scripts/build-python-release.py --package runtime --platform macos-arm64 --runtime-exe dist-exe/dsh-jsonrpc-agent-pkg-macos-arm64 --output-dir dist-python
+python scripts/build-python-release.py --package runtime --platform macos-arm64 --runtime-exe dist-exe/deepseek-harness-sdk-runtime-macos-arm64 --output-dir dist-python
 pip install \
   "dist-python/deepseek_harness_sdk-$version-py3-none-any.whl" \
   "dist-python/deepseek_harness_runtime_bin-$version-py3-none-macosx_14_0_arm64.whl"

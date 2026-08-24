@@ -12,6 +12,7 @@ import os
 import queue
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import threading
 import time
@@ -37,13 +38,34 @@ FS_SEARCH_TEXT = "filesystem search smoke ok"
 FS_SEARCH_MARKER = "PACKAGED_FS_SEARCH_OK"
 MCP_PROMPT = "Exercise the packaged MCP client with one external stdio server."
 MCP_TEXT = "MCP client smoke ok"
-MINIMAL_CORDIS = (
-    Path(__file__).resolve().parent.parent / "examples" / "python-sdk-agent" / "minimal.cordis.yml"
-)
+PROFILE_PLUGIN_PROMPT = "Verify the Python-installed dsh profile plugin."
+PROFILE_PLUGIN_TEXT = "profile plugin smoke ok"
+PROFILE_PLUGIN_MARKER = "PYTHON_INSTALLED_DSH_PROFILE_PLUGIN"
 MINIMAL_BASH_COMMAND = (
     "counter=$(( ${counter:-0} + 1 )); export counter; "
     "printf 'COUNT=%s CWD=%s\\n' \"$counter\" \"$PWD\"; "
     "if [ \"$counter\" -eq 1 ]; then cd /tmp; fi"
+)
+LEGACY_CUSTOM_DISABLED_ROWS = (
+    "agent-instructions",
+    "goal",
+    "goal-round-driver",
+    "command-goal",
+    "plan-mode",
+    "skill",
+    "skill-filesystem",
+    "tool-fs",
+    "tool-fs-search",
+    "tool-goal",
+    "tool-ralph",
+    "tool-skill",
+    "tool-str-replace-editor",
+    "tool-subagent-control",
+    "tool-subagent-list-agents",
+    "tool-subagent-fork",
+    "tool-subagent-report",
+    "tool-todo",
+    "tool-web",
 )
 SNAPSHOT_PROMPT = "Run the advanced packaged-runtime snapshot scenario."
 SNAPSHOT_SESSION_ID = "advanced-executable"
@@ -91,79 +113,6 @@ RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
 RESTART_SNAPSHOT_FILENAMES = ("result.json", "requests.json", "session.1.jsonl", "session.2.jsonl")
-# The agent loop's dynamic runtime-context snapshot is the one model-visible message this
-# expected output cannot carry: the same composition emits it on macOS and not on Linux
-# (deepseek-harness#2488), and the file must replay on both. Everything else is compared.
-RUNTIME_CONTEXT_PREFIX = "Current runtime context"
-CUSTOM_CORDIS = """\
-- id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
-- id: deepseek-llm-api-extensions
-  name: '@deepseek-ai/dsh-deepseek-llm-api-extensions'
-- id: session-log-deepseek
-  name: '@deepseek-ai/dsh-session-log-deepseek'
-  config:
-    enabled: true
-- id: agent-core
-  name: '@deepseek-ai/dsh-agent-spine-demo'
-  config:
-    workspaceContext: false
-    skills:
-      enabled: false
-    toolBash: false
-    tools:
-      mode: both
-- id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
-  config:
-    root: !!js process.env.DSH_SESSION_ROOT
-    compression: 'none'
-- id: code-runtime
-  name: '@deepseek-ai/dsh-code-runtime-worker-thread'
-- id: subagents
-  name: '@deepseek-ai/dsh-subagent'
-- id: subagent-spawn-in-process
-  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
-  config:
-    providerName: spawn
-- id: subagent-tool
-  name: '@deepseek-ai/dsh-tool-subagent'
-  config:
-    provider: spawn
-- id: workflow-engine
-  name: '@deepseek-ai/dsh-workflow-worker-thread'
-  config:
-    provider: spawn
-- id: workflow-tool
-  name: '@deepseek-ai/dsh-tool-workflow'
-- id: cordis-host-runner
-  name: '@deepseek-ai/dsh-cordis-host-runner'
-- id: cordis-tool
-  name: '@deepseek-ai/dsh-tool-cordis'
-"""
-FS_SEARCH_CORDIS = """\
-- id: sdk-jsonrpc-server
-  name: '@deepseek-ai/dsh-sdk-jsonrpc-server'
-- id: agent-core
-  name: '@deepseek-ai/dsh-agent-spine-demo'
-  config:
-    workspaceContext: false
-    skills:
-      enabled: false
-    toolBash: false
-    toolJobs: false
-- id: sessions
-  name: '@deepseek-ai/dsh-session-persistence-jsonl'
-  config:
-    root: !!js process.env.DSH_SESSION_ROOT
-    compression: 'none'
-- id: subprocess
-  name: '@deepseek-ai/dsh-subprocess-local'
-- id: fs-search
-  name: '@deepseek-ai/dsh-tool-fs-search'
-  config:
-    sampleOverCapGlobResults: false
-"""
 MCP_SERVER_SCRIPT = """\
 import json
 import os
@@ -242,28 +191,29 @@ for line in sys.stdin:
 """
 
 
-def mcp_cordis(server_script: Path) -> str:
-    """Build an external config that mounts the packaged MCP client."""
-    return json.dumps([
+def write_profile_patch(
+    root: Path,
+    name: str,
+    sessions: Path,
+    patches: list[dict[str, object]],
+) -> Path:
+    """Write one JSON-form dsh profile patch with deterministic persistence."""
+    path = root / name
+    path.write_text(json.dumps([
         {
-            "id": "sdk-jsonrpc-server",
-            "name": "@deepseek-ai/dsh-sdk-jsonrpc-server",
+            "id": "session-persistence-jsonl",
+            "config": {"root": str(sessions), "compression": "none"},
         },
-        {
-            "id": "agent-core",
-            "name": "@deepseek-ai/dsh-agent-spine-demo",
-            "config": {
-                "workspaceContext": False,
-                "skills": {"enabled": False},
-                "toolBash": False,
-            },
-        },
-        {
-            "id": "sessions",
-            "name": "@deepseek-ai/dsh-session-persistence-jsonl",
-            "config": {"root": "./sessions", "compression": "none"},
-        },
-        {
+        {"id": "session-telemetry-otel", "disabled": True},
+        *patches,
+    ], indent=2))
+    return path
+
+
+def write_mcp_patch(root: Path, sessions: Path, server_script: Path) -> Path:
+    """Write a profile patch that mounts the packaged MCP client."""
+    return write_profile_patch(root, "mcp.patch.yml", sessions, [{
+        "insert": [{
             "id": "mcp-fixture",
             "name": "@deepseek-ai/dsh-mcp-client",
             "config": {
@@ -275,8 +225,8 @@ def mcp_cordis(server_script: Path) -> str:
                 "failOnStartupError": True,
                 "reconnect": {"enabled": False},
             },
-        },
-    ], indent=2)
+        }],
+    }])
 
 
 class MockModelHandler(BaseHTTPRequestHandler):
@@ -364,6 +314,7 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
         MCP_PROMPT,
         RESTART_FIRST_PROMPT,
         RESTART_SECOND_PROMPT,
+        PROFILE_PLUGIN_PROMPT,
     }
     prompt = next(
         (candidate for candidate in user_prompts if candidate in scenario_prompts),
@@ -430,6 +381,15 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
             "mcp__fixture__add",
             {"a": 19, "b": 23},
         )
+    if prompt == PROFILE_PLUGIN_PROMPT:
+        system_text = "\n".join(
+            message_text(message.get("content"))
+            for message in messages
+            if isinstance(message, dict) and message.get("role") == "system"
+        )
+        if PROFILE_PLUGIN_MARKER not in system_text:
+            raise AssertionError("external profile plugin contributed no model-visible marker")
+        return text_chunks(PROFILE_PLUGIN_TEXT)
     return text_chunks(EXPECTED_TEXT)
 
 
@@ -710,7 +670,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--scenario",
-        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-live", "direct"),
+        choices=("all", "sdk-default", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-mcp", "sdk-snapshot", "sdk-restart", "sdk-profile-plugin", "sdk-live", "direct"),
         default="all",
     )
     parser.add_argument("--exe", type=Path)
@@ -725,6 +685,8 @@ def main() -> None:
         parser.error("--installed-wheel resolves the wheel's own runtime and cannot be combined with --exe")
     if args.scenario == "sdk-live" and not args.installed_wheel:
         parser.error("--scenario sdk-live requires --installed-wheel")
+    if args.scenario == "sdk-profile-plugin" and not args.installed_wheel:
+        parser.error("--scenario sdk-profile-plugin requires --installed-wheel")
     if args.installed_wheel:
         args.exe = assert_installed_wheel_environment()
     if args.scenario in {"all", "sdk-custom", "sdk-minimal", "sdk-fs-search", "sdk-snapshot", "sdk-restart", "direct"} and args.exe is None:
@@ -759,6 +721,8 @@ def main() -> None:
         if args.scenario in {"all", "sdk-restart"}:
             assert args.exe is not None
             smoke_sdk_restart_snapshot(model.url, args.exe.resolve(), args.update_snapshots)
+        if args.installed_wheel and args.scenario in {"all", "sdk-profile-plugin"}:
+            smoke_sdk_profile_plugin(model.url)
         if args.scenario in {"all", "direct"}:
             assert args.exe is not None
             smoke_direct(model.url, args.exe.resolve())
@@ -832,7 +796,8 @@ def smoke_sdk_live() -> None:
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-live-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
         marker = root / "live-api-marker.txt"
         session_id = "installed-wheel-live-api"
         create_prompt = (
@@ -847,7 +812,11 @@ def smoke_sdk_live() -> None:
             provider="deepseek-official",
             model="deepseek-v4-flash",
             cwd=str(root),
-            session_root=str(sessions),
+            dsh_home=str(dsh_home),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
             api_key=api_key,
             base_url=base_url,
             request_timeout_seconds=180,
@@ -910,18 +879,27 @@ def smoke_sdk_default(base_url: str) -> None:
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-default-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
-            session_root=str(sessions),
+            dsh_home=str(dsh_home),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
         ) as harness:
             result = harness.run("reply with the smoke text", session_id="default-smoke")
-        assert result.final_response == EXPECTED_TEXT, result.final_response
+        assert result.final_response == EXPECTED_TEXT, (
+            f"final={result.final_response!r} finish={result.finish_reason!r} "
+            f"events={[event.get('type') for event in result.events]!r} "
+            f"turn_end={safe_turn_end(next((event.get('data', event) for event in reversed(result.events) if event.get('type') == 'turn/end'), {}))!r}"
+        )
         assert_zstd_session_log(sessions)
 
 
@@ -930,16 +908,44 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-custom-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
-        cordis = root / "cordis.yml"
-        cordis.write_text(CUSTOM_CORDIS)
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
+        patch = write_profile_patch(root, "custom.patch.yml", sessions, [
+            {"id": "tools", "config": {"mode": "both"}},
+            {
+                "id": "system-prompt",
+                "config": {
+                    "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
+                },
+            },
+            {"id": "session-log-deepseek", "config": {"enabled": True}},
+            *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
+            {"id": "tool-bash", "disabled": True},
+            {
+                "id": "tool-subagent",
+                "config": {
+                    "provider": "spawn",
+                    "toolName": "subagent",
+                    "backgroundMode": "one-shot",
+                },
+            },
+            {"insert": [
+                {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
+                {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
+                {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
+            ]},
+        ])
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
-            session_root=str(sessions),
-            cordis=str(cordis),
-            runtime_bin=str(executable),
+            dsh_bin=str(executable),
+            dsh_home=str(dsh_home),
+            patches=(str(patch),),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -954,7 +960,7 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
 
 
 def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -> None:
-    """Exercise the checked-in minimal composition through the packaged executable."""
+    """Exercise the shipped standalone minimal profile through the packaged executable."""
     from deepseek_harness import DeepSeekHarness
 
     # One mock model serves every scenario of a run, so the snapshot takes this turn's slice.
@@ -963,14 +969,15 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
         root = Path(temporary).resolve()
         editor_path = root / "created.txt"
         prompt = f"{MINIMAL_PROMPT}\n{MINIMAL_EDITOR_PATH_PREFIX}{editor_path}"
-        sessions = root / "sessions"
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
-            session_root=str(sessions),
-            cordis=str(MINIMAL_CORDIS),
-            runtime_bin=str(executable),
+            dsh_bin=str(executable),
+            dsh_home=str(dsh_home),
+            profile="sdk-minimal",
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -997,16 +1004,23 @@ def smoke_sdk_fs_search(base_url: str, executable: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-fs-search-") as temporary:
         root = Path(temporary).resolve()
         (root / "needle.txt").write_text(f"{FS_SEARCH_MARKER}\n")
-        sessions = root / "sessions"
-        cordis = root / "cordis.yml"
-        cordis.write_text(FS_SEARCH_CORDIS)
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
+        patch = write_profile_patch(root, "fs-search.patch.yml", sessions, [
+            {"id": "skill-filesystem", "disabled": True},
+            {"id": "tool-fs-search", "config": {"sampleOverCapGlobResults": False}},
+        ])
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
-            session_root=str(sessions),
-            cordis=str(cordis),
-            runtime_bin=str(executable),
+            dsh_bin=str(executable),
+            dsh_home=str(dsh_home),
+            patches=(str(patch),),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -1023,19 +1037,23 @@ def smoke_sdk_mcp(base_url: str, executable: Path | None) -> None:
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-mcp-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
         server_script = root / "mcp_server.py"
         server_script.write_text(MCP_SERVER_SCRIPT)
-        cordis = root / "cordis.yml"
-        cordis.write_text(mcp_cordis(server_script))
+        patch = write_mcp_patch(root, sessions, server_script)
         discovery_log = server_script.with_suffix(".log")
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
-            session_root=str(sessions),
-            cordis=str(cordis),
-            runtime_bin=None if executable is None else str(executable),
+            dsh_bin=None if executable is None else str(executable),
+            dsh_home=str(dsh_home),
+            patches=(str(patch),),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -1052,22 +1070,131 @@ def smoke_sdk_mcp(base_url: str, executable: Path | None) -> None:
         assert_session_log(sessions, root, MCP_TEXT, "mcp__fixture__add", "42")
 
 
+def smoke_sdk_profile_plugin(base_url: str) -> None:
+    """Install an external bundle through Python's dsh command and load it in the SDK."""
+    from deepseek_harness import DeepSeekHarness
+
+    with tempfile.TemporaryDirectory(prefix="dsh-sdk-profile-plugin-") as temporary:
+        root = Path(temporary).resolve()
+        dsh_home = root / "home"
+        plugin = root / "plugin"
+        plugin.mkdir()
+        (plugin / "package.json").write_text(json.dumps({
+            "name": "dsh-python-blackbox-plugin",
+            "version": "1.0.0",
+            "private": True,
+            "type": "module",
+            "exports": "./index.js",
+            "peerDependencies": {"@deepseek-ai/cordis": "*"},
+            "dsh": {"bundle": {"patch": "./cordis.patch.yml"}},
+        }, indent=2))
+        (plugin / "index.js").write_text(
+            "import { Context } from '@deepseek-ai/cordis'\n"
+            "export const name = 'python-sdk-blackbox-plugin'\n"
+            "export const inject = ['systemPrompt']\n"
+            "export function apply(ctx) {\n"
+            "  if (!(ctx instanceof Context)) throw new Error('external plugin loaded a second Cordis instance')\n"
+            "  ctx.effect(() => ctx.systemPrompt.section({\n"
+            "    name: 'python-sdk:blackbox-plugin',\n"
+            "    order: 10,\n"
+            f"    text: '{PROFILE_PLUGIN_MARKER}',\n"
+            "  }))\n"
+            "}\n"
+        )
+        (plugin / "cordis.patch.yml").write_text(json.dumps([{
+            "insert": [{"id": "python-sdk-blackbox-plugin", "name": "dsh-python-blackbox-plugin"}],
+        }], indent=2))
+
+        dsh = Path(sysconfig.get_path("scripts")) / "dsh"
+        environment = {**os.environ, "DSH_HOME": str(dsh_home)}
+        installed = subprocess.run(
+            [str(dsh), "plugin", "--profile", "sdk", "add", f"file:{plugin}"],
+            cwd=root,
+            env=environment,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if installed.returncode != 0:
+            raise AssertionError(
+                f"Python-installed dsh could not add the external profile plugin: "
+                f"stdout={installed.stdout!r} stderr={installed.stderr!r}"
+            )
+        manifest = json.loads((dsh_home / "profiles" / "sdk" / "package.json").read_text())
+        if "dsh-python-blackbox-plugin" not in manifest.get("dependencies", {}):
+            raise AssertionError(f"dsh plugin did not record the external dependency: {manifest}")
+        if "dsh-python-blackbox-plugin" not in manifest["dsh"]["profile"]["bundles"]:
+            raise AssertionError(f"dsh plugin did not activate the external bundle: {manifest}")
+
+        harness = DeepSeekHarness(
+            provider="deepseek-official",
+            model="smoke-model",
+            cwd=str(root),
+            dsh_home=str(dsh_home),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
+            api_key="sk-keyless-smoke",
+            base_url=base_url,
+            request_timeout_seconds=60,
+        )
+        try:
+            with harness:
+                result = harness.run(PROFILE_PLUGIN_PROMPT, session_id="profile-plugin-smoke")
+        except Exception as error:
+            raise AssertionError(
+                f"external profile plugin runtime failed: {harness.client._runtime_diagnostics()}"
+            ) from error
+
+        assert result.final_response == PROFILE_PLUGIN_TEXT, result.final_response
+        assert_zstd_session_log(dsh_home / "sessions")
+
+
 def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) -> None:
     """Drive and compare the advanced SDK/executable behavioral snapshot."""
     from deepseek_harness import DeepSeekHarness
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-snapshot-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
-        cordis = root / "cordis.yml"
-        cordis.write_text(CUSTOM_CORDIS)
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
+        patch = write_profile_patch(root, "snapshot.patch.yml", sessions, [
+            {"id": "tools", "config": {"mode": "both"}},
+            {
+                "id": "system-prompt",
+                "config": {
+                    "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
+                },
+            },
+            {"id": "session-log-deepseek", "config": {"enabled": True}},
+            *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
+            {"id": "tool-bash", "disabled": True},
+            {
+                "id": "tool-subagent",
+                "config": {
+                    "provider": "spawn",
+                    "toolName": "subagent",
+                    "backgroundMode": "one-shot",
+                },
+            },
+            {"insert": [
+                {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
+                {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
+                {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
+            ]},
+        ])
         with DeepSeekHarness(
             provider="deepseek-official",
             model="smoke-model",
             cwd=str(root),
-            session_root=str(sessions),
-            cordis=str(cordis),
-            runtime_bin=str(executable),
+            dsh_bin=str(executable),
+            dsh_home=str(dsh_home),
+            patches=(str(patch),),
+            env={
+                "DSH_PERMISSION_MODE": "danger-full-access",
+                "DSH_TELEMETRY_DISABLED": "1",
+            },
             api_key="sk-keyless-smoke",
             base_url=base_url,
             request_timeout_seconds=60,
@@ -1103,9 +1230,33 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
 
     with tempfile.TemporaryDirectory(prefix="dsh-sdk-restart-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
-        cordis = root / "cordis.yml"
-        cordis.write_text(CUSTOM_CORDIS)
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
+        patch = write_profile_patch(root, "restart.patch.yml", sessions, [
+            {"id": "tools", "config": {"mode": "both"}},
+            {
+                "id": "system-prompt",
+                "config": {
+                    "persona": "You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.",
+                },
+            },
+            {"id": "session-log-deepseek", "config": {"enabled": True}},
+            *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
+            {"id": "tool-bash", "disabled": True},
+            {
+                "id": "tool-subagent",
+                "config": {
+                    "provider": "spawn",
+                    "toolName": "subagent",
+                    "backgroundMode": "one-shot",
+                },
+            },
+            {"insert": [
+                {"id": "code-runtime", "name": "@deepseek-ai/dsh-code-runtime-worker-thread"},
+                {"id": "cordis-host-runner", "name": "@deepseek-ai/dsh-cordis-host-runner"},
+                {"id": "cordis-tool", "name": "@deepseek-ai/dsh-tool-cordis"},
+            ]},
+        ])
         first_request = len(MockModelHandler.requests)
 
         def run(prompt: str, session_id: str) -> "RunResult":
@@ -1113,9 +1264,13 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
                 provider="deepseek-official",
                 model="smoke-model",
                 cwd=str(root),
-                session_root=str(sessions),
-                cordis=str(cordis),
-                runtime_bin=str(executable),
+                dsh_bin=str(executable),
+                dsh_home=str(dsh_home),
+                patches=(str(patch),),
+                env={
+                    "DSH_PERMISSION_MODE": "danger-full-access",
+                    "DSH_TELEMETRY_DISABLED": "1",
+                },
                 api_key="sk-keyless-smoke",
                 base_url=base_url,
                 request_timeout_seconds=60,
@@ -1155,18 +1310,22 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
 def smoke_direct(base_url: str, executable: Path) -> None:
     with tempfile.TemporaryDirectory(prefix="dsh-direct-") as temporary:
         root = Path(temporary).resolve()
-        sessions = root / "sessions"
-        cordis = root / "cordis.yml"
-        cordis.write_text(CUSTOM_CORDIS)
+        dsh_home = root / "home"
+        sessions = dsh_home / "sessions"
+        patch = write_profile_patch(root, "direct.patch.yml", sessions, [])
         environment = {
             **os.environ,
-            "DSH_CORDIS_CONFIG": str(cordis),
-            "DSH_SESSION_ROOT": str(sessions),
-            "DSH_CWD": str(root),
+            "DSH_HOME": str(dsh_home),
+            "DSH_PERMISSION_MODE": "danger-full-access",
+            "DSH_TELEMETRY_DISABLED": "1",
             "DEEPSEEK_API_KEY": "sk-keyless-smoke",
             "DEEPSEEK_BASE_URL": base_url,
         }
-        peer = RuntimePeer([str(executable)], root, environment)
+        peer = RuntimePeer(
+            [str(executable), "--profile", "sdk", "--patch", str(patch)],
+            root,
+            environment,
+        )
         try:
             peer.send({"jsonrpc": "2.0", "id": "initialize", "method": "initialize", "params": {"cwd": str(root), "provider": "deepseek-official", "model": "smoke-model"}})
             peer.read_until(lambda message: message.get("id") == "initialize")
@@ -1332,9 +1491,9 @@ def build_minimal_snapshot_files(
     Every assembled system prompt, advertised tool schema, and system or user message is
     kept verbatim: they carry what the deployment actually shows the model, so a plugin
     that contributes an unintended system section or user message cannot pass unnoticed.
-    Assistant and tool payloads keep only their call identity, and the dynamic
-    runtime-context snapshot is dropped, because their text differs across the platforms
-    this expected output must replay on.
+    Assistant and tool payloads keep only their call identity because their text differs
+    across the platforms this expected output must replay on. The shipped profile omits
+    dynamic runtime context, so every message it emits is compared.
     """
     snapshot = []
     for body in requests:
@@ -1346,19 +1505,9 @@ def build_minimal_snapshot_files(
             "messages": [
                 minimal_snapshot_message(message, cwd)
                 for message in messages
-                if not is_runtime_context_message(message)
             ],
         })
     return {"model-visible.json": json.dumps(snapshot, indent=2, ensure_ascii=False) + "\n"}
-
-
-def is_runtime_context_message(message: object) -> bool:
-    """Identify the agent loop's dynamic runtime-context snapshot, current or cleared."""
-    return (
-        isinstance(message, dict)
-        and message.get("role") == "user"
-        and message_text(message.get("content")).startswith(RUNTIME_CONTEXT_PREFIX)
-    )
 
 
 def minimal_snapshot_message(message: object, cwd: Path) -> dict[str, object]:
@@ -1419,7 +1568,6 @@ def build_snapshot_files(
             {"method": notification.method, "payload": notification.payload}
             for notification in result.notifications
         ],
-        "session_root": result.session_root,
     }
     normalized_result = normalize_snapshot_value(result_value, replacements)
     files = {
@@ -1461,7 +1609,6 @@ def build_restart_snapshot_files(
             "finish_reason": result.finish_reason,
             "eventTypes": [event.get("type") for event in result.events],
             "notificationMethods": [notification.method for notification in result.notifications],
-            "session_root": result.session_root,
         }
         for result in (first, second)
     ]
