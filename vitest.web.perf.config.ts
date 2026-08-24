@@ -12,7 +12,7 @@ export default defineConfig({
     execArgv: [...vitestExecArgv, '--expose-gc'],
     include: [
       'apps/web/tests/**/*.perf.ts',
-      'packages/api/session-controller/tests/**/*.perf.client.ts',
+      'packages/client/ui-conversation/tests/**/*.perf.client.ts',
     ],
     disableConsoleIntercept: true,
     hookTimeout: 180_000,

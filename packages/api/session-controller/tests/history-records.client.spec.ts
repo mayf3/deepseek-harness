@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm/brand'
+import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionHistoryRecord } from '../src/types.ts'
 import { historyEntries } from '../src/client/sessions/history-records.ts'
 
@@ -23,11 +24,14 @@ describe('historyEntries', () => {
 
     expect(entries).toHaveLength(5)
     expect(entries[0]).toBe(ordinary)
-    expect(entries.slice(1).map(entry => ({
-      seq: entry.event.seq,
-      time: entry.event.time,
-      chunk: entry.event.type === 'assistant/chunk' ? entry.event.data.chunk : undefined,
-    }))).toEqual([
+    expect(entries.slice(1).map((entry) => {
+      const event = entry.event as unknown as SessionEvent<'assistant/chunk'>
+      return {
+        seq: event.seq,
+        time: event.time,
+        chunk: event.data.chunk,
+      }
+    })).toEqual([
       { seq: 1, time: 2, chunk: { type: 'text-delta', index: 0, text: 'a' } },
       { seq: 2, time: 3, chunk: { type: 'text-delta', index: 0, text: 'b' } },
       { seq: 3, time: 4, chunk: { type: 'text-delta', index: 0, text: 'c' } },
@@ -52,14 +56,14 @@ describe('historyEntries', () => {
       },
     }
 
-    const events = historyEntries([packed]).map(entry => entry.event)
+    const events = historyEntries([packed])
+      .map(entry => entry.event as unknown as SessionEvent<'assistant/chunk'>)
 
     expect(events).toMatchObject([
       { seq: 20, time: 200, data: { chunk: { argumentsDelta: '' } } },
       { seq: 21, time: 202, data: { chunk: { argumentsDelta: '{"x":' } } },
       { seq: 22, time: 205, data: { chunk: { argumentsDelta: '1}' } } },
     ])
-    expect(events.every(event => event.type === 'assistant/chunk'
-      && !Object.hasOwn(event.data.chunk, 'name'))).toBe(true)
+    expect(events.every(event => !Object.hasOwn(event.data.chunk, 'name'))).toBe(true)
   })
 })

@@ -4,7 +4,7 @@
 
 `@deepseek-ai/dsh-api-session-controller` 拥有 Host 的 `ctx.sessionController` 服务和生成的 Client `ctx.remote.session` namespace。它提供 Session 列表、搜索、创建、模型选择、重命名、fork、prompt、附件、queue、取消、按消息对齐的历史、live 日志跟随和 Host 范围 control 状态。
 
-历史页与 follow event frame 只携带原始 `SessionWireEvent`。工具参数、结果内容、失败信息和 `tool/result.data.meta` 原样通过；controller 不解析 Tool definition、不运行 presenter，也不附加 UI 数据。
+历史页携带 `records`：普通记录包含原始 `SessionWireEvent`，连续且属于同一 block 的 `assistant/chunk` delta 使用 Session 包的无损打包行编码。`SessionEventStream` 会在向 Client Session 对象层发布页面前逐成员展开打包行，因此回放仍能观察到每个原始事件和序号。Follow frame 继续携带单个原始事件。工具参数、结果内容、失败信息和 `tool/result.data.meta` 原样通过；controller 不解析 Tool definition、不运行 presenter，也不附加 UI 数据。
 
 每个 endpoint 都声明自己的激活策略。列表、搜索、附件、历史页和日志跟随可以在不激活 Agent 的情况下检查 persistence；queue 变更和取消要求对应 live 状态仍然存在；模型、重命名和 prompt 命令可以显式恢复普通 Session。只有 create 和 fork 会创建新 Agent。该服务把同一套感知 preset 的恢复策略和 subagent ownership fence 同时用于自身方法，以及其他 Remote namespace 使用的 Typert Agent 与 Session lookup。
 

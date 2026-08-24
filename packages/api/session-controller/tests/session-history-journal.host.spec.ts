@@ -86,7 +86,7 @@ async function openFollow(
 function pageEvents(page: SessionPage): SessionWireEvent[] {
   return page.records.flatMap(record => 'event' in record
     ? [record.event]
-    : decodeStorageRecord(record.chunks))
+    : decodeStorageRecord(record.chunks).map(event => event as unknown as SessionWireEvent))
 }
 
 describe('Session history raw journal', () => {
@@ -242,10 +242,10 @@ describe('Session history raw journal', () => {
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
     session.append('turn/start', { turn: 1 })
-    const sources = Array.from({ length: 128 }, (_unused, index) => session.append('assistant/chunk', {
+    const sources = Array.from({ length: 128 }, () => session.append('assistant/chunk', {
       turn: 1,
       step: 1,
-      chunk: { type: 'text-delta', index, text: 'x' },
+      chunk: { type: 'text-delta', index: 0, text: 'x' },
     }).seq)
     const message = session.append('assistant/message', {
       turn: 1,

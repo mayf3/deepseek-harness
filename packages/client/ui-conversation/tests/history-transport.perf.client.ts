@@ -7,21 +7,22 @@ import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { expect, it } from 'vitest'
 import { z } from 'zod'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { HistoryEntry, HistoryRecord } from '@deepseek-ai/dsh-api-remotes/client'
 import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
+import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session/types'
-import {
-  historyEntrySchema,
-  sessionHistoryValueSchema,
-} from '@deepseek-ai/dsh-host-apiproxy/api/sessions.schema'
+import type {
+  SessionEventEntry,
+  SessionHistoryRecord,
+  SessionWireEvent,
+} from '@deepseek-ai/dsh-api-session-controller/types'
+import { historyEntries } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/history-records.ts'
+import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ConversationEventInput,
   ConversationNodeDefinition,
   ConversationViewDefinition,
   ConversationViewNode,
-} from '../src/client/contract/conversation.ts'
-import { ConversationNodeAssembler } from '../src/client/sessions/conversation-assembler.ts'
-import { historyEntries } from '../src/client/sessions/history-records.ts'
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 const LOGICAL_EVENTS = 416_756
 const DELTA_EVENTS = 416_176
@@ -68,21 +69,90 @@ interface FoldSnapshots {
 }
 
 interface RawHistoryValue {
-  readonly events: HistoryEntry[]
+  readonly events: SessionEventEntry[]
   readonly hasMore: boolean
 }
 
 interface PackedHistoryValue {
-  readonly records: HistoryRecord[]
+  readonly records: SessionHistoryRecord[]
   readonly hasMore: boolean
-  readonly fromSeq: number
-  readonly toSeq: number
 }
 
+const safeIntegerSchema = z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER)
+const sessionWireEventSchema = z.object({
+  type: z.string(),
+  seq: safeIntegerSchema,
+  time: safeIntegerSchema,
+  data: z.json(),
+  ignorable: z.literal(true).optional(),
+  sourceEventSeqs: z.array(safeIntegerSchema).optional(),
+  surfaceOp: z.json().optional(),
+}).strict()
+const historyEntrySchema = z.object({ event: sessionWireEventSchema }).strict()
+const chunkRunBaseSchema = {
+  turn: z.number(),
+  step: z.number(),
+  index: z.number(),
+  dt: z.array(safeIntegerSchema),
+}
+const textChunkRowSchema = z.object({
+  type: z.enum(['text-chunks', 'reasoning-chunks']),
+  seq0: safeIntegerSchema.nonnegative(),
+  time0: safeIntegerSchema,
+  data: z.object({
+    ...chunkRunBaseSchema,
+    texts: z.array(z.string()).min(1),
+  }).strict(),
+}).strict()
+const toolCallChunkRowSchema = z.object({
+  type: z.literal('tool-call-chunks'),
+  seq0: safeIntegerSchema.nonnegative(),
+  time0: safeIntegerSchema,
+  data: z.object({
+    ...chunkRunBaseSchema,
+    id: z.string(),
+    name: z.string().optional(),
+    args: z.array(z.string()).min(1),
+  }).strict(),
+}).strict()
+const chunkRowSchema: z.ZodType<ChunkRow> = z.discriminatedUnion('type', [
+  textChunkRowSchema,
+  toolCallChunkRowSchema,
+]).superRefine((row, context) => {
+  const members = row.type === 'tool-call-chunks' ? row.data.args : row.data.texts
+  if (row.data.dt.length !== members.length - 1) {
+    context.addIssue({
+      code: 'custom',
+      message: 'packed chunk dt length must be one less than member count',
+      path: ['data', 'dt'],
+    })
+  }
+  if (members.length - 1 > Number.MAX_SAFE_INTEGER - row.seq0) {
+    context.addIssue({ code: 'custom', message: 'packed chunk seqs must stay safe integers', path: ['seq0'] })
+  }
+  let time = row.time0
+  for (let index = 0; index < row.data.dt.length; index++) {
+    time += row.data.dt[index] as number
+    if (Number.isSafeInteger(time)) continue
+    context.addIssue({
+      code: 'custom',
+      message: 'packed chunk times must stay safe integers',
+      path: ['data', 'dt', index],
+    })
+    break
+  }
+}) as z.ZodType<ChunkRow>
+const packedHistoryValueSchema: z.ZodType<PackedHistoryValue> = z.object({
+  records: z.array(z.union([
+    historyEntrySchema,
+    z.object({ chunks: chunkRowSchema }).strict(),
+  ])),
+  hasMore: z.boolean(),
+}) as z.ZodType<PackedHistoryValue>
 const rawSessionHistoryValueSchema: z.ZodType<RawHistoryValue> = z.object({
   events: z.array(historyEntrySchema),
   hasMore: z.boolean(),
-}) as unknown as z.ZodType<RawHistoryValue>
+}) as z.ZodType<RawHistoryValue>
 
 function timed<T>(run: () => T): Timed<T> {
   const start = performance.now()
@@ -302,8 +372,20 @@ function viewDefinition(target: string): ConversationViewDefinition<Conversation
   }
 }
 
-function conversationInputs(entries: readonly HistoryEntry[]): ConversationEventInput[] {
-  return entries.map(entry => ({ event: entry.event, view: entry.view }))
+function conversationInputs(entries: readonly SessionEventEntry[]): ConversationEventInput[] {
+  return entries.map(entry => ({ event: entry.event as SessionEvent }))
+}
+
+function wireEntry(event: SessionEvent): SessionEventEntry {
+  return { event: event as unknown as SessionWireEvent }
+}
+
+function wireEntries(events: readonly SessionEvent[]): SessionEventEntry[] {
+  return events.map(wireEntry)
+}
+
+function historyRecord(record: SessionEvent | ChunkRow): SessionHistoryRecord {
+  return isChunkRow(record) ? { chunks: record } : wireEntry(record)
 }
 
 function assemble(entries: readonly ConversationEventInput[]): FoldSnapshots {
@@ -330,9 +412,9 @@ function digest(value: unknown): string {
 it('reports packed history transport and exact replay costs', async () => {
   const fixture = timed(buildEvents)
 
-  assemble(conversationInputs(fixture.value.slice(0, 1_000).map(event => ({ event }))))
+  assemble(conversationInputs(wireEntries(fixture.value.slice(0, 1_000))))
   const rawHostHeap = sampledPeakHeap((sample) => {
-    const entries = fixture.value.map(event => ({ event }))
+    const entries = wireEntries(fixture.value)
     sample()
     const json = JSON.stringify({ events: entries, hasMore: false } satisfies RawHistoryValue)
     sample()
@@ -341,29 +423,23 @@ it('reports packed history transport and exact replay costs', async () => {
   const packedHostHeap = sampledPeakHeap((sample) => {
     const packedEvents = packChunkRuns(fixture.value)
     sample()
-    const records = packedEvents.map((record): HistoryRecord =>
-      isChunkRow(record) ? { chunks: record } : { event: record })
+    const records = packedEvents.map(historyRecord)
     sample()
     const json = JSON.stringify({
       records,
       hasMore: false,
-      fromSeq: 0,
-      toSeq: fixture.value.length,
     } satisfies PackedHistoryValue)
     sample()
     return Buffer.byteLength(json)
   })
 
-  const rawEntries = timed(() => fixture.value.map(event => ({ event })))
+  const rawEntries = timed(() => wireEntries(fixture.value))
   const packed = timed(() => packChunkRuns(fixture.value))
-  const packedRecords = timed(() => packed.value.map((record): HistoryRecord =>
-    isChunkRow(record) ? { chunks: record } : { event: record }))
+  const packedRecords = timed(() => packed.value.map(historyRecord))
   const rawValue: RawHistoryValue = { events: rawEntries.value, hasMore: false }
   const packedValue: PackedHistoryValue = {
     records: packedRecords.value,
     hasMore: false,
-    fromSeq: 0,
-    toSeq: fixture.value.length,
   }
 
   const rawJson = timed(() => JSON.stringify(rawValue))
@@ -389,7 +465,7 @@ it('reports packed history transport and exact replay costs', async () => {
   const packedClientHeap = sampledPeakHeap((sample) => {
     const wire: unknown = JSON.parse(packedJson.value)
     sample()
-    const parsed = sessionHistoryValueSchema.parse(wire) as unknown as PackedHistoryValue
+    const parsed = packedHistoryValueSchema.parse(wire)
     sample()
     const prepared = conversationInputs(historyEntries(parsed.records))
     sample()
@@ -401,7 +477,7 @@ it('reports packed history transport and exact replay costs', async () => {
   const parsedRaw = timed((): unknown => JSON.parse(rawJson.value))
   const parsedPacked = timed((): unknown => JSON.parse(packedJson.value))
   const rawValidation = timed(() => rawSessionHistoryValueSchema.parse(parsedRaw.value))
-  const packedValidation = timed(() => sessionHistoryValueSchema.parse(parsedPacked.value) as unknown as PackedHistoryValue)
+  const packedValidation = timed(() => packedHistoryValueSchema.parse(parsedPacked.value))
   const rawPreparation = timed(() => conversationInputs(rawValidation.value.events))
   const packedPreparation = timed(() => conversationInputs(historyEntries(packedValidation.value.records)))
 
@@ -534,7 +610,7 @@ it('reports exact decoding cost for long whitespace-prefix runs', () => {
     },
   }])
   const results = [10_000, 20_000, 40_000].map((members) => {
-    const record: HistoryRecord = {
+    const record: SessionHistoryRecord = {
       chunks: {
         type: 'reasoning-chunks',
         seq0: 0,

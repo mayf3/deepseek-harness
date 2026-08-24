@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 `@deepseek-ai/dsh-api-session-controller` owns the Host `ctx.sessionController` service and the generated Client `ctx.remote.session` namespace. It serves Session list, search, creation, model selection, rename, fork, prompt, attachment, queue, cancellation, message-aligned history, live log following, and Host-wide control state.
 
-History pages and follow event frames carry only raw `SessionWireEvent` values. Tool arguments, result content, failures, and `tool/result.data.meta` pass through unchanged; the controller does not resolve a Tool definition, run a presenter, or attach UI data.
+History pages carry `records`: ordinary records contain a raw `SessionWireEvent`, while consecutive same-block `assistant/chunk` deltas use the Session package's lossless packed-row encoding. `SessionEventStream` expands packed rows member-for-member before publishing a page to the Client Session object layer, so replay still observes every original event and sequence number. Follow frames remain raw individual events. Tool arguments, result content, failures, and `tool/result.data.meta` pass through unchanged; the controller does not resolve a Tool definition, run a presenter, or attach UI data.
 
 Each endpoint states its activation policy. List, search, attachment, history pages, and log following can inspect persistence without activating an Agent; queue mutation and cancellation require the corresponding live state; model, rename, and prompt commands may explicitly resume an ordinary Session. Create and fork are the only operations that create a new Agent. The service applies one preset-aware resume policy and subagent ownership fence to its own methods and to the Typert Agent and Session lookups used by other Remote namespaces.
 

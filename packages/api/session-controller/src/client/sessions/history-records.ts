@@ -4,6 +4,7 @@ import { decodeStorageRecord } from '@deepseek-ai/dsh-session/chunk-rows'
 import type {
   SessionEventEntry,
   SessionHistoryRecord,
+  SessionWireEvent,
 } from '../../types.ts'
 
 /**
@@ -14,5 +15,7 @@ import type {
 export function historyEntries(records: readonly SessionHistoryRecord[]): SessionEventEntry[] {
   return records.flatMap(record => 'event' in record
     ? [record]
-    : decodeStorageRecord(record.chunks).map(event => ({ event })))
+    : decodeStorageRecord(record.chunks).map(event => ({
+      event: event as unknown as SessionWireEvent,
+    })))
 }
