@@ -407,44 +407,12 @@ function ensureModuleProxy(
   }
 }
 
-/**
- * Maintain the flat module fallback `$DSH_HOME/profiles/node_modules`: one
- * entry per package in the dsh app's resolvable dependency CLOSURE (BFS
- * over `dependencies` from the app manifest), each resolved from its own
- * installation location. Plain Node uses symlinks. A pkg executable resolves
- * exports under ESM import conditions and writes small proxy packages because
- * the host filesystem cannot follow a symlink into pkg's virtual `/snapshot`
- * tree; the proxy re-exports the virtual URL, preserving the executable's
- * single module instance. One cross-process writer lock prevents partial
- * proxies and serializes carrier transitions. Node's
- * parent-directory walk from any profile finds this
- * directory after the profile's own `node_modules`, so every in-box plugin
- * resolves without pnpm ever managing it — the exact "bundles come from the
- * installation" contract. The closure (not just direct dependencies) is
- * required for out-of-tree plugins: their peer dependencies name Service
- * Definition packages (`dsh-compaction`, `dsh-invariants`, ...) that the app
- * reaches only through its Service Provider packages. Both a symlink target
- * and a proxy's virtual target resolve transitive imports from the original
- * package directory, so each package needs one flat fallback entry.
- * Idempotent: correct entries are kept and changed installation targets are
- * rewritten; under plain Node, a stale dangling link stays until its name is
- * reused because resolution cannot discover it.
- * @param installAnchor - absolute path of the dsh app's package.json.
- * @param home - the Harness home; defaults to {@link resolveDshHome}.
- * @returns settlement after the locked fallback generation is complete.
- */
-export async function healProfilesModuleFallback(installAnchor: string, home: string = resolveDshHome()): Promise<void> {
-  const profilesDir = join(home, PROFILES_DIR)
-  const modulesDir = join(profilesDir, 'node_modules')
-  mkdirSync(modulesDir, { recursive: true })
-  await withFileLock(modulesDir, () => {
-    healProfilesModuleFallbackLocked(installAnchor, modulesDir)
-    return Promise.resolve()
-  })
-}
+type ModuleFallbackEntry =
+  | { kind: 'symlink'; packageName: string; packageDir: string }
+  | { kind: 'proxy'; packageName: string; version: string; targets: Record<string, string> }
 
-/** Heal one module-fallback generation while the cross-process writer lock is held. */
-function healProfilesModuleFallbackLocked(installAnchor: string, modulesDir: string): void {
+/** Resolve the installation generation that every profile must find through the fallback directory. */
+function resolveModuleFallbackEntries(installAnchor: string): ModuleFallbackEntry[] {
   const appManifest = JSON.parse(readFileSync(installAnchor, 'utf8')) as ProfileManifest
   const links = new Map<string, string>()
   /* v8 ignore next -- a real app manifest always declares its name */
@@ -468,16 +436,88 @@ function healProfilesModuleFallbackLocked(installAnchor: string, modulesDir: str
       queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
     }
   }
-  for (const [packageName, target] of links) {
-    const link = join(modulesDir, packageName)
+  if (!isPackagedExecutable()) {
+    return [...links].map(([packageName, packageDir]) => ({ kind: 'symlink', packageName, packageDir }))
+  }
+  return [...links].flatMap(([packageName, packageDir]) => {
+    const source = packageProxySource(packageName, packageDir)
+    return Object.keys(source.targets).length === 0
+      ? []
+      : [{ kind: 'proxy' as const, packageName, version: source.version, targets: source.targets }]
+  })
+}
+
+/** Return whether one existing fallback entry already matches its resolved installation generation. */
+function moduleFallbackEntryCurrent(modulesDir: string, entry: ModuleFallbackEntry): boolean {
+  const link = join(modulesDir, entry.packageName)
+  try {
+    const stat = lstatSync(link)
+    if (entry.kind === 'symlink') {
+      return stat.isSymbolicLink() && readlinkSync(link) === entry.packageDir
+    }
+    if (!stat.isDirectory()) return false
+    const existing = readModuleProxyRecord(link)
+    return existing?.version === entry.version
+      && JSON.stringify(existing.dsh?.moduleFallback?.targets) === JSON.stringify(entry.targets)
+      && Object.keys(entry.targets).every((_, index) => existsSync(join(link, `entry-${index}.js`)))
+  } catch {
+    return false
+  }
+}
+
+/** Return whether every required fallback entry is already ready for this installation. */
+function moduleFallbackCurrent(modulesDir: string, entries: readonly ModuleFallbackEntry[]): boolean {
+  return entries.every(entry => moduleFallbackEntryCurrent(modulesDir, entry))
+}
+
+/**
+ * Maintain the flat module fallback `$DSH_HOME/profiles/node_modules`: one
+ * entry per package in the dsh app's resolvable dependency CLOSURE (BFS
+ * over `dependencies` from the app manifest), each resolved from its own
+ * installation location. Plain Node uses symlinks. A pkg executable resolves
+ * exports under ESM import conditions and writes small proxy packages because
+ * the host filesystem cannot follow a symlink into pkg's virtual `/snapshot`
+ * tree; the proxy re-exports the virtual URL, preserving the executable's
+ * single module instance. A complete matching generation returns without a
+ * writer lock; actual repairs acquire and recheck one cross-process lock so
+ * partial proxies and carrier transitions remain serialized. Node's
+ * parent-directory walk from any profile finds this
+ * directory after the profile's own `node_modules`, so every in-box plugin
+ * resolves without pnpm ever managing it — the exact "bundles come from the
+ * installation" contract. The closure (not just direct dependencies) is
+ * required for out-of-tree plugins: their peer dependencies name Service
+ * Definition packages (`dsh-compaction`, `dsh-invariants`, ...) that the app
+ * reaches only through its Service Provider packages. Both a symlink target
+ * and a proxy's virtual target resolve transitive imports from the original
+ * package directory, so each package needs one flat fallback entry.
+ * Idempotent: correct entries are kept and changed installation targets are
+ * rewritten; under plain Node, a stale dangling link stays until its name is
+ * reused because resolution cannot discover it.
+ * @param installAnchor - absolute path of the dsh app's package.json.
+ * @param home - the Harness home; defaults to {@link resolveDshHome}.
+ * @returns settlement after current-state validation or a locked repair.
+ */
+export async function healProfilesModuleFallback(installAnchor: string, home: string = resolveDshHome()): Promise<void> {
+  const profilesDir = join(home, PROFILES_DIR)
+  const modulesDir = join(profilesDir, 'node_modules')
+  mkdirSync(modulesDir, { recursive: true })
+  const entries = resolveModuleFallbackEntries(installAnchor)
+  if (moduleFallbackCurrent(modulesDir, entries)) return
+  await withFileLock(modulesDir, () => {
+    if (!moduleFallbackCurrent(modulesDir, entries)) healProfilesModuleFallbackLocked(entries, modulesDir)
+    return Promise.resolve()
+  })
+}
+
+/** Heal one module-fallback generation while the cross-process writer lock is held. */
+function healProfilesModuleFallbackLocked(entries: readonly ModuleFallbackEntry[], modulesDir: string): void {
+  for (const entry of entries) {
+    const link = join(modulesDir, entry.packageName)
     mkdirSync(dirname(link), { recursive: true })
-    if (isPackagedExecutable()) {
-      const source = packageProxySource(packageName, target)
-      if (Object.keys(source.targets).length > 0) {
-        ensureModuleProxy(link, packageName, source.version, source.targets)
-      }
+    if (entry.kind === 'proxy') {
+      ensureModuleProxy(link, entry.packageName, entry.version, entry.targets)
     } else {
-      ensureSymlink(link, target)
+      ensureSymlink(link, entry.packageDir)
     }
   }
 }

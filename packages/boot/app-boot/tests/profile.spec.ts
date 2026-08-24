@@ -4,7 +4,7 @@
  * empty-root composition, and the installation module-fallback healing.
  */
 
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { withFileLock } from '@deepseek-ai/dsh-atomic-write'
@@ -321,6 +321,20 @@ describe('healProfilesModuleFallback', () => {
     expect(readlinkSync(join(fallback, 'dsh-app'))).toContain('app')
   })
 
+  it('retains current links while repairing a missing sibling', async () => {
+    const anchor = stageInstallation({ 'bundle-a': { patch: '[]\n' } })
+    const home = tmp()
+    const fallback = join(home, 'profiles', 'node_modules')
+    await healProfilesModuleFallback(anchor, home)
+    const appTarget = readlinkSync(join(fallback, 'dsh-app'))
+    unlinkSync(join(fallback, 'bundle-a'))
+
+    await healProfilesModuleFallback(anchor, home)
+
+    expect(readlinkSync(join(fallback, 'dsh-app'))).toBe(appTarget)
+    expect(lstatSync(join(fallback, 'bundle-a')).isSymbolicLink()).toBe(true)
+  })
+
   it('serializes concurrent healers and retains the identical link', async () => {
     const anchor = stageInstallation({})
     const home = tmp()
@@ -330,6 +344,31 @@ describe('healProfilesModuleFallback', () => {
     ])
     const fallback = join(home, 'profiles', 'node_modules')
     expect(lstatSync(join(fallback, 'dsh-app')).isSymbolicLink()).toBe(true)
+  })
+
+  it('does not acquire the writer lock for a complete generation', async () => {
+    const anchor = stageInstallation({})
+    const home = tmp()
+    const modules = join(home, 'profiles', 'node_modules')
+    await healProfilesModuleFallback(anchor, home)
+    let releaseLock: (() => void) | undefined
+    let reportLock: (() => void) | undefined
+    const lockHeld = new Promise<void>((resolve) => { reportLock = resolve })
+    const release = new Promise<void>((resolve) => { releaseLock = resolve })
+    const holder = withFileLock(modules, async () => {
+      reportLock?.()
+      await release
+    })
+    await lockHeld
+
+    const healer = healProfilesModuleFallback(anchor, home)
+    const outcome = await Promise.race([
+      healer.then(() => 'complete' as const),
+      new Promise<'blocked'>(resolve => setTimeout(() => { resolve('blocked') }, 100)),
+    ])
+    releaseLock?.()
+    await Promise.all([holder, healer])
+    expect(outcome).toBe('complete')
   })
 
   it('waits for the module-fallback writer lock before publishing entries', async () => {
