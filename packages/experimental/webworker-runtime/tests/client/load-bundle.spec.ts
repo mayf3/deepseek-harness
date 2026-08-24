@@ -29,7 +29,7 @@ afterEach(() => {
   document.head.innerHTML = ''
 })
 
-it('loads a combo map through the tunnel and gives the blob script a local map URL', async () => {
+it('loads a combo map through the tunnel and embeds it in the blob script', async () => {
   const { worker, sent, deliver } = stubWorker()
   const tunnel = new WorkerTunnel(worker)
   const blobs: Blob[] = []
@@ -75,7 +75,10 @@ it('loads a combo map through the tunnel and gives the blob script a local map U
   })
   await loading
 
-  expect(await blobs[0]?.text()).toBe(map)
-  expect(await blobs[1]?.text()).toContain('//# sourceMappingURL=blob:fixture-1')
-  expect(revoked).toEqual(['blob:fixture-2'])
+  const source = await blobs[0]?.text()
+  const encoded = /sourceMappingURL=data:application\/json;charset=utf-8;base64,([^\s]+)/.exec(source ?? '')?.[1]
+  if (encoded === undefined) throw new Error('localized bundle has no inline source map')
+  const decoded = Uint8Array.from(atob(encoded), char => char.charCodeAt(0))
+  expect(new TextDecoder().decode(decoded)).toBe(map)
+  expect(revoked).toEqual(['blob:fixture-1'])
 })
