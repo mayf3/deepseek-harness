@@ -182,7 +182,6 @@ export class TypertGatewayService extends Service implements TypertGateway {
         '/api',
         endpoint => this.claimsEndpoint(endpoint),
         (endpoint, payload, signal) => this.dispatchRpc(endpoint, payload, signal),
-        { authority: 'trusted-host' },
       )
     })
     ctx.inject(['connection', 'webServer'], (webCtx) => {
@@ -193,9 +192,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
       webCtx.effect(() => {
         const route: WebUpgradeRoute = {
           path: REMOTE_STREAM_MUX_PATH,
-          handler: (req, socket, head) => {
-            if (!webCtx.connection.isTrustedRequest(req, 'trusted-host')) {
-              rejectRemoteStreamUpgrade(socket)
+          handler: async (req, socket, head) => {
+            const rejection = await webCtx.connection.requestRejection(req)
+            if (rejection !== undefined) {
+              rejectRemoteStreamUpgrade(socket, rejection)
               return
             }
             mux.handleUpgrade(req, socket, head)
