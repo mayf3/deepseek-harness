@@ -11,7 +11,6 @@ import * as agentCore from '@deepseek-ai/dsh-agent-spine-demo'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { defineTool } from '@deepseek-ai/dsh-tools'
 import * as jsonrpc from '../src/index.ts'
 
 /**
@@ -72,7 +71,6 @@ async function mountPlugin(
     writeDelayMs?: number
     failFlush?: boolean
     beforeServer?: (ctx: Context) => Promise<void> | void
-    toolFilter?: jsonrpc.JsonRpcConfig['toolFilter']
   } = {},
 ): Promise<ApplyHarness> {
   const ctx = new Context()
@@ -122,7 +120,6 @@ async function mountPlugin(
     input,
     output,
     exit,
-    ...options.toolFilter === undefined ? {} : { toolFilter: options.toolFilter },
   })
 
   const frames = (): Record<string, unknown>[] =>
@@ -283,51 +280,6 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
         jsonrpc: '2.0',
         params: { sessionId: 'main', status: 'idle' },
       })
-    } finally {
-      await harness.dispose()
-      await rm(storageDir, { recursive: true, force: true })
-    }
-  })
-
-  it('applies the configured root-agent tool filter through the Loader plugin', async () => {
-    const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-tool-filter-'))
-    const llmServer = await mockCompletionServer()
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
-    vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
-    const harness = await mountPlugin(storageDir, {
-      toolFilter: { allow: ['kept'] },
-      beforeServer: (ctx) => {
-        for (const name of ['kept', 'excluded']) {
-          ctx.tools.register(defineTool({
-            name,
-            description: name,
-            parameters: {},
-            output: {
-              schema: { type: 'string' },
-              render: (_args, value) => [{ type: 'text', text: value }],
-            },
-            execute: async () => name,
-          }))
-        }
-      },
-    })
-    try {
-      harness.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { cwd: storageDir, provider: 'deepseek-official', model: 'filtered-model' } })
-      await harness.waitForFrame(frame => frame.id === 1, 'initialize response')
-      harness.send({
-        jsonrpc: '2.0',
-        id: 2,
-        method: 'session/prompt',
-        params: { sessionId: 'filtered', contentBlocks: [{ type: 'text', text: 'inspect tools' }] },
-      })
-      await harness.waitForFrame(
-        frame => frame.method === 'session.status'
-          && (frame.params as { status?: string } | undefined)?.status === 'idle',
-        'filtered session idle status',
-      )
-
-      const request = llmServer.requests[0] as { tools?: Array<{ function?: { name?: string } }> }
-      expect(request.tools?.map(entry => entry.function?.name)).toEqual(['kept'])
     } finally {
       await harness.dispose()
       await rm(storageDir, { recursive: true, force: true })
