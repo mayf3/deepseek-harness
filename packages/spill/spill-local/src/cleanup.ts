@@ -48,14 +48,20 @@ function isTrustedDirectory(stats: Stats): boolean {
   if (!stats.isDirectory()) return false
   /* v8 ignore next -- POSIX ownership and mode bits have no Windows equivalent. */
   if (process.platform === 'win32' || process.geteuid === undefined) return true
+  /* v8 ignore start -- Windows takes the return above; POSIX tests exercise
+     owner and mode rejection. */
   return stats.uid === process.geteuid() && (stats.mode & 0o022) === 0
+  /* v8 ignore stop */
 }
 
 /** Stable identity for de-duplicating aliases of one root. */
 function rootIdentity(path: string, stats: Stats): string {
   /* v8 ignore next -- Windows file indexes are not portable inode identities. */
   if (process.platform === 'win32') return path.toLowerCase()
+  /* v8 ignore start -- Windows uses the canonical path identity above; POSIX
+     tests exercise device and inode identity. */
   return `${String(stats.dev)}:${String(stats.ino)}`
+  /* v8 ignore stop */
 }
 
 /**
