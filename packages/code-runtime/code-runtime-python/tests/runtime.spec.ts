@@ -555,8 +555,8 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
         'import signal, time',
         'if hasattr(signal, "pthread_sigmask"):',
         '    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGXCPU})',
-        'end = time.perf_counter() + 1.05',
-        'while time.perf_counter() < end:',
+        'end = time.process_time() + 1.05',
+        'while time.process_time() < end:',
         '    pass',
         'return "escaped"',
       ].join('\n'),
@@ -585,8 +585,8 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
         '        signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGXCPU})',
         '    signal.signal(signal.SIGXCPU, h)',
         '    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGXCPU})',
-        '    end = time.perf_counter() + 1.05',
-        '    while time.perf_counter() < end:',
+        '    end = time.process_time() + 1.05',
+        '    while time.process_time() < end:',
         '        pass',
         'return "escaped"',
       ].join('\n'),
@@ -3922,10 +3922,11 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // the serialized outer logs array adds one more byte of envelope (two
     // brackets and n-1 commas). The ledgers reserve that byte, so a result that
     // exactly exhausts the ledger still serializes within the configured cap.
-    // At the 64-byte floor: ledger 63, a 60-character line serializes as
-    // `"aaa...a"` (62 bytes) + 1 separator = 63, exactly exhausting the ledger
-    // and serializing as `["aaa...a"]` = 64 = the cap; a 61-character line
-    // costs 64 > 63 and truncates to the marker alone.
+    // At the 64-byte floor (the smallest admissible maxLogBytes): ledger 63,
+    // a 60-character line serializes as `"aaa...a"` (62 bytes) + 1 separator
+    // = 63, exactly exhausting the ledger and serializing as `["aaa...a"]`
+    // = 64 = the cap; a 61-character line costs 64 > 63 and truncates. The
+    // marker rides envelope, so the serialized logs run to cap + marker.
     const { runtime } = await setup({ maxLogBytes: 64, maxWallMs: 10_000 })
     const result = await runtime.run({
       program: ['print("a" * 60 + "\\n" + "b" * 61, end="")', 'return "done"'].join('\n'),
@@ -3941,11 +3942,11 @@ describe('PythonCodeRuntime — hostile peer', () => {
   }, 15_000)
 
   it('rejects a log budget too small to serialize the truncation marker', async () => {
-    // A maxLogBytes below 62 cannot serialize the truncation marker plus the
-    // outer-array envelope; it is rejected at construction so a tiny config
-    // cannot report more than the public cap. maxValueBytes keeps no floor
-    // beyond the positive-integer requirement (a completion can be 1 byte).
-    await expect(setup({ maxLogBytes: 61, maxWallMs: 10_000 })).rejects.toThrow(/must be at least 62/)
+    // A maxLogBytes below 64 cannot serialize the truncation marker itself;
+    // it is rejected at construction so a marker-only truncated run cannot
+    // report more than the public cap. maxValueBytes keeps no floor beyond the
+    // positive-integer requirement (a completion can be 1 byte).
+    await expect(setup({ maxLogBytes: 63, maxWallMs: 10_000 })).rejects.toThrow(/must be at least 64/)
   }, 15_000)
 
   it('charges the JSON-escaped cost of control characters against the log ledger', async () => {
@@ -4399,20 +4400,20 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('charges a forged log frame its escaped cost once past the code-unit lower bound', async () => {
     // The cheap lower bound only rejects what cannot possibly fit; a SHORT
     // control-heavy frame clears it and must still be charged what it costs on
-    // the wire. Ten NULs are 13 against the 32-byte lower bound but 63 escaped
+    // the wire. Eleven NULs are 14 against the 64-byte ledger's cheap bound
     // (six bytes each, two quotes, one separator), so the full charge truncates.
-    const { runtime } = await setup({ maxLogBytes: 63 })
+    const { runtime } = await setup({ maxLogBytes: 64 })
     const result = await runtime.run({
       program: [
         'import os',
-        'os.write(3, b\'{"type":"log","text":"\' + b"\\\\u0000" * 10 + b\'"}\\n\')',
+        'os.write(3, b\'{"type":"log","text":"\' + b"\\\\u0000" * 11 + b\'"}\\n\')',
         'return "settled"',
       ].join('\n'),
       bindings: [],
     })
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('settled')
-    expect(result.logs).toEqual([logTruncationMarker(63)])
+    expect(result.logs).toEqual([logTruncationMarker(64)])
   }, 8000)
 
   it('caps a forged done error.message from its code-unit prefix, never encoding the whole message', async () => {
