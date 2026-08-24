@@ -357,9 +357,10 @@ function messageOf(error: unknown): string {
  * Linux reads field 22 of `/proc/<pid>/stat` (starttime in clock ticks); the
  * field is positional after the comm field's closing parenthesis, which is
  * parsed from the LAST such character because a process name may contain one.
- * Darwin has no `/proc`, so the caller gets `undefined` there and the guard
- * degrades to the pre-existing behavior rather than paying a `ps` fork on a
- * teardown path. Any read failure is `undefined` for the same reason: this
+ * Darwin has no `/proc`, so the caller gets `undefined` there and `killGroup`
+ * signals the pgid without the identity re-check rather than paying a `ps`
+ * fork on a teardown path. Any read failure is `undefined` for the same
+ * reason: this
  * hardens a narrow race and must never be the thing that breaks teardown.
  * @param pid - the process to read.
  * @returns its start time, or undefined when unavailable.

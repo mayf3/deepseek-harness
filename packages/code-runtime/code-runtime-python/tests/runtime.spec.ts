@@ -408,8 +408,9 @@ describe('PythonCodeRuntime — process identity', () => {
       // undefined and the guard is inert).
       expect(readProcessStart(0)).toBeUndefined()
     } else {
-      // Darwin has no /proc: the reader reports undefined, and `killGroup` then
-      // keeps its pre-existing behavior instead of paying a `ps` fork per signal.
+      // Darwin has no /proc: the reader reports undefined, and `killGroup`
+      // signals the pgid without the identity re-check instead of paying a `ps`
+      // fork per signal.
       expect(own).toBeUndefined()
     }
   })
