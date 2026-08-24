@@ -149,7 +149,7 @@ describe('local attachment store', () => {
     }, { ...LIMITS, maxImagePixels: 64 }, { maxDimension: 2, maxBytes: 1024 * 1024 })
 
     expect(saved).toMatchObject({
-      mediaType: 'image/png',
+      mediaType: 'image/jpeg',
       width: 2,
       height: 2,
       name: 'big.png',
