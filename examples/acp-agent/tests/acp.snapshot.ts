@@ -350,11 +350,10 @@ const SCENARIOS: Scenario[] = [
     prepareWorkspace: prepareEditingCordisSkillWorkspace,
   },
   { name: 'lsp-definition', hasModelTurn: true, recorded: false, pinsHeader: true, headerClass: 'lsp', configPath: LSP_CONFIG },
-  // web_fetch markdown rendering end to end: the overlay's loopback fixture
-  // server supplies deterministic HTML (entities, a GFM table, nesting), the
-  // REAL local fetch provider retrieves it, and the tool result pins the
-  // turndown conversion. The fetched URL (fixed port) is part of the recorded
-  // transcript; replay re-executes the real fetch against the same fixture.
+  // web_fetch non-public-address rejection end to end: the real provider
+  // resolves the recorded loopback target and the result pins the failed tool
+  // call. The fixed URL is part of the recorded transcript; replay re-executes
+  // the real network policy without opening a connection.
   { name: 'web-fetch', hasModelTurn: true, recorded: true, pinsHeader: true, headerClass: 'web', configPath: WEB_CONFIG },
   {
     name: 'workspace-edit',

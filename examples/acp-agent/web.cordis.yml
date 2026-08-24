@@ -1,13 +1,11 @@
 # Web-fetch composition for the web-fetch snapshot scenario: the web seam, the
-# real local HTTP fetch provider, the model-facing web tools (fetch only, so
-# the pinned header carries exactly the surface under test), and the loopback
-# fixture server the scenario prompt fetches — deterministic content, no
-# external network, in recording and replay alike.
+# real local HTTP fetch provider, and the model-facing web tools (fetch only,
+# so the pinned header carries exactly the surface under test). The recorded
+# loopback target exercises the provider's non-public-address rejection without
+# opening a network connection.
 - insert:
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
-    - id: web-fetch-fixture
-      name: './web-fetch-fixture-server.mjs'
 
 - id: web
   name: '@deepseek-ai/dsh-web'
