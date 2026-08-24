@@ -699,6 +699,11 @@
         "@deepseek-ai/dsh-sdk-jsonrpc-server"
       ]
     },
+    "packages/bundle/sdk-minimal": {
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
+      ]
+    },
     "packages/bundle/web-app": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"

@@ -173,6 +173,10 @@ describe('loadProfile', () => {
       bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
       patchReload: 'startup',
     })
+    expect(PROFILE_TEMPLATES['sdk-minimal']).toEqual({
+      bundles: ['@deepseek-ai/dsh-sdk-minimal'],
+      patchReload: 'startup',
+    })
     try {
       loadProfile('t', 'web', anchor, home)
     } catch {
