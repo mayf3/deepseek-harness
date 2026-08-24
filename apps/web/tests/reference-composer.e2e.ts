@@ -1,7 +1,7 @@
 // Web e2e scenario: the shipped composition discovers local files and cold
 // sessions through the real Host, groups both domains in the shared @ menu,
 // and projects each pick as a complete inline range without issuing a model call.
-import { writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -127,6 +127,8 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'reference.txt'), 'reference fixture\n')
+    await mkdir(join(scaffold.workspaceCwd, 'workspace', 'folderx'), { recursive: true })
+    await writeFile(join(scaffold.workspaceCwd, 'workspace', 'folderx', 'child.txt'), 'child fixture\n')
   }, 120_000)
 
   afterAll(async () => {
@@ -230,6 +232,42 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await page.keyboard.press('Backspace')
     await expect.poll(() => input.locator('[data-composer-chip]').count()).toBe(0)
     await expect.poll(() => input.textContent()).toBe('pr ')
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
+  it('settles a folder as an atomic chip; Tab and the chevron drill instead', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-folder'))
+    const input = page.locator('[data-composer-input]').first()
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+
+    // Settle: Enter on the highlighted folder row resolves the folder itself
+    // as an atomic chip — folder glyph, no trigger character, one unit.
+    await input.fill('@folderx')
+    await menu.getByRole('option', { name: /Folder · folderx\// }).waitFor()
+    await page.keyboard.press('Enter')
+    const chip = input.locator('[data-composer-chip]').last()
+    await expect.poll(() => chip.textContent()).toBe('folderx/')
+    await expect.poll(() => chip.locator('svg').count()).toBe(1)
+    await expect.poll(() => input.textContent()).toBe('folderx/ ')
+
+    // Tab drills: the literal descent text stays editable and the open menu
+    // lists the folder's children.
+    await input.fill('@folderx')
+    await menu.getByRole('option', { name: /Folder · folderx\// }).waitFor()
+    await page.keyboard.press('Tab')
+    await expect.poll(() => input.textContent()).toBe('@folderx/')
+    await menu.getByRole('option', { name: /File · child\.txt/ }).waitFor()
+
+    // The row chevron drills the same way by pointer.
+    await input.fill('@folderx')
+    const row = menu.getByRole('option', { name: /Folder · folderx\// })
+    await row.waitFor()
+    await row.getByRole('button', { name: 'Browse folder' }).click()
+    await expect.poll(() => input.textContent()).toBe('@folderx/')
+    await menu.getByRole('option', { name: /File · child\.txt/ }).waitFor()
+    await page.keyboard.press('Escape')
 
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

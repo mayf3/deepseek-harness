@@ -66,7 +66,7 @@ export type PickOutcome =
   | undefined
 
 /** Keyboard keys intercepted by an open trigger menu. */
-export type ArbitrateKey = 'up' | 'down' | 'enter' | 'escape'
+export type ArbitrateKey = 'up' | 'down' | 'enter' | 'escape' | 'tab'
 
 /** Trigger-menu keyboard routing result. */
 export type ArbitrateOutcome = 'consumed' | 'pick-highlighted' | 'pass'

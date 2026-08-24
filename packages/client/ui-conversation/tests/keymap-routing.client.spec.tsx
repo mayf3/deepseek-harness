@@ -33,4 +33,31 @@ describe('keymap keydown routing', () => {
     fireEvent.keyDown(root, { key: 'Enter', metaKey: true })
     expect(submit).toHaveBeenCalledWith(true)
   })
+
+  it('routes Tab through arbitration and passes when unconsumed', () => {
+    const editor = createEditor({ namespace: 'keymap-routing', onError: (e) => { throw e } })
+    const root = document.createElement('div')
+    root.contentEditable = 'true'
+    document.body.appendChild(root)
+    editor.setRootElement(root)
+    registerPlainText(editor)
+    const arbitrate = vi.fn<(key: string, composing: boolean) => 'consumed' | 'pick-highlighted' | 'pass'>()
+      .mockReturnValueOnce('consumed')
+      .mockReturnValue('pass')
+    registerComposerKeymap(editor, {
+      arbitrate,
+      space: () => false,
+      dismissPopup: () => {},
+      canSubmit: () => true,
+      submit: () => {},
+      intakeFiles: () => {},
+      pasteText: () => {},
+    })
+    const consumed = fireEvent.keyDown(root, { key: 'Tab', keyCode: 9 })
+    expect(arbitrate).toHaveBeenCalledWith('tab', false)
+    expect(consumed).toBe(false) // consumed: preventDefault fired
+    const passed = fireEvent.keyDown(root, { key: 'Tab', keyCode: 9 })
+    expect(passed).toBe(true) // pass: the browser keeps native focus traversal
+  })
+
 })
