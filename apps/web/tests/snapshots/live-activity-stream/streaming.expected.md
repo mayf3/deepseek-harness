@@ -1,0 +1,8 @@
+- list "Live activities":
+  - listitem:
+    - button "Hide live output of printf 'streamed-%s\\n' marker-line; sleep 45" [expanded]:
+      - text: bash printf 'streamed-%s\n' marker-line; sleep 45 running
+      - img
+    - text: running $ printf 'streamed-%s\n' marker-line; sleep 45
+    - button "Copy"
+    - text: streamed-marker-line

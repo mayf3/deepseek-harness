@@ -25,6 +25,7 @@ import type {
 } from './types.ts'
 // Declaration merge only: makes ctx.systemPrompt visible for the section registration.
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { createWorkflowActivityMirror } from './activity.ts'
 
 export const name = 'tool-workflow'
 export const inject = ['tools', 'workflowEngine', 'systemPrompt']
@@ -207,6 +208,7 @@ export function apply(ctx: Context, config: Config): void {
   // fields; the assertion records that resolution, not a hidden fallback.
   const { toolName, maxResultChars } = config as ResolvedConfig
   const recorder = createWorkflowRecorder(ctx)
+  const mirror = createWorkflowActivityMirror(ctx)
   // Usage policy ships with the tool (the master convention: tool guidance
   // lives in tool plugins as prompt sections, not in the deployment persona).
   ctx.systemPrompt.section({
@@ -291,7 +293,10 @@ export function apply(ctx: Context, config: Config): void {
       const recordsRun = exec.parent === undefined
       // The shipped worker-thread engine publishes member events from later
       // worker messages, after start() returns and this run record is active.
-      if (recordsRun) recorder.start(parent.session, run)
+      if (recordsRun) {
+        recorder.start(parent.session, run)
+        mirror.start(run, parent)
+      }
 
       // Bridge the tool's abort signal to the run: if the parent step is aborted while the
       // script is in flight, cancel the whole run. The signal also enters the engine directly, but
@@ -323,9 +328,13 @@ export function apply(ctx: Context, config: Config): void {
             /* v8 ignore next -- WorkflowRun.result never rejects by contract, so result is assigned before finally. */
             if (result === undefined) throw new Error('workflow run settled without a result')
             recorder.finish(run.id, result.stopReason)
+            mirror.finish(run.id, result.stopReason)
           }
         } finally {
-          if (recordsRun) recorder.abandon(run.id)
+          if (recordsRun) {
+            recorder.abandon(run.id)
+            mirror.abandon(run.id)
+          }
         }
       }
     },

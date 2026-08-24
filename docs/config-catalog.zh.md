@@ -35,6 +35,22 @@ export interface AcpConfig {
 
 来源：[`packages/acp/acp/src/index.ts:74`](../packages/acp/acp/src/index.ts)
 
+<a id="deepseek-aidsh-activity-local"></a>
+
+## `@deepseek-ai/dsh-activity-local`
+
+```ts config-catalog
+/** Configuration for the process-local observation registry. */
+export interface Config {
+  /** Live output retention per activity in UTF-8 bytes; omission defaults to 262144. */
+  retainBytes?: number
+  /** Output retention kept after an activity settles, in UTF-8 bytes; omission defaults to 16384. */
+  settledRetainBytes?: number
+}
+```
+
+来源：[`packages/activity/activity-local/src/index.ts:31`](../packages/activity/activity-local/src/index.ts)
+
 <a id="deepseek-aidsh-agent-default-model"></a>
 
 ## `@deepseek-ai/dsh-agent-default-model`
@@ -277,6 +293,24 @@ export interface Config {
 依赖：[`ToolPresentationMode`](subsystems/tools.zh.md)
 
 来源：[`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/core/agent-tool-presentation/src/index.ts)
+
+<a id="deepseek-aidsh-api-activity-controller"></a>
+
+## `@deepseek-ai/dsh-api-activity-controller`
+
+需要：`typert`
+
+```ts config-catalog
+/** Configuration for the Activity Remote owner. */
+export interface Config {
+  /** Coalescing window after new output before an observation read, in milliseconds (default 100). */
+  flushMs?: number
+  /** Soft byte budget per observation output frame (default 65536); one larger chunk ships whole. */
+  maxFrameBytes?: number
+}
+```
+
+来源：[`packages/api/activity-controller/src/index.ts:26`](../packages/api/activity-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -2561,10 +2595,12 @@ export type TokenMeterConfig = Record<string, never>
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
+  activityPollMs?: number
 }
 ```
 
-来源：[`packages/shell/tool-bash/src/index.ts:34`](../packages/shell/tool-bash/src/index.ts)
+来源：[`packages/shell/tool-bash/src/index.ts:36`](../packages/shell/tool-bash/src/index.ts)
 
 <a id="deepseek-aidsh-tool-bash-persistent"></a>
 
@@ -2726,10 +2762,12 @@ export interface Config {
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
+  activityPollMs?: number
 }
 ```
 
-来源：[`packages/shell/tool-pwsh/src/index.ts:52`](../packages/shell/tool-pwsh/src/index.ts)
+来源：[`packages/shell/tool-pwsh/src/index.ts:60`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -3305,6 +3343,7 @@ export interface Config {
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
 - `@deepseek-ai/dsh-client-locale`（[`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts)）
 - `@deepseek-ai/dsh-client-modules` — 需要 `webServer` · `loader`（[`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts)）
+- `@deepseek-ai/dsh-client-ui-activity`（[`packages/client/ui-activity/src/index.ts`](../packages/client/ui-activity/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-agent-preset`（[`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-approval`（[`packages/client/ui-approval/src/index.ts`](../packages/client/ui-approval/src/index.ts)）
 - `@deepseek-ai/dsh-client-ui-attachment`（[`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts)）
@@ -3378,6 +3417,7 @@ export interface Config {
 
 抽象服务类——部署时应改为加载具体的实现包（参见[能力 seam](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)）。
 
+- `@deepseek-ai/dsh-activity` — 抽象 `ActivityRegistry`（[`packages/activity/activity/src/index.ts`](../packages/activity/activity/src/index.ts)）
 - `@deepseek-ai/dsh-attachment` — 抽象 `AttachmentStore`（[`packages/attachment/attachment/src/index.ts`](../packages/attachment/attachment/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime` — 抽象 `CodeRuntime`（[`packages/code-runtime/code-runtime/src/index.ts`](../packages/code-runtime/code-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-compaction` — 抽象 `CompactionEngine`（[`packages/compaction/compaction/src/index.ts`](../packages/compaction/compaction/src/index.ts)）

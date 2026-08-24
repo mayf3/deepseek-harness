@@ -33,9 +33,11 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
+import type {} from '@deepseek-ai/dsh-activity'
 import { processOutcome } from './background.ts'
+import { observeBackgroundActivity } from './observe.ts'
 import { renderPwshProcessRead, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
@@ -45,19 +47,34 @@ declare module '@deepseek-ai/dsh-jobs' {
   }
 }
 
+declare module '@deepseek-ai/dsh-activity' {
+  interface ActivityKindMap {
+    pwsh: 'pwsh'
+  }
+}
+
 export const name = 'tool-pwsh'
 export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 
+/* jscpd:ignore-start -- the pwsh Config mirrors tool-bash's by design, like render/background. */
 /** Configuration for the pwsh tool. */
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
+  /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
+  activityPollMs?: number
 }
 
 /** Runtime configuration schema for the pwsh tool plugin. */
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
+  activityPollMs: z.number()
+    .step(1)
+    .min(1)
+    .max(Number.MAX_SAFE_INTEGER)
+    .default(150),
 })
+/* jscpd:ignore-end */
 
 /** Parsed tool args; execute validates value constraints absent from ParameterSchemaSpec. */
 interface PwshToolArgs {
@@ -194,6 +211,7 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
+  const activityPollMs = config.activityPollMs ?? 150
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -378,12 +396,14 @@ export function apply(ctx: Context, config: Config = {}): void {
           throw error
         }
         // Task preflight finishes before the starter can spawn a process.
+        let started: ShellProcess | undefined
         const id = jobs.start({
           kind: 'pwsh',
           label: args.command,
           ...exec.agent ? { owner: exec.agent } : {},
           run: () => {
             const proc = ctx.shell.start(ctx.shell.resolve(request))
+            started = proc
             return {
               cancel: () => void proc.kill(),
               done: proc.done.then(() => processOutcome(proc)),
@@ -391,6 +411,16 @@ export function apply(ctx: Context, config: Config = {}): void {
             }
           },
         })
+        // The starter ran synchronously inside the committed start; mirror the
+        // spawned process into the optional observation registry.
+        if (started !== undefined) {
+          observeBackgroundActivity(ctx, started, {
+            kind: 'pwsh',
+            label: args.command,
+            ...exec.agent ? { owner: exec.agent } : {},
+            correlation: { callId: exec.callId, jobId: id },
+          }, activityPollMs, processOutcome)
+        }
         return { kind: 'background' as const, jobId: id }
       }
       const result = await ctx.shell.run(ctx.shell.resolve({

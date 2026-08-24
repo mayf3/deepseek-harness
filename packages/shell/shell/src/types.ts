@@ -8,10 +8,22 @@
  */
 
 import type { SandboxEnforcement, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import type { CollectedOutput, DshEnvironment } from '@deepseek-ai/dsh-subprocess'
+import type { CollectedOutput, DshEnvironment, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
 
 export { DSH_ENV_PREFIX } from '@deepseek-ai/dsh-subprocess'
-export type { CollectedOutput, DshEnvironment, DshEnvironmentKey } from '@deepseek-ai/dsh-subprocess'
+export type { CollectedOutput, DshEnvironment, DshEnvironmentKey, SubprocessOutputRead, SubprocessOutputReader } from '@deepseek-ai/dsh-subprocess'
+
+/**
+ * Non-consuming offset readers over a background process's captured streams,
+ * for observers independent of the consuming {@link ShellProcess.readOutput}
+ * cursor. A stream is absent when its backend cannot expose offset reads.
+ */
+export interface ShellObservedStreams {
+  /** Offset reader over captured stdout, when the backend exposes one. */
+  stdout?: SubprocessOutputReader
+  /** Offset reader over captured stderr, when the backend exposes one. */
+  stderr?: SubprocessOutputReader
+}
 
 /**
  * Sandbox facts for one run, present iff a sandboxing executor handled it.
@@ -175,6 +187,13 @@ export interface ShellProcess {
    * full-stream spill files when available.
    */
   readOutput(): ShellProcessRead
+  /**
+   * Non-consuming offset readers over the same captured streams the consuming
+   * {@link readOutput} cursor drains. Independent observers read here at their
+   * own offsets without stealing bytes from `readOutput`. Absent when the
+   * backend cannot expose offset reads; observers then see no stream.
+   */
+  observed?: ShellObservedStreams
   /**
    * Kill the process group. Returns false when it had already finished
    * (no-op); idempotent.

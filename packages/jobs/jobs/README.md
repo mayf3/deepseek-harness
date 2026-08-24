@@ -35,6 +35,6 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-- **Stream output has one consuming cursor** — independent observers need a cursor or snapshot API.
+- **Stream output has one consuming cursor** — the model owns it; independent observers use the non-consuming [`dsh-activity`](../../activity/activity/README.md) plane the producers mirror into instead.
 - **Foreground work cannot be promoted** — producers choose foreground or background before starting.
 - **The contract is in-process** — `JobStart.run()` passes callbacks and exact `Agent` objects; a durable or cross-process backend must reshape identity, restart, ownership, and observation semantics before it can implement this seam.

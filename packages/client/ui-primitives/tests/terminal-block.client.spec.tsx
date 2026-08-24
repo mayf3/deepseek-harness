@@ -89,13 +89,28 @@ describe('TerminalBlock prompt label', () => {
 })
 
 describe('TerminalBlock states', () => {
-  it('running shows the command line only: no output, no placeholder, no copy', () => {
-    const view = render(<TerminalBlock command="sleep 5" running output="partial" />)
+  it('running with no output shows the command line only: no output box, no placeholder, no copy', () => {
+    const view = render(<TerminalBlock command="sleep 5" running />)
     expect(view.getByText('sleep 5')).toBeTruthy()
-    expect(view.queryByText('partial')).toBeNull()
+    expect(outputLines(view.container)).toEqual([])
     expect(view.queryByText('无输出')).toBeNull()
     expect(view.queryByRole('button')).toBeNull()
     expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
+  })
+
+  it('running with supplied output streams the live text and keeps it copyable', () => {
+    const view = render(<TerminalBlock command="sleep 5" running output="partial" />)
+    expect(view.getByText('partial')).toBeTruthy()
+    expect(view.queryByText('无输出')).toBeNull()
+    expect(view.queryByRole('button', { name: '复制' })).toBeTruthy()
+    expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
+  })
+
+  it('running with an empty live stream draws neither output nor placeholder', () => {
+    const view = render(<TerminalBlock command="tail -f log" running output="" />)
+    expect(outputLines(view.container)).toEqual([])
+    expect(view.queryByText('无输出')).toBeNull()
+    expect(view.queryByRole('button')).toBeNull()
   })
 
   it('running still shows a settled-looking status pill when one is supplied', () => {

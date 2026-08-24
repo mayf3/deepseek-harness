@@ -23,6 +23,7 @@
 | `start(spec)` | 后台执行。立即返回不含任务语义的 `ShellProcess` 句柄；**不应用超时**。调用方可以将其适配到 `ctx.jobs`。 |
 | `sandboxMode` | 工具层的能力事实：沙箱执行器用于限制执行的默认模式（基类中为 `undefined`，即「此执行器不使用沙箱」）。`dsh-tool-bash` 会在注册时读取它，仅当组合确实支持升权字段时才公布这些字段。 |
 | `ShellProcess.readOutput()` | **增量** 读取输出：连续读取绝不会重复交付。因缓冲区容量限制而丢失数据的读取会标记 `lossy`，并指向完整流 spill 文件。 |
+| `ShellProcess.observed` | 可选的**非消费** offset 读取器，覆盖同一批捕获流，供独立于消费游标的观察者使用（activity 观察面）。后端无法提供 offset 读取时缺省。 |
 | `ShellProcess.kill()` | 终止进程组。如果进程已结束，返回 `false`。 |
 
 实现会继承 `ShellExecutor` 并实现抽象方法。dispose（资源释放）必须终止每个运行中的进程并等待其退出。

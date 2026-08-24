@@ -1,0 +1,26 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.host.tsbuildinfo"
+  },
+  "files": [
+    "src/index.ts",
+    "src/invariant.ts",
+    "src/types.ts",
+    "src/feed.ts",
+    "src/observe.ts"
+  ],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../activity/activity" },
+    { "path": "../../core/agent" },
+    { "path": "../../core/session" },
+    { "path": "../../jobs/jobs" },
+    { "path": "../../llm/llm" },
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../typert/protocol" }
+  ]
+}

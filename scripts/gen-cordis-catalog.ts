@@ -105,6 +105,8 @@ export const SERVICE_PAGE: Record<string, string> = {
   subprocess: 'subprocess.md',
   systemPrompt: 'system-prompt.md',
   jobs: 'jobs.md',
+  activities: 'activity.md',
+  activityController: 'activity.md',
   sessionTelemetry: 'session-telemetry.md',
   agentTeams: 'agent-team.md',
   tokenMeter: 'token-meter.md',
@@ -168,6 +170,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   slots: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
   workspaces: 'client-side interface-typed browser service — packages/api/workspace-controller/README.md owns the API',
+  activityFeed: 'client-side interface-typed browser service — packages/api/activity-controller/README.md owns the API',
 }
 
 /**
@@ -477,6 +480,16 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PromptSection: 'system-prompt.md',
   SystemPrompt: 'system-prompt.md',
   ToolProviderResult: 'system-prompt.md',
+  ActivitiesChangedListener: 'activity.md',
+  ActivityHandle: 'activity.md',
+  ActivityId: 'activity.md',
+  ActivityOpen: 'activity.md',
+  ActivityOutputListener: 'activity.md',
+  ActivityRead: 'activity.md',
+  ActivitySnapshot: 'activity.md',
+  ActivityControlFrame: 'activity.md',
+  ActivityObserveFrame: 'activity.md',
+  ActivityObserveRequest: 'activity.md',
   JobDoneListener: 'jobs.md',
   JobId: 'jobs.md',
   JobRead: 'jobs.md',

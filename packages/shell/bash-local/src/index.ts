@@ -272,6 +272,7 @@ export class LocalBashExecutor extends ShellExecutor {
       status: 'running',
       exitCode: null,
       signal: null,
+      observed: collected,
       done: running.done.then((outcome) => {
         // Any signal termination is killed, including a command signaling itself.
         if (proc.status === 'running') {

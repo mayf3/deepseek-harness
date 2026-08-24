@@ -81,6 +81,11 @@
     - id: jobs
       name: '@deepseek-ai/dsh-jobs-local'
 
+    # Live-activity observation registry: non-consuming output streams for the
+    # optional activity plane (background bash/pwsh mirror into it when loaded).
+    - id: activity
+      name: '@deepseek-ai/dsh-activity-local'
+
     - id: llm-retry
       name: '@deepseek-ai/dsh-llm-retry'
 

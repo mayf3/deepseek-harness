@@ -54,7 +54,10 @@ export interface TerminalBlockProps {
   exitCode?: number | undefined
   /** Settled terminating signal name; any value renders the status pill, taking precedence over the exit code. */
   signal?: string | undefined
-  /** The command is still running: the block shows the prompt line alone. */
+  /**
+   * The command is still running: with no `output` the block shows the prompt
+   * line alone; with output it renders the live text under the running state.
+   */
   running?: boolean | undefined
   /** Height cap in output lines before the middle collapses (default {@link DEFAULT_TERMINAL_MAX_LINES}); Infinity disables the cap. */
   maxLines?: number | undefined
@@ -221,13 +224,16 @@ export function TerminalBlock({
           ))}
         </div>
         {status !== undefined && <Pill className={css.status}>{status}</Pill>}
-        {!running && !empty && (
+        {(!running || output !== undefined) && !empty && (
           <button type="button" className={css.copyButton} onClick={onCopy}>
             {copied ? copy.copied : copy.copy}
           </button>
         )}
       </div>
-      {!running && (empty
+      {/* A running block renders its live text as soon as the caller supplies
+          output; an undefined output keeps the historical prompt-only frame,
+          and a live-but-empty stream draws no placeholder. */}
+      {(!running || (output !== undefined && !empty)) && (empty && !running
         ? <div className={css.empty}>{copy.noOutput}</div>
         : (
           <div className={css.output}>

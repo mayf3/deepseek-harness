@@ -165,6 +165,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns Workspace commands and reconnect-safe Workspace state delivery through the generated Remote namespace.',
   },
   {
+    key: 'activityController',
+    pkg: 'api-activity-controller',
+    title: 'Host Activity Remote controller',
+    mode: 'core',
+    note: 'Owns the live-activity roster stream and per-activity non-consuming output observation through the generated Remote namespace.',
+  },
+  {
     key: 'invariants',
     pkg: 'invariants',
     title: 'Package-owned invariant registry',
@@ -536,6 +543,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     implementations: ['jobs-local'],
     consumers: ['tool-bash', 'tool-terminal', 'tool-subagent', 'tool-jobs'],
     note: 'Producers (background bash, PTY sends, and subagent delegations) register running work; tool-jobs is the model-facing controller that reads, lists, and kills it; jobs-local is the process-local registry.',
+  },
+  {
+    key: 'activities',
+    pkg: 'activity',
+    title: 'Live activity observation registry',
+    mode: 'seam',
+    implementations: ['activity-local'],
+    consumers: ['tool-bash', 'tool-pwsh', 'tool-workflow', 'activity-controller'],
+    note: 'Producers mirror live output and status into non-consuming offset-addressed streams; activity-controller serves them to browsers, and the model-facing paths (jobs cursors, tool results) stay untouched.',
   },
   {
     key: 'web',

@@ -23,6 +23,7 @@ The split is a standard capability seam ([capability-seams Agent Note](../../../
 | `start(spec)` | Background execution. Returns a task-free `ShellProcess` handle immediately; **no timeout applies**. The caller may adapt it into `ctx.jobs`. |
 | `sandboxMode` | The capability fact for the tool layer: the default mode a SANDBOXING executor confines under (`undefined` in the base class — "this executor does not sandbox"). `dsh-tool-bash` reads it at registration to advertise the escalation fields only when the composition honors them. |
 | `ShellProcess.readOutput()` | **Incremental** output read — consecutive reads never re-deliver. Reads that lost data to buffer bounds flag `lossy` and point at full-stream spill files. |
+| `ShellProcess.observed` | Optional **non-consuming** offset readers over the same captured streams, for observers independent of the consuming cursor (the activity observation plane). Absent when a backend cannot expose offset reads. |
 | `ShellProcess.kill()` | Kill the process group. Returns `false` when it already finished. |
 
 Implementations subclass `ShellExecutor` and implement the abstract methods. Disposal must kill every running process and await its exit.
