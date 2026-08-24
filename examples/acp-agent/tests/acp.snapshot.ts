@@ -262,6 +262,18 @@ const SCENARIOS: Scenario[] = [
     headerClass: 'image',
     configPath: IMAGE_CONFIG,
   },
+  // Authored keyless replay of the re-encoding path: the 900x1200 16-bit
+  // gradient PNG cannot pass through, so the master converts down the opaque
+  // JPEG ladder and the 640,000-pixel request budget re-encodes a downscaled
+  // request version — the assembled projection the tiny byte-identical
+  // fixtures above never exercise.
+  {
+    name: 'read-image-reencode',
+    hasModelTurn: true,
+    recorded: false,
+    headerClass: 'image',
+    configPath: IMAGE_CONFIG,
+  },
   {
     name: 'inline-image-prompt',
     hasModelTurn: true,

@@ -308,16 +308,21 @@ export interface Config {
   maxImagePixels?: number
   /** Maximum intrinsic width and maximum intrinsic height accepted for one submitted image. Default: 8192px. */
   maxImageDimension?: number
-  /** Long-edge pixel cap of the stored provider-independent normalized image. */
+  /** Total-pixel budget of the stored provider-independent normalized image. */
+  normalizedImageMaxPixels?: number
+  /** Long-edge pixel cap of the stored provider-independent normalized image, applied after the total-pixel budget. */
   normalizedImageMaxDimension?: number
-  /** Encoded-byte safety cap of the stored provider-independent normalized image. */
+  /**
+   * Encoded-byte target of the stored provider-independent normalized image;
+   * the smallest quality-ladder output is kept when no quality fits.
+   */
   normalizedImageMaxBytes?: number
   /** Maximum simultaneous normalization or request-image transformations in this service instance. */
   imageCompressionConcurrency?: number
 }
 ```
 
-Source: [`packages/attachment/attachment-local/src/index.ts:51`](../packages/attachment/attachment-local/src/index.ts)
+Source: [`packages/attachment/attachment-local/src/index.ts:55`](../packages/attachment/attachment-local/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -943,7 +948,7 @@ export interface DeepSeekCatalogModel {
   inputModalities?: ModelModality[]
   /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
   imagePixelBudget?: number | 'low'
-  /** Encoded-byte cap for one deterministic request preview. */
+  /** Encoded-byte target for one deterministic request preview; the smallest quality-ladder output is used when no quality fits. */
   imageMaxBytes?: number
 }
 ```
@@ -1054,7 +1059,10 @@ export interface PiAiProviderProfile {
   maxRequestImageBytes?: number
   /** Total-pixel budget for each deterministic inline request version. */
   requestImagePixelBudget?: number
-  /** Raw encoded-byte cap for each deterministic inline request version. */
+  /**
+   * Raw encoded-byte target for each deterministic inline request version;
+   * the smallest quality-ladder output is used when no quality fits.
+   */
   requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
@@ -1213,7 +1221,7 @@ export type PiAiThinkingFormat = NonNullable<OpenAICompletionsCompat['thinkingFo
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-Source: [`packages/llm/llm-pi-ai/src/config.ts:213`](../packages/llm/llm-pi-ai/src/config.ts)
+Source: [`packages/llm/llm-pi-ai/src/config.ts:216`](../packages/llm/llm-pi-ai/src/config.ts)
 
 <a id="deepseek-aidsh-llm-replay"></a>
 

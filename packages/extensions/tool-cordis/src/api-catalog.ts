@@ -459,7 +459,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: AbortSignal, ): Promise<RequestImageAttachment>',
         description: 'Generate or read one deterministic model-request version from the stored normalized image.',
-        parameters: [{ name: 'ref', description: 'durable provider-independent normalized attachment reference.' }, { name: 'policy', description: 'exact route pixel and encoded-byte budget.' }, { name: 'signal', description: 'optional cancellation.' }],
+        parameters: [{ name: 'ref', description: 'durable provider-independent normalized attachment reference.' }, { name: 'policy', description: 'exact route pixel budget and encoded-byte target; a target no ladder quality meets yields the smallest ladder output.' }, { name: 'signal', description: 'optional cancellation.' }],
         returns: 'request bytes and the cache/upload identity covering every transform input.',
       },
     ],
