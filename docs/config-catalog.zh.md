@@ -1286,7 +1286,9 @@ export interface ReplayModelConfig {
    * Optional flat visual-token price the replay route declares for every
    * retained request image, so keyless scenarios exercise route-priced
    * request pressure; each occurrence is priced at this value plus its
-   * request-preview handle text. Absent declares no image pricing.
+   * request-preview handle text. Requires {@link inputModalities} to include
+   * `image` — a text-only route never sends visual tokens. Absent declares
+   * no image pricing.
    */
   imageRequestTokens?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */

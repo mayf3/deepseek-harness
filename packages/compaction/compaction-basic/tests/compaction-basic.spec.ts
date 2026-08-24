@@ -4,6 +4,7 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import BasicCompactionEngine from '@deepseek-ai/dsh-compaction-basic'
 import type { BasicCompactionConfig } from '@deepseek-ai/dsh-compaction-basic'
 import { selectCompactableRange } from '@deepseek-ai/dsh-compaction-basic/src/region.ts'
+import { frameSummary } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import type { SummarizationInput, SummaryResult } from '@deepseek-ai/dsh-compaction-basic/src/summarizer.ts'
 import { CompactionId, toolPairingBalancedAfter, toolPairingBalancedBefore } from '@deepseek-ai/dsh-compaction'
 import {
@@ -1964,6 +1965,33 @@ describe('route-priced image pressure', () => {
     expect(selectCompactableRange(session, neutral, 350)).toBeNull()
     const range = selectCompactableRange(session, routed, 350)
     expect(range).not.toBeNull()
+  })
+
+  it('accepts a summary larger than the span heuristic when the route price shrinks', async () => {
+    // A single short image message prices below a framed summary under the
+    // fixed heuristic but far above it under the route: the shrink comparison
+    // must ask whether the replacement lowers route pressure.
+    const ctx = pricedContext(1_000)
+    const session = imageConversation(1)
+    const before = ctx.tokenMeter.measure(session)
+    const imageNode = before.nodes[0]!
+    const compact = new TestCompactionEngine(ctx, { auto: false })
+    compact.summary = [{
+      type: 'text',
+      text: 'summary text sized between the heuristic and route prices of the shadowed image message, '
+        + 'long enough that the fixed heuristic alone would reject it as not smaller '
+        + 'while the route-priced comparison accepts the pressure reduction.',
+    }]
+    const framed = ctx.tokenMeter.estimateMessage(createUserMessage({
+      content: frameSummary(compact.summary),
+      source: { kind: 'plugin', plugin: 'test' },
+    }))
+    expect(framed).toBeGreaterThan(imageNode.heuristicTokens)
+    expect(framed).toBeLessThan(imageNode.tokens)
+
+    const result = await compact.compactRegion(imageNode.seq, imageNode.seq, agent(session), SIGNAL)
+    expect(result.shadowedSeqs).toEqual([imageNode.seq])
+    expect(result.shadowedTokenCount).toBe(imageNode.heuristicTokens)
   })
 
   it('triggers pressure compaction from routed visual tokens and logs heuristic shadow prices', async () => {

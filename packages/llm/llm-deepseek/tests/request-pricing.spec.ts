@@ -58,6 +58,22 @@ describe('DeepSeek request-image pricing', () => {
     expect(prices[0]!.visualTokens).toBe(201)
   })
 
+  it('builds handle and placeholder text through the supplied access resolution', () => {
+    const access = { readonlyPath: '/world/attachments/photo.png' }
+    const images = [ref('first', 800, 800), ref('second', 800, 800)]
+    const prices = deepSeekImageRequestPricing(
+      connection({ maxImagesPerRequest: 1, imageOffloadCountQuantum: 1 }),
+      'vision',
+      () => access,
+    ).priceImages(images)
+    expect(prices[0]).toEqual({ visualTokens: 0, text: offloadedImageText(images[0]!, access) })
+    expect(prices[1]).toEqual({
+      visualTokens: 349,
+      text: requestImageHandleText(images[1]!, { width: 800, height: 800 }, access),
+    })
+    expect(prices[1]?.text).toContain('/world/attachments/photo.png')
+  })
+
   it('prices count-offloaded oldest occurrences as their placeholder text', () => {
     const images = [ref('first', 800, 800), ref('second', 800, 800), ref('third', 800, 800)]
     const prices = deepSeekImageRequestPricing(

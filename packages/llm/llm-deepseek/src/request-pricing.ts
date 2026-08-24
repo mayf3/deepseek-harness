@@ -10,7 +10,7 @@
  */
 
 import { offloadedImageText, offloadedImagePrefixCount, requestImageHandleText, textOnlyImageText } from '@deepseek-ai/dsh-llm'
-import type { LlmImageRequestPrice, LlmImageRequestPricing } from '@deepseek-ai/dsh-llm'
+import type { ImageAttachmentAccessResolver, LlmImageRequestPrice, LlmImageRequestPricing } from '@deepseek-ai/dsh-llm'
 import { requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageRequestPolicy } from '@deepseek-ai/dsh-attachment'
 import { deepSeekImageTokens } from './image-tokens.ts'
@@ -45,7 +45,11 @@ export function resolveRequestImagePolicy(model: DeepSeekCatalogModel): ImageReq
   }
 }
 
-/** Price one occurrence a text-only route substitutes with deterministic text. */
+/**
+ * Price one occurrence a text-only route substitutes with deterministic text,
+ * reproducing the `projectImagesForTextModel` substitution `LlmRuntime`
+ * applies before dispatching to a route without the `image` modality.
+ */
 function textOnlyPrice(ref: ImageAttachmentRef): LlmImageRequestPrice {
   return { visualTokens: 0, text: textOnlyImageText(ref) }
 }
@@ -54,17 +58,22 @@ function textOnlyPrice(ref: ImageAttachmentRef): LlmImageRequestPrice {
  * Build the request-image pricing for one DeepSeek route from a validated
  * connection snapshot. Uncatalogued and text-only models price every
  * occurrence as its deterministic text substitution; image-capable models
- * reproduce the adapter's oldest-first offload and price retained images by
- * their projected request dimensions. The base64 fallback's tighter inline
+ * reproduce the adapter's first-stage oldest-first offload from durable byte
+ * lengths and price retained images by their projected request dimensions,
+ * with each occurrence's handle or placeholder text built through the same
+ * access resolution the serializer uses. The base64 fallback's tighter inline
  * budget is not reproduced, so a fallback request can only cost less than
- * this estimate.
+ * this estimate; access paths resolve at pricing time, so a path that changes
+ * before the request only shifts the text price by its own length.
  * @param connection - validated connection facts of the pricing resolution.
  * @param model - exact model id named by the request header.
+ * @param resolveAccess - current execution-world access resolution shared with request serialization.
  * @returns synchronous per-occurrence pricing for the route.
  */
 export function deepSeekImageRequestPricing(
   connection: DeepSeekConnectionOptions,
   model: string,
+  resolveAccess?: ImageAttachmentAccessResolver,
 ): LlmImageRequestPricing {
   const catalogModel = connection.models.find(entry => entry.id === model)
   if (catalogModel?.inputModalities?.includes('image') !== true) {
@@ -83,11 +92,13 @@ export function deepSeekImageRequestPricing(
         },
       )
       return images.map((ref, index) => {
-        if (index < offloaded) return { visualTokens: 0, text: offloadedImageText(ref) }
+        if (index < offloaded) {
+          return { visualTokens: 0, text: offloadedImageText(ref, resolveAccess?.(ref)) }
+        }
         const dimensions = requestImageDimensions(ref.width, ref.height, policy.maxPixels)
         return {
           visualTokens: deepSeekImageTokens(dimensions.width, dimensions.height),
-          text: requestImageHandleText(ref, dimensions),
+          text: requestImageHandleText(ref, dimensions, resolveAccess?.(ref)),
         }
       })
     },

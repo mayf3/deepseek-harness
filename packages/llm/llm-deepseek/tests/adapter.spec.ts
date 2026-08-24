@@ -169,6 +169,22 @@ describe('request image policy', () => {
     const textOnly = adapter.imageRequestPricing('deepseek-official', 'unlisted')?.priceImages([imageRef])
     expect(textOnly?.[0]!.visualTokens).toBe(0)
   })
+
+  it('prices descriptor text through the serializer\'s access resolution', () => {
+    const attachments = {} as AttachmentStore
+    const adapter = new DeepSeekAdapter({
+      options: () => resolveAdapterOptions({ models: [{ id: 'vision', inputModalities: ['text', 'image'] }] }),
+      resolveApiKey: () => Promise.resolve('k'),
+      resolveUserId: () => TEST_USER_ID,
+      resolveAttachments: () => attachments,
+      resolveImageAccess: (store, ref) => (store === attachments && ref === imageRef
+        ? { readonlyPath: '/world/img.png' }
+        : undefined),
+      prepareExtensions: noExtensions,
+    })
+    const priced = adapter.imageRequestPricing('deepseek-official', 'vision')?.priceImages([imageRef])
+    expect(priced?.[0]?.text).toContain('/world/img.png')
+  })
 })
 
 describe('DeepSeekAdapter against a mock server', () => {

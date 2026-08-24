@@ -347,7 +347,15 @@ export class DeepSeekAdapter extends LlmAdapter {
   }
 
   override imageRequestPricing(_provider: string, model: string): ReturnType<LlmAdapter['imageRequestPricing']> {
-    return deepSeekImageRequestPricing(this.config.options(), model)
+    // The same access resolution the serializer uses, so priced handle and
+    // placeholder text matches what the request actually sends.
+    const attachments = this.config.resolveAttachments?.()
+    const resolveAccess = attachments === undefined
+      ? undefined
+      : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => (
+        this.config.resolveImageAccess?.(attachments, ref)
+      )
+    return deepSeekImageRequestPricing(this.config.options(), model, resolveAccess)
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {

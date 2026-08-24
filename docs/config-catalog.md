@@ -1284,7 +1284,9 @@ export interface ReplayModelConfig {
    * Optional flat visual-token price the replay route declares for every
    * retained request image, so keyless scenarios exercise route-priced
    * request pressure; each occurrence is priced at this value plus its
-   * request-preview handle text. Absent declares no image pricing.
+   * request-preview handle text. Requires {@link inputModalities} to include
+   * `image` — a text-only route never sends visual tokens. Absent declares
+   * no image pricing.
    */
   imageRequestTokens?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */
@@ -1299,7 +1301,7 @@ export interface ReplayModelConfig {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/test-support/llm-replay/src/index.ts:867`](../packages/test-support/llm-replay/src/index.ts)
+Source: [`packages/test-support/llm-replay/src/index.ts:869`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 

@@ -1268,6 +1268,15 @@ describe('apply (the plugin entry)', () => {
     expect(ctx.llm.imageRequestPricing('deepseek', 'plain')).toBeUndefined()
   })
 
+  it('rejects imageRequestTokens on a model without the image modality during load', () => {
+    const ctx = new Context()
+    const providers = [{ id: 'm', models: [{ id: 'm', imageRequestTokens: 384 }] }] as unknown as
+      NonNullable<Config['providers']>
+    expect(() => { apply(ctx, { file, providers }) }).toThrow(
+      'llm-replay: provider "m" model "m" imageRequestTokens requires inputModalities to include "image"',
+    )
+  })
+
   it.each([
     ['zero', 0],
     ['a float', 1.5],

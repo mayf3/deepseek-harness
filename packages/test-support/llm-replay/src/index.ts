@@ -66,7 +66,9 @@ export interface ReplayModelConfig {
    * Optional flat visual-token price the replay route declares for every
    * retained request image, so keyless scenarios exercise route-priced
    * request pressure; each occurrence is priced at this value plus its
-   * request-preview handle text. Absent declares no image pricing.
+   * request-preview handle text. Requires {@link inputModalities} to include
+   * `image` — a text-only route never sends visual tokens. Absent declares
+   * no image pricing.
    */
   imageRequestTokens?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */
@@ -898,6 +900,15 @@ function validateConfiguredModels(providers: ReplayProviderConfig[] | undefined)
         throw new Error(
           `llm-replay: provider "${provider.id}" model "${model.id}" imageRequestTokens `
           + 'must be a positive safe integer',
+        )
+      }
+      // A text-only route never sends visual tokens: LlmRuntime substitutes
+      // its images with deterministic text before dispatch, so declared
+      // visual pricing would contradict the actual request projection.
+      if (imageRequestTokens !== undefined && model.inputModalities?.includes('image') !== true) {
+        throw new Error(
+          `llm-replay: provider "${provider.id}" model "${model.id}" imageRequestTokens `
+          + 'requires inputModalities to include "image"',
         )
       }
     }
