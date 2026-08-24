@@ -3,13 +3,16 @@
 import sharp, { type Sharp } from 'sharp'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
-import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
+import { encodeFirstWithinLimit, encodingLadder, isExhaustedEncoding } from './encoding.ts'
+import { requestImageDimensions } from './request-image.ts'
 import { detectImage, encodedAlphaIsCompatible } from './image.ts'
 import type { DetectedImage } from './image.ts'
 
 /** Deployment-resolved policy for the persisted normalized attachment. */
 export interface NormalizationPolicy {
-  /** Long-edge cap in pixels; larger sources are downscaled proportionally. */
+  /** Total-pixel budget; larger sources are downscaled proportionally. */
+  maxPixels: number
+  /** Long-edge cap in pixels applied after the total-pixel budget, bounding extreme aspect ratios. */
   maxDimension: number
   /** Encoded-byte target for the quality ladder; the smallest ladder output is kept when no quality fits. */
   maxBytes: number
@@ -21,24 +24,6 @@ export interface NormalizedImage {
   mediaType: ImageMediaType
   width: number
   height: number
-}
-
-/** Shared ladder for both encoders: spaced so each step buys a real size reduction. */
-export const IMAGE_ENCODING_QUALITIES = [85, 75, 60] as const
-/** Fixed lossy-WebP effort; deeper search costs 3-4x encode time for about 5% size. */
-export const WEBP_ENCODING_EFFORT = 0
-
-/** Encode one prepared pipeline and report exact output facts. */
-async function encode(
-  pipeline: Sharp,
-  mediaType: 'image/jpeg' | 'image/webp',
-  quality: number,
-): Promise<NormalizedImage> {
-  const encoded = mediaType === 'image/webp'
-    ? pipeline.webp({ quality, effort: WEBP_ENCODING_EFFORT })
-    : pipeline.jpeg({ quality })
-  const { data, info } = await encoded.toBuffer({ resolveWithObject: true })
-  return { data: new Uint8Array(data), mediaType, width: info.width, height: info.height }
 }
 
 /**
@@ -59,6 +44,7 @@ export function canPassThroughNormalization(
     && detected.depth === 'uchar'
     && detected.space === 'srgb'
     && bytes <= policy.maxBytes
+    && detected.width * detected.height <= policy.maxPixels
     && Math.max(detected.width, detected.height) <= policy.maxDimension
 }
 
@@ -92,33 +78,22 @@ function preparedPipeline(data: Uint8Array, width: number, height: number): Shar
     .resize({ width, height, fit: 'inside', withoutEnlargement: true })
 }
 
-/** Dimensions after the long edge is capped without changing aspect ratio. */
-function initialDimensions(detected: DetectedImage, maxDimension: number): { width: number; height: number } {
-  const scale = Math.min(1, maxDimension / Math.max(detected.width, detected.height))
+/** Dimensions under the total-pixel budget, then the long-edge cap, without changing aspect ratio. */
+function initialDimensions(detected: DetectedImage, policy: NormalizationPolicy): { width: number; height: number } {
+  const budgeted = requestImageDimensions(detected.width, detected.height, policy.maxPixels)
+  const longEdge = Math.max(budgeted.width, budgeted.height)
+  if (longEdge <= policy.maxDimension) return budgeted
+  const scale = policy.maxDimension / longEdge
   return {
-    width: Math.max(1, Math.round(detected.width * scale)),
-    height: Math.max(1, Math.round(detected.height * scale)),
+    width: Math.max(1, Math.floor(budgeted.width * scale)),
+    height: Math.max(1, Math.floor(budgeted.height * scale)),
   }
-}
-
-/** Lazy quality ladder: WebP keeps a source alpha channel, everything else is JPEG. */
-function encodingAttempts(
-  data: Uint8Array,
-  width: number,
-  height: number,
-  hasAlpha: boolean,
-): Array<() => Promise<NormalizedImage>> {
-  const prepared = preparedPipeline(data, width, height)
-  const mediaType = hasAlpha ? 'image/webp' : 'image/jpeg'
-  return IMAGE_ENCODING_QUALITIES.map(quality => (
-    () => encode(prepared.clone(), mediaType, quality)
-  ))
 }
 
 /**
  * Produce the persisted provider-independent normalized version of one fully decoded source.
  * The source is passed through only when it is already clean, single-frame, 8-bit sRGB/sRGBA,
- * and inside both normalization limits. Re-encoding never removes transparency. When every
+ * and inside every normalization limit. Re-encoding never removes transparency. When every
  * ladder quality exceeds the byte target, the smallest ladder output is kept; provider byte
  * caps stay enforced at the route that transmits the bytes.
  * @param data - complete admitted source bytes.
@@ -135,9 +110,9 @@ export async function normalizeImage(
     return { data, mediaType: detected.mediaType, width: detected.width, height: detected.height }
   }
   try {
-    const { width, height } = initialDimensions(detected, policy.maxDimension)
+    const { width, height } = initialDimensions(detected, policy)
     const encoded = await encodeFirstWithinLimit(
-      encodingAttempts(data, width, height, detected.hasAlpha),
+      encodingLadder(preparedPipeline(data, width, height), detected.hasAlpha),
       policy.maxBytes,
     )
     const chosen = isExhaustedEncoding(encoded) ? encoded.smallest : encoded

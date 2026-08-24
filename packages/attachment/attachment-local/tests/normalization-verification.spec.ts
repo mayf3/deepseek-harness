@@ -29,7 +29,7 @@ describe('normalization verification', () => {
     const detected = await detectImage(data)
     control.mismatch = true
 
-    await expect(normalizeImage(data, detected, { maxDimension: 5, maxBytes: 4 * 1024 * 1024 }))
+    await expect(normalizeImage(data, detected, { maxPixels: 2048 * 2048, maxDimension: 5, maxBytes: 4 * 1024 * 1024 }))
       .rejects.toMatchObject({
         code: 'ATTACHMENT_WRITE_FAILED',
         message: 'Image normalization did not produce a single-frame 8-bit sRGB image with matching metadata.',

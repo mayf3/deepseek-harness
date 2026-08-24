@@ -39,7 +39,7 @@ const PNG = Uint8Array.from(Buffer.from(
   'base64',
 ))
 
-const POLICY: NormalizationPolicy = { maxDimension: 2048, maxBytes: 1024 * 1024 }
+const POLICY: NormalizationPolicy = { maxPixels: 2048 * 2048, maxDimension: 8192, maxBytes: 1024 * 1024 }
 
 const LIMITS: ImageAttachmentLimits = {
   maxImageBytes: 1024,
@@ -157,7 +157,7 @@ describe('local attachment store', () => {
 
     const saved = await saveImageFile(storageRoot, {
       data: oversized, mediaType: 'image/png', name: 'big.png',
-    }, { ...LIMITS, maxImagePixels: 64 }, { maxDimension: 2, maxBytes: 1024 * 1024 })
+    }, { ...LIMITS, maxImagePixels: 64 }, { maxPixels: POLICY.maxPixels, maxDimension: 2, maxBytes: 1024 * 1024 })
 
     expect(saved).toMatchObject({
       mediaType: 'image/jpeg',

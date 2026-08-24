@@ -12,8 +12,13 @@ import type {
   RequestImageAttachment,
   StoredImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
-import { IMAGE_ENCODING_QUALITIES, WEBP_ENCODING_EFFORT } from './normalization.ts'
-import { encodeFirstWithinLimit, isExhaustedEncoding } from './encoding.ts'
+import {
+  IMAGE_ENCODING_QUALITIES,
+  WEBP_ENCODING_EFFORT,
+  encodeFirstWithinLimit,
+  encodingLadder,
+  isExhaustedEncoding,
+} from './encoding.ts'
 import { detectImage, encodedAlphaIsCompatible, probeImage } from './image.ts'
 
 /** Transform version included in every cache and upload-index identity. */
@@ -116,31 +121,6 @@ function sourcePipeline(attachment: StoredImageAttachment): Sharp {
   return sharp(attachment.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
 }
 
-async function encoded(
-  image: Sharp,
-  mediaType: 'image/jpeg' | 'image/webp',
-  quality: number,
-): Promise<EncodedRequestImage> {
-  const output = mediaType === 'image/webp'
-    ? image.webp({ quality, effort: WEBP_ENCODING_EFFORT })
-    : image.jpeg({ quality })
-  const { data, info } = await output.toBuffer({ resolveWithObject: true })
-  return { data: new Uint8Array(data), mediaType, width: info.width, height: info.height }
-}
-
-function encodingAttempts(
-  attachment: StoredImageAttachment,
-  width: number,
-  height: number,
-  hasAlpha: boolean,
-): Array<() => Promise<EncodedRequestImage>> {
-  const prepared = pipeline(attachment, width, height)
-  const mediaType = hasAlpha ? 'image/webp' : 'image/jpeg'
-  return IMAGE_ENCODING_QUALITIES.map(quality => (
-    () => encoded(prepared.clone(), mediaType, quality)
-  ))
-}
-
 async function createRequestImage(
   attachment: StoredImageAttachment,
   policy: ImageRequestPolicy,
@@ -158,7 +138,7 @@ async function createRequestImage(
     }
   }
   const encodedVersion = await encodeFirstWithinLimit(
-    encodingAttempts(attachment, dimensions.width, dimensions.height, hasAlpha),
+    encodingLadder(pipeline(attachment, dimensions.width, dimensions.height), hasAlpha),
     policy.maxBytes,
   )
   return isExhaustedEncoding(encodedVersion) ? encodedVersion.smallest : encodedVersion
