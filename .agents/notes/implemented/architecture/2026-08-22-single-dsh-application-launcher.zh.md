@@ -8,7 +8,7 @@ Status: implemented
 
 DeepSeek Harness 应用进程需要由同一个机制负责组合、插件解析、环境发现、关闭和用户自定义。带完整 `cordis.yml` 的专用应用 bin 会在 profile 启动之外形成第二套生命周期：安装到 profile 的插件无法到达它，行为会与 `dsh-base` 偏离，SDK 调用方还需要学习任意进程 argv，而不是产品的组合模型。
 
-Python SDK 分发一个原生可执行文件和三个平台 wheel 包。其打包进程必须使用同一 profile 启动器，同时保留封闭的 VFS 依赖树、原生伴随文件与 installed-wheel 证据。
+Python SDK 通过四个平台 wheel 包分发原生可执行文件。其打包进程使用同一 profile 启动器，同时保留封闭的 VFS 依赖树、原生伴随文件与 installed-wheel 证据。
 
 ## Decision
 
@@ -48,7 +48,7 @@ SDK 用户通过 profile 自定义插件。`dsh plugin --profile <name> ...` 管
 
 Python 运行时 wheel 通过私有 `dsh-python-runtime-closure` 部署 manifest，打包来自 `node_modules/@deepseek-ai/dsh/lib/bin.js` 的普通 `@deepseek-ai/dsh` CLI。Python 客户端默认选择 `dsh --profile sdk`、有序 patch 文件与显式 Harness home；可运行 Python 示例选择 `sdk-minimal`。安装的 `dsh` 控制台命令暴露相同 profile 语法与单独打包的 `web` 应用。
 
-可执行文件族是 `deepseek-harness-sdk-runtime-<platform>-<arch>`。SDK 协议格式、wheel 与 import 分发名称、伴随文件名称，以及协议 identity `deepseek-harness-sdk-runtime` 保持稳定。SDK 包族是 `@deepseek-ai/dsh-sdk-client`、`@deepseek-ai/dsh-sdk-protocol` 与 `@deepseek-ai/dsh-sdk-jsonrpc-server`；`@deepseek-ai/dsh-acp` 继续作为 ACP 协议插件。仓库不保留 Python 专用 Node 应用、检入的完整配置、兼容包、转发可执行文件、后备解析器或 SDK／ACP 启动别名。
+可执行文件族是 `deepseek-harness-sdk-runtime-<platform>-<arch>`。SDK 协议格式、wheel 与 import 分发名称、伴随文件名称，以及协议 identity `deepseek-harness-sdk-runtime` 保持稳定。SDK 包族是 `@deepseek-ai/dsh-sdk-client`、`@deepseek-ai/dsh-sdk-protocol` 与 `@deepseek-ai/dsh-sdk-jsonrpc-server`；`@deepseek-ai/dsh-acp` 继续作为 ACP 协议插件。仓库不保留 Python 专用 Node 应用、检入的完整配置、兼容包、转发可执行文件、后备解析器或 SDK／ACP 启动别名。[Python profile 运行时决策](2026-08-23-python-sdk-dsh-profile-runtime.zh.md)负责该启动方式，[Windows x64 运行时决策](2026-08-23-python-sdk-windows-x64-runtime.zh.md)负责第四个载体。
 
 ### 强制校验
 
@@ -76,7 +76,7 @@ Python 运行时 wheel 通过私有 `dsh-python-runtime-closure` 部署 manifest
 
 **热重载协议 profile。** 拒绝：替换协议服务器或其依赖可能破坏待处理协议帧与 SDK 自有 agent。进程重启是 SDK 与 ACP 配置变更的采用边界。
 
-**不做独立打包证明就把 Python 可执行文件迁移到 profile。** 拒绝：原生 VFS 闭包、三个平台 wheel 包、ripgrep 与 spawn-helper 伴随文件、默认配置发现和干净安装行为都需要自己的迁移证据。
+**不做独立打包证明就把 Python 可执行文件迁移到 profile。** 拒绝：原生 VFS 闭包、四个平台 wheel 包、profile 资源、ripgrep 与 spawn-helper 伴随文件和干净安装行为都需要自己的迁移证据。
 
 ## 验证
 

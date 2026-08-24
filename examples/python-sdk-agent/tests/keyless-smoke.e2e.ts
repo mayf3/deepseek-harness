@@ -242,7 +242,8 @@ describe('Python SDK dsh profile keyless smoke', () => {
         tools?: Array<{ function?: { name?: string } }>
       }
       expect(request.messages?.[0]).toMatchObject({ role: 'system', content: 'Minimal allowlist prompt.' })
-      expect(request.tools?.map(tool => tool.function?.name).sort()).toEqual(['bash', 'str_replace_editor'])
+      const shellTool = process.platform === 'win32' ? 'pwsh' : 'bash'
+      expect(request.tools?.map(tool => tool.function?.name).sort()).toEqual([shellTool, 'str_replace_editor'].sort())
       const profile = JSON.parse(
         await readFile(join(root, '.dsh', 'profiles', 'sdk-minimal', 'package.json'), 'utf8'),
       ) as { dsh?: { profile?: { bundles?: string[]; patchReload?: string } } }
