@@ -276,7 +276,7 @@ Keep MCP, Todo, and the Plan Mode package, key, events, and tool names. This dec
 | `PluginInventoryService` | `PluginInventoryGateway` | The class is a Remote-only adapter from the live Loader tree to the `pluginInventory/list` RPC. It owns no same-process service, cache, history, or mutation path. `Gateway` states the role that exists. |
 | `@deepseek-ai/dsh-jsonrpc-demo`, `@deepseek-ai/dsh-sdk-jsonrpc-demo`, `@deepseek-ai/dsh-sdk-python-runtime` | removed | The Python runtime packages the existing `@deepseek-ai/dsh` CLI and its `sdk` profile; a private application package would recreate a second launcher. |
 | `packages/examples/jsonrpc-demo/`, `packages/sdk/python-runtime/` | removed | The Python runtime wheel's closure manifest owns packaging without a separate application package. |
-| `examples/jsonrpc-agent/` | `examples/python-sdk-agent/` | The example demonstrates Python use of the `sdk` profile and ordered patches. |
+| `examples/jsonrpc-agent/` | `python/sdk/examples/` | The example demonstrates Python use of the `sdk` profile and ordered patches. |
 | `@deepseek-ai/dsh-acp-demo` | `@deepseek-ai/dsh-acp-app` | The package is the ACP profile's application bundle, not a standalone demo bin. |
 | Deploy-root manifests `dsh-jsonrpc-agent-pkg`, `dsh-sdk-python-runtime-closure` | `dsh-python-runtime-closure` | The zero-code manifest defines the Python runtime wheel's complete `dsh` dependency closure without naming a separate SDK application. |
 | `@deepseek-ai/dsh-frontend` | `@deepseek-ai/dsh-web-frontend` | The application is the web frontend. Keep its physical `apps/web/` folder. |

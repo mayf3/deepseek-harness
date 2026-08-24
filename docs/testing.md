@@ -17,7 +17,7 @@ Session fixtures keep headers and payloads but omit body sequence/time envelopes
 
 ## The with-key policy: inference is cheap here
 
-We are DeepSeek — do not ration real-API tests. A no-key test proves plumbing; only a with-key run proves the agent works against a real model. Cover file-writing prompts, multi-turn conversations, tool use, and mid-stream cancellation. Highest-value are **smoke tests** that boot the real example, send one prompt, and check the world — they catch the "green unit tests, broken product" class that mocks cannot ([postmortem 0001](postmortem/0001-acp-default-export-drops-inject.md)). Self-skip keeps secretless CI and keyless contributors unblocked; it is not a cost signal. Every example ships keyless and with-key smokes ([examples/AGENTS.md](../examples/AGENTS.md)).
+We are DeepSeek — do not ration real-API tests. A no-key test proves plumbing; only a with-key run proves the agent works against a real model. Cover file-writing prompts, multi-turn conversations, tool use, and mid-stream cancellation. Highest-value are **smoke tests** that boot a shipped `dsh` profile, send one prompt, and check the world — they catch the "green unit tests, broken product" class that mocks cannot ([postmortem 0001](postmortem/0001-acp-default-export-drops-inject.md)). Self-skip keeps secretless CI and keyless contributors unblocked; it is not a cost signal. Profile-level integration tests live under `apps/cli/tests/profiles/`; package-specific compositions stay with their package tests.
 
 ## Prefer the real implementation over a mock
 
@@ -41,7 +41,7 @@ An e2e assertion re-runs the command or re-reads the file externally; a keyword 
 
 ## Test subprocess launch modes
 
-- CI and build-having test lanes run every example or Cordis-config subprocess from built `lib/` through the shared dual-mode launcher. Do not hand-write `--import tsx` for these subprocesses.
+- CI and build-having test lanes run every profile or Cordis-config subprocess from built `lib/` through the shared dual-mode launcher. Do not hand-write `--import tsx` for these subprocesses.
 - Protocol and operating-system fixtures that do not load Cordis run erasable `.ts` directly with Node, without tsx or the root paths map.
 - Only a test whose subject is source-path resolution may select `src`; state that contract in the test.
 

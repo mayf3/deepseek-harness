@@ -5,9 +5,8 @@
  * activate, against that plugin context) and the entry `disabled` field (at
  * every mount decision, against the loader context). Every other entry
  * metadata field stays static, so an expression there remains truthy data and
- * silently changes composition. Example configs and the dsh Web composition
- * resolve named plugins from their owning workspace manifests. Local example
- * packages must also be in the root TypeScript project graph.
+ * silently changes composition. Shipped and test-only dsh overlays resolve
+ * named plugins from the CLI application's owning manifest.
  */
 
 import { globSync, readFileSync } from 'node:fs'
@@ -20,6 +19,7 @@ import { isCordisGroupEntry, isJsExpr, loadCordisYaml } from './cordis-yaml.ts'
 export interface PackageManifest {
   name?: string
   dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
   optionalDependencies?: Record<string, string>
   dsh?: { bundle?: { patch?: string } }
 }
@@ -30,14 +30,10 @@ export interface PluginReference {
 }
 
 const root = resolve(import.meta.dirname, '..')
-// These example files are overlays consumed by the built dsh app, so their bare
-// specifiers resolve from apps/cli rather than the examples workspace.
+// These overlays are consumed by the built dsh app, so their bare specifiers
+// resolve from apps/cli.
 const appOverlayFiles = new Set([
-  'examples/web-github-review/tests/fixtures/real-cli/cordis.yml',
-  'examples/web-cordis/cordis.yml',
-  'examples/web-github-review/cordis.yml',
-  'examples/web-schedule/cordis.yml',
-  ...globSync('examples/mcp-memory/*.cordis.yml', { cwd: root }),
+  ...globSync('apps/cli/config/examples/**/*.yml', { cwd: root }),
 ])
 const metadataFields = ['id', 'name', 'group', 'inject', 'intercept', 'isolate'] as const
 
@@ -74,7 +70,6 @@ if (import.meta.main) {
     }
   }
 
-  errors.push(...validateExampleResolution())
   errors.push(...validateAppResolution())
   errors.push(...validateSourcePlaneResolution())
   errors.push(...validatePresetPlaneSeparation())
@@ -225,37 +220,14 @@ function recordPlugin(entry: Record<string, unknown>, file: string): void {
   if (typeof entry.name === 'string') pluginReferences.push({ file, name: entry.name })
 }
 
-function validateExampleResolution(): string[] {
-  const violations: string[] = []
-  const exampleManifest = readManifest('examples/package.json')
-  const dependencies = exampleManifest.dependencies ?? {}
-  const localPackages = localPackageDirectories()
-  const rootReferences = rootProjectReferences()
-  const exampleReferences = pluginReferences.filter(reference => reference.file.startsWith('examples/') && !appOverlayFiles.has(reference.file))
-  violations.push(...missingPluginDependencies(exampleReferences, dependencies, 'examples/package.json'))
-  const requiredPackages = new Set(exampleReferences.map(reference => packageNameFromSpecifier(reference.name)))
-
-  const localExamplePackages = new Set([
-    ...Object.keys(dependencies),
-    ...[...requiredPackages].filter(packageName => packageName !== undefined),
-  ])
-  for (const packageName of localExamplePackages) {
-    const packageDirectory = localPackages.get(packageName)
-    if (packageDirectory === undefined || rootReferences.has(packageDirectory)) continue
-    const repoPath = relative(root, packageDirectory).replaceAll('\\', '/')
-    violations.push(`tsconfig.json: missing project reference for ${packageName} (${repoPath})`)
-  }
-
-  return violations
-}
-
 function validateAppResolution(): string[] {
   const violations: string[] = []
   const bundleManifests = bundleManifestPaths()
   // App overlays (and any config left under apps/cli/config) resolve from the
   // dsh app's own dependency surface — the profile module fallback mirrors it.
+  const appManifest = readManifest('apps/cli/package.json')
   const appDependencies = {
-    ...readManifest('apps/cli/package.json').dependencies,
+    ...appManifest.dependencies,
     // The fallback also links every in-box bundle's own dependencies
     // (healProfilesModuleFallback). Optional Profile bundles stay outside the
     // app installation until that Profile installs them.
@@ -266,6 +238,12 @@ function validateAppResolution(): string[] {
     .map(file => `apps/cli/config/${file}`))
   const appReferences = pluginReferences.filter(reference => shipped.has(reference.file) || appOverlayFiles.has(reference.file))
   violations.push(...missingPluginDependencies(appReferences, appDependencies, 'apps/cli/package.json or a bundle manifest'))
+  const appTestReferences = pluginReferences.filter(reference => reference.file.startsWith('apps/cli/tests/'))
+  violations.push(...missingPluginDependencies(
+    appTestReferences,
+    { ...appManifest.dependencies, ...appManifest.devDependencies },
+    'apps/cli/package.json dependencies or devDependencies',
+  ))
   // Each bundle's patch rows must resolve from that bundle's own dependencies:
   // per-layer resolution anchors on the bundle package directory.
   for (const manifestPath of bundleManifests) {
@@ -399,33 +377,6 @@ function localPackageDirectories(): Map<string, string> {
     if (manifest.name !== undefined) packages.set(manifest.name, resolve(root, dirname(manifestPath)))
   }
   return packages
-}
-
-function rootProjectReferences(): Set<string> {
-  // The root solution references the host and client aggregates (the two
-  // sides merge cordis Context under the same keys, so one program cannot see
-  // both — but this BFS only collects reference paths, it never forms a
-  // program). Seed the solution and follow nested aggregate references to
-  // collect the covered leaf project set.
-  const collected = new Set<string>()
-  const queue = [resolve(root, 'tsconfig.json')]
-  const seen = new Set<string>()
-  for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
-    if (seen.has(file)) continue
-    seen.add(file)
-    const config = ts.readConfigFile(file, path => ts.sys.readFile(path))
-    if (config.error !== undefined) {
-      throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'))
-    }
-    const references = (config.config as { references?: Array<{ path?: unknown }> }).references ?? []
-    for (const reference of references) {
-      if (typeof reference.path !== 'string') continue
-      const target = resolve(dirname(file), reference.path)
-      if (target.endsWith('.json')) queue.push(target)
-      else collected.add(target)
-    }
-  }
-  return collected
 }
 
 function packageNameFromSpecifier(specifier: string): string | undefined {

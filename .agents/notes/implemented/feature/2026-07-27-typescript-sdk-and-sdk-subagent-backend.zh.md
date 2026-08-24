@@ -24,7 +24,7 @@ stdio JSON-RPC 对外服务接口（`@deepseek-ai/dsh-sdk-jsonrpc-server`，见[
 四层，依[测试政策](../../../../docs/testing.zh.md)：
 
 - **免密钥单元**——`sdk-client` 通过真实 stdio 驱动脚本化伪运行时（`tests/fake-runtime.ts`，环境变量脚本化、纯协议——即 Python `test_client.py` 的模式）；`subagent-dsh-sdk` 经真实提供方驱动同一伪运行时。三个包全部 100% 逐文件覆盖。
-- **免密钥 Loader 组合**——`subagent-dsh-sdk/tests/loader-composition.e2e.ts` 启动仅测试用 cordis.yml（`examples/python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/`），其中子进程是真实的第二个 `dsh --profile sdk` 运行时，拥有独立 home 与有序 patch；断言父工具结果与子进程自己持久化的 transcript（文本记录）都携带父会话 cwd。
+- **免密钥 Loader 组合**——`subagent-dsh-sdk/tests/loader-composition.e2e.ts` 启动包自有测试组合（`packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/`），其中子进程是真实的第二个 `dsh --profile sdk` 运行时，拥有独立 home 与有序 patch；断言父工具结果与子进程自己持久化的 transcript（文本记录）都携带父会话 cwd。
 - **免密钥快照**——`snapshots/sdk/sdk.snapshot.ts` 通过真实 `dsh-sdk-client` 驱动真实 `dsh --profile sdk` 运行时，并通过有序 `llm-replay` patch 回放已录制 fixture（测试前置数据）。每个场景都钉住规范化通知流、SDK 轮次结果，以及持久化的父日志与子日志。这也补上了单文件可执行 Note 的 Python 侧快照在 vitest 侧留下的协议层缺口。
 - **带密钥 e2e**——快照套件的 `DSH_SNAPSHOT=record` 模式即真实 API 路径（已提交 fixture 由它产出）；组合 e2e 设计上无需密钥。
 

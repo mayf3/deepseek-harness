@@ -65,12 +65,12 @@ describe('application entrypoints', () => {
     ])
   })
 
-  it('rejects an unclassified executable in an example workspace', () => {
+  it('rejects an unclassified executable in an app workspace', () => {
     const root = fixture()
-    write(root, 'examples/rogue/src/bin.ts', '#!/usr/bin/env node\n')
+    write(root, 'apps/rogue/src/bin.ts', '#!/usr/bin/env node\n')
 
     expect(applicationEntrypointViolations(root)).toEqual([
-      'examples/rogue/src/bin.ts: executable source has no application/build/test classification',
+      'apps/rogue/src/bin.ts: executable source has no application/build/test classification',
     ])
   })
 
