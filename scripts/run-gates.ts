@@ -471,13 +471,16 @@ function ciWindowsBlockingGates(): Gate[] {
 }
 
 function ciWindowsCompleteGates(): Gate[] {
-  const coverage = coverageGates().map(gate => gate.id === 'coverage-exempt-heavy'
-    ? {
-      ...gate,
-      needs: [...new Set(['build', ...(gate.needs ?? [])])],
-      after: [...new Set(['coverage', ...(gate.after ?? [])])],
-    }
-    : gate)
+  // Coverage executes suites that read built `lib/` output (the
+  // webworker-packer image tests), so every coverage gate waits for the
+  // build gate instead of racing its tsdown writes against a partial tree.
+  const coverage = coverageGates().map(gate => ({
+    ...gate,
+    needs: [...new Set(['build', ...(gate.needs ?? [])])],
+    ...gate.id === 'coverage-exempt-heavy'
+      ? { after: [...new Set(['coverage', ...(gate.after ?? [])])] }
+      : {},
+  }))
   const observational = ciWindowsObservationalGates()
     // The required production site replaces the observational MPA build; both
     // VitePress modes write the same output directory and cannot overlap.
