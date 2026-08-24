@@ -594,6 +594,19 @@ describe('durable image attachments', () => {
     ])
   })
 
+  it('labels a record whose only text block is empty as image-only', () => {
+    const nodes = [
+      {
+        kind: 'user', seq: 1, time: 1_000, source: null,
+        content: [{ type: 'text', text: '' }, { type: 'image', attachment }],
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const user = turns[0]?.groups[0]?.cells[0]
+    expect(user?.text).toBe('Images ×1')
+    expect(user?.previewMarkdown).toBeUndefined()
+  })
+
   it('keeps the text preview when a user message mixes text and images', () => {
     const nodes = [
       {

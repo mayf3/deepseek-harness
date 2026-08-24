@@ -1035,6 +1035,42 @@ describe('TrajectoryTable', () => {
       .toBe(String(attachment.attachmentId))
   })
 
+  it('keeps the failure name beside an image-only error result', () => {
+    const attachment = {
+      attachmentId: `sha256:${'c'.repeat(64)}`,
+      mediaType: 'image/png',
+      bytes: 68,
+      width: 320,
+      height: 320,
+      name: 'failed.png',
+    } as unknown as NonNullable<
+      NonNullable<TrajectoryTurnModel['groups'][number]['cells'][number]['outputBlocks']>[number]['attachment']
+    >
+    const turns: readonly TrajectoryTurnModel[] = [{
+      turn: 1,
+      groups: [{
+        title: 'Step 1',
+        cells: [{
+          index: 1,
+          kind: 'tool',
+          text: 'render {"target":"chart"}',
+          outputDetail: 'ToolError: RENDER_TRUNCATED',
+          outputBlocks: [{ type: 'image', content: '', attachment }],
+          isError: true,
+          timeSeconds: 0.1,
+        }],
+      }],
+    }]
+
+    render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /TOOL/ }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Result' }))
+
+    expect(screen.getByText('ToolError: RENDER_TRUNCATED')).toBeTruthy()
+    const gallery = screen.getAllByTestId('record-images').at(-1)
+    expect(gallery?.getAttribute('data-count')).toBe('1')
+  })
+
   it('keeps the first row and a compact summary when a turn is collapsed', () => {
     render(
       <TrajectoryTable

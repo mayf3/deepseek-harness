@@ -1160,6 +1160,8 @@ function SourceBlocks({
                 </span>
               </div>
             )}
+          {/* The Raw view keeps model block order and granularity: one
+              gallery per image block, unlike the aggregated record gallery. */}
           {block.attachment !== undefined
             ? renderImages({ images: [{ attachment: block.attachment }], align: 'start' })
             : <pre className={css.sourceBlockContent}>{block.content}</pre>}
@@ -1388,11 +1390,14 @@ function SystemPromptDiff({
 function ToolOutputBlocks({
   blocks,
   error,
+  errorDetail,
   preview,
   renderImages,
 }: {
   blocks: readonly TrajectorySourceBlock[]
   error: boolean
+  /** Failure name and code preserved beside image-only error content. */
+  errorDetail?: string | undefined
   preview: boolean
   renderImages: RenderMessageImages
 }) {
@@ -1403,6 +1408,8 @@ function ToolOutputBlocks({
       error ? css.errorPayload : undefined,
     ].filter((value): value is string => value !== undefined).join(' ')}
     >
+      {error && errorDetail !== undefined && errorDetail !== ''
+        && <pre className={css.resultBlockText}>{errorDetail}</pre>}
       {blocks.map((block, index) => (
         block.attachment !== undefined
           ? (
@@ -1630,6 +1637,7 @@ function RecordPayload({
       <ToolOutputBlocks
         blocks={record.cell.outputBlocks}
         error={error}
+        errorDetail={error ? value : undefined}
         preview={preview}
         renderImages={renderImages}
       />

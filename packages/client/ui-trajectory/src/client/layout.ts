@@ -120,7 +120,10 @@ function inputCellDetail(node: InputNode, t: TrajectoryTranslate): Pick<
   | 'timeSeconds'
   | 'startedAt'
 > {
-  const previewMarkdown = previewContent(node.content)
+  // An empty text block yields an empty preview; treat it as absent so an
+  // image-bearing record still labels its row instead of rendering blank.
+  const preview = previewContent(node.content)
+  const previewMarkdown = preview === '' ? undefined : preview
   const images = imageBlockCount(node.content)
   return {
     text: previewMarkdown === undefined && images > 0
@@ -792,7 +795,7 @@ function summarizeAssistantActivity(
   if (tools.size > 0) {
     return t('layout.toolCallOnly')
   }
-  const images = imageBlockCount(blocks.map(block => ({ type: block.kind })))
+  const images = blocks.filter(block => block.kind === 'image').length
   if (images > 0) return t('layout.imageOnly', { count: images })
   return ''
 }
@@ -828,9 +831,14 @@ function sourceBlock(value: unknown): TrajectorySourceBlock {
   if (typeof block.text === 'string') {
     return { type: type === 'reasoning' ? 'thinking' : type, content: block.text }
   }
-  if (type === 'image' && typeof block.attachment === 'object' && block.attachment !== null) {
-    // Typed content only reaches here as a core ImageBlock; wire-shaped
-    // 'other' blocks never define `attachment`.
+  if (
+    type === 'image'
+    && typeof block.attachment === 'object' && block.attachment !== null
+    && typeof (block.attachment as Record<string, unknown>).attachmentId === 'string'
+  ) {
+    // Session-log content is validated into core ContentBlocks by the
+    // Conversation node assembly; the `attachmentId` guard only keeps
+    // wire-shaped 'other' blocks with an unrelated `attachment` member out.
     return { type, content: '', attachment: block.attachment as ImageAttachmentRef }
   }
   return { type, content: stringifySourceValue(value) }

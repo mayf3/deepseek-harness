@@ -10,7 +10,7 @@ Trajectory 不展示会话图片。持久化的 `{ type: 'image', attachment: Im
 
 ## Decision
 
-- `ui-conversation` 拥有按会话的持久化图片 URL 缓存。`HistoricalImageCache` 从 `ui-chat` 移入 `packages/client/ui-conversation/src/client/conversation/historical-images.ts`，以 `ctx.uiConversation.imageUrl(sessionId, attachment)` 提供。Chat 与 Trajectory 通过同一实例解析，因此一个会话附件只产生一次 `session.attachment` 读取和一个浏览器 URL，并随 Session binding 释放而撤销。
+- `ui-conversation` 拥有按会话的持久化图片 URL 缓存。`HistoricalImageCache` 从 `ui-chat` 移入 `packages/client/ui-conversation/src/client/conversation/historical-images.ts`，以 `ctx.uiConversation.imageUrl(sessionId, attachment)` 提供。Chat 与 Trajectory 通过同一实例解析，因此一个会话附件只产生一次 `session.attachment` 读取和一个浏览器 URL，并随 Session binding 释放而撤销。这部分取代了 [client Session/Conversation 所有权](../architecture/2026-08-20-client-session-conversation-ownership.zh.md)中记录的 `ui-chat` 缓存归属。
 - 画廊 owner 契约（`MessageImagesOwnerProps`、`RenderMessageImages`）移入 `ui-conversation` 客户端契约。`ui-chat` 的 `conversation.message.images` SlotMap 行沿用共享 owner 类型；`ui-trajectory` 以同一 owner 类型声明自己的子槽位 `conversation.trajectory.images`；`ui-attachment` 把同一个 `MessageImages` 画廊组件注册进两个键，因此加载、重试与灯箱行为在两个视图中完全一致。
 - `TrajectorySourceBlock` 以 `attachment?: ImageAttachmentRef` 取代 `imageSrc`/`imageAlt`。内联来源嗅探（`sourceImage`、`safeImageSource`）与 Trajectory 本地的 `PanelImage` 渲染器一并删除：没有生产方向会话日志写入内联图片字节或 URL，这些路径是死代码，且 issue 明确排除上传来源的临时路径。
 - 内容含图片但没有文本的记录，其记录表行以 locale 持有的 `layout.imageOnly` 计数标注；只含图片的工具结果的摘要也使用同一标签，而不是 JSON 转储。
