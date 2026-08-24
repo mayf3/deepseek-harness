@@ -550,11 +550,6 @@
         "zod"
       ]
     },
-    "packages/sdk/python-runtime": {
-      "project": [
-        "src/**/*.ts"
-      ]
-    },
     "packages/subagent/subagent-spawn-in-process": {
       "entry": [
         "tests/**/*.spec.ts",
@@ -702,6 +697,11 @@
     "packages/bundle/sdk-app": {
       "ignoreDependencies": [
         "@deepseek-ai/dsh-sdk-jsonrpc-server"
+      ]
+    },
+    "packages/bundle/sdk-minimal": {
+      "ignoreDependencies": [
+        "@deepseek-ai/.+"
       ]
     },
     "packages/bundle/web-app": {

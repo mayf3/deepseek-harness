@@ -20,6 +20,7 @@
   config:
     provider: spawn
     toolName: subagent
+    enableModelSelection: true
     backgroundMode: continuable
     maxDepth: 2
 # Re-pin the recorded flash model for this scenario's corpus.

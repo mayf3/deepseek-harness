@@ -1,23 +1,20 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-sdk-python-runtime`.
- * @module @deepseek-ai/dsh-sdk-python-runtime/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-sdk-minimal`.
+ * @module @deepseek-ai/dsh-sdk-minimal/invariant
  */
 
-/* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-sdk-python-runtime'
+const PACKAGE_NAME = '@deepseek-ai/dsh-sdk-minimal'
 
 /** Cordis companion plugin name. */
-export const name = 'sdk-python-runtime-invariant'
-/** Service required before the companion can reserve package ownership. */
+export const name = 'sdk-minimal-bundle-invariant'
+/** Service required before the companion can register. */
 export const inject = ['invariants']
 
-/**
- * No runtime invariant: this composition package owns no independent event stream or mutable data;
- * Loader and built-entry tests cover its wiring.
- */
+// No runtime invariant: the package is a static patch-list carrier whose
+// inserted rows own their runtime relationships and invariant companions.
 const install: InvariantInstaller = () => {}
 
 /**
@@ -27,4 +24,3 @@ const install: InvariantInstaller = () => {}
  */
 export const apply = (ctx: Context): Promise<() => void> =>
   Promise.resolve(ctx.invariants.register(PACKAGE_NAME, install))
-/* jscpd:ignore-end */
