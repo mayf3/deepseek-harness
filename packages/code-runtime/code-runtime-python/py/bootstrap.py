@@ -946,6 +946,13 @@ async def _run(channel: ProtocolChannel) -> None:
     _lossless_json_violation_cls = _lossless_json_violation
     _get_event_loop_cls = asyncio.get_event_loop
     _send_sync_cls = channel.send_sync
+    # The frame WRITE primitives are bound too: send_sync's body resolves
+    # `_encode_json_plain` (module global) and `self.write_encoded` (class
+    # attribute) at call time, so a program rebinding either before the first
+    # binding call could turn a legitimate call into an exception. dispatch
+    # writes through these directly, and the log sink through the bound send.
+    _write_encoded_cls = channel.write_encoded
+    _encode_plain_cls = _encode_json_plain
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -1025,7 +1032,7 @@ async def _run(channel: ProtocolChannel) -> None:
 
     logs = LogBuffer(
         int(boot["maxLogBytes"]),
-        sink=lambda text, truncated=False: channel.send_sync(
+        sink=lambda text, truncated=False: _send_sync_cls(
             {"type": "log", "text": text, **({"truncated": True} if truncated else {})}
         ),
     )
@@ -1092,14 +1099,16 @@ async def _run(channel: ProtocolChannel) -> None:
             fut: asyncio.Future[Any] = loop.create_future()
             pending[call_id] = (loop, fut)
             try:
-                _send_sync_cls(
-                    {
-                        "type": "call",
-                        "id": call_id,
-                        "global": global_name,
-                        "name": name,
-                        "args": args,
-                    }
+                _write_encoded_cls(
+                    _encode_plain_cls(
+                        {
+                            "type": "call",
+                            "id": call_id,
+                            "global": global_name,
+                            "name": name,
+                            "args": args,
+                        }
+                    )
                 )
             except (TypeError, ValueError) as exc:
                 pending.pop(call_id, None)

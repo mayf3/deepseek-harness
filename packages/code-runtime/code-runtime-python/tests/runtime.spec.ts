@@ -711,6 +711,8 @@ describe('PythonCodeRuntime — programs and bindings', () => {
         '__main__._lossless_json_violation = boom',
         '__main__.asyncio = boom',
         '__main__.ProtocolChannel.send_sync = boom',
+        '__main__._encode_json_plain = boom',
+        '__main__.ProtocolChannel.write_encoded = boom',
         'first = await tools.echo({"n": 1})',
         'return first',
       ].join('\n'),
@@ -2745,7 +2747,7 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(result.value).toBe("read: ''")
   }, 15_000)
 
-  it('keeps runtime type annotations unevaluated-as-strings when the program reads them', async () => {
+  it('keeps runtime type annotations as live classes, not PEP 563 strings, when the program reads them', async () => {
     // bootstrap.py imports `from __future__ import annotations`; without
     // dont_inherit=True on compile(), that PEP 563 flag leaks into the program's
     // compiled code and stringifies its type annotations, changing the semantics
