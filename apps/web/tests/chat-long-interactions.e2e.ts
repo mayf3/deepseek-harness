@@ -153,7 +153,7 @@ describe('web e2e: long Chat interaction contract', () => {
     })
     await seedSession(scaffold, FIXTURE.log, SESSION_ID)
     browser = await chromium.launch()
-    page = await newEnglishPage(browser, 1_280)
+    page = await newEnglishPage(browser, 900)
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -234,6 +234,12 @@ describe('web e2e: long Chat interaction contract', () => {
       () => page.locator(`[data-chat-turn="${String(firstTurn)}"][data-chat-flow-kind="user"]`).count(),
       { timeout: 5_000 },
     ).toBe(1)
+
+    // Desktop-only affordance: a narrow Chat container hides the rail outright.
+    await page.setViewportSize({ width: 800, height: 900 })
+    await turnNavigation.waitFor({ state: 'hidden', timeout: 5_000 })
+    await page.setViewportSize({ width: 1_680, height: 900 })
+    await turnNavigation.waitFor({ state: 'visible', timeout: 5_000 })
 
     await wheelUntilMounted(page, `[data-chat-call-id="${TARGET_CALL_2}"]`, -1_100)
     const toolUserKey = messageKey(toolUserEvent)

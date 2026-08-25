@@ -24,9 +24,13 @@
      padding, so the rail gives that inset back and keeps 12px of its own. */
   right: calc(12px - (var(--dsh-composer-side-clearance) + 16px));
   width: 28px;
+  /* Never taller than the band it centers in: a short window (a tall composer,
+     a low viewport) shrinks the rail instead of pushing marks under the
+     composer or above the scrollport. */
   height: min(
     var(--turn-natural-height),
-    clamp(120px, calc(var(--turn-rail-band) - 64px), 420px)
+    max(0px, calc(var(--turn-rail-band) - 64px)),
+    420px
   );
   cursor: pointer;
   pointer-events: auto;

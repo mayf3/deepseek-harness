@@ -32,7 +32,6 @@ import {
 } from '../src/client/chat/MessageItem.tsx'
 import { TurnTailNodeView } from '../src/client/chat/TurnTailNodeView.tsx'
 import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
-import { deriveTurnNavigationItems } from '../src/client/chat/turn-navigation.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
 afterEach(() => {
@@ -423,7 +422,7 @@ describe('ChatView', () => {
       ],
       turnEnds: new Map([[1, 3], [2, 6]]),
     })
-    expect(deriveTurnNavigationItems(snapshot)).toEqual([
+    expect(snapshot.navigation.items()).toEqual([
       { turn: 1, anchorKey: 'fixture:user:1', prompt: 'first prompt', response: 'first response' },
       { turn: 2, anchorKey: 'fixture:user:4', prompt: 'second prompt', response: 'second response' },
     ])

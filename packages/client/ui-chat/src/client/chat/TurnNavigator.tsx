@@ -2,7 +2,7 @@ import {
   useId, useState, type CSSProperties, type MouseEvent, type PointerEvent,
 } from 'react'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import type { TurnNavigationItem } from './turn-navigation.ts'
+import type { TurnNavigationItem } from '../contract/snapshot.ts'
 import css from './TurnNavigator.module.css'
 
 interface TurnNavigatorProps {

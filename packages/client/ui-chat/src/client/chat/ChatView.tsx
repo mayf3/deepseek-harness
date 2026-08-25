@@ -7,10 +7,10 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
+import type { TurnNavigationItem } from '../contract/snapshot.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
-import { deriveTurnNavigationItems, type TurnNavigationItem } from './turn-navigation.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -34,6 +34,32 @@ function anchorElement(list: HTMLElement, key: string): HTMLElement | null {
     if (row.dataset.chatAnchorKey === key) return row
   }
   return null
+}
+
+/**
+ * Turn owning the row at a scrollport line. Scroll frames are hot, so this
+ * hit-tests the line first and falls back to one row scan when layout cannot
+ * answer (jsdom, pre-paint); neither path queries per navigation item.
+ * @param list - the ChatView list element.
+ * @param line - viewport y of the reading line.
+ * @returns the Turn number, or null when no loaded row covers the line.
+ */
+function turnAtLine(list: HTMLElement, line: number): number | null {
+  const content = list.getBoundingClientRect()
+  if (typeof document.elementsFromPoint === 'function' && content.width > 0) {
+    for (const element of document.elementsFromPoint(content.left + content.width / 2, line)) {
+      const row = element instanceof HTMLElement ? element.closest<HTMLElement>('[data-chat-turn]') : null
+      const turn = Number(row?.dataset.chatTurn)
+      if (row !== null && list.contains(row) && Number.isSafeInteger(turn)) return turn
+    }
+  }
+  let found: number | null = null
+  for (const row of list.querySelectorAll<HTMLElement>('[data-chat-turn]')) {
+    if (row.getBoundingClientRect().top > line) break
+    const turn = Number(row.dataset.chatTurn)
+    if (Number.isSafeInteger(turn)) found = turn
+  }
+  return found
 }
 
 /** Row position in scrollport coordinates (viewport-independent). */
@@ -153,7 +179,10 @@ export function ChatView({
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
-  const locations = useChat(s => s.locations)
+  // The rail's items are accumulated in the Chat snapshot, so this selector is
+  // both the data and its change signal: the array identity moves only when a
+  // Turn enters, leaves, or changes its preview.
+  const turnNavigationItems = useChat(s => s.navigation.items())
   const timeline = useChat(s => s.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -211,10 +240,6 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
-  const turnNavigationItems = useMemo(
-    () => deriveTurnNavigationItems({ timeline, locations, nodes: nodeStore }),
-    [locations, nodeStore, order, timeline],
-  )
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -252,13 +277,17 @@ export function ChatView({
       return
     }
     const el = scrollerOf(local)
-    const scrollport = el.getBoundingClientRect()
-    const readingLine = scrollport.top + Math.min(96, el.clientHeight * 0.2)
+    const readingLine = el.getBoundingClientRect().top + Math.min(96, el.clientHeight * 0.2)
+    const reading = turnAtLine(local, readingLine)
+    // No row reaches the line yet: the flow head still owns the mark. Otherwise
+    // the row's Turn may be one the rail does not offer (all its nodes hidden),
+    // so the newest offered Turn at or above it owns the mark.
     let next = first.turn
-    for (const item of turnNavigationItems) {
-      const row = anchorElement(local, item.anchorKey)
-      if (row === null || row.getBoundingClientRect().top > readingLine) break
-      next = item.turn
+    if (reading !== null) {
+      for (const item of turnNavigationItems) {
+        if (item.turn > reading) break
+        next = item.turn
+      }
     }
     if (el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1) {
       next = turnNavigationItems.at(-1)?.turn ?? next
@@ -266,6 +295,7 @@ export function ChatView({
     setActiveTurn(current => current === next ? current : next)
   }, [turnNavigationItems])
 
+  const activeTurnRef = useRef<(() => void) | null>(null)
   const activeFrameRef = useRef<number | null>(null)
   const scheduleActiveTurn = useCallback((): void => {
     if (activeFrameRef.current !== null) return
@@ -284,6 +314,8 @@ export function ChatView({
       cancelAnimationFrame(activeFrameRef.current)
     }
   }, [])
+
+  activeTurnRef.current = scheduleActiveTurn
 
   useLayoutEffect(() => {
     scheduleActiveTurn()
@@ -434,7 +466,12 @@ export function ChatView({
     if (column === null || local === null || typeof ResizeObserver === 'undefined') return
     const scrollport = scrollerOf(local)
     const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
-    const observer = new ResizeObserver(() => { followRef.current?.() })
+    // Flow-height changes (image loads, tool disclosures) move rows across the
+    // reading line without a scroll event, so the active mark resyncs here too.
+    const observer = new ResizeObserver(() => {
+      followRef.current?.()
+      activeTurnRef.current?.()
+    })
     observer.observe(column)
     if (composer !== null) observer.observe(composer)
     return () => { observer.disconnect() }
@@ -467,10 +504,15 @@ export function ChatView({
     if (local === null) return
     const row = anchorElement(local, item.anchorKey)
     if (row === null) return
-    anchorRef.current = null
     const el = scrollerOf(local)
     el.scrollTop += flowTop(row, el) - 24
     observedTopRef.current = el.scrollTop
+    // A pending older page still has to compensate the prepended height, so
+    // navigation moves that anchor to the new position instead of dropping it.
+    const landed = loadingOlder ? pagingAnchor(local, el) : null
+    anchorRef.current = landed === null || landed.dataset.chatAnchorKey === undefined
+      ? null
+      : { key: landed.dataset.chatAnchorKey, top: flowTop(landed, el) }
     const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
     atBottomRef.current = isAtBottom
     setAtBottom(isAtBottom)
