@@ -220,7 +220,8 @@ const MAX_PENDING_CHUNKS = 1024
 /**
  * Bytes a frame spends on its own JSON structure around a capped payload, used
  * to bound `maxLogBytes`/`maxValueBytes` against {@link FRAME_PARSE_CAP_BYTES}
- * (the receive path drops raw frames past that cap before decoding).
+ * (the receive path rejects raw frames past that cap, settling the run as a
+ * worker-exit).
  * The widest carrier is `{"type":"log","text":"","truncated":true}` at 41
  * bytes; 64 rounds that up so adding a field to either frame does not silently
  * invalidate the bound. A protocol constant, not a deployment choice.
@@ -779,9 +780,10 @@ export class PythonCodeRuntime extends CodeRuntime {
     // into `CodeRunResult.error.message` and never re-crosses a frame-bounded
     // channel, so it is not part of the wire-width bound (see its JSDoc). The
     // admissible cap is therefore `parse-cap - envelope`: the receive path
-    // drops raw frames past FRAME_PARSE_CAP_BYTES before decoding (a hostile
-    // compact-wide-frame OOM guard), so a budget must not exceed what an honest
-    // child's frame can actually carry through that parser.
+    // rejects raw frames past FRAME_PARSE_CAP_BYTES before decoding (the run
+    // settles as a worker-exit; a hostile compact-wide-frame OOM guard), so a
+    // budget must not exceed what an honest child's frame can actually carry
+    // through that parser.
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
       // Require an integer: the child reads these budgets through `int(...)`,
       // which silently floors a float, so `maxLogBytes: 3.5` would truncate at 3
@@ -1823,6 +1825,8 @@ export class PythonCodeRuntime extends CodeRuntime {
         // final hard bound where nothing more can be done.
         let hardDeadline = 0
         const pollGroup = (): void => {
+          /* v8 ignore next -- the group-emptied arm needs the close-driven settle to win the
+           * race against the grace SIGKILL; no seam-observable test pins that interleaving. */
           if (groupEmpty()) {
             // The group is gone; the grace SIGKILL is moot. Cancel it (it may not
             // have fired yet) and finalize. graceTimer is always defined here:
