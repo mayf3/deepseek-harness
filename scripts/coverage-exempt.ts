@@ -34,13 +34,12 @@ export const coverageExemptHeavySuites: readonly CoverageExemptSuite[] = [
     filter: 'packages/typert/generator/tests/',
     exclude: 'packages/typert/generator/tests/**',
   },
-  // Spawns the full-corpus transform gate in a child process (Node's ESM
-  // loader is its oracle), so no measured file executes in-process; the
-  // sibling in-process suites carry the package's src coverage. As a single
-  // 499–513 s case it dominated one native Windows coverage partition.
+  // The webworker-runtime package is outside the coverage requirement by
+  // decision: vitest.config.ts threshold-excludes its src, so every suite
+  // runs uninstrumented.
   {
-    filter: 'packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts',
-    exclude: 'packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts',
+    filter: 'packages/experimental/webworker-runtime/tests/',
+    exclude: 'packages/experimental/webworker-runtime/tests/**',
   },
   // Real child-process fixtures over scripts/ sources, which coverage never measures.
   { filter: 'scripts/install-lefthook.spec.ts', exclude: 'scripts/install-lefthook.spec.ts' },
