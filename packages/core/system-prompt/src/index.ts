@@ -193,8 +193,6 @@ export interface Config {
    * `deployment:persona` shadows it; `{{variable}}` references are strict.
    */
   persona?: string
-  /** Treat the deployment persona as the complete system prompt (default false). */
-  personaComplete?: boolean
   /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names
@@ -342,7 +340,6 @@ export class SystemPrompt extends Service {
     includeHarnessIdentity: z.boolean().default(true),
     includeRuntimeContext: z.boolean().default(true),
     persona: z.string().default(''),
-    personaComplete: z.boolean().default(false),
     // Preserve omission because an explicit empty order lacks the rest marker.
     toolOrder: z.array(z.string()).default(undefined as unknown as string[]),
   })
@@ -369,7 +366,6 @@ export class SystemPrompt extends Service {
       order: PERSONA_ORDER,
       // The fallback narrows the optional input type; the schema already defaults it.
       text: config.persona ?? '',
-      complete: config.personaComplete ?? false,
     })
     if (!(config.includeRuntimeContext ?? true)) this.suppressRuntimeContext()
   }

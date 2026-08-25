@@ -10,7 +10,7 @@ The `jsonrpc` plugin serves newline-delimited JSON-RPC over stdio so out-of-proc
 
 ## Config
 
-`maxTokensAsSuccess` defaults to `false` and affects only the deployment-mapped status on `subagent.finished`; root-session prompts have no prompt-level status. Optional `toolFilter.allow` and `toolFilter.deny` restrict each SDK-created root agent through `ctx.tools.restrict()`. An allow list excludes later global tool registrations that it does not name, so a fixed SDK deployment cannot silently gain model-facing tools when its base bundle expands. Unknown names and an empty filter fail when the first session is created. `JsonRpcConfig.input`, `output`, and `exit` are runtime-only transport hooks; production uses process stdio and `process.exit`.
+`maxTokensAsSuccess` defaults to `false` and affects only the deployment-mapped status on `subagent.finished`; root-session prompts have no prompt-level status. The profile composition owns each root agent's tools. `JsonRpcConfig.input`, `output`, and `exit` are runtime-only transport hooks; production uses process stdio and `process.exit`.
 
 ## stdout is the protocol
 
@@ -30,7 +30,7 @@ The plugin answers `shutdown`, flushes the response, disposes the root context s
 
 #### What the model sees
 
-For each accepted `session/prompt`, text and durable content references enter one user message verbatim. Inline `SdkEncodedImageBlock` values are validated and committed through the composition's attachment store first, so the session log retains content-addressed image references rather than base64 bytes. This package adds no system-prompt prose or tool schema; those come from the other plugins in the composition. A configured `toolFilter` projects that composition's global tool registry before the request is assembled and executed.
+For each accepted `session/prompt`, text and durable content references enter one user message verbatim. Inline `SdkEncodedImageBlock` values are validated and committed through the composition's attachment store first, so the session log retains content-addressed image references rather than base64 bytes. This package adds no system-prompt prose or tool schema; those come from the other plugins in the composition.
 
 #### Token effect
 
