@@ -80,7 +80,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
   it('shows a running background job in the session header without a refresh', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-running'))
     // Polling for zero would pass at t=0 before delivery and prove nothing.
-    const trigger = page.getByRole('button', { name: '1 background job running' })
+    const trigger = page.getByRole('button', { name: '1 task running' })
     expect(await trigger.count()).toBe(0)
 
     const started = await scaffold.ctx.tools.execute({
@@ -97,7 +97,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
 
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
-    const row = page.getByRole('list', { name: 'Background jobs' }).getByRole('listitem').first()
+    const row = page.getByRole('list', { name: 'Tasks' }).getByRole('listitem').first()
     await row.waitFor({ timeout: 10_000 })
     await expect.poll(() => row.textContent()).toContain(COMMAND)
 
@@ -111,7 +111,7 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-settled'))
     expect(scaffold.ctx.jobs.kill(jobId, agent, 'web e2e cancellation')).toBe('requested')
 
-    const idle = page.getByRole('button', { name: '1 background job' })
+    const idle = page.getByRole('button', { name: '1 task' })
     await idle.waitFor({ timeout: 20_000 })
 
     const snapshot = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)

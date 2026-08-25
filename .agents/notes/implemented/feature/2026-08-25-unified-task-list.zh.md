@@ -1,0 +1,31 @@
+# Agent Note：会话头部单一任务列表——jobs 与 activity 只在 UI 投影层合并
+
+状态：implemented
+
+[English](2026-08-25-unified-task-list.md) | 中文
+
+## 问题
+
+[activity 观察面](2026-08-24-activity-observation-seam.zh.md)的 Web 呈现落地为[后台任务列表](2026-08-08-web-background-job-display.zh.md)旁边的第二个会话头部按钮。一次后台 bash 会同时登记在两个面里——`ctx.jobs` 负责控制、`ctx.activities` 负责观察——于是同一份工作渲染了两次：一次在"后台任务"里带生命周期与时长，一次在"活动"里带可展开的实时输出。两个行集合高度重叠、名字却不同的近似弹层，读起来像产品事故；而活动列表的扁平行（live 与 settled 混排、单行、无时长）也缺乏视觉层次。
+
+## 决策
+
+服务面保持正交；合并只在 UI 投影层逐行发生一次。
+
+- **`ctx.jobs` 与 `ctx.activities` 仍是两个服务。** jobs 是控制面：模型可见的 id、模型消耗式的 `readOutput` 游标、`stopping`、`kill` 与 `reported` 完成通知契约。activity 是瞬态观察面：非消耗式绝对偏移、模型不可见、重启即无。合并服务会迫使一个注册表同时携带消耗式与非消耗式两种游标，并模糊这个刻意不进 session log 的面与"模型可见 ⟺ 已记录"不变量的边界。
+- **`dsh-client-ui-activity` 渲染唯一的合并列表；`dsh-client-ui-jobs` 删除**（预发布阶段，不留兼容层），合并入口占用原 job 列表的 slot 顺位。每个 `jobsBySession` 行与携带其 `correlation.jobId` 的 activity 逐行 join：job 提供身份、生命周期（`stopping` 只存在于此）、时长与模型可见 `detail`；activity 提供可展开的输出面板。没有 job 的 activity（workflow 运行）保留自己的行；job 不在投影里的 activity 也不会被丢弃。没有 activity 注册表时 job 行照常渲染——只是没有面板，合并控件退化为与旧 job 列表完全等价。
+- **用户可见词汇统一为"任务"（task）**——`N 个任务进行中` / `N tasks running`——因为对用户而言每一行都是在跑的工作，而"后台任务"排除了 workflow 运行、"活动"命名的是内部面而非用户概念。词典命名空间与包名保持 `activity`：内部名遵循命名台账，不跟随展示文案。
+- **层次**：进行中的行在前（命令为主行、kind 徽章加状态为副行、时长每秒跳动），两段都存在时插入"已结束"分节线，已结束的行折为降权单行。没有可观察 activity 的行渲染为无展开交互的静态行。
+
+刻意不合并的：subagent 委托行保持裸 job 行（subagent 面板是它的呈现面），前台命令留在工具卡片里——两者都不接活动生产者。
+
+## 已否决的替代方案
+
+- **合并服务层**——因上述游标语义与模型可见性理由否决。
+- **保留 job 列表、把输出挂上去**——workflow 运行（无 job 的 activity）无处安放，第二个列表终究得活下来。
+
+## 后果
+
+- 两个 web e2e 场景（`background-job-list`、`live-activity-stream`）现在断言同一个"任务"列表；job 场景的行获得了实时输出面板，这正是 join 端到端生效的证据。
+- live 行上的人工 kill 控件仍被 job-display note 记录的 jobs `reported` 契约问题阻塞。
+- `job` 词典命名空间随包一起消失；`activity` 拥有合并后的全部文案，包括时长词汇。

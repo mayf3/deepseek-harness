@@ -35,6 +35,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
+  ctx.provide('sessions', {} as never)
   ctx.provide('activityFeed', {
     state: { getSnapshot: () => ({ rowsBySession: {}, observed: {}, phase: 'pending' }), subscribe: () => () => {} },
     observe: (id: string) => { observed.push(id); return () => {} },
@@ -56,7 +57,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
 
 describe('ui-activity browser half', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['activityFeed', 'slots', 'locale'])
+    expect(inject).toEqual(['sessions', 'activityFeed', 'slots', 'locale'])
   })
 
   it('exposes the feed source and observation control through the inject face', async () => {

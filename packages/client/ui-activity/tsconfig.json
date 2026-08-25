@@ -11,6 +11,7 @@
     { "path": "../../../vendor/cosmokit" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../api/activity-controller/tsconfig.client.json" },
+    { "path": "../../api/session-controller/tsconfig.client.json" },
     { "path": "../locale" },
     { "path": "../ui-conversation" },
     { "path": "../ui-primitives" },

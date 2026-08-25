@@ -80,7 +80,7 @@ describe.skipIf(MODE === 'record')('web e2e: live activity stream', () => {
 
   it('streams a running background command\'s real output into the expanded panel', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-live-activity-streaming'))
-    const trigger = page.getByRole('button', { name: '1 live activity' })
+    const trigger = page.getByRole('button', { name: '1 task running' })
     expect(await trigger.count()).toBe(0)
 
     const started = await scaffold.ctx.tools.execute({
@@ -118,7 +118,7 @@ describe.skipIf(MODE === 'record')('web e2e: live activity stream', () => {
 
     // Settlement arrives on the observation stream itself, so the open panel
     // flips without any further interaction; the roster trigger follows.
-    const idle = page.getByRole('button', { name: '1 activity' })
+    const idle = page.getByRole('button', { name: '1 task' })
     await idle.waitFor({ timeout: 20_000 })
     await page.getByText('streamed-marker-line').waitFor({ timeout: 10_000 })
 

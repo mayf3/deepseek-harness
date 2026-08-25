@@ -1,8 +1,10 @@
 /**
- * Live-activity plugin, browser half: contributes one session-header action
- * that renders the activity roster and, per expanded row, an on-demand
- * observation stream's live output. All data arrives through the
- * `activityFeed` client service; this plugin holds no transport state.
+ * Task-list plugin, browser half: contributes one session-header action that
+ * renders this session's tasks — background jobs joined with their correlated
+ * live-output activities, plus standalone activities such as workflow runs.
+ * Job rows arrive through the `jobsBySession` list mirror; activity rows and
+ * per-row observation streams arrive through the `activityFeed` client
+ * service. This plugin holds no transport state of its own.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { ActivityListAction } from './ActivityListAction.tsx'
@@ -22,8 +24,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { ActivityListActionProps, ActivityListInjected } from './ActivityListAction.tsx'
 
-/** Required services: the activity feed, the slot registry, and dictionaries. */
-export const inject = ['activityFeed', 'slots', 'locale']
+/** Required services: session and activity state, the slot registry, and dictionaries. */
+export const inject = ['sessions', 'activityFeed', 'slots', 'locale']
 
 /**
  * Client plugin body: register the dictionaries and the header action.
@@ -36,8 +38,8 @@ export function apply(ctx: ClientContext): void {
     () => ctx.slots.register({
       name: 'conversation.session.header.actions',
       id: 'activity-list',
-      // After the background-job list: job control reads before live output.
-      order: 30,
+      // After the subagent catalog: session lineage reads before running work.
+      order: 20,
       locale: NS,
       inject: (): ActivityListInjected => ({
         hooks: { activity: ctx.activityFeed.state },

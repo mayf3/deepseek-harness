@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
   ActivityFeedSnapshot, ActivityId, ActivityRow, ObservedActivity,
 } from '@deepseek-ai/dsh-api-activity-controller/client'
+import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { ActivityListAction, type ActivityListActionProps } from '../src/client/ActivityListAction.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -12,6 +13,7 @@ import { zh } from '../src/client/locales.ts'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 const SESSION = 'session' as SessionId
@@ -36,9 +38,21 @@ function unownedRow(over: Partial<ActivityRow> = {}): ActivityRow {
   return rest
 }
 
+function job(over: Partial<SessionJob> = {}): SessionJob {
+  return {
+    id: 'bash-1' as SessionJob['id'],
+    kind: 'bash',
+    label: 'pnpm run build',
+    status: 'running',
+    startedAt: 1_700_000_000_000,
+    ...over,
+  }
+}
+
 function props(
   snapshot: Partial<ActivityFeedSnapshot>,
   observe: ActivityListActionProps['observe'] = () => () => {},
+  jobs: readonly SessionJob[] = [],
 ): ActivityListActionProps {
   const state: ActivityFeedSnapshot = {
     rowsBySession: {},
@@ -49,7 +63,11 @@ function props(
   function useActivity<T>(select: (value: ActivityFeedSnapshot) => T): T {
     return select(state)
   }
-  return { sessionId: SESSION, useActivity, observe, t } as unknown as ActivityListActionProps
+  const sessionsState = { jobsBySession: jobs.length > 0 ? { [SESSION]: jobs } : {} }
+  function useSessions<T>(select: (value: typeof sessionsState) => T): T {
+    return select(sessionsState)
+  }
+  return { sessionId: SESSION, useSessions, useActivity, observe, t } as unknown as ActivityListActionProps
 }
 
 function openList(): void {
@@ -57,19 +75,19 @@ function openList(): void {
 }
 
 describe('ActivityListAction visibility', () => {
-  it('renders nothing while the session sees no activities', () => {
+  it('renders nothing while the session sees no tasks', () => {
     const { container } = render(<ActivityListAction {...props({})} />)
     expect(container.innerHTML).toBe('')
   })
 
-  it('counts live activities on the trigger, merging owned and unowned rows', () => {
+  it('counts live tasks on the trigger, merging owned and unowned activity rows', () => {
     render(<ActivityListAction {...props({
       rowsBySession: {
         [SESSION]: [row()],
         '': [unownedRow({ id: 'workflow-1' as ActivityId, kind: 'workflow' })],
       },
     })} />)
-    expect(screen.getByRole('button', { name: '2 个活动进行中' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '2 个任务进行中' })).toBeDefined()
   })
 
   it('falls back to the total when nothing is live and hides foreign sessions', () => {
@@ -79,7 +97,79 @@ describe('ActivityListAction visibility', () => {
         other: [row({ id: 'bash-9' as ActivityId, sessionId: 'other' as SessionId })],
       },
     })} />)
-    expect(screen.getByRole('button', { name: '1 个活动' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '1 个任务' })).toBeDefined()
+  })
+})
+
+describe('ActivityListAction merged rows', () => {
+  it('joins a job with its correlated activity: job lifecycle, activity output', () => {
+    const observe = vi.fn(() => () => {})
+    render(<ActivityListAction {...props({
+      rowsBySession: {
+        [SESSION]: [row({
+          id: 'bash-act-7' as ActivityId,
+          label: 'activity-side label',
+          correlation: { jobId: 'bash-1' as never },
+        })],
+      },
+    }, observe, [job({ status: 'stopping', detail: 'winding down' })])} />)
+    openList()
+    const list = screen.getByRole('list', { name: zh['list.aria'] })
+    // One merged row: the job's label and lifecycle word, not the activity's.
+    expect(within(list).getAllByRole('listitem')).toHaveLength(1)
+    expect(within(list).getByText('pnpm run build')).toBeDefined()
+    expect(screen.queryByText('activity-side label')).toBeNull()
+    expect(within(list).getByText('winding down')).toBeDefined()
+    // Expansion observes the correlated activity's stream.
+    fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
+    expect(observe).toHaveBeenCalledWith('bash-act-7')
+  })
+
+  it('renders a bare job row without expansion affordances', () => {
+    render(<ActivityListAction {...props({}, undefined, [
+      job({ id: 'subagent-1' as SessionJob['id'], kind: 'subagent', label: 'explore the repo' }),
+    ])} />)
+    expect(screen.getByRole('button', { name: '1 个任务进行中' })).toBeDefined()
+    openList()
+    expect(screen.getByText('explore the repo')).toBeDefined()
+    expect(screen.queryByRole('button', { name: zh['row.expandAria'].replace('{label}', 'explore the repo') })).toBeNull()
+  })
+
+  it('keeps an activity whose job is not in the projection', () => {
+    render(<ActivityListAction {...props({
+      rowsBySession: {
+        [SESSION]: [row({ correlation: { jobId: 'bash-9' as never } })],
+      },
+    })} />)
+    openList()
+    expect(screen.getByText('pnpm run build')).toBeDefined()
+  })
+
+  it('separates live and settled sections only when both exist', () => {
+    const settled = [job({ id: 'bash-2' as SessionJob['id'], status: 'completed', finishedAt: 1_700_000_012_000 })]
+    const { rerender } = render(<ActivityListAction {...props({}, undefined, [job(), ...settled])} />)
+    openList()
+    expect(screen.getByText(zh['section.settled'])).toBeDefined()
+    // Live-only lists carry no divider.
+    rerender(<ActivityListAction {...props({}, undefined, [job()])} />)
+    expect(screen.queryByText(zh['section.settled'])).toBeNull()
+  })
+
+  it('shows a settled duration and ticks a live one', () => {
+    vi.useFakeTimers({ now: 1_700_000_020_000 })
+    render(<ActivityListAction {...props({}, undefined, [
+      job({ startedAt: 1_700_000_015_000 }),
+      job({ id: 'bash-2' as SessionJob['id'], status: 'completed', startedAt: 1_700_000_000_000, finishedAt: 1_700_000_012_000 }),
+      job({ id: 'bash-3' as SessionJob['id'], status: 'completed', startedAt: 1_699_996_200_000, finishedAt: 1_700_000_000_000 }),
+      job({ id: 'bash-4' as SessionJob['id'], status: 'completed', startedAt: 1_699_999_900_000, finishedAt: 1_699_999_972_000 }),
+    ])} />)
+    openList()
+    expect(screen.getByText('5秒')).toBeDefined()
+    expect(screen.getByText('12秒')).toBeDefined()
+    expect(screen.getByText('1小时3分')).toBeDefined()
+    expect(screen.getByText('1分12秒')).toBeDefined()
+    act(() => { vi.advanceTimersByTime(1_000) })
+    expect(screen.getByText('6秒')).toBeDefined()
   })
 })
 
@@ -200,7 +290,7 @@ describe('ActivityListAction rows and observation', () => {
     const { rerender } = render(<ActivityListAction {...props({
       rowsBySession: { [SESSION]: settledPair },
     })} />)
-    expect(screen.getByRole('button', { name: '2 个活动' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '2 个任务' })).toBeDefined()
     openList()
     const list = screen.getByRole('list', { name: zh['list.aria'] })
     fireEvent.keyDown(list, { key: 'a' })
