@@ -40,11 +40,11 @@ Python 运行时继续打包 `dsh-web-app` 与前端产物。`dsh web` 会从已
 
 ## 验证
 
-组合包测试固定确切配置项与依赖清单。Profile 模板与配置 dump 测试固定单组合包 manifest、仅启动时生命周期、`dsh-base` 缺席与模块 HMR 缺席。Keyless Python 示例测试启动真实 `dsh --profile sdk-minimal` 进程，并断言生成的 manifest、完整系统提示词与两个对外公布的工具。Installed-wheel 极简场景通过打包可执行程序验证持久 shell 状态、editor 文件效果、JSONL 持久化与已提交的模型可见快照。
+组合包测试固定确切配置项与依赖清单。Profile 模板与配置 dump 测试固定单组合包 manifest、仅启动时生命周期、`dsh-base` 缺席与模块 HMR 缺席。Keyless 源码测试启动真实 `dsh --profile sdk-minimal` 进程、完成一个回合并断言生成的 manifest。Installed-wheel 极简场景通过已提交的模型可见快照固定完整系统提示词和两个对外公布的工具，同时经由打包可执行程序验证持久 shell 状态、editor 文件效果与 JSONL 持久化。
 
 ## 考虑过的替代方案
 
-**继续把极简模式作为 `sdk` 上的 overlay。** 否决：筛选面向模型的工具不会移除 base 服务、提示词贡献方、持久化选择或后续运行时行为，还会让极简应用依赖共享 SDK server 与系统提示词接口中的控制项。
+**继续把极简模式作为 `sdk` 上的 overlay。** 否决：筛选面向模型的工具不会移除 base 服务、提示词贡献方、持久化选择或后续运行时行为。该方案还要求共享 SDK server 提供根工具筛选，并要求 system-prompt 配置提供 complete-persona 快捷项；这两个共享接口均不再携带这些组合控制项。
 
 **恢复 Python `cordis` 参数或由环境选择的完整配置。** 否决：这会重新创建 Python 自有应用组合，并绕过 profile 插件管理与 launcher 生命周期。
 

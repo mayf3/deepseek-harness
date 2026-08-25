@@ -34,7 +34,6 @@ class HarnessConfig:
     initialize_timeout_seconds: float = 30.0
     request_timeout_seconds: float | None = None
     shutdown_timeout_seconds: float | None = 1.0
-    _launch_args: tuple[str, ...] | None = None
 
 
 class HarnessClient:
@@ -47,7 +46,7 @@ class HarnessClient:
         _launch_args: tuple[str, ...] | None = None,
     ) -> None:
         self.config = config or HarnessConfig()
-        self._launch_args = _launch_args or self.config._launch_args
+        self._launch_args = _launch_args
         self._proc: subprocess.Popen[str] | None = None
         self._lock = threading.Lock()
         self._write_lock = threading.Lock()
