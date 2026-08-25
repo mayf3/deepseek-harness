@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/module-graph.md
-module-graph.md: 31e8905e50b096535c295ef7c9199954f9f3ab5c
-module-graph.zh.md: b4555e73c0c0ab589d1b35967010901f5e053110
+module-graph.md: 7e16de9c8a5c1e40dd6f3f625bc311e9956cf035
+module-graph.zh.md: c12de9caddc3e6134b9a57366821901ef8bbfcd5
