@@ -852,9 +852,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
 
-<a id="toolptc-dispatch--log-only"></a>
+<a id="toolcode-dispatch--log-only"></a>
 
-#### `tool/ptc-dispatch` — log-only
+#### `tool/code-dispatch` — log-only
 
 ```ts persistence-catalog
 /**
@@ -877,9 +877,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
 
-<a id="toolptc-dispatch-start--log-only"></a>
+<a id="toolcode-dispatch-start--log-only"></a>
 
-#### `tool/ptc-dispatch-start` — log-only
+#### `tool/code-dispatch-start` — log-only
 
 ```ts persistence-catalog
 /**

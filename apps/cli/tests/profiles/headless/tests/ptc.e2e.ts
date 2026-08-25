@@ -49,7 +49,7 @@ afterEach(async () => {
   workdir = undefined
 })
 
-async function codeModeHarness(cwd: string): Promise<Context> {
+async function ptcModeHarness(cwd: string): Promise<Context> {
   const harness = new Context()
   await harness.plugin(LlmRuntime)
   await harness.plugin(SessionStore)
@@ -66,7 +66,7 @@ async function codeModeHarness(cwd: string): Promise<Context> {
   return harness
 }
 
-async function workspaceCodeModeHarness(): Promise<Context> {
+async function workspacePtcModeHarness(): Promise<Context> {
   const harness = new Context()
   await harness.plugin(LlmRuntime)
   await harness.plugin(SessionStore)
@@ -112,7 +112,7 @@ function completion(result: ToolExecutionResult): unknown {
 }
 
 /** Keyless real-worker harness for direct typed-binding acceptance tests. */
-async function typedCodeModeHarness(): Promise<Context> {
+async function typedPtcModeHarness(): Promise<Context> {
   const harness = new Context()
   await harness.plugin(SystemPrompt)
   await harness.plugin(ToolRuntime, { mode: 'ptc' })
@@ -121,8 +121,8 @@ async function typedCodeModeHarness(): Promise<Context> {
 }
 
 /** Keyless real-worker harness with the task-owned bash lifecycle. */
-async function backgroundCodeModeHarness(cwd: string): Promise<Context> {
-  const harness = await typedCodeModeHarness()
+async function backgroundPtcModeHarness(cwd: string): Promise<Context> {
+  const harness = await typedPtcModeHarness()
   await harness.plugin(LocalJobRegistry)
   await harness.plugin(ToolTasks, {})
   await harness.plugin(LocalSubprocessRuntime)
@@ -134,7 +134,7 @@ async function backgroundCodeModeHarness(cwd: string): Promise<Context> {
 
 describe('PTC mode typed values: keyless real-worker contracts', () => {
   it('crosses a large intermediate value intact and exposes only typed tool failure fields', async () => {
-    ctx = await typedCodeModeHarness()
+    ctx = await typedPtcModeHarness()
     ctx.tools.register(defineTool({
       name: 'large_value',
       description: 'Return a large canonical string.',
@@ -188,7 +188,7 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
 
   it('returns a background job id, settles the outer run, and polls that id to completion', async () => {
     workdir = await mkdtemp(join(tmpdir(), 'dsh-ptc-background-'))
-    ctx = await backgroundCodeModeHarness(workdir)
+    ctx = await backgroundPtcModeHarness(workdir)
 
     const jobId = completion(await runCode(ctx, `
       const started = await tools.bash({
@@ -211,7 +211,7 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
 
   it('pre-abort spawns nothing; post-publication abort leaves job_kill as the cancellation owner', async () => {
     workdir = await mkdtemp(join(tmpdir(), 'dsh-ptc-task-cancel-'))
-    ctx = await backgroundCodeModeHarness(workdir)
+    ctx = await backgroundPtcModeHarness(workdir)
 
     const pre = new AbortController()
     pre.abort('pre-aborted')
@@ -248,7 +248,7 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
 
   it('keeps foreground bash coupled to the outer signal', async () => {
     workdir = await mkdtemp(join(tmpdir(), 'dsh-ptc-foreground-cancel-'))
-    ctx = await backgroundCodeModeHarness(workdir)
+    ctx = await backgroundPtcModeHarness(workdir)
     const controller = new AbortController()
     const startedAt = Date.now()
     const pending = runCode(ctx, `
@@ -262,7 +262,7 @@ describe('PTC mode typed values: keyless real-worker contracts', () => {
   }, 15_000)
 
   it('uses versioned Cordis DTO ids directly for running and pending Plugins, then confirms removal', async () => {
-    ctx = await typedCodeModeHarness()
+    ctx = await typedPtcModeHarness()
     await ctx.plugin(CordisHostRunner)
     await ctx.plugin(ToolCordis)
     const agent = {
@@ -352,7 +352,7 @@ function waitForIdle(harness: Context, agent: Agent): Promise<void> {
 describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a program over real tools', () => {
   it('collapses the wire tool list to [run_code], bridges sub-calls, and returns curated output', async () => {
     workdir = await mkdtemp(join(tmpdir(), 'dsh-ptc-e2e-'))
-    ctx = await codeModeHarness(workdir)
+    ctx = await ptcModeHarness(workdir)
     const agent = ctx.agentLoop.create(SessionId('e2e-ptc'), { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
 
     agent.followup(createUserMessage({
@@ -401,7 +401,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
     await mkdir(join(workdir, 'pkg/deep'), { recursive: true })
     await writeFile(join(workdir, 'pkg/AGENTS.md'), `If asked for the PTC mode workspace handshake, reply with exactly ${WORKSPACE_PROBE} and nothing else.\n`)
     await writeFile(join(workdir, 'pkg/deep/task.txt'), 'Touch this file to discover the nested instructions.\n')
-    ctx = await workspaceCodeModeHarness()
+    ctx = await workspacePtcModeHarness()
     const handle = await ctx.agents.create({
       sessionId: SessionId('e2e-ptc-workspace-session'),
       meta: { cwd: workdir },

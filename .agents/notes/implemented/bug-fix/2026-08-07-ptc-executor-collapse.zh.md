@@ -12,11 +12,11 @@ Status: implemented
 
 ## 决策
 
-`ToolRuntime` 通过新增的私有 `resolveExecution(name, scope, nested)` 解析可执行定义，在拥有该决策的操作边界上应用模式塌缩。当 `modeFor(scope)` 解析为 `code` 时，模型直呼（`nested = false`）只允许命名保留的 `run_code` 传输工具；任何原生名字都解析为 `undefined`，并以执行器既有的 `UNKNOWN_TOOL` 错误呈现，其消息会指出改走 `run_code` 的正确路径——因为这个名字对当前模型而言是**已声明过**的（已中止的调用方 signal 保留取消契约：`ABORTED_BEFORE_DISPATCH`，并应用可见工具的 finalizer）。有效的 scope 模式包括从 agent preset 继承的声明，因此其 wire schema 与执行权限保持一致。被塌缩的调用在 `createExecution`（`prepare` 的第一阶段）即终止——在可扩展策略流水线之前，因此 `tools/pre-execute` 监听器、approval `ask` 与 guard 永远不会观察到一个注定被拒绝的调用，人类也不会被提示去批准它。嵌套子调用（`nested = true`——即设置了 `parent` token，生产代码中只有 `run_code` SDK 绑定会设置）可以调用任意可见工具，因此程序保留生成 SDK 声明的全部绑定。
+`ToolRuntime` 通过新增的私有 `resolveExecution(name, scope, nested)` 解析可执行定义，在拥有该决策的操作边界上应用模式塌缩。当 `modeFor(scope)` 解析为 `ptc` 时，模型直呼（`nested = false`）只允许命名保留的 `run_code` 传输工具；任何原生名字都解析为 `undefined`，并以执行器既有的 `UNKNOWN_TOOL` 错误呈现，其消息会指出改走 `run_code` 的正确路径——因为这个名字对当前模型而言是**已声明过**的（已中止的调用方 signal 保留取消契约：`ABORTED_BEFORE_DISPATCH`，并应用可见工具的 finalizer）。有效的 scope 模式包括从 agent preset 继承的声明，因此其 wire schema 与执行权限保持一致。被塌缩的调用在 `createExecution`（`prepare` 的第一阶段）即终止——在可扩展策略流水线之前，因此 `tools/pre-execute` 监听器、approval `ask` 与 guard 永远不会观察到一个注定被拒绝的调用，人类也不会被提示去批准它。嵌套子调用（`nested = true`——即设置了 `parent` token，生产代码中只有 `run_code` SDK 绑定会设置）可以调用任意可见工具，因此程序保留生成 SDK 声明的全部绑定。
 
 执行链路的四处查表——`executionMode`、`dispatchToolBody`、`postExecute`、`normalizeDispatchResult`——改走 `resolveExecution`。`createExecution` 通过共享的 `collapses(name, nested)` 谓词应用同一塌缩，以便在策略流水线之前区分被塌缩的调用与真正未知的名字。公共注册表视图（`get`）与 SDK 投影（`schemas`）语义不变：展示、检查与绑定枚举仍看到完整可见集合。通告（`wireSchemas`）与执行器现在一致。带非 JSON 可序列化参数的塌缩调用报告参数 `TypeError`（invalid-args 契约），而非 `UNKNOWN_TOOL`——函数体仍不会运行，策略也不会执行。
 
-塌缩是安全相关的不变量，因此验收经执行器钉死：`code` 模式下模型直呼原生工具返回 `UNKNOWN_TOOL`；同一工具经 SDK 子调用成功；`native`/`both` 模式直呼与 `run_code` 本身行为不变。本 note 把执行边界叠加在基础 [PTC mode 基础](../feature/2026-06-15-ptc.zh.md) 之上，传输设计由后者拥有。
+塌缩是安全相关的不变量，因此验收经执行器钉死：`ptc` 模式下模型直呼原生工具返回 `UNKNOWN_TOOL`；同一工具经 SDK 子调用成功；`native`/`both` 模式直呼与 `run_code` 本身行为不变。本 note 把执行边界叠加在基础 [PTC mode 基础](../feature/2026-06-15-ptc.zh.md) 之上，传输设计由后者拥有。
 
 ## 备选方案
 
