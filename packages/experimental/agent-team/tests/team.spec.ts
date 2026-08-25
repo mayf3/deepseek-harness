@@ -838,6 +838,28 @@ describe('Team shared task DAG', () => {
 })
 
 describe('Team mailbox and waiting', () => {
+  it('injects a quiet message addressed to the Lead and checkpoints its receipt', async () => {
+    const { ctx, lead } = await setup([])
+    const message: TeamMessageSnapshot = {
+      id: TeamMessageId('quiet-lead-message'),
+      senderId: SessionId('team-worker'),
+      senderName: 'worker',
+      targetId: lead.id,
+      delivery: 'quiet',
+      content: content('quiet report'),
+    }
+    lead.session.append('team/message/queued', {
+      version: 1,
+      teamId: TeamId(lead.id),
+      message,
+    })
+
+    await expect(teamInternals(ctx).mailbox.tryDispatch(lead, message, SIGNAL)).resolves.toBe(true)
+    expect(lead.inbox.nextStep.some(input => input.source.kind === 'team-message'
+      && input.source.messageId === message.id)).toBe(true)
+    expect(durable(lead).pendingMessages).toEqual([])
+  })
+
   it('acknowledges waking messages persisted by a busy Lead before model claim', async () => {
     const { ctx, lead, teamFiber } = await setup(['hang', 'hang'], { maxPendingMessagesPerMember: 1 })
     const started = await spawn(ctx, lead, 'lead-reporter')
