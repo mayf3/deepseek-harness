@@ -843,11 +843,10 @@ export class ToolRuntime extends Service {
    *
    * Every tool contributes its own guidance section naming its tool, none of
    * them qualify how that tool is reached, and they all render before the SDK.
-   * Without this the model
-   * reads a catalog of tools it is told to use and no statement that only
-   * `run_code` may be called, so it emits a native call, receives
-   * `UNKNOWN_TOOL` for a tool the prompt just declared, and concludes the
-   * deployment is inconsistent. {@link COLLAPSE_SECTION_ORDER} places the rule
+   * Without this the model reads a catalog of tools it is told to use and no
+   * statement that only `run_code` may be called, so it emits a native call,
+   * receives `UNKNOWN_TOOL` for a tool the prompt just declared, and concludes
+   * the deployment is inconsistent. {@link COLLAPSE_SECTION_ORDER} places the rule
    * before that guidance rather than after it.
    *
    * `both` renders empty: native calls do execute there, so the rule is false.

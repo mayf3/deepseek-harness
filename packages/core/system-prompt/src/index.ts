@@ -122,8 +122,8 @@ export interface PromptAssembly {
 /**
  * Sparse integer placements for repository-owned prompt sections.
  *
- * Adjacent values differ by at least ten so a new first-party section can be
- * inserted without renumbering the surrounding sequence.
+ * Adjacent values differ by at least ten to keep the first-party groups sparse
+ * and make accidental collisions mechanically detectable.
  * External plugins may use any finite order; equal orders are deterministic by
  * section name.
  */
