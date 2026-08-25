@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-缓存打开采用新增 `per-record` 布局的 `session_projcache` 存储域：每个会话一个带版本戳的文档，位于 `<root>/session_projcache/sessions/<id>.json`，介质归存储栈所有——`storage` / `storage-json` / `storage-domain` 与缓存一起落在共享 base 装配里，缓存重新变回纯粹的域消费方。缓存绝不咨询持久化层：没有 `locate`、不依赖挂载的是哪个后端。
+缓存打开采用新增 `per-record` 布局的 `session_projcache` 存储域：每个会话一个带版本戳的文档，位于 `<root>/session_projcache/sessions/<id>.json`，介质归存储栈所有——`storage` / `storage-json` / `storage-domain` 与缓存一起落在共享 base 装配里，缓存重新变回纯粹的域消费方。所有随附且基于 base 的 profile 都保持启用缓存，因此会话生产方会记录检查点，不取决于当前应用是否提供列表接口；不使用 base 组合包的 `sdk-minimal` 不在此装配范围内。缓存绝不咨询持久化层：没有 `locate`、不依赖挂载的是哪个后端。
 
 读写共享同一份一致状态：每次读取（`cachedSnapshot`）都是对域内存表的同步查找（零 I/O）；每次写入排进该域的单条写链，先落盘成功才改内存——不再有落后于节流写入的直读磁盘。缓存保留其余全部职责：检查点折叠、写策略（turn/end + dispose 强制点、count/interval 节流）、fail-soft 持久化与列表读。`cachedSnapshot(meta)` 是同步的。缓存不运行冷重折叠阶梯（那需要读取会话日志，属于持久化层的职责）；需要保证冷快照的消费方自行从日志重折叠。json 后端以仅属主权限（`0o700`）创建自己的目录树。
 
@@ -18,6 +18,7 @@ Status: implemented
 
 - 每会话写入隔离：每次节流写入只替换该会话的小文档，消除全局写放大。域写链将写入串行化，新切面绝不会先于旧切面落盘；域关闭时会排空在途写入。
 - 列表读取是同步内存读；没有记录文档的会话只是缺少投影列。
+- ACP、headless、SDK 与 Web 会话都会发布缓存行，供后续消费方使用。确保日志领先的持久性屏障可能按缓存节奏 flush 已覆盖的前缀，并拆分原本会合并的 JSONL 行；各 profile 的录制快照保留这一完整装配下的持久化行为。
 - per-record 契约把故障范围缩小到单记录：畸形或过期版本的文档在打开时读作"无此记录"，单个坏文件不会拖垮整个缓存；检查点 schema 升级按会话丢弃过期行，而不是拒绝整个域。
 - 无需迁移：缓存是派生数据，绝非权威。过时的缓存（任何更早格式）从不被读取——首次冷读从日志重折叠并写出当前格式。
 - 缓存记录仍绑定同一日志生命周期：存储的 `{createdAt, cwd}` 身份防止被重建的 id 误导。

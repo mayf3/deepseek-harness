@@ -8,14 +8,6 @@
 - id: session-title-llm
   disabled: true
 
-# The base projection cache serves session-listing columns for web surfaces.
-# ACP exposes no listing surface, and the cache's write-behind would force
-# session-log flushes at cache-chosen times — changing the durable JSONL
-# batching this profile's keyless transcripts pin — so the automation profile
-# disables the base row.
-- id: session-projection-cache
-  disabled: true
-
 - insert:
     - id: acp-app-startup
       name: '@deepseek-ai/dsh-acp-app'

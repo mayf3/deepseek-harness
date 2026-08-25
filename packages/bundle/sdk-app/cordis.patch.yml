@@ -8,14 +8,6 @@
 - id: session-title-llm
   disabled: true
 
-# The base projection cache serves session-listing columns for web surfaces.
-# The SDK protocol exposes no listing surface, and the cache's write-behind
-# would force session-log flushes at cache-chosen times — changing the durable
-# JSONL batching this profile's keyless replay fixtures pin — so this bundle
-# disables the base row.
-- id: session-projection-cache
-  disabled: true
-
 - insert:
     - id: sdk-app-startup
       name: '@deepseek-ai/dsh-sdk-app'
