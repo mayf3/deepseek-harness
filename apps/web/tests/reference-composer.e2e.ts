@@ -27,7 +27,7 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/reference-composer', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/reference-composer', import.meta.url))
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
 const ORDER_EXPECTED = join(SNAPSHOT_DIR, 'order.expected.md')
 const CARET_EXPECTED = join(SNAPSHOT_DIR, 'caret-edits.expected.md')

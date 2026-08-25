@@ -59,7 +59,7 @@ $env:DEEPSEEK_API_KEY = "sk-your-key-here"
 ### Linux 与 macOS
 
 ```sh
-python examples/python-sdk-agent/minimal.py \
+python python/sdk/examples/minimal.py \
   --workspace /absolute/path/to/disposable-workspace \
   --dsh-home /absolute/path/to/example-dsh-home \
   --session-id example-001 \
@@ -69,7 +69,7 @@ python examples/python-sdk-agent/minimal.py \
 ### Windows PowerShell
 
 ```powershell
-python examples/python-sdk-agent/minimal.py `
+python python/sdk/examples/minimal.py `
   --workspace C:\work\disposable-workspace `
   --dsh-home C:\work\example-dsh-home `
   --session-id example-001 `
@@ -147,4 +147,4 @@ dsh plugin --profile sdk-minimal add file:C:/work/my-plugin-bundle
 
 需要隔离 profile、插件、凭据、设置与会话时，应使用新的 home。独立工作应使用新的 session id；只有继续同一段持久对话和会话资源时，才同时复用 harness、home 与 id。
 
-[组合包参考](../../../packages/bundle/sdk-minimal/README.zh.md)定义确切配置树，[示例参考](../../../examples/python-sdk-agent/README.zh.md)定义可运行程序。[Python SDK 参考](../../../python/sdk/README.zh.md)介绍生命周期、结果、通知与底层行为；[dsh CLI 参考](../../../apps/cli/reference/README.zh.md)介绍 profile 分层。
+[组合包参考](../../../packages/bundle/sdk-minimal/README.zh.md)定义确切配置树，[示例参考](../../../python/sdk/examples/README.zh.md)定义可运行程序。[Python SDK 参考](../../../python/sdk/README.zh.md)介绍生命周期、结果、通知与底层行为；[dsh CLI 参考](../../../apps/cli/reference/README.zh.md)介绍 profile 分层。
