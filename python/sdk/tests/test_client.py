@@ -471,9 +471,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(
-        HarnessConfig(_launch_args=(sys.executable, str(script)))
-    ) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         init = client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         assert init.serverInfo.name == "fake-dsh"
 
@@ -611,7 +609,7 @@ for line in sys.stdin:
     def broken_filter(_notification: object) -> bool:
         raise RuntimeError("bad notification filter")
 
-    with HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script)))) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         with (
             client.subscribe_notifications(broken_filter) as broken,
@@ -648,7 +646,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script)))) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         with pytest.raises(ValueError):
             client.session_prompt("main", [{"type": "text", "text": "fix it"}])
@@ -675,9 +673,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(
-        HarnessConfig(_launch_args=(sys.executable, str(script)))
-    ) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
 
         request = client.next_request()
@@ -709,9 +705,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(
-        HarnessConfig(_launch_args=(sys.executable, str(script)))
-    ) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         init = client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         assert init.serverInfo.name == "fake-dsh"
 
@@ -730,10 +724,10 @@ time.sleep(60)
 
     with HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             profile="web",
             initialize_timeout_seconds=0.1,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     ) as client:
         start = time.monotonic()
         try:
@@ -768,9 +762,9 @@ for line in sys.stdin:
 
     client = HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             shutdown_timeout_seconds=0.1,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     )
     client.start()
     proc = client._proc
@@ -808,10 +802,10 @@ Path(os.environ["QUIESCED_MARKER"]).write_text("quiesced")
 
     client = HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             env={"QUIESCED_MARKER": str(marker)},
             shutdown_timeout_seconds=1,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     )
     client.start()
     client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
@@ -838,7 +832,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    client = HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script))))
+    client = HarnessClient(_launch_args=(sys.executable, str(script)))
     client.start()
     proc = client._proc
     assert proc is not None
@@ -878,6 +872,7 @@ def test_public_signatures_omit_unsupported_wire_parameters() -> None:
     for removed in ("cordis", "session_root", "runtime_bin", "bridge_bin", "launch_args_override"):
         assert removed not in DeepSeekHarnessConfig.__dataclass_fields__
         assert removed not in HarnessConfig.__dataclass_fields__
+    assert "_launch_args" not in HarnessConfig.__dataclass_fields__
     assert "session_root" not in RunResult.__dataclass_fields__
 
 
@@ -900,7 +895,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    client = HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script))))
+    client = HarnessClient(_launch_args=(sys.executable, str(script)))
     client.start()
     client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
     client.close()
@@ -920,9 +915,9 @@ sys.exit(42)
 
     with HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             request_timeout_seconds=2,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     ) as client:
         with pytest.raises(Exception, match="fatal bridge exploded"):
             client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
@@ -952,9 +947,9 @@ with open(os.environ["SEEN"], "w") as seen:
 
     with HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             env={"SEEN": str(output)},
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     ) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         threads = [
