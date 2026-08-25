@@ -2172,7 +2172,7 @@ def _cap_message(message: str, max_bytes: int) -> str:
     roughly six times that and breach the 256 MiB frame ceiling — the silent
     ``worker-exit`` inversion the load-time cap check exists to prevent, and a
     several-hundred-MiB escape allocation besides. The seam's load bound admits
-    ``maxValueBytes`` up to ``ceiling - envelope`` on the premise that both the
+    ``maxValueBytes`` up to ``parse-cap - envelope`` on the premise that both the
     completion value and the diagnostic are metered in serialized bytes, so this
     honors that premise for the diagnostic.
 
@@ -2408,6 +2408,7 @@ def _done_with_value(
     # `exception`. Defaults are evaluated at def time, so they are the originals.
     _check_done_value: Any = _check_done_value,
     _encode_json_plain: Any = _encode_json_plain,
+    _cap_message: Any = _cap_message,
 ) -> dict[str, Any] | str:
     """Build the terminal done frame under the seam's lossless-JSON contract.
 
@@ -2444,7 +2445,12 @@ def _done_with_value(
     rejection = _check_done_value(value, max_value_bytes)
     if rejection is not None:
         kind, message = rejection
-        return {"type": "done", "error": {"kind": kind, "message": message}}
+        # The rejection diagnostic is capped like an exception message: a
+        # reason embedding a hostile class name (a huge `type(value).__name__`)
+        # could otherwise make the done frame exceed the host's frame parse cap
+        # and be silently dropped — an invalid-output run misreported as a
+        # worker-exit.
+        return {"type": "done", "error": {"kind": kind, "message": _cap_message(message, max_value_bytes)}}
     # Pre-encode the value at the validation point (not in `_run`'s later send,
     # which is outside the try): see the TOCTOU note in the docstring. The value
     # is JSON-plain by construction, so `_encode_json_plain` is the encoder.

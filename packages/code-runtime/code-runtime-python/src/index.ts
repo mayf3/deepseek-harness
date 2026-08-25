@@ -231,7 +231,8 @@ const MAX_PENDING_CHUNKS = 1024
 
 /**
  * Bytes a frame spends on its own JSON structure around a capped payload, used
- * to bound `maxLogBytes`/`maxValueBytes` against {@link FRAME_CEILING_BYTES}.
+ * to bound `maxLogBytes`/`maxValueBytes` against {@link FRAME_PARSE_CAP_BYTES}
+ * (the receive path drops raw frames past that cap before decoding).
  * The widest carrier is `{"type":"log","text":"","truncated":true}` at 41
  * bytes; 64 rounds that up so adding a field to either frame does not silently
  * invalidate the bound. A protocol constant, not a deployment choice.

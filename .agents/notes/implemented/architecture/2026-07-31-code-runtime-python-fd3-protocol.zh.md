@@ -8,7 +8,7 @@ Status: implemented
 
 `@deepseek-ai/dsh-code-runtime-python` 负责供 CPython code-runtime 提供方使用的 wire protocol。这样的提供方会在全新的 `python3 -I` 子进程中运行每个模型程序，并通过子进程 fd 3 桥接 binding 调用与完成值。Host 不能信任这条通道：模型代码可以完全访问 fd 3 并伪造任意帧，因此 host 必须把每个入站帧视为敌意输入，先校验并重建后才能读取。协议还必须承载无深度限制的 lossless JSON，因为 seam 的 `CodeJsonValue` 深度无界，而 `JSON.stringify` 和 `json.dumps` 都有递归深度限制。
 
-该包独立交付协议，不包含 runtime 实现。它不导出 `PythonCodeRuntime`、子进程路径或 Python 侧 JSON codec；这些属于未来提供方。协议建立在[可移植标识符 seam](2026-07-31-code-runtime-portable-identifier-seam.zh.md)之上。
+该包同时交付协议与 runtime 实现：`PythonCodeRuntime`（插件的默认导出）、`python3 -I` 子进程路径与 Python 侧 JSON codec 都在 `@deepseek-ai/dsh-code-runtime-python` 中。协议建立在[可移植标识符 seam](2026-07-31-code-runtime-portable-identifier-seam.zh.md)之上。
 
 ## Decision
 
