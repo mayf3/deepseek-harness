@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在需要通过 code-runtime seam 运行 Python 模型代码时选择本包：向 `dsh-tools` 注册 `PythonCodeRuntime`，`run()` 就在全新的 `python3 -I` 子进程中执行每个程序，并对每种程序结果都通过 resolve 结果的 error 字段报告（正交的 `CodeRunFailure.kind` 分类涵盖解析失败、抛出异常、无效完成值、输出溢出、预算到期、中止与执行基底终止）；只有 seam 误用才 reject——绑定命名空间畸形，或已释放后仍调用。配置在加载期被拒绝：非 Unix 平台、非正或非整数的预算、低于截断标记下限（64）的 `maxLogBytes`、`setTimeout` 会收敛的定时器值、超过单个 fd-3 帧可承载的预算，以及最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`/输出预算组合。
+在需要通过 code-runtime seam 运行 Python 模型代码时选择本包：向 `dsh-tools` 注册 `PythonCodeRuntime`，`run()` 就在全新的 `python3 -I` 子进程中执行每个程序，成功时以 `result.value` resolve、失败时以 `result.error` resolve（正交的 `CodeRunFailure.kind` 分类涵盖解析失败、抛出异常、无效完成值、输出溢出、预算到期、中止与执行基底终止）；只有 seam 误用才 reject——绑定命名空间畸形，或已释放后仍调用。配置在加载期被拒绝：非 Unix 平台、非正或非整数的预算、低于截断标记下限（64）的 `maxLogBytes`、`setTimeout` 会收敛的定时器值、超过单个 fd-3 帧可承载的预算，以及最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`/输出预算组合。
 
 ### 你得到什么
 
@@ -111,6 +111,7 @@ kind: "package-reference"
 这些限制定义本包覆盖与不覆盖的内容；它们是当前包约束，不是任务积压。
 
 - **跨语言 guard 覆盖执行的表面与帧字段形状，而非字段类型**——mirror e2e 比较必填／可选字段集，而非 `cpuSeconds` 在两侧是否都是 `int`；类型级漂移由评审加后端的真实子进程套件捕获。
+- **以 `setsid()` 逃出子进程组后代不被组拆卸回收**——`kill(-pid)` 够不到它；运行仍按 done 帧决定的值结算，若该孤儿持有管道，close 截止兜底会强制结算，但孤儿本身在自行退出前一直存活到 fiber 之外。
 - **`run()` 是一次性的**——`logs` 只有在 `CodeRunResult` resolve 后才能获得；没有为运行中程序产生的输出提供流式日志或进度接口。
 - **运行之间不保留状态**——每次请求都在全新子进程中执行；持久 REPL 风格内核在某个后端带来自己的日志方案之前保持延期。
 - **原始长度超过 64 MiB 的 fd-3 帧会让本次运行以 worker-exit 结算**——`maxLogBytes`/`maxValueBytes` 在加载期被限制到同一解析器上限，因此诚实子进程的帧总能放得下；模型构造的超过 64 MiB 的 binding 实参（一个在 seam 层没有预算的值）会触发同一上限——这是该 OOM 防护的已接受残余。

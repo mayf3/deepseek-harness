@@ -121,8 +121,8 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 These limits define what the seam cannot do; they are current package constraints, not a task backlog.
 
 - **`run()` is one-shot** — `logs` arrive only on the resolved `CodeRunResult`; the seam exposes no streaming-log or progress API for a live program's output.
-- **A persistent REPL-style kernel is recorded future work** — the no-state-between-runs contract stands until a persistent-kernel backend brings its own logging story ([Code Mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-code-mode.md)).
-- **The worker-thread and Python (process) backends ship; `'container'` is future work** — `'process'` is implemented by the `dsh-code-runtime-python` backend, while `'container'` remains a declared well-known `isolation` value with no implementation; a hard security boundary awaits a container backend.
+- **No state survives between runs** — every request runs against a fresh world; a persistent REPL-style kernel is deferred until a backend brings its own logging story.
+- **The worker-thread and Python (process) backends ship; `'container'` does not** — `'container'` is a declared well-known `isolation` value with no implementation; a hard security boundary awaits a container backend.
 - **Intermediate binding values have no byte cap** — implementations remain subject to structured-clone cost and process memory, while a provider or executor may already have imposed its own acquisition bound.
 
 <a id="dev-note"></a>

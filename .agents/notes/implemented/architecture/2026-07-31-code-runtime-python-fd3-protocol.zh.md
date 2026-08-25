@@ -32,7 +32,7 @@ Status: implemented
 
 ## Alternatives considered
 
-**要求未来的 Python JSON codec（`_encode_json_plain` / `_decode_json_plain`）放进 `py/protocol.py`，以便与 `protocol.ts` 跨侧对称。**拒绝。仓库的 “prefer symmetry for parallel values” 规则指向真正平行的值；这两者不是。`protocol.ts` 中的 host 侧 codec 校验敌意输入且自包含。Child 侧 codec 会产出受信任输出，应与 bootstrap 拥有的发出逻辑和成本核算放在一起；只把入口强塞进 `protocol.py` 会让 vocabulary 镜像耦合 runtime 内部实现，或制造 import 环。`protocol.py` 保持纯 wire-vocabulary 镜像。本包尚未交付 Python codec。
+**要求未来的 Python JSON codec（`_encode_json_plain` / `_decode_json_plain`）放进 `py/protocol.py`，以便与 `protocol.ts` 跨侧对称。**拒绝。仓库的 “prefer symmetry for parallel values” 规则指向真正平行的值；这两者不是。`protocol.ts` 中的 host 侧 codec 校验敌意输入且自包含。Child 侧 codec 会产出受信任输出，应与 bootstrap 拥有的发出逻辑和成本核算放在一起；只把入口强塞进 `protocol.py` 会让 vocabulary 镜像耦合 runtime 内部实现，或制造 import 环。`protocol.py` 保持纯 wire-vocabulary 镜像；codec（`_encode_json_plain`／`_decode_json_plain`）与它所服务的 runtime 一起位于 `bootstrap.py`。
 
 **在 runtime 交付前把协议文件放在不可构建的包外。**拒绝：workspace-constraint、coverage 与 invariant-topology 检查要求 `packages/<group>/<pkg>` 下的每个目录都是可构建包，而协议本身拥有独立测试与公开 wire vocabulary。
 

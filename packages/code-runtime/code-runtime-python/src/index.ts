@@ -874,11 +874,11 @@ export class PythonCodeRuntime extends CodeRuntime {
   }
 
   /**
-   * Execute one program in a fresh Python subprocess. Every program outcome —
-   * parse failure, thrown exception, invalid completion, output overflow,
-   * budget expiry, abort, or substrate death — resolves with `result.error` set
-   * (classified by `CodeRunFailure.kind`); the method rejects only for seam
-   * misuse.
+   * Execute one program in a fresh Python subprocess. Success resolves with
+   * `result.value` (and no `result.error`); failure — parse failure, thrown
+   * exception, invalid completion, output overflow, budget expiry, abort, or
+   * substrate death — resolves with `result.error` set (classified by
+   * `CodeRunFailure.kind`). The method rejects only for seam misuse.
    */
   async run(request: CodeRunRequest): Promise<CodeRunResult> {
     if (this.disposed) throw new Error('dsh-code-runtime-python: run() after disposal')
@@ -1995,7 +1995,6 @@ export class PythonCodeRuntime extends CodeRuntime {
       }
       // Register the ack gate with the frame handler before any data arrives.
       bootAckGate.run = (): void => {
-        /* v8 ignore next -- a forged second boot-ack would re-enter; the honest child sends exactly one. */
         if (runSent) return
         runSent = true
         try {
