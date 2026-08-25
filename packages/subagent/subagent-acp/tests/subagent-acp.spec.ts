@@ -589,6 +589,8 @@ describe('dsh-subagent-acp', () => {
     )
   })
 
+  // Windows anonymous pipes do not surface a child stdout half-close while
+  // the child stays alive.
   it.skipIf(process.platform === 'win32')('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
     const error = await startAcpRun(request(), {
       command: process.execPath,
@@ -936,6 +938,8 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
+  // Windows anonymous pipes do not surface a child stdout half-close while
+  // the child stays alive.
   it.skipIf(process.platform === 'win32')('classifies a prompt transport failure without copying SDK text', async () => {
     const run = await startAcpRun(request('private prompt text'), {
       command: process.execPath,
@@ -957,6 +961,8 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
+  // Windows anonymous pipes do not surface a child stdout half-close while
+  // the child stays alive.
   it.skipIf(process.platform === 'win32')('lets local cancellation interrupt prompt-failure process observation', async () => {
     const controller = new AbortController()
     const protocolEnded = Promise.withResolvers<undefined>()
