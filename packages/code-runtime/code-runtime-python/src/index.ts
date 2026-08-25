@@ -1402,10 +1402,11 @@ export class PythonCodeRuntime extends CodeRuntime {
             buffered = buffered.subarray(newline + 1)
             /* v8 ignore next -- an empty line comes only from a forged `\n\n` write. */
             if (line.length === 0) continue
-            // A later frame in this buffer may still exceed the cap; drop that
-            // single line like any junk frame (the first frame was already
-            // bounded by the check above).
-            if (line.length > FRAME_PARSE_CAP_BYTES) continue
+            // No per-line cap check here: the pre-join counter (single unframed
+            // line) and the first-frame check (newline-bearing chunk) above
+            // reject any frame past FRAME_PARSE_CAP_BYTES before this join, so
+            // every line in this loop is within the cap by construction — a
+            // per-line check would be dead code.
             const text = line.toString('utf8')
             // JSON.parse would silently ROUND an integer token outside the
             // safe range before validation could see it, so a forged frame
