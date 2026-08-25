@@ -1,6 +1,10 @@
 import type { SessionEventLike } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 
+/* oxlint-disable typescript/no-duplicate-type-constituents, typescript/no-redundant-type-constituents --
+ * The unaugmented declaration-merge maps intentionally resolve to never in the Runtime program;
+ * installed business packages supply their concrete keys in consuming Client programs. */
+
 /** Definition-local identity and lifecycle role extracted from one event. */
 export interface ConversationMatchResult {
   readonly id: string
