@@ -240,6 +240,11 @@ interface ToolArgsMap {
     /** Concrete blocking condition; required only with action blocked. */
     blocked_reason?: string;
   } & Record<string, JsonValue>;
+  /** Fetch the content of a specific HTTP(S) URL and return it decoded to text. */
+  web_fetch: {
+    /** The HTTP(S) URL to fetch. */
+    url: string;
+  } & Record<string, JsonValue>;
   /** Search the web for current information. Provide 1–4 queries in the required queries array. Returns an optional summary answer and a list of source URLs. */
   web_search: {
     /** Required search queries; accepts 1–4 items and merges their results. */
@@ -519,6 +524,18 @@ interface ToolOutputMap {
       };
     };
     activation: "armed" | "disarmed";
+  };
+  web_fetch: {
+    url: string;
+    statusCode: number;
+    body: {
+      kind: "html";
+      content: string;
+    } | {
+      kind: "text";
+      content: string;
+    };
+    truncated: boolean;
   };
   web_search: {
     content?: string;
