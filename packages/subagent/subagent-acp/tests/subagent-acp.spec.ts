@@ -4,13 +4,14 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PassThrough, type Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import * as acp from '../src/index.ts'
-import { acpStopReason, acpContentText, acpProcessFailureFacts, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, observeAcpProcessOutcome, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
+import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
 
@@ -121,6 +122,50 @@ function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): Subpro
   }
 }
 
+function replaceProtocolStreams(
+  child: SubprocessHandle,
+  stdin: PassThrough,
+  stdout: Readable,
+): SubprocessHandle {
+  if (child.stdin === undefined) throw new Error('expected piped child stdin')
+  stdin.pipe(child.stdin)
+  return {
+    pid: child.pid,
+    stdin,
+    stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done,
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+  }
+}
+
+function closeProtocolImmediately(child: SubprocessHandle): SubprocessHandle {
+  const stdout = new PassThrough()
+  stdout.end()
+  return replaceProtocolStreams(child, new PassThrough(), stdout)
+}
+
+function closeProtocolOnPrompt(child: SubprocessHandle, onClose: () => void = () => {}): SubprocessHandle {
+  if (child.stdout === undefined) throw new Error('expected piped child stdout')
+  const stdin = new PassThrough()
+  const stdout = new PassThrough()
+  child.stdout.pipe(stdout)
+  let requestText = ''
+  let closed = false
+  stdin.on('data', (chunk: Buffer) => {
+    if (closed) return
+    requestText += chunk.toString('utf8')
+    if (!requestText.includes('"session/prompt"')) return
+    closed = true
+    child.stdout?.unpipe(stdout)
+    stdout.end()
+    onClose()
+  })
+  return replaceProtocolStreams(child, stdin, stdout)
+}
+
 function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
   return {
     pid: child.pid,
@@ -160,34 +205,6 @@ describe('acpContentText / toAcpPrompt', () => {
     // A non-text harness block (e.g. reasoning) is dropped from the ACP prompt.
     expect(toAcpPrompt([{ type: 'text', text: 'a' }, { type: 'reasoning', text: 'think' }]))
       .toEqual([{ type: 'text', text: 'a' }])
-  })
-})
-
-describe('ACP process failure observation', () => {
-  it('classifies transport and process-exit failures without process timing', () => {
-    expect(acpProcessFailureFacts('initialize', 'initialize', undefined)).toEqual({
-      stage: 'initialize',
-      category: 'transport',
-    })
-    const outcome: SubprocessOutcome = { exitCode: 9, signal: null }
-    expect(acpProcessFailureFacts('prompt', 'process', outcome)).toEqual({
-      stage: 'process',
-      category: 'process-exit',
-      outcome,
-    })
-  })
-
-  it('lets caller cancellation interrupt process observation', async () => {
-    const controller = new AbortController()
-    const observed = observeAcpProcessOutcome(
-      1,
-      new Promise<SubprocessOutcome>(() => {}),
-      undefined,
-      10_000,
-      controller.signal,
-    )
-    controller.abort()
-    await expect(observed).resolves.toBeUndefined()
   })
 })
 
@@ -636,10 +653,10 @@ describe('dsh-subagent-acp', () => {
       args: [mockServer],
       cwd: process.cwd(),
       permission: 'reject',
-      env: { MOCK_CLOSE_PROTOCOL_ON_INITIALIZE: '1' },
+      env: {},
       disposeEofGraceMs: 50,
       disposeGraceMs: 50,
-      spawn: spawnSubprocess,
+      spawn: spec => closeProtocolImmediately(spawnSubprocess(spec)),
     }).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
@@ -983,10 +1000,10 @@ describe('dsh-subagent-acp', () => {
       args: [mockServer],
       cwd: process.cwd(),
       permission: 'reject',
-      env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
+      env: { MOCK_HANG: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 100,
-      spawn: spawnSubprocess,
+      spawn: spec => closeProtocolOnPrompt(spawnSubprocess(spec)),
     })
     const result = await run.result
     expect(result).toEqual({
@@ -1007,13 +1024,15 @@ describe('dsh-subagent-acp', () => {
       args: [mockServer],
       cwd: process.cwd(),
       permission: 'reject',
-      env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
+      env: { MOCK_HANG: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 5000,
       spawn: (spec) => {
         const child = spawnSubprocess(spec)
-        child.stdout?.once('end', () => { protocolEnded.resolve(undefined) })
-        return tapBoundedExitWait(child, () => { boundedExitWaits += 1 })
+        return closeProtocolOnPrompt(
+          tapBoundedExitWait(child, () => { boundedExitWaits += 1 }),
+          () => { protocolEnded.resolve(undefined) },
+        )
       },
     })
     await protocolEnded.promise
