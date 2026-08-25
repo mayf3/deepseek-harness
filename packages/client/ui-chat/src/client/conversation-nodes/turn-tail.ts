@@ -44,6 +44,11 @@ function hasTextAssistant(event: Parameters<ConversationNodeDefinition['match']>
 }
 
 function chunkHasText(event: Parameters<ConversationNodeDefinition['match']>[0]): boolean {
+  if (event.type === 'chunkrow/text-chunks') {
+    return event.data.texts.some(text => text.trim() !== '')
+  }
+  if (event.type === 'chunkrow/reasoning-chunks'
+    || event.type === 'chunkrow/tool-call-chunks') return false
   if (event.type !== 'assistant/chunk') return false
   const chunk = event.data.chunk
   if (chunk.type === 'text-delta') return chunk.text.trim() !== ''
@@ -59,6 +64,9 @@ function turnCoordinates(event: Parameters<ConversationNodeDefinition['match']>[
   if (event.type === 'assistant/message'
     || event.type === 'assistant/chunk'
     || event.type === 'step/start'
+    || event.type === 'chunkrow/text-chunks'
+    || event.type === 'chunkrow/reasoning-chunks'
+    || event.type === 'chunkrow/tool-call-chunks'
     || event.type === 'step/end') {
     return { turn: event.data.turn, step: event.data.step }
   }
@@ -80,7 +88,10 @@ function closingAnchor(context: ConversationNodeContext<TurnTailState>): number 
     const coordinates = turnCoordinates(event)
     if (coordinates?.step === undefined) continue
     const previous = steps.get(coordinates.step) ?? { streamedText: false, finalized: false }
-    if (event.type === 'assistant/chunk') {
+    if (event.type === 'assistant/chunk'
+      || event.type === 'chunkrow/text-chunks'
+      || event.type === 'chunkrow/reasoning-chunks'
+      || event.type === 'chunkrow/tool-call-chunks') {
       steps.set(coordinates.step, {
         ...previous,
         streamedText: previous.streamedText || chunkHasText(event),

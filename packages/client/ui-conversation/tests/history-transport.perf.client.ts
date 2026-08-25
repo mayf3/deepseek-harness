@@ -11,14 +11,15 @@ import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionEvent, SessionEventMap } from '@deepseek-ai/dsh-session/types'
 import type {
+  ChunkRowEvent,
   SessionEventEntry,
   SessionHistoryRecord,
   SessionWireEvent,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import { historyEntries } from '@deepseek-ai/dsh-api-session-controller/src/client/sessions/history-records.ts'
+import type { SessionEventLikeEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
-  ConversationEventInput,
   ConversationNodeDefinition,
   ConversationViewDefinition,
   ConversationViewNode,
@@ -88,26 +89,29 @@ const sessionWireEventSchema = z.object({
   sourceEventSeqs: z.array(safeIntegerSchema).optional(),
   surfaceOp: z.json().optional(),
 }).strict()
-const historyEntrySchema = z.object({ event: sessionWireEventSchema }).strict()
+const historyEntrySchema = z.object({
+  type: z.literal('event'),
+  event: sessionWireEventSchema,
+}).strict()
 const chunkRunBaseSchema = {
   turn: z.number(),
   step: z.number(),
   index: z.number(),
   dt: z.array(safeIntegerSchema),
 }
-const textChunkRowSchema = z.object({
-  type: z.enum(['text-chunks', 'reasoning-chunks']),
-  seq0: safeIntegerSchema.nonnegative(),
-  time0: safeIntegerSchema,
+const textChunkEventSchema = z.object({
+  type: z.enum(['chunkrow/text-chunks', 'chunkrow/reasoning-chunks']),
+  seq: safeIntegerSchema.nonnegative(),
+  time: safeIntegerSchema,
   data: z.object({
     ...chunkRunBaseSchema,
     texts: z.array(z.string()).min(1),
   }).strict(),
 }).strict()
-const toolCallChunkRowSchema = z.object({
-  type: z.literal('tool-call-chunks'),
-  seq0: safeIntegerSchema.nonnegative(),
-  time0: safeIntegerSchema,
+const toolCallChunkEventSchema = z.object({
+  type: z.literal('chunkrow/tool-call-chunks'),
+  seq: safeIntegerSchema.nonnegative(),
+  time: safeIntegerSchema,
   data: z.object({
     ...chunkRunBaseSchema,
     id: z.string(),
@@ -115,24 +119,24 @@ const toolCallChunkRowSchema = z.object({
     args: z.array(z.string()).min(1),
   }).strict(),
 }).strict()
-const chunkRowSchema: z.ZodType<ChunkRow> = z.discriminatedUnion('type', [
-  textChunkRowSchema,
-  toolCallChunkRowSchema,
-]).superRefine((row, context) => {
-  const members = row.type === 'tool-call-chunks' ? row.data.args : row.data.texts
-  if (row.data.dt.length !== members.length - 1) {
+const chunkEventSchema: z.ZodType<ChunkRowEvent> = z.discriminatedUnion('type', [
+  textChunkEventSchema,
+  toolCallChunkEventSchema,
+]).superRefine((event, context) => {
+  const members = event.type === 'chunkrow/tool-call-chunks' ? event.data.args : event.data.texts
+  if (event.data.dt.length !== members.length - 1) {
     context.addIssue({
       code: 'custom',
       message: 'packed chunk dt length must be one less than member count',
       path: ['data', 'dt'],
     })
   }
-  if (members.length - 1 > Number.MAX_SAFE_INTEGER - row.seq0) {
-    context.addIssue({ code: 'custom', message: 'packed chunk seqs must stay safe integers', path: ['seq0'] })
+  if (members.length - 1 > Number.MAX_SAFE_INTEGER - event.seq) {
+    context.addIssue({ code: 'custom', message: 'packed chunk seqs must stay safe integers', path: ['seq'] })
   }
-  let time = row.time0
-  for (let index = 0; index < row.data.dt.length; index++) {
-    time += row.data.dt[index] as number
+  let time = event.time
+  for (let index = 0; index < event.data.dt.length; index++) {
+    time += event.data.dt[index] as number
     if (Number.isSafeInteger(time)) continue
     context.addIssue({
       code: 'custom',
@@ -141,11 +145,11 @@ const chunkRowSchema: z.ZodType<ChunkRow> = z.discriminatedUnion('type', [
     })
     break
   }
-}) as z.ZodType<ChunkRow>
+}) as z.ZodType<ChunkRowEvent>
 const packedHistoryValueSchema: z.ZodType<PackedHistoryValue> = z.object({
   records: z.array(z.union([
     historyEntrySchema,
-    z.object({ chunks: chunkRowSchema }).strict(),
+    z.object({ type: z.literal('chunks'), event: chunkEventSchema }).strict(),
   ])),
   hasMore: z.boolean(),
 }) as z.ZodType<PackedHistoryValue>
@@ -318,6 +322,12 @@ function buildEvents(): SessionEvent[] {
   return events
 }
 
+function memberTime(event: ChunkRowEvent, index: number): number {
+  let time = event.time
+  for (let cursor = 0; cursor < index; cursor++) time += event.data.dt[cursor] as number
+  return time
+}
+
 function foldDefinition(kind: string, target: string): ConversationNodeDefinition<FoldState> {
   return {
     kind,
@@ -327,10 +337,35 @@ function foldDefinition(kind: string, target: string): ConversationNodeDefinitio
       if (event.type === 'assistant/chunk' && event.data.chunk.type === 'reasoning-delta') {
         return { id: `${String(event.data.turn)}:${String(event.data.step)}`, role: 'update' }
       }
+      if (event.type === 'chunkrow/reasoning-chunks') {
+        return { id: `${String(event.data.turn)}:${String(event.data.step)}`, role: 'update' }
+      }
       return null
     },
     start: () => ({ blocks: [], deltaCount: 0 }),
     update: (context, match) => {
+      if (match.event.type === 'chunkrow/reasoning-chunks') {
+        const event = match.event
+        const blocks = [...context.state.blocks]
+        blocks[event.data.index] = (blocks[event.data.index] ?? '') + event.data.texts.join('')
+        const firstToken = event.data.texts.findIndex(text => text !== '')
+        const firstVisible = event.data.texts.findIndex(text => text.trim() !== '')
+        return {
+          ...context.state,
+          blocks,
+          deltaCount: context.state.deltaCount + event.data.texts.length,
+          lastDeltaSeq: event.seq + event.data.texts.length - 1,
+          ...context.state.firstTokenTime === undefined && firstToken >= 0
+            ? { firstTokenTime: memberTime(event, firstToken) }
+            : {},
+          ...context.state.firstVisibleSeq === undefined && firstVisible >= 0
+            ? {
+              firstVisibleSeq: event.seq + firstVisible,
+              firstVisibleTime: memberTime(event, firstVisible),
+            }
+            : {},
+        }
+      }
       if (match.event.type !== 'assistant/chunk' || match.event.data.chunk.type !== 'reasoning-delta') {
         return context.state
       }
@@ -372,23 +407,31 @@ function viewDefinition(target: string): ConversationViewDefinition<Conversation
   }
 }
 
-function conversationInputs(entries: readonly SessionEventEntry[]): ConversationEventInput[] {
-  return entries.map(entry => ({ event: entry.event as SessionEvent }))
-}
-
 function wireEntry(event: SessionEvent): SessionEventEntry {
-  return { event: event as unknown as SessionWireEvent }
+  return { type: 'event', event: event as unknown as SessionWireEvent }
 }
 
 function wireEntries(events: readonly SessionEvent[]): SessionEventEntry[] {
   return events.map(wireEntry)
 }
 
-function historyRecord(record: SessionEvent | ChunkRow): SessionHistoryRecord {
-  return isChunkRow(record) ? { chunks: record } : wireEntry(record)
+function chunkEntry(row: ChunkRow): SessionHistoryRecord {
+  return {
+    type: 'chunks',
+    event: {
+      type: `chunkrow/${row.type}`,
+      seq: row.seq0,
+      time: row.time0,
+      data: row.data,
+    } as ChunkRowEvent,
+  }
 }
 
-function assemble(entries: readonly ConversationEventInput[]): FoldSnapshots {
+function historyRecord(record: SessionEvent | ChunkRow): SessionHistoryRecord {
+  return isChunkRow(record) ? chunkEntry(record) : wireEntry(record)
+}
+
+function assemble(entries: readonly SessionEventLikeEntry[]): FoldSnapshots {
   const definitions = [
     foldDefinition('benchmark-chat-assistant', 'chat'),
     foldDefinition('benchmark-trajectory-assistant', 'trajectory'),
@@ -412,7 +455,7 @@ function digest(value: unknown): string {
 it('reports packed history transport and exact replay costs', async () => {
   const fixture = timed(buildEvents)
 
-  assemble(conversationInputs(wireEntries(fixture.value.slice(0, 1_000))))
+  assemble(historyEntries(wireEntries(fixture.value.slice(0, 1_000))))
   const rawHostHeap = sampledPeakHeap((sample) => {
     const entries = wireEntries(fixture.value)
     sample()
@@ -456,7 +499,7 @@ it('reports packed history transport and exact replay costs', async () => {
     sample()
     const parsed = rawSessionHistoryValueSchema.parse(wire)
     sample()
-    const prepared = conversationInputs(parsed.events)
+    const prepared = historyEntries(parsed.events)
     sample()
     const folded = assemble(prepared)
     sample()
@@ -467,7 +510,7 @@ it('reports packed history transport and exact replay costs', async () => {
     sample()
     const parsed = packedHistoryValueSchema.parse(wire)
     sample()
-    const prepared = conversationInputs(historyEntries(parsed.records))
+    const prepared = historyEntries(parsed.records)
     sample()
     const folded = assemble(prepared)
     sample()
@@ -478,8 +521,8 @@ it('reports packed history transport and exact replay costs', async () => {
   const parsedPacked = timed((): unknown => JSON.parse(packedJson.value))
   const rawValidation = timed(() => rawSessionHistoryValueSchema.parse(parsedRaw.value))
   const packedValidation = timed(() => packedHistoryValueSchema.parse(parsedPacked.value))
-  const rawPreparation = timed(() => conversationInputs(rawValidation.value.events))
-  const packedPreparation = timed(() => conversationInputs(historyEntries(packedValidation.value.records)))
+  const rawPreparation = timed(() => historyEntries(rawValidation.value.events))
+  const packedPreparation = timed(() => historyEntries(packedValidation.value.records))
 
   assemble(rawPreparation.value.slice(0, 1_000))
   assemble(packedPreparation.value)
@@ -493,7 +536,7 @@ it('reports packed history transport and exact replay costs', async () => {
   expect(fixture.value.filter(event => event.type !== 'assistant/chunk')).toHaveLength(ORDINARY_EVENTS)
   expect(packedRows).toHaveLength(DELTA_RUNS)
   expect(packed.value).toHaveLength(696)
-  expect(packedPreparation.value).toHaveLength(LOGICAL_EVENTS)
+  expect(packedPreparation.value).toHaveLength(696)
   expect(digest(packedFold.value)).toBe(digest(rawFold.value))
   expect(packedClientHeap.value).toBe(rawClientHeap.value)
   expect(rawHostHeap.value).toBe(rawBytes)
@@ -516,7 +559,7 @@ it('reports packed history transport and exact replay costs', async () => {
       deltaEvents: DELTA_EVENTS,
       deltaRuns: packedRows.length,
       packedRecords: packed.value.length,
-      decodedEvents: packedPreparation.value.length,
+      conversationInputs: packedPreparation.value.length,
     },
     bytes: {
       rawJson: rawBytes,
@@ -600,21 +643,23 @@ it('reports packed history transport and exact replay costs', async () => {
   })}\n`)
 }, 600_000)
 
-it('reports exact decoding cost for long whitespace-prefix runs', () => {
+it('reports compact folding cost for long whitespace-prefix runs', () => {
   historyEntries([{
-    chunks: {
-      type: 'reasoning-chunks',
-      seq0: 0,
-      time0: TIME_ZERO,
+    type: 'chunks',
+    event: {
+      type: 'chunkrow/reasoning-chunks',
+      seq: 0,
+      time: TIME_ZERO,
       data: { turn: 1, step: 1, index: 0, dt: [], texts: ['x'] },
     },
   }])
   const results = [10_000, 20_000, 40_000].map((members) => {
     const record: SessionHistoryRecord = {
-      chunks: {
-        type: 'reasoning-chunks',
-        seq0: 0,
-        time0: TIME_ZERO,
+      type: 'chunks',
+      event: {
+        type: 'chunkrow/reasoning-chunks',
+        seq: 1,
+        time: TIME_ZERO + 1,
         data: {
           turn: 1,
           step: 1,
@@ -624,13 +669,20 @@ it('reports exact decoding cost for long whitespace-prefix runs', () => {
         },
       },
     }
-    const decoded = historyEntries([record])
-    const samplesMs = Array.from({ length: 5 }, () => timed(() => historyEntries([record])).ms)
-    expect(decoded).toHaveLength(members)
-    expect(decoded.at(-1)?.event).toMatchObject({
-      seq: members - 1,
-      time: TIME_ZERO + members - 1,
-      data: { chunk: { type: 'reasoning-delta', text: 'x' } },
+    const start = wireEntry({
+      type: 'step/start',
+      seq: 0,
+      time: TIME_ZERO,
+      data: { turn: 1, step: 1 },
+    })
+    const inputs = historyEntries([start, record])
+    const folded = assemble(inputs)
+    const samplesMs = Array.from({ length: 5 }, () => timed(() => assemble(inputs)).ms)
+    expect((folded.chat as readonly { readonly data: FoldState }[])[0]?.data).toMatchObject({
+      deltaCount: members,
+      lastDeltaSeq: members,
+      firstVisibleSeq: members,
+      firstVisibleTime: TIME_ZERO + members,
     })
     return {
       members,
