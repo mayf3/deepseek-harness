@@ -13,6 +13,7 @@ import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
+const MAX_PAGING_ANCHOR_PROBES = 64
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -26,7 +27,7 @@ interface PagingAnchor {
   top: number
 }
 
-/** Find an already-rendered settled row without interpolating a selector. */
+/** Find an already-rendered row without interpolating a selector. */
 function anchorElement(list: HTMLElement, key: string): HTMLElement | null {
   for (const row of list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')) {
     if (row.dataset.chatAnchorKey === key) return row
@@ -45,17 +46,24 @@ function pagingAnchor(list: HTMLElement, scrollport: HTMLElement): HTMLElement |
   const viewport = scrollport.getBoundingClientRect()
   const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
   const visibleBottom = composer?.getBoundingClientRect().top ?? viewport.bottom
-  // Scroll events are hot: hit-test a few points through the stretched flow
-  // rows before considering the full mounted set. The fallback keeps jsdom
-  // and pre-layout states deterministic; a virtualizer naturally bounds it.
+  // Scroll events are hot: walk down one hit-test line and stop at the first
+  // hit row with layout before considering the full mounted set. Starting at the
+  // viewport edge preserves the reader's leading row when a later row is
+  // inserted between already-visible messages. The fallback keeps jsdom and
+  // pre-layout states deterministic; a virtualizer naturally bounds it.
   if (typeof document.elementsFromPoint === 'function' && visibleBottom > viewport.top) {
     const content = list.getBoundingClientRect()
     const left = Math.max(viewport.left, content.left)
     const right = Math.min(viewport.right, content.right)
     const x = left + Math.max(0, right - left) / 2
     const height = visibleBottom - viewport.top
-    const points = [1, Math.min(32, height / 3), height / 2, Math.max(1, height - 1)]
-    for (const offset of points) {
+    let probes = 0
+    for (
+      let offset = 1;
+      offset < height && probes < MAX_PAGING_ANCHOR_PROBES;
+      offset = offset === 1 ? 16 : offset + 16
+    ) {
+      probes++
       for (const element of document.elementsFromPoint(x, viewport.top + offset)) {
         const row = element instanceof HTMLElement
           ? element.closest<HTMLElement>('[data-chat-anchor-key]')

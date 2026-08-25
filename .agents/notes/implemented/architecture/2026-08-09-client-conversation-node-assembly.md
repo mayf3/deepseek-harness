@@ -260,6 +260,7 @@ Page size, the number of history loads, and RAF coalescing affect only when evid
 | Next-turn Inbox / `inbox-next-turn` | Splice Event seq | Each `agent/inbox/spliced` targeting next-turn | None | Apply the current splice to the pending/claimed instantaneous state from `reader.previous(ownKind)` |
 | Next-step Inbox / `inbox-next-step` | Splice Event seq | Each `agent/inbox/spliced` targeting next-step | None | Build the same per-instruction instantaneous state; Message reads its claimed set |
 | Message / `input-message` | Message ID | Append-surface `user/message` | None | Use source for a context message, or read the nearest next-step Inbox to distinguish user from steering |
+| Request Prompt / `request-prompt` | Header Event seq | Each `request/header` | None | Read the preceding Request Prompt through Reader, retain the full prompt state, and classify system/tool changes |
 | Assistant / `assistant-step` | `turn:step` | `step/start` | `assistant/chunk`, final `assistant/message`, and same-step Retry | Aggregate blocks, usage, first-token time, final evidence, and retry-hidden state, then publish same-key Step data |
 | Tool / `tool-call` | Root call ID | Root `tool/call` | Root result and Code Dispatch start/result | Aggregate the root, children, and parent Map; Dispatch Events route exactly through `rootCallId` |
 | Command / `command` | Command ID | `command/run` | `command/done` and compact lifecycle/checkpoint Events carrying a source command ID | Aggregate command outcome and manual-compaction evidence |
@@ -276,6 +277,7 @@ Page size, the number of history loads, and RAF coalescing affect only when evid
 |---|---|---|---|
 | Inbox | `none` | No Node | Recompute instantaneous states along the Reader chain when prepend supplies earlier splices |
 | Message | Immediate by default | `user`, `steering`, or `context` | Window-gap repair can reclassify the same message key |
+| Request Prompt | Immediate by default | One `system-prompt` for every header carrying a non-empty system field | A step's first header anchors before its request messages; a later same-step series anchors after its surface rewrite; prepend of the preceding header can correct a partial-window anchor |
 | Assistant | RAF for chunks, immediate for final, none for pure usage/finish | Same-key `assistant-step` with running/settled/interrupted status | Matches support fallback without `step/start`; Location close produces interruption presentation |
 | Tool | Immediate by default | One recursive `tool-call` root containing all `subCalls` | A result-only history window supports fallback; running→settled retains its key |
 | Command | Immediate by default | Ordinary `command` or integrated `manual-compaction` | Checkpoint arrival may change the anchor without changing the Context key |
@@ -287,6 +289,8 @@ Page size, the number of history loads, and RAF coalescing affect only when evid
 | Fallback | Immediate by default | `unknown` JSON row | Covers only append-surface Events; an ordinary business that claimed but has not rendered an Event does not duplicate it |
 
 Inbox demonstrates that every Event can be a start-only instantaneous-state Context; not every business requires a start/update pair. Reader links each state to the prior same-kind Context instead of inventing a lifecycle ID for the entire Inbox.
+
+Request Prompt demonstrates shared pure interpretation without shared target State: Chat and Trajectory call `inspectRequestPrompt()` from their own Definitions. The function canonicalizes the full header and classifies model-visible system/tool differences; each target then chooses its own output. Chat materializes every header carrying a non-empty system field, including `series` snapshots that repeat an unchanged header for an explicitly declared series or a post-replacement request, while Trajectory retains the complete request fact and its change classification. Ordinary append-only later Turns do not write another unchanged header. The first header in a Step follows the provider envelope rather than the header Event position: step one uses the owning Turn start and later steps use their Step start, placing the system field before the request's user-role messages; a later header in the same Step stays at its own Event after the surface rewrite that began the new series. When the preceding header is outside a partial window, a non-`initial` header stays at its own Event until prepend supplies that predecessor. Every header is a full snapshot, so a first loaded `resume`, `change`, or `series` header can render its system field without fabricating a comparison to unloaded history.
 
 Retry, Assistant, and Turn Tail demonstrate independent claims on one Event. Each Definition updates only its own State and produces its own atomic Chat Node.
 
