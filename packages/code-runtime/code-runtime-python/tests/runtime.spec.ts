@@ -1843,6 +1843,41 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error?.kind).not.toBe('worker-exit')
   }, 90_000)
 
+  it('appends a flushed unterminated line to the next entry without a fake newline', async () => {
+    // An explicit flush of an unterminated line (print(..., end='', flush=True))
+    // used to push a full log frame, so the following print() landed in a
+    // SECOND entry and logs.join('\n') rendered 'a\nb' for what the program
+    // printed as one line. The flush frame now carries `open: true` and the
+    // host appends the next frame to the same entry.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        "print('a', end='', flush=True)",
+        "print('b')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['ab'])
+  }, 15_000)
+
+  it('keeps a flushed unterminated line when the run ends with it still open', async () => {
+    // The settlement flush pushes the residual with `open: true`; finish()
+    // admits it so a program that commits a partial line and returns does not
+    // lose it from logs.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        "print('committed', end='', flush=True)",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['committed'])
+  }, 15_000)
+
   it('keeps a float completion exact when the program mutates the decimal context', async () => {
     // The float encoder's Decimal(repr(value)).normalize() used the process
     // GLOBAL decimal context: a legitimate program setting

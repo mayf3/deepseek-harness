@@ -1025,6 +1025,10 @@ export class PythonCodeRuntime extends CodeRuntime {
     return new Promise<CodeRunResult>((resolve) => {
       let settled = false
       const logs: string[] = []
+      // An unterminated line flushed with the `open` flag: the next log frame
+      // appends to it (no fake newline between entries), and finish() admits
+      // the residual if the run ends with it still open.
+      let openLog: string | undefined
 
       // One host-side ledger covers normal frames, forged frames, and stray stdout bytes.
       // The ledger starts one byte below maxLogBytes: each entry is charged its
@@ -1496,7 +1500,17 @@ export class PythonCodeRuntime extends CodeRuntime {
               }
               return
             }
-            admit(message.text)
+            if (message.open === true) {
+              // An explicit flush of an unterminated line: hold it so the next
+              // frame appends to the SAME entry (print('a', end='', flush=True)
+              // followed by print('b') reads back as one 'ab' entry, not a fake
+              // newline). The residual is admitted by finish() if the run ends
+              // with it still open.
+              openLog = (openLog ?? '') + message.text
+              return
+            }
+            admit((openLog ?? '') + message.text)
+            openLog = undefined
             return
           case 'done': {
             if (message.error) {
@@ -1876,6 +1890,12 @@ export class PythonCodeRuntime extends CodeRuntime {
         // A spawn failure (ENOENT, EACCES) never produced a pid, so there is no
         // process to kill: settle now. Its `close` still fires later and reaches
         // the idempotent settle() again as a no-op.
+        // An unterminated flushed line never got a closing frame; admit it so
+        // the committed flush is not lost from logs.
+        if (openLog !== undefined) {
+          admit(openLog)
+          openLog = undefined
+        }
         if (child.pid === undefined) {
           settle(result)
           return

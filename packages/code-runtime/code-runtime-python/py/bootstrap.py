@@ -149,11 +149,11 @@ class LogBuffer:
 
         return 0 if self._truncated else self._remaining
 
-    def push(self, text: str) -> None:
+    def push(self, text: str, open: bool = False) -> None:
         with self._lock:
-            self._push_locked(text)
+            self._push_locked(text, open)
 
-    def _push_locked(self, text: str) -> None:
+    def _push_locked(self, text: str, open: bool = False) -> None:
         if self._truncated:
             return
         # Cheap lower bound FIRST: one char is at least one UTF-8 byte and the
@@ -193,7 +193,7 @@ class LogBuffer:
             self._sink(log_truncation_marker(self._max_bytes), truncated=True)
             return
         self._remaining -= cost
-        self._sink(text)
+        self._sink(text, open=open)
 
 
 class _LogStream(io.TextIOBase):
@@ -445,7 +445,10 @@ class _LogStream(io.TextIOBase):
                 self._pending = []
                 self._pending_blocks = []
                 self._pending_chars = 0
-                self._logs.push(line)
+                # The line has NO trailing newline: mark the frame `open` so the
+                # host appends the next log frame to the same entry instead of
+                # inserting a fake newline between two entries.
+                self._logs.push(line, open=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1044,9 +1047,14 @@ async def _run(channel: ProtocolChannel) -> None:
         # The sink writes through the def-time bound encode+write primitives
         # (not _send_sync_cls, whose body still resolves _encode_json_plain and
         # self.write_encoded at call time) so a rebind cannot break a log frame.
-        sink=lambda text, truncated=False: _write_encoded_cls(
+        sink=lambda text, truncated=False, open=False: _write_encoded_cls(
             _encode_plain_cls(
-                {"type": "log", "text": text, **({"truncated": True} if truncated else {})}
+                {
+                    "type": "log",
+                    "text": text,
+                    **({"truncated": True} if truncated else {}),
+                    **({"open": True} if open else {}),
+                }
             )
         ),
     )

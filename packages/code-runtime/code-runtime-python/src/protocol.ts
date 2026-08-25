@@ -102,6 +102,13 @@ interface LogMessage {
    * and keeps exactly one marker in `logs`.
    */
   truncated?: boolean
+  /**
+   * Set on the frame an explicit `flush()` (or the settlement flush) pushes for
+   * an UNTERMINATED line: the host holds it and appends the next log frame to
+   * the same entry, so `print('a', end='', flush=True); print('b')` reads back
+   * as one `'ab'` entry rather than a fake newline between two entries.
+   */
+  open?: boolean
 }
 
 /** The failure carried on a {@link DoneMessage}: one of three kinds plus text. */
@@ -227,7 +234,7 @@ const WIRE_FRAME_FIELD_ROLES = {
   RunMessage: { type: 'required', program: 'required' },
   BootAckMessage: { type: 'required' },
   CallMessage: { type: 'required', id: 'required', global: 'required', name: 'required', args: 'required' },
-  LogMessage: { type: 'required', text: 'required', truncated: 'optional' },
+  LogMessage: { type: 'required', text: 'required', truncated: 'optional', open: 'optional' },
   DoneErrorField: { kind: 'required', message: 'required' },
   DoneMessage: { type: 'required', value: 'optional', error: 'optional' },
   ErrorClass: { name: 'required', memberNameProperty: 'required' },
@@ -611,8 +618,13 @@ export function validateChildFrame(raw: unknown): ChildToHost | undefined {
       if (typeof m.text !== 'string') return undefined
       // Rebuilt, not passed through: a forged `truncated` of any other type
       // would reach the host as a truthy value and silence capture for the
-      // rest of the run. Only the literal `true` counts.
-      return { type: 'log', text: m.text, ...m.truncated === true ? { truncated: true } : {} }
+      // rest of the run. Only the literal `true` counts; `open` likewise.
+      return {
+        type: 'log',
+        text: m.text,
+        ...m.truncated === true ? { truncated: true } : {},
+        ...m.open === true ? { open: true } : {},
+      }
     case 'call': {
       // The id must be a finite number: it is echoed verbatim into the reply
       // frame, and a forged `1e400` id (Infinity after JSON.parse) would make
