@@ -8,10 +8,14 @@ export type TestSqlName =
   | 'count-ignorable-events'
   | 'count-packed-events'
   | 'count-physical-types'
+  | 'count-session-events'
   | 'create-loose-schema'
+  | 'create-temp-replace-trigger'
   | 'create-unrelated-table'
   | 'delete-persistence-state'
+  | 'delete-session-by-id'
   | 'delete-session-events'
+  | 'drop-temp-replace-trigger'
   | 'empty-store-id'
   | 'insert-corrupt-event'
   | 'measure-write-traffic'
@@ -25,6 +29,8 @@ export type TestSqlName =
   | 'set-user-version-16'
   | 'set-user-version-17'
   | 'update-invalid-session-metadata'
+  | 'update-session-cwd'
+  | 'update-session-revision'
 
 /** Load one fixed test SQL resource. */
 export function testSql(name: TestSqlName): string {

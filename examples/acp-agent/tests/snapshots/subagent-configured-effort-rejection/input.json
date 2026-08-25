@@ -1,7 +1,0 @@
-{
-  "steps": [
-    { "op": "initialize" },
-    { "op": "newSession" },
-    { "op": "prompt", "text": "Inspect the configured child model, then attempt one subagent call so its configured reasoning effort is validated before child creation." }
-  ]
-}

@@ -24,8 +24,8 @@ stdio JSON-RPC 对外服务接口（`@deepseek-ai/dsh-sdk-jsonrpc-server`，见[
 四层，依[测试政策](../../../../docs/testing.zh.md)：
 
 - **免密钥单元**——`sdk-client` 通过真实 stdio 驱动脚本化伪运行时（`tests/fake-runtime.ts`，环境变量脚本化、纯协议——即 Python `test_client.py` 的模式）；`subagent-dsh-sdk` 经真实提供方驱动同一伪运行时。三个包全部 100% 逐文件覆盖。
-- **免密钥 Loader 组合**——`subagent-dsh-sdk/tests/loader-composition.e2e.ts` 启动仅测试用 cordis.yml（`examples/python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/`），其中子进程是真实的第二个 `dsh --profile sdk` 运行时，拥有独立 home 与有序 patch；断言父工具结果与子进程自己持久化的 transcript（文本记录）都携带父会话 cwd。
-- **免密钥快照**——`examples/python-sdk-agent/tests/sdk.snapshot.ts` 通过真实 `dsh-sdk-client` 驱动真实 `dsh --profile sdk` 运行时，并通过有序 `llm-replay` patch 回放已录制 fixture（测试前置数据）。文本轮次、bash 工具、spawn subagent 与极简持久工具组合四个场景分别钉住规范化通知流、SDK 轮次结果，以及持久化的父日志与子日志。这也补上了单文件可执行 Note 的 Python 侧快照在 vitest 侧留下的协议层缺口。
+- **免密钥 Loader 组合**——`subagent-dsh-sdk/tests/loader-composition.e2e.ts` 启动包自有测试组合（`packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/`），其中子进程是真实的第二个 `dsh --profile sdk` 运行时，拥有独立 home 与有序 patch；断言父工具结果与子进程自己持久化的 transcript（文本记录）都携带父会话 cwd。
+- **免密钥快照**——`snapshots/sdk/sdk.snapshot.ts` 通过真实 `dsh-sdk-client` 驱动真实 `dsh --profile sdk` 运行时，并通过有序 `llm-replay` patch 回放已录制 fixture（测试前置数据）。每个场景都钉住规范化通知流、SDK 轮次结果，以及持久化的父日志与子日志。这也补上了单文件可执行 Note 的 Python 侧快照在 vitest 侧留下的协议层缺口。
 - **带密钥 e2e**——快照套件的 `DSH_SNAPSHOT=record` 模式即真实 API 路径（已提交 fixture 由它产出）；组合 e2e 设计上无需密钥。
 
 ## 考虑过的替代方案
@@ -40,7 +40,7 @@ stdio JSON-RPC 对外服务接口（`@deepseek-ai/dsh-sdk-jsonrpc-server`，见[
 
 **导出源模块、规范化辅助函数和订阅投递端操作。** 这些都是调用方不需要的实现细节；暴露它们会让调用方不得不理解客户端如何校验与分发协议输入。各包根转而枚举受支持的客户端接口与协议接口，客户端则只重新导出调用方必须区分的那一种协议错误。
 
-**复用 `dsh-acp-snapshot` 的 `runScenario` 做 SDK 快照。** 那个 harness 说 ACP（`ClientSideConnection`、`InputStep` 脚本）。SDK 套件的全部意义就是以 *SDK 客户端*为入口；它复用 normalize/refresh 库层（`normalizeSessionLog`、`refreshFixtureReplacements`……），不动 ACP 驱动器。
+**复用 `dsh-session-snapshot` 的 ACP `runScenario` 做 SDK 快照。** 该适配器说 ACP（`ClientSideConnection`、`InputStep` 脚本）。SDK 套件的全部意义就是以 *SDK 客户端*为入口；它复用 normalize/refresh 库层（`normalizeSessionLog`、`refreshFixtureReplacements`……），不动 ACP 适配器。
 
 ## 后果
 
