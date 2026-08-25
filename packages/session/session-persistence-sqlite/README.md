@@ -77,7 +77,7 @@ await ctx.sessionPersistence.append(id, events)
 
 ### Startup and safe operation
 
-A fresh database initializes directly at schema version 17. Databases with any other version, a foreign application identity, an unversioned non-pristine schema, or unexpected schema objects are rejected before any data is exposed or changed — this pre-release provider ships no migration. Every statement and fixed pragma comes from packaged `.sql` resources in `resources/sql/`, and runtime values are bound as SQLite parameters, so package code never assembles query text.
+A fresh database initializes directly at schema version 18. Databases with any other version, a foreign application identity, an unversioned non-pristine schema, or unexpected schema objects are rejected before any data is exposed or changed — this pre-release provider ships no migration. Every statement and fixed pragma comes from packaged `.sql` resources in `resources/sql/`, and runtime values are bound as SQLite parameters, so package code never assembles query text.
 
 Each connection disables SQLite trusted schemas and memory-mapped I/O, verifies the requested journal mode, and pins `synchronous=FULL` so a resolved append remains durable across an OS crash or power loss. On POSIX, the database parent directory and file must belong to the current user, the parent must not be group/world-writable, and the file must grant no group or world permissions; Windows additionally rejects symbolic links and non-regular files, while ACL restriction stays the deployment's job. Path and ownership failures reject plugin initialization; Node's SQLite driver loads lazily on the first persistence operation. Ordinary `create` stays lazy until the first append, while `ensureMaterialized` writes a session metadata row with no event rows.
 
@@ -96,7 +96,7 @@ This section explains the design decisions behind the provider and points at the
 The provider is built on one separation and three commitments:
 
 - **Logical contract, physical format.** Callers always read and write ordinary `SessionEvent[]`; how rows are packed, stored, and compressed is private to this package.
-- **The schema owns the format.** Schema 17 is a frozen physical contract: a database at another version, with a foreign identity, or with unexpected schema objects is rejected, never migrated. Changing the physical rules requires a new schema.
+- **The schema owns the format.** Schema 18 is a frozen physical contract: a database at another version, with a foreign identity, or with unexpected schema objects is rejected, never migrated. Changing the physical rules requires a new schema.
 - **Durability is the default.** Appends run in immediate transactions with `synchronous=FULL`, and a resolved `append()` means the batch is durable. Normal appends are insert-only: earlier event rows are never rewritten.
 - **Efficiency within strict bounds.** Packing and compression keep the database small, but every limit is a hard format bound — at most 1,024 events and 1 MiB of payload per packed row.
 
@@ -124,7 +124,7 @@ A fresh database contains three strict tables, defined in [`resources/sql/schema
 | `sessions` | One row per session: header fields plus a monotonic revision |
 | `events` | Physical event rows: one logical event, or one packed run |
 
-The exact columns live in [`resources/sql/schema.sql`](resources/sql/schema.sql). `events.data` holds text or a blob: small payloads stay text, larger ones are stored compressed when that is smaller. Packed rows reuse the `seq` of their first logical event, so under the composite `(session_id, seq)` primary key physical order is logical order.
+The exact columns live in [`resources/sql/schema.sql`](resources/sql/schema.sql). `events.data` holds text or a blob: small payloads stay text, larger ones are stored compressed when that is smaller. `events.is_packed` is `0` for a scalar logical event and `1` for a packed chunk run, so a scalar event whose type matches a physical chunk tag remains unambiguous. Packed rows reuse the `seq` of their first logical event, so under the composite `(session_id, seq)` primary key physical order is logical order.
 
 ### Write path
 
@@ -146,7 +146,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [Session persistence subsystem](../../../docs/subsystems/persistence.md) — backend-neutral service semantics and provider relationships.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
 - [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-persistence-sqlite) — every accepted config field and its source declaration.
-- [SQLite physical chunk-row decision](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.md) — rationale, alternatives, and measurements behind schema 17.
+- [SQLite physical chunk-row decision](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.md) — rationale, alternatives, and measurements behind the packed layout.
 
 -----
 
@@ -174,7 +174,7 @@ Physical packing does not mutate request prefixes. Provider cache reuse depends 
 
 These limits define when the provider is a poor fit or needs special operational care. They are current package constraints, not a general SQLite comparison or a task backlog.
 
-- **Pre-release design with no migration** — schema 17 is an interim SQLite-only design; the deferred unified multi-backend relational design with configurable schemas exists as a working external prototype in [morlay/session-persistence-rdb](https://github.com/morlay/session-persistence-rdb) (Drizzle-based, SQLite and PostgreSQL), and neither schema stability nor migration support is guaranteed.
+- **Pre-release design with no migration** — schema 18 is an interim SQLite-only design; the deferred unified multi-backend relational design with configurable schemas exists as a working external prototype in [morlay/session-persistence-rdb](https://github.com/morlay/session-persistence-rdb) (Drizzle-based, SQLite and PostgreSQL), and neither schema stability nor migration support is guaranteed.
 - **Packing depends on batch boundaries** — a compatible run split by the write-behind window or an explicit flush stays split across physical rows; this avoids rewriting prior rows at the cost of a timing-dependent packing ratio.
 - **Synchronous SQLite and compression** — Node's SQLite driver and Zstandard calls block the JavaScript thread; the 4 KiB compression threshold bounds per-frame work for small records.
 - **Busy waits block the event loop** — SQLite waits inside synchronous calls; a competing writer can stall the thread for up to the configured `busyTimeoutMs`.
@@ -210,7 +210,7 @@ A unified multi-backend relational design stays deferred. A Drizzle-backed rewor
 
 #### Future: persistence-to-persistence transfer and version migration
 
-The README documents a manual `load` → `create`/`append` transfer, but the seam has no import/export API, and SQLite rejects other schema versions outright. Automating transfer needs: an export format that preserves header lineage (`seedLength`, `parentSession`, `agentPreset`) and revision semantics; an upgrader chain for format and schema versions, the deferred chain from the [session-log-version-mechanism note](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md); and a source-side guarantee that the log is readable and balanced before export — `load` already commits cold repair.
+The README documents a manual `load` → `create`/`append` transfer, but the seam has no import/export API, and SQLite rejects other schema versions outright. Automating transfer needs: an export format that preserves header lineage (`seedLength`, `parentSession`, `agentPreset`) and revision semantics; an upgrader chain for format and schema versions, the deferred chain from the [fail-closed event-vocabulary note](../../../.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.md); and a source-side guarantee that the log is readable and balanced before export — `load` already commits cold repair.
 
 #### Future: in-database full-text search and indexing
 
