@@ -725,6 +725,12 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/experimental/agent-team-profile": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-experimental-agent-team",
+        "@deepseek-ai/dsh-experimental-tool-agent-team"
+      ]
+    },
     "packages/bundle/base": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"

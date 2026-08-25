@@ -15,10 +15,10 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../team"
+      "path": "../agent-team"
     },
     {
-      "path": "../tool-team"
+      "path": "../tool-agent-team"
     }
   ]
 }

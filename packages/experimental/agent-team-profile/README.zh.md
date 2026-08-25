@@ -1,8 +1,8 @@
-# @deepseek-ai/dsh-agent-team-profile
+# @deepseek-ai/dsh-experimental-agent-team-profile
 
 [English](README.md) | 中文
 
-在 `@deepseek-ai/dsh-base` 之上启用 [Agent Teams](../team/README.md) 的私有 profile bundle。它的 patch 会插入 Team domain 与 scoped 工具、禁用名称重叠的全局 continuable-child control，并保留普通的一次性 fresh／fork delegation 工具。必须从源码 checkout 将本包显式安装到 profile；正式发布会排除本包。
+在 `@deepseek-ai/dsh-base` 之上启用 [Agent Teams](../agent-team/README.zh.md) 的私有 profile bundle。它的 patch 会插入 Team domain 与 scoped 工具、禁用名称重叠的全局 continuable-child control，并保留普通的一次性 fresh／fork delegation 工具。必须从源码 checkout 将本包显式安装到 profile；正式发布会排除本包。
 
 ## Profile 安装
 
@@ -13,7 +13,7 @@ pnpm dsh plugin --profile headless add ./packages/experimental/agent-team-profil
 pnpm dsh --profile headless "Use Agent Teams to split this task between two teammates, wait, and summarize."
 ```
 
-profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Subagent service 与 provider 配置行。执行 `dsh plugin --profile <name> remove @deepseek-ai/dsh-agent-team-profile` 移除本包时，bundle 也会从 profile 的有序层列表中移除。
+profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Subagent service 与 provider 配置行。执行 `dsh plugin --profile <name> remove @deepseek-ai/dsh-experimental-agent-team-profile` 移除本包时，bundle 也会从 profile 的有序层列表中移除。
 
 ## Model Experience
 
@@ -21,7 +21,7 @@ profile 必须已经包含 `@deepseek-ai/dsh-base`，本层会使用其中的 Su
 
 #### 模型会看到什么
 
-Team 策略与 schema 由 [`@deepseek-ai/dsh-tool-team`](../tool-team/README.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent 不会获得 continuable-child `report` 工具。
+Team 策略与 schema 由 [`@deepseek-ai/dsh-experimental-tool-agent-team`](../tool-agent-team/README.zh.md) 所有。本 bundle 只改变 composition：Team-scoped `list_agents`、`send_message` 与 `interrupt_agent` 会替代已禁用的全局 continuable-child control。`subagent` 与 `subagent_fork` 仍作为一次性 delegation 工具可用，其子 agent 不会获得 continuable-child `report` 工具。
 
 #### Token 影响
 

@@ -20,8 +20,8 @@ describe('Agent Teams profile bundle', () => {
     expect(manifest.publishConfig).toBeUndefined()
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml')
     expect(manifest.dependencies).toMatchObject({
-      '@deepseek-ai/dsh-team': 'workspace:^',
-      '@deepseek-ai/dsh-tool-team': 'workspace:^',
+      '@deepseek-ai/dsh-experimental-agent-team': 'workspace:^',
+      '@deepseek-ai/dsh-experimental-tool-agent-team': 'workspace:^',
     })
 
     const parsed = yaml.load(
@@ -41,12 +41,12 @@ describe('Agent Teams profile bundle', () => {
     expect(patches.find(patch => patch.id === 'tool-subagent')?.config).toMatchObject({ backgroundMode: 'one-shot' })
     expect(patches.find(patch => patch.id === 'tool-subagent-fork')?.config).toMatchObject({ backgroundMode: 'one-shot' })
     const inserted = patches.flatMap(patch => patch.insert ?? [])
-    expect(inserted.find(entry => entry.id === 'team')).toMatchObject({
-      name: '@deepseek-ai/dsh-team',
+    expect(inserted.find(entry => entry.id === 'agent-team')).toMatchObject({
+      name: '@deepseek-ai/dsh-experimental-agent-team',
       config: { maxMembers: 8 },
     })
-    expect(inserted.find(entry => entry.id === 'tool-team')).toMatchObject({
-      name: '@deepseek-ai/dsh-tool-team',
+    expect(inserted.find(entry => entry.id === 'tool-agent-team')).toMatchObject({
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team',
       config: { freshProvider: 'spawn', forkProvider: 'fork' },
     })
   })

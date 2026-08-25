@@ -24,8 +24,8 @@
     backgroundMode: one-shot
 
 - insert:
-    - id: team
-      name: '@deepseek-ai/dsh-team'
+    - id: agent-team
+      name: '@deepseek-ai/dsh-experimental-agent-team'
       config:
         maxMembers: 8
         maxTasks: 256
@@ -33,8 +33,8 @@
         maxMessageBytes: 65536
         disposalTimeoutMs: 5000
 
-    - id: tool-team
-      name: '@deepseek-ai/dsh-tool-team'
+    - id: tool-agent-team
+      name: '@deepseek-ai/dsh-experimental-tool-agent-team'
       config:
         freshProvider: spawn
         forkProvider: fork
