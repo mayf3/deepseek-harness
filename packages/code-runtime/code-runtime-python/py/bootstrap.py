@@ -744,6 +744,15 @@ async def _run(channel: ProtocolChannel) -> None:
     # with no done frame, misreporting the run as a `worker-exit`. A frame local
     # is not reachable by `__main__._X = ...`, so the catch is immune.
     _BaseException = BaseException
+    # `RuntimeError` and the `_BindingRejection` marker class are likewise bound
+    # into locals: `dispatch`'s `call_failure` and its `except` clause resolve
+    # them at call time, and the program (running as `__main__`) can rebind the
+    # module globals — `__main__._BindingRejection = ValueError` would leak the
+    # marker type into model code, violating the class's conversion contract.
+    # The names differ from the module globals (`_RuntimeError_cls`) so the
+    # assignment RHS resolves the module global, not an unbound local.
+    _RuntimeError_cls = RuntimeError
+    _BindingRejection_cls = _BindingRejection
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -861,7 +870,7 @@ async def _run(channel: ProtocolChannel) -> None:
             # the pre-errorClass behavior for namespaces that declared none.
             if error_class is not None:
                 return error_class(name, message)
-            return RuntimeError(message)
+            return _RuntimeError_cls(message)
 
         # Validate the argument shape before claiming an id, so a rejected call
         # leaves no gap in the sequence the host checks. json.dumps would coerce
@@ -907,7 +916,7 @@ async def _run(channel: ProtocolChannel) -> None:
             next_id += 1
         try:
             return await fut
-        except _BindingRejection as exc:
+        except _BindingRejection_cls as exc:
             raise call_failure(str(exc)) from None
 
     namespaces: dict[str, Any] = {}

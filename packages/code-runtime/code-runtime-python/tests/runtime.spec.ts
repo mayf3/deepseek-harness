@@ -674,6 +674,35 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(calls).toEqual([{ n: 1 }])
   })
 
+  it('keeps the rejection contract when _BindingRejection is rebound', async () => {
+    // `dispatch`'s except clause resolves `_BindingRejection` at call time; a
+    // program that rebinds `__main__._BindingRejection = ValueError` would
+    // otherwise let the internal marker type leak into model code (the program
+    // would catch a `ValueError` for a host rejection). The class is now bound
+    // into `_run` locals before the program runs, so a host rejection still
+    // surfaces as the declared `RuntimeError`.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        '__main__._BindingRejection = ValueError',
+        'caught = ""',
+        'try:',
+        '    await tools.fail({})',
+        'except RuntimeError as e:',
+        '    caught = str(e)',
+        'except Exception as e:',
+        '    caught = "WRONG TYPE: " + type(e).__name__',
+        'return caught',
+      ].join('\n'),
+      bindings: tools({
+        fail: async () => { throw new Error('nope') },
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('nope')
+  }, 15_000)
+
   it('still answers the call when the rejection value cannot be converted to a string', async () => {
     // `messageOf` calls `String(error)`, which runs the value's own conversion,
     // and this call site is a DETACHED async reply callback. A rejection whose
@@ -4317,6 +4346,12 @@ describe('PythonCodeRuntime — hostile peer', () => {
     const result = await runtime.run({
       program: [
         'import sys',
+        // `-u` makes the streams write-through; re-enable block buffering so
+        // the bytes sit in the wrapper until the SETTLEMENT drain flushes them
+        // — the drain path, not the -u immediate write, is what this case pins.
+        'if hasattr(sys.__stdout__, "reconfigure"):',
+        '    sys.__stdout__.reconfigure(write_through=False)',
+        '    sys.__stderr__.reconfigure(write_through=False)',
         'sys.__stdout__.write("orig stdout\\n")',
         'sys.__stderr__.write("orig stderr\\n")',
         'return "done"',
