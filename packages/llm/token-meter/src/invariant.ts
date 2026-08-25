@@ -22,9 +22,11 @@ export const inject = ['invariants']
  * not be monotone when a final sample corrects an earlier chunk, and the
  * composition fold prices through the same `estimate.ts` heuristic as the
  * measurement service and subtracts producer-logged shadow prices derived
- * from that service's own nodes, which makes its message figure equal
- * `measure().surfaceTokens` by construction rather than by a relation worth
- * observing at runtime.
+ * from that service's own fixed-heuristic node prices, which makes its
+ * message figure equal the sum of `measure().nodes[].heuristicTokens` by
+ * construction rather than by a relation worth observing at runtime; the
+ * route-priced `surfaceTokens` deliberately diverges by the routed model's
+ * image repricing.
  */
 const install: InvariantInstaller = () => {}
 

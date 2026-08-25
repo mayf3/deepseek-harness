@@ -964,7 +964,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:117`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:124`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -1286,6 +1286,15 @@ export interface ReplayModelConfig {
    * omit one, so replay reconstructs the request header a live catalog produced.
    */
   defaultMaxTokens?: number
+  /**
+   * Optional flat visual-token price the replay route declares for every
+   * retained request image, so keyless scenarios exercise route-priced
+   * request pressure; each occurrence is priced at this value plus its
+   * request-preview handle text. Requires {@link inputModalities} to include
+   * `image` — a text-only route never sends visual tokens. Absent declares
+   * no image pricing.
+   */
+  imageRequestTokens?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */
   reasoningEfforts?: string[]
   /**
@@ -1298,7 +1307,7 @@ export interface ReplayModelConfig {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/test-support/llm-replay/src/index.ts:892`](../packages/test-support/llm-replay/src/index.ts)
+Source: [`packages/test-support/llm-replay/src/index.ts:914`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 
@@ -2308,10 +2317,12 @@ Source: [`packages/subagent/subagent-claude-code/src/index.ts:38`](../packages/s
 Requires: `subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned permission, environment, and process-release settings. */
+/** Deployment-owned model, permission, environment, and process-release settings. */
 export interface Config {
   /** Provider name on `ctx.subagents` (default `codex`). */
   providerName?: string
+  /** Native Codex model fixed for this instance; omitted to inherit Codex settings. */
+  model?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.

@@ -15,9 +15,9 @@
 - `measure(session, requestHeader?)` 在同一个已消费日志 revision 上返回请求压力与当前已计价表层。
 - `estimateMessage(message)` 使用固定启发式规则为一条消息计价。
 
-`measure()` 会同步一次，并返回一个独立且深度不可变的快照。`totalTokens` 是请求与响应压力，`surfaceTokens` 是仅表层启发式总量，等于 `nodes[].tokens` 之和。`requestHeader` 覆盖只影响压力字段；表层字段仍描述当前会话。每次调用都会克隆带位置的节点，因此测量是 O(surface)。
+`measure()` 会同步一次，并返回一个独立且深度不可变的快照。`totalTokens` 是请求与响应压力，`surfaceTokens` 是表层的路由定价总量，等于 `nodes[].tokens` 之和。`requestHeader` 覆盖会选择计价路由并影响压力字段；节点集合仍描述当前会话。每次调用都会克隆带位置的节点，因此测量是 O(surface)。
 
-fold 跟踪完整请求标头快照、步骤边界、表层追加与替换、成功 assistant 消息、提供方用量，以及每条 assistant 消息引用的分片 seq。只有当最新成功调用的规范请求 envelope 与已测量 envelope 匹配，且其总量不低于该调用的完整启发式锚点时，才会复用提供方用量；后续成功会替换较早锚点。否则会对当前 envelope 与表层进行完整估算。表层变更保持相对于匹配锚点的带符号值，包括缩减替换后的负 delta。
+fold 跟踪完整请求标头快照、步骤边界、表层追加与替换、成功 assistant 消息、提供方用量，以及每条 assistant 消息引用的分片 seq。每次计量都会通过可选的 `llm` 服务把生效 envelope 的 provider/model 解析为该路由声明的请求图片定价：图片出现处按路由请求实际发送的视觉 token 加模型可见文本计价，未声明定价的路由与组合保持固定启发式规则。每个节点还携带与路由无关的固定价格 `heuristicTokens`，供影子价协议为替换计价。只有当最新成功调用的规范请求 envelope 与已测量 envelope 匹配，且其总量不低于该调用的完整路由定价锚点时，才会复用提供方用量；后续成功会替换较早锚点。否则会对当前 envelope 与表层进行完整估算。表层变更保持相对于匹配锚点（按同一路由重新定价）的带符号值，包括缩减替换后的负 delta。
 
 用量计量会求和不重叠的输入、cache-read、cache-write 与输出 bucket；不会再次添加推理（reasoning）。每次成功调用都会记录一个 assistant 锚点，包括无内容调用。显式的空 `sourceEventSeqs` 列表表示已知空提供方流；遗留记录缺少该列表时，fold 会保守地将持久 assistant 输出视为提供方输出。
 
@@ -33,7 +33,7 @@ token-meter 还拥有一份可安全用于浏览器的纯 fold，将一个完整
 
 `projectedTokens` 是「下一个请求的提示词要花多少」：在该样本之上，加上自取样以来表层增减部分的启发式重新计价，并将下界钳制为零。它在 `surface-projection.ts` 中的 O(1) 折叠会跟踪追加，并消费紧邻替换之前记录的影子价；在完整计量的日志上，它无需保留逐节点价格也能与测量服务的带位置 plan/commit 折叠一致。只有增量部分是估算的，因此这个数字既锚定在提供方读数上，又能在内容落地——或压缩遮蔽一段区间——的瞬间做出反应。最后这种情况正是该字段存在的理由：压缩通过直连的 `ctx.llm.stream()` 调用生成摘要，自身不追加任何用量，所以仅凭 `pressureTokens` 会一直报告压缩前的提示词规模，直到再完成一整个轮次为止。占用率展示读取 `projectedTokens`。
 
-`contextBreakdown` 携带启发式的 `systemTokens`、`toolsTokens` 与 `messageTokens`，描述上下文的组成而非提供方计费规模。envelope 数字在每条 `request/header` 上按后者胜重新计价；消息数字重放与 `contextPressure` 相同的 O(1) 影子价折叠，因此在完整计量的日志上，它在每个事件边界都等于 `measure().surfaceTokens`，压缩会像缩小下一个请求那样缩小它。若替换前没有紧邻的影子价声明，这个有界投影会保持不变，因为它无法重建被替换区间。三个数字都使用测量服务的固定启发式规则，属于估算值：它们加起来不等于 `projectedTokens`——后者的提供方锚点所体现的恰好是这些明细行仍然带着的误差（按「4 字符 ≈ 1 token」计价，CJK 文本与 JSON schema 会被严重低估）。请把它们当作近似的**组成**呈现，而不是总量。
+`contextBreakdown` 携带启发式的 `systemTokens`、`toolsTokens` 与 `messageTokens`，描述上下文的组成而非提供方计费规模。envelope 数字在每条 `request/header` 上按后者胜重新计价；消息数字重放与 `contextPressure` 相同的 O(1) 影子价折叠，因此在完整计量的日志上，它在每个事件边界都等于 `measure().nodes[].heuristicTokens` 之和，压缩会按记录的影子价缩小该值。路由定价的 `measure().surfaceTokens` 在路由模型重新为图片计价时会与该值不同。若替换前没有紧邻的影子价声明，这个有界投影会保持不变，因为它无法重建被替换区间。三个数字都使用测量服务的固定启发式规则，属于估算值。它们加起来不等于 `projectedTokens`，后者的提供方锚点体现了这些明细行仍然带有的误差（按「4 字符 ≈ 1 token」计价时，CJK 文本与 JSON schema 会被严重低估）。请把它们当作近似的**组成**呈现，而不是总量。
 
 三个单元都使用标准的投影基线、实时帧、seq 高者胜值仓和 JSON 检查点路径。卸载 token-meter 会移除这三个键。不带投影 seam 的组合会保留测量服务的既有行为。
 
@@ -52,7 +52,7 @@ token-meter 还拥有一份可安全用于浏览器的纯 fold，将一个完整
 - name: '@deepseek-ai/dsh-compaction-basic'
 ```
 
-两个插件都有可用默认值。meter 保持与模型路由和可选压缩无关。部署会在 LLM（大语言模型）适配器上配置容量，并在 `dsh-compaction-basic` 上配置压缩策略。
+两个插件都有可用默认值。meter 只消费可选的 `llm` 服务，且仅用于解析路由声明的请求图片定价；压缩保持可选。部署会在 LLM（大语言模型）适配器上配置容量与图片定价，并在 `dsh-compaction-basic` 上配置压缩策略。
 
 ## 模型体验
 
@@ -64,7 +64,7 @@ token-meter 还拥有一份可安全用于浏览器的纯 fold，将一个完整
 
 ## 已知限制与暂缓事项
 
-- **固定启发式规则是近似值**：没有可复用提供方用量的内容按字符数加结构开销计价，而不是使用精确提供方 tokenizer 或请求 serializer。
+- **固定启发式规则是近似值**：没有可复用提供方用量的文本按字符数加结构开销计价，而不是使用精确提供方 tokenizer 或请求 serializer；只有声明了定价的路由上的图片出现处携带提供方精确的视觉 token。
 - **每次测量都会克隆当前表层**：一致且不可变的快照使读取成为 O(surface)，包括低于阈值的压力检查。
 - **提供方用量只能为完全相同的规范 envelope 复用**：提示词、前缀、工具、提供方、模型或调用配置变更都会有意回退到完整启发式估算。
 - **保守处理缺少源事件 seq 的遗留记录**：没有 `sourceEventSeqs` 的 assistant 消息无法区分提供方输出与 listener 改写，因此 fold 不会声称已知空流或精确分片流。
