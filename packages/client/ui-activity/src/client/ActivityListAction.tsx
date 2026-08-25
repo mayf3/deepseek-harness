@@ -62,8 +62,6 @@ const NO_JOBS: readonly SessionJob[] = []
 /** Minimum gap kept between the popover and the viewport edges (the Menu primitive's portal margin). */
 const VIEWPORT_MARGIN = 12
 
-/** Height cap for one live output panel inside the popover. */
-const PANEL_MAX_LINES = 16
 
 function isLive(row: TaskRow): boolean {
   return row.status === 'running' || row.status === 'stopping'
@@ -136,7 +134,11 @@ function terminalLabels(t: TranslateNS<typeof NS>): TerminalBlockLabels {
     noOutput: t('terminal.noOutput'),
     collapseAria: t('terminal.collapseAria'),
     collapse: t('terminal.collapse'),
+    // The panel never caps lines (it scrolls), so the fold controls that
+    // would invoke these stay unrendered.
+    /* v8 ignore next */
     expandAria: hidden => t('terminal.expandAria', { n: hidden }),
+    /* v8 ignore next */
     expand: hidden => t('terminal.expand', { n: hidden }),
   }
 }
@@ -288,7 +290,12 @@ function TaskItem({ row, view, expanded, now, onToggle, t }: {
               command={row.label}
               output={view.text}
               running={live}
-              maxLines={PANEL_MAX_LINES}
+              copyText={row.label}
+              // The row above the panel already carries the state dot.
+              runStateDot={false}
+              // The panel scrolls its output (a stylesheet height cap) instead
+              // of collapsing the middle.
+              maxLines={Number.POSITIVE_INFINITY}
               labels={labels}
             />
           </div>

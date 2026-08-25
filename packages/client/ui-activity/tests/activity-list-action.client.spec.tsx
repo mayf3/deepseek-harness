@@ -192,7 +192,9 @@ describe('ActivityListAction rows and observation', () => {
     expect(items[1]?.textContent).toContain('exit code: 3')
   })
 
-  it('marks killed rows and expands an overflowing panel through the collapse controls', () => {
+  it('marks killed rows, renders every output line unfolded, and copies the command', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     const lines = Array.from({ length: 24 }, (_value, index) => `line ${index + 1}`).join('\n')
     const view: ObservedActivity = {
       activityId: 'bash-1' as ActivityId,
@@ -208,9 +210,15 @@ describe('ActivityListAction rows and observation', () => {
     openList()
     expect(screen.getByText(zh['status.killed'])).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
-    const expand = screen.getByRole('button', { name: zh['terminal.expandAria'].replace('{n}', '8') })
-    fireEvent.click(expand)
-    expect(screen.getByRole('button', { name: zh['terminal.collapseAria'] })).toBeDefined()
+    // The panel scrolls instead of folding: every line renders, no fold control.
+    expect(screen.getByText('line 1')).toBeDefined()
+    expect(screen.getByText('line 24')).toBeDefined()
+    expect(screen.queryByRole('button', { name: zh['terminal.expandAria'].replace('{n}', '8') })).toBeNull()
+    // The panel draws no state dot or label of its own — the row carries it.
+    expect(screen.queryByText(zh['terminal.done'])).toBeNull()
+    // The copy control carries the command, not the output.
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: zh['terminal.copy'] })) })
+    expect(writeText).toHaveBeenCalledWith('pnpm run build')
   })
 
   it('orders live rows first by start and settled rows newest-first with tie-breaks', () => {

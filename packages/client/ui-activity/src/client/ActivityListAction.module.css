@@ -189,11 +189,22 @@
   transform: rotate(180deg);
 }
 
-/* Output hangs under its row behind a spine that ties the two together. */
 .panel {
-  margin: 0 8px 8px 14px;
-  padding-left: 8px;
-  border-left: 2px solid var(--dsw-alias-border-l2);
+  margin: 0 8px 8px;
+  /* Long commands and output lines wrap in full instead of ellipsizing or
+     scrolling sideways, and the output region scrolls within a fixed height
+     instead of folding its middle lines. */
+  --dsl-terminal-command-whitespace: pre-wrap;
+  --dsl-terminal-line-whitespace: pre-wrap;
+  --dsl-terminal-output-max-height: 288px;
+}
+
+/* The row carries the state dot, so the panel omits its own and reclaims the
+   dot gutter down to an ordinary content inset. The override targets the card
+   element itself because the gutter variable is declared on it — a value
+   inherited from this container would lose to that declaration. */
+.panel :global([data-terminal]) {
+  --dsl-terminal-gutter: 12px;
 }
 
 .notice {

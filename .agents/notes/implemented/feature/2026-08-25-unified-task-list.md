@@ -19,10 +19,25 @@ The service planes stay orthogonal; the join happens once, per row, in the UI pr
 
 Deliberately not joined: subagent delegation rows stay bare job rows (the subagent panel is their surface), and foreground commands stay in their tool cards — neither gains an activity producer.
 
-## Alternatives rejected
+## Alternatives considered
 
 - **Merge the services** — rejected for the cursor-semantics and model-visibility reasons above.
 - **Keep the job list and bolt output onto it** — leaves workflow runs (activities without jobs) homeless, forcing a second list to survive anyway.
+
+## Refinements from browser acceptance
+
+Driving the merged list in the real app produced four presentation decisions, all scoped to the expanded panel and the header band:
+
+- **The header band order is preset → tasks → subagent catalog.** The root-session descendant count moved out of the breadcrumb (`header.lineage`) into the actions band (order 30) and dropped its `/` separator — a root session has no hierarchy to breadcrumb; child sessions keep their `root / child` switcher where the `/` is real. `SubagentCatalogAction` owns the moved seat; the lineage renderer now renders nothing on roots.
+- **The panel's copy control copies the command** (`TerminalBlock.copyText`), not the output: a long command ellipsizes in the row, so the control is its only complete source, while output is selectable text below. Supplying `copyText` also keeps the control rendered before any output exists.
+- **The panel scrolls instead of folding**: commands and output lines wrap in full (`--dsl-terminal-command-whitespace` / `--dsl-terminal-line-whitespace: pre-wrap`, so the output region never scrolls sideways) and the output region caps at a fixed height (`--dsl-terminal-output-max-height`) with `maxLines: Infinity` disabling the head/tail fold.
+- **The panel draws no run-state dot** (`TerminalBlock.runStateDot: false`) — the row above it already carries the same state — and reclaims the dot gutter via `--dsl-terminal-gutter`. The panel's left spine was dropped with it.
+
+All four land as opt-ins on `TerminalBlock` (props or `--dsl-terminal-*` variables), so tool cards keep their shipped fold/ellipsis/dot behavior unchanged.
+
+## Testing
+
+Component suites cover the join (job lifecycle wins, activity supplies the panel, bare-job rows, standalone activities), sections, durations, and the panel options; `pnpm vitest run packages/client/ui-activity packages/client/ui-primitives packages/client/ui-subagent` runs them. The keyless web e2e pair (`background-job-list`, `live-activity-stream`) replays the merged list end to end against ARIA goldens; `agent-preset-selection` pins the header band order.
 
 ## Consequences
 

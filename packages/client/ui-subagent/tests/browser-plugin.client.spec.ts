@@ -60,6 +60,7 @@ async function provideSlotFaces(ctx: Context): Promise<void> {
     name: 'root',
     children: {
       'conversation.session.header.lineage': { kind: 'single', scope: 'session' },
+      'conversation.session.header.actions': { kind: 'list', scope: 'session' },
       'conversation.composer': { kind: 'chain', scope: 'session' },
     },
   } as never, () => null)
@@ -112,6 +113,15 @@ describe('apply', () => {
       { method: 'refreshSubagents', args: [sid('parent')] },
       { method: 'setSubagentCatalogOpen', args: [sid('parent'), true] },
     ])
+
+    // The root-session catalog seat registers in the actions band with the
+    // same business face, ordered after the task list.
+    const actionEntry = ctx.slots.entries('conversation.session.header.actions')
+      .find(entry => entry.options.id === 'subagent-catalog')!
+    expect(actionEntry.options.order).toBe(30)
+    const actionFace = (actionEntry.inject as unknown as (id: SessionId) => SubagentCatalogInjected)(sid('parent'))
+    actionFace.refresh(sid('parent'))
+    expect(face.actionCalls.at(-1)).toEqual({ method: 'refreshSubagents', args: [sid('parent')] })
 
     const composerEntry = ctx.slots.entries('conversation.composer')
       .find(entry => entry.component === SubagentReadOnlyComposer)!

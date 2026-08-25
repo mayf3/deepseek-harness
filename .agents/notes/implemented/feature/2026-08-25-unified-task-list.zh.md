@@ -19,10 +19,25 @@
 
 刻意不合并的：subagent 委托行保持裸 job 行（subagent 面板是它的呈现面），前台命令留在工具卡片里——两者都不接活动生产者。
 
-## 已否决的替代方案
+## 曾考虑的替代方案
 
 - **合并服务层**——因上述游标语义与模型可见性理由否决。
 - **保留 job 列表、把输出挂上去**——workflow 运行（无 job 的 activity）无处安放，第二个列表终究得活下来。
+
+## 浏览器验收带来的细化
+
+在真实应用里驱动合并列表得出四个呈现决策，全部限定在展开面板与头部条带：
+
+- **头部条带顺序为 preset → 任务 → subagent 目录。** 根会话的后代数量从面包屑（`header.lineage`）移入操作区（order 30）并去掉 `/` 分隔符——根会话没有可面包屑的层级；子会话保留 `根 / 子` 切换器，那里的 `/` 是真实层级。移位后的席位由 `SubagentCatalogAction` 拥有；谱系 renderer 在根会话上不再渲染任何东西。
+- **面板的复制控件复制命令**（`TerminalBlock.copyText`）而非输出：长命令在行内被省略号截断，控件是它唯一的完整来源，而输出本身就是下方可选中的文本。提供 `copyText` 还让控件在任何输出出现之前就保持渲染。
+- **面板以滚动取代折叠**：命令与输出行完整换行（`--dsl-terminal-command-whitespace` / `--dsl-terminal-line-whitespace: pre-wrap`，输出区因此永不横向滚动），输出区以固定高度封顶（`--dsl-terminal-output-max-height`），`maxLines: Infinity` 禁用头尾折叠。
+- **面板不画运行状态点**（`TerminalBlock.runStateDot: false`）——上方的行已携带同一状态——并通过 `--dsl-terminal-gutter` 收回状态点落区。面板左侧竖线随之移除。
+
+四项全部以 `TerminalBlock` 的可选项落地（prop 或 `--dsl-terminal-*` 变量），工具卡片保持既有的折叠/省略/状态点行为不变。
+
+## 测试
+
+组件套件覆盖 join（job 生命周期优先、activity 提供面板、裸 job 行、独立 activity）、分段、时长与面板选项；`pnpm vitest run packages/client/ui-activity packages/client/ui-primitives packages/client/ui-subagent` 运行它们。无密钥 web e2e 对（`background-job-list`、`live-activity-stream`）按 ARIA golden 端到端回放合并列表；`agent-preset-selection` 钉住头部条带顺序。
 
 ## 后果
 

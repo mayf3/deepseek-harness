@@ -98,6 +98,22 @@ describe('TerminalBlock states', () => {
     expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
   })
 
+  it('copyText overrides the copy payload and keeps the control before any output', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    const view = render(<TerminalBlock command="npm run build --verbose" running copyText="npm run build --verbose" />)
+    // No output yet, but the command is already copyable.
+    const button = view.getByRole('button', { name: '复制' })
+    await act(async () => { fireEvent.click(button) })
+    expect(writeText).toHaveBeenCalledWith('npm run build --verbose')
+  })
+
+  it('omits the run-state dot and its assistive label when the host carries the state', () => {
+    const view = render(<TerminalBlock command="sleep 5" running output="partial" runStateDot={false} />)
+    expect(view.container.querySelector('[class*="runState"]')).toBeNull()
+    expect(view.queryByText('运行中')).toBeNull()
+  })
+
   it('running with supplied output streams the live text and keeps it copyable', () => {
     const view = render(<TerminalBlock command="sleep 5" running output="partial" />)
     expect(view.getByText('partial')).toBeTruthy()
