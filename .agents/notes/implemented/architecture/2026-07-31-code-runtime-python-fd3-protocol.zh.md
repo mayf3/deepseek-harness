@@ -28,7 +28,7 @@ Status: implemented
 
 ## Mirror alignment
 
-`py/protocol.py` 与 `src/protocol.ts` 一致规定：`LogMessage` 携带 `truncated`，`DoneMessage.error` 携带 `kind`，`Namespace` 可以携带 `errorClass`。`tests/protocol-mirror.e2e.ts` 启动真实 `python3`，对照 `src/protocol.ts` 断言 `PROTOCOL_FD`、`log_truncation_marker` 以及每个 `TypedDict` 的必填和可选 wire 字段集。字段改名、删除或必填／可选性不一致都会使测试失败。字段*类型*不跨语言边界比较；这项缺口由评审和未来提供方的真实子进程套件负责。
+`py/protocol.py` 与 `src/protocol.ts` 一致规定：`LogMessage` 携带 `truncated`，`DoneMessage.error` 携带 `kind`，`Namespace` 可以携带 `errorClass`。`tests/protocol-mirror.e2e.ts` 启动真实 `python3`，对照 `src/protocol.ts` 断言 `PROTOCOL_FD`、`log_truncation_marker` 以及每个 `TypedDict` 的必填和可选 wire 字段集。字段改名、删除或必填／可选性不一致都会使测试失败。字段*类型*不跨语言边界比较；这项缺口由评审和 runtime 的真实子进程套件（`runtime.spec.ts`）负责。
 
 ## Alternatives considered
 
@@ -38,6 +38,6 @@ Status: implemented
 
 ## Consequences
 
-收获：fd-3 协议及其敌意输入 codec 构成自包含、unit 全覆盖的一层，并由执行中的 guard 防止 TypeScript／Python 字段集漂移。未来 runtime 可以直接消费经过评审的 wire contract。
+收获：fd-3 协议及其敌意输入 codec 构成自包含、unit 全覆盖的一层，并由执行中的 guard 防止 TypeScript／Python 字段集漂移。基于它构建的 runtime（`bootstrap.py`）消费经过评审的 wire contract。
 
-代价：包名表示 Python runtime 家族，而 `src/index.ts` 导出完整的 `PythonCodeRuntime` 实现，协议 vocabulary 只是包表面的一部分。mirror e2e 会比较两侧字段名与必填／可选状态，但不比较字段类型；跨 TypeScript 与 Python 比较类型声明没有机械等价物，因此评审与未来 runtime 的真实子进程套件继续负责这项检查。
+代价：包名表示 Python runtime 家族，而 `src/index.ts` 导出完整的 `PythonCodeRuntime` 实现，协议 vocabulary 只是包表面的一部分。mirror e2e 会比较两侧字段名与必填／可选状态，但不比较字段类型；跨 TypeScript 与 Python 比较类型声明没有机械等价物，因此评审与 runtime 的真实子进程套件继续负责这项检查。

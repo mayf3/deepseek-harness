@@ -28,7 +28,7 @@ Frames are JSON-lines on fd 3, one object per line, leaving stdout/stderr free f
 
 ## Mirror alignment
 
-`py/protocol.py` and `src/protocol.ts` agree that `LogMessage` carries `truncated`, `DoneMessage.error` carries `kind`, and `Namespace` may carry `errorClass`. `tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts `PROTOCOL_FD`, `log_truncation_marker`, and each `TypedDict`'s required and optional wire field sets against `src/protocol.ts`. A renamed or dropped field, or a required/optional mismatch, fails the test. Field *types* are not compared across the language boundary; review and a future provider's real-subprocess suite own that gap.
+`py/protocol.py` and `src/protocol.ts` agree that `LogMessage` carries `truncated`, `DoneMessage.error` carries `kind`, and `Namespace` may carry `errorClass`. `tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts `PROTOCOL_FD`, `log_truncation_marker`, and each `TypedDict`'s required and optional wire field sets against `src/protocol.ts`. A renamed or dropped field, or a required/optional mismatch, fails the test. Field *types* are not compared across the language boundary; review and the runtime's real-subprocess suite (`runtime.spec.ts`) own that gap.
 
 ## Alternatives considered
 
@@ -40,4 +40,4 @@ Frames are JSON-lines on fd 3, one object per line, leaving stdout/stderr free f
 
 Bought: the fd-3 protocol and its hostile-input codec form a self-contained, fully unit-covered layer, with an executing guard against TypeScript/Python field-set drift. The runtime built on it (`bootstrap.py`) consumes the reviewed wire contract.
 
-Cost: the package name denotes a Python runtime family and `src/index.ts` exports the full `PythonCodeRuntime` implementation, so the protocol vocabulary is only one part of the package surface. The mirror e2e compares field names and required/optional status across the two sides but not field types; comparing type declarations across TypeScript and Python has no mechanical equivalent, so review and the future runtime's real-subprocess suite retain that responsibility.
+Cost: the package name denotes a Python runtime family and `src/index.ts` exports the full `PythonCodeRuntime` implementation, so the protocol vocabulary is only one part of the package surface. The mirror e2e compares field names and required/optional status across the two sides but not field types; comparing type declarations across TypeScript and Python has no mechanical equivalent, so review and the runtime's real-subprocess suite retain that responsibility.
