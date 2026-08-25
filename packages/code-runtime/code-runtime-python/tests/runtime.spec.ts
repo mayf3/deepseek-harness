@@ -108,14 +108,17 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // frame and fails the run as `worker-exit`, inverting the `output-limit`
     // the cap describes. Both budgets are metered in already-escaped serialized
     // bytes, so a payload occupies at most `cap + envelope` on the wire; the
-    // bound is `ceiling - envelope`, not `(ceiling - envelope) / 6` (that
-    // divided in escape expansion the charge already counts).
-    const admissible = 256 * 1024 * 1024 - 64
+    // bound is `parse-cap - envelope`, not `(ceiling - envelope) / 6` (that
+    // divided in escape expansion the charge already counts). The receive path
+    // drops raw frames past the 64 MiB parse cap before decoding, so a budget
+    // above it would admit a config whose honest child frames the host then
+    // silently discards.
+    const admissible = 64 * 1024 * 1024 - 64
     const ctx = new Context()
     await expect(ctx.plugin(PythonCodeRuntime, { maxLogBytes: admissible + 1 }))
-      .rejects.toThrow(/maxLogBytes must not exceed 268435392 .*fd-3 frame ceiling/)
+      .rejects.toThrow(/maxLogBytes must not exceed 67108800/)
     await expect(ctx.plugin(PythonCodeRuntime, { maxValueBytes: admissible + 1 }))
-      .rejects.toThrow(/maxValueBytes must not exceed 268435392 .*fd-3 frame ceiling/)
+      .rejects.toThrow(/maxValueBytes must not exceed 67108800/)
     // The boundary value itself loads: the bound is the largest cap a frame can
     // still carry, not one below it. It needs an address space large enough to
     // clear the separate maxValueBytes/addressSpaceMb worst-case gate (the cap

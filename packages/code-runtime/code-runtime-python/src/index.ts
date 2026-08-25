@@ -784,7 +784,10 @@ export class PythonCodeRuntime extends CodeRuntime {
     // it bills a forged `done.error.message` by RAW bytes, but that output goes
     // into `CodeRunResult.error.message` and never re-crosses a frame-bounded
     // channel, so it is not part of the wire-width bound (see its JSDoc). The
-    // admissible cap is therefore `ceiling - envelope`.
+    // admissible cap is therefore `parse-cap - envelope`: the receive path
+    // drops raw frames past FRAME_PARSE_CAP_BYTES before decoding (a hostile
+    // compact-wide-frame OOM guard), so a budget must not exceed what an honest
+    // child's frame can actually carry through that parser.
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
       // Require an integer: the child reads these budgets through `int(...)`,
       // which silently floors a float, so `maxLogBytes: 3.5` would truncate at 3
@@ -794,9 +797,9 @@ export class PythonCodeRuntime extends CodeRuntime {
       if (!Number.isInteger(this.config[key])) {
         throw new Error(`dsh-code-runtime-python: config.${key} must be a positive integer (the child reads it as an int, so a float diverges from the host), got ${String(this.config[key])}`)
       }
-      const limit = FRAME_CEILING_BYTES - FRAME_ENVELOPE_BYTES
+      const limit = FRAME_PARSE_CAP_BYTES - FRAME_ENVELOPE_BYTES
       if (this.config[key] > limit) {
-        throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the ${FRAME_CEILING_BYTES}-byte fd-3 frame ceiling, so the run would fail as worker-exit rather than output-limit), got ${String(this.config[key])}`)
+        throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the fd-3 frame PARSER, which drops raw frames past ${FRAME_PARSE_CAP_BYTES} bytes before decoding to bound host memory — a larger budget would admit a config whose honest child frames the host then silently discards, stranding the run to the wall clock), got ${String(this.config[key])}`)
       }
       // Reject a log budget too small to honor: the truncation marker alone
       // must serialize within the budget, or a marker-only truncated run
@@ -1308,7 +1311,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         // most the newline-bearing chunk's own length (one pipe read): the
         // residual carried in is always a partial line, so nothing but the
         // current line can be larger than that. That over-count is deliberate and
-        // load-bounded on the OTHER side: the config cap is `ceiling - envelope`,
+        // load-bounded on the OTHER side: the config cap is `parse-cap - envelope`,
         // and a legitimate near-cap frame plus a following chunk's leading bytes
         // could in principle nudge the counter over the ceiling for one read
         // window — but only when maxLogBytes/maxValueBytes is configured within
