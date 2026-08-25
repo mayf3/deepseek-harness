@@ -398,7 +398,7 @@ export function apply(ctx: Context): void {
         source: { kind: 'plugin', plugin: name, form: 'instructions' },
       })
     })
-    return { kind: 'enter', messages: [...decision.messages, ...contexts] }
+    return { ...decision, messages: [...decision.messages, ...contexts] }
   })
 }
 

@@ -15,6 +15,8 @@ import { compactionDefinition } from '../src/client/conversation-nodes/compactio
 import { unknownFallbackDefinition } from '../src/client/conversation-nodes/fallback.ts'
 import { nextStepInboxDefinition, nextTurnInboxDefinition } from '../src/client/conversation-nodes/inbox.ts'
 import { messageDefinition } from '../src/client/conversation-nodes/message.ts'
+import { inspectRequestPrompt } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { requestPromptDefinition } from '../src/client/conversation-nodes/request-prompt.ts'
 import { retryDefinition } from '../src/client/conversation-nodes/retry.ts'
 import { toolDefinition } from '../src/client/conversation-nodes/tool.ts'
 import { turnErrorDefinition } from '../src/client/conversation-nodes/turn-error.ts'
@@ -28,6 +30,7 @@ const DEFINITIONS: readonly ConversationNodeDefinition[] = [
   nextTurnInboxDefinition,
   nextStepInboxDefinition,
   messageDefinition,
+  requestPromptDefinition(inspectRequestPrompt),
   assistantDefinition,
   toolDefinition,
   commandDefinition,
@@ -121,6 +124,18 @@ function toolResult(callId: string, text: string, isError = false) {
 }
 
 describe('built-in conversation node Definitions', () => {
+  it('rejects an unrelated event passed directly to the request-prompt start', () => {
+    const input = at(1, 'turn/start', { turn: 1 })
+    const invalidStart = {
+      ...input,
+      role: 'start' as const,
+      location: { kind: 'session' as const },
+    }
+
+    expect(() => requestPromptDefinition(inspectRequestPrompt).start({} as never, invalidStart, {} as never))
+      .toThrow('request-prompt start requires request/header')
+  })
+
   it('keeps ordinary command-only history inactive for the Conversation shell', () => {
     const value = assembler([
       at(1, 'command/run', {
@@ -558,6 +573,223 @@ describe('built-in conversation node Definitions', () => {
       provenance: { role: 'inject', label: 'demo-skill' },
       form: 'instructions',
     })
+  })
+
+  it('materializes series starts and system changes but not same-series config or tool changes', () => {
+    const tools = [{ name: 'read', description: 'Read', parameters: { type: 'object' } }]
+    const expandedTools = [...tools, { name: 'write', description: 'Write', parameters: { type: 'object' } }]
+    const value = assembler([
+      at(1, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Initial', tools },
+      }),
+      at(2, 'request/header', {
+        reason: 'change',
+        header: {
+          config: { provider: 'fake', model: 'fake' },
+          system: '# Initial',
+          tools: expandedTools,
+        },
+      }),
+      at(3, 'request/header', {
+        reason: 'change',
+        header: {
+          config: { provider: 'fake', model: 'fake', maxTokens: 1_024 },
+          system: '# Initial',
+          tools: expandedTools,
+        },
+      }),
+      at(4, 'request/header', {
+        reason: 'change',
+        startsSeries: true,
+        header: {
+          config: { provider: 'fake', model: 'fake', maxTokens: 2_048 },
+          system: '# Initial',
+          tools: expandedTools,
+        },
+      }),
+      at(5, 'request/header', {
+        reason: 'resume',
+        header: {
+          config: { provider: 'fake', model: 'fake', maxTokens: 2_048 },
+          system: '# Initial',
+          tools: expandedTools,
+        },
+      }),
+      at(6, 'request/header', {
+        reason: 'change',
+        header: {
+          config: { provider: 'fake', model: 'fake', maxTokens: 2_048 },
+          system: '# Updated',
+          tools: expandedTools,
+        },
+      }),
+    ])
+
+    const prompts = snapshot(value).nodes.values()
+      .filter(candidate => candidate.kind === 'system-prompt')
+    expect(prompts.map(prompt => ({ anchorSeq: prompt.anchorSeq, data: prompt.data }))).toEqual([
+      { anchorSeq: 1, data: { text: '# Initial' } },
+      { anchorSeq: 4, data: { text: '# Initial' } },
+      { anchorSeq: 5, data: { text: '# Initial' } },
+      { anchorSeq: 6, data: { text: '# Updated' } },
+    ])
+
+    const windowed = assembler([
+      at(10, 'request/header', {
+        reason: 'resume',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Resumed prompt' },
+      }),
+    ], true)
+    const systemless = assembler([
+      at(20, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' } },
+      }),
+    ])
+    expect(node(snapshot(windowed), 'system-prompt')?.data).toEqual({ text: '# Resumed prompt' })
+    expect(node(snapshot(systemless), 'system-prompt')).toBeUndefined()
+
+    windowed.prepend([
+      at(5, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Original prompt' },
+      }),
+    ], false)
+    windowed.flush()
+    const restored = snapshot(windowed)
+    const restoredPrompts = restored.order.flatMap((key) => {
+      const candidate = restored.nodes.get(key)
+      return candidate?.kind === 'system-prompt' ? [candidate] : []
+    })
+    expect(restoredPrompts.map(prompt => prompt.data)).toEqual([
+      { text: '# Original prompt' },
+      { text: '# Resumed prompt' },
+    ])
+  })
+
+  it('orders the system field before the request messages while preserving message order', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'user/message', textMessage('direct-user', 'prompt'), { surfaceOp: 'append' }),
+      at(4, 'user/message', {
+        ...textMessage('runtime-context', 'runtime facts'),
+        source: { kind: 'plugin', plugin: '@deepseek-ai/dsh-system-prompt', form: 'snapshot' },
+      }, { surfaceOp: 'append' }),
+      at(5, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# System' },
+      }),
+    ])
+
+    const current = snapshot(value)
+    expect(current.order.map(key => current.nodes.get(key)?.kind)).toEqual([
+      'system-prompt',
+      'user',
+      'context',
+    ])
+    expect(node(current, 'system-prompt')?.anchorSeq).toBe(1)
+  })
+
+  it('keeps an append-only later user turn in the existing system-prompt series', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# System' },
+      }),
+      at(5, 'step/end', { turn: 1, step: 1 }),
+      at(6, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(7, 'turn/start', { turn: 2 }),
+      at(8, 'step/start', { turn: 2, step: 1 }),
+      at(9, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
+    ])
+
+    const current = snapshot(value)
+    const ordered = current.order.flatMap((key) => {
+      const candidate = current.nodes.get(key)
+      return candidate?.kind === 'system-prompt' || candidate?.kind === 'user' ? [candidate] : []
+    })
+    expect(ordered.map(candidate => candidate.kind)).toEqual(['system-prompt', 'user', 'user'])
+  })
+
+  it('keeps windowed non-initial headers at their event until prepend supplies the preceding header', () => {
+    const reasons = ['change', 'resume', 'series'] as const
+    for (const reason of reasons) {
+      const windowedSystem = reason === 'series' ? '# Original' : '# Windowed'
+      const windowed = assembler([
+        at(5, 'turn/start', { turn: 2 }),
+        at(6, 'step/start', { turn: 2, step: 1 }),
+        at(7, 'user/message', textMessage(`second-user-${reason}`, 'second'), { surfaceOp: 'append' }),
+        at(8, 'request/header', {
+          reason,
+          header: { config: { provider: 'fake', model: 'fake' }, system: windowedSystem },
+        }),
+      ], true)
+
+      expect(node(snapshot(windowed), 'system-prompt')?.anchorSeq).toBe(8)
+
+      windowed.prepend([
+        at(1, 'turn/start', { turn: 1 }),
+        at(2, 'step/start', { turn: 1, step: 1 }),
+        at(3, 'user/message', textMessage(`first-user-${reason}`, 'first'), { surfaceOp: 'append' }),
+        at(4, 'request/header', {
+          reason: 'initial',
+          header: { config: { provider: 'fake', model: 'fake' }, system: '# Original' },
+        }),
+      ], false)
+      windowed.flush()
+
+      const restored = snapshot(windowed)
+      const prompts = restored.order.flatMap((key) => {
+        const candidate = restored.nodes.get(key)
+        return candidate?.kind === 'system-prompt' ? [candidate] : []
+      })
+      expect(prompts.map(prompt => prompt.anchorSeq)).toEqual([1, 5])
+    }
+  })
+
+  it('repeats an unchanged system prompt after a surface rewrite and before an explicit later series', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'user/message', textMessage('first-user', 'first'), { surfaceOp: 'append' }),
+      at(4, 'request/header', {
+        reason: 'initial',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Same' },
+      }),
+      at(5, 'user/message', {
+        ...textMessage('compacted', 'summary'),
+        source: { kind: 'plugin', plugin: 'compact' },
+      }, { surfaceOp: { op: 'replace', start: 3, end: 3 } }),
+      at(6, 'request/header', {
+        reason: 'series',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Same' },
+      }),
+      at(7, 'step/end', { turn: 1, step: 1 }),
+      at(8, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(9, 'turn/start', { turn: 2 }),
+      at(10, 'step/start', { turn: 2, step: 1 }),
+      at(11, 'user/message', textMessage('second-user', 'second'), { surfaceOp: 'append' }),
+      at(12, 'request/header', {
+        reason: 'series',
+        header: { config: { provider: 'fake', model: 'fake' }, system: '# Same' },
+      }),
+    ])
+
+    const current = snapshot(value)
+    const ordered = current.order.flatMap((key) => {
+      const candidate = current.nodes.get(key)
+      return candidate?.kind === 'system-prompt' || candidate?.kind === 'user' ? [candidate] : []
+    })
+    expect(ordered.map(candidate => candidate?.kind)).toEqual([
+      'system-prompt', 'user', 'system-prompt', 'system-prompt', 'user',
+    ])
+    expect(ordered.filter(candidate => candidate?.kind === 'system-prompt')
+      .map(candidate => candidate?.anchorSeq)).toEqual([1, 6, 9])
   })
 
   it('associates each direct message with its immediately following session recall', () => {

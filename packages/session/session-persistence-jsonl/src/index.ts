@@ -9,43 +9,41 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { readdirSync } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rename, rm, stat, truncate } from 'node:fs/promises'
+import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
-  decodeStoredSessionHeader, SessionPersistence, SessionPersistenceRevision,
-  SessionPersistenceRevisionConflictError, PersistenceCoordinator,
+  SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator, SessionFormatUnsupportedError,
   type BorrowedSessionSource,
   type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot,
-  type SessionInspection, type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact,
-  type StoredEventRead, type StoredSessionSource,
+  type SessionInspection,
+  type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact,
+  type StoredPrefix,
 } from '@deepseek-ai/dsh-session-persistence'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionId, SessionHeader, SessionPreparation } from '@deepseek-ai/dsh-session'
 import {
-  encodeSegment, eventLines, logPath, logSuffix, parseStoredHeaderMeta, projectDir, scanLog, sessionDir,
+  encodeSegment, eventLines, logPath, logSuffix, parseHeaderMeta, projectDir, scanLog, sessionDir,
   SessionLogScanner, toHeaderLine,
   type JsonlCompression,
 } from './format.ts'
 import {
   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
 } from './zstd.ts'
-import { ensureDurableDirectoryWin32, publishNewFileWin32, replaceFileWin32 } from './win32.ts'
+import { ensureDurableDirectoryWin32, publishNewFileWin32 } from './win32.ts'
 
 export type { JsonlCompression } from './format.ts'
 
 const DEFAULT_PACK_CHUNKS = true
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
 /**
- * Internal scheduling constants, not deployment configuration: decode yields
- * balance frame latency against `setImmediate` overhead; replacement batches
- * bound memory and frame granularity without changing durable behavior.
+ * Internal scheduling constant, not deployment configuration: balance
+ * frame-boundary event-loop yields against `setImmediate` overhead. One frame
+ * remains an indivisible synchronous decode.
  */
 const ZSTD_DECODE_YIELD_INTERVAL_MS = 500
-const REPLACEMENT_BATCH_SIZE = 128
 
 /** Assert that the independently decodable first frame contains only the header record. */
 function assertZstdHeaderFrame(plaintext: Buffer): void {
@@ -90,18 +88,6 @@ export interface Config {
 interface JsonlTornMarker {
   truncateTo: number
   recoveredEvents: SessionEvent[]
-}
-
-interface JsonlStoredPrefix {
-  readonly meta: unknown
-  readonly events: unknown[]
-  readonly revision: PersistenceRevision
-  readonly tornMarker?: JsonlTornMarker
-}
-
-interface JsonlStoredHeader {
-  readonly meta: unknown
-  readonly revision: PersistenceRevision
 }
 
 interface FileRevisionIdentity {
@@ -217,8 +203,8 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return this.coordinator.borrowSession(id, signal)
   }
 
-  // JSONL is sequential media: its source reader parses the stored prefix and
-  // filters only after physical framing and sequence checks.
+  // JSONL is sequential media: no loadStoredFrom hook, so the coordinator
+  // parses the stored prefix (both encodings) and skips forward to fromSeq.
   readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
     return this.coordinator.readFrom(id, fromSeq, signal)
   }
@@ -229,38 +215,14 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   /* jscpd:ignore-end */
   // --- PersistenceBackend hooks (the file-bytes storage primitives) ---
 
-  /** Open repeatable reads over one revision resolved across project directories. */
-  async openStored(id: SessionId, signal?: AbortSignal): Promise<StoredSessionSource<JsonlTornMarker> | undefined> {
+  /** Read a stored prefix by id across all project directories when cwd is unknown. */
+  async loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<JsonlTornMarker> | undefined> {
     signal?.throwIfAborted()
     await this.ensureRootEncoding()
     signal?.throwIfAborted()
     const path = await this.findLog(id, signal)
     if (path === undefined) return undefined
-    const { meta, revision } = await this.readStoredHeader(path, id, signal)
-    return {
-      meta,
-      revision,
-      location: { kind: 'jsonl', path },
-      readEvents: (options = {}): StoredEventRead<JsonlTornMarker> => {
-        const fromSeq = options.fromSeq ?? 0
-        return this.createStoredEventRead(
-          async () => {
-            const prefix = await this.readPrefix(path, id, signal)
-            if (prefix.revision !== revision) {
-              throw new SessionPersistenceRevisionConflictError(
-                `session "${id}" changed while reading revision ${revision}`,
-              )
-            }
-            return prefix
-          },
-          (event) => {
-            const seq = (event as { seq?: unknown }).seq
-            return typeof seq !== 'number' || seq >= fromSeq
-          },
-          signal,
-        )
-      },
-    }
+    return this.readPrefix(path, id, signal)
   }
 
   /**
@@ -320,11 +282,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     } else {
       content = buffer.toString('utf8')
     }
-    const rawMeta = parseStoredHeaderMeta(content.split('\n', 1)[0] as string)
-    if (rawMeta === undefined) {
+    const meta = parseHeaderMeta(content.split('\n', 1)[0] as string)
+    if (meta === undefined || meta.id !== id) {
       throw new Error(`corrupt session log: invalid header line in "${path}"`)
     }
-    const meta = decodeStoredSessionHeader(rawMeta, id, { kind: 'jsonl', path })
     // The logical artifact name is `session.jsonl` regardless of the physical
     // encoding suffix (`.jsonl.zstd` marks compression only).
     return { meta, filename: 'session.jsonl', content }
@@ -352,31 +313,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     }
   }
 
-  /** Read one version-independent header at a stable file revision. */
-  private async readStoredHeader(
-    path: string,
-    _expectedId?: SessionId,
-    signal?: AbortSignal,
-  ): Promise<JsonlStoredHeader> {
-    for (;;) {
-      signal?.throwIfAborted()
-      const before = fileRevision(await stat(path, { bigint: true }))
-      const firstLine = this.compression === 'zstd'
-        ? await this.readFirstZstdLine(path, signal)
-        : await this.readFirstLine(path, signal)
-      const after = fileRevision(await stat(path, { bigint: true }))
-      if (before !== after) continue
-      if (firstLine === undefined) {
-        throw new Error(this.compression === 'zstd'
-          ? `empty or header-less Zstandard session log at "${path}"`
-          : `empty or header-less session log at "${path}"`)
-      }
-      const meta = parseStoredHeaderMeta(firstLine)
-      if (meta === undefined) throw new Error(`corrupt session log: first line is not a session header in "${path}"`)
-      return { meta, revision: after }
-    }
-  }
-
   /**
    * Read a stored prefix and convert torn-tail state to the opaque marker the
    * coordinator can round-trip without knowing the physical encoding.
@@ -385,22 +321,32 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     path: string,
     expectedId?: SessionId,
     signal?: AbortSignal,
-  ): Promise<JsonlStoredPrefix> {
+  ): Promise<StoredPrefix<JsonlTornMarker>> {
     const { buffer, revision } = await this.readStableFile(path, signal)
-    let prefix: Omit<JsonlStoredPrefix, 'revision'>
-    if (this.compression === 'zstd') {
-      prefix = await this.readZstdPrefix(buffer, signal)
-    } else {
-      signal?.throwIfAborted()
-      const { meta, events, committedBytes } = scanLog(buffer)
-      signal?.throwIfAborted()
-      prefix = {
-        meta,
-        events,
-        ...committedBytes < buffer.byteLength
-          ? { tornMarker: { truncateTo: committedBytes, recoveredEvents: [] } }
-          : {},
+    let prefix: Omit<StoredPrefix<JsonlTornMarker>, 'revision'>
+    try {
+      if (this.compression === 'zstd') {
+        prefix = await this.readZstdPrefix(buffer, signal)
+      } else {
+        signal?.throwIfAborted()
+        const { meta, events, committedBytes } = scanLog(buffer)
+        signal?.throwIfAborted()
+        prefix = {
+          meta,
+          events,
+          ...committedBytes < buffer.byteLength
+            ? { tornMarker: { truncateTo: committedBytes, recoveredEvents: [] } }
+            : {},
+        }
       }
+    } catch (error: unknown) {
+      // A parse-time format refusal predates any SessionHeader, so the
+      // coordinator's locate-based enrichment cannot run; attach the artifact
+      // this read actually refused.
+      if (error instanceof SessionFormatUnsupportedError && error.location === undefined) {
+        throw new SessionFormatUnsupportedError(`${error.message} (raw log: ${path})`, { kind: 'jsonl', path })
+      }
+      throw error
     }
     signal?.throwIfAborted()
     await this.assertStoredIdentity(path, prefix.meta, expectedId, signal)
@@ -412,7 +358,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   private async readZstdPrefix(
     buffer: Buffer,
     signal?: AbortSignal,
-  ): Promise<Omit<JsonlStoredPrefix, 'revision'>> {
+  ): Promise<Omit<StoredPrefix<JsonlTornMarker>, 'revision'>> {
     signal?.throwIfAborted()
     const { frames, tornStart } = scanZstdFrames(buffer)
     signal?.throwIfAborted()
@@ -470,7 +416,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         events: recoveredPrefix.events,
         tornMarker: {
           truncateTo: tornStart,
-          recoveredEvents: recoveredPrefix.events.slice(complete.eventCount) as SessionEvent[],
+          recoveredEvents: recoveredPrefix.events.slice(complete.eventCount),
         },
       }
     } catch (error) {
@@ -511,61 +457,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
     if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
     if (tornMarker !== undefined) this.ctx.logger.warn(`${this.name}: session "${meta.id}" recovered from a torn tail; incomplete tail bytes were discarded`)
-  }
-
-  /** Replace one exact source revision through a synced sibling and atomic namespace update. */
-  async replaceStored(
-    expectedRevision: PersistenceRevision,
-    meta: SessionHeader,
-    events: AsyncIterable<SessionEvent>,
-  ): Promise<void> {
-    await this.ensureRootEncoding()
-    const path = await this.findLog(meta.id)
-    if (path === undefined) {
-      throw new SessionPersistenceRevisionConflictError(
-        `session "${meta.id}" no longer has revision ${expectedRevision}`,
-      )
-    }
-    let current: JsonlStoredHeader
-    try {
-      current = await this.readStoredHeader(path, meta.id)
-    } catch (error: unknown) {
-      if (isENOENT(error)) {
-        throw new SessionPersistenceRevisionConflictError(
-          `session "${meta.id}" no longer has revision ${expectedRevision}`,
-        )
-      }
-      throw error
-    }
-    if (current.revision !== expectedRevision) {
-      throw new SessionPersistenceRevisionConflictError(
-        `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
-      )
-    }
-    const currentIdentity = this.storedIdentity(current.meta, path)
-    if (meta.cwd !== currentIdentity.cwd) {
-      throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
-    }
-
-    const tmp = `${path}.${randomBytes(6).toString('hex')}.upgrade.tmp`
-    try {
-      await this.writeReplacement(tmp, meta, events)
-      const beforeCommit = fileRevision(await stat(path, { bigint: true }))
-      if (beforeCommit !== expectedRevision) {
-        throw new SessionPersistenceRevisionConflictError(
-          `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
-        )
-      }
-      /* v8 ignore next -- Windows uses its write-through replacement primitive. */
-      if (process.platform === 'win32') {
-        await replaceFileWin32(tmp, path)
-      } else {
-        await rename(tmp, path)
-        await this.syncDirPosix(dirname(path))
-      }
-    } finally {
-      await rm(tmp, { force: true })
-    }
   }
 
   /** List valid unique stored sessions' metadata (header line only — no full-log parse). */
@@ -618,15 +509,9 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
           : await this.readFirstLine(path, signal)
         signal?.throwIfAborted()
         if (first === undefined) continue // empty/half-written file
-        const rawMeta = parseStoredHeaderMeta(first)
-        if (rawMeta === undefined) continue // not a session header
-        const rawId = rawMeta['id']
-        const expectedId = typeof rawId === 'string'
-          ? SessionId(rawId)
-          : SessionId('')
-        const meta = decodeStoredSessionHeader(rawMeta, expectedId, { kind: 'jsonl', path })
-        this.storedIdentity(rawMeta, path)
-        await this.assertStoredIdentity(path, rawMeta, undefined, signal)
+        const meta = parseHeaderMeta(first)
+        if (meta === undefined) continue // not a session header
+        await this.assertStoredIdentity(path, meta, undefined, signal)
         signal?.throwIfAborted()
         if (ids.has(meta.id)) {
           throw new Error(`duplicate JSONL session id "${meta.id}" appears in multiple project directories`)
@@ -744,34 +629,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       await handle.close()
     }
     return tmp
-  }
-
-  /** Stream one complete current-format replacement into a synced temp file. */
-  private async writeReplacement(
-    path: string,
-    meta: SessionHeader,
-    events: AsyncIterable<SessionEvent>,
-  ): Promise<void> {
-    const handle = await open(path, 'wx', 0o600)
-    try {
-      const header = JSON.stringify(toHeaderLine(meta)) + '\n'
-      await handle.writeFile(this.compression === 'zstd' ? await compressZstdFrame(header) : header)
-      let batch: SessionEvent[] = []
-      const writeBatch = async (): Promise<void> => {
-        if (batch.length === 0) return
-        const body = eventLines(batch, this.packChunks) + '\n'
-        await handle.writeFile(this.compression === 'zstd' ? await compressZstdFrame(body) : body)
-        batch = []
-      }
-      for await (const event of events) {
-        batch.push(event)
-        if (batch.length === REPLACEMENT_BATCH_SIZE) await writeBatch()
-      }
-      await writeBatch()
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
   }
 
   /** Encode the header and first batch without combining their frame boundaries. */
@@ -969,43 +826,24 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   /** Reject metadata that does not identify the selected physical log. */
   private async assertStoredIdentity(
     path: string,
-    meta: unknown,
+    meta: SessionHeader,
     expectedId?: SessionId,
     signal?: AbortSignal,
   ): Promise<void> {
     signal?.throwIfAborted()
-    const identity = this.storedIdentity(meta, path)
-    if (expectedId !== undefined && identity.id !== expectedId) {
-      throw new Error(`corrupt session log "${path}": requested id "${expectedId}" does not match header id "${identity.id}"`)
+    if (expectedId !== undefined && meta.id !== expectedId) {
+      throw new Error(`corrupt session log "${path}": requested id "${expectedId}" does not match header id "${meta.id}"`)
     }
     let expectedPath: string
     try {
-      expectedPath = logPath(this.root, identity.cwd, identity.id, this.compression)
+      expectedPath = logPath(this.root, meta.cwd, meta.id, this.compression)
     } catch (error) {
       throw new Error(`corrupt session log "${path}": header id cannot name a storage path`, { cause: error })
     }
     if (path !== expectedPath && !await this.sameFile(path, expectedPath, signal)) {
-      throw new Error(`corrupt session log "${path}": header id "${identity.id}" and cwd identify "${expectedPath}"`)
+      throw new Error(`corrupt session log "${path}": header id "${meta.id}" and cwd identify "${expectedPath}"`)
     }
     signal?.throwIfAborted()
-  }
-
-  /** Read storage identity fields shared by every Session format version. */
-  private storedIdentity(meta: unknown, path: string): { id: SessionId; cwd?: string } {
-    if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) {
-      throw new Error(`corrupt session log "${path}": header is not a record`)
-    }
-    const record = meta as Record<string, unknown>
-    if (typeof record['id'] !== 'string') {
-      throw new Error(`corrupt session log "${path}": header id is not a string`)
-    }
-    if (record['cwd'] !== undefined && typeof record['cwd'] !== 'string') {
-      throw new Error(`corrupt session log "${path}": header cwd is not a string`)
-    }
-    return {
-      id: SessionId(record['id']),
-      ...typeof record['cwd'] === 'string' ? { cwd: record['cwd'] } : {},
-    }
   }
 
   /**
