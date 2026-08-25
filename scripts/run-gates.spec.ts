@@ -71,6 +71,7 @@ describe('gate graph validation', () => {
     'check-all',
     'hygiene',
     'doc-sync',
+    'doc-quick',
   ] as const)('constructs and executes preflight for a valid non-empty %s graph', async (mode) => {
     const subject = withPnpmEntrypoint(() => gatesForMode(mode))
     const execute = vi.fn(async (item: Gate) => resultFor(item))
@@ -88,6 +89,13 @@ describe('gate graph validation', () => {
     const ids = withPnpmEntrypoint(() => gatesForMode('doc-sync').map(subject => subject.id))
 
     expect(ids).toContain('subsystem-pages')
+  })
+
+  it('derives the quick documentation aggregate from marked doc-sync leaves', () => {
+    const full = withPnpmEntrypoint(() => gatesForMode('doc-sync'))
+    const quick = withPnpmEntrypoint(() => gatesForMode('doc-quick'))
+
+    expect(quick).toEqual(full.filter(gate => gate.quick === true))
   })
 
   it('keeps the hygiene aggregate aligned with the package script checks', () => {
@@ -171,6 +179,9 @@ describe('gate graph validation', () => {
     expect(byId.get('coverage-exempt-heavy')?.allowFailure).not.toBe(true)
     expect(byId.get('coverage')?.needs).toContain('build')
     expect(byId.get('coverage-exempt-heavy')?.needs).toContain('build')
+    expect(byId.get('coverage-exempt-heavy')?.args).toContain(
+      'packages/experimental/webworker-packer/tests/image-loadable.spec.ts',
+    )
     expect(observational).not.toHaveLength(0)
     for (const gate of observational) {
       const completeGate = byId.get(gate.id)
@@ -219,6 +230,7 @@ describe('gate graph validation', () => {
     expect(coverage).toMatchObject({
       displayCommand: 'DSH_COVERAGE_PARTITIONS=3 pnpm run test:coverage:partitioned',
       args: ['/private/pnpm.cjs', 'run', 'test:coverage:partitioned'],
+      env: { DSH_COVERAGE_EXEMPT_HEAVY: '1' },
       streamOutput: true,
     })
   })
