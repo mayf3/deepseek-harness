@@ -2,8 +2,10 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import type { TeamTaskId, TeamTaskView as TeamTask, TeamView } from '@deepseek-ai/dsh-team/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type {
+  TeamTaskId, TeamTaskView as TeamTask, TeamView,
+} from '@deepseek-ai/dsh-experimental-agent-team/client'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import {
@@ -501,7 +503,7 @@ describe('TeamAction', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: /failed-worker/u }).disabled).toBe(true)
     expect(screen.getByRole<HTMLButtonElement>('button', { name: /provisioning-worker/u }).disabled).toBe(true)
 
-    fireEvent.click(screen.getByRole('button', { name: /^workerrunning/u }))
+    fireEvent.click(screen.getByRole('button', { name: /^worker运行中/u }))
     expect(await screen.findByText('Error: navigation failed')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: zh.refresh }))
     await waitFor(() => { expect(load).toHaveBeenCalledTimes(2) })

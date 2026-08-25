@@ -106,13 +106,6 @@ membership(agent: Agent): TeamMembership
 listMembers(agent: Agent): TeamMemberView[]
 
 /**
- * Read the current roster and non-deleted task board for a browser client.
- * @param agent - exact live Team member used as the authority credential.
- * @returns detached current roster and task views.
- */
-@Remote('view') view(agent: Agent): TeamView
-
-/**
  * Create one named, continuable direct child of the Team Lead.
  * @param caller - exact live Lead Agent.
  * @param request - immutable name, description, prompt, context mode, provider, and cancellation.
@@ -135,14 +128,6 @@ async sendMessage(caller: Agent, request: SendTeamMessageRequest): Promise<SendT
  * @returns the revision-one task view.
  */
 async createTask(caller: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView>
-
-/**
- * Create one shared task for a browser client.
- * @param agent - exact live Team member creating the task.
- * @param request - task text, blockers, and advisory write scopes.
- * @returns the revision-one task view.
- */
-@Remote('createTask') createTaskForClient(agent: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskView>
 
 /**
  * Return one task, including a deleted tombstone.
@@ -168,14 +153,6 @@ listTasks(caller: Agent): TeamTaskView[]
 async updateTask(caller: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskView>
 
 /**
- * Apply one task mutation for a browser client while preserving CAS conflicts.
- * @param agent - exact live Team member authorizing the mutation.
- * @param request - task identity, expected revision, action, and action fields.
- * @returns the committed task or a browser-safe Team rejection.
- */
-@Remote('updateTask') async updateTaskForClient(agent: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskMutationResult>
-
-/**
  * Wait for the next Team-domain or member-status change.
  * @param caller - exact live Team member waiting for activity.
  * @param timeoutMs - bounded wait duration from ten seconds through one hour.
@@ -198,6 +175,29 @@ interrupt(caller: Agent, targetName: string): { previousStatus: 'running' | 'idl
  * @returns Team membership, or undefined for non-Team subagents and stale identities.
  */
 tryMembership(agent: Agent): TeamMembership | undefined
+
+/**
+ * Read the current roster and non-deleted task board through the generated Remote API.
+ * @param agent - exact live Team member used as the authority credential.
+ * @returns detached current roster and task views.
+ */
+@Remote('view') remoteView(agent: Agent): TeamView
+
+/**
+ * Create one shared task through the generated Remote API.
+ * @param agent - exact live Team member creating the task.
+ * @param request - task text, blockers, and advisory write scopes.
+ * @returns the revision-one task or a typed Team rejection.
+ */
+@Remote('createTask') remoteCreateTask(agent: Agent, request: CreateTeamTaskRequest): Promise<TeamTaskMutationResult>
+
+/**
+ * Apply one task mutation and preserve Team rejections as business results.
+ * @param agent - exact live Team member authorizing the mutation.
+ * @param request - task identity, expected revision, action, and action fields.
+ * @returns the committed task or a typed Team rejection.
+ */
+@Remote('updateTask') remoteUpdateTask(agent: Agent, request: UpdateTeamTaskRequest): Promise<TeamTaskMutationResult>
 ```
 
 Types: [Agent](core.zh.md)

@@ -1,8 +1,8 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
+import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { TeamMemberView as TeamRosterMember, TeamTaskId } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team/remote'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
@@ -60,14 +60,14 @@ async function bench(options: {
   }
   ctx.provide('remote.agentTeams', {
     view: (...args: unknown[]) => {
-      calls.push({ method: 'teams/view', args })
+      calls.push({ method: 'agentTeams/view', args })
       return Promise.resolve(options.remoteFailure === 'view'
         ? failure
         : { ok: true as const, value: view })
     },
-    createTask: answer('teams/createTask', task),
+    createTask: answer('agentTeams/createTask', task),
     updateTask: (...args: unknown[]) => {
-      calls.push({ method: 'teams/updateTask', args })
+      calls.push({ method: 'agentTeams/updateTask', args })
       if (options.remoteFailure === 'update') return Promise.resolve(failure)
       return Promise.resolve(options.conflict
         ? {
@@ -146,7 +146,7 @@ describe('ui-team browser plugin', () => {
     expect(inject).toEqual(['sessions', 'remote', 'slots', 'locale'])
     expect(b.entry()).toMatchObject({
       options: { id: 'agent-team', order: 20 },
-      locale: 'team',
+      locale: 'agent-team',
     })
     expect(b.remote.mount).toHaveBeenCalledOnce()
     expect(b.remote.mount).toHaveBeenCalledWith(REMOTE)
@@ -162,7 +162,7 @@ describe('ui-team browser plugin', () => {
       taskId: TASK_ID, expectedRevision: 2, action: 'reassign', owner: 'worker',
     })).ok).toBe(true)
     expect(b.calls.map(call => call.method)).toEqual([
-      'teams/view', 'teams/createTask', 'teams/updateTask', 'teams/updateTask',
+      'agentTeams/view', 'agentTeams/createTask', 'agentTeams/updateTask', 'agentTeams/updateTask',
     ])
     expect(b.calls.at(-1)?.args[1]).toMatchObject({ owner: 'worker' })
 
@@ -251,7 +251,7 @@ describe('ui-team browser plugin', () => {
       status: 'inactive',
       diagnostics: [],
     })
-    expect(b.calls[0]).toEqual({ method: 'teams/view', args: [SESSION] })
+    expect(b.calls[0]).toEqual({ method: 'agentTeams/view', args: [SESSION] })
     expect(b.navigation).toEqual([
       ['refresh', SESSION],
       ['open', {

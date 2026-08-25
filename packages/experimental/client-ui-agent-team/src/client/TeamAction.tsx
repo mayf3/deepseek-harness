@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   TeamMemberView as TeamRosterMember,
   TeamTaskAction,
@@ -7,7 +7,7 @@ import type {
   TeamTaskMutationResult,
   TeamTaskView as TeamTask,
   TeamView,
-} from '@deepseek-ai/dsh-team/client'
+} from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   IconCheckOutline14, IconCloseOutline16, IconEditOutline16, IconPlusOutline16,
@@ -15,7 +15,7 @@ import {
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { TeamKey } from './locales.ts'
+import { NS, type TeamKey } from './locales.ts'
 import css from './TeamAction.module.css'
 
 /** Generated Remote result consumed directly by the Team UI. */
@@ -48,7 +48,7 @@ export interface TeamActionInjected {
 
 /** Full props of the Team conversation-header action. */
 export type TeamActionProps =
-  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & PropsLocale<'team'>
+  PropsRuntime<'conversation.session.header.actions'> & TeamActionInjected & PropsLocale<typeof NS>
 
 interface Draft {
   subject: string
@@ -78,6 +78,16 @@ function statusKey(status: TeamTask['status']): TeamKey {
     case 'completed': return 'status.completed'
     /* v8 ignore next -- Team views omit deleted task tombstones. */
     case 'deleted': return 'status.completed'
+  }
+}
+
+function memberStatusKey(status: TeamRosterMember['status']): TeamKey {
+  switch (status) {
+    case 'running': return 'memberStatus.running'
+    case 'idle': return 'memberStatus.idle'
+    case 'inactive': return 'memberStatus.inactive'
+    case 'provisioning': return 'memberStatus.provisioning'
+    case 'failed': return 'memberStatus.failed'
   }
 }
 
@@ -278,7 +288,7 @@ export function TeamAction({
                       <StateDot state={member.status === 'running' ? 'ongoing' : member.status === 'failed' ? 'error' : 'done'} />
                       <span className={css.memberText}>
                         <span>{member.name}</span>
-                        <small>{member.status}{member.model === undefined ? '' : ` · ${t('model')}: ${member.model}`}</small>
+                        <small>{t(memberStatusKey(member.status))}{member.model === undefined ? '' : ` · ${t('model')}: ${member.model}`}</small>
                         {member.diagnostics.map(diagnostic => <small key={diagnostic} className={css.diagnostic}>{diagnostic}</small>)}
                       </span>
                     </button>

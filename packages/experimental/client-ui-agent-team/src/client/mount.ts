@@ -5,20 +5,23 @@ import type {
   TeamView,
 } from '@deepseek-ai/dsh-experimental-agent-team/client'
 import type {} from '@deepseek-ai/dsh-experimental-agent-team/remote'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import {
   TeamAction, type TeamActionInjected, type TeamActionResult, type TeamTaskActionResult,
 } from './TeamAction.tsx'
-import { en, zh, type TeamKey } from './locales.ts'
+import { en, NS, zh, type TeamKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     /** Agent Teams roster and task-board copy. */
-    team: TeamKey
+    'agent-team': TeamKey
   }
 }
 
@@ -26,7 +29,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const inject = ['sessions', 'remote', 'slots', 'locale']
 
 function registerUi(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register('team', { zh, en }), 'client-ui-agent-team: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'client-ui-agent-team: dictionaries')
   const sessions = ctx.sessions
   const leadSessionId = (sessionId: SessionId): SessionId => {
     const address = sessions.binding(sessionId)?.session.getSnapshot().subagent?.address
@@ -66,7 +69,7 @@ function registerUi(ctx: ClientContext): void {
       name: 'conversation.session.header.actions',
       id: 'agent-team',
       order: 20,
-      locale: 'team',
+      locale: NS,
       inject: () => actions,
     }, TeamAction),
   )

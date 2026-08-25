@@ -1,5 +1,8 @@
 /** Agent Teams Web dictionaries. */
 
+/** Locale namespace owned by the Agent Teams Web UI. */
+export const NS = 'agent-team'
+
 /** Simplified Chinese dictionary and key source. */
 export const zh = {
   trigger: 'Agent Team',
@@ -29,6 +32,11 @@ export const zh = {
   ready: '可开始',
   blocked: '被依赖阻塞',
   conflict: '任务状态已变化，已重新加载；请检查后重试。',
+  'memberStatus.running': '运行中',
+  'memberStatus.idle': '空闲',
+  'memberStatus.inactive': '未运行',
+  'memberStatus.provisioning': '准备中',
+  'memberStatus.failed': '失败',
   'status.pending': '待处理',
   'status.in_progress': '进行中',
   'status.completed': '已完成',
@@ -66,6 +74,11 @@ export const en = {
   ready: 'Ready',
   blocked: 'Blocked by dependencies',
   conflict: 'Task state changed and was reloaded. Review it before retrying.',
+  'memberStatus.running': 'Running',
+  'memberStatus.idle': 'Idle',
+  'memberStatus.inactive': 'Inactive',
+  'memberStatus.provisioning': 'Provisioning',
+  'memberStatus.failed': 'Failed',
   'status.pending': 'Pending',
   'status.in_progress': 'In progress',
   'status.completed': 'Completed',

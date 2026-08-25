@@ -6,7 +6,7 @@ English | [中文](2026-08-06-agent-teams-web.zh.md)
 
 ## Problem
 
-The durable Agent Teams runtime owns roster, mailbox, and task state but exposes only model tools and Host service methods. Web users need to inspect teammate activity, manage shared tasks with the same compare-and-set rules, and open a teammate conversation. Agent Teams is still experimental, so these capabilities must not add Team-specific contracts or dependencies to the stable API Proxy, Client runtime, Subagent UI, or Web bundle.
+The durable Agent Teams runtime owns roster, mailbox, and task state but exposes only model tools and Host service methods. Web users need to inspect teammate activity, manage shared tasks with the same compare-and-set rules, and open a teammate conversation. Agent Teams is still experimental, so these capabilities must not add Team-specific contracts or dependencies to the stable API Proxy, Session Controller, Client UI packages, or Web bundle.
 
 ## Decision
 
@@ -40,4 +40,4 @@ Team-service unit tests, generation, and a plain-Node built-artifact smoke verif
 
 ## Consequences
 
-The Team service is the single Cordis owner for both domain state and the Remote operations that expose selected Team values. The stable API Proxy, Client runtime, Subagent UI, and Web bundle remain Team-agnostic. Source-checkout users must add two ordered experimental profile layers to a Web profile. Promotion renames the experimental npm packages but does not require a new generated namespace.
+The Team service is the single Cordis owner for both domain state and the Remote operations that expose selected Team values. The stable API Proxy, Session Controller, Client UI packages, and Web bundle remain Team-agnostic. Source-checkout users must add two ordered experimental profile layers to a Web profile. Promotion renames the experimental npm packages but does not require a new generated namespace.
