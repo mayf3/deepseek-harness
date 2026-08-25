@@ -15,7 +15,6 @@ import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
-import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type {
   InitializeParams,
@@ -61,8 +60,6 @@ function subagentParentOf(carrier: Scoped<SubagentRuntime>): Agent {
 export interface HarnessSdkJsonRpcServerOptions {
   /** Report max-token termination as an accepted result instead of an infrastructure error. */
   maxTokensAsSuccess?: boolean
-  /** Restrict each SDK-created root agent to an explicit subset of global tools. */
-  toolFilter?: ToolRestriction
 }
 
 function successStatus(reason: string, options: HarnessSdkJsonRpcServerOptions): 'ok' | 'error' {
@@ -256,7 +253,6 @@ export class HarnessSdkJsonRpcServer {
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
-    const toolFilter = this.options.toolFilter
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(sessionId),
       meta: { cwd: this.cwd },
@@ -265,9 +261,6 @@ export class HarnessSdkJsonRpcServer {
         model: this.model,
         ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
       },
-      ...toolFilter === undefined
-        ? {}
-        : { setup: (agentCtx: Context) => { agentCtx.tools.restrict(toolFilter) } },
     })
     const rec: SessionRecord = { handle }
     this.sessions.set(sessionId, rec)

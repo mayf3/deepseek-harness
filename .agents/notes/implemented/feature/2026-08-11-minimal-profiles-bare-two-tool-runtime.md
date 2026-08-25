@@ -22,7 +22,7 @@ The standalone [`@deepseek-ai/dsh-sdk-minimal` bundle](../../../../packages/bund
 
 The Web replay boots the complete Web host, creates the agent through the preset service, and asserts that the scoped filesystem is bare, no scoped compaction service exists, no system-prompt-owned runtime-context message was appended, and the assembled request contains exactly the fixed prompt and two tools. It then executes persistent Bash and the editor against the real scoped services.
 
-The SDK keyless process test boots real `dsh --profile sdk-minimal`, injects an environment-selected prompt, and asserts the generated one-bundle manifest, assembled prompt, exact two-tool catalog, and absence of every system-prompt-owned runtime-context message. Python SDK bundled-runtime coverage initializes the standalone profile through each available packaged carrier with environment-selected model, model capacity, and prompt values, then executes the selected persistent shell and editor. Cordis validation checks that both configurations resolve their declared plugins and configuration fields.
+The SDK keyless source test boots real `dsh --profile sdk-minimal`, completes a turn with an environment-selected prompt, and asserts the generated one-bundle manifest. The Python SDK bundled-runtime snapshot owns the assembled prompt, exact two-tool catalog, and absence of every system-prompt-owned runtime-context message. Packaged-runtime coverage initializes the standalone profile through each available carrier with environment-selected model, model capacity, and prompt values, then executes the selected persistent shell and editor. Cordis validation checks that both configurations resolve their declared plugins and configuration fields.
 
 ## Alternatives considered
 

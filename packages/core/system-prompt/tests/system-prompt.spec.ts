@@ -49,21 +49,6 @@ describe('SystemPrompt', () => {
       expect(renderPrompt(assembly)).toBe('You are a helpful software engineer assistant.')
     })
 
-    it('can make the deployment persona the complete system prompt', async () => {
-      const ctx = new Context()
-      await ctx.plugin(SystemPrompt, {
-        persona: 'You are a focused SDK agent.',
-        personaComplete: true,
-      })
-      ctx.systemPrompt.section({ name: 'tool:future', order: 100, text: 'Future tool guidance.' })
-
-      const assembly = await ctx.systemPrompt.assemble()
-      expect(assembly.sections).toEqual([
-        { name: 'deployment:persona', text: 'You are a focused SDK agent.' },
-      ])
-      expect(renderPrompt(assembly)).toBe('You are a focused SDK agent.')
-    })
-
     it('can suppress runtime context without evaluating providers or accepting waterfall additions', async () => {
       const ctx = new Context()
       await ctx.plugin(SystemPrompt, { includeRuntimeContext: false })
