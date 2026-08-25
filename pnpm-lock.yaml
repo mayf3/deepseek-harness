@@ -1597,12 +1597,12 @@ importers:
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-credentials':
-        specifier: workspace:^
-        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:^
+        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../host/apiproxy
@@ -5559,9 +5559,6 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
-      '@deepseek-ai/dsh-goal':
-        specifier: workspace:^
-        version: link:../../goal/goal
       '@deepseek-ai/dsh-host-directory-picker':
         specifier: workspace:^
         version: link:../directory-picker
