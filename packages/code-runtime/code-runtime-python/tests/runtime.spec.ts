@@ -1843,6 +1843,27 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error?.kind).not.toBe('worker-exit')
   }, 90_000)
 
+  it('keeps a float completion exact when the program mutates the decimal context', async () => {
+    // The float encoder's Decimal(repr(value)).normalize() used the process
+    // GLOBAL decimal context: a legitimate program setting
+    // `getcontext().prec = 2` silently rounded the completion value's digits,
+    // and `traps[Inexact] = True` made the encode raise, misclassifying a
+    // successful run as an exception. A fixed module-level Context(prec=28)
+    // makes the spelling decision context-independent.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'from decimal import getcontext',
+        'getcontext().prec = 2',
+        'getcontext().traps[__import__("decimal").Inexact] = True',
+        'return 1.2345678901234567',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(1.2345678901234567)
+  }, 15_000)
+
   it('bounds an over-cap exception-group nesting on the copy', async () => {
     // Exception groups link through `exceptions`, not the cause/context
     // dunders, so the cap has to count that edge too — otherwise a deeply
@@ -2951,7 +2972,6 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     }
     expect(still).toBe(true)
   }, 20_000)
-
 
   it('dispose awaits reaping of a same-group survivor from a completed run', async () => {
     // The quiescence contract also holds for a run that ALREADY resolved: the run

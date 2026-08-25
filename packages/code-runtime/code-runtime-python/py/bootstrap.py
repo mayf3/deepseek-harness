@@ -25,7 +25,15 @@ import signal
 import sys
 import threading
 import traceback
-from decimal import Decimal
+from decimal import Context, Decimal
+
+# The float encoder must NOT depend on the process-global decimal context: a
+# legitimate program may set `getcontext().prec = 2` (silently rounding the
+# completion value's digits) or `traps[Inexact] = True` (making the encode
+# raise, misclassifying a successful run as an exception). A fixed context with
+# prec=28 (more than the 17 significant digits a double needs) makes the
+# normalize() spelling decision context-independent.
+_FLOAT_CONTEXT = Context(prec=28)
 from pathlib import Path
 from typing import Any
 
@@ -1727,7 +1735,7 @@ def _dump_float(value: float) -> str:
     if value.is_integer() and value > float(2**53 - 1):
         # The host's BigInt branch: exact digits, not shortest-round-trip.
         return str(int(value))
-    parts = Decimal(repr(value)).normalize().as_tuple()
+    parts = Decimal(repr(value)).normalize(context=_FLOAT_CONTEXT).as_tuple()
     digits = "".join(str(digit) for digit in parts.digits)
     k = len(digits)
     n = parts.exponent + k
