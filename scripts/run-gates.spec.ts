@@ -437,6 +437,15 @@ describe('Node 24 lane ownership', () => {
     expect(subject.find(item => item.id === 'web-snapshot')).toMatchObject({
       displayCommand: 'DSH_SNAPSHOT=replay pnpm run test:web:built',
       env: { DSH_SNAPSHOT: 'replay' },
+      after: [
+        'publint',
+        'lint-and-duplication',
+        'snapshot',
+        'expected-output',
+        'doc-typecheck',
+        'node-next-types',
+        'built-bin-smoke',
+      ],
     })
   })
 })
