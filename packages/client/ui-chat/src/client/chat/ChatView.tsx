@@ -13,7 +13,6 @@ import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
 const FOLLOW_THRESHOLD = 24
-const MAX_PAGING_ANCHOR_PROBES = 64
 
 /** Active column host when present; otherwise the view-local scroller. */
 function scrollerOf(from: HTMLElement): HTMLElement {
@@ -46,38 +45,30 @@ function pagingAnchor(list: HTMLElement, scrollport: HTMLElement): HTMLElement |
   const viewport = scrollport.getBoundingClientRect()
   const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
   const visibleBottom = composer?.getBoundingClientRect().top ?? viewport.bottom
-  // Scroll events are hot: walk down one hit-test line and stop at the first
-  // hit row with layout before considering the full mounted set. Starting at the
-  // viewport edge preserves the reader's leading row when a later row is
-  // inserted between already-visible messages. The fallback keeps jsdom and
-  // pre-layout states deterministic; a virtualizer naturally bounds it.
+  // The leading edge preserves nested call identity when it hits a row.
+  // Chrome/gap misses use logarithmic layout reads over the ordered flex rows.
   if (typeof document.elementsFromPoint === 'function' && visibleBottom > viewport.top) {
     const content = list.getBoundingClientRect()
     const left = Math.max(viewport.left, content.left)
     const right = Math.min(viewport.right, content.right)
     const x = left + Math.max(0, right - left) / 2
-    const height = visibleBottom - viewport.top
-    let probes = 0
-    for (
-      let offset = 1;
-      offset < height && probes < MAX_PAGING_ANCHOR_PROBES;
-      offset = offset === 1 ? 16 : offset + 16
-    ) {
-      probes++
-      for (const element of document.elementsFromPoint(x, viewport.top + offset)) {
-        const row = element instanceof HTMLElement
-          ? element.closest<HTMLElement>('[data-chat-anchor-key]')
-          : null
-        if (row !== null && list.contains(row)) return row
-      }
+    for (const element of document.elementsFromPoint(x, viewport.top + 1)) {
+      const row = element instanceof HTMLElement
+        ? element.closest<HTMLElement>('[data-chat-anchor-key]')
+        : null
+      if (row !== null && list.contains(row)) return row
     }
   }
-  const rows = [...list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')]
-  const visibleRows = rows.filter((row) => {
-    const rect = row.getBoundingClientRect()
-    return rect.bottom > viewport.top && rect.top < visibleBottom
-  })
-  return visibleRows[0] ?? rows[0] ?? null
+  const rows = list.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty)')
+  let low = 0
+  let high = rows.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (rows.item(middle).getBoundingClientRect().bottom > viewport.top) high = middle
+    else low = middle + 1
+  }
+  const row = rows[low]
+  return row !== undefined && row.getBoundingClientRect().top < visibleBottom ? row : rows[0] ?? null
 }
 
 type ChatScrollPosition = NonNullable<ReturnType<ChatViewSlotProps['chatScroll']['read']>>
