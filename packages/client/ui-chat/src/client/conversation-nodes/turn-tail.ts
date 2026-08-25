@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
+import { deriveTurnTokenUsage } from '@deepseek-ai/dsh-token-meter/client'
 import type {
   AssistantChatData, FinalAssistantChatData, TurnTailChatData,
 } from '../contract/chat-nodes.ts'
@@ -57,10 +58,13 @@ function turnCoordinates(event: Parameters<ConversationNodeDefinition['match']>[
 } | undefined {
   if (event.type === 'assistant/message'
     || event.type === 'assistant/chunk'
+    || event.type === 'step/start'
     || event.type === 'step/end') {
     return { turn: event.data.turn, step: event.data.step }
   }
-  if (event.type === 'llm/retry') return { turn: event.data.turn, step: event.data.step }
+  if (event.type === 'llm/retry' || event.type === 'llm/retry-started') {
+    return { turn: event.data.turn, step: event.data.step }
+  }
   return undefined
 }
 
@@ -138,6 +142,9 @@ function tailData(context: ConversationNodeContext<TurnTailState>): TurnTailChat
     }
   }
   const metrics = deriveTurnMetrics(finalized.map(candidate => candidate.finalNode)).get(end.event.data.turn)
+  const tokenUsage = context.start?.event.type === 'turn/start'
+    ? deriveTurnTokenUsage(context.matches.map(match => match.event))
+    : undefined
   return {
     turn: end.event.data.turn,
     seq: end.event.seq,
@@ -146,6 +153,7 @@ function tailData(context: ConversationNodeContext<TurnTailState>): TurnTailChat
     branchUnavailable: closing === null || latestTranscriptSeq !== closing.finalNode.seq,
     ...metrics?.ttftMs === undefined ? {} : { ttftMs: metrics.ttftMs },
     ...metrics?.tokensPerSecond === undefined ? {} : { tokensPerSecond: metrics.tokensPerSecond },
+    ...tokenUsage === undefined ? {} : { tokenUsage },
   }
 }
 

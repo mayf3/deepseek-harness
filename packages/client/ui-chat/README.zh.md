@@ -19,3 +19,4 @@ Chat 会为非空的初始或恢复请求、显式序列起点，或 system 字�
 ## 已知限制与暂缓事项
 
 - **视图只反映已加载的 Session 窗口**——只有 Session Controller 加载前一页 event 后，更早的 transcript node 才会出现。
+- **单轮次 token 用量采用 fail-closed 方式**——只有已加载窗口包含 `turn/start`，且每个已开始的模型 attempt 都具有安全、精确的用量时，已完成轮次才显示 disclosure。缺失的 bucket 会被省略，记账不完整或矛盾时则隐藏整条 disclosure。

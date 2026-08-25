@@ -500,6 +500,44 @@ describe('built-in conversation node Definitions', () => {
     expect(tail.branchUnavailable).toBe(true)
   })
 
+  it('publishes exact Turn usage only after pagination supplies the full lifecycle window', () => {
+    const value = assembler([
+      at(3, 'assistant/message', {
+        turn: 1,
+        step: 1,
+        message: assistantMessage('usage-assistant', 'done'),
+        usage: {
+          inputTokens: 10,
+          outputTokens: 4,
+          totalTokens: 17,
+          cacheReadTokens: 2,
+          cacheWriteTokens: 1,
+          reasoningTokens: 1,
+        },
+      }, { surfaceOp: 'append' }),
+      at(4, 'step/end', { turn: 1, step: 1 }),
+      at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+    ], true)
+
+    expect((node(snapshot(value), 'turn-tail')?.data as TurnTailChatData).tokenUsage).toBeUndefined()
+
+    value.prepend([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+    ], false)
+    value.flush()
+
+    expect((node(snapshot(value), 'turn-tail')?.data as TurnTailChatData).tokenUsage).toEqual({
+      uncachedInputTokens: 10,
+      outputTokens: 4,
+      totalTokens: 17,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 1,
+      reasoningTokens: 1,
+      routes: [{ provider: 'fake', model: 'fake' }],
+    })
+  })
+
   it('replays inbox predecessors after prepend and reclassifies the dependent message as steering', () => {
     const value = assembler([
       at(3, 'user/message', textMessage('steer-1', 'change direction'), { surfaceOp: 'append' }),
