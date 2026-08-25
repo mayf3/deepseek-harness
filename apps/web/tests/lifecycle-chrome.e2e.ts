@@ -21,7 +21,7 @@ import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
@@ -79,7 +79,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     await page.locator('[data-composer-input]').first().press('Escape')
     await expect.poll(() => menu.count()).toBe(0)
     const input = page.locator('[data-composer-input]').first()
-    await input.fill('/')
+    await writeComposerDraft(page, input, '/')
     await menu.waitFor({ timeout: 10_000 })
     const typedBox = await menu.boundingBox()
     expect(launchedBox).not.toBeNull()
@@ -88,13 +88,13 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
     expect(Math.abs(
       launchedBox!.y + launchedBox!.height - typedBox!.y - typedBox!.height,
     )).toBeLessThan(1)
-    await input.fill('/cpt')
+    await writeComposerDraft(page, input, '/cpt')
     await expect.poll(() => menu.getByRole('option').allTextContents()).toEqual([
       'compactCompact older conversation history',
     ])
     const fuzzySnapshot = await captureStableAria(page, '[role="listbox"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(FUZZY_COMMAND_MENU_EXPECTED, fuzzySnapshot, MODE)
-    await input.fill('')
+    await writeComposerDraft(page, input, '')
     await expect.poll(() => menu.count()).toBe(0)
   })
 
@@ -175,7 +175,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await compareOrRefreshGolden(HERO_EXPECTED, snapshot, MODE)
     }
     const settled = scaffold.whenTurnSettled()
-    await input.fill(PROMPT)
+    await writeComposerDraft(page, input, PROMPT)
     const observeTurn = async () => {
       const originalViewport = page.viewportSize() ?? { width: 1680, height: 1000 }
       if (MODE !== 'record') await page.setViewportSize({ width: 480, height: 1000 })

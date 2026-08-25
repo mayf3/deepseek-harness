@@ -110,6 +110,29 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
     .waitFor({ timeout: 15_000 })
 }
 
+/**
+ * Replace the composer draft through per-key gestures. `fill()` issues
+ * select-all and insertText inside one task; directly after a trigger-menu or
+ * chip interaction Lexical's internal selection has not yet absorbed the DOM
+ * selection, and the batched edit lands on a null selection and is silently
+ * dropped, leaving the previous draft in place. Real keystrokes leave room for
+ * `selectionchange` between keys, which is also what a user's typing does.
+ * @param page - the page under test.
+ * @param input - the `[data-composer-input]` surface locator.
+ * @param text - the replacement draft; `''` clears the draft. Must not
+ * contain a newline: typed Enter submits the composer.
+ */
+export async function writeComposerDraft(
+  page: Page,
+  input: ReturnType<Page['locator']>,
+  text: string,
+): Promise<void> {
+  await input.click()
+  await page.keyboard.press('ControlOrMeta+A')
+  if (text === '') await page.keyboard.press('Backspace')
+  else await page.keyboard.type(text)
+}
+
 /** Failure evidence goes to the gitignored .artifacts/ (repo convention). */
 export async function saveFailureShot(page: Page, name: string): Promise<void> {
   const dir = fileURLToPath(new URL('../../../.artifacts', import.meta.url))

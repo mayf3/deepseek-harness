@@ -25,7 +25,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/reference-composer', import.meta.url))
 const MENU_EXPECTED = join(SNAPSHOT_DIR, 'menu.expected.md')
@@ -108,22 +108,6 @@ function targetSessionFixture(): string {
     ...session.events.map(event => JSON.stringify(event)),
     '',
   ].join('\n')
-}
-
-/**
- * Replace the draft through per-key gestures. `fill()` issues select-all and
- * insertText inside one task; directly after a chip deletion Lexical's internal
- * selection has not yet absorbed the DOM selection, and the batched insertText
- * lands on a null selection and is dropped. Real keystrokes leave room for
- * `selectionchange` between keys, which is also what a user's typing does.
- * @param page - the page under test.
- * @param input - the composer surface locator.
- * @param text - the replacement draft.
- */
-async function writeDraft(page: Page, input: ReturnType<Page['locator']>, text: string): Promise<void> {
-  await input.click()
-  await page.keyboard.press('ControlOrMeta+A')
-  await page.keyboard.type(text)
 }
 
 describe.skipIf(MODE === 'record')('web e2e: file and session references through the real host', () => {
@@ -264,7 +248,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     // Settle: Enter on the highlighted folder row resolves the folder itself
     // as an atomic chip — folder glyph, no trigger character, one unit.
-    await writeDraft(page, input, '@folderx')
+    await writeComposerDraft(page, input, '@folderx')
     // First folder query on this page: allow the Host index a cold start.
     await menu.getByRole('option', { name: /Folder · folderx\// }).waitFor({ timeout: 60_000 })
     await page.keyboard.press('Enter')
@@ -275,14 +259,14 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
     // Tab drills: the literal descent text stays editable and the open menu
     // lists the folder's children.
-    await writeDraft(page, input, '@folderx')
+    await writeComposerDraft(page, input, '@folderx')
     await menu.getByRole('option', { name: /Folder · folderx\// }).waitFor()
     await page.keyboard.press('Tab')
     await expect.poll(() => input.textContent()).toBe('@folderx/')
     await menu.getByRole('option', { name: /File · child\.txt/ }).waitFor()
 
     // The row chevron drills the same way by pointer.
-    await writeDraft(page, input, '@folderx')
+    await writeComposerDraft(page, input, '@folderx')
     const row = menu.getByRole('option', { name: /Folder · folderx\// })
     await row.waitFor()
     await row.getByRole('button', { name: 'Browse folder' }).click()
