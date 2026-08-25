@@ -85,6 +85,9 @@ function resolveClientExport(packagePath: string, pkg: ClientPackageManifest): s
   return resolve(dirname(packagePath), relative)
 }
 
+const comboUrl = (ids: readonly string[], rev: string): string =>
+  `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+
 /** Derive the assembled browser graph from the same bundle patches and package declarations as `dsh web`. */
 function loadAssembledPlugins(): readonly AssembledPlugin[] {
   const entries = appBoot.composeEntries(BUNDLE_LAYERS.map(layer =>
@@ -103,7 +106,7 @@ function loadAssembledPlugins(): readonly AssembledPlugin[] {
     plugins.set(entry.name, {
       id: entry.name,
       bundlePath: resolveClientExport(packagePath, pkg),
-      url: `/plugins/${entry.name}/client.js?rev=fx`,
+      url: comboUrl([entry.name], 'fx'),
       rev: 'fx',
       ...(declaration.inject === undefined ? {} : { inject: declaration.inject }),
       ...(declaration.external === undefined ? {} : { external: declaration.external }),
@@ -121,8 +124,6 @@ function loadAssembledPlugins(): readonly AssembledPlugin[] {
 const PLUGINS = loadAssembledPlugins()
 
 const BOOTSTRAP_IDS = ['@deepseek-ai/dsh-client-modules'] as const
-const BOOTSTRAP_URL = '/plugins/_batch/bootstrap/fx/client.js'
-const APPLICATION_URL = '/plugins/_batch/application/fx/client.js'
 
 /** Build the fixture graph after applying per-scenario package exclusions. */
 function bootGraph(plugins: readonly AssembledPlugin[]): WebBootGraph {
@@ -138,13 +139,13 @@ function bootGraph(plugins: readonly AssembledPlugin[]): WebBootGraph {
     batches: [
       ...(bootstrapEntries.length === 0 ? [] : [{
         phase: 'bootstrap' as const,
-        url: BOOTSTRAP_URL,
+        url: comboUrl(bootstrapEntries, 'fx'),
         rev: 'fx',
         entries: bootstrapEntries,
       }]),
       ...(applicationEntries.length === 0 ? [] : [{
         phase: 'application' as const,
-        url: APPLICATION_URL,
+        url: comboUrl(applicationEntries, 'fx'),
         rev: 'fx',
         entries: applicationEntries,
       }]),
@@ -152,7 +153,7 @@ function bootGraph(plugins: readonly AssembledPlugin[]): WebBootGraph {
   }
 }
 
-/** Build individual and batch script bodies for one fixture composition. */
+/** Build single-resource and startup combo script bodies for one fixture composition. */
 function bundleTable(graph: WebBootGraph, plugins: readonly AssembledPlugin[]): Map<string, string> {
   const bundles = new Map(plugins.map(plugin => [
     plugin.url,

@@ -24,8 +24,8 @@ Three packages, layered exactly like the existing Python stack, plus one Service
 Four tiers, per [testing policy](../../../../docs/testing.md):
 
 - **Keyless unit** — `sdk-client` drives a scripted fake runtime (`tests/fake-runtime.ts`, env-scripted, protocol-only — the Python `test_client.py` pattern) over real stdio; `subagent-dsh-sdk` drives the same fake through the real provider. 100% per-file coverage on all three packages.
-- **Keyless Loader composition** — `subagent-dsh-sdk/tests/loader-composition.e2e.ts` boots a test-only cordis.yml (`examples/python-sdk-agent/tests/fixtures/subagent/subagent-dsh-sdk/`) where the child is a real second `dsh --profile sdk` runtime with its own isolated home and ordered patch; it asserts provider/model/reasoning/maxTokens and parent cwd in both the tool result and the child's persisted request header.
-- **Keyless snapshot** — `examples/python-sdk-agent/tests/sdk.snapshot.ts` drives the real `dsh --profile sdk` runtime through the real `dsh-sdk-client`. Text, bash, and in-process subagent scenarios replay recorded fixtures through `llm-replay`; the DSH SDK scenario uses deterministic parent and child adapters to pin a model-selected route through the delegation tool, a second SDK runtime, and the child's persisted request header. The minimal persistent-tool scenario covers the smaller shipped profile. Every scenario pins the normalized notification stream, SDK result, and applicable session logs.
+- **Keyless Loader composition** — `subagent-dsh-sdk/tests/loader-composition.e2e.ts` boots its package-owned test composition (`packages/subagent/subagent-dsh-sdk/tests/fixtures/loader/`), where the child is a real second `dsh --profile sdk` runtime with its own isolated home and ordered patch; the tool result and the child's persisted request header both prove provider, model, reasoning effort, maxTokens, and parent-session cwd.
+- **Keyless snapshot** — `snapshots/sdk/sdk.snapshot.ts` drives the real `dsh --profile sdk` runtime through the real `dsh-sdk-client`, replaying recorded fixtures through ordered `llm-replay` patches. The DSH SDK scenario uses deterministic parent and child adapters to pin a model-selected route through the delegation tool, a second SDK runtime, and the child's persisted request header; every scenario pins the normalized notification stream, SDK turn result, and applicable parent and child logs.
 - **With-key e2e** — the snapshot suite's `DSH_SNAPSHOT=record` mode is the live-API path (it produced the committed fixtures); the composition e2e needs no key by design.
 
 ## Alternatives considered
@@ -40,7 +40,7 @@ Four tiers, per [testing policy](../../../../docs/testing.md):
 
 **Export source modules, normalization helpers, and subscription producer operations.** These are implementation details with no caller need; exposing them would make callers learn how the client validates and distributes wire input. The package roots instead enumerate the supported client and protocol interfaces, and the client re-exports the one protocol error callers must distinguish.
 
-**Reuse `dsh-acp-snapshot`'s `runScenario` for the SDK snapshots.** That harness speaks ACP (`ClientSideConnection`, `InputStep` scripts). The SDK suite's whole point is to drive the *SDK client* as the entry surface; it reuses the normalize/refresh library layer (`normalizeSessionLog`, `refreshFixtureReplacements`, …) and leaves the ACP driver alone.
+**Reuse `dsh-session-snapshot`'s ACP `runScenario` for the SDK snapshots.** That adapter speaks ACP (`ClientSideConnection`, `InputStep` scripts). The SDK suite's whole point is to drive the *SDK client* as the entry surface; it reuses the normalize/refresh library layer (`normalizeSessionLog`, `refreshFixtureReplacements`, …) and leaves the ACP adapter alone.
 
 ## Consequences
 

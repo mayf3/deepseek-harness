@@ -28,7 +28,7 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/live-interactions', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/live-interactions', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 // One golden pins the empty mid-turn loading state, one pins the sendable draft
 // state, and the other four capture what remains after cancel, after a
@@ -97,13 +97,14 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     scaffold = await launchWebScaffold({
       replayFixture: FIXTURE,
       ...(overridePath === undefined ? {} : { replayOverride: overridePath }),
+      ...(overridePath === undefined ? {} : { compareReplaySession: false }),
       ...(retryPolicy === undefined ? {} : { replayRetryPolicy: retryPolicy }),
     })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     // Fresh world: connect a Workspace so the composer scenarios start live.
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -131,6 +132,12 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     const sessionId = await settled
     await recordFixture(scaffold!, sessionId, FIXTURE)
   }, 200_000)
+
+  it.skipIf(MODE === 'record')('matches the canonical persisted session', async () => {
+    await launch()
+    const { settled } = await sendPrompt(30_000)
+    await settled
+  })
 
   it.skipIf(MODE === 'record')('cancels a hung stream deterministically via the readyFile marker', async () => {
     expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])

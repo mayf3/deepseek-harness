@@ -6,6 +6,7 @@
  */
 
 import type { ContentBlock, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { SdkPromptContentBlock } from '@deepseek-ai/dsh-sdk-protocol'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 /** One server-to-client notification as received off the wire. */
@@ -79,3 +80,4 @@ export interface RunResult {
 
 /** Re-exported content-block alias so SDK callers need no extra import. */
 export type { ContentBlock }
+export type { SdkPromptContentBlock }

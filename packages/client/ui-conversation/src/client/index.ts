@@ -28,8 +28,9 @@ export type {
   ContextProvenanceView, ContextRole, KnownContextForm,
 } from './contract/context-provenance.ts'
 export type {
-  ConversationPromptSnapshot, RequestInspectionSnapshot, RequestPromptChange, RequestView,
+  ConversationPromptSnapshot, RequestInspectionSnapshot, RequestPromptChange, RequestPromptInspection, RequestPromptInspector, RequestView,
 } from './contract/request-inspection.ts'
+export { inspectRequestPrompt } from './contract/request-inspection.ts'
 export type { ConversationStoreState, ConversationViewRequest, ViewTab } from './contract/views.ts'
 
 export { ConversationNodeAssembler } from './conversation/assembler.ts'
@@ -51,7 +52,7 @@ export type {
   ConversationSessionInjected, ConversationSessionSlotProps, ConversationSlotProps,
   ConversationStore, ConvViewOwnerProps, ConvViewProps, EmptyWorkspaceOwnerProps,
   HeroAgentPresetOwnerProps, HeroBrandMarkOwnerProps, InputControlOwnerProps, InputZone,
-  UseConversation, UseConversationViews,
+  MessageImagesOwnerProps, RenderMessageImages, UseConversation, UseConversationViews,
 } from './contract/slots.ts'
 export type {
   ArbitrateKey, ArbitrateOutcome, BeginCommandRequest, CommandClaim, ConsumeTokenRequest,

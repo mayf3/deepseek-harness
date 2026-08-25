@@ -773,31 +773,13 @@ const APP_EXAMPLES = [
     config: 'packages/bundle/base/cordis.patch.yml',
     summary: 'The dsh-base bundle patch shared by the web, headless, sdk, and acp profiles; their mode bundles and user layers patch over it, while sdk-minimal owns a separate standalone tree.',
   },
-  {
-    id: 'headless',
-    rel: 'examples/headless-agent/composition.md',
-    title: 'Headless Agent Snapshot Composition',
-    label: 'examples/headless-agent',
-    config: 'examples/headless-agent/cordis.yml',
-    summary: 'The headless snapshot composition combines the real DeepSeek adapter and coding capabilities with one explicitly configured persisted top-level agent; its JSONL driver is test-only.',
-  },
-  {
-    id: 'acp',
-    rel: 'examples/acp-agent/composition.md',
-    title: 'ACP Automation Profile Patch',
-    label: 'examples/acp-agent',
-    config: 'examples/acp-agent/cordis.yml',
-    summary: 'The ACP example patches the shipped base + acp-app profile for demos and snapshots; dsh owns launch, and the ACP bridge exposes fresh automation sessions without a stdout logger or pre-created agent.',
-  },
 ]
 
 type AppExample = typeof APP_EXAMPLES[number]
 
 function renderAppComposition(example: AppExample): string {
   const plugins = parseExampleCordis(example.config)
-  const maintenance = example.id === 'acp'
-    ? 'hybrid: the patch row list is parsed from its `cordis.yml`; the scope summary is curated'
-    : 'hybrid: the leaf plugin list is parsed from its `cordis.yml`; app package expansion is curated from package source'
+  const maintenance = 'hybrid: the patch row list is parsed from its `cordis.yml`; app package expansion is curated from package source'
   const lines = generatedHeader(example.title)
   lines.push(
     example.summary,
@@ -1350,7 +1332,7 @@ function renderLifecycle(): string {
     '',
     '`dsh-compaction-basic` uses `agent/pre-step` for pressure before request derivation and `agent/request-error` only for canonical context overflow. Once either trigger qualifies, optional tool-result pruning runs before summary selection. Recovery works between the closed failed step and failed turn close, and opens a fresh retry turn only when pruning or summarization advances the surface replacement generation; otherwise the original request error remains authoritative.',
     '',
-    'The returned `agent/pre-step` decision is authoritative; listeners wrapping `next()` preserve downstream messages unless replacement is intentional. Steering and injected context pass through the same waterfall after a later claim operation takes their next-step batch.',
+    'The returned `agent/pre-step` decision is authoritative; listeners wrapping `next()` preserve downstream messages and `startsRequestSeries` unless replacement is intentional. Steering and injected context pass through the same waterfall after a later claim operation takes their next-step batch.',
     '',
     'SDK users that need replayable transcript data should consume `session/event`; `agent/*` is the live coordination API for queue/status, prompt interception, request construction, steering, continuation, and errors.',
     '',
@@ -1440,9 +1422,6 @@ function renderIndex(docs: GraphDoc[]): string {
   const labels: Record<string, string> = {
     'docs/capability-seams.md': 'capability seams and core services',
     'apps/cli/composition.md': 'dsh shared base composition',
-    'examples/headless-agent/composition.md': 'headless-agent app composition',
-    'examples/cordis-agent/composition.md': 'cordis-agent app composition',
-    'examples/acp-agent/composition.md': 'acp-agent app composition',
     'docs/event-producer-consumer.md': 'event producer/consumer matrix',
     'docs/agent-lifecycle.md': 'agent turn and step lifecycle',
     'docs/tool-execution-pipeline.md': 'tool execution pipeline',
@@ -1450,9 +1429,6 @@ function renderIndex(docs: GraphDoc[]): string {
   const modes: Record<string, string> = {
     'docs/capability-seams.md': 'hybrid generated',
     'apps/cli/composition.md': 'hybrid generated',
-    'examples/headless-agent/composition.md': 'hybrid generated',
-    'examples/cordis-agent/composition.md': 'hybrid generated',
-    'examples/acp-agent/composition.md': 'hybrid generated',
     'docs/event-producer-consumer.md': 'hybrid generated',
     'docs/agent-lifecycle.md': 'curated',
     'docs/tool-execution-pipeline.md': 'curated',

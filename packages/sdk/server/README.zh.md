@@ -10,7 +10,7 @@
 
 ## 配置
 
-`maxTokensAsSuccess` 默认为 `false`，且只影响 `subagent.finished` 上由部署映射的状态；根会话提示词没有提示词级状态。可选的 `toolFilter.allow` 与 `toolFilter.deny` 通过 `ctx.tools.restrict()` 限制每个由 SDK 创建的根 agent。Allow 列表会排除之后出现但未指名的全局工具，因此固定的 SDK 部署不会在基础 bundle 扩展时静默获得面向模型的新工具。未知名称与空筛选器会在创建首个会话时明确失败。`JsonRpcConfig.input`、`output` 和 `exit` 是仅供运行时使用的传输钩子；生产环境使用进程 stdio 和 `process.exit`。
+`maxTokensAsSuccess` 默认为 `false`，且只影响 `subagent.finished` 上由部署映射的状态；根会话提示词没有提示词级状态。Profile 组合负责每个根 agent 的工具。`JsonRpcConfig.input`、`output` 和 `exit` 是仅供运行时使用的传输钩子；生产环境使用进程 stdio 和 `process.exit`。
 
 ## stdout 即协议
 
@@ -30,7 +30,7 @@ Stdout 只承载 JSON-RPC 帧。部署不得组合 stdout logger；诊断应写�
 
 #### 模型看到的内容
 
-对于每个已接受的 `session/prompt`，对话模型会将调用方提供的 `contentBlocks` 原样作为该 SDK 会话中的一条用户消息接收。此包不会添加系统提示词文本或工具 schema；这些内容来自组合中的其他插件。配置的 `toolFilter` 会在请求组装与执行前投影该组合的全局工具注册表。
+对于每个已接受的 `session/prompt`，文本和持久内容引用会原样进入一条用户消息。内联 `SdkEncodedImageBlock` 会先通过组合中的附件存储完成校验与提交，因此会话日志保留内容寻址的图片引用而不是 base64 字节。此包不会添加系统提示词文本或工具 schema；这些内容来自组合中的其他插件。
 
 #### Token 影响
 
