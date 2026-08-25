@@ -145,13 +145,15 @@ describe('ActivityListAction merged rows', () => {
     expect(screen.getByText('pnpm run build')).toBeDefined()
   })
 
-  it('separates live and settled sections only when both exist', () => {
+  it('labels each non-empty section and drops the heading of an empty one', () => {
     const settled = [job({ id: 'bash-2' as SessionJob['id'], status: 'completed', finishedAt: 1_700_000_012_000 })]
     const { rerender } = render(<ActivityListAction {...props({}, undefined, [job(), ...settled])} />)
     openList()
+    expect(screen.getByText(zh['section.live'])).toBeDefined()
     expect(screen.getByText(zh['section.settled'])).toBeDefined()
-    // Live-only lists carry no divider.
+    // A live-only list keeps its own heading and drops the settled one.
     rerender(<ActivityListAction {...props({}, undefined, [job()])} />)
+    expect(screen.getByText(zh['section.live'])).toBeDefined()
     expect(screen.queryByText(zh['section.settled'])).toBeNull()
   })
 

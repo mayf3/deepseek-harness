@@ -96,6 +96,8 @@ describe('TerminalBlock states', () => {
     expect(view.queryByText('无输出')).toBeNull()
     expect(view.queryByRole('button')).toBeNull()
     expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
+    // Banner-only: no body, so no banner divider either.
+    expect(view.container.firstElementChild?.getAttribute('data-with-body')).toBeNull()
   })
 
   it('copyText overrides the copy payload and keeps the control before any output', async () => {
@@ -120,6 +122,8 @@ describe('TerminalBlock states', () => {
     expect(view.queryByText('无输出')).toBeNull()
     expect(view.queryByRole('button', { name: '复制' })).toBeTruthy()
     expect(view.container.firstElementChild?.getAttribute('data-running')).toBe('')
+    // Live output renders a body, so the banner divider returns.
+    expect(view.container.firstElementChild?.getAttribute('data-with-body')).toBe('')
   })
 
   it('running with an empty live stream draws neither output nor placeholder', () => {

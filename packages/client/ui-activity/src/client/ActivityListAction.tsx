@@ -449,8 +449,11 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
       {open
         ? (
           <ul ref={menuRef} className={css.menu} style={{ left: menuShift }} aria-label={t('list.aria')}>
+            {liveRows.length > 0
+              ? <li className={css.sectionHeader} aria-hidden="true">{t('section.live')}</li>
+              : null}
             {liveRows.map(item)}
-            {liveRows.length > 0 && settledRows.length > 0
+            {settledRows.length > 0
               ? <li className={css.sectionHeader} aria-hidden="true">{t('section.settled')}</li>
               : null}
             {settledRows.map(item)}

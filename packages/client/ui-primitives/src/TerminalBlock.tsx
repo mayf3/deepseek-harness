@@ -211,9 +211,17 @@ export function TerminalBlock({
   // for invisible bytes, and hide the placeholder that belongs there.
   const empty = lines.every(line => line.every(span => span.text.trim() === ''))
   const { hidden, capped, headLines, tailLines } = headTailCap(lines.length, maxLines, expanded)
+  // The body region below the banner: settled cards always draw one (output or
+  // the placeholder); a running card draws it once live output is supplied.
+  const withBody = !running || (output !== undefined && !empty)
 
   return (
-    <div className={clsx(css.block, className)} data-terminal="" data-running={running ? '' : undefined}>
+    <div
+      className={clsx(css.block, className)}
+      data-terminal=""
+      data-running={running ? '' : undefined}
+      data-with-body={withBody ? '' : undefined}
+    >
       <div className={css.header}>
         <div className={css.prompt}>
           {runStateDot && <span className={css.runStateLabel}>{state.label}</span>}

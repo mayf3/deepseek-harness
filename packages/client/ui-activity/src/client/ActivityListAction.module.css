@@ -62,7 +62,7 @@
   box-shadow: var(--dsw-shadow-lv3);
 }
 
-/* Divider label between the live section and the settled tail. */
+/* Section labels over the live rows and the settled tail. */
 .sectionHeader {
   margin: 4px 4px 1px;
   padding: 4px 4px 3px;
@@ -70,6 +70,12 @@
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 16px;
+}
+
+/* The leading section needs no divider above it. */
+.sectionHeader:first-child {
+  margin-top: 0;
+  border-top: 0;
 }
 
 .item {

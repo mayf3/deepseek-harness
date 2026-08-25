@@ -15,7 +15,7 @@
 - **`ctx.jobs` 与 `ctx.activities` 仍是两个服务。** jobs 是控制面：模型可见的 id、模型消耗式的 `readOutput` 游标、`stopping`、`kill` 与 `reported` 完成通知契约。activity 是瞬态观察面：非消耗式绝对偏移、模型不可见、重启即无。合并服务会迫使一个注册表同时携带消耗式与非消耗式两种游标，并模糊这个刻意不进 session log 的面与"模型可见 ⟺ 已记录"不变量的边界。
 - **`dsh-client-ui-activity` 渲染唯一的合并列表；`dsh-client-ui-jobs` 删除**（预发布阶段，不留兼容层），合并入口占用原 job 列表的 slot 顺位。每个 `jobsBySession` 行与携带其 `correlation.jobId` 的 activity 逐行 join：job 提供身份、生命周期（`stopping` 只存在于此）、时长与模型可见 `detail`；activity 提供可展开的输出面板。没有 job 的 activity（workflow 运行）保留自己的行；job 不在投影里的 activity 也不会被丢弃。没有 activity 注册表时 job 行照常渲染——只是没有面板，合并控件退化为与旧 job 列表完全等价。
 - **用户可见词汇统一为"任务"（task）**——`N 个任务进行中` / `N tasks running`——因为对用户而言每一行都是在跑的工作，而"后台任务"排除了 workflow 运行、"活动"命名的是内部面而非用户概念。词典命名空间与包名保持 `activity`：内部名遵循命名台账，不跟随展示文案。
-- **层次**：进行中的行在前（命令为主行、kind 徽章加状态为副行、时长每秒跳动），两段都存在时插入"已结束"分节线，已结束的行折为降权单行。没有可观察 activity 的行渲染为无展开交互的静态行。
+- **层次**：进行中的行在前（命令为主行、kind 徽章加状态为副行、时长每秒跳动），已结束的行折为降权单行；每个非空分组带自己的标题（进行中 / 已结束）。没有可观察 activity 的行渲染为无展开交互的静态行。
 
 刻意不合并的：subagent 委托行保持裸 job 行（subagent 面板是它的呈现面），前台命令留在工具卡片里——两者都不接活动生产者。
 

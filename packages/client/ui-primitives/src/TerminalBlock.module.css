@@ -59,9 +59,10 @@
 }
 
 /* Full-width l2 hairline between the command banner and the body — the same
-   divider the IN/OUT card draws between its sections. A running card is
-   banner-only, so it draws none. */
-.block:not([data-running]) .header {
+   divider the IN/OUT card draws between its sections. It follows the rendered
+   body: a banner-only running card draws none, while a running card that
+   already streams live output separates the two like a settled card. */
+.block[data-with-body] .header {
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
