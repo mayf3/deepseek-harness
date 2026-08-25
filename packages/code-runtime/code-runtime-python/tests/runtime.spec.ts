@@ -1734,32 +1734,45 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error?.kind).not.toBe('worker-exit')
   }, 15_000)
 
-  it('drops an fd-3 frame whose raw length exceeds the parse cap before decoding it', async () => {
+  it('rejects an fd-3 frame whose raw length exceeds the parse cap before joining it', async () => {
     // The 256 MiB wire ceiling bounds the RAW frame bytes, not the decoded
     // structure; a compact wide frame near that ceiling could decode to far
-    // more host memory. The receive path caps raw frames at
-    // FRAME_PARSE_CAP_BYTES before toString/JSON.parse and drops the oversized
-    // one like any junk frame, so the following normal frame is still
-    // processed. Fail-before: without the cap the oversized log text would be
-    // parsed and admitted (truncating the ledger), and the trailing frame
-    // would be dropped as post-truncation instead of appearing in logs.
+    // more host memory. The unframed-buffer counter is checked against
+    // FRAME_PARSE_CAP_BYTES BEFORE the Buffer.concat join, so an oversized
+    // frame is dropped at one copy of its wire bytes instead of being fully
+    // joined (a second copy) and only then discarded in the line loop — the
+    // peak-memory doubling the pre-join check exists to prevent. Fail-before:
+    // without the check the frame is joined whole and parsed (its log text
+    // admitted, truncating the ledger), and the run completes normally.
     const { runtime } = await setup({ maxWallMs: 60_000 })
     const result = await runtime.run({
       program: [
         'import os',
         // One frame just past the 64 MiB parse cap.
         'os.write(3, b"{\\"type\\":\\"log\\",\\"text\\":\\"" + b"a" * (65 * 1024 * 1024) + b"\\"}\\n")',
-        'os.write(3, b"{\\"type\\":\\"log\\",\\"text\\":\\"after-cap\\"}\\n")',
         'return "done"',
       ].join('\n'),
       bindings: [],
     })
-    expect(result.error).toBeUndefined()
-    expect(result.value).toBe('done')
-    // The oversized frame was dropped before parse; the trailing frame was
-    // processed normally (its text survives in logs).
-    expect(result.logs).toContain('after-cap')
-    expect(result.logs.some(line => line.length > 1024 * 1024)).toBe(false)
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('protocol frame exceeded')
+  }, 90_000)
+
+  it('caps an oversized rejection diagnostic so an invalid completion stays invalid-output', async () => {
+    // _done_with_value caps its rejection diagnostic through _cap_message: a
+    // hostile class name (huge type(value).__name__) would otherwise push the
+    // done frame past the host's 64 MiB parse cap, misreporting an
+    // invalid-output run as a worker-exit. The diagnostic is capped to the
+    // value budget, so the frame always crosses the parser.
+    const { runtime } = await setup({ maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: [
+        'return type("N" * (70 * 1024 * 1024), (), {})()',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('invalid-output')
+    expect(result.error?.kind).not.toBe('worker-exit')
   }, 90_000)
 
   it('bounds an over-cap exception-group nesting on the copy', async () => {

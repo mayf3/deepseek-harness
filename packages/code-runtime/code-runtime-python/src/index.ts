@@ -203,25 +203,25 @@ function materializePyScripts(): string {
  * check at the `done` handler, deliberately decoupled from this. Not a config
  * knob because it is an internal framing invariant, not a deployment choice.
  */
-const FRAME_CEILING_BYTES = 256 * 1024 * 1024
-
 /**
- * A frame's RAW length is capped before JSON.parse: the 256 MiB wire ceiling
- * bounds the bytes on fd 3, not the decoded structure, and a compact wide
+ * A frame's RAW length is capped before JSON.parse: the 256 MiB fd-3 wire
+ * ceiling bounds the bytes, not the decoded structure, and a compact wide
  * frame near that ceiling (e.g. a huge array of tiny elements) could decode to
  * far more host memory than the wire admitted — an OOM inside the receive
  * path. 64 MiB raw admits every legal config (the widest in-tree completion
  * and binding frames are ~12 MB) while bounding decode amplification to a
- * roughly constant factor of the wire bytes. A hostile-peer invariant, not a
- * deployment choice.
+ * roughly constant factor of the wire bytes. The unframed-buffer counter is
+ * checked against this same cap BEFORE a `Buffer.concat` join, so an oversized
+ * frame is dropped at one copy of its wire bytes. A hostile-peer invariant,
+ * not a deployment choice.
  */
 const FRAME_PARSE_CAP_BYTES = 64 * 1024 * 1024
 
 /**
  * Fragments the unframed fd-3 buffer may hold before they are coalesced into
- * one Buffer, bounding retained per-chunk overhead that {@link
- * FRAME_CEILING_BYTES} cannot see: that ceiling meters payload bytes, while
- * each chunk is a distinct Buffer with its own object and backing store. A
+ * one Buffer, bounding retained per-chunk overhead that the byte cap cannot
+ * see: the cap meters payload bytes, while each chunk is a distinct Buffer
+ * with its own object and backing store. A
  * program writing single bytes without a newline produced one chunk per write.
  * 1024 keeps the overhead a small constant factor of the payload while leaving
  * normal pipe-sized reads (which arrive in far fewer, much larger chunks)
@@ -1314,21 +1314,23 @@ export class PythonCodeRuntime extends CodeRuntime {
         // current line can be larger than that. That over-count is deliberate and
         // load-bounded on the OTHER side: the config cap is `parse-cap - envelope`,
         // and a legitimate near-cap frame plus a following chunk's leading bytes
-        // could in principle nudge the counter over the ceiling for one read
-        // window — but only when maxLogBytes/maxValueBytes is configured within
-        // one pipe read of the 256 MiB ceiling, orders of magnitude past the
-        // 32/64 KiB defaults. Enforcing the ceiling per-frame instead (splitting
-        // before the check) would require `Buffer.concat`-ing an over-ceiling
-        // single frame before rejecting it, reintroducing the peak-memory
-        // doubling this pre-concat check and its regression tests exist to
-        // prevent; the memory-safety bound against hostile input at any config
-        // takes precedence over a false-reject reachable only at a pathological
-        // near-ceiling config.
-        if (pendingBytes > FRAME_CEILING_BYTES) {
+        // could in principle nudge the counter over the cap for one read window
+        // — but only when maxLogBytes/maxValueBytes is configured within one
+        // pipe read of the 64 MiB cap, orders of magnitude past the 32/64 KiB
+        // defaults.
+        //
+        // The cap used HERE is FRAME_PARSE_CAP_BYTES, not the 256 MiB wire
+        // ceiling: a single frame between 64 MiB and the ceiling would otherwise
+        // be fully `Buffer.concat`-ed (a second copy of its bytes) and only then
+        // dropped in the line loop — the peak-memory doubling this pre-concat
+        // check exists to prevent, now for a frame the parser is guaranteed to
+        // discard. Dropping the oversized unframed buffer before the join keeps
+        // the peak at one copy of the wire bytes.
+        if (pendingBytes > FRAME_PARSE_CAP_BYTES) {
           pendingChunks = []
           sealedBlocks = []
           pendingBytes = 0
-          finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${FRAME_CEILING_BYTES} bytes on fd 3` } })
+          finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${FRAME_PARSE_CAP_BYTES} bytes on fd 3` } })
           return
         }
         // Bound the FRAGMENT COUNT as well as the byte total, but only AFTER the

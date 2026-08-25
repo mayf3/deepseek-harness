@@ -20,7 +20,7 @@ The package ships the protocol AND the runtime implementation: `PythonCodeRuntim
 
 `py/protocol.py` mirrors the message shapes as `TypedDict`s and re-declares the two surfaces both sides EXECUTE against — `PROTOCOL_FD = 3` and `log_truncation_marker` — with byte-identical text.
 
-The package remains independently buildable with protocol-only exports. `check-workspace-constraints` reads every `packages/<group>/<pkg>/package.json` unconditionally, while the coverage and invariant-topology checks exercise the package as soon as its directory exists.
+The package ships the runtime alongside the protocol; it remains independently buildable. `check-workspace-constraints` reads every `packages/<group>/<pkg>/package.json` unconditionally, while the coverage and invariant-topology checks exercise the package as soon as its directory exists.
 
 ## Wire contract
 
@@ -32,12 +32,12 @@ Frames are JSON-lines on fd 3, one object per line, leaving stdout/stderr free f
 
 ## Alternatives considered
 
-**Require a future Python JSON codec (`_encode_json_plain` / `_decode_json_plain`) to live in `py/protocol.py` for cross-side symmetry with `protocol.ts`.** Rejected. The repository's "prefer symmetry for parallel values" rule points at genuinely parallel values; these are not. The host-side codec in `protocol.ts` validates hostile input and is self-contained. A child-side codec would produce trusted output and belong with bootstrap-owned emission and cost accounting; forcing only its entry points into `protocol.py` would couple the vocabulary mirror to runtime internals or create an import cycle. `protocol.py` remains a pure wire-vocabulary mirror. No Python codec ships in this package.
+**Require a future Python JSON codec (`_encode_json_plain` / `_decode_json_plain`) to live in `py/protocol.py` for cross-side symmetry with `protocol.ts`.** Rejected. The repository's "prefer symmetry for parallel values" rule points at genuinely parallel values; these are not. The host-side codec in `protocol.ts` validates hostile input and is self-contained. A child-side codec would produce trusted output and belong with bootstrap-owned emission and cost accounting; forcing only its entry points into `protocol.py` would couple the vocabulary mirror to runtime internals or create an import cycle. `protocol.py` remains a pure wire-vocabulary mirror; the codec (`_encode_json_plain` / `_decode_json_plain`) lives in `bootstrap.py` with the runtime it serves.
 
 **Keep the protocol files outside a buildable package until a runtime ships.** Rejected: the workspace-constraint, coverage, and invariant-topology checks require every directory under `packages/<group>/<pkg>` to be a buildable package, and the protocol has independent tests and a public wire vocabulary.
 
 ## Consequences
 
-Bought: the fd-3 protocol and its hostile-input codec form a self-contained, fully unit-covered layer, with an executing guard against TypeScript/Python field-set drift. A future runtime can consume a reviewed wire contract.
+Bought: the fd-3 protocol and its hostile-input codec form a self-contained, fully unit-covered layer, with an executing guard against TypeScript/Python field-set drift. The runtime built on it (`bootstrap.py`) consumes the reviewed wire contract.
 
-Cost: the package name denotes a Python runtime family while `src/index.ts` exports only the protocol vocabulary. The mirror e2e compares field names and required/optional status across the two sides but not field types; comparing type declarations across TypeScript and Python has no mechanical equivalent, so review and the future runtime's real-subprocess suite retain that responsibility.
+Cost: the package name denotes a Python runtime family and `src/index.ts` exports the full `PythonCodeRuntime` implementation, so the protocol vocabulary is only one part of the package surface. The mirror e2e compares field names and required/optional status across the two sides but not field types; comparing type declarations across TypeScript and Python has no mechanical equivalent, so review and the future runtime's real-subprocess suite retain that responsibility.

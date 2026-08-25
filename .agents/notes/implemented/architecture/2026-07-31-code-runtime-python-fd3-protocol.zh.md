@@ -20,7 +20,7 @@ Status: implemented
 
 `py/protocol.py` 用 `TypedDict` 镜像消息形状，并重新声明两侧都会 EXECUTE 的两个面——`PROTOCOL_FD = 3` 与 `log_truncation_marker`——文本逐字节一致。
 
-该包只导出协议，同时保持独立可构建。`check-workspace-constraints` 会无条件读取每个 `packages/<group>/<pkg>/package.json`，coverage 与 invariant-topology 检查则会在包目录存在时立即覆盖该包。
+该包随协议一起交付 runtime，同时保持独立可构建。`check-workspace-constraints` 会无条件读取每个 `packages/<group>/<pkg>/package.json`，coverage 与 invariant-topology 检查则会在包目录存在时立即覆盖该包。
 
 ## Wire contract
 
@@ -40,4 +40,4 @@ Status: implemented
 
 收获：fd-3 协议及其敌意输入 codec 构成自包含、unit 全覆盖的一层，并由执行中的 guard 防止 TypeScript／Python 字段集漂移。未来 runtime 可以直接消费经过评审的 wire contract。
 
-代价：包名表示 Python runtime 家族，而 `src/index.ts` 只导出协议 vocabulary。mirror e2e 会比较两侧字段名与必填／可选状态，但不比较字段类型；跨 TypeScript 与 Python 比较类型声明没有机械等价物，因此评审与未来 runtime 的真实子进程套件继续负责这项检查。
+代价：包名表示 Python runtime 家族，而 `src/index.ts` 导出完整的 `PythonCodeRuntime` 实现，协议 vocabulary 只是包表面的一部分。mirror e2e 会比较两侧字段名与必填／可选状态，但不比较字段类型；跨 TypeScript 与 Python 比较类型声明没有机械等价物，因此评审与未来 runtime 的真实子进程套件继续负责这项检查。
