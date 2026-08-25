@@ -330,6 +330,11 @@ describe('web e2e: continuous conversation grown through the composer', () => {
     expect(scaffold.ctx.agents.get(sessionId)?.session.events.filter(event => (
       event.type === 'turn/end' && event.data.reason.kind === 'completed'
     ))).toHaveLength(TURN_COUNT)
+    expect(sessionEvents.flatMap(event =>
+      event.type === 'request/header' ? [event.data.reason] : [])).toEqual(['initial'])
+    await expect.poll(() => page.getByRole('button', { name: 'System prompt' }).count(), {
+      timeout: 10_000,
+    }).toBe(1)
     expect(specs.at(-1)?.prompt.length).toBeGreaterThan(4_000)
     expect(sessionEvents.filter(event => (
       event.type === 'assistant/chunk' && event.data.turn === TURN_COUNT

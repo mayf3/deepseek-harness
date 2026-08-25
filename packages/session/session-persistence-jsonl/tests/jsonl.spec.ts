@@ -8,12 +8,7 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {
-  SessionPersistenceRevisionConflictError,
-  type StoredEventRead,
-} from '@deepseek-ai/dsh-session-persistence'
-import {
-  encodeSegment, eventLines, fromHeaderLine, logPath, parseStoredHeaderMeta, projectDir, projectKey, scanLog, sessionDir,
-  SessionLogScanner, toHeaderLine,
+  encodeSegment, eventLines, logPath, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
 import { runPersistenceContract, meta, oneTurnLog, appendLog } from '../../session-persistence/tests/contract.ts'
 import { runCoordinatorContract, type CoordinatorFixture } from '../../session-persistence/tests/coordinator-contract.ts'
@@ -21,8 +16,6 @@ import { runCoordinatorContract, type CoordinatorFixture } from '../../session-p
 const statRace = vi.hoisted(() => ({
   path: undefined as string | undefined,
   reads: 0,
-  renamePath: undefined as string | undefined,
-  renameError: undefined as Error | undefined,
 }))
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -36,25 +29,6 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       if (statRace.reads !== 2) return identity
       return { ...identity, mtimeNs: identity.mtimeNs + 1n }
     }) as typeof actual.stat,
-    rename: async (...args: Parameters<typeof actual.rename>) => {
-      if (String(args[1]) === statRace.renamePath && statRace.renameError !== undefined) {
-        throw statRace.renameError
-      }
-      return actual.rename(...args)
-    },
-  }
-})
-
-vi.mock('../src/win32.ts', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../src/win32.ts')>()
-  return {
-    ...actual,
-    replaceFileWin32: async (existing: string, replacement: string) => {
-      if (replacement === statRace.renamePath && statRace.renameError !== undefined) {
-        throw statRace.renameError
-      }
-      return actual.replaceFileWin32(existing, replacement)
-    },
   }
 })
 
@@ -66,17 +40,6 @@ type MutableSessionHeader = { -readonly [K in keyof SessionHeader]: SessionHeade
 /** Test-only mutable view used to verify that backends detach returned/caller metadata. */
 function mutableHeader(header: SessionHeader): MutableSessionHeader {
   return header
-}
-
-async function collectStoredRead(read: StoredEventRead<unknown>): Promise<unknown[]> {
-  const events: unknown[] = []
-  for await (const event of read.events) events.push(event)
-  await read.completed
-  return events
-}
-
-async function* replacementEvents(events: readonly SessionEvent[]): AsyncIterable<SessionEvent> {
-  for (const event of events) yield structuredClone(event)
 }
 
 /** Rewrite only a stored header while preserving every event byte below it. */
@@ -123,8 +86,6 @@ function rawLogPath(root: string, cwd: string | undefined, id: SessionId): strin
 afterEach(async () => {
   statRace.path = undefined
   statRace.reads = 0
-  statRace.renamePath = undefined
-  statRace.renameError = undefined
   vi.restoreAllMocks()
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true })
 })
@@ -172,18 +133,6 @@ runCoordinatorContract('jsonl-none', async (): Promise<CoordinatorFixture> => {
 })
 
 describe('JsonlSessionPersistence: format helpers', () => {
-  it('parses only the version-independent stored header envelope', () => {
-    expect(parseStoredHeaderMeta('{')).toBeUndefined()
-    expect(parseStoredHeaderMeta('42')).toBeUndefined()
-    expect(parseStoredHeaderMeta(JSON.stringify({ type: 'event', version: 9, id: 'wrong-type' })))
-      .toBeUndefined()
-    expect(parseStoredHeaderMeta(JSON.stringify({ type: 'session', version: 9, id: 'future', futureOnly: true })))
-      .toEqual({ version: 9, id: 'future', futureOnly: true })
-    expect(parseStoredHeaderMeta(JSON.stringify({
-      type: 'session', version: 0, id: 'current', createdAt: 1, delegationDepth: 0,
-    }))).toEqual({ version: 0, id: 'current', createdAt: 1, delegationDepth: 0 })
-  })
-
   it('encodeSegment neutralizes traversal, separators, and absolute paths', () => {
     expect(encodeSegment('..')).toBe('~002E~002E')
     expect(encodeSegment('.')).toBe('~002E')
@@ -370,8 +319,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect(raw!.content).toBe(await readFile(rawLogPath(root, '/work', m.id), 'utf8'))
     expect(raw!.content.split('\n')[0]).toBe(JSON.stringify(toHeaderLine(m)))
     const scanned = scanLog(Buffer.from(raw!.content))
-    expect(scanned.events.map(event => (event as SessionEvent).type))
-      .toEqual(oneTurnLog().map(event => event.type))
+    expect(scanned.events.map(event => event.type)).toEqual(oneTurnLog().map(event => event.type))
   })
 
   it('readRaw is undefined for an absent session', async () => {
@@ -469,259 +417,26 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await otherCtx.fiber.dispose()
   })
 
-  it('binds a stored source to the same revision as a lightweight read', async () => {
+  it('binds a full stored prefix to the same revision as a lightweight read', async () => {
     const m = meta('stored-prefix-revision')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     const persistence = ctx.sessionPersistence as JsonlSessionPersistence
 
-    const stored = await persistence.openStored(m.id)
+    const stored = await persistence.loadStored(m.id)
     expect(stored?.revision).toBe(await persistence.readStoredRevision(m.id))
     expect(await persistence.readStoredRevision(SessionId('missing-revision'))).toBeUndefined()
   })
 
-  it('retries a revision-bound source read when the file changes during the read', async () => {
+  it('retries a full-prefix read when the file revision changes during the read', async () => {
     const m = meta('stored-prefix-revision-race')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const stored = await persistence.openStored(m.id)
-    if (stored === undefined) throw new Error('test session must be materialized')
     statRace.path = rawLogPath(root, m.cwd, m.id)
 
-    await expect(collectStoredRead(stored.readEvents())).resolves.toEqual(oneTurnLog())
+    await expect(persistence.loadStored(m.id)).resolves.toMatchObject({ events: oneTurnLog() })
     expect(statRace.reads).toBe(4)
-  })
-
-  it('rejects a revision-bound source after a complete append changes its revision', async () => {
-    const m = meta('stored-source-stale')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const stored = await persistence.openStored(m.id)
-    if (stored === undefined) throw new Error('test session must be materialized')
-
-    await ctx.sessionPersistence.append(m.id, [
-      { type: 'turn/start', seq: oneTurnLog().length, time: 7, data: { turn: 2 } },
-    ])
-
-    const read = stored.readEvents()
-    const completion = read.completed.catch((error: unknown) => error)
-    await expect(collectStoredRead(read)).rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-    await expect(completion).resolves.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-  })
-
-  it('retries a header read whose revision changes around the first-line read', async () => {
-    const m = meta('stored-header-revision-race')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const path = rawLogPath(root, m.cwd, m.id)
-    const internals = persistence as unknown as {
-      findLog(id: SessionId): Promise<string | undefined>
-    }
-    vi.spyOn(internals, 'findLog').mockResolvedValue(path)
-    statRace.path = path
-
-    await expect(persistence.openStored(m.id)).resolves.toMatchObject({ meta: { id: m.id } })
-    expect(statRace.reads).toBe(4)
-  })
-
-  it('reports a present empty plaintext artifact as header-less', async () => {
-    const m = meta('empty-plaintext-log')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    await writeFile(rawLogPath(root, m.cwd, m.id), '')
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-
-    await expect(persistence.openStored(m.id))
-      .rejects.toThrow('empty or header-less session log')
-  })
-
-  it('forwards prepare through the concrete backend API', async () => {
-    const m = meta('jsonl-prepare-forward')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-
-    const preparation = await persistence.prepare(m.id)
-    expect(preparation.session.id).toBe(m.id)
-    preparation[Symbol.dispose]()
-  })
-
-  it('atomically replaces one exact revision and rejects a stale replacement', async () => {
-    const m = meta('format-replace', '/work')
-    const original = [
-      ...oneTurnLog(),
-      { type: 'turn/start', seq: 6, time: 7, data: { turn: 2 } },
-      { type: 'turn/end', seq: 7, time: 8, data: { turn: 2, reason: { kind: 'completed' } } },
-    ] as SessionEvent[]
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, original)
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-
-    await persistence.replaceStored(source.revision, m, replacementEvents(oneTurnLog()))
-    const replaced = await persistence.openStored(m.id)
-    if (replaced === undefined) throw new Error('replacement must preserve the session')
-    expect(replaced.revision).not.toBe(source.revision)
-    expect(await collectStoredRead(replaced.readEvents())).toEqual(oneTurnLog())
-
-    await expect(
-      persistence.replaceStored(source.revision, m, replacementEvents(original)),
-    ).rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-    const afterConflict = await persistence.openStored(m.id)
-    if (afterConflict === undefined) throw new Error('conflict must preserve the session')
-    expect(await collectStoredRead(afterConflict.readEvents())).toEqual(oneTurnLog())
-  })
-
-  it('preserves the old complete log when atomic replacement rename fails', async () => {
-    const m = meta('format-replace-rename-failure', '/work')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-    const path = rawLogPath(root, m.cwd, m.id)
-    const failure = new Error('simulated format replacement rename failure')
-    statRace.renamePath = path
-    statRace.renameError = failure
-
-    await expect(
-      persistence.replaceStored(source.revision, m, replacementEvents([])),
-    ).rejects.toBe(failure)
-
-    statRace.renameError = undefined
-    const preserved = await persistence.openStored(m.id)
-    if (preserved === undefined) throw new Error('failed replacement must preserve the session')
-    expect(await collectStoredRead(preserved.readEvents())).toEqual(oneTurnLog())
-    expect((await readdir(dirname(path))).some(name => name.endsWith('.upgrade.tmp'))).toBe(false)
-  })
-
-  it('rejects replacement when the artifact disappears before or after discovery', async () => {
-    const m = meta('format-replace-disappeared', '/work')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-    const path = rawLogPath(root, m.cwd, m.id)
-
-    await rm(path)
-    await expect(persistence.replaceStored(source.revision, m, replacementEvents([])))
-      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-
-    const internals = persistence as unknown as {
-      findLog(id: SessionId): Promise<string | undefined>
-    }
-    vi.spyOn(internals, 'findLog').mockResolvedValue(path)
-    await expect(persistence.replaceStored(source.revision, m, replacementEvents([])))
-      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-  })
-
-  it('propagates a non-absence error while rechecking a replacement source', async () => {
-    const m = meta('format-replace-header-error', '/work')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-    const failure = new Error('simulated header read failure')
-    const internals = persistence as unknown as {
-      readStoredHeader(path: string, id: SessionId): Promise<unknown>
-    }
-    vi.spyOn(internals, 'readStoredHeader').mockRejectedValue(failure)
-
-    await expect(persistence.replaceStored(source.revision, m, replacementEvents([])))
-      .rejects.toBe(failure)
-  })
-
-  it('rejects a replacement that changes cwd storage identity', async () => {
-    const m = meta('format-replace-identity', '/work')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-
-    await expect(persistence.replaceStored(
-      source.revision,
-      { ...m, cwd: '/other' },
-      replacementEvents(oneTurnLog()),
-    )).rejects.toThrow(/changes its stored identity/)
-  })
-
-  it('rejects a replacement when the source changes after the temp file is synced', async () => {
-    const m = meta('format-replace-final-cas', '/work')
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-    const path = rawLogPath(root, m.cwd, m.id)
-    const internals = persistence as unknown as {
-      writeReplacement(path: string, meta: SessionHeader, events: AsyncIterable<SessionEvent>): Promise<void>
-    }
-    const writeReplacement = internals.writeReplacement.bind(internals)
-    vi.spyOn(internals, 'writeReplacement').mockImplementation(async (...args) => {
-      await writeReplacement(...args)
-      await appendFile(path, '\n')
-    })
-
-    await expect(persistence.replaceStored(source.revision, m, replacementEvents(oneTurnLog())))
-      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
-    expect((await readdir(dirname(path))).some(name => name.endsWith('.upgrade.tmp'))).toBe(false)
-  })
-
-  it('streams replacement events in bounded batches', async () => {
-    const m = meta('format-replace-batches', '/work')
-    const events = Array.from({ length: 128 }, (_, seq): SessionEvent => ({
-      type: 'turn/start', seq, time: seq + 1, data: { turn: seq + 1 },
-    }))
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(m.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-
-    await persistence.replaceStored(source.revision, m, replacementEvents(events))
-
-    const replaced = await persistence.openStored(m.id)
-    if (replaced === undefined) throw new Error('replacement must preserve the session')
-    expect(await collectStoredRead(replaced.readEvents())).toHaveLength(128)
-  })
-
-  it('rejects malformed version-independent storage identity fields', async () => {
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const path = rawLogPath(root, '/work', SessionId('identity-fields'))
-    const internals = persistence as unknown as {
-      storedIdentity(meta: unknown, path: string): { id: SessionId; cwd?: string }
-    }
-
-    expect(() => internals.storedIdentity(null, path)).toThrow(/header is not a record/)
-    expect(() => internals.storedIdentity({ id: 1 }, path)).toThrow(/header id is not a string/)
-    expect(() => internals.storedIdentity({ id: 'identity-fields', cwd: 1 }, path))
-      .toThrow(/header cwd is not a string/)
-  })
-
-  it('rejects a physical log whose requested id differs from its header id', async () => {
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const requested = SessionId('requested-identity')
-    const path = rawLogPath(root, '/work', requested)
-    const internals = persistence as unknown as {
-      assertStoredIdentity(
-        path: string,
-        meta: unknown,
-        expectedId?: SessionId,
-      ): Promise<void>
-    }
-
-    await expect(internals.assertStoredIdentity(
-      path,
-      { id: 'different-identity', cwd: '/work' },
-      requested,
-    )).rejects.toThrow(/requested id .* does not match header id/)
   })
 
   it('handles revision-stat races and errors after log discovery', async () => {
@@ -1053,7 +768,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     const beforeB = await readFile(bPath)
 
     await expect(ctx.sessionPersistence.load(a.id))
-      .rejects.toThrow(/identity mismatch: requested "identity-a", header contains "identity-b"/)
+      .rejects.toThrow(/requested id "identity-a" does not match header id "identity-b"/)
     expect(await readFile(aPath)).toEqual(beforeA)
     expect(await readFile(bPath)).toEqual(beforeB)
   })
@@ -1244,20 +959,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
 
     // The preset decides the resumed session's tools and prompt; dropping it
     // on disk would restore a composition the logged history contradicts.
-    expect((scanLog(Buffer.from(log)).meta as SessionHeader).agentPreset).toBe('minimal')
-  })
-
-  it('round-trips and validates a subagent origin', () => {
-    const header: SessionHeader = {
-      ...meta('subagent-origin'),
-      delegationDepth: 1,
-      origin: 'subagent',
-    }
-    const line = toHeaderLine(header)
-
-    expect(fromHeaderLine(line)).toEqual(header)
-    expect(() => scanLog(Buffer.from(`${JSON.stringify({ ...line, origin: 'parent' })}\n`)))
-      .toThrow(/session header/)
+    expect(scanLog(Buffer.from(log)).meta.agentPreset).toBe('minimal')
   })
 
   it('rejects a session header whose agentPreset is not a string', () => {
@@ -1275,7 +977,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
     // No committed turn/end, so the gap is a tolerated crash boundary: scanLog PRESERVES the
     // contiguous prefix (turn/start seq 0) — real interrupted-turn work, not discarded — and
     // stops at the gap. `loadCore`, not this scanner, later closes the orphaned turn.
-    expect(scanLog(Buffer.from(log)).events.map(e => (e as SessionEvent).seq)).toEqual([0])
+    expect(scanLog(Buffer.from(log)).events.map(e => e.seq)).toEqual([0])
   })
 
   it('rejects a seq gap BEFORE a later committed turn/end (committed data damaged)', () => {
@@ -1315,7 +1017,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
     ].join('\n') + '\n'
     // The contiguous prefix (turn/start seq 0) is preserved; the corrupt
     // fragment after it is the tolerated crash boundary.
-    expect(scanLog(Buffer.from(log)).events.map(e => (e as SessionEvent).seq)).toEqual([0])
+    expect(scanLog(Buffer.from(log)).events.map(e => e.seq)).toEqual([0])
   })
 
   it('tolerates a seq gap AFTER a turn/end (uncommitted tail)', () => {
@@ -1326,7 +1028,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
       JSON.stringify({ type: 'step/start', seq: 9, time: 3, data: { turn: 2, step: 1 } }), // gap in uncommitted tail
     ].join('\n') + '\n'
     const { events } = scanLog(Buffer.from(log))
-    expect(events.map(e => (e as SessionEvent).seq)).toEqual([0, 1]) // tail dropped
+    expect(events.map(e => e.seq)).toEqual([0, 1]) // tail dropped
   })
 })
 
@@ -1447,7 +1149,7 @@ describe('JsonlSessionPersistence: default packed chunk rows', () => {
       JSON.stringify({ type: 'turn/end', seq: 4, time: 5, data: { turn: 1, reason: { kind: 'completed' } } }),
     ].join('\n') + '\n'
     const { events } = scanLog(Buffer.from(logText))
-    expect(events.map(e => (e as SessionEvent).seq)).toEqual([0, 1, 2, 3, 4])
+    expect(events.map(e => e.seq)).toEqual([0, 1, 2, 3, 4])
     expect(events[2]).toEqual({ type: 'assistant/chunk', seq: 2, time: 3, data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'b' } } })
   })
 
@@ -1469,7 +1171,7 @@ describe('JsonlSessionPersistence: default packed chunk rows', () => {
       JSON.stringify({ type: 'text-chunks', seq0: 2, time0: 2, data: { turn: 1, step: 1, index: 0, dt: [1, 1], texts: ['a', 'b', 'c'] } }),
     ].join('\n') + '\n'
     const scanned = scanLog(Buffer.from(logText))
-    expect(scanned.events.map(e => (e as SessionEvent).seq)).toEqual([0])
+    expect(scanned.events.map(e => e.seq)).toEqual([0])
     // committedBytes stays on the line boundary BEFORE the dropped row.
     const headerAndTurn = logText.split('\n').slice(0, 2).join('\n') + '\n'
     expect(scanned.committedBytes).toBe(Buffer.byteLength(headerAndTurn, 'utf8'))
@@ -1542,23 +1244,6 @@ describe('JsonlSessionPersistence: edge cases', () => {
 
   it('list on an empty root returns nothing', async () => {
     expect(await ctx.sessionPersistence.list()).toEqual([])
-  })
-
-  it('listing refuses a future format before validating current identity fields', async () => {
-    const id = SessionId('future-list')
-    const path = rawLogPath(root, '/work', id)
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id: 123 })}\n`)
-
-    for (const list of [
-      () => ctx.sessionPersistence.list(),
-      () => ctx.sessionPersistence.listSnapshots(),
-    ]) {
-      const failure = await list().then(() => undefined, (error: unknown) => error as Error)
-      expect(failure?.name).toBe('SessionFormatUnsupportedError')
-      expect(failure?.message).toContain('session "123" uses log format v42')
-      expect(failure?.message).toMatch(/written by a newer harness.*upgrade the harness/)
-    }
   })
 
   it('keeps the transcript in an extensible session-owned directory', async () => {
@@ -1728,7 +1413,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
     // The "/w" log is untouched — no no-cwd events were grafted onto it, and no
     // `_no-cwd` log for "x" was created.
     const inW = scanLog(await readFile(rawLogPath(root, '/w', SessionId('x'))))
-    expect((inW.meta as SessionHeader).cwd).toBe('/w')
+    expect(inW.meta.cwd).toBe('/w')
     expect(inW.events).toHaveLength(6)
     await expect(stat(rawLogPath(root, undefined, SessionId('x')))).rejects.toThrow()
     await ctx2.fiber.dispose()
