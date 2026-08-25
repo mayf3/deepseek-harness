@@ -6,7 +6,7 @@ SDK 提供方会在全新的子进程中把每个 subagent 作为完整的 DeepS
 
 ## 启动与所有权
 
-`start(request)` 先解析子进程工作目录，通过 `DeepSeekHarness` spawn 运行时，并在履行前完成 `initialize` 握手（携带配置的 `provider`/`model` 路由及可选的 `maxTokens` 输出上限）。因此，履行意味着子运行时已就绪、所有权已移交给调用方。spawn、握手或发布前取消失败通常会在子进程被回收后拒绝；若清理自身也拒绝，有序的安全事实会在普通失败时保留 initialize 与 shutdown，在取消后只保留 shutdown，且不会宣称进程已经完全停稳。工作目录解析失败则会在尚未 spawn 任何内容时拒绝。非取消拒绝的 Error 消息只公开固定的 provider、stage 与 category 事实；原始 SDK 失败仍保留在内部 cause 链和 Host 诊断中。
+`start(request)` 会先拒绝已经取消的请求，再在 spawn 前解析子进程工作目录与一条进程级 SDK 路由。`request.agentOptions` 中每个已声明字段（`provider`、`model`、`reasoningEffort` 或 `maxTokens`）都会覆盖对应的提供方实例默认值；省略时保留已配置的提供方／模型与可选上限，而推理强度只有在请求提供时才会出现。随后，提供方通过 `DeepSeekHarness` spawn 运行时，并在履行前完成子运行时的 `initialize` 握手，其中包括确切模型与推理强度校验。因此，履行意味着子运行时已就绪、所有权已移交给调用方。路由、spawn、握手或发布前取消失败通常会在子进程被回收后拒绝；若清理自身也拒绝，有序的安全事实会在普通失败时保留 initialize 与 shutdown，在取消后只保留 shutdown，且不会宣称进程已经完全停稳。工作目录解析失败则会在尚未 spawn 任何内容时拒绝。非取消拒绝的 Error 消息只公开固定的 provider、stage 与 category 事实；原始 SDK 失败仍保留在内部 cause 链和 Host 诊断中。
 
 工作目录的解析与 ACP 后端完全一致，并使用 seam 共享的进程外辅助工具（[`dsh-subagent`](../subagent/README.zh.md)）：设置了 `cwd` 覆盖值时使用该值（加载时校验一次），否则使用发起委派的父会话 cwd，绝不使用服务器进程自身的 cwd。解析出的路径同时成为子进程 cwd 和其 SDK 会话的工作区 cwd。`dshHome` 必须另外指定为绝对路径，使嵌套运行时不会意外共享父运行时的 profile、插件安装或会话存储。
 
@@ -43,7 +43,7 @@ Subagent failure (provider: DSH SDK; stage: <stage>; category: <category>)
 
 ## 能力与上下文
 
-Provider 不宣告任何启动期能力（`agentOptions`/`outputSchema`/`depthLimit`/`toolFilter`/`persona` 全为 false），且 `inheritsParentContext: false`：子进程是另一进程里的全新运行时，唯一来自父方的输入是工作区 cwd。基于本 provider 的 `dsh-tool-subagent` 部署应设置 `maxDepth: 'provider-managed'`——子 harness 拥有自己的递归预算。
+提供方声明 `agentOptions: true`，同时保持 `outputSchema`/`depthLimit`/`toolFilter`/`persona` 为 false，并且 `inheritsParentContext: false`。不可变的 `agentRouteDefaults` 会在模型覆盖与确切路由预检前，把配置的 provider／model 基线公开给 `dsh-tool-subagent`；`start()` 则为直接调用方与 maxTokens 独立应用同一份 Config 默认值。Agent 路由值通过显式白名单跨越 SDK 协议；子进程仍是另一进程里的全新运行时，唯一从父 Agent 本身派生的值是工作区 cwd。基于本提供方的 `dsh-tool-subagent` 部署应设置 `maxDepth: 'provider-managed'`——子 harness 拥有自己的递归预算。
 
 ## 配置
 
@@ -62,6 +62,8 @@ Provider 不宣告任何启动期能力（`agentOptions`/`outputSchema`/`depthLi
 | `shutdownTimeoutMs` | `1000` | dispose 期间协议 `shutdown` 交换的时限。 |
 | `disposeEofGraceMs` | `6000` | stdin EOF 之后、平台终止之前的宽限。 |
 | `disposeGraceMs` | `3000` | 终止后的退出确认窗口；POSIX 在 SIGTERM 之后、SIGKILL 之前也等待同样时长。 |
+
+请求 `agentOptions` 会分别覆盖 `provider`、`model` 与 `maxTokens`。`reasoningEffort` 没有提供方实例默认值：请求省略时保持缺省，由所选子模型解析自身默认值。面向模型的 subagent 工具可在每次调用时选择提供方／模型／推理强度；`maxTokens` 仍由工具配置或本提供方默认值在部署侧控制。
 
 ```yaml
 - id: subagent-dsh-sdk
@@ -91,7 +93,7 @@ Provider 不宣告任何启动期能力（`agentOptions`/`outputSchema`/`depthLi
 
 #### 模型看到的内容
 
-子运行时的模型会收到作为用户消息的独立任务，以及该运行时自身配置的系统提示词、工具和全新会话。它不会收到父级对话。本提供方不声明可选的启动时能力，因此本地服务会拒绝要求 `agentOptions`、persona、工具过滤、深度强制或结构化输出的请求，而不是静默省略这些要求。
+子运行时的模型会收到作为用户消息的独立任务，以及该运行时自身配置的系统提示词、工具和全新会话。它不会收到父级对话。父级工具调用可以为本次运行选择子级提供方、模型与推理强度；所选路由和部署持有的可选输出上限会固定到这个新子进程。persona、工具过滤、深度强制与结构化输出仍不受支持，并会被拒绝而不是静默省略。
 
 #### Token 影响
 
@@ -118,6 +120,6 @@ Provider 不宣告任何启动期能力（`agentOptions`/`outputSchema`/`depthLi
 ## 已知限制与暂缓事项
 
 - **每次运行都使用全新的运行时进程**：不使用进程池；harness 运行时需要启动完整的插件树，因此每次运行的 spawn 成本高于 ACP 后端通常使用的子进程。
-- **不支持可选的启动时能力**：父级无法在子进程内应用 `agentOptions`，也无法强制执行 `outputSchema`、深度限制、工具过滤或 persona；应改为配置所选子 profile 及其有序 patch。
+- **不支持路由之外的启动时能力**：父级可以选择子 Agent 路由，但无法在子进程内强制执行 `outputSchema`、深度限制、工具过滤或 persona；应改为配置所选子 profile 及其有序 patch。
 - **子进程的 transcript（文本记录）保留在其自身的会话根目录中**：父级日志只记录委派工具调用／结果（seam 的子级隔离规则）；流式 `session.event` 通道只用于提取输出，不会桥接到父级日志中。
 - **仅支持本地子进程**：解析出的 cwd 是本地路径；远程运行时需要独立的后端。

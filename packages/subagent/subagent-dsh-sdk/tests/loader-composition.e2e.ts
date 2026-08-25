@@ -1,8 +1,10 @@
 /**
- * Keyless REAL-composition coverage across the SDK wire: a test-only
- * cordis.yml boots the headless app through the Loader, delegates to a
- * complete second harness runtime, and verifies cwd inheritance plus
- * model-visible child-failure diagnostics.
+ * Keyless REAL-composition coverage for dynamic child routing and parent cwd
+ * inheritance across the SDK wire. A test-only cordis.yml boots through the
+ * Loader, a scripted model selects provider/model/reasoning, tool config adds
+ * maxTokens, and a COMPLETE second harness runtime echoes the effective route
+ * and cwd. The same path also verifies model-visible child-failure diagnostics
+ * remain separate from partial output.
  */
 
 import { existsSync, realpathSync } from 'node:fs'
@@ -63,11 +65,12 @@ async function childLaunch(failure = false): Promise<{
   }
 }
 
-describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
-  it('runs the child runtime in the parent session workspace', async () => {
+describe('SDK subagent routing and diagnostics through a real cordis.yml', () => {
+  it('runs the selected child route in the parent session workspace', async () => {
     const child = await childLaunch()
     let events: SessionEvent[] = []
     let childEvents: SessionEvent[] = []
+    let parentResolvedRoutes: string[] = []
     let workspace = ''
     try {
       const { stderr } = await runLoaderSmoke({
@@ -81,7 +84,11 @@ describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
         // child); from-source tsx boots under load need more than the default
         // 30s window.
         processTimeoutMs: 120_000,
-        env: child.env,
+        env: {
+          ...child.env,
+          DSH_TEST_CHILD_DEFAULT_ROUTE: '1',
+          DSH_TEST_PARENT_MODEL_RECORD: '.parent-model-routes',
+        },
         inspect: async (cwd) => {
           // The child reports realpaths; canonicalize the temp workspace to match.
           workspace = realpathSync(cwd)
@@ -97,6 +104,7 @@ describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
           const childLogs = await jsonlFiles(childSessions)
           expect(childLogs).toHaveLength(1)
           childEvents = await sessionEvents(childLogs[0] as string)
+          parentResolvedRoutes = (await readFile(join(cwd, '.parent-model-routes'), 'utf8')).trim().split('\n')
         },
       })
       expect(stderr).not.toContain('UNHANDLED')
@@ -110,10 +118,20 @@ describe('SDK subagent cwd inheritance through a real cordis.yml', () => {
         .filter(block => block.type === 'text')
         .map(block => block.text)
         .join('')
-      expect(resultText).toBe(`child cwd: ${workspace}`)
+      expect(resultText).toBe(`child route: mock/mock-routed/max/777; cwd: ${workspace}`)
+      expect(parentResolvedRoutes).toContain('mock/mock-routed')
 
-      // The child ran a real turn of its own: user message in, assistant out.
+      // The child ran a real turn with the model-selected route and tool-configured cap.
       expect(childEvents.some(event => event.type === 'user/message')).toBe(true)
+      const childHeader = childEvents.find(
+        (event): event is Extract<SessionEvent, { type: 'request/header' }> => event.type === 'request/header',
+      )
+      expect(childHeader?.data.header.config).toEqual({
+        provider: 'mock',
+        model: 'mock-routed',
+        reasoningEffort: 'max',
+        maxTokens: 777,
+      })
       const childAnswers = childEvents.filter(event => event.type === 'assistant/message')
       expect(childAnswers.length).toBeGreaterThan(0)
     } finally {
