@@ -456,7 +456,10 @@ describe('SubagentModelSelectionCardController', () => {
       groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
     })
     const controller = new SubagentModelSelectionCardController(host.scope, models.api)
-    host.publish({ status: 'ready', writable: true, value: { enabled: false, allowedModels: [] }, user: {} })
+    host.publish({
+      status: 'ready', writable: true, revision: 3,
+      value: { enabled: false, allowedModels: [] }, user: {},
+    })
     const face = controller.inject()
 
     expect(face.hooks.subagentModelSelectionCard.getSnapshot().enabled).toBe(false)
@@ -470,7 +473,7 @@ describe('SubagentModelSelectionCardController', () => {
       expect(host.mutate).toHaveBeenCalledWith([
         { op: 'set', path: ['enabled'], value: true },
         { op: 'set', path: ['allowedModels'], value: [{ provider: 'alpha', model: 'fast' }] },
-      ])
+      ], 3)
     })
 
     expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
@@ -479,6 +482,19 @@ describe('SubagentModelSelectionCardController', () => {
       saving: false,
       saved: true,
       failed: false,
+    })
+  })
+
+  it('starts an empty draft when a ready test scope has no decoded value', () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const controller = new SubagentModelSelectionCardController(host.scope, modelsApi().api)
+    host.publish({ status: 'ready', writable: true, revision: 0, value: undefined })
+    const face = controller.inject()
+
+    face.toggleEnabled()
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      enabled: true, dirty: true, invalid: true,
     })
   })
 
@@ -517,7 +533,7 @@ describe('SubagentModelSelectionCardController', () => {
     })
     const controller = new SubagentModelSelectionCardController(host.scope, models.api)
     host.publish({
-      status: 'ready', writable: true,
+      status: 'ready', writable: true, revision: 5,
       value: { enabled: true, allowedModels: [{ provider: 'alpha', model: 'fast' }] }, user: {},
     })
     const face = controller.inject()
@@ -541,7 +557,7 @@ describe('SubagentModelSelectionCardController', () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
     acceptWrites(host)
     host.publish({
-      status: 'ready', writable: true,
+      status: 'ready', writable: true, revision: 5,
       value: { enabled: true, allowedModels: [{ provider: 'alpha', model: 'fast' }] }, user: {},
     })
     const models = modelsApi({
@@ -557,7 +573,7 @@ describe('SubagentModelSelectionCardController', () => {
       expect(host.mutate).toHaveBeenCalledWith([
         { op: 'set', path: ['enabled'], value: false },
         { op: 'set', path: ['allowedModels'], value: [{ provider: 'alpha', model: 'fast' }] },
-      ])
+      ], 5)
     })
     expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
       enabled: false, dirty: false, saved: true,
@@ -576,6 +592,71 @@ describe('SubagentModelSelectionCardController', () => {
     await vi.waitFor(() => { expect(state().catalogStatus).toBe('error') })
     face.retryCatalog()
     await vi.waitFor(() => { expect(models.models).toHaveBeenCalledTimes(2) })
+  })
+
+  it('rejects a draft after the Host revision changes', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const models = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
+    })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    host.publish({
+      status: 'ready', writable: true, revision: 4,
+      value: { enabled: false, allowedModels: [] }, user: {},
+    })
+    const face = controller.inject()
+    face.toggleEnabled()
+    await vi.waitFor(() => {
+      expect(face.hooks.subagentModelSelectionCard.getSnapshot().candidates).toHaveLength(1)
+    })
+    face.toggleModel('alpha\0fast')
+
+    host.publish({
+      revision: 5,
+      value: { enabled: true, allowedModels: [{ provider: 'other', model: 'new' }] },
+    })
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({ failed: true, dirty: true })
+    face.save()
+    await Promise.resolve()
+
+    expect(host.mutate).not.toHaveBeenCalled()
+    face.discard()
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      failed: false, dirty: false, enabled: true,
+    })
+  })
+
+  it('reloads the model catalog after invalidation', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    host.publish({
+      status: 'ready', writable: true, revision: 1,
+      value: { enabled: true, allowedModels: [] }, user: {},
+    })
+    const models = vi.fn()
+      .mockResolvedValueOnce({
+        rpcId: 'catalog-1',
+        result: { ok: true, value: {
+          groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
+          failures: [],
+        } },
+      })
+      .mockResolvedValueOnce({
+        rpcId: 'catalog-2',
+        result: { ok: true, value: {
+          groups: [{ id: 'beta', name: 'Beta', models: [{ id: 'new', name: 'New' }] }],
+          failures: [],
+        } },
+      })
+    const controller = new SubagentModelSelectionCardController(
+      host.scope, { llm: { models } } as never,
+    )
+    const state = () => controller.inject().hooks.subagentModelSelectionCard.getSnapshot()
+    await vi.waitFor(() => { expect(state().candidates[0]?.provider).toBe('alpha') })
+
+    controller.refreshCatalog()
+
+    await vi.waitFor(() => { expect(state().candidates[0]?.provider).toBe('beta') })
+    expect(models).toHaveBeenCalledTimes(2)
   })
 
   it('suppresses duplicate actions and late save settlements', async () => {
@@ -658,6 +739,8 @@ describe('SubagentModelSelectionCardController', () => {
     expect(host.mutate).not.toHaveBeenCalled()
 
     controller.dispose()
+    controller.refreshCatalog()
+    controller.resetCatalog()
     face.toggleEnabled()
     face.retryCatalog()
     face.save()

@@ -129,6 +129,13 @@ describe('SubagentModelSelectionConfig', () => {
     const invalid = Session.create(SessionId('empty-policy'))
     invalid.append('subagent/model-selection-policy', { allowedModels: [] })
     expect(() => subagentModelSelectionPolicy(invalid)).toThrow('requires at least one route')
+
+    const malformed = Session.create(SessionId('malformed-policy'))
+    malformed.append('subagent/model-selection-policy', {
+      allowedModels: [{ provider: 1, model: 'fast-model' }],
+    } as never)
+    expect(() => subagentModelSelectionPolicy(malformed))
+      .toThrow('requires non-empty provider and model ids')
     await ctx.fiber.dispose()
   })
 
@@ -219,6 +226,40 @@ describe('SubagentModelSelectionConfig', () => {
     await enabled.dispose()
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
     await disabled.dispose()
+    await ctx.fiber.dispose()
+  })
+
+  it('releases a shared-preset installation reservation after policy selection fails', async () => {
+    const ctx = await boot()
+    const preset = createScope(ctx, { preset: 'standard' })
+    const other = createScope(ctx, { preset: 'minimal' })
+    await preset.ctx.plugin(tool, {
+      provider: 'spawn',
+      modelSelectionSettings: true,
+      backgroundMode: 'continuable',
+    })
+    let binding: ReturnType<typeof bindScopeParent> | undefined
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('preset-policy-retry'),
+      setup: (agentCtx) => {
+        binding = bindScopeParent(scopeOf(agentCtx)!, scopeOf(preset.ctx)!)
+      },
+    })
+    expect(selectable(ctx, handle.agent)).toBe(false)
+
+    binding!.rebind(scopeOf(other.ctx)!)
+    ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
+    binding!.rebind(scopeOf(preset.ctx)!)
+    vi.spyOn(ctx.subagentModelSelection, 'current')
+      .mockImplementationOnce(() => { throw new Error('transient settings read') })
+      .mockReturnValue({ enabled: true, allowedModels: ALLOWED_MODELS })
+
+    expect(() => { ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change') })
+      .toThrow('transient settings read')
+    ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
+    await vi.waitFor(() => { expect(selectable(ctx, handle.agent)).toBe(true) })
+
+    await handle.dispose()
     await ctx.fiber.dispose()
   })
 

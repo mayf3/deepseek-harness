@@ -120,13 +120,14 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
   /**
    * Queue one atomic namespace mutation; see {@link SettingsScope.mutate}.
    * @param ops - ordered field operations copied when queued.
+   * @param expectedRevision - optional fixed revision read by the domain editor.
    * @returns settlement after the mutation and any latest-write recovery read.
    */
-  mutate(ops: readonly SettingsPathOpView[]): Promise<void> {
+  mutate(ops: readonly SettingsPathOpView[], expectedRevision?: number): Promise<void> {
     const ownedOps = structuredClone(ops) as SettingsPathOpView[]
     const generation = ++this.writeGeneration
     return this.enqueue(async () => {
-      const revision = this.pendingRevision ?? this.getSnapshot().revision
+      const revision = expectedRevision ?? this.pendingRevision ?? this.getSnapshot().revision
       let response: Awaited<ReturnType<SettingsFace['settings']['mutate']>>
       try {
         response = await this.api.settings.mutate(this.spec.namespace, ownedOps, revision)

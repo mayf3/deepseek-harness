@@ -201,6 +201,30 @@ describe('SettingsScopeController', () => {
     )
   })
 
+  it('preserves an editor-owned revision fence behind earlier queued writes', async () => {
+    const first = deferred<RpcResponse<SettingsNamespaceView>>()
+    const describeCall = vi.fn()
+      .mockResolvedValueOnce(described({ preference: 'system' }, 7))
+      .mockResolvedValueOnce(described({ preference: 'dark' }, 8))
+    const mutate = vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce(rejected())
+    const { mirror, scope } = derivedScope({ describe: describeCall, mutate })
+    await mirror.load()
+
+    const earlier = scope.set('preference', 'dark')
+    const fenced = scope.mutate([{ op: 'set', path: ['preference'], value: 'light' }], 7)
+    first.resolve(ok(view({ preference: 'dark' }, 8)))
+    await Promise.all([earlier, fenced])
+
+    expect(mutate).toHaveBeenNthCalledWith(2, {
+      ns: 'ui-test',
+      ops: [{ op: 'set', path: ['preference'], value: 'light' }],
+      expectedRevision: 7,
+    })
+    expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 8 })
+  })
+
   it('folds the latest write answer into the mirror so a sibling scope sees it', async () => {
     const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'system' }, 4))
     const mutate = vi.fn().mockResolvedValueOnce(ok(view({ preference: 'dark' }, 5)))

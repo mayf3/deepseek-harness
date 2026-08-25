@@ -38,6 +38,10 @@ describe('dsh-tool-subagent model selection', () => {
       .toThrow('requires non-empty provider and model ids')
     expect(() => { assertAllowedModelRoutes([{ provider: 'provider', model: '' }]) })
       .toThrow('requires non-empty provider and model ids')
+    expect(() => { assertAllowedModelRoutes({ provider: 'provider', model: 'model' }) })
+      .toThrow('requires an array of routes')
+    expect(() => { assertAllowedModelRoutes([{ provider: 1, model: 'model' }]) })
+      .toThrow('requires non-empty provider and model ids')
   })
 
   it('allows pure inheritance but rejects explicit values outside a Session allowlist', () => {

@@ -651,11 +651,15 @@ export function apply(ctx: Context, config: Config): void {
     // Reserve before the injected fiber runs: tool registration emits
     // `tools/change` synchronously, which re-enters the reconciliation below.
     installing.add(candidate)
-    const policy = selectForAgent(candidate)
-    const fiber = candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
-      install(runtimeCtx, policy)
-    })
-    installing.delete(candidate)
+    let fiber: ReturnType<Context['inject']>
+    try {
+      const policy = selectForAgent(candidate)
+      fiber = candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
+        install(runtimeCtx, policy)
+      })
+    } finally {
+      installing.delete(candidate)
+    }
     scopedInstalls.set(candidate, fiber)
   }
   const removeScoped = (candidate: Agent): void => {

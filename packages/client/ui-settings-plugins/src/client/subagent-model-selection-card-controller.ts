@@ -134,6 +134,7 @@ export class SubagentModelSelectionCardController {
   private catalogStatus: SubagentModelSelectionCardState['catalogStatus'] = 'idle'
   private draftEnabled: boolean | undefined
   private draftSelected: Set<string> | undefined
+  private draftRevision: number | undefined
   private saving = false
   private saved = false
   private failed = false
@@ -153,6 +154,11 @@ export class SubagentModelSelectionCardController {
   ) {
     this.store = createSnapshotStore(this.projection())
     this.unsubscribe = scope.subscribe(() => {
+      if (!this.saving && this.draftSelected !== undefined
+        && this.scope.getSnapshot().revision !== this.draftRevision) {
+        this.saved = false
+        this.failed = true
+      }
       if (this.enabled() && this.catalogStatus === 'idle') void this.loadCatalog()
       this.publish()
     })
@@ -199,8 +205,12 @@ export class SubagentModelSelectionCardController {
   }
 
   private beginDraft(): Set<string> {
-    this.draftEnabled ??= this.currentEnabled()
-    this.draftSelected ??= new Set(this.currentRoutes().map(subagentModelKey))
+    if (this.draftSelected === undefined) {
+      const snapshot = this.scope.getSnapshot()
+      this.draftEnabled = snapshot.value?.enabled ?? false
+      this.draftSelected = new Set(snapshot.value?.allowedModels.map(subagentModelKey) ?? [])
+      this.draftRevision = snapshot.revision
+    }
     return this.draftSelected
   }
 
@@ -230,6 +240,7 @@ export class SubagentModelSelectionCardController {
     if (this.saving) return
     this.draftEnabled = undefined
     this.draftSelected = undefined
+    this.draftRevision = undefined
     this.saved = false
     this.failed = false
     this.publish()
@@ -252,6 +263,12 @@ export class SubagentModelSelectionCardController {
     if (this.disposed || snapshot.status !== 'ready' || !snapshot.writable || this.saving
       || (this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired))
       || (desiredEnabled && desired.length === 0)) return
+    if (this.draftSelected !== undefined && snapshot.revision !== this.draftRevision) {
+      this.saved = false
+      this.failed = true
+      this.publish()
+      return
+    }
     const generation = this.saveGeneration
     this.saving = true
     this.saved = false
@@ -260,7 +277,7 @@ export class SubagentModelSelectionCardController {
     await this.scope.mutate([
       { op: 'set', path: ['enabled'], value: desiredEnabled },
       { op: 'set', path: ['allowedModels'], value: desired },
-    ])
+    ], this.draftRevision)
     if (generation !== this.saveGeneration) return
     const landed = this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired)
     this.saving = false
@@ -269,8 +286,26 @@ export class SubagentModelSelectionCardController {
     if (landed) {
       this.draftEnabled = undefined
       this.draftSelected = undefined
+      this.draftRevision = undefined
     }
     this.publish()
+  }
+
+  /** Invalidate and reload model candidates after a Host model input changes. */
+  refreshCatalog(): void {
+    if (this.disposed) return
+    this.catalogGeneration += 1
+    this.catalogStatus = 'idle'
+    this.catalogFailures = []
+    if (this.enabled()) void this.loadCatalog()
+    else this.publish()
+  }
+
+  /** Clear Host-specific candidates and reload after reconnecting. */
+  resetCatalog(): void {
+    if (this.disposed) return
+    this.catalogGroups = []
+    this.refreshCatalog()
   }
 
   private async loadCatalog(): Promise<void> {

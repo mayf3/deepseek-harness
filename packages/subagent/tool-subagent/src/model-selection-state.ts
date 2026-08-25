@@ -26,8 +26,9 @@ declare module '@deepseek-ai/dsh-session/types' {
 export function subagentModelSelectionPolicy(session: Session): AllowedModelRoute[] | undefined {
   const event = session.events.find(candidate => candidate.type === 'subagent/model-selection-policy')
   if (event?.type !== 'subagent/model-selection-policy') return undefined
-  const routes = event.data.allowedModels.map(route => ({ ...route }))
-  assertAllowedModelRoutes(routes)
+  const { allowedModels } = event.data
+  assertAllowedModelRoutes(allowedModels)
+  const routes = allowedModels.map(route => ({ ...route }))
   if (routes.length === 0) throw new Error('subagent/model-selection-policy requires at least one route')
   return routes
 }

@@ -35,15 +35,24 @@ export function modelRouteKey(route: AllowedModelRoute): string {
 }
 
 /**
- * Reject malformed or duplicate route policy entries at a configuration boundary.
- * @param routes - Exact routes to validate.
+ * Reject malformed or duplicate route policy entries at a durable or configuration boundary.
+ * @param routes - Candidate exact routes to validate.
+ * @returns an assertion that the candidate is a validated exact-route array.
  */
-export function assertAllowedModelRoutes(routes: readonly AllowedModelRoute[]): void {
+export function assertAllowedModelRoutes(routes: unknown): asserts routes is readonly AllowedModelRoute[] {
+  if (!Array.isArray(routes)) {
+    throw new Error('subagent model selection requires an array of routes')
+  }
   const seen = new Set<string>()
-  for (const route of routes) {
-    if (route.provider.length === 0 || route.model.length === 0) {
+  const candidates: readonly unknown[] = routes
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'object' || candidate === null || Array.isArray(candidate)
+      || !('provider' in candidate) || typeof candidate.provider !== 'string'
+      || !('model' in candidate) || typeof candidate.model !== 'string'
+      || candidate.provider.length === 0 || candidate.model.length === 0) {
       throw new Error('subagent model selection requires non-empty provider and model ids')
     }
+    const route = { provider: candidate.provider, model: candidate.model }
     const key = modelRouteKey(route)
     if (seen.has(key)) {
       throw new Error(`subagent model selection repeats route "${route.provider}/${route.model}"`)

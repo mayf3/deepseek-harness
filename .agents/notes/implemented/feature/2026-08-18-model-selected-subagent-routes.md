@@ -48,7 +48,7 @@ The delegation definition is static across adapter registration and catalog chan
 
 ## Consequences
 
-- A statically enabled delegation tool can select any live child LLM route without deployment selector configuration; disabled instances omit and reject model-facing route fields.
+- A settings-enabled Session can select only its recorded exact child LLM routes; disabled Sessions omit and reject model-facing route fields.
 - The primary delegation-tool instance defaults selection off, exposes a Plugins-page exact-route opt-in for new Sessions, and registers `list_subagent_models` only in Sessions whose durable policy exists; discovery and explicit selection are constrained to that policy.
 - Shipped fork tools inherit the parent's provider and model and omit model-facing route fields so the inherited conversation prefix remains eligible for KV Cache reuse.
 - Omission retains configured defaults plus static provider route defaults or compatible parent inheritance; a route change without an explicit effort uses the selected model's default.

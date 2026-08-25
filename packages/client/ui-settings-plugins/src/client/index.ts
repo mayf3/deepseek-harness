@@ -9,6 +9,7 @@
  * settings scope, which keeps them unaware of one another and of other tabs.
  */
 
+import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the settings shell's SlotMap merge (the 'settings.section' entry)
@@ -53,13 +54,14 @@ export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-co
 const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'remote', 'remote.credentials', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.credentials', 'settingsScope']
 
 /**
  * Mount the plugin configuration section and the cards this package ships.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
+  const { api } = ctx.get('connection') as ConnectionHandle
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugins: section dictionaries')
 
@@ -78,6 +80,18 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(
     () => ctx.remote.$on('credentials/reference-updated', (ref) => { webSearch.refreshCredential(ref) }),
     'ui-settings-plugins: credential invalidations',
+  )
+  ctx.effect(
+    () => ctx.remote.$on('llm/adapters-updated', () => { subagentModelSelection.refreshCatalog() }),
+    'ui-settings-plugins: subagent adapter invalidations',
+  )
+  ctx.effect(
+    () => ctx.remote.$on('settings/document-updated', () => { subagentModelSelection.refreshCatalog() }),
+    'ui-settings-plugins: subagent settings invalidations',
+  )
+  ctx.effect(
+    () => ctx.on('connection/reset', () => { subagentModelSelection.resetCatalog() }),
+    'ui-settings-plugins: subagent connection generation',
   )
   ctx.effect(() => () => { subagentModelSelection.dispose() }, 'ui-settings-plugins: subagent preference')
 
