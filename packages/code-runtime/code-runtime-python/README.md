@@ -1,32 +1,103 @@
 ---
-description: "CPython subprocess implementation of the DeepSeek Harness code-execution seam, with fd-3 bindings, resource limits, log capture, and process-group teardown."
-kind: "package-reference"
+description: "CPython-subprocess code runtime: the dsh-code-runtime seam implementation for Python model code, with the fd-3 wire protocol it speaks."
+kind: "package-library"
 ---
 
 # @deepseek-ai/dsh-code-runtime-python
 
 English | [中文](README.zh.md)
 
-CPython-subprocess implementation of the [`@deepseek-ai/dsh-code-runtime`](../code-runtime/README.md) seam. Companion to [`@deepseek-ai/dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md); trades the Node worker thread for a fresh `python3` subprocess so model code is Python instead of TypeScript.
+## Summary
 
-The package owns the wire protocol for that seam: the host-side frame codec and the Python-side mirror of the same message vocabulary. On top of that protocol it ships `PythonCodeRuntime` (the plugin's default export), which registers as `codeRuntime` with `language: 'python'` and `isolation: 'process'`. Each `run()` spawns a fresh `python3 -I` process, sends a boot frame and the program over fd 3, and resolves a `CodeRunResult` for every program outcome — `run()` rejects only for seam misuse, such as a malformed binding namespace or a call on a runtime whose fiber was already disposed. Configuration is rejected earlier, when the plugin loads: a non-Unix platform, a non-positive or non-integer budget, a `maxLogBytes` below the truncation-marker floor (64), a timer value `setTimeout` would clamp, a budget larger than one fd-3 frame can carry, and an `addressSpaceMb`/output-budget pair whose worst-case peak would breach `RLIMIT_AS` all throw from the constructor, so a misconfiguration fails at assembly rather than on a later run. The child runs the program as the body of an async function, so top-level `await` and `return` both work; binding calls travel back over fd 3 as JSON-lines. Containment (not a security boundary — model code has bash-equivalent trust) comes from an empty environment, `RLIMIT_CPU`/`RLIMIT_AS`, a wall-clock ceiling, and a `SIGTERM`→grace→`SIGKILL` teardown on the child's process group.
+`dsh-code-runtime-python` ships `PythonCodeRuntime`, the CPython-subprocess implementation of the [`dsh-code-runtime`](../code-runtime/README.md) seam: it registers as `codeRuntime` with `language: 'python'` and `isolation: 'process'`, spawning a fresh `python3 -I` child per `run()` and executing the program as an async function body over a versionless JSON-lines protocol on the child's fd 3 (stdout/stderr stay free for the program's own output). The host side (`src/protocol.ts`) treats every inbound frame as hostile and rebuilds it before reading; the Python side (`py/protocol.py`) mirrors the message vocabulary. Containment — not a security boundary, model code has bash-equivalent trust — comes from an empty environment, `RLIMIT_CPU`/`RLIMIT_AS`, a wall-clock ceiling, and `SIGTERM`→grace→`SIGKILL` process-group teardown, with all caps validated at plugin load.
 
-## Wire protocol
+## Table of Contents
 
-The host and the CPython subprocess exchange a versionless, JSON-lines protocol on the child's fd 3 — one JSON object per line, leaving stdout/stderr free for the program's own output. `src/protocol.ts` is the host side; `py/protocol.py` mirrors its message shapes and the shared truncation-marker text on the Python side.
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-- **fd 3, not stdout** — Node pins the channel positionally with `stdio: ['pipe','pipe','pipe','pipe']`; the Python bootstrap reads the same `PROTOCOL_FD` constant. JSON-lines framing.
-- **Host treats every inbound frame as hostile** — model code has full access to fd 3 and can post anything through it, so `validateChildFrame` shape-validates and REBUILDS each frame before the host reads it: forged extra fields never ride along, a non-number call id can never be echoed into a reply, and junk drops to `undefined` rather than throwing in the host's message handler. The Python side trusts host replies (the host is not model-controlled).
-- **Lossless-JSON crossing** — completion values and binding arguments cross as exact JSON. `encodeJsonPlain` serializes a `JSON.parse`-produced value without recursion, so a deep value below the byte budget crosses intact instead of dying on `JSON.stringify`'s stack limit; `checkDoneValue` meters a forged completion value's byte length AND number losslessness in one bounded traversal that rejects an over-budget payload before enqueuing its children; `hasUnsafeIntegerToken` reads the raw frame text to catch an integer token that `JSON.parse` would silently round; `hasNonLosslessNumber` rejects a non-finite or negative-zero number in unbounded `call.args`. Beyond-safe-range integral doubles serialize through `BigInt` digits so the exact integer crosses, not the rounded `String()` form.
-- **Shared truncation marker** — `logTruncationMarker(maxBytes)` produces byte-identical text on both sides, so a truncated log run reads the same however the cap was hit. The `log` frame's `truncated` flag distinguishes the child ledger's own marker from program output.
+-----
 
-## Configuration
+<a id="use-this-package"></a>
+## Use this package
 
-Every cap is a validated `Config` field with a default, changeable from `cordis.yml` (no hardcoded tunables). `cpuSeconds` (default 60) is the `RLIMIT_CPU` whole-second budget; the child sets the soft limit to `cpuSeconds` and the hard limit to `cpuSeconds + 1`, so the kernel's `SIGXCPU` at the soft limit classifies as a `timeout` while the +1s hard limit is a `SIGKILL` backstop. `maxWallMs` (default 600000) is the wall-clock ceiling that backstops CPU time for a program awaiting a promise nobody resolves. `addressSpaceMb` (default 512) is the `RLIMIT_AS` cap, not applied on Darwin (the dyld shared cache mapped into every process exceeds any practical cap there; `cpuSeconds` and `maxWallMs` still bound the run). `maxLogBytes` (default 65536) is the shared captured-log byte budget; `maxValueBytes` (default 32768) caps the completion value; `graceMs` (default 3000) is the `SIGTERM`→`SIGKILL` grace window; `pythonBin` (default `python3`) is the interpreter, resolved against `PATH` before the child spawns with an empty environment.
+Choose this package to run Python model code through the code-runtime seam: register `PythonCodeRuntime` with `dsh-tools` and `run()` executes each program in a fresh `python3 -I` subprocess, resolves with an `error` FIELD for every program outcome (the orthogonal `CodeRunFailure.kind` taxonomy classifies parse failures, thrown exceptions, invalid completions, output overflows, budget expiry, aborts, and substrate death), and rejects only for seam misuse — a malformed binding namespace, or a call after disposal. Configuration is rejected at load: a non-Unix platform, a non-positive or non-integer budget, a `maxLogBytes` below the truncation-marker floor (64), a timer value `setTimeout` would clamp, a budget larger than one fd-3 frame can carry, and an `addressSpaceMb`/output-budget pair whose worst-case peak would breach `RLIMIT_AS`.
 
+### What you get
+
+The package's default export is the `PythonCodeRuntime` plugin. Its public surface also re-exports the host-side protocol vocabulary: `validateChildFrame` (rebuilds every inbound frame), the lossless-JSON codec and meters (`encodeJsonPlain`, `checkDoneValue`, `hasUnsafeIntegerToken`, `hasNonLosslessNumber`), and `logTruncationMarker` (the shared truncation-marker text). Every cap is a validated `Config` field with a default: `cpuSeconds` (60), `maxWallMs` (600000), `addressSpaceMb` (512, not applied on Darwin), `maxLogBytes` (65536), `maxValueBytes` (32768), `graceMs` (3000), and `pythonBin` (`python3`, resolved against `PATH` before the child spawns with an empty environment).
+
+### The wire
+
+Frames travel on the child's fd 3 as JSON-lines — one object per line — so stdout/stderr stay clear for the program's own output. Child → host: `boot-ack`, `call`, `log`, `done`. Host → child: `boot` (first frame, carrying every cap and the namespace declarations), `run` (after `boot-ack`, carrying only the program body), and one `reply` per `call`. A forged frame can carry both `value` and `error` on `done`, so a consumer must check `error` first and ignore `value` when it is set.
+
+### What can go wrong
+
+Host-side validation drops junk without throwing, so a malformed or forged frame never crashes the host process: `validateChildFrame` returns `undefined` for anything that does not rebuild cleanly, a non-number call id can never be echoed into a reply, and forged extra fields never ride along. A completion value that is not lossless JSON, or that exceeds the configured byte budget, is rejected explicitly (`non-lossless` / `over-budget`) rather than silently rounded or truncated. An fd-3 frame whose raw length exceeds 64 MiB settles the run as a `worker-exit` (the receive path caps raw frames before `toString`/`JSON.parse` so a compact wide frame cannot decode to far more host memory than its wire bytes admitted).
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+This section explains the design behind the backend; observable behavior is fully covered in [Use this package](#use-this-package).
+
+### Design concept
+
+One direction of trust: the host treats every inbound frame as hostile (model code can forge anything on fd 3) and REBUILDS it field by field before reading; the Python side trusts host replies. The bootstrap (`py/bootstrap.py`) runs the program as the body of an async function, so top-level `await` and `return` work; binding calls travel over fd 3 as JSON-lines and replies are paced across the pump so a flood of large replies cannot pin the host's fd-3 write buffer.
+
+### Wire contract
+
+The frames are `boot` / `run` (host → child) and `boot-ack` / `call` / `log` / `done` plus one `reply` per call (child → host). The `log` frame's `truncated` flag marks the frame that IS the child ledger's truncation marker, so the host stops capturing at the same point the child did instead of inferring it from its own budget. `done.error.kind` is one of `exception`, `invalid-output`, `output-limit`; wall/CPU budgets, aborts, and substrate death are observed host-side, not carried as frames.
+
+### Lossless JSON crossing
+
+Completion values and binding arguments cross as exact JSON: values serialize without recursion, so a deep payload below the byte budget survives instead of dying on `JSON.stringify`'s stack limit, and integral doubles beyond the safe range cross as exact digits rather than silently rounded tokens; the meters in `src/protocol.ts` enforce byte budgets and number losslessness before anything else reads the payload.
+
+### Mirror alignment
+
+`tests/protocol-mirror.e2e.ts` spawns a real `python3` and asserts, against `src/protocol.ts`, both `PROTOCOL_FD` / the truncation-marker text and each `TypedDict`'s required/optional wire field set in `py/protocol.py`, so a renamed or dropped field — or one side making a field optional the other requires — fails the test. Field *types* are not compared across the language boundary; that residue stays with review plus the backend's real-subprocess suite (`tests/runtime.spec.ts`).
+
+### Source map
+
+| File | Role |
+|---|---|
+| [`src/index.ts`](src/index.ts) | Plugin entry: `PythonCodeRuntime` — spawn, frame pump, budgets, containment, teardown; re-exports the protocol vocabulary |
+| [`src/protocol.ts`](src/protocol.ts) | Host side: frame codec, hostile-frame validators, lossless-JSON meters, shared marker text |
+| [`py/bootstrap.py`](py/bootstrap.py) | Child side: fd-3 channel, program execution, binding dispatch, ledger and settlement |
+| [`py/protocol.py`](py/protocol.py) | Python side: `PROTOCOL_FD`, `TypedDict` frame mirrors, `log_truncation_marker` |
+| [`tests/runtime.spec.ts`](tests/runtime.spec.ts) | Real-subprocess suite: budgets, containment, hostile frames, name rebinding |
+| [`tests/protocol-mirror.e2e.ts`](tests/protocol-mirror.e2e.ts) | Cross-language mirror test against a real `python3` |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; the package registers no mutable data relation) |
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+Read these when the runtime contract is not enough. They move from the seam definition to the design record and the companion backend.
+
+- [Code runtime seam](../code-runtime/README.md) — the abstract contract this backend implements.
+- [fd-3 protocol Agent Note](../../../.agents/notes/implemented/architecture/2026-07-31-code-runtime-python-fd3-protocol.md) — design rationale and wire contract.
+- [Settlement-fixes Agent Note](../../../.agents/notes/implemented/bug-fix/2026-07-31-code-runtime-python-settlement-fixes.md) — settlement, metering, and containment fixes and their regression cases.
+- [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript sibling.
+- [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and failure taxonomy.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through Code Mode in [`dsh-tools`](../../core/tools/README.md), which renders this backend's exact completion value when it fits (or an explicit `invalid-output` / `output-limit` failure), plus the exact `[dsh-code-runtime-python] log capture truncated at <maxLogBytes> bytes` log marker, into a retained `run_code` result.
+Indirectly, through Code Mode in `dsh-tools`, which renders the program's completion value or failure into a retained `run_code` result.
 
 #### KV Cache effect
 
@@ -34,18 +105,25 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 
 ## Known Limitations and Deferred Work
 
-- **The cross-language guard covers executed values and frame field sets, not field types** — `tests/protocol-mirror.e2e.ts` compares `PROTOCOL_FD`, the log truncation marker, and each `TypedDict`'s required and optional fields against a real `python3`. Comparing field types across TypeScript and Python has no mechanical equivalent here, so review plus the backend's real-subprocess suite owns type-level drift.
-- **`RLIMIT_AS` is not enforced on macOS** — the dyld shared cache mapped into every process at exec exceeds any practical address-space cap, and the kernel rejects the `setrlimit` call, so `addressSpaceMb` is skipped there. `cpuSeconds` and `maxWallMs` still bound every run.
-- **PID-reuse protection is inert on macOS** — `readProcessStart` reads `/proc/<pid>/stat`, which Darwin does not provide, so the identity re-check that guards `killGroup` against signalling a recycled pgid always passes there; `killGroup` signals the pgid without the identity re-check on macOS rather than paying a `ps` fork on a teardown path. The process-group teardown and the `closeDeadline` bound still contain the run.
-- **C-ext stdio buffers are not drained at settlement.** The child runs with `-u` (unbuffered), so `sys.__stdout__`/`sys.__stderr__` and `os.write` bytes are visible to the host's stray capture immediately; but a C extension's private C-stdio (`FILE*`) buffering is outside the interpreter, and its unwritten bytes are lost when the host SIGTERMs the child after the done frame. Model code should flush C-level stdio explicitly before returning if it must survive.
+<a id="known-limitations-and-deferred-work"></a>
 
-- **An fd-3 frame whose raw length exceeds 64 MiB settles the run as a worker-exit.** The receive path caps raw frames at `FRAME_PARSE_CAP_BYTES` before `toString`/`JSON.parse` (a compact wide frame could decode to far more host memory than the wire bytes admitted). `maxLogBytes`/`maxValueBytes` are load-bounded to that parser cap so an honest child's frames always fit; a model-constructed binding ARGUMENT above 64 MiB (a value with no seam-level budget) trips the same cap — an accepted residual of the OOM guard.
 
-- **A truncated log's serialized array runs to `maxLogBytes` plus the marker.** The truncation marker is envelope, not payload — it rides uncharged so it can always be emitted — and the outer-array envelope is reserved one byte in the ledger. A truncated run with admitted entries therefore serializes its `logs` array to at most `maxLogBytes + marker + 1`; the marker alone fits any admissible budget (the 64-byte floor guarantees it).
-- **A descendant that calls `setsid()` / `start_new_session=True` escapes teardown.** Termination signals the child's process group with `kill(-pid)`; a descendant that moves itself into a fresh session is no longer in that group and no signal reaches it. If it also releases the inherited stdout/stderr/fd-3 pipes, the leader's `close` still settles the run, and after the `closeDeadline` bound the fiber goes quiescent while that orphan keeps running. This is the containment boundary, not a security one — model code has bash-equivalent trust, and a bash tool can `setsid` away just the same. Reaching such an orphan would require tracking every descendant pid (as the bash-local backend's process-inspector does) and is deferred; the process-group teardown reaps everything that stays in the group.
-- **A combined log-and-value peak is not modelled by the load gate.** Each budget is checked against `addressSpaceMb` on its own. A model daemon thread that keeps writing while the completion value is metered and framed can refill the log pending toward `maxLogBytes` during that window, so the two peaks add in a way no gate admits or rejects. A gate over `(maxLogBytes + maxValueBytes)` was considered and deferred: its discriminating case cannot be scheduled deterministically under `RLIMIT_AS`, so the gate would only prove its own arithmetic. When the combined peak is reached the run dies as `worker-exit` -- containment holds and only the failure classification is degraded.
-- **A 1-second dual-limit `ulimit -t 1` CPU overrun is reported as `worker-exit`, not a timeout.** When the host starts under a hard CPU limit equal to the soft (`ulimit -t N` sets both) and that limit is 1, `_clamped` cannot lower the soft to 0, so the kernel SIGKILLs the busy loop in the same tick and SIGXCPU is never delivered. The host classifies a CPU overrun only on `signal === 'SIGXCPU'`, so the overrun is reported as `worker-exit`. For a dual limit of 2 or more the soft is lowered by one unit, SIGXCPU fires, and the run is a timeout. Containment holds in both cases; only the classification is degraded.
-- **A program that traps SIGXCPU can exceed the soft CPU limit during settlement encoding and still report success.** The settlement CPU recheck (`die_if_cpu_exhausted`) runs unconditionally after the program returns and before the log flush and completion encode; a program that exceeded the soft limit before returning is caught there and dies on the re-delivered SIGXCPU, classified as a timeout. The only false-success window is a program that PASSES the recheck and then, with SIGXCPU trapped, exceeds the soft limit during the settlement flush/encode window. A post-encode recheck is not done because it would charge the settlement encode's own CPU to the program, misclassifying a legitimate near-limit program. Containment holds — the hard limit (soft + 1s) and the wall clock still bound it — and only the classification is degraded.
-- **The encoder's direct dependencies resolve at call time.** `_encode_json_plain` reaches `_dump_scalar`/`_dump_string`/`json` via module-global lookup, so a program running as `__main__` that rebinds one of those names (e.g. `__main__._dump_scalar = boom`) after returning a legitimate value can make the encode throw and downgrade a success to `exception`. The value path's entry name (`_done_with_value`) is bound into `_run` locals and its top-level `_check_done_value`/`_encode_json_plain` are def-time defaults, but the encoder's transitive deps (e.g. `_dump_scalar`/`_dump_string`/`json`/`io` — a non-exhaustive set) still resolve at call time. This is an accepted residual: under the bash-equivalent trust model a rebind here only harms the model's own run, and the verdict still reaches the host — `send_done`'s fixed fallback frame delivers a done frame even when the error-path encode/write throws.
-- **A wide binding REPLY expands host-side state per member.** Resolutions cross through `snapshotJsonValue` in [`@deepseek-ai/dsh-session`](../../core/session/README.md), whose `walkJsonValue` pushes one task frame per member, and binding resolution carries no seam-level byte cap. A legitimate reply of several million elements can therefore exhaust the host heap. The property belongs to that shared walk, not to this backend -- the worker-thread backend consumes the same function -- so the fix belongs in `packages/core/session` where every consumer benefits.
-- **A cross-thread binding that the program joins with a synchronous `t.join()` can deadlock.** This is specific to the `process` isolation backend: the reply pump runs on the child's main event loop, so when the program's main coroutine calls `t.join()` on a worker thread that is still awaiting a binding reply, the join blocks the main thread's event loop — the loop the pump needs to deliver that reply — and the worker's `await` never resumes until the wall clock. The worker-thread backend does not share this structure, so the fix belongs here, not in `packages/core/session`.
+These limits define what the package does and does not cover; they are current package constraints, not a task backlog.
+
+- **The cross-language guard covers the executed surfaces and the frame field shapes, not the field types** — the mirror e2e compares required/optional field sets, not that `cpuSeconds` is an `int` on both sides; a type-level drift is caught by review plus the backend's real-subprocess suite.
+- **`run()` is one-shot** — `logs` become available only after `CodeRunResult` resolves; there is no streaming-log or progress interface for output produced by a running program.
+- **No state persists across runs** — every request executes in a fresh subprocess; a persistent REPL-style kernel stays deferred until a backend brings its own logging scheme.
+- **An fd-3 frame whose raw length exceeds 64 MiB settles the run as a worker-exit** — `maxLogBytes`/`maxValueBytes` are load-bounded to the same parser cap so an honest child's frames always fit; a model-constructed binding ARGUMENT above 64 MiB (a value with no seam-level budget) trips the same cap — an accepted residual of the OOM guard.
+- **A combined log-and-value peak is not modelled by the load gate** — a model daemon thread that keeps writing while the completion value is metered and framed can add the two peaks in a way no gate admits or rejects; the run dies as `worker-exit`, containment holds, and only the failure classification is degraded.
+- **A 1-second dual-limit `ulimit -t 1` CPU overrun is reported as `worker-exit`, not a timeout** — when the host starts under a hard CPU limit equal to the soft and that limit is 1, `_clamped` cannot lower the soft, so the kernel SIGKILLs the busy loop and SIGXCPU is never delivered; containment holds, only the classification is degraded.
+- **No byte cap on intermediate binding values** — the implementation remains bounded by structured-clone cost and process memory, and a provider or executor may apply its own fetch cap.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
