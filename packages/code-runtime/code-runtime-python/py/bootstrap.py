@@ -950,7 +950,8 @@ async def _run(channel: ProtocolChannel) -> None:
     # `_encode_json_plain` (module global) and `self.write_encoded` (class
     # attribute) at call time, so a program rebinding either before the first
     # binding call could turn a legitimate call into an exception. dispatch
-    # writes through these directly, and the log sink through the bound send.
+    # and the log sink both write through these directly (the sink does NOT go
+    # through send_sync, whose body resolves the same names at call time).
     _write_encoded_cls = channel.write_encoded
     _encode_plain_cls = _encode_json_plain
     # 1. Boot handshake.
