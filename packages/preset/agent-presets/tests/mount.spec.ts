@@ -39,7 +39,7 @@ const ROOTS = [
  * @param roster - roster config, defaulting to the fixture roots.
  * @returns the booted context.
  */
-async function harness(roster: Config = { default: 'standard', roots: ROOTS, includeUserRoot: false }): Promise<Context> {
+async function harness(roster: Config = { default: 'standard', roots: ROOTS, includeShippedRoot: false, includeUserRoot: false }): Promise<Context> {
   const ctx = new Context()
   ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
   await ctx.plugin(Loader)
@@ -55,7 +55,6 @@ async function harness(roster: Config = { default: 'standard', roots: ROOTS, inc
   return ctx
 }
 
-/** Create one agent composed from `presetId`, exactly as a factory `setup` would. */
 async function agentOn(ctx: Context, id: string, presetId?: string): Promise<Agent> {
   const handle = await ctx.agents.create({
     sessionId: SessionId(id),
@@ -96,7 +95,7 @@ describe('composing an agent from a preset', () => {
       join(presetDir, COMPOSITION_FILE),
       `- id: only\n  name: ${plugin}\n  config:\n    tool: absolute\n`,
     )
-    const scoped = await harness({ default: 'absolute', roots: [{ path: root, trust: 'user' }], includeUserRoot: false })
+    const scoped = await harness({ default: 'absolute', roots: [{ path: root, trust: 'user' }], includeShippedRoot: false, includeUserRoot: false })
     const imported = vi.spyOn(scoped.loader.internal!, 'import')
 
     await agentOn(scoped, 'sess-absolute-plugin')
@@ -349,7 +348,7 @@ describe('composing from a broken preset', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-preset-broken-'))
     await mkdir(join(root, 'damaged'))
     await writeFile(join(root, 'damaged', COMPOSITION_FILE), composition)
-    return await harness({ default: 'damaged', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
+    return await harness({ default: 'damaged', roots: [{ path: root, trust: 'user' as const }], includeShippedRoot: false, includeUserRoot: false })
   }
 
   it('refuses the mount up front with the discovery-reported reason', async () => {
@@ -382,7 +381,7 @@ describe('a roster with nothing in it', () => {
   it('says so instead of naming an empty list of candidates', async () => {
     const bare = new Context()
     await bare.plugin(Loader)
-    await bare.plugin(AgentPresets, { default: 'standard', roots: [], includeUserRoot: false })
+    await bare.plugin(AgentPresets, { default: 'standard', roots: [], includeShippedRoot: false, includeUserRoot: false })
 
     await expect(bare.agentPresets.resolve())
       .rejects.toThrow(/preset "standard" not found \(available: none\)/)
@@ -421,7 +420,7 @@ describe('the preset file is an input, never a persistence target', () => {
     await scoped.plugin(AgentRegistry)
     await scoped.plugin(SessionProjectionRegistry)
     await scoped.plugin(AgentLoop, { agents: [] })
-    await scoped.plugin(AgentPresets, { default: 'self-disposing', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
+    await scoped.plugin(AgentPresets, { default: 'self-disposing', roots: [{ path: root, trust: 'user' as const }], includeShippedRoot: false, includeUserRoot: false })
 
     await scoped.agents.create({
       sessionId: SessionId('sess-self-dispose'),
@@ -488,6 +487,27 @@ describe('replacing a composition', () => {
     expect(toolNames(ctx)).toEqual([])
   })
 
+  it('notifies tool views after reparenting and contains notification failures', async () => {
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('sess-tool-change'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'standard'),
+    })
+    await ctx.agentPresets.standingKeyFor('minimal')
+    let changes = 0
+    const stopCounting = ctx.on('tools/change', () => { changes += 1 })
+    await ctx.agentPresets.recompose(handle.agent.ctx, 'minimal')
+    expect(changes).toBe(1)
+    stopCounting()
+
+    const warnings: string[] = []
+    ctx.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof ctx.logger.warn
+    const stopThrowing = ctx.on('tools/change', () => { throw new Error('listener failed') })
+    await expect(ctx.agentPresets.recompose(handle.agent.ctx, 'standard')).resolves.toMatchObject({ id: 'standard' })
+    expect(ctx.agentPresets.composedPreset(handle.agent.ctx)).toBe('standard')
+    expect(warnings).toEqual([expect.stringContaining('tools/change listener failed')])
+    stopThrowing()
+  })
+
   it('leaves the agent on its previous composition when the new one is unknown', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId('sess-unknown'),
@@ -537,7 +557,7 @@ describe('replacing a composition', () => {
     // exactly right there and the diagnostic must stay silent. Opting out is
     // what makes this rosterless — empty `roots` alone would still derive the
     // harness-home root, which is a roster like any other.
-    const rosterless = await harness({ default: 'standard', roots: [], includeUserRoot: false })
+    const rosterless = await harness({ default: 'standard', roots: [], includeShippedRoot: false, includeUserRoot: false })
     const warnings: string[] = []
     rosterless.logger.warn = ((message: unknown) => { warnings.push(String(message)) }) as typeof rosterless.logger.warn
 
@@ -587,7 +607,7 @@ describe('replacing a composition', () => {
     await scoped.plugin(AgentRegistry)
     await scoped.plugin(SessionProjectionRegistry)
     await scoped.plugin(AgentLoop, { agents: [] })
-    await scoped.plugin(AgentPresets, { default: 'first', roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
+    await scoped.plugin(AgentPresets, { default: 'first', roots: [{ path: root, trust: 'user' as const }], includeShippedRoot: false, includeUserRoot: false })
     const handle = await scoped.agents.create({
       sessionId: SessionId('sess-restore-gone'),
       setup: async (agentCtx: Context) => void await scoped.agentPresets.mount(agentCtx, 'first'),
@@ -627,7 +647,7 @@ describe('editing a composition file', () => {
     await mkdir(join(root, id))
     const path = join(root, id, COMPOSITION_FILE)
     await writeFile(path, rowFor('before'))
-    const scoped = await harness({ default: id, roots: [{ path: root, trust: 'user' as const }], includeUserRoot: false })
+    const scoped = await harness({ default: id, roots: [{ path: root, trust: 'user' as const }], includeShippedRoot: false, includeUserRoot: false })
     return { scoped, path }
   }
 

@@ -7,13 +7,17 @@
  * only the source roster. One controller per session scope; the service
  * disposes it with the scope fiber.
  */
-import type { ClientContext, SessionId, SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type {
+  ArbitrateKey, ArbitrateOutcome, PickOutcome,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { detectTrigger } from '../core/detect.ts'
 import { MENU_CLOSED, menuReduce, seedGroups } from '../core/menu.ts'
 import type { MenuEvent, MenuState, TriggerHit } from '../core/contract.ts'
 import type {
-  ArbitrateKey, ArbitrateOutcome, ClientSessionContext, PickOutcome, InputTriggerSource, SubmitEnvelope, TriggerChar, TriggerGuard,
+  ClientSessionContext, InputTriggerSource, SubmitEnvelope, TriggerChar, TriggerGuard,
 } from '../types.ts'
 
 /** Roster access the controller borrows from the root service (registration order preserved). */
@@ -101,6 +105,7 @@ export class InputTriggerController {
     const prev = this.menu.getSnapshot()
     const same = !launched && prev.open && prev.hit !== null
       && prev.hit.trigger === hit.trigger && prev.hit.query === hit.query
+      && prev.hit.quoted === hit.quoted
       && prev.hit.span.start === hit.span.start && prev.hit.span.end === hit.span.end
     this.hit = hit
     if (same) return
@@ -111,7 +116,7 @@ export class InputTriggerController {
       return
     }
     if (launched || !prev.open || prev.hit === null || prev.hit.trigger !== hit.trigger) {
-      this.menu.set(seedGroups(this.menu.getSnapshot(), roster.map(s => s.name)))
+      this.menu.set(seedGroups(this.menu.getSnapshot(), roster))
     }
     this.reduce({ type: 'hit', hit })
     this.fetchCandidates(hit, roster)
@@ -139,7 +144,7 @@ export class InputTriggerController {
     this.stopFetch()
     this.hit = hit
     this.launcher.set(source)
-    this.menu.set(seedGroups(this.menu.getSnapshot(), [source]))
+    this.menu.set(seedGroups(this.menu.getSnapshot(), [match]))
     this.reduce({ type: 'hit', hit })
     this.fetchCandidates(hit, [match])
   }
@@ -324,7 +329,11 @@ export class InputTriggerController {
       return actx.bail(actx, 'slash/input-begin-command', { claim: outcome.claim, span }) === true
     }
     if ('text' in outcome) {
-      return actx.bail(actx, 'slash/input-insert-text', { text: outcome.text, span }) === true
+      return actx.bail(actx, 'slash/input-insert-text', {
+        text: outcome.text,
+        span,
+        ...outcome.continue === true ? { continue: true } : {},
+      }) === true
     }
     return actx.bail(actx, 'slash/input-insert-reference', { reference: outcome.insert, span }) === true
   }
@@ -355,7 +364,17 @@ export class InputTriggerController {
   /** Wire one source's lexicon invalidation channel into refresh (hookless or roll-less sources never notify). */
   private watchLexicon(source: InputTriggerSource, projection: ClientSessionContext): void {
     if (source.lexicon === undefined || source.subscribeLexicon === undefined) return
-    this.lexiconOffs.set(source, source.subscribeLexicon(projection, () => { this.refreshLexicon() }))
+    this.lexiconOffs.set(source, source.subscribeLexicon(projection, () => {
+      this.refreshLexicon()
+      const hit = this.hit
+      if (hit === null || !this.menu.getSnapshot().open || hit.trigger !== source.trigger) return
+      // Let every source process the same invalidation before rebuilding the
+      // open menu, so one source cannot contribute its previous catalog.
+      void Promise.resolve().then(() => {
+        if (this.disposed || this.hit !== hit || !this.menu.getSnapshot().open) return
+        this.fetchCandidates(hit, this.deps.roster.sources(hit.trigger))
+      })
+    }))
   }
 
   /** Launch the candidate fetch for one hit generation, superseding the previous one. */
@@ -367,7 +386,12 @@ export class InputTriggerController {
     const projection = this.project()
     for (const source of roster) {
       void source
-        .candidates(projection, { query: hit.query, position: hit.position, signal: controller.signal })
+        .candidates(projection, {
+          query: hit.query,
+          quoted: hit.quoted,
+          position: hit.position,
+          signal: controller.signal,
+        })
         .then(
           (items) => {
             if (controller.signal.aborted) return

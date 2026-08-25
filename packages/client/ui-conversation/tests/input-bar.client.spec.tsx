@@ -1,23 +1,22 @@
 // @vitest-environment jsdom
-// InputBar behavior over the machine wiring: Enter-send semantics (IME guard,
-// Shift newline, busy Enter policy, Ctrl/Meta steering, repeat suppression), running
-// semantics (input stays free; continuable children keep Send beside Stop), the machine pending lock,
-// decoration backdrop, error banners, status strips, and the focus-keeping mousedown.
 
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import type { Context } from '@deepseek-ai/cordis'
+import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
-  createSnapshotStore, EMPTY_CHAT_SNAPSHOT, EMPTY_CONVERSATION_VIEWS,
-} from '@deepseek-ai/dsh-client-runtime/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
+  bindSnapshotSelector, conversationSnapshot, makeTranslate, sessionSnapshot,
+} from '@deepseek-ai/dsh-client-test-runtime'
+import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { ClientContext, ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SubmitOutcome } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import type {
   ComposerAttachment, ComposerAttachmentsOwnerProps,
 } from '../src/client/contract/slots.ts'
-import type { DraftAttachmentId } from '../src/client/input/contract.ts'
+import type { DraftAttachmentId } from '../src/client/contract/input.ts'
 import { InputBar } from '../src/client/skeleton/InputBar.tsx'
 import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -36,18 +35,11 @@ Range.prototype.getBoundingClientRect = ZERO_RECT
 const NATIVE_SET_START = Object.getOwnPropertyDescriptor(Range.prototype, 'setStart')!
   .value as (this: Range, node: Node, offset: number) => void
 
-const SCTX = {} as ClientContext
+const SCTX = {} as Context
 const SID = 's1' as SessionId
 
-function snapshotOf(overrides: Partial<ConversationSnapshot> = {}): ConversationSnapshot {
-  return {
-    sessionId: SID, views: EMPTY_CONVERSATION_VIEWS, chat: EMPTY_CHAT_SNAPSHOT,
-    nodes: [], turnTimings: new Map(), turnEnds: new Map(), partial: null, runningCalls: [],
-    pending: [], queue: [], running: false, composerPhase: 'active', removed: false,
-    openState: 'open', openError: null, hasMore: false, loadingOlder: false,
-    promptError: null, blank: false, subagent: null, lastAgentError: null,
-    ...overrides,
-  }
+function snapshotOf(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
+  return { ...sessionSnapshot(SID), ...overrides }
 }
 
 interface BenchOptions {
@@ -69,14 +61,15 @@ interface BenchOptions {
   }
   draft?: string
   running?: boolean
-  subagent?: Exclude<ConversationSnapshot['subagent'], null>
+  subagent?: Exclude<SessionSnapshot['subagent'], null>
   disabled?: boolean
   inert?: boolean
+  blocked?: { readonly reason: string }
   workspacePickerOpen?: boolean
   onRequestWorkspace?: () => void
-  promptError?: ConversationSnapshot['promptError']
+  promptError?: SessionSnapshot['promptError']
   /** Authoritative queue rows served to the machine overlay (empty = none). */
-  queue?: ConversationSnapshot['queue']
+  queue?: SessionSnapshot['queue']
   /** The hub's steer-all face (empty-draft accelerated Enter). */
   steerQueue?: () => void
   variant?: 'hero' | 'composer'
@@ -95,7 +88,7 @@ interface BenchOptions {
 }
 
 /** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
-function row(id: string): ConversationSnapshot['queue'][number] {
+function row(id: string): SessionSnapshot['queue'][number] {
   return {
     id: id as never, messageId: `message-${id}` as never, placement: 'queued',
     content: [{ type: 'text', text: id }], preview: id, text: id,
@@ -104,9 +97,14 @@ function row(id: string): ConversationSnapshot['queue'][number] {
 
 /** Real machine behind the bar entry: sink spy, no slash pipeline (plain text goes straight to the sink). */
 function bench(over?: BenchOptions) {
-  const sink = vi.fn()
+  const sink = vi.fn<(
+    text: string,
+    imageIds: readonly DraftAttachmentId[],
+    mode: 'queue' | 'steer',
+    signal: AbortSignal,
+  ) => Promise<SubmitOutcome>>(() => Promise.resolve({ kind: 'success' }))
   const lex = over?.lexicon
-  const session = createSnapshotStore<ConversationSnapshot>(snapshotOf({
+  const session = createSnapshotStore<SessionSnapshot>(snapshotOf({
     running: over?.running ?? false,
     subagent: over?.subagent ?? null,
     removed: over?.disabled ?? false,
@@ -147,12 +145,15 @@ function bench(over?: BenchOptions) {
   }) as InputBarProps['renderSlot']
   const props: InputBarProps = {
     sessionId: SID,
-    SessionProvider: ({ children }) => children(SID),
+    SessionProvider: ({ children }) => children,
     useSession: bindSnapshotSelector(session),
     useSessions: bindSnapshotSelector(createSnapshotStore({
       ids: [], byId: {}, current: undefined, phase: 'ready',
       subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
     })),
+    useSessionPendingInteraction: bindSnapshotSelector(
+      createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
+    ),
     useWorkspaces: bindSnapshotSelector(createSnapshotStore({
       items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
       baselinesReady: true, recentWorkspaceId: undefined,
@@ -161,6 +162,7 @@ function bench(over?: BenchOptions) {
       (selector ?? (v => v))(key === 'permissions'
         ? over?.permissions
         : key === 'plan' ? over?.plan : key === 'imageLimits' ? over?.imageLimits : undefined)),
+    useConversation: bindSnapshotSelector(createSnapshotStore(conversationSnapshot())),
     useInput: bindSnapshotSelector(shell.state),
     inputActions: shell.actions,
     keyboard: shell,
@@ -181,11 +183,11 @@ function bench(over?: BenchOptions) {
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
     stop,
     command: over?.command ?? (() => Promise.resolve(true)),
-    // Mirrors the real lookup chain (conversation namespace, then common).
     t: over?.t ?? makeTranslate(zh, commonZh),
     renderSlot,
     variant: over?.variant ?? 'composer',
     ...(over?.inert === true ? { disabled: true } : {}),
+    ...(over?.blocked !== undefined ? { blocked: over.blocked } : {}),
     ...(over?.workspacePickerOpen !== undefined ? { workspacePickerOpen: over.workspacePickerOpen } : {}),
     ...(over?.onRequestWorkspace !== undefined ? { onRequestWorkspace: over.onRequestWorkspace } : {}),
     ...(over?.placeholder !== undefined ? { placeholder: over.placeholder } : {}),
@@ -196,7 +198,9 @@ function bench(over?: BenchOptions) {
   }
   const view = render(<InputBar {...props} />)
   const textarea = view.container.querySelector('textarea')!
+  const sendableDraft = (over?.draft?.trim() ?? '') !== '' || (over?.attachments?.length ?? 0) > 0
   const primaryStops = over?.running === true && over.subagent === undefined
+    && (!sendableDraft || over.blocked !== undefined)
   const button = view.container.querySelector<HTMLButtonElement>(
     `button[aria-label="${primaryStops ? '停止生成' : '发送消息'}"]`,
   )!
@@ -208,10 +212,23 @@ function bench(over?: BenchOptions) {
   }
 }
 
+/**
+ * Dispatch the native `beforeinput` the composer reads the pre-edit selection
+ * from. The DOM event carries no range for a textarea (`getTargetRanges()` is
+ * empty there), so the element's own selection plus `inputType` is the signal.
+ * The selection each gesture leaves is the engine-observed one: a delete over a
+ * selection reports that selection, a caret delete reports the bare caret.
+ */
+function beforeInput(el: HTMLTextAreaElement, inputType = 'insertText'): void {
+  el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, cancelable: true, inputType }))
+}
+
 function attachmentOwner(slotCalls: readonly { key: string; owner: unknown }[]): ComposerAttachmentsOwnerProps {
-  const call = slotCalls.find(candidate => candidate.key === 'conversation.input.attachments')
-  if (call === undefined) throw new Error('attachment slot was not rendered')
-  return call.owner as ComposerAttachmentsOwnerProps
+  for (let i = slotCalls.length - 1; i >= 0; i -= 1) {
+    const call = slotCalls[i]
+    if (call?.key === 'conversation.input.attachments') return call.owner as ComposerAttachmentsOwnerProps
+  }
+  throw new Error('attachment slot was not rendered')
 }
 
 describe('image draft rail', () => {
@@ -312,7 +329,7 @@ describe('image draft rail', () => {
   })
 
   it('announces server attachment rejections as product copy, other codes as developer text', () => {
-    const attachmentError = (reason: string): ConversationSnapshot['promptError'] => ({
+    const attachmentError = (reason: string): SessionSnapshot['promptError'] => ({
       op: 'send',
       error: { code: 'attachment-error', message: 'raw wire text', details: { reason } },
     })
@@ -333,18 +350,28 @@ describe('image draft rail', () => {
     expect(attachmentOwner(result.slotCalls).canAcceptDrop).toBe(false)
   })
 
-  it('sends an image-only draft and exposes removal through the attachment slot', () => {
+  it('sends an image-only draft and exposes removal through the attachment slot', async () => {
     const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
-    const attachment = { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file, previewUrl: 'blob:draft-1' }
-    const result = bench({ attachments: [attachment] })
+    const extra = new File([Uint8Array.of(2)], 'extra.png', { type: 'image/png' })
+    const attachments = [
+      { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file, previewUrl: 'blob:draft-1' },
+      { kind: 'image' as const, id: 'draft-2' as DraftAttachmentId, file: extra, previewUrl: 'blob:draft-2' },
+    ]
+    const result = bench({ attachments })
     const { view, textarea, sink, removeImage } = result
     expect((view.getByRole('button', { name: '发送消息' }) as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue')
     const owner = attachmentOwner(result.slotCalls)
-    expect(owner.attachments).toEqual([attachment])
-    owner.onRemoveImage(attachment.id)
-    expect(removeImage).toHaveBeenCalledWith('draft-1')
+    act(() => { owner.onRemoveImage('draft-2' as DraftAttachmentId) })
+    expect(removeImage).toHaveBeenCalledWith('draft-2')
+    let settle!: (outcome: SubmitOutcome) => void
+    sink.mockImplementationOnce(() => new Promise<SubmitOutcome>((resolve) => { settle = resolve }))
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue', expect.any(AbortSignal))
+    expect(attachmentOwner(result.slotCalls).attachments).toEqual([attachments[0]])
+    await act(async () => { settle({ kind: 'success' }) })
+    await vi.waitFor(() => {
+      expect(attachmentOwner(result.slotCalls).attachments).toEqual([])
+    })
   })
 
   it('announces an image-intake rejection as a fading toast, repeatable for the same reason', () => {
@@ -439,8 +466,11 @@ describe('Enter semantics', () => {
   it('plain Enter submits queue mode through the machine; repeat and empty are suppressed', () => {
     const { textarea, sink } = bench({ draft: 'hello' })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(sink).toHaveBeenCalledWith('hello', [], 'queue')
+    expect(sink).toHaveBeenCalledWith('hello', [], 'queue', expect.any(AbortSignal))
+    // The submitting-phase lock, not draft emptiness, suppresses the repeat:
+    // the draft is still uncleared while the sink round-trip is in flight.
     fireEvent.keyDown(textarea, { key: 'Enter', repeat: true })
+    fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(sink).toHaveBeenCalledTimes(1)
     const empty = bench({ draft: '   ' })
     fireEvent.keyDown(empty.textarea, { key: 'Enter' })
@@ -464,15 +494,15 @@ describe('Enter semantics', () => {
   it('Ctrl/Meta+Enter sends normally while idle and steers while running', () => {
     const idle = bench({ draft: 'hello' })
     fireEvent.keyDown(idle.textarea, { key: 'Enter', metaKey: true })
-    expect(idle.sink).toHaveBeenCalledWith('hello', [], 'queue')
+    expect(idle.sink).toHaveBeenCalledWith('hello', [], 'queue', expect.any(AbortSignal))
 
     const busyCtrl = bench({ running: true, draft: 'steer with ctrl' })
     fireEvent.keyDown(busyCtrl.textarea, { key: 'Enter', ctrlKey: true })
-    expect(busyCtrl.sink).toHaveBeenCalledWith('steer with ctrl', [], 'steer')
+    expect(busyCtrl.sink).toHaveBeenCalledWith('steer with ctrl', [], 'steer', expect.any(AbortSignal))
 
     const busyMeta = bench({ running: true, draft: 'steer with cmd' })
     fireEvent.keyDown(busyMeta.textarea, { key: 'Enter', metaKey: true })
-    expect(busyMeta.sink).toHaveBeenCalledWith('steer with cmd', [], 'steer')
+    expect(busyMeta.sink).toHaveBeenCalledWith('steer with cmd', [], 'steer', expect.any(AbortSignal))
   })
 
   it('empty-draft Cmd/Ctrl+Enter steers the whole queue instead of submitting', () => {
@@ -537,7 +567,7 @@ describe('Enter semantics', () => {
     const steerQueue = vi.fn()
     const { textarea, sink } = bench({ running: true, queue: [row('q-1')], draft: '插话', steerQueue })
     fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true })
-    expect(sink).toHaveBeenCalledWith('插话', [], 'steer')
+    expect(sink).toHaveBeenCalledWith('插话', [], 'steer', expect.any(AbortSignal))
     expect(steerQueue).not.toHaveBeenCalled()
   })
 
@@ -580,31 +610,69 @@ describe('Enter semantics', () => {
 })
 
 describe('running and lock semantics', () => {
-  it('running keeps the input free (typing + Enter queue) while the primary turns stop', () => {
-    const { textarea, button, stop, sink } = bench({ running: true, draft: '排队消息' })
+  it('running switches the primary between Stop and Queue Send with the draft', async () => {
+    const { textarea, button, stop, sink } = bench({ running: true, busyEnter: 'steer' })
     expect(textarea.disabled).toBe(false)
-    fireEvent.change(textarea, { target: { value: '排队消息2' } })
-    fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(sink).toHaveBeenCalledWith('排队消息2', [], 'queue')
     expect(button.getAttribute('aria-label')).toBe('停止生成')
     fireEvent.click(button)
     expect(stop).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(textarea, { target: { value: '排队消息' } })
+    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    fireEvent.change(textarea, { target: { value: '   ' } })
+    expect(button.getAttribute('aria-label')).toBe('停止生成')
+    fireEvent.change(textarea, { target: { value: '排队消息2' } })
+    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('排队消息2', [], 'queue', expect.any(AbortSignal))
+    await vi.waitFor(() => { expect(button.getAttribute('aria-label')).toBe('停止生成') })
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
+  it('running treats an attachment-only draft as Send', async () => {
+    const attachment = {
+      kind: 'image' as const,
+      id: 'draft-1' as DraftAttachmentId,
+      file: new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' }),
+      previewUrl: 'blob:pixel',
+    }
+    const { button, sink } = bench({ running: true, attachments: [attachment] })
+    expect(button.getAttribute('aria-label')).toBe('发送消息')
+    fireEvent.click(button)
+    expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue', expect.any(AbortSignal))
+    await vi.waitFor(() => { expect(button.getAttribute('aria-label')).toBe('停止生成') })
+  })
+
+  it('running blocked composer keeps Stop with a retained draft', () => {
+    const { button, sink, stop, textarea } = bench({
+      running: true,
+      draft: '保留的草稿',
+      blocked: { reason: '请选择可用模型' },
+      placeholder: '请选择可用模型',
+    })
+    expect(textarea.disabled).toBe(true)
+    expect(textarea.placeholder).toBe('请选择可用模型')
+    expect(button.getAttribute('aria-label')).toBe('停止生成')
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(stop).toHaveBeenCalledTimes(1)
+    expect(sink).not.toHaveBeenCalled()
   })
 
   it('running plain Enter follows the busy-state Steer preference', () => {
     const { textarea, sink } = bench({ running: true, busyEnter: 'steer', draft: '直接插话' })
     fireEvent.keyDown(textarea, { key: 'Enter' })
-    expect(sink).toHaveBeenCalledWith('直接插话', [], 'steer')
+    expect(sink).toHaveBeenCalledWith('直接插话', [], 'steer', expect.any(AbortSignal))
   })
 
   it('running Cmd/Ctrl+Enter uses the opposite of the busy-state Enter preference', () => {
     const meta = bench({ running: true, busyEnter: 'steer', draft: '排到下一轮' })
     fireEvent.keyDown(meta.textarea, { key: 'Enter', metaKey: true })
-    expect(meta.sink).toHaveBeenCalledWith('排到下一轮', [], 'queue')
+    expect(meta.sink).toHaveBeenCalledWith('排到下一轮', [], 'queue', expect.any(AbortSignal))
 
     const ctrl = bench({ running: true, busyEnter: 'steer', draft: 'also queue' })
     fireEvent.keyDown(ctrl.textarea, { key: 'Enter', ctrlKey: true })
-    expect(ctrl.sink).toHaveBeenCalledWith('also queue', [], 'queue')
+    expect(ctrl.sink).toHaveBeenCalledWith('also queue', [], 'queue', expect.any(AbortSignal))
   })
 
   it('running continuable subagent keeps Send beside an independent Stop', () => {
@@ -624,7 +692,7 @@ describe('running and lock semantics', () => {
     expect(interruptButton).not.toBeNull()
     expect(textarea.disabled).toBe(false)
     fireEvent.click(button)
-    expect(sink).toHaveBeenCalledWith('后续消息', [], 'queue')
+    expect(sink).toHaveBeenCalledWith('后续消息', [], 'queue', expect.any(AbortSignal))
     fireEvent.click(interruptButton!)
     expect(stop).toHaveBeenCalledTimes(1)
   })
@@ -681,11 +749,11 @@ describe('running and lock semantics', () => {
     }
     const plain = bench({ running: true, busyEnter: 'steer', draft: 'plain', subagent })
     fireEvent.keyDown(plain.textarea, { key: 'Enter' })
-    expect(plain.sink).toHaveBeenCalledWith('plain', [], 'queue')
+    expect(plain.sink).toHaveBeenCalledWith('plain', [], 'queue', expect.any(AbortSignal))
 
     const accelerated = bench({ running: true, draft: 'accelerated', subagent })
     fireEvent.keyDown(accelerated.textarea, { key: 'Enter', metaKey: true })
-    expect(accelerated.sink).toHaveBeenCalledWith('accelerated', [], 'queue')
+    expect(accelerated.sink).toHaveBeenCalledWith('accelerated', [], 'queue', expect.any(AbortSignal))
   })
 
   it('disabled (session removed) locks the textarea and chrome', () => {
@@ -698,7 +766,7 @@ describe('running and lock semantics', () => {
   it('idle primary sends and disables on empty draft', () => {
     const { button, sink } = bench({ draft: 'go' })
     fireEvent.click(button)
-    expect(sink).toHaveBeenCalledWith('go', [], 'queue')
+    expect(sink).toHaveBeenCalledWith('go', [], 'queue', expect.any(AbortSignal))
     const empty = bench()
     expect(empty.button.disabled).toBe(true)
   })
@@ -1140,20 +1208,188 @@ describe('decorations', () => {
     expect(view.container.querySelector('[data-decoration="hint"]')?.textContent).toBe('输入目标，智能体将持续执行')
   })
 
-  it('an inserted reference renders as a chip at its placeholder offset', () => {
+  it('an inserted reference decorates its complete inline display range', () => {
     const { view, shell } = bench()
+    const reference = {
+      source: 'reference', ref: 'w1', label: '会话一', appearance: 'session' as const, clipboardText: '@w1',
+    }
     act(() => {
       shell.setDraft('参考 @w1 内容')
       shell.insertReference(
-        { source: 'subagent', ref: 'w1', label: '@w1', clipboardText: '@w1' },
+        reference,
         { start: 3, end: 6, draftRev: shell.snapshot.draftRev },
       )
     })
     const chip = view.container.querySelector('[data-decoration="chip"]')
-    expect(chip?.textContent).toBe('@w1')
+    expect(chip?.textContent).toBe('@会话一')
+    expect(chip?.getAttribute('data-reference-appearance')).toBe('session')
+    expect(chip?.querySelector('svg')).not.toBeNull()
     expect(shell.snapshot.occurrences).toHaveLength(1)
-    // The draft carries exactly one placeholder char where the token was.
-    expect(shell.snapshot.draft).toBe('参考 \uFFFC 内容')
+    expect(shell.snapshot.draft).toBe('参考 @会话一 内容')
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 3, length: 4 })
+  })
+
+  it('keeps the textarea glyph layer transparent when a structured reference becomes disabled', () => {
+    const { view, shell, session, textarea } = bench()
+    act(() => {
+      shell.setDraft('@w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 0, end: 3, draftRev: shell.snapshot.draftRev })
+      session.set(snapshotOf({ removed: true }))
+    })
+    const backdrop = view.container.querySelector('[data-input-backdrop]')
+    expect(textarea.disabled).toBe(true)
+    expect(backdrop?.getAttribute('data-disabled')).toBe('true')
+    expect(backdrop?.querySelector('[data-decoration="chip"] svg')).not.toBeNull()
+  })
+
+  it('Backspace and Delete remove a reference as one range at its boundaries', () => {
+    const reference = {
+      source: 'reference', ref: 'w1', label: '会话一', appearance: 'session' as const, clipboardText: '@w1',
+    }
+    const backspace = bench()
+    act(() => {
+      backspace.shell.setDraft('前 @w1 后')
+      backspace.shell.insertReference(
+        reference,
+        { start: 2, end: 5, draftRev: backspace.shell.snapshot.draftRev },
+      )
+    })
+    backspace.textarea.setSelectionRange(6, 6)
+    fireEvent.keyDown(backspace.textarea, { key: 'Backspace' })
+    expect(backspace.shell.snapshot).toMatchObject({ draft: '前  后', occurrences: [] })
+
+    const forwardDelete = bench()
+    act(() => {
+      forwardDelete.shell.setDraft('前 @w1 后')
+      forwardDelete.shell.insertReference(
+        reference,
+        { start: 2, end: 5, draftRev: forwardDelete.shell.snapshot.draftRev },
+      )
+    })
+    forwardDelete.textarea.setSelectionRange(2, 2)
+    fireEvent.keyDown(forwardDelete.textarea, { key: 'Delete' })
+    expect(forwardDelete.shell.snapshot).toMatchObject({ draft: '前  后', occurrences: [] })
+  })
+
+  it('typing the trigger char immediately before a reference keeps it structured', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('@w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 0, end: 3, draftRev: shell.snapshot.draftRev })
+    })
+    expect(shell.snapshot.draft).toBe('@会话一 ')
+    // The inserted char equals the reference's own leading trigger, so the two
+    // drafts alone cannot say whether it landed before or after that trigger.
+    textarea.setSelectionRange(0, 0)
+    act(() => {
+      beforeInput(textarea)
+      fireEvent.change(textarea, { target: { value: '@@会话一 ' } })
+    })
+    expect(shell.snapshot.draft).toBe('@@会话一 ')
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 1, length: 4 })
+  })
+
+  it('a selection-replacing delete before a reference keeps it structured', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('@@w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 1, end: 4, draftRev: shell.snapshot.draftRev })
+    })
+    expect(shell.snapshot.draft).toBe('@@会话一 ')
+    textarea.setSelectionRange(0, 1)
+    act(() => {
+      beforeInput(textarea, 'deleteContentBackward')
+      fireEvent.change(textarea, { target: { value: '@会话一 ' } })
+    })
+    expect(shell.snapshot.draft).toBe('@会话一 ')
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 0, length: 4 })
+  })
+
+  it('a caret Backspace before a reference keeps it structured', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('@@w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 1, end: 4, draftRev: shell.snapshot.draftRev })
+    })
+    expect(shell.snapshot.draft).toBe('@@会话一 ')
+    // A caret delete reports the bare caret, never the character it removes.
+    textarea.setSelectionRange(1, 1)
+    act(() => {
+      beforeInput(textarea, 'deleteContentBackward')
+      fireEvent.change(textarea, { target: { value: '@会话一 ' } })
+    })
+    expect(shell.snapshot.draft).toBe('@会话一 ')
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 0, length: 4 })
+  })
+
+  it('a caret Delete before a reference keeps it structured', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('@@w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 1, end: 4, draftRev: shell.snapshot.draftRev })
+    })
+    textarea.setSelectionRange(0, 0)
+    act(() => {
+      beforeInput(textarea, 'deleteContentForward')
+      fireEvent.change(textarea, { target: { value: '@会话一 ' } })
+    })
+    expect(shell.snapshot.draft).toBe('@会话一 ')
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 0, length: 4 })
+  })
+
+  it('a caret word delete before a reference keeps it structured', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('word @w1')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 5, end: 8, draftRev: shell.snapshot.draftRev })
+    })
+    expect(shell.snapshot.draft).toBe('word @会话一 ')
+    // One caret gesture can remove more than one character; the deleted span
+    // is whatever the draft lost, never a fixed step.
+    textarea.setSelectionRange(5, 5)
+    act(() => {
+      beforeInput(textarea, 'deleteWordBackward')
+      fireEvent.change(textarea, { target: { value: '@会话一 ' } })
+    })
+    expect(shell.snapshot.draft).toBe('@会话一 ')
+    expect(shell.snapshot.occurrences).toHaveLength(1)
+    expect(shell.snapshot.occurrences[0]).toMatchObject({ offset: 0, length: 4 })
+  })
+
+  it('copy and cut expand a partial reference selection to its structured range', () => {
+    const { shell, textarea } = bench()
+    act(() => {
+      shell.setDraft('前 @w1 后')
+      shell.insertReference({
+        source: 'reference', ref: 'w1', label: '会话一', appearance: 'session', clipboardText: '@w1',
+      }, { start: 2, end: 5, draftRev: shell.snapshot.draftRev })
+    })
+    const setData = vi.fn()
+    textarea.setSelectionRange(3, 4)
+    fireEvent.copy(textarea, { clipboardData: { setData } })
+    expect(setData).toHaveBeenCalledWith('text/plain', '@w1')
+    expect(shell.snapshot.draft).toBe('前 @会话一 后')
+
+    textarea.setSelectionRange(3, 4)
+    fireEvent.cut(textarea, { clipboardData: { setData } })
+    expect(setData).toHaveBeenLastCalledWith('text/plain', '@w1')
+    expect(shell.snapshot).toMatchObject({ draft: '前  后', occurrences: [] })
   })
 
   it('a lexicon-matched plain token renders the text-ref mark', () => {
@@ -1165,6 +1401,33 @@ describe('decorations', () => {
     // Editing the token out of match shape drops the decoration.
     act(() => { shell.setDraft('use /fixture-dem now') })
     expect(view.container.querySelector('[data-decoration="text-ref"]')).toBeNull()
+  })
+
+  it('a directory completion renders a folder glyph without changing its plain text', () => {
+    const { view, shell } = bench()
+    act(() => { shell.setDraft('see @src/components/') })
+    const mark = view.container.querySelector('[data-decoration="text-ref"]')
+    expect(mark?.textContent).toBe('@src/components/')
+    expect(mark?.querySelector('svg')).not.toBeNull()
+    expect(shell.snapshot.draft).toBe('see @src/components/')
+  })
+
+  it('a plain-text reference keeps its nodes while earlier text shifts its offset', () => {
+    const { view, textarea, shell } = bench()
+    act(() => { shell.setDraft('see @src/components/ here') })
+    const backdrop = view.container.querySelector('[data-input-backdrop]')!
+    const mark = backdrop.querySelector('[data-decoration="text-ref"]')!
+    const icon = mark.querySelector('svg')!
+    act(() => { fireEvent.change(textarea, { target: { value: 'X see @src/components/ here' } }) })
+    // Node identity, not text: an offset-derived key remounts the mark and its
+    // icon on every keystroke landing ahead of the range.
+    expect(backdrop.querySelector('[data-decoration="text-ref"]')).toBe(mark)
+    expect(icon.isConnected).toBe(true)
+    expect(mark.textContent).toBe('@src/components/')
+    // A token edited out of match shape still loses its decoration.
+    act(() => { fireEvent.change(textarea, { target: { value: 'X see X@src/components/ here' } }) })
+    expect(backdrop.querySelector('[data-decoration="text-ref"]')).toBeNull()
+    expect(shell.snapshot.draft).toBe('X see X@src/components/ here')
   })
 })
 

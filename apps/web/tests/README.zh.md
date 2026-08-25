@@ -5,7 +5,7 @@
 这些测试在进程内启动真实的 web 组合，并用真实 Chromium 通过真实 HTTP 驱动它。该 lane
 的运行机制——模式、fixture、golden，以及与 `dsh web` 之间刻意保留的组合差异——记录在
 [`scaffold.ts`](scaffold.ts) 和
-[浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.md)中。
+[浏览器 e2e Agent Note](../../../.agents/notes/implemented/testing/2026-07-24-web-gui-browser-e2e-lane.zh.md)中。
 
 ## 这些是 Host 面的测试
 
@@ -26,12 +26,10 @@ Client face，而该 face 必须等 Host tsdown 生成 `@deepseek-ai/dsh-goal/re
 import 点明源模块。这样漂移会表现为选择器未命中或镜像值过期——是响亮的失败，绝不会是静默
 通过。`scaffold.ts` 按此规则镜像欢迎声明的 namespace、确认字段、版本和被断言的中文文案。
 
-有两类 Client import 是长期成立的。`assembled-boot.ts` 驱动 shell 本身，因此它从
+有一类 Client import 是长期成立的。`assembled-boot.ts` 驱动 shell 本身，因此它从
 `@deepseek-ai/dsh-client-web` import `AppWebEntry`、从
 `@deepseek-ai/dsh-client-modules/client` import boot manifest 类型：启动真实 shell 正是该
-harness 的用途，且这两个包本来就在 Host 图中。另外，chat 场景从
-`@deepseek-ai/dsh-client-runtime/client` import `conversationContextKey`，因为
-`client/runtime` 经未拆分的 `directory-picker` 包可达，且不会再牵入别的东西。这种可达性是
-偶然而非保证——一旦它离开该图，就像其余情形那样镜像该 helper。
+harness 的用途，且这两个包本来就在 Host 图中。chat 场景则在 `support.ts` 中镜像
+`conversationContextKey`，而不 import 其 Client owner。
 
 没有任何机制强制这条规则；靠 review 守住它。

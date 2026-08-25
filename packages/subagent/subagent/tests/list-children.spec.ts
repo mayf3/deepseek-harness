@@ -2,19 +2,25 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache from '@deepseek-ai/dsh-session-projection-cache'
 import Storage from '@deepseek-ai/dsh-storage'
-import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
+import {
+  apply as storageJsonApply, Config as storageJsonConfig, inject as storageJsonInject, name as storageJsonName,
+} from '@deepseek-ai/dsh-storage-json'
+import {
+  apply as storageDomainApply, Config as storageDomainConfig, inject as storageDomainInject, name as storageDomainName,
+} from '@deepseek-ai/dsh-storage-domain'
 import SubagentRuntime, {
   SUBAGENT_DESCRIPTOR_VERSION,
   SubagentError,
@@ -22,11 +28,15 @@ import SubagentRuntime, {
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
+import { TestSessionQuery } from './test-session-query.ts'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
 const roots: string[] = []
+const projCacheRoots: string[] = []
+
 afterEach(() => {
+  for (const root of projCacheRoots.splice(0)) rmSync(root, { recursive: true, force: true })
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 })
 })
 
@@ -43,21 +53,22 @@ async function setup(
   await ctx.plugin(AgentLoop, { agents: [] })
   if (options.sessionProjections !== false) await ctx.plugin(SessionProjectionRegistry)
   if (options.projectionCache === true) {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-projcache-'))
+    projCacheRoots.push(root)
+    // The cache opens its domain through the storage stack; the json backend
+    // lands it under this tmp root.
     await ctx.plugin(Storage)
-    ctx.storage.backend.register('memory', new MemoryStorageBackend(new MemoryMediaPool()))
-    const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
-    ctx.storage.mount('domain', facility)
-    ctx.provide('storageDomain', facility)
+    await ctx.plugin({ name: storageJsonName, inject: storageJsonInject, apply: storageJsonApply, Config: storageJsonConfig }, { root })
+    await ctx.plugin({ name: storageDomainName, inject: storageDomainInject, apply: storageDomainApply, Config: storageDomainConfig }, { backend: 'json' })
     await ctx.plugin(SessionProjectionCache, { writeEveryEvents: 100, writeIntervalMs: 60_000 })
   }
+  await ctx.plugin(TestSessionQuery)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
   ctx.llm.registerAdapter(['mock'], new MockAdapter(script))
-  const parent = ctx.get('agentLoop') === undefined
-    ? undefined
-    : ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
-  return { ctx, parent: parent as Agent }
+  const parent = ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
+  return { ctx, parent }
 }
 
 const testSignal = new AbortController().signal
@@ -118,11 +129,46 @@ function descriptorPayload(label: string, version = SUBAGENT_DESCRIPTOR_VERSION)
   return { version, mode: 'continuable' as const, provider: 'spawn', label }
 }
 
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    subagentListHostileProbe: { poisoned?: boolean | undefined }
+  }
+  interface SessionProjectionMap {
+    /** Test-only hostile probe proving per-child isolation of foreign unit failures. */
+    subagentListHostileProbe: null
+  }
+}
+
+/**
+ * A foreign registered unit that rejects one specific child's log at view
+ * time: `apply` never throws (the eager drive passes every committed event
+ * through it), while the poisoned state detonates only when a listing read
+ * folds or serves this child through the registry.
+ */
+const hostileProjectionDefinition = {
+  key: 'subagentListHostileProbe',
+  stateSchema: z.object({ poisoned: z.boolean().optional() }),
+  init: () => ({}),
+  apply: (state, event) =>
+    event.type === 'subagent/descriptor' && (event.data as { label?: string }).label === 'poison me'
+      ? { poisoned: true }
+      : state,
+  wire: {
+    viewSchema: z.null(),
+    view: (state) => {
+      if (state.poisoned === true) throw new Error('hostile unit rejects the poisoned log')
+      return null
+    },
+  },
+  stateVersion: 1,
+} satisfies ProjectionDefinition<'subagentListHostileProbe', { poisoned?: boolean | undefined }>
+
 describe('SubagentRuntime.listChildren', () => {
-  it('lists live children without persistence, query services, or the continuation runtime', async () => {
+  it('lists live children without persistence or the continuation runtime', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(TestSessionQuery)
     await ctx.plugin(SubagentRuntime)
     expect(ctx.get('jobs')).toBeUndefined()
     expect(ctx.get('agents')).toBeUndefined()
@@ -147,10 +193,11 @@ describe('SubagentRuntime.listChildren', () => {
     ])
   })
 
-  it('never activates without the projection registry (mandatory seam)', async () => {
-    const { ctx } = await setup([], { sessionProjections: false })
-    expect(ctx.get('subagents')).toBeUndefined()
-    expect(ctx.get('agentLoop')).toBeUndefined()
+  it('fails loud when the projection registry is not mounted, even with no children', async () => {
+    const { ctx, parent } = await setup([], { sessionProjections: false })
+    await expect(ctx.subagents.listChildren(parent.id)).rejects.toThrow(
+      expect.objectContaining({ code: 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE' }) as Error,
+    )
   })
 
   it('fails loud when the session store is not mounted', async () => {
@@ -159,6 +206,17 @@ describe('SubagentRuntime.listChildren', () => {
     await ctx.plugin(SubagentRuntime)
     await expect(ctx.subagents.listChildren(SessionId('no-store-parent'))).rejects.toThrow(
       expect.objectContaining({ code: 'SUBAGENT_CONTROL_SESSION_STORE_UNAVAILABLE' }) as Error,
+    )
+  })
+
+  it('fails loud when the Session query service is not mounted', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(SubagentRuntime)
+
+    await expect(ctx.subagents.listChildren(SessionId('no-query-parent'))).rejects.toThrow(
+      expect.objectContaining({ code: 'SUBAGENT_CONTROL_QUERY_UNAVAILABLE' }) as Error,
     )
   })
 
@@ -265,6 +323,76 @@ describe('SubagentRuntime.listChildren', () => {
     // The creation window: the establishing provider has not appended the
     // descriptor yet, so the row is omitted rather than diagnosed.
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([])
+  })
+
+  it('contains a live child projection failure as one corrupt diagnostic', async () => {
+    const { ctx, parent } = await setup([])
+    const childId = SessionId('live-projection-failure')
+    const child = ctx.sessions.create(childId, {
+      meta: { parentSession: parent.id, origin: 'subagent' },
+    })
+    child.append('subagent/descriptor', descriptorPayload('broken live child'))
+    const snapshot = ctx.sessionProjections.snapshot.bind(ctx.sessionProjections)
+    vi.spyOn(ctx.sessionProjections, 'snapshot').mockImplementation((session, keys) => {
+      if (session.id === childId) throw new Error('projection failed')
+      return snapshot(session, keys)
+    })
+
+    await expect(ctx.subagents.listChildren(parent.id)).resolves.toContainEqual({
+      kind: 'diagnostic', id: childId, reason: 'corrupt',
+    })
+  })
+
+  it('maps a non-Error cold observation failure to unavailable', async () => {
+    const { ctx, parent } = await setup([])
+    const childId = await authorChild(ctx, '00000000-0000-4000-8000-00000000aa01', {
+      parentSession: parent.id,
+      origin: 'subagent',
+    }, childEvents(descriptorPayload('unreadable child')))
+    const observe = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+    vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation((id, options) => {
+      if (id === childId) {
+        return Promise.reject('backend unavailable') // oxlint-disable-line typescript/prefer-promise-reject-errors
+      }
+      return observe(id, options)
+    })
+
+    await expect(ctx.subagents.listChildren(parent.id)).resolves.toContainEqual({
+      kind: 'diagnostic', id: childId, reason: 'unavailable',
+    })
+  })
+
+  it('releases a cold observation when cancellation lands after its read', async () => {
+    const { ctx, parent } = await setup([])
+    const controller = new AbortController()
+    const childId = await authorChild(ctx, '00000000-0000-4000-8000-00000000aa02', {
+      parentSession: parent.id,
+      origin: 'subagent',
+    }, childEvents(descriptorPayload('cancelled child')))
+    const dispose = vi.fn()
+    vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation((id) => {
+      if (id !== childId) throw new Error(`unexpected observation: ${id}`)
+      controller.abort(new Error('cancelled after observation'))
+      return Promise.resolve({
+        source: 'prepared',
+        header: {
+          version: SESSION_FORMAT_VERSION,
+          id: childId,
+          createdAt: 1,
+          parentSession: parent.id,
+          origin: 'subagent',
+        },
+        events: [],
+        cursor: -1,
+        projections: { asOfSeq: -1, values: {} },
+        retain: vi.fn(),
+        [Symbol.dispose]: dispose,
+      } as unknown as SessionObservation)
+    })
+
+    await expect(ctx.subagents.listChildren(parent.id, controller.signal))
+      .rejects.toMatchObject({ code: 'CANCELLED' })
+    expect(dispose).toHaveBeenCalledOnce()
   })
 
   it('lists a one-shot child with its durable creation label', async () => {
@@ -390,11 +518,11 @@ describe('SubagentRuntime.listChildren', () => {
     // seq 2 >= seedLength 0: the cached identity provably comes from the
     // child's own suffix, so it is final and the log is never re-read — the
     // divergent label proves the row, not the log, produced the entry.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({
       asOfSeq: 2,
       values: { subagent: { mode: 'continuable', label: 'cached own', seq: 2 } },
     })
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: child, label: 'cached own', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -420,11 +548,11 @@ describe('SubagentRuntime.listChildren', () => {
     }, events)
     // A creation-window checkpoint carried the ANCESTOR identity: its seq 2
     // fails the own-suffix gate (< seedLength 4), so preparation rules.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({
       asOfSeq: 2,
       values: { subagent: { mode: 'continuable', label: 'ancestor label', seq: 2 } },
     })
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: forkChild, label: 'own label', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -447,12 +575,12 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('reborn child')))
-    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
-    ctx.sessionPersistence.inspect = async (sessionId, signal) => {
+    const original = ctx.sessionPersistence.borrowSession.bind(ctx.sessionPersistence)
+    ctx.sessionPersistence.borrowSession = async (sessionId, signal) => {
       const result = await original(sessionId, signal)
       if (sessionId !== reborn) return result
       // The id was re-published as a different lifecycle after enumeration.
-      return { ...result, meta: mutate(result.meta) }
+      return { ...result, inspection: { ...result.inspection, meta: mutate(result.inspection.meta) } }
     }
     const entries = await ctx.subagents.listChildren(parent.id)
     expect(entries).toContainEqual({ kind: 'diagnostic', id: reborn, reason: 'corrupt' })
@@ -469,8 +597,8 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('actually valid')))
     // A stale cached sentinel must not out-rank the authoritative re-fold.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({ asOfSeq: 0, values: { subagent: null } })
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: { subagent: null } })
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: healthy, label: 'actually valid', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -478,7 +606,7 @@ describe('SubagentRuntime.listChildren', () => {
     expect(inspect).toHaveBeenCalledTimes(1)
   })
 
-  it('maps a child rejected by persistence inspection to unavailable', async () => {
+  it('maps a child rejected by persistence validation to corrupt', async () => {
     const { ctx, parent } = await setup([])
     // The surface-eligible user/message lacks its required surfaceOp, so the
     // first-party inspection rejects before any projection fold can run.
@@ -496,7 +624,7 @@ describe('SubagentRuntime.listChildren', () => {
       { type: 'subagent/descriptor', seq: 2, time: 3, data: descriptorPayload('broken surface') },
     ] as SessionEvent[])
     const entries = await ctx.subagents.listChildren(parent.id)
-    expect(entries).toEqual([{ kind: 'diagnostic', id: invalid, reason: 'unavailable' }])
+    expect(entries).toEqual([{ kind: 'diagnostic', id: invalid, reason: 'corrupt' }])
   })
 
   it('diagnoses a malformed descriptor payload as corrupt', async () => {
@@ -522,10 +650,10 @@ describe('SubagentRuntime.listChildren', () => {
     expect(entries).toEqual([{ kind: 'diagnostic', id: future, reason: 'corrupt' }])
   })
 
-  it('lists a fork whose seed replays an ancestor descriptor under that identity', async () => {
+  it('rejects a fork whose only descriptor belongs to its inherited seed', async () => {
     const { ctx, parent } = await setup([])
-    // The last-wins fold serves a seed-replayed ancestor descriptor until the
-    // child's own descriptor overrides it (known deviation #1 in the design).
+    // A seed-replayed descriptor predates this child's own suffix and cannot
+    // identify the fork as a resumable child.
     const seed = childEvents(descriptorPayload('ancestor label'))
     const forkChild = await authorChild(ctx, '00000000-0000-4000-8000-0000000000f0', {
       parentSession: parent.id,
@@ -533,12 +661,7 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, seed)
     const entries = await ctx.subagents.listChildren(parent.id)
-    expect(entries).toEqual([
-      {
-        kind: 'child', id: forkChild, label: 'ancestor label', mode: 'continuable',
-        activity: 'inactive', hasChildren: false,
-      },
-    ])
+    expect(entries).toEqual([{ kind: 'diagnostic', id: forkChild, reason: 'corrupt' }])
   })
 
   it('does not filter by provider availability: children of unmounted providers stay listed', async () => {
@@ -561,6 +684,50 @@ describe('SubagentRuntime.listChildren', () => {
     ])
   })
 
+  it('contains a foreign unit failure during a cold fold to that child as corrupt', async () => {
+    const { ctx, parent } = await setup([textResponse('done')])
+    ctx.sessionProjections.register(hostileProjectionDefinition)
+    const healthy = await startChild(ctx, parent, 'healthy sibling')
+    const poisoned = await authorChild(ctx, '00000000-0000-4000-8000-00000000d00d', {
+      parentSession: parent.id,
+      origin: 'subagent',
+    }, childEvents(descriptorPayload('poison me')))
+    // The subagent unit itself folds this child cleanly; the FOREIGN unit's
+    // view throws, and that damage stays contained to the one child.
+    const entries = await ctx.subagents.listChildren(parent.id)
+    expect(entries).toContainEqual({ kind: 'diagnostic', id: poisoned, reason: 'corrupt' })
+    expect(entries).toContainEqual({
+      kind: 'child', id: healthy, label: 'healthy sibling', mode: 'continuable',
+      activity: 'inactive', hasChildren: false,
+    })
+  })
+
+  it('does not evaluate an unrelated wire view when exposing a live child identity', async () => {
+    const { ctx, parent } = await setup([])
+    ctx.sessionProjections.register(hostileProjectionDefinition)
+    const poisonedId = SessionId('live-poisoned-child')
+    const poisoned = ctx.sessions.create(poisonedId, {
+      meta: { parentSession: parent.id, origin: 'subagent' },
+    })
+    poisoned.append('turn/start', { turn: 1 })
+    poisoned.append('subagent/descriptor', descriptorPayload('poison me'))
+    const healthyId = SessionId('live-healthy-child')
+    const healthy = ctx.sessions.create(healthyId, {
+      meta: { parentSession: parent.id, origin: 'subagent' },
+    })
+    healthy.append('turn/start', { turn: 1 })
+    healthy.append('subagent/descriptor', descriptorPayload('live healthy'))
+    const entries = await ctx.subagents.listChildren(parent.id)
+    expect(entries).toContainEqual({
+      kind: 'child', id: poisonedId, label: 'poison me', mode: 'continuable',
+      activity: 'running', hasChildren: false,
+    })
+    expect(entries).toContainEqual({
+      kind: 'child', id: healthyId, label: 'live healthy', mode: 'continuable',
+      activity: 'running', hasChildren: false,
+    })
+  })
+
   it('fails the whole enumeration when the persisted listing itself fails', async () => {
     const { ctx, parent } = await setup([textResponse('done')])
     await startChild(ctx, parent, 'never listed')
@@ -577,8 +744,8 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('flaky storage')))
-    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
-    ctx.sessionPersistence.inspect = (sessionId, signal) => {
+    const original = ctx.sessionPersistence.borrowSession.bind(ctx.sessionPersistence)
+    ctx.sessionPersistence.borrowSession = (sessionId, signal) => {
       if (sessionId === flaky) {
         return Promise.reject(new Error('backend read failed'))
       }
@@ -594,7 +761,7 @@ describe('SubagentRuntime.listChildren', () => {
     })
     // Nothing is memoized: with the backend healthy again, the next listing
     // folds the same child to its identity.
-    ctx.sessionPersistence.inspect = original
+    ctx.sessionPersistence.borrowSession = original
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toContainEqual({
       kind: 'child', id: flaky, label: 'flaky storage', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -648,8 +815,8 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('grandchild')))
     const inspected: SessionId[] = []
-    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
-    ctx.sessionPersistence.inspect = (sessionId, signal) => {
+    const original = ctx.sessionPersistence.borrowSession.bind(ctx.sessionPersistence)
+    ctx.sessionPersistence.borrowSession = (sessionId, signal) => {
       inspected.push(sessionId)
       return original(sessionId, signal)
     }
@@ -680,8 +847,8 @@ describe('SubagentRuntime.listChildren', () => {
     live.append('subagent/descriptor', descriptorPayload('live mixed child'))
 
     const inspected: SessionId[] = []
-    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
-    ctx.sessionPersistence.inspect = (sessionId, signal) => {
+    const original = ctx.sessionPersistence.borrowSession.bind(ctx.sessionPersistence)
+    ctx.sessionPersistence.borrowSession = (sessionId, signal) => {
       inspected.push(sessionId)
       return original(sessionId, signal)
     }
@@ -700,10 +867,10 @@ describe('SubagentRuntime.listChildren', () => {
     // The child's turn/end and disposal are the cache's mandatory checkpoint
     // points; both writes are fail-soft asynchronous, so wait for the row.
     const header = (await ctx.sessionPersistence.list()).find(meta => meta.id === childId)
-    await vi.waitFor(async () => {
-      expect((await ctx.sessionProjectionCache.cachedSnapshot(header!))?.values.subagent).toBeDefined()
+    await vi.waitFor(() => {
+      expect(ctx.sessionProjectionCache.cachedSnapshot(header!)?.values.subagent).toBeDefined()
     }, { timeout: 5_000 })
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: childId, label: 'cached child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -722,12 +889,12 @@ describe('SubagentRuntime.listChildren', () => {
       activity: 'inactive', hasChildren: false,
     }]
     // No stored row at all for a foreign child this process never ran.
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual(expected)
     expect(inspect).toHaveBeenCalledTimes(1)
     // A stored row whose cut predates the descriptor: the subagent key is
     // absent from the served values, and preparation still rules.
-    ctx.sessionProjectionCache.cachedSnapshot = async () => ({ asOfSeq: 0, values: {} })
+    ctx.sessionProjectionCache.cachedSnapshot = () => ({ asOfSeq: 0, values: {} })
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual(expected)
     expect(inspect).toHaveBeenCalledTimes(2)
   })
@@ -739,7 +906,7 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('uncacheable child')))
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: foreign, label: 'uncacheable child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -753,12 +920,12 @@ describe('SubagentRuntime.listChildren', () => {
       parentSession: parent.id,
       origin: 'subagent',
     }, childEvents(descriptorPayload('recovered child')))
-    ctx.sessionProjectionCache.cachedSnapshot = async () => {
+    ctx.sessionProjectionCache.cachedSnapshot = () => {
       // A poisoned stored row (any unit's) detonates at view time; the cache
       // is derived data, so its failure must not become a verdict.
       throw new Error('poisoned cache row')
     }
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: recovered, label: 'recovered child', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
@@ -837,7 +1004,7 @@ describe('SubagentRuntime.listChildren', () => {
     }, childEvents(descriptorPayload('cancelled cold read')))
     const controller = new AbortController()
     const entered = Promise.withResolvers<undefined>()
-    ctx.sessionPersistence.inspect = (_sessionId, signal) => {
+    ctx.sessionPersistence.borrowSession = (_sessionId, signal) => {
       entered.resolve(undefined)
       return new Promise((_resolve, reject) => {
         signal?.addEventListener('abort', () => {
@@ -860,8 +1027,8 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('cancelled mid-listing')))
     const controller = new AbortController()
-    const original = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
-    ctx.sessionPersistence.inspect = async (sessionId, signal) => {
+    const original = ctx.sessionPersistence.borrowSession.bind(ctx.sessionPersistence)
+    ctx.sessionPersistence.borrowSession = async (sessionId, signal) => {
       const result = await original(sessionId, signal)
       controller.abort()
       return result
@@ -879,7 +1046,7 @@ describe('SubagentRuntime.listChildren', () => {
       origin: 'subagent',
     }, childEvents(descriptorPayload('aborted behind a failure')))
     const controller = new AbortController()
-    ctx.sessionPersistence.inspect = () => {
+    ctx.sessionPersistence.borrowSession = () => {
       // The read fails while the caller aborts: cancellation normalization
       // must fail the listing rather than return a one-diagnostic success.
       controller.abort()
@@ -897,14 +1064,10 @@ describe('SubagentRuntime.listChildren', () => {
   })
 
   it('SubagentError from listChildren is typed with its stable code', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    await ctx.plugin(SubagentRuntime)
-    const caught: unknown = await ctx.subagents
-      .listChildren(SessionId('no-store-parent'))
-      .catch((error: unknown) => error)
+    const { ctx, parent } = await setup([], { sessionProjections: false })
+    const caught: unknown = await ctx.subagents.listChildren(parent.id).catch((error: unknown) => error)
     expect(caught).toBeInstanceOf(SubagentError)
-    expect((caught as SubagentError).code).toBe('SUBAGENT_CONTROL_SESSION_STORE_UNAVAILABLE')
+    expect((caught as SubagentError).code).toBe('SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE')
   })
 })
 
@@ -1117,11 +1280,17 @@ describe('SubagentRuntime.listDescendants', () => {
       createdAt: 1,
       origin: 'subagent',
     }, childEvents(descriptorPayload('lineage checked')))
-    const realInspect = ctx.sessionPersistence.inspect.bind(ctx.sessionPersistence)
-    ctx.sessionPersistence.inspect = async (sessionId, signal) => {
+    const realInspect = ctx.sessionPersistence.borrowSession.bind(ctx.sessionPersistence)
+    ctx.sessionPersistence.borrowSession = async (sessionId, signal) => {
       const inspected = await realInspect(sessionId, signal)
       // The exact read reports a different durable parent than enumeration did.
-      return { ...inspected, meta: { ...inspected.meta, parentSession: SessionId('someone-else') } }
+      return {
+        ...inspected,
+        inspection: {
+          ...inspected.inspection,
+          meta: { ...inspected.inspection.meta, parentSession: SessionId('someone-else') },
+        },
+      }
     }
     await expect(ctx.subagents.listDescendants(parent.id)).resolves.toEqual([
       { kind: 'diagnostic', id: childId, reason: 'corrupt', parentId: parent.id, depth: 1 },
@@ -1140,8 +1309,10 @@ describe('SubagentRuntime.listDescendants', () => {
     expect(list).not.toHaveBeenCalled()
   })
 
-  it('does not activate when the projection registry is not mounted', async () => {
-    const { ctx } = await setup([], { sessionProjections: false })
-    expect(ctx.subagents).toBeUndefined()
+  it('fails loud when the projection registry is not mounted', async () => {
+    const { ctx, parent } = await setup([], { sessionProjections: false })
+    await expect(ctx.subagents.listDescendants(parent.id)).rejects.toThrow(
+      expect.objectContaining({ code: 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE' }) as Error,
+    )
   })
 })

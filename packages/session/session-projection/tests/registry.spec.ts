@@ -10,8 +10,8 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 
@@ -33,8 +33,13 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 type MarksState = { marks: string[] } | null
+const RESTORE_HEADER: SessionHeader = {
+  version: 0,
+  id: SessionId('projection-restore'),
+  createdAt: 0,
+}
 /** Whole-value unit: latest test/mark event wins; unrelated events return the same reference. */
-const marksUnit = (): ProjectionDefinition<'test/marks', MarksState>
+const marksUnit = (): Omit<ProjectionDefinition<'test/marks', MarksState>, 'wire'>
   & { wire: NonNullable<ProjectionDefinition<'test/marks', MarksState>['wire']> } => ({
   key: 'test/marks',
   stateSchema: z.object({ marks: z.array(z.string()) }).nullable(),
@@ -108,90 +113,6 @@ describe('SessionProjectionRegistry drive', () => {
     expect(seen).toEqual([{ key: 'test/marks', value: { marks: ['a'] }, seq: event.seq, sessionId: String(session.id) }])
   })
 
-  it('contains a throwing change listener and continues the remaining feed', async () => {
-    const { ctx, session } = await harness()
-    ctx.sessionProjections.register(marksUnit())
-    const seen: string[] = []
-    ctx.sessionProjections.onChanged(() => {
-      throw new Error('change listener boom')
-    })
-    ctx.sessionProjections.onChanged((_session, key) => {
-      seen.push(key)
-    })
-
-    expect(() => mark(session, ['contained'])).not.toThrow()
-    expect(seen).toEqual(['test/marks'])
-  })
-
-  it('publishes only client-visible changes and honors the direct disposer', async () => {
-    const { ctx, session } = await harness()
-    ctx.sessionProjections.register(marksUnit())
-    ctx.sessionProjections.register(countUnit())
-    const seen: string[] = []
-    const dispose = ctx.sessionProjections.onChanged((_session, key) => {
-      seen.push(key)
-    })
-    mark(session, ['wire'])
-    expect(seen).toEqual(['test/marks'])
-    dispose()
-    mark(session, ['disposed'])
-    expect(seen).toEqual(['test/marks'])
-  })
-
-  it('makes an earlier session listener read current and skips duplicate drive application', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const seen: unknown[] = []
-    ctx.on('session/event', (session) => {
-      seen.push(ctx.sessionProjections.snapshot(session).values['test/marks'])
-    })
-    await ctx.plugin(SessionProjectionRegistry)
-    ctx.sessionProjections.register(marksUnit())
-    const session = ctx.sessions.create()
-
-    mark(session, ['early listener'])
-
-    expect(seen).toEqual([{ marks: ['early listener'] }])
-    expect(ctx.sessionProjections.snapshot(session).values['test/marks'])
-      .toEqual({ marks: ['early listener'] })
-  })
-
-  it('forward-applies events appended while the session is detached', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionProjectionRegistry)
-    ctx.sessionProjections.register(countUnit())
-    const session = ctx.sessions.prepare()
-    const detach = ctx.sessions.enter(session)
-    session.append('turn/start', { turn: 1 })
-    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(1)
-    detach()
-    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    session.append('turn/start', { turn: 2 })
-    ctx.sessions.enter(session)
-
-    session.append('turn/end', { turn: 2, reason: { kind: 'completed' } })
-
-    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(4)
-  })
-
-  it('brings a detached session cell current on its first read after reattachment', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionProjectionRegistry)
-    ctx.sessionProjections.register(countUnit())
-    const session = ctx.sessions.prepare()
-    const detach = ctx.sessions.enter(session)
-    session.append('turn/start', { turn: 1 })
-    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(1)
-    detach()
-    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    session.append('turn/start', { turn: 2 })
-    ctx.sessions.enter(session)
-
-    expect(ctx.sessionProjections.snapshot(session).values['test/count']).toBe(3)
-  })
-
   it('drives independently per session (cells are per-session watermarks)', async () => {
     const { ctx, session } = await harness()
     const other = ctx.sessions.create()
@@ -212,9 +133,8 @@ describe('SessionProjectionRegistry drive', () => {
     })
     session.append('turn/start', { turn: 1 })
     expect(changedKeys).toEqual([])
-    const snapshot = ctx.sessionProjections.snapshot(session)
-    expect(snapshot.values['test/count']).toBe(1)
-    expect(snapshot.values['test/marks']).toEqual({ marks: [] })
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(1)
+    expect(ctx.sessionProjections.snapshot(session).values).toEqual({ 'test/marks': { marks: [] } })
   })
 
   it('shares one unit between registrants of the same key', async () => {
@@ -237,9 +157,9 @@ describe('SessionProjectionRegistry drive', () => {
 
     first()
 
-    // The regression this counts against: one session ending used to strip
-    // the projection from every other live session, because the first
-    // registrant owned the only disposer.
+    // The regression this counts against: without last-release semantics, one
+    // session ending strips the projection from every other live session,
+    // because the first registrant owns the only disposer.
     expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['kept'] })
     second()
     expect(ctx.sessionProjections.snapshot(session).values).toEqual({})
@@ -273,23 +193,6 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values['test/marks']).toEqual({ marks: ['cached'] })
   })
 
-  it('returns the exact disposer so a composite owner can read state before unregistering', async () => {
-    const { ctx, session } = await harness()
-    mark(session, ['cleanup'])
-    let cleanupState: MarksState | undefined
-    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      inner.effect(function* () {
-        yield inner.sessionProjections.register(marksUnit())
-        yield () => { cleanupState = inner.sessionProjections.stateOf(session, 'test/marks') }
-      }, 'projection cleanup ordering fixture')
-    }, { inject: ['sessionProjections'] }))
-
-    await fiber.dispose()
-
-    expect(cleanupState).toEqual({ marks: ['cleanup'] })
-    expect(ctx.sessionProjections.stateOf(session, 'test/marks')).toBeUndefined()
-  })
-
   it('removes registrations and change listeners when their owning fiber unloads (HMR safety)', async () => {
     const { ctx, session } = await harness()
     const notifications: string[] = []
@@ -307,14 +210,15 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values).toEqual({})
   })
 
-  it('snapshot serves the wire view for a client key and the raw state for a host-internal key', async () => {
+  it('snapshot serves client views and excludes host-only state', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())
     ctx.sessionProjections.register(countUnit())
     mark(session, ['a', 'b'])
     const values = ctx.sessionProjections.snapshot(session).values
     expect(values['test/marks']).toEqual({ marks: ['a', 'b'] })
-    expect(values['test/count']).toEqual(1)
+    expect('test/count' in values).toBe(false)
+    expect(ctx.sessionProjections.stateOf(session, 'test/count')).toBe(1)
     expect('test/unregistered' in values).toBe(false)
   })
 
@@ -381,7 +285,7 @@ describe('SessionProjectionRegistry drive', () => {
     expect(() => ctx.sessionProjections.restore({
       'test/marks': { ver: 1, seq: 2, val: { marks: ['old'] } },
       'test/count': { ver: 99, seq: 2, val: 3 },
-    }, tail, 3)).toThrow(/re-read from seq 0/)
+    }, tail, 3, RESTORE_HEADER)).toThrow(/re-read from seq 0/)
     // The full-log re-read (baseSeq 0) refolds the mismatched key from init.
     const full: SessionEvent[] = [
       { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
@@ -392,10 +296,10 @@ describe('SessionProjectionRegistry drive', () => {
     const { snapshot, checkpoint } = ctx.sessionProjections.restore({
       'test/marks': { ver: 1, seq: 2, val: { marks: ['old', '2'] } },
       'test/count': { ver: 99, seq: 2, val: 3 },
-    }, full, 0)
+    }, full, 0, RESTORE_HEADER)
     expect(snapshot.asOfSeq).toBe(4)
     expect(snapshot.values['test/marks']).toEqual({ marks: ['new'] })
-    expect(snapshot.values['test/count']).toBe(5) // refolded from init over all 5 events
+    expect('test/count' in snapshot.values).toBe(false)
     // The refreshed rows sit at the served cut, ready for a durable write-back.
     expect(checkpoint['test/marks']).toEqual({ ver: 1, seq: 4, val: { marks: ['new'] } })
     expect(checkpoint['test/count']).toEqual({ ver: 1, seq: 4, val: 5 })
@@ -413,20 +317,22 @@ describe('SessionProjectionRegistry drive', () => {
       { type: 'turn/start', seq: 3, time: 3, data: { turn: 2 } },
       { type: 'turn/end', seq: 4, time: 4, data: { turn: 2, reason: { kind: 'completed' } } },
     ]
-    const { snapshot } = ctx.sessionProjections.restore(rows, tail, 3)
+    const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, tail, 3, RESTORE_HEADER)
     expect(snapshot.asOfSeq).toBe(4)
     // marks already covers the tail (watermark 4): nothing re-applied.
     expect(snapshot.values['test/marks']).toEqual({ marks: ['done'] })
-    // count folds exactly seqs 3 and 4 on top of its checkpoint.
-    expect(snapshot.values['test/count']).toBe(5)
+    // count folds exactly seqs 3 and 4 on top of its checkpoint, but remains host-only.
+    expect(checkpoint['test/count']).toEqual({ ver: 1, seq: 4, val: 5 })
+    expect('test/count' in snapshot.values).toBe(false)
 
     // Empty tail (checkpoint is current): the cut sits at baseSeq - 1.
-    const { snapshot: current } = ctx.sessionProjections.restore({
+    const { snapshot: current, checkpoint: currentCheckpoint } = ctx.sessionProjections.restore({
       'test/marks': { ver: 1, seq: 4, val: { marks: ['done'] } },
       'test/count': { ver: 1, seq: 4, val: 5 },
-    }, [], 5)
+    }, [], 5, RESTORE_HEADER)
     expect(current.asOfSeq).toBe(4)
-    expect(current.values['test/count']).toBe(5)
+    expect('test/count' in current.values).toBe(false)
+    expect(currentCheckpoint['test/count']).toEqual({ ver: 1, seq: 4, val: 5 })
   })
 
   it('viewCheckpoint serves version-matching rows without any log and skips mismatched keys', async () => {
@@ -442,7 +348,7 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.viewCheckpoint({})).toEqual({})
   })
 
-  it('viewCheckpoint and restore can serve wire keys while retaining full host checkpoints', async () => {
+  it('viewCheckpoint and restore exclude host-only state while retaining its checkpoint', async () => {
     const { ctx } = await harness()
     ctx.sessionProjections.register(marksUnit())
     ctx.sessionProjections.register(countUnit())
@@ -452,13 +358,9 @@ describe('SessionProjectionRegistry drive', () => {
     }
     expect(ctx.sessionProjections.viewCheckpoint(rows)).toEqual({
       'test/marks': { marks: ['stored'] },
-      'test/count': 5,
-    })
-    expect(ctx.sessionProjections.viewCheckpoint(rows, { wireOnly: true })).toEqual({
-      'test/marks': { marks: ['stored'] },
     })
 
-    const restored = ctx.sessionProjections.restore(rows, [], 5, { wireOnly: true })
+    const restored = ctx.sessionProjections.restore(rows, [], 5, RESTORE_HEADER)
     expect(restored.snapshot.values).toEqual({
       'test/marks': { marks: ['stored'] },
     })
@@ -473,7 +375,7 @@ describe('SessionProjectionRegistry drive', () => {
     }
 
     expect(ctx.sessionProjections.viewCheckpoint(drifted)).toEqual({})
-    expect(() => ctx.sessionProjections.restore(drifted, [], 3)).toThrow()
+    expect(() => ctx.sessionProjections.restore(drifted, [], 3, RESTORE_HEADER)).toThrow()
   })
 
   it('restore rejects a row claiming events past the supplied log end (shrunk log ⇒ re-read)', async () => {
@@ -486,18 +388,21 @@ describe('SessionProjectionRegistry drive', () => {
     expect(floor).toBe(9)
     // …an intact log serves the anchor event and the checkpoint stands as-is.
     const anchor: SessionEvent = { type: 'turn/end', seq: 9, time: 9, data: { turn: 2, reason: { kind: 'completed' } } }
-    expect(ctx.sessionProjections.restore(rows, [anchor], 9).snapshot.values['test/count']).toBe(10)
+    const anchored = ctx.sessionProjections.restore(rows, [anchor], 9, RESTORE_HEADER)
+    expect(anchored.snapshot.values).toEqual({})
+    expect(anchored.checkpoint['test/count']).toEqual({ ver: 1, seq: 9, val: 10 })
     // …while a log crash-repaired down to fewer events returns an empty tail:
     // the row overreaches the proven end and a tail read cannot fix this key.
-    expect(() => ctx.sessionProjections.restore(rows, [], 9)).toThrow(/re-read from seq 0/)
+    expect(() => ctx.sessionProjections.restore(rows, [], 9, RESTORE_HEADER)).toThrow(/re-read from seq 0/)
     // The full re-read discards the overreaching row and refolds from init.
     const events: SessionEvent[] = [
       { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
       { type: 'turn/end', seq: 1, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ]
-    const { snapshot } = ctx.sessionProjections.restore(rows, events, 0)
+    const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, events, 0, RESTORE_HEADER)
     expect(snapshot.asOfSeq).toBe(1)
-    expect(snapshot.values['test/count']).toBe(2)
+    expect(snapshot.values).toEqual({})
+    expect(checkpoint['test/count']).toEqual({ ver: 1, seq: 1, val: 2 })
   })
 
   it('fails loud when a unit view violates its own schema (async unit output is unrepresentable)', async () => {

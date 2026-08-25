@@ -20,11 +20,11 @@ import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 const hasPwsh = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', '$true'], { encoding: 'utf8' }).status === 0
 
 const driver = fileURLToPath(new URL(
-  '../../../../examples/acp-agent/tests/fixtures/shell/tool-pwsh/driver.ts',
+  './fixtures/loader/driver.ts',
   import.meta.url,
 ))
 const configPath = fileURLToPath(new URL(
-  '../../../../examples/acp-agent/tests/fixtures/shell/tool-pwsh/cordis.yml',
+  './fixtures/loader/cordis.yml',
   import.meta.url,
 ))
 const repoTsconfig = fileURLToPath(new URL('../../../../tsconfig.json', import.meta.url))
@@ -46,6 +46,9 @@ describe.skipIf(!hasPwsh)('tool-pwsh through a real Loader composition', () => {
       libBinScript: driver,
       configPath,
       tsconfigPath: repoTsconfig,
+      // The self-hosted Windows pool can take roughly 40 seconds to boot this
+      // real Loader composition under the full CI load.
+      processTimeoutMs: 90_000,
       inspect: async (cwd) => {
         report = JSON.parse(await readFile(join(cwd, 'pwsh-loader-report.json'), 'utf8')) as PwshLoaderReport
       },
@@ -59,5 +62,5 @@ describe.skipIf(!hasPwsh)('tool-pwsh through a real Loader composition', () => {
     expect(report?.foregroundText).toBe('loader-ok\n')
     expect(report?.backgroundText).toContain('loader-bg-ok')
     expect(report?.backgroundText).toContain('[status: completed, exit code: 0]')
-  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+  }, LOADER_SMOKE_TEST_TIMEOUT_MS + 75_000)
 })

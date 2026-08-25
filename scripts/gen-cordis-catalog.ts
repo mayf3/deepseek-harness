@@ -3,8 +3,9 @@
  * Typert catalog projection. Every harness `ctx.<key>` service and event scope
  * maps to exactly one `docs/subsystems/` page through the curated tables below;
  * the generator injects each page's Cordis API reference between its GENERATED markers —
- * byte-identically into both language sides of the pair — and re-records a
- * pair's `.i18n.yaml` only when nothing outside the region changed. The
+ * into both language sides of the pair, localizing paired document paths for
+ * the Chinese side while retaining every other byte — and re-records a pair's
+ * `.i18n.yaml` only when nothing outside the region changed. The
  * projection enforces event modes, JSDoc parameter/return completeness, and
  * signature type-link coverage; the inherited (vendor) tier renders to
  * `docs/cordis-api/inherited.md`. `--check` verifies every generated artifact.
@@ -32,9 +33,12 @@ import { contextKeyMap, contextMergeFiles, eventNameList } from './cordis-walk.t
 import {
   blobHash,
   parsePairMeta,
+  parseTranslationPairingManifest,
   partitionGeneratedRegions,
   renderPairMeta,
+  translationPairSourcePredicate,
 } from './translation-pairing.ts'
+import { rewriteTranslationLinkLocales } from './translation-links.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const SUBSYSTEMS_DIR = 'docs/subsystems'
@@ -64,10 +68,13 @@ export const SERVICE_PAGE: Record<string, string> = {
   commands: 'commands.md',
   compaction: 'compaction.md',
   cordisInspect: 'extensions.md',
+  authorization: 'credentials.md',
   credentials: 'credentials.md',
   directoryPicker: 'workspace.md',
+  deepseekLlmApiExtensions: 'llm-streaming.md',
   dynamicCordisRunner: 'extensions.md',
   e2b: 'subprocess.md',
+  fileReferences: 'session-reference.md',
   fs: 'filesystem.md',
   goals: 'goal.md',
   webServer: 'web-server.md',
@@ -85,6 +92,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   sessionReferenceResolver: 'session-reference.md',
   sessionProjectionCache: 'session-projection.md',
   sessionProjections: 'session-projection.md',
+  sessionController: 'session.md',
   sessions: 'session.md',
   settings: 'settings.md',
   sessionTitle: 'session-title.md',
@@ -92,12 +100,13 @@ export const SERVICE_PAGE: Record<string, string> = {
   spillStore: 'spill.md',
   storage: 'storage.md',
   storageDomain: 'storage.md',
+  subagentModelSelection: 'subagent.md',
   subagents: 'subagent.md',
   subprocess: 'subprocess.md',
   systemPrompt: 'system-prompt.md',
   jobs: 'jobs.md',
   sessionTelemetry: 'session-telemetry.md',
-  teams: 'team.md',
+  agentTeams: 'agent-team.md',
   tokenMeter: 'token-meter.md',
   toolResultPruner: 'compaction.md',
   tools: 'tools.md',
@@ -106,7 +115,9 @@ export const SERVICE_PAGE: Record<string, string> = {
   userQuestions: 'user-questions.md',
   web: 'web.md',
   workflowEngine: 'workflow.md',
+  webhookRuntime: 'webhook.md',
   workspaceRegistry: 'workspace.md',
+  workspaceController: 'workspace.md',
 }
 
 /**
@@ -129,6 +140,7 @@ export const SERVICE_PAGE: Record<string, string> = {
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   agent: 'not a service: the DX accessor field on Agent.ctx (root accessor defaulting to undefined) — docs/subsystems/core.md owns the Agent handle',
+  appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',
   appExit: 'not a service: launcher-provided bounded process-exit callback — packages/boot/cmdline/README.md owns the launcher contract',
   cmdlineArgs: 'not a service: launcher-provided immutable app argument accessor — packages/boot/cmdline/README.md owns the launcher contract',
   configuredAgentIdentities: 'not a service: launcher-provided boot-context value (ConfiguredAgentIdentities | undefined) — packages/core/agent-loop/README.md owns this launcher contract',
@@ -137,13 +149,14 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   launchEnvironment: 'not a service: launcher-provided root accessor value (LaunchEnvironmentSnapshot | undefined) — packages/util/launch-environment/README.md owns this launcher contract',
   connection: 'interface-typed (HostConnectionHandle); implementing class HostConnectionService is declared in rpc-host.ts — packages/client/connection/README.md owns the API',
   uiRenderer: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
+  uiSession: 'client-side Session source adapter — packages/client/ui-session/README.md owns the API',
+  uiConversation: 'client-side Conversation registries and assembler — packages/client/ui-conversation/README.md owns the API',
+  uiWorkspace: 'client-side Workspace navigation adapter — packages/client/ui-workspace/README.md owns the API',
   settingsSchema: 'client-side schema introspection service — packages/client/ui-settings/README.md owns the API',
   settingsScope: 'client-side settings-namespace transport service — packages/client/ui-settings/README.md owns the API',
-  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-conversation/README.md owns the API',
+  chatFileMentions: 'client-side slot-contract accessor (ChatFileMentions) — packages/client/ui-chat/README.md owns the API',
   commandUi: 'client-side interface-typed browser service — packages/client/ui-commands/README.md owns the API',
   conversation: 'client-side interface-typed browser service — packages/client/ui-conversation/README.md owns the API',
-  conversationEvents: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
-  conversationViews: 'client-side interface-typed registry — packages/client/runtime/README.md owns the API',
   layout: 'client-side interface-typed browser service — packages/client/ui-layout/README.md owns the API',
   locale: 'client-side interface-typed browser service — packages/client/locale/README.md owns the API',
   modelDirectories: 'client-side interface-typed browser service — packages/client/ui-model-selection/README.md owns the API',
@@ -152,9 +165,9 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   sessionLogDownload: 'client-side browser download controller — packages/session-query/session-log-export/README.md owns the API',
   inputTriggers: 'client-side interface-typed browser service — packages/client/ui-input-trigger/README.md owns the API',
   timer: 'client-side dynamic-package timer service — packages/extensions/cordis-client-runner/README.md owns the API',
-  slots: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  slots: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
-  workspaces: 'client-side interface-typed browser service — packages/client/runtime/README.md owns the API',
+  workspaces: 'client-side interface-typed browser service — packages/api/workspace-controller/README.md owns the API',
 }
 
 /**
@@ -168,9 +181,11 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'agent': 'core.md',
   'agent-loop': 'core.md',
   'agent-preset': 'core.md',
+  'api-session': 'session.md',
   'approval': 'approval.md',
   'commands': 'commands.md',
   'cordis': 'extensions.md',
+  'authorization': 'credentials.md',
   'credentials': 'credentials.md',
   'domain': 'storage.md',
   'fs': 'filesystem.md',
@@ -183,6 +198,8 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
   'system-prompt': 'system-prompt.md',
   'session-telemetry': 'session-telemetry.md',
   'tools': 'tools.md',
+  'user-questions': 'user-questions.md',
+  'webserver': 'web-server.md',
   'workflow': 'workflow.md',
 }
 
@@ -198,13 +215,13 @@ export const EVENT_SCOPE_PAGE: Record<string, string> = {
  */
 export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
   'command/executed': 'client-face local command acknowledgment — packages/client/ui-commands/README.md owns the API',
-  'connection/reset': 'client-face transport signal — packages/client/runtime/README.md owns the API',
+  'connection/reset': 'client-face transport signal — packages/api/session-controller/README.md owns the API',
   'locale/change': 'client-face locale switch signal — packages/client/locale/README.md owns the API',
   'slash/input-begin-command': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-consume-token': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-insert-reference': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
   'slash/input-insert-text': 'client-face slash-input protocol — packages/client/ui-input-trigger/README.md owns the API',
-  'slots/changed': 'client-face slot invalidation signal — packages/client/runtime/README.md owns the API',
+  'slots/changed': 'client-face slot invalidation signal — packages/client/ui-renderer/README.md owns the API',
   'theme/change': 'client-face theme switch signal — packages/client/ui-theme/README.md owns the API',
 }
 
@@ -232,11 +249,15 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SettleReason: 'core.md',
   AdapterRegistrationHandle: 'llm-streaming.md',
   DirectoryRegistrationHandle: 'llm-streaming.md',
+  DeepSeekLlmApiExtensionMap: 'llm-streaming.md',
+  DeepSeekLlmApiExtensionProvider: 'llm-streaming.md',
+  DeepSeekLlmApiExtensionRequest: 'llm-streaming.md',
   LlmCallConfig: 'llm-streaming.md',
   LlmModelContext: 'llm-streaming.md',
   LlmModelReasoningInfo: 'llm-streaming.md',
   LlmResolvedModelInfo: 'llm-streaming.md',
   LlmFailure: 'llm-streaming.md',
+  LlmImageRequestPricing: 'llm-streaming.md',
   LlmModelInfo: 'llm-streaming.md',
   LlmProviderInfo: 'llm-streaming.md',
   LlmConfigurableProvider: 'llm-streaming.md',
@@ -265,24 +286,61 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   MessageFeedbackVersion: 'feedback.md',
   MessageFeedbackVersionConflict: 'feedback.md',
   UserMessage: 'session.md',
+  ApiSessionAgentResult: 'session.md',
   PreStepDecision: 'core.md',
   PreStepContext: 'core.md',
   RequestErrorAction: 'core.md',
   RequestFailureContext: 'core.md',
   PreparedReferencedMessage: 'session-reference.md',
+  FileReferenceCandidate: 'session-reference.md',
   SessionReferenceCandidate: 'session-reference.md',
+  SessionReferenceMentionCandidate: 'session-reference.md',
   SessionReferenceInput: 'session-reference.md',
+  SessionAttachmentRequest: 'session.md',
+  SessionAttachmentValue: 'session.md',
+  SessionCancelRequest: 'session.md',
+  SessionCancelValue: 'session.md',
+  SessionControlFrame: 'session.md',
+  SessionCreateRequest: 'session.md',
+  SessionCreateValue: 'session.md',
   SessionEvent: 'session.md',
+  SessionFollowFrame: 'session.md',
+  SessionFollowRequest: 'session.md',
+  SessionForkRequest: 'session.md',
+  SessionForkValue: 'session.md',
   SessionId: 'core.md',
+  SessionListRequest: 'session.md',
+  SessionListValue: 'session.md',
+  SessionModels: 'session.md',
+  SessionModelsRequest: 'session.md',
+  SessionPage: 'session.md',
+  SessionPageRequest: 'session.md',
+  SessionPromptRequest: 'session.md',
+  SessionPromptValue: 'session.md',
+  SessionRenameRequest: 'session.md',
+  SessionRenameValue: 'session.md',
+  SessionRespondReceipt: 'session.md',
+  SessionRespondRequest: 'session.md',
+  SessionSearchValue: 'session.md',
+  SessionSelectModelRequest: 'session.md',
+  SessionSelectModelValue: 'session.md',
+  SessionSummary: 'session.md',
+  SessionUpdateQueueRequest: 'session.md',
+  SessionUpdateQueueValue: 'session.md',
   SessionStartSource: 'core.md',
   SessionLogSnapshot: 'session-query.md',
   SessionSurfaceSnapshot: 'session-query.md',
   ApprovalOutcome: 'approval.md',
   ApprovalPolicy: 'approval.md',
   ApprovalRequest: 'approval.md',
+  ApprovalRequestEvent: 'approval.md',
   ApprovalService: 'approval.md',
+  AskUserQuestionRequestEvent: 'user-questions.md',
   EncodedImageAttachment: 'attachment.md',
+  ImageAttachmentAccess: 'llm-streaming.md',
   ImageAttachmentRef: 'attachment.md',
+  ImageRequestPolicy: 'attachment.md',
+  RequestImageAttachment: 'attachment.md',
   SaveImageAttachment: 'attachment.md',
   StoredImageAttachment: 'attachment.md',
   ShellExecRequest: 'shell.md',
@@ -331,6 +389,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   LspQueryResult: 'lsp.md',
   LlmAdapter: 'llm-streaming.md',
   PreparedLlmCall: 'llm-streaming.md',
+  PreparedDeepSeekLlmApiExtensions: 'llm-streaming.md',
   LlmRuntime: 'llm-streaming.md',
   StreamChunk: 'llm-streaming.md',
   SkillProviderControl: 'skills.md',
@@ -338,6 +397,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   PrepareSessionOptions: 'persistence.md',
   SessionHeader: 'persistence.md',
   SessionInspection: 'persistence.md',
+  BorrowedSessionSource: 'persistence.md',
   SessionLocation: 'persistence.md',
   SessionPreparation: 'persistence.md',
   SessionPersistenceSnapshot: 'persistence.md',
@@ -377,6 +437,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SessionEventTraceRequest: 'session-query.md',
   SessionEventWindow: 'session-query.md',
   SessionLineageTrace: 'session-query.md',
+  SessionObservation: 'session-query.md',
+  SessionObservationOptions: 'session-query.md',
   SessionRecord: 'session-query.md',
   SessionResultFilter: 'session-query.md',
   SessionSearchExecContext: 'session-query.md',
@@ -425,18 +487,18 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   JobSnapshot: 'jobs.md',
   JobStart: 'jobs.md',
   JobsChangedListener: 'jobs.md',
-  CreateTeamTaskRequest: 'team.md',
-  SendTeamMessageRequest: 'team.md',
-  SendTeamMessageResult: 'team.md',
-  SpawnTeammateRequest: 'team.md',
-  SpawnTeammateResult: 'team.md',
-  TeamId: 'team.md',
-  TeamMemberView: 'team.md',
-  TeamMembership: 'team.md',
-  TeamTaskId: 'team.md',
-  TeamTaskView: 'team.md',
-  TeamWaitResult: 'team.md',
-  UpdateTeamTaskRequest: 'team.md',
+  CreateTeamTaskRequest: 'agent-team.md',
+  SendTeamMessageRequest: 'agent-team.md',
+  SendTeamMessageResult: 'agent-team.md',
+  SpawnTeammateRequest: 'agent-team.md',
+  SpawnTeammateResult: 'agent-team.md',
+  TeamId: 'agent-team.md',
+  TeamMemberView: 'agent-team.md',
+  TeamMembership: 'agent-team.md',
+  TeamTaskId: 'agent-team.md',
+  TeamTaskView: 'agent-team.md',
+  TeamWaitResult: 'agent-team.md',
+  UpdateTeamTaskRequest: 'agent-team.md',
   TokenMeasurement: 'token-meter.md',
   CodeDispatchLog: 'tools.md',
   PostToolDecision: 'tools.md',
@@ -460,8 +522,23 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SettingsPathOp: 'settings.md',
   SettingsDescribeOptions: 'settings.md',
   SettingsUpdateSource: 'settings.md',
+  AuthorizationEntry: 'credentials.md',
+  AuthorizationFlow: 'credentials.md',
+  AuthorizationInteraction: 'credentials.md',
+  AuthorizationMethod: 'credentials.md',
+  AuthorizationNotice: 'credentials.md',
+  AuthorizationOutcome: 'credentials.md',
+  AuthorizationPrompt: 'credentials.md',
+  AuthorizationRequest: 'credentials.md',
+  AuthorizationSession: 'credentials.md',
+  AuthorizationSettlement: 'credentials.md',
+  AuthorizationStatus: 'credentials.md',
   CredentialRef: 'credentials.md',
+  CredentialKey: 'credentials.md',
   CredentialInfo: 'credentials.md',
+  CredentialRecord: 'credentials.md',
+  CredentialRecordEntry: 'credentials.md',
+  CredentialRecordInfo: 'credentials.md',
   ResolvedCredential: 'credentials.md',
   AskUserQuestionAnswer: 'user-questions.md',
   AskUserQuestionRequest: 'user-questions.md',
@@ -473,10 +550,13 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WebSearchRequest: 'web.md',
   WebSearchResult: 'web.md',
   WorkflowRun: 'workflow.md',
+  VerifiedWebhookDelivery: 'webhook.md',
+  WebhookRule: 'webhook.md',
   PresetOption: 'permission-presets.md',
   PresetSpec: 'permission-presets.md',
   InvariantInstaller: 'invariants.md',
   WebRoute: 'web-server.md',
+  IndexInjection: 'web-server.md',
   StorageBackend: 'storage.md',
   StorageForms: 'storage.md',
   Domain: 'storage.md',
@@ -484,7 +564,20 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   DomainChanged: 'storage.md',
   DomainFacility: 'storage.md',
   Workspace: 'workspace.md',
+  WorkspaceArchiveSessionRequest: 'workspace.md',
+  WorkspaceArchiveValue: 'workspace.md',
+  WorkspaceCreateRequest: 'workspace.md',
+  WorkspaceCreateValue: 'workspace.md',
+  WorkspaceDeleteRequest: 'workspace.md',
+  WorkspaceDeleteValue: 'workspace.md',
+  WorkspaceFollowFrame: 'workspace.md',
   WorkspaceId: 'workspace.md',
+  WorkspaceInsertBeforeRequest: 'workspace.md',
+  WorkspaceInsertSessionBeforeRequest: 'workspace.md',
+  WorkspaceOrderValue: 'workspace.md',
+  WorkspaceRenameRequest: 'workspace.md',
+  WorkspaceValue: 'workspace.md',
+  ClientArtifactBaseline: 'client-modules.md',
   WebBootGraph: 'client-modules.md',
   SessionTelemetryRecord: 'session-telemetry.md',
   WorkflowRunInfo: 'workflow.md',
@@ -497,6 +590,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ProjectionCheckpoint: 'session-projection.md',
   DirectoryPickerCapability: 'workspace.md',
   TypertContribution: 'invariants.md',
+  TypertRemoteEventSource: 'typert.md',
   TypertFace: 'invariants.md',
   TypertPackageFilter: 'invariants.md',
   TypertPackageRecord: 'invariants.md',
@@ -510,7 +604,9 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'AsyncIterable',
   'Context',
   'Error',
+  'EntryTree',
   'Exclude',
+  'Extract',
   'Map',
   'NonNullable',
   'Omit',
@@ -717,6 +813,19 @@ export interface WalkPartitionMaps {
   readonly eventWalkExemptions: Readonly<Record<string, string>>
 }
 
+/** Project paired Markdown destinations in one generated region to the page's locale. */
+export function localizePageRegion(region: string, pageRel: string, scanRoot: string = root): string {
+  if (!pageRel.endsWith('.zh.md')) return region
+  const manifest = parseTranslationPairingManifest(
+    readFileSync(resolve(scanRoot, 'scripts/translation-pairing.manifest.json'), 'utf8'),
+  )
+  return rewriteTranslationLinkLocales(region, {
+    repoRoot: scanRoot,
+    sourcePath: pageRel,
+    isTranslationPairSource: translationPairSourcePredicate(manifest),
+  }).content
+}
+
 /**
  * Judge the rendered API and the independent AST scan against the curated
  * partition maps, fail-closed in both directions for services AND events: a
@@ -840,6 +949,7 @@ export function computeOutputs(): [string, string][] {
     )
     for (const side of [page, page.replace(/\.md$/, '.zh.md')]) {
       const rel = `${SUBSYSTEMS_DIR}/${side}`
+      const localizedRegion = localizePageRegion(region, rel)
       let current: string
       try {
         current = readFileSync(resolve(root, rel), 'utf8')
@@ -850,7 +960,7 @@ export function computeOutputs(): [string, string][] {
         continue
       }
       try {
-        outputs.push([rel, spliceRegion(current, region)])
+        outputs.push([rel, spliceRegion(current, localizedRegion)])
       } catch (error) {
         problems.push(`${rel}: ${error instanceof Error ? error.message : String(error)}`)
       }
@@ -966,7 +1076,6 @@ export function main(): void {
   console.log(`gen-cordis-catalog: ${outputs.length} artifact(s) computed, ${changedPages} written, ${recorded} pair record(s) refreshed.`)
 }
 
-// Run only when invoked as a script, not when imported by a test.
 if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   main()
 }

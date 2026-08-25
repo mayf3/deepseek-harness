@@ -10,16 +10,17 @@ import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
 import { defineTool } from '@deepseek-ai/dsh-tools'
-import type { TodoItem } from '@deepseek-ai/dsh-session'
+import type { TodoItem } from './types.ts'
+// Type-only: resolves ctx.sessionProjections for the optional unit child.
 import type {} from '@deepseek-ai/dsh-session-projection'
 // The `todos` projection-key declaration lives in src/types.ts (its one home);
 // this re-export projects the type face onto the package root AND keeps the
 // module edge in the emitted index.d.ts, so aggregate programs consuming the
-// declarations still receive the SessionProjectionStateMap merge.
+// declarations still receive the SessionProjectionMap merge.
 export type * from './types.ts'
 
 export const name = 'tool-todo'
-export const inject = ['tools', 'sessionProjections']
+export const inject = ['tools']
 
 /** The valid {@link TodoItem} statuses, as a runtime set for input narrowing. */
 const STATUSES = ['pending', 'in_progress', 'completed'] as const
@@ -119,23 +120,31 @@ const todosProjectionSchema: ZodType<TodoItem[] | null> = zod.union([
 ])
 
 /**
- * Register the `todo_write` tool and `todos` projection.
- * @param ctx - registrant context carrying the tool and projection registries.
+ * Register the `todo_write` tool on `ctx.tools` and, when the session-projection seam is composed,
+ * the `todos` unit.
+ * @param ctx - registrant context carrying the tool registry.
  * @param config - deployment's explicit todo policy.
  */
 export function apply(ctx: Context, config: Config): void {
   const allowParallel = config.allowParallelInProgress
-  ctx.sessionProjections.register({
-    key: 'todos',
-    stateVersion: 2,
-    stateSchema: todosProjectionSchema,
-    init: () => null,
-    apply: (state, event) => {
-      if (event.type === 'todo/write') return event.data.todos
-      if (event.type === 'turn/start') return null
-      return state
-    },
-    wire: { viewSchema: todosProjectionSchema, view: state => state },
+  // The unit child activates only when a projection registry is composed
+  // (headless assemblies without the seam stay unaffected). Standing-plan fold:
+  // latest whole todo/write list, cleared by the next turn/start (turn/end keeps
+  // the finished checklist visible); null before the first write or after a
+  // later turn begins; every other event returns the same state reference.
+  ctx.inject(['sessionProjections'], (projectionCtx) => {
+    projectionCtx.sessionProjections.register<'todos', TodoItem[] | null>({
+      key: 'todos',
+      stateSchema: todosProjectionSchema,
+      init: () => null,
+      apply: (state, event) => {
+        if (event.type === 'todo/write') return event.data.todos
+        if (event.type === 'turn/start') return null
+        return state
+      },
+      wire: { viewSchema: todosProjectionSchema, view: state => state },
+      stateVersion: 2,
+    })
   })
   ctx.tools.register(defineTool({
     name: 'todo_write',
