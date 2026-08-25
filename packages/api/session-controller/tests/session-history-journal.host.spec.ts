@@ -289,6 +289,63 @@ describe('Session history raw journal', () => {
     }
   })
 
+  it('encodes reasoning and tool-call runs as aligned chunk events', async () => {
+    const { ctx } = await harness()
+    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const reasoning = [0, 1, 2].map(index => session.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'reasoning-delta', index: 0, text: `r${String(index)}` },
+    }))
+    const callId = CallId('packed-call')
+    const toolCall = [0, 1, 2].map(index => session.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'tool-call-delta', index: 1, id: callId, argumentsDelta: `a${String(index)}` },
+    }))
+
+    const response = await remote.page({
+      address: { kind: 'session', sessionId: session.id },
+      throughSeq: session.seq - 1,
+    })
+    if (!response.ok) throw new Error('unreachable')
+    expect(response.value.records).toEqual([
+      {
+        type: 'chunks',
+        event: {
+          type: 'chunkrow/reasoning-chunks',
+          seq: reasoning[0]?.seq,
+          time: reasoning[0]?.time,
+          data: {
+            turn: 1,
+            step: 1,
+            index: 0,
+            dt: reasoning.slice(1).map((event, index) => event.time - (reasoning[index]?.time ?? 0)),
+            texts: ['r0', 'r1', 'r2'],
+          },
+        },
+      },
+      {
+        type: 'chunks',
+        event: {
+          type: 'chunkrow/tool-call-chunks',
+          seq: toolCall[0]?.seq,
+          time: toolCall[0]?.time,
+          data: {
+            turn: 1,
+            step: 1,
+            index: 1,
+            id: callId,
+            dt: toolCall.slice(1).map((event, index) => event.time - (toolCall[index]?.time ?? 0)),
+            args: ['a0', 'a1', 'a2'],
+          },
+        },
+      },
+    ])
+    await ctx.fiber.dispose()
+  })
+
   it('follows a result after turn/end without reading the addressed Session log', async () => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })

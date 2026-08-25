@@ -164,6 +164,25 @@ describe('Session Client stream adapters', () => {
     await stream.dispose()
   })
 
+  it('rejects a packed record emitted by the live follow path', async () => {
+    const failed = vi.fn()
+    const remote = new ScriptedSessionRemote(
+      [{ frames: [snapshot(-1, []), chunks(0) as SessionFollowFrame], hold: true }],
+      [],
+    )
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: vi.fn(),
+      failed,
+    })
+
+    await stream.open({})
+    await vi.waitFor(() => { expect(failed).toHaveBeenCalledOnce() })
+    expect(failed.mock.calls[0]?.[0]).toMatchObject({
+      message: 'session live stream emitted a packed history record',
+    })
+    await stream.dispose()
+  })
+
   it('binds an event journal to one address and publishes replace, append, and prepend changes', async () => {
     const remote = new ScriptedSessionRemote(
       [{
