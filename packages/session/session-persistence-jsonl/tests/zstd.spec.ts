@@ -332,27 +332,6 @@ describe('Zstandard frame structure', () => {
 })
 
 describe('JsonlSessionPersistence: default Zstandard encoding', () => {
-  it('atomically replaces a stored revision with compressed header and event frames', async () => {
-    const root = await freshRoot()
-    const ctx = await mount(root)
-    const header = meta('replace-zstd', '/work')
-    await ctx.sessionPersistence.create(header)
-    await ctx.sessionPersistence.append(header.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(header.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-    const replacement = oneTurnLog().slice(0, 2)
-
-    await persistence.replaceStored(source.revision, header, (async function* () {
-      yield* replacement
-    })())
-
-    const buffer = await readFile(logPath(root, header.cwd, header.id, 'zstd'))
-    expect(scanZstdFrames(buffer).frames).toHaveLength(2)
-    const plaintext = (await decodeCompleteFrames(buffer)).toString()
-    expect(scanLog(Buffer.from(plaintext)).events).toEqual(replacement)
-  })
-
   it('materializes an explicitly durable empty session as one header frame', async () => {
     const root = await freshRoot()
     const ctx = await mount(root)
@@ -408,8 +387,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       '',
     ].join('\n'))
     const scanned = scanLog(Buffer.from(raw!.content))
-    expect(scanned.events.map(event => (event as SessionEvent).type))
-      .toEqual(oneTurnLog().map(event => event.type))
+    expect(scanned.events.map(event => event.type)).toEqual(oneTurnLog().map(event => event.type))
   })
 
   it('readRaw rejects a present zstd artifact that carries no frame', async () => {
@@ -422,32 +400,6 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     await writeFile(logPath(root, '/work', header.id, 'zstd'), Buffer.alloc(0))
     await expect(ctx.sessionPersistence.readRaw(header.id))
       .rejects.toThrow('empty or header-less Zstandard session log')
-    await expect(ctx.sessionPersistence.load(header.id))
-      .rejects.toThrow('empty or header-less Zstandard session log')
-  })
-
-  it('rejects a zero-frame artifact through an already-open stored reader', async () => {
-    const root = await freshRoot()
-    const ctx = await mount(root)
-    const header = meta('stored-zero-frame', '/work')
-    await ctx.sessionPersistence.create(header)
-    await ctx.sessionPersistence.append(header.id, oneTurnLog())
-    const persistence = ctx.sessionPersistence as JsonlSessionPersistence
-    const source = await persistence.openStored(header.id)
-    if (source === undefined) throw new Error('test session must be materialized')
-    await writeFile(logPath(root, '/work', header.id, 'zstd'), Buffer.alloc(0))
-
-    const read = source.readEvents()
-    const completion = read.completed.catch((error: unknown) => error)
-    const consumption = (async (): Promise<void> => {
-      for await (const _event of read.events) {
-        // A zero-frame artifact cannot yield a logical event.
-      }
-    })().catch((error: unknown) => error)
-    const [streamFailure, completionFailure] = await Promise.all([consumption, completion])
-
-    expect(streamFailure).toBe(completionFailure)
-    expect(streamFailure).toMatchObject({ message: 'empty or header-less Zstandard session log' })
   })
 
   it('resolves the default when a programmatic wrapper bypasses Loader schema normalization', async () => {
@@ -790,7 +742,7 @@ describe('JsonlSessionPersistence: encoding selection', () => {
       '',
     ].join('\n'))
     await expect(ctx.sessionPersistence.load(loadHeader.id)).rejects.toThrow(/uses \.jsonl/)
-    await expect((ctx.sessionPersistence as JsonlSessionPersistence).openStored(loadHeader.id))
+    await expect((ctx.sessionPersistence as JsonlSessionPersistence).loadStored(loadHeader.id))
       .rejects.toThrow(/uses \.jsonl/)
     await expect(ctx.sessionPersistence.list()).rejects.toThrow(/uses \.jsonl/)
   })

@@ -9,6 +9,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
 - text: Stream one TypeScript fence for the highlighting snapshot. {{clock}}
 - button "Copy":
   - img
