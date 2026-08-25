@@ -12,8 +12,6 @@ Web 承载层启动的是一个不受限的 agent（智能体）：`bootHost` �
 
 Web 承载层组合与 acp-agent 相同的沙箱化产品路径：`dsh-sandbox-local`、`dsh-sandbox-policy`、`dsh-bash-sandbox`、`dsh-fs-sandbox`、`dsh-user-approval` 与 `dsh-permission-presets`，由 `BootHostOptions.sandbox` 提供部署默认值（`mode`，默认 `workspace-write`；`approvalPolicy`，默认 `ask`）。
 
-已交付的 Web 组合还会在 `tools/pre-execute` 上挂载 `dsh-web-fetch-approval-policy`。它会在作出 `web_fetch` 决策前计算下游策略。`danger-full-access` 不询问并继续委托；`read-only` 与 `workspace-write` 会在单次审批前执行不产生网络活动的 URL 语法、长度、凭据与 IP 字面量校验；审批策略 `never` 不解析或提示，直接拒绝。`allowed-once` 之后，提供方才会解析并固定实际连接，拒绝包括通过当前 DNS64 前缀抵达私有 IPv4 在内的所有非公开结果，并在每次同源重定向时重复强制执行。因此，该策略不会在用户同意前通过 DNS 泄露 hostname，授权也无法批准私有目的地址或 DNS rebinding 解析结果。`plan` 仍是独立的协作状态；产品通过把 plan 工作与受限 sandbox preset 组合来限制它，而不会引入第二套网络 mode 词汇。
-
 `createApiProxy` 拥有审批 pending 注册表。它的 `approval/request` waterfall（瀑布式事件）应答者从会话刚追加的 `approval/asked` 审计事件中读取审批 id（没有审计事件的 ask 属于外部通道，予以委托），为每个问题 mint 一个稳定的 rpcId，向每个打开的 mux 流广播可应答的 `approval/requested` 帧，并在每次 mux 打开时原样重放仍处于 pending 的帧——这正是约定早已承诺的刷新恢复基线。`respond` 按回显的 rpcId 路由，用既有的 zod schema 校验 `ApprovalResponsePayload`，将载荷的审计关联与所路由的条目交叉核对，解析应答者，并广播 `approval/resolved`；ask 的中断信号会以 `cancelled` 撤回该问题。
 
 权限选择依托两个新的一元 RPC，`session.permissions` 与 `session.setPermission`，把 `ctx.permissionPresets` 投影为一个由协议拥有的 `PermissionOption` DTO（沿用 ACP bridge 的先例：每个协议拥有自己的呈现形状）。无权限的组合提供空的选择项，client 隐藏该控件。空闲期的切换以后写胜出（last-write-wins）的方式保存在 proxy 侧的 pending map 中，并在 `agent/pre-step` 时冲刷，因为旋钮事件必须保持轮次内闭合以支持持久回放；共享的 `hasOpenTurn` 折叠迁入 `dsh-session`，取代了 `dsh-user-approval`、ACP bridge 与 proxy 中各自的私有副本。
@@ -30,8 +28,6 @@ Web 承载层组合与 acp-agent 相同的沙箱化产品路径：`dsh-sandbox-l
 
 **点击即乐观移除卡片。** 不予采纳：广播的 resolved 帧才是真相；点击即移除会隐藏一个因拒绝回执或传输失败而仍然悬置的问题。面板改为在本地禁用其按钮，并在失败时重新启用。
 
-**在首版抓取策略中加入持久域名授权。** 不予采纳：现有审批词汇只有一个授权结果 `allowed-once`，并且已把它关联到精确的工具调用。按 session／域名授权需要自身的持久作用域、撤销、展示与重定向语义；安全验证权限链不需要这些机制。
-
 ## 后果
 
-Web 会话从受限状态启动（默认 `workspace-write` + `ask`），`web_fetch` 会在 hostname 解析前等待可应答的单次请求；沙箱拒绝升级也通过同一通道抵达浏览器。部署方可以通过 `BootHostOptions.sandbox` 放宽或收紧默认值，无需触动装配。问题应答使用同一注册表模式（ui-user-questions 基于问题 pending 表），Session 导航会在用户打开会话前识别审批、计划审阅与普通问题等待。权限选择在每次挂载时读取一次；来自另一个 client 切换的实时刷新暂缓实现。覆盖包括拒绝时 resolver 零调用的策略决策矩阵、公开地址与 DNS64 强制校验、proxy 注册表与权限 RPC 单元测试套件、会话对象与 fixture 单元测试套件、针对 fixture 模式审批应答与 preset 切换的无密钥 Web 冒烟测试，以及固定 `ask` → `allowed-once` → 固定地址 HTTP → 清洗后模型可见内容的 assembled ACP 快照。
+Web 会话从受限状态启动（默认 `workspace-write` + `ask`），sandbox 拒绝升级会通过审批通道抵达浏览器。部署方可以通过 `BootHostOptions.sandbox` 放宽或收紧默认值，无需触动装配。问题应答使用同一注册表模式（ui-user-questions 基于问题 pending 表），Session 导航会在用户打开会话前识别审批、计划审阅与普通问题等待。权限选择在每次挂载时读取一次；来自另一个 client 切换的实时刷新暂缓实现。覆盖包括 proxy 注册表与权限 RPC 单元测试套件、会话对象与 fixture 单元测试套件，以及针对审批应答与 preset 切换的无密钥 Web 冒烟测试。

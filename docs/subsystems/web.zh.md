@@ -124,11 +124,11 @@ type WebFetchBody =
 
 选择从不依赖注册顺序、配置顺序或 HMR（热模块替换）顺序：一项能力要么有显式的提供方 id（配置 `searchProvider`／`fetchProvider`，或填充同一字段的对应环境变量），要么在恰好只有一个可用提供方注册时自动选择；如果存在多个可用提供方却未配置 id，则抛出 `WEB_PROVIDER_AMBIGUOUS`，而不会选用最先注册的提供方。
 
-## 抓取权限
+## 抓取网络策略
 
-[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) 监听 `tools/pre-execute`，不改变 web 服务或工具 schema。它会先计算下游策略。`danger-full-access` 不询问并继续委托；`read-only` 与 `workspace-write` 在审批策略为 `ask` 时，会在不产生网络活动的情况下校验 URL 语法、长度、凭据和 IP 字面量，再返回携带精确 call id 与完整标准化 URL 的 `ask`。审批策略 `never` 和受限模式下的无 agent 调用不进行 DNS 解析或提示，直接拒绝。只有 `allowed-once` 允许该次 pending 调用；不存在按域名或 session 持久化的授权。
+已交付的 Cordis、Code 与 Standard preset 会在所有 sandbox 和审批模式下暴露 `web_fetch`，无需逐次确认。文件 sandbox preset 不管辖 Web 网络访问。需要确认步骤的部署必须添加 `tools/pre-execute` 策略或禁用抓取。
 
-权限校验与提供方强制执行彼此独立。DNS 只会在用户同意后运行：HTTP 提供方为实际请求执行解析，拒绝包括通过当前 DNS64 前缀抵达私有 IPv4 在内的非公开结果，固定该组已验证地址，并对每个同源重定向重复强制校验。跨源重定向需要新的工具调用与权限决策。`plan` 仍是协作状态，而不是网络 mode，因此产品应将 plan 工作与所需的 sandbox 和审批策略组合。
+HTTP 提供方会解析每个实际请求，拒绝包括通过当前 DNS64 前缀抵达私有 IPv4 在内的非公开结果，固定已验证的地址集合，并在每次同源重定向时重复强制执行。跨源重定向需要新的工具调用和新的公开地址校验。这些检查会阻止通过 SSRF 访问非公开目的地址，但不会阻止模型把数据发送到公开 URL。
 
 ## 错误
 

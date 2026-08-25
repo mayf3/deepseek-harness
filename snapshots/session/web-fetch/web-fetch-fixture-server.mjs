@@ -2,7 +2,7 @@
  * Deterministic HTTP provider for the web-fetch snapshot scenario: a small
  * HTML page (headings, named entities, a GFM table, nested formatting) on a
  * fixed loopback port behind the real address-pinned transport. Recording and
- * replay therefore exercise approval, fetch, and markdown rendering without
+ * replay therefore exercise fetch and markdown rendering without
  * external network. The port is fixed because the fetched URL is recorded.
  */
 import { createServer } from 'node:http'
@@ -25,7 +25,7 @@ const PAGE = `<!doctype html>
 /** Cordis plugin name. */
 export const name = 'web-fetch-fixture-server'
 
-/** Services and events used by the fixture provider and approval answerer. */
+/** Service used by the fixture provider. */
 export const inject = ['web']
 
 const LIMITS = {
@@ -37,7 +37,7 @@ const LIMITS = {
 }
 
 /**
- * Register the approved deterministic provider and start its loopback server.
+ * Register the deterministic provider and start its loopback server.
  * @param ctx - Cordis context; the effect disposes the server with the fiber.
  */
 export function apply(ctx) {
@@ -64,9 +64,6 @@ export function apply(ctx) {
     return [{ address: '127.0.0.1', family: 4 }]
   }
 
-  ctx.on('approval/request', (request, next) => (
-    request.toolName === 'web_fetch' ? 'allowed-once' : next()
-  ))
   ctx.effect(() => async () => {
     await new Promise((resolve, reject) => {
       server.close(error => error ? reject(error) : resolve(undefined))

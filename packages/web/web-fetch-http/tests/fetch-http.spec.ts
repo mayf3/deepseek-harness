@@ -16,7 +16,6 @@ import {
   validateFetchUrl,
   WEB_FETCH_MAX_URL_LENGTH,
 } from '../src/policy.ts'
-import { validateFetchApprovalUrl } from '../src/preflight.ts'
 
 const limits: HttpFetchLimits = {
   maxResponseBytes: 5_000_000,
@@ -64,15 +63,6 @@ describe('policy helpers', () => {
     const exact = `${prefix}${'a'.repeat(WEB_FETCH_MAX_URL_LENGTH - prefix.length)}`
     expect(validateFetchUrl(exact).href).toBe(exact)
     expect(() => validateFetchUrl(`${exact}a`)).toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
-  })
-
-  it('validates literal approval targets without DNS', () => {
-    expect(validateFetchApprovalUrl('https://example.com/path').hostname).toBe('example.com')
-    expect(validateFetchApprovalUrl('https://8.8.8.8/path').hostname).toBe('8.8.8.8')
-    expect(validateFetchApprovalUrl('https://[2001:4860:4860::8888]/path').hostname)
-      .toBe('[2001:4860:4860::8888]')
-    expect(() => validateFetchApprovalUrl('http://127.0.0.1/private'))
-      .toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
   })
 
   it('classifies content types', () => {

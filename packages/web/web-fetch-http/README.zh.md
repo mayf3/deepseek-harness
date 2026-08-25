@@ -4,7 +4,7 @@
 
 一个匿名公共 HTTP(S) `WebFetchProvider`，用于 harness [web 能力 seam](../web/README.zh.md)（`ctx.web`）。它获取具体 URL，返回状态码和长度受限的解码内容。
 
-这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。独立的 [`dsh-web-fetch-approval-policy`](../web-fetch-approval-policy/README.zh.md) 插件会在询问用户是否允许受限的 `web_fetch` 调用前，复用此包不产生网络活动的 URL 校验。
+这是一个**实现**包：它向 `ctx.web` 注册提供方，不拥有该键，也不注册面向模型的工具。它是函数／命名空间插件（`inject: ['web']`）。
 
 ## 职责拆分
 
@@ -23,8 +23,6 @@
 - 只跟随**同源**重定向；每个跟随的跳转都会再次执行公开地址解析与连接固定，跨源重定向则以 `WEB_REDIRECT_BLOCKED` 失败并要求发起新的工具调用（沿用 Claude Code 的 WebFetch 模式）。
 - 发送显式的产品 `User-Agent`，绝不伪装成浏览器。
 - 不受支持的内容类型（例如二进制）以 `WEB_UNSUPPORTED_CONTENT_TYPE` 拒绝。
-
-`validateFetchApprovalUrl()` 向权限消费方暴露不产生网络活动的 URL 语法、长度、凭据与 IP 字面量校验。hostname 解析只会在用户同意后由提供方执行；提供方会强制校验并固定解析结果，而不会把它当作可复用的授权令牌。
 
 直接构造 `HttpFetchProvider` 时，可以为受信任的替代装配和确定性测试注入 `HttpFetchResolver`。该 resolver 必须先拒绝所有非公开目的地址，再返回地址；随产品交付的插件始终使用内置的公开地址 resolver。
 

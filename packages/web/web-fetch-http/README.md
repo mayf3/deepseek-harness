@@ -4,7 +4,7 @@ English | [中文](README.zh.md)
 
 An anonymous public HTTP(S) `WebFetchProvider` for the harness [web capability seam](../web/README.md) (`ctx.web`). It retrieves a concrete URL and returns a status code plus bounded decoded content.
 
-This is an **implementation** package: it registers a provider into `ctx.web`, it does not own the key and it does not register a model-facing tool. It is a function/namespace plugin (`inject: ['web']`). The separate [`dsh-web-fetch-approval-policy`](../web-fetch-approval-policy/README.md) plugin reuses its network-free URL validation before asking users about restricted `web_fetch` calls.
+This is an **implementation** package: it registers a provider into `ctx.web`, it does not own the key and it does not register a model-facing tool. It is a function/namespace plugin (`inject: ['web']`).
 
 ## Responsibility split
 
@@ -23,8 +23,6 @@ A shipping web-tool deployment sets the provider backstop above the tool budget,
 - Follows only **same-origin** redirects; each followed hop repeats public-address resolution and pinning, while a cross-origin redirect fails with `WEB_REDIRECT_BLOCKED` and requires a fresh tool call (the model of Claude Code's WebFetch).
 - Sends an explicit product `User-Agent`, never a browser disguise.
 - Rejects unsupported (e.g. binary) content types with `WEB_UNSUPPORTED_CONTENT_TYPE`.
-
-`validateFetchApprovalUrl()` exposes network-free URL syntax, length, credentials, and literal-IP checks to permission consumers. Hostname resolution remains exclusively in the provider after consent, where the result is enforced and pinned rather than reused as an authorization token.
 
 Direct `HttpFetchProvider` construction may inject an `HttpFetchResolver` for alternate trusted assemblies and deterministic tests. That resolver must reject every non-public destination before returning addresses; the shipped plugin always uses the built-in public-address resolver.
 

@@ -124,11 +124,11 @@ A provider's `available(): boolean` is a cheap LOCAL check (credential presence,
 
 Selection never depends on registration, config, or HMR order: a capability has an explicit provider id (config `searchProvider`/`fetchProvider`, or the matching env var feeding the same field), or auto-selects when exactly one usable provider is registered; multiple usable providers with no configured id is `WEB_PROVIDER_AMBIGUOUS`, not first-wins.
 
-## Fetch permission
+## Fetch network policy
 
-[`dsh-web-fetch-approval-policy`](../../packages/web/web-fetch-approval-policy) listens on `tools/pre-execute` without changing the web service or tool schemas. It evaluates downstream policies first. `danger-full-access` delegates without asking; `read-only` and `workspace-write` with approval policy `ask` validate URL syntax, length, credentials, and literal IPs without network activity, then return `ask` with the exact call id and full normalized URL. Approval policy `never` and agentless restricted calls deny without DNS or a prompt. Only `allowed-once` grants the pending call; there is no persistent domain or session authorization.
+The shipped Cordis, Code, and Standard presets expose `web_fetch` in every sandbox and approval mode without per-call confirmation. File sandbox presets do not govern Web network access. A deployment that needs confirmation must add a `tools/pre-execute` policy or disable fetch.
 
-Permission validation and provider enforcement are separate. DNS runs only after consent: the HTTP provider resolves for the actual request, rejects non-public answers including private IPv4 reached through the active DNS64 prefix, pins that validated address set, and repeats enforcement for each same-origin redirect. A cross-origin redirect requires a new tool call and permission decision. `plan` remains collaboration state rather than a network mode, so products combine plan work with the desired sandbox and approval policies.
+The HTTP provider resolves each actual request, rejects non-public answers including private IPv4 reached through the active DNS64 prefix, pins the validated address set, and repeats enforcement for each same-origin redirect. A cross-origin redirect requires a new tool call and fresh public-address validation. These checks prevent SSRF access to non-public destinations but do not stop a model from sending data to a public URL.
 
 ## Errors
 

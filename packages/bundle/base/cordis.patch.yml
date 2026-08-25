@@ -413,12 +413,11 @@
     # overriding tool-web. DeepSeek search resolves the same DEEPSEEK_API_KEY
     # credential the Models page manages for chat, at each search; its Messages
     # endpoint is separate from the chat-completions endpoint, so it takes its own
-    # base-URL override. Anonymous fetch accepts only public HTTP(S) destinations.
-    # Restricted modes preflight the destination and require one-shot approval;
-    # danger-full-access delegates directly, while the provider independently
-    # re-resolves and pins every actual connection. Search is a full auxiliary
-    # model request with server-side retrieval, so this shipped DeepSeek route
-    # gets 60s while the provider-neutral tool default remains 30s.
+    # base-URL override. Anonymous fetch accepts only public HTTP(S) destinations,
+    # resolves and validates every destination, and pins every actual connection.
+    # Search is a full auxiliary model request with server-side retrieval, so this
+    # shipped DeepSeek route gets 60s while the provider-neutral tool default
+    # remains 30s.
     - id: web
       name: '@deepseek-ai/dsh-web'
       config:
@@ -432,9 +431,6 @@
 
     - id: web-fetch-http
       name: '@deepseek-ai/dsh-web-fetch-http'
-
-    - id: web-fetch-approval-policy
-      name: '@deepseek-ai/dsh-web-fetch-approval-policy'
 
     - id: tool-web
       name: '@deepseek-ai/dsh-tool-web'

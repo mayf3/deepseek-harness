@@ -1192,9 +1192,6 @@ importers:
       '@deepseek-ai/dsh-web':
         specifier: workspace:^
         version: link:../../web/web
-      '@deepseek-ai/dsh-web-fetch-approval-policy':
-        specifier: workspace:^
-        version: link:../../web/web-fetch-approval-policy
       '@deepseek-ai/dsh-web-fetch-http':
         specifier: workspace:^
         version: link:../../web/web-fetch-http
@@ -9285,36 +9282,6 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
-
-  packages/web/web-fetch-approval-policy:
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-agent':
-        specifier: workspace:^
-        version: link:../../core/agent
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-llm':
-        specifier: workspace:^
-        version: link:../../llm/llm
-      '@deepseek-ai/dsh-sandbox-policy':
-        specifier: workspace:^
-        version: link:../../sandbox/sandbox-policy
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-      '@deepseek-ai/dsh-tools':
-        specifier: workspace:^
-        version: link:../../core/tools
-      '@deepseek-ai/dsh-user-approval':
-        specifier: workspace:^
-        version: link:../../interaction/user-approval
-      '@deepseek-ai/dsh-web-fetch-http':
-        specifier: workspace:^
-        version: link:../web-fetch-http
 
   packages/web/web-fetch-http:
     dependencies:

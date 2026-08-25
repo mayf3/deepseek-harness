@@ -61,8 +61,6 @@ flowchart LR
   perplexity["@deepseek-ai/dsh-web-search-perplexity"] -->|registerSearchProvider| web
   deepseek["@deepseek-ai/dsh-web-search-deepseek"] -->|registerSearchProvider| web
   fetchLocal["@deepseek-ai/dsh-web-fetch-http"] -->|registerFetchProvider| web
-  fetchPermission["@deepseek-ai/dsh-web-fetch-approval-policy"] -->|pre-execute ask/deny| webFetch
-  fetchPermission -->|public destination preflight| fetchLocal
   toolWeb["@deepseek-ai/dsh-tool-web"] -->|search/fetch| web
   toolWeb -->|ctx.tools.register| webSearch["tool: web_search"]
   toolWeb -->|ctx.tools.register| webFetch["tool: web_fetch"]
@@ -146,9 +144,6 @@ The "single provider auto-selects" rule is for tests, demos, and simple deployme
 
 - id: web-fetch-http
   name: '@deepseek-ai/dsh-web-fetch-http'
-
-- id: web-fetch-approval-policy
-  name: '@deepseek-ai/dsh-web-fetch-approval-policy'
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
@@ -244,12 +239,10 @@ The fetch provider's resource controls:
 - The request retains that validated address set in an Undici lookup callback instead of resolving the hostname again. The original hostname remains the HTTP Host and TLS SNI value, while DNS rebinding cannot replace the connection destination after validation.
 - Maximum URL length, response byte cap, decoded body character cap, timeout, and redirect hop cap are enforced.
 - Abort signals propagate through network fetches and expensive decoding.
-- Only same-origin redirects are followed automatically; each followed hop performs a fresh public-address lookup and pins its own connection. A cross-origin redirect fails with `WEB_REDIRECT_BLOCKED`, requiring a fresh tool call and therefore a fresh provider/permission decision. (Claude Code's WebFetch uses this same model — it does not auto-follow a cross-host redirect; it returns the redirect target to the model for a fresh call.)
+- Only same-origin redirects are followed automatically; each followed hop performs a fresh public-address lookup and pins its own connection. A cross-origin redirect fails with `WEB_REDIRECT_BLOCKED`, requiring a fresh tool call and fresh public-address validation. (Claude Code's WebFetch uses this same model — it does not auto-follow a cross-host redirect; it returns the redirect target to the model for a fresh call.)
 - Requests carry an explicit product user agent rather than silently impersonating a browser.
 
 The provider rejects an entire DNS answer set when any address is not public instead of silently filtering the unsafe members. This fail-closed rule prevents connection-family selection or fallback from reaching an address that did not satisfy the public-network policy.
-
-`dsh-web-fetch-approval-policy` owns user-consent decisions without moving them into the provider or tool schema. It evaluates downstream policies first and delegates `danger-full-access`; in `read-only` and `workspace-write` it denies approval policy `never`, otherwise performs network-free URL syntax, length, credentials, and literal-IP checks before returning `ask`. The existing approval service correlates the request to the exact call id, and only `allowed-once` runs that call. The provider then independently resolves, validates, and pins the actual connection, so rejection causes no DNS query and consent cannot bypass SSRF enforcement. Plan mode stays an independent collaboration state and uses whichever sandbox and approval policies the product composes with it.
 
 ## Tool consumer behavior
 
@@ -325,6 +318,10 @@ Rejected because an ordinary fetch resolves the hostname again when it opens the
 
 Rejected because hostname syntax does not establish the connection destination: an arbitrary public-looking name can resolve to loopback, a private range, or a cloud metadata address. Address classification belongs after resolution, and every address available to connection fallback must pass it.
 
+### Require per-call approval before public fetches
+
+Rejected for the shipped presets. Public-address validation blocks SSRF destinations, while per-call confirmation would interrupt ordinary browsing without controlling public data egress reliably: a model can reach the same public network through mounted shell tools. Deployments that require a dedicated confirmation step can add a `tools/pre-execute` policy or disable `web_fetch`.
+
 ## Consequences
 
 **The search schema is deliberately thin.** Exa and Perplexity both expose useful provider-specific controls; a control is added only once it can be defined provider-neutrally and enforced honestly by both tool registration and provider execution.
@@ -335,7 +332,7 @@ Rejected because hostname syntax does not establish the connection destination: 
 
 **Provider state can change after startup.** A tool can be visible in the request assembled at step start and lose its provider before execution. The execution path resolves again and fails with a structured error.
 
-**Fetch is a network boundary, not just a read-only tool.** Public-address validation and connection pinning prevent `web_fetch` from reaching non-public destinations, but a model can still disclose data through a public URL and fetched text remains untrusted model input. Restricted shipped presets therefore require one-shot approval, while `danger-full-access` deliberately delegates without asking.
+**Fetch is a network boundary, not just a read-only tool.** Public-address validation and connection pinning prevent `web_fetch` from reaching non-public destinations, but a model can still disclose data through a public URL and fetched text remains untrusted model input. The shipped `cordis`, `code`, and `standard` presets expose `web_fetch` in every sandbox and approval mode without per-call confirmation.
 
 **Large web content can damage context quality.** Providers enforce byte/character caps and report `truncated`; `tool-web` formats bounded model output with clear continuation or follow-up guidance.
 

@@ -11,9 +11,8 @@ This family provides provider-neutral web search and fetch operations plus the m
 | [`web-search-perplexity/`](web-search-perplexity/README.md) | Provides web search through Perplexity | registers on `ctx.web` |
 | [`web-search-deepseek/`](web-search-deepseek/README.md) | Provides native DeepSeek web search | registers on `ctx.web` |
 | [`web-fetch-http/`](web-fetch-http/README.md) | Fetches public HTTP and HTTPS resources | registers on `ctx.web` |
-| [`web-fetch-approval-policy/`](web-fetch-approval-policy/README.md) | Applies sandbox- and approval-aware one-shot fetch permission | listens on `tools/pre-execute` |
 | [`tool-web/`](tool-web/README.md) | Exposes web search and fetch to the model | registers on `ctx.tools` |
 
 The [web capability decision](../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md) records why search and fetch share one provider-selection service.
 
-The subsystem reference — search/fetch requests and results, availability, `WebError`, and fetch permission — is [docs/subsystems/web.md](../../docs/subsystems/web.md); rationale is in the [web capability seam Agent Note](../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md).
+The subsystem reference — search/fetch requests and results, availability, `WebError`, and public-address enforcement — is [docs/subsystems/web.md](../../docs/subsystems/web.md); rationale is in the [web capability seam Agent Note](../../.agents/notes/implemented/architecture/2026-06-24-web-capability-seam.md).

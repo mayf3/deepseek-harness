@@ -8,7 +8,7 @@
 
 import { WebError } from '@deepseek-ai/dsh-web'
 
-/** Maximum accepted request URL length across permission and transport checks. */
+/** Maximum accepted request URL length enforced by the public fetch provider. */
 export const WEB_FETCH_MAX_URL_LENGTH = 2048
 
 /** The body kinds this provider decodes. */
@@ -16,8 +16,8 @@ export type FetchableKind = 'html' | 'text'
 
 /**
  * Parse a request URL and enforce network-independent transport restrictions:
- * HTTP(S) only and no embedded credentials. Both permission preflight and the
- * provider use this function before resolving a destination.
+ * HTTP(S) only and no embedded credentials. The provider applies this before
+ * resolving a destination.
  *
  * @param input - the raw URL string from the fetch request.
  * @returns the parsed `URL`.
@@ -56,7 +56,7 @@ export function validateFetchUrl(input: string): URL {
 /**
  * Two URLs are same-origin when scheme, hostname, and port match. A redirect
  * that crosses origins is refused so each new origin requires a fresh tool call
- * (and thus a fresh provider/permission decision).
+ * and public-address validation.
  *
  * @param a - one of the two URLs to compare.
  * @param b - the other URL to compare.

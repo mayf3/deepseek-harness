@@ -61,8 +61,6 @@ flowchart LR
   perplexity["@deepseek-ai/dsh-web-search-perplexity"] -->|registerSearchProvider| web
   deepseek["@deepseek-ai/dsh-web-search-deepseek"] -->|registerSearchProvider| web
   fetchLocal["@deepseek-ai/dsh-web-fetch-http"] -->|registerFetchProvider| web
-  fetchPermission["@deepseek-ai/dsh-web-fetch-approval-policy"] -->|pre-execute ask/deny| webFetch
-  fetchPermission -->|public destination preflight| fetchLocal
   toolWeb["@deepseek-ai/dsh-tool-web"] -->|search/fetch| web
   toolWeb -->|ctx.tools.register| webSearch["tool: web_search"]
   toolWeb -->|ctx.tools.register| webFetch["tool: web_fetch"]
@@ -146,9 +144,6 @@ interface WebRuntime {
 
 - id: web-fetch-http
   name: '@deepseek-ai/dsh-web-fetch-http'
-
-- id: web-fetch-approval-policy
-  name: '@deepseek-ai/dsh-web-fetch-approval-policy'
 
 - id: tool-web
   name: '@deepseek-ai/dsh-tool-web'
@@ -244,12 +239,10 @@ fetch 提供方的资源控制：
 - 请求通过 Undici lookup 回调保留这一组已验证地址，不会再次解析 hostname。原 hostname 仍作为 HTTP Host 与 TLS SNI 值，而 DNS rebinding 无法在验证后替换连接目的地址。
 - 强制执行最大 URL 长度、响应字节上限、解码正文字符上限、超时和重定向跳数上限。
 - Abort 信号传播到网络获取和高开销解码。
-- 仅自动跟随同源重定向；每个跟随的跳转都会重新解析公开地址，并把自己的连接固定到解析结果。跨源重定向以 `WEB_REDIRECT_BLOCKED` 失败，要求一次新的工具调用，从而触发新的提供方/权限决策。（Claude Code 的 WebFetch 使用同样的模型——它不自动跟随跨主机重定向，而是将重定向目标返回给模型以发起新调用。）
+- 仅自动跟随同源重定向；每个跟随的跳转都会重新解析公开地址，并把自己的连接固定到解析结果。跨源重定向以 `WEB_REDIRECT_BLOCKED` 失败，要求一次新的工具调用和新的公开地址校验。（Claude Code 的 WebFetch 使用同样的模型——它不自动跟随跨主机重定向，而是将重定向目标返回给模型以发起新调用。）
 - 请求携带显式的产品 User-Agent，而非静默伪装浏览器。
 
 只要 DNS 完整解析结果中存在任一非公开地址，提供方就会拒绝整个结果，而不是静默过滤不安全成员。该 fail-closed 规则可防止连接的地址族选择或回退触及未满足公开网络策略的地址。
-
-`dsh-web-fetch-approval-policy` 负责用户同意决策，而不会把它移入提供方或工具 schema。它会先计算下游策略并委托 `danger-full-access`；在 `read-only` 与 `workspace-write` 中，它拒绝审批策略 `never`，否则在返回 `ask` 前执行不产生网络活动的 URL 语法、长度、凭据与 IP 字面量校验。现有审批服务把请求关联到精确的 call id，只有 `allowed-once` 会运行该次调用。随后，提供方才会独立解析、校验并固定实际连接，因此拒绝不会产生 DNS 查询，用户同意也不能绕过 SSRF 强制校验。Plan mode 保持独立的协作状态，采用产品与其组合的 sandbox 和审批策略。
 
 ## 工具消费方行为
 
@@ -325,6 +318,10 @@ fetch 提供方的资源控制：
 
 否决，因为 hostname 语法无法确定连接目的地址：任意看似公开的名称都可能解析到 loopback、私有网段或云 metadata 地址。地址分类必须在解析后执行，连接回退可使用的每个地址都必须通过校验。
 
+### 在公开抓取前要求逐次审批
+
+已交付的 preset 不采用这一方案。公开地址校验会阻断 SSRF 目的地址，而逐次确认会打断普通浏览，却不能可靠控制公开数据出站：模型可以通过已挂载的 shell 工具访问同一公开网络。要求专门确认步骤的部署可以添加 `tools/pre-execute` 策略或禁用 `web_fetch`。
+
 ## 后果
 
 **搜索 schema 刻意精简。** Exa 和 Perplexity 都暴露了有用的提供方特有控制；只有当某个控制能以提供方无关的方式定义、且工具注册和提供方执行都能诚实遵守时，才会添加。
@@ -335,7 +332,7 @@ fetch 提供方的资源控制：
 
 **提供方状态可能在启动后变化。** 一个工具可能在步骤开始时组装的请求中可见，但在执行前失去其提供方。执行路径重新解析并以结构化错误失败。
 
-**Fetch 是网络边界，不仅仅是只读工具。** 公开地址校验与连接固定可防止 `web_fetch` 触达非公开目的地址，但模型仍可通过公开 URL 泄露数据，抓取文本也仍是不受信任的模型输入。因此，已交付的受限 preset 要求单次审批，而 `danger-full-access` 会有意地不询问并委托。
+**Fetch 是网络边界，不仅仅是只读工具。** 公开地址校验与连接固定可防止 `web_fetch` 触达非公开目的地址，但模型仍可通过公开 URL 泄露数据，抓取文本也仍是不受信任的模型输入。已交付的 `cordis`、`code` 与 `standard` preset 会在所有 sandbox 和审批模式下暴露 `web_fetch`，无需逐次确认。
 
 **大量 web 内容可能损害上下文质量。** 提供方强制执行字节/字符上限并报告 `truncated`；`tool-web` 格式化有界的模型输出，附带清晰的继续或后续引导。
 
