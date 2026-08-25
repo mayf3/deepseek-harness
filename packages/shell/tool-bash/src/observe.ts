@@ -65,7 +65,17 @@ export function observeBackgroundActivity(
       .catch((error: unknown) => {
         ctx.logger.warn(`activity observation pump for ${handle.id} failed: ${String(error)}`)
       })
-      .then(() => { handle.end(outcome(proc)) })
+      .then(async () => {
+        // The pump can fail while the process is still running; the outcome
+        // mapping requires a settled handle, and `end` is first-wins, so an
+        // early mapping would freeze a wrong terminal state onto the row.
+        // `proc.done` never rejects.
+        await proc.done
+        handle.end(outcome(proc))
+      })
+      .catch((error: unknown) => {
+        ctx.logger.warn(`activity settlement mapping for ${handle.id} failed: ${String(error)}`)
+      })
   } catch (error: unknown) {
     ctx.logger.warn(`activity observation unavailable for this run: ${String(error)}`)
   }

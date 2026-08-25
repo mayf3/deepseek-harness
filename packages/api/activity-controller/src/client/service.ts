@@ -78,25 +78,33 @@ export class ClientActivityFeed extends Service implements IActivityFeed {
     const existing = this.entries.get(key)
     if (existing !== undefined && !existing.stopped) {
       existing.refs += 1
-      return this.releaser(key)
+      return this.releaser(key, existing)
     }
     const entry = this.startObservation(id)
     this.entries.set(key, entry)
-    return this.releaser(key)
+    return this.releaser(key, entry)
   }
 
-  private releaser(key: string): () => void {
+  /**
+   * Release closures bind the exact entry they were minted for, never the
+   * map's current occupant: a later `observe()` on the same id may have
+   * replaced a stopped entry, and decrementing or disposing through the key
+   * alone would tear down that newer stream's references.
+   */
+  private releaser(key: string, entry: ObservationEntry): () => void {
     let released = false
     return () => {
       if (released) return
       released = true
-      const entry = this.entries.get(key)
-      if (entry === undefined) return
       entry.refs -= 1
       if (entry.refs > 0) return
-      this.entries.delete(key)
+      if (this.entries.get(key) === entry) this.entries.delete(key)
       entry.stopped = true
       void entry.dispose().then(() => {
+        // Clear the view only while no successor observation holds the key:
+        // a re-expand inside the dispose round-trip already re-anchored the
+        // model, and a stale clear would blank its panel for good.
+        if (this.entries.has(key)) return
         // The key is the stringified branded id this releaser was minted for.
         this.model.observeStopped(key as ActivityId)
       })

@@ -173,6 +173,8 @@ function mergeRows(
   for (const activity of activities) {
     const jobId = activity.correlation?.jobId
     if (jobId === undefined) standalone.push(activity)
+    // One activity per job: every shipped producer opens at most one, so a
+    // duplicate jobId keeps only the newest row rather than growing the list.
     else byJob.set(String(jobId), activity)
   }
   const rows: TaskRow[] = jobs.map((job) => {

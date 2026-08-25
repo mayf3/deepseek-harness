@@ -157,7 +157,12 @@ export interface ActivityOutputChunk {
 export interface ActivityRead {
   /** Retained chunks overlapping `[from, total)`, in offset order. */
   chunks: readonly ActivityOutputChunk[]
-  /** Offset to resume from — the process' current `outputTotal`. */
+  /**
+   * Offset to resume from — the process' current `outputTotal`. Always a
+   * chunk boundary: appends land whole and trimming only advances chunk
+   * starts, and consumers concatenate `chunks` under that assumption, so a
+   * provider serving partial chunks would silently duplicate text.
+   */
   next: number
   /** True when `from` fell below the oldest retained byte, so bytes are missing before `chunks`. */
   lossy: boolean

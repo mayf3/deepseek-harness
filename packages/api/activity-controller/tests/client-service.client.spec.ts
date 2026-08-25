@@ -11,6 +11,10 @@ class FakeStream {
   disposed = false
   /** Model a carrier whose disposal surfaces as an iterator throw. */
   throwOnDispose = false
+  /** Hold the dispose promise open until {@link releaseDispose}. */
+  deferDispose = false
+  private disposeRelease: (() => void) | undefined
+  private disposePending: Promise<void> | undefined
   private readonly frames: ActivityObserveFrame[] = []
   private waiter: (() => void) | undefined
   private failure: Error | undefined
@@ -33,7 +37,17 @@ class FakeStream {
       this.disposed = true
     }
     this.waiter?.()
+    if (this.deferDispose) {
+      // Repeat disposals (releaser plus the consumer's finally) share one
+      // deferred promise, so releaseDispose resumes every waiter.
+      this.disposePending ??= new Promise((resolve) => { this.disposeRelease = resolve })
+      return this.disposePending
+    }
     return Promise.resolve()
+  }
+
+  releaseDispose(): void {
+    this.disposeRelease?.()
   }
 
   async *[Symbol.asyncIterator]() {
@@ -113,6 +127,55 @@ describe('ClientActivityFeed observation streams', () => {
     await tick()
     expect(streams[0]!.stream.disposed).toBe(true)
     expect(model.getSnapshot().observed[String(ID)]).toBeUndefined()
+  })
+
+  it('a late release of a superseded observation neither tears down nor clears its successor', async () => {
+    const { model, feed, streams } = bench()
+    const firstStop = feed.observe(ID)
+    const first = streams[0]!.stream
+    first.push({ type: 'opened', activityId: ID, from: 0, earliest: 0, total: 0, status: 'running' })
+    first.push({ type: 'status', status: 'completed' })
+    await tick()
+    // A successor observation replaces the settled entry while the first
+    // observer still holds its releaser.
+    const secondStop = feed.observe(ID)
+    const second = streams[1]!.stream
+    second.push({ type: 'opened', activityId: ID, from: 0, earliest: 0, total: 0, status: 'running' })
+    await tick()
+
+    firstStop()
+    await tick()
+    expect(second.disposed).toBe(false)
+    expect(model.getSnapshot().observed[String(ID)]).toBeDefined()
+
+    secondStop()
+    await tick()
+    expect(second.disposed).toBe(true)
+    expect(model.getSnapshot().observed[String(ID)]).toBeUndefined()
+  })
+
+  it('a re-observation inside the dispose round-trip keeps its fresh view', async () => {
+    const { model, feed, streams } = bench()
+    const stop = feed.observe(ID)
+    const first = streams[0]!.stream
+    first.deferDispose = true
+    first.push({ type: 'opened', activityId: ID, from: 0, earliest: 0, total: 0, status: 'running' })
+    await tick()
+
+    stop()
+    // Re-expand while the previous generation's dispose is still in flight.
+    feed.observe(ID)
+    const second = streams[1]!.stream
+    second.push({ type: 'opened', activityId: ID, from: 0, earliest: 0, total: 0, status: 'running' })
+    await tick()
+
+    first.releaseDispose()
+    await tick()
+    // The stale post-dispose clear must not blank the successor's view.
+    expect(model.getSnapshot().observed[String(ID)]).toBeDefined()
+    second.push({ type: 'output', chunks: [{ at: 0, text: 'alive' }], next: 5 })
+    await tick()
+    expect(model.getSnapshot().observed[String(ID)]?.text).toBe('alive')
   })
 
   it('opens a fresh stream for a re-observed activity and resumes from the model cursor', async () => {

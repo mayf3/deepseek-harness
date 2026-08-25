@@ -160,6 +160,45 @@ describe('background bash observation', () => {
     expect(ended[0]).toMatchObject({ status: 'completed' })
   })
 
+  it('a pump failure waits for process settlement before mapping the outcome', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(ToolTasks)
+    const ended: unknown[] = []
+    await ctx.plugin({
+      name: 'early-failing-activities-probe',
+      apply(child: Context) {
+        child.provide('activities', {
+          open: () => ({
+            id: 'bash-1',
+            append() { throw new Error('append boom') },
+            updateDetail() {},
+            end(outcome: unknown) { ended.push(outcome) },
+          }),
+        })
+      },
+    })
+    await ctx.plugin(LocalSubprocessRuntime)
+    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
+    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    await ctx.plugin(ToolBash, { activityPollMs: 25 })
+    // One early line makes the first pump poll append (and fail) while the
+    // process still has most of its sleep ahead.
+    await call(ctx, { command: 'printf "early\\n"; sleep 0.7', description: 'test command', run_in_background: true })
+    await until(() => warn.mock.calls.some(args => String(args[0]).includes('activity observation pump')) ? true : undefined)
+    // The pump already failed; the outcome must wait for real settlement
+    // rather than freezing a fake terminal state onto the running process.
+    expect(ended).toHaveLength(0)
+    await until(() => ended.length > 0 ? true : undefined)
+    expect(ended[0]).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
+  })
+
   it('a throwing observation registry never breaks the background call', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)

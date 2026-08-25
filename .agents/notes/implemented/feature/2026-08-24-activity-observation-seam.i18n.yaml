@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-24-activity-observation-seam.md
-2026-08-24-activity-observation-seam.md: da356b3b871a45958dc5a5214ccff8b49c0c193f
-2026-08-24-activity-observation-seam.zh.md: 1c0c87d23a08d41882f00fd8f729f794d09169b1
+2026-08-24-activity-observation-seam.md: 88109cb3404132885bde359af0907a29ea1bee2c
+2026-08-24-activity-observation-seam.zh.md: b8aa938edfd0019794211975c616aa50381ffe77

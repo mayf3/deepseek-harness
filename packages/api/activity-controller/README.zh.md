@@ -6,7 +6,7 @@
 
 宿主 `ActivityController`（命名空间 `activity`）暴露两个 `@Remote({ mode: 'stream' })` 方法：
 
-- `control(signal)`——一份完整 roster baseline，之后每次注册表变化按 owner 会话推送整桶替换帧（与 session control 流承载 jobs 的自愈形态一致）。没有注册表的组合返回空 baseline。
+- `control(signal)`——一份完整 roster baseline，之后每次注册表变化按 owner 会话推送整桶替换帧（与 session control 流承载 jobs 的自愈形态一致）。没有注册表的组合返回空 baseline。Remote 层有意把所有会话的行提供给任何已连接的浏览器，`observe` 以镜像到的 owner 替调用方满足注册表的 owner 栅栏：按会话的栅栏是进程内契约，这个单用户本地 BFF 跨栅栏读取，与 session control 流对 `jobsBySession` 的做法完全一致。
 - `observe({ activityId, from? }, signal)`——一帧 `opened` 锚点，随后是合并的 `output` 帧（`flushMs` 窗口、`maxFrameBytes` 软预算；更大的单 chunk 整帧发出），activity 结算且排干后发一帧终态 `status`，然后本代正常关闭。重连方以上一帧的 `next` 作为 `from` 续传；落后于保留窗口的续传会带 `lossy` 标记。状态与输出同流，结算永远不会与仍开着的输出通道竞态。
 
 | 配置 | 默认值 | 含义 |

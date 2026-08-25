@@ -137,6 +137,37 @@ describe('background pwsh observation', () => {
     expect(ctx.activities.get(row.id).detail).toBe('exit code: 0')
   })
 
+  it('a pump failure waits for process settlement before mapping the outcome', async () => {
+    const { ctx, pwsh } = await setup()
+    let resolveDone: () => void = () => {}
+    const done = new Promise<void>((resolve) => { resolveDone = resolve })
+    const proc: ShellProcess = {
+      status: 'running',
+      exitCode: null,
+      signal: null,
+      done,
+      readOutput: () => ({ delta: '', lossy: false }),
+      kill: () => false,
+      observed: {
+        stdout: { readFrom() { throw new Error('reader boom') } },
+        stderr: { readFrom: () => ({ text: '', nextOffset: 0, lossy: false }) },
+      },
+    }
+    pwsh.backgroundHandler = () => proc
+    await call(ctx, { command: 'Get-Broken', description: 'test command', run_in_background: true })
+    const row = await until(() => ctx.activities.list()[0])
+    // The pump rejected on its first poll; the still-running process must not
+    // be mapped to a terminal state until it actually settles.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(ctx.activities.list()[0]?.status).toBe('running')
+    proc.status = 'completed'
+    proc.exitCode = 0
+    resolveDone()
+    await until(() => ctx.activities.list()[0]?.status !== 'running' ? true : undefined)
+    expect(ctx.activities.list()[0]).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
+    expect(String(row.id)).toContain('pwsh')
+  })
+
   it('a backend without observed readers still yields a status-only process', async () => {
     const { ctx, pwsh } = await setup()
     const scripted = observableProcess()

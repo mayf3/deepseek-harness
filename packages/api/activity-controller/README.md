@@ -6,7 +6,7 @@ Activity Remote streams over the optional `ctx.activities` registry, plus their 
 
 The Host `ActivityController` (namespace `activity`) exposes two `@Remote({ mode: 'stream' })` methods:
 
-- `control(signal)` — one complete roster baseline, then whole-bucket replacement frames per owner session on every registry change (the self-healing shape the session control stream uses for jobs). A composition without the registry serves an empty baseline.
+- `control(signal)` — one complete roster baseline, then whole-bucket replacement frames per owner session on every registry change (the self-healing shape the session control stream uses for jobs). A composition without the registry serves an empty baseline. The Remote tier deliberately serves every session's rows to any connected browser, and `observe` satisfies the registry's owner fence with the mirrored owner: the per-session fence is an in-process contract, and this single-user local BFF reads across it exactly as the session control stream does for `jobsBySession`.
 - `observe({ activityId, from? }, signal)` — one `opened` anchor, coalesced `output` frames (`flushMs` window, `maxFrameBytes` soft budget; one larger chunk ships whole), then one terminal `status` after the settled activity is drained, after which the generation closes normally. Reconnecting callers resume by passing the last frame's `next`; a resume behind the retained window arrives flagged `lossy`. Status rides the same stream as output, so settlement can never race a still-open output channel.
 
 | Config | Default | Meaning |
