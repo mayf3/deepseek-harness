@@ -29,7 +29,7 @@ Status: implemented
 
 上述每个关键选择都在陈述处记录了被否决的替代方案：**过滤分片的规范日志**（Codex 的 `policy.rs` 形式）破坏连续 seq 约定；**截断崩溃的轮次**会静默销毁长时间自主运行中的真实工作；**日志内 `session/meta` 事件作为第 0 行**——元数据不是可回放状态；**有限的非整数 `createdAt` 值**没有生产方，且与整数 Unix 毫秒存储及查询列不一致；**接受非全新的未版本化 SQLite 文件**可能覆盖无关对象或应用标识；**将 `sessionPersistence` 硬注入循环**会让非持久化的演示永远挂起。
 
-格式版本控制：header 携带一个 `version`；冷读取接受当前版本或完整的静态相邻版本 decoder 路径，并拒绝未来版本或缺失步骤。Format decoder 负责历史 header 和 event 转换，Coordinator 只在解码后负责各操作自己的 recovery（[Session log 版本机制](2026-08-10-session-log-version-mechanism.zh.md)）。预发布阶段的会话格式仍固定为 `SESSION_FORMAT_VERSION = 0`，不承诺广泛兼容。仅追加 + 刷写对尾部的不完整写入具有健壮性（冷准备时可容忍），但无法抵御未使用 fsync 时在行写入中途断电；数据库/WAL 后端是该场景下更强的选项。
+格式版本控制：header 携带一个 `version`；冷读取拒绝任何非当前版本。预发布阶段的会话格式仍固定为 `SESSION_FORMAT_VERSION = 0`，不承诺广泛兼容；当持久化用户数据确有需要时，协调器可以负责显式且范围受限的导入升级（[消息标识机制引入前的消息恢复](../bug-fix/2026-07-28-load-pre-identity-session-messages.zh.md)）。仅追加 + 刷写对尾部的不完整写入具有健壮性（冷准备时可容忍），但无法抵御未使用 fsync 时在行写入中途断电；数据库/WAL 后端是该场景下更强的选项。
 
 ## 后果
 

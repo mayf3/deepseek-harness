@@ -11,7 +11,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const MOVEFILE_WRITE_THROUGH = 0x00000008
-const MOVEFILE_REPLACE_EXISTING = 0x00000001
 const ERROR_FILE_NOT_FOUND = 2
 const ERROR_PATH_NOT_FOUND = 3
 const ERROR_ACCESS_DENIED = 5
@@ -91,17 +90,6 @@ async function importWithFilesystemMove(): Promise<typeof import('../src/win32.t
   })
 }
 
-async function importWithFilesystemReplace(): Promise<typeof import('../src/win32.ts')> {
-  return importWithMove((existing, replacement, flags, setLastError) => {
-    expect(flags).toBe(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)
-    const from = stripNamespace(existing)
-    const to = stripNamespace(replacement)
-    if (!existsSync(from)) { setLastError(ERROR_FILE_NOT_FOUND); return 0 }
-    renameSync(from, to)
-    return 1
-  })
-}
-
 afterEach(async () => {
   vi.doUnmock('koffi')
   vi.doUnmock('node:fs/promises')
@@ -151,30 +139,6 @@ describe('Windows durable namespace helpers', () => {
     await publishNewFileWin32(tmp, final)
     expect(existsSync(tmp)).toBe(false)
     expect(readFileSync(final, 'utf8')).toBe('content')
-  })
-
-  it('replaces an existing file with write-through MoveFileExW semantics', async () => {
-    const { replaceFileWin32 } = await importWithFilesystemReplace()
-    const root = await tempRoot()
-    const tmp = join(root, 'log.tmp')
-    const final = join(root, 'log.jsonl')
-    await writeFile(tmp, 'replacement')
-    await writeFile(final, 'original')
-
-    await replaceFileWin32(tmp, final)
-    expect(existsSync(tmp)).toBe(false)
-    expect(readFileSync(final, 'utf8')).toBe('replacement')
-  })
-
-  it('maps a Win32 replacement failure to a Node-style error', async () => {
-    const { replaceFileWin32 } = await importWithError(ERROR_ACCESS_DENIED)
-
-    await expect(replaceFileWin32('from', 'to')).rejects.toMatchObject({
-      code: 'EACCES',
-      win32Code: ERROR_ACCESS_DENIED,
-      path: 'from',
-      dest: 'to',
-    })
   })
 
   it('maps Win32 publish failures to Node-style errno codes', async () => {
