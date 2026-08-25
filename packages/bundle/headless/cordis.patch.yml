@@ -14,6 +14,14 @@
     # Keep the same temporary process-wide Code Mode opt-in as the Web surface.
     mode: !!js process.env.DSH_TOOLS_MODE
 
+# The base projection cache serves session-listing columns for web surfaces.
+# The one-shot runner exposes no listing surface, and the cache's write-behind
+# would force session-log flushes at cache-chosen times — changing the durable
+# JSONL batching this profile's keyless replay fixtures pin — so this bundle
+# disables the base row.
+- id: session-projection-cache
+  disabled: true
+
 - insert:
     # Code Mode is a core execution capability, not a Web component.
     - id: code-runtime

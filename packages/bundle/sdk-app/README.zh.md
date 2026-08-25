@@ -4,7 +4,7 @@
 
 以 [`dsh-base`](../base/README.zh.md) 为基础的 SDK stdio 应用 `dsh` profile 组合包。它继承 base 默认禁用模块 HMR（热模块替换）的策略；其 patch 设置 coding agent（编程智能体）persona、挂载应用自有的零选项命令提供方，并且只在该提供方接受调用后启动 [`dsh-sdk-jsonrpc-server`](../../sdk/server/README.zh.md)。因此，`dsh --profile sdk --help` 会写出 help 并退出，不会占用 stdin 或 stdout。独立的 [`sdk-minimal`](../sdk-minimal/README.zh.md) 组合包复用同一个启动提供方，并提供自己的 profile 名称。
 
-启动提供方把 stdin EOF 接到启动器的有界成功关闭流程。SDK 协议 `shutdown`、SIGINT 与 SIGTERM 继续使用各自所属的 server 或启动器路径；dispose（资源释放）会排空根 profile 配置树与持久化。stdout 专用于按换行分隔的 JSON-RPC 帧。SDK 不提供 title 表层，因此本组合包禁用模型生成的 session title；确定性的 fallback title 仍会持久化，但不发起辅助模型请求。部署通过 profile 组合包与 patch 文件选择另一套完整组合，而不是使用另一个应用 bin。
+启动提供方把 stdin EOF 接到启动器的有界成功关闭流程。SDK 协议 `shutdown`、SIGINT 与 SIGTERM 继续使用各自所属的 server 或启动器路径；dispose（资源释放）会排空根 profile 配置树与持久化。stdout 专用于按换行分隔的 JSON-RPC 帧。SDK 不提供 title 表层，因此本组合包禁用模型生成的 session title；确定性的 fallback title 仍会持久化，但不发起辅助模型请求。本组合包同样禁用 base 的投影缓存：SDK 协议不提供 session 列表表层，而缓存的写回会在缓存选定的时机强制 session 日志 flush，从而改变本 profile 免密钥回放 fixtures 所固定的持久 JSONL 批处理格式。部署通过 profile 组合包与 patch 文件选择另一套完整组合，而不是使用另一个应用 bin。
 
 | 配置 | 默认值 | 行为 |
 |---|---|---|
