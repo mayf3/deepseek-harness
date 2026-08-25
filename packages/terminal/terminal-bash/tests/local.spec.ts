@@ -163,6 +163,27 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     await ctx.terminals.kill(agent, created.sessionId)
   }, 20_000)
 
+  it.skipIf(process.platform !== 'linux')('recognizes a foreground read opened through /dev/tty', async () => {
+    const { ctx, agent } = await harness('danger-full-access', {
+      idleSilenceMs: 5_000,
+      timeoutMs: 8_000,
+    })
+    const created = await ctx.terminals.spawn(agent, { type: 'shell' })
+
+    const waiting = ctx.terminals.startSend(agent, created.sessionId, {
+      text: 'bash -c \'exec </dev/tty; printf "WAITING\\n"; read -r answer; printf "ANSWER=%s\\n" "$answer"\'',
+      submit: true,
+    })
+    await waitForOutput(waiting, 'WAITING')
+    expect((await waiting.done).waitReason).toBe('stdin_read')
+
+    const answer = ctx.terminals.startSend(agent, created.sessionId, { text: 'accepted', submit: true })
+    const result = await answer.done
+    expect(result.waitReason).toBe('stdin_read')
+    expect(result.viewport).toContain('ANSWER=accepted')
+    await ctx.terminals.kill(agent, created.sessionId)
+  }, 20_000)
+
   it('wraps the exact shell argv under confined policy and unregisters on reload', async () => {
     const { ctx, root, agent, fiber, sandbox } = await harness('workspace-write')
     const created = await ctx.terminals.spawn(agent, { type: 'shell' })

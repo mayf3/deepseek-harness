@@ -7,8 +7,17 @@ import {
 import type { ProcessInspectorInternals } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import { WindowsProcessInspector } from '@deepseek-ai/dsh-subprocess-local/src/windows-inspector.ts'
 
-function stat(pid: number, pgrp: number, session: number, tpgid: number, started: string, parentPid = 1, state = 'S'): string {
-  const rest = [state, String(parentPid), String(pgrp), String(session), '99', String(tpgid)]
+function stat(
+  pid: number,
+  pgrp: number,
+  session: number,
+  tpgid: number,
+  started: string,
+  parentPid = 1,
+  state = 'S',
+  ttyDevice = 99,
+): string {
+  const rest = [state, String(parentPid), String(pgrp), String(session), String(ttyDevice), String(tpgid)]
   while (rest.length < 19) rest.push('0')
   rest.push(started)
   return `${pid} (command with space) ${rest.join(' ')}`
@@ -24,6 +33,7 @@ function fakeInternals() {
   const files = new Map<string, string>()
   const dirs = new Map<string, string[]>()
   const links = new Map<string, string>()
+  const devices = new Map<string, { character: boolean; rdev: number }>()
   const memories = new Map<string, Buffer>()
   const fds = new Map<number, string>()
   const kills: Array<[number, NodeJS.Signals]> = []
@@ -46,6 +56,11 @@ function fakeInternals() {
       if (value === undefined) throw new Error(`missing ${path}`)
       return value
     },
+    stat(path) {
+      const value = devices.get(path)
+      if (value === undefined) throw new Error(`missing ${path}`)
+      return { rdev: value.rdev, isCharacterDevice: () => value.character }
+    },
     open(path) {
       if (!memories.has(path)) throw new Error(`missing ${path}`)
       const fd = nextFd++
@@ -67,7 +82,7 @@ function fakeInternals() {
     kill(pid, signal) { kills.push([pid, signal]) },
   }
   return {
-    internals, files, dirs, links, memories, kills,
+    internals, files, dirs, links, devices, memories, kills,
     setPs(value: string) { ps = value },
     setTpgid(value: string) { tpgid = value },
   }
@@ -94,7 +109,7 @@ describe('Linux process inspector', () => {
     expect(parseProcStat('1 () ')).toBeUndefined()
     expect(parseProcStat('1 () S')).toBeUndefined()
     expect(parseProcStat(stat(10, 20, 30, 40, '500', 1, 'SS'))).toBeUndefined()
-    expect(parseProcStat(stat(10, 20, 30, 40, '500'))).toEqual({ pid: 10, parentPid: 1, pgrp: 20, session: 30, state: 'S', tpgid: 40, started: '500' })
+    expect(parseProcStat(stat(10, 20, 30, 40, '500'))).toEqual({ pid: 10, parentPid: 1, pgrp: 20, session: 30, state: 'S', ttyDevice: 99, tpgid: 40, started: '500' })
 
     const fake = fakeInternals()
     fake.dirs.set('/proc', ['x', '10', '11', '12', '13', '14'])
@@ -139,7 +154,9 @@ describe('Linux process inspector', () => {
     fake.dirs.set('/proc/100/task', ['100'])
     fake.dirs.set('/proc/101/task', ['101', '102'])
     fake.links.set('/proc/100/fd/0', '/dev/pts/1')
-    fake.links.set('/proc/101/fd/0', '/dev/pts/1')
+    fake.devices.set('/proc/100/fd/0', { character: true, rdev: 99 })
+    fake.links.set('/proc/101/task/102/fd/0', '/dev/pts/1')
+    fake.devices.set('/proc/101/task/102/fd/0', { character: true, rdev: 99 })
     const inspector = createProcessInspector('linux', 'x64', fake.internals)
 
     fake.files.set('/proc/100/task/100/syscall', 'running')
@@ -161,25 +178,33 @@ describe('Linux process inspector', () => {
     expect(inspector.isStdinWaiting(77, 100)).toBe(true)
 
     fake.files.set('/proc/101/task/102/syscall', syscall(232, 5, 0, 1))
-    fake.files.set('/proc/101/fdinfo/5', 'pos: 0\ntfd: 0 events: 19\n')
+    fake.files.set('/proc/101/task/102/fdinfo/5', 'pos: 0\ntfd: 0 events: 19\n')
     expect(inspector.isStdinWaiting(77, 100)).toBe(true)
   })
 
-  it('rejects pipeline reads whose fd 0 is not the terminal input', () => {
+  it('uses the waiting thread fd table and recognizes the controlling-terminal alias', () => {
     const fake = fakeInternals()
     fake.dirs.set('/proc', ['100'])
+    fake.files.set('/proc/99/stat', stat(99, 99, 99, 77, '0'))
     fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
     fake.dirs.set('/proc/100/task', ['100'])
     fake.files.set('/proc/100/task/100/syscall', syscall(0, 0))
     fake.links.set('/proc/99/fd/0', '/dev/pts/1')
-    fake.links.set('/proc/100/fd/0', 'pipe:[123]')
+    fake.devices.set('/proc/99/fd/0', { character: true, rdev: 99 })
+    fake.links.set('/proc/100/fd/0', '/dev/pts/1')
+    fake.devices.set('/proc/100/fd/0', { character: true, rdev: 99 })
+    fake.links.set('/proc/100/task/100/fd/0', 'pipe:[123]')
+    fake.devices.set('/proc/100/task/100/fd/0', { character: false, rdev: 0 })
     const inspector = createProcessInspector('linux', 'x64', fake.internals)
 
     expect(inspector.isStdinWaiting(77, 99)).toBe(false)
-    fake.links.delete('/proc/100/fd/0')
+    fake.links.delete('/proc/100/task/100/fd/0')
     expect(inspector.isStdinWaiting(77, 99)).toBe(false)
-    fake.links.set('/proc/100/fd/0', '/dev/pts/1')
+    fake.links.set('/proc/100/task/100/fd/0', '/dev/tty')
     expect(inspector.isStdinWaiting(77, 99)).toBe(true)
+    fake.links.set('/proc/100/task/100/fd/0', '/dev/pts/2')
+    fake.devices.set('/proc/100/task/100/fd/0', { character: true, rdev: 100 })
+    expect(inspector.isStdinWaiting(77, 99)).toBe(false)
   })
 
   it('fails closed on unsupported, malformed, unreadable, or non-stdin waits', () => {
@@ -188,6 +213,9 @@ describe('Linux process inspector', () => {
     fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
     fake.dirs.set('/proc/100/task', ['100'])
     fake.links.set('/proc/100/fd/0', '/dev/pts/1')
+    fake.devices.set('/proc/100/fd/0', { character: true, rdev: 99 })
+    fake.links.set('/proc/100/task/100/fd/0', '/dev/pts/1')
+    fake.devices.set('/proc/100/task/100/fd/0', { character: true, rdev: 99 })
     fake.files.set('/proc/100/task/100/syscall', syscall(0, 2))
     expect(createProcessInspector('linux', 'mips', fake.internals).isStdinWaiting(77, 100)).toBe(false)
     expect(createProcessInspector('linux', 'x64', fake.internals).isStdinWaiting(77, 100)).toBe(false)
@@ -220,8 +248,17 @@ describe('Linux process inspector', () => {
     fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
     fake.dirs.set('/proc/100/task', ['100'])
     const inspector = createProcessInspector('linux', 'x64', fake.internals)
+    fake.files.delete('/proc/100/stat')
+    expect(inspector.isStdinWaiting(77, 100)).toBe(false)
+    fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1', 1, 'S', 0))
+    expect(inspector.isStdinWaiting(77, 100)).toBe(false)
+    fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
     expect(inspector.isStdinWaiting(77, 100)).toBe(false)
     fake.links.set('/proc/100/fd/0', '/dev/pts/1')
+    expect(inspector.isStdinWaiting(77, 100)).toBe(false)
+    fake.devices.set('/proc/100/fd/0', { character: true, rdev: 99 })
+    fake.links.set('/proc/100/task/100/fd/0', '/dev/pts/1')
+    fake.devices.set('/proc/100/task/100/fd/0', { character: true, rdev: 99 })
     expect(inspector.isStdinWaiting(77, 100)).toBe(false)
 
     fake.files.set('/proc/100/task/100/syscall', syscall(270, 1, 0x10))

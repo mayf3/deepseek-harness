@@ -1,6 +1,6 @@
 /** Platform process-table inspection for terminal readiness, signals, and teardown. */
 
-import { closeSync, openSync, readFileSync, readdirSync, readlinkSync, readSync } from 'node:fs'
+import { closeSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import type { SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
 import { createWindowsProcessInspector } from './windows-inspector.ts'
@@ -9,6 +9,11 @@ import { createWindowsProcessInspector } from './windows-inspector.ts'
 export interface ProcessIdentity {
   pid: number
   started: string
+}
+
+interface FileStatus {
+  readonly rdev: number
+  isCharacterDevice(): boolean
 }
 
 /** Injectable OS process operations used by one local PTY session. */
@@ -37,6 +42,7 @@ export interface ProcessInspectorInternals {
   readFile(path: string): string
   readDir(path: string): string[]
   readLink(path: string): string
+  stat(path: string): FileStatus
   open(path: string): number
   read(fd: number, buffer: Buffer, length: number, position: number): number
   close(fd: number): void
@@ -49,6 +55,7 @@ const DEFAULT_INTERNALS: ProcessInspectorInternals = {
   readFile: path => readFileSync(path, 'utf8'),
   readDir: path => readdirSync(path),
   readLink: path => readlinkSync(path, 'utf8'),
+  stat: path => statSync(path),
   open: path => openSync(path, 'r'),
   read: (fd, buffer, length, position) => readSync(fd, buffer, 0, length, position),
   close: closeSync,
@@ -63,6 +70,7 @@ interface ProcStat {
   pgrp: number
   session: number
   state: string
+  ttyDevice: number
   tpgid: number
   started: string
 }
@@ -82,11 +90,12 @@ export function parseProcStat(text: string): ProcStat | undefined {
   const parentPid = Number(rest[1])
   const pgrp = Number(rest[2])
   const session = Number(rest[3])
+  const ttyDevice = Number(rest[4])
   const tpgid = Number(rest[5])
   const started = rest[19]
-  if (![pid, parentPid, pgrp, session, tpgid].every(Number.isSafeInteger)
+  if (![pid, parentPid, pgrp, session, ttyDevice, tpgid].every(Number.isSafeInteger)
     || state.length !== 1 || started === undefined) return undefined
-  return { pid, parentPid, pgrp, session, state, tpgid, started }
+  return { pid, parentPid, pgrp, session, state, ttyDevice, tpgid, started }
 }
 
 function readLinuxStat(internals: ProcessInspectorInternals, pid: number): ProcStat | undefined {
@@ -97,10 +106,31 @@ function readLinuxStat(internals: ProcessInspectorInternals, pid: number): ProcS
   }
 }
 
-function readLinuxStdinTarget(internals: ProcessInspectorInternals, pid: number): string | undefined {
+// `/proc/<pid>/stat` renders tty_nr as a signed 32-bit device number, while
+// Node exposes the same st_rdev bits as a nonnegative number.
+function linuxDeviceNumber(value: number): number {
+  return value >>> 0
+}
+
+// `/dev/tty` reports the alias device instead of the selected PTY through stat,
+// so its owning process's tty_nr is the only comparable terminal identity.
+function readLinuxTerminalDevice(
+  internals: ProcessInspectorInternals,
+  pid: number,
+  ttyDevice: number,
+  tid?: number,
+): number | undefined {
+  const terminalDevice = linuxDeviceNumber(ttyDevice)
+  if (terminalDevice === 0) return undefined
+  const path = tid === undefined ? `/proc/${pid}/fd/0` : `/proc/${pid}/task/${tid}/fd/0`
   try {
-    return internals.readLink(`/proc/${pid}/fd/0`)
-  } catch (_unreadableStdinTarget) {
+    const target = internals.readLink(path)
+    if (target === '/dev/tty') return terminalDevice
+    const status = internals.stat(path)
+    return status.isCharacterDevice() && linuxDeviceNumber(status.rdev) === terminalDevice
+      ? terminalDevice
+      : undefined
+  } catch (_unreadableStdinDevice) {
     return undefined
   }
 }
@@ -199,9 +229,9 @@ function pollHasStdin(
   return false
 }
 
-function epollHasStdin(internals: ProcessInspectorInternals, pid: number, epfd: number): boolean {
+function epollHasStdin(internals: ProcessInspectorInternals, pid: number, tid: number, epfd: number): boolean {
   try {
-    return internals.readFile(`/proc/${pid}/fdinfo/${epfd}`)
+    return internals.readFile(`/proc/${pid}/task/${tid}/fdinfo/${epfd}`)
       .split('\n')
       .some(line => /^tfd:\s+0\b/.test(line.trim()))
   } catch (_unreadableFdInfo) {
@@ -227,6 +257,7 @@ const SYSCALLS: Partial<Record<NodeJS.Architecture, SyscallTable>> = {
 function syscallWaitsOnStdin(
   internals: ProcessInspectorInternals,
   pid: number,
+  tid: number,
   syscall: SyscallInfo,
   table: SyscallTable,
 ): boolean {
@@ -239,7 +270,7 @@ function syscallWaitsOnStdin(
     return a1 >= 1 && pollHasStdin(internals, pid, a0, a1)
   }
   if (syscall.number === table.epollWait || syscall.number === table.epollPwait) {
-    return a2 >= 1 && epollHasStdin(internals, pid, a0)
+    return a2 >= 1 && epollHasStdin(internals, pid, tid, a0)
   }
   return false
 }
@@ -304,15 +335,18 @@ class LinuxProcessInspector extends PosixProcessInspector {
   isStdinWaiting(pgid: number, shellPid: number): boolean {
     const table = SYSCALLS[this.arch]
     if (table === undefined) return false
-    const terminalStdinTarget = readLinuxStdinTarget(this.internals, shellPid)
-    if (terminalStdinTarget === undefined) return false
+    const shell = readLinuxStat(this.internals, shellPid)
+    if (shell === undefined) return false
+    const terminalDevice = readLinuxTerminalDevice(this.internals, shellPid, shell.ttyDevice)
+    if (terminalDevice === undefined) return false
     for (const pid of numericEntries(this.internals, '/proc')) {
-      if (readLinuxStat(this.internals, pid)?.pgrp !== pgid) continue
+      const process = readLinuxStat(this.internals, pid)
+      if (process?.pgrp !== pgid) continue
       for (const tid of numericEntries(this.internals, `/proc/${pid}/task`)) {
         const syscall = readSyscall(this.internals, pid, tid)
         if (syscall !== undefined
-          && syscallWaitsOnStdin(this.internals, pid, syscall, table)
-          && readLinuxStdinTarget(this.internals, pid) === terminalStdinTarget) return true
+          && syscallWaitsOnStdin(this.internals, pid, tid, syscall, table)
+          && readLinuxTerminalDevice(this.internals, pid, process.ttyDevice, tid) === terminalDevice) return true
       }
     }
     return false
