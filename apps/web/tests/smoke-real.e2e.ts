@@ -180,8 +180,16 @@ async function sessionCursor(baseUrl: string, sessionId: string): Promise<number
 }
 
 interface HistoryPage {
-  events: { event: { type: string; data: unknown } }[]
+  records: (
+    | { type: 'event'; event: HistoryEvent }
+    | { type: 'chunks'; event: HistoryEvent }
+  )[]
   hasMore: boolean
+}
+
+interface HistoryEvent {
+  type: string
+  data: unknown
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -189,8 +197,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function providerTitle(page: HistoryPage): string | undefined {
-  for (let index = page.events.length - 1; index >= 0; index--) {
-    const event = page.events[index]!.event
+  const events = page.records.flatMap(record => record.type === 'event' ? [record.event] : [])
+  for (let index = events.length - 1; index >= 0; index--) {
+    const event = events[index] as HistoryEvent
     if (event.type !== 'session/title' || !isRecord(event.data)) continue
     const source = event.data.source
     if (typeof event.data.title === 'string' && isRecord(source) && source.kind === 'provider') {
@@ -201,7 +210,9 @@ function providerTitle(page: HistoryPage): string | undefined {
 }
 
 function hasAssistantMarker(page: HistoryPage, marker: string): boolean {
-  return page.events.some(({ event }) => {
+  return page.records.some((record) => {
+    if (record.type !== 'event') return false
+    const { event } = record
     if (event.type !== 'assistant/message' || !isRecord(event.data) || !isRecord(event.data.message)) return false
     const content = event.data.message.content
     if (!Array.isArray(content)) return false
@@ -556,16 +567,18 @@ describe('dsh web keyless CLI smoke', () => {
         return hasAssistantMarker(page, recoveredMarker)
       }, { timeout: 20_000 }).toBe(true)
       if (page === undefined) throw new Error('retry history was not observed')
-      const retry = page.events.find(({ event }) => event.type === 'llm/retry')?.event
+      const retry = page.records.find(record => (
+        record.type === 'event' && record.event.type === 'llm/retry'
+      ))
       expect(mainAttempts).toBe(2)
-      expect(retry?.data).toMatchObject({
+      expect(retry?.type === 'event' ? retry.event.data : undefined).toMatchObject({
         turn: 1,
         step: 1,
         retry: 1,
         maxRetries: 5,
         failure: { code: 'TRANSPORT' },
       })
-      expect(JSON.stringify(page.events)).toContain('WEB_RETRY_DISCARDED')
+      expect(JSON.stringify(page.records)).toContain('WEB_RETRY_DISCARDED')
     } finally {
       const closed = child.exitCode === null
         ? new Promise<void>((resolveClose) => { child.once('close', () => { resolveClose() }) })
