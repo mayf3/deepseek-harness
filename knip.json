@@ -26,6 +26,7 @@
       "entry": [
         "scripts/**/*.mjs",
         "scripts/**/*.cjs",
+        "snapshots/**/*.mjs",
         "scripts/types/client-build-environment/index.d.ts"
       ],
       "ignoreUnresolved": [
@@ -34,7 +35,8 @@
       "project": [
         "scripts/**/*.ts",
         "scripts/**/*.mjs",
-        "scripts/**/*.cjs"
+        "scripts/**/*.cjs",
+        "snapshots/**/*.mjs"
       ]
     },
     "packages/host/directory-picker-auto": {
