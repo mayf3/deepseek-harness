@@ -15,6 +15,7 @@ afterEach(cleanup)
 
 const COPY: Record<string, string> = {
   'fontSize.title': 'Font size',
+  'fontSize.description': 'Only affects conversation content',
   'fontSize.increase': 'Increase font size',
   'fontSize.decrease': 'Decrease font size',
 }
@@ -61,6 +62,7 @@ describe('FontSizeRow', () => {
   it('renders the title and the current size with both arrows enabled mid-range', () => {
     mount(14)
     expect(screen.getByText('Font size')).toBeDefined()
+    expect(screen.getByText('Only affects conversation content')).toBeDefined()
     expect(screen.getByText('14')).toBeDefined()
     expect(arrow('Increase font size').disabled).toBe(false)
     expect(arrow('Decrease font size').disabled).toBe(false)

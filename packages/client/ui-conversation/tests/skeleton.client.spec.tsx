@@ -590,7 +590,7 @@ describe('ConversationRoot resident composer', () => {
     expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
   })
 
-  it('drag → persist → window clamp → double-click reset round-trip on a width handle', () => {
+  it('drag → persist → window clamp round-trip on a width handle', () => {
     const b = mount(sessionSnapshotOf())
     const root = b.view.container.querySelector('[data-phase]') as HTMLElement
     Object.defineProperty(root, 'offsetWidth', { value: 1600, configurable: true })
@@ -622,16 +622,15 @@ describe('ConversationRoot resident composer', () => {
       expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
       expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
       // A press without travel (a real double-click delivers two such
-      // press/release rounds before dblclick) must not commit the clamped
-      // display value over the stored preference.
+      // press/release rounds) must not commit the clamped display value over
+      // the stored preference.
       fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
       fireEvent.pointerUp(handle, { pointerId: 1, clientX: 800, clientY: 300 })
       expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
       expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
-      // Double-click resets to the adaptive width: preference and override gone.
+      // No reset affordance on the handle: double-click leaves the preference alone.
       fireEvent.doubleClick(handle)
-      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBeNull()
-      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
     } finally {
       for (const [name, descriptor] of originals) {
         if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, name)

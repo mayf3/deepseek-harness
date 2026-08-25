@@ -16,7 +16,7 @@ Status: implemented
 
 **拖拽手柄是正文两侧 40px 宽的条，对称是构造性的。** 每条内边缘位于内容列外 24px、向外延伸 40px，外边缘被钳制在距列缘至少 24px 的安全区（24 + 40 + 24 = 下文每侧 88px 的预算）；边距装不下"内偏移 + 热区 + 安全区"时计算宽度为负、热区解析为零。两个手柄写同一个居中宽度——向外拖按指针位移 2 倍变宽——复用 AppFrame DragHandle 的捕获模型（指针捕获 + rAF 节流 + 拖拽起点快照）；只有指针确实产生位移的手势才提交存储，因此在被窗口钳制的宽度上按下即松开不会用钳制后的显示值覆盖更宽的已存偏好。hover 提示是跟随指针 Y 的 3px 光带（pointermove 发布 `--dsh-width-handle-pointer-y`）：24px 实色核心、两侧各 40px 渐变，用滚动条 hover 色——border token 的透明度在底色上几乎不可见。手柄只在 active 阶段渲染；选举了 composer overlay 的视图（trajectory）隐藏手柄，header 提升到手柄之上（z-index 9）保持可点。
 
-**偏好持久化在 `localStorage`（`dsh.conversation.contentWidth`），钳制不改写。** 列收窄时显示宽度重新钳制到 `[640px, 列宽 − 176px]`（每侧预留 88px 保证手柄永远放得下），但存储的偏好保留——拉宽窗口自动恢复，与 AppFrame 侧栏拖拽同规则。双击手柄清除偏好、回到自适应 clamp；手柄的 `title` 说明拖拽与双击用法。
+**偏好持久化在 `localStorage`（`dsh.conversation.contentWidth`），钳制不改写。** 列收窄时显示宽度重新钳制到 `[640px, 列宽 − 176px]`（每侧预留 88px 保证手柄永远放得下），但存储的偏好保留——拉宽窗口自动恢复，与 AppFrame 侧栏拖拽同规则。手柄不带重置操作也不带 tooltip；已存储的偏好只会被下一次拖拽替换。
 
 **用户气泡上限跟随宽度轴。** `min(525px, 82%)` 改为 `min(calc(var(--dsh-chat-content-width, 748px) * 0.702), 82%)`（0.702 = 525/748，即 figma 气泡占 figma 列宽的比例），`ui-conversation` MessageItem 与对称的 `ui-goal` 命令气泡同步，气泡随列缩放。748px 缺省值覆盖会话列之外的挂载。
 
@@ -26,7 +26,7 @@ Status: implemented
 
 **宽内容出血（代码块、工具卡片突破散文列）。** 阅读工效最佳但涉及 MarkdownText 和所有工具卡片布局；作为可能的二期推迟。
 
-**settings 支持的"宽屏模式"开关。** 为拖拽 + 双击已覆盖的能力增加持久设置面；不需要。
+**settings 支持的"宽屏模式"开关。** 为拖拽已覆盖的能力增加持久设置面；不需要。
 
 **输入卡旁 12px 手柄条。** 首版实现，实践中不可用：宽屏上千余像素的边距里只有一条细缝，且 sticky 输入卡遮挡它。改为锚定在光带位置的 40px 条。
 

@@ -16,7 +16,7 @@
 
 **一个 CSS 增量变量平移阶梯。**`gradient-shadow-text.css` 派生 `--dsh-content-font-delta: calc(var(--dsh-content-font-size, 14px) - 14px)`，把 markdown h1–h4 与 base 各变体（字号与行高）按同一像素增量平移，保持标题层级与各变体的行距。表格、small 与 code 变体保持固定——中断回合的 `.stopped` 标签（11px）同样固定：它们是密集次级文本，其默认值在字号下调时会低于可读下限。token 阶梯之外的消费方直接读取 `var(--dsh-content-font-size, 14px)`（较小档位则用 `calc(<自身默认> + var(--dsh-content-font-delta, 0px))`）与 `calc(<默认行高> + var(--dsh-content-font-delta, 0px))`：助手正文根节点、用户气泡（含引用摘要及其行内字形）、composer 卡片（其 textarea/mirror/backdrop 三层按设计从卡片继承字体度量），以及围绕它们的流内 chrome——共享的 DisclosureRow 头部（工具调用、think、命令；行高、标题与 leading 盒同步移动），其展开内容以 `22px + delta` 缩进跟随平移后的标题起点保持对齐、ToolRow/bash 行的 summary 与文件链接、think 正文（12px，保持比正文小 2px 的层级）、compaction/context/retry/错误行、StatsLine、chat 提示与打开失败条、workflow-run 面板（run/phase 头部与展开的成员行）、消息时钟与图标操作（slot 注入的消息反馈操作经同一对变量同步缩放），以及回合状态行。流内图标经由各 leading 盒的 CSS 边长缩放（`svg` width/height 覆盖字形自身属性）；StateDot 通过其 `data-state` 属性豁免——它是状态标记，不是文字组件。14px 回退让变量缺席时（测试、独立挂载、采纳前的远程组合）所有表面逐像素不变。
 
-**步进器是药丸控件，不是菜单。**该行复用选择器药丸几何（h36 r18 模块填充），数值在药丸内居中，上下箭头列在 hover/focus-within 时显示并绝对定位在药丸右缘（显示时数值不移动），药丸后带 `px` 单位标签。到达边界时对应箭头禁用；显示跟随 store 镜像，绝不跟随点击回声——与外观行相同的 store/face 模式。
+**步进器是药丸控件，不是菜单。**该行复用选择器药丸几何（h36 r18 模块填充），数值在药丸内居中，上下箭头列在 hover/focus-within 时显示并绝对定位在药丸右缘（显示时数值不移动），药丸后带 `px` 单位标签。标题下方的三级说明行标明作用范围——字号仅影响会话内容，不影响应用外框。到达边界时对应箭头禁用；显示跟随 store 镜像，绝不跟随点击回声——与外观行相同的 store/face 模式。
 
 ## 已考虑的替代方案
 

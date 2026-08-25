@@ -1,10 +1,11 @@
 /**
  * Font-size preference row registered into the General section item slot:
- * title + stepper pill (centered value; hover reveals the up/down arrow
- * column anchored to the pill's right edge) + a px unit label after the
- * pill. Registered by this package — the theme feature owns the content
- * font-size setting the same way it owns the appearance preference. The
- * displayed value follows the persisted setting, never the click echo.
+ * title + body-text-only description + stepper pill (centered value; hover
+ * reveals the up/down arrow column anchored to the pill's right edge) + a px
+ * unit label after the pill. Registered by this package — the theme feature
+ * owns the content font-size setting the same way it owns the appearance
+ * preference. The displayed value follows the persisted setting, never the
+ * click echo.
  */
 import {
   IconChevronDownOutline14, IconChevronUpOutline14,
@@ -37,6 +38,7 @@ export function FontSizeRow({ t, setFontSize, useStore }: FontSizeRowComponentPr
     <div className={css.row}>
       <div className={css.rowText}>
         <div className={css.title}>{t('fontSize.title')}</div>
+        <div className={css.desc}>{t('fontSize.description')}</div>
       </div>
       <div className={css.control}>
         <div className={css.stepper}>

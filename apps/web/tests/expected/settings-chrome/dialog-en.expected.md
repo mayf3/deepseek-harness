@@ -39,7 +39,7 @@
   - button "System" [pressed]:
     - img
     - text: System
-  - text: Font size 14
+  - text: Font size Only affects conversation content 14
   - button "Increase font size":
     - img
   - button "Decrease font size":

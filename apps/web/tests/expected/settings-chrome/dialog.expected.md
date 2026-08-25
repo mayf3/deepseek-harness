@@ -39,7 +39,7 @@
   - button "跟随系统" [pressed]:
     - img
     - text: 跟随系统
-  - text: 字号大小 14
+  - text: 字号大小 仅影响会话内容的字号 14
   - button "增大字号":
     - img
   - button "减小字号":

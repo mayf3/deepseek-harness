@@ -45,17 +45,15 @@ function resolveContentWidth(columnWidth: number, preference: number | null): nu
 
 /** One transcript width handle: pointer capture + rAF-throttled symmetric
  * resize (both sides write the one centered width, so outward travel widens
- * by 2× the pointer distance), double-click resets to the adaptive width.
- * pointermove publishes the pointer's Y as a CSS variable so the glow
- * indicator rides it. Mirrors ui-layout AppFrame's DragHandle capture model. */
+ * by 2× the pointer distance). pointermove publishes the pointer's Y as a CSS
+ * variable so the glow indicator rides it. Mirrors ui-layout AppFrame's
+ * DragHandle capture model. */
 function WidthHandle(props: {
   side: 'left' | 'right'
-  title: string
   onStart: () => number
   onDrag: (width: number) => void
   onCommit: (width: number) => void
   onEnd: () => void
-  onReset: () => void
 }) {
   const [dragging, setDragging] = useState(false)
   const base = useRef(0)
@@ -121,13 +119,11 @@ function WidthHandle(props: {
       data-side={props.side}
       data-width-handle={props.side}
       data-dragging={dragging || undefined}
-      title={props.title}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerCancel}
       onLostPointerCapture={onPointerCancel}
-      onDoubleClick={() => { callbacks.current.onReset() }}
     />
   )
 }
@@ -226,11 +222,6 @@ export function ConversationRoot({
     localStorage.setItem(WIDTH_PREF_KEY, `${resolveContentWidth(root.offsetWidth, width)}`)
   }, [])
   const onHandleEnd = useCallback((): void => {
-    const root = rootEl.current
-    if (root !== null) publishWidths(root)
-  }, [publishWidths])
-  const onHandleReset = useCallback((): void => {
-    localStorage.removeItem(WIDTH_PREF_KEY)
     const root = rootEl.current
     if (root !== null) publishWidths(root)
   }, [publishWidths])
@@ -389,12 +380,10 @@ export function ConversationRoot({
         <WidthHandle
           key={side}
           side={side}
-          title={t('width.handle.title')}
           onStart={onHandleStart}
           onDrag={onHandleDrag}
           onCommit={onHandleCommit}
           onEnd={onHandleEnd}
-          onReset={onHandleReset}
         />
       ))}
     </div>

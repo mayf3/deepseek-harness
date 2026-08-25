@@ -16,7 +16,7 @@ The conversation column's shared width axis (`--dsh-chat-content-width`) was the
 
 **Drag handles are 40px strips beside the transcript, symmetric by construction.** Each strip's inner edge sits 24px outside the content column and extends 40px outward, with the outer edge clamped to keep a 24px safe zone from the column edges (24 + 40 + 24 = the 88px-per-side budget below); when the margin cannot fit inset + strip + safe zone the computed width goes negative and the strip resolves to zero. Both handles write the one centered width — outward travel widens by 2× the pointer distance — reusing AppFrame's DragHandle capture model (pointer capture + rAF throttle + drag-start snapshot); only a gesture with actual pointer travel commits to storage, so a bare press-and-release on a window-clamped width cannot overwrite the wider stored preference. The hover indicator is a 3px glow riding the pointer's Y (published as `--dsh-width-handle-pointer-y` on pointermove): a 24px solid core fading over 40px each side, in the scrollbar hover tint because border-token alphas disappear against the base fill. Handles render only in the active phase; views that elect a composer overlay (trajectory) hide them, and the header lifts above them (z-index 9) to stay clickable.
 
-**The preference persists in `localStorage` (`dsh.conversation.contentWidth`) and clamps without rewriting.** The displayed width re-clamps to `[640px, column − 176px]` when the column shrinks (88px per side keeps the handles fully placeable — a wider drag would push its own handles off the column), but the stored preference survives — widening the window restores it, the same rule AppFrame's sidebar drag follows. Double-clicking a handle clears the preference and returns to the adaptive clamp; the handle's `title` documents drag and double-click.
+**The preference persists in `localStorage` (`dsh.conversation.contentWidth`) and clamps without rewriting.** The displayed width re-clamps to `[640px, column − 176px]` when the column shrinks (88px per side keeps the handles fully placeable — a wider drag would push its own handles off the column), but the stored preference survives — widening the window restores it, the same rule AppFrame's sidebar drag follows. The handle carries no reset affordance and no tooltip; a stored preference is only ever replaced by another drag.
 
 **The user bubble cap follows the axis.** `min(525px, 82%)` becomes `min(calc(var(--dsh-chat-content-width, 748px) * 0.702), 82%)` (0.702 = 525/748, the figma bubble share of the figma column) in both `ui-conversation` MessageItem and the symmetric `ui-goal` command bubble, so bubbles scale with the column. The 748px fallback covers mounts outside the conversation column.
 
@@ -26,7 +26,7 @@ The conversation column's shared width axis (`--dsh-chat-content-width`) was the
 
 **Wide-content bleed (code blocks and tool cards break out of the prose column).** Best reading ergonomics but touches MarkdownText and every tool card's layout; deferred as a possible second phase.
 
-**A settings-backed "wide mode" toggle.** Adds a persistent settings surface for what drag + double-click already covers; not needed.
+**A settings-backed "wide mode" toggle.** Adds a persistent settings surface for what drag already covers; not needed.
 
 **A 12px handle strip beside the input card.** Shipped first and unusable in practice: on a wide screen the strip was a sliver in a thousand-plus pixels of margin, and the sticky input card overlapped it. Replaced by the 40px strip anchored to the glow line's position.
 
