@@ -16,8 +16,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -332,6 +332,58 @@ describe('SessionProjectionCache listing read', () => {
 })
 
 describe('SessionProjectionCache cold-read seeding', () => {
+  /** One session's event log: turn/start, one mark per group, turn/end. */
+  const storedLog = (marks: string[][]): SessionEvent[] => {
+    const events: SessionEvent[] = [
+      { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+    ]
+    for (const m of marks) {
+      events.push({ type: 'cache-test/mark', seq: events.length, time: events.length, data: { marks: m } })
+    }
+    events.push({ type: 'turn/end', seq: events.length, time: events.length, data: { turn: 1, reason: { kind: 'completed' } } })
+    return events
+  }
+
+  it('hydratePrepared seeds from a matching row and retries from the exact log on a malformed one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
+    roots.push(root)
+    // Records land on disk before the domain opens, so the in-memory table
+    // picks them up at init.
+    await seedRecord(root, 'prepared-seeded', {
+      'cache-test/marks': { ver: 1, seq: 1, val: { marks: ['cached'] } },
+    })
+    await seedRecord(root, 'prepared-fallback', {
+      'cache-test/marks': { ver: 1, seq: 1, val: { marks: 'malformed' } },
+    })
+    const { cache } = await harness({ root })
+    const events = storedLog([['fresh']])
+
+    // A matching row hydrates the prepared Session without a persistence read.
+    const seeded = headerOf(SessionId('prepared-seeded'))
+    const seededSession = Session.create(seeded.id, events, seeded)
+    expect(cache.hydratePrepared(seededSession, seeded, events)).toEqual({
+      asOfSeq: 2,
+      values: { 'cache-test/marks': { marks: ['cached'] } },
+    })
+
+    // A malformed row cannot seed the fold; hydration falls back to the
+    // exact log so a valid Session stays readable.
+    const fallback = headerOf(SessionId('prepared-fallback'))
+    const fallbackSession = Session.create(fallback.id, events, fallback)
+    expect(cache.hydratePrepared(fallbackSession, fallback, events)).toEqual({
+      asOfSeq: 2,
+      values: { 'cache-test/marks': { marks: ['fresh'] } },
+    })
+
+    // No row at all: hydrate from init over the exact log.
+    const bare = headerOf(SessionId('prepared-bare'))
+    const bareSession = Session.create(bare.id, events, bare)
+    expect(cache.hydratePrepared(bareSession, bare, events)).toEqual({
+      asOfSeq: 2,
+      values: { 'cache-test/marks': { marks: ['fresh'] } },
+    })
+  })
+
   it('coldSnapshot traverses the full log but applies only the events after each cached watermark', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
     roots.push(root)

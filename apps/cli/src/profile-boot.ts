@@ -115,8 +115,8 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
  * @returns the loaded profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
-  healProfilesModuleFallback(INSTALL_ANCHOR)
+export async function prepareProfile(name: string, userLayer = true): Promise<Profile> {
+  await healProfilesModuleFallback(INSTALL_ANCHOR)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
@@ -145,8 +145,8 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 
 /**
  * Load `name` and compose its effective patch stack: bundle layers in
- * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
- * platform on its own rows), the profile's user layer, the home-level user
+ * `dsh.profile.bundles` order (a base-backed profile gets the base bundle's
+ * platform-gated shell rows), the profile's user layer, the home-level user
  * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
  * to every profile, so it outranks the per-profile layer), `--patch` overlays,
  * then the telemetry switch.
@@ -154,11 +154,11 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
  * @param patchFiles - `--patch` overlay paths, in argv order.
  * @returns the profile and its patch layers.
  */
-function composeProfile(
+async function composeProfile(
   name: string,
   patchFiles: readonly string[],
-): ComposedProfile {
-  const profile = prepareProfile(name)
+): Promise<ComposedProfile> {
+  const profile = await prepareProfile(name)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
@@ -207,7 +207,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const composed = await composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
   const appReady = createAppReady()
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })

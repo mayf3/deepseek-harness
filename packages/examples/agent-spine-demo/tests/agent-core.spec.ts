@@ -714,6 +714,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       includeHarnessIdentity: false,
       includeRuntimeContext: false,
       persona: 'You are a helpful software engineer assistant.',
+      personaComplete: true,
       workspaceContext: false,
       skills: { enabled: false },
       toolBash: false,
@@ -723,6 +724,7 @@ describe('dsh-agent-spine-demo bundle', () => {
     expect(ctx.tools.schemas()).toEqual([])
     ctx.systemPrompt.context({ name: 'policy', order: 0, text: 'hidden policy' })
     expect((await ctx.systemPrompt.assemble()).contexts).toEqual([])
+    ctx.systemPrompt.section({ name: 'hidden', order: 100, text: 'hidden guidance' })
     expect(renderPrompt(await ctx.systemPrompt.assemble()))
       .toBe('You are a helpful software engineer assistant.')
 
@@ -736,6 +738,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       includeHarnessIdentity: false,
       includeRuntimeContext: false,
       persona: 'You are merged.',
+      personaComplete: true,
       toolOrder: ['zulu'],
       tools: { mode: 'native' as const },
       dshHome: '/tmp/dsh-home',
@@ -754,6 +757,7 @@ describe('dsh-agent-spine-demo bundle', () => {
       includeHarnessIdentity: appConfig.includeHarnessIdentity,
       includeRuntimeContext: appConfig.includeRuntimeContext,
       persona: appConfig.persona,
+      personaComplete: appConfig.personaComplete,
       toolOrder: appConfig.toolOrder,
       tools: appConfig.tools,
       dshHome: appConfig.dshHome,

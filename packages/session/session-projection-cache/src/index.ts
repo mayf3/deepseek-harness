@@ -20,7 +20,11 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import type { ProjectionCheckpoint, ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
+import type {
+  ProjectionCheckpoint,
+  ProjectionSnapshot,
+  SessionProjectionMap,
+} from '@deepseek-ai/dsh-session-projection'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { projectionCacheDomainSpec } from './spec.ts'
 import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
@@ -117,20 +121,52 @@ export class SessionProjectionCache extends Service {
    * paths (the history tail baseline) supersede these values whenever a
    * session is actually opened.
    * @param meta - the listed session's header (identity witness; no log read).
+   * @param keys - optional projection keys required by the caller's audience.
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
    *   `undefined` when no usable row exists for this lifecycle.
    */
-  cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined {
+  cachedSnapshot(
+    meta: SessionHeader,
+    keys?: readonly Extract<keyof SessionProjectionMap, string>[],
+  ): ProjectionSnapshot | undefined {
     const record = this.recordFor(meta.id, identityOf(meta))
     if (record === undefined) return undefined
-    const values = this.ctx.sessionProjections.viewCheckpoint(record.rows)
-    const keys = Object.keys(values)
-    if (keys.length === 0) return undefined
+    const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, keys)
+    const servedKeys = Object.keys(values)
+    if (servedKeys.length === 0) return undefined
     // The block carries ONE cut: the lowest served watermark is the seq every
     // value is at least current as of (under-claiming is safe under
     // higher-seq-wins; over-claiming would let a stale value outrank pushes).
-    const asOfSeq = Math.min(...keys.map(key => (record.rows[key] as { seq: number }).seq))
+    const asOfSeq = Math.min(...servedKeys.map(key => (record.rows[key] as { seq: number }).seq))
     return { asOfSeq, values }
+  }
+
+  /**
+   * Hydrate projection cells for an already-prepared Session without another
+   * persistence read. The cache seeds matching rows; the supplied exact log
+   * advances every unit to the observation cut. No checkpoint is written
+   * because the logical observation may contain recovery events not yet durable.
+   * @param session - exact unpublished Session retained by persistence.
+   * @param meta - observed lifecycle header.
+   * @param events - exact logical event prefix represented by the observation.
+   * @returns all projection values at the event cut.
+   */
+  hydratePrepared(
+    session: Session,
+    meta: SessionHeader,
+    events: readonly SessionEvent[],
+  ): ProjectionSnapshot {
+    const record = this.recordFor(meta.id, identityOf(meta))
+    if (record === undefined) {
+      return this.ctx.sessionProjections.hydrate(session, {}, events, 0)
+    }
+    try {
+      return this.ctx.sessionProjections.hydrate(session, record.rows, events, 0)
+    } catch {
+      // Cached rows are disposable derived data. Retry from the exact log so a
+      // stale schema cannot make a valid Session unreadable.
+      return this.ctx.sessionProjections.hydrate(session, {}, events, 0)
+    }
   }
 
   /**
@@ -169,7 +205,7 @@ export class SessionProjectionCache extends Service {
    * @returns the projection cut at the log end.
    */
   coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot {
-    const restored = this.ctx.sessionProjections.restore(this.recordFor(meta.id, identityOf(meta))?.rows ?? {}, events, 0)
+    const restored = this.ctx.sessionProjections.restore(this.recordFor(meta.id, identityOf(meta))?.rows ?? {}, events, 0, meta)
     // Refresh the row so the next cold read seeds from it; fail-soft and
     // fire-and-forget — a failed write-back only costs a longer tail replay.
     void this.put(meta.id, identityOf(meta), restored.checkpoint).catch((error: unknown) => {
