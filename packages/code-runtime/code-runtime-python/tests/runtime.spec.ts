@@ -4569,11 +4569,11 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('bounds the fd-3 receive buffer against a newline-free flood', async () => {
     // A program looping os.write(3, ...) with no newline would grow the host
     // accumulator unbounded (the child's RLIMIT_AS does not cover the host
-    // string). The ceiling is a fixed 256 MiB memory-safety invariant —
+    // string). The frame cap is a fixed 64 MiB memory-safety invariant —
     // deliberately NOT derived from maxValueBytes, because legitimate binding
     // call frames may be large. We flood slightly past it in 8 MiB writes so
     // the test terminates promptly once the guard trips.
-    const ceiling = 256 * 1024 * 1024
+    const ceiling = 64 * 1024 * 1024
     const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
     const start = Date.now()
     const result = await runtime.run({
@@ -4827,10 +4827,10 @@ describe('PythonCodeRuntime — hostile peer', () => {
   }, 8000)
 
   it('bounds a single oversized newline-terminated line on fd 3', async () => {
-    // The same ceiling applies to one giant framed line. Write EXACTLY the
-    // ceiling with no newline — at the limit, not past it, so nothing trips —
+    // The same cap applies to one giant framed line. Write EXACTLY the
+    // cap with no newline — at the limit, not past it, so nothing trips —
     // then a small newline tail, which is the chunk that crosses.
-    const ceiling = 256 * 1024 * 1024
+    const ceiling = 64 * 1024 * 1024
     const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
     const result = await runtime.run({
       program: [
@@ -4863,7 +4863,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // never reported: measured, the run settled as
     // `python exited (code=0, signal=null) before completing` after the host had
     // held the ceiling AND copied it, which is the doubling this check prevents.
-    const ceiling = 256 * 1024 * 1024
+    const ceiling = 64 * 1024 * 1024
     const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
     const result = await runtime.run({
       program: [
