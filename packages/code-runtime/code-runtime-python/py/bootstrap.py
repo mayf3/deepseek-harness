@@ -102,7 +102,8 @@ class LogBuffer:
         # JSON-string cost plus one separator byte, and the serialized outer
         # logs array adds one more byte of envelope (two brackets and n-1 commas
         # over n entries' separators), so a result that exactly exhausts the
-        # ledger would serialize to max_bytes + 1. Reserving that byte keeps an
+        # ledger serializes to exactly max_bytes; WITHOUT the reserved byte it
+        # would serialize to max_bytes + 1. Reserving that byte keeps an
         # admitted result within the configured cap; the truncation-marker entry
         # is envelope, not payload, and rides uncharged (``_max_bytes`` stays the
         # configured value for the marker's message text).
@@ -947,6 +948,18 @@ async def _run(channel: ProtocolChannel) -> None:
     sys.stdout = _LogStream(logs)  # type: ignore[assignment]
     sys.stderr = _LogStream(logs)  # type: ignore[assignment]
     out_stream, err_stream = sys.stdout, sys.stderr
+    # The ORIGINAL std streams are bound here, before the program runs, so the
+    # settlement flush can drain bytes a program wrote through them without an
+    # explicit flush. The bootstrap only replaces `sys.stdout`/`sys.stderr` with
+    # the `_LogStream`; `sys.__stdout__`/`sys.__stderr__` (and C-ext stdio
+    # layered on the same fds) are untouched, and their block-buffered bytes are
+    # lost when the host SIGTERMs the child right after the done frame — the
+    # default SIGTERM disposition terminates without interpreter finalization.
+    # Binding the names here (before the program) makes them immune to a
+    # `sys.__stdout__ = boom` rebind in model code; `None` under `-S`-style
+    # redirects is guarded at flush time.
+    _stdout_orig = sys.__stdout__
+    _stderr_orig = sys.__stderr__
 
     # 6. Compile the program as the body of an async function, matching the
     # seam contract (`CodeRunRequest.program` is an async-function body: top-level
@@ -1123,7 +1136,9 @@ async def _run(channel: ProtocolChannel) -> None:
     # already pushed still reports the truncation. Same rule as
     # `_make_failure_reporter`: a settled verdict must not be swallowed by the
     # reporting that follows it.
-    for _flush in (flush_out, flush_err):
+    for _flush in (flush_out, flush_err, _stdout_orig, _stderr_orig):
+        if _flush is None:
+            continue
         try:
             _flush()
         except _BaseException:  # noqa: BLE001 -- swallow ONLY the log tail; `done` must reach the host; `_BaseException` is a pre-program local

@@ -967,7 +967,15 @@ export class PythonCodeRuntime extends CodeRuntime {
     let child: ChildProcessWithoutNullStreams
     let proto: Duplex | null
     try {
-      child = spawn(resolvePythonBin(this.config.pythonBin), ['-I', bootstrapPath], {
+      // `-u` keeps the interpreter's own stdout/stderr UNBUFFERED: a program
+      // that writes through `sys.__stdout__`/`sys.__stderr__` (or C-stdio
+      // layered on the same fds) must have those bytes visible to the host's
+      // stray capture immediately — a block-buffered wrapper would otherwise
+      // hold them until an explicit flush, and the host SIGTERMs the child
+      // right after the done frame, before any finalization-time flush could
+      // run. The `_LogStream` replacement of `sys.stdout`/`sys.stderr` is
+      // unaffected (it is a Python object, not the C-level stdio buffer).
+      child = spawn(resolvePythonBin(this.config.pythonBin), ['-u', '-I', bootstrapPath], {
         env: {},
         detached: true, // Own process group — kill(-pid, sig) reaches subprocesses the model program spawns.
         stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
@@ -1000,12 +1008,25 @@ export class PythonCodeRuntime extends CodeRuntime {
       // The ledger starts one byte below maxLogBytes: each entry is charged its
       // JSON-string cost plus one separator byte, and the serialized outer logs
       // array adds one more byte of envelope (two brackets and n-1 commas over n
-      // entries' separators), so a result that exactly exhausts the ledger would
+      // entries' separators), so a result that exactly exhausts the ledger
+      // serializes to exactly maxLogBytes; WITHOUT the reserved byte it would
       // serialize to maxLogBytes + 1. Reserving that byte keeps an admitted
       // result within the configured cap; the truncation-marker entry is
       // envelope, not payload, and rides uncharged.
       let logBudget = this.config.maxLogBytes - 1
       let logsTruncated = false
+      // Drop a pipe's buffered stray output wholesale: once the ledger has
+      // truncated, every byte of it would be no-op'd by admit(), so retaining
+      // it (and later Buffer.concat+decoding it in flushStray) would spend host
+      // memory on output that can never be admitted. Called from every arm that
+      // marks the ledger truncated — admit()'s two ceilings and the child-marker
+      // frame arm — so the end-path flushStray sees empty buffers and exits.
+      const clearStray = (stray: StrayBuffer): void => {
+        stray.chunks = []
+        stray.blocks = []
+        stray.cost = 0
+        stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
+      }
       const admit = (text: string): void => {
         // Post-truncation admits are no-ops: once the ledger has truncated, the
         // marker is the last entry. Reachable within one `data` callback — a
@@ -1036,6 +1057,10 @@ export class PythonCodeRuntime extends CodeRuntime {
         if (text.length + 3 > logBudget) {
           logsTruncated = true
           logs.push(logTruncationMarker(this.config.maxLogBytes))
+          // Release the buffered stray pipes: their bytes can never be
+          // admitted now (see clearStray).
+          clearStray(strayOut)
+          clearStray(strayErr)
           return
         }
         // Past the lower bound, measure the exact serialized cost without
@@ -1046,6 +1071,8 @@ export class PythonCodeRuntime extends CodeRuntime {
         if (measured === undefined) {
           logsTruncated = true
           logs.push(logTruncationMarker(this.config.maxLogBytes))
+          clearStray(strayOut)
+          clearStray(strayErr)
           return
         }
         logBudget -= measured + 1
@@ -1113,6 +1140,11 @@ export class PythonCodeRuntime extends CodeRuntime {
           // The residual begins at a character boundary (a newline is never
           // inside a multibyte sequence), so its cost and UTF-8 state recompute
           // cleanly from a fresh walk.
+          // A line admitted inside the loop may have exhausted the ledger and
+          // cleared this pipe (see clearStray); the re-retain below must not
+          // resurrect the doomed residual.
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- admit() (a closure) sets it.
+          if (logsTruncated) return
           stray.chunks = detachResidual(buffered)
           stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
           stray.cost = accrueStrayCost(buffered, stray.utf8)
@@ -1370,6 +1402,8 @@ export class PythonCodeRuntime extends CodeRuntime {
               // describes the run.
               if (!logsTruncated) {
                 logsTruncated = true
+                clearStray(strayOut)
+                clearStray(strayErr)
                 // The host's OWN marker, never the frame's text. `truncated` is
                 // attacker-reachable, so trusting the text let a program write
                 // `{"type":"log","truncated":true,"text":<1 MiB>}` and land all

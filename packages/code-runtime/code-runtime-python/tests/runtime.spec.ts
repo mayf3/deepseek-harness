@@ -4304,6 +4304,31 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.logs.join('')).toContain('stray stderr')
   })
 
+  it('flushes bytes written through sys.__stdout__/sys.__stderr__ before the done frame', async () => {
+    // The bootstrap only replaces sys.stdout/sys.stderr with the _LogStream;
+    // sys.__stdout__/sys.__stderr__ are the original block-buffered wrappers
+    // over fd 1/2. A program that writes through them without an explicit flush
+    // would lose those bytes when the host SIGTERMs the child right after the
+    // done frame (the default SIGTERM disposition terminates without
+    // interpreter finalization). The settlement flush now drains the original
+    // std streams before sending the done frame, so the bytes land in the
+    // kernel pipe buffer and the host's stray capture records them.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'sys.__stdout__.write("orig stdout\\n")',
+        'sys.__stderr__.write("orig stderr\\n")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs.join('')).toContain('orig stdout')
+    expect(result.logs.join('')).toContain('orig stderr')
+  }, 15_000)
+
   it('escalates to SIGKILL when the program traps SIGTERM and ignores the grace period', async () => {
     // A program that traps SIGTERM should still die: the kill() escalation
     // fires SIGKILL after graceMs. The full run reports either timeout (wall)
