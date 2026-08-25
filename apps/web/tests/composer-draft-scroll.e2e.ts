@@ -29,7 +29,7 @@ import {
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/composer-draft-scroll', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/composer-draft-scroll', import.meta.url))
 /**
  * Committed golden of the composer's scroll geometry. The change alters no
  * accessible name, so the aria goldens the other scenarios commit are

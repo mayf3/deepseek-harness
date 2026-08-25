@@ -47,7 +47,7 @@ The repository uses isolated Host and Client aggregates. An ordinary package is 
 
 | File | Role | Forms a program? |
 |---|---|---|
-| `tsconfig.json` | Solution root: `extends` base, `files: []`, and references to the two aggregates. It is the tsserver discovery entry and the entry for explicitly running the complete Project Reference graph; through the inherited `paths`, it is also the resolution config for tsx running `examples/` and `scripts/`. | No |
+| `tsconfig.json` | Solution root: `extends` base, `files: []`, and references to the two aggregates. It is the tsserver discovery entry and the entry for explicitly running the complete Project Reference graph; through the inherited `paths`, it is also the resolution config for tsx running `scripts/`. | No |
 | `tsconfig.host.json` | Host aggregate: Host packages, examples, tests, scripts, website, and the exceptional Host project of `api/remotes`. | Yes |
 | `tsconfig.client.json` | Client aggregate: `packages/client/*` packages and their tests, `apps/web`, and the exceptional Client project of `api/remotes`. | Yes |
 | `tsconfig.base.json` | Shared compilerOptions and the source `paths` map. Also the resolution facade the vitest configs point vite-tsconfig-paths at: it has no `include`, so its `paths` apply to every importer. | No |
@@ -126,7 +126,7 @@ The keyless [CI workflow](../.github/workflows/ci.yml) groups independent gates 
 
 The root [contributor instructions](../AGENTS.md#commands) summarize common commands, while [`package.json`](../package.json) and [scripts/run-gates.ts](../scripts/run-gates.ts) own the current script and gate inventories. Select the smallest checks that cover the changed surface. Documentation changes use `pnpm run doc-sync`; package-public behavior changes also update the owning README or JSDoc, and built-artifact checks require `pnpm run build` first.
 
-### Demos
+### Profile runs
 
 Run the repository build separately before using these source-checkout demos:
 
@@ -140,16 +140,10 @@ The one-shot Headless coding agent needs `DEEPSEEK_API_KEY` in the environment o
 pnpm dsh --profile headless "summarize this workspace"
 ```
 
-The self-referential cordis demo can inspect and modify its live plugin runtime and needs the same credentials (`web` by default, or `acp`):
+The Code Mode demo runs the same headless profile with code presentation enabled:
 
 ```sh
-pnpm run demo:cordis
-```
-
-The ACP automation server exposes fresh agent sessions over JSON-RPC stdio and also needs `DEEPSEEK_API_KEY`:
-
-```sh
-pnpm run demo:acp
+pnpm run demo:code-mode -- "summarize this workspace"
 ```
 
 ### TODO markers

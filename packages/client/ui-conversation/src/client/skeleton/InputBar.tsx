@@ -109,7 +109,7 @@ export function InputBar({
   // A continuable child without its live parent cannot accept human input,
   // but its independent Stop below stays available while it runs.
   const continuable = subagent?.address.mode === 'continuable'
-  const parentOffline = continuable && !subagent.parentAvailable
+  const parentOffline = continuable && subagent.parentAvailable !== true
   // Running input stays free; locked = session removed, the
   // inert no-workspace state, the machine faces absent (no session), or a
   // parent-offline continuable child. An owner block also disables input;

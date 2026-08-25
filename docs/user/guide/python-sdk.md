@@ -59,7 +59,7 @@ Run one task with explicit workspace and home paths:
 ### Linux and macOS
 
 ```sh
-python examples/python-sdk-agent/minimal.py \
+python python/sdk/examples/minimal.py \
   --workspace /absolute/path/to/disposable-workspace \
   --dsh-home /absolute/path/to/example-dsh-home \
   --session-id example-001 \
@@ -69,7 +69,7 @@ python examples/python-sdk-agent/minimal.py \
 ### Windows PowerShell
 
 ```powershell
-python examples/python-sdk-agent/minimal.py `
+python python/sdk/examples/minimal.py `
   --workspace C:\work\disposable-workspace `
   --dsh-home C:\work\example-dsh-home `
   --session-id example-001 `
@@ -147,4 +147,4 @@ The installed wheel still packages the full `web` profile and frontend assets. R
 
 Use a fresh home when profiles, plugins, credentials, settings, and sessions must be isolated. Use a fresh session id for independent work; reuse a harness, home, and id only to continue the same durable conversation and session-owned resources.
 
-The [bundle reference](../../../packages/bundle/sdk-minimal/README.md) owns the exact tree, and the [example reference](../../../examples/python-sdk-agent/README.md) owns the runnable program. The [Python SDK reference](../../../python/sdk/README.md) covers lifecycle, results, notifications, and low-level behavior; the [dsh CLI reference](../../../apps/cli/reference/README.md) covers profile layering.
+The [bundle reference](../../../packages/bundle/sdk-minimal/README.md) owns the exact tree, and the [example reference](../../../python/sdk/examples/README.md) owns the runnable program. The [Python SDK reference](../../../python/sdk/README.md) covers lifecycle, results, notifications, and low-level behavior; the [dsh CLI reference](../../../apps/cli/reference/README.md) covers profile layering.

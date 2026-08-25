@@ -1,4 +1,4 @@
-# Agent Note: 保留缓存的 fork child 保持 one-shot
+# Agent Note: fork 出的 child 保持 one-shot
 
 Status: implemented
 
@@ -12,7 +12,7 @@ fork 与 spawn 的唯一区别是 child 的 Session 会以 parent 已完成轮�
 
 ## 决策
 
-保留缓存的组合会把 fork 委派工具绑定为 `backgroundMode: one-shot`：[base 组合包](../../../../packages/bundle/base/cordis.patch.yml)、[ACP 示例](../../../../examples/acp-agent/cordis.yml)与[headless 示例](../../../../examples/headless-agent/cordis.yml)。base 组合包保留 `run_in_background`，因为它挂载了 task 服务；两个示例设置 `enableRunInBackground: false`，因为它们都不挂载 task 服务，否则一次 one-shot 后台启动会在调用时因缺少 `tasks` 服务而失败。standard、code 与 Cordis CLI preset 则把 fork 绑定为 `continuable`；其子级作用域的 `report` 增量会使继承前缀失效，并接受这里说明的重算成本。
+所有交付组合都从 [base bundle](../../../../packages/bundle/base/cordis.patch.yml)继承 fork 委派工具的 `backgroundMode: one-shot`。base bundle 保留 `run_in_background`，因为它也挂载了结算后台工作所需的 task 服务。
 
 one-shot child——前台与后台皆然——经由 `SubagentRuntime.start()` 创建，该路径从不进入可继续的 activation setup 注册表，因此 `report` 与它的提示词 section 都不会被安装。于是一个 fork 出的 one-shot child 的系统提示词与工具 schema 与其 parent 相同，只差部署逐个委派工具主动选择的 `persona` 与 `toolFilter` 增量。
 
@@ -20,9 +20,9 @@ one-shot child——前台与后台皆然——经由 `SubagentRuntime.start()` 
 
 ### 该限制在于组合，不在于代码
 
-`ForkInProcessProvider.prepareContinuable` 仍然实现完好，`ctx.subagents.startContinuable()` 也接受 `fork`；组合会选择 fork 工具采用 one-shot 还是 continuable。`tool-subagent` 在挂载时同时知道提供方的 `inheritsParentContext` 与自身的 `backgroundMode`，因此一个加载期拒绝该组合的检查是可行的，而这里刻意不加：该组合并非普遍错误。只有在某个 child 作用域增量位于继承历史之前时，它才会产生高昂成本，而产生该增量的包——[`dsh-tool-subagent-report`](../../../../packages/subagent/tool-subagent-report/README.zh.md)——是独立安装的，并且按其自身设计对 `tool-subagent` 不可见。一个不安装 report 包的部署可以在前缀完好的前提下运行可继续的 fork child。把某一份插件清单的后果写成委派工具的不变量，会让该工具断言它无法观察到的事实。
+`ForkInProcessProvider.prepareContinuable` 仍然实现完好，`ctx.subagents.startContinuable()` 也仍接受 `fork`；改动的只有随附的 `cordis.yml` 行。`tool-subagent` 在挂载时同时知道提供方的 `inheritsParentContext` 与自身的 `backgroundMode`，因此一个加载期拒绝该组合的检查是可行的，而这里刻意不加：该组合并非普遍错误。它只在某个 child 作用域增量位于继承历史之前时才是错的，而产生该增量的包——[`dsh-tool-subagent-report`](../../../../packages/subagent/tool-subagent-report/README.zh.md)——是独立安装的，并且按其自身设计对 `tool-subagent` 不可见。一个不安装 report 包的部署可以在前缀完好的前提下运行可继续的 fork child。把某一份插件清单的后果写成委派工具的不变量，会让该工具断言它无法观察到的事实。
 
-保留缓存的条件记录为 `prepareContinuable` 方法上的 `TODO(fork-continuable-prefix-reuse)` 标记，并由 issue #2124 跟踪：当 child 的系统提示词与工具 schema 能与其 parent 逐字节一致时，可继续 fork 就能保留继承前缀。
+重新开放的条件记录为 `prepareContinuable` 方法上的 `TODO(fork-continuable-prefix-reuse)` 标记——随附组合不调用这个方法——并由 issue #2124 跟踪：当 child 的系统提示词与工具 schema 能与其 parent 逐字节一致时，可继续 fork 即可重新开放。
 
 ## 备选方案
 
@@ -30,7 +30,7 @@ one-shot child——前台与后台皆然——经由 `SubagentRuntime.start()` 
 
 **干脆不挂载 fork 提供方。** 这是该限制更彻底的形式。否决的原因是前台 fork *正是*复用前缀的那种情形，且不受 report 通道影响，因此全面禁用会在不换来任何 one-shot 绑定尚未换来的东西的同时放弃该能力——并且随附组合将没有任何一个演练 session 初始内容。
 
-**在保留缓存的组合中随附可继续的 fork child 并接受这份损失。** base 组合包与 ACP/headless 示例不采用，因为这份损失是全额而非边际的：复用在继承历史之前就已中断，于是 child 为一份自己复制过来、目的恰恰是不必付费的 transcript 付了全额预填充。CLI preset 选择了另一项取舍并保留可继续 fork。想要一个没有继承上下文的长期 child 的部署，本来就有 `spawn`。
+**照常随附可继续的 fork child 并接受这份损失。** 否决的原因是这份损失是全额而非边际的：复用在继承历史之前就已中断，于是 child 为一份自己复制过来、目的恰恰是不必付费的 transcript 付了全额预填充。想要一个没有继承上下文的长期 child 的部署，本来就有 `spawn`。
 
 **让 `report` 对每个 Agent 可见。** 全局注册会通过让 parent 与 child 拥有相同的 schema 与 section 来恢复逐字节相同的前缀。否决的原因是根 agent、one-shot child、远端 child 与无 agent 调用方都会宣告一件推导不出收件方的工具，而执行期拒绝会让 schema 可见性与权限彼此矛盾——这正是[report 工具 Agent Note](../feature/2026-07-30-continuable-subagent-report-tool.zh.md)已经定下的作用域局部决策。
 
@@ -38,12 +38,12 @@ one-shot child——前台与后台皆然——经由 `SubagentRuntime.start()` 
 
 ## 后果
 
-- base 组合包与 ACP/headless 示例只创建 one-shot fork child；其中的 `subagent_fork` 会把结果返回给调用方的轮次，`send_message` 也只寻址 spawn 出的 child。三个 CLI preset 会创建可继续的 fork child。
-- 除非部署在 fork 委派工具上配置了 `persona`、`toolFilter` 或不同的 LLM 路由，one-shot fork child 的请求前缀会与其 parent 逐字节相同，因此初始内容的 token 成本可以换来提供方侧的复用。可继续 fork 会在继承历史之前增加 `report`，从而失去该复用。
-- fork 提供方的可继续路径有 CLI 生产调用方与包内测试。同一条 seam 也接受 one-shot 组合，因此某个组合包或 `--patch` 覆盖层可以无需改动代码、也不会有任何警告地选择任一生命周期。
+- 没有任何随附组合会创建可继续的 fork child；`subagent_fork` 把结果返回给调用方的轮次，而 `send_message` 只寻址 spawn 出的 child。
+- 除非部署在 fork 委派工具上配置了 `persona` 或 `toolFilter`，fork child 的请求前缀与其 parent 逐字节相同，因此初始内容的 token 成本重新换来了提供方侧的复用。
+- fork 提供方的可继续路径没有生产调用方，也没有整体组装层面的覆盖。它保留自己的包内测试，seam 也仍然接受它，因此某个组合包或 `--patch` 覆盖层可以无需改动代码、也不会有任何警告地把它重新引入。
 - `subagent_fork` 面向模型的 schema 发生变化：base 组合包中可继续的后台措辞被 one-shot 的 task 措辞取代，在两个示例中则完全消失。受影响的无密钥快照工具 schema 伴随文件在同一次改动中重新记录。
-- 在每个可继续组合中，report 义务都会覆盖 spawn 出的 child；在 CLI preset 中，它也覆盖 fork 出的 child。它的 `next-step` 默认调度、权限模型与覆盖仍独立于 fork 组合。
+- 在随附部署中，report 义务的覆盖范围收窄到 spawn 出的 child。它的 `next-step` 默认调度、权限模型与覆盖仍独立于 fork 组合。
 
 ### 已接受的风险
 
-one-shot 限制存在于三个配置文件与一处代码注释中，而不在门禁里；CLI preset 行已经选择 `backgroundMode: continuable` 并承担前缀损失。任何组合包或 profile 补丁都能选择任一方式，且不会收到警告。这就是不把某一份插件清单的后果写入 `tool-subagent` 所接受的代价。
+该限制存在于三个配置文件与一处代码注释中，而不在门禁里。未来某个组合包行或 profile 补丁可以在 fork 工具上设置 `backgroundMode: continuable`，从而悄然重新引入前缀损失；没有任何东西会失败得很响亮。这就是不把某一份插件清单的后果写入 `tool-subagent` 所接受的代价。
