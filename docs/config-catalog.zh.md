@@ -168,9 +168,9 @@ export type PresetTrust = 'system' | 'user'
  * Bundle config: each field forwarded verbatim to the child that owns it —
  * `agents` to the agent loop (an app that pre-creates no agents, like the ACP
  * bridge, simply omits it), `includeHarnessIdentity`, `includeRuntimeContext`,
- * `persona`, `personaComplete`, and `toolOrder` to the system-prompt plugin
- * (the fixed opener, dynamic-context policy, deployment persona completeness,
- * and explicit model-facing tool order), the `tools` object to the tool
+ * `persona`, and `toolOrder` to the system-prompt plugin (the fixed opener,
+ * dynamic-context policy, deployment persona, and explicit model-facing tool
+ * order), the `tools` object to the tool
  * registry (its presentation `mode`),
  * `dshHome` to bash environment and local skill discovery, `sessionTitle` to
  * the fallback title service, `skills` to the
@@ -199,8 +199,6 @@ export interface Config {
   includeRuntimeContext?: SystemPromptConfig['includeRuntimeContext']
   /** The deployment persona (see dsh-system-prompt's `Config`). */
   persona?: SystemPromptConfig['persona']
-  /** Whether the deployment persona is the complete system prompt. */
-  personaComplete?: SystemPromptConfig['personaComplete']
   /** The explicit model-facing tool order (see dsh-system-prompt's `Config`). */
   toolOrder?: SystemPromptConfig['toolOrder']
   /** The tool registry's config — its presentation `mode` (see dsh-tools' `Config`). */
@@ -614,7 +612,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
+来源：[`packages/experimental/tool-agent-team/src/index.ts:18`](../packages/experimental/tool-agent-team/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -1716,13 +1714,6 @@ export interface Config {
 export interface JsonRpcConfig {
   /** Report max-token turn/subagent termination as a successful SDK result. */
   maxTokensAsSuccess?: boolean
-  /** Per-root-agent model-facing tool filter; an allow list excludes later unnamed global tools. */
-  toolFilter?: {
-    /** Global tool names that remain visible. */
-    allow?: string[]
-    /** Global tool names removed from visibility. */
-    deny?: string[]
-  }
   /** Transport input override; production uses `process.stdin`. */
   input?: Readable
   /** Transport output override; production uses `process.stdout`. */
@@ -1789,7 +1780,7 @@ export interface Config {
 export type JsonlCompression = 'zstd' | 'none'
 ```
 
-来源：[`packages/session/session-persistence-jsonl/src/index.ts:62`](../packages/session/session-persistence-jsonl/src/index.ts)
+来源：[`packages/session/session-persistence-jsonl/src/index.ts:64`](../packages/session/session-persistence-jsonl/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-sqlite"></a>
 
@@ -2459,8 +2450,6 @@ export interface Config {
    * `deployment:persona` shadows it; `{{variable}}` references are strict.
    */
   persona?: string
-  /** Treat the deployment persona as the complete system prompt (default false). */
-  personaComplete?: boolean
   /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names
@@ -2470,7 +2459,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2790,7 +2779,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
+来源：[`packages/workflow/tool-ralph/src/index.ts:22`](../packages/workflow/tool-ralph/src/index.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 
@@ -2955,7 +2944,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/terminal/tool-terminal/src/index.ts:35`](../packages/terminal/tool-terminal/src/index.ts)
+来源：[`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal/tool-terminal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-todo"></a>
 
@@ -3023,7 +3012,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/workflow/tool-workflow/src/index.ts:33`](../packages/workflow/tool-workflow/src/index.ts)
+来源：[`packages/workflow/tool-workflow/src/index.ts:32`](../packages/workflow/tool-workflow/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 

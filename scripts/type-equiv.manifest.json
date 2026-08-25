@@ -558,6 +558,11 @@
     },
     {
       "doc": "docs/subsystems/persistence.md",
+      "symbol": "SessionFormatMigration",
+      "source": "packages/session/session-persistence/src/format-decoder.ts"
+    },
+    {
+      "doc": "docs/subsystems/persistence.md",
       "symbol": "SessionRawArtifact",
       "source": "packages/session/session-persistence/src/index.ts"
     },
