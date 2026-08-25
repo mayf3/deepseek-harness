@@ -2,6 +2,8 @@
  * Settings-namespace scope contracts owned beside the settings transport.
  */
 
+import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+
 /** Client-side sync state of one settings namespace. */
 export interface SettingsScopeSnapshot<T> {
   /**
@@ -46,7 +48,8 @@ export interface SettingsScopeSpec<T> {
 /**
  * Reactive owner handle over one namespace's durable section — the browser
  * mirror of the Host-side `SettingsScope` owner seam. Domain services read
- * and observe the snapshot and route explicit user choices through `set`.
+ * and observe the snapshot and route explicit user choices through its
+ * mutation methods.
  */
 export interface SettingsScope<T> {
   /** @returns the current sync snapshot (stable reference until the next change). */
@@ -57,6 +60,13 @@ export interface SettingsScope<T> {
    * @returns the disposer removing this listener.
    */
   subscribe(listener: () => void): () => void
+  /**
+   * Queue one atomic namespace mutation. All operations share one revision
+   * fence, Host validation, persistence decision, and recovery read.
+   * @param ops - ordered field operations copied when queued.
+   * @returns settlement after the mutation and any latest-write recovery read.
+   */
+  mutate(ops: readonly SettingsPathOpView[]): Promise<void>
   /**
    * Queue one field write. Rapid writes preserve mutation order, each carries
    * the latest known namespace revision, and only the latest settlement may

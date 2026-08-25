@@ -10,13 +10,13 @@ Registering an LLM adapter makes its routes reachable, but does not authorize an
 
 ## Decision
 
-The Host-owned `subagent-model-selection` settings section stores `allowedModels`, an array of exact `{ provider, model }` routes. An empty array disables model-facing child route selection. The Plugins settings card reads the live adapter directory through `llm.models`, lets the user stage one or more exact routes, and replaces the whole array in one revision-fenced field write. It stores no adapter-owned display names, descriptions, or reasoning-effort metadata. A stored route absent from the current directory remains visible as unavailable and removable; a provider-local catalog failure does not block other providers or erase stored authorization.
+The Host-owned `subagent-model-selection` settings section stores an explicit `enabled` switch and `allowedModels`, an array of exact `{ provider, model }` routes. Enabling requires at least one route; disabling may retain the selected routes for later reuse. The Plugins settings card reads the live adapter directory through `llm.models`, lets the user stage the switch and routes, and saves both fields in one revision-fenced settings mutation. It stores no adapter-owned display names, descriptions, or reasoning-effort metadata. A stored route absent from the current directory remains visible as unavailable and removable; a provider-local catalog failure does not block other providers or erase stored authorization.
 
-A newly composed top-level Session snapshots a non-empty route list in `subagent/model-selection-policy` before its model-selectable definitions can reach a request. Child Sessions inherit that exact list from their live parent, and resumed Sessions use the recorded event instead of current settings. Settings changes therefore affect only subsequently composed top-level Sessions.
+A newly composed top-level Session snapshots the route list in `subagent/model-selection-policy` when the setting is enabled, before its model-selectable definitions can reach a request. Event presence means selection was enabled; the event does not store the global switch. Child Sessions inherit that exact list from their live parent, and resumed Sessions use the recorded event instead of current settings. Settings changes therefore affect only subsequently composed top-level Sessions, while a non-empty legacy Session without the event remains disabled.
 
 The fixed `list_subagent_models` schema does not enumerate the policy. At call time, provider and model listings are the intersection of the Session route list and the adapter's live advertised directory. An exact provider/model lookup first requires authorization, then resolves the adapter-owned model metadata and all advertised reasoning efforts. The delegation executor independently rejects any explicit provider, model, or effort selection whose effective provider/model route is outside the Session list before `resolveCallConfig()` validates adapter availability and effort support. A call that supplies no selection field retains configured or inherited routing because the model made no route choice.
 
-Static `enableModelSelection: true` remains an unrestricted deployment-owned mode for custom compositions. The shipped `modelSelectionSettings` path is user-authorized and default-off. The primary spawn tool uses that path; the shipped fork tool still exposes no route selection so inherited conversation prefixes remain eligible for provider-side KV Cache reuse.
+Model selection has no unrestricted static mode. The default-off Host setting is the only authority, and an enabled Session always carries an exact allowlist. The primary spawn tool reads that setting; the shipped fork tool still exposes no route selection so inherited conversation prefixes remain eligible for provider-side KV Cache reuse.
 
 ## Alternatives considered
 
@@ -24,7 +24,7 @@ Static `enableModelSelection: true` remains an unrestricted deployment-owned mod
 
 **Filter only the settings UI or discovery result.** Rejected because a model can guess a route or retain one from an earlier transcript. Authorization is enforced in the executor that starts the child.
 
-**Store `enabled` and `allowedModels` as separate fields.** Rejected because two writes admit an enabled state with no completed authorization decision. A non-empty array is both the opt-in and its exact policy; an empty user-layer array can explicitly disable a deployment base list.
+**Infer enablement from a non-empty `allowedModels` array.** Rejected because disabling would have to discard a useful selection or preserve a non-empty array whose meaning depends on write history. The explicit switch is authoritative, and the settings scope submits both fields in one Host-validated mutation so no intermediate state is persisted.
 
 **Store per-route reasoning-effort allowlists.** Rejected because the user decision concerns child models, while effort ids and compatibility belong to the exact adapter route. Every adapter-supported effort remains available after the route is authorized.
 

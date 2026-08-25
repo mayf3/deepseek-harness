@@ -1,7 +1,9 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { describe, expect, it, vi } from 'vitest'
-import type { JsonValue, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  JsonValue, SettingsNamespaceView, SettingsPathOpView,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { SettingsSchemaService } from '../src/client/schema.ts'
@@ -171,6 +173,31 @@ describe('SettingsScopeController', () => {
       'ui-test',
       [{ op: 'set', path: ['preference'], value: 'light' }],
       5,
+    )
+  })
+
+  it('sends one copied multi-field mutation behind one revision fence', async () => {
+    const describeCall = vi.fn().mockResolvedValueOnce(described({ preference: 'system' }, 7))
+    const mutate = vi.fn().mockResolvedValueOnce(ok(view({ preference: 'dark' }, 8)))
+    const { mirror, scope } = derivedScope({ describe: describeCall, mutate })
+    await mirror.load()
+    const ops: SettingsPathOpView[] = [
+      { op: 'set', path: ['enabled'], value: true },
+      { op: 'set', path: ['allowedModels'], value: [{ provider: 'alpha', model: 'fast' }] },
+    ]
+
+    const write = scope.mutate(ops)
+    ops[0] = { op: 'unset', path: ['enabled'] }
+    ;(ops[1] as { value: Array<{ model: string }> }).value[0]!.model = 'changed'
+    await write
+
+    expect(mutate).toHaveBeenCalledWith(
+      'ui-test',
+      [
+        { op: 'set', path: ['enabled'], value: true },
+        { op: 'set', path: ['allowedModels'], value: [{ provider: 'alpha', model: 'fast' }] },
+      ],
+      7,
     )
   })
 

@@ -20,9 +20,10 @@ export const AllowedModelRouteSchema: z<AllowedModelRoute> = z.object({
 })
 
 /** Route-selection authority captured by one delegation definition. */
-export type ModelSelectionPolicy =
-  | { readonly kind: 'unrestricted' }
-  | { readonly kind: 'allowlist'; readonly routes: readonly AllowedModelRoute[] }
+export interface ModelSelectionPolicy {
+  /** Exact provider/model routes authorized for explicit selection. */
+  readonly routes: readonly AllowedModelRoute[]
+}
 
 /**
  * Stable identity for one provider/model pair.
@@ -132,7 +133,7 @@ export function assertAllowedModelSelection(
   requested: AgentOptions | undefined,
   request: DelegationModelRequest,
 ): void {
-  if (policy?.kind !== 'allowlist' || !hasDelegationModelRequest(request)) return
+  if (policy === undefined || !hasDelegationModelRequest(request)) return
   const provider = requested?.provider ?? parentOptions.provider
   const model = requested?.model ?? parentOptions.model
   if (provider === undefined || model === undefined) {

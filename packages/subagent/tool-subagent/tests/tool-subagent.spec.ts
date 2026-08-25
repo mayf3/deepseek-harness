@@ -964,7 +964,10 @@ describe('dsh-tool-subagent background mode', () => {
   })
 
   it('skips background startup when cancellation wins asynchronous route preflight', async () => {
-    const ctx = await backgroundSetup({ provider: 'mock', enableModelSelection: true })
+    const ctx = await backgroundSetup({
+      provider: 'mock',
+      agentOptions: { provider: 'alpha', model: 'selected-model' },
+    })
     const parent = ownerAgent(ctx, 'sess-parent')
     const adapter = new MockAdapter([])
     let releasePreflight!: () => void
@@ -979,8 +982,6 @@ describe('dsh-tool-subagent background mode', () => {
     const resultPromise = callSubagent(ctx, {
       description: 'cancelled selection',
       prompt: 'do it',
-      provider: 'alpha',
-      model: 'selected-model',
       run_in_background: true,
     }, { agent: parent, signal: controller.signal })
     await vi.waitFor(() => { expect(resolveModel).toHaveBeenCalledOnce() })

@@ -10,13 +10,13 @@ Status: implemented
 
 ## Decision
 
-Host 自有的 `subagent-model-selection` 设置 section 保存 `allowedModels`，即由精确 `{ provider, model }` 路由组成的数组。空数组会关闭面向模型的子级路由选择。Plugins 设置卡通过 `llm.models` 读取实时适配器目录，让用户暂存一条或多条精确路由，再用一次带 revision 限制的字段写入整体替换该数组。它不保存适配器自有的显示名称、描述或推理强度元数据。当前目录中缺失的已存路由仍显示为不可用并允许移除；某个提供方的目录失败不会阻塞其他提供方，也不会清除已存授权。
+Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 开关与 `allowedModels`，后者是由精确 `{ provider, model }` 路由组成的数组。启用时必须至少有一条路由；关闭时可以保留已选路由，供以后重新启用。Plugins 设置卡通过 `llm.models` 读取实时适配器目录，让用户暂存开关与路由，再在一次带 revision 限制的设置 mutation 中保存两个字段。它不保存适配器自有的显示名称、描述或推理强度元数据。当前目录中缺失的已存路由仍显示为不可用并允许移除；某个提供方的目录失败不会阻塞其他提供方，也不会清除已存授权。
 
-新组合的顶层 Session 会在模型可选定义进入请求之前，把非空路由列表快照记录为 `subagent/model-selection-policy`。子 Session 从在线父级继承同一份精确列表，恢复的 Session 使用已记录事件而不是当前设置。因此，设置修改只影响之后组合的顶层 Session。
+设置启用时，新组合的顶层 Session 会在模型可选定义进入请求之前，把路由列表快照记录为 `subagent/model-selection-policy`。事件存在就表示模型选择已启用；事件不保存全局开关。子 Session 从在线父级继承同一份精确列表，恢复的 Session 使用已记录事件而不是当前设置。因此，设置修改只影响之后组合的顶层 Session，而已有非空日志但没有该事件的 Session 仍保持禁用。
 
 固定的 `list_subagent_models` schema 不会枚举该策略。调用时，提供方和模型列表是 Session 路由列表与适配器实时公布目录的交集。精确 provider/model 查询先要求授权，再解析适配器自有的模型元数据和全部已公布推理强度。委派执行器还会独立拒绝任何生效 provider/model 路由不在 Session 列表内的显式提供方、模型或强度选择，然后才由 `resolveCallConfig()` 校验适配器可用性与强度支持。完全没有选择字段的调用保留配置或继承路由，因为模型没有作出路由选择。
 
-静态 `enableModelSelection: true` 继续作为自定义组合中由部署方所有的无限制模式。随附的 `modelSelectionSettings` 路径由用户授权且默认关闭。主 spawn 工具使用该路径；随附 fork 工具仍不公开路由选择，使继承的对话前缀继续符合提供方侧 KV Cache 复用条件。
+模型选择不再有无限制的静态模式。默认关闭的 Host 设置是唯一授权来源，启用的 Session 始终携带精确允许列表。主 spawn 工具读取该设置；随附 fork 工具仍不公开路由选择，使继承的对话前缀继续符合提供方侧 KV Cache 复用条件。
 
 ## Alternatives considered
 
@@ -24,7 +24,7 @@ Host 自有的 `subagent-model-selection` 设置 section 保存 `allowedModels`�
 
 **只过滤设置 UI 或发现结果。** 不采用，因为模型可以猜测路由，或从较早的 transcript 中保留路由。授权由启动子级的执行器强制执行。
 
-**把 `enabled` 与 `allowedModels` 存成两个字段。** 不采用，因为两次写入会产生已经启用但尚无完整授权决定的状态。非空数组同时表示 opt-in 与精确策略；用户层空数组可以显式关闭部署基础列表。
+**从非空 `allowedModels` 数组推断是否启用。** 不采用，因为关闭功能时要么必须丢弃仍有用的选择，要么要保留一个含义取决于写入历史的非空数组。显式开关是权威依据，设置 scope 会在一次由 Host 校验的 mutation 中提交两个字段，因此不会持久化中间状态。
 
 **保存每条路由的推理强度允许列表。** 不采用，因为用户决定针对子级模型，而强度 id 与兼容性属于精确适配器路由。路由获准后，仍可使用适配器支持的每种强度。
 

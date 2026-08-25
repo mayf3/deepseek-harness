@@ -20,8 +20,10 @@ export interface AllowedSubagentModel {
 
 /** Settings fields stored for subagent model selection. */
 export interface SubagentModelSelectionSettings {
+  /** Whether model-facing child route selection applies to new Sessions. */
+  enabled: boolean
   /** Exact child routes offered to newly composed top-level Sessions. */
-  allowedModels?: AllowedSubagentModel[]
+  allowedModels: AllowedSubagentModel[]
 }
 
 /** One catalog row joined with a stored route that may no longer be advertised. */
@@ -64,7 +66,7 @@ export interface SubagentModelSelectionCardFace {
   toggleModel: (key: string) => void
   /** Retry the adapter directory. */
   retryCatalog: () => void
-  /** Persist the whole exact route list as one revision-fenced field write. */
+  /** Persist the switch and exact routes as one revision-fenced mutation. */
   save: () => void
   /** Drop the staged enabled state and route choices. */
   discard: () => void
@@ -151,9 +153,10 @@ export class SubagentModelSelectionCardController {
   ) {
     this.store = createSnapshotStore(this.projection())
     this.unsubscribe = scope.subscribe(() => {
-      if (this.currentRoutes().length > 0 && this.catalogStatus === 'idle') void this.loadCatalog()
+      if (this.enabled() && this.catalogStatus === 'idle') void this.loadCatalog()
       this.publish()
     })
+    if (this.enabled() && this.catalogStatus === 'idle') void this.loadCatalog()
   }
 
   /** Stop observing settings and suppress late directory/write settlements. */
@@ -180,7 +183,11 @@ export class SubagentModelSelectionCardController {
   }
 
   private currentRoutes(): AllowedSubagentModel[] {
-    return this.scope.getSnapshot().value?.allowedModels?.map(route => ({ ...route })) ?? []
+    return this.scope.getSnapshot().value?.allowedModels.map(route => ({ ...route })) ?? []
+  }
+
+  private currentEnabled(): boolean {
+    return this.scope.getSnapshot().value?.enabled ?? false
   }
 
   private selected(): Set<string> {
@@ -188,11 +195,11 @@ export class SubagentModelSelectionCardController {
   }
 
   private enabled(): boolean {
-    return this.draftEnabled ?? this.currentRoutes().length > 0
+    return this.draftEnabled ?? this.currentEnabled()
   }
 
   private beginDraft(): Set<string> {
-    this.draftEnabled ??= this.currentRoutes().length > 0
+    this.draftEnabled ??= this.currentEnabled()
     this.draftSelected ??= new Set(this.currentRoutes().map(subagentModelKey))
     return this.draftSelected
   }
@@ -233,7 +240,6 @@ export class SubagentModelSelectionCardController {
   }
 
   private desiredRoutes(): AllowedSubagentModel[] {
-    if (!this.enabled()) return []
     return this.candidates()
       .filter(candidate => candidate.selected)
       .map(({ provider, model }) => ({ provider, model }))
@@ -241,17 +247,22 @@ export class SubagentModelSelectionCardController {
 
   private async save(): Promise<void> {
     const snapshot = this.scope.getSnapshot()
+    const desiredEnabled = this.enabled()
     const desired = this.desiredRoutes()
     if (this.disposed || snapshot.status !== 'ready' || !snapshot.writable || this.saving
-      || sameRoutes(this.currentRoutes(), desired) || (this.enabled() && desired.length === 0)) return
+      || (this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired))
+      || (desiredEnabled && desired.length === 0)) return
     const generation = this.saveGeneration
     this.saving = true
     this.saved = false
     this.failed = false
     this.publish()
-    await this.scope.set('allowedModels', desired)
+    await this.scope.mutate([
+      { op: 'set', path: ['enabled'], value: desiredEnabled },
+      { op: 'set', path: ['allowedModels'], value: desired },
+    ])
     if (generation !== this.saveGeneration) return
-    const landed = sameRoutes(this.currentRoutes(), desired)
+    const landed = this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired)
     this.saving = false
     this.saved = landed
     this.failed = !landed
@@ -291,7 +302,7 @@ export class SubagentModelSelectionCardController {
     return {
       available: snapshot.status === 'ready',
       writable: snapshot.writable,
-      dirty: !sameRoutes(current, desired),
+      dirty: this.currentEnabled() !== enabled || !sameRoutes(current, desired),
       invalid: enabled && desired.length === 0,
       saving: this.saving,
       failed: this.failed,

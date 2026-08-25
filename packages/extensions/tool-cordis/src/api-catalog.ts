@@ -2086,10 +2086,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Singleton settings owner read by delegation tools when an Agent is published.',
     methods: [
       {
-        signature: 'currentAllowedModels(): AllowedModelRoute[]',
-        description: 'Read a detached route policy for the next eligible Agent publication.',
+        signature: 'current(): SubagentModelSelectionSettings',
+        description: 'Read a detached selection preference for the next eligible Agent publication.',
         parameters: [],
-        returns: 'exact allowed routes; an empty list disables model-facing selection.',
+        returns: 'the enabled state and exact allowed routes.',
       },
     ],
   },
@@ -3361,10 +3361,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentStatus',
     declaration: 'export type AgentStatus = \'idle\' | \'running\';',
-  },
-  {
-    name: 'AllowedModelRoute',
-    declaration: 'export interface AllowedModelRoute {\n    readonly provider: string;\n    readonly model: string;\n}',
   },
   {
     name: 'ApiKeyRecord',

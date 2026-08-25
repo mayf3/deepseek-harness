@@ -505,10 +505,10 @@ Singleton settings owner read by delegation tools when an Agent is published.
 
 ```ts cordis-catalog
 /**
- * Read a detached route policy for the next eligible Agent publication.
- * @returns exact allowed routes; an empty list disables model-facing selection.
+ * Read a detached selection preference for the next eligible Agent publication.
+ * @returns the enabled state and exact allowed routes.
  */
-currentAllowedModels(): AllowedModelRoute[]
+current(): SubagentModelSelectionSettings
 ```
 
 Source: [`packages/subagent/tool-subagent/src/model-selection-settings.ts`](../../packages/subagent/tool-subagent/src/model-selection-settings.ts)

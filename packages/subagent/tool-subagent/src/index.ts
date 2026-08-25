@@ -54,12 +54,9 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
-  /** Let the model discover and select the child LLM route (default false). */
-  enableModelSelection?: boolean
   /**
    * Sample the Host `subagent-model-selection` user setting for each new
-   * top-level session and inherit that decision in its child sessions. Mutually
-   * exclusive with `enableModelSelection`.
+   * top-level session and inherit that decision in its child sessions.
    */
   modelSelectionSettings?: boolean
   /**
@@ -109,7 +106,6 @@ export interface Config {
 export const Config: z<Config> = z.object({
   provider: z.string().required(),
   toolName: z.string().default('subagent'),
-  enableModelSelection: z.boolean().default(false),
   modelSelectionSettings: z.boolean().default(false),
   enableRunInBackground: z.boolean().default(true),
   backgroundMode: z.union(['one-shot', 'continuable'] as const).default('one-shot'),
@@ -317,14 +313,11 @@ export function apply(ctx: Context, config: Config): void {
   if (config.toolFilter !== undefined && config.toolFilter.allow === undefined && config.toolFilter.deny === undefined) {
     throw new Error('tool-subagent: `toolFilter` is configured but names neither `allow` nor `deny` — remove the key or fill the filter')
   }
-  if (config.enableModelSelection === true && config.modelSelectionSettings === true) {
-    throw new Error('tool-subagent: `enableModelSelection` and `modelSelectionSettings` are mutually exclusive')
-  }
   const backgroundEnabled = config.enableRunInBackground !== false
   const continuable = (config.backgroundMode ?? 'one-shot') === 'continuable'
   const toolName = config.toolName ?? 'subagent'
 
-  const modelSelectionCapable = config.enableModelSelection === true || config.modelSelectionSettings === true
+  const modelSelectionCapable = config.modelSelectionSettings === true
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     if (typeof config.maxDepth === 'number' && !subagentProvider.capabilities.depthLimit) {
@@ -607,7 +600,7 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   if (config.modelSelectionSettings !== true) {
-    install(ctx, config.enableModelSelection === true ? { kind: 'unrestricted' } : undefined)
+    install(ctx, undefined)
     return
   }
 
@@ -633,12 +626,12 @@ export function apply(ctx: Context, config: Config): void {
         const parent = ctx.get('agents')?.get(parentId)
         allowedModels = parent === undefined ? undefined : subagentModelSelectionPolicy(parent.session)
       } else if (agent.session.firstLiveSeq === 0) {
-        const current = settings.currentAllowedModels()
-        allowedModels = current.length === 0 ? undefined : current
+        const current = settings.current()
+        allowedModels = current.enabled ? current.allowedModels : undefined
       }
     }
     if (allowedModels !== undefined) recordSubagentModelSelection(agent.session, allowedModels)
-    return allowedModels === undefined ? undefined : { kind: 'allowlist', routes: allowedModels }
+    return allowedModels === undefined ? undefined : { routes: allowedModels }
   }
 
   const agent = ctx.agent

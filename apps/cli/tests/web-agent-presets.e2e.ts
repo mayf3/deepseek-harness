@@ -242,12 +242,16 @@ describe('the shipped Web composition', () => {
   })
 
   it('applies the default-off subagent model allowlist only to new sessions', async () => {
-    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { allowedModels: [] })
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: false,
+      allowedModels: [],
+    })
     const disabled = await ctx.agents.create({
       sessionId: SessionId('preset-model-selection-disabled'),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'standard').then(() => undefined),
     })
     await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
+      enabled: true,
       allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-v4-flash' }],
     })
     const enabled = await ctx.agents.create({
@@ -265,7 +269,7 @@ describe('the shipped Web composition', () => {
       ]))
       expect(toolNames(ctx, disabled.agent)).not.toContain('list_subagent_models')
     } finally {
-      await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { allowedModels: [] })
+      await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
       await enabled.dispose()
       await disabled.dispose()
     }

@@ -12,11 +12,18 @@ interface ListSubagentModelsRequest {
 }
 
 /** Resolve one registered provider with a model-correctable diagnostic. */
-function registeredProvider(llm: LlmRuntime, providerId: string): LlmProviderInfo {
+function registeredProvider(
+  llm: LlmRuntime,
+  policy: ModelSelectionPolicy,
+  providerId: string,
+): LlmProviderInfo {
   const providers = llm.listProviders()
   const provider = providers.find(candidate => candidate.id === providerId)
   if (provider !== undefined) return provider
-  const available = providers.map(candidate => candidate.id).join(', ') || '(none)'
+  const available = providers
+    .filter(candidate => policy.routes.some(route => route.provider === candidate.id))
+    .map(candidate => candidate.id)
+    .join(', ') || '(none)'
   throw new Error(`LLM provider "${providerId}" is not registered; available providers: ${available}`)
 }
 
@@ -40,24 +47,27 @@ async function listSubagentModels(
     throw new Error('`model` requires `provider`')
   }
   if (request.provider === undefined) {
-    const providers = llm.listProviders().filter(provider => policy.kind === 'unrestricted'
-      || policy.routes.some(route => route.provider === provider.id))
+    const providers = llm.listProviders()
+      .filter(provider => policy.routes.some(route => route.provider === provider.id))
     return providers.length === 0
       ? '(no LLM providers)'
       : providers.map(provider => `${provider.id} — ${provider.name}`).join('\n')
   }
   if (request.provider.length === 0) throw new Error('`provider` must be non-empty')
-  const provider = registeredProvider(llm, request.provider)
+  const allowedRoutes = policy.routes.filter(route => route.provider === request.provider)
+  if (allowedRoutes.length === 0) {
+    throw new Error(`LLM provider "${request.provider}" is not allowed for this Session`)
+  }
+  const provider = registeredProvider(llm, policy, request.provider)
   if (request.model === undefined) {
-    const models = (await llm.listModels(provider.id)).filter(model => policy.kind === 'unrestricted'
-      || policy.routes.some(route => route.provider === provider.id && route.model === model.id))
+    const models = (await llm.listModels(provider.id))
+      .filter(model => allowedRoutes.some(route => route.model === model.id))
     return models.length === 0
       ? `(no advertised models for ${provider.id})`
       : models.map(model => modelLine(provider.id, model)).join('\n')
   }
   if (request.model.length === 0) throw new Error('`model` must be non-empty')
-  if (policy.kind === 'allowlist'
-    && !policy.routes.some(route => route.provider === provider.id && route.model === request.model)) {
+  if (!allowedRoutes.some(route => route.model === request.model)) {
     throw new Error(`child LLM route "${provider.id}/${request.model}" is not allowed for this Session`)
   }
   const model = await llm.resolveModelInfo(provider.id, request.model, signal)
