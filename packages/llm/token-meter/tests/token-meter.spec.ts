@@ -468,6 +468,32 @@ describe('malformed replay and listener lifecycle', () => {
     expectRepeatedFailure(meter(), session, /no matching step\/start/)
   })
 
+  it('leaves the priced surface uncommitted when a later validation step rejects the event', () => {
+    // A valid append plan whose anchor validation throws: only commit
+    // ordering keeps the surface from double-counting across retries.
+    const session = Session.create(SessionId('bad-step-surface'))
+    appendHeader(session, header('deepseek-v4-flash'))
+    session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createMessage({
+        role: 'assistant',
+        content: [{ type: 'text', text: 'planned but never committed' }],
+        source: {
+          kind: 'model',
+          ...{ provider: 'mock', model: 'deepseek-v4-flash' },
+        },
+      }),
+    }, { surfaceOp: 'append', sourceEventSeqs: [] })
+    const service = meter()
+    const states = (service as unknown as {
+      states: WeakMap<Session, { surface: unknown[] }>
+    }).states
+    expectRepeatedFailure(service, session, /no matching step\/start/)
+    const state = states.get(session)
+    expect(state?.surface).toEqual([])
+  })
+
   it('clears completed step boundaries and rejects overlapping or late step events', () => {
     const overlapping = Session.create(SessionId('overlapping-step'))
     overlapping.append('step/start', { turn: 1, step: 1 })

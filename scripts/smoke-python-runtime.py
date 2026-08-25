@@ -30,7 +30,7 @@ CODE_PROMPT = "Use run_code to compute the packaged worker smoke value."
 CODE_WORKER_TEXT = "code worker smoke ok"
 WORKFLOW_PROMPT = "Use workflow to compute the packaged worker smoke value without agents."
 WORKFLOW_WORKER_TEXT = "workflow worker smoke ok"
-MINIMAL_PROMPT = "Exercise the packaged minimal agent's persistent Bash and string-replacement editor."
+MINIMAL_PROMPT = "Exercise the packaged minimal agent's persistent shell and string-replacement editor."
 MINIMAL_TEXT = "minimal agent smoke ok"
 MINIMAL_EDITOR_PATH_PREFIX = "Editor path: "
 FS_SEARCH_PROMPT = "Exercise the packaged filesystem search tools."
@@ -41,11 +41,20 @@ MCP_TEXT = "MCP client smoke ok"
 PROFILE_PLUGIN_PROMPT = "Verify the Python-installed dsh profile plugin."
 PROFILE_PLUGIN_TEXT = "profile plugin smoke ok"
 PROFILE_PLUGIN_MARKER = "PYTHON_INSTALLED_DSH_PROFILE_PLUGIN"
-MINIMAL_BASH_COMMAND = (
-    "counter=$(( ${counter:-0} + 1 )); export counter; "
-    "printf 'COUNT=%s CWD=%s\\n' \"$counter\" \"$PWD\"; "
-    "if [ \"$counter\" -eq 1 ]; then cd /tmp; fi"
+IS_WINDOWS = sys.platform == "win32"
+MINIMAL_SHELL_TOOL = "pwsh" if IS_WINDOWS else "bash"
+MINIMAL_SHELL_COMMAND = (
+    "$global:dshSdkCounter = [int]$global:dshSdkCounter + 1; "
+    'Write-Output "COUNT=$global:dshSdkCounter CWD=$((Get-Location).Path)"; '
+    "if ($global:dshSdkCounter -eq 1) { Set-Location $env:TEMP }"
+    if IS_WINDOWS
+    else (
+        "counter=$(( ${counter:-0} + 1 )); export counter; "
+        "printf 'COUNT=%s CWD=%s\\n' \"$counter\" \"$PWD\"; "
+        "if [ \"$counter\" -eq 1 ]; then cd /tmp; fi"
+    )
 )
+MINIMAL_SHELL_SECOND_CWD = str(Path(tempfile.gettempdir()).resolve()) if IS_WINDOWS else "/tmp"
 LEGACY_CUSTOM_DISABLED_ROWS = (
     "agent-instructions",
     "goal",
@@ -108,6 +117,8 @@ ADVANCED_SNAPSHOT_FILENAMES = ("result.json", "session.jsonl", "session.1.jsonl"
 MINIMAL_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal"
 )
+if IS_WINDOWS:
+    MINIMAL_SNAPSHOT_DIRECTORY /= "win-x64"
 MINIMAL_SNAPSHOT_FILENAMES = ("model-visible.json",)
 RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
@@ -301,8 +312,8 @@ def completion_chunks(body: dict[str, object]) -> list[dict[str, object]]:
     if minimal_prompt is not None:
         return tool_call_chunks(
             "minimal-bash-1",
-            "bash",
-            {"command": MINIMAL_BASH_COMMAND},
+            MINIMAL_SHELL_TOOL,
+            {"command": MINIMAL_SHELL_COMMAND},
         )
     scenario_prompts = {
         SNAPSHOT_DIRECT_CHILD_PROMPT,
@@ -438,17 +449,18 @@ def minimal_tool_followup(
     """Verify the checked-in minimal composition's PTY and editor."""
     if not call_id.startswith("minimal-"):
         return None
-    if call_id == "minimal-bash-1" and tool_name == "bash":
+    if call_id == "minimal-bash-1" and tool_name == MINIMAL_SHELL_TOOL:
         if "COUNT=1" not in tool_text:
-            raise AssertionError(f"first persistent bash call lost its output: {tool_text}")
+            raise AssertionError(f"first persistent shell call lost its output: {tool_text}")
         return tool_call_chunks(
             "minimal-bash-2",
-            "bash",
-            {"command": MINIMAL_BASH_COMMAND},
+            MINIMAL_SHELL_TOOL,
+            {"command": MINIMAL_SHELL_COMMAND},
         )
-    if call_id == "minimal-bash-2" and tool_name == "bash":
-        if "COUNT=2 CWD=/tmp" not in tool_text:
-            raise AssertionError(f"persistent bash did not retain state: {tool_text}")
+    if call_id == "minimal-bash-2" and tool_name == MINIMAL_SHELL_TOOL:
+        expected = f"COUNT=2 CWD={MINIMAL_SHELL_SECOND_CWD}"
+        if expected.lower() not in tool_text.lower():
+            raise AssertionError(f"persistent shell did not retain state: {tool_text}")
         messages = body.get("messages")
         if not isinstance(messages, list):
             raise AssertionError("persistent editor smoke request has no messages")
@@ -800,8 +812,9 @@ def smoke_sdk_live() -> None:
         sessions = dsh_home / "sessions"
         marker = root / "live-api-marker.txt"
         session_id = "installed-wheel-live-api"
+        shell_tool = "pwsh" if IS_WINDOWS else "bash"
         create_prompt = (
-            "Use the bash tool to create the file at the absolute path below with exactly one line "
+            f"Use the {shell_tool} tool to create the file at the absolute path below with exactly one line "
             f"containing {LIVE_API_SENTINEL}. Then reply with exactly {LIVE_API_SENTINEL}.\n{marker}"
         )
         verify_prompt = (
@@ -845,8 +858,8 @@ def smoke_sdk_live() -> None:
                 raise AssertionError(f"{label} turn returned {result.final_response!r}")
         if not marker.is_file():
             raise AssertionError(f"real-model tool turn did not create {marker}")
-        if marker.read_bytes() != f"{LIVE_API_SENTINEL}\n".encode():
-            raise AssertionError(f"real-model tool turn wrote unexpected bytes to {marker}")
+        if marker.read_text(encoding="utf-8").splitlines() != [LIVE_API_SENTINEL]:
+            raise AssertionError(f"real-model tool turn wrote unexpected text to {marker}")
         assert_zstd_session_log(sessions)
 
 
@@ -921,6 +934,7 @@ def smoke_sdk_custom(base_url: str, executable: Path) -> None:
             {"id": "session-log-deepseek", "config": {"enabled": True}},
             *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
             {"id": "tool-bash", "disabled": True},
+            {"id": "tool-pwsh", "disabled": True},
             {
                 "id": "tool-subagent",
                 "config": {
@@ -989,7 +1003,7 @@ def smoke_sdk_minimal(base_url: str, executable: Path, update_snapshots: bool) -
             raise AssertionError(f"minimal agent run emitted no final response: {result.events}")
         if editor_path.read_text() != "created by packaged editor\n":
             raise AssertionError(f"packaged editor wrote unexpected content: {editor_path.read_text()!r}")
-        assert_session_log(sessions, root, MINIMAL_TEXT, "COUNT=1", "COUNT=2 CWD=/tmp")
+        assert_session_log(sessions, root, MINIMAL_TEXT, "COUNT=1", "COUNT=2")
 
         files = build_minimal_snapshot_files(MockModelHandler.requests[first_request:], root)
         compare_snapshot_files(
@@ -1105,7 +1119,7 @@ def smoke_sdk_profile_plugin(base_url: str) -> None:
             "insert": [{"id": "python-sdk-blackbox-plugin", "name": "dsh-python-blackbox-plugin"}],
         }], indent=2))
 
-        dsh = Path(sysconfig.get_path("scripts")) / "dsh"
+        dsh = Path(sysconfig.get_path("scripts")) / ("dsh.exe" if IS_WINDOWS else "dsh")
         environment = {**os.environ, "DSH_HOME": str(dsh_home)}
         installed = subprocess.run(
             [str(dsh), "plugin", "--profile", "sdk", "add", f"file:{plugin}"],
@@ -1170,6 +1184,7 @@ def smoke_sdk_snapshot(base_url: str, executable: Path, update_snapshots: bool) 
             {"id": "session-log-deepseek", "config": {"enabled": True}},
             *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
             {"id": "tool-bash", "disabled": True},
+            {"id": "tool-pwsh", "disabled": True},
             {
                 "id": "tool-subagent",
                 "config": {
@@ -1243,6 +1258,7 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
             {"id": "session-log-deepseek", "config": {"enabled": True}},
             *({"id": row_id, "disabled": True} for row_id in LEGACY_CUSTOM_DISABLED_ROWS),
             {"id": "tool-bash", "disabled": True},
+            {"id": "tool-pwsh", "disabled": True},
             {
                 "id": "tool-subagent",
                 "config": {
@@ -1758,7 +1774,7 @@ def compare_snapshot_files(
     if update:
         directory.mkdir(parents=True, exist_ok=True)
         for name, content in files.items():
-            (directory / name).write_text(content, encoding="utf-8")
+            (directory / name).write_text(content, encoding="utf-8", newline="\n")
         print(f"smoke-python-runtime: updated snapshots in {directory}")
 
     existing = {
