@@ -700,7 +700,7 @@ describe('PTC mode native-tool denial through the agent loop', () => {
     }
   }
 
-  async function codeModeHarness(adapter: MockAdapter) {
+  async function ptcModeHarness(adapter: MockAdapter) {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
@@ -714,7 +714,7 @@ describe('PTC mode native-tool denial through the agent loop', () => {
     return ctx
   }
 
-  it('denies a model-direct native-tool call under code mode: tool body never runs and session records UNKNOWN_TOOL', async () => {
+  it('denies a model-direct native-tool call under PTC mode: tool body never runs and session records UNKNOWN_TOOL', async () => {
     let toolInvoked = false
     const tool = defineContentToolFixture({
       name: 'write',
@@ -729,7 +729,7 @@ describe('PTC mode native-tool denial through the agent loop', () => {
       },
     })
 
-    // Scripted model emits a native tool call under code mode — the wire
+    // Scripted model emits a native tool call under PTC mode — the wire
     // never advertised it, but a non-compliant provider may still emit one.
     const adapter = new MockAdapter([
       [
@@ -738,7 +738,7 @@ describe('PTC mode native-tool denial through the agent loop', () => {
       ],
     ])
 
-    const ctx = await codeModeHarness(adapter)
+    const ctx = await ptcModeHarness(adapter)
     ctx.tools.register(tool)
 
     const agent = ctx.agentLoop.create(SessionId('code-native'), { provider: 'mock', model: 'mock' })

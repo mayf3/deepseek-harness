@@ -391,7 +391,7 @@ describe('mode-aware wire contribution', () => {
 
   it("assembles under a python runtime in mode 'both' as well, SDK and schema together", async () => {
     // `both` reaches the same wireSchemas/requireCodeRuntime/SDK-section code
-    // as `code`, so this pins the mode-by-language matrix rather than a
+    // as `ptc`, so this pins the mode-by-language matrix rather than a
     // separate path — including that the `wireSchemas` projection behind
     // `assembly.tools` picks the Python flavor under `both` instead of hitting
     // the flavor-table guard.
@@ -401,7 +401,7 @@ describe('mode-aware wire contribution', () => {
     expect(assembly.sections.find(section => section.name === 'tools:sdk')?.text).toContain('class Tools(Protocol):')
     const runCodeSchema = assembly.tools.find(tool => tool.name === RUN_CODE_NAME)
     expect(runCodeSchema?.description).toContain('Execute a Python program')
-    // `both` keeps the native tools alongside run_code; `code` does not.
+    // `both` keeps the native tools alongside run_code; `ptc` does not.
     expect(assembly.tools.map(tool => tool.name)).toContain('echo')
   })
 
@@ -453,7 +453,7 @@ describe('mode-aware wire contribution', () => {
   it('degrades the run_code flavor to TypeScript when no runtime is mounted', async () => {
     // Any reader of the definition without a mounted runtime uses this fallback; the
     // shipped one is the tool-catalog generator, which boots the registry under
-    // `mode: code` and reads run_code's schema WITHOUT a runtime. peekRuntime
+    // `mode: ptc` and reads run_code's schema WITHOUT a runtime. peekRuntime
     // returns undefined there, so the flavor getter degrades to the TS default
     // rather than throwing. None of those readers feeds a model: assembly goes
     // through wireSchemas, which requires a runtime first.
@@ -1657,7 +1657,7 @@ describe('the run_code dispatch bridge', () => {
       .toThrow('maxParallelSubCalls must be a positive integer')
   })
 
-  it('direct construction in code mode defaults the parallel sub-call cap', async () => {
+  it('direct construction in PTC mode defaults the parallel sub-call cap', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
     const registry = new ToolRuntime(ctx, { mode: 'ptc' })
@@ -1672,7 +1672,7 @@ describe('the run_code dispatch bridge', () => {
     const assembly = await ctx.systemPrompt.assemble()
     expect(assembly.sections.some(section => section.name === 'tools:sdk')).toBe(false)
   })
-  it('denies a model-direct native-tool call under code mode as UNKNOWN_TOOL', async () => {
+  it('denies a model-direct native-tool call under PTC mode as UNKNOWN_TOOL', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt, {})
     const registry = new ToolRuntime(ctx, { mode: 'ptc' })

@@ -819,7 +819,7 @@ export class ToolRuntime extends Service {
   /**
    * Reserved presentation transport, kept outside the filterable registration
    * layers. Built on first need rather than at construction: which agents run
-   * a code mode is no longer known when the service is constructed, and the
+   * a PTC mode is no longer known when the service is constructed, and the
    * transport is stateless beyond its closures over `this`.
    */
   private ptcTransport: ToolDefinition | undefined
@@ -838,8 +838,8 @@ export class ToolRuntime extends Service {
   }
 
   /**
-   * The prompt statement of the `code` executor collapse, registered wherever
-   * {@link sdkSection} is and rendering empty outside an effective `code`.
+   * The prompt statement of the `ptc` executor collapse, registered wherever
+   * {@link sdkSection} is and rendering empty outside an effective `ptc`.
    *
    * Every tool contributes its own guidance section naming its tool, none of
    * them qualify how that tool is reached, and they all render before the SDK.
@@ -1207,7 +1207,7 @@ export class ToolRuntime extends Service {
   /**
    * Resolve the definition that MAY EXECUTE for a call, applying the mode
    * collapse at the operation boundary that owns it. The registry view
-   * (`get`) is presentation-agnostic; here a MODEL-DIRECT call under `code`
+   * (`get`) is presentation-agnostic; here a MODEL-DIRECT call under `ptc`
    * may only name the reserved `run_code` transport, while a nested
    * sub-dispatch (a `parent` token set — the `run_code` SDK calling a tool
    * it bound) may call any visible tool. Denial surfaces as `UNKNOWN_TOOL`
@@ -1311,7 +1311,7 @@ export class ToolRuntime extends Service {
    * security-relevant predicate, shared by {@link resolveExecution} and
    * {@link createExecution} so the two can never drift apart.
    *
-   * Resolved through {@link modeFor}, NOT `defaultMode`: an agent given `code`
+   * Resolved through {@link modeFor}, NOT `defaultMode`: an agent given `ptc`
    * by an agent preset under a native deployment is the composition
    * `dsh-agent-tool-presentation` exists for, and reading the deployment default would
    * leave exactly that agent uncollapsed — announcing one surface while
@@ -1370,7 +1370,7 @@ export class ToolRuntime extends Service {
     const parent = exec.parent
     const signal = exec.signal
     // Distinguish a mode-collapsed call (visible in the scope, denied only by
-    // the `code` collapse) from a genuinely unknown tool. A collapsed call is
+    // the `ptc` collapse) from a genuinely unknown tool. A collapsed call is
     // deterministically denied, so it terminates BEFORE the extensible policy
     // pipeline: pre-execute listeners, approval `ask`, and guards must never
     // observe — or worse, approve — a call that can only fail. An unknown tool

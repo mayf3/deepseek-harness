@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-An [agent preset](../../preset/agent-presets/README.md) carries `dsh-agent-tool-presentation` to choose which form of its tools the model sees: `native` (every visible schema), `code` (only `run_code` plus a generated SDK), or `both`. The tool registry itself stays on the host plane — this row only declares the presentation for the mounting agent, so a PTC mode session runs beside native ones in one process, each seeing its own catalog. A PTC mode waits for a code runtime before mounting, so a preset selecting PTC mode against a deployment without one fails at mount instead of at the first prompt. The `mode` field is required: a preset without this row already gets the deployment default. Choose it when an agent preset needs to fix the tool form its agents' models see.
+An [agent preset](../../preset/agent-presets/README.md) carries `dsh-agent-tool-presentation` to choose which form of its tools the model sees: `native` (every visible schema), `ptc` (only `run_code` plus a generated SDK), or `both`. The tool registry itself stays on the host plane — this row only declares the presentation for the mounting agent, so a PTC mode session runs beside native ones in one process, each seeing its own catalog. A PTC mode waits for a code runtime before mounting, so a preset selecting PTC mode against a deployment without one fails at mount instead of at the first prompt. The `mode` field is required: a preset without this row already gets the deployment default. Choose it when an agent preset needs to fix the tool form its agents' models see.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ An [agent preset](../../preset/agent-presets/README.md) carries `dsh-agent-tool-
 <a id="use-this-package"></a>
 ## Use this package
 
-Add this row to an agent preset to fix how every agent joined to that preset sees its tools. `native` presents each visible tool schema as a function definition; `code` presents only the `run_code` transport plus a generated SDK and the rule that only `run_code` may be called directly; `both` presents both forms. Agents that declare nothing get the deployment-wide `mode` on the [`dsh-tools`](../tools/README.md) row.
+Add this row to an agent preset to fix how every agent joined to that preset sees its tools. `native` presents each visible tool schema as a function definition; `ptc` presents only the `run_code` transport plus a generated SDK and the rule that only `run_code` may be called directly; `both` presents both forms. Agents that declare nothing get the deployment-wide `mode` on the [`dsh-tools`](../tools/README.md) row.
 
 ### Add the row to a preset
 
@@ -37,13 +37,13 @@ Add this row to an agent preset to fix how every agent joined to that preset see
 
 | Field | Default | Meaning |
 |---|---|---|
-| `mode` | required | `native` — every schema; `code` — `run_code` plus generated SDK; `both` — both forms |
+| `mode` | required | `native` — every schema; `ptc` — `run_code` plus generated SDK; `both` — both forms |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-agent-tool-presentation) is the exhaustive source for every accepted field. `mode` is required rather than defaulted because a preset without this row inherits the deployment default.
 
 ### What PTC mode requires
 
-Selecting `code` or `both` needs a composed code runtime (`ctx.codeRuntime`) whose language has a registered SDK renderer — the TypeScript runtime ships via [`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md), and both the TypeScript and Python SDK renderers are built into `dsh-tools`. A preset that selects a PTC mode against a deployment composing no such runtime refuses to mount, naming this row, so the failure lands where the operator can act instead of at the session's first request.
+Selecting `ptc` or `both` needs a composed code runtime (`ctx.codeRuntime`) whose language has a registered SDK renderer — the TypeScript runtime ships via [`dsh-code-runtime-worker-thread`](../../code-runtime/code-runtime-worker-thread/README.md), and both the TypeScript and Python SDK renderers are built into `dsh-tools`. A preset that selects a PTC mode against a deployment composing no such runtime refuses to mount, naming this row, so the failure lands where the operator can act instead of at the session's first request.
 
 ### One presentation per agent
 
