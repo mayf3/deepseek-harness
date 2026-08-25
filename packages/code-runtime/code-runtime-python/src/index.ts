@@ -1369,11 +1369,10 @@ export class PythonCodeRuntime extends CodeRuntime {
             buffered = buffered.subarray(newline + 1)
             /* v8 ignore next -- an empty line comes only from a forged `\n\n` write. */
             if (line.length === 0) continue
-            // Drop an oversized frame BEFORE toString/JSON.parse: the 256 MiB
-            // wire ceiling bounds the raw bytes, not the decoded structure (see
-            // FRAME_PARSE_CAP_BYTES), so a near-ceiling compact wide frame must
-            // not be parsed whole.
-            if (line.length > FRAME_PARSE_CAP_BYTES) continue
+            // No per-line cap check here: the unframed-buffer counter above
+            // already guarantees every line is within FRAME_PARSE_CAP_BYTES
+            // before this join runs, so a cap check on the line would be
+            // dead code.
             const text = line.toString('utf8')
             // JSON.parse would silently ROUND an integer token outside the
             // safe range before validation could see it, so a forged frame
