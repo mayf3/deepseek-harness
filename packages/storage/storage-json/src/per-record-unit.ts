@@ -76,7 +76,7 @@ async function loadPerRecordState(descriptor: KvUnitDescriptor, dir: string): Pr
     // (the fresh-upgrade shape is exactly an absent new tree).
   }
   if (entries !== undefined) {
-    for (const entry of entries) {
+    await Promise.all(entries.map(async (entry) => {
       if (entry.isDirectory()) {
         const records = state.tables.get(entry.name)
         if (records !== undefined) {
@@ -86,7 +86,7 @@ async function loadPerRecordState(descriptor: KvUnitDescriptor, dir: string): Pr
         const global = await readRecord(join(dir, entry.name), descriptor.version)
         if (global !== undefined) state.global = global
       }
-    }
+    }))
   }
   await migrateLegacyUnit(descriptor, dir, state)
   return state
@@ -142,12 +142,16 @@ async function migrateLegacyUnit(descriptor: KvUnitDescriptor, dir: string, stat
 
 /** Read one declared table's record documents into `records`. */
 async function loadTableRecords(records: Map<string, unknown>, version: number, dir: string): Promise<void> {
-  for (const file of await readdir(dir, { withFileTypes: true })) {
-    if (!file.name.endsWith('.json')) continue
+  const files = await readdir(dir, { withFileTypes: true })
+  const loaded = await Promise.all(files.map(async (file) => {
+    if (!file.name.endsWith('.json')) return
     const key = file.name.slice(0, -'.json'.length)
-    if (!SAFE_KEY_RE.test(key)) continue
+    if (!SAFE_KEY_RE.test(key)) return
     const record = await readRecord(join(dir, file.name), version)
-    if (record !== undefined) records.set(key, record)
+    if (record !== undefined) return [key, record] as const
+  }))
+  for (const record of loaded) {
+    if (record !== undefined) records.set(...record)
   }
 }
 
