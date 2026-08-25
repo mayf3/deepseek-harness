@@ -192,20 +192,21 @@ function materializePyScripts(): string {
 }
 
 /**
- * The fd-3 receive ceiling for one unframed line: a pure host-memory-safety
+ * The fd-3 receive cap for one unframed line: a pure host-memory-safety
  * bound, NOT an output budget. Binding `call` frames legitimately carry large
- * arguments (the seam puts no byte cap on binding traffic), so the ceiling
+ * arguments (the seam puts no byte cap on binding traffic), so the cap
  * must sit far above any plausible frame while still stopping a hostile
  * newline-free flood from growing the host accumulator without bound — the
- * child's RLIMIT_AS bounds the child, not the host string. 256 MiB mirrors
- * the order of the worker backend's default outer-output cap and V8's string
- * ceiling neighborhood; completion values have their own `maxValueBytes`
- * check at the `done` handler, deliberately decoupled from this. Not a config
- * knob because it is an internal framing invariant, not a deployment choice.
+ * child's RLIMIT_AS bounds the child, not the host string. 64 MiB mirrors
+ * the order of the worker backend's default outer-output cap while keeping
+ * decode amplification (see FRAME_PARSE_CAP_BYTES) a bounded factor of the
+ * wire bytes; completion values have their own `maxValueBytes` check at the
+ * `done` handler, deliberately decoupled from this. Not a config knob because
+ * it is an internal framing invariant, not a deployment choice.
  */
 /**
- * A frame's RAW length is capped before JSON.parse: the 256 MiB fd-3 wire
- * ceiling bounds the bytes, not the decoded structure, and a compact wide
+ * A frame's RAW length is capped before JSON.parse: the 64 MiB fd-3 frame
+ * parse cap bounds the bytes, not the decoded structure, and a compact wide
  * frame near that ceiling (e.g. a huge array of tiny elements) could decode to
  * far more host memory than the wire admitted — an OOM inside the receive
  * path. 64 MiB raw admits every legal config (the widest in-tree completion
@@ -607,7 +608,7 @@ function accrueStrayCost(buf: Buffer, state: Utf8CostState): number {
  */
 function capMessage(message: string, maxValueBytes: number): string {
   // Code-unit bounds BEFORE any encode, so a forged done frame carrying a
-  // message anywhere below the 256 MiB fd-3 frame ceiling cannot force a
+  // message anywhere below the 64 MiB fd-3 frame parse cap cannot force a
   // full-length UTF-8 copy under a 32 KiB cap. One UTF-16 code unit encodes to
   // at least one UTF-8 byte and at most three: three for a non-ASCII BMP
   // character, two apiece for the pair halves sharing an astral code point's
@@ -1077,8 +1078,8 @@ export class PythonCodeRuntime extends CodeRuntime {
         // pair contributes two of the four bytes its code point encodes to),
         // and the JSON form adds two quotes on top of the separator byte. So
         // `text.length + 3` never exceeds the true cost, and a forged `log`
-        // frame carrying a control-heavy string anywhere below the 256 MiB
-        // frame ceiling truncates here instead of allocating a
+        // frame carrying a control-heavy string anywhere below the 64 MiB
+        // frame parse cap truncates here instead of allocating a
         // hundreds-of-megabytes escaped copy under a small maxLogBytes.
         if (text.length + 3 > logBudget) {
           logsTruncated = true
@@ -1321,8 +1322,8 @@ export class PythonCodeRuntime extends CodeRuntime {
         // pipe read of the 64 MiB cap, orders of magnitude past the 32/64 KiB
         // defaults.
         //
-        // The cap used HERE is FRAME_PARSE_CAP_BYTES, not the 256 MiB wire
-        // ceiling, and ONLY when the held bytes are still a single unframed
+        // The cap used HERE is FRAME_PARSE_CAP_BYTES, not the old 256 MiB
+        // wire ceiling, and ONLY when the held bytes are still a single unframed
         // line (this chunk carries no newline, and earlier newline-bearing
         // chunks were joined immediately): a frame between 64 MiB and the
         // ceiling would otherwise be fully `Buffer.concat`-ed (a second copy
@@ -1360,7 +1361,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         // 53.7 GB that way, and 64 MiB copies 2.2 TB. Here each byte is copied
         // once into its block and never again, so the total stays linear, and the
         // block list is itself bounded — every block holds at least
-        // `MAX_PENDING_CHUNKS - 1` bytes, so reaching the 256 MiB ceiling admits
+        // `MAX_PENDING_CHUNKS - 1` bytes, so reaching the 64 MiB cap admits
         // at most a few hundred thousand of them.
         // Sealing runs ONLY on a newline-free chunk, and after the newline
         // branch below: a chunk carrying a newline must reach the join (and its
@@ -1453,7 +1454,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // next legitimate id exactly `nextCallId`.
       //
       // Retaining a set instead let a program write an unbounded run of unique
-      // forged ids, each below the 256 MiB per-frame ceiling so nothing
+      // forged ids, each below the 64 MiB per-frame parse cap so nothing
       // rejected them, and grow host memory for the whole run. Accepting any
       // id above a high-water mark would have been just as wrong in the other
       // direction: one forged `{"id": 9999}` would starve every honest call
@@ -1513,7 +1514,7 @@ export class PythonCodeRuntime extends CodeRuntime {
             // completion must cross intact rather than dying on stringify
             // recursion; bounded because it stops at the cap without
             // materializing the encoding, rejecting a forged value anywhere
-            // below the 256 MiB frame ceiling before it forces host-side copies.
+            // below the 64 MiB frame parse cap before it forces host-side copies.
             // The seam forbids substituting a rendered/truncated value, so an
             // oversized value fails the run as output-limit and a non-lossless
             // number as invalid-output. The value is JSON-plain by construction
@@ -1535,8 +1536,8 @@ export class PythonCodeRuntime extends CodeRuntime {
             const fn = record && Object.hasOwn(record, message.name) ? record[message.name] : undefined
             if (typeof fn !== 'function') {
               // `call.global` and `call.name` are attacker-controlled strings
-              // with no byte cap of their own — only the 256 MiB fd-3 frame
-              // ceiling — so each is sliced to `maxValueBytes` CODE UNITS
+              // with no byte cap of their own — only the 64 MiB fd-3 frame
+              // parse cap — so each is sliced to `maxValueBytes` CODE UNITS
               // BEFORE it reaches the template. Interpolating them whole would
               // copy them into the message, `JSON.stringify` would copy the
               // escaped form, `encodeJsonPlain` the frame, and the pipe write

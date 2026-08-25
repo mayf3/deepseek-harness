@@ -103,7 +103,7 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
 
   it('rejects an output cap whose payload could not cross the frame ceiling', async () => {
     // The caps budget a payload that must arrive inside ONE fd-3 frame, and the
-    // 256 MiB framing ceiling is fixed. A larger cap is unsatisfiable rather
+    // 64 MiB frame parse cap is fixed. A larger cap is unsatisfiable rather
     // than generous: a completion the cap admits arrives as an over-ceiling
     // frame and fails the run as `worker-exit`, inverting the `output-limit`
     // the cap describes. Both budgets are metered in already-escaped serialized
@@ -140,6 +140,27 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: 'py\u0000thon3' }))
       .rejects.toThrow(/pythonBin must be a non-empty path without NUL bytes/)
   })
+
+  it('skips relative PATH entries when resolving a basename pythonBin', async () => {
+    // resolvePythonBin must return an absolute path: a RELATIVE PATH entry
+    // ('.' here) would otherwise resolve the basename against the host CWD —
+    // spawn() then tries './python3' from the test process's directory, where
+    // no interpreter exists, surfacing an ENOENT worker-exit instead of a
+    // normal run. The relative entry is skipped and the absolute entry used.
+    const cp = await import('node:child_process')
+    const nodePath = await import('node:path')
+    const pythonDir = nodePath.dirname(cp.execFileSync('which', ['python3'], { encoding: 'utf8' }).trim())
+    vi.stubEnv('PATH', `.:${pythonDir}`)
+    try {
+      const { runtime, fiber } = await setup({ pythonBin: 'python3', maxWallMs: 30_000 })
+      const result = await runtime.run({ program: 'return 1', bindings: [] })
+      expect(result.error).toBeUndefined()
+      expect(result.value).toBe(1)
+      await fiber.dispose()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  }, 45_000)
 
   it('rejects a timer budget setTimeout would silently clamp to 1 ms', async () => {
     // Node stores a setTimeout delay as a signed 32-bit value and substitutes
@@ -1735,7 +1756,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
   }, 15_000)
 
   it('rejects an fd-3 frame whose raw length exceeds the parse cap before joining it', async () => {
-    // The 256 MiB wire ceiling bounds the RAW frame bytes, not the decoded
+    // The 64 MiB frame parse cap bounds the RAW frame bytes, not the decoded
     // structure; a compact wide frame near that ceiling could decode to far
     // more host memory. The unframed-buffer counter is checked against
     // FRAME_PARSE_CAP_BYTES BEFORE the Buffer.concat join, so an oversized
@@ -2186,7 +2207,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
 
   it('bounds an unknown-binding diagnostic built from a forged call frame', async () => {
     // `call.global` and `call.name` carry no byte cap of their own, only the
-    // 256 MiB fd-3 frame ceiling, and the reply interpolated them raw: one copy
+    // 64 MiB fd-3 frame parse cap, and the reply interpolated them raw: one copy
     // into the template result, one into the `JSON.stringify` escape, one into
     // the `encodeJsonPlain` frame, one into the pipe write. Slicing each field
     // to `maxValueBytes` code units first makes an 8 MiB forged name a
@@ -3045,7 +3066,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('drops forged call frames whose ids are not the next in sequence, retaining no per-id state', async () => {
     // The host used to remember every answered id in a Set, so a program could
     // write an unbounded run of unique forged ids — each frame far below the
-    // 256 MiB ceiling, so nothing rejected them — and grow host memory for the
+    // 64 MiB cap, so nothing rejected them — and grow host memory for the
     // whole run. Ids are consecutive from 0, so one counter replaces the set.
     //
     // The discriminator is that the forgeries must not be answered. Each names a
@@ -3764,7 +3785,7 @@ describe('PythonCodeRuntime — hostile peer', () => {
     // The marker branch bypasses `admit`, so retaining the frame's own text put
     // attacker-controlled bytes into `logs` with no cap at all: measured, a 1 MiB
     // forged text was retained whole under `maxLogBytes: 64`, and the only bound
-    // left was the 256 MiB frame ceiling. The host emits its own marker instead,
+    // left was the 64 MiB frame parse cap. The host emits its own marker instead,
     // so the retained size is fixed regardless of what the program sent.
     const forgedBytes = 1024 * 1024
     const { runtime } = await setup({ maxLogBytes: 64, maxWallMs: 20_000 })

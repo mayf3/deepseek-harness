@@ -2169,7 +2169,7 @@ def _cap_message(message: str, max_bytes: int) -> str:
     by raw UTF-8 length: the message crosses fd 3 inside a JSON frame where
     control characters escape up to sixfold (a NUL is one raw byte but six as
     ``\\u0000``), so a raw-length cap of ``maxValueBytes`` could serialize to
-    roughly six times that and breach the 256 MiB frame ceiling — the silent
+    roughly six times that and breach the 64 MiB frame parse cap — the silent
     ``worker-exit`` inversion the load-time cap check exists to prevent, and a
     several-hundred-MiB escape allocation besides. The seam's load bound admits
     ``maxValueBytes`` up to ``parse-cap - envelope`` on the premise that both the
