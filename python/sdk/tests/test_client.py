@@ -471,9 +471,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(
-        HarnessConfig(_launch_args=(sys.executable, str(script)))
-    ) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         init = client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         assert init.serverInfo.name == "fake-dsh"
 
@@ -611,7 +609,7 @@ for line in sys.stdin:
     def broken_filter(_notification: object) -> bool:
         raise RuntimeError("bad notification filter")
 
-    with HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script)))) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         with (
             client.subscribe_notifications(broken_filter) as broken,
@@ -648,7 +646,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script)))) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         with pytest.raises(ValueError):
             client.session_prompt("main", [{"type": "text", "text": "fix it"}])
@@ -675,9 +673,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(
-        HarnessConfig(_launch_args=(sys.executable, str(script)))
-    ) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
 
         request = client.next_request()
@@ -709,9 +705,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    with HarnessClient(
-        HarnessConfig(_launch_args=(sys.executable, str(script)))
-    ) as client:
+    with HarnessClient(_launch_args=(sys.executable, str(script))) as client:
         init = client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         assert init.serverInfo.name == "fake-dsh"
 
@@ -730,10 +724,10 @@ time.sleep(60)
 
     with HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             profile="web",
             initialize_timeout_seconds=0.1,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     ) as client:
         start = time.monotonic()
         try:
@@ -768,9 +762,9 @@ for line in sys.stdin:
 
     client = HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             shutdown_timeout_seconds=0.1,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     )
     client.start()
     proc = client._proc
@@ -781,6 +775,43 @@ for line in sys.stdin:
     assert time.monotonic() - start < 2
     assert proc.poll() is not None
     assert client._proc is None
+
+
+def test_client_close_allows_eof_quiescence_after_shutdown_response(tmp_path: Path) -> None:
+    script = tmp_path / "fake_runtime.py"
+    marker = tmp_path / "quiesced.txt"
+    script.write_text(
+        """
+import json
+import os
+from pathlib import Path
+import sys
+import time
+
+for line in sys.stdin:
+    msg = json.loads(line)
+    if msg.get("method") == "initialize":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {"serverInfo": {"name": "fake-dsh"}}}), flush=True)
+    elif msg.get("method") == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": {}}), flush=True)
+
+time.sleep(0.05)
+Path(os.environ["QUIESCED_MARKER"]).write_text("quiesced")
+""".strip()
+    )
+
+    client = HarnessClient(
+        HarnessConfig(
+            env={"QUIESCED_MARKER": str(marker)},
+            shutdown_timeout_seconds=1,
+        ),
+        _launch_args=(sys.executable, str(script)),
+    )
+    client.start()
+    client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
+    client.close()
+
+    assert marker.read_text() == "quiesced"
 
 
 def test_initialize_failure_reaps_started_runtime(tmp_path: Path) -> None:
@@ -801,7 +832,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    client = HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script))))
+    client = HarnessClient(_launch_args=(sys.executable, str(script)))
     client.start()
     proc = client._proc
     assert proc is not None
@@ -836,9 +867,12 @@ def test_public_signatures_omit_unsupported_wire_parameters() -> None:
     )
     assert "initialize_timeout_seconds" in DeepSeekHarnessConfig.__dataclass_fields__
     assert "initialize_timeout_seconds" in HarnessConfig.__dataclass_fields__
+    assert DeepSeekHarnessConfig().initialize_timeout_seconds == 30.0
+    assert HarnessConfig().initialize_timeout_seconds == 30.0
     for removed in ("cordis", "session_root", "runtime_bin", "bridge_bin", "launch_args_override"):
         assert removed not in DeepSeekHarnessConfig.__dataclass_fields__
         assert removed not in HarnessConfig.__dataclass_fields__
+    assert "_launch_args" not in HarnessConfig.__dataclass_fields__
     assert "session_root" not in RunResult.__dataclass_fields__
 
 
@@ -861,7 +895,7 @@ for line in sys.stdin:
 """.strip()
     )
 
-    client = HarnessClient(HarnessConfig(_launch_args=(sys.executable, str(script))))
+    client = HarnessClient(_launch_args=(sys.executable, str(script)))
     client.start()
     client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
     client.close()
@@ -881,9 +915,9 @@ sys.exit(42)
 
     with HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             request_timeout_seconds=2,
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     ) as client:
         with pytest.raises(Exception, match="fatal bridge exploded"):
             client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
@@ -913,9 +947,9 @@ with open(os.environ["SEEN"], "w") as seen:
 
     with HarnessClient(
         HarnessConfig(
-            _launch_args=(sys.executable, str(script)),
             env={"SEEN": str(output)},
-        )
+        ),
+        _launch_args=(sys.executable, str(script)),
     ) as client:
         client.initialize(provider="deepseek-official", cwd="/workspace", model="dsagent")
         threads = [

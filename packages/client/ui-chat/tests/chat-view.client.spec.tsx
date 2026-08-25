@@ -452,6 +452,39 @@ describe('ChatView', () => {
     expect(scroller.scrollTop).toBe(590) // latest 90 + the anchored row's 500px prepend shift
   })
 
+  it('bounds no-anchor hit testing before using the mounted-row fallback', () => {
+    const originalHitTest = Object.getOwnPropertyDescriptor(document, 'elementsFromPoint')
+    const hitTest = vi.fn((): Element[] => [])
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: hitTest,
+    })
+    try {
+      const h = makeHarness({ nodes: [user(1, 'visible row')] })
+      const view = render(<h.ChatView {...h.props} />)
+      const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+      const anchor = view.container.querySelector('[data-chat-anchor-key="fixture:user:1"]') as HTMLElement
+      installScrollMetrics(scroller, 4_000, 2_000)
+      vi.spyOn(scroller, 'getBoundingClientRect').mockReturnValue({
+        top: 0, bottom: 2_000, left: 0, right: 1_000,
+      } as DOMRect)
+      vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({
+        top: 100, bottom: 140, left: 0, right: 1_000,
+      } as DOMRect)
+
+      readerScroll(scroller, 100)
+
+      expect(hitTest).toHaveBeenCalledTimes(64)
+      expect(h.chatScroll.read()?.anchorKey).toBe('fixture:user:1')
+    } finally {
+      if (originalHitTest !== undefined) {
+        Object.defineProperty(document, 'elementsFromPoint', originalHitTest)
+      } else {
+        Reflect.deleteProperty(document, 'elementsFromPoint')
+      }
+    }
+  })
+
   it('renders the fixture main line as independently keyed business nodes', () => {
     const h = makeHarness({
       nodes: [user(1, 'do the thing'), assistant(2, 'running tools'), toolResult(3, 'a'), toolResult(4, 'b')],

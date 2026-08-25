@@ -22,7 +22,7 @@ import {
 } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE, connectFreshWorkspaceZh, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/agent-preset-authoring', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/agent-preset-authoring', import.meta.url))
 const SECTION_EXPECTED = join(SNAPSHOT_DIR, 'section.expected.md')
 const COPY_DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'copy-dialog.expected.md')
 const CREATED_EXPECTED = join(SNAPSHOT_DIR, 'created.expected.md')
@@ -69,7 +69,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     // The scenario asserts the shipped Chinese copy, so the browser asks for it.
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -257,7 +257,7 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     await dialog.waitFor({ state: 'detached', timeout: 10_000 })
     await page.getByRole('button', { name: '创造模式' }).waitFor({ timeout: 10_000 })
     await expect.poll(async () => {
-      const response = await fetch(`${scaffold.baseUrl}/api/session/list`, {
+      const response = await scaffold.hostFetch('/api/session/list', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

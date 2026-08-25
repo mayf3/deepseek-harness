@@ -8,7 +8,7 @@ import {
 } from '@deepseek-ai/dsh-loader-smoke'
 
 const fixtureDir = fileURLToPath(new URL(
-  '../../../../examples/acp-agent/tests/fixtures/subagent/subagent-codex/',
+  './fixtures/loader/',
   import.meta.url,
 ))
 const driver = join(fixtureDir, 'driver.ts')

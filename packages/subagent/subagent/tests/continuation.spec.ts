@@ -22,6 +22,7 @@ import SubagentRuntime, {
 } from '../src/index.ts'
 import type { SubagentRunEndInfo, SubagentRunInfo } from '../src/index.ts'
 import * as SubagentInvariant from '../src/invariant.ts'
+import { TestSessionQuery } from './test-session-query.ts'
 
 type Script = ConstructorParameters<typeof MockAdapter>[0]
 
@@ -65,7 +66,10 @@ afterEach(async () => {
 })
 
 /** Boot the full continuable stack: loop, persistence, providers, and subagents. */
-async function setupWith(adapter: LlmAdapter, options: { persistence?: boolean } = {}) {
+async function setupWith(
+  adapter: LlmAdapter,
+  options: { persistence?: boolean; sessionQuery?: boolean } = {},
+) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   let disposePersistence: (() => Promise<void>) | undefined
@@ -81,6 +85,7 @@ async function setupWith(adapter: LlmAdapter, options: { persistence?: boolean }
     })
   }
   await ctx.plugin(AgentLoop, { agents: [] })
+  if (options.sessionQuery !== false) await ctx.plugin(TestSessionQuery)
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   await ctx.plugin(SubagentFork, { providerName: 'fork' })
@@ -455,6 +460,7 @@ describe('SubagentRuntime.startContinuable', () => {
     // afterEach closes it before removing the root (even on a failure path).
     cleanups.push(async () => { await freshPersistence.dispose() })
     await fresh.plugin(AgentLoop, { agents: [] })
+    await fresh.plugin(TestSessionQuery)
     await fresh.plugin(SubagentRuntime)
     await fresh.plugin(SubagentSpawn, { providerName: 'spawn' })
     const freshParent = fresh.agentLoop.create(SessionId('routeless-resume'), {})
@@ -518,6 +524,16 @@ describe('SubagentRuntime.startContinuable', () => {
 })
 
 describe('SubagentRuntime.followup residency routing', () => {
+  it('fails a cold follow-up when Session query is unavailable', async () => {
+    const { ctx, parent } = await setupWith(new MockAdapter([]), {
+      persistence: false,
+      sessionQuery: false,
+    })
+
+    await expect(followup(ctx, parent, SessionId('cold-without-query'), message('continue')))
+      .rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
+  })
+
   it('enqueues in the same Activation while it is running, preserving one inbox FIFO', async () => {
     const releaseFirst = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([
@@ -669,7 +685,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await waitNoActivation(ctx, started.childId)
     const inspectStarted = Promise.withResolvers<undefined>()
-    const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect').mockImplementation((_id, signal) => {
+    const inspect = vi.spyOn(ctx.sessionPersistence, 'borrowSession').mockImplementation((_id, signal) => {
       return new Promise<never>((_resolve, reject) => {
         if (signal === undefined) {
           reject(new Error('cold inspection must receive the followup signal'))

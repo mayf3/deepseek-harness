@@ -276,7 +276,7 @@ PascalCase 标识符中的首字母缩略词使用首字母大写格式：`Ui`�
 | `PluginInventoryService` | `PluginInventoryGateway` | 该类只负责把实时 Loader 树适配到 `pluginInventory/list` RPC。它不拥有同进程服务、缓存、历史或修改路径。`Gateway` 准确说明现有角色。 |
 | `@deepseek-ai/dsh-jsonrpc-demo`、`@deepseek-ai/dsh-sdk-jsonrpc-demo`、`@deepseek-ai/dsh-sdk-python-runtime` | 已删除 | Python 运行时打包现有 `@deepseek-ai/dsh` CLI 与其 `sdk` profile；私有应用包会重新产生第二个启动器。 |
 | `packages/examples/jsonrpc-demo/`、`packages/sdk/python-runtime/` | 已删除 | Python 运行时 wheel 的闭包 manifest 负责打包，无需独立应用包。 |
-| `examples/jsonrpc-agent/` | `examples/python-sdk-agent/` | 该示例演示 Python 使用 `sdk` profile 与有序 patch。 |
+| `examples/jsonrpc-agent/` | `python/sdk/examples/` | 该示例演示 Python 使用 `sdk` profile 与有序 patch。 |
 | `@deepseek-ai/dsh-acp-demo` | `@deepseek-ai/dsh-acp-app` | 该包是 ACP profile 的应用组合包，不是独立 demo bin。 |
 | 部署根 manifest `dsh-jsonrpc-agent-pkg`、`dsh-sdk-python-runtime-closure` | `dsh-python-runtime-closure` | 该零代码 manifest 定义 Python 运行时 wheel 的完整 `dsh` 依赖闭包，不再命名独立 SDK 应用。 |
 | `@deepseek-ai/dsh-frontend` | `@deepseek-ai/dsh-web-frontend` | 该应用是 Web 前端。保留其物理目录 `apps/web/`。 |

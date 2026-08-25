@@ -21,8 +21,8 @@ import {
 import { saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
-const OVERLAY = fileURLToPath(new URL('../../../examples/web-github-review/cordis.yml', import.meta.url))
-const EXPECTED = fileURLToPath(new URL('./snapshots/github-ready-review/conversation.expected.md', import.meta.url))
+const OVERLAY = fileURLToPath(new URL('../../cli/config/examples/github-review/cordis.yml', import.meta.url))
+const EXPECTED = fileURLToPath(new URL('./expected/github-ready-review/conversation.expected.md', import.meta.url))
 const PROVIDER = 'github-webhook-review-test'
 const MODEL = 'reply'
 const SECRET = 'github-webhook-review-secret'
@@ -98,7 +98,7 @@ describe.skipIf(MODE === 'record')('web e2e: GitHub ready-for-review', () => {
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: 'en-US' })
     await page.addInitScript(() => { localStorage.setItem('dsh.locale', 'en') })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 60_000)
 

@@ -29,7 +29,7 @@ class DeepSeekHarnessConfig:
     patches: tuple[str, ...] = ()
     dsh_home: str | None = None
     env: dict[str, str] = field(default_factory=dict)
-    initialize_timeout_seconds: float = 10.0
+    initialize_timeout_seconds: float = 30.0
     request_timeout_seconds: float | None = None
     shutdown_timeout_seconds: float | None = 1.0
     base_url: str | None = None

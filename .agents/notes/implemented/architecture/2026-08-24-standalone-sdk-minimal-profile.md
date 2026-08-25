@@ -22,9 +22,9 @@ The bundle reuses `@deepseek-ai/dsh-sdk-app` for command help, stdin EOF, and bo
 
 ### Explicit composition
 
-The bundle owns one DeepSeek adapter, SDK JSON-RPC serving, the executor-less agent spine, local subprocess and unrestricted filesystem providers, persistent Bash, the string-replace editor, and uncompressed JSONL sessions under `$DSH_HOME/sessions`. The SDK initialization request owns the model id; `DSH_CONTEXT_WINDOW` supplies fallback capacity for models outside the adapter's advisory catalog. The persona comes from `DSH_SYSTEM_PROMPT`, and the credential from `DEEPSEEK_API_KEY`.
+The bundle owns one DeepSeek adapter, SDK JSON-RPC serving, the executor-less agent spine, local subprocess and unrestricted filesystem providers, a platform-selected persistent shell, the string-replace editor, and uncompressed JSONL sessions under `$DSH_HOME/sessions`. Linux and macOS mount Bash; Windows mounts PowerShell. The SDK initialization request owns the model id; `DSH_CONTEXT_WINDOW` supplies fallback capacity for models outside the adapter's advisory catalog. The persona comes from `DSH_SYSTEM_PROMPT`, and the credential from `DEEPSEEK_API_KEY`.
 
-Harness identity, runtime context, workspace instructions, skills, model-facing job controls, compaction, settings, managed credentials, telemetry, Web tools, subagents, and every other base row are absent rather than hidden. The profile pins `danger-full-access`, `maxTokensAsSuccess: false`, and startup-only patch loading. This layer is POSIX-only because its persistent terminal uses Bash.
+Harness identity, runtime context, workspace instructions, skills, model-facing job controls, compaction, settings, managed credentials, telemetry, Web tools, subagents, and every other base row are absent rather than hidden. The profile pins `danger-full-access`, `maxTokensAsSuccess: false`, and startup-only patch loading.
 
 ### Customization and Web
 
@@ -40,11 +40,11 @@ It also supersedes the minimal-overlay realization in [Python SDK runtime throug
 
 ## Verification
 
-The bundle test pins the exact row and dependency roster. Profile-template and config-dump tests pin the one-bundle manifest, startup-only lifecycle, absence of `dsh-base`, and absence of module HMR. The keyless Python example test boots the real `dsh --profile sdk-minimal` process and asserts the generated manifest, complete system prompt, and two advertised tools. The installed-wheel minimal scenario exercises persistent shell state, editor effects, JSONL persistence, and the committed model-visible snapshot through the packaged executable.
+The bundle test pins the exact row and dependency roster. Profile-template and config-dump tests pin the one-bundle manifest, startup-only lifecycle, absence of `dsh-base`, and absence of module HMR. The keyless source test boots the real `dsh --profile sdk-minimal` process, completes a turn, and asserts the generated manifest. The installed-wheel minimal scenario owns the complete system prompt and two advertised tools in its committed model-visible snapshot while exercising persistent shell state, editor effects, and JSONL persistence through the packaged executable.
 
 ## Alternatives considered
 
-**Keep the minimal mode as an overlay on `sdk`.** Rejected because filtering model-visible tools does not remove base services, prompt contributors, persistence choices, or later runtime behavior. It also makes the minimal application depend on controls in shared SDK server and system-prompt interfaces.
+**Keep the minimal mode as an overlay on `sdk`.** Rejected because filtering model-visible tools does not remove base services, prompt contributors, persistence choices, or later runtime behavior. It also required root-tool filtering in the shared SDK server and a complete-persona shortcut in the system-prompt config; neither shared interface carries those composition controls.
 
 **Restore a Python `cordis` argument or environment-selected complete config.** Rejected because it recreates a Python-owned application composition and bypasses profile plugin management and launcher lifecycle.
 

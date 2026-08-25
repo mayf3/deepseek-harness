@@ -24,13 +24,13 @@ Linux 另外保留 manylinux 2.28 干净安装冒烟测试与 GLIBC 检查。mac
 
 ### 真实 DeepSeek API
 
-可信拉取请求会在每个原生目标上运行第二项安装后 wheel 检查，并且只在预检与 live 测试步骤中把 `DEEPSEEK_API_KEY_EXTERNAL` 映射进去。密钥为空时预检失败，因此提供方测试不能通过自行 skip 产生假绿。该测试通过公开 SDK 访问 `https://api.deepseek.com`，要求模型通过 Bash 写入内容精确的 sentinel 文件，再在同一 session 的第二个轮次中读取它，并校验外部文件字节、最终响应、已完成的轮次结束原因、模型请求的工具调用，以及 session 日志存在且采用 Zstandard framing。解码后的记录内容与已完成轮次的持久性是由 restart 快照负责的确定性 keyless 要求，不从压缩后的 live 提供方字节推断。
+可信拉取请求会在每个原生目标上运行第二项安装后 wheel 检查，并且只在预检与 live 测试步骤中把 `DEEPSEEK_API_KEY_EXTERNAL` 映射进去。密钥为空时预检失败，因此提供方测试不能通过自行 skip 产生假绿。该测试通过公开 SDK 访问 `https://api.deepseek.com`，要求模型通过当前平台 shell 写入内容精确的 sentinel 文件，再在同一 session 的第二个轮次中读取它，并校验外部文件行内容、最终响应、已完成的轮次结束原因、模型请求的工具调用，以及 session 日志存在且采用 Zstandard framing。解码后的记录内容与已完成轮次的持久性是由 restart 快照负责的确定性 keyless 要求，不从压缩后的 live 提供方字节推断。
 
 Fork 与 Dependabot 拉取请求永远不会获得仓库密钥。它们的原生 job 运行完整 keyless 路径并跳过两个带密钥的步骤；禁止使用 `pull_request_target`，因为它会让不可信代码带着密钥执行。
 
 ### 必需目标
 
-拉取请求的 `python-runtime` job 会针对 Linux x64、Linux arm64 与 macOS arm64 调用可复用构建器。其聚合结果仍是 `all checks passed` 的依赖项，因此任一原生载体失败、取消或缺失都会阻止必需判定通过。Windows 不在运行时平台 manifest 中，本决策不声称支持它。
+拉取请求的 `python-runtime` job 会针对 Linux x64、Linux arm64、macOS arm64 与 Windows x64 调用可复用构建器。其聚合结果仍是 `all checks passed` 的依赖项，因此任一原生载体失败、取消或缺失都会阻止必需判定通过。[Windows x64 运行时决策](../architecture/2026-08-23-python-sdk-windows-x64-runtime.zh.md)负责第四个目标及其 PowerShell 专属极简快照。
 
 ## Existing decisions and supersession
 
@@ -38,7 +38,7 @@ Fork 与 Dependabot 拉取请求永远不会获得仓库密钥。它们的原生
 
 ## Alternatives considered
 
-**只保留 Linux x64 必需载体。** 否决：三个已发布目标的原生 addon、可执行文件构建、wheel 包标签与 helper 文件不同。等到发布时才发现问题，对每个 Python SDK 安装都会按平台选择的产物而言太晚。
+**只保留 Linux x64 必需载体。** 否决：四个已发布目标的原生 addon、可执行文件构建、wheel 包标签与 helper 文件不同。等到发布时才发现问题，对每个 Python SDK 安装都会按平台选择的产物而言太晚。
 
 **在 wheel 构建前运行完整行为，并保留两个很小的安装后冒烟测试。** 否决：这只能证明可执行文件配合源码 import 工作，再通过 distribution 证明很少的行为。干净安装环境是在同一批场景中验证用户实际安装内容的更强位置。
 
@@ -48,4 +48,4 @@ Fork 与 Dependabot 拉取请求永远不会获得仓库密钥。它们的原生
 
 ## Consequences
 
-每个拉取请求都会承担三个原生可执行文件及 wheel 包构建，并运行确定性的安装后产物场景。可信的同仓库拉取请求还会在每个目标上承担一次双轮 DeepSeek 任务。相应地，必需结果描述 Python 用户实际安装的文件，在合并前证明每个已发布载体，并且不能通过导入 checkout 或静默跳过真实提供方而通过。
+每个拉取请求都会承担四个原生可执行文件及 wheel 包构建，并运行确定性的安装后产物场景。可信的同仓库拉取请求还会在每个目标上承担一次双轮 DeepSeek 任务。相应地，必需结果描述 Python 用户实际安装的文件，在合并前证明每个已发布载体，并且不能通过导入 checkout 或静默跳过真实提供方而通过。
