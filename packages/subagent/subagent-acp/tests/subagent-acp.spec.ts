@@ -10,7 +10,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import * as acp from '../src/index.ts'
-import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
+import { acpStopReason, acpContentText, acpProcessFailureFacts, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, observeAcpProcessOutcome, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
 
@@ -121,19 +121,6 @@ function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): Subpro
   }
 }
 
-function hideProcessOutcome(child: SubprocessHandle): SubprocessHandle {
-  return {
-    pid: child.pid,
-    stdin: child.stdin,
-    stdout: child.stdout,
-    stderr: child.stderr,
-    collected: child.collected,
-    done: new Promise<SubprocessOutcome>(() => {}),
-    terminate: () => { child.terminate() },
-    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
-  }
-}
-
 function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
   return {
     pid: child.pid,
@@ -173,6 +160,34 @@ describe('acpContentText / toAcpPrompt', () => {
     // A non-text harness block (e.g. reasoning) is dropped from the ACP prompt.
     expect(toAcpPrompt([{ type: 'text', text: 'a' }, { type: 'reasoning', text: 'think' }]))
       .toEqual([{ type: 'text', text: 'a' }])
+  })
+})
+
+describe('ACP process failure observation', () => {
+  it('classifies transport and process-exit failures without process timing', () => {
+    expect(acpProcessFailureFacts('initialize', 'initialize', undefined)).toEqual({
+      stage: 'initialize',
+      category: 'transport',
+    })
+    const outcome: SubprocessOutcome = { exitCode: 9, signal: null }
+    expect(acpProcessFailureFacts('prompt', 'process', outcome)).toEqual({
+      stage: 'process',
+      category: 'process-exit',
+      outcome,
+    })
+  })
+
+  it('lets caller cancellation interrupt process observation', async () => {
+    const controller = new AbortController()
+    const observed = observeAcpProcessOutcome(
+      1,
+      new Promise<SubprocessOutcome>(() => {}),
+      undefined,
+      10_000,
+      controller.signal,
+    )
+    controller.abort()
+    await expect(observed).resolves.toBeUndefined()
   })
 })
 
@@ -624,7 +639,7 @@ describe('dsh-subagent-acp', () => {
       env: { MOCK_CLOSE_PROTOCOL_ON_INITIALIZE: '1' },
       disposeEofGraceMs: 50,
       disposeGraceMs: 50,
-      spawn: spec => hideProcessOutcome(spawnSubprocess(spec)),
+      spawn: spawnSubprocess,
     }).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
@@ -971,7 +986,7 @@ describe('dsh-subagent-acp', () => {
       env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 100,
-      spawn: spec => hideProcessOutcome(spawnSubprocess(spec)),
+      spawn: spawnSubprocess,
     })
     const result = await run.result
     expect(result).toEqual({

@@ -283,12 +283,59 @@ function startupFailure(
   if (child.pid <= 0) {
     return new AcpRunFailure({ stage: 'process', category: 'process-start' }, error)
   }
-  return new AcpRunFailure(
-    outcome === undefined
-      ? { stage, category: 'transport' }
-      : { stage, category: 'process-exit', outcome },
-    error,
-  )
+  return new AcpRunFailure(acpProcessFailureFacts(stage, stage, outcome), error)
+}
+
+/**
+ * Classify an ACP operation failure from its process outcome.
+ * @param stage - active protocol stage when no process outcome was observed.
+ * @param processExitStage - diagnostic stage used when the process exited.
+ * @param outcome - observed child exit, or undefined while the child remains live.
+ * @returns fixed failure facts suitable for model-visible diagnostics.
+ */
+export function acpProcessFailureFacts(
+  stage: Extract<AcpFailureStage, 'initialize' | 'new-session' | 'prompt'>,
+  processExitStage: Extract<AcpFailureStage, 'initialize' | 'new-session' | 'process'>,
+  outcome: SubprocessOutcome | undefined,
+): AcpFailureFacts {
+  return outcome === undefined
+    ? { stage, category: 'transport' }
+    : { stage: processExitStage, category: 'process-exit', outcome }
+}
+
+/**
+ * Observe a child outcome until it settles, the caller aborts, or the grace elapses.
+ * @param pid - child process id; non-positive ids represent spawn failure.
+ * @param processDone - child outcome promise.
+ * @param processOutcome - outcome already observed by the run, if any.
+ * @param graceMs - maximum observation window.
+ * @param signal - optional caller cancellation signal.
+ * @returns the observed outcome, or undefined when observation is interrupted.
+ */
+export async function observeAcpProcessOutcome(
+  pid: number,
+  processDone: Promise<SubprocessOutcome>,
+  processOutcome: SubprocessOutcome | undefined,
+  graceMs: number,
+  signal?: AbortSignal,
+): Promise<SubprocessOutcome | undefined> {
+  if (processOutcome !== undefined || pid <= 0) return processOutcome
+  const timeout = AbortSignal.timeout(Math.ceil(graceMs))
+  const bound = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
+  const aborted = Promise.withResolvers<undefined>()
+  const onObservationAbort = (): void => { aborted.resolve(undefined) }
+  bound.addEventListener('abort', onObservationAbort, { once: true })
+  /* v8 ignore next -- closes the event-loop race between listener registration and the preceding derived-signal check. */
+  if (bound.aborted) onObservationAbort()
+  try {
+    return await Promise.race([processDone, aborted.promise])
+  } catch {
+    // The active protocol failure remains authoritative when exit observation fails.
+    /* v8 ignore next -- a published child.done cannot reject; spawn rejection is consumed before publication. */
+    return processOutcome
+  } finally {
+    bound.removeEventListener('abort', onObservationAbort)
+  }
 }
 
 /** Map one remote terminal reason to the optional safe failure line it needs. */
@@ -373,25 +420,8 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   )
   spawnFailed.catch(() => { /* observed by the startup race; never unhandled */ })
 
-  const observeProcessOutcome = async (signal?: AbortSignal): Promise<SubprocessOutcome | undefined> => {
-    if (processOutcome !== undefined || child.pid <= 0) return processOutcome
-    const timeout = AbortSignal.timeout(Math.ceil(spec.disposeGraceMs))
-    const bound = signal === undefined ? timeout : AbortSignal.any([signal, timeout])
-    const aborted = Promise.withResolvers<undefined>()
-    const onObservationAbort = (): void => { aborted.resolve(undefined) }
-    bound.addEventListener('abort', onObservationAbort, { once: true })
-    /* v8 ignore next -- closes the event-loop race between listener registration and the preceding derived-signal check. */
-    if (bound.aborted) onObservationAbort()
-    try {
-      return await Promise.race([processDone, aborted.promise])
-    } catch {
-      // The active protocol failure remains authoritative when exit observation fails.
-      /* v8 ignore next -- a published child.done cannot reject; spawn rejection is consumed before publication. */
-      return processOutcome
-    } finally {
-      bound.removeEventListener('abort', onObservationAbort)
-    }
-  }
+  const observeProcessOutcome = (signal?: AbortSignal): Promise<SubprocessOutcome | undefined> =>
+    observeAcpProcessOutcome(child.pid, processDone, processOutcome, spec.disposeGraceMs, signal)
 
   // Startup rollback and the published handle share one process teardown.
   let processDisposal: Promise<void> | undefined
@@ -562,9 +592,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
       } catch (error: unknown) {
         if (!flags.cancelled) {
           const outcome = await observeProcessOutcome(request.signal)
-          const facts = outcome === undefined
-            ? { stage: 'prompt', category: 'transport' } as const
-            : { stage: 'process', category: 'process-exit', outcome } as const
+          const facts = acpProcessFailureFacts('prompt', 'process', outcome)
           diagnostic = diagnosticText(facts, latestPermission)
         }
         throw error
