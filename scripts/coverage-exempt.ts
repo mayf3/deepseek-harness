@@ -39,4 +39,13 @@ export const coverageExemptHeavySuites: readonly CoverageExemptSuite[] = [
   { filter: 'scripts/oxlint-contract.spec.ts', exclude: 'scripts/oxlint-contract.spec.ts' },
   { filter: 'scripts/change-scope.spec.ts', exclude: 'scripts/change-scope.spec.ts' },
   { filter: 'scripts/translation-pairing-merge.spec.ts', exclude: 'scripts/translation-pairing-merge.spec.ts' },
+  // Spawns the full-corpus transform gate in a child process (Node's ESM
+  // loader is its oracle), so no measured file executes in-process; the
+  // package src is threshold-excluded in vitest.config.ts. A single
+  // 900s-budget case; running it inside an instrumented partition exceeds
+  // the Windows partition budget under load.
+  {
+    filter: 'packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts',
+    exclude: 'packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts',
+  },
 ]

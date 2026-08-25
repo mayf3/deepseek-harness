@@ -30,6 +30,7 @@ Linux 覆盖率 CI 与原生 Windows CI 在插桩门禁内部使用 [job 内分�
 | typert generator 全部 6 个 spec | generator 自身 src | generator src 已整包 threshold-excluded（`vitest.config.ts`），本不在阈值口径内 |
 | 其中 tools-catalog.spec 额外 import | `typert-registry`、`tool-cordis` 的 src | 两包各自的测试独立满覆盖（focused coverage 实测无阈值错误） |
 | `scripts/install-lefthook.spec.ts`、`scripts/oxlint-contract.spec.ts`、`scripts/change-scope.spec.ts`、`scripts/translation-pairing-merge.spec.ts` | 无——被测对象是 `scripts/` 源码（从不在 coverage.include），执行方式是 spawn 子进程 | 无需接 |
+| `packages/experimental/webworker-runtime/tests/compile/transform-corpus.spec.ts` | 无——spawn 子进程对全部已构建 bundle 做 transform 并 import（oracle 是 Node ESM loader） | webworker-runtime src 已整包 threshold-excluded（`vitest.config.ts`），本不在阈值口径内 |
 
 ### 成员资格约定
 
