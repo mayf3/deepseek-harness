@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -118,6 +118,55 @@ function processIsRunning(pid: number): boolean {
   }
 }
 
+function linuxBashProcDiagnostics(): string {
+  const read = (path: string): string => {
+    try {
+      return readFileSync(path, 'utf8').trim()
+    } catch (error) {
+      return error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+    }
+  }
+  const ps = spawnSync('/bin/ps', ['-eo', 'pid=,ppid=,pgid=,sid=,stat=,args='], { encoding: 'utf8' })
+  const bash = ps.stdout.split('\n').filter(line => /(?:^|\s)(?:\/bin\/)?bash(?:\s|$)/.test(line))
+  const processes = bash.map((line) => {
+    const pid = /^\s*(\d+)/.exec(line)?.[1]
+    if (pid === undefined) return { line }
+    let tids: string[]
+    try {
+      tids = readdirSync(`/proc/${pid}/task`)
+    } catch (error) {
+      return { line, tasks: error instanceof Error ? `${error.name}: ${error.message}` : String(error) }
+    }
+    return {
+      line,
+      stat: read(`/proc/${pid}/stat`),
+      tasks: tids.map((tid) => {
+        const fd = `/proc/${pid}/task/${tid}/fd/0`
+        let fd0: string
+        let rdev: string
+        try {
+          fd0 = readlinkSync(fd)
+        } catch (error) {
+          fd0 = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        }
+        try {
+          const device = statSync(fd)
+          rdev = `${device.rdev} character=${device.isCharacterDevice()}`
+        } catch (error) {
+          rdev = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+        }
+        return { tid, syscall: read(`/proc/${pid}/task/${tid}/syscall`), fd0, rdev }
+      }),
+    }
+  })
+  return JSON.stringify({
+    arch: process.arch,
+    machine: spawnSync('/bin/uname', ['-m'], { encoding: 'utf8' }).stdout.trim(),
+    ptraceScope: read('/proc/sys/kernel/yama/ptrace_scope'),
+    processes,
+  }, undefined, 2)
+}
+
 // The real-shell suite drives a POSIX bash over the actual node-pty terminal;
 // Windows has no bash, and its pwsh counterpart lives in the describe below.
 describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => {
@@ -175,7 +224,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
       submit: true,
     })
     await waitForOutput(waiting, 'WAITING')
-    expect((await waiting.done).waitReason).toBe('stdin_read')
+    expect((await waiting.done).waitReason, linuxBashProcDiagnostics()).toBe('stdin_read')
 
     const answer = ctx.terminals.startSend(agent, created.sessionId, { text: 'accepted', submit: true })
     const result = await answer.done
