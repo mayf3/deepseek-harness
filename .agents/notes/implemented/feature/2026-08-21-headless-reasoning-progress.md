@@ -20,7 +20,7 @@ Reasoning progress is not TTY-gated and has no separate flag. A redirected stder
 
 ## Verification
 
-The package test holds the Agent active after a reasoning delta and observes stderr before idle, then pins newline ownership for provider-terminated and unterminated phases plus terminal errors. The keyless product snapshot drives the shipped headless profile through a reasoning-plus-tool round and pins both stderr and the persisted Session. Built-bin acceptance sends `reasoning_content` through the native DeepSeek SSE adapter and requires reasoning on stderr while stdout remains the final answer.
+The package test holds the Agent active after a reasoning delta and observes stderr before idle, then pins newline ownership for provider-terminated and unterminated phases plus terminal errors. The owner-local product expectation drives the shipped headless profile through a reasoning-plus-tool round and pins both stderr and the persisted Session. Recorded-session replay reconstructs expected stderr from scalar and packed chunk rows, closes sections on packed text and tool-call output, and uses the raw run log before fixture path tokenization in record modes. Built-bin acceptance sends `reasoning_content` through the native DeepSeek SSE adapter and requires reasoning on stderr while stdout remains the final answer.
 
 ## Alternatives considered
 

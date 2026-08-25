@@ -20,7 +20,7 @@ Status: implemented
 
 ## 验证
 
-包测试在推理分片后保持 Agent 活跃，并在 idle 前观察 stderr；测试同时固定由提供方终止和未终止的推理段换行归属，以及终止态错误。无密钥产品快照通过包含推理与工具调用的轮次驱动随附 headless profile，并固定 stderr 与持久化 Session。构建后二进制验收通过原生 DeepSeek SSE（Server-Sent Events）适配器发送 `reasoning_content`，要求推理出现在 stderr，同时 stdout 仍只包含最终答案。
+包测试在推理分片后保持 Agent 活跃，并在 idle 前观察 stderr；测试同时固定由提供方终止和未终止的推理段换行归属，以及终止态错误。产品自有期望通过包含推理与工具调用的轮次驱动随附 headless profile，并固定 stderr 与持久化 Session。录制会话回放从标量及压缩分片记录重建预期 stderr，在压缩文本或工具调用输出处关闭推理段，并在录制模式下于 fixture 路径标记化之前使用原始运行日志。构建后二进制验收通过原生 DeepSeek SSE（Server-Sent Events）适配器发送 `reasoning_content`，要求推理出现在 stderr，同时 stdout 仍只包含最终答案。
 
 ## 考虑过的替代方案
 
