@@ -170,7 +170,7 @@ Logging causes no invalidation, and exact reconstruction preserves request-prefi
 These limits define when the session store needs special care. They are current package constraints, not a task backlog.
 
 - **`fork()` cuts only at stable boundaries of live sessions** — the selected prefix must end outside an open turn and the source must be in the store; forking a persisted-but-unloaded session is excluded from the [fork API](../../../.agents/notes/implemented/feature/2026-06-30-session-store-fork-api.md).
-- **`SESSION_FORMAT_VERSION` stays pinned at `0`** — pre-release, no broad compatibility implied: `Session` accepts only current seed shapes, a backend refuses any other version, and unknown event types refuse reconstruction unless marked `ignorable` in the envelope ([mechanism](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md)).
+- **`SESSION_FORMAT_VERSION` stays pinned at `0`** — pre-release, no broad compatibility implied: `Session` accepts only current seed shapes, a backend refuses any other version, and every unknown event type refuses reconstruction ([mechanism](../../../.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.md)).
 - **`TurnEndReasonMap` omits the ACP-named `refusal` / `max_turn_requests` variants** — producer-gated: they land when an adapter or the loop first emits them.
 - **No session tree beyond fork** — a pi-style entry tree over branched sessions is deferred unless a consumer needs more than boundary-based forking.
 

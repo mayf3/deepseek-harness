@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 磁盘占用与性能
 
-打包布局以磁盘空间换取速度与结构。在 schema 17 的基准语料上——105 个会话、约 250 万个事件——SQLite 数据库占用 75 MB，而默认压缩 JSONL 日志为 31 MB：磁盘占用约为后者的 2.5 倍。
+打包布局以磁盘空间换取速度与结构。现有基准测量 schema 17，该打包前身使用相同的分片 codec，但行判别值不同；schema 18 尚未重新测量。在该语料上——105 个会话、约 250 万个事件——SQLite 数据库占用 75 MB，而默认压缩 JSONL 日志为 31 MB：磁盘占用约为后者的 2.5 倍。
 
 同一组测量显示，写入快约 3 倍，50 个事件的后缀读取快约 40 倍，完整会话读取相当或略快，约 250 万个物理行缩减到约 6.6 万个。按会话内容不同，磁盘占用约为压缩 JSONL 的 2–3 倍；完整数据与方法见 [SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md)。
 
@@ -77,7 +77,7 @@ await ctx.sessionPersistence.append(id, events)
 
 ### 启动与安全运行
 
-全新数据库直接初始化为 schema 版本 17。任何其他版本、外来应用标识、无版本的非全新 schema 或意外 schema 对象，都会在任何数据暴露或变更之前被拒绝——本预发布提供方不提供迁移。每条语句和固定 pragma 都来自 `resources/sql/` 下打包的 `.sql` 资源，运行时的值以 SQLite 参数绑定，包代码从不拼装查询文本。
+全新数据库直接初始化为 schema 版本 18。任何其他版本、外来应用标识、无版本的非全新 schema 或意外 schema 对象，都会在任何数据暴露或变更之前被拒绝——本预发布提供方不提供迁移。每条语句和固定 pragma 都来自 `resources/sql/` 下打包的 `.sql` 资源，运行时的值以 SQLite 参数绑定，包代码从不拼装查询文本。
 
 每个连接都会禁用 SQLite trusted schema 与内存映射 I/O、验证所请求的 journal mode，并固定 `synchronous=FULL`，保证成功返回的追加在操作系统崩溃或断电后依然持久。在 POSIX 上，数据库父目录和文件必须属于当前用户，父目录不得允许组或其他用户写入，文件也不得授予任何组或其他用户权限；Windows 还会拒绝符号链接和非普通文件，ACL 限制则由部署方负责。路径与所有权失败会拒绝插件初始化；Node 的 SQLite 驱动在首次持久化操作时才延迟加载。普通 `create` 会保持惰性直到首次 append，而 `ensureMaterialized` 会写入一条没有事件行的会话元数据记录。
 
@@ -96,7 +96,7 @@ await ctx.sessionPersistence.append(id, events)
 本提供方建立在一个分离与三项承诺之上：
 
 - **逻辑约定，物理格式。** 调用方始终读写普通的 `SessionEvent[]`；行如何打包、存储与压缩是本包私有的存储行为。
-- **schema 拥有格式。** Schema 17 是冻结的物理约定：任何其他版本、外来标识或意外 schema 对象的数据库都会被拒绝，绝不迁移。改变物理规则需要新的 schema。
+- **schema 拥有格式。** Schema 18 是冻结的物理约定：任何其他版本、外来标识或意外 schema 对象的数据库都会被拒绝，绝不迁移。改变物理规则需要新的 schema。
 - **持久性是默认值。** 追加在立即事务中以 `synchronous=FULL` 提交，成功返回的 `append()` 意味着该批次已持久。普通追加仅插入：更早的事件行永远不会被重写。
 - **在严格边界内追求效率。** 打包与压缩让数据库保持小巧，但每个上限都是硬性格式边界——每个打包行至多表示 1,024 个事件、1 MiB 载荷。
 
@@ -124,7 +124,7 @@ await ctx.sessionPersistence.append(id, events)
 | `sessions` | 每个会话一行：头部字段加单调递增的 revision |
 | `events` | 物理事件行：一个逻辑事件，或一个打包连续段 |
 
-确切的列定义见 [`resources/sql/schema.sql`](resources/sql/schema.sql)。`events.data` 列存放文本或 blob：小载荷保持为文本，较大的载荷在压缩后更小时以压缩形式存储。打包行沿用其首个逻辑事件的 `seq`，因此在复合主键 `(session_id, seq)` 下，物理顺序就是逻辑顺序。
+确切的列定义见 [`resources/sql/schema.sql`](resources/sql/schema.sql)。`events.data` 列存放文本或 blob：小载荷保持为文本，较大的载荷在压缩后更小时以压缩形式存储。标量逻辑事件的 `events.is_packed` 为 `0`，打包分片连续段的该值为 `1`，因此类型与物理分片标签同名的标量事件仍然明确。打包行沿用其首个逻辑事件的 `seq`，因此在复合主键 `(session_id, seq)` 下，物理顺序就是逻辑顺序。
 
 ### 写入路径
 
@@ -146,7 +146,7 @@ await ctx.sessionPersistence.append(id, events)
 - [会话持久化子系统](../../../docs/subsystems/persistence.zh.md)——后端无关的服务语义与提供方关系。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
 - [生成配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-session-persistence-sqlite)——每个受支持配置字段及其源声明。
-- [SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md)——schema 17 背后的理由、备选方案与测量。
+- [SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md)——打包布局背后的理由、备选方案与测量。
 
 -----
 
@@ -174,7 +174,7 @@ await ctx.sessionPersistence.append(id, events)
 
 这些限制说明本提供方何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是通用 SQLite 对比或任务积压。
 
-- **预发布设计，无迁移**——schema 17 是临时的 SQLite 专用设计；被推迟的统一多后端、可配置 schema 关系型设计已有可运行的外部原型 [morlay/session-persistence-rdb](https://github.com/morlay/session-persistence-rdb)（基于 Drizzle，支持 SQLite 与 PostgreSQL），预发布期间不保证 schema 稳定性或迁移支持。
+- **预发布设计，无迁移**——schema 18 是临时的 SQLite 专用设计；被推迟的统一多后端、可配置 schema 关系型设计已有可运行的外部原型 [morlay/session-persistence-rdb](https://github.com/morlay/session-persistence-rdb)（基于 Drizzle，支持 SQLite 与 PostgreSQL），预发布期间不保证 schema 稳定性或迁移支持。
 - **打包依赖批次边界**——被写后窗口或显式 flush 拆开的兼容连续段仍分属不同物理行；这避免了重写先前行，代价是打包比例依赖时序。
 - **同步 SQLite 与压缩**——Node 的 SQLite 驱动与 Zstandard 调用会阻塞 JavaScript 线程；4 KiB 压缩阈值限制了小记录的单帧工作量。
 - **忙等待阻塞事件循环**——SQLite 在同步调用内部等待；竞争写入方最长可让线程停顿配置的 `busyTimeoutMs`。
@@ -191,7 +191,7 @@ await ctx.sessionPersistence.append(id, events)
 
 #### 基准产物
 
-以下数字是 schema 17 背后的基准；[SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md) 是权威记录，本表只是带注的摘要。
+以下数字是冻结的 schema 17 基准。Schema 18 改变了行判别值，尚未重新测量；[SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md) 是权威记录，本表只是带注的摘要。
 
 | 指标 | **JSONL（zstd）** | **SQLite（legacy）** | **SQLite（new）** |
 |---|---|---|---|
@@ -202,7 +202,7 @@ await ctx.sessionPersistence.append(id, events)
 | 事件行数 | 2,507,860（逻辑） | 2,507,860 | **65,810** |
 | 全部会话 fork | 14.48 s | 19.30 s | **13.10 s** |
 
-语料为 105 个会话、2,507,860 个逻辑事件，按 512 个事件一批追加，因此具体比例取决于会话内容、流密度与批次边界。`SQLite（legacy）` 是标量布局——每个逻辑事件一行、不打包——其 709.57 MB 的占用正是打包行的动机。相对 JSONL，schema 17 磁盘占用约为 2.5 倍，但写入快约 3.3 倍，完整会话读取在两个分位上都更快，50 个事件尾部读取快约 40 倍；相对标量布局，它缩小约 89%、写入更快，并把 2,507,860 行缩减到 65,810 行，只有标量尾部读取仍略快（0.189 对 0.253 ms p50）。写入路径或 schema 变化时，请重跑或扩展该基准。
+语料为 105 个会话、2,507,860 个逻辑事件，按 512 个事件一批追加，因此具体比例取决于会话内容、流密度与批次边界。`SQLite（legacy）` 是标量布局——每个逻辑事件一行、不打包——其 709.57 MB 的占用正是打包行的动机。在已测量的 schema 17 布局中，SQLite 磁盘占用约为 JSONL 的 2.5 倍，但写入快约 3.3 倍，完整会话读取在两个分位上都更快，50 个事件尾部读取快约 40 倍；相对标量布局，它缩小约 89%、写入更快，并把 2,507,860 行缩减到 65,810 行，只有标量尾部读取仍略快（0.189 对 0.253 ms p50）。写入路径或 schema 变化时，请重跑或扩展该基准。
 
 #### 未来：多后端 RDB 持久化（Drizzle）
 
@@ -210,7 +210,7 @@ await ctx.sessionPersistence.append(id, events)
 
 #### 未来：持久化到持久化的迁移与版本升级
 
-README 记录了手动的 `load` → `create`/`append` 迁移，但 seam 没有导入/导出 API，SQLite 也直接拒绝其他 schema 版本。自动化迁移需要：能保留头部血缘（`seedLength`、`parentSession`、`agentPreset`）与 revision 语义的导出格式；格式与 schema 版本的升级链，即 [session-log-version-mechanism 笔记](../../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.zh.md) 中推迟的升级链；以及导出前源日志可读且平衡的保证——`load` 已先提交冷修复。
+README 记录了手动的 `load` → `create`/`append` 迁移，但 seam 没有导入/导出 API，SQLite 也直接拒绝其他 schema 版本。自动化迁移需要：能保留头部血缘（`seedLength`、`parentSession`、`agentPreset`）与 revision 语义的导出格式；格式与 schema 版本的升级链，即[事件词汇表显式拒绝笔记](../../../.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.zh.md)中推迟的升级链；以及导出前源日志可读且平衡的保证——`load` 已先提交冷修复。
 
 #### 未来：库内全文搜索与索引改进
 
