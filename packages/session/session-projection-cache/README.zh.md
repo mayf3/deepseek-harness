@@ -28,7 +28,7 @@
 
 ## 列表读（`cachedSnapshot(meta)`）
 
-零 I/O 一档：从身份匹配的存储记录直接 view 客户端值（仅版本与 state schema 均匹配的 key），以 `{asOfSeq, values}` 切面返回——`asOfSeq` 取所服务行的最低水位，客户端在 higher-seq-wins 规则下播种值存储时，陈旧列表块永远压不过更新的推送帧。host-only 行永不返回。无可用客户端行（未知 id、无关生命周期、无可用行）时返回 `undefined`；api-proxy 列表载体将其转为列缺席。
+零 I/O 一档：从身份匹配的存储记录直接 view 客户端值（仅版本与 state schema 均匹配的 key），以 `{asOfSeq, values}` 切面返回。`asOfSeq` 取所服务行的最低水位，列表载体只用该块预热暂定 row。较新的 hint 可以替换较旧的 hint，但任何 hint 都不能替换权威 opening baseline 或 control frame；成功的精确打开会忽略 hint 声称的 sequence，直接替换或清除它。存储记录可能落后于日志，也可能越过崩溃修复后的截断点；精确 cold/open 路径会校验并重新折叠。host-only 行永不返回。`undefined` 表示无可用客户端行（未知 id、无关生命周期或无可用行）；api-proxy 列表载体将其转为列缺席。
 
 ## 冷读（`coldSnapshot(id, signal?)`）
 

@@ -151,25 +151,30 @@ describe('list lifecycle', () => {
     expect(manager.getListSnapshot().items.find(item => item.sessionId === S1)?.title).toBeUndefined()
   })
 
-  it('seeds cold titles from the list rows\' projections block under higher-seq-wins', async () => {
+  it('prewarms cold titles from list and session-added hints without replacing authoritative values', async () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(api, fakeRemote(api))
-    // A push frame landed before the list (S2's title is newer than the block's cut).
+    // A push frame landed before the list. Even a later cache watermark stays
+    // tentative and cannot replace this authoritative value.
     manager.handleControlFrame({
       type: 'projection', sessionId: S2, key: 'title', value: 'Pushed', seq: 9,
     })
     api.onList = () => Promise.resolve(ok({
       items: [
         { ...summary(S1), projections: { asOfSeq: 4, values: { title: 'Cold cached' } } },
-        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 5, values: { title: 'List stale' } } },
+        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 12, values: { title: 'List stale' } } },
       ] as never[],
     }))
     await manager.refreshList()
     const items = manager.getListSnapshot().items
     // Cold row: title surfaces straight from the list block — no open, no history.
     expect(items.find(item => item.sessionId === S1)?.title).toBe('Cold cached')
-    // The stale list block (seq 5) cannot overwrite the newer push frame (seq 9).
     expect(items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
+    manager.handleSessionAdded({
+      ...summary(S2, { updatedAt: 300 }),
+      projections: { asOfSeq: 15, values: { title: 'Added stale' } },
+    })
+    expect(manager.getListSnapshot().items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
   })
 
   it('drops a projection row beyond the subscription baseline before accepting its durable replay', async () => {

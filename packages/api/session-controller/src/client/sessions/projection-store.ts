@@ -2,11 +2,13 @@
  * Generic per-session projection value store (push model; see the
  * session-projection subsystem page, docs/subsystems/session-projection.md):
  * the host is the only computation site; the client holds finished
- * whole values per key — `key → { value, seq }` — seeded by a follow opening
- * baseline and updated by Session Controller `projection` frames,
- * under the single rule **higher seq wins**. No client-side domain folding
- * exists: a domain ships projection support with zero client code. Per-key
- * bare observable faces feed `useProjection` (ui-renderer binds them).
+ * whole values per key — `key → { value, seq, provenance }`. Session-list and
+ * session-added blocks are tentative prewarm hints; a successful follow
+ * opening installs the complete authoritative baseline, and Session Controller
+ * `projection` frames advance authoritative rows by sequence. No client-side
+ * domain folding exists: a domain ships projection support with zero client
+ * code. Per-key bare observable faces feed `useProjection` (ui-renderer binds
+ * them).
  */
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -51,10 +53,11 @@ export interface ProjectionsBaseline {
   values: Readonly<Record<string, unknown>>
 }
 
-/** One key's row: the latest finished value and the seq it is consistent with. */
+/** One key's row: the latest finished value, its cut, and its trust level. */
 interface Row {
   value: unknown
   seq: number
+  provenance: 'prewarm' | 'authoritative'
 }
 
 /** Per-key notification channel: the bare face plus its batching notifier. */
@@ -64,14 +67,15 @@ interface Channel {
 }
 
 /**
- * One session's projection values. Framework semantics, uniform across every
- * key: a baseline seeds rows at its cut, a push frame updates one row, and in
- * both paths a lower-or-equal seq loses — a replayed frame cannot regress a
- * value, a stale baseline cannot overwrite a newer frame. A key the store has
- * never seen reads `undefined` (capability absent). Faces are identity-stable
- * per key (create-on-demand, cached) so the React side binds each exactly
- * once; the store-level channel (`subscribeAny`) serves coarse consumers (the
- * manager's list projection reads the `title` key).
+ * One session's projection values. A list hint can fill or advance only a
+ * tentative row. A complete baseline replaces or clears every tentative row,
+ * regardless of its claimed sequence, while preserving authoritative frames
+ * newer than the baseline cut. Frames use higher-sequence-wins after promoting
+ * an equal-sequence hint to authoritative state. A key the store has never seen
+ * reads `undefined` (capability absent). Faces are identity-stable per key
+ * (create-on-demand, cached) so the React side binds each exactly once; the
+ * store-level channel (`subscribeAny`) serves coarse consumers (the manager's
+ * list projection reads the `title` key).
  */
 export class ProjectionValueStore {
   private readonly rows = new Map<string, Row>()
@@ -125,6 +129,22 @@ export class ProjectionValueStore {
   }
 
   /**
+   * Prewarm one tentative value from a partial Session list or session-added
+   * block. Hints compete only with other hints; once an authoritative value is
+   * known, no later list refresh may replace it.
+   * @param key - projection key.
+   * @param value - whole cached value.
+   * @param seq - the cache row's claimed watermark.
+   */
+  prewarm(key: string, value: unknown, seq: number): void {
+    const row = this.rows.get(key)
+    if (row?.provenance === 'authoritative') return
+    if (row !== undefined && seq <= row.seq) return
+    this.rows.set(key, { value, seq, provenance: 'prewarm' })
+    this.changed(key)
+  }
+
+  /**
    * Apply one finished value from the Session control stream.
    * @param key - projection key.
    * @param value - whole value computed by the host unit.
@@ -132,27 +152,31 @@ export class ProjectionValueStore {
    */
   apply(key: string, value: unknown, seq: number): void {
     const row = this.rows.get(key)
-    if (row !== undefined && seq <= row.seq) return // higher seq wins; replays and stale frames drop
-    this.rows.set(key, { value, seq })
+    if (row !== undefined && (seq < row.seq || (seq === row.seq && row.provenance === 'authoritative'))) return
+    this.rows.set(key, { value, seq, provenance: 'authoritative' })
     this.changed(key)
   }
 
   /**
-   * Seed from a history tail page's projections block: every carried key
-   * lands under the same seq rule as frames; a key the block omits is
-   * capability-absent as of the cut — its row clears unless a newer frame
-   * already superseded the cut (a stale baseline can neither overwrite nor
-   * clear newer values).
+   * Seed from a complete history or control projections block. The baseline
+   * replaces every tentative hint, including one whose cache watermark is
+   * higher, and clears omitted hints. Only an authoritative frame newer than
+   * the cut survives.
    * @param baseline - the response's projections block.
    */
   seed(baseline: ProjectionsBaseline): void {
     // Erased walk: the framework crosses the open key space; per-key typing
     // is re-established at the consumer (useProjection's map lookup).
     const values = baseline.values as Record<string, unknown>
-    for (const key of Object.keys(values)) this.apply(key, values[key], baseline.asOfSeq)
+    for (const key of Object.keys(values)) {
+      const row = this.rows.get(key)
+      if (row?.provenance === 'authoritative' && row.seq > baseline.asOfSeq) continue
+      this.rows.set(key, { value: values[key], seq: baseline.asOfSeq, provenance: 'authoritative' })
+      this.changed(key)
+    }
     for (const [key, row] of this.rows) {
       if (Object.hasOwn(values, key)) continue
-      if (row.seq > baseline.asOfSeq) continue
+      if (row.provenance === 'authoritative' && row.seq > baseline.asOfSeq) continue
       this.rows.delete(key)
       this.changed(key)
     }

@@ -138,54 +138,59 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
     setOpen(false)
     triggerRef.current?.focus()
   }
+  const toggleCatalog = (): void => {
+    setNow(Date.now())
+    setOpen(current => !current)
+  }
+  const trigger = (
+    <button
+      ref={triggerRef}
+      type="button"
+      className={css.trigger}
+      aria-expanded={open}
+      aria-label={countLabel}
+      onClick={toggleCatalog}
+    >
+      <ScheduleClockIcon />
+      <span className={css.count}>{countLabel}</span>
+      <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
+    </button>
+  )
+  const catalog = open
+    ? (
+      <ul className={css.menu} aria-label={t('list.aria')}>
+        {rows.map((record) => {
+          const overdue = Date.parse(record.scheduledAt) <= now
+          return (
+            <li
+              key={record.id}
+              className={overdue ? `${css.row} ${css.rowOverdue}` : css.row}
+            >
+              <span className={css.status}>
+                <span className={css.statusDot} aria-hidden="true" />
+                <span>{t(overdue ? 'status.overdue' : 'status.scheduled')}</span>
+              </span>
+              <span className={css.prompt}>{record.prompt}</span>
+              <span className={css.metadata}>
+                <span>{formatScheduleFrequency(record, t)}</span>
+                <span aria-hidden="true">·</span>
+                <span>{formatScheduleLocalTime(record.scheduledAt)}</span>
+                <span aria-hidden="true">·</span>
+                <span className={overdue ? css.relativeOverdue : css.relative}>
+                  {formatScheduleRelative(record.scheduledAt, now, t)}
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+    )
+    : null
 
   return (
     <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
-      <button
-        ref={triggerRef}
-        type="button"
-        className={css.trigger}
-        aria-expanded={open}
-        aria-label={countLabel}
-        onClick={() => {
-          setNow(Date.now())
-          setOpen(current => !current)
-        }}
-      >
-        <ScheduleClockIcon />
-        <span className={css.count}>{countLabel}</span>
-        <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
-      </button>
-      {open
-        ? (
-          <ul className={css.menu} aria-label={t('list.aria')}>
-            {rows.map((record) => {
-              const overdue = Date.parse(record.scheduledAt) <= now
-              return (
-                <li
-                  key={record.id}
-                  className={overdue ? `${css.row} ${css.rowOverdue}` : css.row}
-                >
-                  <span className={css.status}>
-                    <span className={css.statusDot} aria-hidden="true" />
-                    <span>{t(overdue ? 'status.overdue' : 'status.scheduled')}</span>
-                  </span>
-                  <span className={css.prompt}>{record.prompt}</span>
-                  <span className={css.metadata}>
-                    <span>{formatScheduleFrequency(record, t)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{formatScheduleLocalTime(record.scheduledAt)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span className={overdue ? css.relativeOverdue : css.relative}>
-                      {formatScheduleRelative(record.scheduledAt, now, t)}
-                    </span>
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        )
-        : null}
+      {trigger}
+      {catalog}
     </div>
   )
 }

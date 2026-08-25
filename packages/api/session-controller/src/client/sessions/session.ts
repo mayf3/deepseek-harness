@@ -107,9 +107,10 @@ export class Session implements SessionFace {
   /**
    * Per-session projection value store (push model; see the session-projection
    * subsystem page, docs/subsystems/session-projection.md): finished whole
-   * values computed on the Host, seeded by the tail page's
-   * projections block and updated by Session Controller control frames under the
-   * one higher-seq-wins rule. Keys are read via `projections.faceOf(key)`
+   * values computed on the Host. Partial list blocks prewarm tentative rows;
+   * the tail page installs the complete authoritative baseline, and Session
+   * Controller frames advance authoritative rows by sequence. Keys are read
+   * via `projections.faceOf(key)`
    * (the useProjection resolution face); the conversation snapshot never
    * carries projection values, and no client-side domain folding exists.
    * Manager-owned when constructed through SessionManager (frames route and
@@ -574,7 +575,7 @@ export class Session implements SessionFace {
     }
   }
 
-  /** Replace the complete contiguous window and apply page-owned projection metadata. */
+  /** Replace the complete contiguous window and install its authoritative projection baseline. */
   private installWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
     this.baseSeq = entries[0]?.event.seq ?? 0
     this.hasMore = hasMore

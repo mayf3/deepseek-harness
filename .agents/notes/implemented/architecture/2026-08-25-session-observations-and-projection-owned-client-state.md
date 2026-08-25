@@ -108,11 +108,11 @@ These distinctions prevent one overloaded `undefined` from representing cache mi
 | Follow opening baseline | Complete for the Host composition | Exact opening cursor | Capability absent |
 | Projection frame | One whole key | Event sequence carried by the frame | Not applicable |
 
-The Client stores one row per key with its sequence number. A newer hint, baseline, or frame replaces a row; an equal or older input is ignored. Reconnect can therefore replace the event window without rolling back a projection frame that was already accepted at a later sequence.
+The Client stores one row per key with its provenance and sequence number. A list hint fills or advances only a tentative row. A complete opening baseline replaces or clears tentative rows even when a cache hint claims a higher sequence, while preserving an authoritative frame newer than the opening cut. Frames use higher-sequence-wins and promote an equal-sequence hint to authoritative state. A replacement control baseline first discards rows beyond its durable cut, then installs its complete values.
 
 The list view reads the same per-Session store as the opened Session. Hints can populate title, preset, and other list presentation before follow completes; the opening baseline then converges that state without creating a second summary-only authority.
 
-The per-Session Client projection store accepts list hints, the follow baseline, and later whole-value frames under one higher-sequence-wins rule. It never folds Session events. A baseline or frame may advance a hinted value, while an older cut cannot overwrite a newer row.
+The per-Session Client projection store never folds Session events; it only reconciles finished hints, complete baselines, and whole-value frames under those source-aware rules.
 
 Data that is not derived from one Session remains outside projections. `llm.models` owns the Host-generation model catalog, and `agentPreset.list` owns the configurable preset roster. A selector combines the relevant catalog with the Session's `modelSelection` or `agentPreset` projection only when both inputs are ready. During refresh it may retain the last complete catalog; before the first complete pair it reports loading instead of rendering a guessed name or availability verdict.
 

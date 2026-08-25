@@ -3,10 +3,11 @@
  * checkpoints of every client-visible or explicitly persisted projection unit's state, one record per
  * session on the domain data form (`session_projcache` domain — the shipped
  * json backend lands it beside `workspace.json`). The cache is a fold
- * shortcut, never an authority: a row is possibly stale (its `seq`
- * says how stale) but never wrong, so every write path is fail-soft (a lost
- * write costs a longer tail replay on the next cold read) and a
- * `ver` mismatch discards the row instead of migrating it. Design
+ * shortcut, never an authority: an identity-matching row may lag the log or
+ * overreach a crash-repaired truncation, so exact reads validate and refold it.
+ * Every write path is fail-soft (a lost write costs a longer tail replay on
+ * the next cold read), and a `ver` mismatch discards the row instead of
+ * migrating it. Design
  * authority: the session-projection RFC
  * (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
  * @module @deepseek-ai/dsh-session-projection-cache
@@ -110,12 +111,11 @@ export class SessionProjectionCache extends Service {
 
   /**
    * The zero-I/O listing read: whole values viewed straight from the stored
-   * rows (version-matching keys only), each cut carried with its watermark
-   * so a client value store can seed under its higher-seq-wins rule — as
-   * stale as the last durable checkpoint but never wrong, and never from an
-   * unrelated log (the caller's header is the identity witness). Fresher
-   * paths (the history tail baseline, {@link coldSnapshot}) supersede these
-   * values whenever a session is actually opened.
+   * rows (version-matching keys only), each cut carried with its watermark so
+   * a client value store can prewarm tentative rows. The caller's header keeps
+   * unrelated lifecycles out, but a row may lag the log or overreach a
+   * crash-repaired truncation; the exact history or {@link coldSnapshot}
+   * baseline replaces or clears hints whenever a session is opened.
    * @param meta - the listed session's header (identity witness; no log read).
    * @param keys - optional projection keys required by the caller's audience.
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
@@ -131,8 +131,8 @@ export class SessionProjectionCache extends Service {
     const servedKeys = Object.keys(values)
     if (servedKeys.length === 0) return undefined
     // The block carries ONE cut: the lowest served watermark is the seq every
-    // value is at least current as of (under-claiming is safe under
-    // higher-seq-wins; over-claiming would let a stale value outrank pushes).
+    // value is at least current as of. Under-claiming is safe; over-claiming
+    // would misorder this hint against other tentative observations.
     const asOfSeq = Math.min(...servedKeys.map(key => (record.rows[key] as { seq: number }).seq))
     return { asOfSeq, values }
   }

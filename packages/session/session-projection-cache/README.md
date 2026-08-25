@@ -28,7 +28,7 @@ Both `Config` fields are required (no defaults): flush cadence is a deployment c
 
 ## Listing read (`cachedSnapshot(meta)`)
 
-The zero-I/O rung: client values viewed straight from the identity-matching stored record (version- and state-schema-matching keys only), returned as a `{asOfSeq, values}` cut — `asOfSeq` is the lowest served-row watermark, so a client seeding its per-session value store under higher-seq-wins can never let a stale list block overwrite a newer push frame. Host-only rows are never returned. `undefined` when no usable client row exists (unknown id, unrelated lifecycle, or no usable rows); the api-proxy list carrier turns that into an absent column.
+The zero-I/O rung: client values viewed straight from the identity-matching stored record (version- and state-schema-matching keys only), returned as a `{asOfSeq, values}` cut. `asOfSeq` is the lowest served-row watermark, and the list carrier uses the block only to prewarm tentative rows. Newer hints may replace older hints, but no hint replaces an authoritative opening baseline or control frame; a successful exact opening replaces or clears hints regardless of their claimed sequence. The record may lag the log or overreach a crash-repaired truncation, which the exact cold/open path validates and refolds. Host-only rows are never returned. `undefined` means no usable client row exists (unknown id, unrelated lifecycle, or no usable rows); the api-proxy list carrier turns that into an absent column.
 
 ## Cold read (`coldSnapshot(id, signal?)`)
 

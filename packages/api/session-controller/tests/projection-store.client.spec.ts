@@ -1,18 +1,17 @@
 /**
  * Projection value store (push model; session-projection subsystem page:
- * docs/subsystems/session-projection.md): the single
- * higher-seq-wins rule on both paths (a stale baseline cannot overwrite a
- * newer push frame; a replayed frame cannot regress), capability absence as
- * undefined, generation truncation, and the Session/manager wiring (tail-page
- * seeding, control-stream projection routing pre- and post-instantiation, the
- * list rows' title projection).
+ * docs/subsystems/session-projection.md): tentative list prewarm versus
+ * authoritative baselines and frames, capability absence as undefined,
+ * generation truncation, and the Session/manager wiring (tail-page seeding,
+ * control-stream projection routing pre- and post-instantiation, the list
+ * rows' title projection).
  */
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { ProjectionValueStore } from '../src/client/sessions/projection-store.ts'
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionManager } from '../src/client/sessions/manager.ts'
-import { FakeApiClient, err, fakeRemote, ok } from './fake-api.client.ts'
+import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 import { entries, plainTurn } from './event-script.client.ts'
 
 // Test-domain keys merged into the projection map (the Service Definition package's
@@ -42,18 +41,31 @@ describe('Session projection value semantics', () => {
     expect(store.get('test/marks')).toEqual({ marks: ['a', 'b'] })
   })
 
-  it('a stale baseline can neither overwrite nor clear a newer frame; a fresh one reseeds and clears', () => {
+  it('prewarms only tentative rows and promotes an equal-seq authoritative frame', () => {
     const store = new ProjectionValueStore()
-    store.apply('test/marks', { marks: ['frame-20'] }, 20)
-    // Stale cut: carried key loses to the newer frame; omitted key survives.
+    store.prewarm('test/marks', { marks: ['hint-5'] }, 5)
+    store.prewarm('test/marks', { marks: ['stale-hint'] }, 3)
+    expect(store.get('test/marks')).toEqual({ marks: ['hint-5'] })
+    store.prewarm('test/marks', { marks: ['hint-9'] }, 9)
+    store.apply('test/marks', { marks: ['frame-9'] }, 9)
+    store.prewarm('test/marks', { marks: ['later-hint'] }, 20)
+    expect(store.get('test/marks')).toEqual({ marks: ['frame-9'] })
+  })
+
+  it('a complete baseline replaces hints but preserves newer authoritative frames', () => {
+    const store = new ProjectionValueStore()
+    store.prewarm('test/marks', { marks: ['hint-20'] }, 20)
+    store.prewarm('hint-only', 'stale', 20)
+    store.apply('frame-only', 'frame-20', 20)
     store.seed({ asOfSeq: 10, values: { 'test/marks': { marks: ['baseline-10'] } } })
+    expect(store.get('test/marks')).toEqual({ marks: ['baseline-10'] })
+    expect(store.get('hint-only')).toBeUndefined()
+    expect(store.get('frame-only')).toBe('frame-20')
+    store.apply('test/marks', { marks: ['frame-20'] }, 20)
+    store.seed({ asOfSeq: 15, values: { 'test/marks': { marks: ['baseline-15'] } } })
     expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
-    store.seed({ asOfSeq: 15, values: {} })
-    expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
-    // Fresh cut: carried key reseeds…
     store.seed({ asOfSeq: 30, values: { 'test/marks': { marks: ['baseline-30'] } } })
     expect(store.get('test/marks')).toEqual({ marks: ['baseline-30'] })
-    // …and an omitting fresh cut clears (capability absent as of the cut).
     store.seed({ asOfSeq: 40, values: {} })
     expect(store.get('test/marks')).toBeUndefined()
   })
@@ -104,7 +116,7 @@ describe('Session tail-page seeding', () => {
   it('retains a prewarmed projection when opening the Session fails', async () => {
     const api = new FakeApiClient()
     const projections = new ProjectionValueStore()
-    projections.apply('test/marks', { marks: ['cached'] }, 5)
+    projections.prewarm('test/marks', { marks: ['cached'] }, 5)
     const session = new Session(SID, api, fakeRemote(api), { projections })
     api.onHistory = () => Promise.resolve(err({
       code: 'session-not-found',
@@ -127,6 +139,39 @@ describe('Session tail-page seeding', () => {
     } as never))
     await session.open()
     expect(session.projections.get('test/marks')).toEqual({ marks: ['from-baseline'] })
+  })
+
+  it('replaces a higher-seq prewarm hint after a successful opening', async () => {
+    const api = new FakeApiClient()
+    const projections = new ProjectionValueStore()
+    projections.prewarm('test/marks', { marks: ['stale-list'] }, 9)
+    const session = new Session(SID, api, fakeRemote(api), { projections })
+    api.onHistory = () => Promise.resolve(ok({
+      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
+      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['authoritative'] } } },
+    } as never))
+
+    await session.open()
+
+    expect(session.getSnapshot().openState).toBe('open')
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['authoritative'] })
+  })
+
+  it('preserves an authoritative frame that lands while opening waits for its older baseline', async () => {
+    const api = new FakeApiClient()
+    const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => history.promise
+    const session = new Session(SID, api, fakeRemote(api))
+
+    const opening = session.open()
+    session.projections.apply('test/marks', { marks: ['live-3'] }, 3)
+    history.resolve(ok({
+      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
+      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['baseline-2'] } } },
+    } as never))
+    await opening
+
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['live-3'] })
   })
 
   it('a resync serving a stale block keeps the newer pushed value (seq rule end to end)', async () => {
