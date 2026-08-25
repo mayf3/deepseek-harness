@@ -164,6 +164,30 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     }
   }, 45_000)
 
+  it('skips a PATH entry that is an executable DIRECTORY named like the interpreter', async () => {
+    // accessSync(X_OK) succeeds on directories, so without the isFile guard a
+    // PATH entry like a `python3` directory would be chosen over a later real
+    // interpreter. The stub PATH puts such a directory first and asserts the
+    // real interpreter is used.
+    const cp = await import('node:child_process')
+    const nodePath = await import('node:path')
+    const { mkdtempSync, mkdirSync } = await import('node:fs')
+    const { tmpdir } = await import('node:os')
+    const realPythonDir = nodePath.dirname(cp.execFileSync('which', ['python3'], { encoding: 'utf8' }).trim())
+    const fakeDir = mkdtempSync(nodePath.join(tmpdir(), 'dsh-fake-bin-'))
+    mkdirSync(nodePath.join(fakeDir, 'python3')) // A directory named python3, executable by default.
+    vi.stubEnv('PATH', `${fakeDir}:${realPythonDir}`)
+    try {
+      const { runtime, fiber } = await setup({ pythonBin: 'python3', maxWallMs: 30_000 })
+      const result = await runtime.run({ program: 'return 1', bindings: [] })
+      expect(result.error).toBeUndefined()
+      expect(result.value).toBe(1)
+      await fiber.dispose()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  }, 45_000)
+
   it('rejects a timer budget setTimeout would silently clamp to 1 ms', async () => {
     // Node stores a setTimeout delay as a signed 32-bit value and substitutes
     // 1 ms for anything larger, inverting the knob's meaning: a huge maxWallMs

@@ -1995,11 +1995,13 @@ export class PythonCodeRuntime extends CodeRuntime {
       }
       // Register the ack gate with the frame handler before any data arrives.
       bootAckGate.run = (): void => {
+        /* v8 ignore next -- a forged second boot-ack would re-enter; the honest child sends exactly one. */
         if (runSent) return
         runSent = true
         try {
           proto.write(`${JSON.stringify({ type: 'run', program: request.program })}\n`)
         } catch (error: unknown) {
+          /* v8 ignore next -- the child exited between its ack and this write; the run settles as worker-exit. */
           finish({ error: { kind: 'worker-exit', message: `failed to boot python subprocess: ${messageOf(error)}` } })
         }
       }
