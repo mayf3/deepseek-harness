@@ -1032,8 +1032,13 @@ async def _run(channel: ProtocolChannel) -> None:
 
     logs = LogBuffer(
         int(boot["maxLogBytes"]),
-        sink=lambda text, truncated=False: _send_sync_cls(
-            {"type": "log", "text": text, **({"truncated": True} if truncated else {})}
+        # The sink writes through the def-time bound encode+write primitives
+        # (not _send_sync_cls, whose body still resolves _encode_json_plain and
+        # self.write_encoded at call time) so a rebind cannot break a log frame.
+        sink=lambda text, truncated=False: _write_encoded_cls(
+            _encode_plain_cls(
+                {"type": "log", "text": text, **({"truncated": True} if truncated else {})}
+            )
         ),
     )
 

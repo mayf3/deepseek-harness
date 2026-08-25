@@ -1731,6 +1731,34 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error?.kind).not.toBe('worker-exit')
   }, 15_000)
 
+  it('drops an fd-3 frame whose raw length exceeds the parse cap before decoding it', async () => {
+    // The 256 MiB wire ceiling bounds the RAW frame bytes, not the decoded
+    // structure; a compact wide frame near that ceiling could decode to far
+    // more host memory. The receive path caps raw frames at
+    // FRAME_PARSE_CAP_BYTES before toString/JSON.parse and drops the oversized
+    // one like any junk frame, so the following normal frame is still
+    // processed. Fail-before: without the cap the oversized log text would be
+    // parsed and admitted (truncating the ledger), and the trailing frame
+    // would be dropped as post-truncation instead of appearing in logs.
+    const { runtime } = await setup({ maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // One frame just past the 64 MiB parse cap.
+        'os.write(3, b"{\\"type\\":\\"log\\",\\"text\\":\\"" + b"a" * (65 * 1024 * 1024) + b"\\"}\\n")',
+        'os.write(3, b"{\\"type\\":\\"log\\",\\"text\\":\\"after-cap\\"}\\n")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    // The oversized frame was dropped before parse; the trailing frame was
+    // processed normally (its text survives in logs).
+    expect(result.logs).toContain('after-cap')
+    expect(result.logs.some(line => line.length > 1024 * 1024)).toBe(false)
+  }, 90_000)
+
   it('bounds an over-cap exception-group nesting on the copy', async () => {
     // Exception groups link through `exceptions`, not the cause/context
     // dunders, so the cap has to count that edge too — otherwise a deeply
@@ -4574,20 +4602,21 @@ describe('PythonCodeRuntime — hostile peer', () => {
   }, 8000)
 
   it('drops a forged oversized log frame on its code-unit lower bound, before escaping it', async () => {
-    // A forged `log` frame carrying a control-heavy string sits below the
-    // 256 MiB fd-3 frame ceiling but escapes several-fold: 24 MiB of NULs
-    // becomes ~144 MiB of `\u0000`. Charging it required building that escaped
-    // copy first, so a 32-byte maxLogBytes could still force a
-    // hundreds-of-megabytes host allocation. The cheap `length + 3` lower bound
-    // truncates it instead. The host's own heap is what is under test, so keep
-    // the child's address space generous enough to BUILD the frame.
+    // A forged `log` frame carrying a control-heavy string: NULs escape
+    // several-fold (one NUL -> six bytes `\u0000`). The raw frame stays under
+    // the host's 64 MiB parse cap (4 MiB of `\u0000` text = 24 MiB raw) while
+    // the escaped form would be ~24 MiB. Charging it required building that
+    // escaped copy first, so a 32-byte maxLogBytes could still force a large
+    // host allocation. The cheap `length + 3` lower bound truncates it instead.
+    // The host's own heap is what is under test, so keep the child's address
+    // space generous enough to BUILD the frame.
     const { runtime } = await setup({ maxLogBytes: 128, addressSpaceMb: 1024, maxWallMs: 60_000 })
     const before = process.memoryUsage().heapUsed
     const result = await runtime.run({
       program: [
         'import os',
         // Written as a raw frame so the child's own ledger never sees it.
-        'os.write(3, b\'{"type":"log","text":"\' + b"\\\\u0000" * (24 * 1024 * 1024) + b\'"}\\n\')',
+        'os.write(3, b\'{"type":"log","text":"\' + b"\\\\u0000" * (4 * 1024 * 1024) + b\'"}\\n\')',
         'return "settled"',
       ].join('\n'),
       bindings: [],

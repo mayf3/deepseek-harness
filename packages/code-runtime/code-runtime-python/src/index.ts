@@ -206,6 +206,18 @@ function materializePyScripts(): string {
 const FRAME_CEILING_BYTES = 256 * 1024 * 1024
 
 /**
+ * A frame's RAW length is capped before JSON.parse: the 256 MiB wire ceiling
+ * bounds the bytes on fd 3, not the decoded structure, and a compact wide
+ * frame near that ceiling (e.g. a huge array of tiny elements) could decode to
+ * far more host memory than the wire admitted — an OOM inside the receive
+ * path. 64 MiB raw admits every legal config (the widest in-tree completion
+ * and binding frames are ~12 MB) while bounding decode amplification to a
+ * roughly constant factor of the wire bytes. A hostile-peer invariant, not a
+ * deployment choice.
+ */
+const FRAME_PARSE_CAP_BYTES = 64 * 1024 * 1024
+
+/**
  * Fragments the unframed fd-3 buffer may hold before they are coalesced into
  * one Buffer, bounding retained per-chunk overhead that {@link
  * FRAME_CEILING_BYTES} cannot see: that ceiling meters payload bytes, while
@@ -1351,6 +1363,11 @@ export class PythonCodeRuntime extends CodeRuntime {
             buffered = buffered.subarray(newline + 1)
             /* v8 ignore next -- an empty line comes only from a forged `\n\n` write. */
             if (line.length === 0) continue
+            // Drop an oversized frame BEFORE toString/JSON.parse: the 256 MiB
+            // wire ceiling bounds the raw bytes, not the decoded structure (see
+            // FRAME_PARSE_CAP_BYTES), so a near-ceiling compact wide frame must
+            // not be parsed whole.
+            if (line.length > FRAME_PARSE_CAP_BYTES) continue
             const text = line.toString('utf8')
             // JSON.parse would silently ROUND an integer token outside the
             // safe range before validation could see it, so a forged frame
