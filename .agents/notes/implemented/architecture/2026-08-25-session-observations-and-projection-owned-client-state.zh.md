@@ -94,7 +94,7 @@ Registry 拥有 fold state；各领域拥有自己的 `init`、`apply`、`view`�
 
 Projection 的三种交付状态含义不同：
 
-- Session-list hint 是可选、部分且可能陈旧的数据。key 缺失表示未知，因此 list 消费方不得自行补成空值或部署默认值。
+- Session-list hint 是可选、部分且未经当前日志范围校验的数据。它可能陈旧，也可能声称一个已被崩溃修复移除的 cut。key 缺失表示未知，因此 list 消费方不得自行补成空值或部署默认值。
 - Follow opening baseline 是其 cursor 上所有已注册 Client 可见 projection capability 的完整集合。此处缺少 key 表示当前 Host composition 不具备该 capability。
 - 显式 `null` 是领域计算出的无值结果。它不同于 list hint 缺失，并且能够完整通过 JSON transport。
 
@@ -108,7 +108,7 @@ Projection 的三种交付状态含义不同：
 | Follow opening baseline | 对当前 Host composition 完整 | 精确 opening cursor | Capability 不存在 |
 | Projection frame | 单个完整 key | Frame 携带的 event sequence | 不适用 |
 
-Client 为每个 key 保存带来源与 sequence number 的一行。List hint 只能填充或推进暂定 row。完整 opening baseline 即使面对声称更高 sequence 的 cache hint，也会替换或清除暂定 row，同时保留晚于 opening cut 的权威 frame。Frame 继续使用 higher-sequence-wins，并会把相同 sequence 的 hint 提升为权威状态。Replacement control baseline 会先丢弃超出其 durable cut 的 row，再安装完整值。
+Client 为每个 key 保存带来源与 sequence number 的一行。List hint 只能填充或推进暂定 row。首个权威 frame 无论暂定 hint 声称的 sequence 多高都会替换它；后续权威 frame 之间才使用 higher-sequence-wins。完整 opening baseline 会替换或清除暂定 row，同时保留晚于 opening cut 的权威 frame。Replacement control baseline 会先丢弃超出其 durable cut 的 row，再安装完整值。
 
 List view 与已打开 Session 读取同一个 per-Session store。Hints 可以在 follow 完成前填充 title、preset 和其他 list presentation；opening baseline 随后收敛这份状态，而不会建立第二套 summary-only authority。
 

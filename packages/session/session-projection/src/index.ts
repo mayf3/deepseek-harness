@@ -428,10 +428,11 @@ export class SessionProjectionRegistry extends Service {
   /**
    * View a checkpoint's rows without any log read: for every registered
    * client-visible unit whose row's `ver` matches, serve the schema-validated
-   * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
-   * absent (a cold or listing consumer treats it as not-yet-available and a
-   * fuller read path refolds it). The zero-I/O rung of the read ladder —
-   * values are as stale as their rows, never wrong.
+   * `view` of the schema-validated stored state; mismatched, malformed, or
+   * absent rows leave their key absent. The current log extent is unknown, so
+   * returned values are tentative hints: a row may trail the log or overreach
+   * a crash-repaired truncation. Exact restore validates the cut before using
+   * a row as authoritative state.
    * @param checkpoint - persisted rows for one session (possibly stale or empty).
    * @param keys - optional wire keys to view.
    * @returns whole values per key with a usable row; empty when none.

@@ -70,12 +70,12 @@ interface Channel {
  * One session's projection values. A list hint can fill or advance only a
  * tentative row. A complete baseline replaces or clears every tentative row,
  * regardless of its claimed sequence, while preserving authoritative frames
- * newer than the baseline cut. Frames use higher-sequence-wins after promoting
- * an equal-sequence hint to authoritative state. A key the store has never seen
- * reads `undefined` (capability absent). Faces are identity-stable per key
- * (create-on-demand, cached) so the React side binds each exactly once; the
- * store-level channel (`subscribeAny`) serves coarse consumers (the manager's
- * list projection reads the `title` key).
+ * newer than the baseline cut. The first authoritative frame replaces any
+ * tentative hint; later authoritative frames use higher-sequence-wins. A key
+ * the store has never seen reads `undefined` (capability absent). Faces are
+ * identity-stable per key (create-on-demand, cached) so the React side binds
+ * each exactly once; the store-level channel (`subscribeAny`) serves coarse
+ * consumers (the manager's list projection reads the `title` key).
  */
 export class ProjectionValueStore {
   private readonly rows = new Map<string, Row>()
@@ -152,7 +152,7 @@ export class ProjectionValueStore {
    */
   apply(key: string, value: unknown, seq: number): void {
     const row = this.rows.get(key)
-    if (row !== undefined && (seq < row.seq || (seq === row.seq && row.provenance === 'authoritative'))) return
+    if (row?.provenance === 'authoritative' && seq <= row.seq) return
     this.rows.set(key, { value, seq, provenance: 'authoritative' })
     this.changed(key)
   }

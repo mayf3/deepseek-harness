@@ -94,7 +94,7 @@ A Client-visible fact belongs to `SessionProjectionMap` when its value is determ
 
 The three projection delivery states have different meanings:
 
-- A Session-list hint is optional, partial, and possibly stale. A missing key means unknown, so a list consumer must not invent an empty value or deployment default.
+- A Session-list hint is optional, partial, and unvalidated against the current log extent. It may be stale or claim a cut removed by crash repair. A missing key means unknown, so a list consumer must not invent an empty value or deployment default.
 - A follow opening baseline is the complete set of client-visible projection capabilities registered at its cursor. A missing key there means the capability is absent for that Host composition.
 - An explicit `null` is a domain-computed no-value result. It is distinct from a missing list hint and survives JSON transport.
 
@@ -108,7 +108,7 @@ These distinctions prevent one overloaded `undefined` from representing cache mi
 | Follow opening baseline | Complete for the Host composition | Exact opening cursor | Capability absent |
 | Projection frame | One whole key | Event sequence carried by the frame | Not applicable |
 
-The Client stores one row per key with its provenance and sequence number. A list hint fills or advances only a tentative row. A complete opening baseline replaces or clears tentative rows even when a cache hint claims a higher sequence, while preserving an authoritative frame newer than the opening cut. Frames use higher-sequence-wins and promote an equal-sequence hint to authoritative state. A replacement control baseline first discards rows beyond its durable cut, then installs its complete values.
+The Client stores one row per key with its provenance and sequence number. A list hint fills or advances only a tentative row. The first authoritative frame replaces a tentative hint regardless of its claimed sequence; later authoritative frames use higher-sequence-wins. A complete opening baseline replaces or clears tentative rows while preserving an authoritative frame newer than the opening cut. A replacement control baseline first discards rows beyond its durable cut, then installs its complete values.
 
 The list view reads the same per-Session store as the opened Session. Hints can populate title, preset, and other list presentation before follow completes; the opening baseline then converges that state without creating a second summary-only authority.
 

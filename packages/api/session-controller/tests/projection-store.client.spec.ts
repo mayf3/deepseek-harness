@@ -157,11 +157,13 @@ describe('Session tail-page seeding', () => {
     expect(session.projections.get('test/marks')).toEqual({ marks: ['authoritative'] })
   })
 
-  it('preserves an authoritative frame that lands while opening waits for its older baseline', async () => {
+  it('preserves an authoritative frame below a higher hint while opening waits for its older baseline', async () => {
     const api = new FakeApiClient()
     const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
     api.onHistory = () => history.promise
-    const session = new Session(SID, api, fakeRemote(api))
+    const projections = new ProjectionValueStore()
+    projections.prewarm('test/marks', { marks: ['hint-9'] }, 9)
+    const session = new Session(SID, api, fakeRemote(api), { projections })
 
     const opening = session.open()
     session.projections.apply('test/marks', { marks: ['live-3'] }, 3)
