@@ -20,7 +20,7 @@ Reads and writes share ONE coherent state: every read (`cachedSnapshot`) is a sy
 - Listing is a synchronous in-memory read; a session without a record document simply lacks the projection column.
 - ACP, headless, SDK, and Web sessions publish cache rows for later consumers. The log-leading durability barrier may flush a covered prefix at the cache cadence and split otherwise coalesced physical JSONL runs; recorded profile snapshots re-pack the logical event stream so cache timing does not define fixture layout.
 - The per-record contract scopes failure: a malformed or stale-version document reads as an absent record at open, so one bad file never bricks the cache, and a checkpoint schema bump discards stale sessions per record instead of rejecting the whole domain.
-- No migration: the cache is derived data, never an authority. An obsolete cache (any earlier format) is never read — the first cold read refolds from the log and writes the current format.
+- The json backend bootstraps the per-record tree from the legacy whole-unit cache only when enumeration finds no new-layout document path. Any new document path, including an unreadable or stale file, suppresses the bootstrap for the whole unit; missing session rows refold from the log. The legacy file remains untouched.
 - The cache record is bound to the same log lifecycle as before: the stored `{createdAt, cwd}` identity guards against a recreated id.
 
 ## Alternatives considered

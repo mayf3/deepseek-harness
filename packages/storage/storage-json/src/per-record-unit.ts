@@ -15,9 +15,11 @@
  * of migrating them. Record keys become path segments, so they must be
  * path-safe (`[a-zA-Z0-9_-]+`); an unsafe key rejects at write.
  *
- * One-time migration: a legacy whole-unit file `<root>/<name>.json` (the
- * pre-per-record layout) is split into per-record documents on first open,
- * new records winning, and deleted once every record migrated.
+ * Legacy bootstrap: when the new tree has no document path, a legacy
+ * whole-unit file `<root>/<name>.json` (the pre-per-record layout) seeds
+ * per-record documents. Any new document path, including one whose contents
+ * are unreadable or stale, suppresses the bootstrap for the whole unit. The
+ * legacy file is never changed or deleted.
  * @module @deepseek-ai/dsh-storage-json/src/per-record-unit
  */
 
@@ -72,39 +74,40 @@ async function loadPerRecordState(descriptor: KvUnitDescriptor, dir: string): Pr
     entries = await readdir(dir, { withFileTypes: true })
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-    // Missing directory = empty unit; the legacy migration below still runs
+    // Missing directory = empty unit; the legacy bootstrap below still runs
     // (the fresh-upgrade shape is exactly an absent new tree).
   }
-  if (entries !== undefined) {
-    await Promise.all(entries.map(async (entry) => {
+  const hasNewDocuments = entries === undefined
+    ? false
+    : (await Promise.all(entries.map(async (entry) => {
       if (entry.isDirectory()) {
         const records = state.tables.get(entry.name)
         if (records !== undefined) {
-          await loadTableRecords(records, descriptor.version, join(dir, entry.name))
+          return loadTableRecords(records, descriptor.version, join(dir, entry.name))
         }
-      } else if (entry.isFile() && entry.name === 'global.json' && descriptor.hasGlobal) {
+      }
+      if (entry.name === 'global.json' && descriptor.hasGlobal) {
         const global = await readRecord(join(dir, entry.name), descriptor.version)
         if (global !== undefined) state.global = global
+        return true
       }
-    }))
-  }
-  await migrateLegacyUnit(descriptor, dir, state)
+      return false
+    }))).some(Boolean)
+  if (!hasNewDocuments) await bootstrapLegacyUnit(descriptor, dir, state)
   return state
 }
 
 /**
- * One-time migration of a legacy whole-unit file (`<root>/<name>.json`, the
- * pre-per-record layout). Every record it holds that the new tree lacks is
- * written as a per-record document — an already-present new record wins —
- * and the legacy file is deleted only after all records migrated. A missing
- * legacy file, or one that is unreadable, foreign (another unit's name), or
- * not a unit document, is left alone: the migration is idempotent, and the
- * legacy file's absence is the "migrated" marker.
+ * Bootstrap an empty per-record tree from a legacy whole-unit file
+ * (`<root>/<name>.json`, the pre-per-record layout). Every declared-table
+ * record is copied into a current-version document, while the legacy file is
+ * retained unchanged. A missing, foreign (another unit's name), malformed,
+ * or non-unit legacy file is left alone; other read failures propagate.
  * @param descriptor - Static identity and shape of the unit.
  * @param dir - The per-record unit directory (`<root>/<name>`).
- * @param state - The tree state loaded so far; migrated records are added.
+ * @param state - The empty tree state; bootstrapped records are added.
  */
-async function migrateLegacyUnit(descriptor: KvUnitDescriptor, dir: string, state: UnitState): Promise<void> {
+async function bootstrapLegacyUnit(descriptor: KvUnitDescriptor, dir: string, state: UnitState): Promise<void> {
   const legacyPath = join(dirname(dir), `${descriptor.name}.json`)
   let text: string | undefined
   try {
@@ -130,19 +133,22 @@ async function migrateLegacyUnit(descriptor: KvUnitDescriptor, dir: string, stat
     const target = state.tables.get(table)
     if (target === undefined) continue
     for (const [key, value] of Object.entries(records)) {
-      if (target.has(key)) continue // An existing new record wins.
       const path = join(dir, table, `${key}.json`)
       await mkdir(dirname(path), { recursive: true, mode: 0o700 })
       await writeAtomic(path, serializeRecord(descriptor.version, value))
       target.set(key, value)
     }
   }
-  await rm(legacyPath, { force: true }) // Every record migrated: drop the legacy file.
 }
 
-/** Read one declared table's record documents into `records`. */
-async function loadTableRecords(records: Map<string, unknown>, version: number, dir: string): Promise<void> {
+/**
+ * Read one declared table's record documents into `records`.
+ * @returns whether the directory contains any `.json` document path,
+ * independently of key safety, readability, or stored version.
+ */
+async function loadTableRecords(records: Map<string, unknown>, version: number, dir: string): Promise<boolean> {
   const files = await readdir(dir, { withFileTypes: true })
+  const hasDocuments = files.some(file => file.name.endsWith('.json'))
   const loaded = await Promise.all(files.map(async (file) => {
     if (!file.name.endsWith('.json')) return
     const key = file.name.slice(0, -'.json'.length)
@@ -153,6 +159,7 @@ async function loadTableRecords(records: Map<string, unknown>, version: number, 
   for (const record of loaded) {
     if (record !== undefined) records.set(...record)
   }
+  return hasDocuments
 }
 
 /** Read one record document; a foreign (unreadable or stale) one reads as absent. */
