@@ -130,7 +130,7 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'reference.txt'), 'reference fixture\n')
     await mkdir(join(scaffold.workspaceCwd, 'workspace', 'folderx'), { recursive: true })
     await writeFile(join(scaffold.workspaceCwd, 'workspace', 'folderx', 'child.txt'), 'child fixture\n')
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
   }, 120_000)

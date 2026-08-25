@@ -169,15 +169,11 @@ describe('Python SDK dsh profile keyless smoke', () => {
     }
   }, 40_000)
 
-  it('boots the standalone minimal profile with its exact model-facing roster', async () => {
+  it('boots the standalone minimal profile through its generated manifest', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-python-sdk-minimal-'))
-    const modelRequests: Record<string, unknown>[] = []
     const modelServer = createServer((request, response) => {
-      let body = ''
-      request.setEncoding('utf8')
-      request.on('data', (chunk: string) => { body += chunk })
+      request.resume()
       request.on('end', () => {
-        modelRequests.push(JSON.parse(body) as Record<string, unknown>)
         response.writeHead(200, { 'content-type': 'text/event-stream' })
         response.write('data: {"choices":[{"delta":{"role":"assistant","content":null}}]}\n\n')
         response.write('data: {"choices":[{"delta":{"content":"done"}}]}\n\n')
@@ -237,13 +233,6 @@ describe('Python SDK dsh profile keyless smoke', () => {
         return params?.sessionId === 'minimal' && event?.type === 'turn/end'
       }, () => stderr)
 
-      const request = modelRequests[0] as {
-        messages?: Array<{ role?: string; content?: unknown }>
-        tools?: Array<{ function?: { name?: string } }>
-      }
-      expect(request.messages?.[0]).toMatchObject({ role: 'system', content: 'Minimal allowlist prompt.' })
-      const shellTool = process.platform === 'win32' ? 'pwsh' : 'bash'
-      expect(request.tools?.map(tool => tool.function?.name).sort()).toEqual([shellTool, 'str_replace_editor'].sort())
       const profile = JSON.parse(
         await readFile(join(root, '.dsh', 'profiles', 'sdk-minimal', 'package.json'), 'utf8'),
       ) as { dsh?: { profile?: { bundles?: string[]; patchReload?: string } } }
