@@ -1,7 +1,9 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
+import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
+import { decodeStoredSession } from '@deepseek-ai/dsh-session-persistence/src/format-decoder.ts'
 import { scanLog } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import { foldSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import {
@@ -26,10 +28,24 @@ function filesUnder(root: string): string[] {
   return files.sort()
 }
 
-function readSession(id: string): ReturnType<typeof scanLog> {
-  return scanLog(readFileSync(
+async function readSession(id: string): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
+  const stored = scanLog(readFileSync(
     join(VFS_EXAMPLE_ROOT, 'home/sessions/--dsh-workspace--', id, 'session.jsonl'),
   ))
+  const decoded = decodeStoredSession({
+    meta: stored.meta,
+    revision: SessionPersistenceRevision(`vfs-example:${id}`),
+    readEvents: () => ({
+      events: (async function* (): AsyncIterable<unknown> {
+        yield* stored.events
+      })(),
+      completed: Promise.resolve({}),
+    }),
+  }, SessionId(id))
+  const events: SessionEvent[] = []
+  for await (const event of decoded.events) events.push(event)
+  await decoded.completed
+  return { meta: decoded.meta, events }
 }
 
 function textOf(event: SessionEvent): string {
@@ -66,8 +82,8 @@ describe('WebWorker preview VFS example', () => {
     })
   })
 
-  it('restores the main production log with paging and tool coverage', () => {
-    const { meta, events } = readSession(VFS_EXAMPLE_SESSION_IDS.main)
+  it('restores the main production log with paging and tool coverage', async () => {
+    const { meta, events } = await readSession(VFS_EXAMPLE_SESSION_IDS.main)
     expect(meta).toMatchObject({
       id: VFS_EXAMPLE_SESSION_IDS.main,
       cwd: '/dsh/workspace',
@@ -94,13 +110,13 @@ describe('WebWorker preview VFS example', () => {
     expect(events.some(event => event.type === 'tool/result' && event.data.message.content[0].isError === true)).toBe(true)
   })
 
-  it('restores one-shot and continuable child Sessions with durable descriptors', () => {
+  it('restores one-shot and continuable child Sessions with durable descriptors', async () => {
     const expected = [
       [VFS_EXAMPLE_SESSION_IDS.oneShot, 'one-shot'],
       [VFS_EXAMPLE_SESSION_IDS.continuable, 'continuable'],
     ] as const
     for (const [id, mode] of expected) {
-      const { meta, events } = readSession(id)
+      const { meta, events } = await readSession(id)
       expect(meta).toMatchObject({
         id,
         cwd: '/dsh/workspace',

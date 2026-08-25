@@ -9,10 +9,11 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { SessionPreparation } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistenceRevision } from './revision.ts'
+import { createStoredEventRead, type StoredEventRead } from './format-decoder.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
-export { SessionPersistenceRevision } from './revision.ts'
+export { SessionPersistenceRevision, SessionPersistenceRevisionConflictError } from './revision.ts'
 export { SessionPersistenceNotFoundError } from './errors.ts'
 
 /** Lightweight immutable source identity returned without loading a full log. */
@@ -67,17 +68,18 @@ export {
   DEFAULT_WRITE_BATCH_MAX_DELAY_MS,
   MAX_WRITE_BATCH_DELAY_MS,
   PersistenceCoordinator,
-  SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
-  sessionFormatVersionRefusal,
 } from './coordinator.ts'
 export type {
   PersistenceBackend,
   PersistenceCoordinatorOptions,
-  StoredPrefix,
-  StoredSuffix,
 } from './coordinator.ts'
-
+export {
+  createStoredEventRead,
+  decodeStoredSessionHeader,
+  SessionFormatUnsupportedError,
+  sessionFormatVersionRefusal,
+} from './format-decoder.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     sessionPersistence: SessionPersistence
@@ -105,6 +107,21 @@ export interface SessionLocation {
 export abstract class SessionPersistence extends Service {
   constructor(ctx: Context) {
     super(ctx, 'sessionPersistence')
+  }
+
+  /**
+   * Build the standard lazy event stream and EOF metadata around one backend read.
+   * @param load - revision-checked batch loader owned by the backend.
+   * @param include - whether one loaded event belongs in this physical read.
+   * @param signal - optional cancellation checked between yielded events.
+   * @returns an independently consumable event read.
+   */
+  protected createStoredEventRead<TornMarker>(
+    load: () => Promise<{ readonly events: readonly unknown[]; readonly tornMarker?: TornMarker }>,
+    include: (event: unknown) => boolean,
+    signal?: AbortSignal,
+  ): StoredEventRead<TornMarker> {
+    return createStoredEventRead(load, include, signal)
   }
 
   /**
@@ -283,3 +300,11 @@ export abstract class SessionPersistence extends Service {
 }
 
 export default SessionPersistence
+
+export type {
+  SessionFormatMigration,
+  StoredEventRead,
+  StoredEventReadCompletion,
+  StoredEventReadOptions,
+  StoredSessionSource,
+} from './format-decoder.ts'
