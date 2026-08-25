@@ -14,6 +14,8 @@ import type {
   ConversationViewSnapshotStore,
 } from '../contract/conversation.ts'
 import type { ConversationSnapshot } from '../contract/snapshot.ts'
+import type { ConversationPromptSnapshot, RequestPromptInspection } from '../contract/request-inspection.ts'
+import { inspectRequestPrompt } from '../contract/request-inspection.ts'
 import { ConversationNodeAssembler } from './assembler.ts'
 import { ConversationEventRegistry } from './event-registry.ts'
 import { HistoricalImageCache } from './historical-images.ts'
@@ -215,6 +217,23 @@ export class UiConversation extends Service {
    */
   imageUrl(sessionId: SessionId, attachment: ImageAttachmentRef): Promise<string> {
     return this.images.resolve(sessionId, attachment)
+  }
+
+  /**
+   * Canonicalize one `request/header` event against the previous prompt state.
+   *
+   * A pure interpretation shared by the Chat and Trajectory Definitions, exposed
+   * as a service method because cross-plugin value imports are forbidden in
+   * client bundles.
+   * @param previous - prompt recorded by the preceding loaded header, if any.
+   * @param event - the `request/header` session event to interpret.
+   * @returns the canonical prompt snapshot and any model-visible change.
+   */
+  inspectRequestPrompt(
+    previous: ConversationPromptSnapshot | undefined,
+    event: SessionEvent<'request/header'>,
+  ): RequestPromptInspection {
+    return inspectRequestPrompt(previous, event)
   }
 
   private drop(record: BindingRecord, releaseScope: boolean): void {

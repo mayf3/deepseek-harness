@@ -426,8 +426,12 @@ async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly Se
       const base = reconstructed[index] ?? reconstructed[0]
       const expected = selectedSchemas === undefined ? base : { ...base as JsonObject, tools: selectedSchemas }
       expect(header, `${scenario.name}: request header ${index + 1}`).toEqual(expected)
-      expect(formatSystemPromptSnapshot(prompts[index] as string), `${scenario.name}: system prompt ${index + 1}`)
-        .toBe(childPrompts.get(logIndex) ?? prompt)
+    }
+    if (prompts.length > 0) {
+      expect(
+        formatSystemPromptSnapshot(prompts[0] as string, prompts.slice(1)),
+        `${scenario.name}: system prompts`,
+      ).toBe(childPrompts.get(logIndex) ?? prompt)
     }
   }
 }
