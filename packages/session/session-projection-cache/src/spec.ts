@@ -1,11 +1,12 @@
 /**
- * The session-projcache domain declaration: one `sessions` table keyed by
+ * The projection-cache domain declaration: one `sessions` table keyed by
  * {@link SessionId}, each record the full projection checkpoint for one
- * session (`key → {ver, seq, val}` rows). The spec object
- * is the single source of the domain's identity, version, and record schema;
- * the storage-domain routing decides the medium (the shipped composition's
- * json backend lands it at `<root>/session_projcache.json`, beside
- * `workspace.json`).
+ * session (`key → {ver, seq, val}` rows). The spec object is the single
+ * source of the domain's identity, version, layout, and record schema; the
+ * storage-domain routing decides the medium (the shipped composition's json
+ * backend stores the domain `per-record`: one document per session under
+ * `<root>/session_projcache/sessions/`, so a checkpoint write rewrites one
+ * session's document instead of the whole unit).
  * @module @deepseek-ai/dsh-session-projection-cache/src/spec
  */
 
@@ -35,9 +36,9 @@ export const checkpointRow = z.object({
  * that distinguish one session lifecycle from another under the same id. A
  * session id names a slot, not a lifecycle — a deleted-then-recreated id, or
  * a persistence root swapped under a surviving cache, would otherwise let an
- * old row pass every watermark check and seed state folded from an unrelated
- * log. Reads validate this against the live header (listing) or the stored
- * header (cold read) before accepting any row.
+ * old record pass every watermark check and seed state folded from an
+ * unrelated log. Reads validate this against the live header (listing) or
+ * the stored header (cold read) before accepting any record.
  */
 export const checkpointIdentity = z.object({
   createdAt: z.number().int().nonnegative(),
@@ -62,13 +63,15 @@ export const checkpointRecord = z.object({
 export type CheckpointRecord = z.infer<typeof checkpointRecord>
 
 /**
- * The session-projcache domain spec. Version bumps discard the whole medium.
- * Zero-I/O callers may use matching rows only as tentative hints; exact reads
- * validate the current log extent and refold before returning authoritative
- * state.
+ * The session-projcache domain spec. The `per-record` layout scopes version
+ * bumps per session: a stale document is discarded when that session opens,
+ * while the rest of the domain stays usable. Zero-I/O callers treat matching
+ * rows as tentative hints; exact reads validate the current log extent and
+ * refold from the supplied full log when necessary.
  */
 export const projectionCacheDomainSpec = defineDomain({
   name: 'session_projcache',
-  version: 3,
+  version: 4,
+  layout: 'per-record',
   tables: { sessions: domainTable<SessionId, CheckpointRecord>(checkpointRecord) },
 })

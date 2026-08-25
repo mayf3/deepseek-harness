@@ -206,7 +206,7 @@ type AgentCancelCause =
   | { readonly kind: 'disposed' }
 ```
 
-cause 是由 TypeScript 强制约束的同进程输入。活跃的取消持有者会将它复制到仅运行时的 `AbortSignal.reason`；signal 不授予协作监听器任何分类权限。持久 `turn/end` 保留粗粒度 `{ kind: 'aborted' }` 结果；若需记录谁请求了取消，应使用单独的持久事件，而不是让终态结果承担额外含义。
+cause 是由 TypeScript 强制约束的同进程输入。活跃的取消持有者会将它复制到仅运行时的 `AbortSignal.reason`；signal 不授予协作监听器任何分类权限。持久 `turn/end` 以 `{ kind: 'aborted', reason: TurnEndCancelCause }` 记录结果，取消原因随终态结果一起持久化。
 
 [事件分类](../architecture.zh.md#events)负责 `agent/*` 生命周期、检查点与 waterfall（瀑布式事件）约定。轮次和步骤边界是持久会话事件，而不是 agent emit。
 
@@ -247,7 +247,7 @@ type PreStepDecision =
 type RequestErrorAction = { kind: 'retry' } | undefined
 ```
 
-`agent/pre-step` 是请求推导前唯一的串行监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。
+`agent/pre-step` 是请求推导前唯一的 waterfall（瀑布式）监听器链。`agent/turn-stopping` 在轮次没有工具或 steering（中途引导）后续时运行，先于最后一次 steering 排空。
 
 `agent/session-start` 携带 `SessionStartSource`（会话生命周期为何开始；桥接层据此匹配其 SessionStart）：
 
@@ -295,14 +295,13 @@ declare module '@deepseek-ai/dsh-llm' {
 }
 ```
 
-六个规范 map 使用此模式；插件作者扩展它们：
+五个规范 map 使用此模式；插件作者扩展它们：
 
 | Map | 包 | 派生 | 目录 |
 |---|---|---|---|
 | `ContentBlockMap` | dsh-llm | `ContentBlock` | [llm-streaming.md](llm-streaming.zh.md#content-blocks-and-messages) |
 | `MessageSourceMap` | dsh-llm | `MessageSource` | [llm-streaming.md](llm-streaming.zh.md#content-blocks-and-messages) |
 | `FinishReasonMap` | dsh-llm | `FinishReason` | [llm-streaming.md](llm-streaming.zh.md#the-model-request-and-result) |
-| `TurnTriggerMap` | dsh-session | `TurnTrigger` | [session.md](session.zh.md) |
 | `TurnEndReasonMap` | dsh-session | `TurnEndReason` | [session.md](session.zh.md) |
 | `SessionEventMap` | dsh-session | `SessionEvent` | [session.md](session.zh.md) |
 

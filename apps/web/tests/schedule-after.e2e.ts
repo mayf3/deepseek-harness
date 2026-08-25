@@ -645,8 +645,10 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
     // Seed the list cache for both cold Sessions; preserve the damaged Session's
     // valid row before its later bad tail exercises the open-state visibility gate.
-    await scaffold.ctx.sessionProjectionCache.coldSnapshot(CATALOG_SESSION_ID)
-    await scaffold.ctx.sessionProjectionCache.coldSnapshot(DAMAGED_SESSION_ID)
+    const catalog = await scaffold.ctx.sessionPersistence.readFrom(CATALOG_SESSION_ID, 0)
+    const damaged = await scaffold.ctx.sessionPersistence.readFrom(DAMAGED_SESSION_ID, 0)
+    scaffold.ctx.sessionProjectionCache.coldSnapshot(catalog.meta, catalog.events)
+    scaffold.ctx.sessionProjectionCache.coldSnapshot(damaged.meta, damaged.events)
 
     browser = await chromium.launch()
     page = await browser.newPage({

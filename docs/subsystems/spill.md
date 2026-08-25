@@ -38,7 +38,7 @@ interface SpillOwner {
 }
 ```
 
-`SpillOwner.sessionId` is the save-time storage namespace. Forked sessions inherit existing spill locators from the seeded log; those artifacts are not copied or re-owned, and spills produced after the fork use the child session id. A retention-period cleanup may expire old locators with other old session artifacts; the spill seam does not define a per-session cleanup policy.
+A retention-period cleanup may expire old locators with other old session artifacts; the spill seam does not define a per-session cleanup policy.
 
 ```ts type-equiv
 /**

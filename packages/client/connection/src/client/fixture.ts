@@ -2273,18 +2273,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     return { ok: true, value: goalView(projection) }
   }
 
-  const mapGoalResult = <T, U>(result: RpcResult<T>, map: (value: T) => U): RpcResult<U> => (
-    result.ok ? { ok: true, value: map(result.value) } : result
-  )
-
-  const goalRefResult = (result: RpcResult<FxGoalView>): RpcResult<{ ref: { id: never; revision: number } }> => (
-    mapGoalResult(result, view => ({ ref: { id: view.id as never, revision: view.revision } }))
-  )
-
-  const legacyGoalResponse = <P, T>(request: RpcRequest<P>, result: RpcResult<T>): Promise<RpcResponse<T>> => (
-    Promise.resolve({ rpcId: request.rpcId, result })
-  )
-
   /** At most one in-flight replay per session; cancel clears it. */
   const replays = new Map<SessionId, { timer: ReturnType<typeof setTimeout>; finish(aborted: boolean): void }>()
 
@@ -3339,46 +3327,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         })
       },
     },
-    goals: {
-      // Compatibility face only: old API Proxy payloads and acknowledgements
-      // adapt to the canonical fixture Remote implementation above.
-      create: request => legacyGoalResponse(
-        request,
-        mapGoalResult(
-          goalRemotes.create(request.payload.sessionId, {
-            objective: request.payload.objective,
-            ...request.payload.maxGoalRounds === undefined ? {} : { maxGoalRounds: request.payload.maxGoalRounds },
-          }),
-          value => ({ ref: { id: value.ref.id as never, revision: value.ref.revision } }),
-        ),
-      ),
-      edit: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.edit(request.payload.sessionId, request.payload.ref, {
-          ...request.payload.objective === undefined ? {} : { objective: request.payload.objective },
-          ...request.payload.maxGoalRounds === undefined ? {} : { maxGoalRounds: request.payload.maxGoalRounds },
-        })),
-      ),
-      pause: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.pause(request.payload.sessionId, request.payload.ref)),
-      ),
-      resume: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.resume(request.payload.sessionId, request.payload.ref)),
-      ),
-      complete: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.complete(request.payload.sessionId, request.payload.ref)),
-      ),
-      clear: request => legacyGoalResponse(
-        request,
-        mapGoalResult(
-          goalRemotes.clear(request.payload.sessionId, request.payload.ref),
-          () => ({ cleared: true as const }),
-        ),
-      ),
-    },
     settings: {
       // Only the resolved DeepSeek address needed by first-run readiness is
       // represented here. Fixture-backed journeys do not open its Models
@@ -3638,12 +3586,6 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'agentPreset.copy': return this.api.agentPresets.copy(request)
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
       case 'agentPreset.remove': return this.api.agentPresets.remove(request)
-      case 'goal.create': return this.api.goals.create(request)
-      case 'goal.edit': return this.api.goals.edit(request)
-      case 'goal.pause': return this.api.goals.pause(request)
-      case 'goal.resume': return this.api.goals.resume(request)
-      case 'goal.complete': return this.api.goals.complete(request)
-      case 'goal.clear': return this.api.goals.clear(request)
       case 'settings.describe': return this.api.settings.describe(request)
       case 'settings.openDocument': return this.api.settings.openDocument(request, signal)
       case 'settings.update': return this.api.settings.update(request)
