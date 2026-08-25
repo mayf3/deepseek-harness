@@ -197,7 +197,7 @@ describe('web e2e: continuous conversation grown through the composer', () => {
     page.on('console', (message) => {
       if (message.type() === 'warning') consoleWarnings.push(message.text())
     })
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd, 'continuous-chat-e2e')
   }, 120_000)
