@@ -113,8 +113,11 @@ describe('CI workflow', () => {
     const nativeTestCommands = nativeTestSteps.filter((step): step is Record<string, unknown> & { run: string } => (
       isRecord(step) && typeof step.run === 'string'
     ))
-    expect(nativeTestCommands.map(step => step.run).join('\n')).toContain('tool-pwsh/tests/loader.spec.ts')
-    expect(nativeTestCommands.map(step => step.run).join('\n')).toContain('workflow-worker-thread.spec.ts')
+    const nativeTestCommand = nativeTestCommands.map(step => step.run).join('\n')
+    expect(nativeTestCommand).toContain('--no-file-parallelism')
+    expect(nativeTestCommand).toContain('--testTimeout 30000')
+    expect(nativeTestCommand).toContain('tool-pwsh/tests/loader.spec.ts')
+    expect(nativeTestCommand).toContain('workflow-worker-thread.spec.ts')
 
     // windows-observational is non-blocking.
     expect(windowsObservational.name).toBe('windows node 24 / observational')

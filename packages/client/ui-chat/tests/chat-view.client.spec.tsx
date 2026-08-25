@@ -474,8 +474,62 @@ describe('ChatView', () => {
 
       readerScroll(scroller, 100)
 
-      expect(hitTest).toHaveBeenCalledTimes(64)
+      expect(hitTest).toHaveBeenCalledTimes(1)
       expect(h.chatScroll.read()?.anchorKey).toBe('fixture:user:1')
+    } finally {
+      if (originalHitTest !== undefined) {
+        Object.defineProperty(document, 'elementsFromPoint', originalHitTest)
+      } else {
+        Reflect.deleteProperty(document, 'elementsFromPoint')
+      }
+    }
+  })
+
+  it('falls back to the first visible row when the viewport top hit-test misses', () => {
+    const originalHitTest = Object.getOwnPropertyDescriptor(document, 'elementsFromPoint')
+    const nodes = Array.from({ length: 16 }, (_, index) => user(20 + index, `row ${String(index)}`))
+    const h = makeHarness(
+      { nodes },
+      { hasMore: true },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
+    const rows = [...view.container.querySelectorAll<HTMLElement>('[data-chat-flow-key]')]
+    let prepended = false
+    let rowRectCalls = 0
+    vi.spyOn(scroller, 'getBoundingClientRect').mockImplementation(
+      () => ({ top: 0, bottom: 200 } as DOMRect),
+    )
+    rows.forEach((row, index) => {
+      vi.spyOn(row, 'getBoundingClientRect').mockImplementation(() => {
+        rowRectCalls += 1
+        const shift = prepended ? (index === 8 ? 400 : 500) : 0
+        const top = 20 + (index - 8) * 60 + shift
+        return { top, bottom: top + 40 } as DOMRect
+      })
+    })
+    Object.defineProperty(scroller, 'scrollHeight', { value: 800, writable: true })
+    Object.defineProperty(scroller, 'clientHeight', { value: 200, writable: true })
+    readerScroll(scroller, 50)
+
+    const hitTest = vi.fn((_x: number, _y: number): Element[] => [])
+    Object.defineProperty(document, 'elementsFromPoint', {
+      configurable: true,
+      value: hitTest,
+    })
+    try {
+      rowRectCalls = 0
+      fireEvent.click(view.getByText('加载更早'))
+      expect(hitTest).toHaveBeenCalledTimes(1)
+      expect(hitTest.mock.calls[0]?.[1]).toBe(1)
+      expect(rowRectCalls).toBeLessThanOrEqual(6)
+
+      Object.defineProperty(scroller, 'scrollHeight', { value: 1_300, writable: true })
+      prepended = true
+      act(() => {
+        h.setChat({ nodes: [assistant(2, 'older'), ...nodes] })
+      })
+      expect(scroller.scrollTop).toBe(450) // reader offset 50 + first visible row's 400px shift
     } finally {
       if (originalHitTest !== undefined) {
         Object.defineProperty(document, 'elementsFromPoint', originalHitTest)
