@@ -143,10 +143,12 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
 
   it('skips relative PATH entries when resolving a basename pythonBin', async () => {
     // resolvePythonBin must return an absolute path: a RELATIVE PATH entry
-    // ('.' here) would otherwise resolve the basename against the host CWD —
-    // spawn() then tries './python3' from the test process's directory, where
-    // no interpreter exists, surfacing an ENOENT worker-exit instead of a
-    // normal run. The relative entry is skipped and the absolute entry used.
+    // ('.' here) would otherwise resolve the basename against the host CWD.
+    // This run's CWD holds no executable named python3, so both the relative
+    // skip and the accessSync-miss fall through to the absolute entry — the
+    // case pins the contract (absolute candidate wins over a relative PATH
+    // prefix), not a worker-exit distinction, which would need an executable
+    // named python3 in the test CWD.
     const cp = await import('node:child_process')
     const nodePath = await import('node:path')
     const pythonDir = nodePath.dirname(cp.execFileSync('which', ['python3'], { encoding: 'utf8' }).trim())
@@ -4925,12 +4927,13 @@ describe('PythonCodeRuntime — hostile peer', () => {
   it('rejects an oversized first frame that lands on the sealing threshold with a newline', async () => {
     // The fragment-count seal runs only on newline-free chunks (the ELSE half
     // of the newline branch), so a chunk that carries the first newline always
-    // reaches the join and its first-frame check. Fail-before: sealing that
-    // chunk into a block would empty pendingChunks, leave sawNewline false,
-    // skip the first-frame check, and join the oversized first frame whole.
+    // reaches the join and its first-frame check; sealing it into a block
+    // would empty pendingChunks, leave sawNewline false, and skip that check.
     // Whether the pipe delivers exactly 1024 chunks is timing-dependent, but
-    // the oversized first frame (63.9 MiB of A's + 12288 more before the
-    // newline) exceeds FRAME_PARSE_CAP_BYTES no matter how it arrives.
+    // the oversized first frame (63.9 MiB of A's + 12289 more before the
+    // newline) exceeds FRAME_PARSE_CAP_BYTES no matter how it arrives — the
+    // case pins the worker-exit settlement, not a pre/post copy-count
+    // distinction (both orders reject an over-cap frame).
     const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
     const result = await runtime.run({
       program: [

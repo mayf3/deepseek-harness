@@ -192,19 +192,6 @@ function materializePyScripts(): string {
 }
 
 /**
- * The fd-3 receive cap for one unframed line: a pure host-memory-safety
- * bound, NOT an output budget. Binding `call` frames legitimately carry large
- * arguments (the seam puts no byte cap on binding traffic), so the cap
- * must sit far above any plausible frame while still stopping a hostile
- * newline-free flood from growing the host accumulator without bound — the
- * child's RLIMIT_AS bounds the child, not the host string. 64 MiB mirrors
- * the order of the worker backend's default outer-output cap while keeping
- * decode amplification (see FRAME_PARSE_CAP_BYTES) a bounded factor of the
- * wire bytes; completion values have their own `maxValueBytes` check at the
- * `done` handler, deliberately decoupled from this. Not a config knob because
- * it is an internal framing invariant, not a deployment choice.
- */
-/**
  * A frame's RAW length is capped before JSON.parse: the 64 MiB fd-3 frame
  * parse cap bounds the bytes, not the decoded structure, and a compact wide
  * frame near that ceiling (e.g. a huge array of tiny elements) could decode to
@@ -1322,17 +1309,16 @@ export class PythonCodeRuntime extends CodeRuntime {
         // pipe read of the 64 MiB cap, orders of magnitude past the 32/64 KiB
         // defaults.
         //
-        // The cap used HERE is FRAME_PARSE_CAP_BYTES, not the old 256 MiB
-        // wire ceiling, and ONLY when the held bytes are still a single unframed
-        // line (this chunk carries no newline, and earlier newline-bearing
-        // chunks were joined immediately): a frame between 64 MiB and the
-        // ceiling would otherwise be fully `Buffer.concat`-ed (a second copy
-        // of its bytes) and only then dropped in the line loop — the
-        // peak-memory doubling this pre-concat check exists to prevent.
-        // Dropping the oversized unframed buffer before the join keeps the
-        // peak at one copy of the wire bytes. When this chunk DOES carry a
-        // newline the buffer holds several frames, so the FIRST-FRAME check
-        // below (not this counter, which charges them all) decides.
+        // The cap is enforced ONLY when the held bytes are still a single
+        // unframed line (this chunk carries no newline, and earlier
+        // newline-bearing chunks were joined immediately): a frame past the cap
+        // would otherwise be fully `Buffer.concat`-ed (a second copy of its
+        // bytes) and only then dropped in the line loop — the peak-memory
+        // doubling this pre-concat check exists to prevent. Dropping the
+        // oversized unframed buffer before the join keeps the peak at one copy
+        // of the wire bytes. When this chunk DOES carry a newline the buffer
+        // holds several frames, so the FIRST-FRAME check below (not this
+        // counter, which charges them all) decides.
         if (pendingBytes > FRAME_PARSE_CAP_BYTES && !chunk.includes(0x0a)) {
           pendingChunks = []
           sealedBlocks = []
@@ -1376,8 +1362,8 @@ export class PythonCodeRuntime extends CodeRuntime {
           // serve here — it charges the whole buffer, which legitimately
           // holds several frames each within the cap. A first frame past the
           // cap is dropped before the join (one copy of its wire bytes);
-          // later frames in the same buffer are handled by the per-line check
-          // in the loop below.
+          // later frames in the same buffer are handled line by line in the
+          // loop below.
           let firstFrameLen = 0
           let sawNewline = false
           // Sealed blocks hold newline-free prefixes only (see the sealing
