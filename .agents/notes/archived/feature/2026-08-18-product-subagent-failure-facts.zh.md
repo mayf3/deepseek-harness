@@ -1,6 +1,7 @@
 # Agent Note: 产品 subagent 公开有界结构化失败事实
 
 Status: implemented
+Archived: 2026-08-21
 
 [English](2026-08-18-product-subagent-failure-facts.md) | 中文
 
