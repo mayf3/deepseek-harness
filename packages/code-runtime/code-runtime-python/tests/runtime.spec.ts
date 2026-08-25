@@ -164,6 +164,27 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     }
   }, 45_000)
 
+  it('ignores a forged second boot-ack without re-sending the run frame', async () => {
+    // The run frame is sent once, from the first boot-ack; a program that
+    // forges an extra boot-ack frame on fd 3 must not re-enter the gate (a
+    // second run frame would confuse the child's frame reader). The honest
+    // child sends exactly one ack; the forged one exercises the re-entry
+    // guard.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // One forged boot-ack after the program starts; the run already went
+        // out on the real ack.
+        "os.write(3, b'{\"type\":\"boot-ack\"}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+  }, 15_000)
+
   it('skips a PATH entry that is an executable DIRECTORY named like the interpreter', async () => {
     // accessSync(X_OK) succeeds on directories, so without the isFile guard a
     // PATH entry like a `python3` directory would be chosen over a later real

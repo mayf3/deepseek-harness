@@ -47,6 +47,30 @@ afterEach(() => {
   spawnMock.mockReset()
 })
 
+/** A child whose fd-3 pipe accepts the boot write, then rejects the run write. */
+function fakeChildWithAckThenThrowingFd3(): EventEmitter {
+  const child = new EventEmitter() as EventEmitter & {
+    pid?: number
+    stdout: PassThrough
+    stderr: PassThrough
+    stdio: unknown[]
+  }
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  const proto = new PassThrough()
+  let writes = 0
+  proto.write = () => {
+    writes += 1
+    if (writes === 1) return true // The boot frame goes out.
+    throw Object.assign(new Error('EPIPE: broken pipe, write'), { code: 'EPIPE' })
+  }
+  child.stdio = [new PassThrough(), child.stdout, child.stderr, proto]
+  // Emit the boot-ack after the boot write, so the run-frame write fires and
+  // hits the throwing pipe.
+  setImmediate(() => proto.emit('data', Buffer.from('{"type":"boot-ack"}\n')))
+  return child
+}
+
 describe('PythonCodeRuntime — boot-write failure', () => {
   it('resolves a worker-exit when the fd-3 boot write throws (no TDZ ReferenceError)', async () => {
     // Before the fix, the boot-write block ran BEFORE `wallTimer`, `onAbort`,
@@ -96,6 +120,22 @@ describe('PythonCodeRuntime — boot-write failure', () => {
     expect(result.error?.message).toContain('python spawn error')
     expect(stagedBootstrap).toBeDefined()
     expect(existsSync(dirname(stagedBootstrap as string))).toBe(false)
+    await fiber.dispose()
+  })
+
+  it('resolves a worker-exit when the run write after boot-ack throws', async () => {
+    // The run frame goes out from the boot-ack handler; a pipe that accepts
+    // the boot frame but rejects the run write must settle the run as a
+    // worker-exit rather than reject run() or leave it hanging.
+    spawnMock.mockImplementation(() => fakeChildWithAckThenThrowingFd3())
+    const ctx = new Context()
+    const fiber = await ctx.plugin(PythonCodeRuntime)
+    const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
+
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('failed to boot python subprocess')
     await fiber.dispose()
   })
 })
