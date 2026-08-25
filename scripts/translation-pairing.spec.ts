@@ -303,7 +303,7 @@ describe('translation scope discovery', () => {
     'packages/example/guide.md',
     'packages/example/CONTRIBUTING.md',
     'packages/example/BRAND_GUIDELINES.md',
-    'examples/tutorial.md',
+    'other/tutorial.md',
     'website/reference.md',
     'packages/example/README.txt',
     'vendor/example/README.md',

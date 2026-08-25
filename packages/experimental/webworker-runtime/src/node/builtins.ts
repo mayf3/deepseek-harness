@@ -24,6 +24,7 @@
 import * as nodeAsyncHooks from './builtin_modules/implemented/async_hooks.ts'
 import * as nodeBuffer from './builtin_modules/implemented/buffer.ts'
 import * as nodeCrypto from './builtin_modules/implemented/crypto.ts'
+import * as nodeDnsPromises from './builtin_modules/mock/dns/promises.ts'
 import * as nodeEvents from './builtin_modules/implemented/events.ts'
 import * as nodeFs from './builtin_modules/implemented/fs.ts'
 import * as nodeFsPromises from './builtin_modules/implemented/fs/promises.ts'
@@ -34,6 +35,7 @@ import * as nodePath from './builtin_modules/implemented/path.ts'
 import * as nodePerfHooks from './builtin_modules/implemented/perf_hooks.ts'
 import * as nodeStream from './builtin_modules/implemented/stream.ts'
 import * as nodeTimersPromises from './builtin_modules/implemented/timers/promises.ts'
+import * as nodeTty from './builtin_modules/implemented/tty.ts'
 import * as nodeUrl from './builtin_modules/implemented/url.ts'
 import * as nodeUtil from './builtin_modules/implemented/util.ts'
 import * as nodeUtilTypes from './builtin_modules/implemented/util/types.ts'
@@ -58,6 +60,7 @@ const BUILTINS: Record<string, StaticModuleFactory> = {
   buffer: () => nodeBuffer,
   child_process: () => nodeChildProcess,
   crypto: () => nodeCrypto,
+  'dns/promises': () => nodeDnsPromises,
   events: () => nodeEvents,
   fs: () => nodeFs,
   'fs/promises': () => nodeFsPromises,
@@ -71,6 +74,7 @@ const BUILTINS: Record<string, StaticModuleFactory> = {
   sqlite: () => nodeSqlite,
   stream: () => nodeStream,
   'timers/promises': () => nodeTimersPromises,
+  tty: () => nodeTty,
   url: () => nodeUrl,
   util: () => nodeUtil,
   'util/types': () => nodeUtilTypes,

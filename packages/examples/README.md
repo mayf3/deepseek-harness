@@ -1,8 +1,8 @@
-# examples/ — ready-to-run demo bundles
+# examples/ — reusable composition bundles
 
 English | [中文](README.zh.md)
 
-Pre-composed plugin bundles a thin leaf `cordis.yml` loads instead of assembling the spine by hand. These are **demo / reference** packages — the `-demo` npm suffix marks each one as non-product surface, readable straight off the package name. Runnable leaves under the repo-root [`examples/`](../../examples/AGENTS.md) are the consumers; each is just its swappable backends plus one bundle entry.
+Pre-composed plugin bundles for tests and custom deployments that need the concrete Agent spine without assembling it by hand. The `-demo` npm suffix marks each package as support infrastructure rather than a product interface.
 
 | Package | npm name | Role |
 |---|---|---|
@@ -10,6 +10,4 @@ Pre-composed plugin bundles a thin leaf `cordis.yml` loads instead of assembling
 
 `agent-spine-demo` is the shared bundle. Product SDK, ACP, and one-shot execution belong to `dsh --profile sdk` / `dsh --profile sdk-minimal`, `dsh --profile acp`, and `dsh --profile headless`; no package in this directory provides an application entry.
 
-These packages are not product API. Product seams and entry points remain in their owning groups; demo bundles select concrete compositions.
-
-Do not confuse this group with the repo-root [`examples/`](../../examples/AGENTS.md): that directory holds the runnable `cordis.yml` **leaves**; this group holds the **bundles** those leaves load.
+These packages are not product API. Product seams and entry points remain in their owning groups; support bundles select concrete compositions for focused consumers.

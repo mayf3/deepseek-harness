@@ -31,10 +31,9 @@ class HarnessConfig:
     dsh_home: str | None = None
     cwd: str | None = None
     env: dict[str, str] | None = None
-    initialize_timeout_seconds: float = 10.0
+    initialize_timeout_seconds: float = 30.0
     request_timeout_seconds: float | None = None
     shutdown_timeout_seconds: float | None = 1.0
-    _launch_args: tuple[str, ...] | None = None
 
 
 class HarnessClient:
@@ -47,7 +46,7 @@ class HarnessClient:
         _launch_args: tuple[str, ...] | None = None,
     ) -> None:
         self.config = config or HarnessConfig()
-        self._launch_args = _launch_args or self.config._launch_args
+        self._launch_args = _launch_args
         self._proc: subprocess.Popen[str] | None = None
         self._lock = threading.Lock()
         self._write_lock = threading.Lock()
@@ -93,11 +92,14 @@ class HarnessClient:
         self._start_stderr_thread()
 
     def close(self) -> None:
+        """Close the runtime after a bounded opportunity to flush durable state."""
         proc = self._proc
         if proc is None:
             return
+        shutdown_completed = False
         try:
             self.request("shutdown", None, response_model=_ShutdownResponse, timeout_seconds=self.config.shutdown_timeout_seconds)
+            shutdown_completed = True
         except Exception as exc:
             self._stderr_lines.append(f"shutdown request failed: {exc}")
         if proc.stdin:
@@ -105,16 +107,22 @@ class HarnessClient:
                 proc.stdin.close()
             except Exception as exc:
                 self._stderr_lines.append(f"stdin close failed: {exc}")
+        if shutdown_completed:
+            try:
+                proc.wait(timeout=self.config.shutdown_timeout_seconds)
+            except subprocess.TimeoutExpired:
+                pass
         if proc.poll() is None:
             try:
                 proc.terminate()
             except ProcessLookupError:
                 pass
-        try:
-            proc.wait(timeout=self.config.shutdown_timeout_seconds)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
+        if proc.poll() is None:
+            try:
+                proc.wait(timeout=self.config.shutdown_timeout_seconds)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
         self._proc = None
         self._fail_waiters(self._runtime_closed_error("DeepSeek Harness runtime closed"))
         if self._reader_thread and self._reader_thread.is_alive():

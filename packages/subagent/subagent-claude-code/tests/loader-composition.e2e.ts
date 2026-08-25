@@ -8,7 +8,7 @@ import {
 } from '@deepseek-ai/dsh-loader-smoke'
 
 const fixtureDir = fileURLToPath(new URL(
-  '../../../../examples/acp-agent/tests/fixtures/subagent/subagent-claude-code/',
+  './fixtures/loader/',
   import.meta.url,
 ))
 const driver = join(fixtureDir, 'driver.ts')
@@ -40,7 +40,7 @@ describe('product-provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      registeredProviders: ['codex', 'claude-primary', 'claude-secondary', 'claude-code'],
+      registeredProviders: ['claude-code', 'claude-primary', 'claude-secondary', 'codex'],
       providers: [
         {
           name: 'codex',

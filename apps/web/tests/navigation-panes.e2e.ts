@@ -21,8 +21,8 @@ import {
 } from './scaffold.ts'
 import { newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/navigation-panes', import.meta.url))
-const SEED = join(SNAPSHOT_DIR, 'seed.jsonl')
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/navigation-panes', import.meta.url))
+const SEED = join(SNAPSHOT_DIR, 'session.jsonl')
 const TRAJECTORY_EXPECTED = join(SNAPSHOT_DIR, 'trajectory.expected.md')
 const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
@@ -114,7 +114,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     // Workspace stream settles through the user-visible Ungrouped barrier.
     const sessionBaseline = baselineResponse(page)
     const [, sessionResponse] = await Promise.all([
-      page.goto(scaffold.baseUrl, { waitUntil: 'load' }),
+      page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' }),
       sessionBaseline,
     ])
     await assertBaselineSucceeded(sessionResponse, 'session.list')
@@ -327,7 +327,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     })
     const observerSessionBaseline = baselineResponse(observer)
     const [, observerSessionResponse] = await Promise.all([
-      observer.goto(scaffold.baseUrl, { waitUntil: 'load' }),
+      observer.goto(scaffold.authenticatedUrl, { waitUntil: 'load' }),
       observerSessionBaseline,
     ])
     await assertBaselineSucceeded(observerSessionResponse, 'observer session.list')
@@ -504,7 +504,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE === 'record')('keeps the recorded fixture inventory exact', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'seed.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
+      'session.jsonl', 'search-results.expected.md', 'trajectory.expected.md',
       'terminal-card.expected.md',
     ])
   })

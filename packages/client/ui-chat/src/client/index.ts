@@ -5,6 +5,7 @@ export type {} from './conversation-nodes/command.ts'
 export type {} from './conversation-nodes/compaction.ts'
 export type {} from './conversation-nodes/fallback.ts'
 export type {} from './conversation-nodes/message.ts'
+export type {} from './conversation-nodes/request-prompt.ts'
 export type {} from './conversation-nodes/retry.ts'
 export type {} from './conversation-nodes/tool.ts'
 export type {} from './conversation-nodes/turn-error.ts'
@@ -28,8 +29,7 @@ export type {
   AssistantActionOwnerProps, ChatFileMentions, ChatNodeOwnerProps, ChatNodeTurnDataInjected,
   ChatNodeViewProps, ChatScrollPosition, ChatStore, ChatViewInjected, ChatViewSlotProps,
   CommandRowOwnerProps, CommandRowProps, DetailsInjected, DetailsSlotProps,
-  DetailsToolOwnerProps, MessageImagesOwnerProps, MessageImagesProps, RenderMessageImages,
-  TurnTailOwnerProps, UseChat, UseChatNodeTurnData,
+  DetailsToolOwnerProps, MessageImagesProps, TurnTailOwnerProps, UseChat, UseChatNodeTurnData,
 } from './contract/slots.ts'
 export type { ChatKey } from './locale.ts'
 export type { ConversationContext, ConversationContextOriginKind } from './model/conversation-context.ts'
