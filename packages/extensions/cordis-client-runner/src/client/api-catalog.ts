@@ -647,7 +647,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventEntry',
-    declaration: 'export interface SessionEventEntry {\n    readonly event: SessionWireEvent;\n    readonly view?: SessionToolView;\n}',
+    declaration: 'export interface SessionEventEntry {\n    readonly event: SessionWireEvent;\n}',
   },
   {
     name: 'SessionEventSource',
@@ -679,19 +679,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionSnapshot',
-    declaration: 'export interface SessionSnapshot {\n    readonly sessionId: SessionId;\n    readonly queue: readonly QueuedMessage[];\n    readonly running: boolean;\n    readonly subagent: {\n        readonly address: SubagentAddress;\n        readonly parentAvailable: boolean;\n    } | null;\n    readonly removed: boolean;\n    readonly openState: OpenState;\n    readonly openError: ClientFailure | null;\n    readonly hasMore: boolean;\n    readonly loadingOlder: boolean;\n    readonly promptError: PromptError | null;\n    readonly blank: boolean;\n    readonly lastAgentError: string | null;\n    readonly promptAttempted: boolean;\n    readonly awaitingFirstTurn: boolean;\n}',
+    declaration: 'export interface SessionSnapshot {\n    readonly sessionId: SessionId;\n    readonly queue: readonly QueuedMessage[];\n    readonly running: boolean;\n    readonly subagent: {\n        readonly address: SubagentAddress;\n        readonly parentAvailable?: boolean;\n    } | null;\n    readonly removed: boolean;\n    readonly openState: OpenState;\n    readonly openError: ClientFailure | null;\n    readonly hasMore: boolean;\n    readonly loadingOlder: boolean;\n    readonly promptError: PromptError | null;\n    readonly blank: boolean;\n    readonly lastAgentError: string | null;\n    readonly promptAttempted: boolean;\n    readonly awaitingFirstTurn: boolean;\n}',
   },
   {
     name: 'SessionStandardProps',
     declaration: 'export interface SessionStandardProps {\n}',
-  },
-  {
-    name: 'SessionToolCallView',
-    declaration: 'export type SessionToolCallView = (Omit<GenericCallView, \'rawInput\'> & {\n    readonly rawInput?: JsonValue;\n}) | TerminalCallView | DiffCallView;',
-  },
-  {
-    name: 'SessionToolView',
-    declaration: 'export type SessionToolView = {\n    readonly for: \'call\';\n    readonly view: SessionToolCallView;\n} | {\n    readonly for: \'result\';\n    readonly view: ToolResultView;\n};',
   },
   {
     name: 'SessionWireEvent',

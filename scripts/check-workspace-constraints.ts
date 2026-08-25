@@ -54,12 +54,9 @@ const experimentalPackageDirectory = /^packages\/experimental\/[^/]+$/
 const experimentalPackageNamePrefix = '@deepseek-ai/dsh-experimental-'
 /** Directories whose packages this repository publishes: one release member each. */
 const releaseMemberDirectory = /^(?:packages\/(?!experimental\/)[^/]+\/[^/]+|apps\/[^/]+|vendor\/[^/]+)$/
-/** Named dsh packages that remain private because another distribution embeds them. */
-const privateCarrierDirectories = new Set(['packages/sdk/python-runtime'])
-
 const localArtifactDirs = new Set(['node_modules'])
 const appPackageFiles: Readonly<Record<string, readonly string[]>> = {
-  '@deepseek-ai/dsh': ['lib/*.js', 'config'],
+  '@deepseek-ai/dsh': ['lib/*.js'],
   // Sourcemaps stay out by payload policy; the worker-preview surface
   // (dist/preview.html and dist/preview/) backs private experimental
   // packages and is not published.
@@ -154,8 +151,11 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-client-ui-theme': ['lib/styles'],
   // The CPython side ships as source .py files, published as-is rather than built.
   '@deepseek-ai/dsh-code-runtime-python': ['py/**/*.py'],
-  // The private Python carrier ships only its closed-resolution entry.
-  '@deepseek-ai/dsh-sdk-python-runtime': ['lib/packaged-bin.js'],
+  // The shipped preset compositions travel inside the roster package.
+  '@deepseek-ai/dsh-agent-presets': ['presets'],
+  // The Web Host mounts the default-off settings owner independently of each
+  // Agent-scoped delegation-tool instance.
+  '@deepseek-ai/dsh-tool-subagent': ['lib/model-selection-settings.js'],
   // The argv-prefix runner entry ships beside the lib as its own bundle;
   // sandbox-local resolves it through the package's ./runner export. tsdown
   // also shares its generated FFI code through a hashed runtime chunk.
@@ -289,13 +289,6 @@ export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): st
       || manifest.repository.url !== repositoryUrl
       || manifest.repository.directory !== expectedDirectory) {
       errors.push(`${label}: published Landlock package repository must use ${repositoryUrl} with directory ${expectedDirectory} for trusted publishing`)
-    }
-  } else if (privateCarrierDirectories.has(dir)) {
-    if (manifest.private !== true) {
-      errors.push(`${label}: private carrier must set "private": true`)
-    }
-    if (manifest.publishConfig !== undefined) {
-      errors.push(`${label}: private carrier must omit publishConfig`)
     }
   } else if (releaseMemberDirectory.test(dir)) {
     // Release members state that they are publishable: npm refuses a private

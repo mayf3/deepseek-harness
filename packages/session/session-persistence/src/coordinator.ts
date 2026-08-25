@@ -15,7 +15,7 @@ import {
 } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { SessionInspection } from './index.ts'
+import type { BorrowedSessionSource, SessionInspection } from './index.ts'
 import {
   decodeStoredSession,
   SessionFormatUnsupportedError,
@@ -25,6 +25,7 @@ import type {
   DecodedSession,
   StoredSessionSource,
 } from './format-decoder.ts'
+import { SessionPersistenceNotFoundError } from './errors.ts'
 import { SessionPersistenceRevisionConflictError } from './revision.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 import { observeQueuedAbort, SessionPreparations } from './preparations.ts'
@@ -494,6 +495,64 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   }
 
   /**
+   * Borrow one exact logical view while pinning its reusable prepared Session.
+   * @param id - persisted session to observe.
+   * @param signal - optional cancellation for preparation work.
+   * @returns a disposable observation retaining the prepared source.
+   */
+  async borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource> {
+    for (;;) {
+      signal?.throwIfAborted()
+      if (this.retirements.has(id)) await this.waitForRetirement(id, signal)
+      const live = this.ctx.sessions.get(id)
+      if (live !== undefined) {
+        return { source: 'live', inspection: this.inspectLive(live), [Symbol.dispose]: () => {} }
+      }
+      const observation = await this.preparations.borrow(
+        id,
+        () => this.serialize(id, () => this.prepareCore(id)),
+        signal,
+      )
+      const source = observation.source
+      try {
+        const attached = this.ctx.sessions.get(id)
+        if (attached !== undefined) {
+          observation[Symbol.dispose]()
+          return { source: 'live', inspection: this.inspectLive(attached), [Symbol.dispose]: () => {} }
+        }
+        const current = await this.serialize(
+          id,
+          () => this.isPreparedSourceCurrent(source, signal),
+          signal,
+        )
+        const published = this.ctx.sessions.get(id)
+        if (published !== undefined) {
+          observation[Symbol.dispose]()
+          return { source: 'live', inspection: this.inspectLive(published), [Symbol.dispose]: () => {} }
+        }
+        if (current || this.preparations.discardReady(id, source) === 'retained') {
+          return {
+            source: 'prepared',
+            inspection: source.inspection,
+            revision: source.revision,
+            preparedSession: source.session,
+            [Symbol.dispose]: () => { observation[Symbol.dispose]() },
+          }
+        }
+      } catch (error: unknown) {
+        observation[Symbol.dispose]()
+        signal?.throwIfAborted()
+        const attached = this.ctx.sessions.get(id)
+        if (attached !== undefined) {
+          return { source: 'live', inspection: this.inspectLive(attached), [Symbol.dispose]: () => {} }
+        }
+        throw error
+      }
+      observation[Symbol.dispose]()
+    }
+  }
+
+  /**
    * Read the stored events from `fromSeq` onward, detached and non-mutating
    * (the read-from-seq primitive behind the service's `readFrom`). Runs on
    * the same per-id chain as writes. The format decoder requests a backend
@@ -521,7 +580,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       signal?.throwIfAborted()
       const stored = await this.backend.openStored(id, signal)
       signal?.throwIfAborted()
-      if (stored === undefined) throw new Error(`session "${id}" not found`)
+      if (stored === undefined) throw new SessionPersistenceNotFoundError(id)
       try {
         const current = decodeStoredSession(stored, id, fromSeq)
         const { events } = await collectDecodedEvents(current)
@@ -539,7 +598,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   private async prepareCore(id: SessionId): Promise<PreparedSessionSource<TornMarker>> {
     for (;;) {
       const stored = await this.backend.openStored(id)
-      if (stored === undefined) throw new Error(`session "${id}" not found`)
+      if (stored === undefined) throw new SessionPersistenceNotFoundError(id)
       try {
         const current = decodeStoredSession(stored, id)
         const { events: storedEvents, tornMarker } = await collectDecodedEvents(current)

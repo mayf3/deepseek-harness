@@ -30,10 +30,6 @@ import {
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-
-/** Shipped agent-preset root: beside this app's own config, in both source and built layouts. */
-const SHIPPED_PRESET_ROOT = fileURLToPath(new URL('../config/agent-presets/', import.meta.url))
-
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
@@ -119,14 +115,14 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
  * @returns the loaded profile.
  */
-export function prepareProfile(name: string, userLayer = true): Profile {
-  healProfilesModuleFallback(INSTALL_ANCHOR)
+export async function prepareProfile(name: string, userLayer = true): Promise<Profile> {
+  await healProfilesModuleFallback(INSTALL_ANCHOR)
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
 }
 
-/** One profile's patch layers (application order) and the row index of its pre-flag composition. */
+/** One profile's patch layers, in application order. */
 interface ComposedProfile {
   profile: Profile
   /** Bundle layers concatenated — the part below the user layers on a live reload. */
@@ -135,11 +131,6 @@ interface ComposedProfile {
   homePatches: PatchOptions[]
   /** Layers above the user layers on a live reload: `--patch` overlays and the telemetry switch. */
   overlays: PatchOptions[]
-  /**
-   * id → row of the composed tree (bundles + user layers + overlays), for the
-   * launcher's own row checks.
-   */
-  rows: ReadonlyMap<string, EntryOptions>
 }
 
 /** The full patch stack of one composed profile, in application order. */
@@ -154,20 +145,20 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 
 /**
  * Load `name` and compose its effective patch stack: bundle layers in
- * `dsh.profile.bundles` order (the base bundle gates the shell stacks by
- * platform on its own rows), the profile's user layer, the home-level user
+ * `dsh.profile.bundles` order (a base-backed profile gets the base bundle's
+ * platform-gated shell rows), the profile's user layer, the home-level user
  * layer (`$DSH_HOME/cordis.patch.yml` — machine-local preferences that apply
  * to every profile, so it outranks the per-profile layer), `--patch` overlays,
  * then the telemetry switch.
  * @param name - the profile name.
  * @param patchFiles - `--patch` overlay paths, in argv order.
- * @returns the profile, its patch layers, and the composed row index.
+ * @returns the profile and its patch layers.
  */
-function composeProfile(
+async function composeProfile(
   name: string,
   patchFiles: readonly string[],
-): ComposedProfile {
-  const profile = prepareProfile(name)
+): Promise<ComposedProfile> {
+  const profile = await prepareProfile(name)
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)
@@ -176,22 +167,9 @@ function composeProfile(
     if (typeof row.id === 'string') rows.set(row.id, row)
   }
   const composedOverlays = [...overlays]
-  // The SHIPPED root is the part of the roster only this app can resolve: it
-  // sits beside this app's own config, in both the source and built layouts.
-  // The writable root the roster appends is `dsh-agent-presets`' own, so a
-  // launcher that never reaches this patch still finds a person's presets.
-  if (rows.has('agent-presets')) {
-    composedOverlays.push({
-      id: 'agent-presets',
-      config: {
-        ...(rows.get('agent-presets')?.config ?? {}) as Record<string, unknown>,
-        roots: [{ path: SHIPPED_PRESET_ROOT, trust: 'system' }],
-      },
-    })
-  }
   const telemetryPatch = resolveTelemetryPatch(process.env.DSH_TELEMETRY_DISABLED, rows.has(TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) composedOverlays.push(telemetryPatch)
-  return { profile, bundlePatches, homePatches, overlays: composedOverlays, rows }
+  return { profile, bundlePatches, homePatches, overlays: composedOverlays }
 }
 
 /** Options for {@link runProfile}. */
@@ -229,7 +207,7 @@ function suppressShutdownError(ctx: Context, signal: AbortSignal, error: unknown
  * @returns the settled root context and the shutdown controller.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
-  const composed = composeProfile(options.profile, options.patchFiles)
+  const composed = await composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}
   const appReady = createAppReady()
   const shutdown = createProcessShutdown(async () => { await app.current?.fiber.dispose() })

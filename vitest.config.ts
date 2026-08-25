@@ -57,6 +57,17 @@ const windowsUnsupportedTests = process.platform === 'win32'
     ]
   : []
 
+// These suites compare against or assemble the Worker's fixed Linux platform.
+// Host-native Windows and macOS behavior is not their oracle.
+const nonLinuxWebWorkerTests = process.platform === 'linux'
+  ? []
+  : [
+      'packages/experimental/webworker-runtime/tests/node/fs-watch-stream.spec.ts',
+      'packages/experimental/webworker-runtime/tests/node/sandbox-stack.spec.ts',
+    ]
+
+const platformUnsupportedTests = [...windowsUnsupportedTests, ...nonLinuxWebWorkerTests]
+
 const windowsUnsupportedCoveragePackages = process.platform === 'win32'
   ? [...windowsUnsupportedPackages, 'packages/subprocess/*']
   : []
@@ -101,7 +112,6 @@ const pwshCoverageExclusions = spawnSync(resolvePwshPath(), ['-NoLogo', '-NoProf
 const testIncludes = [
   'packages/*/*/tests/**/*.spec.{ts,tsx}',
   'apps/*/tests/**/*.spec.ts',
-  'examples/*/tests/**/*.spec.ts',
   'scripts/**/*.spec.ts',
 ]
 
@@ -142,7 +152,7 @@ export default defineConfig({
     setupFiles: ['./scripts/test-invariants.ts'],
     // .tsx: client component specs (jsdom via per-file @vitest-environment pragma).
     include: testIncludes,
-    exclude: windowsUnsupportedTests,
+    exclude: platformUnsupportedTests,
     // One coverage invocation aggregates both projects. Every suite forks for
     // Node stability; process-bound suites stay separate for inventory control.
     projects: [
@@ -158,7 +168,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: testIncludes,
           exclude: [
-            ...windowsUnsupportedTests,
+            ...platformUnsupportedTests,
             ...processBoundTests,
             ...coverageExemptExcludes,
           ],
@@ -173,7 +183,7 @@ export default defineConfig({
           setupFiles: ['./scripts/test-invariants.ts'],
           include: processBoundTests,
           exclude: [
-            ...windowsUnsupportedTests,
+            ...platformUnsupportedTests,
             ...coverageExemptExcludes,
           ],
         },
@@ -182,8 +192,7 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       // Coverage measures OUR runtime source. Types-only files carry no
-      // executable code; vendor/ and examples/ are out of scope (examples are
-      // exercised by the demo smoke test instead).
+      // executable code; vendor/ and application/config fixtures are out of scope.
       // .tsx: client components are gated like everything else (jsdom lane).
       include: ['packages/*/*/src/**/*.{ts,tsx}'],
       // Types-only files have no runtime coverage. Importing self-executing bins/workers would boot

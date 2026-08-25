@@ -137,10 +137,10 @@ const toolResult = (seq: number, callId: string, name = 'bash'): ToolResultNode 
   kind: 'tool-result', seq, time: seq * 1_000, callId,
   call: { name, argsRaw: `{"command":"cmd-${callId}","description":"run ${callId}"}` },
   callTime: seq * 1_000 - 500,
-  content: [], isError: false, callView: null, resultView: null, subCalls: [],
+  content: [], isError: false, subCalls: [],
 })
 const runningCall = (callId: string, name = 'bash'): RunningToolCall => ({
-  callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, callView: null, subCalls: [],
+  callId, name, argsRaw: `{"command":"cmd-${callId}"}`, turn: 2, step: 1, time: 1_000, subCalls: [],
 })
 const command = (over: Partial<CommandNode> = {}): CommandNode => ({
   kind: 'command', seq: 5, time: 5_000, commandId: 'cmd-1' as CommandNode['commandId'],
@@ -361,17 +361,14 @@ function installScrollMetrics(element: HTMLElement, initialHeight: number, clien
 describe('Chat node rendering', () => {
 
   it('threads the injected file-mention vocabulary into the closing prose only', () => {
-    const wrote = (seq: number, callId: string, path: string): ToolResultNode => ({
+    const wrote = (seq: number, callId: string): ToolResultNode => ({
       ...toolResult(seq, callId, 'write'),
-      callView: {
-        card: 'diff', title: 'Write', diffs: [{ path, oldText: null, newText: 'x' }], locations: [{ path }],
-      },
     })
     const h = makeHarness({
       nodes: [
         user(1, 'build it'),
         assistant(2, 'writing `report.html` now', 1),
-        wrote(3, 'w', 'site/report.html'),
+        wrote(3, 'w'),
         assistant(4, 'Wrote `report.html`; `notes.md` untouched.', 1),
       ],
       turnEnds: new Map([[1, 4]]),
@@ -917,7 +914,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByTestId('tool-seat-r1')).toBeTruthy()
     expect(h.toolOwners[0]?.block).toMatchObject({ callId: 'r1', argsRaw: '{"command":"cmd-r1"}' })
-    expect(view.getByRole('status').textContent).toBe('正在深入处理…')
+    expect(view.getByRole('status').textContent).toBe('深度求索中...')
   })
 
   it('keeps the Tool renderer mounted when a running call settles into log order', () => {
@@ -977,7 +974,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     // Freshly mounted (as after a reload) yet already past the 15s gate.
     const status = view.getByRole('status')
-    expect(status.textContent).toMatch(/^正在深入处理…2分0\d秒$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
       h.setSession({ queue: [{
@@ -989,7 +986,7 @@ describe('ChatView', () => {
         text: 'also',
       }] })
     })
-    expect(status.textContent).toMatch(/^正在深入处理…2分0\d秒$/)
+    expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
   })
 
   it('hands each ordered root call to the keyed business-node slot', () => {

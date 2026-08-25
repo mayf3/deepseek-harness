@@ -82,10 +82,11 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   // Asserts the vendored-manifest table, which gains an upstream-name column.
   { file: 'scripts/gen-third-party-notices.spec.ts', upstream: RENAMES.map(rename => rename.upstream) },
   // `cordis` is also an agent-preset id — the directory name under
-  // apps/cli/config/agent-presets/ — so in these files the bare name is
+  // packages/preset/agent-presets/presets/ — so in these files the bare name is
   // product data, not a package reference. Renaming it changed which preset
   // the creator flow stages and which id the roster reports.
   { file: 'packages/client/ui-agent-preset/src/client/AgentPresetSection.tsx', upstream: ['cordis'] },
+  { file: 'packages/preset/agent-presets/tests/shipped-root.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/src/client/index.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/apply.client.spec.ts', upstream: ['cordis'] },
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', upstream: ['cordis'] },
@@ -96,7 +97,7 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   // The preset's own composition: its header comment and its system prompt name
   // the preset a model mounts, so the scoped name would send the model after an
   // id no roster reports.
-  { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', upstream: ['cordis'] },
+  { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', upstream: ['cordis'] },
   // The preset-roster loop names the `cordis` preset id, not a package.
   { file: 'apps/cli/tests/windows-shell.spec.ts', upstream: ['cordis'] },
   // GROUP_ORDER holds `packages/<group>/` directory names, not package names.
@@ -157,8 +158,8 @@ const POSTCONDITIONS: readonly PostCondition[] = [
   // The preset ids in this table are product data, not package names.
   { file: 'packages/client/ui-agent-preset/tests/locales.client.spec.ts', text: '[\'cordis\', \'presetCordisName\'', count: 1 },
   // The preset id the shipped composition documents to its own model.
-  { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
-  { file: 'apps/cli/config/agent-presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
+  { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'The `cordis` agent preset', count: 1 },
+  { file: 'packages/preset/agent-presets/presets/cordis/agent.cordis.yml', text: 'corrupting the `cordis` preset', count: 1 },
 ]
 
 /**
@@ -191,23 +192,6 @@ const EXACT_EDITS: readonly ExactEdit[] = [
     if (!dev) errors.push(\`\${label}: @deepseek-ai/cordis must also be a devDependency\`)
     if (peer && dev && peer !== dev) {
       errors.push(\`\${label}: @deepseek-ai/cordis peer (\${peer}) and dev (\${dev}) ranges must match\`)`,
-    expect: 1,
-  },
-  {
-    // The rescoped name is already covered by the `@deepseek-ai/.+` pattern beside it.
-    id: 'knip-logger-console',
-    file: 'knip.json',
-    find: `      "ignoreDependencies": [
-        "@cordisjs/plugin-logger-console",
-        "@deepseek-ai/.+"
-      ]
-    },
-    "packages/host/directory-picker-auto": {`,
-    replace: `      "ignoreDependencies": [
-        "@deepseek-ai/.+"
-      ]
-    },
-    "packages/host/directory-picker-auto": {`,
     expect: 1,
   },
   {

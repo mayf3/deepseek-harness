@@ -41,6 +41,11 @@
 # `dsh.client` rows are the browser roster the modules node half scans into
 # window.__DSH_BOOT__; the modules row is simultaneously a host row.
 - insert:
+    # Host-owned opt-in sampled when a new Web session receives its preset
+    # delegation tools. The Models page edits this settings namespace.
+    - id: subagent-model-selection-settings
+      name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
@@ -128,6 +133,9 @@
       config:
         host: !!js ctx.webStartup.host ?? '127.0.0.1'
         port: !!js ctx.webStartup.port ?? 3080
+        compression: gzip
+        compressionLevel: 1
+        compressionThresholdBytes: 1024
 
     # Web glue owned by this bundle: resolves the built frontend dist (an
     # assembly fact of dsh-web-app, never user config), mounts the
@@ -435,16 +443,13 @@
 - id: tool-web
   disabled: true
 
-# The preset roster. `config/agent-presets/` ships with the deployment and is
-# read-only (its entries carry `system` trust); `$DSH_HOME/.agent-presets` is
-# where a person — or an agent — authors their own, and carries the same trust
-# as shell access because a preset IS a composition.
-#
-# Only the SHIPPED root is an assembly fact: it sits beside the installed app's
-# own config, so `apps/cli`'s `composeProfile` resolves and patches it in — the
-# same treatment `distIndex` gets on the webserver row. The writable root is
-# `dsh-agent-presets`' own default (`includeUserRoot`), so a composition that
-# never reaches that patch still finds a person's presets.
+# The preset roster. The shipped presets are bundled inside
+# `dsh-agent-presets` itself and prepended as a read-only `system` root
+# (`includeShippedRoot`); `$DSH_HOME/.agent-presets` is where a person — or an
+# agent — authors their own, appended by the same package (`includeUserRoot`),
+# and carries the same trust as shell access because a preset IS a
+# composition. This row only names the default and any deployment-added
+# `roots`; no launcher patching is involved.
 - insert:
     - id: agent-presets
       name: '@deepseek-ai/dsh-agent-presets'

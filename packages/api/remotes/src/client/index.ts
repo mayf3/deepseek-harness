@@ -49,10 +49,10 @@ export type {} from '@deepseek-ai/dsh-api-session-controller/types'
 export type {
   ConfigurableProviderView, ConnectionHandle, ConnectionSinks, ContentBlock,
   CredentialView, DirectoryListing, DiscoveredModelView, IApiClient,
-  MessageId, ModelCatalogFailure, ModelProviderGroup, ModelReasoningEffort, ModelSelection,
+  MessageId, ModelCatalog, ModelCatalogFailure, ModelProviderGroup, ModelReasoningEffort, ModelSelection,
   RpcError, RpcId, RpcRequest, RpcResponse, RpcResult, SessionId,
   SettingsNamespaceView, SettingsPathOpView, SkillEntry, StreamChunk,
-  SubagentAddress, SubagentCatalog, ToolCallView, ToolResultView,
+  SubagentAddress, SubagentCatalog,
 } from '@deepseek-ai/dsh-client-connection/client'
 export type {} from '@deepseek-ai/dsh-api-gateway/client'
 export type {} from '@deepseek-ai/dsh-cordis-host-runner/remote'

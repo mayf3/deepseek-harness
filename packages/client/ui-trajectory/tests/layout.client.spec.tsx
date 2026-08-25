@@ -87,7 +87,7 @@ describe('deriveTrajectoryLayout', () => {
       {
         kind: 'tool-result', seq: 3, time: 7_500, callId: 'c1',
         call: { name: 'bash', argsRaw: '{"command":"ls"}' }, callTime: 6_200,
-        content: [{ type: 'text', text: 'a.txt' }], isError: false, callView: null, resultView: null,
+        content: [{ type: 'text', text: 'a.txt' }], isError: false,
       },
     ] as unknown as LegacyConversationSlice['nodes']
     const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
@@ -113,7 +113,7 @@ describe('deriveTrajectoryLayout', () => {
       partial: null,
       runningCalls: [{
         callId: 'r1', name: 'bash', argsRaw: '{"command":"pwd"}',
-        turn: 1, step: 2, time: 9_000, callView: null, subCalls: [],
+        turn: 1, step: 2, time: 9_000, subCalls: [],
       }],
     })
     expect(turns[0]?.groups.map(g => g.title)).toEqual(['Step 2'])
@@ -177,7 +177,7 @@ describe('deriveTrajectoryLayout', () => {
       partial: { ...partial, blocks: [] },
       runningCalls: [{
         callId: 'c1', name: 'bash', argsRaw: '{"command":"pwd"}',
-        turn: 1, step: 1, time: 9_000, callView: null, subCalls: [],
+        turn: 1, step: 1, time: 9_000, subCalls: [],
       }],
     })
 
@@ -218,12 +218,12 @@ describe('deriveTrajectoryLayout', () => {
       {
         kind: 'tool-result', seq: 2, time: 2_500, callId: 'a',
         call: { name: 'bash', argsRaw: '{}' }, callTime: 1_100,
-        content: [], isError: false, callView: null, resultView: null,
+        content: [], isError: false,
       },
       {
         kind: 'tool-result', seq: 3, time: 4_000, callId: 'b',
         call: { name: 'bash', argsRaw: '{}' }, callTime: 2_600,
-        content: [], isError: false, callView: null, resultView: null,
+        content: [], isError: false,
       },
     ] as unknown as LegacyConversationSlice['nodes']
     const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
@@ -447,7 +447,7 @@ describe('deriveTrajectoryLayout', () => {
       {
         kind: 'tool-result', seq: 3, time: 3_000, callId: 'c1',
         call: { name: 'bash', argsRaw: '{}' }, callTime: 2_100,
-        content: [], isError: false, callView: null, resultView: null,
+        content: [], isError: false,
       },
       {
         kind: 'context', seq: 4, time: 9_000,
@@ -502,7 +502,7 @@ describe('run_code sub-dispatch cells', () => {
     {
       kind: 'tool-result', seq: 3, time: 9_000, callId: 'p1',
       call: { name: 'run_code', argsRaw: '{"code":"…","description":"批量读取"}' }, callTime: 6_200,
-      content: [{ type: 'text', text: 'done' }], isError: false, callView: null, resultView: null,
+      content: [{ type: 'text', text: 'done' }], isError: false,
       subCalls: [],
     },
   ] as unknown as LegacyConversationSlice['nodes']
@@ -511,7 +511,7 @@ describe('run_code sub-dispatch cells', () => {
     kind: 'tool-result' as const, seq: 100 + n, time: end,
     callId: `p1:code:${n}`,
     call: { name, argsRaw: '{"x":1}' }, callTime: start,
-    content: [{ type: 'text' as const, text: 'ok' }], isError: false, callView: null, resultView: null,
+    content: [{ type: 'text' as const, text: 'ok' }], isError: false,
     subCalls: [],
   })
 
@@ -538,7 +538,7 @@ describe('run_code sub-dispatch cells', () => {
   it('a running (unsettled) sub-call renders a subtool cell with blank time', () => {
     const running = {
       callId: 'p1:code:1', name: 'grep', argsRaw: '{"pattern":"x"}',
-      turn: 0, step: 0, time: 6_400, callView: null, subCalls: [],
+      turn: 0, step: 0, time: 6_400, subCalls: [],
     }
     const turns = deriveTrajectoryLayout({ nodes: withSubCalls([running]), partial: null, runningCalls: [] })
     const sub = turns[0]!.groups.flatMap(g => g.cells).find(c => c.kind === 'subtool')
@@ -564,5 +564,105 @@ describe('run_code sub-dispatch cells', () => {
       'p1:code:1:code:1',
     ])
     expect(cells.map(cell => cell.index)).toEqual([1, 2, 3, 4])
+  })
+})
+
+describe('durable image attachments', () => {
+  const attachment = {
+    attachmentId: `sha256:${'a'.repeat(64)}`,
+    mediaType: 'image/png',
+    bytes: 68,
+    width: 640,
+    height: 320,
+    name: 'screenshot.png',
+  }
+
+  it('carries user image refs into sourceBlocks and labels an image-only record', () => {
+    const nodes = [
+      {
+        kind: 'user', seq: 1, time: 1_000, source: null,
+        content: [{ type: 'image', attachment }, { type: 'image', attachment }],
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const user = turns[0]?.groups[0]?.cells[0]
+    expect(user?.text).toBe('Images ×2')
+    expect(user?.previewMarkdown).toBeUndefined()
+    expect(user?.sourceBlocks).toEqual([
+      { type: 'image', content: '', attachment },
+      { type: 'image', content: '', attachment },
+    ])
+  })
+
+  it('labels a record whose only text block is empty as image-only', () => {
+    const nodes = [
+      {
+        kind: 'user', seq: 1, time: 1_000, source: null,
+        content: [{ type: 'text', text: '' }, { type: 'image', attachment }],
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const user = turns[0]?.groups[0]?.cells[0]
+    expect(user?.text).toBe('Images ×1')
+    expect(user?.previewMarkdown).toBeUndefined()
+  })
+
+  it('keeps the text preview when a user message mixes text and images', () => {
+    const nodes = [
+      {
+        kind: 'user', seq: 1, time: 1_000, source: null,
+        content: [{ type: 'text', text: 'look at this' }, { type: 'image', attachment }],
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const user = turns[0]?.groups[0]?.cells[0]
+    expect(user?.text).toBe('')
+    expect(user?.previewMarkdown).toBe('look at this')
+    expect(user?.sourceBlocks?.[1]).toEqual({ type: 'image', content: '', attachment })
+  })
+
+  it('maps assistant image blocks to attachment source blocks and labels image-only output', () => {
+    const nodes = [
+      {
+        kind: 'assistant', seq: 1, time: 1_000, turn: 1, step: 0,
+        blocks: [{ kind: 'image', attachment }],
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const message = turns[0]?.groups.flatMap(g => g.cells).find(c => c.kind === 'message')
+    expect(message?.text).toBe('Images ×1')
+    expect(message?.sourceBlocks).toEqual([{ type: 'image', content: '', attachment }])
+  })
+
+  it('carries tool-result image refs into outputBlocks and labels the result', () => {
+    const nodes = [
+      {
+        kind: 'assistant', seq: 1, time: 1_000, turn: 1, step: 1,
+        blocks: [{ kind: 'tool-call', callId: 'c1', name: 'read_image', argsRaw: '{}' }],
+      },
+      {
+        kind: 'tool-result', seq: 2, time: 2_000, callId: 'c1',
+        call: { name: 'read_image', argsRaw: '{}' }, callTime: 1_200,
+        content: [{ type: 'image', attachment }], isError: false,
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const tool = turns[0]?.groups.flatMap(g => g.cells).find(c => c.kind === 'tool')
+    expect(tool?.result).toBe('Images ×1')
+    expect(tool?.outputDetail).toBe('Images ×1')
+    expect(tool?.outputBlocks).toEqual([{ type: 'image', content: '', attachment }])
+  })
+
+  it('shows wire-shaped blocks without an attachment as JSON, not as an image', () => {
+    const nodes = [
+      {
+        kind: 'user', seq: 1, time: 1_000, source: null,
+        content: [{ type: 'image', url: 'https://example.com/a.png' }],
+      },
+    ] as unknown as LegacyConversationSlice['nodes']
+    const turns = deriveTrajectoryLayout({ nodes, partial: null, runningCalls: [] })
+    const block = turns[0]?.groups[0]?.cells[0]?.sourceBlocks?.[0]
+    expect(block?.attachment).toBeUndefined()
+    expect(block?.content).toContain('https://example.com/a.png')
   })
 })

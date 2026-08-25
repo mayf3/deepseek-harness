@@ -18,6 +18,7 @@ import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
   decodeStoredSessionHeader, SessionPersistence, SessionPersistenceRevision,
   SessionPersistenceRevisionConflictError, PersistenceCoordinator,
+  type BorrowedSessionSource,
   type PersistenceBackend, type SessionLocation, type SessionPersistenceSnapshot,
   type SessionInspection, type SessionPersistenceRevision as PersistenceRevision, type SessionRawArtifact,
   type StoredEventRead, type StoredSessionSource,
@@ -210,6 +211,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection> {
     return this.coordinator.inspect(id, signal)
+  }
+
+  override borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource> {
+    return this.coordinator.borrowSession(id, signal)
   }
 
   // JSONL is sequential media: its source reader parses the stored prefix and
@@ -505,6 +510,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     if (tornMarker !== undefined) await this.repair(meta, tornMarker.truncateTo)
     const repairedEvents = [...(tornMarker?.recoveredEvents ?? []), ...closers]
     if (repairedEvents.length > 0) await this.appendLines(meta, repairedEvents)
+    if (tornMarker !== undefined) this.ctx.logger.warn(`${this.name}: session "${meta.id}" recovered from a torn tail; incomplete tail bytes were discarded`)
   }
 
   /** Replace one exact source revision through a synced sibling and atomic namespace update. */

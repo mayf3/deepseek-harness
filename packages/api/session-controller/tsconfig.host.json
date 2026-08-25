@@ -15,7 +15,8 @@
     "src/commands.ts",
     "src/control.ts",
     "src/history.ts",
-    "src/list.ts"
+    "src/list.ts",
+    "src/model-selection-projection.ts"
   ],
   "references": [
     { "path": "../../../vendor/cordis" },
@@ -24,7 +25,6 @@
     { "path": "../../core/agent-default-model" },
     { "path": "../../core/scope" },
     { "path": "../../core/session" },
-    { "path": "../../core/tools" },
     { "path": "../../attachment/attachment" },
     { "path": "../../interaction/permission-presets" },
     { "path": "../../jobs/jobs" },
