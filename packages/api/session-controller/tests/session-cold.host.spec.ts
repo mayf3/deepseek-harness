@@ -24,7 +24,7 @@ import {
   PersistenceCoordinator,
   SessionPersistenceRevision,
   type PersistenceBackend,
-  type StoredPrefix,
+  type StoredSessionSource,
 } from '@deepseek-ai/dsh-session-persistence'
 import { ApiSessionList } from '../src/list.ts'
 import {
@@ -359,19 +359,29 @@ describe('cold history recovery view', () => {
     await ctx.plugin(SessionStore)
     const sessionId = sid('session-interrupted')
     const meta = header(sessionId, 1000)
-    const stored: StoredPrefix<never> = {
+    const revision = SessionPersistenceRevision('history-recovery-test:1')
+    const stored: StoredSessionSource<never> = {
       meta,
-      events: [{ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }],
-      revision: SessionPersistenceRevision('history-recovery-test:1'),
+      revision,
+      readEvents: ({ fromSeq = 0 } = {}) => ({
+        events: (async function* () {
+          const events: SessionEvent[] = [
+            { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+          ]
+          for (const event of events.slice(fromSeq)) yield structuredClone(event)
+        })(),
+        completed: Promise.resolve({}),
+      }),
     }
     const backend: PersistenceBackend<never> = {
       name: 'history-recovery-test',
-      loadStored: id => Promise.resolve(id === sessionId ? structuredClone(stored) : undefined),
+      openStored: id => Promise.resolve(id === sessionId ? stored : undefined),
       readStoredRevision: id => Promise.resolve(
-        id === sessionId ? SessionPersistenceRevision('history-recovery-test:1') : undefined,
+        id === sessionId ? revision : undefined,
       ),
       appendBatch: () => Promise.resolve(),
       commitRepair: () => Promise.resolve(),
+      replaceStored: () => Promise.resolve(),
       list: () => Promise.resolve([structuredClone(meta)]),
     }
     const coordinator = new PersistenceCoordinator(ctx, backend)
