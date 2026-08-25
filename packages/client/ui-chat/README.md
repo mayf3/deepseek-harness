@@ -14,4 +14,4 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 ## Known Limitations and Deferred Work
 
-- **The view reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page.
+- **The view reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation likewise represents only loaded Turns; loading an earlier page preserves existing Turn marks and redistributes the complete loaded set in a compact rail without an unloaded-history placeholder. Marks stay 10px apart until the loaded set exceeds the available height, then compress to fit.

@@ -9,6 +9,8 @@ import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client
 import type { ChatViewSlotProps } from '../contract/slots.ts'
 import { PendingSteeringBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { TurnNavigator } from './TurnNavigator.tsx'
+import { deriveTurnNavigationItems, type TurnNavigationItem } from './turn-navigation.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -151,6 +153,7 @@ export function ChatView({
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
+  const locations = useChat(s => s.locations)
   const timeline = useChat(s => s.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -208,11 +211,18 @@ export function ChatView({
     [loadImage, renderSlot],
   )
   const runningTurnStart = useMemo(() => runningTurnStartTime(timeline), [timeline])
+  const turnNavigationItems = useMemo(
+    () => deriveTurnNavigationItems({ timeline, locations, nodes: nodeStore }),
+    [locations, nodeStore, order, timeline],
+  )
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
   const atBottomRef = useRef(true)
   const [atBottom, setAtBottom] = useState(true)
+  const [activeTurn, setActiveTurn] = useState<number | null>(
+    () => turnNavigationItems.at(-1)?.turn ?? null,
+  )
   /** Last position delivered or written on the main thread. */
   const observedTopRef = useRef(0)
   /** Paging anchor: semantic row/position at click, updated by reader scrolls
@@ -234,6 +244,51 @@ export function ChatView({
   const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
   const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
 
+  const syncActiveTurn = useCallback((): void => {
+    const local = listRef.current
+    const first = turnNavigationItems[0]
+    if (local === null || first === undefined) {
+      setActiveTurn(null)
+      return
+    }
+    const el = scrollerOf(local)
+    const scrollport = el.getBoundingClientRect()
+    const readingLine = scrollport.top + Math.min(96, el.clientHeight * 0.2)
+    let next = first.turn
+    for (const item of turnNavigationItems) {
+      const row = anchorElement(local, item.anchorKey)
+      if (row === null || row.getBoundingClientRect().top > readingLine) break
+      next = item.turn
+    }
+    if (el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1) {
+      next = turnNavigationItems.at(-1)?.turn ?? next
+    }
+    setActiveTurn(current => current === next ? current : next)
+  }, [turnNavigationItems])
+
+  const activeFrameRef = useRef<number | null>(null)
+  const scheduleActiveTurn = useCallback((): void => {
+    if (activeFrameRef.current !== null) return
+    if (typeof requestAnimationFrame === 'undefined') {
+      syncActiveTurn()
+      return
+    }
+    activeFrameRef.current = requestAnimationFrame(() => {
+      activeFrameRef.current = null
+      syncActiveTurn()
+    })
+  }, [syncActiveTurn])
+
+  useEffect(() => () => {
+    if (activeFrameRef.current !== null && typeof cancelAnimationFrame !== 'undefined') {
+      cancelAnimationFrame(activeFrameRef.current)
+    }
+  }, [])
+
+  useLayoutEffect(() => {
+    scheduleActiveTurn()
+  }, [scheduleActiveTurn])
+
   const toBottom = (el: HTMLElement): void => {
     anchorRef.current = null
     el.scrollTop = el.scrollHeight
@@ -241,6 +296,7 @@ export function ChatView({
     atBottomRef.current = true
     setAtBottom(true)
     chatScroll.save(null)
+    setActiveTurn(turnNavigationItems.at(-1)?.turn ?? null)
   }
 
   useLayoutEffect(() => {
@@ -339,6 +395,7 @@ export function ChatView({
     if (isAtBottom) chatScroll.save(null)
     else if (position !== null) chatScroll.save(position)
     observedTopRef.current = el.scrollTop
+    scheduleActiveTurn()
   }
 
   // Bind the scroll listener on the resolved scrollport once per mount;
@@ -405,9 +462,33 @@ export function ChatView({
     loadOlder()
   }
 
+  const navigateToTurn = (item: TurnNavigationItem): void => {
+    const local = listRef.current
+    if (local === null) return
+    const row = anchorElement(local, item.anchorKey)
+    if (row === null) return
+    anchorRef.current = null
+    const el = scrollerOf(local)
+    el.scrollTop += flowTop(row, el) - 24
+    observedTopRef.current = el.scrollTop
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
+    atBottomRef.current = isAtBottom
+    setAtBottom(isAtBottom)
+    setActiveTurn(item.turn)
+    const position = isAtBottom ? null : scrollPosition(local, el)
+    if (isAtBottom) chatScroll.save(null)
+    else if (position !== null) chatScroll.save(position)
+  }
+
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
+        <TurnNavigator
+          items={turnNavigationItems}
+          activeTurn={activeTurn}
+          onNavigate={navigateToTurn}
+          t={t}
+        />
         <div ref={columnRef} className={css.column} data-chat-flow="">
           {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
           {openState === 'error' && openError !== null && (

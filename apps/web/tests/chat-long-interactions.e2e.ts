@@ -153,7 +153,7 @@ describe('web e2e: long Chat interaction contract', () => {
     })
     await seedSession(scaffold, FIXTURE.log, SESSION_ID)
     browser = await chromium.launch()
-    page = await newEnglishPage(browser, 900)
+    page = await newEnglishPage(browser, 1_280)
     tripwire = watchConsole(page)
     await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
@@ -192,6 +192,48 @@ describe('web e2e: long Chat interaction contract', () => {
     ))
     if (boundary === undefined) throw new Error(`turn ${String(BRANCH_TURN)} has no turn/end event`)
     const expectedUserText = textContent(branchUserEvent.data.content)
+
+    const turnNavigation = page.getByRole('navigation', { name: 'Turn navigation' })
+    await turnNavigation.waitFor({ state: 'visible', timeout: 15_000 })
+    const initialTurnButtons = turnNavigation.getByRole('button')
+    const initialTurnCount = await initialTurnButtons.count()
+    expect(initialTurnCount).toBeGreaterThan(1)
+    expect(await initialTurnButtons.last().getAttribute('aria-current')).toBe('true')
+    const firstTurnButton = initialTurnButtons.first()
+    const firstTurnLabel = await firstTurnButton.getAttribute('aria-label')
+    if (firstTurnLabel === null) throw new Error('first Turn navigation mark has no accessible label')
+    const firstTurn = Number(firstTurnLabel.match(/^Jump to turn (\d+)$/)?.[1])
+    expect(Number.isSafeInteger(firstTurn)).toBe(true)
+    await firstTurnButton.focus()
+    const preview = page.getByRole('tooltip')
+    await preview.waitFor({ state: 'visible', timeout: 5_000 })
+    // The first loaded Turn may begin mid-Turn at a page boundary. Its mark is
+    // still useful with the loaded response and gains the prompt after prepend.
+    expect(await preview.textContent()).toContain(`Turn ${String(firstTurn)}`)
+    expect(await preview.textContent()).toContain(FIXTURE.markers.assistant(firstTurn))
+    const firstTurnPosition = await firstTurnButton.evaluate(button => (
+      button.parentElement?.style.getPropertyValue('--turn-position') ?? ''
+    ))
+    expect(firstTurnPosition).toBe('0%')
+
+    const loadEarlier = page.getByRole('button', { name: 'Load earlier', exact: true })
+    await loadEarlier.click()
+    await expect.poll(() => turnNavigation.getByRole('button').count(), { timeout: 15_000 })
+      .toBeGreaterThan(initialTurnCount)
+    const stableFirstTurnButton = turnNavigation.getByRole('button', { name: firstTurnLabel })
+    expect(await stableFirstTurnButton.evaluate(button => (
+      button.parentElement?.style.getPropertyValue('--turn-position') ?? ''
+    ))).not.toBe(firstTurnPosition)
+    await stableFirstTurnButton.focus()
+    await expect.poll(() => preview.textContent(), { timeout: 5_000 })
+      .toContain(FIXTURE.markers.user(firstTurn))
+    expect(await preview.textContent()).toContain(FIXTURE.markers.assistant(firstTurn))
+    await stableFirstTurnButton.press('Enter')
+    await expect.poll(() => stableFirstTurnButton.getAttribute('aria-current'), { timeout: 5_000 }).toBe('true')
+    await expect.poll(
+      () => page.locator(`[data-chat-turn="${String(firstTurn)}"][data-chat-flow-kind="user"]`).count(),
+      { timeout: 5_000 },
+    ).toBe(1)
 
     await wheelUntilMounted(page, `[data-chat-call-id="${TARGET_CALL_2}"]`, -1_100)
     const toolUserKey = messageKey(toolUserEvent)
