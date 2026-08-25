@@ -1,13 +1,13 @@
 ---
 description: "CPython 子进程代码 runtime：为 Python 模型代码实现 dsh-code-runtime seam，及其使用的 fd-3 wire 协议。"
-kind: "package-library"
+kind: "package-reference"
 ---
 
 # @deepseek-ai/dsh-code-runtime-python
 
 [English](README.md) | 中文
 
-## 摘要
+## 概述
 
 `dsh-code-runtime-python` 交付 `PythonCodeRuntime`——[`dsh-code-runtime`](../code-runtime/README.zh.md) seam 的 CPython 子进程实现：它以 `language: 'python'`、`isolation: 'process'` 注册为 `codeRuntime`，每次 `run()` 启动一个全新的 `python3 -I` 子进程，把程序作为 async 函数体执行，通过子进程 fd 3 上的无版本 JSON-lines 协议通信（stdout/stderr 留给程序自己的输出）。宿主侧（`src/protocol.ts`）把每条入站帧都视为敌意并逐字段重建后才读取；Python 侧（`py/protocol.py`）镜像消息词汇。隔离（不是安全边界——模型代码与 bash 同等的信任）来自空环境、`RLIMIT_CPU`/`RLIMIT_AS`、墙钟上限与 `SIGTERM`→宽限→`SIGKILL` 进程组拆卸，所有上限都在插件加载期校验。
 
