@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -13,12 +13,6 @@ import * as acp from '../src/index.ts'
 import { acpStopReason, acpContentText, DEFAULT_DISPOSE_EOF_GRACE_MS, DEFAULT_DISPOSE_GRACE_MS, disposeAcpChild, startAcpRun, toAcpPrompt, type AcpRunSpec } from '../src/run.ts'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import { spawnSubprocess } from '@deepseek-ai/dsh-subprocess-local/src/spawn.ts'
-
-// These tests spawn real ACP child subprocesses. On contended self-hosted
-// Windows runners the default per-test budget is too tight, so give this file
-// twice the configured default timeout (DSH_COVERAGE_TEST_TIMEOUT_MS in CI).
-const DEFAULT_TEST_TIMEOUT_MS = Number(process.env.DSH_COVERAGE_TEST_TIMEOUT_MS ?? 5_000)
-vi.setConfig({ testTimeout: DEFAULT_TEST_TIMEOUT_MS * 2 })
 
 /**
  * Keyless integration tests for the ACP subagent backend. Each spawns a REAL
@@ -595,7 +589,10 @@ describe('dsh-subagent-acp', () => {
     )
   })
 
-  it('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
+  it.skipIf(
+    process.platform === 'win32',
+    'Windows anonymous pipes do not surface a child stdout half-close while the child stays alive',
+  )('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
     const error = await startAcpRun(request(), {
       command: process.execPath,
       args: [mockServer],
@@ -942,7 +939,10 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  it('classifies a prompt transport failure without copying SDK text', async () => {
+  it.skipIf(
+    process.platform === 'win32',
+    'Windows anonymous pipes do not surface a child stdout half-close while the child stays alive',
+  )('classifies a prompt transport failure without copying SDK text', async () => {
     const run = await startAcpRun(request('private prompt text'), {
       command: process.execPath,
       args: [mockServer],
@@ -963,7 +963,10 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  it('lets local cancellation interrupt prompt-failure process observation', async () => {
+  it.skipIf(
+    process.platform === 'win32',
+    'Windows anonymous pipes do not surface a child stdout half-close while the child stays alive',
+  )('lets local cancellation interrupt prompt-failure process observation', async () => {
     const controller = new AbortController()
     const protocolEnded = Promise.withResolvers<undefined>()
     let boundedExitWaits = 0
