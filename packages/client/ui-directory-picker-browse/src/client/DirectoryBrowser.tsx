@@ -40,8 +40,7 @@ import {
   Button, IconCheckOutline16, IconChevronRightOutline14, IconEditOutline16, IconFolderClose16, IconFolderOpen16,
   IconPlusOutline16, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-runtime/client'
-import { DirectoryBrowseError } from '@deepseek-ai/dsh-client-runtime/client'
+import type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-client-connection/client'
 import type { Translate } from '@deepseek-ai/dsh-client-locale/client'
 import css from './DirectoryBrowser.module.css'
 
@@ -49,9 +48,18 @@ import css from './DirectoryBrowser.module.css'
 export interface DirectoryBrowserProps {
   /** Dialog visibility (owner-local; closed unmounts nothing but resets on reopen). */
   open: boolean
-  /** List one directory level (absent path = the Host home directory); the signal aborts a superseded scan on the wire. */
+  /**
+   * List one directory level (absent path = the Host home directory); the
+   * signal aborts a superseded scan on the wire. A rejection may carry
+   * `{ rpcError: { message: string } }`; the dialog prefers that Host
+   * business message over the ordinary Error text.
+   */
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
-  /** Create one child directory under an existing parent. */
+  /**
+   * Create one child directory under an existing parent. A rejection may
+   * carry `{ rpcError: { message: string } }`; the dialog prefers that Host
+   * business message over the ordinary Error text.
+   */
   createDirectory: (path: string, name: string) => Promise<string>
   /** The operator confirmed a directory (the selection, else the listed level). */
   onOpen: (path: string) => void
@@ -63,9 +71,13 @@ export interface DirectoryBrowserProps {
   t: Translate
 }
 
-/** Failure text: the Host business message when typed, else the throw's text. */
+/** Failure text from the injected directory operation. */
 function failureText(error: unknown): string {
-  if (error instanceof DirectoryBrowseError) return error.rpcError.message
+  if (error !== null && typeof error === 'object' && 'rpcError' in error) {
+    const rpcError = error.rpcError
+    if (rpcError !== null && typeof rpcError === 'object' && 'message' in rpcError
+      && typeof rpcError.message === 'string') return rpcError.message
+  }
   return error instanceof Error ? error.message : String(error)
 }
 

@@ -15,7 +15,7 @@ import {
 } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { SessionInspection } from './index.ts'
+import type { BorrowedSessionSource, SessionInspection } from './index.ts'
 import {
   decodeStoredSession,
   SessionFormatUnsupportedError,
@@ -25,6 +25,7 @@ import type {
   DecodedSession,
   StoredSessionSource,
 } from './format-decoder.ts'
+import { SessionPersistenceNotFoundError } from './errors.ts'
 import { SessionPersistenceRevisionConflictError } from './revision.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
 import { observeQueuedAbort, SessionPreparations } from './preparations.ts'
@@ -90,6 +91,9 @@ export interface PersistenceBackend<TornMarker = unknown> {
    * @param signal - optional cancellation for backend read work.
    */
   readStoredRevision(id: SessionId, signal?: AbortSignal): Promise<SessionPersistenceRevision | undefined>
+
+  /** Durably create an empty header-only session artifact. */
+  materializeHeader?(meta: SessionHeader): Promise<void>
 
   /**
    * Durably append a CONTIGUOUS batch, lazily materializing the session first
@@ -294,6 +298,26 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     return this.serialize(snapshot.id, () => this.createCore(snapshot))
   }
 
+  /**
+   * Materialize one exact live session without inventing a session event.
+   * @param session - live session already registered through the write path.
+   */
+  async ensureMaterialized(session: Session): Promise<void> {
+    await this.flush(session)
+    await this.serialize(session.id, async () => {
+      const state = this.states.get(session.id)
+      /* v8 ignore next -- successful live flush always initializes the exact session state. */
+      if (state === undefined) throw new Error(`session "${session.id}" is not registered for persistence`)
+      if (state.materialized) return
+      if (this.backend.materializeHeader === undefined) {
+        throw new Error('session persistence backend cannot materialize an empty session')
+      }
+      await this.backend.materializeHeader(state.meta)
+      state.materialized = true
+      this.preparations.invalidate(session.id)
+    })
+  }
+
   private async createCore(meta: SessionHeader): Promise<void> {
     // Do NOT clobber an existing session: the SessionId IS the identity.
     if (this.states.has(meta.id) || this.preparations.has(meta.id)) {
@@ -471,6 +495,64 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   }
 
   /**
+   * Borrow one exact logical view while pinning its reusable prepared Session.
+   * @param id - persisted session to observe.
+   * @param signal - optional cancellation for preparation work.
+   * @returns a disposable observation retaining the prepared source.
+   */
+  async borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource> {
+    for (;;) {
+      signal?.throwIfAborted()
+      if (this.retirements.has(id)) await this.waitForRetirement(id, signal)
+      const live = this.ctx.sessions.get(id)
+      if (live !== undefined) {
+        return { source: 'live', inspection: this.inspectLive(live), [Symbol.dispose]: () => {} }
+      }
+      const observation = await this.preparations.borrow(
+        id,
+        () => this.serialize(id, () => this.prepareCore(id)),
+        signal,
+      )
+      const source = observation.source
+      try {
+        const attached = this.ctx.sessions.get(id)
+        if (attached !== undefined) {
+          observation[Symbol.dispose]()
+          return { source: 'live', inspection: this.inspectLive(attached), [Symbol.dispose]: () => {} }
+        }
+        const current = await this.serialize(
+          id,
+          () => this.isPreparedSourceCurrent(source, signal),
+          signal,
+        )
+        const published = this.ctx.sessions.get(id)
+        if (published !== undefined) {
+          observation[Symbol.dispose]()
+          return { source: 'live', inspection: this.inspectLive(published), [Symbol.dispose]: () => {} }
+        }
+        if (current || this.preparations.discardReady(id, source) === 'retained') {
+          return {
+            source: 'prepared',
+            inspection: source.inspection,
+            revision: source.revision,
+            preparedSession: source.session,
+            [Symbol.dispose]: () => { observation[Symbol.dispose]() },
+          }
+        }
+      } catch (error: unknown) {
+        observation[Symbol.dispose]()
+        signal?.throwIfAborted()
+        const attached = this.ctx.sessions.get(id)
+        if (attached !== undefined) {
+          return { source: 'live', inspection: this.inspectLive(attached), [Symbol.dispose]: () => {} }
+        }
+        throw error
+      }
+      observation[Symbol.dispose]()
+    }
+  }
+
+  /**
    * Read the stored events from `fromSeq` onward, detached and non-mutating
    * (the read-from-seq primitive behind the service's `readFrom`). Runs on
    * the same per-id chain as writes. The format decoder requests a backend
@@ -498,7 +580,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       signal?.throwIfAborted()
       const stored = await this.backend.openStored(id, signal)
       signal?.throwIfAborted()
-      if (stored === undefined) throw new Error(`session "${id}" not found`)
+      if (stored === undefined) throw new SessionPersistenceNotFoundError(id)
       try {
         const current = decodeStoredSession(stored, id, fromSeq)
         const { events } = await collectDecodedEvents(current)
@@ -516,7 +598,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
   private async prepareCore(id: SessionId): Promise<PreparedSessionSource<TornMarker>> {
     for (;;) {
       const stored = await this.backend.openStored(id)
-      if (stored === undefined) throw new Error(`session "${id}" not found`)
+      if (stored === undefined) throw new SessionPersistenceNotFoundError(id)
       try {
         const current = decodeStoredSession(stored, id)
         const { events: storedEvents, tornMarker } = await collectDecodedEvents(current)
@@ -615,7 +697,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     const state = this.states.get(session.id)
     /* v8 ignore next -- successful flush always publishes this live session's durable state */
     if (state === undefined) throw new Error(`session "${session.id}" lost persistence state during load`)
-    if (events.length === 0) throw new Error(`session "${session.id}" not found`)
+    if (events.length === 0 && !state.materialized) throw new Error(`session "${session.id}" not found`)
     if (interruptedTurnClosers(events).length > 0) {
       throw new Error(`cannot load session "${session.id}" while its live turn is open; use the live Session or wait for the turn to close`)
     }

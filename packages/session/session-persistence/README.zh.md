@@ -14,12 +14,13 @@
 | `supportsRawArtifacts: boolean` | 明确说明该后端是否为每个会话暴露一份逐字工件。Consumer 在调用 `readRaw` 前检查此能力；`false` 并不表示会话缺失。 |
 | `readRaw(id, signal?): Promise<SessionRawArtifact \| undefined>` | 读取受支持后端自身的逐字工件文本；只解码物理编码，绝不从事件重建。`undefined` 仅表示所请求工件缺失；不支持的后端会拒绝。 |
 | `create(meta): Promise<void>` | 注册新会话元数据。可以将物理写入延迟到第一次 `append`（延迟实体化）。 |
+| `ensureMaterialized(session): Promise<void>` | 在不虚构事件的情况下，显式使一个确切 live session 即使零事件也保持持久。只有当空会话本身是可恢复资源时，生命周期前端才使用它；普通创建仍保持延迟实体化。 |
 | `append(id, events): Promise<void>` | 持久保存一个批次。仅追加；任何修复后，第一个事件 `seq` == 已存储 next-seq；非 JSON 可序列化数据会被拒绝，并命名违规类型。 |
 | `prepare(id, signal?): Promise<SessionPreparation>` | 预留恢复所使用的那个未发布 Session。协调器会尽可能复用之前的检查结果、提交待处理恢复，并在 dispose（资源释放）时将未发布 reservation 释放回有界缓存。 |
 | `load(id): Promise<{ meta; events }>` | 沿受支持的格式路径解码，并提交格式替换与冷恢复后，返回不可变、平衡的逻辑日志。实时 load 先 flush 其快照，并在轮次开放时拒绝；冷 load 保留中断的最终轮次，并用合成 `tool/result`/`step/end?`/`turn/end {interrupted}` 事件持久关闭它。只丢弃撕裂尾部碎片；已提交损坏和格式错误的记录以 `SessionPersistenceCorruptionError` 拒绝，不支持的格式 `version` 或本构建不认识且信封未带 `ignorable` 标记的事件类型以 `SessionFormatUnsupportedError` 拒绝，消息说明拒绝方向，并在后端为每个会话保留独立文件时给出原始日志路径。 |
 | `inspect(id, signal?): Promise<{ meta; events }>` | 返回已经升级、验证和深度冻结的逻辑视图，但不提交恢复或发布 Session。冷视图会获得仅存在于内存的合成恢复 closer，物理撕裂尾部保持不变；实时状态下的视图则是当前不可变快照，可能包含开放的轮次。基于协调器的实现会在有界 LRU 中保留该冷状态下未发布的 Session 本身，供后续 `prepare` 使用，但已存储修订值变化后会丢弃并重新读取。同 id 检查共享进行中的读取。 |
 | `readFrom(id, fromSeq, signal?): Promise<{ meta; events }>` | 返回 `seq >= fromSeq` 的有效已存储事件，不进入 preparation 缓存、不截断、不合成 closer，也不发布协调器状态。`fromSeq` 达到或超过已存储末尾时返回空事件列表；负数或非安全整数 `fromSeq` 会被拒绝。当前格式读取向后端请求 suffix；存在格式迁移时则读取完整 source，迁移后才应用 `fromSeq`。顺序介质可能仍需扫描物理 framing 后再过滤，可寻址介质则可不读取更早的记录。供 checkpoint 消费方只应用已存序号之后的事件。 |
-| `list(signal?): Promise<SessionHeader[]>` | 从元数据轻量列出，不解析完整日志。可选信号取消后端列表工作。零事件延迟实体化会话不在 `list` 中。 |
+| `list(signal?): Promise<SessionHeader[]>` | 从元数据轻量列出，不解析完整日志。可选信号取消后端列表工作。零事件会话在 consumer 显式实体化前不在 `list` 中。 |
 | `listSnapshots(signal?): Promise<SessionPersistenceSnapshot[]>` | 返回轻量元数据和每份日志一个不透明、带品牌类型的修订值，不加载事件日志。日志及其后端存储不变时，修订保持相等；append 或变更性 load 修复后会改变；不会仅因两个存储使用相同本地计数器而冲突。可选信号请求取消后端发现工作；第一方后端会先等待所有已启动的列出工作结束，再予以拒绝，因此调用返回拒绝时，相关工作已完全停稳。 |
 
 ## 每个后端必须遵守的不变量
@@ -57,6 +58,7 @@ v0 decoder 还识别[消息标识机制引入前的消息](../../../.agents/note
 | `openStored(id, signal?)` | 打开不可信 header 和绑定同一精确 source revision 的可重复事件 reader。每次 `readEvents({ fromSeq? })` 都重现该 revision，并只在 EOF 后暴露 backend 自有 torn-tail metadata；source 已变化时以 `SessionPersistenceRevisionConflictError` 拒绝。 |
 | `readStoredRevision(id, signal?)` | 在不加载事件日志的情况下读取一个 id 当前的来源限定修订值。它使用与 `openStored` 相同的修订值表示；id 不存在时返回 `undefined`。 |
 | `appendBatch(meta, events, isMaterialized)` | 持久追加连续批次；尚未实体化时以原子方式延迟实体化。 |
+| `materializeHeader?(meta)` | 为 `ensureMaterialized` 持久创建仅含 header 的 artifact；支持持久空会话的 provider 必须实现。 |
 | `commitRepair(meta, tornMarker, closers)` | 使崩溃修复持久：截断撕裂尾部（当且仅当 `tornMarker !== undefined`；标记可为 falsy，例如 seq/offset `0`），并追加 `closers`。不要求原子性。由 load（截断 + closer）和活动会话接管（仅截断）使用。 |
 | `replaceStored(expectedRevision, meta, events)` | 用完整的当前格式 header 与事件流原子替换一个精确 revision。Revision 与存储身份检查发生在提交边界——JSONL 在原子替换前立即检查，SQLite 在替换事务内检查；该检查不提供跨进程写者排他。不匹配时以 `SessionPersistenceRevisionConflictError` 拒绝。 |
 | `list(signal?)` | 列出全部已存储元数据，并遵循可选的取消信号。 |

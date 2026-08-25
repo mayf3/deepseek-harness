@@ -4,8 +4,6 @@
  *
  * - `GET /__boot__` answers from tunnel glue, never from the host API surface,
  *   because the page needs the boot payload before its Cordis tree exists.
- * - The two event-stream paths go straight to the API fetch handler so they take
- *   its SSE branch; the `/api` route answers 426 upgrade-required first.
  * - Privileged `/api` methods take that same direct entry: the browser strips the
  *   `host` header from the WHATWG `Request` the route lane rebuilds, so the
  *   privileged fence would answer 403 for every one of them. The method set is
@@ -21,13 +19,11 @@
  */
 import {
   parseInboundFrame, type TunnelOutboundFrame, type TunnelRequestFrame, type TunnelRequestId,
+  type TunnelStreamOpenFrame,
 } from './frames.ts'
 import {
   createSyntheticExchange, type RequestListener, type ResponseSink, type SyntheticExchange,
 } from './synthetic-http.ts'
-
-/** Event-stream routes that must reach the SSE branch of the API fetch handler. */
-export const STREAM_PATHS = ['/api/events.mux', '/api/events.host'] as const
 
 /** Prefix owning the API methods. */
 export const API_PREFIX = '/api'
@@ -91,12 +87,24 @@ export interface TunnelPort {
 /** What the tunnel gains once the host tree is up. */
 export interface TunnelSeams {
   /**
-   * Direct entry to the API fetch handler: event streams, privileged methods,
-   * and any unary call the route lane refused with 403.
+   * Direct entry to the API fetch handler for privileged methods and any unary
+   * call the route lane refused with 403.
    */
   readonly directFetch: (request: Request) => Promise<Response>
   /** Boot payload for `GET /__boot__`: the structured index injection table. */
   readonly bootPayload: () => unknown
+  /** Open one decoded Gateway Remote stream without another network carrier. */
+  readonly openStream: (
+    endpoint: string,
+    payload: unknown,
+    signal: AbortSignal,
+  ) => Promise<AsyncIterable<unknown>>
+  /** Convert a Gateway stream failure to stable Client fields. */
+  readonly streamFailure: (error: unknown) => {
+    readonly code: string
+    readonly message: string
+    readonly details: object
+  }
 }
 
 /** Construction inputs for {@link TunnelServer}. */
@@ -124,6 +132,8 @@ export interface TunnelServerOptions {
 interface InFlight {
   abort(): void
 }
+
+type QueuedFrame = TunnelRequestFrame | TunnelStreamOpenFrame
 
 /** Recorded response frames, so a 403 from the route lane can be discarded. */
 class BufferedSink {
@@ -171,7 +181,7 @@ export class TunnelServer {
   private readonly requestListener: () => Promise<RequestListener>
   private readonly privilegedMethods: ReadonlySet<string> | undefined
   private readonly unaryApiLane: 'route' | 'direct'
-  private readonly queue: TunnelRequestFrame[] = []
+  private readonly queue: QueuedFrame[] = []
   private readonly inFlight = new Map<TunnelRequestId, InFlight>()
   private seams: TunnelSeams | undefined
   private failure: string | undefined
@@ -209,7 +219,7 @@ export class TunnelServer {
       this.queue.push(frame)
       return
     }
-    void this.serveRequest(frame)
+    this.dispatchFrame(frame)
   }
 
   /**
@@ -219,7 +229,7 @@ export class TunnelServer {
   serve(seams: TunnelSeams): void {
     this.seams = seams
     console.info(`webworker tunnel: serving (unary /api lane=${this.unaryApiLane}${this.unaryApiLane === 'route' ? ' with 403 retry' : ''}, privileged set=${this.privilegedMethods === undefined ? 'none' : String(this.privilegedMethods.size)}, queued=${String(this.queue.length)})`)
-    for (const frame of this.queue.splice(0)) void this.serveRequest(frame)
+    for (const frame of this.queue.splice(0)) this.dispatchFrame(frame)
   }
 
   /**
@@ -237,7 +247,15 @@ export class TunnelServer {
     this.port.postMessage(frame, transfer)
   }
 
-  private refuse(frame: TunnelRequestFrame, message: string): void {
+  private refuse(frame: QueuedFrame, message: string): void {
+    if (frame.t === 'stream-open') {
+      this.send({
+        t: 'stream-error',
+        id: frame.id,
+        failure: { kind: 'carrier', message },
+      })
+      return
+    }
     const body = toTransferable(encoder.encode(message))
     this.send({
       t: 'res',
@@ -247,6 +265,40 @@ export class TunnelServer {
       body,
       message,
     }, [body])
+  }
+
+  private dispatchFrame(frame: QueuedFrame): void {
+    if (frame.t === 'stream-open') void this.serveStream(frame)
+    else void this.serveRequest(frame)
+  }
+
+  private async serveStream(frame: TunnelStreamOpenFrame): Promise<void> {
+    if (this.seams === undefined) {
+      this.refuse(frame, 'webworker tunnel: Remote stream requested before the host tree is serving')
+      return
+    }
+    const seams = this.seams
+    const controller = new AbortController()
+    this.inFlight.set(frame.id, { abort: () => { controller.abort() } })
+    try {
+      const source = await seams.openStream(frame.endpoint, frame.payload, controller.signal)
+      for await (const value of source) {
+        if (controller.signal.aborted) return
+        this.send({ t: 'stream-item', id: frame.id, value })
+      }
+      if (!controller.signal.aborted) this.send({ t: 'stream-end', id: frame.id })
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        const failure = seams.streamFailure(error)
+        this.send({
+          t: 'stream-error',
+          id: frame.id,
+          failure: { kind: 'remote', ...failure },
+        })
+      }
+    } finally {
+      this.inFlight.delete(frame.id)
+    }
   }
 
   private sinkFor(id: TunnelRequestId): ResponseSink {
@@ -291,7 +343,6 @@ export class TunnelServer {
     try {
       const { frame: routed, path } = this.pathFrame(frame)
       if (path === '/__boot__') {  this.serveBoot(frame, sink); return }
-      if ((STREAM_PATHS as readonly string[]).includes(path)) {  await this.serveDirect(frame, sink); return }
       if (path.startsWith(`${API_PREFIX}/`)) {  await this.serveApi(frame, routed, path, sink); return }
       this.dispatch(routed, sink)
     } catch (reason) {

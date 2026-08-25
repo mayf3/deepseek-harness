@@ -337,6 +337,27 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect((await ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
   })
 
+  it('materializes an explicitly durable empty live session without an event row', async () => {
+    const id = SessionId('durable-empty')
+    const session = ctx.sessions.create(id, { meta: { cwd: '/work' } })
+
+    await ctx.sessionPersistence.ensureMaterialized(session)
+
+    expect(await readFile(rawLogPath(root, '/work', id), 'utf8')).toBe(`${JSON.stringify(toHeaderLine(session.header))}\n`)
+    await expect(ctx.sessionPersistence.load(id)).resolves.toEqual({ meta: session.header, events: [] })
+  })
+
+  it('delegates direct preparation through the JSONL provider', async () => {
+    const m = meta('direct-prepare', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+
+    const preparation = await ctx.sessionPersistence.prepare(m.id)
+
+    expect(preparation.session.header).toMatchObject(m)
+    preparation[Symbol.dispose]()
+  })
+
   it('readRaw returns the stored artifact text verbatim with its original filename', async () => {
     const m = meta('raw-read', '/work')
     await ctx.sessionPersistence.create(m)
