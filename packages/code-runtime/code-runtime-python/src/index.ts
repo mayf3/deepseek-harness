@@ -1320,13 +1320,17 @@ export class PythonCodeRuntime extends CodeRuntime {
         // defaults.
         //
         // The cap used HERE is FRAME_PARSE_CAP_BYTES, not the 256 MiB wire
-        // ceiling: a single frame between 64 MiB and the ceiling would otherwise
-        // be fully `Buffer.concat`-ed (a second copy of its bytes) and only then
-        // dropped in the line loop — the peak-memory doubling this pre-concat
-        // check exists to prevent, now for a frame the parser is guaranteed to
-        // discard. Dropping the oversized unframed buffer before the join keeps
-        // the peak at one copy of the wire bytes.
-        if (pendingBytes > FRAME_PARSE_CAP_BYTES) {
+        // ceiling, and ONLY when the held bytes are still a single unframed
+        // line (this chunk carries no newline, and earlier newline-bearing
+        // chunks were joined immediately): a frame between 64 MiB and the
+        // ceiling would otherwise be fully `Buffer.concat`-ed (a second copy
+        // of its bytes) and only then dropped in the line loop — the
+        // peak-memory doubling this pre-concat check exists to prevent.
+        // Dropping the oversized unframed buffer before the join keeps the
+        // peak at one copy of the wire bytes. When this chunk DOES carry a
+        // newline the buffer holds several frames, so the FIRST-FRAME check
+        // below (not this counter, which charges them all) decides.
+        if (pendingBytes > FRAME_PARSE_CAP_BYTES && !chunk.includes(0x0a)) {
           pendingChunks = []
           sealedBlocks = []
           pendingBytes = 0
@@ -1361,6 +1365,35 @@ export class PythonCodeRuntime extends CodeRuntime {
           pendingChunks = []
         }
         if (chunk.includes(0x0a)) {
+          // First-FRAME check before the join: measure the bytes up to the
+          // first newline across the held chunks. The byte counter cannot
+          // serve here — it charges the whole buffer, which legitimately
+          // holds several frames each within the cap. A first frame past the
+          // cap is dropped before the join (one copy of its wire bytes);
+          // later frames in the same buffer are handled by the per-line check
+          // in the loop below.
+          let firstFrameLen = 0
+          let sawNewline = false
+          // Sealed blocks hold newline-free prefixes only (a newline-bearing
+          // chunk is joined immediately), so they are entirely part of the
+          // first frame.
+          for (const b of sealedBlocks) firstFrameLen += b.length
+          for (const c of pendingChunks) {
+            const nl = c.indexOf(0x0a)
+            if (nl >= 0) {
+              firstFrameLen += nl
+              sawNewline = true
+              break
+            }
+            firstFrameLen += c.length
+          }
+          if (sawNewline && firstFrameLen > FRAME_PARSE_CAP_BYTES) {
+            pendingChunks = []
+            sealedBlocks = []
+            pendingBytes = 0
+            finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${FRAME_PARSE_CAP_BYTES} bytes on fd 3` } })
+            return
+          }
           let buffered = Buffer.concat(sealedBlocks.length > 0 ? [...sealedBlocks, ...pendingChunks] : pendingChunks)
           sealedBlocks = []
           let newline: number
@@ -1369,10 +1402,10 @@ export class PythonCodeRuntime extends CodeRuntime {
             buffered = buffered.subarray(newline + 1)
             /* v8 ignore next -- an empty line comes only from a forged `\n\n` write. */
             if (line.length === 0) continue
-            // No per-line cap check here: the unframed-buffer counter above
-            // already guarantees every line is within FRAME_PARSE_CAP_BYTES
-            // before this join runs, so a cap check on the line would be
-            // dead code.
+            // A later frame in this buffer may still exceed the cap; drop that
+            // single line like any junk frame (the first frame was already
+            // bounded by the check above).
+            if (line.length > FRAME_PARSE_CAP_BYTES) continue
             const text = line.toString('utf8')
             // JSON.parse would silently ROUND an integer token outside the
             // safe range before validation could see it, so a forged frame

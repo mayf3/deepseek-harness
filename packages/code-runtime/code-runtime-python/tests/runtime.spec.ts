@@ -4847,35 +4847,25 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error?.message).toContain(`protocol frame exceeded ${ceiling} bytes`)
   }, 90_000)
 
-  it('rejects an over-ceiling fd-3 buffer without first joining it into one line', async () => {
-    // The ceiling has to be enforced on the byte COUNTER before Buffer.concat,
+  it('rejects an over-cap newline-free fd-3 buffer without first joining it into one line', async () => {
+    // The cap has to be enforced on the byte COUNTER before Buffer.concat,
     // not on the joined line afterwards: the join is a second copy of
     // everything held, so a program could force roughly twice the advertised
-    // 256 MiB of host memory before anything rejected it.
+    // 64 MiB of host memory before anything rejected it.
     //
-    // This program makes the two orders observably different rather than merely
-    // differently sized. It writes exactly the ceiling with no newline (at the
-    // limit, so nothing trips), then a newline followed by 8 MiB more. Checking
-    // the counter first sees more than the ceiling on the newline-bearing pipe
-    // chunk and rejects. Checking the joined line instead produced a FIRST LINE
-    // of exactly the ceiling — inside the per-line bound, so it passed as a junk
-    // frame — and left an 8 MiB residual well under the bound, so the breach was
-    // never reported: measured, the run settled as
-    // `python exited (code=0, signal=null) before completing` after the host had
-    // held the ceiling AND copied it, which is the doubling this check prevents.
+    // This program writes past the cap with no newline: the counter crosses on
+    // the 9th 8 MiB write (72 MiB) while the buffer is still a single unframed
+    // line, so the pre-join check rejects it without concat-ing a second copy.
+    // Checking the joined line instead would have produced a 72 MiB FIRST LINE
+    // that the per-line bound then dropped only after the doubling had happened.
     const ceiling = 64 * 1024 * 1024
     const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
     const result = await runtime.run({
       program: [
         'import os',
         'chunk = b"A" * (8 * 1024 * 1024)',
-        `for _ in range(${ceiling / (8 * 1024 * 1024)}):`,
+        `for _ in range(${ceiling / (8 * 1024 * 1024) + 1}):`,
         '    os.write(3, chunk)',
-        // One drain loop: a single os.write past the pipe buffer returns short,
-        // and a truncated tail would change which bytes cross the ceiling.
-        'view = memoryview(b"\\n" + b"B" * (8 * 1024 * 1024))',
-        'while view:',
-        '    view = view[os.write(3, view):]',
         'return "never"',
       ].join('\n'),
       bindings: [],
@@ -4883,6 +4873,32 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.value).toBeUndefined()
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain(`protocol frame exceeded ${ceiling} bytes`)
+  }, 120_000)
+
+  it('keeps two within-cap frames whose combined buffer crosses the cap', async () => {
+    // The unframed byte counter charges the WHOLE buffer, which legitimately
+    // holds several frames each within FRAME_PARSE_CAP_BYTES. A first frame of
+    // exactly the cap followed by a second frame crosses the counter without
+    // either frame exceeding the cap; the first-frame check (not the counter)
+    // must let them through, or a legitimate near-cap frame plus a trailing
+    // frame would be misreported as a worker-exit.
+    const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'chunk = b"A" * (8 * 1024 * 1024)',
+        // Exactly the cap, no newline — at the limit, so nothing trips.
+        'for _ in range(8):',
+        '    os.write(3, chunk)',
+        // A newline, then a small legitimate log frame.
+        'os.write(3, b"\\n{\\"type\\":\\"log\\",\\"text\\":\\"after-cap-frames\\"}\\n")',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+    expect(result.logs).toContain('after-cap-frames')
   }, 120_000)
 
 })
