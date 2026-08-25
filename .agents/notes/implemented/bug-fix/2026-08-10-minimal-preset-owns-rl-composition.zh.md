@@ -36,4 +36,4 @@ preset persona 恰好是 `You are a helpful software engineer assistant.`，它�
 
 ## 后果
 
-Web RL 提示词固定不变，不能通过环境覆盖；独立 JSON-RPC 提示词由部署选择。Web preset 与 `sdk-minimal` profile 分别为各自启动路径声明相同的双工具行为。模型只看到持久 `bash` 与 `str_replace_editor`；shell 状态按 agent 隔离，并随该 agent 一并消失。Web preset 为自身的 PTY 与裸文件系统服务实例承担开销，其他 preset 无需承担。持久 shell 的本地后端需要受支持的 POSIX 终端基础环境，因此该 preset 不支持 Windows agent。
+Web RL 提示词固定不变，不能通过环境覆盖；独立 JSON-RPC 提示词由部署选择。Web preset 与 `sdk-minimal` profile 在各自启动路径共享持久 shell 加 editor 的行为；`sdk-minimal` 在 Windows 上选择 PowerShell。Shell 状态按 agent 隔离，并随该 agent 一并消失。Web preset 为自身的 PTY 与裸文件系统服务实例承担开销，其他 preset 无需承担。Web preset 的 Bash 后端需要受支持的 POSIX 终端基础环境，因此该 preset 不支持 Windows agent。

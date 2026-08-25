@@ -30,7 +30,7 @@ The plugin answers `shutdown`, flushes the response, disposes the root context s
 
 #### What the model sees
 
-For each accepted `session/prompt`, the conversation model receives the caller-supplied `contentBlocks` verbatim as one user message in that SDK session. This package adds no system-prompt prose or tool schema; those come from the other plugins in the composition. A configured `toolFilter` projects that composition's global tool registry before the request is assembled and executed.
+For each accepted `session/prompt`, text and durable content references enter one user message verbatim. Inline `SdkEncodedImageBlock` values are validated and committed through the composition's attachment store first, so the session log retains content-addressed image references rather than base64 bytes. This package adds no system-prompt prose or tool schema; those come from the other plugins in the composition. A configured `toolFilter` projects that composition's global tool registry before the request is assembled and executed.
 
 #### Token effect
 

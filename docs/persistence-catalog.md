@@ -133,7 +133,7 @@ Source: [`packages/core/agent/src/types.ts:38`](../packages/core/agent/src/types
 'agent-preset/selected': { agentPreset: string }
 ```
 
-Source: [`packages/preset/agent-presets/src/session.ts:26`](../packages/preset/agent-presets/src/session.ts)
+Source: [`packages/preset/agent-presets/src/session.ts:28`](../packages/preset/agent-presets/src/session.ts)
 
 ### `approval/*`
 
@@ -497,6 +497,22 @@ Source: [`packages/llm/llm-retry/src/types.ts:9`](../packages/llm/llm-retry/src/
 ```
 
 Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src/types.ts)
+
+### `model/*`
+
+<a id="modelselection--log-only"></a>
+
+#### `model/selection` — log-only
+
+```ts persistence-catalog
+/**
+ * Complete validated model selection requested for subsequent prompt
+ * assembly. Log-only: it never enters derived model history.
+ */
+'model/selection': ModelSelection
+```
+
+Source: [`packages/api/session-controller/src/types.ts:39`](../packages/api/session-controller/src/types.ts)
 
 ### `permission/*`
 

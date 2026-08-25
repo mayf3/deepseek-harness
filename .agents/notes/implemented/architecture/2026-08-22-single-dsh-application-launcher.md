@@ -8,7 +8,7 @@ English | [中文](2026-08-22-single-dsh-application-launcher.zh.md)
 
 DeepSeek Harness application processes need one owner for composition, plugin resolution, environment discovery, shutdown, and user customization. A dedicated app bin with a complete `cordis.yml` creates a second lifecycle beside profile launch: plugins installed into a profile do not reach it, behavior drifts from `dsh-base`, and SDK callers learn arbitrary process argv instead of the product's composition model.
 
-The Python SDK distributes a native executable and three platform wheels. Its packaged process must use the same profile launcher while preserving the closed VFS dependency tree, native sidecars, and installed-wheel evidence.
+The Python SDK distributes a native executable through four platform wheels. Its packaged process uses the same profile launcher while preserving the closed VFS dependency tree, native sidecars, and installed-wheel evidence.
 
 ## Decision
 
@@ -46,9 +46,9 @@ Direct SDK use follows normal Harness-home resolution: explicit `dshHome`, inher
 
 ### Python runtime
 
-The Python runtime wheel packages the ordinary `@deepseek-ai/dsh` CLI from `node_modules/@deepseek-ai/dsh/lib/bin.js` through the private `dsh-python-runtime-closure` deploy manifest. The Python client selects `dsh --profile sdk` by default, ordered patch files, and an explicit Harness home; the runnable Python example selects `sdk-minimal`. The installed `dsh` console command exposes the same profile grammar and the separately packaged `web` application.
+The Python runtime wheel packages the ordinary `@deepseek-ai/dsh` CLI from `node_modules/@deepseek-ai/dsh/lib/bin.js` through the private `dsh-python-runtime-closure` deploy manifest. The Python client selects `dsh --profile sdk` by default, ordered patch files, and an explicit Harness home; the runnable example under `python/sdk/examples` selects `sdk-minimal`. The installed `dsh` console command exposes the same profile grammar and the separately packaged `web` application.
 
-The executable family is `deepseek-harness-sdk-runtime-<platform>-<arch>`. The SDK wire, wheel and import distribution names, sidecar names, and wire identity `deepseek-harness-sdk-runtime` remain stable. The SDK package family is `@deepseek-ai/dsh-sdk-client`, `@deepseek-ai/dsh-sdk-protocol`, and `@deepseek-ai/dsh-sdk-jsonrpc-server`; `@deepseek-ai/dsh-acp` remains the ACP protocol plugin. There is no Python-specific Node application, checked-in complete config, compatibility package, forwarding executable, fallback parser, or SDK/ACP launcher alias.
+The executable family is `deepseek-harness-sdk-runtime-<platform>-<arch>`. The SDK wire, wheel and import distribution names, sidecar names, and wire identity `deepseek-harness-sdk-runtime` remain stable. The SDK package family is `@deepseek-ai/dsh-sdk-client`, `@deepseek-ai/dsh-sdk-protocol`, and `@deepseek-ai/dsh-sdk-jsonrpc-server`; `@deepseek-ai/dsh-acp` remains the ACP protocol plugin. There is no Python-specific Node application, checked-in complete config, compatibility package, forwarding executable, fallback parser, or SDK/ACP launcher alias. The [Python profile-runtime decision](2026-08-23-python-sdk-dsh-profile-runtime.md) owns this launch, and the [Windows x64 runtime decision](2026-08-23-python-sdk-windows-x64-runtime.md) owns the fourth carrier.
 
 ### Enforcement
 
@@ -76,7 +76,7 @@ The [ACP automation-only protocol](../simplification/2026-07-23-acp-automation-o
 
 **Hot-reload protocol profiles.** Rejected: replacing a protocol server or its dependencies can invalidate pending frames and SDK-owned agents. Process restart is the adoption boundary for SDK and ACP configuration changes.
 
-**Move the Python executable through profiles without a separate packaging proof.** Rejected: the native VFS closure, three platform wheels, ripgrep and spawn-helper sidecars, default config discovery, and clean-install behavior require their own migration evidence.
+**Move the Python executable through profiles without a separate packaging proof.** Rejected: the native VFS closure, four platform wheels, profile assets, ripgrep and spawn-helper sidecars, and clean-install behavior require their own migration evidence.
 
 ## Verification
 

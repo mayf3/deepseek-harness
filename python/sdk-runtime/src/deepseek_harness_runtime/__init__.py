@@ -4,9 +4,10 @@ Two runtime carriers coexist under ``runtime/``, both injected by the repo's
 ``scripts/build-exe-for-python-sdk.ts`` build (neither is checked into git):
 
 - **exe (production)**: single-file Node executables named
-  ``deepseek-harness-sdk-runtime-<platform>-<arch>`` (platform in {linux, macos}, arch in
-  {x64, arm64}) with a sibling ``-rg`` executable; macOS also uses a sibling
-  ``-spawn-helper``. The target machine needs no Node installation.
+  ``deepseek-harness-sdk-runtime-<platform>-<arch>`` for Linux/macOS and an
+  ``.exe`` counterpart for Windows. Each has a sibling ripgrep executable;
+  macOS also uses a sibling ``-spawn-helper``. The target machine needs no
+  Node installation.
 - **node (dev-only)**: the full deploy closure under ``runtime/node/``
   (``package.json`` + ``node_modules/``), executed as ``node
   runtime/node/node_modules/@deepseek-ai/dsh/lib/bin.js`` on a
@@ -30,7 +31,7 @@ PACKAGE_METADATA_FILENAME = "deepseek-harness-runtime.json"
 
 RUNTIME_MODE_ENV_VAR = "DSH_RUNTIME_MODE"
 
-_PLATFORM_TAGS = {"linux": "linux", "darwin": "macos"}
+_PLATFORM_TAGS = {"linux": "linux", "darwin": "macos", "win32": "win"}
 _ARCH_TAGS = {"x86_64": "x64", "amd64": "x64", "arm64": "arm64", "aarch64": "arm64"}
 
 _EXE_ACQUISITION_HINT = (
@@ -62,13 +63,18 @@ def bundled_runtime_path() -> Path:
     touching callers).
     """
     tag = _current_platform_tag()
-    path = bundled_package_dir() / "runtime" / f"deepseek-harness-sdk-runtime-{tag}"
+    extension = ".exe" if tag.startswith("win-") else ""
+    path = bundled_package_dir() / "runtime" / f"deepseek-harness-sdk-runtime-{tag}{extension}"
     if not path.is_file():
         raise FileNotFoundError(
             f"deepseek-harness-runtime-bin is missing the runtime executable at {path}. "
             + _EXE_ACQUISITION_HINT
         )
-    ripgrep = Path(f"{path}-rg")
+    ripgrep = (
+        path.with_name(f"{path.stem}-rg.exe")
+        if tag.startswith("win-")
+        else Path(f"{path}-rg")
+    )
     if not ripgrep.is_file():
         raise FileNotFoundError(
             f"deepseek-harness-runtime-bin is missing the ripgrep sidecar at {ripgrep}. "
@@ -110,11 +116,16 @@ def resolve_bundled_launch_args(mode: str | None = None) -> tuple[str, ...]:
 def _current_platform_tag() -> str:
     plat = _PLATFORM_TAGS.get(sys.platform)
     arch = _ARCH_TAGS.get(platform.machine().lower())
-    if plat is None or arch is None:
+    if (
+        plat is None
+        or arch is None
+        or (plat == "win" and arch != "x64")
+        or (plat == "macos" and arch != "arm64")
+    ):
         raise FileNotFoundError(
             "no bundled DeepSeek Harness SDK runtime exists for this platform "
             f"(sys.platform={sys.platform!r}, machine={platform.machine()!r}); supported: "
-            "linux/macos on x64/arm64. " + _EXE_ACQUISITION_HINT
+            "Linux x64/arm64, macOS arm64, and Windows x64. " + _EXE_ACQUISITION_HINT
         )
     return f"{plat}-{arch}"
 

@@ -24,13 +24,13 @@ Linux additionally retains its manylinux 2.28 clean-install smoke and GLIBC chec
 
 ### Real DeepSeek API
 
-Trusted pull requests run a second installed-wheel check on every native target with `DEEPSEEK_API_KEY_EXTERNAL`, mapped only into a preflight and the live test step. The preflight fails when the secret is empty, so the provider suite cannot self-skip to green. The test starts the public SDK against `https://api.deepseek.com`, asks the model to write an exact sentinel file through Bash, asks a second turn in the same session to read it, and verifies the external bytes, final responses, completed turn reasons, model-requested tool calls, and the existence and Zstandard framing of its session log. Decoded record content and completed-turn durability are deterministic keyless obligations owned by the restart snapshot rather than inferred from compressed live-provider bytes.
+Trusted pull requests run a second installed-wheel check on every native target with `DEEPSEEK_API_KEY_EXTERNAL`, mapped only into a preflight and the live test step. The preflight fails when the secret is empty, so the provider suite cannot self-skip to green. The test starts the public SDK against `https://api.deepseek.com`, asks the model to write an exact sentinel file through the platform shell, asks a second turn in the same session to read it, and verifies the external line content, final responses, completed turn reasons, model-requested tool calls, and the existence and Zstandard framing of its session log. Decoded record content and completed-turn durability are deterministic keyless obligations owned by the restart snapshot rather than inferred from compressed live-provider bytes.
 
 Fork and Dependabot pull requests never receive the repository secret. Their native jobs run the complete keyless path and skip both secret-bearing steps; `pull_request_target` is forbidden because it would execute untrusted code with the key.
 
 ### Required targets
 
-The pull-request `python-runtime` job calls the reusable builder for Linux x64, Linux arm64, and macOS arm64. Its aggregate result remains a dependency of `all checks passed`, so a failed, cancelled, or missing native carrier blocks the required verdict. Windows has no runtime wheel in the platform manifest and is not claimed by this decision.
+The pull-request `python-runtime` job calls the reusable builder for Linux x64, Linux arm64, macOS arm64, and Windows x64. Its aggregate result remains a dependency of `all checks passed`, so a failed, cancelled, or missing native carrier blocks the required verdict. The [Windows x64 runtime decision](../architecture/2026-08-23-python-sdk-windows-x64-runtime.md) owns the fourth target and its PowerShell-specific minimal snapshot.
 
 ## Existing decisions and supersession
 
@@ -38,7 +38,7 @@ This decision supersedes the single-target topology in the archived [required Py
 
 ## Alternatives considered
 
-**Keep Linux x64 as the only required carrier.** Rejected because native addons, executable construction, wheel tags, and helper files differ across the three published targets. Release-time discovery is too late for an artifact that every Python SDK installation selects by platform.
+**Keep Linux x64 as the only required carrier.** Rejected because native addons, executable construction, wheel tags, and helper files differ across the four published targets. Release-time discovery is too late for an artifact that every Python SDK installation selects by platform.
 
 **Run full behavior before wheel construction and keep two small installed smokes.** Rejected because that proves the executable against source imports, then proves too little through the distribution users install. The clean installed environment is the stronger common location for the same scenarios.
 
@@ -48,4 +48,4 @@ This decision supersedes the single-target topology in the archived [required Py
 
 ## Consequences
 
-Every pull request pays for three native executable and wheel builds plus deterministic installed-artifact scenarios. Trusted same-repository pull requests also pay for one two-turn DeepSeek task per target. In exchange, the required result describes the files Python users install, proves every published carrier before merge, and cannot pass by importing the checkout or silently skipping the real provider.
+Every pull request pays for four native executable and wheel builds plus deterministic installed-artifact scenarios. Trusted same-repository pull requests also pay for one two-turn DeepSeek task per target. In exchange, the required result describes the files Python users install, proves every published carrier before merge, and cannot pass by importing the checkout or silently skipping the real provider.
