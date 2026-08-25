@@ -33,7 +33,7 @@ Choose this backend when a local deployment benefits from one queryable database
 
 ### Disk footprint and performance
 
-The packed layout trades disk space for speed and structure. On the benchmark corpus behind schema 17 — 105 sessions, about 2.5 million events — the SQLite database used 75 MB against 31 MB for the default compressed JSONL logs: roughly 2.5× the on-disk size.
+The packed layout trades disk space for speed and structure. The available benchmark measures schema 17, the packed predecessor with the same chunk codec but the former row discriminator; schema 18 has not been remeasured. On its corpus — 105 sessions, about 2.5 million events — the SQLite database used 75 MB against 31 MB for the default compressed JSONL logs: roughly 2.5× the on-disk size.
 
 The same measurements show writes finishing about 3× faster, 50-event suffix reads about 40× faster, full-session reads comparable or slightly faster, and about 2.5 million physical rows shrinking to roughly 66 thousand. Expect 2–3× the compressed JSONL footprint depending on session content; the full numbers and method live in the [SQLite physical chunk-row decision](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.md).
 
@@ -191,7 +191,7 @@ This Dev Note is working context for maintainers: measured artifacts, open desig
 
 #### Benchmark artifact
 
-The numbers below are the benchmark behind schema 17; the [SQLite physical chunk-row decision](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.md) is the authoritative record, and this table is an annotated digest.
+The numbers below are the frozen schema-17 benchmark. Schema 18 changes the row discriminator and has not been remeasured; the [SQLite physical chunk-row decision](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.md) is the authoritative record, and this table is an annotated digest.
 
 | Metric | **JSONL (zstd)** | **SQLite (legacy)** | **SQLite (new)** |
 |---|---|---|---|
@@ -202,7 +202,7 @@ The numbers below are the benchmark behind schema 17; the [SQLite physical chunk
 | Event rows | 2,507,860 (logical) | 2,507,860 | **65,810** |
 | Fork of all sessions | 14.48 s | 19.30 s | **13.10 s** |
 
-The corpus was 105 sessions with 2,507,860 logical events appended in 512-event durable batches, so the ratios depend on session content, stream density, and batch boundaries. `SQLite (legacy)` is the scalar layout — one physical row per logical event, no packing — whose 709.57 MB footprint motivated the packed rows. Against JSONL, schema 17 uses ≈2.5× the disk space but writes ≈3.3× faster, reads complete sessions faster at both percentiles, and reads 50-event tails ≈40× faster; against the scalar layout it is ≈89% smaller, faster to write, and shrinks 2,507,860 rows to 65,810, while scalar tail reads remain marginally faster (0.189 vs 0.253 ms p50). Re-run or extend this benchmark whenever the write path or the schema changes.
+The corpus was 105 sessions with 2,507,860 logical events appended in 512-event durable batches, so the ratios depend on session content, stream density, and batch boundaries. `SQLite (legacy)` is the scalar layout — one physical row per logical event, no packing — whose 709.57 MB footprint motivated the packed rows. In the measured schema-17 layout, SQLite uses ≈2.5× the JSONL disk space but writes ≈3.3× faster, reads complete sessions faster at both percentiles, and reads 50-event tails ≈40× faster; against the scalar layout it is ≈89% smaller, faster to write, and shrinks 2,507,860 rows to 65,810, while scalar tail reads remain marginally faster (0.189 vs 0.253 ms p50). Re-run or extend this benchmark whenever the write path or the schema changes.
 
 #### Future: multi-backend RDB persistence (Drizzle)
 

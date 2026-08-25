@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 磁盘占用与性能
 
-打包布局以磁盘空间换取速度与结构。在 schema 17 的基准语料上——105 个会话、约 250 万个事件——SQLite 数据库占用 75 MB，而默认压缩 JSONL 日志为 31 MB：磁盘占用约为后者的 2.5 倍。
+打包布局以磁盘空间换取速度与结构。现有基准测量 schema 17，该打包前身使用相同的分片 codec，但行判别值不同；schema 18 尚未重新测量。在该语料上——105 个会话、约 250 万个事件——SQLite 数据库占用 75 MB，而默认压缩 JSONL 日志为 31 MB：磁盘占用约为后者的 2.5 倍。
 
 同一组测量显示，写入快约 3 倍，50 个事件的后缀读取快约 40 倍，完整会话读取相当或略快，约 250 万个物理行缩减到约 6.6 万个。按会话内容不同，磁盘占用约为压缩 JSONL 的 2–3 倍；完整数据与方法见 [SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md)。
 
@@ -191,7 +191,7 @@ await ctx.sessionPersistence.append(id, events)
 
 #### 基准产物
 
-以下数字是 schema 17 背后的基准；[SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md) 是权威记录，本表只是带注的摘要。
+以下数字是冻结的 schema 17 基准。Schema 18 改变了行判别值，尚未重新测量；[SQLite 物理分片行决策](../../../.agents/notes/implemented/architecture/2026-08-18-sqlite-physical-chunk-row-compression.zh.md) 是权威记录，本表只是带注的摘要。
 
 | 指标 | **JSONL（zstd）** | **SQLite（legacy）** | **SQLite（new）** |
 |---|---|---|---|
@@ -202,7 +202,7 @@ await ctx.sessionPersistence.append(id, events)
 | 事件行数 | 2,507,860（逻辑） | 2,507,860 | **65,810** |
 | 全部会话 fork | 14.48 s | 19.30 s | **13.10 s** |
 
-语料为 105 个会话、2,507,860 个逻辑事件，按 512 个事件一批追加，因此具体比例取决于会话内容、流密度与批次边界。`SQLite（legacy）` 是标量布局——每个逻辑事件一行、不打包——其 709.57 MB 的占用正是打包行的动机。相对 JSONL，schema 17 磁盘占用约为 2.5 倍，但写入快约 3.3 倍，完整会话读取在两个分位上都更快，50 个事件尾部读取快约 40 倍；相对标量布局，它缩小约 89%、写入更快，并把 2,507,860 行缩减到 65,810 行，只有标量尾部读取仍略快（0.189 对 0.253 ms p50）。写入路径或 schema 变化时，请重跑或扩展该基准。
+语料为 105 个会话、2,507,860 个逻辑事件，按 512 个事件一批追加，因此具体比例取决于会话内容、流密度与批次边界。`SQLite（legacy）` 是标量布局——每个逻辑事件一行、不打包——其 709.57 MB 的占用正是打包行的动机。在已测量的 schema 17 布局中，SQLite 磁盘占用约为 JSONL 的 2.5 倍，但写入快约 3.3 倍，完整会话读取在两个分位上都更快，50 个事件尾部读取快约 40 倍；相对标量布局，它缩小约 89%、写入更快，并把 2,507,860 行缩减到 65,810 行，只有标量尾部读取仍略快（0.189 对 0.253 ms p50）。写入路径或 schema 变化时，请重跑或扩展该基准。
 
 #### 未来：多后端 RDB 持久化（Drizzle）
 

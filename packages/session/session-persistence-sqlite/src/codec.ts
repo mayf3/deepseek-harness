@@ -1,5 +1,5 @@
 /**
- * Schema-17 physical chunk-row codec. This package owns the durable tags,
+ * Schema-18 physical chunk-row codec. This package owns the durable tags,
  * validation, and row-size limits independently from other persistence formats.
  * @module @deepseek-ai/dsh-session-persistence-sqlite/codec
  */
