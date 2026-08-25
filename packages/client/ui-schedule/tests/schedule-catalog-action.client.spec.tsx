@@ -133,12 +133,8 @@ describe('ScheduleCatalogAction rows', () => {
 
     expect(prompts()).toEqual([rawPrompt, 'Check metrics', 'Join meeting'])
     const rows = screen.getAllByRole('listitem')
-    expect(rows[0]?.getAttribute('data-overdue')).toBe('true')
-    expect(rows[1]?.getAttribute('data-overdue')).toBe('false')
-    expect(rows[0]?.querySelector('[data-schedule-status]')?.getAttribute('data-schedule-status')).toBe('overdue')
-    expect(rows[1]?.querySelector('[data-schedule-status]')?.getAttribute('data-schedule-status')).toBe('scheduled')
-    expect(rows[0]?.textContent).toContain('Overdue')
-    expect(rows[1]?.textContent).toContain('Scheduled')
+    expect(within(rows[0]!).getByText('Overdue', { exact: true })).toBeDefined()
+    expect(within(rows[1]!).getByText('Scheduled', { exact: true })).toBeDefined()
     expect(rows[0]?.textContent).toContain('Once')
     expect(rows[0]?.textContent).toContain('1 minute overdue')
     expect(rows[1]?.textContent).toContain('Every 5 minutes')
@@ -196,9 +192,13 @@ describe('ScheduleCatalogAction rows', () => {
 
     render(<ScheduleCatalogAction {...props([first, second])} />)
     fireEvent.click(screen.getByRole('button'))
-    expect(screen.getAllByRole('listitem').every(row => row.getAttribute('data-overdue') === 'false')).toBe(true)
+    expect(screen.getAllByRole('listitem').every(row => (
+      within(row).queryByText('Scheduled', { exact: true }) !== null
+    ))).toBe(true)
     act(() => { vi.advanceTimersByTime(1_000) })
-    expect(screen.getAllByRole('listitem').every(row => row.getAttribute('data-overdue') === 'true')).toBe(true)
+    expect(screen.getAllByRole('listitem').every(row => (
+      within(row).queryByText('Overdue', { exact: true }) !== null
+    ))).toBe(true)
   })
 })
 

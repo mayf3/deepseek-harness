@@ -11,14 +11,6 @@ Source: [`packages/session/session-projection/src/index.ts`](../../packages/sess
 `SessionProjectionStateMap` is the merge-extensible table of host fold states, while `SessionProjectionMap` retains the client-visible whole values. A domain contributes one `ProjectionDefinition` per state key; a `wire` block makes that key client-visible, and rendering belongs to the slot system, never this layer:
 
 ```ts type-equiv
-/** Minimal immutable Session fact supplied when a projection state is initialized. */
-interface ProjectionInitialization {
-  /** Number of inherited leading events that belong to a fork's source Session. */
-  readonly seedLength: number
-}
-```
-
-```ts type-equiv
 /**
  * One domain's state-driven computation unit: a pure synchronous fold plus
  * declarations and an optional client view — never an opaque getter. The framework drives
@@ -36,11 +28,11 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State for the empty log.
-   * @param initialization - immutable Session facts needed to establish the fold boundary.
+   * State for the empty log and its immutable Session metadata.
+   * @param header - immutable metadata for the Session being projected.
    * @returns the initial state.
    */
-  init(initialization: ProjectionInitialization): NoInfer<S>
+  init(header: SessionHeader): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -71,7 +63,7 @@ interface ProjectionDefinition<
 }
 ```
 
-The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init` receives immutable normalized Session facts rather than reaching into ambient state. Today that input is `seedLength`, which lets fork-sensitive domains ignore the inherited prefix while ordinary Sessions receive zero.
+The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init` receives the immutable `SessionHeader` associated with the observed events rather than reaching into ambient state. A fork-sensitive domain derives `header.seedLength ?? 0` to ignore the inherited prefix, and the registry rejects a seed boundary beyond the observed log.
 
 ## The snapshot and the change feed
 
@@ -107,7 +99,7 @@ type ProjectionChangeListener = (
 
 ## The registry: `ctx.sessionProjections`
 
-`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, calls `init({ seedLength: session.header.seedLength ?? 0 })` before folding the in-memory log on first touch (event or read). Detached cache, history, and Subagent restore paths pass the same normalized value from the header returned with their persisted event read. Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence; duplicate keys throw. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
+`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, calls `init(session.header)` before folding the in-memory log on first touch (event or read). Detached cache, history, and Subagent restore paths pass the immutable header returned with the same persisted event read. Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence; duplicate keys throw. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -133,10 +125,23 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
  * paths (the history tail baseline, {@link coldSnapshot}) supersede these
  * values whenever a session is actually opened.
  * @param meta - the listed session's header (identity witness; no log read).
+ * @param keys - optional projection keys required by the caller's audience.
  * @returns the cut (`asOfSeq` = lowest served-row watermark), or
  *   `undefined` when no usable row exists for this lifecycle.
  */
-cachedSnapshot(meta: SessionHeader): ProjectionSnapshot | undefined
+cachedSnapshot( meta: SessionHeader, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot | undefined
+
+/**
+ * Hydrate projection cells for an already-prepared Session without another
+ * persistence read. The cache seeds matching rows; the supplied exact log
+ * advances every unit to the observation cut. No checkpoint is written
+ * because the logical observation may contain recovery events not yet durable.
+ * @param session - exact unpublished Session retained by persistence.
+ * @param meta - observed lifecycle header.
+ * @param events - exact logical event prefix represented by the observation.
+ * @returns all projection values at the event cut.
+ */
+hydratePrepared( session: Session, meta: SessionHeader, events: readonly SessionEvent[], ): ProjectionSnapshot
 
 /**
  * Durably checkpoint one live session NOW (both mandatory points call
@@ -163,7 +168,7 @@ async write(session: Session): Promise<void>
 async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot>
 ```
 
-Types: [Session](session.md) · [SessionHeader](persistence.md) · [SessionId](core.md)
+Types: [Session](session.md) · [SessionEvent](session.md) · [SessionHeader](persistence.md) · [SessionId](core.md)
 
 Source: [`packages/session/session-projection-cache/src/index.ts`](../../packages/session/session-projection-cache/src/index.ts)
 
@@ -201,7 +206,8 @@ register< K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjec
 onChanged(listener: ProjectionChangeListener): () => void
 
 /**
- * Read one unit's current host state without computing unrelated views.
+ * Read one unit's current host state after materializing every registered
+ * unit at the Session cursor. Unrelated wire views are not produced.
  * The returned value is live; callers must not mutate it.
  * @param session - the session whose state is read.
  * @param key - the registered unit key.
@@ -215,9 +221,20 @@ stateOf<K extends keyof SessionProjectionStateMap>( session: Session, key: K, ):
  * Fully synchronous — every value and `asOfSeq` reflect the same log
  * position. Each value passes its unit's `viewSchema` before leaving.
  * @param session - the session whose projection values are read.
- * @returns the snapshot; `values` is empty when no client-visible unit is registered.
+ * @param keys - optional client-visible outputs; state materialization remains complete.
+ * @returns the snapshot; `values` is empty when no selected client-visible unit is registered.
  */
-snapshot(session: Session): ProjectionSnapshot
+snapshot( session: Session, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot
+
+/**
+ * Read only already-materialized client-visible cells without folding history.
+ * Values may trail the live Session and are therefore hints, not a complete
+ * baseline. Missing cells are omitted.
+ * @param session - attached Session whose cached cells are inspected.
+ * @param keys - optional wire keys to view.
+ * @returns the lowest common cached cut, or `undefined` when no wire cell exists.
+ */
+cachedSnapshot( session: Session, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot | undefined
 
 /**
  * State-level checkpoint of every persisted unit for one session, read
@@ -261,9 +278,10 @@ restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined
  * fuller read path refolds it). The zero-I/O rung of the read ladder —
  * values are as stale as their rows, never wrong.
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
+ * @param keys - optional wire keys to view.
  * @returns whole values per key with a usable row; empty when none.
  */
-viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
+viewCheckpoint( checkpoint: ProjectionCheckpoint, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): Partial<SessionProjectionMap>
 
 /**
  * Cold read: fold every persisted unit over a stored log suffix, seeding
@@ -283,15 +301,27 @@ viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param events - the stored events with `seq >= baseSeq`, in seq order.
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
- * @param initialization - normalized facts from the stored header returned by the same read.
+ * @param header - immutable metadata for the Session being restored.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, initialization: ProjectionInitialization, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, header: SessionHeader, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+
+/**
+ * Restore an exact cut and install its states on the supplied prepared Session.
+ * A later publication reuses these cells; ordinary live reads and event drive
+ * advance any constructor-owned suffix exactly once.
+ * @param session - exact prepared Session that owns the restored log prefix.
+ * @param checkpoint - persisted rows for this Session lifecycle.
+ * @param events - exact events at the observation cut.
+ * @param baseSeq - first supplied event sequence.
+ * @returns all projection values at the supplied cut.
+ */
+hydrate( session: Session, checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, ): ProjectionSnapshot
 ```
 
-Types: [Session](session.md) · [SessionEvent](session.md)
+Types: [Session](session.md) · [SessionEvent](session.md) · [SessionHeader](persistence.md)
 
 Source: [`packages/session/session-projection/src/index.ts`](../../packages/session/session-projection/src/index.ts)
 <!-- END GENERATED cordis-surface -->

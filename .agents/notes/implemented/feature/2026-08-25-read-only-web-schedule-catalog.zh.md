@@ -16,9 +16,9 @@ Schedule 注册一个可选的 `schedule` Session projection，由独立浏览�
 
 ### seed-aware 严格 projection
 
-`ProjectionDefinition.init()` 现在接收不可变的 `ProjectionInitialization { seedLength }`。live 惰性构建、事件驱动构建、持久化缓存恢复、Session history 读取与 detached Subagent 读取，都从提供对应事件的同一个 Session header 规范化该边界。既有单元可以忽略此输入。fork-sensitive 单元可以把它保存在状态中，并跳过 `seq` 小于边界的每个事件，而无需读取环境 Session 对象。
+`ProjectionDefinition.init()` 接收不可变的 `SessionHeader`。live 惰性构建、事件驱动构建、持久化缓存恢复、Session history 读取与 detached Subagent 读取，都使用提供对应事件的同一个 header；注册表会拒绝超过已观察日志长度的 `seedLength`。既有单元可以忽略此输入。fork-sensitive 单元可以把 `header.seedLength ?? 0` 保存在状态中，并跳过 `seq` 小于边界的每个事件，而无需读取环境 Session 对象。
 
-Schedule 单元持久化 `{ seedLength, active, seenIds }`，复用领域的严格 decoder 与 `applyScheduleChange` transition，并发布完整的活动 `ScheduleRecord[]`。保留 `seenIds` 可在缓存恢复后继续维持 id 不复用不变量。严格 state schema 会拒绝畸形记录、重复 id，以及不在已使用集合中的活动 id。损坏事件或 checkpoint 会使既有读取／打开路径失败；系统不会发布部分数组。
+Schedule 单元持久化 `{ seedLength, active, seenIds }`，复用领域的严格 decoder 与 `applyScheduleChange` transition，并发布完整的活动 `ScheduleRecord[]`。保留 `seenIds` 可在缓存恢复后继续维持 id 不复用不变量。严格 state schema 会拒绝畸形记录、重复 id，以及不在已使用集合中的活动 id。损坏的权威事件会使既有读取／打开路径失败；非权威 checkpoint 畸形时会被丢弃并从日志重建。系统不会发布部分数组。
 
 `@deepseek-ai/dsh-schedule/client` 是持久记录词汇的纯类型浏览器安全出口。它不会把 Cordis 插件、runtime、timer、工具或 Node 依赖带入 client graph。
 
@@ -58,12 +58,12 @@ slot 条目使用内部 order 10：静态 Agent 与 Subagent 信息位于它之�
 
 ## 验证
 
-projection 测试覆盖共享 transition 等价性、创建顺序、fork 前缀排除、checkpoint 恢复、严格损坏传播与注册拆除。注册表、cache、history 与 Subagent 测试覆盖 live、惰性、全量日志和 detached 路径上的规范化初始化。浏览器测试覆盖能力缺失、open-state 门槛、中英文文案、精确周期单位、本地与相对时间、时钟越界、状态与稳定排序、完整纯文本 prompt、滚动、live 移除、外部关闭、键盘激活、Escape 回焦，以及外部卸载时不迁移焦点。无密钥 shipped-Web 场景覆盖默认 disabled 与 overlay enabled 组合、live 变化、reload 与 cold baseline、fork 隔离、普通 Assistant 交付、header 排序和窄屏暗色布局。
+projection 测试覆盖共享 transition 等价性、创建顺序、fork 前缀排除、checkpoint 恢复、严格损坏传播与注册拆除。注册表、cache、history 与 Subagent 测试覆盖 live、惰性、全量日志和 detached 路径上的不可变 header 初始化与 seed 边界校验。浏览器测试覆盖能力缺失、open-state 门槛、中英文文案、精确周期单位、本地与相对时间、时钟越界、状态与稳定排序、完整纯文本 prompt、滚动、live 移除、外部关闭、键盘激活、Escape 回焦，以及外部卸载时不迁移焦点。无密钥 shipped-Web 场景覆盖默认 disabled 与 overlay enabled 组合、live 变化、reload 与 cold baseline、fork 隔离、普通 Assistant 交付、header 排序和窄屏暗色布局。
 
 ## 后果
 
 - 用户可以查看每条活动提醒，而无需调用模型或增加另一份持久权威。
-- fork 隔离现在属于共享 projection 初始化契约，而不是 Schedule 专属的带外扫描。
+- fork 隔离属于共享 projection header 输入，而不是 Schedule 专属的带外扫描。
 - 不同查看者的浏览器时间标签可能因 locale、时区与时钟而不同，持久记录仍完全相同。
 - 损坏的 Schedule history 会使正常 Session 路径失败，绝不会降级成貌似可信的部分目录。
 - 该目录不能确认、重试、编辑或证明交付；这些语义有意留在此界面之外。

@@ -12,6 +12,7 @@ import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import WebSocket from 'ws'
 
 const REPO_ROOT = fileURLToPath(new URL('../../..', import.meta.url))
 const BUILT_BIN = join(REPO_ROOT, 'apps/cli/lib/bin.js')
@@ -23,13 +24,30 @@ const SECRET = 'github-webhook-real-e2e-secret'
 const DELIVERY = 'github-webhook-real-e2e-delivery'
 const MARKER = 'DSH_GITHUB_WEBHOOK_REAL_E2E_OK'
 const TITLE = 'GitHub webhook real e2e'
+const authenticatedCookies = new Map<string, Promise<{ origin: string; cookie: string }>>()
+
+/** Exchange the printed process token once for Node-side API probes. */
+function authenticatedWeb(launchUrl: string): Promise<{ origin: string; cookie: string }> {
+  const existing = authenticatedCookies.get(launchUrl)
+  if (existing !== undefined) return existing
+  const exchange = (async () => {
+    const response = await fetch(launchUrl, { redirect: 'manual' })
+    const setCookie = response.headers.get('set-cookie')
+    if (response.status !== 303 || setCookie === null) {
+      throw new Error(`dsh web authentication returned HTTP ${String(response.status)}`)
+    }
+    return { origin: new URL(launchUrl).origin, cookie: setCookie.split(';', 1)[0]! }
+  })()
+  authenticatedCookies.set(launchUrl, exchange)
+  return exchange
+}
 
 interface SessionList {
   items: Array<{
     sessionId: string
     cwd?: string
-    agentPreset?: string
     blank: boolean
+    projections?: { values: { agentPreset?: string | null } }
   }>
 }
 
@@ -111,9 +129,10 @@ async function freePort(): Promise<number> {
 
 /** Invoke one public Remote method over its HTTP carrier. */
 async function remoteRpc<T>(baseUrl: string, endpoint: string, args: object): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/${endpoint}`, {
+  const authenticated = await authenticatedWeb(baseUrl)
+  const response = await fetch(`${authenticated.origin}/api/${endpoint}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', cookie: authenticated.cookie },
     body: JSON.stringify({
       type: 'client-request',
       rpcId: `github-webhook-real-${endpoint}-${randomUUID()}`,
@@ -140,7 +159,10 @@ async function openingStreamItem(
   args: object,
   accepts: (value: unknown) => boolean,
 ): Promise<Record<string, unknown>> {
-  const socket = new WebSocket(`${baseUrl.replace(/^http/u, 'ws')}/api/remote.mux`)
+  const authenticated = await authenticatedWeb(baseUrl)
+  const socket = new WebSocket(`${authenticated.origin.replace(/^http/u, 'ws')}/api/remote.mux`, {
+    headers: { cookie: authenticated.cookie },
+  })
   const streamId = `github-webhook-real-${endpoint}-${randomUUID()}`
   try {
     await new Promise<void>((resolve, reject) => {
@@ -179,10 +201,13 @@ async function openingStreamItem(
         else if (value === undefined) reject(new Error(`${endpoint} opening item was absent`))
         else resolve(value)
       }
-      const message = (event: MessageEvent<unknown>): void => {
+      const message = (event: WebSocket.MessageEvent): void => {
         try {
-          if (typeof event.data !== 'string') throw new Error(`${endpoint} published a non-text frame`)
-          const frame: unknown = JSON.parse(event.data)
+          const text = typeof event.data === 'string'
+            ? event.data
+            : Buffer.isBuffer(event.data) ? event.data.toString('utf8') : undefined
+          if (text === undefined) throw new Error(`${endpoint} published a non-text frame`)
+          const frame: unknown = JSON.parse(text)
           if (!isRecord(frame) || frame.streamId !== streamId) return
           if (frame.type === 'error') {
             finish(new Error(`${endpoint} failed: ${JSON.stringify(frame.error)}`))
@@ -222,23 +247,18 @@ async function workspaceBaseline(baseUrl: string): Promise<WorkspaceBaseline> {
   return frame.value as WorkspaceBaseline
 }
 
-/** Read the explicit page cut from a fresh Session follow generation. */
-async function sessionCursor(baseUrl: string, sessionId: string): Promise<number> {
+/** Read the complete opening page from a fresh Session follow generation. */
+async function history(baseUrl: string, sessionId: string): Promise<HistoryPage> {
   const frame = await openingStreamItem(
     baseUrl,
     'session/follow',
-    { request: { address: { kind: 'session', sessionId } } },
-    value => isRecord(value) && value.type === 'opened' && Number.isSafeInteger(value.cursor),
+    { request: { address: { kind: 'session', sessionId }, maxMessages: 100 } },
+    value => isRecord(value)
+      && value.type === 'snapshot'
+      && Array.isArray(value.events)
+      && typeof value.hasMore === 'boolean',
   )
-  return frame.cursor as number
-}
-
-/** Read Session history at the cursor explicitly opened for this page. */
-async function history(baseUrl: string, sessionId: string): Promise<HistoryPage> {
-  const throughSeq = await sessionCursor(baseUrl, sessionId)
-  return remoteRpc<HistoryPage>(baseUrl, 'session/page', {
-    request: { address: { kind: 'session', sessionId }, throughSeq, maxMessages: 100 },
-  })
+  return { events: frame.events as HistoryPage['events'], hasMore: frame.hasMore as boolean }
 }
 
 /** Poll a public observation until it satisfies the test's behavior predicate. */
@@ -361,7 +381,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
       const webhookOrigin = `http://127.0.0.1:${String(webhookPort)}`
 
       expect((await fetch(`${webhookOrigin}/api`)).status).toBe(404)
-      expect((await sendGitHubDelivery(baseUrl)).status).not.toBe(202)
+      expect((await sendGitHubDelivery(new URL(baseUrl).origin)).status).not.toBe(202)
       expect((await sendGitHubDelivery(webhookOrigin)).status).toBe(202)
 
       const workspaces = await eventually(
@@ -379,9 +399,9 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('GitHub webhook through the real 
 
       const sessions = await remoteRpc<SessionList>(baseUrl, 'session/list', { _request: {} })
       expect(sessions.items.find(session => session.sessionId === sessionId)).toMatchObject({
-        agentPreset: 'minimal',
         blank: false,
         cwd: canonicalWorkspacePath,
+        projections: { values: { agentPreset: 'minimal' } },
       })
 
       const admitted = await eventually(

@@ -137,11 +137,11 @@ async function seedSubagent(scaffold: WebScaffold, parentId: SessionId): Promise
  * produced. Addressed by id rather than by scanning the serialized list: the
  * seeded session records `minimal` too, so a substring match over the whole
  * list answers before the switch has landed.
- * @param baseUrl - the scaffold's origin.
+ * @param scaffold - authenticated Web Host scaffold.
  * @returns the live session's preset, or undefined before it is listed.
  */
-async function livePreset(baseUrl: string): Promise<string | undefined> {
-  const response = await fetch(`${baseUrl}/api/session/list`, {
+async function livePreset(scaffold: WebScaffold): Promise<string | undefined> {
+  const response = await scaffold.hostFetch('/api/session/list', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -150,9 +150,18 @@ async function livePreset(baseUrl: string): Promise<string | undefined> {
     }),
   })
   const body = await response.json() as {
-    result: { value?: { items: { sessionId: string; agentPreset?: string }[] } }
+    result: {
+      value?: {
+        items: {
+          sessionId: string
+          projections?: { values: { agentPreset?: string | null } }
+        }[]
+      }
+    }
   }
-  return body.result.value?.items.find(item => item.sessionId !== SEED_ID)?.agentPreset
+  const preset = body.result.value?.items.find(item => item.sessionId !== SEED_ID)
+    ?.projections?.values.agentPreset
+  return typeof preset === 'string' ? preset : undefined
 }
 
 /** Every option label the trigger menu currently lists. */
@@ -181,7 +190,7 @@ describe('web e2e: agent-preset selection', () => {
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -225,7 +234,7 @@ describe('web e2e: agent-preset selection', () => {
 
     // The chip stages; the blank session the workspace connect produced is
     // what the stage lands on. The host's own answer is what comes back.
-    await expect.poll(() => livePreset(scaffold.baseUrl), { timeout: 15_000 }).toBe('minimal')
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('minimal')
   })
 
   it('re-reads the slash catalog through the composition the switch installed', async () => {
@@ -255,7 +264,7 @@ describe('web e2e: agent-preset selection', () => {
     // instead of leaving the session reading the narrower composition.
     await page.getByRole('button', { name: 'Minimal mode' }).click()
     await page.getByRole('menuitem', { name: /^Standard mode/ }).first().click()
-    await expect.poll(() => livePreset(scaffold.baseUrl), { timeout: 15_000 }).toBe('standard')
+    await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
     await composer.fill('/')
     await expect.poll(() => menuOptions(page), { timeout: 15_000 })

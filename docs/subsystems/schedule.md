@@ -149,7 +149,7 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
 ```
 
-The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The Schedule projection receives that same boundary through `ProjectionInitialization`, uses the shared transition, and persists both active records and used-id history so cached restore preserves strict replay. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
+The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The Schedule projection receives the immutable `SessionHeader`, uses the shared transition, and persists both active records and used-id history so cached restore preserves strict replay. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
 
 ## Active views and management
 
@@ -179,7 +179,7 @@ The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns th
 
 ## Read-only Web catalog
 
-When the optional Session projection registry is present, Schedule registers the client-visible `schedule` key whose value is the complete active `ScheduleRecord[]`. Live drive, lazy build, persisted-cache restore, Session history, and detached Subagent reads all initialize the fold from the `seedLength` in the same Session header as the events. A malformed event or checkpoint fails the existing read/open path; no partial active array is published.
+When the optional Session projection registry is present, Schedule registers the client-visible `schedule` key whose value is the complete active `ScheduleRecord[]`. Live drive, lazy build, persisted-cache restore, Session history, and detached Subagent reads all initialize the fold from the same immutable Session header as the events, and reject a `seedLength` beyond the observed log. A malformed authoritative event fails the existing read/open path. A malformed non-authoritative checkpoint is discarded and rebuilt from the log; no partial active array is published.
 
 The shipped Web bundle owns a disabled `ui-schedule` row and the package-resolution dependency. The explicit Schedule overlay enables that existing row together with `time-context` and the Schedule Host plugin, so ordinary Web startup keeps the client plugin inactive. After a Session opens successfully, [`dsh-client-ui-schedule`](../../packages/client/ui-schedule/README.md) reads the projection through `useProjection('schedule')`; an absent or empty value, or any non-open Session state, renders no entry.
 

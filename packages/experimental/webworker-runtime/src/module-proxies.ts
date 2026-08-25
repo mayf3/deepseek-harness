@@ -49,12 +49,16 @@ export const MODULE_PROXIES: Record<string, string> = {
   'node:events': './node/builtin_modules/implemented/events.ts',
   'node:timers/promises': './node/builtin_modules/implemented/timers/promises.ts',
   'node:perf_hooks': './node/builtin_modules/implemented/perf_hooks.ts',
+  'node:tty': './node/builtin_modules/implemented/tty.ts',
+  'tty': './node/builtin_modules/implemented/tty.ts',
   // Real zstd codec: session-log appends compress on every write.
   'node:zlib': './node/builtin_modules/implemented/zlib.ts',
   // The worker's own process layer: `bash -c` and the command table run against
   // the VFS, because a browser worker has no processes to fork.
   'node:child_process': './node/builtin_modules/implemented/child_process.ts',
   // Structural mocks: every symbol exists, every call throws.
+  'node:dns/promises': './node/builtin_modules/mock/dns/promises.ts',
+  'dns/promises': './node/builtin_modules/mock/dns/promises.ts',
   'node:net': './node/builtin_modules/mock/net.ts',
   'node:stream': './node/builtin_modules/implemented/stream.ts',
   'node:vm': './node/builtin_modules/mock/vm.ts',

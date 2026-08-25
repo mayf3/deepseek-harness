@@ -11,8 +11,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
@@ -256,6 +256,21 @@ describe('SessionProjectionCache cold read', () => {
     })
   }
 
+  it('retries prepared hydration without a malformed cached checkpoint', async () => {
+    const pool = new MemoryMediaPool()
+    const id = SessionId('prepared-cache-fallback')
+    seedRow(pool, id, { ver: 1, seq: 1, val: { marks: 'malformed' } })
+    const events = storedLog([['fresh']])
+    const { cache } = await harness({ pool })
+    const meta = headerOf(id)
+    const session = Session.create(id, events, meta)
+
+    expect(cache.hydratePrepared(session, meta, events)).toEqual({
+      asOfSeq: 2,
+      values: { 'cache-test/marks': { marks: ['fresh'] } },
+    })
+  })
+
   it('serves a cold session from the cache row plus a bounded tail read, and writes the refresh back', async () => {
     const pool = new MemoryMediaPool()
     const logs = new Map([['cold', storedLog([['a'], ['a', 'b']])]])
@@ -320,8 +335,14 @@ describe('SessionProjectionCache cold read', () => {
 
     await cache.coldSnapshot(SessionId('seeded'))
 
-    expect(restore).toHaveBeenNthCalledWith(1, expect.any(Object), expect.any(Array), 1, { seedLength: 2 })
-    expect(restore).toHaveBeenNthCalledWith(2, {}, expect.any(Array), 0, { seedLength: 2 })
+    const expectedHeader = {
+      version: 0,
+      id: SessionId('seeded'),
+      createdAt: 0,
+      seedLength: 2,
+    }
+    expect(restore).toHaveBeenNthCalledWith(1, expect.any(Object), expect.any(Array), 1, expectedHeader)
+    expect(restore).toHaveBeenNthCalledWith(2, {}, expect.any(Array), 0, expectedHeader)
   })
 
   it('write-back failure is contained: the snapshot is still served', async () => {

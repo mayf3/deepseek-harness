@@ -26,9 +26,32 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import WebSocket from 'ws'
 import { REPO_ROOT, connectFreshWorkspace, newEnglishPage, probeFreePort, requireDist, saveFailureShot } from './support.ts'
 
 const WEB_SURFACE_PROMPT = fileURLToPath(new URL('./expected/web-runtime-context/web-surface-prompt.expected.md', import.meta.url))
+const authenticatedCookies = new Map<string, Promise<{ origin: string; cookie: string }>>()
+
+/** Exchange a printed process token once for Node-side HTTP/WebSocket probes. */
+function authenticatedWeb(launchUrl: string): Promise<{ origin: string; cookie: string }> {
+  const existing = authenticatedCookies.get(launchUrl)
+  if (existing !== undefined) return existing
+  const exchange = (async () => {
+    const response = await fetch(launchUrl, { redirect: 'manual' })
+    const setCookie = response.headers.get('set-cookie')
+    if (response.status !== 303 || setCookie === null) {
+      throw new Error(`dsh web authentication returned HTTP ${String(response.status)}`)
+    }
+    return {
+      origin: new URL(launchUrl).origin,
+      cookie: setCookie.split(';', 1)[0]!,
+    }
+  })()
+  authenticatedCookies.set(launchUrl, exchange)
+  return exchange
+}
+
+const comboMapUrl = (url: string): string => url.replace(/\/client\.js(?=,|&rev=)/g, '/client.js.map')
 
 function waitForReadyLine(child: ChildProcess): Promise<string> {
   return new Promise((resolveReady, reject) => {
@@ -52,9 +75,10 @@ function waitForReadyLine(child: ChildProcess): Promise<string> {
 }
 
 async function remoteRpc<T>(baseUrl: string, endpoint: string, args: object): Promise<T> {
-  const response = await fetch(`${baseUrl}/api/${endpoint}`, {
+  const authenticated = await authenticatedWeb(baseUrl)
+  const response = await fetch(`${authenticated.origin}/api/${endpoint}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', cookie: authenticated.cookie },
     body: JSON.stringify({
       type: 'client-request',
       rpcId: `smoke-${endpoint}`,
@@ -72,7 +96,10 @@ async function remoteRpc<T>(baseUrl: string, endpoint: string, args: object): Pr
 
 /** Read the explicit page cut from a freshly opened Session follow stream. */
 async function sessionCursor(baseUrl: string, sessionId: string): Promise<number> {
-  const socket = new WebSocket(`${baseUrl.replace(/^http/, 'ws')}/api/remote.mux`)
+  const authenticated = await authenticatedWeb(baseUrl)
+  const socket = new WebSocket(`${authenticated.origin.replace(/^http/u, 'ws')}/api/remote.mux`, {
+    headers: { cookie: authenticated.cookie },
+  })
   const streamId = `smoke-history-${randomUUID()}`
   try {
     await new Promise<void>((resolve, reject) => {
@@ -110,10 +137,13 @@ async function sessionCursor(baseUrl: string, sessionId: string): Promise<number
         if (error !== undefined) reject(error)
         else resolve(cursor ?? -1)
       }
-      const message = (event: MessageEvent<unknown>): void => {
+      const message = (event: WebSocket.MessageEvent): void => {
         try {
-          if (typeof event.data !== 'string') throw new Error('session/follow published a non-text frame')
-          const frame: unknown = JSON.parse(event.data)
+          const text = typeof event.data === 'string'
+            ? event.data
+            : Buffer.isBuffer(event.data) ? event.data.toString('utf8') : undefined
+          if (text === undefined) throw new Error('session/follow published a non-text frame')
+          const frame: unknown = JSON.parse(text)
           if (!isRecord(frame) || frame.streamId !== streamId) return
           if (frame.type === 'error') {
             finish(new Error(`session/follow failed: ${JSON.stringify(frame.error)}`))
@@ -125,7 +155,7 @@ async function sessionCursor(baseUrl: string, sessionId: string): Promise<number
           }
           const value = frame.value
           if (frame.type === 'item' && isRecord(value)
-            && value.type === 'opened' && Number.isSafeInteger(value.cursor)) {
+            && value.type === 'snapshot' && Number.isSafeInteger(value.cursor)) {
             finish(undefined, value.cursor as number)
           }
         } catch (error) {
@@ -276,8 +306,8 @@ describe('dsh web keyless CLI smoke', () => {
     let browser: Browser | undefined
     try {
       const readyUrl = await waitForReadyLine(child)
-      expect(readyUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/)
-      expect((await fetch(readyUrl)).status).toBe(200)
+      expect(readyUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/\?token=[A-Za-z0-9_-]+$/u)
+      expect((await fetch(readyUrl, { redirect: 'manual' })).status).toBe(303)
       browser = await chromium.launch({ headless: true })
       const page = await newEnglishPage(browser)
       const pluginScripts: string[] = []
@@ -286,31 +316,37 @@ describe('dsh web keyless CLI smoke', () => {
       // request when the matching script node executes; this count pins both.
       page.on('request', (request) => {
         const url = new URL(request.url())
-        if (request.resourceType() === 'script' && url.pathname.startsWith('/plugins/')) {
-          pluginScripts.push(url.pathname)
+        const resource = `${url.pathname}${url.search}`
+        if (request.resourceType() === 'script' && resource.startsWith('/plugins/??')) {
+          pluginScripts.push(resource)
         }
       })
       page.on('response', (response) => {
-        const path = new URL(response.url()).pathname
-        if (path.startsWith('/plugins/_batch/')) {
-          cacheHeaders.set(path, response.headers()['cache-control'])
+        const url = new URL(response.url())
+        const resource = `${url.pathname}${url.search}`
+        if (resource.startsWith('/plugins/??')) {
+          cacheHeaders.set(resource, response.headers()['cache-control'])
         }
       })
       await page.goto(readyUrl)
       await page.getByRole('button', { name: 'New session', exact: true }).first().waitFor({ timeout: 30_000 })
       const batchPaths = [...new Set(pluginScripts)].sort()
-      expect(batchPaths).toEqual([
-        expect.stringMatching(/^\/plugins\/_batch\/application\/[a-f\d]{12}\/client\.js$/),
-        expect.stringMatching(/^\/plugins\/_batch\/bootstrap\/[a-f\d]{12}\/client\.js$/),
-      ])
+      expect(batchPaths).toHaveLength(2)
+      expect(batchPaths).toContainEqual(expect.stringMatching(
+        /^\/plugins\/\?\?.+\/client\.js,.+\/client\.js&rev=[a-f\d]{12}$/,
+      ))
+      expect(batchPaths).toContainEqual(expect.stringMatching(
+        /^\/plugins\/\?\?@deepseek-ai\/dsh-client-modules\/client\.js&rev=[a-f\d]{12}$/,
+      ))
+      const readyOrigin = new URL(readyUrl).origin
       expect([...cacheHeaders.values()]).toEqual([
         'public, max-age=31536000, immutable',
         'public, max-age=31536000, immutable',
       ])
       for (const path of batchPaths) {
         const [scriptResponse, mapResponse] = await Promise.all([
-          fetch(`${readyUrl}${path}`),
-          fetch(`${readyUrl}${path}.map`),
+          fetch(`${readyOrigin}${path}`),
+          fetch(`${readyOrigin}${comboMapUrl(path)}`),
         ])
         expect(scriptResponse.status).toBe(200)
         expect(mapResponse.status).toBe(200)
@@ -414,7 +450,7 @@ describe('dsh web keyless CLI smoke', () => {
         message.role === 'user' && message.content?.includes('web-workspace-context-probe'))
       const systemMessage = captured.messages?.find(message => message.role === 'system')
       const expectedWebSection = readFileSync(WEB_SURFACE_PROMPT, 'utf8').trimEnd()
-        .replace('{{webUrl}}', baseUrl)
+        .replace('{{webUrl}}', new URL(baseUrl).origin)
       expect(systemMessage?.content).toContain(expectedWebSection)
       expect(workspaceMessage).toMatchInlineSnapshot(`
         {
@@ -433,6 +469,7 @@ describe('dsh web keyless CLI smoke', () => {
         .filter(name => name === 'web_search' || name === 'web_fetch'))
         .toMatchInlineSnapshot(`
           [
+            "web_fetch",
             "web_search",
           ]
         `)

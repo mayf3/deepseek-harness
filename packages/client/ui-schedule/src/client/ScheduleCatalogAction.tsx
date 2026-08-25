@@ -165,13 +165,8 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
                 <li
                   key={record.id}
                   className={overdue ? `${css.row} ${css.rowOverdue}` : css.row}
-                  data-schedule-reminder=""
-                  data-overdue={overdue ? 'true' : 'false'}
                 >
-                  <span
-                    className={css.status}
-                    data-schedule-status={overdue ? 'overdue' : 'scheduled'}
-                  >
+                  <span className={css.status}>
                     <span className={css.statusDot} aria-hidden="true" />
                     <span>{t(overdue ? 'status.overdue' : 'status.scheduled')}</span>
                   </span>

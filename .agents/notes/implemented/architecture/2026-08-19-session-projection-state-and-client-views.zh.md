@@ -14,7 +14,7 @@
 
 如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
 
-`ProjectionDefinition.init(initialization)` 接收不可变的 `ProjectionInitialization`。当前字段是规范化后的 `seedLength`：live 惰性与事件驱动 cell 使用 `session.header.seedLength ?? 0`，cache、history 与 detached Subagent restore 则从提供对应事件的同一次持久 header 读取传入该值。单元仍是纯同步 fold，不能借此输入取得 Session 或其他环境可变状态。
+`ProjectionDefinition.init(header)` 接收不可变的 `SessionHeader`。live 惰性与事件驱动 cell 传入 `session.header`，cache、history 与 detached Subagent restore 则传入提供对应事件的同一次持久读取所得 header。注册表会在折叠前拒绝超过已观察日志长度的 `seedLength`。单元可以派生 `header.seedLength ?? 0`，但仍是纯同步 fold，不能借此输入取得 Session 或其他环境可变状态。
 
 ## 结果
 

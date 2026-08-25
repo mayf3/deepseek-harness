@@ -77,6 +77,7 @@ const CATALOG_TITLE = 'Active schedule catalog'
 const DAMAGED_TITLE = 'Damaged schedule catalog'
 const FORK_TITLE = 'Forked schedule catalog'
 const LONG_PROMPT_END = 'and preserve every final word without truncation.'
+const REMINDER_TRIGGER_NAME = /^\d+ reminders?$/
 const CATALOG_IDS = {
   after: ScheduleId('catalog-after'),
   at: ScheduleId('catalog-at'),
@@ -305,7 +306,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
     })
     await page.addInitScript(() => { localStorage.setItem('dsh.locale', 'en') })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
     expect(await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone))
@@ -467,7 +468,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       await captureStableAria(page, selector, scaffold.workspaceCwd),
       MODE,
     )
-    expect(await page.locator('[data-schedule-reminder]').count()).toBe(0)
+    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
   }, 60_000)
 
   it('batches one latest occurrence per overdue Every record into an ordinary follow-up', async () => {
@@ -528,7 +529,8 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       await captureStableAria(page, selector, scaffold.workspaceCwd),
       MODE,
     )
-    expect(await page.locator('[data-schedule-reminder]').count()).toBe(0)
+    await page.getByRole('button', { name: '2 reminders', exact: true }).waitFor({ timeout: 15_000 })
+    expect(await page.getByRole('list', { name: 'Active reminders' }).count()).toBe(0)
   }, 60_000)
 
   it('uses request-local browser context to create an explicit local At reminder', async () => {
@@ -600,7 +602,7 @@ describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
       await captureStableAria(page, selector, scaffold.workspaceCwd),
       MODE,
     )
-    expect(await page.locator('[data-schedule-reminder]').count()).toBe(0)
+    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
@@ -655,7 +657,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     await page.clock.setFixedTime(new Date(CATALOG_NOW))
     await page.addInitScript(() => { localStorage.setItem('dsh.locale', 'en') })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     const workspaceRow = page.locator('[role="treeitem"]').first()
     await workspaceRow.waitFor({ timeout: 15_000 })
@@ -722,21 +724,23 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     await catalog.waitFor({ timeout: 10_000 })
     const rows = catalog.getByRole('listitem')
     expect(await rows.count()).toBe(3)
-    const renderedRows = await rows.evaluateAll(items => items.map(item => ({
-      overdue: item.getAttribute('data-overdue'),
-      text: item.textContent,
-    })))
-    expect(renderedRows.map(row => row.overdue)).toEqual(['true', 'false', 'false'])
-    expect(renderedRows.map(row => row.text?.includes('Review overdue deployment') ?? false))
+    const renderedRows = await rows.evaluateAll(items => items.map(item => item.textContent))
+    expect(renderedRows.map(row => row?.includes('Review overdue deployment') ?? false))
       .toEqual([true, false, false])
-    expect(renderedRows.map(row => row.text?.includes('Join release review') ?? false))
+    expect(renderedRows.map(row => row?.includes('Join release review') ?? false))
       .toEqual([false, true, false])
-    expect(renderedRows.map(row => row.text?.includes('Check exact cadence') ?? false))
+    expect(renderedRows.map(row => row?.includes('Check exact cadence') ?? false))
       .toEqual([false, false, true])
-    expect(await rows.nth(0).locator('[data-schedule-status]').getAttribute('data-schedule-status')).toBe('overdue')
-    expect(await rows.nth(0).textContent()).toContain('Overdue')
-    expect(await rows.nth(1).locator('[data-schedule-status]').getAttribute('data-schedule-status')).toBe('scheduled')
-    expect(await rows.nth(1).textContent()).toContain('Scheduled')
+    const overdueStatus = rows.nth(0).getByText('Overdue', { exact: true })
+    const scheduledStatus = rows.nth(1).getByText('Scheduled', { exact: true })
+    expect(await overdueStatus.count()).toBe(1)
+    expect(await scheduledStatus.count()).toBe(1)
+    const rowBackgrounds = await rows.evaluateAll(items => (
+      items.map(item => getComputedStyle(item).backgroundColor)
+    ))
+    expect(rowBackgrounds[0]).not.toBe(rowBackgrounds[1])
+    expect(await overdueStatus.evaluate(element => getComputedStyle(element.parentElement!).color))
+      .not.toBe(await scheduledStatus.evaluate(element => getComputedStyle(element.parentElement!).color))
     expect(await rows.nth(0).textContent()).toContain('Once')
     expect(await rows.nth(0).textContent()).toContain('1 minute overdue')
     expect(await rows.nth(1).textContent()).toContain(LONG_PROMPT_END)
@@ -845,7 +849,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(scaffold.ctx.sessionProjections.snapshot(childAgent.session).values.schedule).toEqual([])
 
     await openSession(page, FORK_TITLE)
-    expect(await page.getByRole('button', { name: /reminder/ }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
     await openSession(page, CATALOG_TITLE)
     await page.getByRole('button', { name: '3 reminders' }).waitFor({ timeout: 15_000 })
   }, 60_000)
@@ -871,7 +875,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       id: CATALOG_IDS.every,
     })
     await expect(scaffold.ctx.sessions.flush(parentAgent.session)).resolves.toBe(true)
-    await expect.poll(() => page.getByRole('button', { name: /reminder/ }).count(), {
+    await expect.poll(() => page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count(), {
       timeout: 15_000,
     }).toBe(0)
     expect(await page.getByRole('list', { name: 'Active reminders' }).count()).toBe(0)
@@ -890,7 +894,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
 
     await openSession(page, DAMAGED_TITLE)
     await page.getByText(/Failed to load history:/).waitFor({ timeout: 15_000 })
-    expect(await page.getByRole('button', { name: /reminder/ }).count()).toBe(0)
+    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
     expect(await page.getByRole('button', { name: /Retry/i }).count()).toBe(0)
   }, 60_000)
 

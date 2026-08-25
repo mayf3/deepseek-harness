@@ -1873,11 +1873,6 @@
     },
     {
       "doc": "docs/subsystems/session-projection.md",
-      "symbol": "ProjectionInitialization",
-      "source": "packages/session/session-projection/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/session-projection.md",
       "symbol": "ProjectionDefinition",
       "source": "packages/session/session-projection/src/index.ts"
     },

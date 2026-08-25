@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { apply as applySchedule } from '../src/index.ts'
 import { foldScheduleEvents, ScheduleId, ScheduleLogError } from '../src/domain.ts'
@@ -9,6 +9,11 @@ import { scheduleProjectionDefinition, type ScheduleProjectionState } from '../s
 import type { ScheduleRecord } from '../src/types.ts'
 
 const contexts: Context[] = []
+const RESTORE_HEADER: SessionHeader = {
+  version: 0,
+  id: SessionId('schedule-projection'),
+  createdAt: 0,
+}
 
 afterEach(async () => {
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
@@ -65,7 +70,10 @@ describe('Schedule Session projection', () => {
       }, 3),
       { type: 'turn/start', seq: 4, time: 4, data: { turn: 1 } },
     ]
-    let projected: ScheduleProjectionState = scheduleProjectionDefinition.init({ seedLength: 1 })
+    let projected: ScheduleProjectionState = scheduleProjectionDefinition.init({
+      ...RESTORE_HEADER,
+      seedLength: 1,
+    })
     for (const event of events) projected = scheduleProjectionDefinition.apply(projected, event)
 
     expect(projected).toEqual({ seedLength: 1, ...foldScheduleEvents(events, 1) })
@@ -81,7 +89,7 @@ describe('Schedule Session projection', () => {
 
     const first = created(afterRecord('one'), 0)
     const second = created(atRecord('two'), 1)
-    const initial = ctx.sessionProjections.restore({}, [first, second], 0, { seedLength: 0 })
+    const initial = ctx.sessionProjections.restore({}, [first, second], 0, RESTORE_HEADER)
     expect(initial.snapshot.values.schedule?.map(record => record.id)).toEqual(['one', 'two'])
 
     const removed = change({ version: 1, operation: 'delete', id: 'one' }, 2)
@@ -89,7 +97,7 @@ describe('Schedule Session projection', () => {
       initial.checkpoint,
       [second, removed],
       1,
-      { seedLength: 0 },
+      RESTORE_HEADER,
     )
     expect(resumed.snapshot.values.schedule?.map(record => record.id)).toEqual(['two'])
     expect(resumed.checkpoint.schedule).toMatchObject({ ver: 1, seq: 2 })
@@ -98,7 +106,7 @@ describe('Schedule Session projection', () => {
       {},
       [change({ version: 1, operation: 'delete', id: 'missing' }, 0)],
       0,
-      { seedLength: 0 },
+      RESTORE_HEADER,
     )).toThrow(ScheduleLogError)
   })
 

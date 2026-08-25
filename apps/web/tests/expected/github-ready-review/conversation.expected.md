@@ -20,6 +20,10 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
 - button "Context injection webhook github webhook handled by review-pr-when-ready":
   - img
   - img
@@ -42,8 +46,8 @@
 - button "Commands":
   - img
 - 'button "Access mode, current: Read Only"': Read Only
-- button "Select model":
-  - text: Select model
+- button "Select model, current github-webhook-review-test/reply":
+  - text: github-webhook-review-test/reply
   - img
 - button "Send message" [disabled]
 - text: 1 turns · 1 steps LLM {{duration}}

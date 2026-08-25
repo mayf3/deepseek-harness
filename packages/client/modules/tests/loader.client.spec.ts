@@ -8,8 +8,11 @@ import {
 } from '../src/client/index.ts'
 
 const MODULES_ID = '@deepseek-ai/dsh-client-modules'
-const BOOTSTRAP_URL = '/plugins/_batch/bootstrap/graph/client.js'
-const APPLICATION_URL = '/plugins/_batch/application/graph/client.js'
+
+const comboUrl = (ids: readonly string[], rev: string): string =>
+  `/plugins/??${ids.map(id => `${id}/client.js`).join(',')}&rev=${rev}`
+const BOOTSTRAP_URL = comboUrl([MODULES_ID], 'bootstrap')
+const APPLICATION_URL = comboUrl(['a', 'b'], 'application')
 const win = globalThis as DshWindow
 const bootstrapExports = { apply, createClientModuleSystem }
 
@@ -24,7 +27,7 @@ afterEach(() => {
 const row = (id: string, fields: Partial<BootModuleRow> = {}): BootModuleRow =>
   ({
     id,
-    url: `/plugins/${id}/client.js?rev=0`,
+    url: comboUrl([id], '0'),
     initialUrl: id === MODULES_ID ? BOOTSTRAP_URL : APPLICATION_URL,
     rev: '0',
     inject: [],
@@ -83,8 +86,12 @@ function bench(
       : url === APPLICATION_URL
         ? entries.filter(entry => entry.initialUrl === APPLICATION_URL).map(entry => entry.id)
         : undefined
-    const individualId = /\/plugins\/(.+)\/client\.js/.exec(url)?.[1]
-    for (const id of batchIds ?? (individualId === undefined ? [] : [individualId])) {
+    const parsed = new URL(url, 'http://dsh.invalid')
+    const combo = parsed.search.startsWith('??') ? parsed.search.slice(2).split('&', 1)[0] : undefined
+    const singleId = combo?.split(',').length === 1 && combo.endsWith('/client.js')
+      ? combo.slice(0, -'/client.js'.length)
+      : undefined
+    for (const id of batchIds ?? (singleId === undefined ? [] : [singleId])) {
       const factory = bundles[id]
       if (factory != null) win.__ModuleLoader__?.load({ id, factory })
     }
@@ -374,21 +381,42 @@ describe('boot manifest wire', () => {
       .toThrow('client-modules: boot manifest batches must be an array')
   })
 
-  it('rejects malformed and duplicate batch phases', () => {
+  it('rejects malformed batch phases', () => {
     const entry = { id: 'a', url: '/a.js', rev: '1' }
     expect(() => parseBootManifest({ rev: 'graph', entries: [entry], batches: [null] }))
       .toThrow('client-modules: boot manifest batch is not an object')
     expect(() => parseBootManifest({
       rev: 'graph', entries: [entry], batches: [{ phase: 'idle', url: '/b.js', rev: 'b', entries: ['a'] }],
     })).toThrow('boot manifest batch phase must be "bootstrap" or "application"')
+  })
+
+  it('rejects duplicate batch URLs', () => {
     expect(() => parseBootManifest({
       rev: 'graph',
-      entries: [entry],
+      entries: [
+        { id: 'a', url: '/a.js', rev: '1' },
+        { id: 'b', url: '/b.js', rev: '2' },
+      ],
+      batches: [
+        { phase: 'application', url: '/combo.js', rev: '1', entries: ['a'] },
+        { phase: 'application', url: '/combo.js', rev: '2', entries: ['b'] },
+      ],
+    })).toThrow('boot manifest carries duplicate batch URL "/combo.js"')
+  })
+
+  it('allows several batches in one scheduling phase', () => {
+    const manifest = parseBootManifest({
+      rev: 'graph',
+      entries: [
+        { id: 'a', url: '/a.js', rev: '1' },
+        { id: 'b', url: '/b.js', rev: '2' },
+      ],
       batches: [
         { phase: 'application', url: '/b.js', rev: '1', entries: ['a'] },
-        { phase: 'application', url: '/c.js', rev: '2', entries: ['a'] },
+        { phase: 'application', url: '/c.js', rev: '2', entries: ['b'] },
       ],
-    })).toThrow('boot manifest carries duplicate "application" batches')
+    })
+    expect(manifest.modules.map(row => row.initialUrl)).toEqual(['/b.js', '/c.js'])
   })
 
   it('requires complete batch fields and non-empty entries', () => {
@@ -436,37 +464,37 @@ describe('HMR reset', () => {
     expect(b.loader.loadCache.has('a')).toBe(false)
     await b.loader.prefetch('a')
     const second = await b.loader.import('a', '', {})
-    expect(b.fetched).toEqual([APPLICATION_URL, '/plugins/a/client.js?rev=1'])
+    expect(b.fetched).toEqual([APPLICATION_URL, comboUrl(['a'], '1')])
     expect((first as { generation: number }).generation).toBe(1)
     expect((second as { generation: number }).generation).toBe(2)
   })
 
-  it('preserves an absolute individual endpoint when applying the rebuilt revision', async () => {
+  it('preserves an absolute combo endpoint when applying the rebuilt revision', async () => {
     const b = bench([
-      row('a', { url: 'https://plugins.example.test/plugins/a/client.js?rev=0' }),
+      row('a', { url: 'https://plugins.example.test/plugins/??a/client.js&rev=0' }),
     ], { a: () => ({}) })
     await b.loader.import('a', '', {})
     b.loader.invalidate('a', 'next')
     await b.loader.prefetch('a')
-    expect(b.fetched.at(-1)).toBe('https://plugins.example.test/plugins/a/client.js?rev=next')
+    expect(b.fetched.at(-1)).toBe('https://plugins.example.test/plugins/??a/client.js&rev=next')
   })
 
-  it('preserves a protocol-relative individual endpoint when applying the rebuilt revision', async () => {
+  it('preserves a protocol-relative combo endpoint when applying the rebuilt revision', async () => {
     const b = bench([
-      row('a', { url: '//plugins.example.test/plugins/a/client.js?rev=0' }),
+      row('a', { url: '//plugins.example.test/plugins/??a/client.js&rev=0' }),
     ], { a: () => ({}) })
     await b.loader.import('a', '', {})
     b.loader.invalidate('a', 'next')
     await b.loader.prefetch('a')
-    expect(b.fetched.at(-1)).toBe('//plugins.example.test/plugins/a/client.js?rev=next')
+    expect(b.fetched.at(-1)).toBe('//plugins.example.test/plugins/??a/client.js&rev=next')
   })
 
-  it('uses the current individual revision when a graph-row invalidation omits an override', async () => {
+  it('uses the current plugin revision when a graph-row invalidation omits an override', async () => {
     const b = bench([row('a')], { a: () => ({}) })
     await b.loader.import('a', '', {})
     b.loader.invalidate('a')
     await b.loader.prefetch('a')
-    expect(b.fetched).toEqual([APPLICATION_URL, '/plugins/a/client.js?rev=0'])
+    expect(b.fetched).toEqual([APPLICATION_URL, comboUrl(['a'], '0')])
   })
 })
 

@@ -149,7 +149,7 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
 ```
 
-严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.seedLength` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。Schedule projection 通过 `ProjectionInitialization` 接收同一边界，复用共享 transition，并持久化活动记录与已使用 id 历史，使缓存恢复继续保持严格回放。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
+严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.seedLength` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。Schedule projection 接收不可变的 `SessionHeader`，复用共享 transition，并持久化活动记录与已使用 id 历史，使缓存恢复继续保持严格回放。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
 
 ## 活动视图与管理
 
@@ -179,7 +179,7 @@ type ScheduleView = ScheduleRecord & {
 
 ## 只读 Web 目录
 
-可选 Session projection 注册表存在时，Schedule 会注册客户端可见的 `schedule` key，其值是完整的活动 `ScheduleRecord[]`。live 驱动、惰性构建、持久化缓存恢复、Session history 与 detached Subagent 读取，都会从提供对应事件的同一个 Session header 中取得 `seedLength` 来初始化 fold。畸形事件或 checkpoint 会使既有读取／打开路径失败；系统不会发布部分活动数组。
+可选 Session projection 注册表存在时，Schedule 会注册客户端可见的 `schedule` key，其值是完整的活动 `ScheduleRecord[]`。live 驱动、惰性构建、持久化缓存恢复、Session history 与 detached Subagent 读取，都以提供对应事件的同一个不可变 Session header 初始化 fold，并拒绝超过已观察日志长度的 `seedLength`。畸形权威事件会使既有读取／打开路径失败；非权威 checkpoint 畸形时会被丢弃并从日志重建，系统不会发布部分活动数组。
 
 shipped Web bundle 拥有默认 disabled 的 `ui-schedule` row 与包解析依赖。显式 Schedule overlay 会把该既有 row 与 `time-context`、Schedule Host 插件一同启用，因此普通 Web 启动仍不会激活该 client 插件。Session 成功打开后，[`dsh-client-ui-schedule`](../../packages/client/ui-schedule/README.zh.md)通过 `useProjection('schedule')` 读取投影；值缺失或为空，以及任何非 open 的 Session 状态，都不会渲染入口。
 

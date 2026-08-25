@@ -1,4 +1,4 @@
-/** Session-scoped historical image URL cache owned by the Chat plugin. */
+/** Session-scoped durable image URL cache shared by Conversation targets. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
@@ -11,9 +11,8 @@ interface ImageUrlEntry {
   readonly pending: Promise<string>
 }
 
-/** Resolve durable Chat images and release their browser URLs with Session scope. */
+/** Resolve durable Conversation images and release their browser URLs with Session scope. */
 export class HistoricalImageCache {
-  private readonly sessions: ISessions
   private readonly entries = new Map<string, ImageUrlEntry>()
   private readonly generations = new Map<SessionId, number>()
   private readonly scopeDisposers = new Map<SessionId, () => void>()
@@ -21,11 +20,11 @@ export class HistoricalImageCache {
   private disposed = false
 
   /**
-   * @param ctx - Owning ui-chat fiber.
+   * @param ctx - Owning ui-conversation fiber.
+   * @param sessions - Session Controller object layer.
    */
-  constructor(ctx: Context) {
-    this.sessions = ctx.sessions
-    ctx.effect(() => () => { this.dispose() }, 'ui-chat historical image cache')
+  constructor(ctx: Context, private readonly sessions: ISessions) {
+    ctx.effect(() => () => { this.dispose() }, 'ui-conversation historical image cache')
   }
 
   /**
@@ -35,22 +34,22 @@ export class HistoricalImageCache {
    * @returns browser URL valid until the Session binding is released.
    */
   resolve(sessionId: SessionId, attachment: ImageAttachmentRef): Promise<string> {
-    if (this.disposed) return Promise.reject(new Error('ui-chat image cache is disposed'))
+    if (this.disposed) return Promise.reject(new Error('ui-conversation image cache is disposed'))
     const key = `${sessionId}:${attachment.attachmentId}`
     const cached = this.entries.get(key)
     if (cached !== undefined) return cached.pending
     const binding = this.sessions.binding(sessionId)
     if (binding === undefined) {
-      return Promise.reject(new Error(`ui-chat: unknown session "${sessionId}"`))
+      return Promise.reject(new Error(`ui-conversation: unknown session "${sessionId}"`))
     }
     this.bindScope(sessionId, binding.ctx)
     const generation = this.generations.get(sessionId) ?? 0
     const pending = binding.session.readAttachment(attachment.attachmentId)
       .then((result) => {
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
-        if (this.disposed) throw new Error('ui-chat image cache was disposed before loading completed')
+        if (this.disposed) throw new Error('ui-conversation image cache was disposed before loading completed')
         if ((this.generations.get(sessionId) ?? 0) !== generation) {
-          throw new Error('ui-chat image scope was released before loading completed')
+          throw new Error('ui-conversation image scope was released before loading completed')
         }
         if (typeof URL.createObjectURL !== 'function') {
           return `data:${result.value.attachment.mediaType};base64,${bytesToBase64(result.value.data)}`
@@ -73,7 +72,7 @@ export class HistoricalImageCache {
     const dispose = scope.effect(() => () => {
       this.scopeDisposers.delete(sessionId)
       this.release(sessionId)
-    }, 'ui-chat historical image scope')
+    }, 'ui-conversation historical image scope')
     this.scopeDisposers.set(sessionId, () => { void dispose() })
   }
 

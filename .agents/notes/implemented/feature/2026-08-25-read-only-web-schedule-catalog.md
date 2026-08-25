@@ -16,9 +16,9 @@ Schedule registers an optional `schedule` Session projection and a separate brow
 
 ### Seed-aware strict projection
 
-`ProjectionDefinition.init()` now receives immutable `ProjectionInitialization { seedLength }`. Live lazy builds, event-driven builds, persisted-cache restores, Session history reads, and detached Subagent reads normalize the boundary from the same Session header that supplied their events. Existing units may ignore the input. A fork-sensitive unit can retain it in state and skip every event whose `seq` is below the boundary without consulting an ambient Session object.
+`ProjectionDefinition.init()` receives the immutable `SessionHeader`. Live lazy builds, event-driven builds, persisted-cache restores, Session history reads, and detached Subagent reads use the same header that supplied their events, and the registry rejects a `seedLength` beyond the observed log. Existing units may ignore the input. A fork-sensitive unit can retain `header.seedLength ?? 0` in state and skip every event whose `seq` is below the boundary without consulting an ambient Session object.
 
-The Schedule unit persists `{ seedLength, active, seenIds }`, reuses the domain's strict decoder and `applyScheduleChange` transition, and publishes the complete active `ScheduleRecord[]`. Keeping `seenIds` preserves the no-reuse invariant after cached restore. Its strict state schema rejects malformed records, duplicate ids, and active ids absent from the used-id set. A damaged event or checkpoint fails the existing read/open path; no partial array is published.
+The Schedule unit persists `{ seedLength, active, seenIds }`, reuses the domain's strict decoder and `applyScheduleChange` transition, and publishes the complete active `ScheduleRecord[]`. Keeping `seenIds` preserves the no-reuse invariant after cached restore. Its strict state schema rejects malformed records, duplicate ids, and active ids absent from the used-id set. A damaged authoritative event fails the existing read/open path; a malformed non-authoritative checkpoint is discarded and rebuilt from the log. No partial array is published.
 
 `@deepseek-ai/dsh-schedule/client` is a type-only browser-safe export of the durable record vocabulary. It does not pull the Cordis plugin, runtime, timers, tools, or Node dependencies into the client graph.
 
@@ -58,12 +58,12 @@ The catalog is current active state, not history or proof of delivery. A termina
 
 ## Verification
 
-Projection tests cover shared transition equivalence, creation order, fork-prefix exclusion, checkpoint restore, strict corruption propagation, and registration teardown. Registry, cache, history, and Subagent tests cover normalized initialization on live, lazy, full-log, and detached paths. Browser tests cover capability absence, open-state gating, English and Chinese copy, exact interval units, local and relative time, clock crossing, status and stable sorting, complete plain-text prompts, scrolling, live removal, outside dismissal, keyboard activation, Escape focus return, and no focus migration on external unmount. The keyless shipped-Web scenario covers default-disabled versus overlay-enabled composition, live changes, reload and cold baseline, fork isolation, ordinary Assistant delivery, header ordering, and narrow dark layout.
+Projection tests cover shared transition equivalence, creation order, fork-prefix exclusion, checkpoint restore, strict corruption propagation, and registration teardown. Registry, cache, history, and Subagent tests cover immutable-header initialization and seed-bound validation on live, lazy, full-log, and detached paths. Browser tests cover capability absence, open-state gating, English and Chinese copy, exact interval units, local and relative time, clock crossing, status and stable sorting, complete plain-text prompts, scrolling, live removal, outside dismissal, keyboard activation, Escape focus return, and no focus migration on external unmount. The keyless shipped-Web scenario covers default-disabled versus overlay-enabled composition, live changes, reload and cold baseline, fork isolation, ordinary Assistant delivery, header ordering, and narrow dark layout.
 
 ## Consequences
 
 - A person can inspect every active reminder without invoking the model or adding another durable source of truth.
-- Fork isolation now belongs to the shared projection initialization contract rather than a Schedule-specific out-of-band scan.
+- Fork isolation belongs to the shared projection header input rather than a Schedule-specific out-of-band scan.
 - Browser time labels may differ across viewers by locale, time zone, and clock while the durable records remain identical.
 - Corrupt Schedule history fails the normal Session path and never degrades into a plausible-looking partial catalog.
 - The catalog cannot acknowledge, retry, edit, or prove delivery; those semantics remain deliberately outside this surface.

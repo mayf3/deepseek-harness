@@ -25,13 +25,6 @@ export const inject = ['agents']
 export interface JsonRpcConfig {
   /** Report max-token turn/subagent termination as a successful SDK result. */
   maxTokensAsSuccess?: boolean
-  /** Per-root-agent model-facing tool filter; an allow list excludes later unnamed global tools. */
-  toolFilter?: {
-    /** Global tool names that remain visible. */
-    allow?: string[]
-    /** Global tool names removed from visibility. */
-    deny?: string[]
-  }
   /** Transport input override; production uses `process.stdin`. */
   input?: Readable
   /** Transport output override; production uses `process.stdout`. */
@@ -42,11 +35,6 @@ export interface JsonRpcConfig {
 
 export const Config: Schema<JsonRpcConfig> = Schema.object({
   maxTokensAsSuccess: Schema.boolean().default(false),
-  // Preserve omission; Schemastery's materialized empty object is not a valid restriction.
-  toolFilter: Schema.object({
-    allow: Schema.array(Schema.string()).default(undefined as unknown as string[]),
-    deny: Schema.array(Schema.string()).default(undefined as unknown as string[]),
-  }).default(undefined as unknown as { allow: string[]; deny: string[] }),
 })
 
 /**
@@ -71,7 +59,6 @@ export function apply(ctx: Context, config: JsonRpcConfig): void {
   const transport = new JsonRpcLineTransport(input, output)
   const server = new HarnessSdkJsonRpcServer(ctx, transport, {
     maxTokensAsSuccess: resolvedConfig.maxTokensAsSuccess,
-    ...resolvedConfig.toolFilter === undefined ? {} : { toolFilter: resolvedConfig.toolFilter },
   })
 
   // Share one exit task so racing shutdown requests cannot dispose the root or

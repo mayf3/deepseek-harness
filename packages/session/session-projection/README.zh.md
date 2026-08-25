@@ -17,15 +17,14 @@
 
 - `SessionProjectionMap`——协议块与客户端钩子共享的 merge-extensible client view 表。值是协议层 JSON 全量值；渲染归 slot 体系管，永远不归本层。
 - `SessionProjectionStateMap`——merge-extensible host 折叠状态表。每个 client-visible key 同时出现在两个表中；host-only key 只出现在这里。
-- `ProjectionInitialization`——每个新折叠边界都会收到的不可变 Session 事实；当前包含规范化后的 `seedLength`，使领域无需读取环境 Session 状态即可排除 fork 继承前缀。
-- `ProjectionDefinition<K, S>`——`{ key, stateSchema, init(initialization), apply(state, event), wire?, stateVersion }`：同步的状态驱动计算单元。`wire` 提供 `viewSchema` 与 `view`；省略它即为 host-only 单元。
+- `ProjectionDefinition<K, S>`——`{ key, stateSchema, init(header), apply(state, event), wire?, stateVersion }`：同步的状态驱动计算单元。`init` 接收不可变的 `SessionHeader`；`wire` 提供 `viewSchema` 与 `view`，省略它即为 host-only 单元。
 
 ## 约定
 
-- **框架负责驱动，领域负责计算。** 注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个单元的 `apply`。领域不持有任何订阅。cell（每会话每单元一份 `{state, observedSeq}`，以 WeakMap 为键）惰性构建——在事件流过之后才注册的单元，或读取一个早于该注册的会话，都会在首次触达时调用 `init({ seedLength })` 并折叠内存日志。
+- **框架负责驱动，领域负责计算。** 注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个单元的 `apply`。领域不持有任何订阅。cell（每会话每单元一份 `{state, observedSeq}`，以 WeakMap 为键）惰性构建——在事件流过之后才注册的单元，或读取一个早于该注册的会话，都会在首次触达时调用 `init(session.header)` 并折叠内存日志。
 - **同引用即无工作。** 对与单元无关的事件，`apply` 必须返回同一个状态引用；驱动以 `Object.is` 把守变更流，因此不匹配的事件只花一次调用，不产生任何下游工作。
 - **确定性 fold，完整 wire 值。** 单元同步校验并折叠其领域拥有的 Session 事件；这些持久事件既可以是完整值，也可以是领域 transition。存在 `wire` 视图时，它始终发布完整当前值，而不是让客户端处理 delta。
-- **初始化跟随事件来源。** live 惰性构建与事件驱动构建会规范化 `session.header.seedLength ?? 0`。detached restore 调用方从与持久事件同一次读取返回的 header 传入同样的规范值。初始化对象是 `init` 的不可变输入；单元不得绕过注册表读取 Session 或进程状态。
+- **初始化跟随事件来源。** live 惰性构建与事件驱动构建传入 `session.header`；detached restore 调用方传入与持久事件同一次读取返回的不可变 header。注册表会在折叠前拒绝超过已观察日志长度的 `seedLength`。单元可以用 `header.seedLength ?? 0` 派生边界，但不得绕过注册表读取 Session 或进程状态。
 - **单元的同步纪律。**`init`/`apply`/`wire.view` 必须是同步的；载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此。误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 - **状态是经校验的纯 JSON，`stateVersion` 是其失效锚点。** 持久投影缓存存储 `(sessionId, key, ver, seq, val)` 行，并在使用前以 `stateSchema` 校验 `val`；状态字段或折叠语义一旦变化就递增 `stateVersion`。每个单元的状态都会被检查点化——client-visible 与 host-only 一视同仁。
 - **本层没有协议词汇。** 注册表只暴露变更流与快照读取面；载体（api-proxy）据此自铸各自的帧（`session/projection`）与块。
