@@ -121,6 +121,32 @@ function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): Subpro
   }
 }
 
+function hideProcessOutcome(child: SubprocessHandle): SubprocessHandle {
+  return {
+    pid: child.pid,
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: new Promise<SubprocessOutcome>(() => {}),
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+  }
+}
+
+function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
+  return {
+    pid: child.pid,
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done.then(() => outcome),
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+  }
+}
+
 describe('acpStopReason', () => {
   it('maps each ACP stop reason to the harness vocabulary', () => {
     expect(acpStopReason('end_turn')).toBe('completed')
@@ -598,7 +624,7 @@ describe('dsh-subagent-acp', () => {
       env: { MOCK_CLOSE_PROTOCOL_ON_INITIALIZE: '1' },
       disposeEofGraceMs: 50,
       disposeGraceMs: 50,
-      spawn: spawnSubprocess,
+      spawn: spec => hideProcessOutcome(spawnSubprocess(spec)),
     }).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
@@ -945,7 +971,7 @@ describe('dsh-subagent-acp', () => {
       env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 100,
-      spawn: spawnSubprocess,
+      spawn: spec => hideProcessOutcome(spawnSubprocess(spec)),
     })
     const result = await run.result
     expect(result).toEqual({
@@ -995,6 +1021,29 @@ describe('dsh-subagent-acp', () => {
     expect(result).toEqual({
       output: [{ type: 'text', text: 'partial answer' }],
       diagnostic: expectedFailure('stage: process; category: process-exit; exit code: 17'),
+      stopReason: 'error',
+    })
+    await run.dispose()
+  })
+
+  it('reports a signal-only process outcome', async () => {
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_CRASH_AFTER_CHUNK: '1' },
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => replaceProcessOutcome(
+        spawnSubprocess(spec),
+        { exitCode: null, signal: 'SIGTERM' },
+      ),
+    })
+    const result = await run.result
+    expect(result).toEqual({
+      output: [{ type: 'text', text: 'mock child answer' }],
+      diagnostic: expectedFailure('stage: process; category: process-exit; signal: SIGTERM'),
       stopReason: 'error',
     })
     await run.dispose()
