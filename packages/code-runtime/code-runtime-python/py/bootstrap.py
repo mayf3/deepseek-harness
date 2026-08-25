@@ -836,14 +836,25 @@ class _BindingRejection(Exception):
     itself never reaches model code."""
 
 
-def _make_error_class(name: str, member_name_property: str) -> type:
+def _make_error_class(
+    name: str,
+    member_name_property: str,
+    # Def-time captures (see the __init__ body): the minted class runs AFTER
+    # the program, so `__main__.Exception`/`__main__.setattr` rebinds must not
+    # break the rejection constructor.
+    _Exception_init: Any = Exception,
+    _setattr: Any = setattr,
+) -> type:
     """Mint one program-visible rejection class per the seam's
     ``CodeBindingErrorClass`` contract: instances carry the failed member name
     under ``member_name_property`` and render as their message."""
 
     def __init__(self, member_name: str, message: str) -> None:  # noqa: N807
-        Exception.__init__(self, message)
-        setattr(self, member_name_property, member_name)
+        # Exception.__init__ and setattr are captured as defaults at def time:
+        # the class constructor runs model-visible code paths, and a rebind of
+        # `__main__.Exception`/`__main__.setattr` must not break a rejection.
+        _Exception_init.__init__(self, message)
+        _setattr(self, member_name_property, member_name)
 
     return type(name, (Exception,), {"__init__": __init__})
 
@@ -928,6 +939,13 @@ async def _run(channel: ProtocolChannel) -> None:
     # frame-shape check is bound the same way.
     _str = str
     _isinstance = isinstance
+    # dispatch's argument-validation, event-loop, and frame-send primitives are
+    # bound here, before the program runs: a rebind of `__main__._lossless_json_violation`,
+    # `__main__.asyncio`, or the channel's send method must not turn a legitimate
+    # binding call into an exception or a wall-clock timeout.
+    _lossless_json_violation_cls = _lossless_json_violation
+    _get_event_loop_cls = asyncio.get_event_loop
+    _send_sync_cls = channel.send_sync
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -1052,7 +1070,7 @@ async def _run(channel: ProtocolChannel) -> None:
         # a non-string dict key or non-finite float rather than raise (allow_nan
         # is off, but key coercion still slips through), silently corrupting what
         # the tool receives. Reject up front through the call's error contract.
-        violation = _lossless_json_violation(args)
+        violation = _lossless_json_violation_cls(args)
         if violation is not None:
             raise call_failure(f"binding arguments must be lossless JSON ({violation})")
         # Ids are consecutive from 0 with NO gaps: the host answers a `call` only
@@ -1068,13 +1086,13 @@ async def _run(channel: ProtocolChannel) -> None:
         # fd 3 in an order that does not match their ids — either of which the
         # host rejects as an out-of-sequence call. The Future's own loop is
         # captured here so ``_pump_replies`` can complete it thread-safely.
-        loop = asyncio.get_event_loop()
+        loop = _get_event_loop_cls()
         with pending_lock:
             call_id = next_id
             fut: asyncio.Future[Any] = loop.create_future()
             pending[call_id] = (loop, fut)
             try:
-                channel.send_sync(
+                _send_sync_cls(
                     {
                         "type": "call",
                         "id": call_id,

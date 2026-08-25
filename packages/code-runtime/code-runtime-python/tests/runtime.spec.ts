@@ -750,7 +750,6 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.value).toBe('nope')
   }, 15_000)
 
-
   it('still answers the call when the rejection value cannot be converted to a string', async () => {
     // `messageOf` calls `String(error)`, which runs the value's own conversion,
     // and this call site is a DETACHED async reply callback. A rejection whose
@@ -4296,7 +4295,6 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error).toBeUndefined()
     expect(result.value).toBe(8 * chunk.length)
   }, 90_000)
-
 
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator
