@@ -690,7 +690,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
         'try:',
         '    await tools.fail({})',
         'except RuntimeError as e:',
-        '    caught = str(e)',
+        '    caught = e.args[0] if e.args else ""',
         'except Exception as e:',
         '    caught = "WRONG TYPE: " + type(e).__name__',
         'return caught',

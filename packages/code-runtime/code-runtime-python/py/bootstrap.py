@@ -753,6 +753,10 @@ async def _run(channel: ProtocolChannel) -> None:
     # assignment RHS resolves the module global, not an unbound local.
     _RuntimeError_cls = RuntimeError
     _BindingRejection_cls = _BindingRejection
+    # `str` for dispatch's rejection conversion is likewise bound: a program
+    # rebinding `__main__.str` would otherwise run a hostile callable when the
+    # binding-rejection message is formatted.
+    _str = str
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -917,7 +921,7 @@ async def _run(channel: ProtocolChannel) -> None:
         try:
             return await fut
         except _BindingRejection_cls as exc:
-            raise call_failure(str(exc)) from None
+            raise call_failure(_str(exc)) from None
 
     namespaces: dict[str, Any] = {}
     for entry in boot["namespaces"]:
