@@ -3344,6 +3344,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'ChunkRowEvent',
+    declaration: 'export type ChunkRowEvent = {\n    [Kind in ChunkRow[\'type\']]: {\n        readonly type: `chunkrow/${Kind}`;\n        readonly seq: number;\n        readonly time: number;\n        readonly data: Extract<ChunkRow, {\n            readonly type: Kind;\n        }>[\'data\'];\n    };\n}[ChunkRow[\'type\']];',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n    readonly mapMtimeMs: number | null;\n    readonly mapSize: number | null;\n}',
   },
@@ -4444,6 +4448,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionCancelValue {\n    readonly accepted: true;\n}',
   },
   {
+    name: 'SessionChunkRun',
+    declaration: 'export interface SessionChunkRun {\n    readonly type: \'chunks\';\n    readonly event: ChunkRowEvent;\n}',
+  },
+  {
     name: 'SessionControlBaseline',
     declaration: 'export interface SessionControlBaseline {\n    readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>;\n    readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>;\n    readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>;\n}',
   },
@@ -4473,7 +4481,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventEntry',
-    declaration: 'export interface SessionEventEntry {\n    readonly event: SessionWireEvent;\n}',
+    declaration: 'export interface SessionEventEntry {\n    readonly type: \'event\';\n    readonly event: SessionWireEvent;\n}',
   },
   {
     name: 'SessionEventMap',
@@ -4537,7 +4545,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionFollowFrame',
-    declaration: 'export type SessionFollowFrame = {\n    readonly type: \'snapshot\';\n    readonly header: SessionHeader;\n    readonly cursor: number;\n    readonly events: readonly SessionEventEntry[];\n    readonly hasMore: boolean;\n    readonly projections: SessionProjectionBaseline;\n} | ({\n    readonly type: \'event\';\n} & SessionEventEntry);',
+    declaration: 'export type SessionFollowFrame = {\n    readonly type: \'snapshot\';\n    readonly header: SessionHeader;\n    readonly cursor: number;\n    readonly records: readonly SessionHistoryRecord[];\n    readonly hasMore: boolean;\n    readonly projections: SessionProjectionBaseline;\n} | SessionEventEntry;',
   },
   {
     name: 'SessionFollowRequest',
@@ -4558,6 +4566,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionHeader',
     declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly seedLength?: number;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
+  },
+  {
+    name: 'SessionHistoryRecord',
+    declaration: 'export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun;',
   },
   {
     name: 'SessionId',
@@ -4605,7 +4617,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionPage',
-    declaration: 'export interface SessionPage {\n    readonly events: readonly SessionEventEntry[];\n    readonly hasMore: boolean;\n}',
+    declaration: 'export interface SessionPage {\n    readonly records: readonly SessionHistoryRecord[];\n    readonly hasMore: boolean;\n}',
   },
   {
     name: 'SessionPageRequest',
