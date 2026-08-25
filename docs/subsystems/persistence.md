@@ -51,8 +51,8 @@ Source: [`packages/core/session/src/types.ts`](../../packages/core/session/src/t
 interface SessionHeader {
   /**
    * On-disk format version, stamped from {@link SESSION_FORMAT_VERSION} when the
-   * session is created. A persistence backend rejects any other version on load
-   * (no migration — see the constant).
+   * session is created. Persistence refuses newer versions and older versions
+   * without a complete registered migration path.
    */
   readonly version: number
   /** The session's id (mirrors the {@link Session}'s id). */
@@ -91,7 +91,27 @@ interface SessionHeader {
 
 ## Format refusal — logs a build cannot faithfully read
 
-A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. A header `version` ahead of `SESSION_FORMAT_VERSION` names the direction ("written by a newer harness — upgrade the harness to open it"); one behind it states that this build ships no upgrade path. After legacy-shape normalization, an event type outside this build's generated vocabulary (`KNOWN_SESSION_EVENT_TYPES`, emitted by `gen-persistence-catalog`) refuses the same way unless the event's envelope carries `ignorable: true` — silently skipping an unrecognized required event could change how the rest of the log must be read. The message appends the raw log path when the backend keeps one artifact per session, so the refused text stays reachable. The JSONL backend refuses a foreign version straight from the raw header line, before validating today's header shape or decoding any event row — a structurally different future format still reports the upgrade direction, never "corrupt"; SQLite gates whole-file structure through its own `SCHEMA_VERSION` pragma first. Design rationale and the deferred upgrader chain live in the [session-log-version-mechanism note](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md).
+A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. A header `version` ahead of `SESSION_FORMAT_VERSION` names the direction ("written by a newer harness — upgrade the harness to open it"); one behind it requires a complete registered adjacent-version migration path or names the missing step. After legacy-shape normalization, an event type outside this build's generated vocabulary (`KNOWN_SESSION_EVENT_TYPES`, emitted by `gen-persistence-catalog`) refuses the same way unless the event's envelope carries `ignorable: true` — silently skipping an unrecognized required event could change how the rest of the log must be read. The message appends the raw log path when the backend keeps one artifact per session, so the refused text stays reachable. The JSONL backend refuses a foreign version straight from the raw header line, before validating today's header shape or decoding any event row — a structurally different future format still reports the upgrade direction, never "corrupt"; SQLite gates whole-file structure through its own `SCHEMA_VERSION` pragma first. Design rationale lives in the [session-log-version-mechanism note](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md).
+
+## `SessionFormatMigration` — adjacent static format upgrades
+
+Each migration class declares one adjacent `from`/`to` pair and creates fresh state for one decode attempt. The decoder snapshots every header and event output as detached lossless JSON before the next migration receives it, preserves event sequence numbers, and calls optional EOF validation only after the complete event stream is consumed. The [package README](../../packages/session/session-persistence/README.md) owns the registration and version-bump procedure.
+
+```ts type-equiv
+/** Static identity and constructor for one adjacent-version migration. */
+interface SessionFormatMigration {
+  /** Input Session format version. */
+  readonly from: number
+  /** Output Session format version; must equal `from + 1`. */
+  readonly to: number
+  /**
+   * Create fresh state for one header decode and its optional complete event
+   * stream. Instances are never shared across sessions or decode attempts.
+   * @returns a single-use migration instance.
+   */
+  new(): SessionFormatMigrationInstance
+}
+```
 
 ## `CreateSessionOptions` — seeding and metadata
 
@@ -286,6 +306,14 @@ readRaw(_id: SessionId, signal?: AbortSignal): Promise<SessionRawArtifact | unde
 abstract create(meta: SessionHeader): Promise<void>
 
 /**
+ * Ensure a live session has a durable header even when it has no events.
+ * Ordinary sessions remain lazily materialized; lifecycle frontends call
+ * this only when an empty session itself is a durable resumable resource.
+ * @param _session - exact live session whose registered header is materialized.
+ */
+ensureMaterialized(_session: Session): Promise<void>
+
+/**
  * Durably persist a batch of events. Honors the append-only and contiguous-
  * seq contracts: the first event's `seq` MUST equal the stored next-seq
  * (after `load` has durably closed any interrupted turn). Rejects non-JSON-
@@ -340,6 +368,17 @@ abstract load(id: SessionId): Promise<SessionInspection>
 abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>
 
 /**
+ * Borrow one exact inspection while retaining any reusable prepared source.
+ * A cold observation must pin the exact prepared Session that a later
+ * {@link prepare} reserves. Implementations must not degrade this operation
+ * to a detached {@link inspect} result.
+ * @param id - persisted session to observe.
+ * @param signal - optional cancellation for preparation work.
+ * @returns a disposable immutable observation.
+ */
+abstract borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>
+
+/**
  * Read the stored events from `fromSeq` onward — the read-from-seq
  * primitive for read models that resume from a watermark (e.g. a persisted
  * projection cache folding only the tail past its checkpoint). Unlike
@@ -379,7 +418,7 @@ abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
 abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>
 ```
 
-Types: [SessionEvent](session.md) · [SessionId](core.md)
+Types: [Session](session.md) · [SessionEvent](session.md) · [SessionId](core.md)
 
 Source: [`packages/session/session-persistence/src/index.ts`](../../packages/session/session-persistence/src/index.ts)
 <!-- END GENERATED cordis-surface -->

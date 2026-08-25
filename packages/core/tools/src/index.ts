@@ -294,9 +294,10 @@ export interface ToolResult {
   /** Whether the call failed. */
   isError: boolean
   /**
-   * The tool-private presentation payload projected by its output declaration
-   * and threaded verbatim from the `tool/result` event. Absent when the tool
-   * declared no projector or the call was nested under a composite transport.
+   * The tool-private presentation payload projected by its output declaration.
+   * It is persisted verbatim on `tool/result` for Host presenters and Client
+   * renderers to narrow independently. Absent when the tool declared no
+   * projector or the call was nested under a composite transport.
    */
   meta?: JsonValue
 }
@@ -969,7 +970,7 @@ export class ToolRuntime extends Service {
         yield ctx.systemPrompt.section(this.sdkSection())
       }
     }.bind(this), 'tools.presentAs()')
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous composite teardown; direct return preserves disposer identity
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous composite teardown
     return dispose
   }
 
@@ -1005,8 +1006,7 @@ export class ToolRuntime extends Service {
    * Read at use time (assembly / run_code execution), NOT via static
    * `inject`: an inject entry would hold `ctx.tools` — and every tool plugin
    * behind it — hostage to a code runtime existing even under `mode:
-   * 'native'` (the loop's optional-backend idiom, same as
-   * `sessionPersistence`).
+   * 'native'`.
    *
    * Assembly and `run_code` execution read separately, so the language is not
    * bound to a request. Harmless while one published backend exists — both
