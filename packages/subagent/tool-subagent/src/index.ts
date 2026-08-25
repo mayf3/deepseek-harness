@@ -23,7 +23,7 @@ import {
 } from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider, SubagentResult, SubagentRun } from '@deepseek-ai/dsh-subagent'
 import type { JobOutcome } from '@deepseek-ai/dsh-jobs'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import {
   hasConfiguredLlmSelection,
   hasDelegationModelRequest,
@@ -42,7 +42,7 @@ export const name = 'tool-subagent'
 export const inject = ['tools', 'subagents', 'systemPrompt']
 
 /** Prompt order after bounded delegation policy and before child reporting. */
-const SUBAGENT_SECTION_ORDER = 116.5
+const SUBAGENT_SECTION_ORDER = FIRST_PARTY_SECTION_ORDER.TOOL_SUBAGENT
 
 /** Config: which registered provider this tool delegates to, plus child defaults. */
 export interface Config {
