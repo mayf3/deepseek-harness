@@ -995,7 +995,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // inheriting fd 0 would keep the host process from exiting even after the
       // closeDeadline forced settlement. The child (and any descendant) reads
       // EOF on fd 0 instead, and no host handle survives.
-      child.stdin.destroy()
+      child.stdin?.destroy()
     } catch (error: unknown) {
       try {
         rmSync(bootstrapDir, { recursive: true, force: true })
