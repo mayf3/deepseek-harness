@@ -28,13 +28,10 @@ const defaultLoadBundle = (url: string): Promise<void> => new Promise((resolve, 
 
 /** Replace the rev query while preserving absolute, protocol-relative, or path-relative form. */
 function atRevision(url: string, rev: string): string {
-  const absolute = /^[A-Za-z][A-Za-z\d+.-]*:/.test(url)
-  const protocolRelative = url.startsWith('//')
-  const parsed = new URL(url, 'http://dsh.invalid')
-  parsed.searchParams.set('rev', rev)
-  if (absolute) return parsed.href
-  if (protocolRelative) return `//${parsed.host}${parsed.pathname}${parsed.search}${parsed.hash}`
-  return `${parsed.pathname}${parsed.search}${parsed.hash}`
+  if (!/[?&]rev=[^&#]*/.test(url)) {
+    throw new Error(`client-modules: bundle URL ${url} has no revision`)
+  }
+  return url.replace(/([?&]rev=)[^&#]*/, `$1${encodeURIComponent(rev)}`)
 }
 
 /**
@@ -71,7 +68,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   private readonly bootstrapIds = new Set<string>()
   /** In-flight script transport per URL; every row in one batch shares it. */
   private readonly pendingArrival = new Map<string, Promise<void>>()
-  /** Individual revisioned URL selected by HMR after invalidating one row. */
+  /** Single-resource combo URL selected by HMR after invalidating one row. */
   private readonly reloadUrls = new Map<string, string>()
   /** Materialization re-entrancy guard: factory-form CJS cannot deliver partial exports, so a cycle is fatal. */
   private readonly materializing = new Set<string>()

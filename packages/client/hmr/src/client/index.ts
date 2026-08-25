@@ -152,7 +152,7 @@ export function apply(ctx: Context): void {
         break
       case 'graph':
         // Connect-time snapshot, unused. Each rebuilt frame carries the
-        // revision that selects the immutable individual script; the boot
+        // revision that selects the immutable single-resource combo script; the boot
         // graph remains the initial-load record until a page reload.
         break
       default:

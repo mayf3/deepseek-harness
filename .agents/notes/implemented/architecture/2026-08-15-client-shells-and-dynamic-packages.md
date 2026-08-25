@@ -46,12 +46,12 @@ There is no general `dsh.client.provide` alias mechanism. Dynamic rows and stati
 The modules Node half injects the startup protocol into the served HTML in this order:
 
 1. Install `window.__ModuleLoader__` in queue mode with `pendingQueue`, `load()`, and `create()`.
-2. Start preloading the content-addressed application batch containing every row except modules.
-3. Execute one blocking bootstrap batch containing the ordinary modules factory registration.
-4. Assign `window.__DSH_BOOT__`, including both batch descriptors and every row's individual HMR URL.
+2. Start preloading every content-addressed application combo URL containing the rows other than modules.
+3. Execute every blocking bootstrap combo URL; these currently contain the ordinary modules factory registration.
+4. Assign `window.__DSH_BOOT__`, including all scheduling descriptors and every row's one-resource HMR combo URL.
 5. Execute the Vite main module.
 
-The bootstrap batch only registers the modules factory. The startup kernel passes the raw graph and shell seeds to `__ModuleLoader__.create()`. The facade removes the modules registration, materializes it with a `require` function that rejects every external, and invokes its `createClientModuleSystem` export. The modules bundle parses the graph, constructs `ClientModuleSystem`, caches its own exports as the modules row, retains the system in a module closure, and switches the same facade to live mode. The modules client face consequently has a zero-external bootstrap requirement.
+The bootstrap combo currently registers only the modules factory. The startup kernel passes the raw graph and shell seeds to `__ModuleLoader__.create()`. The facade removes the modules registration, materializes it with a `require` function that rejects every external, and invokes its `createClientModuleSystem` export. The modules bundle parses the graph, constructs `ClientModuleSystem`, caches its own exports as the modules row, retains the system in a module closure, and switches the same facade to live mode. The modules client face consequently has a zero-external bootstrap requirement.
 
 After the `immediately` tier has registered its factories, the kernel creates all Loader entries, awaits Cordis quiescence, and requires every fiber to be ACTIVE. It then calls `ctx.uiRenderer.mount(container)`. The dynamic `ui-renderer` package owns React, slot rendering, hydration of the existing boot DOM, and the React root lifecycle; the startup kernel and failure page remain React-free.
 
@@ -79,7 +79,7 @@ Ordinary installed libraries remain `dependencies`: a dynamic build may bundle a
 
 Bundle contents stay stable when an npm dependency moves between peer and development sections, because each build face declares externality directly. Static libraries remain host-assembled, while dynamic packages retain uniform artifacts and lifecycle governance.
 
-The startup protocol depends on the modules package id, and modules must remain self-contained at runtime. Batch generation preserves its ordinary package artifact and gives every other row one shared initial transport; HMR still uses each row's revisioned individual artifact. A missing bootstrap registration fails before Cordis starts; later plugin import, apply, and service-wait failures remain visible through the boot page's ACTIVE scan.
+The startup protocol depends on the modules package id, and modules must remain self-contained at runtime. Combo generation preserves its ordinary package artifact and gives every other row one shared initial transport; HMR uses the same route with that row as its sole resource. A missing bootstrap registration fails before Cordis starts; later plugin import, apply, and service-wait failures remain visible through the boot page's ACTIVE scan.
 
 The shell consumes built `lib/` products, so source and browser artifacts can drift until the relevant build or watcher runs. Typechecking source alone does not prove the served application uses the same code.
 

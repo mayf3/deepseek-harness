@@ -193,7 +193,7 @@ describe('web e2e: settings modal and General preferences', () => {
     await page.keyboard.press('Escape')
 
     // Hold the real application batch so the shell-owned loading page remains observable.
-    const pluginPattern = /\/plugins\/_batch\/application\/[a-f\d]{12}\/client\.js$/
+    const pluginPattern = /\/plugins\/\?\?.+\/client\.js,.+\/client\.js&rev=[a-f\d]{12}$/
     let releaseBundles = (): void => {}
     const bundlesReleased = new Promise<void>((resolve) => { releaseBundles = resolve })
     await page.route(pluginPattern, async (route) => {

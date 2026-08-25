@@ -46,12 +46,12 @@ Client npm 依赖区段描述安装和开发关系，但不能可靠描述 bundl
 Modules Node 半按以下顺序向实际返回的 HTML 注入启动协议：
 
 1. 以 queue 模式安装 `window.__ModuleLoader__`，包含 `pendingQueue`、`load()` 与 `create()`。
-2. 开始预加载按内容寻址的 application 批次，其中包含 modules 之外的全部 row。
-3. 执行一个阻塞式 bootstrap 批次，其中包含普通的 modules factory registration。
-4. 赋值 `window.__DSH_BOOT__`，其中包含两个批次描述及每个 row 的独立 HMR URL。
+2. 开始预加载所有按内容寻址的 application combo URL，其中包含 modules 之外的 row。
+3. 执行所有阻塞式 bootstrap combo URL；当前其中包含普通的 modules factory registration。
+4. 赋值 `window.__DSH_BOOT__`，其中包含全部调度描述及每个 row 的单资源 HMR combo URL。
 5. 执行 Vite 主模块。
 
-Bootstrap 批次只登记 modules factory。启动内核把原始图与外壳 seed 传给 `__ModuleLoader__.create()`。Facade 移除 modules registration，用拒绝全部 external 的 `require` 函数将其物化，再调用其 `createClientModuleSystem` 导出。Modules bundle 解析图、构造 `ClientModuleSystem`、把自身 exports 缓存为 modules row、在模块闭包中保留该系统，并把同一 facade 切换到 live 模式。因此 modules client face 必须满足零 external 的自举要求。
+Bootstrap combo 当前只登记 modules factory。启动内核把原始图与外壳 seed 传给 `__ModuleLoader__.create()`。Facade 移除 modules registration，用拒绝全部 external 的 `require` 函数将其物化，再调用其 `createClientModuleSystem` 导出。Modules bundle 解析图、构造 `ClientModuleSystem`、把自身 exports 缓存为 modules row、在模块闭包中保留该系统，并把同一 facade 切换到 live 模式。因此 modules client face 必须满足零 external 的自举要求。
 
 `immediately` 层级完成 factory 注册后，内核创建全部 Loader entry，等待 Cordis 静止，并要求每个 fiber 都进入 ACTIVE。随后调用 `ctx.uiRenderer.mount(container)`。动态 `ui-renderer` 包拥有 React、slot 渲染、已有启动 DOM 的 hydrate 和 React root 生命周期；启动内核与失败页保持 React-free。
 
@@ -79,7 +79,7 @@ Bootstrap 批次只登记 modules factory。启动内核把原始图与外壳 se
 
 Npm 依赖在 peer 与开发区段间移动时，bundle 内容保持稳定，因为每个构建 face 都直接声明 external。静态库继续由宿主装配，动态包则保留统一产物与生命周期治理。
 
-启动协议依赖 modules 的 package id，modules 还必须保持运行期自包含。批次生成保留其普通 package 产物，并为其他全部 row 提供一条共享初始传输；HMR 仍使用每个 row 带 revision 的独立产物。缺少 bootstrap registration 会在 Cordis 启动前失败；后续插件 import、apply 与 service 等待失败仍由启动页的 ACTIVE 扫描呈现。
+启动协议依赖 modules 的 package id，modules 还必须保持运行期自包含。Combo 生成保留其普通 package 产物，并为其他全部 row 提供一条共享初始传输；HMR 使用同一条路由，并只把该 row 作为资源。缺少 bootstrap registration 会在 Cordis 启动前失败；后续插件 import、apply 与 service 等待失败仍由启动页的 ACTIVE 扫描呈现。
 
 外壳消费已构建 `lib/` 产品，因此在相关 build 或 watcher 运行前，源码与浏览器产物可能漂移。仅源码 typecheck 通过不能证明实际服务的应用使用同一份代码。
 
