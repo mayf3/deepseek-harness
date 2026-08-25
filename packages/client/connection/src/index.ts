@@ -106,7 +106,7 @@ export async function apply(ctx: Context, config?: ConnectionConfig): Promise<vo
     kind: 'prefix',
     path: API_PATH,
     handler: async (req, res) => {
-      const rejection = await connection.requestRejection(req)
+      const rejection = connection.requestRejection(req)
       if (rejection !== undefined) {
         res.writeHead(rejection)
         res.end(rejection === 401 ? 'unauthorized' : 'forbidden')

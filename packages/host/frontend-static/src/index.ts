@@ -70,7 +70,7 @@ const STATIC_MISS_CODES: ReadonlySet<string | undefined> = new Set([
  */
 export async function serveStatic(
   pathname: string, res: ServerResponse, distRoot: string, distIndex: string,
-  authorizeIndex: () => Promise<boolean>,
+  authorizeIndex: () => boolean,
   renderIndex: () => Promise<string>,
 ): Promise<void> {
   const target = resolve(normalize(join(distRoot, pathname)))
@@ -86,7 +86,7 @@ export async function serveStatic(
   let type: string
   try {
     if (target === distRoot || target === distIndex) {
-      if (!await authorizeIndex()) return
+      if (!authorizeIndex()) return
       body = await renderIndex()
       type = HTML_MIME
     } else {

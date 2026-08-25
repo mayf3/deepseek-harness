@@ -77,13 +77,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
   }
 
   /** Apply the configured Host/Origin fence, then browser authentication. */
-  async requestRejection(request: ConnectionTrustRequest): Promise<ConnectionRequestRejection> {
+  requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection {
     if (!isTrustedApiRequest(request, this.trustedHosts)) return 403
-    return await this.browserAuth.isAuthenticated(request) ? undefined : 401
+    return this.browserAuth.isAuthenticated(request) ? undefined : 401
   }
 
   /** Authenticate an index request through the process-token exchange or cookie. */
-  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): Promise<boolean> {
+  authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean {
     return this.browserAuth.authorizeIndex(request, response)
   }
 
@@ -125,7 +125,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
       kind: 'prefix',
       path: channel,
       handler: async (req, res) => {
-        const rejection = await this.requestRejection(req)
+        const rejection = this.requestRejection(req)
         if (rejection !== undefined) {
           res.writeHead(rejection)
           res.end(rejection === 401 ? 'unauthorized' : 'forbidden')

@@ -158,11 +158,29 @@ function decodeCookie(value: string, secret: Buffer): BrowserCookiePayload | und
   return decoded as unknown as BrowserCookiePayload
 }
 
+async function initializeSecret(credentials: CredentialProvider): Promise<Buffer> {
+  const generated: StoredSecretPayload = {
+    version: STORED_SECRET_VERSION,
+    secret: encodeBase64Url(randomBytes(SECRET_BYTES)),
+  }
+  const record = await credentials.modifyRecord(AUTH_RECORD_KEY, (current) => {
+    if (current !== undefined) {
+      storedSecret(current)
+      return Promise.resolve(undefined)
+    }
+    return Promise.resolve({ kind: 'grant', payload: generated })
+  })
+  const secret = storedSecret(record)
+  if (secret === undefined) {
+    throw new Error('client-connection: browser-session credential record was not created')
+  }
+  return secret
+}
+
 /**
  * Process launch-token exchange and persistent signed-cookie verification.
- * The credential provider owns the signing secret; this object reads it for
- * each operation so deletion or rotation revokes existing cookies without a
- * process restart.
+ * Connection loads the credential provider's signing secret during activation
+ * and retains it for synchronous request authentication.
  */
 export class BrowserAuth {
   private readonly launchToken: string
@@ -170,7 +188,7 @@ export class BrowserAuth {
 
   private constructor(
     processOwner: object,
-    private readonly credentials: CredentialProvider,
+    private readonly secret: Buffer,
     maxAgeDays: number,
   ) {
     this.launchToken = processLaunchToken(processOwner)
@@ -194,9 +212,7 @@ export class BrowserAuth {
     credentials: CredentialProvider,
     maxAgeDays: number,
   ): Promise<BrowserAuth> {
-    const auth = new BrowserAuth(processOwner, credentials, maxAgeDays)
-    await auth.ensureSecret()
-    return auth
+    return new BrowserAuth(processOwner, await initializeSecret(credentials), maxAgeDays)
   }
 
   /**
@@ -221,7 +237,7 @@ export class BrowserAuth {
    * @param res - response owned when this method returns false.
    * @returns true only when the caller may serve index.html.
    */
-  async authorizeIndex(req: ConnectionIndexRequest, res: ConnectionIndexResponse): Promise<boolean> {
+  authorizeIndex(req: ConnectionIndexRequest, res: ConnectionIndexResponse): boolean {
     /* v8 ignore next -- node:http always supplies url on server requests. */
     const url = new URL(req.url ?? '/', 'http://dsh.invalid')
     const tokens = url.searchParams.getAll(TOKEN_QUERY)
@@ -236,7 +252,7 @@ export class BrowserAuth {
           authority,
           issuedAt,
           expiresAt,
-        }, await this.ensureSecret())
+        }, this.secret)
         res.writeHead(303, {
           'cache-control': 'no-store',
           'location': '/',
@@ -248,7 +264,7 @@ export class BrowserAuth {
         res.end()
         return false
       }
-      if (req.method === 'GET' && url.pathname === '/' && await this.isAuthenticated(req)) {
+      if (req.method === 'GET' && url.pathname === '/' && this.isAuthenticated(req)) {
         res.writeHead(303, {
           'cache-control': 'no-store',
           'location': '/',
@@ -260,7 +276,7 @@ export class BrowserAuth {
       this.writeUnauthorized(req, res)
       return false
     }
-    if (await this.isAuthenticated(req)) return true
+    if (this.isAuthenticated(req)) return true
     this.writeUnauthorized(req, res)
     return false
   }
@@ -268,42 +284,21 @@ export class BrowserAuth {
   /**
    * Verify the authority-bound browser cookie on a Host request.
    * @param request - request headers carrying Host and Cookie.
-   * @returns true only for an unexpired cookie signed by the current durable secret.
+   * @returns true only for an unexpired cookie signed by this activation's loaded secret.
    */
-  async isAuthenticated(request: ConnectionTrustRequest): Promise<boolean> {
+  isAuthenticated(request: ConnectionTrustRequest): boolean {
     const authority = requestAuthority(request.headers)
     const rawCookie = header(request.headers, 'cookie')
     if (authority === undefined || rawCookie === undefined) return false
     const value = cookieValue(rawCookie, cookieName(authority))
     if (value === undefined) return false
-    const secret = storedSecret(await this.credentials.readRecord(AUTH_RECORD_KEY))
-    if (secret === undefined) return false
-    const payload = decodeCookie(value, secret)
+    const payload = decodeCookie(value, this.secret)
     if (payload === undefined || payload.authority !== authority) return false
     const now = Date.now()
     return payload.issuedAt <= now
       && payload.expiresAt > now
       && payload.expiresAt > payload.issuedAt
       && payload.expiresAt - payload.issuedAt <= this.maxAgeMilliseconds
-  }
-
-  private async ensureSecret(): Promise<Buffer> {
-    const generated: StoredSecretPayload = {
-      version: STORED_SECRET_VERSION,
-      secret: encodeBase64Url(randomBytes(SECRET_BYTES)),
-    }
-    const record = await this.credentials.modifyRecord(AUTH_RECORD_KEY, (current) => {
-      if (current !== undefined) {
-        storedSecret(current)
-        return Promise.resolve(undefined)
-      }
-      return Promise.resolve({ kind: 'grant', payload: generated })
-    })
-    const secret = storedSecret(record)
-    if (secret === undefined) {
-      throw new Error('client-connection: browser-session credential record was not created')
-    }
-    return secret
   }
 
   private writeUnauthorized(req: ConnectionIndexRequest, res: ConnectionIndexResponse): void {

@@ -16,7 +16,7 @@ Web Host 以当前操作系统用户的权限运行具有工具能力的 Session
 
 cookie 是签名且绑定 authority 的 bearer。确定性名称与签名 payload 都包含规范化 hostname 和 port，因此同一 Harness home 可以在不同 Web port 运行而不发生 cookie 冲突。payload 在绝对有效期内携带安全整数形式的签发与过期时间；`cookieMaxAgeDays` 默认为 30。cookie 是 host-only、`Path=/`、`HttpOnly`、`SameSite=Strict`。随附服务器使用 loopback HTTP，因此不设置 `Secure`。这里没有 logout 操作或反向代理专用处理。
 
-HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` 的版本化 `grant` 记录；本地提供方将其存入 `$DSH_HOME/.credentials.yaml`。Connection 每次校验都读取记录，因此删除或替换记录无需重启进程即可撤销全部既有 cookie。缺失记录在 Connection 启动时创建；运行期删除后，由下一次有效进程令牌交换或进程启动重新创建。无效 owner payload 会明确失败，而不是被覆盖。启动令牌本身绝不持久化并在每次进程启动时变化；未过期 cookie 则能在相同 authority 上跨重启继续有效。
+HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` 的版本化 `grant` 记录；本地提供方将其存入 `$DSH_HOME/.credentials.yaml`。Connection 在激活期间加载或创建该记录，并保留密钥以同步校验请求。持久记录发生变化后，当前 Connection 继续使用已加载的密钥；下一次激活会加载替换记录或创建缺失记录，因此删除记录并重启进程会撤销全部既有 cookie。无效 owner payload 会明确失败，而不是被覆盖。启动令牌本身绝不持久化并在每次进程启动时变化；未过期 cookie 则能在相同 authority 上跨重启继续有效。
 
 页内 Web Worker preview 不暴露网络 socket。其由页面持有的 `postMessage` tunnel 先进入真实 route，收到 401 或 403 后再经 worker 本地 fetch handler 重试。这样既保留 Connection interceptor，又把认证绕过限制在创建 Host worker 的页面内。
 
@@ -24,7 +24,7 @@ HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` �
 
 ## 验证
 
-单元覆盖 Connection 重载时保留进程令牌、cookie 属性、HMAC 与 payload 校验、authority 与有效期校验、持久密钥复用、记录删除、无效持久记录，以及用有效 cookie 清理过时令牌 URL。Host 传输套件固定 API Proxy、通用 RPC、Typert Remote HTTP 和 WebSocket upgrade 路径上一致的 401/403 行为。frontend 真实组合测试经 Loader 启动 credentials、Connection、webserver 与静态服务，证明读取 index 前完成令牌交换，同时静态资产仍公开。打包 worker 测试证明 cookie 编码可移植，并覆盖认证与信任拒绝后的 worker 本地重试。真实 CLI 测试在临时 `DSH_HOME` 上用同一端口两次启动 `dsh web`，证明伪造 `Host: localhost` 仍未认证，以交换所得 cookie 调用 `host.describe`，观测新的进程令牌，并在重启后复用旧 cookie。
+单元覆盖 Connection 重载时保留进程令牌、每次激活只加载一次密钥、无需读取凭据提供方的同步校验、cookie 属性、HMAC 与 payload 校验、authority 与有效期校验、记录删除在下一次激活时生效、无效持久记录，以及用有效 cookie 清理过时令牌 URL。Host 传输套件固定 API Proxy、通用 RPC、Typert Remote HTTP 和 WebSocket upgrade 路径上一致的 401/403 行为。frontend 真实组合测试经 Loader 启动 credentials、Connection、webserver 与静态服务，证明读取 index 前完成令牌交换，同时静态资产仍公开。打包 worker 测试证明 cookie 编码可移植，并覆盖认证与信任拒绝后的 worker 本地重试。真实 CLI 测试在临时 `DSH_HOME` 上用同一端口两次启动 `dsh web`，证明伪造 `Host: localhost` 仍未认证，以交换所得 cookie 调用 `host.describe`，观测新的进程令牌，并在重启后复用旧 cookie。
 
 ## 曾考虑的替代方案
 
@@ -36,12 +36,12 @@ HMAC 密钥是 `ctx.credentials` 中位于 `client-connection/browser-session` �
 
 **每次重启都轮换签名密钥。** 这会阻止既有浏览器在普通 DSH 重启后重连。只持久化签名密钥既保留该工作流，又由进程令牌轮换把启动 URL 限定在一个进程生命周期。
 
-**增加 logout、TLS 代理和转发 header 配置。** loopback Web 应用与已报告认证缺口都不需要这些能力；加入它们会在没有当前 consumer 时定义部署约定。浏览器站点数据控制与凭据记录删除已经提供本决策所需的两种撤销操作。
+**增加 logout、TLS 代理和转发 header 配置。** loopback Web 应用与已报告认证缺口都不需要这些能力；加入它们会在没有当前 consumer 时定义部署约定。浏览器站点数据控制会撤销单个浏览器会话；删除凭据记录并重启进程会撤销全部会话。
 
 ## 后果
 
 持有浏览器 cookie 就能调用完整的工具型 Host API，这与 Web 应用在创建 Session 后暴露的 authority 一致。`Host` 不授予更高的方法层级，方法在 API Proxy 与 Typert Remote 之间迁移也不会改变调用者集合。
 
-持久密钥使 cookie 跨重启生效，也让被盗 cookie 最多保有配置的绝对有效期；删除或轮换记录是全局撤销机制。不设置 `Secure` 保留 loopback HTTP，但如果操作者让同一 cookie authority 经未加密网络可达，cookie 会以明文传输。启动 URL 含进程凭据，必须视为敏感输出；运行时诊断不会重复它。
+持久密钥使 cookie 跨重启生效，也让被盗 cookie 最多保有配置的绝对有效期。删除记录并重启进程是全局撤销机制；当前 Connection 刻意避免在每个请求上访问凭据提供方。不设置 `Secure` 保留 loopback HTTP，但如果操作者让同一 cookie authority 经未加密网络可达，cookie 会以明文传输。启动 URL 含进程凭据，必须视为敏感输出；运行时诊断不会重复它。
 
 本决策部分取代[浏览器信任说明](2026-07-28-api-browser-trust-boundary.zh.md)中的认证延期与未认证非 loopback 后果。该说明仍是媒体类型、Host、Origin、Fetch-Metadata 和配置 authority 校验的有效权威。没有 active Agent Note 被归档：重叠只发生在局部，两条安全规则都保有未来决策价值。

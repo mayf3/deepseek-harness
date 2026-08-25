@@ -9,8 +9,11 @@ import type { ConnectionIndexRequest, ConnectionIndexResponse } from '../src/rpc
 class RecordCredentials {
   record: CredentialRecord | undefined
   discardWrites = false
+  reads = 0
+  modifies = 0
 
   readRecord(): Promise<CredentialRecord | undefined> {
+    this.reads += 1
     return Promise.resolve(this.record)
   }
 
@@ -18,6 +21,7 @@ class RecordCredentials {
     _key: unknown,
     mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
   ): Promise<CredentialRecord | undefined> {
+    this.modifies += 1
     const next = await mutate(this.record)
     if (this.discardWrites) return undefined
     if (next !== undefined) this.record = next
@@ -96,14 +100,14 @@ function request(url: string, authority = '127.0.0.1:3080', init?: {
   }
 }
 
-async function exchange(
+function exchange(
   auth: BrowserAuth,
   authority = '127.0.0.1:3080',
-): Promise<{ cookie: string; launchUrl: string; state: ResponseState }> {
+): { cookie: string; launchUrl: string; state: ResponseState } {
   const launchUrl = auth.authenticatedUrl(`http://${authority}`)
   const target = new URL(launchUrl)
   const res = response()
-  expect(await auth.authorizeIndex(request(`${target.pathname}${target.search}`, authority), res.value)).toBe(false)
+  expect(auth.authorizeIndex(request(`${target.pathname}${target.search}`, authority), res.value)).toBe(false)
   const setCookie = res.state.headers?.['set-cookie']
   if (setCookie === undefined) throw new Error('token exchange did not set a cookie')
   return { cookie: setCookie.split(';', 1)[0]!, launchUrl, state: res.state }
@@ -118,7 +122,7 @@ describe('BrowserAuth', () => {
     const store = new RecordCredentials()
     const processOwner = {}
     const first = await createAuth(store, 30, processOwner)
-    const login = await exchange(first)
+    const login = exchange(first)
 
     expect(login.state).toMatchObject({
       status: 303,
@@ -130,25 +134,25 @@ describe('BrowserAuth', () => {
     })
     expect(login.state.headers?.['set-cookie']).toMatch(/; Max-Age=2592000; Path=\/; Expires=.*; HttpOnly; SameSite=Strict$/u)
     expect(login.state.headers?.['set-cookie']).not.toContain('Secure')
-    expect(await first.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
-    expect(await first.isAuthenticated({
+    expect(first.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
+    expect(first.isAuthenticated({
       headers: new Headers({ host: '127.0.0.1:3080', cookie: login.cookie }),
     })).toBe(true)
-    expect(await first.isAuthenticated({ headers: new Headers() })).toBe(false)
-    expect(await first.isAuthenticated(request('/', 'localhost:3080', { cookie: login.cookie }))).toBe(false)
-    expect(await first.isAuthenticated(request('/', '127.0.0.1:3081', { cookie: login.cookie }))).toBe(false)
+    expect(first.isAuthenticated({ headers: new Headers() })).toBe(false)
+    expect(first.isAuthenticated(request('/', 'localhost:3080', { cookie: login.cookie }))).toBe(false)
+    expect(first.isAuthenticated(request('/', '127.0.0.1:3081', { cookie: login.cookie }))).toBe(false)
 
     const reloaded = await createAuth(store, 30, processOwner)
     expect(reloaded.authenticatedUrl('http://127.0.0.1:3080')).toBe(login.launchUrl)
-    expect(await reloaded.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
+    expect(reloaded.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
 
     const restarted = await createAuth(store)
     expect(new URL(restarted.authenticatedUrl('http://127.0.0.1:3080')).searchParams.get('token'))
       .not.toBe(new URL(login.launchUrl).searchParams.get('token'))
-    expect(await restarted.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
+    expect(restarted.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: login.cookie }))).toBe(true)
     const staleUrl = new URL(login.launchUrl)
     const redirected = response()
-    expect(await restarted.authorizeIndex(request(
+    expect(restarted.authorizeIndex(request(
       `${staleUrl.pathname}${staleUrl.search}`,
       '127.0.0.1:3080',
       { cookie: login.cookie },
@@ -165,9 +169,9 @@ describe('BrowserAuth', () => {
 
   it('accepts the cookie for index serving and gives every unauthenticated request one response', async () => {
     const auth = await createAuth(new RecordCredentials())
-    const { cookie } = await exchange(auth)
+    const { cookie } = exchange(auth)
     const allowed = response()
-    expect(await auth.authorizeIndex(request('/index.html', '127.0.0.1:3080', { cookie }), allowed.value)).toBe(true)
+    expect(auth.authorizeIndex(request('/index.html', '127.0.0.1:3080', { cookie }), allowed.value)).toBe(true)
     expect(allowed.state).toEqual({})
 
     for (const candidate of [
@@ -178,7 +182,7 @@ describe('BrowserAuth', () => {
       request(auth.authenticatedUrl('http://127.0.0.1:3080'), '127.0.0.1:3080', { method: 'HEAD' }),
     ]) {
       const denied = response()
-      expect(await auth.authorizeIndex(candidate, denied.value)).toBe(false)
+      expect(auth.authorizeIndex(candidate, denied.value)).toBe(false)
       expect(denied.state.status).toBe(401)
       expect(denied.state.headers).toEqual({
         'cache-control': 'no-store',
@@ -195,18 +199,18 @@ describe('BrowserAuth', () => {
     vi.setSystemTime(new Date('2026-08-24T00:00:00.000Z'))
     const store = new RecordCredentials()
     const auth = await createAuth(store)
-    const { cookie } = await exchange(auth)
+    const { cookie } = exchange(auth)
     const [name, value] = cookie.split('=') as [string, string]
 
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=broken` }))).toBe(false)
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=${value.slice(0, -1)}x` }))).toBe(false)
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=%` }))).toBe(false)
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', {
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=broken` }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=${value.slice(0, -1)}x` }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: `${name}=%` }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', {
       cookie: signedBodyCookie(store, name, 'a'),
     }))).toBe(false)
-    expect(await auth.isAuthenticated({ headers: {} })).toBe(false)
-    expect(await auth.isAuthenticated({ headers: { host: 'bad host', cookie } })).toBe(false)
-    expect(await auth.isAuthenticated({ headers: { host: '127.0.0.1:3080' } })).toBe(false)
+    expect(auth.isAuthenticated({ headers: {} })).toBe(false)
+    expect(auth.isAuthenticated({ headers: { host: 'bad host', cookie } })).toBe(false)
+    expect(auth.isAuthenticated({ headers: { host: '127.0.0.1:3080' } })).toBe(false)
 
     const invalidPayloads: unknown[] = [
       'not json',
@@ -217,30 +221,37 @@ describe('BrowserAuth', () => {
       { version: 1, authority: '127.0.0.1:3080', issuedAt: Date.now(), expiresAt: 'later' },
     ]
     for (const payload of invalidPayloads) {
-      expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', {
+      expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', {
         cookie: signedCookie(store, name, payload),
       }))).toBe(false)
     }
 
     const shorter = await createAuth(store, 1)
-    expect(await shorter.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
+    expect(shorter.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
     vi.setSystemTime(new Date('2026-09-24T00:00:00.000Z'))
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
     vi.setSystemTime(new Date('2026-08-23T00:00:00.000Z'))
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie }))).toBe(false)
   })
 
-  it('revokes on record deletion and creates a new secret on the next token exchange', async () => {
+  it('loads one secret per activation and replaces it after deletion on the next activation', async () => {
     const store = new RecordCredentials()
     const auth = await createAuth(store)
-    const first = await exchange(auth)
-    await store.deleteRecord()
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(false)
+    const first = exchange(auth)
+    expect(store).toMatchObject({ reads: 0, modifies: 1 })
 
-    const second = await exchange(auth)
+    await store.deleteRecord()
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(true)
+    const sameActivation = exchange(auth)
+    expect(auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: sameActivation.cookie }))).toBe(true)
+    expect(store).toMatchObject({ reads: 0, modifies: 1 })
+
+    const reactivated = await createAuth(store)
+    const second = exchange(reactivated)
     expect(second.cookie).not.toBe(first.cookie)
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(false)
-    expect(await auth.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: second.cookie }))).toBe(true)
+    expect(reactivated.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: first.cookie }))).toBe(false)
+    expect(reactivated.isAuthenticated(request('/', '127.0.0.1:3080', { cookie: second.cookie }))).toBe(true)
+    expect(store).toMatchObject({ reads: 0, modifies: 2 })
   })
 
   it('fails loud on an invalid owner record instead of replacing it', async () => {

@@ -134,8 +134,8 @@ class FakeConnectionService extends Service {
     }
   }
 
-  requestRejection(): Promise<undefined> {
-    return Promise.resolve(undefined)
+  requestRejection(): undefined {
+    return undefined
   }
 }
 
@@ -171,10 +171,10 @@ async function serveRoute(route: WebRoute): Promise<{ readonly origin: string; c
 }
 
 /** Exchange a Connection launch token without mounting the frontend fallback. */
-async function browserCookie(connection: HostConnectionHandle, origin: string): Promise<string> {
+function browserCookie(connection: HostConnectionHandle, origin: string): string {
   const target = new URL(connection.authenticatedUrl(origin))
   let setCookie: string | undefined
-  await connection.authorizeIndex({
+  connection.authorizeIndex({
     method: 'GET',
     url: `${target.pathname}${target.search}`,
     headers: { host: target.host },
@@ -1182,7 +1182,7 @@ describe('TypertGatewayService', () => {
     let strictActive = true
     expect(routes).toHaveLength(1)
     const server = await serveRoute(routes[0]!)
-    const cookie = await browserCookie(ctx.connection, server.origin)
+    const cookie = browserCookie(ctx.connection, server.origin)
 
     try {
       const response = await fetch(`${server.origin}/api/goals/create`, {

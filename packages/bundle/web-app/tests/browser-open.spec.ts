@@ -81,8 +81,8 @@ describe('web app browser startup', () => {
       __dshWebServer: typeof WebServer
       __dshConnection: {
         authenticatedUrl(baseUrl: string): string
-        authorizeIndex(): Promise<boolean>
-        requestRejection(): Promise<undefined>
+        authorizeIndex(): boolean
+        requestRejection(): undefined
         rpc: object
       }
     }
@@ -94,8 +94,8 @@ describe('web app browser startup', () => {
         url.searchParams.set('token', 'fixture-token')
         return url.href
       },
-      authorizeIndex: () => Promise.resolve(true),
-      requestRejection: () => Promise.resolve(undefined),
+      authorizeIndex: () => true,
+      requestRejection: () => undefined,
       rpc: {},
     }
 
