@@ -989,6 +989,13 @@ export class PythonCodeRuntime extends CodeRuntime {
       if (proto === null) {
         throw new Error('dsh-code-runtime-python: python subprocess spawned without a fd-3 pipe')
       }
+      // Close the host's stdin write handle immediately: the program is an
+      // async body that reads nothing from fd 0, and a live pipe here would
+      // hold a host-side handle open past the run — a setsid-escaped descendant
+      // inheriting fd 0 would keep the host process from exiting even after the
+      // closeDeadline forced settlement. The child (and any descendant) reads
+      // EOF on fd 0 instead, and no host handle survives.
+      child.stdin.destroy()
     } catch (error: unknown) {
       try {
         rmSync(bootstrapDir, { recursive: true, force: true })

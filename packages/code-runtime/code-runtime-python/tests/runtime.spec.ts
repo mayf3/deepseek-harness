@@ -674,6 +674,28 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(calls).toEqual([{ n: 1 }])
   })
 
+  it('keeps decoding binding replies when _decode_json_plain is rebound', async () => {
+    // read_frame_async resolves _decode_json_plain at call time; a program that
+    // rebinds __main__._decode_json_plain would otherwise kill the reply pump
+    // (a broken decode strands every pending Future to the wall clock). The
+    // decode primitives are def-time captures on the channel methods, so a
+    // rebind cannot break reply delivery.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        '__main__._decode_json_plain = None',
+        'first = await tools.echo({"n": 1})',
+        'return first',
+      ].join('\n'),
+      bindings: tools({
+        echo: async args => ({ echoed: args as CodeJsonValue }),
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ echoed: { n: 1 } })
+  }, 15_000)
+
   it('keeps the rejection contract when _BindingRejection is rebound', async () => {
     // `dispatch`'s except clause resolves `_BindingRejection` at call time; a
     // program that rebinds `__main__._BindingRejection = ValueError` would

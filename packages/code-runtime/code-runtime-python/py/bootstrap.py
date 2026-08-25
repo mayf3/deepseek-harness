@@ -445,6 +445,152 @@ class _LogStream(io.TextIOBase):
 # ---------------------------------------------------------------------------
 
 
+# Non-string scalars only. The string form is scanned by hand in
+# :func:`_decode_json_plain` because a ``(?:[^"\\]|\\.)*`` repetition makes
+# CPython's backtracking engine retain per-repetition state proportional to the
+# string's WIDTH: measured at ~146 MiB of engine state for a 1 MiB string and
+# ~558 MiB for 4 MiB, so a legitimate multi-megabyte binding reply raised
+# MemoryError out of ``_pump_replies``, leaving its future unsettled until the
+# wall clock reported a timeout.
+_SCALAR_RE = re.compile(
+    r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null'
+)
+
+# A run of ordinary string body characters. The star applies to a CHARACTER
+# CLASS, which the engine matches in one linear pass with no backtracking state,
+# so the scanner's cost is the number of escapes, not the string's width.
+_STRING_CHUNK_RE = re.compile(r'[^"\\]*')
+
+
+def _decode_json_plain(
+    text: str,
+    # Def-time captures: the decoder runs AFTER the program (which is `__main__`)
+    # may have rebound `__main__.json`, `__main__._SCALAR_RE`,
+    # `__main__._STRING_CHUNK_RE`, or `__main__.len`; a call-time lookup would
+    # let a one-line rebind kill the reply pump (a broken decode strands every
+    # pending Future to the wall clock). Defaults are evaluated at def time.
+    _json_loads: Any = json.loads,
+    _scalar_re: Any = _SCALAR_RE,
+    _string_chunk_re: Any = _STRING_CHUNK_RE,
+    _len: Any = len,
+) -> Any:
+    """Parse one JSON document iteratively (no per-level recursion).
+
+    ``json.loads`` recurses per nesting level and raises ``RecursionError``
+    around ~10k levels, but a binding reply is depth-unbounded by the seam
+    contract — the host's iterative encoder happily produces documents
+    ``json.loads`` cannot read back. Scalars (numbers, strings with escapes)
+    are delegated to ``json.loads`` one token at a time, so their grammar and
+    semantics stay CPython's own; only the container structure is parsed here
+    with an explicit stack. Raises ``ValueError`` on malformed input; frames
+    come from the TRUSTED host, so strictness mirrors ``json.loads`` without
+    extra hostile-input hardening.
+    """
+
+    length = _len(text)
+
+    def skip_ws(i: int) -> int:
+        while i < length and text[i] in " \t\n\r":
+            i += 1
+        return i
+
+    def scan_string(i: int) -> int:
+        # Walk chunk by chunk: each match consumes every character up to the next
+        # quote or backslash, so an escape costs one extra step and a plain body
+        # costs one pass. Returns the offset just past the closing quote.
+        j = i + 1
+        while True:
+            j = _string_chunk_re.match(text, j).end()
+            if j >= length:
+                raise ValueError(f"unterminated string at offset {i}")
+            char = text[j]
+            if char == '"':
+                return j + 1
+            # text[j] is a backslash: skip it and the character it escapes. A
+            # trailing backslash runs j past `length`, caught on the next pass.
+            j += 2
+
+    def scalar(i: int):
+        if i < length and text[i] == '"':
+            end = scan_string(i)
+            return _json_loads(text[i:end]), end
+        match = _scalar_re.match(text, i)
+        if match is None:
+            raise ValueError(f"invalid JSON at offset {i}")
+        return _json_loads(match.group(0)), match.end()
+
+    def string_key(i: int):
+        key, end = scalar(i)
+        if not isinstance(key, str):
+            raise ValueError(f"object key must be a string at offset {i}")
+        end = skip_ws(end)
+        if end >= length or text[end] != ":":
+            raise ValueError(f"expected ':' at offset {end}")
+        return key, skip_ws(end + 1)
+
+    # Frames: a list, or (dict, pending key). `value`/`have_value` carry each
+    # completed value up to its parent frame.
+    stack: list[Any] = []
+    value: Any = None
+    have_value = False
+    i = skip_ws(0)
+    while True:
+        if not have_value:
+            ch = text[i] if i < length else ""
+            if ch == "[":
+                i = skip_ws(i + 1)
+                if i < length and text[i] == "]":
+                    i += 1
+                    value, have_value = [], True
+                else:
+                    stack.append([])
+                    continue
+            elif ch == "{":
+                i = skip_ws(i + 1)
+                if i < length and text[i] == "}":
+                    i += 1
+                    value, have_value = {}, True
+                else:
+                    key, i = string_key(i)
+                    stack.append(({}, key))
+                    continue
+            else:
+                value, i = scalar(i)
+                have_value = True
+        if not stack:
+            i = skip_ws(i)
+            if i != length:
+                raise ValueError(f"trailing data at offset {i}")
+            return value
+        top = stack[-1]
+        i = skip_ws(i)
+        ch = text[i] if i < length else ""
+        if isinstance(top, list):
+            top.append(value)
+            if ch == ",":
+                i = skip_ws(i + 1)
+                have_value = False
+            elif ch == "]":
+                i += 1
+                stack.pop()
+                value = top
+            else:
+                raise ValueError(f"expected ',' or ']' at offset {i}")
+        else:
+            container, key = top
+            container[key] = value
+            if ch == ",":
+                key, i = string_key(skip_ws(i + 1))
+                stack[-1] = (container, key)
+                have_value = False
+            elif ch == "}":
+                i += 1
+                stack.pop()
+                value = container
+            else:
+                raise ValueError(f"expected ',' or '}}' at offset {i}")
+
+
 class ProtocolChannel:
     """Blocking readers and synchronous writers over the fd-3 protocol pipe.
 
@@ -472,7 +618,17 @@ class ProtocolChannel:
         # completion frame drains could interleave bytes mid-frame.
         self._write_lock = threading.Lock()
 
-    def read_frame(self) -> dict[str, Any] | None:
+    def read_frame(
+        self,
+        # Def-time captures for the decode primitives (see _decode_json_plain):
+        # this runs before the program, but the reply path does not — a rebind
+        # of `__main__._decode_json_plain`/`__main__.os`/`__main__._READ_CHUNK_BYTES`
+        # must not break the pump.
+        _decode: Any = _decode_json_plain,
+        _os_read: Any = os.read,
+        _read_chunk: int = _READ_CHUNK_BYTES,
+        _bytes: Any = bytes,
+    ) -> dict[str, Any] | None:
         """Read one JSON-line frame (iteratively decoded). ``None`` on EOF.
 
         Blocking. Used for the two frames read BEFORE the model program starts
@@ -496,18 +652,25 @@ class ProtocolChannel:
         while True:
             newline = self._pending.find(b"\n", scanned)
             if newline >= 0:
-                line = bytes(self._pending[:newline])
+                line = _bytes(self._pending[:newline])
                 del self._pending[: newline + 1]
-                return _decode_json_plain(line.decode("utf-8"))
+                return _decode(line.decode("utf-8"))
             scanned = len(self._pending)
-            chunk = os.read(self._fd, _READ_CHUNK_BYTES)
+            chunk = _os_read(self._fd, _read_chunk)
             if not chunk:
                 # EOF before a newline: drop the partial line, as the host drops
                 # a frame that never completed.
                 return None
             self._pending.extend(chunk)
 
-    async def read_frame_async(self) -> dict[str, Any] | None:
+    async def read_frame_async(
+        self,
+        # Def-time captures, same rationale as read_frame.
+        _decode: Any = _decode_json_plain,
+        _os_read: Any = os.read,
+        _read_chunk: int = _READ_CHUNK_BYTES,
+        _bytes: Any = bytes,
+    ) -> dict[str, Any] | None:
         """Await one JSON-line frame without occupying a thread. ``None`` on EOF.
 
         ``loop.run_in_executor(None, read_frame)`` was the obvious spelling and
@@ -538,9 +701,9 @@ class ProtocolChannel:
         while True:
             newline = self._pending.find(b"\n", scanned)
             if newline >= 0:
-                line = bytes(self._pending[:newline])
+                line = _bytes(self._pending[:newline])
                 del self._pending[: newline + 1]
-                return _decode_json_plain(line.decode("utf-8"))
+                return _decode(line.decode("utf-8"))
             scanned = len(self._pending)
             ready = loop.create_future()
             # `add_reader` only reports readability; the read itself happens here,
@@ -550,7 +713,7 @@ class ProtocolChannel:
                 await ready
             finally:
                 loop.remove_reader(self._fd)
-            chunk = os.read(self._fd, _READ_CHUNK_BYTES)
+            chunk = _os_read(self._fd, _read_chunk)
             if not chunk:
                 # EOF. Any partial line is dropped, matching how the host drops a
                 # frame that never completed.
@@ -1238,141 +1401,6 @@ async def _pump_replies(
             # (dispatch's cancellation does not remove it), so stranded entries
             # are bounded by the number of calls THIS run itself issued.
             continue
-
-
-# Non-string scalars only. The string form is scanned by hand in
-# :func:`_decode_json_plain` because a ``(?:[^"\\]|\\.)*`` repetition makes
-# CPython's backtracking engine retain per-repetition state proportional to the
-# string's WIDTH: measured at ~146 MiB of engine state for a 1 MiB string and
-# ~558 MiB for 4 MiB, so a legitimate multi-megabyte binding reply raised
-# MemoryError out of ``_pump_replies``, leaving its future unsettled until the
-# wall clock reported a timeout.
-_SCALAR_RE = re.compile(
-    r'-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null'
-)
-
-# A run of ordinary string body characters. The star applies to a CHARACTER
-# CLASS, which the engine matches in one linear pass with no backtracking state,
-# so the scanner's cost is the number of escapes, not the string's width.
-_STRING_CHUNK_RE = re.compile(r'[^"\\]*')
-
-
-def _decode_json_plain(text: str) -> Any:
-    """Parse one JSON document iteratively (no per-level recursion).
-
-    ``json.loads`` recurses per nesting level and raises ``RecursionError``
-    around ~10k levels, but a binding reply is depth-unbounded by the seam
-    contract — the host's iterative encoder happily produces documents
-    ``json.loads`` cannot read back. Scalars (numbers, strings with escapes)
-    are delegated to ``json.loads`` one token at a time, so their grammar and
-    semantics stay CPython's own; only the container structure is parsed here
-    with an explicit stack. Raises ``ValueError`` on malformed input; frames
-    come from the TRUSTED host, so strictness mirrors ``json.loads`` without
-    extra hostile-input hardening.
-    """
-
-    length = len(text)
-
-    def skip_ws(i: int) -> int:
-        while i < length and text[i] in " \t\n\r":
-            i += 1
-        return i
-
-    def scan_string(i: int) -> int:
-        # Walk chunk by chunk: each match consumes every character up to the next
-        # quote or backslash, so an escape costs one extra step and a plain body
-        # costs one pass. Returns the offset just past the closing quote.
-        j = i + 1
-        while True:
-            j = _STRING_CHUNK_RE.match(text, j).end()
-            if j >= length:
-                raise ValueError(f"unterminated string at offset {i}")
-            char = text[j]
-            if char == '"':
-                return j + 1
-            # text[j] is a backslash: skip it and the character it escapes. A
-            # trailing backslash runs j past `length`, caught on the next pass.
-            j += 2
-
-    def scalar(i: int):
-        if i < length and text[i] == '"':
-            end = scan_string(i)
-            return json.loads(text[i:end]), end
-        match = _SCALAR_RE.match(text, i)
-        if match is None:
-            raise ValueError(f"invalid JSON at offset {i}")
-        return json.loads(match.group(0)), match.end()
-
-    def string_key(i: int):
-        key, end = scalar(i)
-        if not isinstance(key, str):
-            raise ValueError(f"object key must be a string at offset {i}")
-        end = skip_ws(end)
-        if end >= length or text[end] != ":":
-            raise ValueError(f"expected ':' at offset {end}")
-        return key, skip_ws(end + 1)
-
-    # Frames: a list, or (dict, pending key). `value`/`have_value` carry each
-    # completed value up to its parent frame.
-    stack: list[Any] = []
-    value: Any = None
-    have_value = False
-    i = skip_ws(0)
-    while True:
-        if not have_value:
-            ch = text[i] if i < length else ""
-            if ch == "[":
-                i = skip_ws(i + 1)
-                if i < length and text[i] == "]":
-                    i += 1
-                    value, have_value = [], True
-                else:
-                    stack.append([])
-                    continue
-            elif ch == "{":
-                i = skip_ws(i + 1)
-                if i < length and text[i] == "}":
-                    i += 1
-                    value, have_value = {}, True
-                else:
-                    key, i = string_key(i)
-                    stack.append(({}, key))
-                    continue
-            else:
-                value, i = scalar(i)
-                have_value = True
-        if not stack:
-            i = skip_ws(i)
-            if i != length:
-                raise ValueError(f"trailing data at offset {i}")
-            return value
-        top = stack[-1]
-        i = skip_ws(i)
-        ch = text[i] if i < length else ""
-        if isinstance(top, list):
-            top.append(value)
-            if ch == ",":
-                i = skip_ws(i + 1)
-                have_value = False
-            elif ch == "]":
-                i += 1
-                stack.pop()
-                value = top
-            else:
-                raise ValueError(f"expected ',' or ']' at offset {i}")
-        else:
-            container, key = top
-            container[key] = value
-            if ch == ",":
-                key, i = string_key(skip_ws(i + 1))
-                stack[-1] = (container, key)
-                have_value = False
-            elif ch == "}":
-                i += 1
-                stack.pop()
-                value = container
-            else:
-                raise ValueError(f"expected ',' or '}}' at offset {i}")
 
 
 def _encode_json_plain(value: Any) -> str:
