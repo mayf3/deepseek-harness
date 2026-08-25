@@ -116,7 +116,7 @@ kind: "package-reference"
 - **原始长度超过 64 MiB 的 fd-3 帧会让本次运行以 worker-exit 结算**——`maxLogBytes`/`maxValueBytes` 在加载期被限制到同一解析器上限，因此诚实子进程的帧总能放得下；模型构造的超过 64 MiB 的 binding 实参（一个在 seam 层没有预算的值）会触发同一上限——这是该 OOM 防护的已接受残余。
 - **组合日志与值的峰值不被加载门建模**——持续写入的模型 daemon 线程与完成值计量、分帧相加的峰值没有任何门会放行或拒绝；运行以 `worker-exit` 告终，隔离成立，只有失败分类降级。
 - **1 秒双限 `ulimit -t 1` CPU 超限被报告为 `worker-exit` 而非 timeout**——当宿主在一个与软限相等的硬 CPU 限下启动且该限为 1 时，`_clamped` 无法下调软限，内核在同一 tick SIGKILL 忙循环，SIGXCPU 永远不会送达；隔离成立，只有分类降级。
-- **中间 binding 值没有字节上限**——实现仍受 structured-clone 成本与进程内存约束，提供方或执行器可能应用自己的获取上限。
+- **中间 binding 值没有字节上限**——实现仍受无损 JSON 序列化成本与进程内存约束，提供方或执行器可能应用自己的获取上限。
 
 <a id="dev-note"></a>
 ### 开发备注

@@ -14,7 +14,7 @@
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { once } from 'node:events'
-import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -403,11 +403,14 @@ function resolvePythonBin(bin: string): string {
     // the working directory, and the returned candidate must be an absolute
     // path — spawn() resolves a relative pythonBin against the host CWD, which
     // is outside the seam contract.
-    /* v8 ignore next -- normal PATHs carry no empty or relative segment. */
     if (dir === '' || !isAbsolute(dir)) continue
     const candidate = join(dir, bin)
     try {
       accessSync(candidate, fsConstants.X_OK)
+      // A directory passes X_OK too, so require a regular file: a PATH entry
+      // named like the interpreter (e.g. a `python3` directory) must not be
+      // chosen over a later real interpreter.
+      if (!statSync(candidate).isFile()) continue
       return candidate
     } catch {
       // Not executable here; try the next PATH entry.
@@ -790,7 +793,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       }
       const limit = FRAME_PARSE_CAP_BYTES - FRAME_ENVELOPE_BYTES
       if (this.config[key] > limit) {
-        throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the fd-3 frame PARSER, which drops raw frames past ${FRAME_PARSE_CAP_BYTES} bytes before decoding to bound host memory — a larger budget would admit a config whose honest child frames the host then silently discards, stranding the run to the wall clock), got ${String(this.config[key])}`)
+        throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the fd-3 frame PARSER, which rejects raw frames past ${FRAME_PARSE_CAP_BYTES} bytes before decoding to bound host memory — a larger budget would admit a config whose honest child frames the host then rejects as a worker-exit), got ${String(this.config[key])}`)
       }
       // Reject a log budget too small to honor: the truncation marker alone
       // must serialize within the budget, or a marker-only truncated run
@@ -871,8 +874,11 @@ export class PythonCodeRuntime extends CodeRuntime {
   }
 
   /**
-   * Execute one program in a fresh Python subprocess. Program outcomes resolve
-   * with `result.error`; the method rejects only for seam misuse.
+   * Execute one program in a fresh Python subprocess. Every program outcome —
+   * parse failure, thrown exception, invalid completion, output overflow,
+   * budget expiry, abort, or substrate death — resolves with `result.error` set
+   * (classified by `CodeRunFailure.kind`); the method rejects only for seam
+   * misuse.
    */
   async run(request: CodeRunRequest): Promise<CodeRunResult> {
     if (this.disposed) throw new Error('dsh-code-runtime-python: run() after disposal')
@@ -1448,12 +1454,21 @@ export class PythonCodeRuntime extends CodeRuntime {
       // retained state to one number and cannot be poisoned by a forgery.
       let nextCallId = 0
 
+      // Set by run() when the boot frame is written; the fd-3 handler calls it
+      // on boot-ack to send the run frame (see the seam's boot->boot-ack->run
+      // order). scoped per run. An object holder so the cross-closure
+      // assignment is a property write (eslint's prefer-const cannot see the
+      // reassignment through the closure).
+      const bootAckGate: { run?: () => void } = {}
       const handleFrame = (message: ChildToHost): void => {
         /* v8 ignore next -- late frame after settlement; defensive against forged post-settlement traffic. */
         if (settled) return
         switch (message.type) {
           case 'boot-ack':
-            return // Presently informational.
+            // The child accepted the boot frame (namespaces built); the run
+            // frame goes out now, not with the boot frame.
+            bootAckGate.run?.()
+            return
           case 'log':
             if (message.truncated === true) {
               // The CHILD ledger hit its cap. Its marker is the last log text
@@ -1967,12 +1982,26 @@ export class PythonCodeRuntime extends CodeRuntime {
           ...namespace.errorClass ? { errorClass: namespace.errorClass } : {},
         })),
       }
+      // The run frame is sent only after the child's boot-ack: the seam
+      // contract puts `run` after `boot-ack` (the ack confirms the namespaces
+      // were accepted), and sending it earlier would let a boot failure race
+      // the run frame. The ack handler below writes it.
+      let runSent = false
       try {
         proto.write(`${JSON.stringify(boot)}\n`)
-        proto.write(`${JSON.stringify({ type: 'run', program: request.program })}\n`)
       } catch (error: unknown) {
         finish({ error: { kind: 'worker-exit', message: `failed to boot python subprocess: ${messageOf(error)}` } })
         return
+      }
+      // Register the ack gate with the frame handler before any data arrives.
+      bootAckGate.run = (): void => {
+        if (runSent) return
+        runSent = true
+        try {
+          proto.write(`${JSON.stringify({ type: 'run', program: request.program })}\n`)
+        } catch (error: unknown) {
+          finish({ error: { kind: 'worker-exit', message: `failed to boot python subprocess: ${messageOf(error)}` } })
+        }
       }
     })
   }
