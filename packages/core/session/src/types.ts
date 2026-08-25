@@ -35,7 +35,7 @@ export function SessionId(id: string): SessionId {
  * and enforced by every persistence backend on load. The single source of truth for the
  * version — write sites and the load-time check all read it.
  * While the harness is unreleased it is pinned at `0`: no compatibility is
- * implied; older logs load only through a complete adjacent migration path.
+ * implied, incompatible logs are rejected, and no migration is provided.
  *
  * The version is a single monotonic integer with no major/minor split. Whether
  * a bump is needed is decided by what the WRITER emits, never by what a newer
@@ -61,8 +61,8 @@ export const SESSION_FORMAT_VERSION = 0
 export interface SessionHeader {
   /**
    * On-disk format version, stamped from {@link SESSION_FORMAT_VERSION} when the
-   * session is created. Persistence refuses newer versions and older versions
-   * without a complete registered migration path.
+   * session is created. A persistence backend rejects any other version on load
+   * (no migration — see the constant).
    */
   readonly version: number
   /** The session's id (mirrors the {@link Session}'s id). */
@@ -206,9 +206,11 @@ export interface RequestContext {
  * Why a `request/header` snapshot was appended: `'initial'` — the log's first
  * header (a new conversation); `'resume'` — a loop instance's first request
  * over a log that already has header events (process restart, fork seed);
- * `'change'` — a later request used a different header.
+ * `'change'` — a later request used a different header, with `startsSeries`
+ * preserving a coincident series boundary; `'series'` — an unchanged header
+ * began an explicitly distinct message series or followed a surface replacement.
  */
-export type RequestHeaderReason = 'initial' | 'resume' | 'change'
+export type RequestHeaderReason = 'initial' | 'resume' | 'change' | 'series'
 
 /**
  * The merge-extensible, append-only source of truth for an agent interaction.
@@ -286,7 +288,12 @@ export interface SessionEventMap {
    * Full header for the next request, appended inside its step before dispatch.
    * It is log-only; the latest snapshot reconstructs the request header.
    */
-  'request/header': { header: EpochHeader; reason: RequestHeaderReason }
+  'request/header': {
+    header: EpochHeader
+    reason: RequestHeaderReason
+    /** A changed header also begins a distinct model-message series. */
+    startsSeries?: true
+  }
   /**
    * Route metadata for the next request, logged only when the route or capacity
    * changes. It does not participate in request reconstruction or header equality.

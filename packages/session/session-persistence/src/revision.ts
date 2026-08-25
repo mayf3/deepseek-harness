@@ -16,12 +16,3 @@ export type SessionPersistenceRevision = Branded<'SessionPersistenceRevision'>
 export function SessionPersistenceRevision(value: string): SessionPersistenceRevision {
   return value as SessionPersistenceRevision
 }
-
-/** A repeatable source can no longer reproduce the revision it represents. */
-export class SessionPersistenceRevisionConflictError extends Error {
-  /** @param message - source identity and expected revision context. */
-  constructor(message: string) {
-    super(message)
-    this.name = 'SessionPersistenceRevisionConflictError'
-  }
-}
