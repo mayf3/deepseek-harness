@@ -2,13 +2,14 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
-import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
+import { isChunkRow, packChunkRuns, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type {} from '@deepseek-ai/dsh-subagent'
 import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   SessionAddress,
+  SessionChunkRun,
   SessionEventEntry,
   SessionFollowRequest,
   SessionFollowFrame,
@@ -157,7 +158,7 @@ export class SessionHistoryController {
           reject('internal', `session event stream skipped seq ${String(nextSeq)}`, {})
         }
         nextSeq++
-        yield { type: 'event', ...entryFor(item) }
+        yield entryFor(item)
       }
     } finally {
       this.closeFollowers.delete(close)
@@ -315,14 +316,35 @@ function paginate(
 
 function entryFor(event: SessionEvent): SessionEventEntry {
   return {
+    type: 'event',
     // Session.append validates and freezes event data as JSON before publication.
     event: event as unknown as SessionWireEvent,
+  }
+}
+
+function chunkEntryFor(row: ChunkRow): SessionChunkRun {
+  switch (row.type) {
+    case 'text-chunks':
+      return {
+        type: 'chunks',
+        event: { type: 'chunkrow/text-chunks', seq: row.seq0, time: row.time0, data: row.data },
+      }
+    case 'reasoning-chunks':
+      return {
+        type: 'chunks',
+        event: { type: 'chunkrow/reasoning-chunks', seq: row.seq0, time: row.time0, data: row.data },
+      }
+    case 'tool-call-chunks':
+      return {
+        type: 'chunks',
+        event: { type: 'chunkrow/tool-call-chunks', seq: row.seq0, time: row.time0, data: row.data },
+      }
   }
 }
 
 /** Encode one bounded logical page without changing its pagination cut. */
 function pageRecords(events: readonly SessionEvent[]): SessionHistoryRecord[] {
   return packChunkRuns(events).map(record => isChunkRow(record)
-    ? { chunks: record }
+    ? chunkEntryFor(record)
     : entryFor(record))
 }

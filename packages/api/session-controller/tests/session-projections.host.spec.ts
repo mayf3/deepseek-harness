@@ -153,7 +153,7 @@ describe('session.history projections block', () => {
     expect(projections.values['test/last-user']).toEqual({ text: 'm2' })
     // asOfSeq IS the window tail: the last served event carries it.
     const last = records.at(-1)
-    expect(last !== undefined && 'event' in last ? last.event.seq : last?.chunks.seq0).toBe(projections.asOfSeq)
+    expect(last?.event.seq).toBe(projections.asOfSeq)
   })
 
   it('returns a complete current replacement cut on each follow generation', async () => {
@@ -163,7 +163,7 @@ describe('session.history projections block', () => {
 
     const snapshot = await opening(remote(ctx), session.id)
 
-    expect(snapshot.records.map(record => 'event' in record ? record.event.seq : record.chunks.seq0)).toEqual([0, 1])
+    expect(snapshot.records.map(record => record.event.seq)).toEqual([0, 1])
     expect(snapshot.projections.asOfSeq).toBe(1)
     expect(snapshot.projections.values).toEqual(
       expect.objectContaining({ 'test/last-user': { text: 'm1' } }),

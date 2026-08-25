@@ -37,11 +37,22 @@ interface FixtureSessionSummary {
 }
 
 interface FixtureHistoryEntry {
+  readonly type: 'event'
   readonly event: SessionEvent
 }
 
+type FixtureChunkRowEvent = {
+  [Kind in ChunkRow['type']]: {
+    readonly type: `chunkrow/${Kind}`
+    readonly seq: number
+    readonly time: number
+    readonly data: Extract<ChunkRow, { readonly type: Kind }>['data']
+  }
+}[ChunkRow['type']]
+
 interface FixtureHistoryChunkRun {
-  readonly chunks: ChunkRow
+  readonly type: 'chunks'
+  readonly event: FixtureChunkRowEvent
 }
 
 type FixtureHistoryRecord = FixtureHistoryEntry | FixtureHistoryChunkRun
@@ -52,9 +63,20 @@ interface FixturePage {
 }
 
 function historyEvents(records: readonly FixtureHistoryRecord[]): SessionEvent[] {
-  return records.flatMap(record => 'event' in record
+  return records.flatMap(record => record.type === 'event'
     ? [record.event]
-    : decodeStorageRecord(record.chunks))
+    : decodeStorageRecord(chunkRow(record.event)))
+}
+
+function chunkRow(event: FixtureChunkRowEvent): ChunkRow {
+  switch (event.type) {
+    case 'chunkrow/text-chunks':
+      return { type: 'text-chunks', seq0: event.seq, time0: event.time, data: event.data }
+    case 'chunkrow/reasoning-chunks':
+      return { type: 'reasoning-chunks', seq0: event.seq, time0: event.time, data: event.data }
+    case 'chunkrow/tool-call-chunks':
+      return { type: 'tool-call-chunks', seq0: event.seq, time0: event.time, data: event.data }
+  }
 }
 
 type FixtureFollowFrame =
@@ -68,7 +90,7 @@ type FixtureFollowFrame =
       readonly values: Readonly<Record<string, unknown>>
     }
   }
-  | ({ readonly type: 'event' } & FixtureHistoryEntry)
+  | FixtureHistoryEntry
 
 type FixtureControlFrame =
   | {

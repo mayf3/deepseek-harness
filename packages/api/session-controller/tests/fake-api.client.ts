@@ -28,7 +28,7 @@ import {
 } from '@deepseek-ai/dsh-api-gateway/client'
 import { RpcId } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
-import { historyEntries } from '../src/client/sessions/history-records.ts'
+import { historyRecordLastSeq } from '../src/client/sessions/history-records.ts'
 
 const AVAILABLE_STREAM_CONNECTION = {
   hostDescription: {
@@ -440,8 +440,8 @@ export class FakeApiClient implements IApiClient {
       ok: true,
       value: {
         ...result.value,
-        records: historyEntries(result.value.records)
-          .filter(entry => entry.event.seq <= request.throughSeq),
+        records: result.value.records
+          .filter(record => historyRecordLastSeq(record) <= request.throughSeq),
       },
     }
   }
@@ -469,8 +469,8 @@ export class FakeApiClient implements IApiClient {
         )
       }
       const page = response.result.value
-      const entries = historyEntries(page.records)
-      const cursor = this.followCursor ?? entries.at(-1)?.event.seq ?? -1
+      const tail = page.records.at(-1)
+      const cursor = this.followCursor ?? (tail === undefined ? -1 : historyRecordLastSeq(tail))
       yield {
         type: 'snapshot',
         header: {
@@ -482,7 +482,7 @@ export class FakeApiClient implements IApiClient {
             : {}),
         },
         cursor,
-        records: entries.filter(entry => entry.event.seq <= cursor),
+        records: page.records.filter(record => historyRecordLastSeq(record) <= cursor),
         hasMore: page.hasMore,
         projections: page.projections ?? { asOfSeq: cursor, values: {} },
       }

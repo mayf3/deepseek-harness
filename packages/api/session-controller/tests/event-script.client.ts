@@ -149,7 +149,7 @@ export function plainTurn(startSeq: number, turn: number, ask: string, answer: s
 
 /** Wrap raw events in the journal envelope returned by history. */
 export function entries(events: readonly SessionEvent[]): SessionEventEntry[] {
-  return events.map(event => ({ event: event as unknown as SessionWireEvent }))
+  return events.map(event => ({ type: 'event', event: event as unknown as SessionWireEvent }))
 }
 
 /** Build one view-less history response value. */

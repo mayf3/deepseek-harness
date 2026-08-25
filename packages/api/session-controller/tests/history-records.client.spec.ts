@@ -1,50 +1,60 @@
-/** Packed history records decode to the exact Session event stream. */
+/** Packed history records become one event-shaped Client value per wire record. */
 
 import { describe, expect, it } from 'vitest'
 import { CallId } from '@deepseek-ai/dsh-llm/brand'
-import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionHistoryRecord } from '../src/types.ts'
-import { historyEntries } from '../src/client/sessions/history-records.ts'
+import {
+  historyEntries,
+  historyRecordFirstSeq,
+  historyRecordLastSeq,
+} from '../src/client/sessions/history-records.ts'
 
-describe('historyEntries', () => {
-  it('keeps ordinary entries and expands every packed text member with its exact boundary', () => {
-    const ordinary = {
-      event: { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
-    } as SessionHistoryRecord
+describe('Session history record projection', () => {
+  it('retains an ordinary event and its point cursor', () => {
+    const ordinary: SessionHistoryRecord = {
+      type: 'event',
+      event: { type: 'turn/start', seq: 7, time: 1, data: { turn: 1 } },
+    }
+
+    const records = [ordinary]
+    const [entry] = historyEntries(records)
+
+    expect(historyEntries(records)).toBe(records)
+    expect(entry).toBe(ordinary)
+    expect(historyRecordFirstSeq(ordinary)).toBe(7)
+    expect(entry?.event.time).toBe(1)
+    expect(historyRecordLastSeq(ordinary)).toBe(7)
+  })
+
+  it('retains one packed text row without copying or reshaping it', () => {
     const packed: SessionHistoryRecord = {
-      chunks: {
-        type: 'text-chunks',
-        seq0: 1,
-        time0: 2,
-        data: { turn: 1, step: 1, index: 0, dt: [1, 1, 1], texts: ['a', 'b', 'c', 'd'] },
+      type: 'chunks',
+      event: {
+        type: 'chunkrow/text-chunks',
+        seq: 11,
+        time: 20,
+        data: { turn: 1, step: 2, index: 0, dt: [1, 2, 3], texts: ['a', 'b', 'c', 'd'] },
       },
     }
 
-    const entries = historyEntries([ordinary, packed])
+    const [entry] = historyEntries([packed])
+    if (entry?.type !== 'chunks') throw new Error('expected packed history entry')
+    const { event } = entry
 
-    expect(entries).toHaveLength(5)
-    expect(entries[0]).toBe(ordinary)
-    expect(entries.slice(1).map((entry) => {
-      const event = entry.event as unknown as SessionEvent<'assistant/chunk'>
-      return {
-        seq: event.seq,
-        time: event.time,
-        chunk: event.data.chunk,
-      }
-    })).toEqual([
-      { seq: 1, time: 2, chunk: { type: 'text-delta', index: 0, text: 'a' } },
-      { seq: 2, time: 3, chunk: { type: 'text-delta', index: 0, text: 'b' } },
-      { seq: 3, time: 4, chunk: { type: 'text-delta', index: 0, text: 'c' } },
-      { seq: 4, time: 5, chunk: { type: 'text-delta', index: 0, text: 'd' } },
-    ])
+    expect(entry).toBe(packed)
+    expect(event).toBe(packed.event)
+    expect(historyRecordFirstSeq(packed)).toBe(11)
+    expect(event.time).toBe(20)
+    expect(historyRecordLastSeq(packed)).toBe(14)
   })
 
-  it('preserves every tool-call fragment and optional-name presence', () => {
+  it('preserves a packed tool-call row and optional-name absence', () => {
     const packed: SessionHistoryRecord = {
-      chunks: {
-        type: 'tool-call-chunks',
-        seq0: 20,
-        time0: 200,
+      type: 'chunks',
+      event: {
+        type: 'chunkrow/tool-call-chunks',
+        seq: 20,
+        time: 200,
         data: {
           turn: 2,
           step: 4,
@@ -56,14 +66,13 @@ describe('historyEntries', () => {
       },
     }
 
-    const events = historyEntries([packed])
-      .map(entry => entry.event as unknown as SessionEvent<'assistant/chunk'>)
+    const [entry] = historyEntries([packed])
+    if (entry?.type !== 'chunks') throw new Error('expected packed history entry')
+    const { event } = entry
 
-    expect(events).toMatchObject([
-      { seq: 20, time: 200, data: { chunk: { argumentsDelta: '' } } },
-      { seq: 21, time: 202, data: { chunk: { argumentsDelta: '{"x":' } } },
-      { seq: 22, time: 205, data: { chunk: { argumentsDelta: '1}' } } },
-    ])
-    expect(events.every(event => !Object.hasOwn(event.data.chunk, 'name'))).toBe(true)
+    if (event.type !== 'chunkrow/tool-call-chunks') throw new Error('expected packed history event')
+    expect(event).toBe(packed.event)
+    expect(Object.hasOwn(event.data, 'name')).toBe(false)
+    expect(historyRecordLastSeq(packed)).toBe(22)
   })
 })

@@ -180,7 +180,10 @@ async function sessionCursor(baseUrl: string, sessionId: string): Promise<number
 }
 
 interface HistoryPage {
-  records: ({ event: HistoryEvent } | { chunks: unknown })[]
+  records: (
+    | { type: 'event'; event: HistoryEvent }
+    | { type: 'chunks'; event: HistoryEvent }
+  )[]
   hasMore: boolean
 }
 
@@ -194,7 +197,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function providerTitle(page: HistoryPage): string | undefined {
-  const events = page.records.flatMap(record => 'event' in record ? [record.event] : [])
+  const events = page.records.flatMap(record => record.type === 'event' ? [record.event] : [])
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index] as HistoryEvent
     if (event.type !== 'session/title' || !isRecord(event.data)) continue
@@ -208,7 +211,7 @@ function providerTitle(page: HistoryPage): string | undefined {
 
 function hasAssistantMarker(page: HistoryPage, marker: string): boolean {
   return page.records.some((record) => {
-    if (!('event' in record)) return false
+    if (record.type !== 'event') return false
     const { event } = record
     if (event.type !== 'assistant/message' || !isRecord(event.data) || !isRecord(event.data.message)) return false
     const content = event.data.message.content
@@ -564,9 +567,11 @@ describe('dsh web keyless CLI smoke', () => {
         return hasAssistantMarker(page, recoveredMarker)
       }, { timeout: 20_000 }).toBe(true)
       if (page === undefined) throw new Error('retry history was not observed')
-      const retry = page.records.find(record => 'event' in record && record.event.type === 'llm/retry')
+      const retry = page.records.find(record => (
+        record.type === 'event' && record.event.type === 'llm/retry'
+      ))
       expect(mainAttempts).toBe(2)
-      expect(retry !== undefined && 'event' in retry ? retry.event.data : undefined).toMatchObject({
+      expect(retry?.type === 'event' ? retry.event.data : undefined).toMatchObject({
         turn: 1,
         step: 1,
         retry: 1,

@@ -618,23 +618,23 @@ describe('remaining branches', () => {
     api.onHistory = () => Promise.resolve(ok({
       records: [
         ...entries(plainTurn(0, 0, 'a', 'b')),
-        { event: historyCall },
-        { event: historyResult },
+        { type: 'event', event: historyCall },
+        { type: 'event', event: historyResult },
       ] as never[],
       hasMore: false,
       modelSelection: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
     }))
     await session.open()
     expect(windowEntries(session).slice(-2)).toEqual([
-      { event: historyCall },
-      { event: historyResult },
+      { type: 'event', event: historyCall },
+      { type: 'event', event: historyResult },
     ])
     const liveCall = ev.toolCall(8, 2, 'l1', 'write', '{"file_path":"a.ts"}')
     await follow(api, liveCall)
-    expect(windowEntries(session).at(-1)).toEqual({ event: liveCall })
+    expect(windowEntries(session).at(-1)).toEqual({ type: 'event', event: liveCall })
     const liveResult = ev.toolResult(9, 2, 'l1', 'ok')
     await follow(api, liveResult)
-    expect(windowEntries(session).at(-1)).toEqual({ event: liveResult })
+    expect(windowEntries(session).at(-1)).toEqual({ type: 'event', event: liveResult })
   })
 })
 

@@ -60,13 +60,21 @@ interface WorkspaceBaseline {
 }
 
 interface HistoryPage {
-  records: Array<{ event: HistoryEvent } | { chunks: unknown }>
+  records: Array<
+    | { type: 'event'; event: HistoryEvent }
+    | { type: 'chunks'; event: HistoryChunkEvent }
+  >
   hasMore: boolean
 }
 
 interface HistoryEvent {
   type: string
   data: unknown
+}
+
+interface HistoryChunkEvent extends HistoryEvent {
+  seq: number
+  time: number
 }
 
 interface ProcessObservation {
@@ -308,7 +316,14 @@ function assistantText(page: HistoryPage): string {
 
 /** Expand lossless history records for assertions over the public event stream. */
 function historyEvents(page: HistoryPage): HistoryEvent[] {
-  return page.records.flatMap(record => 'event' in record ? [record.event] : decodeStorageRecord(record.chunks))
+  return page.records.flatMap(record => record.type === 'event'
+    ? [record.event]
+    : decodeStorageRecord({
+      type: record.event.type.replace(/^chunkrow\//u, ''),
+      seq0: record.event.seq,
+      time0: record.event.time,
+      data: record.event.data,
+    }))
 }
 
 /** Stop the spawned CLI through its normal signal path, escalating only on a stuck teardown. */

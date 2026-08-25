@@ -19,6 +19,7 @@ import type {
   SessionEventEntry,
   SessionFollowFrame,
   SessionFollowRequest,
+  SessionHistoryRecord,
   SessionPage,
   SessionPageRequest,
 } from '../src/types.ts'
@@ -36,16 +37,28 @@ const AVAILABLE_CONNECTION = {
 }
 
 function entry(seq: number): SessionEventEntry {
-  return { event: { type: 'turn/start', seq, time: seq, data: { turn: seq } } }
+  return { type: 'event', event: { type: 'turn/start', seq, time: seq, data: { turn: seq } } }
 }
 
-function page(events: readonly SessionEventEntry[], hasMore = false): SessionPage {
-  return { records: events, hasMore }
+function chunks(seq0: number): SessionHistoryRecord {
+  return {
+    type: 'chunks',
+    event: {
+      type: 'chunkrow/text-chunks',
+      seq: seq0,
+      time: seq0,
+      data: { turn: 1, step: 1, index: 0, texts: ['a', 'b', 'c'], dt: [1, 1] },
+    },
+  }
+}
+
+function page(records: readonly SessionHistoryRecord[], hasMore = false): SessionPage {
+  return { records, hasMore }
 }
 
 function snapshot(
   cursor: number,
-  events: readonly SessionEventEntry[],
+  records: readonly SessionHistoryRecord[],
   hasMore = false,
 ): SessionFollowFrame {
   return {
@@ -56,7 +69,7 @@ function snapshot(
       createdAt: 0,
     },
     cursor,
-    records: events,
+    records,
     hasMore,
     projections: { asOfSeq: cursor, values: {} },
   }
@@ -123,13 +136,41 @@ class ScriptedSessionRemote implements SessionTransportRemote {
 }
 
 describe('Session Client stream adapters', () => {
+  it('validates a packed logical range before publishing one compact Client entry', async () => {
+    const row = chunks(1)
+    const remote = new ScriptedSessionRemote(
+      [{ frames: [snapshot(4, [entry(0), row, entry(4)]), entry(5)], hold: true }],
+      [],
+    )
+    const changes: SessionJournalChange[] = []
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) },
+      failed: vi.fn(),
+    })
+
+    await stream.open({})
+    await vi.waitFor(() => { expect(changes).toHaveLength(2) })
+
+    expect(changes[0]).toMatchObject({
+      type: 'replace',
+      entries: [
+        entry(0),
+        row,
+        entry(4),
+      ],
+    })
+    expect(changes[0]?.type === 'replace' ? changes[0].entries[1] : undefined).toBe(row)
+    expect(changes[1]).toEqual({ type: 'append', entry: entry(5) })
+    await stream.dispose()
+  })
+
   it('binds an event journal to one address and publishes replace, append, and prepend changes', async () => {
     const remote = new ScriptedSessionRemote(
       [{
         frames: [
           snapshot(3, [entry(2), entry(3)], true),
-          { type: 'event', ...entry(3) },
-          { type: 'event', ...entry(4) },
+          entry(3),
+          entry(4),
         ],
         hold: true,
       }],
@@ -165,7 +206,7 @@ describe('Session Client stream adapters', () => {
     const remote = new ScriptedSessionRemote(
       [
         {
-          frames: [snapshot(1, [entry(0), entry(1)]), { type: 'event', ...entry(2) }],
+          frames: [snapshot(1, [entry(0), entry(1)]), entry(2)],
           terminal: lost,
         },
         { frames: [snapshot(4, [entry(0), entry(1), entry(2), entry(3), entry(4)])], hold: true },
@@ -221,7 +262,7 @@ describe('Session Client stream adapters', () => {
 
   it('repairs a live gap without adding an absent message limit', async () => {
     const remote = new ScriptedSessionRemote(
-      [{ frames: [snapshot(0, [entry(0)]), { type: 'event', ...entry(2) }], hold: true }],
+      [{ frames: [snapshot(0, [entry(0)]), entry(2)], hold: true }],
       [{ ok: true, value: page([entry(0), entry(1), entry(2)]) }],
     )
     const changes: SessionJournalChange[] = []

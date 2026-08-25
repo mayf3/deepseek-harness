@@ -75,11 +75,22 @@ interface FixtureProjectionsBlock {
 }
 
 interface FixtureHistoryEntry {
+  readonly type: 'event'
   readonly event: SessionEvent
 }
 
+type FixtureChunkRowEvent = {
+  [Kind in ChunkRow['type']]: {
+    readonly type: `chunkrow/${Kind}`
+    readonly seq: number
+    readonly time: number
+    readonly data: Extract<ChunkRow, { readonly type: Kind }>['data']
+  }
+}[ChunkRow['type']]
+
 interface FixtureHistoryChunkRun {
-  readonly chunks: ChunkRow
+  readonly type: 'chunks'
+  readonly event: FixtureChunkRowEvent
 }
 
 type FixtureHistoryRecord = FixtureHistoryEntry | FixtureHistoryChunkRun
@@ -114,7 +125,7 @@ type FixtureFollowFrame =
     readonly hasMore: boolean
     readonly projections: FixtureProjectionsBlock
   }
-  | ({ readonly type: 'event' } & FixtureHistoryEntry)
+  | FixtureHistoryEntry
 
 type FixtureFollowEventFrame = Extract<FixtureFollowFrame, { type: 'event' }>
 
@@ -1414,9 +1425,26 @@ function pageOf(
       break
     }
   }
-  const records = packChunkRuns(log.slice(start, end)).map((record): FixtureHistoryRecord => (
-    isChunkRow(record) ? { chunks: record } : { event: record }
-  ))
+  const records = packChunkRuns(log.slice(start, end)).map((record): FixtureHistoryRecord => {
+    if (!isChunkRow(record)) return { type: 'event', event: record }
+    switch (record.type) {
+      case 'text-chunks':
+        return {
+          type: 'chunks',
+          event: { type: 'chunkrow/text-chunks', seq: record.seq0, time: record.time0, data: record.data },
+        }
+      case 'reasoning-chunks':
+        return {
+          type: 'chunks',
+          event: { type: 'chunkrow/reasoning-chunks', seq: record.seq0, time: record.time0, data: record.data },
+        }
+      case 'tool-call-chunks':
+        return {
+          type: 'chunks',
+          event: { type: 'chunkrow/tool-call-chunks', seq: record.seq0, time: record.time0, data: record.data },
+        }
+    }
+  })
   return { records, hasMore: start > 0 }
 }
 
@@ -1884,7 +1912,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     for (const conn of remoteEventConns.values()) conn.push(frame)
   }
   const emitFollow = (sessionId: SessionId, entry: FixtureHistoryEntry): void => {
-    for (const conn of followConns.get(sessionId) ?? []) conn.push({ type: 'event', ...entry })
+    for (const conn of followConns.get(sessionId) ?? []) conn.push(entry)
   }
 
   /** OK response echoing the caller's rpcId (contract: responses always backfill, never mint). */
@@ -1942,7 +1970,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const log = logOf(id)
     const event = { seq: log.length, time: Date.now(), ...e } as unknown as SessionEvent
     log.push(event)
-    emitFollow(id, { event })
+    emitFollow(id, { type: 'event', event })
     // Host eager-drive parallel: a unit-advancing event pushes its finished value.
     for (const frame of projectionFramesOf(id, log, event)) emitControl(frame)
     if (event.type === 'user/message' && event.data.source.kind === 'user') {

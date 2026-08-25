@@ -14,12 +14,17 @@ import {
 import type {
   SessionAddress,
   SessionControlFrame,
-  SessionEventEntry,
+  SessionHistoryRecord,
   SessionPage,
   SessionPageRequest,
   SessionProjectionBaseline,
 } from '../types.ts'
-import { historyEntries } from './sessions/history-records.ts'
+import {
+  historyEntries,
+  historyRecordFirstSeq,
+  historyRecordLastSeq,
+} from './sessions/history-records.ts'
+import type { SessionEventLikeEntry, SessionLiveEventEntry } from './contract/events.ts'
 
 export {
   SESSION_SEARCH_RESULT_LIMIT,
@@ -38,7 +43,33 @@ interface SessionJournalPage extends SessionPage {
 }
 
 /** One complete publication from the Session journal stream. */
-export type SessionJournalChange = RemoteJournalChange<SessionJournalPage, SessionEventEntry>
+export type SessionJournalChange =
+  | {
+    readonly type: 'replace' | 'prepend'
+    readonly page: SessionJournalPage
+    readonly entries: readonly SessionEventLikeEntry[]
+    readonly hasMore: boolean
+  }
+  | { readonly type: 'append'; readonly entry: SessionLiveEventEntry }
+
+function toSessionJournalChange(
+  change: RemoteJournalChange<SessionJournalPage, SessionHistoryRecord>,
+): SessionJournalChange {
+  switch (change.type) {
+    case 'replace':
+    case 'prepend':
+      return { ...change, entries: historyEntries(change.entries) }
+    case 'append': {
+      if (change.entry.type !== 'event') {
+        throw new Error('session live stream emitted a packed history record')
+      }
+      return {
+        type: 'append',
+        entry: change.entry as unknown as SessionLiveEventEntry,
+      }
+    }
+  }
+}
 
 type SessionControlBaselineFrame = Extract<SessionControlFrame, { type: 'baseline' }>
 type SessionControlDeltaFrame = Exclude<SessionControlFrame, SessionControlBaselineFrame>
@@ -101,7 +132,7 @@ export function createSessionControlStream(
 /** Gateway-owned event journal bound to one ordinary or direct-subagent Session address. */
 export class SessionEventStream extends RemoteJournalStream<
   SessionJournalPage,
-  SessionEventEntry,
+  SessionHistoryRecord,
   number,
   ClientSessionPageRequest
 > {
@@ -118,12 +149,13 @@ export class SessionEventStream extends RemoteJournalStream<
     super(remote, {
       name: 'session event stream',
       emptyCursor: -1,
-      entries: page => historyEntries(page.records),
+      entries: page => page.records,
       hasMore: page => page.hasMore,
-      cursor: entry => entry.event.seq,
+      first: historyRecordFirstSeq,
+      last: historyRecordLastSeq,
       compare: (left, right) => left - right,
       follows: (left, right) => right === left + 1,
-      publish: options.publish,
+      publish: (change) => { options.publish(toSessionJournalChange(change)) },
       ...(options.carrierFailed === undefined
         ? {}
         : { carrierFailed: options.carrierFailed }),
@@ -135,7 +167,7 @@ export class SessionEventStream extends RemoteJournalStream<
   protected override async * follow(
     request: ClientSessionPageRequest,
     signal: AbortSignal,
-  ): AsyncIterable<RemoteJournalFrame<SessionEventEntry, number, SessionJournalPage>> {
+  ): AsyncIterable<RemoteJournalFrame<SessionHistoryRecord, number, SessionJournalPage>> {
     for await (const frame of this.remote.session.follow({
       address: this.address,
       ...(request.maxMessages === undefined ? {} : { maxMessages: request.maxMessages }),
@@ -152,8 +184,7 @@ export class SessionEventStream extends RemoteJournalStream<
         }
         continue
       }
-      const { type: _type, ...entry } = frame
-      yield { type: 'entry', entry }
+      yield { type: 'entry', entry: frame }
     }
   }
 

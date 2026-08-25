@@ -4,11 +4,12 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionStore from '@deepseek-ai/dsh-session'
-import { decodeStorageRecord } from '@deepseek-ai/dsh-session/chunk-rows'
+import { decodeStorageRecord, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import { CallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import type {
+  ChunkRowEvent,
   SessionFollowFrame,
   SessionPage,
   SessionWireEvent,
@@ -84,9 +85,20 @@ async function openFollow(
 
 /** Expand packed page records for assertions over the logical journal. */
 function pageEvents(page: SessionPage): SessionWireEvent[] {
-  return page.records.flatMap(record => 'event' in record
+  return page.records.flatMap(record => record.type === 'event'
     ? [record.event]
-    : decodeStorageRecord(record.chunks).map(event => event as unknown as SessionWireEvent))
+    : decodeStorageRecord(chunkRow(record.event)).map(event => event as unknown as SessionWireEvent))
+}
+
+function chunkRow(event: ChunkRowEvent): ChunkRow {
+  switch (event.type) {
+    case 'chunkrow/text-chunks':
+      return { type: 'text-chunks', seq0: event.seq, time0: event.time, data: event.data }
+    case 'chunkrow/reasoning-chunks':
+      return { type: 'reasoning-chunks', seq0: event.seq, time0: event.time, data: event.data }
+    case 'chunkrow/tool-call-chunks':
+      return { type: 'tool-call-chunks', seq0: event.seq, time0: event.time, data: event.data }
+  }
 }
 
 describe('Session history raw journal', () => {
@@ -182,9 +194,9 @@ describe('Session history raw journal', () => {
     expect(response.ok).toBe(true)
     if (!response.ok) throw new Error('unreachable')
     expect(response.value.records).toEqual([
-      { event: start },
-      { event: call },
-      { event: result },
+      { type: 'event', event: start },
+      { type: 'event', event: call },
+      { type: 'event', event: result },
     ])
   })
 
@@ -270,7 +282,7 @@ describe('Session history raw journal', () => {
       })
       if (!response.ok) throw new Error('unreachable')
       expect(pageEvents(response.value).map(event => event.seq)).toEqual([...sources, message.seq])
-      expect(response.value.records.filter(record => 'chunks' in record)).toHaveLength(1)
+      expect(response.value.records.filter(record => record.type === 'chunks')).toHaveLength(1)
       expect(response.value.hasMore).toBe(true)
     } finally {
       min.mockRestore()
@@ -286,11 +298,17 @@ describe('Session history raw journal', () => {
     const iterator = stream[Symbol.asyncIterator]()
 
     session.append('turn/start', { turn: 1 })
-    await expect(iterator.next()).resolves.toMatchObject({ value: { event: { type: 'turn/start' } } })
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: 'event', event: { type: 'turn/start' } },
+    })
     session.append('tool/call', { turn: 1, step: 1, callId: CallId('c-late'), name: 'term', arguments: '{"cmd":"tail"}' })
-    await expect(iterator.next()).resolves.toMatchObject({ value: { event: { type: 'tool/call' } } })
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: 'event', event: { type: 'tool/call' } },
+    })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    await expect(iterator.next()).resolves.toMatchObject({ value: { event: { type: 'turn/end' } } })
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: 'event', event: { type: 'turn/end' } },
+    })
     const events = vi.spyOn(session, 'events', 'get').mockImplementation(() => {
       throw new Error('live result rescanned Session history')
     })
