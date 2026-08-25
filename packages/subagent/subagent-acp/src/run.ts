@@ -8,15 +8,11 @@
 import { randomUUID } from 'node:crypto'
 import { Readable as NodeReadable, Writable as NodeWritable } from 'node:stream'
 import {
-  ClientSideConnection,
+  client as createAcpClientApp,
+  methods,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type Agent as AcpAgent,
-  type Client,
   type ContentBlock as AcpContentBlock,
-  type RequestPermissionRequest,
-  type RequestPermissionResponse,
-  type SessionNotification,
   type StopReason,
   type ToolKind,
 } from '@agentclientprotocol/sdk'
@@ -408,8 +404,8 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   const flags = { cancelled: false }
   let latestPermission: AcpPermissionDecision | undefined
 
-  const makeClient = (_agent: AcpAgent): Client => ({
-    sessionUpdate(params: SessionNotification): Promise<void> {
+  const clientApp = createAcpClientApp({ name: 'deepseek-harness-subagent-acp' })
+    .onNotification(methods.client.session.update, ({ params }) => {
       const update = params.update
       if (update.sessionUpdate === 'agent_message_chunk') {
         fold.pushText(acpContentText(update.content))
@@ -417,8 +413,8 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
       // Other updates (thoughts, tool calls, plans) are consumed but not
       // surfaced — the subagent returns only its final answer.
       return Promise.resolve()
-    },
-    requestPermission(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
+    })
+    .onRequest(methods.client.session.requestPermission, ({ params }) => {
       // Auto-answer by the configured policy. `allow` selects the first option
       // whose kind is `allow_once` or `allow_always`; if the child offered none (or we
       // reject), answer `cancelled` so the child does not proceed.
@@ -439,16 +435,13 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
         decision: 'denied',
       }
       return Promise.resolve({ outcome: { outcome: 'cancelled' } })
-    },
-  })
+    })
 
-  const conn = new ClientSideConnection(
-    makeClient,
-    ndJsonStream(
-      NodeWritable.toWeb(child.stdin) as WritableStream<Uint8Array>,
-      NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-    ),
-  )
+  const connection = clientApp.connect(ndJsonStream(
+    NodeWritable.toWeb(child.stdin) as WritableStream<Uint8Array>,
+    NodeReadable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+  ))
+  const agent = connection.agent
 
   let sessionId: string | undefined
   let startupStage: Extract<AcpFailureStage, 'initialize' | 'new-session'> = 'initialize'
@@ -461,7 +454,9 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     signalCancelSettled()
     // Best-effort ACP cancel; process teardown remains authoritative.
     /* v8 ignore next */
-    if (sessionId !== undefined) void conn.cancel({ sessionId }).catch(() => { /* child gone / no session */ })
+    if (sessionId !== undefined) {
+      void agent.notify(methods.agent.session.cancel, { sessionId }).catch(() => { /* child gone / no session */ })
+    }
   }
   const onAbort = (): void => { requestCancel() }
   request.signal.addEventListener('abort', onAbort, { once: true })
@@ -474,14 +469,14 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
   try {
     await Promise.race([
       (async (): Promise<void> => {
-        await conn.initialize({
+        await agent.request(methods.agent.initialize, {
           protocolVersion: PROTOCOL_VERSION,
           // Advertise NO optional client capabilities (no fs, no terminal): the
           // child self-serves in its own process.
           clientCapabilities: {},
         })
         startupStage = 'new-session'
-        const session = await conn.newSession({ cwd: spec.cwd, mcpServers: [] })
+        const session = await agent.request(methods.agent.session.new, { cwd: spec.cwd, mcpServers: [] })
         const returnedSessionId: unknown = Reflect.get(session, 'sessionId')
         if (typeof returnedSessionId !== 'string') {
           throw new AcpRunFailure(
@@ -490,6 +485,7 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
           )
         }
         sessionId = returnedSessionId
+        /* v8 ignore next -- cancelSettled wins the startup race before this post-response guard can settle it. */
         if (flags.cancelled) throw new Error('subagent cancelled before the ACP session started')
       })(),
       spawnFailed,
@@ -550,7 +546,10 @@ export async function startAcpRun(request: SubagentStartRequest, spec: AcpRunSpe
     attempt: async (): Promise<SubagentResult> => {
       try {
         const promptResult = await Promise.race([
-          conn.prompt({ sessionId: remoteSessionId, prompt: toAcpPrompt(request.prompt) }),
+          agent.request(methods.agent.session.prompt, {
+            sessionId: remoteSessionId,
+            prompt: toAcpPrompt(request.prompt),
+          }),
           cancelSettled.then((): never => { throw new Error('subagent cancelled while the ACP prompt was running') }),
         ])
         const stopReason = acpStopReason(promptResult.stopReason)

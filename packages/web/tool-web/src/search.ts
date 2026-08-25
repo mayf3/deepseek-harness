@@ -9,13 +9,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, JsonValue, ToolResult, WebSearchResultView, WebSource } from '@deepseek-ai/dsh-tools'
 import type { WebSearchResult, WebSearchSource } from '@deepseek-ai/dsh-web'
-import type {} from '@deepseek-ai/dsh-system-prompt'
+import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 
 /**
  * Default upper bound on returned sources (the `searchMaxResults` config).
- * Owned by the consumer (not the provider or model), mirroring `dsh-tool-fs`'s
- * `READ_LIMIT`. The model just asks a question; the product controls how much
- * context returns. The default `8` aligns with OpenCode's Exa default.
+ * The consumer owns the returned-context limit; providers and models do not.
  */
 export const WEB_SEARCH_MAX_RESULTS = 8
 
@@ -315,7 +313,7 @@ export function applyWebSearchTool(
 ): void {
   ctx.systemPrompt.section({
     name: 'tool:web_search',
-    order: 110,
+    order: FIRST_PARTY_SECTION_ORDER.TOOL_WEB_SEARCH,
     text: fetchEnabled
       ? `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Follow up with web_fetch when you need the full content of a specific result, and cite the relevant URLs as markdown links.`
       : `Use the web_search tool to discover current information on the web. The required queries array accepts 1–${maxQueries} non-empty search queries; use a one-item array for a single search. It returns an optional answer plus a list of source URLs. Use the returned source snippets when available, and cite the relevant URLs as markdown links.`,

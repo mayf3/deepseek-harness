@@ -294,17 +294,18 @@ jobs:
       - name: Run complete keyless Python suite
         run: uv run --python 3.10 --group test --project python/sdk pytest
 
-  # One native target makes the complete release-shaped Python path required
-  # without duplicating platform-independent behavior across the release matrix.
-  # The reusable builder owns the executable, snapshot, wheel, clean-install,
-  # GLIBC, and manylinux checks; release validation retains all native targets.
+  # The reusable builder owns each published executable, wheel, clean-install,
+  # keyless black-box, and trusted real-API path. All native release targets are
+  # required because a platform wheel cannot be validated by another carrier.
   python-runtime:
     if: github.event_name == 'pull_request'
-    name: python runtime / release-shaped Linux x64
+    name: python runtime / release-shaped matrix
     uses: ./.github/workflows/build-exe-for-python-sdk.yml
     with:
-      targets: node24-linux-x64
+      targets: node24-linux-x64,node24-linux-arm64,node24-macos-arm64,node24-win-x64
       ci: true
+    secrets:
+      DEEPSEEK_API_KEY_EXTERNAL: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
 
   # The required pull-request Windows signal: the two blocking win32 surfaces
   # (workspace build, production site) execute with real, checksum-verified
@@ -436,7 +437,7 @@ jobs:
 
       - uses: pnpm/action-setup@v4
         with:
-          dest: ${{ runner.temp }}/setup-pnpm
+          dest: ${{ runner.temp }}/setup-pnpm-js
 
       - uses: actions/setup-node@v6
         with:

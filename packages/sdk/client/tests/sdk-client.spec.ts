@@ -20,7 +20,9 @@ import {
   TransportClosedError,
   type HarnessNotification,
 } from '../src/index.ts'
-import { finalResponse, normalizeInput } from '../src/api.ts'
+import { createProcessDeepSeekHarness, finalResponse, normalizeInput } from '../src/api.ts'
+import { createProcessHarnessClient } from '../src/client.ts'
+import type { RuntimeProcessOptions } from '../src/launch.ts'
 
 const fakeRuntime = fileURLToPath(new URL('./fake-runtime.ts', import.meta.url))
 
@@ -29,20 +31,26 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0)) await cleanup()
 })
 
-type LaunchOverrides = Partial<ConstructorParameters<typeof HarnessClient>[0]>
+type LaunchOverrides = Partial<RuntimeProcessOptions>
 
 /** Launch options running the fake runtime on the current node (type stripping). */
-function fakeLaunch(env: Record<string, string> = {}, extra: LaunchOverrides = {}) {
+function fakeLaunch(env: Record<string, string> = {}, extra: LaunchOverrides = {}): RuntimeProcessOptions {
   return {
     command: process.execPath,
     args: [fakeRuntime],
-    env: { ...process.env as Record<string, string>, ...env },
+    environment: () => ({ ...process.env as Record<string, string>, ...env }),
+    description: 'scripted fake runtime',
+    initializeTimeoutMs: 5_000,
     ...extra,
   }
 }
 
+function processClient(options: RuntimeProcessOptions): HarnessClient {
+  return createProcessHarnessClient(options)
+}
+
 function harnessWith(env: Record<string, string> = {}, extra: LaunchOverrides = {}): DeepSeekHarness {
-  const harness = new DeepSeekHarness({ launch: fakeLaunch(env, extra) })
+  const harness = createProcessDeepSeekHarness(fakeLaunch(env, extra))
   cleanups.push(() => harness.close())
   return harness
 }
@@ -150,8 +158,7 @@ describe('DeepSeekHarness', () => {
   it('sends the configured cwd/provider/model/maxTokens in the handshake exactly once', async () => {
     const dir = await tempDir('sdk-client-init-')
     const recordFile = join(dir, 'init.jsonl')
-    const harness = new DeepSeekHarness({
-      launch: fakeLaunch({ FAKE_RECORD_INIT: recordFile }),
+    const harness = createProcessDeepSeekHarness(fakeLaunch({ FAKE_RECORD_INIT: recordFile }), {
       cwd: dir,
       provider: 'custom-provider',
       model: 'custom-model',
@@ -180,9 +187,9 @@ describe('DeepSeekHarness', () => {
     await mkdir(inner)
     const relativeCwd = relative(process.cwd(), inner)
     expect(isAbsolute(relativeCwd)).toBe(false)
-    const harness = new DeepSeekHarness({
-      launch: fakeLaunch({ FAKE_RECORD_INIT: recordFile, FAKE_ECHO_CWD_IN_INIT: '1' }, { cwd: relativeCwd }),
-    })
+    const harness = createProcessDeepSeekHarness(
+      fakeLaunch({ FAKE_RECORD_INIT: recordFile, FAKE_ECHO_CWD_IN_INIT: '1' }, { cwd: relativeCwd }),
+    )
     cleanups.push(() => harness.close())
     await harness.start()
     const identity = await harness.client.initialize({ cwd: inner, provider: 'p', model: 'm' })
@@ -215,7 +222,7 @@ describe('DeepSeekHarness', () => {
     const initialize = vi.spyOn(HarnessClient.prototype, 'initialize').mockRejectedValue(initializeError)
     const close = vi.spyOn(HarnessClient.prototype, 'close').mockRejectedValue(cleanupError)
     try {
-      const harness = new DeepSeekHarness({ launch: { command: 'unused' } })
+      const harness = createProcessDeepSeekHarness(fakeLaunch())
       const failedClient = harness.client
       const failure = await harness.start().catch((error: unknown) => error)
       expect(failure).toBeInstanceOf(AggregateError)
@@ -236,7 +243,7 @@ describe('DeepSeekHarness', () => {
     const initialize = vi.spyOn(HarnessClient.prototype, 'initialize').mockReturnValue(initializeResult)
     const close = vi.spyOn(HarnessClient.prototype, 'close').mockResolvedValue()
     try {
-      const harness = new DeepSeekHarness({ launch: { command: 'unused' } })
+      const harness = createProcessDeepSeekHarness(fakeLaunch())
       const original = harness.client
       const pending = harness.start()
       await harness.close()
@@ -274,7 +281,7 @@ describe('DeepSeekHarness', () => {
   it('supports await using disposal', async () => {
     let captured: DeepSeekHarness
     {
-      await using harness = new DeepSeekHarness({ launch: fakeLaunch() })
+      await using harness = createProcessDeepSeekHarness(fakeLaunch())
       captured = harness
       const result = await harness.run('scoped')
       expect(result.finalResponse).toBe('hello from fake runtime')
@@ -282,20 +289,45 @@ describe('DeepSeekHarness', () => {
     // After scope exit the runtime is closed: reuse fails loudly.
     await expect(captured.run('after')).rejects.toThrow(TransportClosedError)
   })
+
+  it('constructs the public dsh-backed client lazily', async () => {
+    const harness = new DeepSeekHarness()
+    expect(harness.client).toBeInstanceOf(HarnessClient)
+    await harness.close()
+  })
 })
 
 describe('HarnessClient', () => {
+  it('bounds profile initialization and names the selected profile in its diagnostic', async () => {
+    const client = processClient(fakeLaunch(
+      { FAKE_HANG_INIT: '1' },
+      {
+        description: 'dsh profile "profile-without-sdk-server"',
+        initializeTimeoutMs: 50,
+        disposeEofGraceMs: 100,
+        disposeGraceMs: 100,
+      },
+    ))
+    cleanups.push(() => client.close())
+    await expect(client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' }))
+      .rejects.toThrow(/initialize timed out after 50ms waiting for dsh profile "profile-without-sdk-server"/)
+    await client.close()
+  })
+
   it('times out a hung request at the per-call bound', async () => {
-    const client = new HarnessClient(fakeLaunch({ FAKE_HANG_PROMPT: '1' }))
+    const client = processClient(fakeLaunch({
+      FAKE_HANG_PROMPT: '1',
+      FAKE_STDERR: 'runtime accepted initialize but hung the prompt',
+    }))
     cleanups.push(() => client.close())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
     await expect(client.request('session/prompt', { sessionId: 's', contentBlocks: normalizeInput('hi') }, 200))
-      .rejects.toThrow(RequestTimeoutError)
+      .rejects.toThrow(/session\/prompt timed out.*stderr tail:\nruntime accepted initialize but hung the prompt/s)
     await client.close()
   })
 
   it('a timed-out request leaves no pending transport state', async () => {
-    const client = new HarnessClient(fakeLaunch({ FAKE_HANG_PROMPT: '1' }))
+    const client = processClient(fakeLaunch({ FAKE_HANG_PROMPT: '1' }))
     cleanups.push(() => client.close())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
     for (let round = 0; round < 3; round++) {
@@ -311,7 +343,7 @@ describe('HarnessClient', () => {
   })
 
   it('applies the client-wide request timeout when no per-call bound is given', async () => {
-    const client = new HarnessClient(fakeLaunch({ FAKE_HANG_PROMPT: '1' }, { requestTimeoutMs: 400 }))
+    const client = processClient(fakeLaunch({ FAKE_HANG_PROMPT: '1' }, { requestTimeoutMs: 400 }))
     cleanups.push(() => client.close())
     // The bound applies from send, so it holds regardless of runtime boot time.
     await expect(client.prompt('s', normalizeInput('hi'))).rejects.toThrow(RequestTimeoutError)
@@ -319,14 +351,14 @@ describe('HarnessClient', () => {
   })
 
   it('rejects a malformed prompt acceptance as a protocol error', async () => {
-    const client = new HarnessClient(fakeLaunch({ FAKE_MALFORMED: '1' }))
+    const client = processClient(fakeLaunch({ FAKE_MALFORMED: '1' }))
     cleanups.push(() => client.close())
     await expect(client.prompt('s', normalizeInput('hi'))).rejects.toThrow(SdkProtocolError)
     await client.close()
   })
 
   it('fails pending requests with exit code and stderr tail when the runtime dies', async () => {
-    const client = new HarnessClient(fakeLaunch({ FAKE_EXIT_BEFORE_INIT: '1', FAKE_STDERR: 'fatal: scripted death' }))
+    const client = processClient(fakeLaunch({ FAKE_EXIT_BEFORE_INIT: '1', FAKE_STDERR: 'fatal: scripted death' }))
     cleanups.push(() => client.close())
     const failure = await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' }).then(
       () => { throw new Error('initialize unexpectedly succeeded') },
@@ -340,7 +372,7 @@ describe('HarnessClient', () => {
   })
 
   it('flushes an unterminated stderr line into the tail at close', async () => {
-    const client = new HarnessClient(fakeLaunch({ FAKE_STDERR_NO_NEWLINE: 'no trailing newline', FAKE_EXIT_BEFORE_INIT: '1' }))
+    const client = processClient(fakeLaunch({ FAKE_STDERR_NO_NEWLINE: 'no trailing newline', FAKE_EXIT_BEFORE_INIT: '1' }))
     cleanups.push(() => client.close())
     const failure = await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' }).then(
       () => { throw new Error('initialize unexpectedly succeeded') },
@@ -349,27 +381,37 @@ describe('HarnessClient', () => {
     expect(String(failure)).toContain('no trailing newline')
   })
 
-  it('fails fast when the command does not exist', async () => {
-    const client = new HarnessClient({ command: join(tmpdir(), 'dsh-no-such-runtime-bin') })
+  it('fails when the configured dsh CLI module does not exist', async () => {
+    const client = new HarnessClient({ dshBin: join(tmpdir(), 'dsh-no-such-runtime-bin') })
     cleanups.push(() => client.close())
     await expect(client.request('initialize', {}, 1_000)).rejects.toThrow(TransportClosedError)
   })
 
+  it('reports a generic process spawn failure to internal transports', async () => {
+    const client = processClient(fakeLaunch({}, {
+      command: join(tmpdir(), 'dsh-no-such-process-command'),
+      args: [],
+    }))
+    cleanups.push(() => client.close())
+    await expect(client.request('initialize', {}, 1_000))
+      .rejects.toThrow(/spawn error:.*ENOENT/s)
+  })
+
   it('close() is idempotent, reaps the child, and fails later use', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
     await Promise.all([client.close(), client.close()])
     expect(() => { client.start() }).toThrow(TransportClosedError)
     await expect(client.request('anything')).rejects.toThrow(TransportClosedError)
     // Close with no child ever spawned is a no-op.
-    const untouched = new HarnessClient(fakeLaunch())
+    const untouched = processClient(fakeLaunch())
     await untouched.close()
   })
 
   it('escalates through SIGTERM when the runtime ignores EOF', async () => {
     const dir = await tempDir('sdk-client-ladder-')
     const sigtermFile = join(dir, 'sigterm.txt')
-    const client = new HarnessClient(fakeLaunch(
+    const client = processClient(fakeLaunch(
       { FAKE_IGNORE_EOF: '1', FAKE_SIGTERM_FILE: sigtermFile },
       { shutdownTimeoutMs: 100, disposeEofGraceMs: 100, disposeGraceMs: 1_000 },
     ))
@@ -383,7 +425,7 @@ describe('HarnessClient', () => {
   })
 
   it('escalates to SIGKILL when the runtime traps SIGTERM too', async () => {
-    const client = new HarnessClient(fakeLaunch(
+    const client = processClient(fakeLaunch(
       { FAKE_IGNORE_EOF: '1', FAKE_TRAP_SIGTERM: '1' },
       { shutdownTimeoutMs: 100, disposeEofGraceMs: 100, disposeGraceMs: 300 },
     ))
@@ -393,7 +435,7 @@ describe('HarnessClient', () => {
   })
 
   it('delivers notifications to unfiltered and filtered subscriptions in wire order', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     cleanups.push(() => client.close())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
 
@@ -427,7 +469,7 @@ describe('HarnessClient', () => {
   })
 
   it('contains a throwing filter to its own subscription', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     cleanups.push(() => client.close())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
 
@@ -447,7 +489,7 @@ describe('HarnessClient', () => {
   })
 
   it('close() drops queued notifications; runtime death keeps them drainable', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
     const closed = client.subscribe()
     const drainable = client.subscribe()
@@ -464,20 +506,20 @@ describe('HarnessClient', () => {
   })
 
   it('subscriptions created after termination are born failed', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
     await client.close()
     // No producer can ever feed this subscription; next() must not park forever.
     await expect(client.subscribe().next()).rejects.toThrow(TransportClosedError)
 
-    const dead = new HarnessClient(fakeLaunch({ FAKE_EXIT_BEFORE_INIT: '1' }))
+    const dead = processClient(fakeLaunch({ FAKE_EXIT_BEFORE_INIT: '1' }))
     cleanups.push(() => dead.close())
     await dead.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' }).catch(() => {})
     await expect(dead.subscribe().next()).rejects.toThrow(TransportClosedError)
   })
 
   it('closes subscriptions with the runtime and rejects parked waiters', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
     const subscription = client.subscribe()
     const parked = subscription.next()
@@ -486,7 +528,7 @@ describe('HarnessClient', () => {
   })
 
   it('scopes the session tree across multi-hop lineage and ignores foreign sessions', async () => {
-    const client = new HarnessClient(fakeLaunch())
+    const client = processClient(fakeLaunch())
     cleanups.push(() => client.close())
     await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' })
 
@@ -550,7 +592,7 @@ describe('wire payload validation', () => {
 describe('stderr tail bound', () => {
   it('keeps only the newest lines up to the limit', async () => {
     const manyLines = Array.from({ length: 450 }, (_, i) => `line-${i}`).join('\n')
-    const client = new HarnessClient(fakeLaunch({ FAKE_STDERR: manyLines, FAKE_EXIT_BEFORE_INIT: '1' }))
+    const client = processClient(fakeLaunch({ FAKE_STDERR: manyLines, FAKE_EXIT_BEFORE_INIT: '1' }))
     cleanups.push(() => client.close())
     const failure = await client.initialize({ cwd: process.cwd(), provider: 'p', model: 'm' }).then(
       () => { throw new Error('initialize unexpectedly succeeded') },

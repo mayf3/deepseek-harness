@@ -21,7 +21,7 @@ import {
 } from './scaffold.ts'
 import { ZH_BROWSER_LOCALE, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/settings-chrome', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/settings-chrome', import.meta.url))
 const DIALOG_EXPECTED = join(SNAPSHOT_DIR, 'dialog.expected.md')
 const PLUGINS_EXPECTED = join(SNAPSHOT_DIR, 'plugins.expected.md')
 // The English fallback surface: a browser naming no shipped language.
@@ -42,7 +42,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // the client derives from it (the English default has its own spec below).
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -62,7 +62,7 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(await trigger.getAttribute('aria-expanded')).toBe('true')
     // General is active by default; Permission, Language and Appearance are functional.
     expect(await dialog.getByRole('button', { name: '通用设置' }).getAttribute('aria-current')).toBe('true')
-    await dialog.getByRole('button', { name: '可写入工作区' }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Workspace Write' }).waitFor({ timeout: 10_000 })
     await expect.poll(() => dialog.getByText('语言', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
     await expect.poll(() => dialog.getByText('外观', { exact: true }).count(), { timeout: 5_000 }).toBe(1)
     const openDocument = dialog.getByRole('button', { name: '打开配置文件' })
@@ -135,44 +135,44 @@ describe('web e2e: settings modal and General preferences', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-permission'))
     const existing = scaffold.ctx.sessions.create(SessionId('settings-permission-before'))
     expect(existing.events.find(event => event.type === 'permission/preset')?.data)
-      .toEqual({ preset: 'workspace-write', origin: 'default' })
+      .toEqual({ preset: 'workspace-write' })
 
     await page.getByRole('button', { name: '设置', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '设置' })
     await dialog.waitFor({ timeout: 10_000 })
-    const selector = dialog.getByRole('button', { name: '可写入工作区' })
+    const selector = dialog.getByRole('button', { name: 'Workspace Write' })
     await selector.waitFor({ timeout: 10_000 })
     await expect.poll(() => selector.isEnabled(), { timeout: 5_000 }).toBe(true)
     await selector.click()
-    await page.getByRole('menuitem', { name: '仅可查看' }).click()
-    await dialog.getByRole('button', { name: '仅可查看' }).waitFor({ timeout: 10_000 })
+    await page.getByRole('menuitem', { name: 'Read Only' }).click()
+    await dialog.getByRole('button', { name: 'Read Only' }).waitFor({ timeout: 10_000 })
 
     const document = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(document).toContain('permission:')
     expect(document).toContain('defaultPreset: read-only')
     expect(existing.events.find(event => event.type === 'permission/preset')?.data)
-      .toEqual({ preset: 'workspace-write', origin: 'default' })
+      .toEqual({ preset: 'workspace-write' })
 
     const created = scaffold.ctx.sessions.create(SessionId('settings-permission-after'))
     expect(created.events.map(event => [event.type, event.data])).toEqual([
-      ['permission/preset', { preset: 'read-only', origin: 'default' }],
+      ['permission/preset', { preset: 'read-only' }],
       ['sandbox/mode', { mode: 'read-only' }],
       ['approval/policy', { policy: 'ask' }],
     ])
 
-    await dialog.getByRole('button', { name: '仅可查看' }).click()
-    await page.getByRole('menuitem', { name: '完全权限' }).click()
-    const confirmation = page.getByRole('dialog', { name: '确认启用完全权限？' })
-    const enable = confirmation.getByRole('button', { name: '启用完全权限' })
+    await dialog.getByRole('button', { name: 'Read Only' }).click()
+    await page.getByRole('menuitem', { name: 'Full access' }).click()
+    const confirmation = page.getByRole('dialog', { name: '确认启用 Full access？' })
+    const enable = confirmation.getByRole('button', { name: '启用 Full access' })
     expect(await enable.isDisabled()).toBe(true)
     await confirmation.getByRole('checkbox').click()
     await enable.click()
-    await dialog.getByRole('button', { name: '完全权限' }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Full access' }).waitFor({ timeout: 10_000 })
     const confirmedDocument = await readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8')
     expect(confirmedDocument).toContain('defaultPreset: danger-full-access')
     const confirmed = scaffold.ctx.sessions.create(SessionId('settings-permission-confirmed'))
     expect(confirmed.events.map(event => [event.type, event.data])).toEqual([
-      ['permission/preset', { preset: 'danger-full-access', origin: 'default' }],
+      ['permission/preset', { preset: 'danger-full-access' }],
       ['sandbox/mode', { mode: 'danger-full-access' }],
       ['approval/policy', { policy: 'never' }],
     ])
@@ -192,8 +192,8 @@ describe('web e2e: settings modal and General preferences', () => {
       .toMatch(/ui-theme:\n\s+preference: dark/)
     await page.keyboard.press('Escape')
 
-    // Hold real plugin bundles so the shell-owned loading page remains observable.
-    const pluginPattern = /\/plugins\/@deepseek-ai\/dsh-client-ui-theme\/client\.js(?:\?.*)?$/
+    // Hold the real application batch so the shell-owned loading page remains observable.
+    const pluginPattern = /\/plugins\/\?\?.+\/client\.js,.+\/client\.js&rev=[a-f\d]{12}$/
     let releaseBundles = (): void => {}
     const bundlesReleased = new Promise<void>((resolve) => { releaseBundles = resolve })
     await page.route(pluginPattern, async (route) => {
@@ -314,7 +314,7 @@ describe('web e2e: settings modal and General preferences', () => {
     try {
       expect(second.baseUrl).not.toBe(scaffold.baseUrl)
       await secondPage.emulateMedia({ colorScheme: 'light' })
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
+      await secondPage.goto(second.authenticatedUrl, { waitUntil: 'load' })
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await expect.poll(async () => (await readState(secondPage)).attr, { timeout: 5_000 }).toBe(true)
       const secondState = await readState(secondPage)
@@ -372,7 +372,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const secondTripwire = watchConsole(secondPage)
     try {
       expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
+      await secondPage.goto(second.authenticatedUrl, { waitUntil: 'load' })
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await secondPage.getByRole('button', { name: '设置', exact: true }).click()
       await secondPage.getByRole('dialog', { name: '设置' })
@@ -438,7 +438,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const secondTripwire = watchConsole(secondPage)
     try {
       expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
+      await secondPage.goto(second.authenticatedUrl, { waitUntil: 'load' })
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await secondPage.getByRole('button', { name: 'Settings', exact: true }).click()
       await secondPage.getByRole('dialog', { name: 'Settings' })
@@ -472,7 +472,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const enTripwire = watchConsole(enPage)
     onTestFailed(() => saveFailureShot(enPage, 'web-e2e-settings-browser-language'))
     try {
-      await enPage.goto(fresh.baseUrl, { waitUntil: 'load' })
+      await enPage.goto(fresh.authenticatedUrl, { waitUntil: 'load' })
       await enPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       expect(await enPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
       await enPage.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -498,13 +498,15 @@ describe('web e2e: settings modal and General preferences', () => {
     const frTripwire = watchConsole(frPage)
     onTestFailed(() => saveFailureShot(frPage, 'web-e2e-settings-unshipped-language'))
     try {
-      await frPage.goto(fresh.baseUrl, { waitUntil: 'load' })
+      await frPage.goto(fresh.authenticatedUrl, { waitUntil: 'load' })
       await frPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       expect(await frPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
       await frPage.getByRole('button', { name: 'Settings', exact: true }).click()
       const dialog = frPage.getByRole('dialog', { name: 'Settings' })
       await dialog.waitFor({ timeout: 10_000 })
       await dialog.getByRole('button', { name: 'English' }).waitFor({ timeout: 10_000 })
+      const preset = dialog.getByRole('button', { name: 'Standard mode' })
+      await expect.poll(() => preset.isEnabled(), { timeout: 10_000 }).toBe(true)
       // The markup already ships `en`, so this alone cannot prove the sync ran
       // — the zh scenario above is the discriminating half. Asserted here too
       // so a future change that resolves en but writes the wrong tag is caught.

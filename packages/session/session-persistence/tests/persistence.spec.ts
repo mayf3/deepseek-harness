@@ -5,10 +5,13 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
   SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator,
-  type PersistenceBackend, type SessionPersistenceSnapshot, type StoredPrefix, type StoredSuffix,
+  SessionPersistenceRevisionConflictError,
+  type PersistenceBackend, type SessionPersistenceSnapshot, type StoredEventRead,
+  type StoredEventReadCompletion, type StoredSessionSource,
 } from '../src/index.ts'
 import { runPersistenceContract, meta, oneTurnLog } from './contract.ts'
 import { runCoordinatorContract, type CoordinatorFixture } from './coordinator-contract.ts'
+import * as formatDecoder from '../src/format-decoder.ts'
 
 /** The durable store shape: materialized sessions only (no lazy entries). */
 type MemoryStore = Map<string, { meta: SessionHeader; events: SessionEvent[] }>
@@ -16,6 +19,45 @@ type MemoryStore = Map<string, { meta: SessionHeader; events: SessionEvent[] }>
 /** Test-store revision that changes for any metadata or event mutation. */
 function memoryRevision(entry: { meta: SessionHeader; events: SessionEvent[] }): SessionPersistenceRevision {
   return SessionPersistenceRevision(JSON.stringify(entry))
+}
+
+/** Build one lazy physical read whose completion follows iterator exhaustion. */
+function storedRead<TornMarker>(
+  load: () => Promise<{ events: readonly unknown[]; tornMarker?: TornMarker }>,
+): StoredEventRead<TornMarker> {
+  const completed = Promise.withResolvers<StoredEventReadCompletion<TornMarker>>()
+  const events = (async function* (): AsyncIterable<unknown> {
+    try {
+      const loaded = await load()
+      yield* loaded.events
+      completed.resolve(loaded.tornMarker === undefined ? {} : { tornMarker: loaded.tornMarker })
+    } catch (error: unknown) {
+      completed.reject(error)
+      throw error
+    }
+  })()
+  return { events, completed: completed.promise }
+}
+
+/** Materialize an async replacement stream for the map-backed test stores. */
+async function collectReplacement(events: AsyncIterable<SessionEvent>): Promise<SessionEvent[]> {
+  const collected: SessionEvent[] = []
+  for await (const event of events) collected.push(structuredClone(event))
+  return collected
+}
+
+async function replaceMemoryStored(
+  store: MemoryStore,
+  expectedRevision: SessionPersistenceRevision,
+  m: SessionHeader,
+  events: AsyncIterable<SessionEvent>,
+): Promise<void> {
+  const entry = store.get(m.id)
+  if (entry === undefined || memoryRevision(entry) !== expectedRevision) {
+    throw new SessionPersistenceRevisionConflictError(`session "${m.id}" changed before replacement`)
+  }
+  if (entry.meta.cwd !== m.cwd) throw new Error(`replacement for session "${m.id}" changes its stored identity`)
+  store.set(m.id, { meta: structuredClone(m), events: await collectReplacement(events) })
 }
 
 /** An obsolete event fixture that emulates an untyped pre-change producer. */
@@ -82,7 +124,7 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     super(ctx)
     // Assign the store BEFORE constructing the coordinator: the coordinator's
     // constructor installs the write path and synchronously seeds existing live
-    // sessions through loadStored(), so store must exist first.
+    // sessions through openStored(), so store must exist first.
     this.store = config?.store ?? new Map<string, { meta: SessionHeader; events: SessionEvent[] }>()
     this.coordinator = new PersistenceCoordinator<never>(this.ctx, this)
   }
@@ -95,6 +137,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
 
   create(m: SessionHeader): Promise<void> {
     return this.coordinator.create(m)
+  }
+
+  override ensureMaterialized(session: Session): Promise<void> {
+    return this.coordinator.ensureMaterialized(session)
   }
 
   append(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
@@ -114,6 +160,10 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
       .then(loaded => ({ meta: loaded.meta, events: [...loaded.events] }))
   }
 
+  borrowSession(id: SessionId, signal?: AbortSignal): ReturnType<PersistenceCoordinator['borrowSession']> {
+    return this.coordinator.borrowSession(id, signal)
+  }
+
   readFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<{ meta: SessionHeader; events: SessionEvent[] }> {
     return this.coordinator.readFrom(id, fromSeq, signal)
   }
@@ -121,13 +171,20 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
   // --- PersistenceBackend hooks (the Map storage primitives) ---
 
   // A Map-backed store has no torn tails, so `tornMarker` is never set.
-  async loadStored(id: SessionId): Promise<StoredPrefix<never> | undefined> {
+  async openStored(id: SessionId): Promise<StoredSessionSource<never> | undefined> {
     const entry = this.store.get(id)
     if (!entry) return undefined
+    const revision = memoryRevision(entry)
     return {
       meta: structuredClone(entry.meta),
-      events: structuredClone(entry.events),
-      revision: memoryRevision(entry),
+      revision,
+      readEvents: ({ fromSeq = 0 } = {}) => storedRead(async () => {
+        const current = this.store.get(id)
+        if (current === undefined || memoryRevision(current) !== revision) {
+          throw new SessionPersistenceRevisionConflictError(`session "${id}" changed during read`)
+        }
+        return { events: structuredClone(current.events.filter(event => event.seq >= fromSeq)) }
+      }),
     }
   }
 
@@ -151,6 +208,11 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     }
   }
 
+  materializeHeader(m: SessionHeader): Promise<void> {
+    this.store.set(m.id, { meta: structuredClone(m), events: [] })
+    return Promise.resolve()
+  }
+
   async commitRepair(m: SessionHeader, _tornMarker: undefined, closers: readonly SessionEvent[]): Promise<void> {
     // No torn tails in a Map store, so `_tornMarker` is always undefined; only the
     // synthetic closers are appended (the same DELETE+INSERT a DB backend does,
@@ -159,6 +221,14 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     /* v8 ignore next -- commitRepair only runs for a materialized (stored) session */
     if (!entry) return
     if (closers.length > 0) entry.events.push(...structuredClone(closers) as SessionEvent[])
+  }
+
+  async replaceStored(
+    expectedRevision: SessionPersistenceRevision,
+    m: SessionHeader,
+    events: AsyncIterable<SessionEvent>,
+  ): Promise<void> {
+    await replaceMemoryStored(this.store, expectedRevision, m, events)
   }
 
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
@@ -186,23 +256,36 @@ class ControlledBackend implements PersistenceBackend<never> {
   repairAttempts = 0
   beforeAppend?: (attempt: number) => Promise<void>
   beforeLoadStored?: (attempt: number, signal?: AbortSignal) => Promise<void>
-  /** When set, the declared seek hook delegates here so readFrom exercises it; unset throws (tests set it first). */
-  seekHook?: (id: SessionId, fromSeq: number, signal?: AbortSignal) => Promise<StoredSuffix | undefined>
+  /** Optional physical suffix hook used by readFrom-specific tests. */
+  seekHook?: (
+    id: SessionId,
+    fromSeq: number,
+    signal?: AbortSignal,
+  ) => Promise<{ meta: SessionHeader; events: SessionEvent[] } | undefined>
 
-  loadStoredFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<StoredSuffix | undefined> {
-    if (this.seekHook === undefined) throw new Error('seekHook not configured for this test')
-    return this.seekHook(id, fromSeq, signal)
-  }
-
-  async loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<never> | undefined> {
+  async openStored(id: SessionId, signal?: AbortSignal): Promise<StoredSessionSource<never> | undefined> {
     const attempt = ++this.loadAttempts
     await this.beforeLoadStored?.(attempt, signal)
     const entry = this.store.get(id)
     if (entry === undefined) return undefined
+    const revision = memoryRevision(entry)
     return {
       meta: structuredClone(entry.meta),
-      events: structuredClone(entry.events),
-      revision: memoryRevision(entry),
+      revision,
+      readEvents: ({ fromSeq = 0 } = {}) => storedRead(async () => {
+        signal?.throwIfAborted()
+        const loaded = this.seekHook === undefined
+          ? { meta: entry.meta, events: entry.events.filter(event => event.seq >= fromSeq) }
+          : await this.seekHook(id, fromSeq, signal)
+        if (loaded === undefined) {
+          throw new SessionPersistenceRevisionConflictError(`session "${id}" disappeared during read`)
+        }
+        const current = this.store.get(id)
+        if (current === undefined || memoryRevision(current) !== revision) {
+          throw new SessionPersistenceRevisionConflictError(`session "${id}" changed during read`)
+        }
+        return { events: structuredClone(loaded.events) }
+      }),
     }
   }
 
@@ -230,6 +313,14 @@ class ControlledBackend implements PersistenceBackend<never> {
     if (entry !== undefined) entry.events.push(...structuredClone(closers) as SessionEvent[])
   }
 
+  async replaceStored(
+    expectedRevision: SessionPersistenceRevision,
+    m: SessionHeader,
+    events: AsyncIterable<SessionEvent>,
+  ): Promise<void> {
+    await replaceMemoryStored(this.store, expectedRevision, m, events)
+  }
+
   async list(): Promise<SessionHeader[]> {
     return [...this.store.values()].map(entry => structuredClone(entry.meta))
   }
@@ -239,7 +330,6 @@ class ControlledBackend implements PersistenceBackend<never> {
   }
 }
 
-// Run the shared contract against the in-memory backend.
 runPersistenceContract('memory', async () => {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -561,6 +651,11 @@ describe('PersistenceCoordinator session preparations', () => {
     }, { inject: ['sessions'] }))
 
     try {
+      const immediatelyLive = Session.create(prepareId, oneTurnLog(), meta(prepareId))
+      const immediateGet = vi.spyOn(ctx.sessions, 'get').mockReturnValue(immediatelyLive)
+      await expect(coordinator.prepare(prepareId)).rejects.toThrow(/while it is live/)
+      immediateGet.mockRestore()
+
       const prepareLive = Session.create(prepareId, oneTurnLog(), meta(prepareId))
       const prepareGet = vi.spyOn(ctx.sessions, 'get')
         .mockReturnValueOnce(undefined)
@@ -1192,6 +1287,162 @@ describe('PersistenceCoordinator session preparations', () => {
 })
 
 describe('PersistenceCoordinator observation cancellation', () => {
+  it('borrows live Sessions before, during, and after cold source validation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const afterBorrowId = SessionId('borrow-became-live-before-validation')
+    const afterValidationId = SessionId('borrow-became-live-after-validation')
+    for (const id of [afterBorrowId, afterValidationId]) {
+      backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    }
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const immediate = ctx.sessions.create(SessionId('borrow-already-live'))
+      const immediateSource = await coordinator.borrowSession(immediate.id)
+      expect(immediateSource).toMatchObject({ source: 'live', inspection: { meta: { id: immediate.id } } })
+      immediateSource[Symbol.dispose]()
+
+      const afterBorrow = Session.create(afterBorrowId, oneTurnLog(), meta(afterBorrowId))
+      const afterBorrowGet = vi.spyOn(ctx.sessions, 'get')
+        .mockReturnValueOnce(undefined)
+        .mockReturnValue(afterBorrow)
+      const attachedSource = await coordinator.borrowSession(afterBorrowId)
+      expect(attachedSource).toMatchObject({ source: 'live', inspection: { meta: { id: afterBorrowId } } })
+      attachedSource[Symbol.dispose]()
+      afterBorrowGet.mockRestore()
+
+      const afterValidation = Session.create(afterValidationId, oneTurnLog(), meta(afterValidationId))
+      const afterValidationGet = vi.spyOn(ctx.sessions, 'get')
+        .mockReturnValueOnce(undefined)
+        .mockReturnValueOnce(undefined)
+        .mockReturnValue(afterValidation)
+      const publishedSource = await coordinator.borrowSession(afterValidationId)
+      expect(publishedSource).toMatchObject({
+        source: 'live', inspection: { meta: { id: afterValidationId } },
+      })
+      publishedSource[Symbol.dispose]()
+      afterValidationGet.mockRestore()
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('returns and releases a current prepared observation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('borrow-current-prepared')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const source = await coordinator.borrowSession(id)
+      expect(source).toMatchObject({ source: 'prepared', inspection: { meta: { id } } })
+      source[Symbol.dispose]()
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('reloads a stale prepared observation and retains one claimed concurrently', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const staleId = SessionId('borrow-stale-prepared')
+    const retainedId = SessionId('borrow-retained-prepared')
+    for (const id of [staleId, retainedId]) {
+      backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    }
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const readRevision = backend.readStoredRevision.bind(backend)
+      const revision = vi.spyOn(backend, 'readStoredRevision')
+        .mockResolvedValueOnce(SessionPersistenceRevision('stale'))
+        .mockImplementation(readRevision)
+      const stale = await coordinator.borrowSession(staleId)
+      expect(stale.source).toBe('prepared')
+      expect(backend.loadAttempts).toBe(2)
+      stale[Symbol.dispose]()
+      revision.mockRestore()
+
+      const preparations = (coordinator as unknown as {
+        preparations: { discardReady: (id: SessionId, source: unknown) => string }
+      }).preparations
+      vi.spyOn(backend, 'readStoredRevision').mockResolvedValue(SessionPersistenceRevision('changed'))
+      const discard = vi.spyOn(preparations, 'discardReady').mockReturnValue('retained')
+      const retained = await coordinator.borrowSession(retainedId)
+      expect(retained.source).toBe('prepared')
+      expect(discard).toHaveBeenCalledOnce()
+      retained[Symbol.dispose]()
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('falls back to a concurrently attached Session after revision validation fails', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('borrow-failed-validation-became-live')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const attached = Session.create(id, oneTurnLog(), meta(id))
+    const get = vi.spyOn(ctx.sessions, 'get')
+      .mockReturnValueOnce(undefined)
+      .mockReturnValueOnce(undefined)
+      .mockReturnValue(attached)
+    vi.spyOn(backend, 'readStoredRevision').mockRejectedValue(new Error('revision failed'))
+
+    try {
+      const source = await coordinator.borrowSession(id)
+      expect(source).toMatchObject({ source: 'live', inspection: { meta: { id } } })
+      source[Symbol.dispose]()
+    } finally {
+      get.mockRestore()
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rethrows revision validation failure when no live Session won the race', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('borrow-failed-validation')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    const failure = new Error('revision failed')
+    vi.spyOn(backend, 'readStoredRevision').mockRejectedValue(failure)
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await expect(coordinator.borrowSession(id)).rejects.toBe(failure)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('promptly rejects a queued inspect without invoking it and keeps the same-id chain healthy', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -1305,7 +1556,7 @@ describe('PersistenceCoordinator observation cancellation', () => {
     }
   })
 
-  it('readFrom via the seek hook: serves the suffix, maps undefined to not-found, and relays hook failures by abort state', async () => {
+  it('readFrom via the source reader: serves the suffix, reports absence, and relays reader failures by abort state', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const backend = new ControlledBackend()
@@ -1326,13 +1577,27 @@ describe('PersistenceCoordinator observation cancellation', () => {
       }
       const suffix = await coordinator.readFrom(id, 3)
       expect(suffix.events).toEqual(log.slice(3))
-      // The hook's `undefined` is the backend contract's not-found result.
+      // Absence is established while opening the source, before an event read.
       await expect(coordinator.readFrom(SessionId('missing-seek'), 0)).rejects.toThrow('not found')
 
       // A hook failure with no cancellation in play propagates as-is.
       const hookFailure = new Error('seek backend exploded')
       backend.seekHook = () => Promise.reject(hookFailure)
       await expect(coordinator.readFrom(id, 0)).rejects.toBe(hookFailure)
+
+      // A revision conflict is retryable because it names no stable source.
+      let conflictAttempts = 0
+      backend.seekHook = async (hookId, fromSeq) => {
+        conflictAttempts += 1
+        if (conflictAttempts === 1) {
+          throw new SessionPersistenceRevisionConflictError('source changed during readFrom')
+        }
+        const entry = backend.store.get(hookId)
+        if (entry === undefined) return undefined
+        return { meta: entry.meta, events: entry.events.filter(event => event.seq >= fromSeq) }
+      }
+      await expect(coordinator.readFrom(id, 2)).resolves.toMatchObject({ events: log.slice(2) })
+      expect(conflictAttempts).toBe(2)
 
       // A hook failure after cancellation surfaces the caller's abort reason,
       // not the backend's internal teardown error. The abort fires only once
@@ -1463,14 +1728,13 @@ describe('PersistenceCoordinator retirement', () => {
       }, { inject: ['sessions'] }))
       await ctx.sessions.flush(first)
 
-      // Occupy the per-id serialize chain with a gated physical read:
+      // Occupy the per-id serialize chain with a gated source open:
       // inspect() correctly borrows the still-live Session without entering
       // the backend chain, while both retirements must queue behind readFrom().
       const readEntered = Promise.withResolvers<undefined>()
-      backend.seekHook = async () => {
+      backend.beforeLoadStored = async () => {
         readEntered.resolve(undefined)
         await readGate.promise
-        return undefined
       }
       const parked = coordinator.readFrom(id, 0).catch((error: unknown) => error)
       await readEntered.promise
@@ -1494,7 +1758,7 @@ describe('PersistenceCoordinator retirement', () => {
       // delete the successor's entry (exact-entry guard); the successor's own
       // forget() then clears the map.
       readGate.resolve(true)
-      expect(await parked).toBeInstanceOf(Error) // the parked inspect (not found) is observed
+      expect(await parked).toBeInstanceOf(Error) // the parked read (not found) is observed
       await firstRetirement
       await vi.waitFor(() => { expect(internals.retirements.has(id)).toBe(false) })
     } finally {
@@ -1781,6 +2045,72 @@ describe('PersistenceCoordinator retirement', () => {
 })
 
 describe('SessionPersistence service registration', () => {
+  it('materializes an explicitly durable live session without adding events', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    const session = ctx.sessions.create(SessionId('durable-empty'), { meta: { cwd: '/workspace' } })
+
+    await ctx.sessionPersistence.ensureMaterialized(session)
+    await ctx.sessionPersistence.ensureMaterialized(session)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([session.header])
+    await expect(ctx.sessionPersistence.load(session.id)).resolves.toEqual({ meta: session.header, events: [] })
+    await ctx.fiber.dispose()
+  })
+
+  it('fails loud when a direct backend does not support empty materialization', async () => {
+    const session = Session.create(SessionId('unsupported-empty'))
+    await expect(SessionPersistence.prototype.ensureMaterialized.call({} as SessionPersistence, session))
+      .rejects.toThrow(/cannot materialize an empty session/)
+  })
+
+  it('fails loud when a coordinator backend omits empty materialization', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    let coordinator!: PersistenceCoordinator
+    await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, new ControlledBackend())
+    }, { inject: ['sessions'] }))
+    const session = ctx.sessions.create(SessionId('unsupported-coordinator'))
+
+    await expect(coordinator.ensureMaterialized(session)).rejects.toThrow(/cannot materialize an empty session/)
+    await ctx.fiber.dispose()
+  })
+
+  it('accepts current aborted and error turn endings without legacy conversion', async () => {
+    const store: MemoryStore = new Map()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const endings: SessionEvent[] = [
+      {
+        type: 'turn/end', seq: 5, time: 6,
+        data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } },
+      },
+      {
+        type: 'turn/end', seq: 5, time: 6,
+        data: { turn: 1, reason: { kind: 'error', error: { message: 'failed', code: 'UNKNOWN' } } },
+      },
+    ]
+    for (const [index, ending] of endings.entries()) {
+      const m = meta(`current-ending-${index}`)
+      store.set(m.id, { meta: m, events: [...oneTurnLog().slice(0, -1), ending] })
+    }
+    await ctx.plugin(MemoryPersistence, { store })
+    await Promise.all([...store.keys()].map(id => ctx.sessionPersistence.load(SessionId(id))))
+    await ctx.fiber.dispose()
+  })
+
+  it('rejects preparing an id that already has a live Session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(MemoryPersistence)
+    const session = ctx.sessions.create(SessionId('live-prepare-conflict'))
+
+    await expect(ctx.sessionPersistence.prepare(session.id)).rejects.toThrow(/while it is live/)
+    await ctx.fiber.dispose()
+  })
+
   it('provides a cancellation-aware default preparation for simple backends', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -1901,6 +2231,235 @@ describe('SessionPersistence service registration', () => {
     await expect(ctx.sessions.flush(session))
       .rejects.toThrow(/unsupported legacy request\/header-delta event at seq 0/)
     await Promise.allSettled([fiber.dispose()])
+  })
+
+  it('rejects obsolete event variants passed directly to the persistence writer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const id = SessionId('legacy-direct-append')
+    await coordinator.create(meta(id))
+
+    try {
+      await expect(coordinator.append(id, [legacyHeaderDelta()]))
+        .rejects.toThrow(/unsupported legacy request\/header-delta event/)
+      await expect(coordinator.append(id, [legacyModeSet()]))
+        .rejects.toThrow(/unsupported legacy mode\/set event/)
+      await expect(coordinator.append(id, [legacyFallbackHeader()]))
+        .rejects.toThrow(/unsupported legacy request\/header reason "fallback"/)
+      expect(backend.store.has(id)).toBe(false)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retries cold preparation when its physical source revision changes', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('prepare-source-conflict')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    let attempts = 0
+    backend.seekHook = async (hookId, fromSeq) => {
+      attempts += 1
+      if (attempts === 1) throw new SessionPersistenceRevisionConflictError('prepare source changed')
+      const entry = backend.store.get(hookId)
+      if (entry === undefined) return undefined
+      return { meta: entry.meta, events: entry.events.filter(event => event.seq >= fromSeq) }
+    }
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await expect(coordinator.inspect(id)).resolves.toMatchObject({ events: oneTurnLog() })
+      expect(attempts).toBe(2)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retries live-prefix adoption when the physical source revision changes', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('hmr-source-conflict')
+    const m = meta(id, '/work')
+    backend.store.set(id, { meta: m, events: oneTurnLog() })
+    const session = ctx.sessions.create(id, { seed: oneTurnLog(), meta: { cwd: '/work' } })
+    let attempts = 0
+    backend.seekHook = async (hookId, fromSeq) => {
+      attempts += 1
+      if (attempts === 1) throw new SessionPersistenceRevisionConflictError('live source changed')
+      const entry = backend.store.get(hookId)
+      if (entry === undefined) return undefined
+      return { meta: entry.meta, events: entry.events.filter(event => event.seq >= fromSeq) }
+    }
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await expect(ctx.sessions.flush(session)).resolves.toBe(true)
+      expect(attempts).toBe(2)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('retries ownerless seed verification when the physical source revision changes', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('seed-source-conflict')
+    const m = meta(id, '/work')
+    backend.store.set(id, { meta: m, events: oneTurnLog() })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await coordinator.load(id)
+      let attempts = 0
+      backend.seekHook = async (hookId, fromSeq) => {
+        attempts += 1
+        if (attempts === 1) throw new SessionPersistenceRevisionConflictError('seed source changed')
+        const entry = backend.store.get(hookId)
+        if (entry === undefined) return undefined
+        return { meta: entry.meta, events: entry.events.filter(event => event.seq >= fromSeq) }
+      }
+      const session = ctx.sessions.create(id, { seed: oneTurnLog(), meta: { cwd: '/work' } })
+
+      await expect(ctx.sessions.flush(session)).resolves.toBe(true)
+      expect(attempts).toBe(2)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('streams an old-format prepared source into replacement and propagates non-conflict failures', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('prepared-format-replacement')
+    const m = meta(id)
+    backend.store.set(id, { meta: m, events: oneTurnLog() })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const source = {
+      inspection: Object.freeze({ meta: m, events: Object.freeze(oneTurnLog()) }),
+      session: Session.create(id, oneTurnLog(), m),
+      revision: memoryRevision(backend.store.get(id)!),
+      sourceVersion: -1,
+      sessionLength: oneTurnLog().length,
+      tornMarker: undefined,
+      closers: [],
+    }
+    const internals = coordinator as unknown as {
+      commitPrepared(value: typeof source): Promise<unknown>
+    }
+    const replace = vi.spyOn(backend, 'replaceStored')
+
+    try {
+      await expect(internals.commitPrepared(source)).resolves.toBeUndefined()
+      expect(replace).toHaveBeenCalledOnce()
+      expect(backend.store.get(id)?.events).toEqual(oneTurnLog())
+
+      const failure = new Error('replacement backend failed')
+      replace.mockRejectedValueOnce(failure)
+      source.revision = memoryRevision(backend.store.get(id)!)
+      await expect(internals.commitPrepared(source)).rejects.toBe(failure)
+
+      replace.mockRejectedValueOnce(new SessionPersistenceRevisionConflictError('replacement raced'))
+      await expect(internals.commitPrepared(source)).resolves.toBeUndefined()
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('routes live adoption of a decoded old format through the same replacement primitive', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('live-format-replacement')
+    const m = meta(id, '/work')
+    const log = oneTurnLog()
+    backend.store.set(id, { meta: m, events: log })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const revision = memoryRevision(backend.store.get(id)!)
+    const stored: StoredSessionSource<never> = {
+      meta: m,
+      revision,
+      readEvents: () => storedRead(async () => ({ events: log })),
+    }
+    const decoded = {
+      meta: m,
+      sourceVersion: -1,
+      revision,
+      events: (async function* (): AsyncIterable<SessionEvent> { yield* log })(),
+      completed: Promise.resolve({}),
+    }
+    const decode = vi.spyOn(formatDecoder, 'decodeStoredSession').mockReturnValue(decoded)
+    const replace = vi.spyOn(backend, 'replaceStored')
+    const internals = coordinator as unknown as {
+      adoptLivePrefix(
+        session: Session,
+        seed: readonly SessionEvent[],
+        source: StoredSessionSource<never>,
+      ): Promise<boolean>
+    }
+
+    try {
+      const session = Session.create(id, log, m)
+      await expect(internals.adoptLivePrefix(session, log, stored)).resolves.toBe(false)
+      expect(replace).toHaveBeenCalledOnce()
+      expect(backend.store.get(id)?.events).toEqual(log)
+    } finally {
+      decode.mockRestore()
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('propagates a non-conflict failure during ownerless seed verification', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('seed-source-failure')
+    const m = meta(id, '/work')
+    backend.store.set(id, { meta: m, events: oneTurnLog() })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await coordinator.load(id)
+      const failure = new Error('seed reader failed')
+      backend.seekHook = () => Promise.reject(failure)
+      const session = ctx.sessions.create(id, { seed: oneTurnLog(), meta: { cwd: '/work' } })
+
+      await expect(ctx.sessions.flush(session)).rejects.toBe(failure)
+    } finally {
+      await Promise.allSettled([fiber.dispose()])
+      await ctx.fiber.dispose()
+    }
   })
 
   it('rejects a stored legacy fallback header during load', async () => {

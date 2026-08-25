@@ -10,17 +10,21 @@ import { lstat, mkdir, open } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import type { DatabaseSync, StatementSync } from 'node:sqlite'
 import {
+  SessionId,
   type SessionEvent,
   type SessionHeader,
-  type SessionId,
 } from '@deepseek-ai/dsh-session'
 import {
+  createStoredEventRead,
+  decodeStoredSessionHeader,
   SessionPersistenceRevision,
+  SessionPersistenceRevisionConflictError,
   type PersistenceBackend,
   type SessionPersistenceRevision as PersistenceRevision,
   type SessionPersistenceSnapshot,
-  type StoredPrefix,
-  type StoredSuffix,
+  type StoredEventRead,
+  type StoredEventReadOptions,
+  type StoredSessionSource,
 } from '@deepseek-ai/dsh-session-persistence'
 import {
   MAX_PACKED_ROW_MEMBERS,
@@ -50,6 +54,21 @@ export interface SqliteStoreOptions {
   readonly path: string
   readonly journalMode: JournalMode
   readonly busyTimeoutMs: number
+}
+
+/** A stored session's header, valid event prefix, and revision at one snapshot. */
+interface SqliteStoredPrefix {
+  readonly meta: SessionHeader
+  readonly events: SessionEvent[]
+  readonly revision: PersistenceRevision
+  readonly tornMarker?: number
+}
+
+/** A stored session's suffix (events at or past a seq) and its snapshot revision. */
+interface SqliteStoredSuffix {
+  readonly meta: SessionHeader
+  readonly events: SessionEvent[]
+  readonly revision: PersistenceRevision
 }
 
 /** SQLite implementation of the coordinator's physical backend hooks. */
@@ -131,7 +150,13 @@ export class SqliteStore implements PersistenceBackend<number> {
     }
   }
 
-  async loadStored(id: SessionId, signal?: AbortSignal): Promise<StoredPrefix<number> | undefined> {
+  /**
+   * Load one row's complete validated prefix at a single snapshot.
+   * @param id - persisted session id to resolve.
+   * @param signal - optional cancellation for backend read work.
+   * @returns the stored prefix, or `undefined` when the session has no stored row.
+   */
+  async loadStored(id: SessionId, signal?: AbortSignal): Promise<SqliteStoredPrefix | undefined> {
     await this.observe(signal)
     const snapshot = this.readTransaction(() => {
       const row = this.rowFor(id)
@@ -157,7 +182,14 @@ export class SqliteStore implements PersistenceBackend<number> {
     return row === undefined ? undefined : sqliteRevision(this.storeIdentity, row)
   }
 
-  async loadStoredFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<StoredSuffix | undefined> {
+  /**
+   * Load one row's physical suffix at or past a sequence at a single snapshot.
+   * @param id - persisted session id to resolve.
+   * @param fromSeq - first physical event sequence to include.
+   * @param signal - optional cancellation for backend read work.
+   * @returns the stored suffix, or `undefined` when the session has no stored row.
+   */
+  async loadStoredFrom(id: SessionId, fromSeq: number, signal?: AbortSignal): Promise<SqliteStoredSuffix | undefined> {
     await this.observe(signal)
     const snapshot = this.readTransaction(() => {
       const row = this.rowFor(id)
@@ -167,7 +199,48 @@ export class SqliteStore implements PersistenceBackend<number> {
     signal?.throwIfAborted()
     if (snapshot === undefined) return undefined
     const { preserved } = scanRows(snapshot.eventRows, snapshot.base)
-    return { meta: rowToMeta(snapshot.row), events: preserved.filter(event => event.seq >= fromSeq) }
+    return {
+      meta: rowToMeta(snapshot.row),
+      events: preserved.filter(event => event.seq >= fromSeq),
+      revision: sqliteRevision(this.storeIdentity, snapshot.row),
+    }
+  }
+
+  /**
+   * Open repeatable reads over one row revision. Each event reader reproduces
+   * this revision or rejects when a concurrent writer changed the row.
+   * @param id - persisted session id to resolve.
+   * @param signal - optional cancellation for backend read work.
+   * @returns the source, or `undefined` when the session has no stored row.
+   */
+  async openStored(id: SessionId, signal?: AbortSignal): Promise<StoredSessionSource<number> | undefined> {
+    await this.observe(signal)
+    const row = this.rowFor(id)
+    signal?.throwIfAborted()
+    if (row === undefined) return undefined
+    const revision = sqliteRevision(this.storeIdentity, row)
+    return {
+      meta: rowToMeta(row),
+      revision,
+      readEvents: (options: StoredEventReadOptions = {}): StoredEventRead<number> => {
+        const fromSeq = options.fromSeq ?? 0
+        return createStoredEventRead(
+          async () => {
+            const stored = fromSeq === 0
+              ? await this.loadStored(id, signal)
+              : await this.loadStoredFrom(id, fromSeq, signal)
+            if (stored === undefined || stored.revision !== revision) {
+              throw new SessionPersistenceRevisionConflictError(
+                `session "${id}" changed while reading revision ${revision}`,
+              )
+            }
+            return stored
+          },
+          () => true,
+          signal,
+        )
+      },
+    }
   }
 
   async appendBatch(
@@ -195,6 +268,19 @@ export class SqliteStore implements PersistenceBackend<number> {
       this.db.exec(sql('commit'))
     } catch (error: unknown) {
       this.rollback(error, 'append')
+    }
+  }
+
+  async materializeHeader(meta: SessionHeader): Promise<void> {
+    await this.open()
+    this.db.exec(sql('begin-immediate'))
+    try {
+      validateSchemaForMutation(this.databaseConstructor, this.db, this.databasePath)
+      this.writeRow(meta)
+      this.db.exec(sql('commit'))
+    } catch (error: unknown) {
+      /* v8 ignore next -- validate/write failure uses the same transaction rollback path covered by append and repair. */
+      this.rollback(error, 'materialize empty session')
     }
   }
 
@@ -238,11 +324,64 @@ export class SqliteStore implements PersistenceBackend<number> {
     }
   }
 
+  /**
+   * Atomically replace one exact stored revision with a complete current log.
+   * The streamed events are staged in memory, then the swap commits in one
+   * transaction that rechecks the revision and storage identity.
+   * @param expectedRevision - exact source revision decoded by the caller.
+   * @param meta - complete current-format header.
+   * @param events - complete current-format event stream.
+   */
+  async replaceStored(
+    expectedRevision: PersistenceRevision,
+    meta: SessionHeader,
+    events: AsyncIterable<SessionEvent>,
+  ): Promise<void> {
+    await this.open()
+    const observed = this.rowFor(meta.id)
+    if (observed === undefined
+      || sqliteRevision(this.storeIdentity, observed) !== expectedRevision) {
+      throw new SessionPersistenceRevisionConflictError(
+        `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
+      )
+    }
+    if (meta.cwd !== (observed.cwd ?? undefined)) {
+      throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
+    }
+    // Stage the complete replacement before the swap transaction so a failed
+    // or cancelled stream leaves the stored log untouched.
+    const staged: SessionEvent[] = []
+    for await (const event of events) staged.push(event)
+    const records = packChunkRuns(staged)
+    this.db.exec(sql('begin-immediate'))
+    try {
+      validateSchemaForMutation(this.databaseConstructor, this.db, this.databasePath)
+      const row = this.rowFor(meta.id)
+      if (row === undefined
+        || sqliteRevision(this.storeIdentity, row) !== expectedRevision) {
+        throw new SessionPersistenceRevisionConflictError(
+          `session "${meta.id}" changed before replacement of revision ${expectedRevision}`,
+        )
+      }
+      if (meta.cwd !== (row.cwd ?? undefined)) {
+        throw new Error(`replacement for session "${meta.id}" changes its stored identity`)
+      }
+      this.db.prepare(sql('delete-events-from')).run(meta.id, 0)
+      const insert = this.insertStatement()
+      for (const record of records) this.insertRecord(insert, meta.id, bindRecord(record))
+      this.writeRow(meta)
+      this.incrementRevision(meta.id)
+      this.db.exec(sql('commit'))
+    } catch (error: unknown) {
+      this.rollback(error, 'replacement')
+    }
+  }
+
   async list(signal?: AbortSignal): Promise<SessionHeader[]> {
     await this.observe(signal)
     const rows = this.sessionRows()
     signal?.throwIfAborted()
-    return rows.map(rowToMeta)
+    return rows.map(row => decodeStoredSessionHeader(rowToMeta(row), SessionId(row.id)))
   }
 
   /**
@@ -255,7 +394,7 @@ export class SqliteStore implements PersistenceBackend<number> {
     const rows = this.sessionRows()
     signal?.throwIfAborted()
     return rows.map(row => ({
-      header: rowToMeta(row),
+      header: decodeStoredSessionHeader(rowToMeta(row), SessionId(row.id)),
       revision: sqliteRevision(this.storeIdentity, row),
     }))
   }

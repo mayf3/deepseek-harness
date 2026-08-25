@@ -1,6 +1,6 @@
 /**
  * Out-of-process SDK subagent backend. Each child is a complete DeepSeek
- * Harness runtime in its own process — own `cordis.yml`-decided composition,
+ * Harness runtime in its own process — own named profile and patch composition,
  * session, model route, and tools — driven over stdio JSON-RPC through the
  * TypeScript SDK client, so it shares no Cordis context and advertises no
  * parent-enforced start capabilities; the ONE thing it reads off
@@ -11,6 +11,8 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { statSync } from 'node:fs'
+import { isAbsolute, resolve } from 'node:path'
 import z from '@deepseek-ai/schemastery'
 import type { SubagentCapabilities, SubagentProvider, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { assertPositiveFinite, NO_START_CAPABILITIES, resolveChildCwd, validateConfiguredCwd } from '@deepseek-ai/dsh-subagent'
@@ -30,10 +32,14 @@ export const inject = ['subagents']
 export interface Config {
   /** Provider name on `ctx.subagents` (default `dsh-sdk`). */
   providerName: string
-  /** The executable to spawn for each run (the child runtime bin or packaged exe). */
-  command: string
-  /** Arguments passed to {@link command} (typically the child's `cordis.yml` path). */
-  args: string[]
+  /** Explicit dsh CLI module, resolved and checked at plugin load; omission uses the SDK dependency. */
+  dshBin?: string
+  /** Named child profile (default `sdk`). */
+  profile: string
+  /** Ordered per-launch profile patch files, resolved and checked at plugin load. */
+  patches: string[]
+  /** Absolute isolated Harness home for every nested child process. */
+  dshHome: string
   /**
    * Working directory override for the child process and its SDK session
    * workspace. Must be non-empty; a relative path resolves against the
@@ -51,8 +57,7 @@ export interface Config {
   maxTokens?: number
   /**
    * Extra environment variables for the child process — e.g. the child
-   * runtime's own `DEEPSEEK_API_KEY`, or `DSH_CORDIS_CONFIG` naming its
-   * config. Forwarded on top of a credential-scrubbed copy of the parent
+   * runtime's own `DEEPSEEK_API_KEY`. Forwarded on top of a credential-scrubbed copy of the parent
    * env, so an explicit key here reaches the child while ambient secrets do
    * not leak implicitly.
    */
@@ -71,8 +76,10 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   providerName: z.string().default('dsh-sdk'),
-  command: z.string().required(),
-  args: z.array(z.string()).default([]),
+  dshBin: z.string(),
+  profile: z.string().default('sdk'),
+  patches: z.array(z.string()).default([]),
+  dshHome: z.string().required(),
   cwd: z.string(),
   provider: z.string().default('deepseek-official'),
   model: z.string().default('deepseek-v4-flash'),
@@ -84,11 +91,22 @@ export const Config: z<Config> = z.object({
 })
 
 /** The shape after schemastery applied the defaults (`cwd` and `maxTokens` have none). */
-type ResolvedConfig = Required<Omit<Config, 'cwd' | 'maxTokens'>> & Pick<Config, 'cwd' | 'maxTokens'>
+type ResolvedConfig = Required<Omit<Config, 'cwd' | 'maxTokens' | 'dshBin'>> & Pick<Config, 'cwd' | 'maxTokens' | 'dshBin'>
+
+/** Resolve one configured runtime file against the harness launch directory and require a regular file. */
+function resolveConfiguredFile(field: string, value: string): string {
+  const path = resolve(value)
+  try {
+    if (statSync(path).isFile()) return path
+  } catch {
+    // The diagnostic below owns missing, inaccessible, and non-file paths uniformly.
+  }
+  throw new TypeError(`subagent-dsh-sdk ${field} must name an existing file: ${path}`)
+}
 
 /**
  * The SDK provider. Advertises NO start-time capabilities: an out-of-process
- * child cannot honor `outputSchema`/`maxDepth`/`toolFilter`/`persona` (the
+ * child cannot honor `agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona` (the
  * service rejects a request needing any of them before `start` runs).
  */
 class SdkSubagentProvider implements SubagentProvider {
@@ -111,8 +129,10 @@ class SdkSubagentProvider implements SubagentProvider {
       throw failure
     }
     const spec: SdkRunSpec = {
-      command: this.config.command,
-      args: this.config.args,
+      ...this.config.dshBin === undefined ? {} : { dshBin: this.config.dshBin },
+      profile: this.config.profile,
+      patches: this.config.patches,
+      dshHome: this.config.dshHome,
       cwd,
       provider: this.config.provider,
       model: this.config.model,
@@ -140,11 +160,17 @@ export function apply(ctx: Context, config: Config): void {
   if (resolved.maxTokens !== undefined && (!Number.isSafeInteger(resolved.maxTokens) || resolved.maxTokens <= 0)) {
     throw new TypeError('subagent-dsh-sdk maxTokens must be a positive safe integer')
   }
+  if (!isAbsolute(resolved.dshHome)) throw new TypeError('subagent-dsh-sdk dshHome must be an absolute path')
+  const launchPaths: ResolvedConfig = {
+    ...resolved,
+    patches: resolved.patches.map((path, index) => resolveConfiguredFile(`patches[${String(index)}]`, path)),
+    ...resolved.dshBin === undefined ? {} : { dshBin: resolveConfiguredFile('dshBin', resolved.dshBin) },
+  }
   // Interpret a relative configured cwd against the harness launch directory
   // ONCE, at load, and fail a misconfigured directory here — not per start.
   const configuredCwd = validateConfiguredCwd('subagent-dsh-sdk', resolved.cwd)
   const validated: ResolvedConfig = configuredCwd === undefined
-    ? resolved
-    : { ...resolved, cwd: configuredCwd }
+    ? launchPaths
+    : { ...launchPaths, cwd: configuredCwd }
   ctx.subagents.registerProvider(new SdkSubagentProvider(validated.providerName, ctx, validated))
 }

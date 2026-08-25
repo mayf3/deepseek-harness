@@ -1,7 +1,0 @@
-{
-  "steps": [
-    { "op": "initialize" },
-    { "op": "newSession" },
-    { "op": "prompt", "text": "Observe the ACP diagnostic twice with subagent_acp. First call it in the foreground. Then call it in the background and collect subagent-1 with job_output using wait true. After both failures, reply with exactly PARENT_OBSERVED_ACP_DIAGNOSTIC. Do not call any other tools." }
-  ]
-}

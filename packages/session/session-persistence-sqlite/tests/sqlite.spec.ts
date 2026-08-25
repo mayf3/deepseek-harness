@@ -15,12 +15,14 @@ import SessionPersistenceSqlite, {
   DEFAULT_BUSY_TIMEOUT_MS,
   SCHEMA_VERSION,
 } from '@deepseek-ai/dsh-session-persistence-sqlite'
+import { SessionPersistenceRevisionConflictError } from '@deepseek-ai/dsh-session-persistence'
 import {
   runCoordinatorContract,
   type CoordinatorFixture,
 } from '../../session-persistence/tests/coordinator-contract.ts'
 import {
   meta,
+  oneTurnLog,
   runPersistenceContract,
 } from '../../session-persistence/tests/contract.ts'
 import { MAX_PACKED_DATA_BYTES } from '../src/codec.ts'
@@ -197,6 +199,11 @@ async function measureWriteTraffic(
   } finally {
     await ctx.fiber.dispose()
   }
+}
+
+/** Yield immutable event copies as one replacement stream. */
+async function* replacementEvents(events: readonly SessionEvent[]): AsyncIterable<SessionEvent> {
+  for (const event of events) yield structuredClone(event)
 }
 
 runPersistenceContract('sqlite', async () => {
@@ -498,19 +505,28 @@ describe('SessionPersistenceSqlite schema ownership', () => {
   })
 
   it('paces repeated busy journal-mode attempts', async () => {
-    let attempts = 0
-    const BusyDatabase = databaseWithJournalFailure(() => {
-      attempts += 1
-      return Object.assign(new Error('database is locked'), { errcode: 5 })
+    const attemptedAt: number[] = []
+    const BusyTwiceDatabase = databaseWithJournalFailure(() => {
+      attemptedAt.push(performance.now())
+      return attemptedAt.length <= 2
+        ? Object.assign(new Error('database is locked'), { errcode: 5 })
+        : undefined
     })
-    await expect(openDatabase(
-      BusyDatabase,
+    const db = await openDatabase(
+      BusyTwiceDatabase,
       await freshDbPath('dsh-sqlite-journal-paced-'),
       'wal',
-      50,
-    )).rejects.toThrow('database is locked')
-    expect(attempts).toBeGreaterThan(1)
-    expect(attempts).toBeLessThanOrEqual(6)
+      DEFAULT_BUSY_TIMEOUT_MS,
+    )
+    db.close()
+
+    expect(attemptedAt).toHaveLength(3)
+    for (let index = 1; index < attemptedAt.length; index += 1) {
+      const previous = attemptedAt[index - 1]
+      const current = attemptedAt[index]
+      if (previous === undefined || current === undefined) throw new Error('missing journal attempt timestamp')
+      expect(current - previous).toBeGreaterThanOrEqual(5)
+    }
   })
 
   it('rejects unversioned, incompatible, and foreign-application databases', async () => {
@@ -662,6 +678,20 @@ describe('SessionPersistenceSqlite schema ownership', () => {
 })
 
 describe('SessionPersistenceSqlite edge behavior', () => {
+  it('materializes an explicitly durable empty live session', async () => {
+    const path = await freshDbPath('dsh-sqlite-empty-')
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionPersistenceSqlite, { path })
+    const session = ctx.sessions.create(SessionId('empty'), { meta: { cwd: '/workspace' } })
+
+    await ctx.sessionPersistence.ensureMaterialized(session)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([session.header])
+    await expect(ctx.sessionPersistence.load(session.id)).resolves.toEqual({ meta: session.header, events: [] })
+    await ctx.fiber.dispose()
+  })
+
   it('keeps a fresh database unopened until the first persistence operation', async () => {
     const path = await freshDbPath('dsh-sqlite-lazy-')
     const ctx = new Context()
@@ -828,6 +858,160 @@ describe('SessionPersistenceSqlite edge behavior', () => {
     await rm(parent, { recursive: true })
     await writeFile(parent, 'not a directory')
     await expect(store.open()).rejects.toThrow(/ENOENT|ENOTDIR/)
+    await store.close()
+  })
+})
+
+describe('SessionPersistenceSqlite stored-source and replacement primitives', () => {
+  it('binds a stored source to the same revision as a lightweight read', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const m = meta('stored-prefix-revision')
+    await store.appendBatch(m, oneTurnLog(), false)
+
+    const stored = await store.openStored(m.id)
+    expect(stored?.revision).toBe(await store.readStoredRevision(m.id))
+    expect(await store.readStoredRevision(SessionId('missing-revision'))).toBeUndefined()
+    await store.close()
+  })
+
+  it('rejects revision-bound full and suffix readers after the row changes or disappears', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const m = meta('stored-reader-conflict')
+    await store.appendBatch(m, oneTurnLog(), false)
+    const changed = await store.openStored(m.id)
+    if (changed === undefined) throw new Error('test session must be materialized')
+    await store.appendBatch(m, [
+      { type: 'turn/start', seq: oneTurnLog().length, time: 7, data: { turn: 2 } },
+    ], true)
+    const changedRead = changed.readEvents()
+    const changedCompletion = changedRead.completed.catch((error: unknown) => error)
+    await expect((async () => { for await (const _event of changedRead.events) { /* consume */ } })())
+      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    await expect(changedCompletion).resolves.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+
+    const removed = await store.openStored(m.id)
+    if (removed === undefined) throw new Error('test session must remain materialized')
+    const db = (store as unknown as { db: DatabaseSync }).db
+    db.prepare(testSql('delete-session-by-id')).run(m.id)
+    const removedRead = removed.readEvents({ fromSeq: 1 })
+    const removedCompletion = removedRead.completed.catch((error: unknown) => error)
+    await expect((async () => { for await (const _event of removedRead.events) { /* consume */ } })())
+      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    await expect(removedCompletion).resolves.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    await store.close()
+  })
+
+  it('rolls back a suffix snapshot when its SQL read fails and reports absent direct snapshots', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    expect(await store.loadStored(SessionId('missing-prefix'))).toBeUndefined()
+    expect(await store.loadStoredFrom(SessionId('missing-suffix'), 1)).toBeUndefined()
+
+    const m = meta('suffix-rollback')
+    await store.appendBatch(m, oneTurnLog(), false)
+    const db = (store as unknown as { db: DatabaseSync }).db
+    const prepare = db.prepare.bind(db)
+    const spy = vi.spyOn(db, 'prepare').mockImplementation((source) => {
+      if (source.includes('seq >= ?')) throw new Error('simulated suffix SELECT failure')
+      return prepare(source)
+    })
+    await expect(store.loadStoredFrom(m.id, 1)).rejects.toThrow('simulated suffix SELECT failure')
+    spy.mockRestore()
+    expect((db.prepare(testSql('count-session-events')).get(m.id) as { n: number }).n)
+      .toBe(oneTurnLog().length)
+    await store.close()
+  })
+
+  it('atomically replaces one exact revision and rejects a stale replacement', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const m = meta('format-replace')
+    const original = [
+      ...oneTurnLog(),
+      { type: 'turn/start', seq: oneTurnLog().length, time: 7, data: { turn: 2 } },
+      { type: 'turn/end', seq: oneTurnLog().length + 1, time: 8, data: { turn: 2, reason: { kind: 'completed' } } },
+    ] as SessionEvent[]
+    await store.appendBatch(m, original, false)
+    const source = await store.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+
+    await store.replaceStored(source.revision, m, replacementEvents(oneTurnLog()))
+    const replaced = await store.openStored(m.id)
+    if (replaced === undefined) throw new Error('replacement must preserve the session')
+    expect(replaced.revision).not.toBe(source.revision)
+    expect((await store.loadStored(m.id))?.events).toEqual(oneTurnLog())
+
+    await expect(
+      store.replaceStored(source.revision, m, replacementEvents(original)),
+    ).rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    expect((await store.loadStored(m.id))?.events).toEqual(oneTurnLog())
+    await store.close()
+  })
+
+  it('rejects replacement identity changes before and during the transaction', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const m = meta('format-replace-identity', '/work')
+    await store.appendBatch(m, oneTurnLog(), false)
+    const source = await store.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+
+    await expect(store.replaceStored(
+      source.revision,
+      { ...m, cwd: '/other' },
+      replacementEvents(oneTurnLog()),
+    )).rejects.toThrow(/changes its stored identity/)
+
+    const db = (store as unknown as { db: DatabaseSync }).db
+    const changesDuringStaging = (async function* (): AsyncIterable<SessionEvent> {
+      yield* oneTurnLog()
+      db.prepare(testSql('update-session-cwd')).run('/raced', m.id)
+    })()
+    await expect(store.replaceStored(source.revision, m, changesDuringStaging))
+      .rejects.toThrow(/changes its stored identity/)
+    expect((db.prepare(testSql('count-session-events')).get(m.id) as { n: number }).n)
+      .toBe(oneTurnLog().length)
+    await store.close()
+  })
+
+  it('rejects a revision change that occurs while replacement events are staged', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const m = meta('format-replace-staging-race', '/work')
+    await store.appendBatch(m, oneTurnLog(), false)
+    const source = await store.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+    const db = (store as unknown as { db: DatabaseSync }).db
+    const changesDuringStaging = (async function* (): AsyncIterable<SessionEvent> {
+      yield* oneTurnLog()
+      db.prepare(testSql('update-session-revision')).run(m.id)
+    })()
+
+    await expect(store.replaceStored(source.revision, m, changesDuringStaging))
+      .rejects.toBeInstanceOf(SessionPersistenceRevisionConflictError)
+    expect((db.prepare(testSql('count-session-events')).get(m.id) as { n: number }).n)
+      .toBe(oneTurnLog().length)
+    await store.close()
+  })
+
+  it('rolls back the complete replacement when the transaction fails after it begins', async () => {
+    const path = await freshDbPath()
+    const store = new SqliteStore({ path, journalMode: 'wal', busyTimeoutMs: DEFAULT_BUSY_TIMEOUT_MS })
+    const m = meta('format-replace-rollback')
+    await store.appendBatch(m, oneTurnLog(), false)
+    const source = await store.openStored(m.id)
+    if (source === undefined) throw new Error('test session must be materialized')
+    const db = (store as unknown as { db: DatabaseSync }).db
+    db.exec(testSql('create-temp-replace-trigger'))
+
+    await expect(
+      store.replaceStored(source.revision, m, replacementEvents([])),
+    ).rejects.toThrow(/simulated format replacement failure/)
+    db.exec(testSql('drop-temp-replace-trigger'))
+
+    expect((await store.loadStored(m.id))?.events).toEqual(oneTurnLog())
     await store.close()
   })
 })

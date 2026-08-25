@@ -11,7 +11,6 @@
 import { join } from 'node:path'
 import { decodeStorageRecord, packChunkRuns, SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, StorageRecord } from '@deepseek-ai/dsh-session'
-import { SessionFormatUnsupportedError, sessionFormatVersionRefusal } from '@deepseek-ai/dsh-session-persistence'
 
 /** Physical encoding selected for JSONL session artifacts. */
 export type JsonlCompression = 'zstd' | 'none'
@@ -224,29 +223,26 @@ export function eventLines(events: readonly SessionEvent[], packChunks: boolean)
 }
 
 interface SessionLogScan {
-  meta: SessionHeader
-  events: SessionEvent[]
+  meta: unknown
+  events: unknown[]
   committedBytes: number
 }
 
-/** Parse one complete header record supplied independently from event rows. */
-/**
- * Refuse a header carrying a format version this build does not read BEFORE
- * validating the current header shape or decoding any event row: a future
- * format need not satisfy today's structural checks at all, and its user must
- * see "upgrade the harness", never "corrupt session log".
- * @param parsed - the JSON-parsed first line of a session artifact.
- */
-function refuseForeignFormatVersion(parsed: unknown): void {
-  if (typeof parsed !== 'object' || parsed === null) return
-  const { version, id } = parsed as { version?: unknown; id?: unknown }
-  if (typeof version !== 'number' || version === SESSION_FORMAT_VERSION) return
-  throw new SessionFormatUnsupportedError(
-    sessionFormatVersionRefusal(typeof id === 'string' ? id : String(id), version),
-  )
+/** Parse the version-independent identity fields from one physical header row. */
+function parseStoredHeader(value: unknown): Record<string, unknown> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  if (record['type'] !== 'session'
+    || !Number.isSafeInteger(record['version'])) return undefined
+  if (record['version'] === SESSION_FORMAT_VERSION) {
+    return isHeaderLine(record) ? fromHeaderLine(record) as unknown as Record<string, unknown> : undefined
+  }
+  const { type: _type, ...meta } = record
+  return meta
 }
 
-function parseHeaderRecord(record: Buffer): SessionHeader {
+/** Parse one complete header record supplied independently from event rows. */
+function parseHeaderRecord(record: Buffer): unknown {
   if (record.length === 0 || record.at(-1) !== 0x0A || record.indexOf(0x0A) !== record.length - 1) {
     throw new Error('empty or header-less session log')
   }
@@ -256,11 +252,11 @@ function parseHeaderRecord(record: Buffer): SessionHeader {
   } catch {
     throw new Error('corrupt session log: header line is not valid JSON')
   }
-  refuseForeignFormatVersion(parsed)
-  if (!isHeaderLine(parsed)) {
+  const meta = parseStoredHeader(parsed)
+  if (meta === undefined) {
     throw new Error('corrupt session log: first line is not a session header')
   }
-  return fromHeaderLine(parsed)
+  return meta
 }
 
 /**
@@ -270,8 +266,8 @@ function parseHeaderRecord(record: Buffer): SessionHeader {
  * copied because a decoder may reuse its output buffer after `write()` returns.
  */
 export class SessionLogScanner {
-  private readonly meta: SessionHeader
-  private readonly events: SessionEvent[] = []
+  private readonly meta: unknown
+  private readonly events: unknown[] = []
   private fragments: Buffer[] = []
   private fragmentBytes = 0
   private inputBytes: number
@@ -346,7 +342,7 @@ export class SessionLogScanner {
   /** Decode one complete event row and update the contiguous prefix. */
   private consumeEventLine(line: Buffer, endByte: number): void {
     this.eventLine += 1
-    let decoded: SessionEvent[]
+    let decoded: unknown[]
     try {
       decoded = decodeStorageRecord(JSON.parse(line.toString('utf8')))
     } catch {
@@ -355,20 +351,21 @@ export class SessionLogScanner {
     }
 
     if (this.issue !== undefined) {
-      if (decoded.some(event => event.type === 'turn/end')) throw this.issue
+      if (decoded.some(event => (event as { type?: unknown }).type === 'turn/end')) throw this.issue
       return
     }
 
     const rowStart = this.events.length
     for (const event of decoded) {
-      if (event.seq !== this.events.length) {
+      const seq = (event as { seq?: unknown }).seq
+      if (seq !== this.events.length) {
         const expected = this.events.length
         this.events.length = rowStart
         this.issue = new Error(
           `corrupt session log: seq gap in committed region at line ${this.eventLine} `
-          + `(expected ${expected}, got ${event.seq})`,
+          + `(expected ${expected}, got ${String(seq)})`,
         )
-        if (decoded.some(candidate => candidate.type === 'turn/end')) throw this.issue
+        if (decoded.some(candidate => (candidate as { type?: unknown }).type === 'turn/end')) throw this.issue
         return
       }
       this.events.push(event)
@@ -394,20 +391,18 @@ export function scanLog(buffer: Buffer): SessionLogScan {
 }
 
 /**
- * Parse just the header line of a log into a {@link SessionHeader}, or
- * `undefined` if it is missing/not a header. Used by `list()` to read session
- * metadata WITHOUT parsing the whole log: a session picker scales with the
- * number of sessions, not the total size of every conversation.
- * @param firstLine - the first line of a log file (without its trailing newline).
- * @returns the parsed header, or `undefined` when the line is not a well-formed session header.
+ * Parse only the version-independent identity envelope from one physical
+ * header line. Format migration and current validation run in the persistence
+ * decoder.
+ * @param firstLine - first JSONL record without its newline.
+ * @returns normalized logical header JSON, or `undefined` for invalid framing.
  */
-export function parseHeaderMeta(firstLine: string): SessionHeader | undefined {
+export function parseStoredHeaderMeta(firstLine: string): Record<string, unknown> | undefined {
   let parsed: unknown
   try {
     parsed = JSON.parse(firstLine)
   } catch {
     return undefined
   }
-  if (!isHeaderLine(parsed)) return undefined
-  return fromHeaderLine(parsed)
+  return parseStoredHeader(parsed)
 }

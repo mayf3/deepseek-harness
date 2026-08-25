@@ -4,10 +4,8 @@
  * child before returning its run, so fulfillment is the single publication and
  * ownership-transfer boundary.
  *
- * Unlike the bash seam (one executor per context, second load throws), MULTIPLE
- * providers coexist here: each registers under a unique name and a caller picks
- * one by name. The shape mirrors the LLM adapter registry
- * (`LlmRuntime.registerAdapter`), not the single-service bash executor.
+ * Multiple providers coexist: each registers under a unique name and callers
+ * select one by name.
  *
  * This package owns the Service Definition role of the capability seam. Service Providers
  * (`@deepseek-ai/dsh-subagent-spawn-in-process`, `-fork`, `-acp`) and the model-facing
@@ -105,6 +103,7 @@ export {
   applyChildComposition,
   captureDelegatedPolicyOverrides,
   childSessionMeta,
+  parentAgentOptionsForDelegation,
   resolveChildAgentOptions,
   resolveChildDepth,
   SubagentDepthError,
@@ -284,7 +283,7 @@ export class SubagentRuntime extends Service {
    * @returns the exact Cordis effect disposer.
    */
   registerContinuableSetup(contribution: ContinuableSetupContribution): () => void {
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous disposer
     return this.ctx.effect(
       () => this.setupRegistry.register(contribution),
       'subagents.registerContinuableSetup()',
@@ -326,27 +325,16 @@ export class SubagentRuntime extends Service {
 
   /**
    * Enumerate the parent's direct session-backed subagents without loading or
-   * resuming an Agent and without any query service: the listing merges the live
-   * session store with optional session persistence (live-preferred) and
-   * serves each child's durable mode/label from the registered `subagent`
-   * projection unit down a three-rung ladder — the registry's watermark
-   * snapshot for a live child; for a cold one, a durable projection-cache
-   * row when the optional cache serves an own-suffix identity (its `seq`
-   * gate proves the value postdates the fork seed, where a child's own
-   * descriptor is immutable once appended), else one persistence inspection
-   * folded through the registry. The
-   * projection fold is the single classification authority; per-child
-   * diagnostics relay a fold that served no identity or a failed inspection,
-   * never a list-time descriptor parse. Absent persistence, enumeration is
-   * live-only (a cold child cannot be resumed then either, so its absence is
-   * capability absence, not an error). This service consults no Agent
-   * registrations, Activations, or providers.
+   * resuming an Agent. The Session query service supplies one live-preferred
+   * corpus and shared point observations; the projection cache supplies
+   * immutable descriptor hits without opening cold logs. The registered
+   * `subagent` projection remains the sole mode/label classifier.
    *
-   * Every persistence read receives `signal`, and the listing rechecks
-   * cancellation around each of those awaits. Read rejections that settle
+   * Every query receives `signal`, and the listing rechecks cancellation
+   * around each await. Read rejections that settle
    * after an abort become a stable `SubagentError` with code `CANCELLED`.
    * @param parentSessionId - parent session whose direct children are listed.
-   * @param signal - caller-owned cancellation forwarded to persistence reads
+   * @param signal - caller-owned cancellation forwarded to Session queries
    *   and observed around every read await.
    * @returns children and per-child diagnostics ordered by `createdAt`, then id.
    * @throws {@link SubagentError} when the projection registry or the session
@@ -384,7 +372,7 @@ export class SubagentRuntime extends Service {
    */
   registerProvider(provider: SubagentProvider): () => void {
     const name = provider.name
-    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
+    // oxlint-disable-next-line typescript/no-misused-promises -- synchronous disposer
     return this.ctx.effect(function* (this: SubagentRuntime) {
       if (this.providers.has(name)) {
         throw new SubagentError(`a subagent provider named "${name}" is already registered`, 'DUPLICATE_PROVIDER')
@@ -496,6 +484,7 @@ export class SubagentRuntime extends Service {
   /** Reject the first requested capability that the provider lacks. */
   private assertCapabilities(provider: SubagentProvider, request: SubagentStartRequest): void {
     const needs: { when: boolean; cap: keyof SubagentCapabilities }[] = [
+      { when: request.agentOptions !== undefined, cap: 'agentOptions' },
       { when: request.outputSchema !== undefined, cap: 'outputSchema' },
       { when: request.maxDepth !== undefined, cap: 'depthLimit' },
       { when: request.toolFilter !== undefined, cap: 'toolFilter' },
