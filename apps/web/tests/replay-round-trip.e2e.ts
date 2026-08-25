@@ -150,6 +150,25 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 
+  it.skipIf(MODE === 'record')('renders the system prompt as a collapsed expandable disclosure', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-round-trip-system-prompt'))
+    const disclosure = page.getByRole('button', { name: 'System prompt', exact: true })
+    const body = page.locator('[data-system-prompt-body]')
+    await expect.poll(() => disclosure.count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(await body.count()).toBe(0)
+
+    await disclosure.click()
+    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('true')
+    const opaque = body.locator('[data-context-text]')
+    await expect.poll(() => opaque.count(), { timeout: 5_000 }).toBe(1)
+    expect(await opaque.textContent()).toContain('You are an AI agent powered by DeepSeek Harness.')
+
+    await disclosure.click()
+    await expect.poll(() => disclosure.getAttribute('aria-expanded')).toBe('false')
+    await expect.poll(() => body.count()).toBe(0)
+  })
+
   it.skipIf(MODE === 'record')('expands and collapses the reasoning fold from its click target', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-round-trip-think'))
     // Interaction over the REAL wire-delivered transcript (the fixture-client
