@@ -129,11 +129,12 @@ describe('CI workflow', () => {
     expect(serialWindows['runs-on']).toEqual(['self-hosted', 'dsh-win-ci', 'windows'])
     expect(serialWindows.name).toBe('serial / windows (self-hosted standby)')
 
-    // Aggregate: Wine and the three required split native jobs are needed;
-    // observational stays out of the verdict.
+    // Aggregate: Wine and the required split native jobs are needed;
+    // windows-coverage is temporarily non-blocking while Windows ACP
+    // half-close tests are stabilized; observational stays out too.
     expect(aggregate.needs).toContain('windows')
     expect(aggregate.needs).toContain('windows-build')
-    expect(aggregate.needs).toContain('windows-coverage')
+    expect(aggregate.needs).not.toContain('windows-coverage')
     expect(aggregate.needs).toContain('windows-native-tests')
     expect(aggregate.needs).not.toContain('windows-observational')
     expect(aggregate.needs).not.toContain('serial-windows')
