@@ -119,7 +119,7 @@ The selected DeepSeek model receives the harness system prompt, message history,
 
 #### Token effect
 
-Provider tokenization governs exact text and image-token input. Reasoning passback carries every reasoned turn's chain of thought into later requests, while dropping over-budget images avoids paying those tokens again; cache-read usage is reported when available.
+Provider tokenization governs exact text and image-token input. The adapter additionally declares per-route request-image pricing (`imageRequestPricing`): it reproduces the request projection's oldest-first offload from durable byte lengths and prices each retained image with the published v4 vision accounting (14px patch grid, 3:1 downsampling, 384-token cap, worst-case alignment pad) at its projected request dimensions, so the token meter can price image pressure before a request is sent; reported usage remains authoritative. Reasoning passback carries every reasoned turn's chain of thought into later requests, while dropping over-budget images avoids paying those tokens again; cache-read usage is reported when available.
 
 #### KV Cache effect
 
