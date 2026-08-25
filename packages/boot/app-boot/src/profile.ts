@@ -483,11 +483,21 @@ type ModuleFallbackEntry =
   | { kind: 'symlink'; packageName: string; packageDir: string }
   | { kind: 'proxy'; packageName: string; version: string; targets: Record<string, string> }
 
+/** Read one package manifest used while traversing a module-fallback dependency graph. */
+function readModuleFallbackManifest(anchor: string): ProfileManifest {
+  return JSON.parse(readFileSync(anchor, 'utf8')) as ProfileManifest
+}
+
+/** Return dependency names that may be imported by a loader-visible plugin. */
+function profileDependencyNames(manifest: ProfileManifest): string[] {
+  return [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.peerDependencies ?? {})]
+}
+
 /** Resolve the installation generation that every profile must find through the fallback directory. */
 function resolveModuleFallbackEntries(
   installAnchor: string,
 ): { entries: ModuleFallbackEntry[]; packageNames: ReadonlySet<string> } {
-  const appManifest = JSON.parse(readFileSync(installAnchor, 'utf8')) as ProfileManifest
+  const appManifest = readModuleFallbackManifest(installAnchor)
   const links = new Map<string, string>()
   /* v8 ignore next -- a real app manifest always declares its name */
   if (appManifest.name !== undefined) links.set(appManifest.name, dirname(installAnchor))
@@ -499,7 +509,7 @@ function resolveModuleFallbackEntries(
     // dsh-compaction, ...) are peers of their implementations, never plain
     // dependencies, yet out-of-tree plugins import them directly.
     /* v8 ignore next -- a real app manifest always declares dependencies */
-    for (const dep of [...Object.keys(next.manifest.dependencies ?? {}), ...Object.keys(next.manifest.peerDependencies ?? {})]) {
+    for (const dep of profileDependencyNames(next.manifest)) {
       if (links.has(dep)) continue
       const dir = packageDirFromAnchor(next.anchor, dep)
       // A declared-but-uninstalled dependency cannot be a loader-visible
@@ -507,7 +517,7 @@ function resolveModuleFallbackEntries(
       if (dir === undefined) continue
       links.set(dep, dir)
       const manifestPath = join(dir, 'package.json')
-      queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
+      queue.push({ anchor: manifestPath, manifest: readModuleFallbackManifest(manifestPath) })
     }
   }
   const entries = !isPackagedExecutable()
@@ -603,7 +613,7 @@ function dependencyClosure(
   const visited = new Set(reserved)
   for (const anchor of anchors) {
     const canonicalAnchor = realpathSync.native(anchor)
-    const manifest = JSON.parse(readFileSync(canonicalAnchor, 'utf8')) as ProfileManifest
+    const manifest = readModuleFallbackManifest(canonicalAnchor)
     /* v8 ignore next -- an installable package manifest always declares its name */
     if (manifest.name === undefined) continue
     if (!visited.has(manifest.name)) {
@@ -614,7 +624,7 @@ function dependencyClosure(
     for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
       // Service Provider packages commonly expose Service Definitions as peers.
       /* v8 ignore next -- an installable package manifest always declares dependencies or peers */
-      for (const dep of [...Object.keys(next.manifest.dependencies ?? {}), ...Object.keys(next.manifest.peerDependencies ?? {})]) {
+      for (const dep of profileDependencyNames(next.manifest)) {
         if (visited.has(dep)) continue
         const dir = packageDirFromAnchor(next.anchor, dep, exclude)
         // A declared-but-uninstalled dependency cannot be loader-visible.
@@ -622,7 +632,7 @@ function dependencyClosure(
         visited.add(dep)
         links.set(dep, dir)
         const manifestPath = join(dir, 'package.json')
-        queue.push({ anchor: manifestPath, manifest: JSON.parse(readFileSync(manifestPath, 'utf8')) as ProfileManifest })
+        queue.push({ anchor: manifestPath, manifest: readModuleFallbackManifest(manifestPath) })
       }
     }
   }
