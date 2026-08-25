@@ -14,7 +14,7 @@ import {
   TypertRemoteFailure,
 } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
+import { provideBrowserCredentials } from './browser-credentials.ts'
 import TypertGatewayService, {
   TypertGatewayError,
   type TypertRemoteEventDispatch,
@@ -969,7 +969,7 @@ async function setup(transport: boolean): Promise<{ readonly ctx: Context; reado
   roots.push(ctx)
   if (transport) {
     await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0 })
-    await ctx.plugin(MemoryCredentials)
+    provideBrowserCredentials(ctx)
   }
   await ctx.plugin(TypertRegistry)
   await ctx.plugin(TypertGatewayService)

@@ -2,37 +2,10 @@
 
 import { createHmac } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
+import type { CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { BrowserAuth } from '../src/browser-auth.ts'
 import type { ConnectionIndexRequest, ConnectionIndexResponse } from '../src/rpc.ts'
-
-class RecordCredentials {
-  record: CredentialRecord | undefined
-  discardWrites = false
-  reads = 0
-  modifies = 0
-
-  readRecord(): Promise<CredentialRecord | undefined> {
-    this.reads += 1
-    return Promise.resolve(this.record)
-  }
-
-  async modifyRecord(
-    _key: unknown,
-    mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>,
-  ): Promise<CredentialRecord | undefined> {
-    this.modifies += 1
-    const next = await mutate(this.record)
-    if (this.discardWrites) return undefined
-    if (next !== undefined) this.record = next
-    return this.record
-  }
-
-  deleteRecord(): Promise<void> {
-    this.record = undefined
-    return Promise.resolve()
-  }
-}
+import { RecordCredentials } from './browser-credentials.ts'
 
 function signedCookie(store: RecordCredentials, name: string, payload: unknown): string {
   const body = typeof payload === 'string'

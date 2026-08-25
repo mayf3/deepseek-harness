@@ -18,7 +18,7 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry, { type TypertContribution } from '@deepseek-ai/dsh-typert-registry'
 import TypertGatewayService, { TypertGatewayError } from '@deepseek-ai/dsh-api-gateway'
-import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
+import { provideBrowserCredentials } from './browser-credentials.ts'
 
 interface FixtureAgent {
   readonly id: string
@@ -1168,7 +1168,7 @@ describe('TypertGatewayService', () => {
   it('dispatches claimed invocations through /api and leaves unclaimed endpoints to its fallback', async () => {
     const ctx = new Context().extend({ fixtureScope: 'http-caller' })
     const routes: WebRoute[] = []
-    await ctx.plugin(MemoryCredentials)
+    provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes) as WebServer)
     const connectionFiber = ctx.plugin({ inject: [...connectionInject], apply: applyConnection })
     await connectionFiber

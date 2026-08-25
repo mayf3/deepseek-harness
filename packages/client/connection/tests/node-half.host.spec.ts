@@ -12,7 +12,7 @@ import { RpcId, type ClientRequest } from '@deepseek-ai/dsh-host-apiproxy/api'
 import type { WebServer, WebRoute, WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { API_PATH, apply, inject, type HostConnectionHandle } from '../src/index.ts'
 import { DEFAULT_MAX_REQUEST_BODY_BYTES } from '../src/http-bridge.ts'
-import { MemoryCredentials } from '../../../credentials/credentials/tests/memory.ts'
+import { provideBrowserCredentials } from './browser-credentials.ts'
 
 /** Structural webServer fake recording both route registries. */
 function fakeHttpServer(
@@ -92,7 +92,7 @@ async function mounted(config?: { trustedHosts?: string[] }): Promise<{
   const ctx = new Context()
   const routes: WebRoute[] = []
   const upgrades: WebUpgradeRoute[] = []
-  await ctx.plugin(MemoryCredentials)
+  provideBrowserCredentials(ctx)
   ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
   ctx.provide('apiProxy', {} as unknown as ApiProxy)
   const fiber = ctx.plugin({ inject: [...inject], apply }, config)
@@ -141,7 +141,7 @@ describe('connection node half', () => {
     const routes: WebRoute[] = []
     const upgrades: WebUpgradeRoute[] = []
     const ctx = new Context()
-    await ctx.plugin(MemoryCredentials)
+    provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, upgrades) as WebServer)
     ctx.provide('apiProxy', {} as unknown as ApiProxy)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.internal/path'] })
@@ -247,7 +247,7 @@ describe('connection node half', () => {
   it('provides a disposable dedicated RPC channel without requiring apiProxy', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
-    await ctx.plugin(MemoryCredentials)
+    provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
@@ -296,7 +296,7 @@ describe('connection node half', () => {
   it('dispatches claimed /api endpoints before the API Proxy fallback and withdraws the claim', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
-    await ctx.plugin(MemoryCredentials)
+    provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     ctx.provide('apiProxy', {} as unknown as ApiProxy)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
@@ -381,7 +381,7 @@ describe('connection node half', () => {
   it('applies the configured trust fence and JSON envelope checks to generic channels', async () => {
     const ctx = new Context()
     const routes: WebRoute[] = []
-    await ctx.plugin(MemoryCredentials)
+    provideBrowserCredentials(ctx)
     ctx.provide('webServer', fakeHttpServer(routes, []) as WebServer)
     const fiber = ctx.plugin({ inject: [...inject], apply }, { trustedHosts: ['harness.example'] })
     await fiber.await()
