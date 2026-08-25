@@ -4901,4 +4901,37 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.logs).toContain('after-cap-frames')
   }, 120_000)
 
+  it('rejects an oversized first frame that lands on the sealing threshold with a newline', async () => {
+    // The fragment-count seal runs only on newline-free chunks (the ELSE half
+    // of the newline branch), so a chunk that carries the first newline always
+    // reaches the join and its first-frame check. Fail-before: sealing that
+    // chunk into a block would empty pendingChunks, leave sawNewline false,
+    // skip the first-frame check, and join the oversized first frame whole.
+    // Whether the pipe delivers exactly 1024 chunks is timing-dependent, but
+    // the oversized first frame (63.9 MiB of A's + 12288 more before the
+    // newline) exceeds FRAME_PARSE_CAP_BYTES no matter how it arrives.
+    const { runtime } = await setup({ maxWallMs: 60_000, addressSpaceMb: 2048 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // 4 KiB writes are <= PIPE_BUF, so each os.write is atomic and the
+        // host sees one chunk per write; 16384 of them accumulate 64 MiB of
+        // newline-free bytes (16 fragment-count seals of 1024 chunks).
+        'chunk = b"A" * 4096',
+        'for _ in range(16384):',
+        '    os.write(3, chunk)',
+        // 12289 more A's push the first frame past 64 MiB; drain-loop so the
+        // write cannot truncate, then a newline and a small legitimate frame.
+        "data = b'A' * 12289 + b'\\n' + b'{\"type\":\"log\",\"text\":\"after-seal\"}\\n'",
+        'view = memoryview(data)',
+        'while view:',
+        '    view = view[os.write(3, view):]',
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('protocol frame exceeded')
+  }, 120_000)
+
 })

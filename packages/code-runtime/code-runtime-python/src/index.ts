@@ -410,11 +410,13 @@ function resolvePythonBin(bin: string): string {
   /* v8 ignore next -- PATH is set in every environment the runtime boots in; the guard is defensive. */
   if (path === undefined) return bin
   for (const dir of path.split(delimiter)) {
-    // An empty PATH segment (a `::`, implicitly CWD on POSIX) is skipped so a
-    // basename never resolves against the working directory; normal PATHs
-    // carry no empty segment.
-    /* v8 ignore next -- normal PATHs carry no empty segment. */
-    if (dir === '') continue
+    // An empty PATH segment (a `::`, implicitly CWD on POSIX) and a RELATIVE
+    // segment (`bin` or `.`) are skipped: a basename must never resolve against
+    // the working directory, and the returned candidate must be an absolute
+    // path — spawn() resolves a relative pythonBin against the host CWD, which
+    // is outside the seam contract.
+    /* v8 ignore next -- normal PATHs carry no empty or relative segment. */
+    if (dir === '' || !isAbsolute(dir)) continue
     const candidate = join(dir, bin)
     try {
       accessSync(candidate, fsConstants.X_OK)
