@@ -18,7 +18,7 @@ Reads and writes share ONE coherent state: every read (`cachedSnapshot`) is a sy
 
 - Per-session write isolation: each throttled write replaces only that session's small document, removing the global write amplification. The domain write chain serializes writes, so a newer cut never lands before an older one; domain close drains in-flight writes.
 - Listing is a synchronous in-memory read; a session without a record document simply lacks the projection column.
-- ACP, headless, SDK, and Web sessions publish cache rows for later consumers. The log-leading durability barrier may flush a covered prefix at the cache cadence and split otherwise coalesced JSONL runs; recorded profile snapshots preserve that assembled persistence behavior.
+- ACP, headless, SDK, and Web sessions publish cache rows for later consumers. The log-leading durability barrier may flush a covered prefix at the cache cadence and split otherwise coalesced physical JSONL runs; recorded profile snapshots re-pack the logical event stream so cache timing does not define fixture layout.
 - The per-record contract scopes failure: a malformed or stale-version document reads as an absent record at open, so one bad file never bricks the cache, and a checkpoint schema bump discards stale sessions per record instead of rejecting the whole domain.
 - No migration: the cache is derived data, never an authority. An obsolete cache (any earlier format) is never read — the first cold read refolds from the log and writes the current format.
 - The cache record is bound to the same log lifecycle as before: the stored `{createdAt, cwd}` identity guards against a recreated id.
