@@ -696,6 +696,32 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.value).toEqual({ echoed: { n: 1 } })
   }, 15_000)
 
+  it('keeps dispatch working when _lossless_json_violation, asyncio, and send_sync are rebound', async () => {
+    // dispatch binds _lossless_json_violation, asyncio.get_event_loop, and the
+    // channel's send method into _run locals before the program runs, so a
+    // rebind of __main__._lossless_json_violation/__main__.asyncio/
+    // __main__.ProtocolChannel.send_sync cannot turn a legitimate binding call
+    // into an exception or a wall-clock timeout.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'def boom(*a, **k):',
+        '    raise RuntimeError("hijacked")',
+        '__main__._lossless_json_violation = boom',
+        '__main__.asyncio = boom',
+        '__main__.ProtocolChannel.send_sync = boom',
+        'first = await tools.echo({"n": 1})',
+        'return first',
+      ].join('\n'),
+      bindings: tools({
+        echo: async args => ({ echoed: args as CodeJsonValue }),
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ echoed: { n: 1 } })
+  }, 15_000)
+
   it('keeps the reply pump reading when the read_frame_async class attribute is rebound', async () => {
     // _pump_replies' frame reader is a bound method captured by _run before the
     // program runs and passed in as an explicit argument, so a program rebinding
@@ -1802,6 +1828,36 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('ToolCallError:fail:typed-nope')
   })
+
+  it('keeps the declared error class catching when Exception and setattr are rebound', async () => {
+    // _make_error_class's minted __init__ def-time captures Exception and
+    // setattr, so a program rebinding __main__.Exception/__main__.setattr
+    // cannot break the rejection constructor: `except ToolCallError` must still
+    // catch and read the member property.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'def boom(*a, **k):',
+        '    raise RuntimeError("hijacked")',
+        '__main__.Exception = boom',
+        '__main__.setattr = boom',
+        'caught = ""',
+        'try:',
+        '    await tools.fail({})',
+        'except ToolCallError as e:',
+        '    caught = f"{type(e).__name__}:{e.toolName}"',
+        'return caught',
+      ].join('\n'),
+      bindings: [{
+        global: 'tools',
+        functions: { fail: async () => { throw new Error('typed-nope') } },
+        errorClass: { name: 'ToolCallError', memberNameProperty: 'toolName' },
+      }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('ToolCallError:fail')
+  }, 15_000)
 
   it('rejects an errorClass name colliding with its namespace global at the seam', async () => {
     const { runtime } = await setup()
