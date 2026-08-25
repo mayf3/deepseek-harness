@@ -706,6 +706,22 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
             .rejects.toThrow('lacks an identified message')
         }
 
+        // A known log-only event with non-object data is not a legacy message
+        // candidate; both whole-log and seek reads preserve it unchanged.
+        const primitiveId = SessionId('non-object-log-only-event')
+        const primitive = {
+          type: 'session/end-seed',
+          seq: 0,
+          time: 1,
+          data: null,
+        } as unknown as SessionEvent
+        await ctx.sessionPersistence.create(meta(primitiveId, WORK))
+        await ctx.sessionPersistence.append(primitiveId, [primitive])
+        await expect(ctx.sessionPersistence.inspect(primitiveId))
+          .resolves.toMatchObject({ events: [primitive] })
+        await expect(ctx.sessionPersistence.readFrom(primitiveId, 0))
+          .resolves.toMatchObject({ events: [primitive] })
+
         for (const type of ['user/message', 'assistant/message'] as const) {
           const missingContentId = SessionId(`invalid-${type}-without-content`)
           await ctx.sessionPersistence.create(meta(missingContentId, WORK))
