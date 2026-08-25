@@ -690,7 +690,7 @@ describe('tool-call scheduler: failure quiescence', () => {
   })
 })
 
-describe('code-mode native-tool denial through the agent loop', () => {
+describe('PTC mode native-tool denial through the agent loop', () => {
   /** A minimal in-process code runtime for test purposes — never actually runs. */
   class FakeCodeRuntime extends CodeRuntime {
     readonly language = 'typescript'
@@ -705,7 +705,7 @@ describe('code-mode native-tool denial through the agent loop', () => {
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SessionStore)
     await ctx.plugin(SystemPrompt, { persona: '' })
-    await ctx.plugin(ToolRuntime, { mode: 'code' })
+    await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- FakeCodeRuntime is an internal test helper with an opaque type shape
     await ctx.plugin(FakeCodeRuntime as any)
     await ctx.plugin(AgentRegistry)

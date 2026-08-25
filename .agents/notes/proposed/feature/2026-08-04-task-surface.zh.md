@@ -81,7 +81,7 @@ Task Surface 服务通过受 schema 校验的配置定义限制。初始默认�
 
 `show_task_surface` 接收 `{ model: TaskSurfaceModelV1 }`。Host 解析并规范化完整模型；若该会话已有一个打开的 Task Surface，则拒绝调用；否则生成 `surfaceId`，并返回带规范化模型的规范值 `{ surfaceId, model }`。`presentationMeta` 持久化 `value.model`，使投影器和执行器不会对规范化结果产生分歧。Native 结果会指明该 Surface，并说明客户端无法渲染面板时，可以通过普通消息绕过它。随后工具调用 `exec.concludeTurn()`，防止 agent 越过所要求的人工检查点继续执行。
 
-工具定义省略 `isConcurrencySafe`。根据现有工具注册表约定，省略该字段会将每次调用归类为独占排序屏障，无需新增 `ToolDefinition` 字段。该工具只会组装到同时挂载 Host 服务和 Web 渲染器的 Web profile 中。版本 1 支持 `native` 和 `both` 工具模式；仅支持 `code` 的 profile 不会向模型公布该工具，因为 Code Mode 分发属于嵌套调用，无法把呈现元数据传到外层结果。
+工具定义省略 `isConcurrencySafe`。根据现有工具注册表约定，省略该字段会将每次调用归类为独占排序屏障，无需新增 `ToolDefinition` 字段。该工具只会组装到同时挂载 Host 服务和 Web 渲染器的 Web profile 中。版本 1 支持 `native` 和 `both` 工具模式；仅支持 `code` 的 profile 不会向模型公布该工具，因为 PTC mode 分发属于嵌套调用，无法把呈现元数据传到外层结果。
 
 浏览器安全的领域包从 `@deepseek-ai/dsh-brand` 以仅类型方式导入 `Branded` 原语，并拥有全部三个 Task Surface ID。根据[规范工具输出约定](../../implemented/architecture/2026-07-20-canonical-tool-output-contract.zh.md)，规范值仅存在于本次执行中。因此，回放通过 `output.presentationMeta(args, value)` 将以下带标签的载荷随 `tool/result.meta` 一并持久化：
 
