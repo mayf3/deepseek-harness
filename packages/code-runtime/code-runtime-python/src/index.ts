@@ -1360,10 +1360,13 @@ export class PythonCodeRuntime extends CodeRuntime {
         // block list is itself bounded — every block holds at least
         // `MAX_PENDING_CHUNKS - 1` bytes, so reaching the 256 MiB ceiling admits
         // at most a few hundred thousand of them.
-        if (pendingChunks.length >= MAX_PENDING_CHUNKS) {
-          sealedBlocks.push(Buffer.concat(pendingChunks))
-          pendingChunks = []
-        }
+        // Sealing runs ONLY on a newline-free chunk, and after the newline
+        // branch below: a chunk carrying a newline must reach the join (and its
+        // first-frame check) rather than being sealed into a block the check
+        // would then not scan for newlines. That keeps the invariant
+        // `sealedBlocks hold newline-free prefixes only` true, so the
+        // first-frame scan below can charge each sealed block's whole length
+        // toward the first frame without missing a newline inside it.
         if (chunk.includes(0x0a)) {
           // First-FRAME check before the join: measure the bytes up to the
           // first newline across the held chunks. The byte counter cannot
@@ -1374,9 +1377,8 @@ export class PythonCodeRuntime extends CodeRuntime {
           // in the loop below.
           let firstFrameLen = 0
           let sawNewline = false
-          // Sealed blocks hold newline-free prefixes only (a newline-bearing
-          // chunk is joined immediately), so they are entirely part of the
-          // first frame.
+          // Sealed blocks hold newline-free prefixes only (see the sealing
+          // gate below), so they are entirely part of the first frame.
           for (const b of sealedBlocks) firstFrameLen += b.length
           for (const c of pendingChunks) {
             const nl = c.indexOf(0x0a)
@@ -1431,6 +1433,14 @@ export class PythonCodeRuntime extends CodeRuntime {
           // only the fragment's length. See {@link detachResidual}.
           pendingChunks = detachResidual(buffered)
           pendingBytes = buffered.length
+        } else if (pendingChunks.length >= MAX_PENDING_CHUNKS) {
+          // A newline-free run past the fragment-count bound: seal the held
+          // chunks into one finished block (amortized O(1) per byte, see the
+          // comment above the count bound) and keep accumulating. The gate on
+          // `chunk.includes(0x0a)` is the ELSE half of the newline branch, so a
+          // newline-bearing chunk never lands in a sealed block.
+          sealedBlocks.push(Buffer.concat(pendingChunks))
+          pendingChunks = []
         }
       })
 
