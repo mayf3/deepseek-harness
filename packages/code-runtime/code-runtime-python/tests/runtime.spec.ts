@@ -725,6 +725,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.value).toBe('nope')
   }, 15_000)
 
+
   it('still answers the call when the rejection value cannot be converted to a string', async () => {
     // `messageOf` calls `String(error)`, which runs the value's own conversion,
     // and this call site is a DETACHED async reply callback. A rejection whose
@@ -2643,6 +2644,26 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(result.value).toBe('escaped')
     expect(result.logs).toContain('leader-diagnostic-no-newline')
   }, 8000)
+
+  it('closes the child stdin so a program read sees EOF instead of blocking', async () => {
+    // The host closes the child's stdin write handle immediately after spawn
+    // (the program is an async body that reads nothing from fd 0; a live pipe
+    // would hold a host-side handle open past the run). A program that DOES
+    // read fd 0 therefore sees EOF at once. Fail-before: with the handle left
+    // open and no data written, `sys.stdin.read()` blocks and the run would
+    // hang to maxWallMs as a timeout.
+    const { runtime } = await setup({ maxWallMs: 8_000 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        'data = sys.stdin.read()',
+        'return "read: " + repr(data)',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe("read: ''")
+  }, 15_000)
 
   it('reaps a same-group child that ignores SIGTERM and releases the pipes before close', async () => {
     // The same-group counterpart to the setsid-orphan case above. A descendant
