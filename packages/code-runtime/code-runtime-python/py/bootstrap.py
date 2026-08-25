@@ -958,8 +958,14 @@ async def _run(channel: ProtocolChannel) -> None:
     # Binding the names here (before the program) makes them immune to a
     # `sys.__stdout__ = boom` rebind in model code; `None` under `-S`-style
     # redirects is guarded at flush time.
-    _stdout_orig = sys.__stdout__
-    _stderr_orig = sys.__stderr__
+    # Bind the FLUSH METHODS, not the stream objects: the settlement flush
+    # loop iterates callables, and a bare TextIOWrapper object is not callable —
+    # invoking it would raise TypeError and be swallowed by the loop's except,
+    # silently disabling the drain. A bound method captures its stream at
+    # binding time, so a later `sys.__stdout__ = boom` rebind cannot redirect
+    # it; `None` (stream absent) is guarded at flush time.
+    _stdout_orig = sys.__stdout__.flush if sys.__stdout__ is not None else None
+    _stderr_orig = sys.__stderr__.flush if sys.__stderr__ is not None else None
 
     # 6. Compile the program as the body of an async function, matching the
     # seam contract (`CodeRunRequest.program` is an async-function body: top-level
