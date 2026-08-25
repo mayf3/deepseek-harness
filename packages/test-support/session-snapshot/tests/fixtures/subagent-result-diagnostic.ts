@@ -14,12 +14,12 @@ export const inject = ['subagents']
 const RESULTS = [
   {
     id: '00000000-0000-4000-8000-0000000000d1',
-    diagnostic: 'Product subagent failure (product: Claude Code; stage: query-run; category: error_max_budget_usd)',
+    diagnostic: 'Product subagent failure (product: Claude Code; stage: query-run; category: limit)',
     output: [{ type: 'text' as const, text: 'partial assistant text' }],
   },
   {
     id: '00000000-0000-4000-8000-0000000000d2',
-    diagnostic: 'Product subagent failure (product: Claude Code; stage: query-run; category: error_max_budget_usd)',
+    diagnostic: 'Product subagent failure (product: Claude Code; stage: query-run; category: limit)',
     output: [],
   },
   {
