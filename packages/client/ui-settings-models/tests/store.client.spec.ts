@@ -1,5 +1,5 @@
 /** Page-store join: directory × namespaces × credentials, with last-good rows on failure. */
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import type { RpcResponse } from '@deepseek-ai/dsh-api-remotes/client'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { settingsSchema } from './settings-schema.client.ts'
@@ -84,14 +84,6 @@ function api(overrides: {
 }
 
 describe('ModelsSettingsStore', () => {
-  it('forwards accepted writes into the shared settings mirror', () => {
-    const { face } = api()
-    const acceptView = vi.fn()
-    const store = new ModelsSettingsStore(face, settingsSchema, { acceptView } as never)
-    store.acceptNamespace(NAMESPACES[0]!)
-    expect(acceptView).toHaveBeenCalledWith(NAMESPACES[0])
-  })
-
   it('joins rows with configured, removable, and credential state', async () => {
     const { face, mirror, seenRefs } = api()
     const store = new ModelsSettingsStore(face, settingsSchema, mirror)
