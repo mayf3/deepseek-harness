@@ -1300,7 +1300,11 @@ async def _run(channel: ProtocolChannel) -> None:
         ast.copy_location(wrapper, anchor)
         wrapped = ast.Module(body=[wrapper], type_ignores=[])
         ast.fix_missing_locations(wrapped)
-        code = compile(wrapped, "<model>", "exec")
+        # `dont_inherit=True` stops this module's `from __future__ import
+        # annotations` (line 14) from leaking into the program's compile: PEP 563
+        # would otherwise stringify the program's type annotations, changing the
+        # semantics of a legal program that reads `f.__annotations__` at runtime.
+        code = compile(wrapped, "<model>", "exec", dont_inherit=True)
         exec(code, ns)  # noqa: S102 -- defines __dsh_main__; executing model code is the point
         value = await ns["__dsh_main__"]()
         die_if_cpu_exhausted(cpu_seconds)

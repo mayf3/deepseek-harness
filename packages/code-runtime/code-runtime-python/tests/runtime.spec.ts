@@ -2689,6 +2689,24 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(result.value).toBe("read: ''")
   }, 15_000)
 
+  it('keeps runtime type annotations unevaluated-as-strings when the program reads them', async () => {
+    // bootstrap.py imports `from __future__ import annotations`; without
+    // dont_inherit=True on compile(), that PEP 563 flag leaks into the program's
+    // compiled code and stringifies its type annotations, changing the semantics
+    // of a legal program that reads `f.__annotations__` at runtime.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'def f(x: int) -> int:',
+        '    return x',
+        'return f.__annotations__["x"].__name__',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('int')
+  }, 15_000)
+
   it('reaps a same-group child that ignores SIGTERM and releases the pipes before close', async () => {
     // The same-group counterpart to the setsid-orphan case above. A descendant
     // left in the child's OWN process group (no setsid, so `kill(-pid)` reaches
