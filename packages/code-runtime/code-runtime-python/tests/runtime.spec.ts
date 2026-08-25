@@ -696,6 +696,31 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.value).toEqual({ echoed: { n: 1 } })
   }, 15_000)
 
+  it('keeps the reply pump reading when the read_frame_async class attribute is rebound', async () => {
+    // _pump_replies' frame reader is a bound method captured by _run before the
+    // program runs and passed in as an explicit argument, so a program rebinding
+    // `__main__.ProtocolChannel.read_frame_async` cannot redirect the pump (a
+    // body-local `channel.read_frame_async` lookup would resolve the rebound
+    // class attribute, since the pump starts after the program's top-level
+    // statements).
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import __main__',
+        'async def boom(*a, **k):',
+        '    raise RuntimeError("hijacked reader")',
+        '__main__.ProtocolChannel.read_frame_async = boom',
+        'first = await tools.echo({"n": 1})',
+        'return first',
+      ].join('\n'),
+      bindings: tools({
+        echo: async args => ({ echoed: args as CodeJsonValue }),
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ echoed: { n: 1 } })
+  }, 15_000)
+
   it('keeps the rejection contract when _BindingRejection is rebound', async () => {
     // `dispatch`'s except clause resolves `_BindingRejection` at call time; a
     // program that rebinds `__main__._BindingRejection = ValueError` would

@@ -1704,9 +1704,11 @@ export class PythonCodeRuntime extends CodeRuntime {
           // Swallows only a failure to remove this run's staging directory —
           // `force` already absorbs a missing one, so what remains is a
           // filesystem-level refusal. The run's own outcome is already decided
-          // and must still be delivered, and teardown retries what stays
-          // tracked; the directory holds no secret, only a copy of two
-          // checked-in scripts.
+          // and must still be delivered; the directory holds no secret, only a
+          // copy of two checked-in scripts. teardown deliberately does not
+          // sweep staging (its staging is cleared inside each run's settle), so
+          // a removal failure here is the one case the "gone by settlement"
+          // contract degrades on.
         }
         resolve({ ...result, logs })
         // Mark the fiber quiescent for THIS run: drop it from `live` and resolve
