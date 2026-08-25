@@ -14,7 +14,6 @@ import { skillEntrySchema, skillListRequestSchema, skillListValueSchema } from '
 import {
   agentPresetEntrySchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
 } from '../src/api/agent-presets.schema.ts'
-import { goalEditRequestSchema } from '../src/api/goals.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
 
 describe('RpcId', () => {
@@ -175,15 +174,6 @@ describe('skills domain schemas', () => {
     expect(() => skillEntrySchema.parse({ name: '', description: 'd', modelInvocable: true })).toThrow()
     // modelInvocable is required wire data: an entry without it fails.
     expect(() => skillEntrySchema.parse({ name: 'n', description: 'd' })).toThrow()
-  })
-})
-
-describe('goals domain schemas', () => {
-  it('requires at least one replacement field for goal.edit', () => {
-    const ref = { id: 'g1', revision: 1 }
-    expect(goalEditRequestSchema.parse({ sessionId: 's1', ref, objective: 'updated' }).objective).toBe('updated')
-    expect(goalEditRequestSchema.parse({ sessionId: 's1', ref, maxGoalRounds: 3 }).maxGoalRounds).toBe(3)
-    expect(() => goalEditRequestSchema.parse({ sessionId: 's1', ref })).toThrow()
   })
 })
 
