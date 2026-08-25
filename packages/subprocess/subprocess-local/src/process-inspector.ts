@@ -254,23 +254,35 @@ const SYSCALLS: Partial<Record<NodeJS.Architecture, SyscallTable>> = {
   arm64: { read: 63, pselect: 72, ppoll: 73, epollPwait: 22 },
 }
 
+const SUPPORTED_SYSCALL_TABLES = Object.values(SYSCALLS)
+
+// `/proc/<pid>/task/<tid>/syscall` uses the kernel ABI's numbers. User-mode
+// emulation can therefore expose a supported table different from process.arch.
+function linuxSyscallTables(arch: NodeJS.Architecture): readonly SyscallTable[] | undefined {
+  const primary = SYSCALLS[arch]
+  if (primary === undefined) return undefined
+  return [primary, ...SUPPORTED_SYSCALL_TABLES.filter(table => table !== primary)]
+}
+
 function syscallWaitsOnStdin(
   internals: ProcessInspectorInternals,
   pid: number,
   tid: number,
   syscall: SyscallInfo,
-  table: SyscallTable,
+  tables: readonly SyscallTable[],
 ): boolean {
   const [a0 = 0, a1 = 0, a2 = 0] = syscall.args
-  if (syscall.number === table.read) return a0 === 0
-  if (syscall.number === table.select || syscall.number === table.pselect) {
-    return a0 >= 1 && fdSetHasStdin(internals, pid, a1)
-  }
-  if (syscall.number === table.poll || syscall.number === table.ppoll) {
-    return a1 >= 1 && pollHasStdin(internals, pid, a0, a1)
-  }
-  if (syscall.number === table.epollWait || syscall.number === table.epollPwait) {
-    return a2 >= 1 && epollHasStdin(internals, pid, tid, a0)
+  for (const table of tables) {
+    if (syscall.number === table.read) return a0 === 0
+    if (syscall.number === table.select || syscall.number === table.pselect) {
+      return a0 >= 1 && fdSetHasStdin(internals, pid, a1)
+    }
+    if (syscall.number === table.poll || syscall.number === table.ppoll) {
+      return a1 >= 1 && pollHasStdin(internals, pid, a0, a1)
+    }
+    if (syscall.number === table.epollWait || syscall.number === table.epollPwait) {
+      return a2 >= 1 && epollHasStdin(internals, pid, tid, a0)
+    }
   }
   return false
 }
@@ -333,8 +345,8 @@ class LinuxProcessInspector extends PosixProcessInspector {
   }
 
   isStdinWaiting(pgid: number, shellPid: number): boolean {
-    const table = SYSCALLS[this.arch]
-    if (table === undefined) return false
+    const tables = linuxSyscallTables(this.arch)
+    if (tables === undefined) return false
     const shell = readLinuxStat(this.internals, shellPid)
     if (shell === undefined) return false
     const terminalDevice = readLinuxTerminalDevice(this.internals, shellPid, shell.ttyDevice)
@@ -345,7 +357,7 @@ class LinuxProcessInspector extends PosixProcessInspector {
       for (const tid of numericEntries(this.internals, `/proc/${pid}/task`)) {
         const syscall = readSyscall(this.internals, pid, tid)
         if (syscall !== undefined
-          && syscallWaitsOnStdin(this.internals, pid, tid, syscall, table)
+          && syscallWaitsOnStdin(this.internals, pid, tid, syscall, tables)
           && readLinuxTerminalDevice(this.internals, pid, process.ttyDevice, tid) === terminalDevice) return true
       }
     }

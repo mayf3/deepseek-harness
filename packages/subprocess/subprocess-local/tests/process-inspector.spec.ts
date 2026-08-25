@@ -146,7 +146,7 @@ describe('Linux process inspector', () => {
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
   })
 
-  it('detects read, select, poll, and epoll waits across non-leader threads', () => {
+  it('detects supported kernel ABI waits across non-leader threads', () => {
     const fake = fakeInternals()
     fake.dirs.set('/proc', ['100', '101'])
     fake.files.set('/proc/100/stat', stat(100, 77, 100, 77, '1'))
@@ -162,6 +162,8 @@ describe('Linux process inspector', () => {
     fake.files.set('/proc/100/task/100/syscall', 'running')
     fake.files.set('/proc/101/task/101/syscall', '-1 0x0')
     fake.files.set('/proc/101/task/102/syscall', syscall(0, 0))
+    expect(inspector.isStdinWaiting(77, 100)).toBe(true)
+    fake.files.set('/proc/101/task/102/syscall', syscall(63, 0))
     expect(inspector.isStdinWaiting(77, 100)).toBe(true)
 
     fake.files.set('/proc/101/task/102/syscall', syscall(270, 1, 0x10))
