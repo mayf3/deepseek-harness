@@ -51,8 +51,8 @@ Source: [`packages/core/session/src/types.ts`](../../packages/core/session/src/t
 interface SessionHeader {
   /**
    * On-disk format version, stamped from {@link SESSION_FORMAT_VERSION} when the
-   * session is created. Persistence refuses newer versions and older versions
-   * without a complete registered migration path.
+   * session is created. A persistence backend rejects any other version on load
+   * (no migration — see the constant).
    */
   readonly version: number
   /** The session's id (mirrors the {@link Session}'s id). */
@@ -91,27 +91,7 @@ interface SessionHeader {
 
 ## Format refusal — logs a build cannot faithfully read
 
-A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. A header `version` ahead of `SESSION_FORMAT_VERSION` names the direction ("written by a newer harness — upgrade the harness to open it"); one behind it requires a complete registered adjacent-version migration path or names the missing step. After legacy-shape normalization, an event type outside this build's generated vocabulary (`KNOWN_SESSION_EVENT_TYPES`, emitted by `gen-persistence-catalog`) refuses the same way unless the event's envelope carries `ignorable: true` — silently skipping an unrecognized required event could change how the rest of the log must be read. The message appends the raw log path when the backend keeps one artifact per session, so the refused text stays reachable. The JSONL backend refuses a foreign version straight from the raw header line, before validating today's header shape or decoding any event row — a structurally different future format still reports the upgrade direction, never "corrupt"; SQLite gates whole-file structure through its own `SCHEMA_VERSION` pragma first. Design rationale lives in the [session-log-version-mechanism note](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md).
-
-## `SessionFormatMigration` — adjacent static format upgrades
-
-Each migration class declares one adjacent `from`/`to` pair and creates fresh state for one decode attempt. The decoder snapshots every header and event output as detached lossless JSON before the next migration receives it, preserves event sequence numbers, and calls optional EOF validation only after the complete event stream is consumed. The [package README](../../packages/session/session-persistence/README.md) owns the registration and version-bump procedure.
-
-```ts type-equiv
-/** Static identity and constructor for one adjacent-version migration. */
-interface SessionFormatMigration {
-  /** Input Session format version. */
-  readonly from: number
-  /** Output Session format version; must equal `from + 1`. */
-  readonly to: number
-  /**
-   * Create fresh state for one header decode and its optional complete event
-   * stream. Instances are never shared across sessions or decode attempts.
-   * @returns a single-use migration instance.
-   */
-  new(): SessionFormatMigrationInstance
-}
-```
+A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. A header `version` ahead of `SESSION_FORMAT_VERSION` names the direction ("written by a newer harness — upgrade the harness to open it"); one behind it states that this build ships no upgrade path. After legacy-shape normalization, an event type outside this build's generated vocabulary (`KNOWN_SESSION_EVENT_TYPES`, emitted by `gen-persistence-catalog`) refuses the same way unless the event's envelope carries `ignorable: true` — silently skipping an unrecognized required event could change how the rest of the log must be read. The message appends the raw log path when the backend keeps one artifact per session, so the refused text stays reachable. The JSONL backend refuses a foreign version straight from the raw header line, before validating this format version's header shape or decoding any event row — a structurally different future format still reports the upgrade direction, never "corrupt"; SQLite gates whole-file structure through its own `SCHEMA_VERSION` pragma first. Design rationale and the deferred upgrader chain live in the [session-log-version-mechanism note](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md).
 
 ## `CreateSessionOptions` — seeding and metadata
 

@@ -25,7 +25,9 @@ fold 跟踪完整请求标头快照、步骤边界、表层追加与替换、成
 
 当组合提供 `ctx.sessionProjections` 时，token-meter 会通过一个可选子 fiber 注册三个单元。
 
-`tokenUsage` 携带完整持久日志中的 `uncachedInputTokens`、`outputTokens`、`cacheReadTokens` 和 `cacheWriteTokens`。即使请求随后失败，用量分片仍会计入；同一 `(turn, step)` 的最终 assistant 消息用量会替换该样本，而不是重复计数。推理仍是输出的一个细分项。只保留单个最新样本，依赖的是会话日志的一条顺序性质：一旦某个更晚的步骤报告了用量，合法日志就绝不会再为更早的步骤报告用量。
+`tokenUsage` 携带完整持久日志中的 `uncachedInputTokens`、`outputTokens`、`cacheReadTokens` 和 `cacheWriteTokens`。即使请求随后失败，用量分片仍会计入；最终 assistant 消息用量会替换同一次模型 attempt 的流式样本，而不是重复计数。匹配的 `llm/retry-started` 边界会结束该替换作用域，因此复用同一 `(turn, step)` 的重试会贡献一次新的计费 attempt。推理仍是输出的一个细分项。只保留单个最新样本，依赖的是会话日志的一条顺序性质：一旦某个更晚的步骤报告了用量，合法日志就绝不会再为更早的步骤报告用量。
+
+token-meter 还拥有一份可安全用于浏览器的纯 fold，将一个完整 Turn 的持久事件归并为精确的 attempt 与 Turn 用量。`step/start` 与 `llm/retry-started` 打开真实 attempt；最终消息用量替换该 attempt 的流式样本；终止失败、重试与步骤边界关闭它。缺少生命周期证据、计数不安全或精确总量矛盾时一律 fail-closed。展示消费方只选择完整 Turn 窗口并渲染结果，不再定义第二套记账状态机。
 
 `contextPressure` 携带可选的 `pressureTokens`（提供方报告的最新提示词规模，为未缓存输入加缓存读取与写入之和）、可选的 `projectedTokens`，以及来自最新一条 `request/context` 记录的可选 `contextWindow`。提供方报告用量前两个数字都保持缺失；路由适配器未公布容量时容量也保持缺失。输出不计入其中，因此轮次流式输出期间 `pressureTokens` 保持不动，等到下一个请求报告用量时才前进。
 
