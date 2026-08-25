@@ -2952,6 +2952,31 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(still).toBe(true)
   }, 20_000)
 
+  it('dispose resolves promptly when the kill empties the group and an orphan holds the pipes', async () => {
+    // The group-emptied arm of the reap poll: dispose() drives settle, kill()
+    // kills the still-running child, and a setsid orphan holds the pipes open
+    // so close never fires — the poll must run, see the group empty (the
+    // orphan escaped into its own session), cancel the pending grace SIGKILL,
+    // and finalize immediately. A prompt resolve proves the arm ran
+    // (fail-before: dropping clearTimeout/finalize from that arm leaves dispose
+    // waiting for the never-firing grace escalation and blows the bound).
+    const { runtime, fiber } = await setup({ maxWallMs: 60_000, graceMs: 60_000 })
+    const start = Date.now()
+    const runPromise = runtime.run({
+      program: [
+        'import subprocess, sys, time',
+        'subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],',
+        '                 start_new_session=True)',
+        'time.sleep(30)',
+      ].join('\n'),
+      bindings: [],
+    })
+    await fiber.dispose()
+    const result = await runPromise
+    expect(result.error?.kind).toBe('abort')
+    expect(Date.now() - start).toBeLessThan(5_000)
+  }, 20_000)
+
   it('dispose awaits reaping of a same-group survivor from a completed run', async () => {
     // The quiescence contract also holds for a run that ALREADY resolved: the run
     // stays tracked in `live` until its process group is reaped, so a `dispose()`

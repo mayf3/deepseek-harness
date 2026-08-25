@@ -1825,8 +1825,6 @@ export class PythonCodeRuntime extends CodeRuntime {
         // final hard bound where nothing more can be done.
         let hardDeadline = 0
         const pollGroup = (): void => {
-          /* v8 ignore next -- the group-emptied arm needs the close-driven settle to win the
-           * race against the grace SIGKILL; no seam-observable test pins that interleaving. */
           if (groupEmpty()) {
             // The group is gone; the grace SIGKILL is moot. Cancel it (it may not
             // have fired yet) and finalize. graceTimer is always defined here:
