@@ -17,6 +17,10 @@
 - navigation "Turn navigation":
   - button "Jump to turn 1"
   - button "Jump to turn 2"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
 - text: Explain event sourcing in one sentence. {{clock}}
 - button "Copy":
   - img
@@ -37,7 +41,12 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s Now give the same explanation to a human reader. {{clock}}
+- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: Now give the same explanation to a human reader. {{clock}}
 - button "Copy":
   - img
 - button "Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.":

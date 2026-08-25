@@ -278,7 +278,7 @@ interface AppIdentity {
 
 ## `TokenUsage`
 
-Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached input only; cached input is reported separately, and billed input is the sum of the three. Adapters whose providers fold cache hits into a single prompt total (DeepSeek's `prompt_tokens`) subtract them back out. `reasoningTokens`, when present, is informational detail already included in `outputTokens`; totals must not add it again.
+Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached input only; cached input is reported separately, and billed input is the sum of the three. Adapters whose providers fold cache hits into a single prompt total (DeepSeek's `prompt_tokens`) subtract them back out. Optional `totalTokens` is an exact aggregate prompt-plus-output count preserved from the provider or reconstructed from authoritative aggregate counters; adapters omit it when unavailable or inconsistent. `reasoningTokens`, when present, is informational detail already included in `outputTokens`; totals must not add it again.
 
 ```ts type-equiv
 /**
@@ -292,6 +292,14 @@ Per-call token accounting. Counts are **disjoint**: `inputTokens` is uncached in
 interface TokenUsage {
   inputTokens: number
   outputTokens: number
+  /**
+   * Exact full-call total including aggregate prompt and output tokens.
+   *
+   * Adapters preserve a provider total or derive it from authoritative
+   * aggregate prompt/output counters; they omit it when unavailable or
+   * inconsistent.
+   */
+  totalTokens?: number
   cacheReadTokens?: number
   cacheWriteTokens?: number
   reasoningTokens?: number
