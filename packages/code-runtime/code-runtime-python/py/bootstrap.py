@@ -473,6 +473,9 @@ def _decode_json_plain(
     _scalar_re: Any = _SCALAR_RE,
     _string_chunk_re: Any = _STRING_CHUNK_RE,
     _len: Any = len,
+    _isinstance: Any = isinstance,
+    _str: Any = str,
+    _list: Any = list,
 ) -> Any:
     """Parse one JSON document iteratively (no per-level recursion).
 
@@ -521,7 +524,7 @@ def _decode_json_plain(
 
     def string_key(i: int):
         key, end = scalar(i)
-        if not isinstance(key, str):
+        if not _isinstance(key, _str):
             raise ValueError(f"object key must be a string at offset {i}")
         end = skip_ws(end)
         if end >= length or text[end] != ":":
@@ -565,7 +568,7 @@ def _decode_json_plain(
         top = stack[-1]
         i = skip_ws(i)
         ch = text[i] if i < length else ""
-        if isinstance(top, list):
+        if _isinstance(top, _list):
             top.append(value)
             if ch == ",":
                 i = skip_ws(i + 1)
@@ -628,6 +631,7 @@ class ProtocolChannel:
         _os_read: Any = os.read,
         _read_chunk: int = _READ_CHUNK_BYTES,
         _bytes: Any = bytes,
+        _len: Any = len,
     ) -> dict[str, Any] | None:
         """Read one JSON-line frame (iteratively decoded). ``None`` on EOF.
 
@@ -655,7 +659,7 @@ class ProtocolChannel:
                 line = _bytes(self._pending[:newline])
                 del self._pending[: newline + 1]
                 return _decode(line.decode("utf-8"))
-            scanned = len(self._pending)
+            scanned = _len(self._pending)
             chunk = _os_read(self._fd, _read_chunk)
             if not chunk:
                 # EOF before a newline: drop the partial line, as the host drops
@@ -670,6 +674,8 @@ class ProtocolChannel:
         _os_read: Any = os.read,
         _read_chunk: int = _READ_CHUNK_BYTES,
         _bytes: Any = bytes,
+        _get_event_loop: Any = asyncio.get_event_loop,
+        _len: Any = len,
     ) -> dict[str, Any] | None:
         """Await one JSON-line frame without occupying a thread. ``None`` on EOF.
 
@@ -693,7 +699,7 @@ class ProtocolChannel:
         read ahead.
         """
 
-        loop = asyncio.get_event_loop()
+        loop = _get_event_loop()
         # Scan only the not-yet-examined bytes (running offset), so a frame
         # arriving across many reads costs one linear pass, not a quadratic
         # rescan of the whole buffer per read.
@@ -704,7 +710,7 @@ class ProtocolChannel:
                 line = _bytes(self._pending[:newline])
                 del self._pending[: newline + 1]
                 return _decode(line.decode("utf-8"))
-            scanned = len(self._pending)
+            scanned = _len(self._pending)
             ready = loop.create_future()
             # `add_reader` only reports readability; the read itself happens here,
             # and `os.read` returns whatever is buffered without waiting for more.
@@ -918,8 +924,10 @@ async def _run(channel: ProtocolChannel) -> None:
     _BindingRejection_cls = _BindingRejection
     # `str` for dispatch's rejection conversion is likewise bound: a program
     # rebinding `__main__.str` would otherwise run a hostile callable when the
-    # binding-rejection message is formatted.
+    # binding-rejection message is formatted. `isinstance` for `send_done`'s
+    # frame-shape check is bound the same way.
     _str = str
+    _isinstance = isinstance
     # 1. Boot handshake.
     boot = channel.read_frame()
     if boot is None or boot.get("type") != "boot":
@@ -1105,8 +1113,13 @@ async def _run(channel: ProtocolChannel) -> None:
 
     # 3. Start a reply-pump task before the run message: replies can arrive
     # interleaved with the run's own binding traffic.
+    # The pump's frame reader is bound here, before the program runs: the
+    # pump itself starts AFTER the program's top-level statements (no suspension
+    # point between create_task and `await __dsh_main__`), so a body-local
+    # `channel.read_frame_async` lookup would resolve a rebound class method.
+    pump_read = channel.read_frame_async
     reply_task = asyncio.get_event_loop().create_task(
-        _pump_replies(channel, pending, pending_lock)
+        _pump_replies(channel, pending, pending_lock, pump_read)
     )
 
     # 4. Read the run message.
@@ -1220,7 +1233,7 @@ async def _run(channel: ProtocolChannel) -> None:
 
     def send_done(payload: dict[str, Any] | str) -> None:
         try:
-            if isinstance(payload, str):
+            if _isinstance(payload, _str):
                 write_encoded_bound(payload)
             else:
                 write_encoded_bound(encode_plain_bound(payload))
@@ -1333,6 +1346,10 @@ async def _pump_replies(
     channel: ProtocolChannel,
     pending: dict[int, tuple[asyncio.AbstractEventLoop, asyncio.Future[Any]]],
     pending_lock: "threading.Lock",
+    # The frame reader is a bound method captured by _run BEFORE the program
+    # runs (see the create_task site), so a rebind of the class attribute cannot
+    # redirect it.
+    _read_frame: Any,
     # Bound as DEFAULT ARGUMENTS so they are captured at def/import time, before
     # ANY model code runs. This bootstrap IS `__main__`, so `__main__.RuntimeError
     # = ...` (or `__main__._BindingRejection`, `__main__.str`, `__main__.bool`)
@@ -1374,7 +1391,7 @@ async def _pump_replies(
             fut.set_exception(_BindingRejection(_str(message)))
 
     while True:
-        frame = await channel.read_frame_async()
+        frame = await _read_frame()
         if frame is None:
             return
         if frame.get("type") != "reply":
