@@ -11,6 +11,14 @@ Source: [`packages/session/session-projection/src/index.ts`](../../packages/sess
 `SessionProjectionStateMap` is the merge-extensible table of host fold states, while `SessionProjectionMap` retains the client-visible whole values. A domain contributes one `ProjectionDefinition` per state key; a `wire` block makes that key client-visible, and rendering belongs to the slot system, never this layer:
 
 ```ts type-equiv
+/** Minimal immutable Session fact supplied when a projection state is initialized. */
+interface ProjectionInitialization {
+  /** Number of inherited leading events that belong to a fork's source Session. */
+  readonly seedLength: number
+}
+```
+
+```ts type-equiv
 /**
  * One domain's state-driven computation unit: a pure synchronous fold plus
  * declarations and an optional client view — never an opaque getter. The framework drives
@@ -29,9 +37,10 @@ interface ProjectionDefinition<
   stateSchema: ZodType<S>
   /**
    * State for the empty log.
+   * @param initialization - immutable Session facts needed to establish the fold boundary.
    * @returns the initial state.
    */
-  init(): NoInfer<S>
+  init(initialization: ProjectionInitialization): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -62,7 +71,7 @@ interface ProjectionDefinition<
 }
 ```
 
-The whole-value event rule is load-bearing: a state-carrying log event carries the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
+The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init` receives immutable normalized Session facts rather than reaching into ambient state. Today that input is `seedLength`, which lets fork-sensitive domains ignore the inherited prefix while ordinary Sessions receive zero.
 
 ## The snapshot and the change feed
 
@@ -98,7 +107,7 @@ type ProjectionChangeListener = (
 
 ## The registry: `ctx.sessionProjections`
 
-`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence; duplicate keys throw. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
+`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, calls `init({ seedLength: session.header.seedLength ?? 0 })` before folding the in-memory log on first touch (event or read). Detached cache, history, and Subagent restore paths pass the same normalized value from the header returned with their persisted event read. Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence; duplicate keys throw. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -274,11 +283,12 @@ viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param events - the stored events with `seq >= baseSeq`, in seq order.
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
+ * @param initialization - normalized facts from the stored header returned by the same read.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, initialization: ProjectionInitialization, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 ```
 
 Types: [Session](session.md) · [SessionEvent](session.md)

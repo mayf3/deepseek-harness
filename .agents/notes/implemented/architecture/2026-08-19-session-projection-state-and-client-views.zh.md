@@ -6,7 +6,7 @@
 
 ## 问题
 
-投影注册表会持久化各单元的内部折叠状态，却没有运行时 schema；与此同时，`SessionProjectionMap` 描述的是 `view` 返回的客户端值。这使恢复出的状态未经校验，也让同一张类型表看似同时描述两种可能不同的值。host 消费方还需要读取当前折叠状态，但不应为此序列化全部已注册客户端视图，也不应把内部状态暴露到客户端协议。
+投影注册表会持久化各单元的内部折叠状态，却没有运行时 schema；与此同时，`SessionProjectionMap` 描述的是 `view` 返回的客户端值。这使恢复出的状态未经校验，也让同一张类型表看似同时描述两种可能不同的值。host 消费方还需要读取当前折叠状态，但不应为此序列化全部已注册客户端视图，也不应把内部状态暴露到客户端协议。最后，无参数 `init()` 无法接收 fork 边界等不可变 Session 事实，迫使 fork-sensitive 领域读取环境状态或在注册表外重复 fold。
 
 ## 决策
 
@@ -14,9 +14,11 @@
 
 如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
 
+`ProjectionDefinition.init(initialization)` 接收不可变的 `ProjectionInitialization`。当前字段是规范化后的 `seedLength`：live 惰性与事件驱动 cell 使用 `session.header.seedLength ?? 0`，cache、history 与 detached Subagent restore 则从提供对应事件的同一次持久 header 读取传入该值。单元仍是纯同步 fold，不能借此输入取得 Session 或其他环境可变状态。
+
 ## 结果
 
-投影状态和客户端值分别获得类型与校验，同时不引入第二套客户端 DTO 词汇。单元可以保留更丰富的 host 状态，并暴露紧凑或兼容既有结构的客户端值。畸形缓存状态不能为 `viewCheckpoint` 提供数据；恢复会拒绝畸形状态，并由缓存既有的全量读取回退从日志重建。host 消费方可以用同一套增量折叠替换私有日志扫描。
+投影状态和客户端值分别获得类型与校验，同时不引入第二套客户端 DTO 词汇。单元可以保留更丰富的 host 状态，并暴露紧凑或兼容既有结构的客户端值。畸形缓存状态不能为 `viewCheckpoint` 提供数据；恢复会拒绝畸形状态，并由缓存既有的全量读取回退从日志重建。host 消费方可以用同一套增量折叠替换私有日志扫描。fork-sensitive 单元现在也能共享这条路径，并确定性地排除继承前缀。
 
 原始 [session-projection 提案](../../proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)已记录这次拆分。既有的 [subagent 身份投影](2026-08-06-subagent-list-identity-projection.zh.md)与[投影化 token 用量](2026-07-29-projected-token-usage-and-request-context.zh.md)决策仍然有效；其中的领域折叠迁入状态表，不改变面向用户的值。
 

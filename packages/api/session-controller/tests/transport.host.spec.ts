@@ -423,23 +423,38 @@ describe('SessionHistoryController', () => {
 
   it('uses attached and detached projection cuts and isolates a child projection failure', async () => {
     const attached = await setup()
-    const session = attached.ctx.sessions.create(SessionId('projected'), { meta: { cwd: '/workspace' } })
-    session.append('turn/start', { turn: 1 })
+    const session = attached.ctx.sessions.create(SessionId('projected'), {
+      seed: [event('turn/start', 0, { turn: 1 })],
+      meta: { cwd: '/workspace', seedLength: 1 },
+    })
     const snapshot = vi.fn(() => ({ asOfSeq: 0, values: { title: 'attached' } }))
-    attached.ctx.provide('sessionProjections', { snapshot, restore: vi.fn() } as never)
+    const attachedRestore = vi.fn(() => ({ snapshot: { asOfSeq: 0, values: { title: 'attached-prefix' } } }))
+    attached.ctx.provide('sessionProjections', { snapshot, restore: attachedRestore } as never)
     await expect(attached.transport.page({
       address: { kind: 'session', sessionId: session.id },
-      throughSeq: 0,
+      throughSeq: 1,
     }, signal())).resolves.toMatchObject({ projections: { asOfSeq: 0, values: { title: 'attached' } } })
     expect(snapshot).toHaveBeenCalledWith(session)
+    await attached.transport.page({
+      address: { kind: 'session', sessionId: session.id }, throughSeq: 0,
+    }, signal())
+    expect(attachedRestore).toHaveBeenCalledWith({}, expect.any(Array), 0, { seedLength: 1 })
+
+    const legacy = attached.ctx.sessions.create(SessionId('projected-legacy'), { meta: { cwd: '/workspace' } })
+    legacy.append('turn/start', { turn: 1 })
+    await attached.transport.page({
+      address: { kind: 'session', sessionId: legacy.id }, throughSeq: -1,
+    }, signal())
+    expect(attachedRestore).toHaveBeenCalledWith({}, [], 0, { seedLength: 0 })
+
     const older = await attached.transport.page({
-      address: { kind: 'session', sessionId: session.id }, throughSeq: 0, beforeSeq: 1,
+      address: { kind: 'session', sessionId: session.id }, throughSeq: 1, beforeSeq: 1,
     }, signal())
     expect('projections' in older).toBe(false)
 
     const detached = await setup()
     const coldId = SessionId('projected-cold')
-    const header = { version: 0, id: coldId, createdAt: 1, cwd: '/workspace' }
+    const header = { version: 0, id: coldId, createdAt: 1, cwd: '/workspace', seedLength: 3 }
     cold(detached.ctx, header, [event('turn/start', 0, { turn: 1 })])
     const restore = vi.fn(() => ({ snapshot: { asOfSeq: 0, values: { title: 'cold' } } }))
     detached.ctx.provide('sessionProjections', { snapshot: vi.fn(), restore } as never)
@@ -447,7 +462,7 @@ describe('SessionHistoryController', () => {
       address: { kind: 'session', sessionId: coldId },
       throughSeq: 0,
     }, signal())).resolves.toMatchObject({ projections: { values: { title: 'cold' } } })
-    expect(restore).toHaveBeenCalledWith({}, expect.any(Array), 0)
+    expect(restore).toHaveBeenCalledWith({}, expect.any(Array), 0, { seedLength: 3 })
 
     const failed = await setup()
     cold(failed.ctx, header, [event('turn/start', 0, { turn: 1 })])

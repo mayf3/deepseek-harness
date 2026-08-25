@@ -10,9 +10,9 @@
  * (capability-seam three-way split). Design authority: the session-projection
  * RFC (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
  *
- * Whole-value event rule (load-bearing): a state-carrying log event MUST
- * carry the complete post-change state, never a bare delta — it keeps every
- * unit's transition trivially cheap and every served value self-describing.
+ * Fold rule (load-bearing): a unit synchronously and deterministically
+ * validates and folds the Session events its domain owns. The client-facing
+ * wire value, when present, is always the complete current value.
  *
  * @module @deepseek-ai/dsh-session-projection
  */
@@ -30,6 +30,12 @@ declare module '@deepseek-ai/cordis' {
 import type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts'
 
 export type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts'
+
+/** Minimal immutable Session fact supplied when a projection state is initialized. */
+export interface ProjectionInitialization {
+  /** Number of inherited leading events that belong to a fork's source Session. */
+  readonly seedLength: number
+}
 
 /**
  * One domain's state-driven computation unit: a pure synchronous fold plus
@@ -49,9 +55,10 @@ export interface ProjectionDefinition<
   stateSchema: ZodType<S>
   /**
    * State for the empty log.
+   * @param initialization - immutable Session facts needed to establish the fold boundary.
    * @returns the initial state.
    */
-  init(): NoInfer<S>
+  init(initialization: ProjectionInitialization): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -129,7 +136,7 @@ export type ProjectionCheckpoint = Record<string, ProjectionCheckpointRow>
 interface ErasedDefinition {
   key: string
   stateSchema: { parse(value: unknown): unknown }
-  init(): unknown
+  init(initialization: ProjectionInitialization): unknown
   apply(state: unknown, event: SessionEvent): unknown
   wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
@@ -230,7 +237,7 @@ export class SessionProjectionRegistry extends Service {
     const erased: ErasedDefinition = {
       key: definition.key,
       stateSchema: definition.stateSchema,
-      init: () => definition.init(),
+      init: initialization => definition.init(initialization),
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
         ? undefined
@@ -413,6 +420,7 @@ export class SessionProjectionRegistry extends Service {
    * @param checkpoint - persisted rows for one session (possibly stale or empty).
    * @param events - the stored events with `seq >= baseSeq`, in seq order.
    * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
+   * @param initialization - normalized facts from the stored header returned by the same read.
    * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
    *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
    *   refreshed checkpoint rows at that cut, ready for a durable write-back.
@@ -421,6 +429,7 @@ export class SessionProjectionRegistry extends Service {
     checkpoint: ProjectionCheckpoint,
     events: readonly SessionEvent[],
     baseSeq: number,
+    initialization: ProjectionInitialization,
   ):
   { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint } {
     const endSeq = events.at(-1)?.seq ?? baseSeq - 1
@@ -439,7 +448,7 @@ export class SessionProjectionRegistry extends Service {
           + 'its checkpoint row is missing, version-mismatched, or beyond the supplied log end; re-read from seq 0',
         )
       }
-      let state = usable ? def.stateSchema.parse(row.val) : def.init()
+      let state = usable ? def.stateSchema.parse(row.val) : def.init(initialization)
       const from = usable ? row.seq : baseSeq - 1
       for (const event of events) {
         if (event.seq > from) state = def.apply(state, event)
@@ -454,8 +463,12 @@ export class SessionProjectionRegistry extends Service {
   }
 
   /** Fold one unit from init over `events`, producing a cell watermarked at the last folded event. */
-  private buildCell(def: ErasedDefinition, events: readonly SessionEvent[]): UnitCell {
-    let state = def.init()
+  private buildCell(
+    def: ErasedDefinition,
+    events: readonly SessionEvent[],
+    initialization: ProjectionInitialization,
+  ): UnitCell {
+    let state = def.init(initialization)
     for (const event of events) state = def.apply(state, event)
     return { state, observedSeq: (events.at(-1)?.seq ?? -1) }
   }
@@ -464,7 +477,9 @@ export class SessionProjectionRegistry extends Service {
   private cellFor(registration: Registration, session: Session): UnitCell {
     let cell = registration.cells.get(session)
     if (cell === undefined) {
-      cell = this.buildCell(registration.def, session.events)
+      cell = this.buildCell(registration.def, session.events, {
+        seedLength: session.header.seedLength ?? 0,
+      })
       registration.cells.set(session, cell)
     }
     return cell
@@ -477,7 +492,9 @@ export class SessionProjectionRegistry extends Service {
       if (cell === undefined) {
         // Late build mid-stream: fold history before this event (seq = log
         // index, so the prefix slice is exact), then take the normal gate.
-        cell = this.buildCell(registration.def, session.events.slice(0, event.seq))
+        cell = this.buildCell(registration.def, session.events.slice(0, event.seq), {
+          seedLength: session.header.seedLength ?? 0,
+        })
         registration.cells.set(session, cell)
       }
       const next = registration.def.apply(cell.state, event)

@@ -184,7 +184,11 @@ export class SessionHistoryController {
       const throughSeq = events.at(-1)?.seq ?? -1
       const snapshot = source.kind === 'attached' && source.session.seq - 1 === throughSeq
         ? registry.snapshot(source.session)
-        : registry.restore({}, events, 0).snapshot
+        : registry.restore({}, events, 0, {
+          seedLength: (source.kind === 'attached'
+            ? source.session.header.seedLength
+            : source.header.seedLength) ?? 0,
+        }).snapshot
       return {
         asOfSeq: snapshot.asOfSeq,
         // Projection definitions validate whole JSON values before snapshot publication.

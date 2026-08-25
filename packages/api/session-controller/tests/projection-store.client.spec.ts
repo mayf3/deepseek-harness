@@ -12,7 +12,7 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { ProjectionValueStore } from '../src/client/sessions/projection-store.ts'
 import { Session } from '../src/client/sessions/session.ts'
 import { SessionManager } from '../src/client/sessions/manager.ts'
-import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
+import { FakeApiClient, err, fakeRemote, ok } from './fake-api.client.ts'
 import { entries, plainTurn } from './event-script.client.ts'
 
 // Test-domain keys merged into the projection map (the Service Definition package's
@@ -101,6 +101,23 @@ describe('Session projection value semantics', () => {
 })
 
 describe('Session tail-page seeding', () => {
+  it('retains a prewarmed projection when opening the Session fails', async () => {
+    const api = new FakeApiClient()
+    const projections = new ProjectionValueStore()
+    projections.apply('test/marks', { marks: ['cached'] }, 5)
+    const session = new Session(SID, api, fakeRemote(api), { projections })
+    api.onHistory = () => Promise.resolve(err({
+      code: 'session-not-found',
+      message: 'gone',
+      details: { sessionId: SID },
+    }))
+
+    await session.open()
+
+    expect(session.getSnapshot().openState).toBe('error')
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['cached'] })
+  })
+
   it('seeds the store from a history response carrying a projections block', async () => {
     const api = new FakeApiClient()
     const session = new Session(SID, api, fakeRemote(api))

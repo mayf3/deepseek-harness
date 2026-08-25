@@ -52,12 +52,17 @@ const marksUnit = (stateVersion = 1) => ({
 }) satisfies ProjectionDefinition<'cache-test/marks', MarksState>
 
 /** A persistence double serving readFrom over a fixed per-id stored log (headers stamp createdAt 0). */
-function fakePersistence(logs: Map<string, SessionEvent[]>) {
+function fakePersistence(logs: Map<string, SessionEvent[]>, seedLength?: number) {
   const readFrom = vi.fn(async (id: SessionId, fromSeq: number) => {
     const events = logs.get(String(id))
     if (events === undefined) throw new Error(`session "${id}" not found`)
     return {
-      meta: { version: 0, id, createdAt: 0 },
+      meta: {
+        version: 0,
+        id,
+        createdAt: 0,
+        ...seedLength === undefined ? {} : { seedLength },
+      },
       events: events.filter(event => event.seq >= fromSeq),
     }
   })
@@ -73,6 +78,7 @@ interface HarnessOptions {
   config?: { writeEveryEvents: number; writeIntervalMs: number }
   stateVersion?: number
   logs?: Map<string, SessionEvent[]>
+  seedLength?: number
 }
 
 const contexts: Context[] = []
@@ -90,7 +96,7 @@ async function harness(options: HarnessOptions = {}) {
   await ctx.plugin(SessionStore)
   await ctx.plugin(SessionProjectionRegistry)
   ctx.sessionProjections.register(marksUnit(options.stateVersion))
-  const persistence = fakePersistence(logs)
+  const persistence = fakePersistence(logs, options.seedLength)
   ctx.provide('sessionPersistence', persistence as never)
   const fiber = await ctx.plugin(SessionProjectionCache, options.config ?? { writeEveryEvents: 100, writeIntervalMs: 60_000 })
   return { ctx, pool, logs, fiber, persistence, cache: ctx.sessionProjectionCache }
@@ -303,6 +309,19 @@ describe('SessionProjectionCache cold read', () => {
     expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['real'] })
     expect(persistence.readFrom).toHaveBeenNthCalledWith(1, SessionId('malformed'), 1, undefined)
     expect(persistence.readFrom).toHaveBeenNthCalledWith(2, SessionId('malformed'), 0, undefined)
+  })
+
+  it('passes the stored seed boundary through bounded and fallback full restores', async () => {
+    const pool = new MemoryMediaPool()
+    const logs = new Map([['seeded', storedLog([['real']])]])
+    seedRow(pool, 'seeded', { ver: 1, seq: 1, val: { marks: 'not-an-array' } })
+    const { ctx, cache } = await harness({ pool, logs, seedLength: 2 })
+    const restore = vi.spyOn(ctx.sessionProjections, 'restore')
+
+    await cache.coldSnapshot(SessionId('seeded'))
+
+    expect(restore).toHaveBeenNthCalledWith(1, expect.any(Object), expect.any(Array), 1, { seedLength: 2 })
+    expect(restore).toHaveBeenNthCalledWith(2, {}, expect.any(Array), 0, { seedLength: 2 })
   })
 
   it('write-back failure is contained: the snapshot is still served', async () => {

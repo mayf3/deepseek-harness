@@ -459,11 +459,13 @@ describe('SubagentRuntime.listChildren', () => {
       values: { subagent: { mode: 'continuable', label: 'ancestor label', seq: 2 } },
     })
     const inspect = vi.spyOn(ctx.sessionPersistence, 'inspect')
+    const restore = vi.spyOn(ctx.sessionProjections, 'restore')
     await expect(ctx.subagents.listChildren(parent.id)).resolves.toEqual([{
       kind: 'child', id: forkChild, label: 'own label', mode: 'continuable',
       activity: 'inactive', hasChildren: false,
     }])
     expect(inspect).toHaveBeenCalledTimes(1)
+    expect(restore).toHaveBeenCalledWith({}, expect.any(Array), 0, { seedLength: seed.length })
   })
 
   it.each([

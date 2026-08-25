@@ -10,13 +10,21 @@
 
 Time-context 不是 Schedule 的依赖。组合可以挂载 `@deepseek-ai/dsh-time-context`，使模型能够按浏览器的请求本地时区解释自然语言；官方 Schedule Web overlay 正是如此。模型仍必须向 `schedule_create` 传入显式偏移量或 `time_zone`；Schedule 绝不会从模型上下文中导入或推断该值。
 
+Session projection 是可选能力。`ctx.sessionProjections` 存在时，插件会注册严格的 `schedule` 单元并公开完整的活动 `ScheduleRecord[]`；不带注册表的 headless 组合仍保留相同工具与 runtime。浏览器安全的记录词汇由纯类型出口 `@deepseek-ai/dsh-schedule/client` 提供。shipped Web bundle 通过默认 disabled 的 row 解析 `ui-schedule` client 包，显式 Schedule overlay 再与 Host Schedule 服务一起启用该 row。
+
 每项从 Schedule 折叠结果读取或作出判断的操作，都会先等待 `ctx.sessions.flush(session)`。持久化路径缺失、拒绝或已分离时，操作返回 `persistence_uncertain`；它绝不会把未经确认的 live 后缀当成列表或未找到结果。成功创建或实际删除后，还会等待追加后的持久化 barrier（屏障）再确认变更。
 
 ## 持久状态
 
 此包拥有严格的版本 1 `schedule/change` create、delete 与 dispatch 联合。每条 create 记录都包含稳定的会话本地 `ScheduleId`、已 trim 的提示词，以及使用四位年份的 RFC 3339 UTC `scheduledAt`。`after` 记录还会存储 `afterSeconds`；`at` 记录不会保留所提交的偏移量、本地日历字段或解释该值时所用的时区；`every` 记录存储 `everySeconds`，并把 `scheduledAt` 视为尚未 dispatch 的最早一个创建锚点对齐发生时点。delete 与一次性 dispatch 只携带 id。Every dispatch 还会添加 `acceptedAt`；回放会据此直接推进到该决策时点之后的第一个锚点对齐目标。
 
-回放会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的一次性或 Every dispatch，以及针对非活动记录的 delete 或 dispatch 转换。普通会话折叠完整日志。fork 只折叠 `session.events.slice(session.header.seedLength ?? 0)`，因此不会继承父会话的提醒。此包的 `./invariant` 配套模块会对现有日志和候选事件应用相同策略。
+回放会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的一次性或 Every dispatch，以及针对非活动记录的 delete 或 dispatch 转换。普通会话折叠完整日志。fork 只折叠 `session.events.slice(session.header.seedLength ?? 0)`，因此不会继承父会话的提醒。Schedule projection 初始化时接收同一个已规范化的 `seedLength`，忽略继承前缀，并复用同一严格 transition 函数。此包的 `./invariant` 配套模块会对现有日志和候选事件应用相同策略。
+
+## 客户端 projection
+
+可选的 `schedule` Session projection 以严格纯 JSON 持久化 `{ seedLength, active, seenIds }`，只发布完整的 `active` 数组。其 checkpoint schema 复用持久 Schedule decoder，拒绝重复或内部不一致的 id；损坏的持久事件会使既有 Session 打开或读取路径失败，而不会发布部分目录。live 惰性构建、事件驱动构建、缓存恢复、history 读取与 detached Subagent 读取，都从提供对应事件的同一个 Session header 接收 `seedLength`。
+
+projection 只携带持久记录，不持久化或传输 `scheduled`／`overdue`、本地化文案、相对时间、浏览器本地时间、排序状态、开合状态或交付回执。[`dsh-client-ui-schedule`](../../client/ui-schedule/README.zh.md) 从完整数组与查看方浏览器时钟派生这些呈现值。
 
 ## 绝对时间输入
 
@@ -40,7 +48,7 @@ live owner 从持久折叠结果派生最早的目标。它会拆分超过 Node 
 
 overdue 提醒首先为持久化建立检查点。如果 agent 已被某个轮次或另一项 maintenance task 占用，`runMaintenance()` 会拒绝对 idle phase 的认领；记录会保持活动，owner 会在 `whenIdle()` 后重试。获准执行的 maintenance task 会重新折叠、采样一个决策时点、构造相应的固定 framing、同步将 `followup()` 入队，并在释放 phase 前追加 dispatch。一次性提醒只追加 id。批次中的每条 Every 记录都会追加其 id 和相同的 `acceptedAt`；整数运算会选择该记录最新一个已到期且与创建锚点对齐的发生时点，并将记录直接推进到第一个未来目标。系统绝不会枚举或回放错过的间隔；每条不同的逾期记录各贡献一个发生时点，并且不存在共享的周期性准入门控。触发唤醒的 input 会保持 parked，直到 phase 释放；随后 owner 为 dispatch 建立检查点。
 
-Agent 完全 idle 后，follow-up 会开启一个普通的后续轮次；它绝不会中途引导或中断当前对话。assistant 输出通过普通 transcript（文本记录）显示，不存在独立回执或 Schedule 专属浏览器 UI。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
+Agent 完全 idle 后，follow-up 会开启一个普通的后续轮次；它绝不会中途引导或中断当前对话。assistant 输出通过普通 transcript（文本记录）显示，不存在独立回执。可选 Web 目录只显示当前活动记录，绝不表示 dispatch 成功。dispatch 表示 follow-up 已入队并被记录，不表示模型成功或用户已读取回答。
 
 framing 构造或同步 follow-up 失败不会写入 dispatch。追加失败会使该 owner 进入故障状态，因为消息可能已经入队；barrier 拒绝会把 dispatch 留给后续普通 preflight。agent 或插件执行资源释放时，会取消 timer、停止新工作，并等待进行中的 preflight 与 idle wait，且不会删除持久记录。
 
@@ -115,3 +123,4 @@ reminders_json: <JSON.stringify(reminders)>
 - **只追赶最新一次**：逾期 Every 记录只贡献其最新一个到期发生时点，因此 Schedule 绝不会回放因错过间隔而形成的积压。
 - **存在狭窄的崩溃重复窗口**：同步 follow-up 获得准入后、dispatch 检查点完成前发生崩溃，可能使提醒重复；此包不承诺模型完成、用户确认或副作用恰好执行一次。
 - **加载顺序边界**：插件不会扫描或接管加载时已经 live 的 Agent。
+- **目录只是只读当前状态**：可选 Web 界面没有历史、mutation、Retry 或 acknowledgement 语义；终结记录会消失，交付仍然是普通对话输出。

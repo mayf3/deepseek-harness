@@ -567,6 +567,57 @@ function dispatchedRecord(record: ScheduleRecord, change: DecodedDispatch): Sche
 }
 
 /**
+ * Apply one already-decoded Schedule change to a complete fold value.
+ *
+ * This is the single transition authority shared by full-log replay and the
+ * incremental Session projection. Inputs are never mutated; unchanged event
+ * filtering remains the caller's responsibility.
+ * @param folded - complete active records and used-id history before the change.
+ * @param change - one strictly decoded durable mutation.
+ * @returns the complete fold value after the mutation.
+ */
+export function applyScheduleChange(
+  folded: FoldedSchedules,
+  change: ScheduleChange,
+): FoldedSchedules {
+  const active = new Map(folded.active.map(record => [record.id, record]))
+  const seen = new Set(folded.seenIds)
+  switch (change.operation) {
+    case 'create':
+      if (seen.has(change.schedule.id)) {
+        throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
+      }
+      seen.add(change.schedule.id)
+      active.set(change.schedule.id, change.schedule)
+      break
+    case 'delete':
+      if (!active.delete(change.id)) {
+        throw new ScheduleLogError(`schedule delete targets inactive id ${JSON.stringify(change.id)}`)
+      }
+      break
+    case 'dispatch': {
+      const record = active.get(change.id)
+      if (record === undefined) {
+        throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
+      }
+      const next = dispatchedRecord(record, change)
+      if (next === undefined) active.delete(change.id)
+      else active.set(change.id, next)
+      break
+    }
+    /* v8 ignore next 3 -- decodeScheduleChange returns a closed operation union. */
+    default: {
+      const unreachable: never = change
+      throw new ScheduleLogError(`unknown decoded schedule change ${String(unreachable)}`)
+    }
+  }
+  return Object.freeze({
+    active: Object.freeze([...active.values()]),
+    seenIds: Object.freeze([...seen]),
+  })
+}
+
+/**
  * Fold the package-owned stream after the durable fork seed boundary.
  * @param events - Complete ordered session log or candidate-extended log.
  * @param seedLength - Inherited prefix length excluded from child ownership.
@@ -579,45 +630,15 @@ export function foldScheduleEvents(
   if (!Number.isSafeInteger(seedLength) || seedLength < 0 || seedLength > events.length) {
     throw new ScheduleLogError('schedule seedLength must be within the supplied event log')
   }
-  const active = new Map<ScheduleIdType, ScheduleRecord>()
-  const seen = new Set<ScheduleIdType>()
+  let folded: FoldedSchedules = Object.freeze({
+    active: Object.freeze([]),
+    seenIds: Object.freeze([]),
+  })
   for (const event of events.slice(seedLength)) {
     if (event.type !== 'schedule/change') continue
-    const change = decodeScheduleChange(event.data)
-    switch (change.operation) {
-      case 'create':
-        if (seen.has(change.schedule.id)) {
-          throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
-        }
-        seen.add(change.schedule.id)
-        active.set(change.schedule.id, change.schedule)
-        break
-      case 'delete':
-        if (!active.delete(change.id)) {
-          throw new ScheduleLogError(`schedule delete targets inactive id ${JSON.stringify(change.id)}`)
-        }
-        break
-      case 'dispatch': {
-        const record = active.get(change.id)
-        if (record === undefined) {
-          throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
-        }
-        const next = dispatchedRecord(record, change)
-        if (next === undefined) active.delete(change.id)
-        else active.set(change.id, next)
-        break
-      }
-      /* v8 ignore next 3 -- decodeScheduleChange returns a closed operation union. */
-      default: {
-        const unreachable: never = change
-        throw new ScheduleLogError(`unknown decoded schedule change ${String(unreachable)}`)
-      }
-    }
+    folded = applyScheduleChange(folded, decodeScheduleChange(event.data))
   }
-  return Object.freeze({
-    active: Object.freeze([...active.values()]),
-    seenIds: Object.freeze([...seen]),
-  })
+  return folded
 }
 
 /**

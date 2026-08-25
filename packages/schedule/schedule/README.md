@@ -10,13 +10,21 @@ Load this function plugin after `ctx.sessions`, `ctx.agents`, `ctx.tools`, `ctx.
 
 Time-context is not a Schedule dependency. A composition may mount `@deepseek-ai/dsh-time-context` so the model can interpret natural language in the browser's request-local zone, as the official Schedule Web overlay does. The model must still pass an explicit offset or `time_zone` to `schedule_create`; Schedule never imports or infers from model context.
 
+Session projection is optional. When `ctx.sessionProjections` exists, the plugin registers the strict `schedule` unit and exposes the complete active `ScheduleRecord[]`; a headless composition without the registry keeps the same tools and runtime. The browser-safe record vocabulary is available from the type-only `@deepseek-ai/dsh-schedule/client` export. The shipped Web bundle resolves the `ui-schedule` client package through a disabled row, and the explicit Schedule overlay enables that row alongside the Host Schedule services.
+
 Every operation that reads or decides from the Schedule fold first awaits `ctx.sessions.flush(session)`. A missing, rejected, or detached persistence path returns `persistence_uncertain`; it never turns an unconfirmed live suffix into a list or not-found answer. A successful create or actual delete also awaits a post-append barrier before confirming the mutation.
 
 ## Durable state
 
 The package owns the strict version-1 `schedule/change` create, delete, and dispatch union. Every create record contains a stable Session-local `ScheduleId`, the trimmed prompt, and a four-digit-year RFC 3339 UTC `scheduledAt`. An `after` record also stores `afterSeconds`; an `at` record stores no copy of its submitted offset, local calendar fields, or interpreting zone; an `every` record stores `everySeconds` and treats `scheduledAt` as the earliest creation-anchor-aligned occurrence not yet dispatched. Delete and one-shot dispatch carry only the id. Every dispatch adds `acceptedAt`, from which replay advances directly to the first anchor-aligned target after that decision time.
 
-Replay rejects unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. Normal Sessions fold the complete log. A fork folds only `session.events.slice(session.header.seedLength ?? 0)`, so it does not inherit its parent's reminders. The package's `./invariant` companion applies the same policy to existing logs and candidate events.
+Replay rejects unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. Normal Sessions fold the complete log. A fork folds only `session.events.slice(session.header.seedLength ?? 0)`, so it does not inherit its parent's reminders. The Schedule projection receives the same normalized `seedLength` when its state is initialized and ignores the inherited prefix while using the same strict transition function. The package's `./invariant` companion applies the same policy to existing logs and candidate events.
+
+## Client projection
+
+The optional `schedule` Session projection persists `{ seedLength, active, seenIds }` as strict plain JSON and publishes only the complete `active` array. Its checkpoint schema reuses the durable Schedule decoder, rejects duplicate or inconsistent ids, and fails the existing Session open or read path on corrupt durable events instead of publishing a partial catalog. Live lazy build, event-driven build, cached restore, history reads, and detached Subagent reads all receive `seedLength` from the same Session header that supplied their events.
+
+The projection carries durable records only. It does not persist or transmit `scheduled` versus `overdue`, localized text, relative time, browser-local time, sorting state, open state, or delivery receipts. [`dsh-client-ui-schedule`](../../client/ui-schedule/README.md) derives those presentation values from the full array and the viewing browser's clock.
 
 ## Absolute-time input
 
@@ -40,7 +48,7 @@ The live owner derives the earliest target from the durable fold. It splits wait
 
 An overdue reminder first checkpoints persistence. If a turn or another maintenance task owns the Agent, `runMaintenance()` rejects the idle-phase claim; the record stays active and the owner retries after `whenIdle()`. A successful maintenance task refolds, samples one decision time, builds the appropriate fixed framing, synchronously queues `followup()`, and appends dispatch before releasing the phase. A one-shot appends its id. Each Every record in a batch appends its id plus the same `acceptedAt`; integer arithmetic selects that record's latest due creation-anchor-aligned occurrence and advances it directly to the first future target. Missed intervals are never enumerated or replayed, distinct overdue records each contribute one occurrence, and there is no shared recurrence gate. Waking input remains parked until release, after which the owner checkpoints dispatch.
 
-The follow-up opens a normal later turn after the Agent becomes fully idle; it never steers or interrupts the current conversation. Its assistant output appears through the ordinary transcript, with no independent receipt or Schedule-specific browser UI. Dispatch means the follow-up was queued and recorded, not that the model succeeded or the user read the answer.
+The follow-up opens a normal later turn after the Agent becomes fully idle; it never steers or interrupts the current conversation. Its assistant output appears through the ordinary transcript, with no independent receipt. The optional Web catalog shows only currently active records and never represents dispatch success. Dispatch means the follow-up was queued and recorded, not that the model succeeded or the user read the answer.
 
 Framing or synchronous follow-up failure writes no dispatch. An append failure faults that owner because the message may already be queued; a barrier rejection leaves dispatch pending for a later ordinary preflight. Agent or plugin disposal cancels timers, stops new work, and awaits in-flight preflights and idle waits without deleting durable records.
 
@@ -115,3 +123,4 @@ The batch appends after existing history and preserves its reusable prefix. Its 
 - **Latest-only catch-up** — an overdue Every record contributes only its latest due occurrence, so Schedule never replays a missed backlog.
 - **Narrow crash duplicate window** — a crash after synchronous follow-up admission but before the dispatch checkpoint can repeat the reminder; the package does not claim model completion, user acknowledgement, or exactly-once effects.
 - **Load-order boundary** — the plugin does not scan or adopt Agents that were already live when it loaded.
+- **Catalog is read-only current state** — the optional Web surface has no history, mutation, retry, or acknowledgement semantics; terminal records disappear and delivery remains ordinary conversation output.

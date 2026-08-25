@@ -183,13 +183,17 @@ export class SessionProjectionCache extends Service {
     const related = record === undefined || identityMatches(record.identity, identityOf(tail.meta))
     try {
       if (!related) throw new Error('unrelated log identity')
-      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor)
+      restored = this.ctx.sessionProjections.restore(cached, tail.events, floor, {
+        seedLength: tail.meta.seedLength ?? 0,
+      })
     } catch {
       // Recoverable failures are an unrelated record, a row outside the
       // supplied suffix or log end, and stateSchema rejection. The full read
       // removes every checkpoint seed and lets each unit refold from init.
       const whole = await persistence.readFrom(id, 0, signal)
-      restored = this.ctx.sessionProjections.restore({}, whole.events, 0)
+      restored = this.ctx.sessionProjections.restore({}, whole.events, 0, {
+        seedLength: whole.meta.seedLength ?? 0,
+      })
     }
     await this.putSoft(id, identityOf(tail.meta), restored.checkpoint, 'cold-read write-back')
     return restored.snapshot

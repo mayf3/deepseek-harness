@@ -11,6 +11,14 @@
 `SessionProjectionStateMap` 是 host 侧折叠状态的 merge-extensible 类型表，`SessionProjectionMap` 则继续表示客户端可见的全量值。领域为每个状态 key 贡献一个 `ProjectionDefinition`；`wire` 块使该 key 对客户端可见，渲染归 slot 体系管，永远不归本层：
 
 ```ts type-equiv
+/** Minimal immutable Session fact supplied when a projection state is initialized. */
+interface ProjectionInitialization {
+  /** Number of inherited leading events that belong to a fork's source Session. */
+  readonly seedLength: number
+}
+```
+
+```ts type-equiv
 /**
  * One domain's state-driven computation unit: a pure synchronous fold plus
  * declarations and an optional client view — never an opaque getter. The framework drives
@@ -29,9 +37,10 @@ interface ProjectionDefinition<
   stateSchema: ZodType<S>
   /**
    * State for the empty log.
+   * @param initialization - immutable Session facts needed to establish the fold boundary.
    * @returns the initial state.
    */
-  init(): NoInfer<S>
+  init(initialization: ProjectionInitialization): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -62,7 +71,7 @@ interface ProjectionDefinition<
 }
 ```
 
-全量值事件规则是承重结构：携带状态的日志事件携带的是变更后的完整状态，绝不是裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
+承重规则是确定性同步 fold 与完整 wire 值。领域可以拥有全量值事件，也可以拥有增量 transition，但它会在 Host 上校验并折叠这些事件；客户端既不回放这些事件，也不会收到 delta。`init` 接收不可变且规范化的 Session 事实，而不是读取环境状态。当前输入是 `seedLength`，使 fork-sensitive 领域可以忽略继承前缀，普通 Session 则收到零。
 
 ## 快照与变更流
 
@@ -98,7 +107,7 @@ type ProjectionChangeListener = (
 
 ## 注册表：`ctx.sessionProjections`
 
-`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都在首次触达（事件或读取）时从 `init` 出发在内存日志上折叠。注册是一个 effect，其 disposer 随调用方 fiber 走：领域插件卸载后，其 key（连同缓存的 cell）从后续驱动与快照中消失，客户端将其读作能力缺失；key 重复直接 throw。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
+`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都会在首次触达（事件或读取）时先调用 `init({ seedLength: session.header.seedLength ?? 0 })`，再折叠内存日志。detached cache、history 与 Subagent restore 路径从同一次持久事件读取返回的 header 传入同一规范值。注册是一个 effect，其 disposer 随调用方 fiber 走：领域插件卸载后，其 key（连同缓存的 cell）从后续驱动与快照中消失，客户端将其读作能力缺失；key 重复直接 throw。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -274,11 +283,12 @@ viewCheckpoint(checkpoint: ProjectionCheckpoint): Partial<SessionProjectionMap>
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param events - the stored events with `seq >= baseSeq`, in seq order.
  * @param baseSeq - the seq `events` starts at (its first event's seq when non-empty).
+ * @param initialization - normalized facts from the stored header returned by the same read.
  * @returns the snapshot cut at the supplied log end (`asOfSeq` is the last
  *   supplied event's seq, `baseSeq - 1` for an empty tail) plus the
  *   refreshed checkpoint rows at that cut, ready for a durable write-back.
  */
-restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
+restore( checkpoint: ProjectionCheckpoint, events: readonly SessionEvent[], baseSeq: number, initialization: ProjectionInitialization, ): { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
 ```
 
 Types: [Session](session.zh.md) · [SessionEvent](session.zh.md)

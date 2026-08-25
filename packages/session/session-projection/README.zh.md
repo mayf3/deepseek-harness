@@ -17,13 +17,15 @@
 
 - `SessionProjectionMap`——协议块与客户端钩子共享的 merge-extensible client view 表。值是协议层 JSON 全量值；渲染归 slot 体系管，永远不归本层。
 - `SessionProjectionStateMap`——merge-extensible host 折叠状态表。每个 client-visible key 同时出现在两个表中；host-only key 只出现在这里。
-- `ProjectionDefinition<K, S>`——`{ key, stateSchema, init(), apply(state, event), wire?, stateVersion }`：同步的状态驱动计算单元。`wire` 提供 `viewSchema` 与 `view`；省略它即为 host-only 单元。
+- `ProjectionInitialization`——每个新折叠边界都会收到的不可变 Session 事实；当前包含规范化后的 `seedLength`，使领域无需读取环境 Session 状态即可排除 fork 继承前缀。
+- `ProjectionDefinition<K, S>`——`{ key, stateSchema, init(initialization), apply(state, event), wire?, stateVersion }`：同步的状态驱动计算单元。`wire` 提供 `viewSchema` 与 `view`；省略它即为 host-only 单元。
 
 ## 约定
 
-- **框架负责驱动，领域负责计算。** 注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个单元的 `apply`。领域不持有任何订阅。cell（每会话每单元一份 `{state, observedSeq}`，以 WeakMap 为键）惰性构建——在事件流过之后才注册的单元，或读取一个早于该注册的会话，都在首次触达时从 `init` 出发在内存日志上折叠。
+- **框架负责驱动，领域负责计算。** 注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个单元的 `apply`。领域不持有任何订阅。cell（每会话每单元一份 `{state, observedSeq}`，以 WeakMap 为键）惰性构建——在事件流过之后才注册的单元，或读取一个早于该注册的会话，都会在首次触达时调用 `init({ seedLength })` 并折叠内存日志。
 - **同引用即无工作。** 对与单元无关的事件，`apply` 必须返回同一个状态引用；驱动以 `Object.is` 把守变更流，因此不匹配的事件只花一次调用，不产生任何下游工作。
-- **全量值事件规则（承重）。** 携带状态的日志事件必须携带变更后的完整状态，绝不携带裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
+- **确定性 fold，完整 wire 值。** 单元同步校验并折叠其领域拥有的 Session 事件；这些持久事件既可以是完整值，也可以是领域 transition。存在 `wire` 视图时，它始终发布完整当前值，而不是让客户端处理 delta。
+- **初始化跟随事件来源。** live 惰性构建与事件驱动构建会规范化 `session.header.seedLength ?? 0`。detached restore 调用方从与持久事件同一次读取返回的 header 传入同样的规范值。初始化对象是 `init` 的不可变输入；单元不得绕过注册表读取 Session 或进程状态。
 - **单元的同步纪律。**`init`/`apply`/`wire.view` 必须是同步的；载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此。误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 - **状态是经校验的纯 JSON，`stateVersion` 是其失效锚点。** 持久投影缓存存储 `(sessionId, key, ver, seq, val)` 行，并在使用前以 `stateSchema` 校验 `val`；状态字段或折叠语义一旦变化就递增 `stateVersion`。每个单元的状态都会被检查点化——client-visible 与 host-only 一视同仁。
 - **本层没有协议词汇。** 注册表只暴露变更流与快照读取面；载体（api-proxy）据此自铸各自的帧（`session/projection`）与块。
@@ -45,6 +47,6 @@
 
 - **每个尾页携带每个 client-visible key**——尚无逐 key 的 opt-out 或惰性 key 请求形状；在值都是 UI 量级的全量状态（一张 todo 清单、一份 goal 快照）时可以接受，若某领域的值变大再重议。
 - **单元表是进程级的，因此 key 是否存在不能当作逐会话的能力信号**——只要**任何**一个 agent preset 注册了某个 key，它就出现在每个会话的快照里，包括自身组装完全不产出该值的会话。客户端必须读**值**（`plan.active`、空的 todo 列表），不能把 key 缺席当作功能缺席；如果某个单元的空值与真实值无法区分，它就该待在宿主平面——`dsh-token-meter` 正因如此留在那里。
-- **主动驱动（eager drive）逐事件触达每个单元**——按构造开销很低（全量值规则、同引用闸门），但若出现热点路径，可加按单元的事件类型预过滤，约定不变。
+- **主动驱动（eager drive）逐事件触达每个单元**——按构造开销很低（确定性同步 fold、同引用闸门），但若出现热点路径，可加按单元的事件类型预过滤，约定不变。
 - **注册表 cell 只活在内存里**——重启后首次触达时靠折叠日志重建；挂载了 `dsh-session-projection-cache` 的组合改由持久行播种该折叠。
 - **单元同步纪律只有部分可机械把关**——`wire.viewSchema.parse` 能拒绝返回 Promise 的 view，但阻塞的 `apply`、或读取撕裂的非会话状态的 `apply`，只能靠评审把关；invariant 配套项记载了为何不存在运行时检查。

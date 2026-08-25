@@ -19,6 +19,7 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     'test/marks': MarksState
     'test/count': number
+    'test/seed': number
   }
 
   interface SessionProjectionMap {
@@ -33,6 +34,7 @@ declare module '@deepseek-ai/dsh-session/types' {
 }
 
 type MarksState = { marks: string[] } | null
+const INITIALIZATION = { seedLength: 0 } as const
 /** Whole-value unit: latest test/mark event wins; unrelated events return the same reference. */
 const marksUnit = (): Omit<ProjectionDefinition<'test/marks', MarksState>, 'wire'>
   & { wire: NonNullable<ProjectionDefinition<'test/marks', MarksState>['wire']> } => ({
@@ -53,6 +55,15 @@ const countUnit = (): ProjectionDefinition<'test/count', number> => ({
   stateSchema: z.number().int().nonnegative(),
   init: () => 0,
   apply: state => state + 1,
+  stateVersion: 1,
+})
+
+/** Host-only sentinel proving which Session seed boundary initialized a cell. */
+const seedUnit = (): ProjectionDefinition<'test/seed', number> => ({
+  key: 'test/seed',
+  stateSchema: z.number().int().nonnegative(),
+  init: initialization => initialization.seedLength,
+  apply: state => state,
   stateVersion: 1,
 })
 
@@ -93,6 +104,30 @@ describe('SessionProjectionRegistry drive', () => {
     const snapshot = ctx.sessionProjections.snapshot(session)
     expect(snapshot.asOfSeq).toBe(-1)
     expect(snapshot.values['test/marks']).toEqual({ marks: [] })
+  })
+
+  it('passes the normalized fork boundary to lazy, event-driven, and restore initialization', async () => {
+    const { ctx } = await harness()
+    const parentMark: SessionEvent = {
+      type: 'test/mark', seq: 0, time: 0, data: { marks: ['parent'] },
+    }
+
+    const lazy = ctx.sessions.create(undefined, {
+      seed: [parentMark],
+      meta: { seedLength: 1 },
+    })
+    ctx.sessionProjections.register(seedUnit())
+    expect(ctx.sessionProjections.stateOf(lazy, 'test/seed')).toBe(1)
+
+    const driven = ctx.sessions.create(undefined, {
+      seed: [parentMark],
+      meta: { seedLength: 1 },
+    })
+    mark(driven, ['child'])
+    expect(ctx.sessionProjections.stateOf(driven, 'test/seed')).toBe(1)
+
+    const restored = ctx.sessionProjections.restore({}, [], 0, { seedLength: 7 })
+    expect(restored.checkpoint['test/seed']).toEqual({ ver: 1, seq: -1, val: 7 })
   })
 
   it('notifies onChanged with the validated view and the causing seq, and skips same-reference applies', async () => {
@@ -280,7 +315,7 @@ describe('SessionProjectionRegistry drive', () => {
     expect(() => ctx.sessionProjections.restore({
       'test/marks': { ver: 1, seq: 2, val: { marks: ['old'] } },
       'test/count': { ver: 99, seq: 2, val: 3 },
-    }, tail, 3)).toThrow(/re-read from seq 0/)
+    }, tail, 3, INITIALIZATION)).toThrow(/re-read from seq 0/)
     // The full-log re-read (baseSeq 0) refolds the mismatched key from init.
     const full: SessionEvent[] = [
       { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
@@ -291,7 +326,7 @@ describe('SessionProjectionRegistry drive', () => {
     const { snapshot, checkpoint } = ctx.sessionProjections.restore({
       'test/marks': { ver: 1, seq: 2, val: { marks: ['old', '2'] } },
       'test/count': { ver: 99, seq: 2, val: 3 },
-    }, full, 0)
+    }, full, 0, INITIALIZATION)
     expect(snapshot.asOfSeq).toBe(4)
     expect(snapshot.values['test/marks']).toEqual({ marks: ['new'] })
     expect('test/count' in snapshot.values).toBe(false)
@@ -312,7 +347,7 @@ describe('SessionProjectionRegistry drive', () => {
       { type: 'turn/start', seq: 3, time: 3, data: { turn: 2 } },
       { type: 'turn/end', seq: 4, time: 4, data: { turn: 2, reason: { kind: 'completed' } } },
     ]
-    const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, tail, 3)
+    const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, tail, 3, INITIALIZATION)
     expect(snapshot.asOfSeq).toBe(4)
     // marks already covers the tail (watermark 4): nothing re-applied.
     expect(snapshot.values['test/marks']).toEqual({ marks: ['done'] })
@@ -324,7 +359,7 @@ describe('SessionProjectionRegistry drive', () => {
     const { snapshot: current, checkpoint: currentCheckpoint } = ctx.sessionProjections.restore({
       'test/marks': { ver: 1, seq: 4, val: { marks: ['done'] } },
       'test/count': { ver: 1, seq: 4, val: 5 },
-    }, [], 5)
+    }, [], 5, INITIALIZATION)
     expect(current.asOfSeq).toBe(4)
     expect('test/count' in current.values).toBe(false)
     expect(currentCheckpoint['test/count']).toEqual({ ver: 1, seq: 4, val: 5 })
@@ -355,7 +390,7 @@ describe('SessionProjectionRegistry drive', () => {
       'test/marks': { marks: ['stored'] },
     })
 
-    const restored = ctx.sessionProjections.restore(rows, [], 5)
+    const restored = ctx.sessionProjections.restore(rows, [], 5, INITIALIZATION)
     expect(restored.snapshot.values).toEqual({
       'test/marks': { marks: ['stored'] },
     })
@@ -370,7 +405,7 @@ describe('SessionProjectionRegistry drive', () => {
     }
 
     expect(ctx.sessionProjections.viewCheckpoint(drifted)).toEqual({})
-    expect(() => ctx.sessionProjections.restore(drifted, [], 3)).toThrow()
+    expect(() => ctx.sessionProjections.restore(drifted, [], 3, INITIALIZATION)).toThrow()
   })
 
   it('restore rejects a row claiming events past the supplied log end (shrunk log ⇒ re-read)', async () => {
@@ -383,18 +418,18 @@ describe('SessionProjectionRegistry drive', () => {
     expect(floor).toBe(9)
     // …an intact log serves the anchor event and the checkpoint stands as-is.
     const anchor: SessionEvent = { type: 'turn/end', seq: 9, time: 9, data: { turn: 2, reason: { kind: 'completed' } } }
-    const anchored = ctx.sessionProjections.restore(rows, [anchor], 9)
+    const anchored = ctx.sessionProjections.restore(rows, [anchor], 9, INITIALIZATION)
     expect(anchored.snapshot.values).toEqual({})
     expect(anchored.checkpoint['test/count']).toEqual({ ver: 1, seq: 9, val: 10 })
     // …while a log crash-repaired down to fewer events returns an empty tail:
     // the row overreaches the proven end and a tail read cannot fix this key.
-    expect(() => ctx.sessionProjections.restore(rows, [], 9)).toThrow(/re-read from seq 0/)
+    expect(() => ctx.sessionProjections.restore(rows, [], 9, INITIALIZATION)).toThrow(/re-read from seq 0/)
     // The full re-read discards the overreaching row and refolds from init.
     const events: SessionEvent[] = [
       { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
       { type: 'turn/end', seq: 1, time: 1, data: { turn: 1, reason: { kind: 'completed' } } },
     ]
-    const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, events, 0)
+    const { snapshot, checkpoint } = ctx.sessionProjections.restore(rows, events, 0, INITIALIZATION)
     expect(snapshot.asOfSeq).toBe(1)
     expect(snapshot.values).toEqual({})
     expect(checkpoint['test/count']).toEqual({ ver: 1, seq: 1, val: 2 })
