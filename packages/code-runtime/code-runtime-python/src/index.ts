@@ -1504,9 +1504,23 @@ export class PythonCodeRuntime extends CodeRuntime {
               // An explicit flush of an unterminated line: hold it so the next
               // frame appends to the SAME entry (print('a', end='', flush=True)
               // followed by print('b') reads back as one 'ab' entry, not a fake
-              // newline). The residual is admitted by finish() if the run ends
-              // with it still open.
-              openLog = (openLog ?? '') + message.text
+              // newline). The held fragment is BOUNDED by the ledger budget via
+              // the exact-cost walk (a forged open flood would otherwise grow
+              // openLog without touching logBudget — the same unbounded-retention
+              // attack the ledger exists to stop). The cost is NOT billed here:
+              // the closing frame's admit() bills the whole merged entry once.
+              if (!logsTruncated) {
+                const merged = (openLog ?? '') + message.text
+                if (jsonStringCostUpTo(merged, logBudget - 1) === undefined) {
+                  logsTruncated = true
+                  logs.push(logTruncationMarker(this.config.maxLogBytes))
+                  clearStray(strayOut)
+                  clearStray(strayErr)
+                  openLog = undefined
+                } else {
+                  openLog = merged
+                }
+              }
               return
             }
             admit((openLog ?? '') + message.text)

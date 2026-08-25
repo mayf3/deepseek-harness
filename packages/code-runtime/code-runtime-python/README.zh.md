@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### wire
 
-帧在子进程 fd 3 上以 JSON-lines 传输——每行一个对象——因此 stdout/stderr 留给程序自己的输出。子进程 → 宿主：`boot-ack`、`call`、`log`、`done`。宿主 → 子进程：`boot`（首帧，携带全部上限与命名空间声明）、`run`（`boot-ack` 之后，只携带程序体）与每个 `call` 一个 `reply`。伪造帧可在 `done` 上同时携带 `value` 与 `error`，因此消费方必须先检查 `error`，在它存在时忽略 `value`。
+帧在子进程 fd 3 上以 JSON-lines 传输——每行一个对象——因此 stdout/stderr 留给程序自己的输出。子进程 → 宿主：`boot-ack`、`call`、`log`、`done`。宿主 → 子进程：`boot`（首帧，携带全部上限与命名空间声明）、`run`（`boot-ack` 之后，只携带程序体）与每个 `call` 一个 `reply`。伪造帧可在 `done` 上同时携带 `value` 与 `error`，因此消费方必须先检查 `error`，在它存在时忽略 `value`。`log` 帧的 `open` 标志标记由显式 flush 提交的未结束行：宿主把下一个 log 帧追加到同一条目，因此 `print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行。
 
 ### 可能出错的地方
 

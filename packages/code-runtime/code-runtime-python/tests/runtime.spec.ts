@@ -1878,6 +1878,26 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['committed'])
   }, 15_000)
 
+  it('bounds a forged open-frame flood against the log budget', async () => {
+    // The open hold must be bounded by the ledger: without the exact-cost check
+    // a forged open flood would grow the held fragment without touching
+    // logBudget — unbounded host retention under a small budget. The flood now
+    // truncates to the marker like any over-budget log traffic.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        // 2000 forged open frames, each under the frame parse cap.
+        'for _ in range(2000):',
+        "    os.write(3, b'{\"type\":\"log\",\"text\":\"a\",\"open\":true}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual([logTruncationMarker(64)])
+  }, 15_000)
+
   it('keeps a float completion exact when the program mutates the decimal context', async () => {
     // The float encoder's Decimal(repr(value)).normalize() used the process
     // GLOBAL decimal context: a legitimate program setting

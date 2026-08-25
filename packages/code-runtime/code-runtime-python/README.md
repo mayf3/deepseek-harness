@@ -33,7 +33,7 @@ The package's default export is the `PythonCodeRuntime` plugin. Its public surfa
 
 ### The wire
 
-Frames travel on the child's fd 3 as JSON-lines — one object per line — so stdout/stderr stay clear for the program's own output. Child → host: `boot-ack`, `call`, `log`, `done`. Host → child: `boot` (first frame, carrying every cap and the namespace declarations), `run` (after `boot-ack`, carrying only the program body), and one `reply` per `call`. A forged frame can carry both `value` and `error` on `done`, so a consumer must check `error` first and ignore `value` when it is set.
+Frames travel on the child's fd 3 as JSON-lines — one object per line — so stdout/stderr stay clear for the program's own output. Child → host: `boot-ack`, `call`, `log`, `done`. Host → child: `boot` (first frame, carrying every cap and the namespace declarations), `run` (after `boot-ack`, carrying only the program body), and one `reply` per `call`. A forged frame can carry both `value` and `error` on `done`, so a consumer must check `error` first and ignore `value` when it is set. A `log` frame's `open` flag marks an unterminated line committed by an explicit flush: the host appends the next log frame to the same entry, so `print('a', end='', flush=True); print('b')` reads back as one `'ab'` entry rather than a fake newline.
 
 ### What can go wrong
 

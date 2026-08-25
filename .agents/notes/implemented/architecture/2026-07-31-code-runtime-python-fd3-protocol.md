@@ -24,7 +24,7 @@ The package ships the runtime alongside the protocol; it remains independently b
 
 ## Wire contract
 
-Frames are JSON-lines on fd 3, one object per line, leaving stdout/stderr free for the program's own output. Child → host: `boot-ack`, `call`, `log`, `done`. Host → child: `boot` (first frame), `run` (after `boot-ack`), and one `reply` per `call`. The `log` frame's `truncated` flag marks the frame that IS the child ledger's own truncation marker, so the host stops capturing at the same point the child did instead of inferring it from its own budget. `done.error.kind` is one of `exception`, `invalid-output`, `output-limit`; wall/CPU budgets, aborts, and substrate death are observed host-side, not carried as frames.
+Frames are JSON-lines on fd 3, one object per line, leaving stdout/stderr free for the program's own output. Child → host: `boot-ack`, `call`, `log`, `done`. Host → child: `boot` (first frame), `run` (after `boot-ack`), and one `reply` per `call`. The `log` frame's `truncated` flag marks the frame that IS the child ledger's own truncation marker, so the host stops capturing at the same point the child did instead of inferring it from its own budget. The `log` frame's `open` flag marks an unterminated line committed by an explicit flush: the host holds it (bounded by the ledger budget) and appends the next frame to the same entry, so an explicit flush followed by more text reads back as one line rather than a fake newline. `done.error.kind` is one of `exception`, `invalid-output`, `output-limit`; wall/CPU budgets, aborts, and substrate death are observed host-side, not carried as frames.
 
 ## Mirror alignment
 
