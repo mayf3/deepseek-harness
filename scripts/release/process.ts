@@ -71,19 +71,6 @@ export function capture(command: string, args: readonly string[], options: RunOp
 }
 
 /**
- * Run a command with inherited streams, so its progress reaches the log, and
- * fail on a non-zero exit.
- * @param command - executable name.
- * @param args - command arguments.
- * @param options - working directory and environment.
- */
-export function run(command: string, args: readonly string[], options: RunOptions = {}): void {
-  const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit' })
-  if (result.error !== undefined) throw result.error
-  if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
-}
-
-/**
  * Run a command with inherited streams without blocking the event loop, so a
  * caller can hold several commands in flight, and fail on a non-zero exit.
  * Concurrent children interleave their output at line granularity.
