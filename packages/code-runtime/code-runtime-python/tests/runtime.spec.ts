@@ -1938,6 +1938,60 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['x'.repeat(16)])
   }, 15_000)
 
+  it('admits a compliant merged entry whose closing frame fits the remaining budget', async () => {
+    // The review's arithmetic check: print('a'*30, flush); print('b'*25) under
+    // maxLogBytes: 64 has a merged wire cost of 2 quotes + 55 content + 1
+    // separator = 58 <= 63, so it MUST be admitted as one entry. The earlier
+    // cap math (logBudget - openCost) made the closing frame's walk see a
+    // negative cap and truncate a compliant entry.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        "print('a' * 30, end='', flush=True)",
+        "print('b' * 25)",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['a'.repeat(30) + 'b'.repeat(25)])
+  }, 15_000)
+
+  it('rejects an open frame that would overflow the ledger by one byte', async () => {
+    // The review's arithmetic check: an open frame whose full JSON cost is 63
+    // (maxLogBytes: 64 -> ledger 63) must be rejected by the first-fragment
+    // cap logBudget - 1 (62), not admitted with a bill of 64 that pushes the
+    // ledger negative.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        "print('x' * 61, end='', flush=True)",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual([logTruncationMarker(64)])
+  }, 15_000)
+
+  it('bills the closing frame as the merged tail under an exact-fit budget', async () => {
+    // The child's split billing: a 30-char open + a 30-char closing frame cost
+    // 2 + 60 + 1 = 63 = ledger 63 exactly; the closing frame must be billed as
+    // the merged tail (content only), not as a fresh entry (which would
+    // double-charge the quotes+separator and truncate an exact-fit entry).
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        "print('a' * 30, end='', flush=True)",
+        "print('b' * 30)",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['a'.repeat(30) + 'b'.repeat(30)])
+  }, 15_000)
+
   it('truncates when the closing frame of a merged entry overflows the budget', async () => {
     // The merged entry's billed-once cost: an open fragment that nearly
     // exhausts the budget, then a closing frame whose content no longer fits —

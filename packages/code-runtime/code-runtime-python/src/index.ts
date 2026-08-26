@@ -462,6 +462,7 @@ function serializedCharCost(code: number, character: string): number {
  * @returns the exact serialized byte cost, or `undefined` once it exceeds `maxBytes`.
  */
 function jsonStringCostUpTo(text: string, maxBytes: number): number | undefined {
+  if (maxBytes < 2) return undefined
   let bytes = 2 // the enclosing quotes
   for (const character of text) {
     bytes += serializedCharCost(character.codePointAt(0) as number, character)
@@ -1028,11 +1029,9 @@ export class PythonCodeRuntime extends CodeRuntime {
       // An unterminated line flushed with the `open` flag: the next log frame
       // appends to it (no fake newline between entries), and finish() pushes
       // the residual if the run ends with it still open. Held as a fragment
-      // ARRAY with an incrementally billed content cost, so k tiny open frames
-      // cost O(k) — re-joining and re-walking the whole held text per frame
-      // would be O(k * budget) (jsonStringCostUpTo re-walks from the start).
+      // ARRAY, so k tiny open frames cost O(k) — re-joining and re-walking the
+      // whole held text per frame would be O(k * budget).
       let openParts: string[] = []
-      let openCost = 0
 
       // One host-side ledger covers normal frames, forged frames, and stray stdout bytes.
       // The ledger starts one byte below maxLogBytes: each entry is charged its
@@ -1515,20 +1514,24 @@ export class PythonCodeRuntime extends CodeRuntime {
               // its content (jsonStringCostUpTo includes the two quotes), and
               // the closing frame only its own content — the merged entry's
               // wire cost is billed exactly once, split across the fragments.
+              // Caps: the first fragment's exact-cost walk uses logBudget - 1
+              // (the ledger's reserved byte, matching admit), a continuation's
+              // logBudget + 2 (a continuation is billed WITHOUT quotes, so its
+              // billed cost cost - 2 fits exactly when the walk's cost is at
+              // most logBudget + 2).
               if (!logsTruncated) {
-                const cost = jsonStringCostUpTo(message.text, logBudget - openCost)
+                const cap = openParts.length === 0 ? logBudget - 1 : logBudget + 2
+                const cost = jsonStringCostUpTo(message.text, cap)
                 if (cost === undefined) {
                   logsTruncated = true
                   logs.push(logTruncationMarker(this.config.maxLogBytes))
                   clearStray(strayOut)
                   clearStray(strayErr)
                   openParts = []
-                  openCost = 0
                 } else {
                   const bill = openParts.length === 0 ? cost + 1 : Math.max(cost - 2, 0)
                   logBudget -= bill
                   openParts.push(message.text)
-                  openCost += bill
                 }
               }
               return
@@ -1536,12 +1539,13 @@ export class PythonCodeRuntime extends CodeRuntime {
             if (openParts.length > 0) {
               // Closing frame: the held fragments are already billed; bill only
               // this frame's own content (the quotes and separator ride on the
-              // first fragment) and push the merged entry once.
+              // first fragment) and push the merged entry once. Cap is
+              // logBudget + 2 for the same reason as a continuation.
               /* v8 ignore next -- logsTruncated is an invariant false here: an open
                * frame that would trip the ledger resets openParts, so a non-empty
                * hold implies the ledger never truncated. The guard is defensive. */
               if (!logsTruncated) {
-                const cost = jsonStringCostUpTo(message.text, logBudget - openCost)
+                const cost = jsonStringCostUpTo(message.text, logBudget + 2)
                 if (cost === undefined) {
                   logsTruncated = true
                   logs.push(logTruncationMarker(this.config.maxLogBytes))
@@ -1553,7 +1557,6 @@ export class PythonCodeRuntime extends CodeRuntime {
                 }
               }
               openParts = []
-              openCost = 0
               return
             }
             admit(message.text)
@@ -1942,7 +1945,6 @@ export class PythonCodeRuntime extends CodeRuntime {
           logs.push(openParts.join(''))
         }
         openParts = []
-        openCost = 0
         if (child.pid === undefined) {
           settle(result)
           return

@@ -167,7 +167,7 @@ class LogBuffer:
         # above the budget truncates without ever encoding it — the full encode
         # would allocate a second equally large string and could turn a
         # truncatable log into an RLIMIT_AS death.
-        if (len(text) + 3 if not open or not self._open_started else len(text) + 1) > self._remaining:
+        if (len(text) + 3 if not self._open_started else len(text)) > self._remaining:
             self._truncated = True
             self._sink(log_truncation_marker(self._max_bytes), truncated=True)
             return
@@ -193,11 +193,13 @@ class LogBuffer:
         # instead of emitting the truncation marker. The +1 also floors an empty
         # entry above zero, so a flood of blank ``print()`` lines exhausts the
         # budget instead of emitting unbounded zero-cost log frames.
-        # Split billing for an `open` entry: the first fragment pays the full
-        # JSON-string cost plus the separator; each continuation pays only its
-        # content (the quotes and the separator were billed on the first
-        # fragment). A closed entry pays the full cost as before.
-        if open and self._open_started:
+        # Split billing for a merged entry: the FIRST fragment pays the full
+        # JSON-string cost plus the separator; every later fragment — a
+        # continuation OR the closing frame (it is the merged entry's tail, not
+        # a new entry) — pays only its content, since the quotes and separator
+        # were billed on the first fragment. A standalone closed entry (no open
+        # in progress) pays the full cost as before.
+        if self._open_started:
             cost = _json_string_cost(raw) - 2
             if cost < 0:
                 cost = 0
