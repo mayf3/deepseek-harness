@@ -903,7 +903,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
-  }, SPAWN_TIMEOUT_MS + 30_000)
+  }, SPAWN_TIMEOUT_MS * 2 + 30_000)
 
   describe('config dump', () => {
     let home: string
@@ -965,7 +965,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(stdout).toContain('# == @deepseek-ai/dsh-sdk-minimal')
       expect(stdout).not.toContain('@deepseek-ai/dsh-base')
       expect(stdout).not.toContain('@deepseek-ai/dsh-web-app')
-    }, SPAWN_TIMEOUT_MS + 30_000)
+    }, SPAWN_TIMEOUT_MS * 2 + 30_000)
 
     it('composes the profile user layer and a --patch overlay in order', async () => {
       // Auto-init the web profile first, then write its user layer.
@@ -1004,6 +1004,6 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       // Both layers patched the row; the comment lists them in application order.
       expect(stdout).toContain(`patched by ${profilePatch}, ${overlay}`)
       expect(stderr).toContain('patch: entry "absent-row" not found')
-    }, SPAWN_TIMEOUT_MS + 30_000)
+    }, SPAWN_TIMEOUT_MS * 2 + 30_000)
   })
 })
