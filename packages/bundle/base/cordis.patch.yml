@@ -139,8 +139,10 @@
       name: '@deepseek-ai/dsh-session-projection'
 
     # Session telemetry defaults to feedback-gated sharing: FEEDBACK_ONLY
-    # uploads the canonical session-log prefix only after the user records
-    # /feedback. DSH_TELEMETRY_MODE overrides to FULL or DISABLED; uploading
+    # uploads only when the user records /feedback, releasing the session
+    # records since the last handoff through that event (a resumed session
+    # shares only its current lifecycle). DSH_TELEMETRY_MODE overrides to
+    # FULL or DISABLED; uploading
     # mirrors session-log records onto OTLP/HTTP logs with no session-telemetry/record
     # redaction rule, so exports are the raw captured copy. The deployment
     # stance, env seams, and follow-ups are pinned in the feedback-gated-default

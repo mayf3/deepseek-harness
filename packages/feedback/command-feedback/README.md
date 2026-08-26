@@ -20,7 +20,7 @@ The acknowledgement names the receiving session id and reports how that session 
 | Disclosed status | Acknowledgement sentence |
 |---|---|
 | `full` | `Session sharing is enabled.` |
-| `feedback-only` | `Session sharing is feedback-gated; recording feedback releases the session prefix for sharing.` |
+| `feedback-only` | `Session sharing is feedback-gated; recording feedback uploads the session records not yet shared.` |
 | `disabled` | `Session sharing is disabled.` |
 | no service | `Session sharing is not configured.` |
 

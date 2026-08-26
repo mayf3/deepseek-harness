@@ -10,7 +10,7 @@ Diagnosing a `/feedback` report needs the session data the report describes. Wit
 
 ## Decision
 
-The shared dsh base resolves an unset or empty `DSH_TELEMETRY_MODE` to `FEEDBACK_ONLY` instead of `DISABLED`. Nothing is uploaded before the user records `/feedback`; recording feedback releases the canonical session-log prefix through that exact event to the configured OTLP endpoint, and the acknowledgement's sharing disclosure states that recording feedback releases the session prefix. `FULL` and `DISABLED` remain explicit `DSH_TELEMETRY_MODE` overrides, any non-empty `DSH_TELEMETRY_DISABLED` remains the authoritative pre-load hard opt-out, and the plugin's own omitted-`mode` default stays `DISABLED`: the default changes only in the shared base's config expression, where deployments already override it.
+The shared dsh base resolves an unset or empty `DSH_TELEMETRY_MODE` to `FEEDBACK_ONLY` instead of `DISABLED`. Nothing is uploaded before the user records `/feedback`; each recorded feedback uploads the not-yet-shared session-log records — from the last handoff through that exact event — to the configured OTLP endpoint, a resumed session shares only its current lifecycle, and the acknowledgement's sharing disclosure states that recording feedback uploads the records not yet shared. `FULL` and `DISABLED` remain explicit `DSH_TELEMETRY_MODE` overrides, any non-empty `DSH_TELEMETRY_DISABLED` remains the authoritative pre-load hard opt-out, and the plugin's own omitted-`mode` default stays `DISABLED`: the default changes only in the shared base's config expression, where deployments already override it.
 
 This supersedes the session-backend default of the [default-off decision](2026-08-10-telemetry-default-off.md), accepting the user's explicit feedback action as the release authorization that note required a deployment setting for. That note's hard opt-out and its launcher-feed history remain current, and the [default-mount decision](2026-07-31-web-telemetry-default-mount.md) continues to own the endpoint, batching cadence, and exit-drain settings.
 
@@ -24,6 +24,6 @@ This supersedes the session-backend default of the [default-off decision](2026-0
 
 ## Consequences
 
-- A fresh installation uploads the session-log prefix to the production collector when — and only when — the user records `/feedback`; no other trigger uploads.
+- A fresh installation uploads the not-yet-shared session-log records to the production collector when — and only when — the user records `/feedback`; no other trigger uploads.
 - Released exports remain the raw captured copy: the shipped base mounts no `session-telemetry/record` redaction rule, so they can contain message text, tool arguments and results, and workspace paths.
 - The sharing disclosure is part of the `/feedback` acknowledgement, so the user reads it after the release has been triggered. A deployment that requires prior informed consent must override the default to `DISABLED` or add a pre-upload confirmation before this default is defensible there.
