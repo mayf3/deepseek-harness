@@ -257,7 +257,8 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       The action row sits outside it — nesting buttons is
                       invalid, and these act on the card rather than select it.
                       A broken preset cannot compose a session, so its body is
-                      disabled and the card says why instead of offering it. */}
+                      disabled; the reason rides the badge rather than the card
+                      face, which stays the preset's own description. */}
                     <button
                       type="button"
                       className={css.cardMain}
@@ -266,13 +267,25 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       // Without this the name is the whole card read aloud —
                       // title, badge, description, id.
                       aria-label={`${row.broken !== undefined ? t('brokenBadge') : row.isDefault ? t('inUse') : t('setDefault')}: ${text.name}`}
-                      title={row.broken ?? (row.isDefault ? t('inUse') : t('setDefault'))}
+                      // The reason rides the badge, not the whole card: two
+                      // tooltips over one target would race, and the card's
+                      // own label answers what clicking it would do.
+                      title={row.broken !== undefined ? t('brokenBadge') : row.isDefault ? t('inUse') : t('setDefault')}
                       onClick={() => { void props.makeDefault(row.id) }}
                     >
                       <span className={css.cardHead}>
                         <span className={css.cardName}>{text.name}</span>
                         {row.broken !== undefined
-                          ? <span className={css.brokenBadge}>{t('brokenBadge')}</span>
+                          ? (
+                            <span className={css.brokenBadge}>
+                              {t('brokenBadge')}
+                              {/* Pointer-only, hence `aria-hidden`: the same
+                                reason reaches assistive technology through the
+                                alert below, and a second copy inside the card's
+                                own text would be read out twice. */}
+                              <span className={css.brokenTip} aria-hidden="true">{row.broken}</span>
+                            </span>
+                          )
                           : null}
                         <span className={css.badge}>
                           {row.trust === 'user' ? t('userTrust') : t('builtIn')}
@@ -280,6 +293,10 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                         {row.isDefault ? <span className={css.inUse}>{t('inUse')}</span> : null}
                       </span>
                       <CardDescription text={text.description ?? t('noDescription')} />
+                      {/* Visually hidden, deliberately: the pointer path is the
+                        badge's tooltip, and a disabled card body is out of the
+                        tab order, so this is the only reading a screen reader
+                        or a keyboard-only user gets. */}
                       {row.broken === undefined
                         ? null
                         : <span className={css.cardBrokenReason} role="alert">{row.broken}</span>}

@@ -11,17 +11,27 @@
  * path refuses the name while no surface shows anything to delete — and a
  * malformed composition would otherwise read as an ordinary preset until the
  * first session fails to mount it.
+ *
+ * Health is what every consumer reads before offering a preset — the pickers
+ * drop a broken row rather than defer the discovery to a failed session
+ * start — so it covers the way an authored preset actually rots: a row naming
+ * a package that was renamed or uninstalled. Resolving those names is a
+ * separate pass from the shape check and stops short of importing anything,
+ * so a composition is judged without running a line of plugin code.
  * @module @deepseek-ai/dsh-agent-presets/discovery
  */
 
+import { existsSync } from 'node:fs'
 import { readdir, readFile, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { isBuiltin } from 'node:module'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { load } from 'js-yaml'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
 import { readPresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
+import { classifyRowSpecifier, type RowSpecifier } from './specifier.ts'
 
 /** The composition file that makes a directory a preset. */
 export const COMPOSITION_FILE = 'agent.cordis.yml'
@@ -85,14 +95,152 @@ function entryListProblem(rows: unknown, at = ''): string | undefined {
 }
 
 /**
+ * Whether a package name is installed anywhere above `base`.
+ *
+ * Node's own upward `node_modules` walk, stopping at the package directory:
+ * the question is whether the package is there at all, which is what a row
+ * naming a package a rename or an uninstall took away gets wrong. A pnpm
+ * store link answers through the symlink, and a link left dangling by a
+ * deleted checkout answers false — the shape a stale profile install leaves.
+ *
+ * `existsSync` rather than the async `stat`: the walk is a handful of lookups
+ * per package and runs on every roster read, where 150 promise round-trips
+ * cost more than the lookups they wrap.
+ * @param name - the package specifier, possibly carrying a subpath.
+ * @param base - the URL to walk up from.
+ * @returns true when the package directory is installed above `base`.
+ */
+function packageInstalled(name: string, base: string): boolean {
+  // A scoped name spends two segments on the package; anything after either
+  // form is a subpath export, which lives inside the package directory.
+  const pkg = name.split('/').slice(0, name.startsWith('@') ? 2 : 1).join('/')
+  let dir = fileURLToPath(base)
+  for (;;) {
+    if (existsSync(join(dir, 'node_modules', pkg, 'package.json'))) return true
+    const parent = dirname(dir)
+    if (parent === dir) return false
+    dir = parent
+  }
+}
+
+/**
+ * Package specifiers a resolver has already refused, keyed by base and name.
+ *
+ * Consulted only after {@link packageInstalled} finds nothing, which is what
+ * keeps a recorded refusal from going stale in the direction that matters: a
+ * package installed since is found on disk and never reaches this set, so
+ * fixing an install still takes effect on the next roster read. What it
+ * removes is the repeat cost of confirming the same absent name on every
+ * read, which a preset carrying several stale rows would otherwise pay
+ * forever.
+ */
+const refusedPackages = new Set<string>()
+
+/**
+ * Whether one classified row names a module that exists, importing nothing.
+ *
+ * Each kind is checked by what actually answers it. A package name is looked
+ * up on disk, then — only when that finds nothing — confirmed through
+ * `import.meta.resolve`, which is authoritative but expensive: a registered
+ * ESM loader hook turns each call into a synchronous round-trip to the hooks
+ * thread, measured at 2ms for a hit and 5ms for a miss under the `tsx` hook
+ * the source launch installs. Keeping it to the rows that look absent leaves
+ * a roster read paying for the failures it reports rather than for every row
+ * it clears, and keeps a package that only a loader can resolve — through
+ * tsconfig paths, or an import map — from being called broken.
+ *
+ * A relative or `file:` specifier is statted, because `import.meta.resolve`
+ * only joins URLs for those: a preset shipping a file that was deleted would
+ * otherwise pass. Nothing is evaluated either way, so a row is judged without
+ * its plugin observing that discovery looked.
+ * @param row - the classified specifier, from {@link classifyRowSpecifier}.
+ * @param presetBase - directory URL a preset-relative specifier resolves against.
+ * @param harnessBase - base URL a package name resolves against.
+ * @returns true when the row names something that can be imported.
+ */
+async function rowResolves(row: RowSpecifier, presetBase: string, harnessBase: string): Promise<boolean> {
+  if (row.kind === 'builtin') return true
+  if (row.kind === 'package') {
+    if (isBuiltin(row.specifier)) return true
+    if (packageInstalled(row.specifier, harnessBase)) return true
+    const refusal = `${harnessBase}\u0000${row.specifier}`
+    if (refusedPackages.has(refusal)) return false
+    try {
+      import.meta.resolve(row.specifier, harnessBase)
+      return true
+    } catch {
+      // Absent package, dangling install link, missing subpath export: every
+      // resolution failure is the same answer to the only question asked here,
+      // and the reason names the row rather than repeating the resolver's text.
+      refusedPackages.add(refusal)
+      return false
+    }
+  }
+  const url = row.kind === 'file' ? new URL(row.specifier) : new URL(row.specifier, presetBase)
+  return await isFile(fileURLToPath(url))
+}
+
+/** One row that names a module no resolver can find. */
+interface UnresolvableRow {
+  /** The row's own id in quotes, or its position when it declares none. */
+  readonly label: string
+  /** The specifier exactly as the row wrote it. */
+  readonly name: string
+}
+
+/**
+ * Rows whose module cannot be resolved.
+ *
+ * Only rows that will certainly be started are checked. `disabled` is the one
+ * entry field the Loader interpolates — a `!!js` expression evaluates against
+ * the loader context at mount time — so a row carrying anything but an absent,
+ * null, or `false` value cannot be proven to load from a file alone. Skipping
+ * those trades a missed name for the failure that matters more: calling a
+ * usable preset broken makes it unselectable and uncopyable, which is worse
+ * than reporting the same stale row at mount time as before.
+ *
+ * Shape is the caller's precondition: {@link entryListProblem} has already
+ * proven every row is a map carrying a `name` string, and groups recurse the
+ * same way it does.
+ * @param rows - the parsed composition rows.
+ * @param presetBase - directory URL a preset-relative specifier resolves against.
+ * @param harnessBase - base URL a package name resolves against.
+ * @param at - row-path prefix for nested diagnostics, empty at the top level.
+ * @returns one entry per unresolvable row, in composition order.
+ */
+async function unresolvableRows(
+  rows: readonly unknown[],
+  presetBase: string,
+  harnessBase: string,
+  at = '',
+): Promise<UnresolvableRow[]> {
+  const found: UnresolvableRow[] = []
+  for (const [index, entry] of rows.entries()) {
+    const row = entry as { id?: unknown; name: string; group?: unknown; config?: unknown; disabled?: unknown }
+    const { disabled } = row
+    if (disabled !== undefined && disabled !== null && disabled !== false) continue
+    const positional = at === '' ? `row ${String(index + 1)}` : `${at} row ${String(index + 1)}`
+    if (row.group === true) {
+      found.push(...await unresolvableRows(row.config as readonly unknown[], presetBase, harnessBase, positional))
+      continue
+    }
+    if (await rowResolves(classifyRowSpecifier(row.name), presetBase, harnessBase)) continue
+    const label = typeof row.id === 'string' && row.id !== '' ? `"${row.id}"` : positional
+    found.push({ label, name: row.name })
+  }
+  return found
+}
+
+/**
  * Why the composition at `path` cannot mount, or undefined when it looks
  * loadable. Parsed with the loader's own YAML dialect ({@link entryListSchema},
  * the one carrying `!!js`), so health can never call a composition broken
  * that the loader would accept.
  * @param path - absolute path of the composition file.
+ * @param harnessBase - base URL a row's package name resolves against.
  * @returns one human-readable reason, or undefined when the file is loadable.
  */
-async function compositionProblem(path: string): Promise<string | undefined> {
+async function compositionProblem(path: string, harnessBase: string): Promise<string | undefined> {
   let content: string
   try {
     content = await readFile(path, 'utf8')
@@ -111,7 +259,19 @@ async function compositionProblem(path: string): Promise<string | undefined> {
     // the reason is displayed on a roster card, not in a terminal.
     return `the composition is not valid YAML: ${full.replace(/\n[\s\S]*$/, '')}`
   }
-  return entryListProblem(rows)
+  const shape = entryListProblem(rows)
+  if (shape !== undefined) return shape
+  // The composition's own directory, exactly as `Include` derives it, so a
+  // row naming a file the preset ships resolves the way the mount will.
+  const presetBase = new URL('.', pathToFileURL(path)).href
+  const unresolvable = await unresolvableRows(rows as readonly unknown[], presetBase, harnessBase)
+  const [first] = unresolvable
+  if (first === undefined) return undefined
+  if (unresolvable.length === 1) {
+    return `row ${first.label} names a plugin that cannot be resolved: ${first.name}`
+  }
+  return `${String(unresolvable.length)} rows name plugins that cannot be resolved:\n`
+    + unresolvable.map(row => `- ${row.label}: ${row.name}`).join('\n')
 }
 
 /**
@@ -143,9 +303,11 @@ async function isFile(path: string): Promise<boolean> {
  * so it blocks nothing, and reporting `.DS_Store`-grade residue as broken
  * presets would teach users to ignore the marker.
  * @param root - the directory and the trust its presets inherit.
+ * @param harnessBase - base URL a row's package name resolves against; the
+ * caller's own `ctx.baseUrl`, which is where the installed harness lives.
  * @returns the root's presets ordered by id.
  */
-export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
+export async function scanRoot(root: PresetRoot, harnessBase: string): Promise<AgentPreset[]> {
   const dir = resolve(expandHomePath(root.path))
   let children
   try {
@@ -160,7 +322,7 @@ export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
     const directory = join(dir, child.name)
     const path = join(directory, COMPOSITION_FILE)
     const broken = await isFile(path)
-      ? await compositionProblem(path)
+      ? await compositionProblem(path, harnessBase)
       : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
     // Display text only, and never fatal: a preset with unreadable metadata
     // still mounts, it just shows its id.
@@ -181,12 +343,16 @@ export async function scanRoot(root: PresetRoot): Promise<AgentPreset[]> {
 /**
  * Scan every root in precedence order.
  * @param roots - roots in precedence order; an earlier root wins a duplicate id.
+ * @param harnessBase - base URL a row's package name resolves against.
  * @returns every discovered preset, first-root-wins per id.
  */
-export async function discoverPresets(roots: readonly PresetRoot[]): Promise<AgentPreset[]> {
+export async function discoverPresets(
+  roots: readonly PresetRoot[],
+  harnessBase: string,
+): Promise<AgentPreset[]> {
   const byId = new Map<string, AgentPreset>()
   for (const root of roots) {
-    for (const preset of await scanRoot(root)) {
+    for (const preset of await scanRoot(root, harnessBase)) {
       if (byId.has(preset.id)) continue
       byId.set(preset.id, preset)
     }

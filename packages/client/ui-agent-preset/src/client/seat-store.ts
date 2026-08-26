@@ -98,13 +98,20 @@ export class AgentPresetSeatController {
   /**
    * Stage one preset for the next session, applying it immediately when a
    * blank session is already current.
+   *
+   * The refusal is returned as well as stored, because the two readers need
+   * different things from it: the chip's own label carries the standing state,
+   * while the caller that made this pick is the one that has to say why the
+   * label came back — and only it knows the pick was a person's, not the
+   * applier catching up with a session that just became current.
    * @param id - the preset to stage.
-   * @returns once the stage settled, and the apply too when one happened.
+   * @returns the refusal text, or undefined once the pick settled.
    */
-  async select(id: string): Promise<void> {
-    if (this.store.getSnapshot().busy) return
+  async select(id: string): Promise<string | undefined> {
+    if (this.store.getSnapshot().busy) return undefined
     this.stage(id)
     await this.apply()
+    return this.store.getSnapshot().error ?? undefined
   }
 
   /**
@@ -156,9 +163,14 @@ export class AgentPresetSeatController {
       const response = await this.api.agentPresets.select({ sessionId: session.id, agentPreset: staged })
       this.staged = undefined
       if (!response.result.ok) {
+        const { error } = response.result
         this.set({
           busy: false,
-          error: response.result.error.message,
+          // A mount failure carries its cause twice: `message` wraps it in the
+          // roster's own frame, which names the preset the surface reporting
+          // this already names, and `details.reason` holds the same cause
+          // without it.
+          error: error.code === 'agent-preset-invalid' ? error.details.reason : error.message,
           current: presetOf(session) ?? '',
         })
         return

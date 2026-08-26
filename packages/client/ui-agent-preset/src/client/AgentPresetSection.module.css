@@ -94,12 +94,49 @@
   color: var(--dsw-alias-bg-layer-3);
 }
 
-/* The discovery-reported reason, verbatim: it names the file and the fix. */
-.cardBrokenReason {
-  font-size: 12px;
+/* The discovery-reported reason, verbatim: it names the rows and the fix.
+   A real element rather than the icon row's `data-tip` pseudo-element, for two
+   reasons: generated content joins the card's accessible text, where this would
+   repeat what the alert already carries, and that tooltip is one `nowrap` line
+   for an icon label while this names package specifiers one per line. */
+.brokenTip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1;
+  width: max-content;
+  max-width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-layer-3);
+  font-size: 11px;
+  font-weight: 400;
   line-height: 1.5;
-  color: var(--dsw-alias-state-error-primary);
+  text-align: left;
+  white-space: pre-line;
   overflow-wrap: anywhere;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s;
+}
+
+.brokenBadge:hover .brokenTip {
+  opacity: 1;
+}
+
+/* The same reason, for assistive technology only. The card body is disabled
+   when a preset is broken, so it leaves the tab order and the badge's tooltip
+   has no keyboard or screen-reader path; this node is that path. Sighted
+   pointer users read the badge instead, which keeps a picker card showing the
+   preset's own description rather than a package specifier. */
+.cardBrokenReason {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* The card body is the control that picks the preset. */
@@ -132,6 +169,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* Anchors the broken badge's tooltip: the badge itself stays unpositioned so
+     its `::after` resolves against the card's own width instead of against a
+     badge that sits partway across it. A tooltip grown from the badge would
+     run past the card, and past the section for a card in the last column. */
+  position: relative;
 }
 
 .cardName {
