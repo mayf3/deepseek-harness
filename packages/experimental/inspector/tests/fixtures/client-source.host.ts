@@ -6,7 +6,7 @@ import type { CordisRuntimeTree } from '../../src/shared/cordis/model.ts'
 import type { InspectorJsonValue } from '../../src/shared/json.ts'
 
 /** Optional source artifact exposed by the Client fixture. */
-export interface ClientFixtureSourceCatalog {
+interface ClientFixtureSourceCatalog {
   readonly sourceText: string
   readonly sourceMap: string
   readonly sourceUrl: string

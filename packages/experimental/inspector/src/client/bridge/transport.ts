@@ -2,15 +2,14 @@
 
 import type { InspectorClientBootstrap } from '../../shared/bridge/messages/control.ts'
 import type { InspectorSourceGeneration } from '../../shared/bridge/ids.ts'
-import { isJsonValue, jsonByteLength, type InspectorJsonValue } from '../../shared/json.ts'
-import type { InspectorQuery, InspectorQueryResultFor } from '../../shared/bridge/messages/query/commands.ts'
+import { isJsonValue, jsonByteLength } from '../../shared/json.ts'
 import {
   INSPECTOR_PROTOCOL_VERSION,
   parseWorkerSourceFrame,
   type SourceCloseFrame,
   type SourceOpenFrame,
 } from '../../shared/bridge/messages/observation.ts'
-import type { InspectorConnection } from '../../shared/bridge/publisher.ts'
+import { InspectorSourceConnection } from '../../shared/bridge/publisher.ts'
 import { ClientConsoleObserver } from '../cdp/console.ts'
 import { ClientRuntimeExecutor } from '../cdp/runtime.ts'
 import {
@@ -27,16 +26,16 @@ import { ClientBridgeRpc } from './rpc.ts'
 import { dispatchBridgeFrame } from './dispatcher.ts'
 
 /** Reconnecting Client source whose bounded queue never blocks page work. */
-export class ClientInspectorSource implements InspectorConnection {
+export class ClientInspectorSource extends InspectorSourceConnection {
   private readonly realmSource: ClientRealmSource
-  private readonly publisher: ClientBridgePublisher
+  protected readonly publisher: ClientBridgePublisher
   private socket: WebSocket | undefined
   private generation: InspectorSourceGeneration | undefined
   private accepted = false
   private closed = false
   private readonly runtime: ClientRuntimeExecutor
   private readonly console: ClientConsoleObserver
-  private readonly queries: ClientBridgeRpc
+  protected readonly queries: ClientBridgeRpc
   private readonly lifecycle: ClientBridgeLifecycle
 
   constructor(
@@ -44,6 +43,7 @@ export class ClientInspectorSource implements InspectorConnection {
     label = document.title || 'Client',
     private readonly sourceCatalog: ClientSourceCatalog | undefined = discoverInspectorClientSourceCatalog(),
   ) {
+    super()
     this.realmSource = new ClientRealmSource(label)
     this.lifecycle = new ClientBridgeLifecycle(bootstrap.reconnectBaseMs, bootstrap.reconnectMaxMs)
     this.publisher = new ClientBridgePublisher({
@@ -85,23 +85,6 @@ export class ClientInspectorSource implements InspectorConnection {
       maxFrameBytes: bootstrap.maxFrameBytes,
     })
     this.connect()
-  }
-
-  /** Publish one JSON observation without waiting on the ingest socket. */
-  publish(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {
-    if (this.closed) return
-    this.publisher.publish(topic, payload, monotonicMs)
-  }
-
-  /** Retain and publish one state value for reconnect and resnapshot recovery. */
-  setState(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {
-    if (this.closed) throw new Error('inspector: Client source is closed')
-    this.publisher.setState(topic, payload, monotonicMs)
-  }
-
-  /** Execute one non-CDP query through the accepted Client source generation. */
-  request<Query extends InspectorQuery>(query: Query): Promise<InspectorQueryResultFor<Query>> {
-    return this.queries.request(query)
   }
 
   /** Permanently stop reconnecting and close the active source generation. */
@@ -167,7 +150,7 @@ export class ClientInspectorSource implements InspectorConnection {
           accepted: () => {
             this.accepted = true
             this.lifecycle.connected()
-            this.queries.connect(source, socket)
+            this.queries.connectSocket(source, socket)
             this.publisher.accept(socket)
           },
           resnapshot: () => { this.publisher.replace(socket) },

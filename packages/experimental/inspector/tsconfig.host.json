@@ -74,6 +74,7 @@
     "src/shared/cordis/object-reference.ts",
     "src/shared/cordis/object-registry.ts",
     "src/shared/cordis/observer.ts",
+    "src/shared/cordis/publisher.ts",
     "src/shared/cordis/projector.ts",
     "src/shared/cordis/reader.ts",
     "src/shared/cordis/snapshot.ts",

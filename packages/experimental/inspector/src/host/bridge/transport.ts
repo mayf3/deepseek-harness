@@ -1,7 +1,6 @@
 /** Host-realm observation publisher over a dedicated MessagePort. */
 
 import type { MessagePort } from 'node:worker_threads'
-import type { InspectorQuery, InspectorQueryResultFor } from '../../shared/bridge/messages/query/commands.ts'
 import {
   INSPECTOR_PROTOCOL_VERSION,
   parseWorkerSourceFrame,
@@ -9,11 +8,10 @@ import {
   type SourceOpenFrame,
   type WorkerToSourceFrame,
 } from '../../shared/bridge/messages/observation.ts'
-import type { InspectorConnection } from '../../shared/bridge/publisher.ts'
+import { InspectorSourceConnection } from '../../shared/bridge/publisher.ts'
 import { createHostRealmSource } from '../inspection/realm.ts'
 import { HostBridgePublisher } from './publisher.ts'
 import { HostBridgeRpc } from './rpc.ts'
-import type { InspectorJsonValue } from '../../shared/json.ts'
 import { dispatchBridgeFrame } from './dispatcher.ts'
 
 /** Buffer limits for one source publisher. */
@@ -28,13 +26,14 @@ export interface HostSourceOptions {
 }
 
 /** Non-blocking Host source; queue overflow is represented by `droppedBefore` on the next batch. */
-export class HostInspectorSource implements InspectorConnection {
+export class HostInspectorSource extends InspectorSourceConnection {
   private readonly source
-  private readonly publisher: HostBridgePublisher
+  protected readonly publisher: HostBridgePublisher
   private closed = false
-  private readonly queries: HostBridgeRpc
+  protected readonly queries: HostBridgeRpc
 
   constructor(private readonly port: MessagePort, options: HostSourceOptions) {
+    super()
     this.source = createHostRealmSource(options.label)
     this.publisher = new HostBridgePublisher(port, this.source, options)
     this.queries = new HostBridgeRpc(port, {
@@ -61,23 +60,6 @@ export class HostInspectorSource implements InspectorConnection {
     this.publisher.replace()
   }
 
-  /** Publish one observation without waiting on Worker processing. */
-  publish(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {
-    if (this.closed) return
-    this.publisher.publish(topic, payload, monotonicMs)
-  }
-
-  /** Retain and publish one state value for future `source/replace` frames. */
-  setState(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()): void {
-    if (this.closed) throw new Error('inspector: Host source is closed')
-    this.publisher.setState(topic, payload, monotonicMs)
-  }
-
-  /** Execute one non-CDP query through the accepted Host source generation. */
-  request<Query extends InspectorQuery>(query: Query): Promise<InspectorQueryResultFor<Query>> {
-    return this.queries.request(query)
-  }
-
   /** Flush pending observations and close the source port. */
   close(): void {
     if (this.closed) return
@@ -98,7 +80,7 @@ export class HostInspectorSource implements InspectorConnection {
     if (frame.t !== 'source/rejected'
       && (frame.sourceId !== this.source.sourceId || frame.generation !== this.source.generation)) return
     dispatchBridgeFrame(frame, {
-      accepted: () => { this.queries.connect(this.source) },
+      accepted: () => { this.queries.connectPort(this.source) },
       resnapshot: () => { this.publisher.replace() },
       rejected: (rejected) => { this.queries.disconnect(`Inspector Host source rejected: ${rejected.message}`) },
     })

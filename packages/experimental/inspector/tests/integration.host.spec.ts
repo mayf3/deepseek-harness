@@ -90,13 +90,8 @@ describe('experimental Inspector real Worker', () => {
     await vi.waitFor(async () => {
       const response = await cdp!.call('DSHInspector.getSources')
       const sources = response.result?.sources as Array<{ kind: string; topics: Record<string, number> }>
-      expect(sources).toEqual(expect.arrayContaining([
-        expect.objectContaining({ kind: 'host', topics: { 'host/probe': 1 } }),
-        expect.objectContaining({
-          kind: 'client',
-          topics: expect.objectContaining({ 'client/probe': 1 }),
-        }),
-      ]))
+      expect(sources.find(source => source.kind === 'host')?.topics).toEqual({ 'host/probe': 1 })
+      expect(sources.find(source => source.kind === 'client')?.topics).toMatchObject({ 'client/probe': 1 })
     })
 
     ;(globalThis as Record<string, unknown>).__inspectorHostProbe = 73

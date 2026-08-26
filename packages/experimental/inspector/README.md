@@ -1,11 +1,33 @@
+---
+description: "Experimental Chrome DevTools inspection for Host and browser Client Cordis runtimes, including Console evaluation, Sources, Network capture, Elements trees, and a CDP-independent query API."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-experimental-inspector
 
 English | [中文](README.zh.md)
 
-Experimental Client/Host Cordis plugin that exposes one Chrome DevTools Protocol target from a Node worker thread. The Host and browser Client publish versioned observations into the Worker; the Worker is the sole owner of CDP state and output.
+## Summary
+
+Use this experimental inspector to inspect one running dsh Host and its browser Clients in Chrome DevTools. It exposes Host and Client Console contexts, Host Sources and debugging, captured Host fetches, and a shared Cordis tree while keeping all CDP state in a Worker.
 
 The package is private and excluded from releases. The Worker never accesses live Cordis objects: the shared Host/Client collector projects them into validated snapshots before transport. Cordis also owns plugin composition, `ctx.inspector` registration, bootstrap injection, and disposal.
 
+## Table of Contents
+
+- [Runtime layout](#runtime-layout)
+- [Configuration](#configuration)
+- [Observation API](#observation-api)
+- [Cordis tree inspection](#cordis-tree-inspection)
+- [Host fetch capture](#host-fetch-capture)
+- [Security](#security)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="runtime-layout"></a>
 ## Runtime layout
 
 The Host plugin starts the Worker and connects a dedicated `MessagePort`. The Client plugin reads the injected `globalThis.__DSH_INSPECTOR__` bootstrap and opens a separate authenticated WebSocket directly to the Worker. Chrome DevTools connects to the Worker's CDP WebSocket. A private `node:inspector.Session` per DevTools connection attaches from the Worker to the Host main thread, so Host Console evaluation, Sources, breakpoints, and resume remain available while Host JavaScript is paused.
@@ -18,6 +40,7 @@ Client sources declare typed Runtime, Console, and read-only Sources capabilitie
 
 Both plugin faces run the same browser-safe Cordis collector. It converts reachable Context and Fiber objects into a versioned `CordisTreeSnapshot`; the Worker stores that CDP-independent representation and projects each Host or Client source into the Elements panel.
 
+<a id="configuration"></a>
 ## Configuration
 
 The Host plugin injects `webServer` and accepts these fields:
@@ -49,8 +72,11 @@ The Host plugin injects `webServer` and accepts these fields:
 | `maxCordisNodes` | `2048` | Context and Fiber nodes admitted from one realm snapshot before truncation |
 | `maxDisconnectedCordisTrees` | `8` | Last disconnected realm trees retained as non-live snapshots |
 
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-experimental-inspector) is the exhaustive source for accepted fields and their declarations.
+
 The Host logs a `devtools://` URL after the Worker listens. The same Worker serves `/json`, `/json/list`, `/json/version`, the target WebSocket under `/devtools/page/<id>`, and the Client source at `/ingest`.
 
+<a id="observation-api"></a>
 ## Observation API
 
 Both plugin faces provide the same service:
@@ -69,6 +95,7 @@ await ctx.inspector.cordis.getTree()
 
 Publishing validates lossless JSON and schedules delivery without waiting for the Worker. Each source has a bounded queue. Overflow is reported as a sequence gap and never delays the observed application operation. `cordis.getTree()` reads the Worker's latest detached semantic snapshot without creating a CDP session or enabling Runtime, Debugger, or Sources.
 
+<a id="cordis-tree-inspection"></a>
 ## Cordis tree inspection
 
 The Elements document has fixed `<host>` and `<clients>` containers. `<host>` contains the Host root Context; `<clients>` contains one `<client>` per Client source, and each `<client>` contains that realm's root Context. The Cordis root Fiber is omitted. Every other Fiber is a child of `fiber.parent`, owns exactly one Context child for `fiber.ctx`, and carries only `uid="<Cordis Fiber.uid>"`; Context elements have no attributes. Context-only `extend()`, `isolate()`, and `intercept()` layers remain direct Context descendants.
@@ -77,16 +104,21 @@ Host and Client publish the same nested `CordisTreeSnapshot` type. Context and F
 
 When a Client disconnects, its Console execution context and live object ids are destroyed immediately. With disconnected-tree retention enabled, Elements keeps the last tree unchanged while connection state remains in the inspection model rather than becoming an unreviewed DOM attribute. Reconnection keeps the logical source id, creates a new synthetic CDP context id for the new transport generation, and replaces the stale tree after its complete snapshot arrives. The Worker retains at most `maxDisconnectedCordisTrees` such snapshots; zero removes them immediately.
 
+<a id="host-fetch-capture"></a>
 ## Host fetch capture
 
 Fetch capture is on by default and records the complete URL, all request and response headers, request body, response body, status, timing, errors, and cancellation. It does not redact credentials, cookies, query values, or payloads. Body capture reads clones; the caller receives the original Response as soon as the original fetch resolves.
 
 The configured body limits bound retention rather than select fields: capture keeps the prefix and marks the result truncated. `Network.getRequestPostData` and `Network.getResponseBody` read the Worker's retained bytes. `Network.streamResourceContent` returns the buffered prefix and adds later response bytes to `Network.dataReceived` for that DevTools connection, which drives live Response and EventStream views. Direct Undici Client/Dispatcher calls and fetch references retained before plugin activation are outside this observer.
 
+After response headers arrive, a caller-side abort ends clone capture as a retained, possibly truncated response rather than a failed request. A fetch rejection before response headers remains a failed request.
+
+<a id="security"></a>
 ## Security
 
 The CDP target grants arbitrary code execution in both Host and connected Client realms through `Runtime.evaluate`; Host Debugger operations provide additional control. Full fetch capture includes secrets. The Worker therefore accepts only a `127.0.0.1` bind address. Client ingest additionally requires a random WebSocket subprotocol token injected by the Host and rejects non-loopback origins unless explicitly configured. The CDP socket itself has no token; loopback binding is its only access control.
 
+<a id="model-experience"></a>
 ## Model Experience
 
 None, as this developer-only inspector observes runtime activity without changing model requests.
@@ -97,9 +129,21 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
+<a id="known-limitations-and-deferred-work"></a>
+
 - **Client active debugging is unsupported** — Console events, Runtime evaluation, RemoteObject access, and read-only `lib/client.js` Sources work. Client-script debugger requests return explicit unsupported errors; target-wide pause and resume control the Host only.
 - **Client Sources expose the Inspector bundle only** — other page scripts are not cataloged by this package.
 - **Client evaluation uses page JavaScript** — page Content Security Policy can block dynamic evaluation, and the synthetic context does not provide DevTools command-line helpers or native REPL declaration semantics.
 - **Fetch interception covers `globalThis.fetch`** — direct Undici APIs and fetch references retained before activation are not observed.
 - **Body cloning has cost** — full capture tees request and response streams up to the configured limits and can increase memory and I/O pressure. The retained-body limit does not include buffering inside the stream tee, including an oversized source chunk or data queued for a slower application reader.
 - **No automatic Worker restart** — an unexpected Worker exit fails the current Inspector instance; lifecycle recovery belongs to a later change.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

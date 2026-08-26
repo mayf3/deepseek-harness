@@ -168,7 +168,9 @@ describe.skipIf(!built)('Inspector built Client in Chromium', () => {
     })
     expect(evaluated.error).toBeUndefined()
     expect(asRecord(evaluated.result?.result).objectId).toMatch(/^runtime:/u)
-    expect(await page.evaluate(() => Reflect.get(globalThis, '__inspectorConsoleEvaluation'))).toEqual({ answer: 42 })
+    expect(await page.evaluate(() => Reflect.get(globalThis, '__inspectorConsoleEvaluation') as unknown)).toEqual({
+      answer: 42,
+    })
 
     await page.evaluate(() => {
       const value = { browser: true, nested: { ready: true } }
