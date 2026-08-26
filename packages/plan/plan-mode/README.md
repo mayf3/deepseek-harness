@@ -82,7 +82,7 @@ Plan mode is a product package, not a capability seam: there is no swappable bac
 
 ### Durable state and step-boundary appends
 
-The package persists one log-only whole-value event, `plan/mode`, and the last logged value is the state. A mode change appends immediately when no turn is open; during an open turn it stays pending until the next accepted in-turn pre-step — the only append point while an agent runs — and an append failure cannot block the turn. The `set`/`get`/`foldPlanMode` helpers and their exact return states live in [`src/index.ts`](src/index.ts).
+The package persists one log-only whole-value event, `plan/mode`, and the last logged value is the state. A mode change appends immediately when no turn is open; during an open turn it stays pending until the next accepted in-turn pre-step — the only append point while an agent runs — and an append failure cannot block the turn. The `set`/`get` service methods and their exact return states live in [`src/index.ts`](src/index.ts); the registered `plan` projection unit folds the same state for readers.
 
 ### The `/plan` command
 
@@ -94,7 +94,7 @@ The command child activates only when a commands service is composed. It maps ba
 
 ### Session projection unit
 
-When `ctx.sessionProjections` is composed, the package registers the `plan` unit under an injected child. The unit turns logged `/plan` command runs into a candidate target, commits the logged state on `plan/mode`, and derives `{ active, pending }` for `view`, where `pending` is true only while an unsettled or successful selection differs from the logged state — a pure replay quantity recoverable from the log alone. The key merges into `SessionProjectionMap` from [`src/types.ts`](src/types.ts); the framework drives the unit, and unloading the plugin fiber unregisters the key.
+The package requires `ctx.sessionProjections` and registers the `plan` unit on activation. The unit turns logged `/plan` command runs into a candidate target, commits the logged state on `plan/mode`, and derives `{ active, pending }` for `view`, where `pending` is true only while an unsettled or successful selection differs from the logged state — a pure replay quantity recoverable from the log alone. The key merges into `SessionProjectionMap` from [`src/types.ts`](src/types.ts); the framework drives the unit, and unloading the plugin fiber unregisters the key.
 
 ### Source map
 

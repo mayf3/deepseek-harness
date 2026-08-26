@@ -41,7 +41,6 @@ const timingStateSchema: z.ZodType<TimingState> = z.object({
   settledMs: z.number().int().nonnegative(),
   active: activeIntervalSchema.optional(),
   pendingTurnStart: z.number().int().nonnegative().optional(),
-  /** Whether the fold has crossed a descriptor in this logical log. */
   descriptorSeen: z.boolean(),
 }).strict()
 

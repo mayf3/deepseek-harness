@@ -354,6 +354,7 @@ describe('BashTerminalBackend startup rollback', () => {
   it('bootstraps a pwsh dialect through the prompt function and scrubs bash-only env', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     let spawned: SubprocessTerminalSpawnSpec | undefined
     let sent: TerminalSendRequest | undefined
@@ -391,6 +392,7 @@ describe('BashTerminalBackend startup rollback', () => {
   it('keeps waiting for stdin_read when the first settled output only echoes the prompt literal', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sends: TerminalSendRequest[] = []
     const session = {
@@ -425,6 +427,7 @@ describe('BashTerminalBackend startup rollback', () => {
   it('rejects a pwsh bootstrap whose shell exits or times out', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sessionFor = (waitReason: TerminalWaitReason): LocalPtySession => ({
       startSend: () => ({
@@ -449,6 +452,7 @@ describe('BashTerminalBackend startup rollback', () => {
     try {
       const ctx = new Context()
       await ctx.plugin(EmptySandbox)
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
       const pending = Promise.withResolvers<{
         viewport: string
@@ -501,6 +505,7 @@ describe('BashTerminalBackend startup rollback', () => {
   it('forwards the spawn signal into the pwsh bootstrap sends', async () => {
     const ctx = new Context()
     await ctx.plugin(EmptySandbox)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: 'danger-full-access', workspaceRoot: '/workspace' })
     const sends: TerminalSendRequest[] = []
     const session = {

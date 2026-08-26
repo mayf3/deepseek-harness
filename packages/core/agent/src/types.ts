@@ -34,7 +34,8 @@ export type InboxTarget = 'next-turn' | 'next-step'
  * Reader contract: the key is registered by `dsh-agent-loop` and absent
  * otherwise. Without agent-loop no turn events exist, so readers treat an
  * absent key as "no open turn / no boundaries" — capability absence, not a
- * corrupt state — and never treat it as an error.
+ * corrupt state. A reader whose behavior has no safe fallback for that
+ * absence (the step-open decision, for example) may fail loud instead.
  */
 export interface TurnBoundaryProjection {
   /** Seq of the open turn's `turn/start`, or null between turns. */

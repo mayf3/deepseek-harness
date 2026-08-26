@@ -10,6 +10,7 @@ import { BlockAssembler, deepFreeze } from '@deepseek-ai/dsh-llm'
 import type { LlmImageRequestPricing, Message, TokenUsage } from '@deepseek-ai/dsh-llm'
 import type { EpochHeader, Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals, isSurfaceEvent } from '@deepseek-ai/dsh-session'
+// Type-only: activates the `ctx.sessionProjections` Context declaration.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {
   TokenMeasurement,

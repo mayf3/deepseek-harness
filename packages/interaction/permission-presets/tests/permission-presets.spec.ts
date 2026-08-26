@@ -267,6 +267,31 @@ describe('new-session default', () => {
     expect(ctx.permissionPresets.current(existing)).toBe('workspace-write')
   })
 
+  it('preserves existing knob overrides when the service remounts over a knob-bearing session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SessionProjectionRegistry)
+    ctx.provide('shell', {
+      sandboxMode: 'workspace-write',
+      resolve() { throw new Error('permission tests do not execute bash') },
+      run() { throw new Error('permission tests do not execute bash') },
+      start() { throw new Error('permission tests do not execute bash') },
+    })
+    ctx.provide('approval', { config: { policy: 'ask' } })
+    const existing = ctx.sessions.create(SessionId('existing-knobs'))
+    existing.append('sandbox/mode', { mode: 'read-only' })
+    existing.append('approval/policy', { policy: 'never' })
+
+    await ctx.plugin(PermissionPresetService, {})
+    // The remount sweep must read the folded knob events instead of treating
+    // the session as fresh; no default preset events may overwrite the
+    // overrides (read-only + never matches no preset table entry).
+    expect(existing.events.map(event => event.type)).toEqual([
+      'sandbox/mode', 'approval/policy',
+    ])
+    expect(ctx.permissionPresets.current(existing)).toBe(CUSTOM_PRESET)
+  })
+
   it('fills only missing legacy facts and preserves an unmatched seeded combination', async () => {
     const ctx = await mountedStore()
     const partial = freshSession('partial-source')

@@ -113,12 +113,15 @@ export function resolveConfig(config: PlanModeConfig): PlanModeConfig {
   return { section }
 }
 
-const planUnitStateSchema = zod.object({
+const planUnitStateSchema: ZodType<PlanUnitState> = zod.object({
   active: zod.boolean(),
   wanted: zod.boolean().nullable(),
-  running: zod.object({ commandId: zod.string() as unknown as ZodType<CommandId>, wanted: zod.boolean() }).nullable(),
+  running: zod.object({
+    commandId: zod.string() as unknown as ZodType<CommandId>,
+    wanted: zod.boolean(),
+  }).strict().nullable(),
   activeAtLastHeader: zod.boolean().nullable(),
-})
+}).strict()
 
 /** Wire payload schema of the `plan` projection. */
 const planProjectionSchema: ZodType<PlanProjection> = zod.object({

@@ -189,13 +189,6 @@ export class PermissionPresetService extends Service {
       onChange: () => {},
     })
 
-    ctx.on('session/created', (session) => {
-      this.pinInitialPermission(session)
-    })
-    for (const session of ctx.sessions.list()) {
-      this.pinInitialPermission(session)
-    }
-
     // zod `.optional()` types the key `string | undefined` while the domain
     // says `description?: string`; on the JSON wire the two serialize
     // identically (absent), so the cast records exactly that
@@ -209,17 +202,24 @@ export class PermissionPresetService extends Service {
       currentValue: zod.string().min(1),
     }) as unknown as zod.ZodType<PermissionSelect>
     // The `permissions` projection unit folds the three whole-value knob
-    // events; it registers through the projection registry.
-    ctx.inject(['sessionProjections'], (projectionCtx) => {
-      projectionCtx.sessionProjections.register({
-        key: 'permissions',
-        stateVersion: 1,
-        stateSchema: knobStateSchema,
-        init: () => EMPTY_KNOBS,
-        apply: applyKnobEvent,
-        wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
-      })
+    // events. `sessionProjections` is a hard injection, so the registration is
+    // synchronous and lands before the sweep below; otherwise the sweep would
+    // read an unregistered key and treat every existing session as fresh.
+    ctx.sessionProjections.register({
+      key: 'permissions',
+      stateVersion: 1,
+      stateSchema: knobStateSchema,
+      init: () => EMPTY_KNOBS,
+      apply: applyKnobEvent,
+      wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
     })
+
+    ctx.on('session/created', (session) => {
+      this.pinInitialPermission(session)
+    })
+    for (const session of ctx.sessions.list()) {
+      this.pinInitialPermission(session)
+    }
 
     // The /permission command: the one write path a web client uses (the
     // popup contribution submits the picked preset as this line). The child
