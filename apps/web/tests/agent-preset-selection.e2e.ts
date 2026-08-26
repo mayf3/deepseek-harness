@@ -23,7 +23,9 @@ import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import {
+  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
+} from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('./expected/agent-preset-selection', import.meta.url))
 const HERO_EXPECTED = join(SNAPSHOT_DIR, 'hero.expected.md')
@@ -287,7 +289,7 @@ describe('web e2e: agent-preset selection', () => {
     // `minimal` mounts neither the compaction group nor plan mode nor local
     // skill discovery, so the catalog the composer warmed under the
     // deployment default must not survive the switch.
-    await composer.fill('/')
+    await writeComposerDraft(page, composer, '/')
     await expect.poll(() => menuOptions(page), { timeout: 15_000 })
       .not.toEqual(expect.arrayContaining([expect.stringContaining(SKILL_NAME)]))
     const onMinimal = await menuOptions(page)
@@ -297,7 +299,7 @@ describe('web e2e: agent-preset selection', () => {
     // remains outside every preset.
     expect(onMinimal.some(option => option.startsWith('goal'))).toBe(false)
     expect(onMinimal.some(option => option.startsWith('model'))).toBe(true)
-    await composer.fill('')
+    await writeComposerDraft(page, composer, '')
 
     // Switching back up reaches the host at all — the chip compares the pick
     // against its list row, so a row that never reprojected the first switch
@@ -307,14 +309,14 @@ describe('web e2e: agent-preset selection', () => {
     await page.getByRole('menuitem', { name: /^Standard mode/ }).first().click()
     await expect.poll(() => livePreset(scaffold), { timeout: 15_000 }).toBe('standard')
 
-    await composer.fill('/')
+    await writeComposerDraft(page, composer, '/')
     await expect.poll(() => menuOptions(page), { timeout: 15_000 })
       .toEqual(expect.arrayContaining([expect.stringContaining(SKILL_NAME)]))
     const onStandard = await menuOptions(page)
     expect(onStandard.some(option => option.startsWith('compact'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('goal'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('plan'))).toBe(true)
-    await composer.fill('')
+    await writeComposerDraft(page, composer, '')
   }, 90_000)
 
   it('labels a resumed session with the preset it was created under', async () => {
