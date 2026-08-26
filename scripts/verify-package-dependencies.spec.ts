@@ -82,6 +82,7 @@ function facts(manifest: PackageDependencyManifest): PackageDependencyFacts {
       sourceLine: "import { runtimeValue } from '@deepseek-ai/dsh-runtime'",
     }],
     peerRequiredHostDependencies: new Set(),
+    configurationOnlyDevDependencies: new Set(),
     clientInject: new Set(),
   }
 }
@@ -109,11 +110,17 @@ describe('package dependency scope', () => {
       '@deepseek-ai/dsh-client-ui-tool': ['@deepseek-ai/dsh-api-remotes'],
     })
     expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/schemastery']).toEqual(['default'])
+    expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/dsh-session/types']).toEqual([
+      'SessionId',
+    ])
+    expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/dsh-typert-protocol']).toEqual([
+      'RemoteError', 'remoteErrorOf',
+    ])
     expect(PACKAGE_DEPENDENCY_POLICY.peerRequiredHostExports['@deepseek-ai/dsh-scope']).toEqual([
       'carrierKeyOf', 'scopeOf', 'scopeTarget',
     ])
     expect(PACKAGE_DEPENDENCY_POLICY.peerRequiredHostExports['@deepseek-ai/dsh-typert-protocol']).toEqual([
-      'TypertLookupFailure', 'TypertRemoteFailure', 'remoteMethods',
+      'Remote', 'TypertRemoteService', 'remoteMethods',
     ])
   })
 
@@ -187,6 +194,7 @@ describe('package dependency scope', () => {
         sourceLine: "import { safeValue } from '@f/provider/api'",
       }],
       peerRequiredHostDependencies: new Set(),
+      configurationOnlyDevDependencies: new Set(),
       clientInject: new Set(),
     }
 
@@ -211,6 +219,15 @@ describe('package dependency scope', () => {
 })
 
 describe('face-aware source classification', () => {
+  it('fails when a managed Host package has no Host entry', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-package-missing-host-'))
+    roots.push(root)
+    const subject = pkg('@f/host', 'packages/g/host/package.json')
+
+    expect(() => readPackageDependencyFacts(root, subject, 'configured-host', new Set([subject.name])))
+      .toThrow('packages/g/host/package.json: Host runtime entry packages/g/host/src/index.ts does not exist')
+  })
+
   it('counts Host values as dependencies and Client values as development inputs', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-package-faces-'))
     roots.push(root)
@@ -234,9 +251,12 @@ describe('face-aware source classification', () => {
     }
     const found = readPackageDependencyFacts(root, subject, 'client-host', new Set([
       CORDIS, '@f/runtime', '@f/types', '@f/nested', '@f/hidden', '@f/browser', '@f/injected',
-    ]))
+    ]), policy({
+      configurationOnlyDevDependencies: { '@f/dual': ['@f/injected'] },
+    }))
 
     expect([...found.hostRuntimeSourceUses.keys()].sort()).toEqual(['@f/nested', '@f/runtime'])
+    expect([...found.configurationOnlyDevDependencies]).toEqual(['@f/injected'])
     expect(found.hostRuntimeExportUses).toEqual([
       {
         packageName: '@f/nested',
@@ -294,6 +314,57 @@ describe('face-aware source classification', () => {
 })
 
 describe('dependency sections', () => {
+  it('does not leak repository configuration into captured dependency facts', () => {
+    const manifest: PackageDependencyManifest = {
+      name: '@deepseek-ai/dsh-client-locale',
+      dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:^' },
+      peerDependencies: { [CORDIS]: 'workspace:^' },
+    }
+    const base = facts(manifest)
+    const subject: PackageDependencyFacts = {
+      ...base,
+      workspaceNames: new Set([...base.workspaceNames, '@deepseek-ai/dsh-api-remotes']),
+    }
+
+    expect(collectPackageDependencyViolations({
+      facts: [subject], packages: [], policyViolations: [], workspaceNames: subject.workspaceNames,
+    })).toEqual([])
+  })
+
+  it('requires non-workspace Host runtime imports in dependencies', () => {
+    const manifest: PackageDependencyManifest = {
+      name: '@deepseek-ai/dsh-probe',
+      dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:^', external: '^1.0.0' },
+      peerDependencies: { [CORDIS]: 'workspace:^' },
+    }
+    const subject: PackageDependencyFacts = {
+      ...facts(manifest),
+      hostRuntimeSourceUses: new Map([
+        ['@deepseek-ai/dsh-runtime', ['packages/core/probe/src/index.ts']],
+        ['external', ['packages/core/probe/src/index.ts']],
+      ]),
+    }
+    const state = {
+      facts: [subject], packages: [], policyViolations: [], workspaceNames: subject.workspaceNames,
+    }
+
+    expect(collectPackageDependencyViolations(state)).toContain(
+      'packages/core/probe/package.json: external (packages/core/probe/src/index.ts) '
+      + 'must be dependencies-only; found devDependencies',
+    )
+    repairPackageDependencyManifest(subject)
+    expect(manifest.dependencies?.external).toBe('^1.0.0')
+    expect(manifest.devDependencies?.external).toBeUndefined()
+
+    delete manifest.dependencies?.external
+    expect(collectPackageDependencyViolations(state)).toContain(
+      'packages/core/probe/package.json: external (packages/core/probe/src/index.ts) '
+      + 'must be dependencies-only; found no dependency section',
+    )
+  })
+
   it('accepts Host dependencies, development-only inputs, and shared Cordis', () => {
     const manifest: PackageDependencyManifest = {
       name: '@deepseek-ai/dsh-probe',

@@ -59,6 +59,7 @@ export interface PackageDependencyFacts {
   readonly hostRuntimeSourceUses: ReadonlyMap<string, readonly string[]>
   readonly hostRuntimeExportUses: readonly HostRuntimeExportUse[]
   readonly peerRequiredHostDependencies: ReadonlySet<string>
+  readonly configurationOnlyDevDependencies: ReadonlySet<string>
   readonly clientInject: ReadonlySet<string>
 }
 
@@ -296,7 +297,7 @@ function readHostRuntimeUses(root: string, pkg: WorkspacePackageManifest): {
   const seen = new Set<string>()
   const visit = (path: string): void => {
     const normalized = normalize(path)
-    if (seen.has(normalized) || !existsSync(normalized)) return
+    if (seen.has(normalized)) return
     seen.add(normalized)
     const source = readFileSync(normalized, 'utf8')
     const displayPath = normalizePath(relative(root, normalized))
@@ -312,7 +313,11 @@ function readHostRuntimeUses(root: string, pkg: WorkspacePackageManifest): {
       if (target !== undefined) visit(target)
     }
   }
-  visit(resolve(root, pkg.dir, 'src/index.ts'))
+  const entry = resolve(root, pkg.dir, 'src/index.ts')
+  if (!existsSync(entry)) {
+    throw new Error(`${pkg.manifestPath}: Host runtime entry ${normalizePath(relative(root, entry))} does not exist`)
+  }
+  visit(entry)
   return {
     packageUses,
     exportUses: [...exportUses.values()].sort((left, right) =>
@@ -358,6 +363,9 @@ export function readPackageDependencyFacts(
     peerRequiredHostDependencies: new Set(hostRuntime.exportUses
       .filter(use => policy.peerRequiredHostExports[use.specifier]?.includes(use.exportName) === true)
       .map(use => use.packageName)),
+    configurationOnlyDevDependencies: new Set(
+      policy.configurationOnlyDevDependencies[pkg.manifest.name ?? ''] ?? [],
+    ),
     clientInject: new Set(inject.map(packageNameOf).filter(name => name !== undefined)),
   }
 }
@@ -405,7 +413,7 @@ export function collectHostDependencyExportPolicyViolations(
   for (const fact of facts) {
     for (const use of fact.hostRuntimeExportUses) {
       if (use.packageName === fact.manifest.name || use.packageName === CORDIS) continue
-      if (!workspaceNames.has(use.packageName) && fact.manifest.peerDependencies?.[use.packageName] === undefined) continue
+      if (!workspaceNames.has(use.packageName)) continue
       if (policy.safeHostDependencyExports[use.specifier]?.includes(use.exportName) === true) continue
       if (policy.peerRequiredHostExports[use.specifier]?.includes(use.exportName) === true) continue
       violations.push(
@@ -427,12 +435,16 @@ export function readPackageDependencyState(
   const discovered = discoverPackageDependencyScope(packages.release, policy)
   const facts = discovered.selected.map(pkg =>
     readPackageDependencyFacts(root, pkg, pkg.role, workspaceNames, policy))
+  const selectedNames = new Set(facts.map(fact => fact.manifest.name))
   return {
     facts,
     packages: packages.release,
     policyViolations: [
       ...discovered.violations,
       ...collectHostDependencyExportPolicyViolations(facts, workspaceNames, policy),
+      ...Object.keys(policy.configurationOnlyDevDependencies)
+        .filter(name => !selectedNames.has(name))
+        .map(name => `configurationOnlyDevDependencies names unmanaged package ${name}`),
     ].sort(),
     workspaceNames,
   }
@@ -441,7 +453,6 @@ export function readPackageDependencyState(
 /** Derive the required npm section for each relationship owned by the policy. */
 export function expectedPackageDependencies(
   facts: PackageDependencyFacts,
-  policy: PackageDependencyPolicy = PACKAGE_DEPENDENCY_POLICY,
 ): ReadonlyMap<string, ExpectedPackageDependency> {
   const expected = new Map<string, { section: ExpectedPackageDependency['section']; origins: Set<string> }>()
   const add = (name: string, sectionName: ExpectedPackageDependency['section'], origin: string): void => {
@@ -463,18 +474,16 @@ export function expectedPackageDependencies(
   for (const name of facts.clientInject) {
     if (facts.workspaceNames.has(name)) add(name, 'devDependencies', 'dsh.client.inject')
   }
-  for (const name of PACKAGE_DEPENDENCY_POLICY.configurationOnlyDevDependencies[facts.manifest.name ?? ''] ?? []) {
-    if (facts.workspaceNames.has(name)) add(name, 'devDependencies', 'configured development-only relationship')
-  }
-  for (const name of policy.configurationOnlyDevDependencies[facts.manifest.name ?? ''] ?? []) {
+  for (const name of facts.configurationOnlyDevDependencies) {
     if (facts.workspaceNames.has(name)) add(name, 'devDependencies', 'configured development-only relationship')
   }
   for (const name of Object.keys(facts.manifest.peerDependencies ?? {})) {
     if (name !== CORDIS) add(name, 'devDependencies', 'existing non-Cordis peer')
   }
   for (const [name, paths] of facts.hostRuntimeSourceUses) {
-    if (!facts.workspaceNames.has(name) && facts.manifest.peerDependencies?.[name] === undefined) continue
-    const expectedSection = facts.peerRequiredHostDependencies.has(name) ? 'peer-dev' : 'dependencies'
+    const expectedSection = facts.workspaceNames.has(name) && facts.peerRequiredHostDependencies.has(name)
+      ? 'peer-dev'
+      : 'dependencies'
     for (const path of paths) add(name, expectedSection, path)
   }
   return new Map([...expected].map(([name, rule]) => [name, {

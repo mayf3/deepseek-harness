@@ -26,11 +26,11 @@ Host-only 包通过另一份显式列表加入同一策略。该列表包含 `@d
 
 Host 入口闭包中的运行期 value import 所到达的 workspace 包，只有在每个运行期导出都列入策略的 `safeHostDependencyExports` 表时才只属于 `dependencies`。constructor 身份或模块状态必须共享的导出列入 `peerRequiredHostExports`；一旦使用这类导出，整条包依赖边就保留在范围一致的 `peerDependencies` 与 `devDependencies` 中。表的每个 key 都是精确 module specifier，每个 value 都是经审查的导出集合。验证器从 Host 入口沿运行期本地 import 扫描，记录具名与默认 import 和 re-export，并拒绝两个表都未收录的导出；namespace、dynamic 和 side-effect import 无法限定导出范围，因此不能进入任一表。
 
-Client bundle 使用的 workspace import、纯类型 import、模块扩充、`dsh.client.inject`、invariant companion 和仅有元数据的现存 peer 只属于 `devDependencies`。不属于这些受管关系的现有第三方 dependency 保持原区段。Workspace 引用使用 `workspace:^`。
+Client bundle 使用的 workspace import、纯类型 import、模块扩充、`dsh.client.inject`、invariant companion 和仅有元数据的现存 peer 只属于 `devDependencies`。Host 运行时导入的普通第三方包属于 `dependencies`；其他第三方关系保持原区段。Workspace 引用使用 `workspace:^`。
 
 部分开发期关系只存在于 `dsh.client.inject` 或 TypeScript project reference 中。策略的 `configurationOnlyDevDependencies` 表只列出这些已评审的依赖边，并将它们保留在 `devDependencies` 中。
 
-验证器读取源码 manifest 和源码文件，因此可以在没有已构建 `lib/` 的干净工作树上运行。未分类的 Host 运行期导出属于策略违规，会阻止 `--fix` 的全部写入；维护者必须审查该导出，并选择分类该导出、修改源码关系或修改选包范围。源码安全检查通过后，`--fix` 只执行分类所确定的区段与范围变更，并删除失效的 peer 元数据。
+验证器读取源码 manifest 和源码文件，因此可以在没有已构建 `lib/` 的干净工作树上运行。每个被选中的 Host face 都必须存在 `src/index.ts`。未分类的 Host 运行期导出属于策略违规，会阻止 `--fix` 的全部写入；维护者必须审查该导出，并选择分类该导出、修改源码关系或修改选包范围。源码安全检查通过后，`--fix` 只执行分类所确定的区段与范围变更，并删除失效的 peer 元数据。
 
 ### 维护流程
 
@@ -49,7 +49,7 @@ pnpm run verify-package-dependencies -- --fix
 git diff -- packages pnpm-lock.yaml docs/module-graph.md docs/module-graph.zh.md docs/module-graph.i18n.yaml
 ```
 
-通过仅 metadata 的本地 registry 测量工作树依赖图与 Git ref。每轮都会创建全新 consumer 与 npm cache，执行 `npm install --package-lock-only`，拒绝下载包归档，并保持仓库不变。`--runs` 控制重复次数，`--timeout-ms` 限制单轮耗时，可选 `--max-ms` 会在最慢一轮超过阈值时让命令失败。
+通过仅 metadata 的本地 registry 测量工作树依赖图与 Git ref。每轮都会创建全新 consumer 与 npm cache，用明确的 peer、hoisting 和 registry 设置替换继承的 npm 配置，执行 `npm install --package-lock-only`，拒绝下载包归档，并保持仓库不变。`--runs` 控制重复次数，`--timeout-ms` 会在期限到达后终止 npm 进程树，可选 `--max-ms` 会在最慢一轮超过阈值时让命令失败。
 
 ```sh
 pnpm run benchmark:npm-resolution -- --runs=5 --timeout-ms=300000

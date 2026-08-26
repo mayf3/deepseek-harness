@@ -26,11 +26,11 @@ Every covered package keeps `@deepseek-ai/cordis` in matching `peerDependencies`
 
 A workspace package reached by a runtime value import from the Host entry closure belongs only in `dependencies` when every imported runtime export appears in the policy's `safeHostDependencyExports` table. An export whose constructor identity or module state must be shared appears in `peerRequiredHostExports`; importing one such export keeps the whole package edge in matching `peerDependencies` and `devDependencies`. Each table key is an exact module specifier and each value is a reviewed export set. The verifier follows runtime local imports from the Host entry, records named and default imports and re-exports, and rejects exports present in neither table; namespace, dynamic, and side-effect imports remain unbounded and cannot enter either table.
 
-Workspace imports used by the Client bundle, type-only imports, module augmentations, `dsh.client.inject`, invariant companions, and existing metadata-only peers belong only in `devDependencies`. Existing third-party dependencies outside these managed relationships keep their declared section. Workspace references use `workspace:^`.
+Workspace imports used by the Client bundle, type-only imports, module augmentations, `dsh.client.inject`, invariant companions, and existing metadata-only peers belong only in `devDependencies`. Ordinary third-party packages imported by the Host runtime belong in `dependencies`; other third-party relationships keep their declared section. Workspace references use `workspace:^`.
 
 Some development relationships exist only in `dsh.client.inject` or TypeScript project references. The policy's `configurationOnlyDevDependencies` table names only those reviewed edges and keeps them in `devDependencies`.
 
-The verifier reads source manifests and source files, so it runs on a clean tree without built `lib/`. An unclassified Host runtime export is a policy violation that blocks all `--fix` writes; a maintainer must review the export and classify it, change the source relationship, or change the package selection. Once source safety passes, `--fix` performs only the section and range changes implied by the classification and removes stale peer metadata.
+The verifier reads source manifests and source files, so it runs on a clean tree without built `lib/`. Every selected Host face must have `src/index.ts`. An unclassified Host runtime export is a policy violation that blocks all `--fix` writes; a maintainer must review the export and classify it, change the source relationship, or change the package selection. Once source safety passes, `--fix` performs only the section and range changes implied by the classification and removes stale peer metadata.
 
 ### Maintainer workflow
 
@@ -49,7 +49,7 @@ pnpm run verify-package-dependencies -- --fix
 git diff -- packages pnpm-lock.yaml docs/module-graph.md docs/module-graph.zh.md docs/module-graph.i18n.yaml
 ```
 
-Measure the working-tree graph and a Git ref through the local metadata-only registry. Each run creates a fresh consumer and npm cache, executes `npm install --package-lock-only`, rejects archive downloads, and leaves the repository unchanged. `--runs` controls repetitions, `--timeout-ms` bounds each run, and optional `--max-ms` makes the command fail when the slowest run exceeds a threshold.
+Measure the working-tree graph and a Git ref through the local metadata-only registry. Each run creates a fresh consumer and npm cache, replaces inherited npm configuration with explicit peer, hoisting, and registry settings, executes `npm install --package-lock-only`, rejects archive downloads, and leaves the repository unchanged. `--runs` controls repetitions, `--timeout-ms` terminates the npm process tree after its deadline, and optional `--max-ms` makes the command fail when the slowest run exceeds a threshold.
 
 ```sh
 pnpm run benchmark:npm-resolution -- --runs=5 --timeout-ms=300000

@@ -73,6 +73,7 @@ describe('next package benchmark graph', () => {
         sourceLine: "import { runtimeValue } from '@f/runtime'",
       }],
       peerRequiredHostDependencies: new Set(),
+      configurationOnlyDevDependencies: new Set(),
       clientInject: new Set(),
     }
     const index = new Map<string, Map<string, MutableRegistryManifest>>([

@@ -1,6 +1,6 @@
 /** Benchmark npm's dependency-tree resolution against an all-local registry. */
 
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { globSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -10,6 +10,8 @@ import { parseArgs } from 'node:util'
 
 const TARGET_PACKAGE = '@deepseek-ai/dsh'
 const DEFAULT_TIMEOUT_MS = 300_000
+const TERMINATION_GRACE_MS = 1_000
+const FORCED_EXIT_TIMEOUT_MS = 5_000
 const WORKSPACE_MANIFEST_GLOBS = [
   'apps/*/package.json',
   'packages/*/*/package.json',
@@ -271,6 +273,92 @@ function npmExecutable(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm'
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise(resolveDelay => setTimeout(resolveDelay, ms))
+}
+
+function signalProcessTree(child: ChildProcess, signal: 'SIGTERM' | 'SIGKILL'): void {
+  if (child.pid === undefined) {
+    child.kill(signal)
+    return
+  }
+  if (process.platform === 'win32') {
+    const force = signal === 'SIGKILL' ? ['/F'] : []
+    const result = spawnSync('taskkill', ['/PID', String(child.pid), '/T', ...force], {
+      stdio: 'ignore',
+      windowsHide: true,
+    })
+    if (result.error !== undefined) throw result.error
+    if (result.status !== 0 && child.exitCode === null && child.signalCode === null) child.kill(signal)
+    return
+  }
+  try {
+    process.kill(-child.pid, signal)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw error
+  }
+}
+
+/**
+ * Run one command with bounded process-tree termination after its deadline.
+ * @param command - Executable path or name.
+ * @param args - Arguments passed without shell interpolation on POSIX.
+ * @param options - Working directory, environment, timeout, and termination grace.
+ * @returns Exit facts, captured output, duration, and whether timeout handling began.
+ */
+export async function runCommandWithTimeout(
+  command: string,
+  args: readonly string[],
+  options: {
+    readonly cwd: string
+    readonly env: NodeJS.ProcessEnv
+    readonly timeoutMs: number
+    readonly terminationGraceMs?: number
+  },
+): Promise<{ status: number | null; signal: NodeJS.Signals | null; durationMs: number; output: string; timedOut: boolean }> {
+  const started = performance.now()
+  const child = spawn(command, [...args], {
+    cwd: options.cwd,
+    detached: process.platform !== 'win32',
+    env: options.env,
+    shell: process.platform === 'win32',
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  let output = ''
+  child.stdout.setEncoding('utf8')
+  child.stderr.setEncoding('utf8')
+  child.stdout.on('data', (chunk) => { output += String(chunk) })
+  child.stderr.on('data', (chunk) => { output += String(chunk) })
+  const exited = new Promise<{ status: number | null; signal: NodeJS.Signals | null }>((resolveExit, reject) => {
+    child.once('error', reject)
+    child.once('close', (status, signal) => { resolveExit({ status, signal }) })
+  })
+  let timeout: NodeJS.Timeout | undefined
+  try {
+    const first = await Promise.race([
+      exited.then(outcome => ({ type: 'exit' as const, outcome })),
+      new Promise<{ type: 'timeout' }>((resolveTimeout) => {
+        timeout = setTimeout(() => { resolveTimeout({ type: 'timeout' }) }, options.timeoutMs)
+      }),
+    ])
+    if (first.type === 'exit') {
+      return { ...first.outcome, durationMs: performance.now() - started, output, timedOut: false }
+    }
+
+    signalProcessTree(child, 'SIGTERM')
+    await delay(options.terminationGraceMs ?? TERMINATION_GRACE_MS)
+    signalProcessTree(child, 'SIGKILL')
+    const forced = await Promise.race([
+      exited,
+      delay(FORCED_EXIT_TIMEOUT_MS).then(() => undefined),
+    ])
+    if (forced === undefined) throw new Error('timed-out process tree did not exit after SIGKILL')
+    return { ...forced, durationMs: performance.now() - started, output, timedOut: true }
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout)
+  }
+}
+
 function readNpmPackageLock(path: string): NpmPackageLock {
   const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
@@ -289,50 +377,39 @@ async function runNpm(
   registry: string,
   timeoutMs: number,
 ): Promise<{ durationMs: number; output: string; timedOut: boolean }> {
-  const started = performance.now()
-  const child = spawn(npmExecutable(), [
+  const npmrc = join(cwd, '.npmrc')
+  const globalNpmrc = join(cwd, '.npmrc-global')
+  writeFileSync(npmrc, `registry=${registry}\n@deepseek-ai:registry=${registry}\n`)
+  writeFileSync(globalNpmrc, '')
+  const inheritedEnvironment = Object.fromEntries(Object.entries(process.env)
+    .filter(([name]) => !name.toLowerCase().startsWith('npm_config_')))
+  const result = await runCommandWithTimeout(npmExecutable(), [
     'install',
     '--package-lock-only',
     '--ignore-scripts',
     '--no-audit',
     '--no-fund',
     '--loglevel=error',
+    '--include=peer',
+    '--install-strategy=hoisted',
+    '--legacy-peer-deps=false',
     `--registry=${registry}`,
   ], {
     cwd,
-    // Windows resolves npm through a .cmd shim, which spawn() refuses
-    // without a shell since the CVE-2024-27980 hardening.
-    shell: process.platform === 'win32',
     env: {
-      ...process.env,
+      ...inheritedEnvironment,
       npm_config_cache: join(cwd, '.npm-cache'),
+      npm_config_globalconfig: globalNpmrc,
+      npm_config_userconfig: npmrc,
       npm_config_update_notifier: 'false',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    timeoutMs,
   })
-  let output = ''
-  child.stdout.setEncoding('utf8')
-  child.stderr.setEncoding('utf8')
-  child.stdout.on('data', (chunk) => { output += String(chunk) })
-  child.stderr.on('data', (chunk) => { output += String(chunk) })
-  const outcome = await new Promise<{ status: number | null; timedOut: boolean }>((resolveExit, reject) => {
-    let timeoutReached = false
-    const timer = setTimeout(() => {
-      timeoutReached = true
-      child.kill('SIGTERM')
-    }, timeoutMs)
-    child.once('error', reject)
-    child.once('exit', (status) => {
-      clearTimeout(timer)
-      resolveExit({ status, timedOut: timeoutReached })
-    })
-  })
-  const durationMs = performance.now() - started
-  if (outcome.timedOut) return { durationMs, output, timedOut: true }
-  if (outcome.status !== 0) {
-    throw new Error(`npm install exited ${String(outcome.status)} after ${durationMs.toFixed(0)} ms\n${output.trim()}`)
+  if (result.timedOut) return result
+  if (result.status !== 0) {
+    throw new Error(`npm install exited ${String(result.status)} after ${result.durationMs.toFixed(0)} ms\n${result.output.trim()}`)
   }
-  return { durationMs, output, timedOut: false }
+  return result
 }
 
 /**
@@ -403,6 +480,7 @@ export async function resolveNpmPackageLock(
       packageLock: readNpmPackageLock(join(consumer, 'package-lock.json')),
     }
   } finally {
+    server.closeAllConnections()
     await close(server)
     rmSync(consumer, { recursive: true, force: true })
   }

@@ -35,14 +35,14 @@ const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
 const SAFE_HOST_DEPENDENCY_EXPORTS = {
   '@deepseek-ai/dsh-api-session-controller/remote-events': ['SESSION_CONTROLLER_REMOTE_EVENTS'],
   '@deepseek-ai/dsh-credentials': ['credentialKey'],
-  '@deepseek-ai/dsh-host-apiproxy': ['toFetchHandler'],
-  '@deepseek-ai/dsh-host-apiproxy/api': ['RpcId', 'clientRequestSchema'],
   '@deepseek-ai/dsh-llm': ['MessageId', 'callConfigEquals', 'deepFreeze', 'freezeMessage'],
   '@deepseek-ai/dsh-llm/brand': ['ToolCallId'],
   '@deepseek-ai/dsh-session': ['isJsonValue'],
+  '@deepseek-ai/dsh-session/types': ['SessionId'],
   '@deepseek-ai/dsh-settings': ['settingsNamespace'],
   '@deepseek-ai/dsh-system-prompt': ['FIRST_PARTY_SECTION_ORDER'],
   '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
+  '@deepseek-ai/dsh-typert-protocol': ['RemoteError', 'remoteErrorOf'],
   '@deepseek-ai/dsh-util-crypto': ['randomUUID'],
   '@deepseek-ai/schemastery': ['default'],
 } as const satisfies HostDependencyExports
@@ -50,7 +50,7 @@ const SAFE_HOST_DEPENDENCY_EXPORTS = {
 /** Runtime exports that require every consumer to resolve the provider's shared peer instance. */
 const PEER_REQUIRED_HOST_EXPORTS = {
   '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
-  '@deepseek-ai/dsh-typert-protocol': ['TypertLookupFailure', 'TypertRemoteFailure', 'remoteMethods'],
+  '@deepseek-ai/dsh-typert-protocol': ['Remote', 'TypertRemoteService', 'remoteMethods'],
 } as const satisfies HostDependencyExports
 
 /** Exact import specifier to reviewed runtime exports. */
