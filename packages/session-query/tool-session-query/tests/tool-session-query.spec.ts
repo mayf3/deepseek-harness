@@ -1655,7 +1655,7 @@ describe('search paging, prior-history bounds, titles, and cancellation', () => 
     const result = await ctx.tools.execute({
       name: 'session_event_search',
       arguments: { query: 'q' },
-      callId: CallId('call-no-boundary'),
+      callId: ToolCallId('call-no-boundary'),
       signal: new AbortController().signal,
       agent: fakeAgent(session),
     })
