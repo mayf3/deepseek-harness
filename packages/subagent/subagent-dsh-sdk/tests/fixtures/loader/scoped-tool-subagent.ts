@@ -16,14 +16,16 @@ export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/created', ({ agent }) => {
     agent.ctx.plugin(ToolSubagent, {
       provider: config.provider,
-      toolName: config.toolName,
       modelSelectionSettings: true,
-      enableRunInBackground: config.enableRunInBackground,
-      backgroundMode: config.backgroundMode,
-      agentOptions: config.agentOptions,
-      persona: config.persona,
-      toolFilter: config.toolFilter,
-      maxDepth: config.maxDepth,
+      ...(config.toolName === undefined ? {} : { toolName: config.toolName }),
+      ...(config.enableRunInBackground === undefined
+        ? {}
+        : { enableRunInBackground: config.enableRunInBackground }),
+      ...(config.backgroundMode === undefined ? {} : { backgroundMode: config.backgroundMode }),
+      ...(config.agentOptions === undefined ? {} : { agentOptions: config.agentOptions }),
+      ...(config.persona === undefined ? {} : { persona: config.persona }),
+      ...(config.toolFilter === undefined ? {} : { toolFilter: config.toolFilter }),
+      ...(config.maxDepth === undefined ? {} : { maxDepth: config.maxDepth }),
     })
   })
 }
