@@ -36,9 +36,11 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     'cache-test/marks': MarksState
     'cache-test/marks2': Map<string, string>
     'cache-test/count': number
+    'cache-test/seed': number
   }
   interface SessionProjectionMap {
     'cache-test/marks': { marks: string[] }
+    'cache-test/seed': number
   }
 }
 
@@ -64,6 +66,15 @@ const marksUnit = (stateVersion = 1) => ({
   },
   stateVersion,
 }) satisfies ProjectionDefinition<'cache-test/marks', MarksState>
+
+const seedUnit = {
+  key: 'cache-test/seed',
+  stateSchema: z.number().int().nonnegative(),
+  init: (seedLength: number) => seedLength,
+  apply: (state: number) => state,
+  wire: { viewSchema: z.number().int().nonnegative(), view: (state: number) => state },
+  stateVersion: 1,
+} satisfies ProjectionDefinition<'cache-test/seed', number>
 
 /** One session's record document on the per-record medium. */
 const recordPath = (root: string, id: Session['id']): string =>
@@ -349,6 +360,20 @@ describe('SessionProjectionCache cold-read seeding', () => {
     events.push({ type: 'turn/end', seq: events.length, time: events.length, data: { turn: 1, reason: { kind: 'completed' } } })
     return events
   }
+
+  it('preserves the normalized fork seed through prepared hydration and cold restore', async () => {
+    const { ctx, cache } = await harness()
+    ctx.sessionProjections.register(seedUnit)
+    const events = storedLog([])
+
+    const preparedHeader = headerOf(SessionId('prepared-seed'), 0, undefined, 2)
+    const prepared = Session.create(preparedHeader.id, events, preparedHeader)
+    expect(cache.hydratePrepared(prepared, preparedHeader, events)
+      .values['cache-test/seed']).toBe(2)
+
+    const coldHeader = headerOf(SessionId('cold-seed'), 0, undefined, 2)
+    expect(cache.coldSnapshot(coldHeader, events).values['cache-test/seed']).toBe(2)
+  })
 
   it('hydratePrepared seeds from a matching row and retries from the exact log on a malformed one', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))

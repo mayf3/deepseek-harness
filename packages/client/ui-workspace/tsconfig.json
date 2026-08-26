@@ -36,6 +36,9 @@
       "path": "../../core/session"
     },
     {
+      "path": "../../schedule/schedule"
+    },
+    {
       "path": "../ui-sidebar"
     },
     {

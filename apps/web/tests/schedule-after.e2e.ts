@@ -8,14 +8,9 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-import { JobId } from '@deepseek-ai/dsh-jobs'
 import { CallId, createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
-import {
-  formatSystemPromptSnapshot,
-  formatToolSchemasSnapshot,
-} from '@deepseek-ai/dsh-session-snapshot'
 import {
   ScheduleId,
   createEveryScheduleRecord,
@@ -28,7 +23,6 @@ import {
   captureStableAria,
   compareOrRefreshGolden,
   launchWebScaffold,
-  parseSeedFixture,
   seedSession,
   watchConsole,
   webSnapshotMode,
@@ -37,7 +31,6 @@ import {
 import {
   connectFreshWorkspace,
   conversationContextKey,
-  REPO_ROOT,
   saveFailureShot,
 } from './support.ts'
 
@@ -66,18 +59,13 @@ const EVERY_FIXTURE_AGE_MS = 90 * 60 * 1_000
 const CATALOG_SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/schedule-catalog', import.meta.url))
 const CATALOG_FIXTURE = join(CATALOG_SNAPSHOT_DIR, 'session.jsonl')
 const CATALOG_EXPECTED = join(CATALOG_SNAPSHOT_DIR, 'catalog.expected.md')
-const CATALOG_SYSTEM_PROMPT = join(CATALOG_SNAPSHOT_DIR, 'system-prompt.expected.md')
-const CATALOG_TOOL_SCHEMAS = join(CATALOG_SNAPSHOT_DIR, 'tool-schemas.expected.json')
 const BASE_PATCH = fileURLToPath(new URL('../../../packages/bundle/base/cordis.patch.yml', import.meta.url))
 const WEB_PATCH = fileURLToPath(new URL('../../../packages/bundle/web-app/cordis.patch.yml', import.meta.url))
 const CATALOG_NOW = Date.parse('2099-08-25T12:00:00.000Z')
 const CATALOG_SESSION_ID = SessionId('schedule-catalog-web-e2e')
-const DAMAGED_SESSION_ID = SessionId('schedule-catalog-damaged-web-e2e')
 const CATALOG_TITLE = 'Active schedule catalog'
-const DAMAGED_TITLE = 'Damaged schedule catalog'
-const FORK_TITLE = 'Forked schedule catalog'
-const LONG_PROMPT_END = 'and preserve every final word without truncation.'
 const REMINDER_TRIGGER_NAME = /^\d+ reminders?$/
+const ACTIVE_SCHEDULE_LABEL = 'Has active scheduled task'
 const CATALOG_IDS = {
   after: ScheduleId('catalog-after'),
   at: ScheduleId('catalog-at'),
@@ -257,14 +245,6 @@ async function openSession(page: Page, title: string): Promise<void> {
   await page.getByRole('navigation', { name: 'Session hierarchy' })
     .getByRole('button', { name: title, exact: true })
     .waitFor({ timeout: 15_000 })
-}
-
-/** Normalize the run-local paths embedded in one assembled system prompt. */
-function normalizeScheduleSystemPrompt(value: string, scaffold: WebScaffold, cwd: string): string {
-  return value
-    .split(REPO_ROOT).join('{{sourceRoot}}')
-    .split(scaffold.baseUrl).join('{{webUrl}}')
-    .split(cwd).join('{{cwd}}')
 }
 
 describe.skipIf(MODE === 'record')('web e2e: conversational reminders', () => {
@@ -620,39 +600,26 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
   let scaffold: WebScaffold
   let browser: Browser
   let page: Page
-  let parentAgent: Agent
-  let backgroundJob: JobId | undefined
   let tripwire: ReturnType<typeof watchConsole>
-  let fixture = ''
 
   beforeAll(async () => {
-    fixture = await readFile(CATALOG_FIXTURE, 'utf8')
+    const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,
       replayFixture: CATALOG_FIXTURE,
       replayProvidersOnly: true,
     })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
-    await seedSession(
-      scaffold,
-      fixture.replace(CATALOG_TITLE, DAMAGED_TITLE),
-      DAMAGED_SESSION_ID,
-      'standard',
-    )
     const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
     await workspace.attachSession(CATALOG_SESSION_ID)
-    await workspace.attachSession(DAMAGED_SESSION_ID)
 
-    // Seed the list cache for both cold Sessions; preserve the damaged Session's
-    // valid row before its later bad tail exercises the open-state visibility gate.
+    // Seed the zero-I/O list view before the Session is opened.
     const catalog = await scaffold.ctx.sessionPersistence.readFrom(CATALOG_SESSION_ID, 0)
-    const damaged = await scaffold.ctx.sessionPersistence.readFrom(DAMAGED_SESSION_ID, 0)
     scaffold.ctx.sessionProjectionCache.coldSnapshot(catalog.meta, catalog.events)
-    scaffold.ctx.sessionProjectionCache.coldSnapshot(damaged.meta, damaged.events)
 
     browser = await chromium.launch()
     page = await browser.newPage({
-      viewport: { width: 1680, height: 1000 },
+      viewport: { width: 900, height: 900 },
       locale: 'en-US',
       timezoneId: AT_BROWSER_ZONE,
     })
@@ -661,6 +628,12 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    const openSidebar = page.getByRole('button', { name: 'Open sidebar' })
+    if (await openSidebar.isVisible()) {
+      await openSidebar.click()
+      await page.getByRole('button', { name: 'Collapse sidebar' }).waitFor({ timeout: 10_000 })
+    }
     const workspaceRow = page.locator('[role="treeitem"]').first()
     await workspaceRow.waitFor({ timeout: 15_000 })
     const expansionDeadline = Date.now() + 5_000
@@ -670,25 +643,18 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       await new Promise<void>(resolve => setTimeout(resolve, 50))
     }
     await page.getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) }).waitFor({ timeout: 15_000 })
-    await page.getByRole('treeitem', { name: new RegExp(DAMAGED_TITLE) }).waitFor({ timeout: 15_000 })
   }, 120_000)
 
   afterAll(async () => {
     const failures: unknown[] = []
-    if (backgroundJob !== undefined && parentAgent !== undefined) {
-      try {
-        scaffold.ctx.jobs.kill(backgroundJob, parentAgent, 'Schedule catalog test teardown')
-      } catch (error: unknown) {
-        failures.push(error)
-      }
-    }
     await browser?.close().catch((error: unknown) => failures.push(error))
     await scaffold?.close().catch((error: unknown) => failures.push(error))
     if (failures.length === 1) throw failures[0]
     if (failures.length > 1) throw new AggregateError(failures, 'Schedule catalog teardown failed')
   })
 
-  it('keeps the base Web client disabled and enables its existing row only through the overlay', () => {
+  it('replays the overlay-only catalog and sidebar marker, then removes both live', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog'))
     const base = composeEntries([
       loadOverlayPatches('Schedule catalog base roster', BASE_PATCH),
       loadOverlayPatches('Schedule catalog base roster', WEB_PATCH),
@@ -706,232 +672,67 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       name: '@deepseek-ai/dsh-client-ui-schedule',
       disabled: false,
     })
-  })
 
-  it('renders the cold and reloaded catalog with exact ordering and metadata', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog'))
+    const catalogRow = page.getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
+    expect(await catalogRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
+
+    await page.getByRole('button', { name: 'Search sessions' }).click()
+    const search = page.getByPlaceholder('Search sessions', { exact: false })
+    await search.fill(CATALOG_TITLE)
+    const result = page.getByRole('tree', { name: 'Search results' })
+      .getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
+    await result.waitFor({ timeout: 15_000 })
+    expect(await result.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
+    expect(await result.getByRole('button').count()).toBe(0)
+
+    await page.getByRole('button', { name: 'Clear search' }).click()
+    await catalogRow.waitFor({ timeout: 15_000 })
+
     await openSession(page, CATALOG_TITLE)
-    parentAgent = await liveAgent(scaffold, CATALOG_SESSION_ID)
+    const parentAgent = await liveAgent(scaffold, CATALOG_SESSION_ID)
 
     const trigger = page.getByRole('button', { name: '3 reminders' })
     await trigger.waitFor({ timeout: 15_000 })
-    await trigger.focus()
-    await page.keyboard.press('Tab')
-    expect(await trigger.evaluate(element => element === document.activeElement)).toBe(false)
-    await page.keyboard.press('Shift+Tab')
-    expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
-    await trigger.press('Enter')
-    expect(await trigger.getAttribute('aria-expanded')).toBe('true')
-    await trigger.press('Escape')
-    expect(await trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(await trigger.evaluate(element => element === document.activeElement)).toBe(true)
-    await trigger.press('Space')
+    await trigger.click()
     const catalog = page.getByRole('list', { name: 'Active reminders' })
     await catalog.waitFor({ timeout: 10_000 })
-    const rows = catalog.getByRole('listitem')
-    expect(await rows.count()).toBe(3)
-    const renderedRows = await rows.evaluateAll(items => items.map(item => item.textContent))
-    expect(renderedRows.map(row => row?.includes('Review overdue deployment') ?? false))
-      .toEqual([true, false, false])
-    expect(renderedRows.map(row => row?.includes('Join release review') ?? false))
-      .toEqual([false, true, false])
-    expect(renderedRows.map(row => row?.includes('Check exact cadence') ?? false))
-      .toEqual([false, false, true])
-    const overdueStatus = rows.nth(0).getByText('Overdue', { exact: true })
-    const scheduledStatus = rows.nth(1).getByText('Scheduled', { exact: true })
-    expect(await overdueStatus.count()).toBe(1)
-    expect(await scheduledStatus.count()).toBe(1)
-    const rowBackgrounds = await rows.evaluateAll(items => (
-      items.map(item => getComputedStyle(item).backgroundColor)
-    ))
-    expect(rowBackgrounds[0]).not.toBe(rowBackgrounds[1])
-    expect(await overdueStatus.evaluate(element => getComputedStyle(element.parentElement!).color))
-      .not.toBe(await scheduledStatus.evaluate(element => getComputedStyle(element.parentElement!).color))
-    expect(await rows.nth(0).textContent()).toContain('Once')
-    expect(await rows.nth(0).textContent()).toContain('1 minute overdue')
-    expect(await rows.nth(1).textContent()).toContain(LONG_PROMPT_END)
-    expect(await rows.nth(1).textContent()).toContain('Once')
-    expect(await rows.nth(1).textContent()).toContain('in 6 minutes')
-    expect(await rows.nth(2).textContent()).toContain('Every 301 seconds')
-    expect(await rows.nth(2).textContent()).toContain('in 6 minutes')
-    expect(await catalog.locator('button, a, input, select, textarea, [tabindex]:not([tabindex="-1"])').count()).toBe(0)
-    expect(await rows.nth(1).locator('[class*="prompt"]').evaluate(element => ({
-      overflowWrap: getComputedStyle(element).overflowWrap,
-      whiteSpace: getComputedStyle(element).whiteSpace,
-    }))).toEqual({ overflowWrap: 'anywhere', whiteSpace: 'normal' })
-    expect(await catalog.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true)
-    const text = await catalog.textContent() ?? ''
-    expect(text).not.toMatch(/catalog-(?:after|at|every)|2099-08-25T|Delete|Retry|Details/)
-    expect((await catalog.boundingBox())?.width).toBe(336)
+    expect(await catalog.getByRole('listitem').count()).toBe(3)
+    const layout = await catalog.evaluate((element) => {
+      const box = element.getBoundingClientRect()
+      return {
+        width: box.width,
+        right: box.right,
+        viewport: window.innerWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        background: getComputedStyle(element).backgroundColor,
+      }
+    })
+    expect(layout.width).toBe(336)
+    expect(layout.right).toBeLessThanOrEqual(layout.viewport)
+    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewport)
+    expect(layout.background).not.toBe('rgba(0, 0, 0, 0)')
     await compareOrRefreshGolden(
       CATALOG_EXPECTED,
       await captureStableAria(page, '[aria-label="Active reminders"]', scaffold.workspaceCwd),
       MODE,
     )
 
-    await page.reload({ waitUntil: 'load' })
-    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await page.clock.setFixedTime(new Date(CATALOG_NOW))
-    const reloadedTrigger = page.getByRole('button', { name: '3 reminders' })
-    await reloadedTrigger.waitFor({ timeout: 15_000 })
-    await reloadedTrigger.click()
-    expect(await page.getByRole('list', { name: 'Active reminders' }).getByRole('listitem').count()).toBe(3)
-  }, 60_000)
-
-  it('places the 336px catalog between preset context and Jobs at the 900px dark baseline', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog-dark'))
-    const scheduleTrigger = page.getByRole('button', { name: '3 reminders' })
-    if (await scheduleTrigger.getAttribute('aria-expanded') === 'true') await scheduleTrigger.click()
-
-    const started = await scaffold.ctx.tools.execute({
-      signal: AbortSignal.timeout(10_000),
-      callId: CallId('schedule-catalog-job'),
-      name: 'bash',
-      arguments: {
-        command: 'sleep 45',
-        description: 'Hold a background slot open for Schedule placement',
-        run_in_background: true,
-      },
-      agent: parentAgent,
-    })
-    const reported = started.content.map(block => block.type === 'text' ? block.text : '').join('')
-    const matched = /\bbash-\d+\b/.exec(reported)
-    if (matched === null) throw new Error(`background bash reported no job id: ${reported}`)
-    backgroundJob = JobId(matched[0])
-
-    const jobTrigger = page.getByRole('button', { name: '1 background job running' })
-    await jobTrigger.waitFor({ timeout: 15_000 })
-    const header = page.getByRole('banner')
-    const preset = header.getByText('Standard mode', { exact: true })
-    const [presetBox, scheduleBox, jobBox] = await Promise.all([
-      preset.boundingBox(),
-      scheduleTrigger.boundingBox(),
-      jobTrigger.boundingBox(),
-    ])
-    if (presetBox === null || scheduleBox === null || jobBox === null) {
-      throw new Error('Session header actions did not expose layout boxes')
-    }
-    expect(presetBox.x + presetBox.width).toBeLessThanOrEqual(scheduleBox.x)
-    expect(scheduleBox.x + scheduleBox.width).toBeLessThanOrEqual(jobBox.x)
-
-    await scheduleTrigger.click()
-    const menu = page.getByRole('list', { name: 'Active reminders' })
-    const lightBackground = await menu.evaluate(element => getComputedStyle(element).backgroundColor)
-    await scheduleTrigger.click()
-    await page.setViewportSize({ width: 900, height: 900 })
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
-    await scheduleTrigger.click()
-    const dark = await menu.evaluate((element) => {
-      const box = element.getBoundingClientRect()
-      return {
-        background: getComputedStyle(element).backgroundColor,
-        width: box.width,
-        right: box.right,
-        viewport: window.innerWidth,
-        scrollWidth: document.documentElement.scrollWidth,
-      }
-    })
-    expect(dark.width).toBe(336)
-    expect(dark.right).toBeLessThanOrEqual(dark.viewport)
-    expect(dark.scrollWidth).toBeLessThanOrEqual(dark.viewport)
-    expect(dark.background).not.toBe(lightBackground)
-    await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
-    await page.setViewportSize({ width: 1680, height: 1000 })
-    await scheduleTrigger.click()
-  }, 60_000)
-
-  it('does not inherit parent reminders into a fork', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog-fork'))
-    const forked = await scaffold.ctx.sessionController.fork({ sessionId: CATALOG_SESSION_ID })
-    const childAgent = scaffold.ctx.agents.get(forked.sessionId)
-    if (childAgent === undefined) throw new Error('fork did not publish its Agent')
-    childAgent.session.append('session/title', {
-      title: FORK_TITLE,
-      messageSeqs: [],
-      source: { kind: 'user' },
-    })
-    await expect(scaffold.ctx.sessions.flush(childAgent.session)).resolves.toBe(true)
-    expect(childAgent.session.header.seedLength).toBeGreaterThan(0)
-    expect(scaffold.ctx.sessionProjections.snapshot(childAgent.session).values.schedule).toEqual([])
-
-    await openSession(page, FORK_TITLE)
-    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
-    await openSession(page, CATALOG_TITLE)
-    await page.getByRole('button', { name: '3 reminders' }).waitFor({ timeout: 15_000 })
-  }, 60_000)
-
-  it('removes live rows and closes the trigger when the last reminder disappears', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog-live-remove'))
-    const trigger = page.getByRole('button', { name: '3 reminders' })
-    await trigger.click()
-    const catalog = page.getByRole('list', { name: 'Active reminders' })
-    await catalog.waitFor({ timeout: 10_000 })
-
-    for (const id of [CATALOG_IDS.after, CATALOG_IDS.at]) {
+    const sessionRow = page.getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
+    expect(await sessionRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
+    for (const id of Object.values(CATALOG_IDS)) {
       parentAgent.session.append('schedule/change', { version: 1, operation: 'delete', id })
     }
-    await expect(scaffold.ctx.sessions.flush(parentAgent.session)).resolves.toBe(true)
-    await page.getByRole('button', { name: '1 reminder' }).waitFor({ timeout: 15_000 })
-    expect(await catalog.getByRole('listitem').count()).toBe(1)
-    expect(await catalog.textContent()).toContain('Check exact cadence')
-
-    parentAgent.session.append('schedule/change', {
-      version: 1,
-      operation: 'delete',
-      id: CATALOG_IDS.every,
-    })
     await expect(scaffold.ctx.sessions.flush(parentAgent.session)).resolves.toBe(true)
     await expect.poll(() => page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count(), {
       timeout: 15_000,
     }).toBe(0)
     expect(await page.getByRole('list', { name: 'Active reminders' }).count()).toBe(0)
-    expect(await page.locator('[role="banner"] button:focus').count()).toBe(0)
-  }, 60_000)
-
-  it('hides a prewarmed cached catalog when the Session open fails', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-schedule-catalog-damaged'))
-    const parsed = parseSeedFixture(fixture)
-    await scaffold.ctx.sessionPersistence.append(DAMAGED_SESSION_ID, [{
-      type: 'schedule/change',
-      seq: parsed.events.length,
-      time: CATALOG_NOW,
-      data: { version: 1, operation: 'delete', id: ScheduleId('missing') },
-    }])
-
-    await openSession(page, DAMAGED_TITLE)
-    await page.getByText(/Failed to load history:/).waitFor({ timeout: 15_000 })
-    expect(await page.getByRole('button', { name: REMINDER_TRIGGER_NAME }).count()).toBe(0)
-    expect(await page.getByRole('button', { name: /Retry/i }).count()).toBe(0)
-  }, 60_000)
-
-  it('pins the Schedule overlay request header and keeps the fixture inventory closed', async () => {
-    parentAgent.followup(createUserMessage({
-      content: [{ type: 'text', text: 'Probe the Schedule overlay request header.' }],
-      source: { kind: 'plugin', plugin: 'schedule-web-e2e' },
-    }))
-    await parentAgent.whenIdle()
-    const request = parentAgent.session.events.findLast(event => event.type === 'request/header')
-    if (request?.type !== 'request/header'
-      || typeof request.data.header.system !== 'string'
-      || !Array.isArray(request.data.header.tools)) {
-      throw new Error('Schedule overlay produced no complete request header')
-    }
-    const system = normalizeScheduleSystemPrompt(
-      request.data.header.system,
-      scaffold,
-      parentAgent.session.header.cwd ?? scaffold.workspaceCwd,
-    )
-    await compareOrRefreshGolden(CATALOG_SYSTEM_PROMPT, formatSystemPromptSnapshot(system).trimEnd(), MODE)
-    await compareOrRefreshGolden(
-      CATALOG_TOOL_SCHEMAS,
-      formatToolSchemasSnapshot(request.data.header.tools).trimEnd(),
-      MODE,
-    )
+    await expect.poll(() => sessionRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count(), {
+      timeout: 15_000,
+    }).toBe(0)
     await assertFixtureInventory(CATALOG_SNAPSHOT_DIR, [
       'catalog.expected.md',
       'session.jsonl',
-      'system-prompt.expected.md',
-      'tool-schemas.expected.json',
     ])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

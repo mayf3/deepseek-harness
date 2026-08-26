@@ -66,7 +66,7 @@ const countUnit = (): ProjectionDefinition<'test/count', number> => ({
 const seedUnit = (): ProjectionDefinition<'test/seed', number> => ({
   key: 'test/seed',
   stateSchema: z.number().int().nonnegative(),
-  init: header => header.seedLength ?? 0,
+  init: seedLength => seedLength,
   apply: state => state,
   stateVersion: 1,
 })
@@ -110,7 +110,7 @@ describe('SessionProjectionRegistry drive', () => {
     expect(snapshot.values['test/marks']).toEqual({ marks: [] })
   })
 
-  it('passes the immutable Session header to lazy, event-driven, and restore initialization', async () => {
+  it('passes normalized seedLength to lazy, event-driven, and restore initialization', async () => {
     const { ctx } = await harness()
     const parentMark: SessionEvent = {
       type: 'test/mark', seq: 0, time: 0, data: { marks: ['parent'] },

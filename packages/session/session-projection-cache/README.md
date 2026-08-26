@@ -58,9 +58,9 @@ Three mandatory points always write: session creation persists the seed-derived 
 
 ### Reading cached values
 
-`cachedSnapshot(meta)` synchronously serves client values from the storage domain's coherent in-memory table with zero I/O. It accepts only an identity-matching record and version- and schema-matching client keys, then returns a tentative `{ asOfSeq, values }` cut at the lowest served-row watermark; host-only rows are omitted. It returns `undefined` for an unknown id, unrelated lifecycle, absent or foreign record document, or no usable rows. The list carrier uses this value only to prewarm cells: an exact opening baseline replaces or clears it even when the cached sequence is higher.
+`cachedSnapshot(meta)` synchronously serves client values from the storage domain's coherent in-memory table with zero I/O. It accepts only an identity-matching record and version- and schema-matching client keys, then returns a best-effort `{ asOfSeq, values }` cut at the lowest served-row watermark; host-only rows are omitted. It returns `undefined` for an unknown id, unrelated lifecycle, absent or foreign record document, or no usable rows. The list carrier prewarms the same client rows later used by opening baselines and live frames; every carried value follows one source-neutral higher-sequence-wins rule, while a replacement control baseline alone may first truncate rows beyond its durable cut.
 
-`coldSnapshot(meta, events)` accepts the complete ordered log, validates every seeded row against that exact extent, folds any required events, and refreshes the record without consulting persistence. `hydratePrepared(session, meta, events)` performs the same validation for an unpublished prepared Session. If cached state is malformed or out of range, each path retries from `init(header)` over the full supplied log; corruption in the durable event stream still fails the retry instead of producing a partial snapshot.
+`coldSnapshot(meta, events)` accepts the complete ordered log, validates every seeded row against that exact extent, folds any required events, and refreshes the record without consulting persistence. `hydratePrepared(session, meta, events)` performs the same validation for an unpublished prepared Session. If cached state is malformed or out of range, each path retries over the full supplied log from `init(seedLength)`, followed where declared by `applyHeaderSeed` with only the immutable same-name header field; corruption in the durable event stream still fails the retry instead of producing a partial snapshot.
 
 ### What the cache guarantees
 
@@ -127,7 +127,7 @@ These limits define where the cache needs operational care. They are current pac
 
 - **No eviction or retention surface** — records accumulate per session; pruning stored checkpoints is out-of-band maintenance, same stance as session persistence itself.
 - **Interval throttle is per-session coarse** — the timer arms at the first dirty event after a clean write; a steady sub-threshold trickle writes once per interval, not a sliding window.
-- **Zero-I/O values are tentative** — a cached row may trail current events or overreach a crash-repaired truncation; consumers must replace it with the exact opening baseline.
+- **Zero-I/O values are best effort** — a cached row may trail current events or overreach a crash-repaired truncation; exact Host reads validate against the complete log, while the client keeps the highest sequence until a later value or replacement control baseline supersedes it.
 - **Callers supply cold logs** — the cache can validate and refold a complete log but never reads session persistence itself; a consumer that needs an exact cold snapshot owns that log read.
 
 <a id="dev-note"></a>

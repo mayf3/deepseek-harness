@@ -1,10 +1,9 @@
 /**
  * Projection value store (push model; session-projection subsystem page:
- * docs/subsystems/session-projection.md): tentative list prewarm versus
- * authoritative baselines and frames, capability absence as undefined,
- * generation truncation, and the Session/manager wiring (tail-page seeding,
- * control-stream projection routing pre- and post-instantiation, the list
- * rows' title projection).
+ * docs/subsystems/session-projection.md): higher-seq-wins across every source,
+ * capability absence as undefined, generation truncation, and the
+ * Session/manager wiring (tail-page seeding, control-stream projection routing
+ * pre- and post-instantiation, and list-row projection values).
  */
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -41,33 +40,27 @@ describe('Session projection value semantics', () => {
     expect(store.get('test/marks')).toEqual({ marks: ['a', 'b'] })
   })
 
-  it('prewarms only tentative rows and promotes an equal-seq authoritative frame', () => {
+  it('uses the same higher-seq-wins rule for cached and live values', () => {
     const store = new ProjectionValueStore()
-    store.prewarm('test/marks', { marks: ['hint-5'] }, 5)
-    store.prewarm('test/marks', { marks: ['stale-hint'] }, 3)
-    expect(store.get('test/marks')).toEqual({ marks: ['hint-5'] })
-    store.prewarm('test/marks', { marks: ['hint-9'] }, 9)
-    store.apply('test/marks', { marks: ['frame-9'] }, 9)
-    store.prewarm('test/marks', { marks: ['later-hint'] }, 20)
-    expect(store.get('test/marks')).toEqual({ marks: ['frame-9'] })
+    store.apply('test/marks', { marks: ['cached-5'] }, 5)
+    store.apply('test/marks', { marks: ['stale-live'] }, 3)
+    store.apply('test/marks', { marks: ['cached-9'] }, 9)
+    store.apply('test/marks', { marks: ['equal-live'] }, 9)
+    expect(store.get('test/marks')).toEqual({ marks: ['cached-9'] })
   })
 
-  it('a complete baseline replaces hints but preserves newer authoritative frames', () => {
+  it('a complete baseline updates and clears only rows at or below its cut', () => {
     const store = new ProjectionValueStore()
-    store.prewarm('test/marks', { marks: ['hint-20'] }, 20)
-    store.prewarm('hint-only', 'stale', 20)
-    store.apply('frame-only', 'frame-20', 20)
+    store.apply('test/marks', { marks: ['old'] }, 5)
+    store.apply('cleared', 'old', 5)
+    store.apply('newer', 'newer', 20)
     store.seed({ asOfSeq: 10, values: { 'test/marks': { marks: ['baseline-10'] } } })
     expect(store.get('test/marks')).toEqual({ marks: ['baseline-10'] })
-    expect(store.get('hint-only')).toBeUndefined()
-    expect(store.get('frame-only')).toBe('frame-20')
-    store.apply('test/marks', { marks: ['frame-20'] }, 20)
-    store.seed({ asOfSeq: 15, values: { 'test/marks': { marks: ['baseline-15'] } } })
-    expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
-    store.seed({ asOfSeq: 30, values: { 'test/marks': { marks: ['baseline-30'] } } })
-    expect(store.get('test/marks')).toEqual({ marks: ['baseline-30'] })
-    store.seed({ asOfSeq: 40, values: {} })
+    expect(store.get('cleared')).toBeUndefined()
+    expect(store.get('newer')).toBe('newer')
+    store.seed({ asOfSeq: 10, values: {} })
     expect(store.get('test/marks')).toBeUndefined()
+    expect(store.get('newer')).toBe('newer')
   })
 
   it('truncate drops rows past the durable baseline and keeps the rest', () => {
@@ -116,7 +109,7 @@ describe('Session tail-page seeding', () => {
   it('retains a prewarmed projection when opening the Session fails', async () => {
     const api = new FakeApiClient()
     const projections = new ProjectionValueStore()
-    projections.prewarm('test/marks', { marks: ['cached'] }, 5)
+    projections.apply('test/marks', { marks: ['cached'] }, 5)
     const session = new Session(SID, api, fakeRemote(api), { projections })
     api.onHistory = () => Promise.resolve(err({
       code: 'session-not-found',
@@ -141,28 +134,28 @@ describe('Session tail-page seeding', () => {
     expect(session.projections.get('test/marks')).toEqual({ marks: ['from-baseline'] })
   })
 
-  it('replaces a higher-seq prewarm hint after a successful opening', async () => {
+  it('does not let an older opening baseline replace a newer cached value', async () => {
     const api = new FakeApiClient()
     const projections = new ProjectionValueStore()
-    projections.prewarm('test/marks', { marks: ['stale-list'] }, 9)
+    projections.apply('test/marks', { marks: ['cached'] }, 9)
     const session = new Session(SID, api, fakeRemote(api), { projections })
     api.onHistory = () => Promise.resolve(ok({
       records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
-      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['authoritative'] } } },
+      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['older-baseline'] } } },
     } as never))
 
     await session.open()
 
     expect(session.getSnapshot().openState).toBe('open')
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['authoritative'] })
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['cached'] })
   })
 
-  it('preserves an authoritative frame below a higher hint while opening waits for its older baseline', async () => {
+  it('keeps the highest cut while opening and live frames interleave', async () => {
     const api = new FakeApiClient()
     const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
     api.onHistory = () => history.promise
     const projections = new ProjectionValueStore()
-    projections.prewarm('test/marks', { marks: ['hint-9'] }, 9)
+    projections.apply('test/marks', { marks: ['cached-9'] }, 9)
     const session = new Session(SID, api, fakeRemote(api), { projections })
 
     const opening = session.open()
@@ -173,7 +166,7 @@ describe('Session tail-page seeding', () => {
     } as never))
     await opening
 
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['live-3'] })
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['cached-9'] })
   })
 
   it('a resync serving a stale block keeps the newer pushed value (seq rule end to end)', async () => {

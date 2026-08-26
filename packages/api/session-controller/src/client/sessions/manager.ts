@@ -491,16 +491,16 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          // Prewarm each row's projection hints (cold titles surface without
+          // Apply each row's projection values (cold values surface without
           // opening the session). The list block is partial, so an absent key
-          // must not clear; hints never replace an authoritative frame or
-          // successful opening baseline, even if the cache claims a higher cut.
+          // must not clear; the shared higher-seq-wins rule keeps stale values
+          // from replacing a newer frame or opening baseline.
           for (const s of result.value.items) {
             const block = s.projections
             if (block === undefined) continue
             const store = this.projectionStore(s.sessionId)
             const values = block.values as Record<string, unknown>
-            for (const key of Object.keys(values)) store.prewarm(key, values[key], block.asOfSeq)
+            for (const key of Object.keys(values)) store.apply(key, values[key], block.asOfSeq)
           }
         } else {
           this.listState = 'error'
@@ -723,7 +723,7 @@ export class SessionManager {
     if (projections !== undefined) {
       const store = this.projectionStore(summary.sessionId)
       for (const [key, value] of Object.entries(projections.values)) {
-        store.prewarm(key, value, projections.asOfSeq)
+        store.apply(key, value, projections.asOfSeq)
       }
     }
     if (summary.origin === 'subagent' && summary.parentSessionId !== undefined) {

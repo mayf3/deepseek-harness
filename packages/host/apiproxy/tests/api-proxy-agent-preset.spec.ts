@@ -131,7 +131,10 @@ async function harness(
           'SESSION_QUERY_SESSION_NOT_FOUND',
         ))
       }
-      let preset = agentPresetProjectionDefinition.init(session.header)
+      let preset = agentPresetProjectionDefinition.applyHeaderSeed(
+        agentPresetProjectionDefinition.init(),
+        session.header.agentPreset,
+      )
       for (const event of session.events) {
         preset = agentPresetProjectionDefinition.apply(preset, event)
       }

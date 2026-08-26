@@ -70,10 +70,7 @@ describe('Schedule Session projection', () => {
       }, 3),
       { type: 'turn/start', seq: 4, time: 4, data: { turn: 1 } },
     ]
-    let projected: ScheduleProjectionState = scheduleProjectionDefinition.init({
-      ...RESTORE_HEADER,
-      seedLength: 1,
-    })
+    let projected: ScheduleProjectionState = scheduleProjectionDefinition.init(1)
     for (const event of events) projected = scheduleProjectionDefinition.apply(projected, event)
 
     expect(projected).toEqual({ seedLength: 1, ...foldScheduleEvents(events, 1) })

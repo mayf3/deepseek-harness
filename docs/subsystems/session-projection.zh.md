@@ -28,11 +28,21 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State for the empty log and its immutable Session metadata.
-   * @param header - immutable metadata for the Session being projected.
+   * State before any event is folded.
+   * @param seedLength - normalized count of inherited leading events.
    * @returns the initial state.
    */
-  init(header: SessionHeader): NoInfer<S>
+  init(seedLength: number): NoInfer<S>
+  /**
+   * Optional adjustment from the immutable Session-header field whose name
+   * matches this projection key. The unit receives only that field value.
+   * @param state - the state returned by {@link init}.
+   * @param value - the same-name immutable Session-header field.
+   * @returns the state before event folding begins.
+   */
+  applyHeaderSeed?: K extends keyof SessionHeader
+    ? (state: NoInfer<S>, value: SessionHeader[K]) => NoInfer<S>
+    : never
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -63,7 +73,7 @@ interface ProjectionDefinition<
 }
 ```
 
-承重规则是确定性同步 fold 与完整 wire 值。领域可以拥有全量值事件，也可以拥有增量 transition，但它会在 Host 上校验并折叠这些事件；客户端既不回放这些事件，也不会收到 delta。`init` 接收与已观察事件对应的不可变 `SessionHeader`，而不是读取环境状态。fork-sensitive 领域以 `header.seedLength ?? 0` 忽略继承前缀；注册表会拒绝超过已观察日志长度的 seed 边界。
+承重规则是确定性同步 fold 与完整 wire 值。领域可以拥有全量值事件，也可以拥有增量 transition，但它会在 Host 上校验并折叠这些事件；客户端既不回放这些事件，也不会收到 delta。`init(seedLength)` 只接收规范化后的继承前缀长度，注册表会拒绝超过已观察日志长度的 seed 边界。key 同时也是 `SessionHeader` key 的单元可以通过 `applyHeaderSeed` 只接收这个同名不可变字段；definition 不会收到完整 header 或环境可变状态。
 
 ## 快照与变更流
 
@@ -99,7 +109,7 @@ type ProjectionChangeListener = (
 
 ## 注册表：`ctx.sessionProjections`
 
-`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都会在首次触达（事件或读取）时先调用 `init(session.header)`，再折叠内存日志。detached cache、history 与 Subagent restore 路径传入与持久事件同一次读取返回的不可变 header。注册是一个 effect，其 disposer 随调用方 fiber 走：同一 key 以不同 `stateVersion` 重复注册时抛错，同版本注册方则共享一个单元并计数；最后一个注册方卸载后，该 key 与其 cell 才会消失。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
+`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都会在首次触达（事件或读取）时先接收已校验的 `seedLength` 和可选的同名 header seed，再折叠内存日志。detached cache、history 与 Subagent restore 路径只把与持久事件同一次读取返回的不可变 header 用于派生这些窄输入。注册是一个 effect，其 disposer 随调用方 fiber 走：同一 key 以不同 `stateVersion` 重复注册时抛错，同版本注册方则共享一个单元并计数；最后一个注册方卸载后，该 key 与其 cell 才会消失。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -119,10 +129,10 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
 /**
  * The zero-I/O listing read: whole values viewed straight from the stored
  * rows (version-matching keys only), each cut carried with its watermark so
- * a client value store can prewarm tentative rows. The caller's header keeps
- * unrelated lifecycles out, but a row may lag the log or overreach a
- * crash-repaired truncation; the exact history or {@link coldSnapshot}
- * baseline replaces or clears hints whenever a session is opened.
+ * a client value store can apply the same higher-seq-wins rule used for all
+ * projection sources. The caller's header keeps unrelated lifecycles out;
+ * the value remains a best-effort cached observation until a fresher cut
+ * arrives.
  * @param meta - the listed session's header (identity witness; no log read).
  * @param keys - optional projection keys required by the caller's audience.
  * @returns the cut (`asOfSeq` = lowest served-row watermark), or

@@ -58,9 +58,9 @@ kind: "package-reference"
 
 ### 读取缓存值
 
-`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回暂定的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体只用该值预热 cell：精确 opening baseline 会替换或清除它，即使缓存声称的 sequence 更高。
+`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回尽力而为的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体用该值预热之后也由 opening baseline 与 live frame 共用的客户端行；所有携带值都遵循同一条与来源无关的 higher-sequence-wins 规则，只有 replacement control baseline 可以先截断超出其持久 cut 的行。
 
-`coldSnapshot(meta, events)` 接受完整有序日志，以该精确范围校验每条 seed row、折叠所需事件，并在不访问持久化层的情况下刷新记录。`hydratePrepared(session, meta, events)` 对尚未发布的 prepared Session 执行同样的校验。若缓存状态畸形或越界，两条路径都会从 `init(header)` 开始在所提供的完整日志上重试；持久事件流本身若已损坏，重试仍然失败，绝不会产出部分快照。
+`coldSnapshot(meta, events)` 接受完整有序日志，以该精确范围校验每条 seed row、折叠所需事件，并在不访问持久化层的情况下刷新记录。`hydratePrepared(session, meta, events)` 对尚未发布的 prepared Session 执行同样的校验。若缓存状态畸形或越界，两条路径都会在所提供的完整日志上从 `init(seedLength)` 重试；若 definition 声明了 `applyHeaderSeed`，随后只向它传入同名的不可变 header 字段。持久事件流本身若已损坏，重试仍然失败，绝不会产出部分快照。
 
 ### 缓存保证什么
 
@@ -127,7 +127,7 @@ kind: "package-reference"
 
 - **无淘汰或保留接口**——记录按会话持续累积；清理已存储检查点属于带外维护，与会话持久化采用相同策略。
 - **间隔节流采用按会话的粗粒度控制**——一次无脏数据的写入完成后，计时器在首个脏事件到达时启动；持续但低于条数阈值的事件流每间隔写入一次，而非滑动窗口。
-- **零 I/O 值只是暂定值**——缓存行可能落后于当前事件，也可能越过崩溃修复后的截断点；消费方必须用精确 opening baseline 替换它。
+- **零 I/O 值是尽力而为的**——缓存行可能落后于当前事件，也可能越过崩溃修复后的截断点；Host 精确读取会用完整日志校验，客户端则保留最高 sequence，直到后续值或 replacement control baseline 取代它。
 - **冷日志由调用方提供**——缓存能校验并重新折叠一份完整日志，但绝不自行读取会话持久化层；需要精确冷快照的消费方负责该日志读取。
 
 <a id="dev-note"></a>

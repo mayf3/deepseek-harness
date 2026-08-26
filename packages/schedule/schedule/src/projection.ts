@@ -67,7 +67,7 @@ const scheduleProjectionStateSchema = z.object({
 export const scheduleProjectionDefinition = {
   key: 'schedule',
   stateSchema: scheduleProjectionStateSchema,
-  init: header => ({ seedLength: header.seedLength ?? 0, active: [], seenIds: [] }),
+  init: seedLength => ({ seedLength, active: [], seenIds: [] }),
   apply: (state, event) => {
     if (event.seq < state.seedLength || event.type !== 'schedule/change') return state
     return {

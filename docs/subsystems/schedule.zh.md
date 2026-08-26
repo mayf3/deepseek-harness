@@ -149,7 +149,7 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
 ```
 
-严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.seedLength` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。Schedule projection 接收不可变的 `SessionHeader`，复用共享 transition，并持久化活动记录与已使用 id 历史，使缓存恢复继续保持严格回放。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
+严格 decoder 与 fold 会拒绝未知版本、额外字段、复用 id、不匹配的一次性提醒或 Every dispatch 形状，以及针对非活动记录的 delete 或 dispatch 转换。普通 Session 折叠完整事件流。fork 只折叠 `SessionHeader.seedLength` 位置及其后的事件，因此保留历史，但不会接管父 Session 的活动提醒。Schedule projection 只通过 `init(seedLength)` 接收规范化边界，复用共享 transition，并持久化活动记录与已使用 id 历史，使缓存恢复继续保持严格回放；它不会接收完整 header。`schedule/change` 声明和源码位置也编入[持久化目录](../persistence-catalog.zh.md#schedulechange--log-only)。
 
 ## 活动视图与管理
 
@@ -179,11 +179,13 @@ type ScheduleView = ScheduleRecord & {
 
 ## 只读 Web 目录
 
-可选 Session projection 注册表存在时，Schedule 会注册客户端可见的 `schedule` key，其值是完整的活动 `ScheduleRecord[]`。live 驱动、惰性构建、持久化缓存恢复、Session history 与 detached Subagent 读取，都以提供对应事件的同一个不可变 Session header 初始化 fold，并拒绝超过已观察日志长度的 `seedLength`。畸形权威事件会使既有读取／打开路径失败；非权威 checkpoint 畸形时会被丢弃并从日志重建，系统不会发布部分活动数组。
+可选 Session projection 注册表存在时，Schedule 会注册客户端可见的 `schedule` key，其值是完整的活动 `ScheduleRecord[]`。live 驱动、惰性构建、持久化缓存恢复、Session history 与 detached Subagent 读取都会收到为其事件 cut 校验过的规范化 seed 边界，并拒绝超过已观察日志长度的边界。畸形权威事件会使既有读取／打开路径失败；非权威 checkpoint 畸形时会被丢弃并从日志重建，系统不会发布部分活动数组。
 
 shipped Web bundle 拥有默认 disabled 的 `ui-schedule` row 与包解析依赖。显式 Schedule overlay 会把该既有 row 与 `time-context`、Schedule Host 插件一同启用，因此普通 Web 启动仍不会激活该 client 插件。Session 成功打开后，[`dsh-client-ui-schedule`](../../packages/client/ui-schedule/README.zh.md)通过 `useProjection('schedule')` 读取投影；值缺失或为空，以及任何非 open 的 Session 状态，都不会渲染入口。
 
 header 弹层是一个 336px 的只读列表。它显示完整纯文本 prompt、本地化的「单次」或未经舍入的精确 Every 间隔、浏览器本地目标时间、按浏览器时钟派生的相对时间，以及独立的 scheduled／overdue 状态。逾期行优先，其后按目标排序；完全并列时以 projection 的创建顺序打破。触发器是唯一 Tab stop；原生 Enter／Space 激活、Escape 回焦、外部指针关闭，以及最后一条 live 记录移除时不迁移焦点的卸载，就是完整交互面。
+
+既有 `ui-workspace` 列表投影会另行只派生 `projectionValues.schedule` 是否为非空数组。分组、平铺与搜索行在标题之后渲染同一枚不可交互闹钟（普通行的更新时间仍在它之后），并提供本地化 tooltip 与同义读屏文本。cold 行只有在身份匹配且可用的 projection cache 明确提供非空值时才显示；cache 缺失或陈旧可能造成短暂漏显或残留，而且闹钟绝不表示 Schedule runtime 当前 live。
 
 该目录是当前活动状态，不是回执或历史。它不公开 Schedule id、原始 UTC、详情、mutation、Retry、Toast 或特殊对话卡片。到期提醒仍只通过下文所述的普通 Assistant 输出出现。
 

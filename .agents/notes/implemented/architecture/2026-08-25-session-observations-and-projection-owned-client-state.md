@@ -18,7 +18,7 @@ Exact Session reads use a retained `SessionObservation`, and replayable Session-
 
 ### Data flow
 
-The two ownership rules meet at the observation's projection snapshot. Lightweight listing may stop at cached hints; every exact opening reaches the same observation path and gives the Client a complete replacement baseline.
+The two ownership rules meet at the observation's projection snapshot. Lightweight listing may stop at cached hints; every exact opening reaches the same observation path and gives the Client a complete baseline at that observation's cursor.
 
 ```mermaid
 flowchart LR
@@ -108,11 +108,11 @@ These distinctions prevent one overloaded `undefined` from representing cache mi
 | Follow opening baseline | Complete for the Host composition | Exact opening cursor | Capability absent |
 | Projection frame | One whole key | Event sequence carried by the frame | Not applicable |
 
-The Client stores one row per key with its provenance and sequence number. A list hint fills or advances only a tentative row. The first authoritative frame replaces a tentative hint regardless of its claimed sequence; later authoritative frames use higher-sequence-wins. A complete opening baseline replaces or clears tentative rows while preserving an authoritative frame newer than the opening cut. A replacement control baseline first discards rows beyond its durable cut, then installs its complete values.
+The Client stores one `{ value, seq }` row per key. List hints, opening-baseline values, and projection frames all apply through the same source-neutral rule: a value lands only when its sequence is higher than the current row. A complete baseline also clears an omitted key when the existing row is at or below that cut; a newer row remains. A replacement control baseline is the only input that first discards rows beyond its durable cut, because those rows may describe process state the replacement Host no longer owns, and then seeds its complete values under the same ordering rule.
 
 The list view reads the same per-Session store as the opened Session. Hints can populate title, preset, and other list presentation before follow completes; the opening baseline then converges that state without creating a second summary-only authority.
 
-The per-Session Client projection store never folds Session events; it only reconciles finished hints, complete baselines, and whole-value frames under those source-aware rules.
+The per-Session Client projection store never folds Session events; it only orders finished hints, complete baselines, and whole-value frames by sequence, with replacement-generation truncation as the one explicit reset boundary.
 
 Data that is not derived from one Session remains outside projections. `llm.models` owns the Host-generation model catalog, and `agentPreset.list` owns the configurable preset roster. A selector combines the relevant catalog with the Session's `modelSelection` or `agentPreset` projection only when both inputs are ready. During refresh it may retain the last complete catalog; before the first complete pair it reports loading instead of rendering a guessed name or availability verdict.
 

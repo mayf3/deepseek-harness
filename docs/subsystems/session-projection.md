@@ -28,11 +28,21 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State for the empty log and its immutable Session metadata.
-   * @param header - immutable metadata for the Session being projected.
+   * State before any event is folded.
+   * @param seedLength - normalized count of inherited leading events.
    * @returns the initial state.
    */
-  init(header: SessionHeader): NoInfer<S>
+  init(seedLength: number): NoInfer<S>
+  /**
+   * Optional adjustment from the immutable Session-header field whose name
+   * matches this projection key. The unit receives only that field value.
+   * @param state - the state returned by {@link init}.
+   * @param value - the same-name immutable Session-header field.
+   * @returns the state before event folding begins.
+   */
+  applyHeaderSeed?: K extends keyof SessionHeader
+    ? (state: NoInfer<S>, value: SessionHeader[K]) => NoInfer<S>
+    : never
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -63,7 +73,7 @@ interface ProjectionDefinition<
 }
 ```
 
-The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init` receives the immutable `SessionHeader` associated with the observed events rather than reaching into ambient state. A fork-sensitive domain derives `header.seedLength ?? 0` to ignore the inherited prefix, and the registry rejects a seed boundary beyond the observed log.
+The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init(seedLength)` receives only the normalized inherited-prefix length, and the registry rejects a seed boundary beyond the observed log. A unit whose key is also a `SessionHeader` key may use `applyHeaderSeed` to receive only that same-name immutable field; definitions never receive the complete header or ambient mutable state.
 
 ## The snapshot and the change feed
 
@@ -99,7 +109,7 @@ type ProjectionChangeListener = (
 
 ## The registry: `ctx.sessionProjections`
 
-`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, calls `init(session.header)` before folding the in-memory log on first touch (event or read). Detached cache, history, and Subagent restore paths pass the immutable header returned with the same persisted event read. Registration is an effect whose disposer rides the calling fiber: a duplicate key with a different `stateVersion` throws, while same-version registrants share one unit and are counted; the key and its cells disappear after the last registrant unloads. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
+`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, receives the validated `seedLength`, then its optional same-key header seed, before the in-memory log folds on first touch (event or read). Detached cache, history, and Subagent restore paths use the immutable header returned with the same persisted event read only to derive those narrow inputs. Registration is an effect whose disposer rides the calling fiber: a duplicate key with a different `stateVersion` throws, while same-version registrants share one unit and are counted; the key and its cells disappear after the last registrant unloads. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -119,10 +129,10 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
 /**
  * The zero-I/O listing read: whole values viewed straight from the stored
  * rows (version-matching keys only), each cut carried with its watermark so
- * a client value store can prewarm tentative rows. The caller's header keeps
- * unrelated lifecycles out, but a row may lag the log or overreach a
- * crash-repaired truncation; the exact history or {@link coldSnapshot}
- * baseline replaces or clears hints whenever a session is opened.
+ * a client value store can apply the same higher-seq-wins rule used for all
+ * projection sources. The caller's header keeps unrelated lifecycles out;
+ * the value remains a best-effort cached observation until a fresher cut
+ * arrives.
  * @param meta - the listed session's header (identity witness; no log read).
  * @param keys - optional projection keys required by the caller's audience.
  * @returns the cut (`asOfSeq` = lowest served-row watermark), or

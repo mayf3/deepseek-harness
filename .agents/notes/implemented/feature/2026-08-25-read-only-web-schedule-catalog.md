@@ -14,11 +14,9 @@ The catalog also had to preserve two existing boundaries. A fork must not inheri
 
 Schedule registers an optional `schedule` Session projection and a separate browser package renders that complete active value. The durable `schedule/change` stream remains the only authority; the browser performs presentation-only derivation and exposes no mutation.
 
-### Seed-aware strict projection
+### Projection boundary
 
-`ProjectionDefinition.init()` receives the immutable `SessionHeader`. Live lazy builds, event-driven builds, persisted-cache restores, Session history reads, and detached Subagent reads use the same header that supplied their events, and the registry rejects a `seedLength` beyond the observed log. Existing units may ignore the input. A fork-sensitive unit can retain `header.seedLength ?? 0` in state and skip every event whose `seq` is below the boundary without consulting an ambient Session object.
-
-The Schedule unit persists `{ seedLength, active, seenIds }`, reuses the domain's strict decoder and `applyScheduleChange` transition, and publishes the complete active `ScheduleRecord[]`. Keeping `seenIds` preserves the no-reuse invariant after cached restore. Its strict state schema rejects malformed records, duplicate ids, and active ids absent from the used-id set. A damaged authoritative event fails the existing read/open path; a malformed non-authoritative checkpoint is discarded and rebuilt from the log. No partial array is published.
+The Schedule unit reuses the domain's strict transition and publishes the complete active `ScheduleRecord[]`; damaged authoritative input fails the existing read/open path, while a malformed disposable checkpoint is rebuilt from the log. The shared [projection state and Client views decision](../architecture/2026-08-19-session-projection-state-and-client-views.md) owns `init(seedLength)`, optional same-key header seeding, checkpoint validation, and the live/cache/history/detached drive paths. This note owns only how the resulting active value is presented in Web.
 
 `@deepseek-ai/dsh-schedule/client` is a type-only browser-safe export of the durable record vocabulary. It does not pull the Cordis plugin, runtime, timers, tools, or Node dependencies into the client graph.
 
@@ -29,6 +27,12 @@ The shipped Web bundle owns the `@deepseek-ai/dsh-client-ui-schedule` resolution
 The header action reads `openState` through the standard Session hook and the `schedule` projection through `useProjection`. It renders only when `openState === 'open'` and the array is non-empty. This gate also hides a prewarmed listing-cache value when opening the current Session fails. A live update that removes the final record closes and unmounts the control.
 
 The slot entry uses internal order 10: static Agent and Subagent information precede it, while the Jobs entry at order 20 follows it. The component owns no shared store; popover visibility is its only local interaction state.
+
+### Sidebar marker
+
+`ui-workspace` owns the ordinary, flat, and search Session rows. It derives one display fact from `SessionSummary.projectionValues.schedule`: a non-empty array renders the same outline alarm after the title, before the ordinary row's update time. The icon is not separately clickable or tabbable; its localized tooltip and screen-reader label say that the Session has an active scheduled task.
+
+Cold rows intentionally inherit projection-cache semantics. An identity-matching usable cached value can show the alarm without opening the Session; a missing or stale cache may cause a brief omission or residue. The marker reports only an undispatched or undeleted durable record known to the list value. It never asserts that a Schedule runtime is live or can wake the Session.
 
 ### Presentation and interaction
 
@@ -58,12 +62,13 @@ The catalog is current active state, not history or proof of delivery. A termina
 
 ## Verification
 
-Projection tests cover shared transition equivalence, creation order, fork-prefix exclusion, checkpoint restore, strict corruption propagation, and registration teardown. Registry, cache, history, and Subagent tests cover immutable-header initialization and seed-bound validation on live, lazy, full-log, and detached paths. Browser tests cover capability absence, open-state gating, English and Chinese copy, exact interval units, local and relative time, clock crossing, status and stable sorting, complete plain-text prompts, scrolling, live removal, outside dismissal, keyboard activation, Escape focus return, and no focus migration on external unmount. The keyless shipped-Web scenario covers default-disabled versus overlay-enabled composition, live changes, reload and cold baseline, fork isolation, ordinary Assistant delivery, header ordering, and narrow dark layout.
+Focused projection and Schedule tests cover strict folding, fork-prefix exclusion, restore, corruption, and registration lifetime. `ui-schedule` tests cover the header catalog's open-state gate, localized formatting, clock-driven status and ordering, wrapping and scrolling, removal, pointer and keyboard behavior, and focus boundaries. `ui-workspace` tests cover grouped, flat, and search marker derivation, placement, localization, accessibility, and row-click behavior. One keyless shipped-Web smoke covers default-disabled versus overlay-enabled composition, a cached marker in ordinary and search rows, the current Session's 900px dark catalog, and one live empty update removing both header and sidebar indicators; the existing conversational scenario continues to cover ordinary Assistant delivery.
 
 ## Consequences
 
 - A person can inspect every active reminder without invoking the model or adding another durable source of truth.
-- Fork isolation belongs to the shared projection header input rather than a Schedule-specific out-of-band scan.
+- Fork isolation belongs to the shared projection initialization contract rather than a Schedule-specific out-of-band scan.
+- Sidebar alarms remain best-effort cache-backed list presentation and never become runtime-liveness indicators.
 - Browser time labels may differ across viewers by locale, time zone, and clock while the durable records remain identical.
 - Corrupt Schedule history fails the normal Session path and never degrades into a plausible-looking partial catalog.
 - The catalog cannot acknowledge, retry, edit, or prove delivery; those semantics remain deliberately outside this surface.

@@ -28,7 +28,7 @@ Status: implemented
 
 版本 1 `schedule/change` stream 是唯一持久的 Schedule 权威。create 记录拥有一个 Session 内不复用的品牌 id、trim 后的提示词、规则判别字段和 UTC 目标。delete 与一次性 dispatch 是终结转换。Every dispatch 会存储 id 与决策时点，使 fold 将该记录直接推进到错过的发生时点之后。严格 decoder 与纯 fold 会拒绝未知版本、额外字段、重复使用的 id、形状不匹配的 dispatch，以及针对非活动记录的转换。普通 Session 折叠完整 stream；fork 只折叠 `SessionHeader.seedLength` 位置及其后的 event。
 
-`ctx.sessionProjections` 存在时，Schedule 会注册一个复用同一 transition 的严格单元，并发布完整的活动 `ScheduleRecord[]`。其初始化状态保留规范化后的 `seedLength`、活动记录与全部已使用 id；live、缓存、history 与 detached 读取都从提供对应事件的同一个 Session header 获得该边界。损坏的持久输入会使既有读取路径失败，而不会产生部分数组。浏览器安全的记录词汇通过纯类型子路径 `@deepseek-ai/dsh-schedule/client` 暴露。
+`ctx.sessionProjections` 存在时，Schedule 会注册一个复用同一 transition 的严格单元，并发布完整的活动 `ScheduleRecord[]`；共享的 [projection state 决策](../architecture/2026-08-19-session-projection-state-and-client-views.zh.md)拥有其初始化与 restore 约定。损坏的持久输入会使既有读取路径失败，而不会产生部分数组。浏览器安全的记录词汇通过纯类型子路径 `@deepseek-ai/dsh-schedule/client` 暴露。
 
 当前规则 union 接受非空提示词和恰好一个 selector。`after_seconds` 是正的安全整数 delay，其记录为 `{ id, kind: 'after', prompt, afterSeconds, scheduledAt }`。`at` 可以是带 `Z` 或数值偏移量且严格符合 RFC 3339 的值，也可以是带显式时区的结构化 `{ date, time, time_zone }`；其记录为 `{ id, kind: 'at', prompt, scheduledAt }`。`every_seconds` 是不小于 300 的安全整数，其 `{ id, kind: 'every', prompt, everySeconds, scheduledAt }` 记录始终与从创建时刻加一个间隔开始的序列对齐。一次性 dispatch 只存储 id；Every dispatch 存储 `id + acceptedAt`。工具值派生 `scheduled` 或 `overdue`，并包含 `deliveryMode: 'session-local'`。
 
@@ -62,7 +62,9 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 
 [`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.zh.md)只有在当前 Session 成功打开后才读取完整活动 projection。它在浏览器端派生本地化周期、浏览器本地目标时间、相对时间、逾期状态与稳定呈现顺序，不持久化这些值。projection 缺失或为空时 header 入口不存在，最后一条 live 记录消失时入口也会关闭。
 
-该目录有意不提供详情、mutation、Retry、Toast、原始 UTC、Schedule id 或特殊 transcript 卡片。它表示当前活动状态，而非 dispatch 回执；普通 Assistant 轮次仍是唯一交付呈现。Web bundle 拥有一个 disabled client row 及其解析依赖，Schedule overlay 只负责与 Host 服务一起启用该 row。
+`ui-workspace` 会另行在尽力而为的列表 projection 非空时，为普通行与搜索结果派生不可交互的侧边栏闹钟。cache 缺失或陈旧可能造成短暂漏显或残留，而且该标识绝不保证 Schedule runtime 当前 live。
+
+该目录有意不提供详情、mutation、Retry、Toast、原始 UTC、Schedule id 或特殊 transcript 卡片。它表示当前活动状态，而非 dispatch 回执；普通 Assistant 轮次仍是唯一交付呈现。Web bundle 拥有一个 disabled client row 及其解析依赖，Schedule overlay 只负责与 Host 服务一起启用该 row。[只读目录决策](2026-08-25-read-only-web-schedule-catalog.zh.md)拥有 header 与侧边栏的呈现细节。
 
 ## 已考虑的替代方案
 
@@ -82,7 +84,7 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 
 ## 验证
 
-包测试以逐文件 100% coverage 固定严格回放、一次性与 Every 状态转换、创建锚点运算、只追赶最新一次、多记录批处理、fork 后缀、id 复用、偏移量与本地日历 profile、IANA 校验、夏令时缺口与重叠、时间边界、timer 分段、墙钟变化、overdue 准入、固定 framing、入队与 append 失败、barrier 恢复、projection 注册与恢复、注册 rollback 和完全停稳的 dispose。属性测试会在不同间隔与跳过跨度下比较 Every 计算与回放。production JSONL restart 测试证明一条 overdue 提醒会经过真实 Agent 生命周期 dispatch，并且再次 restart 后不会重复 dispatch。Host／client 测试固定浏览器时区采样、绑定到提示词的校验、open-state 门槛、本地化精确间隔、排序、键盘／焦点行为与严格 projection 失败。无密钥组装 Web 场景覆盖浏览器本地 At、通过普通 assistant follow-up 交付的逾期双记录 Every 批次，以及活动目录的 live 变化、reload、fork 隔离、窄屏暗色布局和普通 Web disabled 组合。
+包测试以逐文件 100% coverage 固定严格回放、一次性与 Every 状态转换、创建锚点运算、只追赶最新一次、多记录批处理、fork 后缀、id 复用、偏移量与本地日历 profile、IANA 校验、夏令时缺口与重叠、时间边界、timer 分段、墙钟变化、overdue 准入、固定 framing、入队与 append 失败、barrier 恢复、projection 注册与恢复、注册 rollback 和完全停稳的 dispose。属性测试会在不同间隔与跳过跨度下比较 Every 计算与回放。production JSONL restart 测试证明一条 overdue 提醒会经过真实 Agent 生命周期 dispatch，并且再次 restart 后不会重复 dispatch。聚焦 client suite 拥有目录与侧边栏行为。无密钥组装 Web 场景保留普通 After／At／Every 交付证据，再由一个 Schedule 目录 smoke 覆盖 overlay 可达性、当前 header 目录、普通／搜索闹钟、窄屏暗色布局与一次 live empty 更新。
 
 ## 后果
 
@@ -90,6 +92,6 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 - cold Session 不工作、不发送外部通知；重新打开后可能交付 overdue 工作。
 - 无需持久 Session 时区状态或从 Schedule 到 time-context 的依赖，绝对时间输入仍然具有确定性。
 - 用户看到普通对话输出；dispatch 绝不会夸大模型成功或 acknowledgement。
-- 显式启用 Schedule 的 Web 用户可以查看完整活动集合，而不会引入第二份持久状态或第二种交付含义。
+- 显式启用 Schedule 的 Web 用户可以查看完整活动集合，并在普通行或搜索结果中辨认 cache 已知的活动 Session，而不会引入第二份持久状态、runtime 信号或第二种交付含义。
 - 每个 live 根只增加从 fold 派生的 timer、可选 idle wait 与一个 in-flight operation。
 - 固定速率周期性受到至少 5 分钟、只追赶最新一次，以及每条逾期记录只在一个批次中贡献一个发生时点的约束；日历周期性仍在此产品边界之外。

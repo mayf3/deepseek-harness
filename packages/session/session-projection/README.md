@@ -40,7 +40,7 @@ const definition = {
   key: 'todo',
   stateSchema: todoStateSchema,
   stateVersion: 1,
-  init: _header => ({ items: [] }),
+  init: _seedLength => ({ items: [] }),
   apply: (state, event) => event.type === 'todo/upsert'
     ? { items: event.data.items }
     : state,
@@ -51,7 +51,7 @@ const definition = {
 }
 ```
 
-`init`, `apply`, and `wire.view` must be synchronous. `init` receives the immutable `SessionHeader` that belongs to the observed events, so fork-sensitive units can use `header.seedLength ?? 0` without reading ambient Session state. `apply` must return the same state reference for events that do not concern the unit; owned events may contain complete values or domain deltas, but `wire.view` always returns the complete current client value.
+`init`, `applyHeaderSeed`, `apply`, and `wire.view` must be synchronous. `init(seedLength)` receives only the normalized inherited-prefix length, so fork-sensitive units can exclude parent events without reading ambient Session state. A unit whose projection key is also a `SessionHeader` key may optionally use `applyHeaderSeed` to receive only that same-name immutable field; the registry never exposes the complete header to a definition. `apply` must return the same state reference for events that do not concern the unit; owned events may contain complete values or domain deltas, but `wire.view` always returns the complete current client value.
 
 ### Register and read
 
@@ -78,7 +78,7 @@ This section explains the drive machinery and the unit contract; the observable 
 
 ### Design concept
 
-The package is the Service Definition and drive role of a capability seam: the framework drives, the domain computes. The registry subscribes to `session/event` once; every committed event passes every registered unit's `apply` eagerly. Cells build lazily on first touch by calling `init(session.header)` and folding the in-memory log; detached restore paths pass the immutable header returned with the same stored events, and the registry rejects a `seedLength` beyond the observed log. The change feed is gated on `Object.is` — a unit that returns the same state reference costs one call and nothing downstream. Carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut; an accidentally async view returns a Promise and fails `wire.viewSchema.parse`.
+The package is the Service Definition and drive role of a capability seam: the framework drives, the domain computes. The registry subscribes to `session/event` once; every committed event passes every registered unit's `apply` eagerly. Cells build lazily on first touch by validating the header's fork boundary, calling `init(seedLength)`, applying an optional same-key header seed, and folding the in-memory log. Detached restore paths use the header returned with the same stored events for that validation and narrow extraction; the registry rejects a `seedLength` beyond the observed log. The change feed is gated on `Object.is` — a unit that returns the same state reference costs one call and nothing downstream. Carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut; an accidentally async view returns a Promise and fails `wire.viewSchema.parse`.
 
 ### Source map
 

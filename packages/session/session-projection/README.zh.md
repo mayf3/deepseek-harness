@@ -40,7 +40,7 @@ const definition = {
   key: 'todo',
   stateSchema: todoStateSchema,
   stateVersion: 1,
-  init: _header => ({ items: [] }),
+  init: _seedLength => ({ items: [] }),
   apply: (state, event) => event.type === 'todo/upsert'
     ? { items: event.data.items }
     : state,
@@ -51,7 +51,7 @@ const definition = {
 }
 ```
 
-`init`、`apply` 与 `wire.view` 必须同步。`init` 接收与所观察事件对应的不可变 `SessionHeader`，因此 fork-sensitive 单元可使用 `header.seedLength ?? 0`，而不必读取环境中的 Session 状态。对与单元无关的事件，`apply` 必须返回同一个状态引用；自有事件可以携带完整值或领域 delta，但 `wire.view` 始终返回完整的当前客户端值。
+`init`、`applyHeaderSeed`、`apply` 与 `wire.view` 必须同步。`init(seedLength)` 只接收规范化后的继承前缀长度，因此 fork-sensitive 单元无需读取环境中的 Session 状态即可排除父会话事件。projection key 同时也是 `SessionHeader` key 的单元，可以选择通过 `applyHeaderSeed` 只接收这个同名不可变字段；注册表绝不会向 definition 暴露完整 header。对与单元无关的事件，`apply` 必须返回同一个状态引用；自有事件可以携带完整值或领域 delta，但 `wire.view` 始终返回完整的当前客户端值。
 
 ### 注册与读取
 
@@ -78,7 +78,7 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 ### 设计理念
 
-本包是能力 seam 的 Service Definition 与驱动角色：框架负责驱动，领域负责计算。注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个已注册单元的 `apply`。cell 在首次触达时调用 `init(session.header)` 并折叠内存日志来惰性构建；detached restore 路径传入与同一次持久事件读取返回的不可变 header，注册表会拒绝超过已观察日志长度的 `seedLength`。变更流以 `Object.is` 把关——返回同一状态引用的单元只花一次调用，不产生任何下游工作。载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此；误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
+本包是能力 seam 的 Service Definition 与驱动角色：框架负责驱动，领域负责计算。注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个已注册单元的 `apply`。cell 在首次触达时先校验 header 中的 fork 边界，再调用 `init(seedLength)`、应用可选的同名 header seed，并折叠内存日志来惰性构建。detached restore 路径只把与同一次持久事件读取返回的 header 用于这项校验和窄字段提取；注册表会拒绝超过已观察日志长度的 `seedLength`。变更流以 `Object.is` 把关——返回同一状态引用的单元只花一次调用，不产生任何下游工作。载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此；误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 
 ### 源码地图
 

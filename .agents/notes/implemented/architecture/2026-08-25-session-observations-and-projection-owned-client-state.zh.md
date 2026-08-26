@@ -18,7 +18,7 @@ Session 精确读取使用可保留的 `SessionObservation`，向 Client 暴露�
 
 ### 数据动线
 
-两条 ownership 规则在 observation 的 projection snapshot 处汇合。轻量 list 可以止于 cache hints；每次精确 opening 都进入同一 observation 路径，并向 Client 提供完整 replacement baseline。
+两条 ownership 规则在 observation 的 projection snapshot 处汇合。轻量 list 可以止于 cache hints；每次精确 opening 都进入同一 observation 路径，并向 Client 提供该 observation cursor 上的完整 baseline。
 
 ```mermaid
 flowchart LR
@@ -108,11 +108,11 @@ Projection 的三种交付状态含义不同：
 | Follow opening baseline | 对当前 Host composition 完整 | 精确 opening cursor | Capability 不存在 |
 | Projection frame | 单个完整 key | Frame 携带的 event sequence | 不适用 |
 
-Client 为每个 key 保存带来源与 sequence number 的一行。List hint 只能填充或推进暂定 row。首个权威 frame 无论暂定 hint 声称的 sequence 多高都会替换它；后续权威 frame 之间才使用 higher-sequence-wins。完整 opening baseline 会替换或清除暂定 row，同时保留晚于 opening cut 的权威 frame。Replacement control baseline 会先丢弃超出其 durable cut 的 row，再安装完整值。
+Client 为每个 key 保存一条 `{ value, seq }` row。List hint、opening baseline 中的值与 projection frame 都遵循同一条与来源无关的规则：只有 sequence 高于当前 row 时才写入。完整 baseline 还会清除其中缺失且现有 sequence 不高于该 cut 的 key；更新的 row 会保留。Replacement control baseline 是唯一会先丢弃超出其 durable cut 的 row 的输入，因为这些 row 可能描述 replacement Host 已不再拥有的进程状态；随后它仍按同一排序规则 seed 完整值。
 
 List view 与已打开 Session 读取同一个 per-Session store。Hints 可以在 follow 完成前填充 title、preset 和其他 list presentation；opening baseline 随后收敛这份状态，而不会建立第二套 summary-only authority。
 
-每个 Session 的 Client projection store 从不折叠 Session event；它只按上述来源感知规则协调成品 hint、完整 baseline 与 whole-value frame。
+每个 Session 的 Client projection store 从不折叠 Session event；它只按 sequence 排序成品 hint、完整 baseline 与 whole-value frame，并把 replacement generation 截断作为唯一显式 reset 边界。
 
 不由单个 Session 派生的数据不进入 projection。`llm.models` 拥有当前 Host generation 的 model catalog，`agentPreset.list` 拥有可配置 preset roster。Selector 只在相应 catalog 与 Session 的 `modelSelection` 或 `agentPreset` projection 均就绪后组合两者。刷新时可以保留上一份完整 catalog；第一次获得完整输入前显示 loading，而不是展示猜测的名称或可用性结论。
 

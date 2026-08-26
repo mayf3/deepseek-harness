@@ -14,11 +14,9 @@ Schedule 已经持久化活动提醒，并把到期工作作为普通后续对�
 
 Schedule 注册一个可选的 `schedule` Session projection，由独立浏览器包渲染这份完整活动值。持久 `schedule/change` stream 仍是唯一权威；浏览器只做呈现派生，不公开 mutation。
 
-### seed-aware 严格 projection
+### Projection 边界
 
-`ProjectionDefinition.init()` 接收不可变的 `SessionHeader`。live 惰性构建、事件驱动构建、持久化缓存恢复、Session history 读取与 detached Subagent 读取，都使用提供对应事件的同一个 header；注册表会拒绝超过已观察日志长度的 `seedLength`。既有单元可以忽略此输入。fork-sensitive 单元可以把 `header.seedLength ?? 0` 保存在状态中，并跳过 `seq` 小于边界的每个事件，而无需读取环境 Session 对象。
-
-Schedule 单元持久化 `{ seedLength, active, seenIds }`，复用领域的严格 decoder 与 `applyScheduleChange` transition，并发布完整的活动 `ScheduleRecord[]`。保留 `seenIds` 可在缓存恢复后继续维持 id 不复用不变量。严格 state schema 会拒绝畸形记录、重复 id，以及不在已使用集合中的活动 id。损坏的权威事件会使既有读取／打开路径失败；非权威 checkpoint 畸形时会被丢弃并从日志重建。系统不会发布部分数组。
+Schedule 单元复用领域的严格 transition，并发布完整的活动 `ScheduleRecord[]`；损坏的权威输入会使既有读取／打开路径失败，畸形的可丢弃 checkpoint 则从日志重建。共享的 [projection state 与 Client views 决策](../architecture/2026-08-19-session-projection-state-and-client-views.zh.md)拥有 `init(seedLength)`、可选的同名 header seed、checkpoint 校验，以及 live／cache／history／detached 驱动路径。本 Note 只拥有所得活动值在 Web 中的呈现方式。
 
 `@deepseek-ai/dsh-schedule/client` 是持久记录词汇的纯类型浏览器安全出口。它不会把 Cordis 插件、runtime、timer、工具或 Node 依赖带入 client graph。
 
@@ -29,6 +27,12 @@ shipped Web bundle 拥有 `@deepseek-ai/dsh-client-ui-schedule` 的解析依赖�
 header action 通过标准 Session hook 读取 `openState`，通过 `useProjection` 读取 `schedule` projection。只有 `openState === 'open'` 且数组非空时才渲染。这条门槛也会在当前 Session 打开失败时隐藏曾由列表缓存预热的值。live 更新移除最后一条记录时，控件会关闭并卸载。
 
 slot 条目使用内部 order 10：静态 Agent 与 Subagent 信息位于它之前，order 20 的 Jobs 入口位于它之后。组件不拥有共享 store；popover 是否打开是唯一的本地交互状态。
+
+### 侧边栏标识
+
+`ui-workspace` 拥有普通、平铺与搜索 Session 行。它从 `SessionSummary.projectionValues.schedule` 派生一个展示事实：非空数组会在标题之后渲染同一枚轮廓闹钟，普通行的更新时间仍位于其后。图标不单独响应点击或进入 Tab 顺序；本地化 tooltip 与读屏标签说明该 Session 有活动定时任务。
+
+cold 行有意继承 projection-cache 语义。身份匹配且可用的缓存值可以在不打开 Session 的情况下显示闹钟；cache 缺失或陈旧可能造成短暂漏显或残留。该标识只报告列表值已知存在尚未 dispatch 或 delete 的持久记录，绝不表示 Schedule runtime 当前 live 或能够唤醒该 Session。
 
 ### 呈现与交互
 
@@ -58,12 +62,13 @@ slot 条目使用内部 order 10：静态 Agent 与 Subagent 信息位于它之�
 
 ## 验证
 
-projection 测试覆盖共享 transition 等价性、创建顺序、fork 前缀排除、checkpoint 恢复、严格损坏传播与注册拆除。注册表、cache、history 与 Subagent 测试覆盖 live、惰性、全量日志和 detached 路径上的不可变 header 初始化与 seed 边界校验。浏览器测试覆盖能力缺失、open-state 门槛、中英文文案、精确周期单位、本地与相对时间、时钟越界、状态与稳定排序、完整纯文本 prompt、滚动、live 移除、外部关闭、键盘激活、Escape 回焦，以及外部卸载时不迁移焦点。无密钥 shipped-Web 场景覆盖默认 disabled 与 overlay enabled 组合、live 变化、reload 与 cold baseline、fork 隔离、普通 Assistant 交付、header 排序和窄屏暗色布局。
+聚焦 projection 与 Schedule 测试覆盖严格 fold、fork 前缀排除、restore、损坏传播与注册生命周期。`ui-schedule` 测试覆盖 header 目录的 open-state 门槛、本地化格式、由时钟驱动的状态与排序、换行与滚动、移除、pointer／键盘行为及焦点边界。`ui-workspace` 测试覆盖分组、平铺与搜索标识的派生、位置、本地化、无障碍与整行点击行为。一个无密钥 shipped-Web smoke 覆盖默认 disabled 与 overlay enabled 组合、普通行与搜索结果中的缓存标识、当前 Session 的 900px 暗色目录，以及一次 live empty 更新同时移除 header 与侧边栏标识；既有对话场景继续覆盖普通 Assistant 交付。
 
 ## 后果
 
 - 用户可以查看每条活动提醒，而无需调用模型或增加另一份持久权威。
-- fork 隔离属于共享 projection header 输入，而不是 Schedule 专属的带外扫描。
+- fork 隔离属于共享 projection 初始化约定，而不是 Schedule 专属的带外扫描。
+- 侧边栏闹钟始终是尽力而为、由 cache 支撑的列表呈现，绝不会变成 runtime 存活标识。
 - 不同查看者的浏览器时间标签可能因 locale、时区与时钟而不同，持久记录仍完全相同。
 - 损坏的 Schedule history 会使正常 Session 路径失败，绝不会降级成貌似可信的部分目录。
 - 该目录不能确认、重试、编辑或证明交付；这些语义有意留在此界面之外。
