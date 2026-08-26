@@ -158,6 +158,20 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns Session commands, cold reads, durable-event following, live control state, and Agent activation policy; apiProxy reuses its inspection and Agent-resolution operations for Session-aware domains.',
   },
   {
+    key: 'credentialsController',
+    pkg: 'api-settings-controller',
+    title: 'Host credential-surface Remote controller',
+    mode: 'core',
+    note: 'Projects the credential-reference seam onto the generated Remote namespace: batch fan-out, view projection, and refusal mapping live here, not on the seam Definition.',
+  },
+  {
+    key: 'settingsController',
+    pkg: 'api-settings-controller',
+    title: 'Host settings-surface Remote controller',
+    mode: 'core',
+    note: 'Projects the user-settings seam onto the generated Remote namespace: the read is always redacted and every refusal is classified here, not on the seam Definition.',
+  },
+  {
     key: 'workspaceController',
     pkg: 'api-workspace-controller',
     title: 'Host Workspace Remote controller',

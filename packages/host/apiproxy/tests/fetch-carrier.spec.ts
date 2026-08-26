@@ -33,31 +33,8 @@ function fakeApi(overrides: Partial<{ crashOn: string }> = {}): ApiProxy {
       },
     },
     settings: {
-      async describe(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { writable: true, hasDocument: false, namespaces: [] } } }
-      },
       async openDocument(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
-      },
-      async update(request) {
-        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'settings-rejected', message: 'stub', details: { ns: request.payload.ns } } } }
-      },
-      async replace(request) {
-        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'settings-rejected', message: 'stub', details: { ns: request.payload.ns } } } }
-      },
-      async mutate(request) {
-        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'settings-rejected', message: 'stub', details: { ns: request.payload.ns } } } }
-      },
-    },
-    credentials: {
-      async describe(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { credentials: {} } } }
-      },
-      async set(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: {} } }
-      },
-      async unset(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: {} } }
+        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
       },
     },
     llm: {
@@ -102,9 +79,9 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
   })
 
   it('carries a business error as 200 + error result', async () => {
-    const response = await client().settings.update({ ns: 'test', patch: {} })
+    const response = await client().settings.openDocument({})
     expect(response.result.ok).toBe(false)
-    if (!response.result.ok) expect(response.result.error.code).toBe('settings-rejected')
+    if (!response.result.ok) expect(response.result.error.code).toBe('internal')
   })
 
   it('round-trips the agent-preset document opener', async () => {
