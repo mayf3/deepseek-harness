@@ -430,7 +430,7 @@ jobs:
         run: if (Test-Path "$env:RUNNER_TEMP/setup-pnpm-js") { Remove-Item -Recurse -Force "$env:RUNNER_TEMP/setup-pnpm-js" -ErrorAction SilentlyContinue }
       - uses: pnpm/action-setup@v4
         with:
-          dest: ${{ runner.temp }}/setup-pnpm-js
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
@@ -470,7 +470,7 @@ jobs:
         run: if (Test-Path "$env:RUNNER_TEMP/setup-pnpm-js") { Remove-Item -Recurse -Force "$env:RUNNER_TEMP/setup-pnpm-js" -ErrorAction SilentlyContinue }
       - uses: pnpm/action-setup@v4
         with:
-          dest: ${{ runner.temp }}/setup-pnpm-js
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
@@ -508,7 +508,7 @@ jobs:
         run: if (Test-Path "$env:RUNNER_TEMP/setup-pnpm-js") { Remove-Item -Recurse -Force "$env:RUNNER_TEMP/setup-pnpm-js" -ErrorAction SilentlyContinue }
       - uses: pnpm/action-setup@v4
         with:
-          dest: ${{ runner.temp }}/setup-pnpm-js
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}
@@ -554,7 +554,7 @@ jobs:
         run: if (Test-Path "$env:RUNNER_TEMP/setup-pnpm-js") { Remove-Item -Recurse -Force "$env:RUNNER_TEMP/setup-pnpm-js" -ErrorAction SilentlyContinue }
       - uses: pnpm/action-setup@v4
         with:
-          dest: ${{ runner.temp }}/setup-pnpm-js
+          dest: ${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.PRIMARY_NODE_VERSION }}

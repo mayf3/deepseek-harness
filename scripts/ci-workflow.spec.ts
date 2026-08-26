@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
 const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
-const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js'
+const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
   it('isolates every pnpm action setup destination per runner', () => {
@@ -33,6 +33,25 @@ describe('CI workflow', () => {
         },
       })
       if (jobName.startsWith('windows-')) expect(step).not.toMatchObject({ with: { standalone: true } })
+    }
+  })
+
+  it('isolates the python SDK exe pnpm setup destination per job', () => {
+    const workflow: unknown = yaml.load(readFileSync(resolve(root, '.github/workflows/build-exe-for-python-sdk.yml'), 'utf8'))
+    if (!isRecord(workflow) || !isRecord(workflow.jobs)) throw new TypeError('build-exe-for-python-sdk.yml must define jobs')
+    const setups: Array<{ step: unknown }> = []
+    for (const job of Object.values(workflow.jobs)) {
+      if (!isRecord(job) || !Array.isArray(job.steps)) continue
+      for (const step of job.steps) {
+        if (!isRecord(step) || typeof step.uses !== 'string' || !step.uses.startsWith('pnpm/action-setup@')) continue
+        setups.push({ step })
+      }
+    }
+    expect(setups.length).toBeGreaterThan(0)
+    for (const { step } of setups) {
+      expect(step).toMatchObject({
+        with: { dest: nativeWindowsPnpmDestination },
+      })
     }
   })
 
