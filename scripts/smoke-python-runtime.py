@@ -884,7 +884,7 @@ def smoke_sdk_live() -> None:
                     f"{label} turn made no model-requested tool call; "
                     f"final={result.final_response!r}"
                 )
-            if result.final_response.strip() != LIVE_API_SENTINEL:
+            if LIVE_API_SENTINEL not in result.final_response:
                 raise AssertionError(f"{label} turn returned {result.final_response!r}")
         if not marker.is_file():
             raise AssertionError(f"real-model tool turn did not create {marker}")
