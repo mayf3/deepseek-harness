@@ -972,6 +972,19 @@ async def _run(channel: ProtocolChannel) -> None:
     # with no done frame, misreporting the run as a `worker-exit`. A frame local
     # is not reachable by `__main__._X = ...`, so the catch is immune.
     _BaseException = BaseException
+    # The child inherits the host's SIGXCPU disposition and signal mask. If
+    # the host ignores or blocks SIGXCPU, the soft RLIMIT_CPU fires but cannot
+    # stop the child — the hard limit's SIGKILL then classifies a definite CPU
+    # overrun as substrate death (worker-exit) instead of a timeout. Reset to
+    # the default disposition and unblock HERE, before the resource-limit setup
+    # and the boot-namespace construction (which can burn CPU): a huge
+    # namespace under an inherited ignore would otherwise reach the hard limit
+    # inside that window. The settle-time enforcer already restores SIG_DFL for
+    # a program that traps or masks the signal mid-run; this closes the
+    # inherited-state gap.
+    signal.signal(signal.SIGXCPU, signal.SIG_DFL)
+    if getattr(signal, "pthread_sigmask", None) is not None:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, (signal.SIGXCPU,))
     # `RuntimeError` and the `_BindingRejection` marker class are likewise bound
     # into locals: `dispatch`'s `call_failure` and its `except` clause resolve
     # them at call time, and the program (running as `__main__`) can rebind the
@@ -1194,17 +1207,6 @@ async def _run(channel: ProtocolChannel) -> None:
             # The class is program-visible under its own name so model code
             # can `except ToolCallError as e:` and read the member property.
             namespaces[declared["name"]] = error_class
-
-    # The child inherits the host's SIGXCPU disposition and signal mask. If
-    # the host ignores or blocks SIGXCPU, the soft RLIMIT_CPU fires but cannot
-    # stop the child — the hard limit's SIGKILL then classifies a definite CPU
-    # overrun as substrate death (worker-exit) instead of a timeout. Reset to
-    # the default disposition and unblock before any model code runs (the
-    # settle-time enforcer already restores SIG_DFL for a program that traps or
-    # masks the signal mid-run; this closes the inherited-state gap).
-    signal.signal(signal.SIGXCPU, signal.SIG_DFL)
-    if getattr(signal, "pthread_sigmask", None) is not None:
-        signal.pthread_sigmask(signal.SIG_UNBLOCK, (signal.SIGXCPU,))
 
     channel.send_sync({"type": "boot-ack"})
 
