@@ -13,9 +13,17 @@
         },
         "rows": {
           "title": {
-            "ver": 1,
+            "ver": 2,
             "seq": 198,
-            "val": "WebWorker Preview Showcase"
+            "val": {
+              "title": "WebWorker Preview Showcase",
+              "messageSeqs": [],
+              "source": {
+                "kind": "user"
+              },
+              "eventSeq": 2,
+              "updatedAt": 1787472000002
+            }
           }
         }
       }

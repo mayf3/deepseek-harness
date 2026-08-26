@@ -62,7 +62,18 @@ describe('WebWorker preview VFS example', () => {
     expect(cache.unit).toEqual({ name: 'session_projcache', version: 3 })
     expect(cache.tables.sessions[VFS_EXAMPLE_SESSION_IDS.main]).toMatchObject({
       identity: { createdAt: 1_787_472_000_000, cwd: '/dsh/workspace' },
-      rows: { title: { ver: 1, val: VFS_EXAMPLE_TITLE } },
+      rows: {
+        title: {
+          ver: 2,
+          val: {
+            title: VFS_EXAMPLE_TITLE,
+            messageSeqs: [],
+            source: { kind: 'user' },
+            eventSeq: 2,
+            updatedAt: 1_787_472_000_002,
+          },
+        },
+      },
     })
   })
 
