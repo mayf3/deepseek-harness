@@ -69,10 +69,7 @@ export type NetworkStoreEvent =
   }
   | { readonly type: 'request-evicted'; readonly requestKey: string }
 
-type JournalNetworkEvent = Exclude<NetworkStoreEvent, {
-  readonly type: 'response-data' | 'event-source-message' | 'request-evicted'
-}>
-type ReplayableNetworkEvent = Exclude<NetworkStoreEvent, { readonly type: 'response-data' | 'request-evicted' }>
+type JournalNetworkEvent = Exclude<NetworkStoreEvent, { readonly type: 'response-data' | 'request-evicted' }>
 
 interface CapturedRequest {
   readonly key: string
@@ -140,26 +137,8 @@ export class NetworkStore implements InspectorRecordConsumer {
    * Read retained request lifecycle events.
    * @returns Events in observation order.
    */
-  replay(): readonly ReplayableNetworkEvent[] {
-    const replay: ReplayableNetworkEvent[] = []
-    for (const event of this.journal) {
-      replay.push(event)
-      if (event.type !== 'response-received' || event.mimeType !== 'text/event-stream') continue
-      const request = this.requests.get(event.requestKey) as CapturedRequest
-      const messages = new InspectorEventSourceParser().push(Buffer.concat(request.responseBody))
-      let eventId = 0
-      for (const message of messages) {
-        replay.push({
-          type: 'event-source-message',
-          requestKey: request.key,
-          requestId: request.requestId,
-          timestampMs: event.timestampMs,
-          ...message,
-          eventId: String(++eventId),
-        })
-      }
-    }
-    return replay
+  replay(): readonly JournalNetworkEvent[] {
+    return this.journal
   }
 
   /**
@@ -274,7 +253,7 @@ export class NetworkStore implements InspectorRecordConsumer {
         const bytes = this.appendBody(request, 'response', data)
         const byteLength = bytes.byteLength
         for (const message of request.eventSourceParser?.push(bytes) ?? []) {
-          this.emit({
+          this.publish({
             type: 'event-source-message',
             requestKey: key,
             requestId: request.requestId,

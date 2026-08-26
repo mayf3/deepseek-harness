@@ -129,9 +129,16 @@ describe('Inspector Network domain', () => {
       .filter(call => call[0] === 'Network.eventSourceMessageReceived')
       .map(call => call[1] as unknown))
       .toEqual([
-        expect.objectContaining({ eventName: 'message', eventId: '1', data: 'first' }),
-        expect.objectContaining({ eventName: 'update', eventId: '2', data: 'second\nline' }),
+        expect.objectContaining({ timestamp: 0.003, eventName: 'message', eventId: '1', data: 'first' }),
+        expect.objectContaining({ timestamp: 0.004, eventName: 'update', eventId: '2', data: 'second\nline' }),
       ])
+    expect(replay.mock.calls.map(call => String(call[0]))).toEqual([
+      'Network.requestWillBeSent',
+      'Network.responseReceived',
+      'Network.eventSourceMessageReceived',
+      'Network.eventSourceMessageReceived',
+      'Network.loadingFinished',
+    ])
   })
 
   it('bounds active request metadata and does not retain per-chunk events for replay', () => {
