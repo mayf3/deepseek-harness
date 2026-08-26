@@ -275,7 +275,13 @@ function TaskItem({ row, view, expanded, now, onToggle, kill, t }: {
             <span className={css.status} title={row.detail ?? status}>{row.detail ?? status}</span>
           </span>
         </span>
-        {observable ? <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
+        {observable
+          ? (
+            <span className={css.chevronBox}>
+              <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+            </span>
+          )
+          : null}
       </>
     )
     : (
@@ -295,7 +301,7 @@ function TaskItem({ row, view, expanded, now, onToggle, kill, t }: {
       : kill.state === 'failed' ? t('kill.failed') : t('kill.stop', { label: row.label })
   return (
     <li className={css.item}>
-      <div className={css.rowLine}>
+      <div className={live ? `${css.rowLine} ${css.rowLineLive}` : css.rowLine}>
         {observable
           ? (
             <button
