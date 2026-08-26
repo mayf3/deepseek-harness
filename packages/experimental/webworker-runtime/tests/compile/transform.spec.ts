@@ -144,6 +144,20 @@ check(
   check('lowered mirrors code !== source', cjsAwait.lowered, cjsAwait.code !== 'module.exports = async () => { await 1 }\n')
 }
 
+{
+  const direct = lowerModuleSource({
+    filename: 'node_modules/p/direct.js',
+    source: "import { createRequire } from 'node:module'\ncreateRequire(import.meta.url)('@xterm/headless')\n",
+  })
+  check('literal createRequire call is a module request', direct.moduleRequests, ['node:module', '@xterm/headless'])
+
+  const assigned = lowerModuleSource({
+    filename: 'node_modules/p/assigned.js',
+    source: "import { createRequire as makeRequire } from 'node:module'\nconst localRequire = makeRequire(import.meta.url)\nlocalRequire('p')\n",
+  })
+  check('literal call through a createRequire binding is a module request', assigned.moduleRequests, ['node:module', 'p'])
+}
+
 // ---------------------------------------------------------------------------
 // 3. Import forms.
 // ---------------------------------------------------------------------------

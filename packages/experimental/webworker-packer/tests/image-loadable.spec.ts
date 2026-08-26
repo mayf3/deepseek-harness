@@ -37,7 +37,9 @@ const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const SUBJECT = '@deepseek-ai/dsh-timeout'
 const LANDLOCK = '@deepseek-ai/node-addon-landlock-run'
 const PLUGIN_INVENTORY = '@deepseek-ai/dsh-plugin-package-inventory-deepseek'
+const TERMINAL_BASH = '@deepseek-ai/dsh-terminal-bash'
 const WEB_SERVER = '@deepseek-ai/dsh-host-webserver'
+const XTERM_HEADLESS = '@xterm/headless'
 
 const workspaces = indexWorkspacePackages(repoRoot)
 
@@ -109,6 +111,15 @@ let webServerMemo: ReturnType<typeof packVfsImage> | undefined
 const packedWebServer = (): ReturnType<typeof packVfsImage> => webServerMemo ??= packVfsImage({
   config: `- id: subject\n  name: '${WEB_SERVER}'\n`,
   profile: 'webserver-dependency-check',
+  workspaces,
+  resolveFrom: repoRoot,
+  entries: [],
+})
+
+let terminalBashMemo: ReturnType<typeof packVfsImage> | undefined
+const packedTerminalBash = (): ReturnType<typeof packVfsImage> => terminalBashMemo ??= packVfsImage({
+  config: `- id: subject\n  name: '${TERMINAL_BASH}'\n`,
+  profile: 'terminal-bash-dependency-check',
   workspaces,
   resolveFrom: repoRoot,
   entries: [],
@@ -216,6 +227,27 @@ const archive = async (): Promise<Uint8Array> =>
     setActiveModuleLoader(loader)
     const webserver = loader.requireFrom(`${DEFAULT_ROOT}/workspace`)(WEB_SERVER) as { WebServer?: unknown }
     expect(typeof webserver.WebServer).toBe('function')
+  })
+
+  it('loads a third-party dependency requested through createRequire', async () => {
+    const result = packedTerminalBash()
+    expect(result.missing).toEqual([])
+    expect(result.packages.get(XTERM_HEADLESS)).toBeGreaterThan(0)
+    expect(Object.hasOwn(result.files, `node_modules/${XTERM_HEADLESS}/lib-headless/xterm-headless.js`)).toBe(true)
+
+    const vfs = loadVfsImage(await inflateImage(result.image, 'the packed terminal backend'), DEFAULT_ROOT)
+    const loader = new WorkerModuleLoader({
+      vfs,
+      root: DEFAULT_ROOT,
+      staticModules: createNodeBuiltins(),
+      staticModulePrefixes: REPLACED_PREFIXES,
+    })
+    setActiveVfs(vfs)
+    setActiveModuleLoader(loader)
+    const terminal = loader.requireFrom(`${DEFAULT_ROOT}/workspace`)(TERMINAL_BASH) as {
+      BashTerminalBackend?: unknown
+    }
+    expect(typeof terminal.BashTerminalBackend).toBe('function')
   })
 
   it('runs the unchanged Landlock entry package over the Worker platform executable', async () => {

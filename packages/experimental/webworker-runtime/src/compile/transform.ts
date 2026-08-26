@@ -70,6 +70,8 @@ class Transformer {
   private moduleSyntax = false
   private readonly moduleRequests = new Set<string>()
   private readonly metaResolveRequests = new Set<string>()
+  private readonly createRequireBindings = new Set<string>()
+  private readonly requireBindings = new Set<string>(['require'])
 
   constructor(source: string, private readonly path: string) {
     // A `#!` line is only legal at offset zero, and the prologue takes that spot;
@@ -154,7 +156,14 @@ class Transformer {
     if (Array.isArray(node.attributes) && node.attributes.length > 0) {
       this.fail('import attributes are not supported', node.start)
     }
-    const request = `require(${this.literal(node.source as Node)})`
+    const source = node.source as Node
+    if (source.value === 'node:module' || source.value === 'module') {
+      for (const specifier of node.specifiers as Node[]) {
+        if (specifier.type !== 'ImportSpecifier' || nameOf(specifier.imported as Node) !== 'createRequire') continue
+        this.createRequireBindings.add(nameOf(specifier.local as Node))
+      }
+    }
+    const request = `require(${this.literal(source)})`
     const specifiers = node.specifiers as Node[]
     if (specifiers.length === 0) {
       this.replace(node.start, node.end, `${request};`)
@@ -337,12 +346,21 @@ class Transformer {
         if (argument !== undefined && typeof argument.value === 'string') this.moduleRequests.add(argument.value)
         break
       }
+      case 'VariableDeclarator': {
+        const id = record.id as Node
+        const init = record.init as Node | null
+        if (id.type === 'Identifier' && init !== null && this.isCreateRequireCall(init)) {
+          this.requireBindings.add(nameOf(id))
+        }
+        break
+      }
       case 'CallExpression': {
-        // CommonJS bodies pass through untransformed, but their literal
-        // `require()` calls are module requests all the same.
+        // CommonJS bodies pass through untransformed, but literal calls through
+        // the wrapper's `require` or Node's `createRequire` are module requests
+        // all the same.
         const callee = record.callee as Node
         const callArguments = record.arguments as Node[]
-        if (callee.type === 'Identifier' && callee.name === 'require' && callArguments.length === 1
+        if (this.isRequireCall(callee) && callArguments.length === 1
           && typeof callArguments[0]?.value === 'string') {
           this.moduleRequests.add(callArguments[0].value)
         }
@@ -408,6 +426,17 @@ class Transformer {
       if (key === 'type' || key === 'start' || key === 'end') continue
       this.visit(value, next)
     }
+  }
+
+  private isCreateRequireCall(node: Node): boolean {
+    if (node.type !== 'CallExpression') return false
+    const callee = node.callee as Node
+    return callee.type === 'Identifier' && this.createRequireBindings.has(nameOf(callee))
+  }
+
+  private isRequireCall(callee: Node): boolean {
+    return (callee.type === 'Identifier' && this.requireBindings.has(nameOf(callee)))
+      || this.isCreateRequireCall(callee)
   }
 
   run(): string {
@@ -539,8 +568,9 @@ export interface LoweredModule {
   readonly lowered: boolean
   /**
    * Static module requests the body makes: import and re-export sources,
-   * literal dynamic imports, and literal `require()` calls. Computed requests
-   * are absent — they resolve (and fail loud) at runtime only.
+   * literal dynamic imports, and literal calls through `require` or an imported
+   * `createRequire`. Computed requests are absent — they resolve (and fail loud)
+   * at runtime only.
    */
   readonly moduleRequests: readonly string[]
   /**
