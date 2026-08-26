@@ -207,10 +207,16 @@ describe('ImageGallery', () => {
     const empty = render(<ImageGallery images={[]} load={load} align="start" labels={labels} />)
     expect(empty.container.firstChild).toBeNull()
     const view = render(
-      <ImageGallery images={[{ attachment }, { attachment }]} load={load} align="end" labels={labels} />,
+      <ImageGallery
+        images={[{ attachment }, { preview: { url: 'blob:echo', name: 'echo.png' } }, { attachment }]}
+        load={load}
+        align="end"
+        labels={labels}
+      />,
     )
     expect(view.container.querySelector('[data-align="end"]')).not.toBeNull()
     await waitFor(() => { expect(view.getAllByAltText('history.png')).toHaveLength(2) })
+    expect(view.getByAltText('echo.png')).toBeTruthy()
   })
 
   it('renders a lone image large and several images as square tiles', () => {

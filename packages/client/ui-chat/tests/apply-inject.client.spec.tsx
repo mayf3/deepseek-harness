@@ -169,8 +169,10 @@ describe('Chat inject API', () => {
     injected.chatScroll.save(null)
     expect(injected.chatScroll.read()).toBeNull()
 
-    await expect(injected.loadImage(ATTACHMENT)).resolves.toEqual(expect.any(String))
+    const loaded = await injected.loadImage(ATTACHMENT)
+    expect(loaded).toEqual(expect.any(String))
     expect(b.session.readAttachment).toHaveBeenCalledWith(ATTACHMENT.attachmentId)
+    expect(injected.loadImage.peek?.(ATTACHMENT)).toBe(loaded)
     await b.runtime.dispose()
   })
 })
