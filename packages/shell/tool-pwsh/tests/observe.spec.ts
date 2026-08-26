@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -166,6 +166,39 @@ describe('background pwsh observation', () => {
     await until(() => ctx.activities.list()[0]?.status !== 'running' ? true : undefined)
     expect(ctx.activities.list()[0]).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
     expect(String(row.id)).toContain('pwsh')
+  })
+
+  it('a throwing end() is swallowed by the settlement-mapping catch', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(ToolTasks)
+    await ctx.plugin({
+      name: 'end-throwing-activities-probe',
+      apply(child: Context) {
+        child.provide('activities', {
+          open: () => ({
+            id: 'pwsh-1',
+            append() {},
+            updateDetail() {},
+            end() { throw new Error('end boom') },
+          }),
+        })
+      },
+    })
+    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(FakePwsh)
+    await ctx.plugin(ToolPwsh, { activityPollMs: 5 })
+    const pwsh = ctx.shell as FakePwsh
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    const handle = observableProcess({ stdout: { text: '' }, stderr: { text: '' } })
+    pwsh.backgroundHandler = () => handle.proc
+    await call(ctx, { command: 'Get-Doom', description: 'test command', run_in_background: true })
+    handle.finish()
+    await until(() => warn.mock.calls.some(args => String(args[0]).includes('activity settlement mapping')) ? true : undefined)
   })
 
   it('a backend without observed readers still yields a status-only process', async () => {

@@ -199,6 +199,37 @@ describe('background bash observation', () => {
     expect(ended[0]).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
   })
 
+  it('a throwing end() is swallowed by the settlement-mapping catch', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(ToolTasks)
+    await ctx.plugin({
+      name: 'end-throwing-activities-probe',
+      apply(child: Context) {
+        child.provide('activities', {
+          open: () => ({
+            id: 'bash-1',
+            append() {},
+            updateDetail() {},
+            end() { throw new Error('end boom') },
+          }),
+        })
+      },
+    })
+    await ctx.plugin(LocalSubprocessRuntime)
+    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
+    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    await ctx.plugin(ToolBash, { activityPollMs: 25 })
+    await call(ctx, { command: 'echo settled', description: 'test command', run_in_background: true })
+    await until(() => warn.mock.calls.some(args => String(args[0]).includes('activity settlement mapping')) ? true : undefined)
+  })
+
   it('a throwing observation registry never breaks the background call', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
