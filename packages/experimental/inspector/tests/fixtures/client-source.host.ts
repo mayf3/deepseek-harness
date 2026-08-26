@@ -103,6 +103,21 @@ export class InspectorClientFixture {
     await this.request({ op: 'disconnect' })
   }
 
+  /** Trigger a Cordis observation without changing the runtime tree. */
+  async refreshTree(): Promise<void> {
+    await this.request({ op: 'refresh-tree' })
+  }
+
+  /** Add one Fiber to the inspected Client runtime. */
+  async addFiber(): Promise<number> {
+    return await this.request({ op: 'add-fiber' }) as number
+  }
+
+  /** Remove the Fiber most recently added by {@link addFiber}. */
+  async removeFiber(): Promise<void> {
+    await this.request({ op: 'remove-fiber' })
+  }
+
   /** Dispose the Client source and its Cordis context. */
   async close(): Promise<void> {
     if (this.closed) return

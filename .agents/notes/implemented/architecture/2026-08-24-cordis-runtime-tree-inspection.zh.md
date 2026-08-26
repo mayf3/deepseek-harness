@@ -39,7 +39,7 @@ collector 从 root、注册表中的每个 live Fiber，以及每个 event hook 
 - Fiber `uid` 来自 Cordis。Context 当前没有 Cordis 自有 id，Inspector 不会暴露一个生成值来替代。
 - `InspectorObjectReference` 是 realm 本地的不透明 handle，用于把树节点解析成实时 Context 或 Fiber。snapshot 携带该 handle 只为完成路由，不把它当成语义 id 或 DOM attribute。
 - `BackendNodeId` 由 Worker 为一条保留的 `(source id, source generation, object reference)` 分配，并在该 generation 的 snapshot 被保留期间由所有 DevTools 连接共享。
-- `NodeId` 在节点进入某个 frontend document 时按 DevTools 连接分配；`DOM.documentUpdated` 或连接关闭时丢弃。
+- `NodeId` 在节点进入某个 frontend document 时按 DevTools 连接分配；对应 backend node 被保留期间保持稳定，并在节点离开树、少见的整 document fallback 或连接关闭时丢弃。
 - `RemoteObjectId` 在 `DOM.resolveNode` 暴露实时对象时由选定的 Runtime session 分配；它只属于该 DevTools 连接和 object group。
 
 `sourceId` 标识一个 Client runtime instance，并在自动重连 transport 时保持稳定；`generation` 标识一次 WebSocket 接纳。断联通过 `Runtime.executionContextDestroyed` 从 Console 移除 synthetic context。重连会发布新的 CDP execution-context id，因为已销毁的 id 及其 RemoteObject 不能复用；这并不表示浏览器底层 JavaScript realm 被重新创建。
@@ -62,7 +62,7 @@ source 把 Cordis 树作为保留状态发布，而不是事件历史。Host Mes
 
 source 关闭时，存储的树从 connected 变为 disconnected，而不是删除最后一份 snapshot。对象查询会排除 disconnected 树，因此 snapshot 仍可作为数据检查，但不会保留或复活实时 Context、Fiber 或 Runtime object。同一 source id 的新 transport generation 提交 replacement 后，会原子恢复 connected 状态。可配置的 disconnected tree 数量上限会淘汰最早保留的 snapshot。
 
-接受 tree replacement 后发送 `DOM.documentUpdated`，要求 frontend 重新拉取 document。如果断联没有淘汰另一棵树，则只失效对象路由，不改变 DOM document，从而保留已加载的树、展开状态与选择。连接状态留在 inspection model 中，等待其 Elements 展示方式被明确设计。保留上限触发淘汰时回退到 `DOM.documentUpdated`。以后可以在 `CordisDomSession` 内增加更多增量 DOM diff，而无需修改 collector、snapshot 或模型消费方。
+每个被接受的 source snapshot 都会重建 connection-neutral document，并按稳定的 backend node identity 比较差异。只改变 revision 的 replacement 不发送 DOM event；子节点增删使用 `DOM.childNodeInserted` 与 `DOM.childNodeRemoved`，attribute 变化使用对应 DOM event，兄弟节点重排只对该 parent 使用 `DOM.setChildNodes`。只有同一 backend identity 被复用为不同 node kind 时才回退到 `DOM.documentUpdated`。断联只会使 object route 失效，不改变保留的 DOM tree，因此保留展开与选择；达到保留上限时只移除被淘汰的 `<client>` 节点。
 
 ## CDP projection
 
@@ -97,7 +97,7 @@ synthetic document 包含一个 `<host>` container 和一个 `<clients>` contain
 - `DOM.resolveNode` 与 `DOM.requestNode` 能往返映射 Context/Fiber 身份，且不会跨 DevTools 连接或 source generation 共享 object id。
 - Runtime evaluation 返回的 Context 或 Fiber 会被标记为 node，并能在 Elements 中定位。
 - 断联会销毁 Client execution context 与 RemoteObject，同时原样保留最后一棵 Elements 树；新的 transport generation 在完整 snapshot 到达后替换它。
-- 重连和 resnapshot 会重放最新树状态；畸形或超限 replacement 不会替换最后一个有效快照。
+- 重连和 resnapshot 会重放最新树状态；无变化的 snapshot 不发送 DOM mutation，结构变化只更新受影响的 parent 或 node。畸形或超限 replacement 不会替换最后一个有效快照。
 - 存储的 snapshot 与查询 API 不包含 CDP 类型，可以不加修改地支持未来的模型适配器。
 
 ## Consequences
@@ -106,8 +106,8 @@ Cordis 不提供完整的全局 Context registry。collector 能恢复从 live f
 
 需要语义识别的每个 Host object 都会增加一次 Runtime round trip。annotation 失败时保留普通 RemoteObject，不破坏 Runtime 或 Debugger 投递。Client Console observation 保留原始 method result，并在之后调度序列化；每个已启用 DevTools session 独立保留 handle，因此识别既不阻塞页面调用，也不在连接间共享对象。
 
-完整树 replacement 比增量 source mutation 更简单，但在超大运行时中可能昂贵。节点数与字节数限制会保留有效前缀并报告截断；以后可以替换为 delta 协议，而不修改 snapshot model。
+source 仍发布完整 snapshot，从而复用同一套 Host/Client collector，并能在 observation 丢失后恢复。Worker 承担 snapshot 比较成本，再发送增量 CDP DOM mutation，使无变化的 revision 不会重置 Elements document。节点数与字节数限制会保留有效前缀并报告截断；以后可以替换 source delta 协议，而不修改 snapshot model 或 CDP projection。
 
 对象表会有意强引用当前可见树中的每个对象，直到下一次 replacement 或 observer dispose。该集合受保留快照限制，不能扩展成通用对象注册表。
 
-Worker 对断联 snapshot 只保留序列化 metadata；仍在运行的 source 独立拥有其 realm-local object registry，dispose 会释放该 registry。`maxDisconnectedCordisTrees` 约束 Worker snapshot 内存；淘汰较早的断联树时，Elements document 可能需要完整刷新。
+Worker 对断联 snapshot 只保留序列化 metadata；仍在运行的 source 独立拥有其 realm-local object registry，dispose 会释放该 registry。`maxDisconnectedCordisTrees` 约束 Worker snapshot 内存；淘汰时会移除对应的已保留 Client subtree。

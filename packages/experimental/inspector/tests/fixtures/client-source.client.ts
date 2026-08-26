@@ -1,7 +1,7 @@
 /** Client-face process fixture used by Host-side protocol integration tests. */
 
 import { parentPort, workerData } from 'node:worker_threads'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import WebSocket from 'ws'
 import { ClientInspectorSource } from '../../src/client/bridge/transport.ts'
 import { ClientSourceCatalog } from '../../src/client/cdp/sources.ts'
@@ -24,7 +24,17 @@ interface ClientFixtureInput {
 
 interface ClientFixtureRequest {
   readonly id: number
-  readonly op: 'close' | 'disconnect' | 'get-tree' | 'log-cordis' | 'log-value' | 'publish' | 'set-global'
+  readonly op:
+    | 'add-fiber'
+    | 'close'
+    | 'disconnect'
+    | 'get-tree'
+    | 'log-cordis'
+    | 'log-value'
+    | 'publish'
+    | 'refresh-tree'
+    | 'remove-fiber'
+    | 'set-global'
   readonly name?: string
   readonly value?: InspectorJsonValue
   readonly marker?: string
@@ -60,6 +70,7 @@ const disposeCordis = publishCordisTree(context, source, {
   maxBytes: input.bootstrap.maxFrameBytes - 4_096,
 })
 const service = createInspectorService(source)
+let addedFiber: Fiber | undefined
 
 port.on('message', (message: ClientFixtureRequest) => {
   void dispatch(message).then(
@@ -100,7 +111,19 @@ async function dispatch(message: ClientFixtureRequest): Promise<unknown> {
       socket?.terminate()
       return undefined
     }
+    case 'refresh-tree':
+      context.emit('internal/status', childFiber.ctx.fiber, childFiber.ctx.fiber.state)
+      return undefined
+    case 'add-fiber':
+      addedFiber = context.plugin({ name: 'dynamic-client-child', apply() {} }).ctx.fiber
+      await addedFiber.await()
+      return addedFiber.uid
+    case 'remove-fiber':
+      await addedFiber?.dispose()
+      addedFiber = undefined
+      return undefined
     case 'close':
+      await addedFiber?.dispose()
       disposeCordis()
       source.close()
       await context.fiber.dispose()

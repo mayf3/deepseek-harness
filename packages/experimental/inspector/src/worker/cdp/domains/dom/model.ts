@@ -9,7 +9,6 @@ import type {
   CordisTreeObjectRoute,
   CordisTreeSourceSnapshot,
   CordisTreeStore,
-  CordisTreeStoreEvent,
 } from '../../../inspection/cordis-store.ts'
 
 /** One Worker-global backend node independent of any DevTools connection. */
@@ -31,9 +30,40 @@ export interface CordisDomDocument {
   readonly parentByBackendId: ReadonlyMap<CdpBackendNodeId, CdpBackendNodeId>
 }
 
-/** A full tree replacement or an in-place source availability change. */
-export type CordisDomChange =
+/** One structural or attribute mutation between two projected documents. */
+export type CordisDomMutation =
   | { readonly type: 'document-updated' }
+  | {
+    readonly type: 'child-inserted'
+    readonly parentBackendNodeId: CdpBackendNodeId
+    readonly previousBackendNodeId: CdpBackendNodeId | 0
+    readonly node: CordisDomNode
+  }
+  | {
+    readonly type: 'child-removed'
+    readonly parentBackendNodeId: CdpBackendNodeId
+    readonly node: CordisDomNode
+  }
+  | {
+    readonly type: 'children-replaced'
+    readonly parentBackendNodeId: CdpBackendNodeId
+    readonly children: readonly CordisDomNode[]
+  }
+  | {
+    readonly type: 'attribute-modified'
+    readonly backendNodeId: CdpBackendNodeId
+    readonly name: string
+    readonly value: string
+  }
+  | {
+    readonly type: 'attribute-removed'
+    readonly backendNodeId: CdpBackendNodeId
+    readonly name: string
+  }
+
+/** A visible incremental mutation or an in-place source availability change. */
+export type CordisDomChange =
+  | { readonly type: 'tree-mutated'; readonly mutations: readonly CordisDomMutation[] }
   | { readonly type: 'source-disconnected'; readonly source: InspectorSourceDescriptor }
 
 /** Assigns durable backend ids and projects the latest source snapshots. */
@@ -51,14 +81,9 @@ export class CordisDomBackend {
     this.unsubscribe = trees.subscribe((event) => {
       const previous = this.documentValue
       this.documentValue = this.build()
-      const change = this.change(event, previous)
-      for (const listener of [...this.listeners]) {
-        try {
-          listener(change)
-        } catch {
-          // One closed CDP connection cannot prevent sibling sessions from receiving the new document.
-        }
-      }
+      if (event.type === 'source-disconnected') this.emit({ type: 'source-disconnected', source: event.source })
+      const mutations = diffDocument(previous, this.documentValue)
+      if (mutations.length > 0) this.emit({ type: 'tree-mutated', mutations })
     })
   }
 
@@ -183,11 +208,14 @@ export class CordisDomBackend {
     return { backendNodeId, key, name, attributes, description, ...(object === undefined ? {} : { object }), children: [] }
   }
 
-  private change(event: CordisTreeStoreEvent, previous: CordisDomDocument): CordisDomChange {
-    if (event.type === 'source-disconnected' && sameNodeSet(previous, this.documentValue)) {
-      return { type: 'source-disconnected', source: event.source }
+  private emit(change: CordisDomChange): void {
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(change)
+      } catch {
+        // One closed CDP connection cannot prevent sibling sessions from receiving the document mutation.
+      }
     }
-    return { type: 'document-updated' }
   }
 }
 
@@ -204,10 +232,66 @@ function objectKey(source: InspectorSourceDescriptor, reference: InspectorObject
   return `${source.sourceId}\0${source.generation}\0${reference.registryId}\0${reference.handle}`
 }
 
-function sameNodeSet(left: CordisDomDocument, right: CordisDomDocument): boolean {
-  if (left.byBackendId.size !== right.byBackendId.size) return false
-  for (const backendNodeId of left.byBackendId.keys()) {
-    if (!right.byBackendId.has(backendNodeId)) return false
+function diffDocument(previous: CordisDomDocument, current: CordisDomDocument): CordisDomMutation[] {
+  const mutations: CordisDomMutation[] = []
+  return diffNode(previous.root, current.root, mutations)
+    ? mutations
+    : [{ type: 'document-updated' }]
+}
+
+function diffNode(previous: CordisDomNode, current: CordisDomNode, mutations: CordisDomMutation[]): boolean {
+  if (previous.backendNodeId !== current.backendNodeId || previous.name !== current.name) {
+    return false
+  }
+  const previousAttributes = new Map(previous.attributes)
+  const currentAttributes = new Map(current.attributes)
+  for (const [name, value] of currentAttributes) {
+    if (previousAttributes.get(name) === value) continue
+    mutations.push({ type: 'attribute-modified', backendNodeId: current.backendNodeId, name, value })
+  }
+  for (const [name] of previousAttributes) {
+    if (!currentAttributes.has(name)) {
+      mutations.push({ type: 'attribute-removed', backendNodeId: current.backendNodeId, name })
+    }
+  }
+
+  const previousIds = previous.children.map(child => child.backendNodeId)
+  const currentIds = current.children.map(child => child.backendNodeId)
+  const previousSet = new Set(previousIds)
+  const currentSet = new Set(currentIds)
+  const retainedBefore = previousIds.filter(id => currentSet.has(id))
+  const retainedAfter = currentIds.filter(id => previousSet.has(id))
+  if (!sameIds(retainedBefore, retainedAfter)) {
+    mutations.push({
+      type: 'children-replaced',
+      parentBackendNodeId: current.backendNodeId,
+      children: current.children,
+    })
+    return true
+  }
+  for (const child of previous.children) {
+    if (!currentSet.has(child.backendNodeId)) {
+      mutations.push({ type: 'child-removed', parentBackendNodeId: current.backendNodeId, node: child })
+    }
+  }
+  for (let index = 0; index < current.children.length; index++) {
+    const child = current.children[index] as CordisDomNode
+    if (previousSet.has(child.backendNodeId)) continue
+    mutations.push({
+      type: 'child-inserted',
+      parentBackendNodeId: current.backendNodeId,
+      previousBackendNodeId: index === 0 ? 0 : (current.children[index - 1] as CordisDomNode).backendNodeId,
+      node: child,
+    })
+  }
+  const previousById = new Map(previous.children.map(child => [child.backendNodeId, child]))
+  for (const child of current.children) {
+    const prior = previousById.get(child.backendNodeId)
+    if (prior !== undefined && !diffNode(prior, child, mutations)) return false
   }
   return true
+}
+
+function sameIds(left: readonly CdpBackendNodeId[], right: readonly CdpBackendNodeId[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }

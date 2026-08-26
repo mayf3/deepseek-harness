@@ -39,7 +39,7 @@ The identities are intentionally distinct:
 - Fiber `uid` comes from Cordis. Context currently has no Cordis-owned id and the Inspector does not expose a generated substitute.
 - `InspectorObjectReference` is an opaque realm-local handle resolving a tree node to its live Context or Fiber. Snapshots carry the handle for routing, never as a semantic id or DOM attribute.
 - `BackendNodeId` is assigned by the Worker to one retained `(source id, source generation, object reference)` and is shared by DevTools connections while that generation's snapshot is retained.
-- `NodeId` is assigned per DevTools connection when a node enters that frontend's document. It is discarded on `DOM.documentUpdated` or connection close.
+- `NodeId` is assigned per DevTools connection when a node enters that frontend's document. It remains stable while the corresponding backend node is retained and is discarded when that node leaves the tree, on the rare full-document fallback, or when the connection closes.
 - `RemoteObjectId` is assigned by the selected Runtime session when `DOM.resolveNode` exposes the live object. It remains scoped to that DevTools connection and object group.
 
 `sourceId` identifies one Client runtime instance and remains stable across its automatic transport reconnects; `generation` identifies one WebSocket admission. Disconnect removes the synthetic context from the Console with `Runtime.executionContextDestroyed`. Reconnection announces a fresh CDP execution-context id because the destroyed id and its RemoteObjects cannot be reused, but this does not imply that the browser's underlying JavaScript realm was recreated.
@@ -62,7 +62,7 @@ Sources publish the Cordis tree as retained state rather than an event history. 
 
 Closing a source changes its stored tree from connected to disconnected instead of deleting the last snapshot. Object lookup excludes disconnected trees, so the snapshot remains inspectable as data without retaining or reviving a live Context, Fiber, or Runtime object. A replacement from the same source id and a new transport generation atomically restores the connected state. The configurable disconnected-tree limit evicts the oldest retained snapshots.
 
-Accepted tree replacements emit `DOM.documentUpdated` and require the frontend to pull a fresh document. A disconnect that does not evict another tree invalidates object routes without changing the DOM document, preserving the loaded tree, expansion, and selection. Connection state remains in the inspection model until its Elements presentation is designed. Retention eviction falls back to `DOM.documentUpdated`. Further incremental tree diffs can be added behind `CordisDomSession` without changing collectors, snapshots, or model consumers.
+Accepted source snapshots rebuild the connection-neutral document and are diffed by stable backend node identity. A revision-only replacement emits no DOM event. Child insertion and removal use `DOM.childNodeInserted` and `DOM.childNodeRemoved`; attribute changes use their corresponding DOM events; sibling reorder falls back to `DOM.setChildNodes` for that parent only. Reusing one backend identity for a different node kind is the sole `DOM.documentUpdated` fallback. A disconnect invalidates object routes without changing the retained DOM tree, preserving expansion and selection; retention eviction removes only the evicted `<client>` node.
 
 ## CDP projection
 
@@ -97,7 +97,7 @@ The read-only adapter implements document retrieval, child requests, node descri
 - `DOM.resolveNode` and `DOM.requestNode` round-trip Context and Fiber identities without sharing object ids across DevTools connections or source generations.
 - A Context or Fiber returned by Runtime evaluation is node-branded and can be revealed in Elements.
 - Disconnect destroys the Client execution context and its RemoteObjects while retaining the last Elements tree unchanged; a new transport generation replaces it after a complete snapshot arrives.
-- Reconnect and resnapshot replay the latest tree state; malformed or oversized replacements do not replace the last valid snapshot.
+- Reconnect and resnapshot replay the latest tree state; unchanged snapshots emit no DOM mutation, while structural changes update only their affected parent or node. Malformed or oversized replacements do not replace the last valid snapshot.
 - The stored snapshot and query API contain no CDP types and can support a future model-facing adapter unchanged.
 
 ## Consequences
@@ -106,8 +106,8 @@ Cordis exposes no complete global Context registry. The collector can recover co
 
 Object recognition adds a Runtime round trip for each Host object that requires semantic identification. An annotation failure leaves an ordinary RemoteObject rather than breaking Runtime or Debugger delivery. Client Console observation preserves the original method result and schedules serialization afterward; each enabled DevTools session receives independently retained handles, so recognition never blocks the page call or shares objects between connections.
 
-Full-tree replacement is simpler than incremental source mutations but can become expensive in very large runtimes. Node and byte limits preserve a valid prefix and report truncation; a later delta protocol can replace the transport without changing the snapshot model.
+Sources continue to publish complete snapshots, keeping one shared Host/Client collector and allowing recovery after dropped observations. The Worker pays the snapshot comparison cost, then emits incremental CDP DOM mutations so unchanged revisions do not reset the Elements document. Node and byte limits preserve a valid prefix and report truncation; a later source delta protocol can replace the transport without changing the snapshot model or CDP projection.
 
 The object table intentionally keeps every object in the current visible tree strongly reachable until the next replacement or observer disposal. This is bounded by the retained snapshot and must not become a general-purpose object registry.
 
-The Worker retains only serialized metadata for a disconnected snapshot; any still-running source owns its realm-local object registry independently and disposal releases that registry. `maxDisconnectedCordisTrees` bounds Worker snapshot memory and may force a full Elements document refresh when an older disconnected tree is evicted.
+The Worker retains only serialized metadata for a disconnected snapshot; any still-running source owns its realm-local object registry independently and disposal releases that registry. `maxDisconnectedCordisTrees` bounds Worker snapshot memory, and eviction removes the corresponding retained Client subtree.

@@ -13,6 +13,7 @@ import type { InspectorJsonValue } from '../src/shared/json.ts'
 import { jsonByteLength } from '../src/shared/json.ts'
 import type { InspectorSourceDescriptor } from '../src/shared/bridge/messages/observation.ts'
 import { CordisTreeStore } from '../src/worker/inspection/cordis-store.ts'
+import { CordisDomBackend, type CordisDomChange } from '../src/worker/cdp/domains/dom/model.ts'
 import { InspectorClientFixture } from './fixtures/client-source.host.ts'
 
 interface CdpMessage {
@@ -277,6 +278,72 @@ describe('Cordis tree inspection', () => {
     collector.close()
   })
 
+  it('diffs snapshots into local DOM mutations and suppresses revision-only updates', () => {
+    const store = new CordisTreeStore({ maxNodes: 100, maxDisconnectedTrees: 1 })
+    const backend = new CordisDomBackend(store)
+    const changes: CordisDomChange[] = []
+    backend.subscribe((event) => { changes.push(event) })
+    const host = { ...source('host', 'generation-1'), kind: 'host' as const }
+    const context = (objectHandle: string, children: unknown[] = []): Record<string, unknown> => ({
+      kind: 'context',
+      objectHandle,
+      children,
+    })
+    const fiber = (uid: number, objectHandle: string): Record<string, unknown> => ({
+      kind: 'fiber',
+      uid,
+      objectHandle,
+      children: [context(`${objectHandle}-context`)],
+    })
+    const snapshot = (revision: number, children: unknown[]): InspectorJsonValue => ({
+      schemaVersion: 0,
+      revision,
+      objectRegistryId: 'registry',
+      root: context('root', children),
+      truncated: false,
+    }) as InspectorJsonValue
+    const replace = (revision: number, children: unknown[]): void => {
+      store.append(host, [{ sequence: revision, monotonicMs: revision, topic: 'cordis/tree', payload: snapshot(revision, children) }])
+    }
+
+    replace(1, [fiber(1, 'fiber-1')])
+    expect(changes.at(-1)).toMatchObject({ type: 'tree-mutated', mutations: [{ type: 'child-inserted' }] })
+    changes.length = 0
+    replace(2, [fiber(1, 'fiber-1')])
+    expect(changes).toEqual([])
+
+    replace(3, [fiber(2, 'fiber-1')])
+    expect(changes).toEqual([
+      expect.objectContaining({ type: 'tree-mutated', mutations: [expect.objectContaining({ type: 'attribute-modified', name: 'uid', value: '2' })] }),
+    ])
+    changes.length = 0
+
+    replace(4, [fiber(2, 'fiber-1'), context('context-2')])
+    expect(changes).toEqual([
+      expect.objectContaining({ type: 'tree-mutated', mutations: [expect.objectContaining({ type: 'child-inserted' })] }),
+    ])
+    changes.length = 0
+    replace(5, [fiber(2, 'fiber-1')])
+    expect(changes).toEqual([
+      expect.objectContaining({ type: 'tree-mutated', mutations: [expect.objectContaining({ type: 'child-removed' })] }),
+    ])
+
+    changes.length = 0
+    replace(6, [context('context-a'), context('context-b')])
+    changes.length = 0
+    replace(7, [context('context-b'), context('context-a')])
+    expect(changes).toEqual([
+      expect.objectContaining({ type: 'tree-mutated', mutations: [expect.objectContaining({ type: 'children-replaced' })] }),
+    ])
+
+    changes.length = 0
+    replace(8, [{ kind: 'fiber', uid: 3, objectHandle: 'context-a', children: [context('changed-kind')] }])
+    expect(changes).toEqual([
+      expect.objectContaining({ type: 'tree-mutated', mutations: [{ type: 'document-updated' }] }),
+    ])
+    backend.close()
+  })
+
   it('projects Host and Client trees and resolves both node kinds to RemoteObjects', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false, maxCordisNodes: 100 })
     const host = new Context()
@@ -455,6 +522,59 @@ describe('Cordis tree inspection', () => {
     expect(disconnectedTree.clients[0]?.connection.state).toBe('disconnected')
   })
 
+  it('emits only node-level DOM changes for Client snapshots', async () => {
+    inspector = await startInspector({ port: 0, captureFetch: false, maxCordisNodes: 100 })
+    cdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
+    const initialDocument = (await cdp.call('DOM.getDocument')).result?.root as CdpNode
+    const clientsNode = initialDocument.children?.find(node => node.localName === 'clients')
+    if (clientsNode === undefined) throw new Error('DOM document has no clients container')
+
+    let offset = cdp.events.length
+    clientSource = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Incremental Client' })
+    await vi.waitFor(() => {
+      const events = cdp!.events.slice(offset)
+      const inserted = events.find(event => event.method === 'DOM.childNodeInserted')
+      expect(inserted?.params?.parentNodeId).toBe(clientsNode.nodeId)
+      expect(inserted?.params?.node).toMatchObject({ localName: 'client' })
+      expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
+    })
+
+    const firstTree = (await cdp.call('DSHInspector.getCordisTree')).result?.tree as {
+      clients: Array<{ revision: number }>
+    }
+    const firstRevision = firstTree.clients[0]?.revision
+    offset = cdp.events.length
+    await clientSource.refreshTree()
+    await vi.waitFor(async () => {
+      const tree = (await cdp!.call('DSHInspector.getCordisTree')).result?.tree as {
+        clients: Array<{ revision: number }>
+      }
+      expect(tree.clients[0]?.revision).toBeGreaterThan(firstRevision ?? 0)
+    })
+    expect(cdp.events.slice(offset).some(event => event.method?.startsWith('DOM.'))).toBe(false)
+
+    offset = cdp.events.length
+    const uid = await clientSource.addFiber()
+    let insertedNodeId: number | undefined
+    await vi.waitFor(() => {
+      const inserted = cdp!.events.slice(offset).find(event => event.method === 'DOM.childNodeInserted'
+        && (event.params?.node as CdpNode | undefined)?.localName === 'fiber'
+        && (event.params?.node as CdpNode | undefined)?.attributes?.includes(String(uid)))
+      insertedNodeId = (inserted?.params?.node as CdpNode | undefined)?.nodeId
+      expect(insertedNodeId).toBeTypeOf('number')
+      expect(cdp!.events.slice(offset).some(event => event.method === 'DOM.documentUpdated')).toBe(false)
+    })
+
+    offset = cdp.events.length
+    await clientSource.removeFiber()
+    await vi.waitFor(() => {
+      const events = cdp!.events.slice(offset)
+      const removed = events.find(event => event.method === 'DOM.childNodeRemoved')
+      expect(removed?.params?.nodeId).toBe(insertedNodeId)
+      expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
+    })
+  })
+
   it('restores a disconnected Client tree from a new transport generation', async () => {
     inspector = await startInspector({
       port: 0,
@@ -493,11 +613,14 @@ describe('Cordis tree inspection', () => {
         const context = event.params?.context as { id?: number } | undefined
         return typeof context?.id === 'number' && context.id !== contextId
       })
-      const refreshed = events.findIndex(event => event.method === 'DOM.documentUpdated')
+      const removed = events.findIndex(event => event.method === 'DOM.childNodeRemoved')
+      const inserted = events.findIndex(event => event.method === 'DOM.childNodeInserted')
       expect(destroyed).toBeGreaterThanOrEqual(0)
       expect(created).toBeGreaterThan(destroyed)
-      expect(refreshed).toBeGreaterThan(created)
+      expect(removed).toBeGreaterThan(created)
+      expect(inserted).toBeGreaterThan(removed)
       expect(events.slice(0, created).some(event => event.method?.startsWith('DOM.'))).toBe(false)
+      expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
     })
 
     await vi.waitFor(async () => {

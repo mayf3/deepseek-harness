@@ -7,7 +7,7 @@ import { respondToCdpRequest, type CdpRequest, type CdpTransport } from '../../p
 import type { InspectorRealmDescriptor } from '../../../inspection/realm.ts'
 import type { RuntimeDomainSession } from '../runtime/index.ts'
 import type { RuntimeObjectPresentation } from '../runtime/object-table.ts'
-import type { CordisDomBackend, CordisDomChange, CordisDomNode } from './model.ts'
+import type { CordisDomBackend, CordisDomChange, CordisDomMutation, CordisDomNode } from './model.ts'
 import {
   cdpNumericId,
   cdpStringId,
@@ -292,8 +292,97 @@ export class CordisDomSession {
       this.releaseSourceObjects(event.source)
       return
     }
-    this.resetDocument()
-    if (this.enabled) this.transport.send({ method: 'DOM.documentUpdated', params: {} })
+    if (this.enabled) for (const mutation of event.mutations) this.sendMutation(mutation)
+    this.pruneDocumentState()
+  }
+
+  private sendMutation(mutation: CordisDomMutation): void {
+    switch (mutation.type) {
+      case 'document-updated':
+        this.resetDocument()
+        this.transport.send({ method: 'DOM.documentUpdated', params: {} })
+        return
+      case 'child-inserted': {
+        const parentNodeId = this.nodeIdByBackend.get(mutation.parentBackendNodeId)
+        if (parentNodeId === undefined) return
+        const previousNodeId = mutation.previousBackendNodeId === 0
+          ? 0
+          : this.nodeIdByBackend.get(mutation.previousBackendNodeId)
+        if (previousNodeId === undefined) return
+        this.transport.send({
+          method: 'DOM.childNodeInserted',
+          params: {
+            parentNodeId,
+            previousNodeId,
+            node: this.serialize(mutation.node, parentNodeId, true),
+          },
+        })
+        return
+      }
+      case 'child-removed': {
+        const parentNodeId = this.nodeIdByBackend.get(mutation.parentBackendNodeId)
+        const nodeId = this.nodeIdByBackend.get(mutation.node.backendNodeId)
+        if (parentNodeId === undefined || nodeId === undefined) return
+        this.transport.send({ method: 'DOM.childNodeRemoved', params: { parentNodeId, nodeId } })
+        return
+      }
+      case 'children-replaced': {
+        const parentNodeId = this.nodeIdByBackend.get(mutation.parentBackendNodeId)
+        if (parentNodeId === undefined) return
+        this.transport.send({
+          method: 'DOM.setChildNodes',
+          params: {
+            parentId: parentNodeId,
+            nodes: mutation.children.map(child => this.serialize(child, parentNodeId, true)),
+          },
+        })
+        return
+      }
+      case 'attribute-modified': {
+        const nodeId = this.nodeIdByBackend.get(mutation.backendNodeId)
+        if (nodeId !== undefined) {
+          this.transport.send({
+            method: 'DOM.attributeModified',
+            params: { nodeId, name: mutation.name, value: mutation.value },
+          })
+        }
+        return
+      }
+      case 'attribute-removed': {
+        const nodeId = this.nodeIdByBackend.get(mutation.backendNodeId)
+        if (nodeId !== undefined) {
+          this.transport.send({ method: 'DOM.attributeRemoved', params: { nodeId, name: mutation.name } })
+        }
+        return
+      }
+      default:
+        return assertNever(mutation)
+    }
+  }
+
+  private pruneDocumentState(): void {
+    const document = this.backend.document()
+    for (const [backendNodeId, nodeId] of this.nodeIdByBackend) {
+      if (document.byBackendId.has(backendNodeId)) continue
+      this.nodeIdByBackend.delete(backendNodeId)
+      this.backendByNodeId.delete(nodeId)
+    }
+    for (const [objectId, binding] of this.backendByObjectId) {
+      const node = document.byBackendId.get(binding.backendNodeId)
+      const source = node?.object?.source
+      if (source?.sourceId === binding.sourceId && source.generation === binding.generation) continue
+      this.backendByObjectId.delete(objectId)
+      for (const [group, objectIds] of this.objectIdsByGroup) {
+        objectIds.delete(objectId)
+        if (objectIds.size === 0) this.objectIdsByGroup.delete(group)
+      }
+    }
+    for (const [searchId, nodeIds] of this.searches) {
+      this.searches.set(searchId, nodeIds.filter((nodeId) => {
+        const backendNodeId = this.backendByNodeId.get(nodeId)
+        return backendNodeId !== undefined && document.byBackendId.has(backendNodeId)
+      }))
+    }
   }
 
   private releaseSourceObjects(source: InspectorSourceDescriptor): void {
@@ -358,4 +447,8 @@ function presentation(node: CordisDomNode): RuntimeObjectPresentation {
     className: node.object?.node.kind === 'fiber' ? 'Fiber' : 'Context',
     description: node.description,
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected Cordis DOM mutation: ${JSON.stringify(value)}`)
 }
