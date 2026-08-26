@@ -147,8 +147,28 @@ describe.skipIf(!built)('Inspector built Client in Chromium', () => {
       const context = event.params?.context as Record<string, unknown> | undefined
       return String(context?.name).startsWith('Client —')
     })
-    const contextId = (contextEvent.params?.context as Record<string, unknown>).id
+    const context = contextEvent.params?.context as Record<string, unknown>
+    const contextId = context.id
+    const uniqueContextId = context.uniqueId
     expect(contextId).toBeTypeOf('number')
+    expect(uniqueContextId).toBeTypeOf('string')
+
+    const evaluated = await cdp.call('Runtime.evaluate', {
+      expression: 'globalThis.__inspectorConsoleEvaluation = { answer: 6 * 7 }',
+      objectGroup: 'console',
+      includeCommandLineAPI: true,
+      silent: false,
+      returnByValue: false,
+      generatePreview: true,
+      userGesture: true,
+      awaitPromise: false,
+      replMode: true,
+      allowUnsafeEvalBlockedByCSP: false,
+      uniqueContextId,
+    })
+    expect(evaluated.error).toBeUndefined()
+    expect(asRecord(evaluated.result?.result).objectId).toMatch(/^runtime:/u)
+    expect(await page.evaluate(() => Reflect.get(globalThis, '__inspectorConsoleEvaluation'))).toEqual({ answer: 42 })
 
     await page.evaluate(() => {
       const value = { browser: true, nested: { ready: true } }

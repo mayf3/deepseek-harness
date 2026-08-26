@@ -79,7 +79,7 @@ describe('full fetch observer', () => {
     expect(payload(records, 'fetch/end')).toMatchObject({ capturedBytes: 4, responseBodyTruncated: true })
   })
 
-  it('reports cancellation after response headers as a canceled request', async () => {
+  it('retains a truncated response when the caller cancels after response headers', async () => {
     const records: InspectorRecordInput[] = []
     Object.defineProperty(globalThis, 'fetch', {
       value: vi.fn(async (request: Request) => new Response(new ReadableStream<Uint8Array>({
@@ -103,9 +103,41 @@ describe('full fetch observer', () => {
     const response = await fetch('https://example.test/cancel-body', { signal: abort.signal })
     abort.abort()
     await expect(response.text()).rejects.toThrow()
-    await vi.waitFor(() => { expect(records.some(record => record.topic === 'fetch/error')).toBe(true) })
+    await vi.waitFor(() => { expect(records.some(record => record.topic === 'fetch/end')).toBe(true) })
+
+    expect(decodeChunks(records, 'fetch/response-body-chunk')).toBe('first')
+    expect(payload(records, 'fetch/end')).toMatchObject({
+      capturedBytes: 5,
+      responseBodyTruncated: true,
+      responseCaptureError: 'AbortError: aborted',
+    })
+    expect(records.some(record => record.topic === 'fetch/error')).toBe(false)
+  })
+
+  it('reports a fetch rejected before response headers as a canceled request', async () => {
+    const records: InspectorRecordInput[] = []
+    Object.defineProperty(globalThis, 'fetch', {
+      value: vi.fn(async (request: Request) => await new Promise<Response>((_resolve, reject) => {
+        request.signal.addEventListener('abort', () => {
+          reject(new DOMException('aborted', 'AbortError'))
+        }, { once: true })
+      })),
+      writable: true,
+      configurable: true,
+    })
+    observer = installFetchObserver({
+      publish(topic: string, payload: InspectorJsonValue, monotonicMs = performance.now()) {
+        records.push({ topic, payload, monotonicMs })
+      },
+    }, { maxRequestBodyBytes: 1_024, maxResponseBodyBytes: 1_024, maxChunkBytes: 4 })
+    const abort = new AbortController()
+
+    const pending = fetch('https://example.test/cancel-before-response', { signal: abort.signal })
+    abort.abort()
+    await expect(pending).rejects.toThrow()
 
     expect(payload(records, 'fetch/error')).toMatchObject({ canceled: true })
+    expect(records.some(record => record.topic === 'fetch/response')).toBe(false)
     expect(records.some(record => record.topic === 'fetch/end')).toBe(false)
   })
 })

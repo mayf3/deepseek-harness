@@ -143,8 +143,6 @@ function assertClientEvaluationOptions(request: Parameters<RuntimeBackend['evalu
   if (request.throwOnSideEffect === true) throw new Error('Client Runtime does not support throwOnSideEffect')
   if (request.serializationOptions !== undefined) throw new Error('Client Runtime does not support serializationOptions')
   if (request.disableBreaks === true) throw new Error('Client Runtime does not support disableBreaks')
-  if (request.replMode === true) throw new Error('Client Runtime does not support replMode')
-  if (request.userGesture === true) throw new Error('Client Runtime does not support userGesture')
   if (request.allowUnsafeEvalBlockedByCSP === true) {
     throw new Error('Client Runtime cannot bypass the page Content Security Policy')
   }

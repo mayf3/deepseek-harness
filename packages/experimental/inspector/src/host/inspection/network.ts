@@ -117,19 +117,9 @@ export function installFetchObserver(
         responseClone.body,
         options.maxResponseBodyBytes,
         options.maxChunkBytes,
-        AbortSignal.any([controller.signal, request.signal]),
+        controller.signal,
         (data) => { publisher.publish('fetch/response-body-chunk', { requestId, data }) },
       ).then((outcome) => {
-        if (request.signal.aborted) {
-          publisher.publish('fetch/error', {
-            requestId,
-            message: request.signal.reason === undefined
-              ? 'AbortError: request aborted during response body capture'
-              : renderError(request.signal.reason),
-            canceled: true,
-          })
-          return
-        }
         publisher.publish('fetch/end', {
           requestId,
           capturedBytes: outcome.capturedBytes,
@@ -210,7 +200,7 @@ async function captureBody(
     }
     return { capturedBytes, truncated }
   } catch (error) {
-    return { capturedBytes, truncated, captureError: renderError(error) }
+    return { capturedBytes, truncated: true, captureError: renderError(error) }
   } finally {
     signal.removeEventListener('abort', abort)
     reader.releaseLock()
