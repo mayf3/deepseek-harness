@@ -17,7 +17,7 @@ afterEach(() => {
 })
 
 function makeSession(api = new FakeApiClient()): { api: FakeApiClient; session: Session } {
-  return { api, session: new Session(SID, api, fakeRemote(api)) }
+  return { api, session: new Session(SID, fakeRemote(api)) }
 }
 
 function imageRef(id: string): ImageAttachmentRef {
