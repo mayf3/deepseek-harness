@@ -76,17 +76,7 @@ export class FakeApiClient implements IApiClient {
   }
 
   readonly settings: IApiClient['settings'] = {
-    describe: payload => this.record('settings.describe', payload, Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [] }))),
     openDocument: payload => this.record('settings.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
-    update: payload => this.record('settings.update', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
-    replace: payload => this.record('settings.replace', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
-    mutate: payload => this.record('settings.mutate', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
-  }
-
-  readonly credentials: IApiClient['credentials'] = {
-    describe: payload => this.record('credentials.describe', payload, Promise.resolve(ok({ credentials: {} }))),
-    set: payload => this.record('credentials.set', payload, Promise.resolve(ok({}))),
-    unset: payload => this.record('credentials.unset', payload, Promise.resolve(ok({}))),
   }
 
   readonly llm: IApiClient['llm'] = {

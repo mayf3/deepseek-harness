@@ -186,7 +186,6 @@ class FakeApiClient implements IApiClient {
   declare readonly skills: IApiClient['skills']
   declare readonly agentPresets: IApiClient['agentPresets']
   declare readonly settings: IApiClient['settings']
-  declare readonly credentials: IApiClient['credentials']
   declare readonly llm: IApiClient['llm']
 
   readonly host: IApiClient['host'] = {

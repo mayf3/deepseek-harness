@@ -20,12 +20,8 @@ import {
   agentPresetOpenDocumentValueSchema,
 } from '../api/agent-presets.schema.ts'
 import {
-  settingsDescribeValueSchema, settingsMutateValueSchema, settingsOpenDocumentValueSchema,
-  settingsReplaceValueSchema, settingsUpdateValueSchema,
+  settingsOpenDocumentValueSchema,
 } from '../api/settings.schema.ts'
-import {
-  credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
-} from '../api/credentials.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
 
 /**
@@ -52,16 +48,7 @@ export interface IApiClient {
     openDocument(payload: RequestPayload<'agentPreset.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.openDocument'>>>
   }
   settings: {
-    describe(payload: RequestPayload<'settings.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.describe'>>>
     openDocument(payload: RequestPayload<'settings.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.openDocument'>>>
-    update(payload: RequestPayload<'settings.update'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.update'>>>
-    replace(payload: RequestPayload<'settings.replace'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.replace'>>>
-    mutate(payload: RequestPayload<'settings.mutate'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.mutate'>>>
-  }
-  credentials: {
-    describe(payload: RequestPayload<'credentials.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.describe'>>>
-    set(payload: RequestPayload<'credentials.set'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.set'>>>
-    unset(payload: RequestPayload<'credentials.unset'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.unset'>>>
   }
   llm: {
     providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
@@ -79,14 +66,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'host.openPath': hostOpenPathValueSchema,
   'skill.list': skillListValueSchema,
   'agentPreset.openDocument': agentPresetOpenDocumentValueSchema,
-  'settings.describe': settingsDescribeValueSchema,
   'settings.openDocument': settingsOpenDocumentValueSchema,
-  'settings.update': settingsUpdateValueSchema,
-  'settings.replace': settingsReplaceValueSchema,
-  'settings.mutate': settingsMutateValueSchema,
-  'credentials.describe': credentialsDescribeValueSchema,
-  'credentials.set': credentialsSetValueSchema,
-  'credentials.unset': credentialsUnsetValueSchema,
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
@@ -232,17 +212,7 @@ export abstract class AbstractApiClient implements IApiClient {
   }
 
   readonly settings: IApiClient['settings'] = {
-    describe: (payload, signal) => this.callUnary('settings.describe', payload, signal),
     openDocument: (payload, signal) => this.callUnary('settings.openDocument', payload, signal),
-    update: (payload, signal) => this.callUnary('settings.update', payload, signal),
-    replace: (payload, signal) => this.callUnary('settings.replace', payload, signal),
-    mutate: (payload, signal) => this.callUnary('settings.mutate', payload, signal),
-  }
-
-  readonly credentials: IApiClient['credentials'] = {
-    describe: (payload, signal) => this.callUnary('credentials.describe', payload, signal),
-    set: (payload, signal) => this.callUnary('credentials.set', payload, signal),
-    unset: (payload, signal) => this.callUnary('credentials.unset', payload, signal),
   }
 
   readonly llm: IApiClient['llm'] = {
