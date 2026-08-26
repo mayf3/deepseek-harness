@@ -29,7 +29,9 @@ import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandDescriptor, CommandExecution, CommandResult } from '@deepseek-ai/dsh-commands/types'
+import type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
 import type { DirectoryListing as FixtureDirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
+import type { SettingsDescribeValue, SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import type {
   ApiProxy, ClientRequest,
@@ -1778,6 +1780,83 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     // DeepSeek route so unrelated GUI journeys do not enter first-run setup.
     ['DEEPSEEK_API_KEY', true],
   ])
+
+  /** Canonical fixture implementation of the generated Settings Remote contract. */
+  const settingsRemotes = {
+    // Only the resolved DeepSeek address needed by first-run readiness is
+    // represented here. Fixture-backed journeys do not open its Models editor;
+    // real schema-driven forms ride the HTTP transport.
+    describe(): RpcResult<SettingsDescribeValue> {
+      return {
+        ok: true,
+        value: {
+          writable: true,
+          hasDocument: true,
+          namespaces: [{
+            ns: 'llm-deepseek',
+            schema: {},
+            value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
+            applies: 'live',
+            secrets: [{ path: ['apiKey'], set: false }],
+            revision: 0,
+          }],
+        },
+      }
+    },
+    update(ns: string): ConnectionRpcResult<SettingsNamespaceView> {
+      return {
+        ok: false,
+        error: {
+          code: 'settings-rejected',
+          message: 'fixture: the minimal readiness settings descriptor is read-only',
+          details: { ns },
+        },
+      }
+    },
+    replace(ns: string): ConnectionRpcResult<SettingsNamespaceView> {
+      return {
+        ok: false,
+        error: {
+          code: 'settings-rejected',
+          message: 'fixture: the minimal readiness settings descriptor is read-only',
+          details: { ns },
+        },
+      }
+    },
+    mutate(ns: string): ConnectionRpcResult<SettingsNamespaceView> {
+      // A Remote failure code is free-form, unlike the unary error vocabulary.
+      return {
+        ok: false,
+        error: {
+          code: 'settings-rejected',
+          message: 'fixture: no settings namespaces are registered',
+          details: { ns },
+        },
+      }
+    },
+  }
+
+  const credentialRemotes = {
+    describe(refs: readonly string[]): RpcResult<Record<string, CredentialInfo>> {
+      return {
+        ok: true,
+        value: Object.fromEntries(refs.map(ref => [ref, {
+          configured: fixtureCredentials.has(ref),
+          ...fixtureCredentials.has(ref) ? { source: 'file' } : {},
+          writable: true,
+        }])),
+      }
+    },
+    set(ref: string): RpcResult<void> {
+      fixtureCredentials.set(ref, true)
+      return { ok: true, value: undefined }
+    },
+    unset(ref: string): RpcResult<void> {
+      fixtureCredentials.delete(ref)
+      return { ok: true, value: undefined }
+    },
+  }
+
   /**
    * Preset compositions the fixture serves. Held as state rather than
    * constants so the settings editor's save and delete are exercisable: the
@@ -3347,55 +3426,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       },
     },
     settings: {
-      // Only the resolved DeepSeek address needed by first-run readiness is
-      // represented here. Fixture-backed journeys do not open its Models
-      // editor; real schema-driven forms ride the HTTP transport.
-      describe: request => ok(request, {
-        writable: true,
-        hasDocument: true,
-        namespaces: [{
-          ns: 'llm-deepseek',
-          schema: {},
-          value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
-          applies: 'live',
-          secrets: [{ path: ['apiKey'], set: false }],
-          revision: 0,
-        }],
-      }),
       // Native opens are deterministic no-op successes in this fixture, as is host.openPath.
       openDocument: request => ok(request, { opened: true as const }),
-      update: request => err(request, {
-        code: 'settings-rejected',
-        message: 'fixture: the minimal readiness settings descriptor is read-only',
-        details: { ns: request.payload.ns },
-      }),
-      replace: request => err(request, {
-        code: 'settings-rejected',
-        message: 'fixture: the minimal readiness settings descriptor is read-only',
-        details: { ns: request.payload.ns },
-      }),
-      mutate: request => err(request, {
-        code: 'settings-rejected',
-        message: 'fixture: no settings namespaces are registered',
-        details: { ns: request.payload.ns },
-      }),
-    },
-    credentials: {
-      describe: request => ok(request, {
-        credentials: Object.fromEntries(request.payload.refs.map(ref => [ref, {
-          configured: fixtureCredentials.has(ref),
-          ...fixtureCredentials.has(ref) ? { source: 'file' } : {},
-          writable: true,
-        }])),
-      }),
-      set: (request) => {
-        fixtureCredentials.set(request.payload.ref, true)
-        return ok(request, {})
-      },
-      unset: (request) => {
-        fixtureCredentials.delete(request.payload.ref)
-        return ok(request, {})
-      },
     },
     llm: {
       providers: request => ok(request, {
@@ -3442,7 +3474,11 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           path?: string
           name?: string
           images?: readonly unknown[]
-          ref?: { id: string; revision: number }
+          // A goal ref and a credential reference name share this wire field name.
+          ref?: string | { id: string; revision: number }
+          refs?: readonly string[]
+          value?: string
+          ns?: string
           agentPreset?: string
           from?: string
           id?: string
@@ -3493,6 +3529,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           },
         })
         case 'subagents/interruptByParent': return Promise.resolve({ ok: true, value: { accepted: true } })
+        case 'credentials/describe': return Promise.resolve(credentialRemotes.describe(args.refs ?? []))
+        case 'credentials/set': return Promise.resolve(credentialRemotes.set(args.ref as string))
+        case 'credentials/unset': return Promise.resolve(credentialRemotes.unset(args.ref as string))
+        case 'settings/describe': return Promise.resolve(settingsRemotes.describe())
+        case 'settings/update': return Promise.resolve(settingsRemotes.update(args.ns as string))
+        case 'settings/replace': return Promise.resolve(settingsRemotes.replace(args.ns as string))
+        case 'settings/mutate': return Promise.resolve(settingsRemotes.mutate(args.ns as string))
         case 'session/list': return sessionApi.list(
           args._request as Parameters<FixtureSessionApi['list']>[0],
         )
@@ -3619,14 +3662,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
-      case 'settings.describe': return this.api.settings.describe(request)
       case 'settings.openDocument': return this.api.settings.openDocument(request, signal)
-      case 'settings.update': return this.api.settings.update(request)
-      case 'settings.replace': return this.api.settings.replace(request)
-      case 'settings.mutate': return this.api.settings.mutate(request)
-      case 'credentials.describe': return this.api.credentials.describe(request)
-      case 'credentials.set': return this.api.credentials.set(request)
-      case 'credentials.unset': return this.api.credentials.unset(request)
       case 'llm.providers': return this.api.llm.providers(request)
       case 'llm.models': return this.api.llm.models(request)
       case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)

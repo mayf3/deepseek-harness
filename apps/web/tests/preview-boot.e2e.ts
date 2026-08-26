@@ -317,17 +317,6 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       type Result<T> = { result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } } }
       interface PreviewApi {
         skills: { list(payload: { sessionId: string }): Promise<Result<{ skills: unknown[] }>> }
-        settings: {
-          describe(payload: object): Promise<Result<{ namespaces: Array<{ ns: string; revision: number }> }>>
-          update(payload: { ns: string; patch: object; expectedRevision: number }): Promise<Result<unknown>>
-        }
-        credentials: {
-          set(payload: { ref: string; value: string }): Promise<Result<unknown>>
-          unset(payload: { ref: string }): Promise<Result<unknown>>
-          describe(payload: { refs: string[] }): Promise<Result<{
-            credentials: Record<string, { configured: boolean }>
-          }>>
-        }
       }
       interface PreviewTransport {
         fetch(input: string, init: RequestInit): Promise<Response>
@@ -373,22 +362,44 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
         if (!refreshed.result.ok) throw new Error(`skill.list refresh failed: ${refreshed.result.error.message}`)
       }
       await createDirectory('/dsh/workspace/.agents/skills', 'runtime-created')
-      const settings = await api.settings.describe({})
-      if (!settings.result.ok) throw new Error(`settings.describe failed: ${settings.result.error.message}`)
-      const shell = settings.result.value.namespaces.find(namespace => namespace.ns === 'shell')
-      if (shell === undefined) throw new Error('settings.describe omitted the shell namespace')
-      const updated = await api.settings.update({ ns: 'shell', patch: { timeoutMs: 61_000 }, expectedRevision: shell.revision })
-      if (!updated.result.ok) throw new Error(`settings.update failed: ${updated.result.error.message}`)
-      const stored = await api.credentials.set({ ref: 'PREVIEW_TEST_SECRET', value: 'worker-only' })
-      if (!stored.result.ok) throw new Error(`credentials.set failed: ${stored.result.error.message}`)
-      const credentials = await api.credentials.describe({ refs: ['PREVIEW_TEST_SECRET'] })
-      if (!credentials.result.ok) throw new Error(`credentials.describe failed: ${credentials.result.error.message}`)
-      const removed = await api.credentials.unset({ ref: 'PREVIEW_TEST_SECRET' })
-      if (!removed.result.ok) throw new Error(`credentials.unset failed: ${removed.result.error.message}`)
+      // Settings and credentials both answer over the Remote carrier, so this
+      // half of the sweep posts the generated endpoints directly like the
+      // session read above.
+      const remote = async <T>(endpoint: string, args: object): Promise<T> => {
+        const answered = await transport.fetch(`/api/${endpoint}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            type: 'client-request',
+            rpcId: `preview-${endpoint.replace('/', '-')}`,
+            method: endpoint,
+            payload: { args },
+          }),
+        })
+        const body = await answered.json() as Result<T>
+        if (!body.result.ok) throw new Error(`${endpoint} failed: ${body.result.error.message}`)
+        return body.result.value
+      }
+      const settings = await remote<{ namespaces: { ns: string; revision: number }[] }>(
+        'settings/describe', {},
+      )
+      const shell = settings.namespaces.find(namespace => namespace.ns === 'shell')
+      if (shell === undefined) throw new Error('settings/describe omitted the shell namespace')
+      await remote('settings/update', {
+        ns: 'shell',
+        patch: { timeoutMs: 61_000 },
+        expectedRevision: shell.revision,
+      })
+      await remote('credentials/set', { ref: 'PREVIEW_TEST_SECRET', value: 'worker-only' })
+      const credentials = await remote<Record<string, { configured: boolean }>>(
+        'credentials/describe',
+        { refs: ['PREVIEW_TEST_SECRET'] },
+      )
+      await remote('credentials/unset', { ref: 'PREVIEW_TEST_SECRET' })
       await new Promise((resolve) => { setTimeout(resolve, 250) })
       return {
         skillCount: skills.result.value.skills.length,
-        credentialConfigured: credentials.result.value.credentials.PREVIEW_TEST_SECRET?.configured,
+        credentialConfigured: credentials.PREVIEW_TEST_SECRET?.configured,
       }
     })
     expect(exercised.skillCount).toBeGreaterThan(0)
