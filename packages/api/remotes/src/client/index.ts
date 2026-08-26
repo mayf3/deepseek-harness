@@ -53,7 +53,7 @@ export type {} from '@deepseek-ai/dsh-api-session-controller/types'
  */
 export type {
   ConfigurableProviderView, ConnectionHandle, ConnectionSinks, ContentBlock,
-  CredentialView, DirectoryListing, DiscoveredModelView, IApiClient,
+  CredentialView, DiscoveredModelView, IApiClient,
   MessageId, ModelCatalog, ModelCatalogFailure, ModelProviderGroup, ModelReasoningEffort, ModelSelection,
   RpcError, RpcId, RpcRequest, RpcResponse, RpcResult, SessionId,
   SettingsNamespaceView, SettingsPathOpView, SkillEntry, StreamChunk,

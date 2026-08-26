@@ -17,8 +17,9 @@ import {
   type FixtureOptions,
 } from '../src/client/fixture.ts'
 import type {
-  ClientConnectionRpc,
+  ClientConnectionRpc, ConnectionRpcResult,
 } from '../src/rpc.ts'
+import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 
 const sid = (id: string): SessionId => id as SessionId
 type WorkspaceId = string & { readonly __fixtureWorkspaceId: 'WorkspaceId' }
@@ -286,6 +287,12 @@ interface FixtureRemoteEventStream extends AsyncIterable<FixtureRemoteEventFrame
 }
 
 type FixtureTestApi = ReturnType<typeof createFixtureFaces>['api'] & {
+  /** The directory-picking Remote namespace as the fixture serves it. */
+  readonly directoryPickerRemote: {
+    pick: () => Promise<ConnectionRpcResult<string | null>>
+    list: (path?: string) => Promise<ConnectionRpcResult<DirectoryListing>>
+    createDirectory: (path: string, name: string) => Promise<ConnectionRpcResult<string>>
+  }
   readonly sessions: FixtureSessionApi
   readonly sessionRemote: FixtureSessionRemote
   readonly workspace: FixtureWorkspaceApi
@@ -298,6 +305,15 @@ type FixtureTestApi = ReturnType<typeof createFixtureFaces>['api'] & {
 function createFixtureApi(options: FixtureOptions = {}): FixtureTestApi {
   const { api, rpc } = createFixtureFaces(options)
   return Object.assign(api, {
+    directoryPickerRemote: {
+      pick: () => rpc.call('/api', 'directoryPicker/pick', { args: {} }) as
+        Promise<ConnectionRpcResult<string | null>>,
+      list: (path?: string) => rpc.call('/api', 'directoryPicker/list', { args: { path } }) as
+        Promise<ConnectionRpcResult<DirectoryListing>>,
+      createDirectory: (path: string, name: string) =>
+        rpc.call('/api', 'directoryPicker/createDirectory', { args: { path, name } }) as
+          Promise<ConnectionRpcResult<string>>,
+    },
     sessions: createSessionApi(rpc),
     sessionRemote: createSessionRemote(rpc),
     workspace: createWorkspaceApi(rpc),
@@ -1049,18 +1065,18 @@ describe('createFixtureApi', () => {
 
   it('createDirectory under the root mints /name whose listing and crumbs share the identity', async () => {
     const api = createFixtureApi()
-    const created = await api.host.createDirectory(req({ path: '/', name: 'srv' }))
-    if (!created.result.ok) throw new Error('create failed')
-    expect(created.result.value.path).toBe('/srv')
-    const listed = await api.host.listDirectory(req({ path: '/srv' }), new AbortController().signal)
-    if (!listed.result.ok) throw new Error('list failed')
-    expect(listed.result.value.crumbs).toEqual([
+    const created = await api.directoryPickerRemote.createDirectory('/', 'srv')
+    if (!created.ok) throw new Error('create failed')
+    expect(created.value).toBe('/srv')
+    const listed = await api.directoryPickerRemote.list('/srv')
+    if (!listed.ok) throw new Error('list failed')
+    expect(listed.value.crumbs).toEqual([
       { name: '/', path: '/', hidden: false },
       { name: 'srv', path: '/srv', hidden: false },
     ])
-    const root = await api.host.listDirectory(req({ path: '/' }), new AbortController().signal)
-    if (!root.result.ok) throw new Error('root list failed')
-    expect(root.result.value.entries).toContainEqual({ name: 'srv', path: '/srv', hidden: false })
+    const root = await api.directoryPickerRemote.list('/')
+    if (!root.ok) throw new Error('root list failed')
+    expect(root.value.entries).toContainEqual({ name: 'srv', path: '/srv', hidden: false })
   })
 
   it('workspace/follow serves the resident baseline and create reuses on path collision', async () => {
