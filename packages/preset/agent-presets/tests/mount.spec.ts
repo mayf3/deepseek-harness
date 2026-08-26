@@ -412,6 +412,7 @@ describe('a roster with no base to resolve from', () => {
     // exactly the failure the check exists to report.
     const baseless = new Context()
     await baseless.plugin(Loader)
+    await baseless.plugin(SessionProjectionRegistry)
 
     await expect(baseless.plugin(AgentPresets, {
       default: 'standard', roots: ROOTS, includeShippedRoot: false, includeUserRoot: false,
