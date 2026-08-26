@@ -7,6 +7,11 @@
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 
+/** Payload recorded when one nested PTC mode Tool dispatch starts. */
+export interface PtcDispatchStartEventData {
+  rootCallId: ToolCallId
+  parentCallId: ToolCallId
+  subCallId: ToolCallId
   name: string
   arguments: unknown
 }
