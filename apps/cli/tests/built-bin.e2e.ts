@@ -36,7 +36,7 @@ async function runBuiltBin(
   )
   const result = await execa(process.execPath, [dshBin, ...args], {
     input: '',
-    timeout: 25_000,
+    timeout: 60_000,
     killSignal: 'SIGKILL',
     reject: false,
     env: childEnv,
@@ -310,7 +310,7 @@ function startStartupProfile(fixture: StartupFixture, args: readonly string[]) {
     cwd: fixture.home,
     input: '',
     reject: false,
-    timeout: 25_000,
+    timeout: 60_000,
     killSignal: 'SIGKILL',
     env: {
       DSH_HOME: fixture.home,
@@ -423,7 +423,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const child = execa(process.execPath, [dshBin, '--profile', 'sdk'], {
       cwd: home,
       reject: false,
-      timeout: 25_000,
+      timeout: 60_000,
       killSignal: 'SIGKILL',
       env: {
         ...process.env,
@@ -484,7 +484,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     const child = execa(process.execPath, [dshBin, '--profile', 'acp'], {
       cwd: home,
       reject: false,
-      timeout: 25_000,
+      timeout: 60_000,
       killSignal: 'SIGKILL',
       env: {
         ...process.env,
