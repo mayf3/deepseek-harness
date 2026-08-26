@@ -46,6 +46,7 @@ function policy(fields: Partial<PackageDependencyPolicy> = {}): PackageDependenc
     clientFaceInclude: [],
     clientFaceExclude: [],
     hostPackages: [],
+    configurationOnlyDevDependencies: {},
     safeHostDependencyExports: {},
     peerRequiredHostExports: {},
     ...fields,
@@ -95,6 +96,18 @@ describe('package dependency scope', () => {
       '@deepseek-ai/dsh-llm',
       '@deepseek-ai/dsh-session',
     ])
+    expect(PACKAGE_DEPENDENCY_POLICY.configurationOnlyDevDependencies).toEqual({
+      '@deepseek-ai/dsh-client-locale': ['@deepseek-ai/dsh-api-remotes'],
+      '@deepseek-ai/dsh-client-ui-conversation': [
+        '@deepseek-ai/dsh-api-remotes',
+        '@deepseek-ai/dsh-client-ui-workspace',
+      ],
+      '@deepseek-ai/dsh-client-ui-model-selection': ['@deepseek-ai/dsh-client-ui-input-trigger'],
+      '@deepseek-ai/dsh-client-ui-sidebar': ['@deepseek-ai/dsh-client-ui-workspace'],
+      '@deepseek-ai/dsh-client-ui-subagent': ['@deepseek-ai/dsh-client-ui-input-trigger'],
+      '@deepseek-ai/dsh-client-ui-theme': ['@deepseek-ai/dsh-api-remotes'],
+      '@deepseek-ai/dsh-client-ui-tool': ['@deepseek-ai/dsh-api-remotes'],
+    })
     expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/schemastery']).toEqual(['default'])
     expect(PACKAGE_DEPENDENCY_POLICY.peerRequiredHostExports['@deepseek-ai/dsh-scope']).toEqual([
       'carrierKeyOf', 'scopeOf', 'scopeTarget',
@@ -219,7 +232,6 @@ describe('face-aware source classification', () => {
       mkdirSync(dirname(join(root, path)), { recursive: true })
       writeFileSync(join(root, path), source)
     }
-
     const found = readPackageDependencyFacts(root, subject, 'client-host', new Set([
       CORDIS, '@f/runtime', '@f/types', '@f/nested', '@f/hidden', '@f/browser', '@f/injected',
     ]))

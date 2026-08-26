@@ -1,8 +1,10 @@
 /** Verify and repair npm dependency sections from published Client and Host faces. */
 
+import { spawnSync } from 'node:child_process'
 import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
 import ts from 'typescript'
+import { writeModuleGraph } from './gen-module-graph.ts'
 import {
   hasClientDeclaration,
   PACKAGE_DEPENDENCY_POLICY,
@@ -439,6 +441,7 @@ export function readPackageDependencyState(
 /** Derive the required npm section for each relationship owned by the policy. */
 export function expectedPackageDependencies(
   facts: PackageDependencyFacts,
+  policy: PackageDependencyPolicy = PACKAGE_DEPENDENCY_POLICY,
 ): ReadonlyMap<string, ExpectedPackageDependency> {
   const expected = new Map<string, { section: ExpectedPackageDependency['section']; origins: Set<string> }>()
   const add = (name: string, sectionName: ExpectedPackageDependency['section'], origin: string): void => {
@@ -459,6 +462,12 @@ export function expectedPackageDependencies(
   }
   for (const name of facts.clientInject) {
     if (facts.workspaceNames.has(name)) add(name, 'devDependencies', 'dsh.client.inject')
+  }
+  for (const name of PACKAGE_DEPENDENCY_POLICY.configurationOnlyDevDependencies[facts.manifest.name ?? ''] ?? []) {
+    if (facts.workspaceNames.has(name)) add(name, 'devDependencies', 'configured development-only relationship')
+  }
+  for (const name of policy.configurationOnlyDevDependencies[facts.manifest.name ?? ''] ?? []) {
+    if (facts.workspaceNames.has(name)) add(name, 'devDependencies', 'configured development-only relationship')
   }
   for (const name of Object.keys(facts.manifest.peerDependencies ?? {})) {
     if (name !== CORDIS) add(name, 'devDependencies', 'existing non-Cordis peer')
@@ -665,6 +674,16 @@ export function fixPackageDependencies(root: string, state: PackageDependencySta
   return changed.sort()
 }
 
+function refreshPnpmLockfile(root: string): void {
+  const result = spawnSync(
+    'pnpm',
+    ['install', '--lockfile-only', '--ignore-scripts', '--no-frozen-lockfile'],
+    { cwd: root, shell: process.platform === 'win32', stdio: 'inherit' },
+  )
+  if (result.error !== undefined) throw new Error(`could not refresh pnpm-lock.yaml: ${result.error.message}`)
+  if (result.status !== 0) throw new Error(`pnpm lockfile refresh exited with status ${String(result.status)}`)
+}
+
 function main(): void {
   const root = resolve(import.meta.dirname, '..')
   let state = readPackageDependencyState(root)
@@ -675,6 +694,11 @@ function main(): void {
     } else {
       const changed = fixPackageDependencies(root, state)
       console.log(`${GATE}: fixed ${String(changed.length)} manifest(s).`)
+      refreshPnpmLockfile(root)
+      const graphChanges = writeModuleGraph(root)
+      console.log(
+        `${GATE}: refreshed pnpm-lock.yaml and wrote ${String(graphChanges.length)} module-graph artifact(s).`,
+      )
       state = readPackageDependencyState(root)
     }
   }

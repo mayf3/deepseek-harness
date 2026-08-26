@@ -28,6 +28,8 @@ A workspace package reached by a runtime value import from the Host entry closur
 
 Workspace imports used by the Client bundle, type-only imports, module augmentations, `dsh.client.inject`, invariant companions, and existing metadata-only peers belong only in `devDependencies`. Existing third-party dependencies outside these managed relationships keep their declared section. Workspace references use `workspace:^`.
 
+Some development relationships exist only in `dsh.client.inject` or TypeScript project references. The policy's `configurationOnlyDevDependencies` table names only those reviewed edges and keeps them in `devDependencies`.
+
 The verifier reads source manifests and source files, so it runs on a clean tree without built `lib/`. An unclassified Host runtime export is a policy violation that blocks all `--fix` writes; a maintainer must review the export and classify it, change the source relationship, or change the package selection. Once source safety passes, `--fix` performs only the section and range changes implied by the classification and removes stale peer metadata.
 
 ### Maintainer workflow
@@ -40,12 +42,11 @@ pnpm run verify-package-dependencies
 
 Classify each new Host runtime export in [`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) before generating manifests. `safeHostDependencyExports` permits an ordinary dependency; `peerRequiredHostExports` keeps the whole provider package edge in matching peer and development sections. An export may appear in exactly one table. After refactoring a peer-required export so duplicate package copies are safe, move that exact specifier and export to the safe table; an edge becomes an ordinary dependency only after none of its imported exports remain peer-required.
 
-Generate managed manifest sections, refresh the lockfile separately, and review both results. `--fix` writes nothing while a policy violation exists; after success it prints the ordinary-dependency and peer-required edge lists, but does not update the lockfile.
+Generate the managed manifests and every directly derived artifact with one command. `--fix` writes nothing while a policy violation exists; after success it refreshes `pnpm-lock.yaml`, regenerates both module-graph languages and their pairing record, and prints the ordinary-dependency and peer-required edge lists.
 
 ```sh
 pnpm run verify-package-dependencies -- --fix
-pnpm install --lockfile-only
-git diff -- packages pnpm-lock.yaml
+git diff -- packages pnpm-lock.yaml docs/module-graph.md docs/module-graph.zh.md docs/module-graph.i18n.yaml
 ```
 
 Measure the working-tree graph and a Git ref through the local metadata-only registry. Each run creates a fresh consumer and npm cache, executes `npm install --package-lock-only`, rejects archive downloads, and leaves the repository unchanged. `--runs` controls repetitions, `--timeout-ms` bounds each run, and optional `--max-ms` makes the command fail when the slowest run exceeds a threshold.

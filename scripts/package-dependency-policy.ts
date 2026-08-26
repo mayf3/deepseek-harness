@@ -15,6 +15,20 @@ const HOST_DEPENDENCY_PACKAGES: readonly string[] = [
   '@deepseek-ai/dsh-session',
 ]
 
+/** Development-only package relationships not represented by source imports. */
+const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
+  '@deepseek-ai/dsh-client-locale': ['@deepseek-ai/dsh-api-remotes'],
+  '@deepseek-ai/dsh-client-ui-conversation': [
+    '@deepseek-ai/dsh-api-remotes',
+    '@deepseek-ai/dsh-client-ui-workspace',
+  ],
+  '@deepseek-ai/dsh-client-ui-model-selection': ['@deepseek-ai/dsh-client-ui-input-trigger'],
+  '@deepseek-ai/dsh-client-ui-sidebar': ['@deepseek-ai/dsh-client-ui-workspace'],
+  '@deepseek-ai/dsh-client-ui-subagent': ['@deepseek-ai/dsh-client-ui-input-trigger'],
+  '@deepseek-ai/dsh-client-ui-theme': ['@deepseek-ai/dsh-api-remotes'],
+  '@deepseek-ai/dsh-client-ui-tool': ['@deepseek-ai/dsh-api-remotes'],
+} as const satisfies Readonly<Record<string, readonly string[]>>
+
 /**
  * Runtime exports whose values remain valid when npm installs another package copy.
  */
@@ -47,6 +61,7 @@ export interface PackageDependencyPolicy {
   readonly clientFaceInclude: readonly string[]
   readonly clientFaceExclude: readonly string[]
   readonly hostPackages: readonly string[]
+  readonly configurationOnlyDevDependencies: Readonly<Record<string, readonly string[]>>
   readonly safeHostDependencyExports: HostDependencyExports
   readonly peerRequiredHostExports: HostDependencyExports
 }
@@ -56,6 +71,7 @@ export const PACKAGE_DEPENDENCY_POLICY: PackageDependencyPolicy = {
   clientFaceInclude: CLIENT_FACE_INCLUDE,
   clientFaceExclude: CLIENT_FACE_EXCLUDE,
   hostPackages: HOST_DEPENDENCY_PACKAGES,
+  configurationOnlyDevDependencies: CONFIGURATION_ONLY_DEV_DEPENDENCIES,
   safeHostDependencyExports: SAFE_HOST_DEPENDENCY_EXPORTS,
   peerRequiredHostExports: PEER_REQUIRED_HOST_EXPORTS,
 }

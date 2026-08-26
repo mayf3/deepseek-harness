@@ -28,6 +28,8 @@ Host 入口闭包中的运行期 value import 所到达的 workspace 包，只�
 
 Client bundle 使用的 workspace import、纯类型 import、模块扩充、`dsh.client.inject`、invariant companion 和仅有元数据的现存 peer 只属于 `devDependencies`。不属于这些受管关系的现有第三方 dependency 保持原区段。Workspace 引用使用 `workspace:^`。
 
+部分开发期关系只存在于 `dsh.client.inject` 或 TypeScript project reference 中。策略的 `configurationOnlyDevDependencies` 表只列出这些已评审的依赖边，并将它们保留在 `devDependencies` 中。
+
 验证器读取源码 manifest 和源码文件，因此可以在没有已构建 `lib/` 的干净工作树上运行。未分类的 Host 运行期导出属于策略违规，会阻止 `--fix` 的全部写入；维护者必须审查该导出，并选择分类该导出、修改源码关系或修改选包范围。源码安全检查通过后，`--fix` 只执行分类所确定的区段与范围变更，并删除失效的 peer 元数据。
 
 ### 维护流程
@@ -40,12 +42,11 @@ pnpm run verify-package-dependencies
 
 生成 manifest 前，在 [`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) 中分类每个新增 Host 运行期导出。`safeHostDependencyExports` 允许普通 dependency；`peerRequiredHostExports` 让整个提供包依赖边保留在范围一致的 peer 与开发区段。一个导出只能出现在一个表中。把 peer-required 导出重构到重复安装安全后，将该精确 specifier 与导出移入 safe 表；只有当一条依赖边的所有 import 都不再使用 peer-required 导出时，它才会成为普通 dependency。
 
-生成受管 manifest 区段后，单独刷新 lockfile，并审查两部分结果。存在策略违规时，`--fix` 不写任何文件；成功后，它会分别打印普通 dependency 与 peer-required 依赖边，但不会更新 lockfile。
+用一条命令生成受管 manifest 和所有直接派生产物。存在策略违规时，`--fix` 不写任何文件；成功后，它会刷新 `pnpm-lock.yaml`、重新生成中英文 module graph 及其配对记录，并打印普通 dependency 与 peer-required 依赖边。
 
 ```sh
 pnpm run verify-package-dependencies -- --fix
-pnpm install --lockfile-only
-git diff -- packages pnpm-lock.yaml
+git diff -- packages pnpm-lock.yaml docs/module-graph.md docs/module-graph.zh.md docs/module-graph.i18n.yaml
 ```
 
 通过仅 metadata 的本地 registry 测量工作树依赖图与 Git ref。每轮都会创建全新 consumer 与 npm cache，执行 `npm install --package-lock-only`，拒绝下载包归档，并保持仓库不变。`--runs` 控制重复次数，`--timeout-ms` 限制单轮耗时，可选 `--max-ms` 会在最慢一轮超过阈值时让命令失败。
