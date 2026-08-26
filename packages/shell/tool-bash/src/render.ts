@@ -63,6 +63,24 @@ export function renderResult(
 }
 
 /**
+ * Shape a timeout promotion into the text the model sees: the output captured
+ * so far (one consuming read taken at the promotion point, so `job_output`
+ * continues exactly after it), then the still-running marker and the job
+ * hand-off guidance.
+ * @param promoted - the promoted result value: the new job id, the effective
+ *   timeout that expired, and the pre-promotion output.
+ * @returns the model-facing text for a promoted call.
+ */
+export function renderPromoted(promoted: { jobId: string; timeoutMs: number; output: string }): string {
+  const body = promoted.output.length > 0
+    ? promoted.output.endsWith('\n') ? promoted.output : `${promoted.output}\n`
+    : ''
+  return `${body}[still running after ${promoted.timeoutMs}ms; moved to background job ${promoted.jobId}]\n`
+    + 'The command keeps running in the background. You will be notified when it finishes; '
+    + 'read newer output with job_output, stop it with job_kill.'
+}
+
+/**
  * Shape one background-process read into the `job_output` delta the model
  * sees: the incremental delta, plus the lossy-read notice (with full-stream
  * spill paths) when in-memory truncation dropped unread bytes. Empty-delta

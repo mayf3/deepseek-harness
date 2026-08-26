@@ -57,16 +57,16 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Running commands
 
-Run a command with `run` and read its output from the result; a nonzero exit, a timeout, or a cancellation resolves descriptively, and only infrastructure failures reject. The command string rides as one argument to `-Command`: PowerShell parses the text itself and no intermediate shell exists, so there is no shell-quoting layer to escape and native Win32 paths pass through unchanged. Every command pins UTF-8 output first, so non-ASCII output is not garbled even on the Windows PowerShell 5.1 fallback. The environment is model-friendly: `NO_COLOR=1 PAGER=cat GIT_PAGER=cat` (no `TERM=dumb` — a POSIX concept), with explicit caller-provided entries still winning.
+Run a command by awaiting the execution's `result()` projection; a nonzero exit, a timeout, or a cancellation resolves descriptively, and only infrastructure failures reject. The command string rides as one argument to `-Command`: PowerShell parses the text itself and no intermediate shell exists, so there is no shell-quoting layer to escape and native Win32 paths pass through unchanged. Every command pins UTF-8 output first, so non-ASCII output is not garbled even on the Windows PowerShell 5.1 fallback. The environment is model-friendly: `NO_COLOR=1 PAGER=cat GIT_PAGER=cat` (no `TERM=dumb` — a POSIX concept), with explicit caller-provided entries still winning.
 
 ```text
-const result = await ctx.shell.run(ctx.shell.resolve({ command: 'Get-ChildItem' }))
+const result = await ctx.shell.execute(ctx.shell.resolve({ command: 'Get-ChildItem' })).result()
 if (result.timedOut) console.log('timed out after', result.timeoutMs)
 ```
 
 ### Background processes
 
-Call `start` to run a command in the background; it returns a handle immediately and no timeout applies. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` stops the process tree; `done` settles when the process closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
+Resolve with `onExpiry: 'none'` and keep the handle to run a command in the background; no deadline is armed. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` stops the process tree; `done` settles when the process closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
 
 <a id="adjusting-budgets-at-runtime"></a>
 ### Adjusting budgets at runtime

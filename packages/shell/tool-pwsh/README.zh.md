@@ -53,6 +53,10 @@ kind: "package-reference"
 
 工具执行 `pwsh -Command <command>` 并返回合并后的输出。命令每次调用都运行在全新 pwsh 进程中，因此状态从不保留——请传 `workdir` 而不是 `cd`。路径使用原生 Windows 形式，环境变量用 `$env:NAME` 读取。非零退出以 `[exit code: N]` 报告；在 Windows 上，强制终止的命令以 `[exit code: 1]` 结算且没有信号标记，因此 agent 把中断后的裸 exit 1 当作终止而非命令失败。后台运行、输出截断以及 `description`／`timeoutMs`／`workdir` 参数的行为与 `dsh-tool-bash` 完全一致。
 
+### 超时转后台
+
+到达超时的前台命令默认不再被杀：执行器把仍在运行的进程交还回来，工具将它注册为后台任务，调用带着任务 id 与已捕获的输出返回——任务的消费游标恰好从此处接续。转移结果呈现为 `[still running after <timeoutMs>ms; moved to background job <id>]` 加任务交接指引，该运行也像任何后台调用一样镜像进 `ctx.activities`，Web 任务列表随即可流式观看（含停止控件）。转移严格尽力而为：`promoteOnTimeout: false`、缺少任务注册表或任务准入被拒都会回落到普通的超时杀，工具描述也只在语义成立时才宣传它。
+
 ### Windows 特有的沙箱行为
 
 在沙箱执行器下，被拒绝的命令会报告 `[sandbox: file access denied under <mode> mode]`，并适用相同的单次升权路径：用 `sandbox_permissions` 加一句 `justification`，经用户审批后重试完全相同的命令一次。工具还会在其描述中教授两条 Windows 受限令牌约定：只读 pwsh 运行在 ConstrainedLanguage 中（`.NET` 静态调用、`Add-Type`、COM 与反射会以 "only core types" 错误失败）；两种受限模式下程序都无法打开命名管道，因此通过管道 stdio 捕获另一程序输出的命令会以 EPERM 失败——请升权该确切命令一次，或重构命令以避免捕获输出。

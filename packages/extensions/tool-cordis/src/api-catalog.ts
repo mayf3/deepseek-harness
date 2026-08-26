@@ -1864,25 +1864,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'shell',
     summary: 'Abstract bash execution service.',
-    description: 'Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.\n- start returns immediately; no timeout applies to background processes. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on stderr.\n- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.\n- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.',
+    description: 'Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nThere is one way to execute: execute spawns the process and returns its live handle. "Foreground" is a property of what the caller awaits, not of the spawn — a caller that awaits ShellExecution.result ran the command in the foreground; one that keeps the handle ran it in the background; one that awaits ShellExecution.promotion under `onExpiry: \'offer\'` decides at the deadline.\n\nImplementations must honor these semantics:\n\n- ShellExecution.result rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a descriptive result: first-cause `timedOut`/`aborted`, the spec\'s `timeoutMs` echoed.\n- The handle is live immediately. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on the read path, while `result()` carries the same failure as its rejection.\n- `onExpiry: \'none\'` arms no deadline; `\'kill\'` kills at expiry; `\'offer\'` resolves ShellExecution.promotion instead of killing, and an unanswered offer is treated as declined.\n- ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.\n- A still-running process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a process survives an executor-only reload.',
     methods: [
       {
         signature: 'abstract resolve(request: ShellExecRequest): ShellExecSpec',
         description: 'Apply implementation-owned defaults and caps to a request before execution.',
         parameters: [{ name: 'request', description: 'the caller\'s request; omitted fields get this implementation\'s defaults, capped fields are clamped.' }],
-        returns: 'the fully-specified spec to hand to {@link run}/{@link start}.',
+        returns: 'the fully-specified spec to hand to {@link execute}.',
       },
       {
-        signature: 'abstract run(spec: ShellExecSpec): Promise<ShellRunResult>',
-        description: 'Run a command in the foreground; resolves when it finishes.',
+        signature: 'abstract execute(spec: ShellExecSpec): ShellExecution',
+        description: 'Spawn the command and return its live execution handle immediately.',
         parameters: [{ name: 'spec', description: 'a resolved spec from {@link resolve}, never a raw request.' }],
-        returns: 'the outcome; nonzero exits, timeout kills, and abort kills resolve with a descriptive result rather than reject.',
-      },
-      {
-        signature: 'abstract start(spec: ShellExecSpec): ShellProcess',
-        description: 'Start a background process and return its handle immediately.',
-        parameters: [{ name: 'spec', description: 'a resolved spec from {@link resolve}, never a raw request.' }],
-        returns: 'the live process handle (reads, kill, quiescence promise).',
+        returns: 'the handle: the live process plus its foreground `result()` projection and the deadline\'s `promotion` signal.',
       },
     ],
   },
@@ -5045,11 +5039,19 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ShellExecRequest',
-    declaration: 'export interface ShellExecRequest {\n    command: string;\n    workdir?: string | undefined;\n    timeoutMs?: number | undefined;\n    stdoutMaxBytes?: number | undefined;\n    signal?: AbortSignal | undefined;\n    stdin?: string | undefined;\n    env?: Record<string, string> | undefined;\n    dshEnv?: DshEnvironment | undefined;\n    sandboxPolicy?: SandboxExecutionPolicy | undefined;\n}',
+    declaration: 'export interface ShellExecRequest {\n    command: string;\n    workdir?: string | undefined;\n    timeoutMs?: number | undefined;\n    onExpiry?: ShellExpiryPolicy | undefined;\n    stdoutMaxBytes?: number | undefined;\n    signal?: AbortSignal | undefined;\n    stdin?: string | undefined;\n    env?: Record<string, string> | undefined;\n    dshEnv?: DshEnvironment | undefined;\n    sandboxPolicy?: SandboxExecutionPolicy | undefined;\n}',
   },
   {
     name: 'ShellExecSpec',
-    declaration: 'export interface ShellExecSpec {\n    command: string;\n    workdir: string;\n    timeoutMs: number;\n    stdoutMaxBytes: number;\n    signal?: AbortSignal | undefined;\n    stdin?: string | undefined;\n    env?: Record<string, string> | undefined;\n    dshEnv?: DshEnvironment | undefined;\n    sandboxPolicy: SandboxExecutionPolicy | undefined;\n}',
+    declaration: 'export interface ShellExecSpec {\n    command: string;\n    workdir: string;\n    timeoutMs: number;\n    onExpiry: ShellExpiryPolicy;\n    stdoutMaxBytes: number;\n    signal?: AbortSignal | undefined;\n    stdin?: string | undefined;\n    env?: Record<string, string> | undefined;\n    dshEnv?: DshEnvironment | undefined;\n    sandboxPolicy: SandboxExecutionPolicy | undefined;\n}',
+  },
+  {
+    name: 'ShellExecution',
+    declaration: 'export interface ShellExecution extends ShellProcess {\n    result(): Promise<ShellRunResult>;\n    promotion: Promise<ShellPromotionOffer | undefined>;\n}',
+  },
+  {
+    name: 'ShellExpiryPolicy',
+    declaration: 'export type ShellExpiryPolicy = \'kill\' | \'offer\' | \'none\';',
   },
   {
     name: 'ShellObservedStreams',
@@ -5066,6 +5068,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ShellProcessStatus',
     declaration: 'export type ShellProcessStatus = \'running\' | \'completed\' | \'killed\';',
+  },
+  {
+    name: 'ShellPromotionOffer',
+    declaration: 'export interface ShellPromotionOffer {\n    accept(): void;\n    decline(): void;\n}',
   },
   {
     name: 'ShellRunResult',

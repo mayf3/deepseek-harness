@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalActivityRegistry from '@deepseek-ai/dsh-activity-local'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import type { WorkflowRun, WorkflowRunId, WorkflowRunInfo } from '@deepseek-ai/dsh-workflow'
 import { createWorkflowActivityMirror } from '../src/activity.ts'
 
@@ -43,6 +46,26 @@ describe('workflow activity mirror', () => {
     // The always-run abandon after a normal finish is inert.
     mirror.abandon(run.id)
     expect(ctx.activities.get(row!.id).status).toBe('completed')
+  })
+
+  it('opens an owned run under the owning agent session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalActivityRegistry)
+    const owner = {
+      id: SessionId('workflow-owner'),
+      session: { id: SessionId('workflow-owner') },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    const mirror = createWorkflowActivityMirror(ctx)
+    const { run } = runStub('run-owned')
+    mirror.start(run, owner)
+    // The owned row is fenced to its owner's view.
+    const row = ctx.activities.list(owner)[0]
+    expect(row?.ownerSession).toBe(owner.id)
+    mirror.finish(run.id, 'completed')
   })
 
   it('maps cancelled and error stops, and ends an abandoned run as killed', async () => {

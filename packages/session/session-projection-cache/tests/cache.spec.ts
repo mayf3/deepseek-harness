@@ -201,8 +201,11 @@ describe('SessionProjectionCache write policy', () => {
     mark(session, ['slow'])
     await new Promise(resolve => setTimeout(resolve, 10)) // before the interval
     expect((await storedRows(root, session.id))?.['cache-test/marks']?.seq).toBe(-1) // still the creation cut
-    await settle() // past the interval; the fire-and-forget write lands
-    expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['slow'] })
+    // Poll past the interval: coarse platform timers (Windows) may fire the
+    // 20ms callback well after a fixed sleep, so wait for the write itself.
+    await vi.waitFor(async () => {
+      expect((await storedRows(root, session.id))?.['cache-test/marks']?.val).toEqual({ marks: ['slow'] })
+    }, { timeout: 5_000 })
   })
 
   it('write() on a never-dirty session checkpoints directly and rejects a non-JSON unit state', async () => {

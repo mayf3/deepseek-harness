@@ -5,10 +5,10 @@ import type { RunHookOptions } from '@deepseek-ai/dsh-hook-protocol'
 
 /**
  * A minimal stand-in for the bits of {@link ShellExecutor} that {@link runHook}
- * actually calls (`resolve` then `run`). `runHook` is pure plumbing over those
- * two methods, so a duck-typed recorder is the right test hook — the REAL
- * executor (dsh-bash-local) is exercised end-to-end by the hook-bridge plugins
- * that consume this library, not here.
+ * actually calls (`resolve` then `execute().result()`). `runHook` is pure
+ * plumbing over those two methods, so a duck-typed recorder is the right test
+ * hook — the REAL executor (dsh-bash-local) is exercised end-to-end by the
+ * hook-bridge plugins that consume this library, not here.
  */
 function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
   bash: ShellExecutor
@@ -23,6 +23,7 @@ function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
         command: request.command,
         workdir: request.workdir ?? '/stub',
         timeoutMs: request.timeoutMs ?? 0,
+        onExpiry: request.onExpiry ?? 'kill',
         stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
         ...request.signal ? { signal: request.signal } : {},
         ...request.stdin !== undefined ? { stdin: request.stdin } : {},
@@ -30,9 +31,9 @@ function recordingBash(run: (spec: ShellExecSpec) => Promise<ShellRunResult>): {
         sandboxPolicy: request.sandboxPolicy,
       }
     },
-    async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+    execute(spec: ShellExecSpec): { result(): Promise<ShellRunResult> } {
       specs.push(spec)
-      return run(spec)
+      return { result: () => run(spec) }
     },
   } as unknown as ShellExecutor
   return { bash, specs }

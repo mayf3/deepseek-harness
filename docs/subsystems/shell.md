@@ -27,6 +27,8 @@ interface ShellExecRequest {
   workdir?: string | undefined
   /** Timeout override in milliseconds (implementations cap it). */
   timeoutMs?: number | undefined
+  /** Deadline policy at `timeoutMs` expiry (default `'kill'`). */
+  onExpiry?: ShellExpiryPolicy | undefined
   /**
    * Foreground stdout capture budget in bytes. Absent uses the executor's
    * default output cap. Trusted in-process consumers use this when they must
@@ -68,16 +70,18 @@ interface ShellExecRequest {
 ```ts type-equiv
 /**
  * A resolved execution spec. {@link ShellExecutor.resolve} fills and caps the
- * required fields; {@link ShellExecutor.start} ignores `timeoutMs` because
- * background processes have no executor timeout.
+ * required fields; under `onExpiry: 'none'` the resolved `timeoutMs` arms no
+ * timer and is only echoed into {@link ShellRunResult.timeoutMs}.
  */
 interface ShellExecSpec {
   command: string
   workdir: string
   timeoutMs: number
+  /** Deadline policy at `timeoutMs` expiry ({@link ShellExecutor.resolve} defaults it to `'kill'`). */
+  onExpiry: ShellExpiryPolicy
   /**
-   * Resolved foreground stdout capture budget in bytes. `run()` uses it for
-   * stdout; background jobs and stderr keep the executor's own output cap.
+   * Resolved stdout capture budget in bytes, applied to every execution's
+   * stdout; stderr keeps the executor's own output cap.
    */
   stdoutMaxBytes: number
   /** Abort signal — implementations kill the command when it fires. */
@@ -241,36 +245,32 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 Abstract bash execution service. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.shell` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
 
+There is one way to execute: execute spawns the process and returns its live handle. "Foreground" is a property of what the caller awaits, not of the spawn — a caller that awaits ShellExecution.result ran the command in the foreground; one that keeps the handle ran it in the background; one that awaits ShellExecution.promotion under `onExpiry: 'offer'` decides at the deadline.
+
 Implementations must honor these semantics:
 
-- run rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a ShellRunResult.
-- start returns immediately; no timeout applies to background processes. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on stderr.
+- ShellExecution.result rejects only for infrastructure failures. Nonzero exits, timeout kills, and abort kills resolve with a descriptive result: first-cause `timedOut`/`aborted`, the spec's `timeoutMs` echoed.
+- The handle is live immediately. `done` settles at process close and never rejects; spawn failures settle as `killed` with the error on the read path, while `result()` carries the same failure as its rejection.
+- `onExpiry: 'none'` arms no deadline; `'kill'` kills at expiry; `'offer'` resolves ShellExecution.promotion instead of killing, and an unanswered offer is treated as declined.
 - ShellProcess.readOutput is incremental: consecutive reads never repeat output. Lossy reads report truncation and available spill files.
-- A still-running background process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a background process survives an executor-only reload.
+- A still-running process is stopped and awaited when its owning composition tears down. With the subprocess seam that boundary is `ctx.subprocess` disposal, so a process survives an executor-only reload.
 
 ```ts cordis-catalog
 /**
  * Apply implementation-owned defaults and caps to a request before execution.
  * @param request - the caller's request; omitted fields get this
  *   implementation's defaults, capped fields are clamped.
- * @returns the fully-specified spec to hand to {@link run}/{@link start}.
+ * @returns the fully-specified spec to hand to {@link execute}.
  */
 abstract resolve(request: ShellExecRequest): ShellExecSpec
 
 /**
- * Run a command in the foreground; resolves when it finishes.
+ * Spawn the command and return its live execution handle immediately.
  * @param spec - a resolved spec from {@link resolve}, never a raw request.
- * @returns the outcome; nonzero exits, timeout kills, and abort kills
- *   resolve with a descriptive result rather than reject.
+ * @returns the handle: the live process plus its foreground `result()`
+ *   projection and the deadline's `promotion` signal.
  */
-abstract run(spec: ShellExecSpec): Promise<ShellRunResult>
-
-/**
- * Start a background process and return its handle immediately.
- * @param spec - a resolved spec from {@link resolve}, never a raw request.
- * @returns the live process handle (reads, kill, quiescence promise).
- */
-abstract start(spec: ShellExecSpec): ShellProcess
+abstract execute(spec: ShellExecSpec): ShellExecution
 ```
 
 Source: [`packages/shell/shell/src/index.ts`](../../packages/shell/shell/src/index.ts)

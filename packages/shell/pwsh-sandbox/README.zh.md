@@ -75,7 +75,7 @@ kind: "package-reference"
 
 ### 设计概念
 
-本执行器是 `dsh-bash-sandbox` 的 pwsh 孪生：它继承 `dsh-pwsh-local` 的进程机制，消费其 argv 级 seam（`argv()`/`runArgv()`/`startArgv()`/`onProcessDone()`），并在 spawn 前把精确的 pwsh 调用经 `ctx.sandbox.confine()` 包装。隔离实体本身是平台无关的——sandbox seam 解析到平台的 runner——而本包只负责 pwsh 侧：所选模式、强制执行完整度，以及结果上的拒绝分类。
+本执行器是 `dsh-bash-sandbox` 的 pwsh 孪生：它继承 `dsh-pwsh-local` 的进程机制，消费其 argv 级 seam（`argv()`/`executeArgv()`/`onProcessDone()`），并在 spawn 前把精确的 pwsh 调用经 `ctx.sandbox.confine()` 包装。隔离实体本身是平台无关的——sandbox seam 解析到平台的 runner——而本包只负责 pwsh 侧：所选模式、强制执行完整度，以及结果上的拒绝分类。
 
 ### 源码地图
 
@@ -88,7 +88,7 @@ kind: "package-reference"
 
 ### 主要流程
 
-对受限模式，`resolve()` 标记每次调用的策略；`run` 与 `start` 把 pwsh argv 经提供方包装，再把受限 argv 交给继承的 subprocess 路径。结算时执行器对结果分类：runner 失败优先于拒绝（命令从未运行），stderr 携带 runner 拒绝方言的失败运行报告 `denied: true`，每次受限运行都携带模式与强制执行事实。`danger-full-access` 完全绕过提供方，并标记 `denied: false`。
+对受限模式，`resolve()` 标记每次调用的策略；`execute` 把 pwsh argv 经提供方包装，再把受限 argv 交给继承的 subprocess 路径。结算时执行器对结果分类：runner 失败优先于拒绝（命令从未运行），stderr 携带 runner 拒绝方言的失败运行报告 `denied: true`，每次受限运行都携带模式与强制执行事实。`danger-full-access` 完全绕过提供方，并标记 `denied: false`。
 
 ### 不变式
 

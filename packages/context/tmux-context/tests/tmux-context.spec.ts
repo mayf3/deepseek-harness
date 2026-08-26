@@ -4,7 +4,7 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { agentEvents, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import * as tmuxContext from '@deepseek-ai/dsh-tmux-context'
 import type { Config } from '@deepseek-ai/dsh-tmux-context'
 
@@ -59,18 +59,25 @@ class FakeBash extends ShellExecutor {
       command: request.command,
       workdir: request.workdir ?? '/work',
       timeoutMs: request.timeoutMs ?? 60_000,
+      onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
       signal: request.signal,
       sandboxPolicy: request.sandboxPolicy,
     }
   }
-  override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+  override execute(spec: ShellExecSpec): ShellExecution {
+    if (spec.onExpiry === 'none') throw new Error('tmux-context must never start a background job')
     this.commands.push(spec.command)
-    if (this.runError) throw this.runError
-    return this.result
-  }
-  override start(): ShellProcess {
-    throw new Error('tmux-context must never start a background job')
+    return {
+      status: 'completed',
+      exitCode: 0,
+      signal: null,
+      done: Promise.resolve(),
+      readOutput: () => ({ delta: '', lossy: false }),
+      kill: () => false,
+      promotion: Promise.resolve(undefined),
+      result: () => this.runError ? Promise.reject(this.runError) : Promise.resolve(this.result),
+    }
   }
 }
 

@@ -46,12 +46,12 @@ try {
     { oldString: 'written-by-fs', newString: 'versioned-by-fs', replaceAll: false },
     { version: observed.version },
   )
-  const bashRead = await ctx.shell.run(ctx.shell.resolve({ command: 'cat from-fs.txt' }))
+  const bashRead = await ctx.shell.execute(ctx.shell.resolve({ command: 'cat from-fs.txt' })).result()
   if (bashRead.exitCode !== 0 || bashRead.stdout.text !== 'versioned-by-fs\n') {
     throw new Error(`E2B Bash could not read the FS write: ${JSON.stringify(bashRead)}`)
   }
 
-  const bashWrite = await ctx.shell.run(ctx.shell.resolve({ command: "printf 'written-by-bash\\n' > from-bash.txt" }))
+  const bashWrite = await ctx.shell.execute(ctx.shell.resolve({ command: "printf 'written-by-bash\\n' > from-bash.txt" })).result()
   if (bashWrite.exitCode !== 0) {
     throw new Error(`E2B Bash could not write the shared filesystem: ${JSON.stringify(bashWrite)}`)
   }

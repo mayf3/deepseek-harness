@@ -2617,6 +2617,13 @@ export interface Config {
   enableRunInBackground?: boolean
   /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
   activityPollMs?: number
+  /**
+   * Move a foreground command that reaches its timeout into the background as
+   * a job instead of killing it (default true). Requires background execution:
+   * it is inert when `enableRunInBackground` is false or the composition has
+   * no job registry, and every promotion failure falls back to the timeout kill.
+   */
+  promoteOnTimeout?: boolean
 }
 ```
 
@@ -2784,6 +2791,13 @@ export interface Config {
   enableRunInBackground?: boolean
   /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
   activityPollMs?: number
+  /**
+   * Move a foreground command that reaches its timeout into the background as
+   * a job instead of killing it (default true). Requires background execution:
+   * it is inert when `enableRunInBackground` is false or the composition has
+   * no job registry, and every promotion failure falls back to the timeout kill.
+   */
+  promoteOnTimeout?: boolean
 }
 ```
 

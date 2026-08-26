@@ -52,16 +52,16 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Running commands
 
-Run a command with `run` and read its output from the result. A nonzero exit, a timeout, or a cancellation resolves with a descriptive result — only infrastructure failures reject. Per-call `timeoutMs` overrides are capped by the configuration, while `workdir` falls back to the configured default when unset; a trusted foreground caller can also raise the stdout capture budget for one call, while stderr and background runs keep `maxOutputBytes`. The environment is model-friendly by default: `NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` keep pagers and ANSI colors from garbling output, and an explicit caller-provided entry still wins.
+Run a command by awaiting the execution's `result()` projection. A nonzero exit, a timeout, or a cancellation resolves with a descriptive result — only infrastructure failures reject. Per-call `timeoutMs` overrides are capped by the configuration, while `workdir` falls back to the configured default when unset; a trusted caller can also raise the per-call stdout capture budget, while stderr keeps `maxOutputBytes`. The environment is model-friendly by default: `NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` keep pagers and ANSI colors from garbling output, and an explicit caller-provided entry still wins.
 
 ```text
-const result = await ctx.shell.run(ctx.shell.resolve({ command: 'ls -la' }))
+const result = await ctx.shell.execute(ctx.shell.resolve({ command: 'ls -la' })).result()
 if (result.timedOut) console.log('timed out after', result.timeoutMs)
 ```
 
 ### Background processes
 
-Call `start` to run a command in the background; it returns a handle immediately and no timeout applies. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` stops the process group; `done` settles when the process closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
+Resolve with `onExpiry: 'none'` and keep the handle to run a command in the background; no deadline is armed. `readOutput()` merges the stream deltas into one consuming read, marking stderr under a `[stderr]` section; `kill()` stops the process group; `done` settles when the process closes and never rejects. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, which the tool layer registers the handle with.
 
 <a id="adjusting-budgets-at-runtime"></a>
 ### Adjusting budgets at runtime
@@ -93,7 +93,7 @@ The executor is a Service Provider for the `ctx.shell` seam built on the subproc
 
 ### Main flow
 
-A call runs through three steps: `resolve()` fills `workdir`/`timeoutMs`/`stdoutMaxBytes` from config (capping per-call overrides); `run` fuses the config-clamped timeout with the caller's abort signal into one deadline and spawns `['bash', '-c', command]` through `ctx.subprocess` with explicit byte caps and the `graceMs`; the settled subprocess outcome is classified — only the executor's own timeout reports `timedOut`, an upstream cancel reports `aborted`, a self-signaled command reports neither — and projected into a `ShellRunResult` with collected output.
+A call runs through three steps: `resolve()` fills `workdir`/`timeoutMs`/`onExpiry`/`stdoutMaxBytes` from config and the request (capping per-call overrides); `execute` wires the deadline per expiry policy — `'kill'` fuses the clamped timeout with the caller's abort signal, `'offer'` keeps the signal on a detachable relay and hands out the promotion offer at expiry instead of killing, `'none'` arms nothing — and spawns `['bash', '-c', command]` through `ctx.subprocess` with explicit byte caps and the `graceMs`; the settled outcome is classified first-cause — only the executor's own timeout (or a declined offer) reports `timedOut`, an upstream cancel reports `aborted`, a self-signaled command reports neither — and `result()` projects it into a `ShellRunResult` with collected output.
 
 ### Invariants and ownership
 

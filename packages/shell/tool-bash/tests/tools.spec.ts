@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellProcessRead, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import SystemPrompt, { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -100,6 +100,16 @@ async function callUntilText(
   throw new Error(`${name} output did not include ${JSON.stringify(expected)}; last text was ${JSON.stringify(last !== undefined ? text(last) : '')}`)
 }
 
+
+/** Wrap a canned handle (and optional foreground result) as the unified execute() surface. */
+function fakeExecution(proc: ShellProcess, result?: () => Promise<ShellRunResult>): ShellExecution {
+  return {
+    ...proc,
+    promotion: Promise.resolve(undefined),
+    result: result ?? (() => Promise.reject(new Error('foreground projection unused'))),
+  }
+}
+
 class RecordingSandboxExecutor extends ShellExecutor {
   readonly modes: Array<string | undefined> = []
 
@@ -113,14 +123,33 @@ class RecordingSandboxExecutor extends ShellExecutor {
       workdir: request.workdir ?? process.cwd(),
       stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
       timeoutMs: request.timeoutMs ?? 1000,
+      onExpiry: request.onExpiry ?? 'kill',
       ...request.signal ? { signal: request.signal } : {},
       sandboxPolicy: request.sandboxPolicy ?? { mode: 'read-only', workspaceRoot: process.cwd() },
     }
   }
 
-  run(spec: ShellExecSpec): Promise<ShellRunResult> {
+  execute(spec: ShellExecSpec): ShellExecution {
     this.modes.push(spec.sandboxPolicy?.mode)
-    return Promise.resolve({
+    if (spec.onExpiry === 'none') {
+      return fakeExecution({
+        status: 'completed',
+        exitCode: 0,
+        signal: null,
+        done: Promise.resolve(),
+        sandbox: { mode: spec.sandboxPolicy?.mode ?? 'read-only', denied: false },
+        readOutput: () => ({ delta: '', lossy: false }),
+        kill: () => false,
+      })
+    }
+    return fakeExecution({
+      status: 'completed',
+      exitCode: 0,
+      signal: null,
+      done: Promise.resolve(),
+      readOutput: () => ({ delta: '', lossy: false }),
+      kill: () => false,
+    }, () => Promise.resolve({
       exitCode: 0,
       signal: null,
       timedOut: false,
@@ -135,20 +164,7 @@ class RecordingSandboxExecutor extends ShellExecutor {
           ? {}
           : { enforcement: 'full' as const, runnerFailed: false },
       },
-    })
-  }
-
-  start(spec: ShellExecSpec): ShellProcess {
-    this.modes.push(spec.sandboxPolicy?.mode)
-    return {
-      status: 'completed',
-      exitCode: 0,
-      signal: null,
-      done: Promise.resolve(),
-      sandbox: { mode: spec.sandboxPolicy?.mode ?? 'read-only', denied: false },
-      readOutput: () => ({ delta: '', lossy: false }),
-      kill: () => false,
-    }
+    }))
   }
 }
 
@@ -161,23 +177,23 @@ class CountingStartExecutor extends ShellExecutor {
       command: request.command,
       workdir: request.workdir ?? '/x',
       timeoutMs: request.timeoutMs ?? 0,
+      onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
       sandboxPolicy: request.sandboxPolicy,
     }
   }
 
-  run(): Promise<ShellRunResult> { return Promise.reject(new Error('unused')) }
-
-  start(): ShellProcess {
+  execute(spec: ShellExecSpec): ShellExecution {
+    if (spec.onExpiry !== 'none') throw new Error('unused foreground path')
     this.starts += 1
-    return {
+    return fakeExecution({
       status: 'completed',
       exitCode: 0,
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
       kill: () => false,
-    }
+    })
   }
 }
 
@@ -674,7 +690,7 @@ describe('sandbox escalation through the generic task producer', () => {
     })
     ctx.agents.register(agent)
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
-    const start = vi.spyOn(bash, 'start')
+    const started = vi.spyOn(bash, 'execute')
 
     const result = await ctx.tools.execute({
       callId: CallId('cancelled-escalation-background'),
@@ -689,7 +705,7 @@ describe('sandbox escalation through the generic task producer', () => {
       info: { name: 'AbortError', code: TOOL_ABORTED },
     })
     expect(text(result)).toBe('Error: tool call aborted')
-    expect(start).not.toHaveBeenCalled()
+    expect(started).not.toHaveBeenCalled()
   })
 
   it('uses the session override for ordinary calls and evaluates widening against it', async () => {
@@ -1082,6 +1098,7 @@ describe('the model-facing bash tool builds its request from named args only (no
         command: request.command,
         workdir: request.workdir ?? process.cwd(),
         timeoutMs: request.timeoutMs ?? 0,
+        onExpiry: request.onExpiry ?? 'kill',
         stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
         ...request.signal ? { signal: request.signal } : {},
         ...request.stdin !== undefined ? { stdin: request.stdin } : {},
@@ -1090,21 +1107,20 @@ describe('the model-facing bash tool builds its request from named args only (no
         sandboxPolicy: request.sandboxPolicy,
       }
     }
-    run(): Promise<ShellRunResult> {
-      return Promise.resolve({
-        exitCode: 0, signal: null, timedOut: false, aborted: false, timeoutMs: 0,
-        stdout: { text: 'ok', truncated: false }, stderr: { text: '', truncated: false },
-      })
-    }
-    start(): ShellProcess {
-      return {
+    execute(spec: ShellExecSpec): ShellExecution {
+      return fakeExecution({
         status: 'completed',
         exitCode: 0,
         signal: null,
         done: Promise.resolve(),
         readOutput: () => ({ delta: '', lossy: false }),
         kill: () => false,
-      }
+      }, spec.onExpiry === 'none'
+        ? undefined
+        : () => Promise.resolve({
+          exitCode: 0, signal: null, timedOut: false, aborted: false, timeoutMs: 0,
+          stdout: { text: 'ok', truncated: false }, stderr: { text: '', truncated: false },
+        }))
     }
   }
 

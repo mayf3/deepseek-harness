@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -14,6 +16,7 @@ import type { ActivitySnapshot } from '@deepseek-ai/dsh-activity'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
+import { renderPromoted } from '../src/render.ts'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 
 const testToolSignal = new AbortController().signal
@@ -260,5 +263,134 @@ describe('background bash observation', () => {
       return value.text.includes('resilient') ? value : undefined
     })
     expect(read.snapshot.status).toBe('completed')
+  })
+})
+
+describe('foreground timeout promotion', () => {
+  it('moves a timed-out foreground command into a job with its output so far, mirrored as an activity', async () => {
+    const ctx = await setup()
+    const result = await call(ctx, {
+      command: 'printf "early-output\\n"; sleep 30',
+      description: 'test command',
+      timeoutMs: 250,
+    })
+    const body = text(result)
+    // The promoted result carries the pre-promotion output, the marker, and
+    // the job hand-off guidance, in that order.
+    expect(body).toContain('early-output')
+    expect(body).toContain('[still running after 250ms; moved to background job bash-1]')
+    expect(body).toContain('read newer output with job_output, stop it with job_kill')
+    expect(body.indexOf('early-output')).toBeLessThan(body.indexOf('[still running'))
+
+    const job = ctx.jobs.list()[0]
+    expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
+
+    // The activity mirror carries the tool-call correlation like any background run.
+    const snapshot = await until(() =>
+      ctx.activities.list().find(row => row.correlation?.jobId === job!.id))
+    expect(snapshot.kind).toBe('bash')
+
+    // The job's consuming cursor continues after the promoted result's output:
+    // no repeat of the early line, and the job stays killable.
+    expect(ctx.jobs.read(job!.id).text).not.toContain('early-output')
+    expect(ctx.jobs.kill(job!.id, undefined, { reason: 'test cleanup' })).toBe('requested')
+    await until(() => ctx.jobs.get(job!.id).status === 'killed' ? true : undefined)
+  })
+
+  it('falls back to the timeout kill when the job admission refuses the promotion', async () => {
+    const ctx = await setup()
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    // Saturate the per-owner admission budget with unowned running jobs.
+    const limit = 10
+    const settlers: Array<(outcome: { status: 'killed' }) => void> = []
+    for (let i = 0; i < limit; i++) {
+      ctx.jobs.start({
+        kind: 'bash',
+        label: `filler-${i}`,
+        run: () => {
+          let settle!: (outcome: { status: 'killed' }) => void
+          const done = new Promise<{ status: 'killed' }>((resolve) => { settle = resolve })
+          settlers.push(settle)
+          return { cancel: () => { settle({ status: 'killed' }) }, done }
+        },
+      })
+    }
+    const result = await call(ctx, {
+      command: 'sleep 30',
+      description: 'test command',
+      timeoutMs: 250,
+    })
+    const body = text(result)
+    expect(body).toContain('[timed out after 250ms]')
+    expect(body).not.toContain('moved to background job')
+    expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('timeout promotion unavailable')
+    for (const settle of settlers) settle({ status: 'killed' })
+  })
+
+  it('keeps the plain timeout kill when promotion is configured off', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(ToolTasks)
+    await ctx.plugin(LocalSubprocessRuntime)
+    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
+    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
+    await ctx.plugin(ToolBash, { promoteOnTimeout: false })
+    const result = await call(ctx, { command: 'sleep 30', description: 'test command', timeoutMs: 250 })
+    expect(text(result)).toContain('[timed out after 250ms]')
+    expect(ctx.jobs.list()).toEqual([])
+    const description = ctx.tools.get('bash')?.description ?? ''
+    expect(description).not.toContain('moves to the background')
+  })
+
+  it('advertises the promotion semantics in the description and the timeout parameter', async () => {
+    const ctx = await setup()
+    const tool = ctx.tools.get('bash')
+    expect(tool?.description).toContain('A foreground command that reaches its timeout is not killed')
+    expect(JSON.stringify(tool?.parameters)).toContain('moves to the background as a job instead of being killed')
+  })
+})
+
+describe('renderPromoted', () => {
+  it('pins the promoted text with and without pre-promotion output', () => {
+    expect(renderPromoted({ jobId: 'bash-7', timeoutMs: 120_000, output: '' })).toBe(
+      '[still running after 120000ms; moved to background job bash-7]\n'
+      + 'The command keeps running in the background. You will be notified when it finishes; '
+      + 'read newer output with job_output, stop it with job_kill.',
+    )
+    // A partial line gains the separating newline exactly once.
+    expect(renderPromoted({ jobId: 'bash-7', timeoutMs: 250, output: 'partial' }))
+      .toContain('partial\n[still running after 250ms; moved to background job bash-7]')
+    expect(renderPromoted({ jobId: 'bash-7', timeoutMs: 250, output: 'line\n' }))
+      .toContain('line\n[still running after 250ms')
+  })
+})
+
+describe('owned background observation', () => {
+  it('mirrors an owned background run under the owning session', async () => {
+    const ctx = await setup()
+    const owner = {
+      id: SessionId('observe-owner'),
+      session: { id: SessionId('observe-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: CallId('observe-owned-1'),
+      name: 'bash',
+      arguments: { command: 'sleep 0.3', description: 'test command', run_in_background: true },
+      agent: owner,
+    })
+    const job = ctx.jobs.list(owner)[0]
+    expect(job).toBeDefined()
+    const row = await until(() => ctx.activities.list(owner).find(item => item.correlation?.jobId === job!.id))
+    expect(row.ownerSession).toBe(owner.id)
+    ctx.jobs.kill(job!.id, owner, { reason: 'test cleanup' })
+    await until(() => ctx.jobs.get(job!.id, owner).status === 'killed' ? true : undefined)
   })
 })

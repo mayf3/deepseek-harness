@@ -20,7 +20,18 @@ import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SubprocessRuntime from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import type { ShellProcess } from '@deepseek-ai/dsh-shell'
+import type { ShellExecSpec, ShellExecution, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
+
+/** Historical foreground shorthand over the unified execute() seam. */
+async function run(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): Promise<ShellRunResult> {
+  return x.execute(spec).result()
+}
+
+/** Historical background shorthand: execute with no deadline armed. */
+function start(x: { execute(spec: ShellExecSpec): ShellExecution }, spec: ShellExecSpec): ShellExecution {
+  return x.execute({ ...spec, onExpiry: 'none' })
+}
+
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-pwsh-exec-spec-'))
 
@@ -179,7 +190,7 @@ describe('spawn construction (pure, every platform)', () => {
     const ctx = new Context()
     const subprocess = new CapturingSubprocessRuntime(ctx)
     await ctx.plugin(PwshLocalExecutor)
-    await ctx.shell.run(ctx.shell.resolve({ command: 'Write-Output 你好' }))
+    await run(ctx.shell, ctx.shell.resolve({ command: 'Write-Output 你好' }))
     expect(subprocess.specs).toHaveLength(1)
     const { argv } = subprocess.specs[0]!
     expect(argv.slice(0, 5)).toEqual([expect.any(String), '-NoLogo', '-NoProfile', '-NonInteractive', '-Command'])
@@ -192,7 +203,7 @@ describe('spawn construction (pure, every platform)', () => {
 describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
   it('resolves with output and the effective timeout', { timeout: 15_000 }, async () => {
     const { bash } = await setup({ timeoutMs: 10_000 })
-    const result = await bash.run(bash.resolve({ command: 'Write-Output hi' }))
+    const result = await run(bash, bash.resolve({ command: 'Write-Output hi' }))
     expect(result.exitCode).toBe(0)
     expect(lf(result.stdout.text)).toBe('hi\n')
     expect(result.timeoutMs).toBe(10_000)
@@ -202,21 +213,21 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
     const first = mkdtempSync(join(tmpdir(), 'dsh-pwsh-cwd-a-'))
     const second = mkdtempSync(join(tmpdir(), 'dsh-pwsh-cwd-b-'))
     const { bash } = await setup({ cwd: first })
-    const fromConfig = await bash.run(bash.resolve({ command: '(Get-Location).Path' }))
+    const fromConfig = await run(bash, bash.resolve({ command: '(Get-Location).Path' }))
     expect(samePath(fromConfig.stdout.text.trim(), first)).toBe(true)
-    const fromCall = await bash.run(bash.resolve({ command: '(Get-Location).Path', workdir: second }))
+    const fromCall = await run(bash, bash.resolve({ command: '(Get-Location).Path', workdir: second }))
     expect(samePath(fromCall.stdout.text.trim(), second)).toBe(true)
   })
 
   it('defaults cwd to process.cwd()', async () => {
     const { bash } = await setup()
-    const result = await bash.run(bash.resolve({ command: '(Get-Location).Path' }))
+    const result = await run(bash, bash.resolve({ command: '(Get-Location).Path' }))
     expect(samePath(result.stdout.text.trim(), process.cwd())).toBe(true)
   })
 
   it('caps per-call timeouts at maxTimeoutMs', async () => {
     const { bash } = await setup({ timeoutMs: 1_000, maxTimeoutMs: 2_000 })
-    const result = await bash.run(bash.resolve({ command: 'Write-Output ok', timeoutMs: 99_999 }))
+    const result = await run(bash, bash.resolve({ command: 'Write-Output ok', timeoutMs: 99_999 }))
     expect(result.timeoutMs).toBe(2_000)
   })
 
@@ -242,7 +253,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
 
     // Raw Console writes avoid PowerShell's own line-ending and formatting
     // layers, so the byte counts are exact on every platform.
-    const result = await bash.run(bash.resolve({
+    const result = await run(bash, bash.resolve({
       command: '[Console]::Out.Write("x" * 500); [Console]::Error.WriteLine("e" * 500)',
       stdoutMaxBytes: 500,
     }))
@@ -255,7 +266,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
 
   it('per-call timeout takes precedence under the cap and kills on expiry', async () => {
     const { bash } = await setup({ timeoutMs: 60_000 })
-    const result = await bash.run(bash.resolve({ command: 'Start-Sleep -Seconds 60', timeoutMs: 100 }))
+    const result = await run(bash, bash.resolve({ command: 'Start-Sleep -Seconds 60', timeoutMs: 100 }))
     expect(result.timedOut).toBe(true)
     // Mutually exclusive: a timeout classifies as timedOut, never also aborted.
     expect(result.aborted).toBe(false)
@@ -265,7 +276,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
   it('propagates abort signals', async () => {
     const { bash } = await setup()
     const controller = new AbortController()
-    const pending = bash.run(bash.resolve({ command: 'Start-Sleep -Seconds 60', signal: controller.signal }))
+    const pending = run(bash, bash.resolve({ command: 'Start-Sleep -Seconds 60', signal: controller.signal }))
     setTimeout(() => { controller.abort() }, 50)
     const result = await pending
     expect(result.aborted).toBe(true)
@@ -275,7 +286,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
 
   it('classifies a self-killed command as neither timed out nor aborted', async () => {
     const { bash } = await setup({ timeoutMs: 60_000 })
-    const result = await bash.run(bash.resolve({ command: 'Stop-Process -Id $PID' }))
+    const result = await run(bash, bash.resolve({ command: 'Stop-Process -Id $PID' }))
     expect(result.timedOut).toBe(false)
     expect(result.aborted).toBe(false)
     // Windows reports a forced termination without a signal; POSIX reports the
@@ -289,7 +300,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
 
   it('rejects on spawn failure (bad workdir)', async () => {
     const { bash } = await setup()
-    await expect(bash.run(bash.resolve({ command: 'Write-Output ok', workdir: '/nonexistent-dsh' }))).rejects.toThrow(/ENOENT/)
+    await expect(run(bash, bash.resolve({ command: 'Write-Output ok', workdir: '/nonexistent-dsh' }))).rejects.toThrow(/ENOENT/)
   })
 
   it('resolve() carries stdin/env/dshEnv onto the spec, and run() threads them to the command', async () => {
@@ -304,7 +315,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
     expect(spec.stdin).toBe('piped\n')
     expect(spec.env).toEqual({ SEAM_VAR: 'env-ok' })
     expect(spec.dshEnv).toEqual({ DSH_SEAM_VAR: 'dsh-ok' })
-    const result = await bash.run(spec)
+    const result = await run(bash, spec)
     expect(lf(result.stdout.text)).toBe('piped\n[env-ok][dsh-ok]\n')
   })
 
@@ -323,7 +334,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     const before = Date.now()
     // The sleep outlasts any realistic spawn latency, so returning while the
     // child still sleeps proves start() does not wait for completion.
-    const proc = bash.start(bash.resolve({ command: 'Start-Sleep -Milliseconds 2000; Write-Output done' }))
+    const proc = start(bash, bash.resolve({ command: 'Start-Sleep -Milliseconds 2000; Write-Output done' }))
     expect(Date.now() - before).toBeLessThan(1000)
     expect(proc.status).toBe('running')
     await proc.done
@@ -333,7 +344,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('threads stdin and extra env into a background process', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({
+    const proc = start(bash, bash.resolve({
       command: '$s = ([Console]::In.ReadToEnd()).TrimEnd(); Write-Output $s; Write-Output "[$env:BG_VAR][$env:DSH_BG_VAR]"',
       stdin: 'bg-stdin\n',
       env: { BG_VAR: 'bg-env' },
@@ -348,7 +359,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('readOutput is consuming: increments are never re-delivered, and reads stay valid after exit', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Write-Output first; Start-Sleep -Seconds 1; Write-Output second' }))
+    const proc = start(bash, bash.resolve({ command: 'Write-Output first; Start-Sleep -Seconds 1; Write-Output second' }))
     const first = await readUntil(proc, 'first\n')
     expect(lf(first)).toBe('first\n')
     await proc.done
@@ -361,28 +372,28 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('readOutput marks stderr sections', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Write-Output out; [Console]::Error.WriteLine("err")' }))
+    const proc = start(bash, bash.resolve({ command: 'Write-Output out; [Console]::Error.WriteLine("err")' }))
     await proc.done
     expect(lf(proc.readOutput().delta)).toBe('out\n[stderr]\nerr\n')
   })
 
   it('readOutput reports stderr-only deltas without a leading newline', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: '[Console]::Error.WriteLine("err")' }))
+    const proc = start(bash, bash.resolve({ command: '[Console]::Error.WriteLine("err")' }))
     await proc.done
     expect(lf(proc.readOutput().delta)).toBe('[stderr]\nerr\n')
   })
 
   it('readOutput adds a separator only when stdout lacks a trailing newline', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: '[Console]::Out.Write("out"); [Console]::Error.WriteLine("err")' }))
+    const proc = start(bash, bash.resolve({ command: '[Console]::Out.Write("out"); [Console]::Error.WriteLine("err")' }))
     await proc.done
     expect(lf(proc.readOutput().delta)).toBe('out\n[stderr]\nerr\n')
   })
 
   it('readOutput flags lossy reads and reports stdout spill paths', async () => {
     const { bash } = await setup({ maxOutputBytes: 100 })
-    const proc = bash.start(bash.resolve({ command: '1..100 | ForEach-Object { "line-$_" }' }))
+    const proc = start(bash, bash.resolve({ command: '1..100 | ForEach-Object { "line-$_" }' }))
     await proc.done
     const read = proc.readOutput()
     // Window slid past offset 0 → lossy, spill path points at the full stream.
@@ -392,7 +403,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('readOutput reports stderr spill paths', async () => {
     const { bash } = await setup({ maxOutputBytes: 100 })
-    const proc = bash.start(bash.resolve({ command: '1..100 | ForEach-Object { [Console]::Error.WriteLine("line-$_") }' }))
+    const proc = start(bash, bash.resolve({ command: '1..100 | ForEach-Object { [Console]::Error.WriteLine("line-$_") }' }))
     await proc.done
     const read = proc.readOutput()
     expect(read.lossy).toBe(true)
@@ -402,7 +413,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('kill() terminates the process tree: true once, false after settlement', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Start-Sleep -Seconds 60' }))
+    const proc = start(bash, bash.resolve({ command: 'Start-Sleep -Seconds 60' }))
     expect(proc.kill()).toBe(true)
     await proc.done
     expect(proc.status).toBe('killed')
@@ -411,7 +422,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('kill() returns false for a naturally completed process', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Write-Output ok' }))
+    const proc = start(bash, bash.resolve({ command: 'Write-Output ok' }))
     await proc.done
     expect(proc.status).toBe('completed')
     expect(proc.kill()).toBe(false)
@@ -420,7 +431,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
   it('a spec.signal abort settles the handle as killed, not completed', async () => {
     const { bash } = await setup()
     const controller = new AbortController()
-    const proc = bash.start(bash.resolve({ command: 'Start-Sleep -Seconds 60', signal: controller.signal }))
+    const proc = start(bash, bash.resolve({ command: 'Start-Sleep -Seconds 60', signal: controller.signal }))
     controller.abort()
     await proc.done
     expect(proc.status).toBe('killed')
@@ -428,7 +439,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it.skipIf(process.platform === 'win32')('a self-signal exit settles the handle as killed, not completed (POSIX)', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Stop-Process -Id $PID' }))
+    const proc = start(bash, bash.resolve({ command: 'Stop-Process -Id $PID' }))
     await proc.done
     expect(proc.status).toBe('killed')
     expect(proc.exitCode).toBeNull()
@@ -438,7 +449,7 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
 
   it('a background spawn failure settles as killed with the error readable on stderr', async () => {
     const { bash } = await setup()
-    const proc = bash.start(bash.resolve({ command: 'Write-Output ok', workdir: '/nonexistent-dsh' }))
+    const proc = start(bash, bash.resolve({ command: 'Write-Output ok', workdir: '/nonexistent-dsh' }))
     // done resolves (never rejects) even though the process never ran.
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
@@ -456,7 +467,7 @@ describe.skipIf(!hasPwsh)('process lifecycle ownership (the subprocess service, 
 
     // The child prints its own pid so the test can probe liveness through the
     // public read surface alone.
-    const proc = bash.start(bash.resolve({ command: 'Write-Output $PID; Start-Sleep -Seconds 60' }))
+    const proc = start(bash, bash.resolve({ command: 'Write-Output $PID; Start-Sleep -Seconds 60' }))
     const pid = Number((await readUntil(proc, '\n')).trim())
     expect(Number.isInteger(pid) && pid > 0).toBe(true)
 
@@ -486,10 +497,10 @@ describe.skipIf(!hasPwsh)('process lifecycle ownership (the subprocess service, 
     await ctx.plugin(PwshLocalExecutor, { graceMs: 200 })
     const bash = ctx.shell as PwshLocalExecutor
 
-    const finished = bash.start(bash.resolve({ command: 'Write-Output done' }))
+    const finished = start(bash, bash.resolve({ command: 'Write-Output done' }))
     await finished.done
     expect(finished.status).toBe('completed')
-    const running = bash.start(bash.resolve({ command: 'Start-Sleep -Seconds 60' }))
+    const running = start(bash, bash.resolve({ command: 'Start-Sleep -Seconds 60' }))
 
     await managerFiber.dispose()
     // A settled process was untouched; the live one was terminated and joined.

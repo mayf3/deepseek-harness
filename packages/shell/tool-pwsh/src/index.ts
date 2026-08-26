@@ -27,7 +27,7 @@ import type { GenericCallView, TerminalCallView, ToolExecution, ToolResult, Tool
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
-import type {} from '@deepseek-ai/dsh-jobs'
+import type { JobId } from '@deepseek-ai/dsh-jobs'
 import type {} from '@deepseek-ai/dsh-shell-env'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
@@ -38,7 +38,7 @@ import { parseExitStatus } from '@deepseek-ai/dsh-shell'
 import type {} from '@deepseek-ai/dsh-activity'
 import { processOutcome } from './background.ts'
 import { observeBackgroundActivity } from './observe.ts'
-import { renderPwshProcessRead, renderPwshResult } from './render.ts'
+import { renderPwshProcessRead, renderPwshPromoted, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -63,6 +63,13 @@ export interface Config {
   enableRunInBackground?: boolean
   /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
   activityPollMs?: number
+  /**
+   * Move a foreground command that reaches its timeout into the background as
+   * a job instead of killing it (default true). Requires background execution:
+   * it is inert when `enableRunInBackground` is false or the composition has
+   * no job registry, and every promotion failure falls back to the timeout kill.
+   */
+  promoteOnTimeout?: boolean
 }
 
 /** Runtime configuration schema for the pwsh tool plugin. */
@@ -73,6 +80,7 @@ export const Config: z<Config> = z.object({
     .min(1)
     .max(Number.MAX_SAFE_INTEGER)
     .default(150),
+  promoteOnTimeout: z.boolean().default(true),
 })
 /* jscpd:ignore-end */
 
@@ -117,9 +125,16 @@ function validatePwshArgs(args: PwshToolArgs): void {
 }
 /* jscpd:ignore-end */
 
-function pwshDescription(backgroundEnabled: boolean, escalationModes: readonly SandboxMode[]): string {
+function pwshDescription(
+  backgroundEnabled: boolean,
+  escalationModes: readonly SandboxMode[],
+  promoteOnTimeout: boolean,
+): string {
   const background = backgroundEnabled
     ? 'Set `run_in_background: true` for long-running commands: the call returns a job id immediately; read its output with `job_output` and stop it with `job_kill`.'
+      + (promoteOnTimeout
+        ? ' A foreground command that reaches its timeout is not killed: it moves to the background the same way, returning its job id and the output so far.'
+        : '')
     : 'Background execution is not available; long-running commands must finish within the timeout.'
   const base = 'Execute a PowerShell command (`pwsh -Command`) and return its stdout/stderr. '
     + 'Each call runs in a fresh pwsh process: no state (cwd, variables, functions) persists between calls — '
@@ -212,6 +227,9 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
   const activityPollMs = config.activityPollMs ?? 150
+  // Promotion needs the whole background surface: the job tools to collect and
+  // stop the promoted work, and the registry itself at execution time.
+  const promoteOnTimeout = (config.promoteOnTimeout ?? true) && backgroundEnabled
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -268,7 +286,7 @@ export function apply(ctx: Context, config: Config = {}): void {
 
   ctx.tools.register(defineTool({
     name: 'pwsh',
-    description: pwshDescription(backgroundEnabled, escalationModes),
+    description: pwshDescription(backgroundEnabled, escalationModes, promoteOnTimeout),
     /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's parameter surface (pwsh-tool-and-executor Agent Note). */
     parameters: {
       command: { type: 'string', required: true, description: 'The PowerShell command to execute.' },
@@ -279,7 +297,12 @@ export function apply(ctx: Context, config: Config = {}): void {
           + '5-10 words (shown in the UI). Examples: "ls" → "List files in current directory"; '
           + '"git status" → "Show working tree status"; "Get-Process" → "List running processes".',
       },
-      timeoutMs: { type: 'number', description: 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.' },
+      timeoutMs: {
+        type: 'number',
+        description: promoteOnTimeout
+          ? 'Timeout in milliseconds. The executor applies its configured default and cap; on expiry the command moves to the background as a job instead of being killed.'
+          : 'Timeout in milliseconds. The executor applies its configured default and cap, and kills the command on expiry.',
+      },
       workdir: { type: 'string', description: 'Working directory for this command. Defaults to the session workspace; a relative path is resolved against it.' },
       ...backgroundEnabled ? {
         run_in_background: { type: 'boolean' as const, description: 'Run in the background and return a job id immediately (collect with job_output, stop with job_kill). No timeout applies.' },
@@ -308,6 +331,16 @@ export function apply(ctx: Context, config: Config = {}): void {
             type: 'object',
             additionalProperties: false,
             properties: BACKGROUND_OUTPUT_PROPERTIES,
+          },
+          {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              kind: { type: 'string', required: true, const: 'promoted' },
+              jobId: { type: 'string', required: true },
+              timeoutMs: { type: 'number', required: true },
+              output: { type: 'string', required: true },
+            },
           },
           {
             type: 'object',
@@ -358,7 +391,9 @@ export function apply(ctx: Context, config: Config = {}): void {
         type: 'text',
         text: value.kind === 'background'
           ? `started background job ${value.jobId}`
-          : renderPwshResult(value as RenderablePwshResult, escalationModes),
+          : value.kind === 'promoted'
+            ? renderPwshPromoted(value)
+            : renderPwshResult(value as RenderablePwshResult, escalationModes),
       }],
     },
     /* jscpd:ignore-start -- the execute path mirrors dsh-tool-bash's by design (see the pwsh-tool-and-executor Agent Note). */
@@ -380,12 +415,12 @@ export function apply(ctx: Context, config: Config = {}): void {
         dshEnv: ctx.shellEnv.collect(exec),
         ...policy !== undefined ? { sandboxPolicy: policy } : {},
       }
+      const jobs = ctx.get('jobs')
       if (args.run_in_background === true) {
         // Undeclared keys are allowed, so schema omission also needs enforcement.
         if (!backgroundEnabled) {
           throw new Error('run_in_background is disabled for this deployment (enableRunInBackground: false)')
         }
-        const jobs = ctx.get('jobs')
         if (jobs === undefined) {
           throw new Error('background jobs unavailable: load @deepseek-ai/dsh-jobs and @deepseek-ai/dsh-tool-jobs')
         }
@@ -402,7 +437,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           label: args.command,
           ...exec.agent ? { owner: exec.agent } : {},
           run: () => {
-            const proc = ctx.shell.start(ctx.shell.resolve(request))
+            const proc = ctx.shell.execute(ctx.shell.resolve({ ...request, onExpiry: 'none' }))
             started = proc
             return {
               cancel: () => void proc.kill(),
@@ -423,10 +458,58 @@ export function apply(ctx: Context, config: Config = {}): void {
         }
         return { kind: 'background' as const, jobId: id }
       }
-      const result = await ctx.shell.run(ctx.shell.resolve({
+      // Promotion needs a live registry at execution time; without one the
+      // deadline policy stays 'kill' and nothing below this line changes.
+      const promotable = promoteOnTimeout && jobs !== undefined
+      const spec = ctx.shell.resolve({
         ...request,
         signal: exec.signal,
-      }))
+        ...promotable ? { onExpiry: 'offer' as const } : {},
+      })
+      const foreground = ctx.shell.execute(spec)
+      if (promotable) {
+        const offer = await foreground.promotion
+        if (offer !== undefined) {
+          // The offer must be answered in this synchronous span — the seam
+          // treats an unanswered offer as declined.
+          let promoted: JobId | undefined
+          try {
+            promoted = jobs.start({
+              kind: 'pwsh',
+              label: args.command,
+              ...exec.agent ? { owner: exec.agent } : {},
+              run: () => ({
+                cancel: () => void foreground.kill(),
+                done: foreground.done.then(() => processOutcome(foreground)),
+                readOutput: () => renderPwshProcessRead(foreground.readOutput(), foreground.sandbox, escalationModes),
+              }),
+            })
+          } catch (error) {
+            // Admission or controller preflight refused the promotion: fall
+            // back to the timeout kill rather than detaching the process.
+            ctx.logger.warn(`pwsh: timeout promotion unavailable, killing on timeout instead: ${String(error)}`)
+          }
+          if (promoted !== undefined) {
+            offer.accept()
+            observeBackgroundActivity(ctx, foreground, {
+              kind: 'pwsh',
+              label: args.command,
+              ...exec.agent ? { owner: exec.agent } : {},
+              correlation: { callId: exec.callId, jobId: promoted },
+            }, activityPollMs, processOutcome)
+            // One consuming read seeds the result with the output so far; the
+            // job's cursor continues exactly after it, no repeat and no gap.
+            return {
+              kind: 'promoted' as const,
+              jobId: promoted,
+              timeoutMs: spec.timeoutMs,
+              output: renderPwshProcessRead(foreground.readOutput(), foreground.sandbox, escalationModes),
+            }
+          }
+          offer.decline()
+        }
+      }
+      const result = await foreground.result()
       if (result.aborted) {
         const error = new HarnessError('tool call aborted', TOOL_ABORTED)
         error.name = 'AbortError'
@@ -462,8 +545,9 @@ export function apply(ctx: Context, config: Config = {}): void {
       if (block === undefined || block.type !== 'text') return undefined
       const raw = block.text
       const isBackground = typeof args === 'object' && args !== null && (args as { run_in_background?: unknown }).run_in_background === true
+      const isPromoted = (result as { value?: { kind?: unknown } }).value?.kind === 'promoted'
       // Background acknowledgements and errors have no terminal exit status.
-      if (isBackground || result.isError) {
+      if (isBackground || isPromoted || result.isError) {
         return { card: 'generic', content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }] }
       }
       // The exit marker becomes the card's exit pill, so it leaves the output body.

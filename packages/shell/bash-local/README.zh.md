@@ -52,16 +52,16 @@ kind: "package-reference"
 
 ### 运行命令
 
-用 `run` 运行命令并从结果读取输出。非零退出、超时或取消都会 resolve 为描述性结果——只有基础设施失败才 reject。每次调用的 `timeoutMs` 覆盖值受配置上限约束，`workdir` 未设置时则回退到配置的默认值；受信任的前台调用方还可以为单次调用提高 stdout 捕获预算，而 stderr 与后台运行仍使用 `maxOutputBytes`。环境默认面向模型：`NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` 可防止分页器与 ANSI 颜色破坏输出，调用方显式提供的条目仍然优先。
+通过等待 execution 的 `result()` 投影来运行命令。非零退出、超时或取消都会 resolve 为描述性结果——只有基础设施失败才 reject。每次调用的 `timeoutMs` 覆盖值受配置上限约束，`workdir` 未设置时则回退到配置的默认值；受信任的调用方还可以为单次调用提高 stdout 捕获预算，而 stderr 仍使用 `maxOutputBytes`。环境默认面向模型：`NO_COLOR=1 TERM=dumb PAGER=cat GIT_PAGER=cat` 可防止分页器与 ANSI 颜色破坏输出，调用方显式提供的条目仍然优先。
 
 ```text
-const result = await ctx.shell.run(ctx.shell.resolve({ command: 'ls -la' }))
+const result = await ctx.shell.execute(ctx.shell.resolve({ command: 'ls -la' })).result()
 if (result.timedOut) console.log('timed out after', result.timeoutMs)
 ```
 
 ### 后台进程
 
-调用 `start` 即可在后台运行命令；它立即返回句柄，且不应用任何超时。`readOutput()` 把流增量合并为一次消费式读取，并在 `[stderr]` 分段下标记 stderr；`kill()` 停止进程组；`done` 在进程关闭时结算且绝不 reject。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。
+以 `onExpiry: 'none'` 解析并保留句柄即可在后台运行命令；不布置任何 deadline。`readOutput()` 把流增量合并为一次消费式读取，并在 `[stderr]` 分段下标记 stderr；`kill()` 停止进程组；`done` 在进程关闭时结算且绝不 reject。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。
 
 <a id="adjusting-budgets-at-runtime"></a>
 ### 运行时调整预算

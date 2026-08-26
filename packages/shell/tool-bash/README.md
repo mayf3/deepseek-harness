@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and `run_in_background` turns long-running commands into background jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`, and under a sandboxing executor a denied command may be retried once with a wider `sandbox_permissions` mode plus a `justification` through user approval. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
+`dsh-tool-bash` gives the agent a `bash` tool that runs commands through the mounted shell executor and returns stdout, stderr, and exit markers. Each call runs in a fresh shell — no cwd, variables, or functions survive — and long-running commands reach the background two ways — `run_in_background` up front, or automatically when a foreground call hits its timeout — as jobs the agent collects with `job_output` and stops with `job_kill`. Every call runs with the managed `DSH_*` environment from `dsh-shell-env`, and under a sandboxing executor a denied command may be retried once with a wider `sandbox_permissions` mode plus a `justification` through user approval. Non-zero exits are reported, not failed, so the agent decides how to react. Mount it together with an executor provider such as `dsh-bash-local` or `dsh-bash-sandbox` and the `dsh-shell-env` plugin.
 
 ## Table of Contents
 
@@ -41,11 +41,12 @@ The common path is an executor provider, the environment registry, and this tool
 - name: '@deepseek-ai/dsh-tool-jobs'
 ```
 
-The single config field toggles background support.
+The config fields govern the background surface.
 
 | Field | Default | Meaning |
 |---|---|---|
 | `enableRunInBackground` | `true` | Expose `run_in_background`; when `false`, forced background calls are rejected |
+| `promoteOnTimeout` | `true` | Move a timed-out foreground command into a background job instead of killing it |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-bash) is the exhaustive source for every accepted field and its JSDoc; the generated [tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-bash) carries the full argument schema.
 
@@ -56,6 +57,10 @@ The tool executes `bash -c <command>` and returns the combined output. Commands 
 ### Running long commands in the background
 
 Passing `run_in_background: true` returns a job id immediately and no timeout applies; the command keeps running while the agent works on something else. The agent reads its output with `job_output` (non-blocking unless `wait: true`), lists jobs with `job_list`, and stops it with `job_kill`; a finished job notifies the owning agent in-session. Background support needs the generic job runtime (`dsh-jobs-local`) and its control tools (`dsh-tool-jobs`) mounted. When the optional `ctx.activities` registry is loaded, the committed background run is also mirrored into it best-effort: a `bash` activity correlated to the call and job pumps the handle's non-consuming `observed` readers at `activityPollMs` (default 150), so the Web client streams live output without touching the job's cursor; any observation failure is logged and swallowed.
+
+### Timeout promotion
+
+A foreground command that reaches its timeout is not killed by default: the executor offers the still-running process back, the tool registers it as a background job, and the call returns the job id with the output captured so far — the job's consuming cursor continues exactly after it. The promoted result reads `[still running after <timeoutMs>ms; moved to background job <id>]` plus the job hand-off guidance, and the run is mirrored into `ctx.activities` like any background call, so the Web task list streams it (stop control included). Promotion is strictly best-effort: `promoteOnTimeout: false`, a missing job registry, or a refused job admission all fall back to the plain timeout kill, and the tool description advertises the semantics only when they hold.
 
 ### Sandboxed execution and escalation
 

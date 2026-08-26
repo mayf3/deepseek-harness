@@ -26,7 +26,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
@@ -54,6 +54,7 @@ class FakeBash extends ShellExecutor {
       command: request.command,
       workdir: request.workdir ?? process.cwd(),
       timeoutMs: request.timeoutMs ?? 60_000,
+      onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
       ...request.signal ? { signal: request.signal } : {},
       ...request.stdin !== undefined ? { stdin: request.stdin } : {},
@@ -63,15 +64,19 @@ class FakeBash extends ShellExecutor {
     }
   }
 
-  override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+  override execute(spec: ShellExecSpec): ShellExecution {
     this.specs.push(spec)
-    return this.handler(spec)
-  }
-
-  override start(spec: ShellExecSpec): ShellProcess {
-    this.startCalls++
-    this.specs.push(spec)
-    return this.backgroundHandler(spec)
+    if (spec.onExpiry === 'none') {
+      this.startCalls++
+      return Object.assign(this.backgroundHandler(spec), {
+        promotion: Promise.resolve<undefined>(undefined),
+        result: () => Promise.reject(new Error('foreground projection unused')),
+      })
+    }
+    return Object.assign(fakeProcess(), {
+      promotion: Promise.resolve<undefined>(undefined),
+      result: () => Promise.resolve(this.handler(spec)),
+    })
   }
 }
 
@@ -175,6 +180,7 @@ class ConfiningFakeBash extends ShellExecutor {
       command: request.command,
       workdir: request.workdir ?? process.cwd(),
       timeoutMs: request.timeoutMs ?? 60_000,
+      onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes: request.stdoutMaxBytes ?? 64_000,
       ...request.signal ? { signal: request.signal } : {},
       ...request.dshEnv !== undefined ? { dshEnv: request.dshEnv } : {},
@@ -182,22 +188,26 @@ class ConfiningFakeBash extends ShellExecutor {
     }
   }
 
-  override async run(spec: ShellExecSpec): Promise<ShellRunResult> {
+  override execute(spec: ShellExecSpec): ShellExecution {
     this.modes.push(spec.sandboxPolicy?.mode)
-    return runResult('ok\n', {
-      sandbox: {
-        mode: spec.sandboxPolicy?.mode ?? 'read-only',
-        denied: false,
-        ...spec.command === 'without optional sandbox facts'
-          ? {}
-          : { enforcement: 'full' as const, runnerFailed: false },
-      },
+    if (spec.onExpiry === 'none') {
+      return Object.assign(fakeProcess(), {
+        promotion: Promise.resolve<undefined>(undefined),
+        result: () => Promise.reject(new Error('foreground projection unused')),
+      })
+    }
+    return Object.assign(fakeProcess(), {
+      promotion: Promise.resolve<undefined>(undefined),
+      result: () => Promise.resolve(runResult('ok\n', {
+        sandbox: {
+          mode: spec.sandboxPolicy?.mode ?? 'read-only',
+          denied: false,
+          ...spec.command === 'without optional sandbox facts'
+            ? {}
+            : { enforcement: 'full' as const, runnerFailed: false },
+        },
+      })),
     })
-  }
-
-  override start(spec: ShellExecSpec): ShellProcess {
-    this.modes.push(spec.sandboxPolicy?.mode)
-    return fakeProcess()
   }
 }
 
@@ -646,7 +656,7 @@ describe('sandbox escalation through ctx.approval', () => {
     })
     ctx.agents.register(agent)
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
-    const start = vi.spyOn(bash, 'start')
+    const started = vi.spyOn(bash, 'execute')
 
     const result = await ctx.tools.execute({
       callId: CallId('cancelled-escalation-background'),
@@ -661,7 +671,7 @@ describe('sandbox escalation through ctx.approval', () => {
       info: { name: 'AbortError', code: TOOL_ABORTED },
     })
     expect(text(result)).toBe('Error: tool call aborted')
-    expect(start).not.toHaveBeenCalled()
+    expect(started).not.toHaveBeenCalled()
   })
 
   it('uses the session override for ordinary calls and evaluates widening against it', async () => {

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-shell` defines the executor service (`ctx.shell`) that runs shell commands for the harness: foreground commands that resolve with bounded output when they finish, and background processes that return a handle immediately. Every shell executor in the repository — local Bash, sandboxed Bash, local PowerShell, sandboxed PowerShell — implements this one contract, so the model-facing `bash` and `pwsh` tools work unchanged over any of them. Callers pass a request and receive a fully-resolved spec with explicit defaults and caps before any command runs. The service itself never renders anything to a model; the shell tools own all model-visible output and sandbox guidance.
+`dsh-shell` defines the executor service (`ctx.shell`) that runs shell commands for the harness: one `execute` returns the live handle, and the foreground result, the background cursor, and the timeout-promotion offer are projections over it. Every shell executor in the repository — local Bash, sandboxed Bash, local PowerShell, sandboxed PowerShell — implements this one contract, so the model-facing `bash` and `pwsh` tools work unchanged over any of them. Callers pass a request and receive a fully-resolved spec with explicit defaults and caps before any command runs. The service itself never renders anything to a model; the shell tools own all model-visible output and sandbox guidance.
 
 ## Table of Contents
 
@@ -25,24 +25,28 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Use `ctx.shell` when an agent or an in-process plugin needs to run a shell command and read its output, or start a background process and poll it. It is the contract every shell executor and the model-facing `bash`/`pwsh` tools build on, so code written against it works over any executor implementation.
+Use `ctx.shell` when an agent or an in-process plugin needs to run a shell command and read its output, keep a process running and poll it, or hand a foreground command a way to outlive its deadline. There is one execution method — `execute(spec)` returns the live handle — and "foreground" is a property of what the caller awaits, not of the spawn. It is the contract every shell executor and the model-facing `bash`/`pwsh` tools build on, so code written against it works over any executor implementation.
 
 ### Foreground commands
 
-Call `run` with a resolved spec to execute a command in the foreground. The promise resolves when the command finishes: a nonzero exit, an executor timeout kill, or a caller abort kill is a result, never a rejection. `run` rejects only for infrastructure failures such as an unusable working directory or a missing shell. The result carries the exit code or signal, whether a timeout or an abort cut the run short, and the collected stdout/stderr with spill-file paths when a stream overflowed its budget.
+Await the handle's `result()` projection to run a command in the foreground. The promise resolves when the command finishes: a nonzero exit, an executor timeout kill, or a caller abort kill is a result, never a rejection. `result()` rejects only for infrastructure failures such as an unusable working directory or a missing shell. The result carries the exit code or signal, whether a timeout or an abort cut the run short (first-cause classification), and the collected stdout/stderr with spill-file paths when a stream overflowed its budget.
 
 ```text
-const result = await ctx.shell.run(ctx.shell.resolve({ command: 'ls -la' }))
+const result = await ctx.shell.execute(ctx.shell.resolve({ command: 'ls -la' })).result()
 console.log(result.exitCode, result.stdout.text)
 ```
 
 ### Background processes
 
-Call `start` with a resolved spec to launch a background process; it returns a handle immediately and no timeout applies. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Kill the process group with `kill()` (returns `false` once it has finished) and await `done` for settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` optionally exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor (the activity observation plane) — and is absent when a backend cannot expose offset reads.
+Resolve the request with `onExpiry: 'none'` and keep the handle: no deadline is armed, and the process runs until killed or finished. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Kill the process group with `kill()` (returns `false` once it has finished) and await `done` for settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` optionally exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor (the activity observation plane) — and is absent when a backend cannot expose offset reads.
+
+### Timeout promotion offers
+
+Resolve with `onExpiry: 'offer'` and the deadline stops meaning "kill": if it expires while the process still runs, `execution.promotion` resolves with a `ShellPromotionOffer` instead. `accept()` ends the deadline obligation and detaches the caller's abort signal — from then on only `kill()` (or composition teardown) stops the process — while `decline()` kills now and classifies the result `timedOut`. The promotion promise settles exactly once and never rejects: it resolves `undefined` when the process settles first (and under every other `onExpiry` policy), so `await execution.promotion` alone distinguishes the outcomes. The consumer must answer the offer synchronously upon its resolution; an unanswered offer is declined, so forgetting falls back to the kill-on-timeout behavior rather than detaching the process. The `bash`/`pwsh` tools use this to move a timed-out foreground command into a `ctx.jobs` background job.
 
 ### Requests and resolved specs
 
-Every execution starts from a `ShellExecRequest` with optional fields; the executor's `resolve()` turns it into a fully-resolved `ShellExecSpec` with explicit defaults and caps before anything runs. This request/spec split is the repository's template for explicit resolution at package boundaries: callers never rely on hidden defaults inside `run` or `start`. `resolve()` fills the working directory and timeout from the executor's configuration, caps per-call overrides, and carries optional inputs — `stdin`, ordinary `env`, and the trusted `DSH_*` snapshot — through verbatim.
+Every execution starts from a `ShellExecRequest` with optional fields; the executor's `resolve()` turns it into a fully-resolved `ShellExecSpec` with explicit defaults and caps before anything runs. This request/spec split is the repository's template for explicit resolution at package boundaries: callers never rely on hidden defaults inside `execute`. `resolve()` fills the working directory, timeout, and expiry policy (default `'kill'`) from the executor's configuration and the request, caps per-call overrides, and carries optional inputs — `stdin`, ordinary `env`, and the trusted `DSH_*` snapshot — through verbatim.
 
 ### Choosing and composing an executor
 
@@ -73,15 +77,15 @@ This section explains the design of the seam and points at the code that realize
 
 The package is one role of a standard capability seam: the Service Definition that names the executor contract, with Service Providers and Consumers split so each role evolves independently (see the [capability-seams note](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)). Two decisions anchor the contract:
 
-- **Explicit resolution at the boundary.** `resolve(request)` is the single place defaults and caps are applied; `run` and `start` accept only resolved specs and never re-default, so no hidden fallback lives inside an implementation.
-- **Task-free background handles.** `start` returns a `ShellProcess` with no id or owner; job identity, ownership, and lifecycle belong to the generic `ctx.jobs` runtime, keeping executors independent of sessions.
+- **Explicit resolution at the boundary.** `resolve(request)` is the single place defaults and caps are applied; `execute` accepts only resolved specs and never re-defaults, so no hidden fallback lives inside an implementation.
+- **One execution, projected views.** `execute` returns the live handle; the foreground result, the background cursor reads, and the promotion offer are projections over the same spawned process, so foreground/background is the caller's choice, never a second spawn path. The handle carries no id or owner; job identity, ownership, and lifecycle belong to the generic `ctx.jobs` runtime, keeping executors independent of sessions.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: abstract `ShellExecutor` service and the shared settings namespace |
-| [`src/types.ts`](src/types.ts) | Request/spec vocabulary, `ShellRunResult`, `ShellProcess`, and sandbox facts |
+| [`src/types.ts`](src/types.ts) | Request/spec vocabulary, `ShellExecution`, `ShellPromotionOffer`, `ShellRunResult`, and sandbox facts |
 | [`src/render.ts`](src/render.ts) | `parseExitStatus`: the exit-status marker contract the shell tools share |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; executors and policy own observations) |
 
@@ -91,7 +95,7 @@ The package is one role of a standard capability seam: the Service Definition th
 
 ### Background lifecycle and ownership
 
-A background process belongs to the subprocess service, not to the executor: it survives an executor-only reload and is killed and joined when the composition tears down. Implementations must honor the seam's semantics — `run` rejects only for infrastructure failures; `start` returns immediately with no timeout and its `done` never rejects (spawn failures settle as `killed` with the error on stderr); `readOutput` is consuming and lossy reads report spill files.
+A spawned process belongs to the subprocess service, not to the executor: it survives an executor-only reload and is killed and joined when the composition tears down. Implementations must honor the seam's semantics — `result()` rejects only for infrastructure failures; the handle is live immediately and its `done` never rejects (spawn failures, synchronous or asynchronous, settle the handle as `killed` with the error on the read path while `result()` carries the same failure as its rejection); `readOutput` is consuming and lossy reads report spill files; an unanswered promotion offer is declined.
 
 </details>
 

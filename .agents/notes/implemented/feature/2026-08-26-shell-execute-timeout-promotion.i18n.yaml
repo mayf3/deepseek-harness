@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-26-shell-execute-timeout-promotion.md
+2026-08-26-shell-execute-timeout-promotion.md: 06da1f7e06badb6af670e5ef23d9211477730059
+2026-08-26-shell-execute-timeout-promotion.zh.md: f81bd9bd67042b46d9dc9b15ef077292978ec9ce

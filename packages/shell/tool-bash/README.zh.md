@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-bash` 为 agent 提供 `bash` 工具，通过已挂载的 shell 执行器运行命令并返回 stdout、stderr 与退出标记。每次调用都运行在全新 shell 中——cwd、变量或函数都不会保留——而 `run_in_background` 把长时间运行的命令变成后台任务，agent 用 `job_output` 收集、用 `job_kill` 停止。每次调用都运行在来自 `dsh-shell-env` 的受管 `DSH_*` 环境中；在沙箱执行器下，被拒绝的命令可以携带更宽的 `sandbox_permissions` 模式和一句 `justification`，经用户审批后在同一轮次内重试一次。非零退出只会被报告、不会失败，因此由 agent 决定如何应对。请与 `dsh-bash-local` 或 `dsh-bash-sandbox` 等执行器提供方以及 `dsh-shell-env` 插件一起挂载。
+`dsh-tool-bash` 为 agent 提供 `bash` 工具，通过已挂载的 shell 执行器运行命令并返回 stdout、stderr 与退出标记。每次调用都运行在全新 shell 中——cwd、变量或函数都不会保留——而长时间运行的命令有两条入口进入后台——事先 `run_in_background`，或前台调用到达超时后自动转移——成为后台任务，agent 用 `job_output` 收集、用 `job_kill` 停止。每次调用都运行在来自 `dsh-shell-env` 的受管 `DSH_*` 环境中；在沙箱执行器下，被拒绝的命令可以携带更宽的 `sandbox_permissions` 模式和一句 `justification`，经用户审批后在同一轮次内重试一次。非零退出只会被报告、不会失败，因此由 agent 决定如何应对。请与 `dsh-bash-local` 或 `dsh-bash-sandbox` 等执行器提供方以及 `dsh-shell-env` 插件一起挂载。
 
 ## 目录
 
@@ -46,6 +46,7 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `enableRunInBackground` | `true` | 暴露 `run_in_background`；为 `false` 时拒绝强制后台调用 |
+| `promoteOnTimeout` | `true` | 把超时的前台命令转入后台任务，而不是杀掉它 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-bash)是每个受支持字段及其 JSDoc 的穷尽式真源；生成的[工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-bash)携带完整参数 schema。
 
@@ -56,6 +57,10 @@ kind: "package-reference"
 ### 后台运行长时间命令
 
 传入 `run_in_background: true` 会立即返回 job id，不应用超时；命令继续运行，agent 同时处理其他事情。agent 用 `job_output` 读取输出（除非 `wait: true`，否则非阻塞）、用 `job_list` 列出任务、用 `job_kill` 停止任务；完成的任务会在会话内通知拥有它的 agent。后台支持需要挂载通用任务运行时（`dsh-jobs-local`）及其控制工具（`dsh-tool-jobs`）。加载了可选的 `ctx.activities` 注册表时，已提交的后台运行还会被尽力镜像进去：一个与调用和 job 关联的 `bash` activity 以 `activityPollMs`（默认 150）的节奏泵送句柄的非消费 `observed` 读取器，使 Web 客户端在不触碰 job 游标的情况下流式看到实时输出；任何观察失败都被记录并吞掉。
+
+### 超时转后台
+
+到达超时的前台命令默认不再被杀：执行器把仍在运行的进程交还回来，工具将它注册为后台任务，调用带着任务 id 与已捕获的输出返回——任务的消费游标恰好从此处接续。转移结果呈现为 `[still running after <timeoutMs>ms; moved to background job <id>]` 加任务交接指引，该运行也像任何后台调用一样镜像进 `ctx.activities`，Web 任务列表随即可流式观看（含停止控件）。转移严格尽力而为：`promoteOnTimeout: false`、缺少任务注册表或任务准入被拒都会回落到普通的超时杀，工具描述也只在语义成立时才宣传它。
 
 ### 沙箱执行与升权
 

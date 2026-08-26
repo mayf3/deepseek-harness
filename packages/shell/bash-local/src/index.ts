@@ -12,7 +12,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { SHELL_SETTINGS_NAMESPACE, ShellExecutor } from '@deepseek-ai/dsh-shell'
-import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellProcessRead, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
+import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, ShellProcessRead, ShellPromotionOffer, ShellRunResult, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import type { SubprocessCollect, SubprocessHandle, SubprocessOutputReader, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { clampTimeout, deadline, MAX_TIMER_DELAY_MS, timeoutOf } from '@deepseek-ai/dsh-timeout'
@@ -140,8 +140,8 @@ export class LocalBashExecutor extends ShellExecutor {
    * Resolve a request into a fully-specified spec: fill `workdir` from
    * `config.cwd` (else `process.cwd()`), and `timeoutMs` from
    * `config.timeoutMs`, capped at `config.maxTimeoutMs`. The tool layer calls
-   * this before {@link run}/{@link start}, so those methods receive explicit
-   * values and never re-default.
+   * this before {@link execute}, so it receives explicit values and never
+   * re-defaults.
    */
   resolve(request: ShellExecRequest): ShellExecSpec {
     const timeoutMs = clampTimeout(
@@ -156,6 +156,7 @@ export class LocalBashExecutor extends ShellExecutor {
       command: request.command,
       workdir: request.workdir ?? this.config.cwd ?? process.cwd(),
       timeoutMs,
+      onExpiry: request.onExpiry ?? 'kill',
       stdoutMaxBytes,
       ...request.signal ? { signal: request.signal } : {},
       // Carry stdin/ordinary env/trusted dshEnv through verbatim — optional,
@@ -208,57 +209,123 @@ export class LocalBashExecutor extends ShellExecutor {
     return { stdout, stderr }
   }
 
-  async run(spec: ShellExecSpec): Promise<ShellRunResult> {
-    return this.runArgv(spec, ['bash', '-c', spec.command])
+  execute(spec: ShellExecSpec): ShellExecution {
+    return this.executeArgv(spec, ['bash', '-c', spec.command])
   }
 
   /**
-   * Run an explicit argv with the foreground lifecycle, environment, output,
-   * timeout, and cancellation semantics of this executor. Subclasses use this
+   * Execute an explicit argv with the lifecycle, environment, output,
+   * deadline, and cancellation semantics of this executor. Subclasses use this
    * after replacing the public command's shell argv at an execution boundary.
    * @param spec - resolved execution settings and caller-owned command metadata.
    * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
-   * @returns the settled foreground result with collected output and cause facts.
+   * @returns the live execution handle; spawn rejection settles the handle as
+   *   killed while `result()` carries the same failure as its rejection.
    */
-  protected async runArgv(spec: ShellExecSpec, argv: readonly string[]): Promise<ShellRunResult> {
-    // One deadline combines timeout and upstream cancellation; disposal clears its timer.
-    using d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
-    const handle = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, spec.stdoutMaxBytes, d.signal))
-    const outcome = await handle.done
-    const collected = LocalBashExecutor.collected(handle)
-    // Only this executor's timeout reason counts as timedOut; outer deadlines count as aborts.
-    const timedOut = timeoutOf(d.signal, 'BASH_TIMEOUT') !== undefined
-    const aborted = d.signal.aborted && !timedOut
-    return {
-      ...outcome,
-      timedOut,
-      aborted,
-      timeoutMs: spec.timeoutMs,
-      stdout: finalOutput(collected.stdout),
-      stderr: finalOutput(collected.stderr),
+  protected executeArgv(spec: ShellExecSpec, argv: readonly string[]): ShellExecution {
+    let settlePromotion!: (offer: ShellPromotionOffer | undefined) => void
+    const promotion = new Promise<ShellPromotionOffer | undefined>((resolve) => {
+      let done = false
+      settlePromotion = (offer) => {
+        if (done) return
+        done = true
+        resolve(offer)
+      }
+    })
+
+    // Deadline wiring by expiry policy. Each arm supplies the spawn signal,
+    // the result projection's first-cause classification, and the disarm the
+    // settlement continuation runs.
+    let spawnSignal: AbortSignal | undefined
+    let classify: () => { timedOut: boolean; aborted: boolean }
+    let disarm = (): void => {}
+    if (spec.onExpiry === 'kill') {
+      // One fused deadline combines timeout and upstream cancellation; only
+      // this executor's timeout reason counts as timedOut, outer deadlines as aborts.
+      const d = deadline(spec.signal, spec.timeoutMs, 'BASH_TIMEOUT')
+      spawnSignal = d.signal
+      classify = () => {
+        const timedOut = timeoutOf(d.signal, 'BASH_TIMEOUT') !== undefined
+        return { timedOut, aborted: d.signal.aborted && !timedOut }
+      }
+      disarm = () => { d[Symbol.dispose]() }
+    } else if (spec.onExpiry === 'none') {
+      // No deadline: callers stop the process through kill() or spec.signal.
+      spawnSignal = spec.signal
+      classify = () => ({ timedOut: false, aborted: spec.signal?.aborted === true })
+    } else {
+      // 'offer': the caller's signal kills only until the offer is accepted;
+      // the timer hands out the offer instead of killing.
+      const relay = new AbortController()
+      spawnSignal = relay.signal
+      let cause: 'timedOut' | 'aborted' | undefined
+      const onCallerAbort = (): void => {
+        cause ??= 'aborted'
+        relay.abort()
+      }
+      spec.signal?.addEventListener('abort', onCallerAbort, { once: true })
+      const detachCaller = (): void => { spec.signal?.removeEventListener('abort', onCallerAbort) }
+      const timer = deadline(undefined, spec.timeoutMs, 'BASH_TIMEOUT')
+      timer.signal.addEventListener('abort', () => {
+        let answered = false
+        const offer: ShellPromotionOffer = {
+          accept: () => {
+            if (answered) return
+            answered = true
+            detachCaller()
+          },
+          decline: () => {
+            // A late decline cannot exist unanswered: the synchronous-answer
+            // contract plus the auto-decline below guarantee the first answer
+            // lands while the process still runs.
+            if (answered) return
+            answered = true
+            cause ??= 'timedOut'
+            relay.abort()
+          },
+        }
+        settlePromotion(offer)
+        // Offer consumers answer synchronously in the resolution's own
+        // microtask batch (their reactions were enqueued by the resolve
+        // above, this check runs after them); an unanswered offer falls back
+        // to the kill-on-timeout behavior rather than detaching the process.
+        queueMicrotask(() => { if (!answered) offer.decline() })
+      }, { once: true })
+      classify = () => ({ timedOut: cause === 'timedOut', aborted: cause === 'aborted' })
+      disarm = () => {
+        timer[Symbol.dispose]()
+        detachCaller()
+      }
     }
-  }
 
-  start(spec: ShellExecSpec): ShellProcess {
-    return this.startArgv(spec, ['bash', '-c', spec.command])
-  }
-
-  /**
-   * Start an explicit argv with the background lifecycle, environment, output,
-   * cancellation, and process-tree ownership semantics of this executor.
-   * Subclasses use this after replacing the public command's shell argv at an
-   * execution boundary.
-   * @param spec - resolved execution settings and caller-owned command metadata.
-   * @param argv - exact executable and arguments to hand to `ctx.subprocess`.
-   * @returns the live background handle; spawn rejection settles it as killed.
-   */
-  protected startArgv(spec: ShellExecSpec, argv: readonly string[]): ShellProcess {
-    // Background runs ignore timeoutMs; callers stop them through kill() or spec.signal.
-    const running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, this.config.maxOutputBytes, spec.signal))
-    const collected = LocalBashExecutor.collected(running)
+    // A synchronous spawn throw (pre-aborted signal, alternative subprocess
+    // implementations) is contained into the same settled-killed shape as an
+    // asynchronous spawn rejection, so execute() itself never throws for a
+    // spawn problem and result() carries the failure uniformly.
+    let running: SubprocessHandle | undefined
+    let syncSpawnError: { error: unknown } | undefined
+    try {
+      running = this.ctx.subprocess.spawn(this.spawnSpec(spec, argv, spec.stdoutMaxBytes, spawnSignal))
+    } catch (error) {
+      syncSpawnError = { error }
+    }
+    const emptyReader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+    }
+    const collected = running !== undefined
+      ? LocalBashExecutor.collected(running)
+      : { stdout: emptyReader, stderr: emptyReader }
+    const spawnThrow = (): unknown => (syncSpawnError as { error: unknown }).error
+    const spawned = running !== undefined
+      ? running.done
+      // The original throw is preserved for callers even when it was not an Error.
+      // eslint-disable-next-line prefer-promise-reject-errors
+      : Promise.reject(spawnThrow())
 
     // A spawn failure produces no process output, so the subprocess service has nothing
-    // to buffer; the note is delivered exactly once through the read path.
+    // to buffer; the note is delivered exactly once through the read path, and
+    // the retained error is the result() projection's rejection.
+    let spawnFailure: { error: unknown } | undefined
     let spawnFailureNote: string | undefined
     const consumeSpawnFailure = (): string => {
       const note = spawnFailureNote ?? ''
@@ -268,24 +335,31 @@ export class LocalBashExecutor extends ShellExecutor {
 
     let stdoutOffset = 0
     let stderrOffset = 0
-    const proc: ShellProcess = {
+    let resultPromise: Promise<ShellRunResult> | undefined
+    const proc: ShellExecution = {
       status: 'running',
       exitCode: null,
       signal: null,
       observed: collected,
-      done: running.done.then((outcome) => {
+      promotion,
+      done: spawned.then((outcome) => {
         // Any signal termination is killed, including a command signaling itself.
         if (proc.status === 'running') {
-          proc.status = spec.signal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
+          proc.status = spawnSignal?.aborted === true || outcome.signal !== null ? 'killed' : 'completed'
         }
         proc.exitCode = outcome.exitCode
         proc.signal = outcome.signal
         this.onProcessDone(proc, collected.stderr.readFrom(0).text, false)
+        disarm()
+        settlePromotion(undefined)
       }, (error: unknown) => {
-        // Background spawn failures settle as killed and surface through the read path.
+        // Spawn failures settle the handle as killed and surface through the read path.
         proc.status = 'killed'
+        spawnFailure = { error }
         spawnFailureNote = `spawn failed: ${String(error)}`
         this.onProcessDone(proc, spawnFailureNote, true, error)
+        disarm()
+        settlePromotion(undefined)
       }),
       readOutput: (): ShellProcessRead => {
         const out = collected.stdout.readFrom(stdoutOffset)
@@ -311,8 +385,24 @@ export class LocalBashExecutor extends ShellExecutor {
       kill: (): boolean => {
         if (proc.status !== 'running') return false
         proc.status = 'killed'
-        running.terminate()
+        running?.terminate()
         return true
+      },
+      result: (): Promise<ShellRunResult> => {
+        resultPromise ??= proc.done.then(() => {
+          // Infrastructure-failure parity with the historical foreground path:
+          // a spawn that never produced a process rejects the projection.
+          if (spawnFailure !== undefined) throw spawnFailure.error
+          return {
+            exitCode: proc.exitCode,
+            signal: proc.signal,
+            ...classify(),
+            timeoutMs: spec.timeoutMs,
+            stdout: finalOutput(collected.stdout),
+            stderr: finalOutput(collected.stderr),
+          }
+        })
+        return resultPromise
       },
     }
     return proc
