@@ -96,9 +96,12 @@ describe('reference submission', () => {
     })
 
     shell.submit('queue')
-    expect(shell.snapshot.phase).toBe('submitting')
+    // Optimistic commit: the composer clears at enter and stays unlocked
+    // while the detached flight runs.
+    expect(shell.snapshot.phase).toBe('plain')
+    expect(shell.snapshot.draft).toBe('')
     await vi.waitFor(() => {
-      expect(shell.snapshot.phase).toBe('plain')
+      expect(shell.snapshot.draft).toBe('@Research ')
     })
     expect(sink).toHaveBeenNthCalledWith(1, mention, [], 'queue', expect.any(AbortSignal))
     expect(shell.snapshot).toMatchObject({
@@ -111,10 +114,10 @@ describe('reference submission', () => {
     })
 
     shell.submit('queue')
+    expect(shell.snapshot.draft).toBe('')
     await vi.waitFor(() => {
-      expect(shell.snapshot.draft).toBe('')
+      expect(sink).toHaveBeenNthCalledWith(2, mention, [], 'queue', expect.any(AbortSignal))
     })
-    expect(sink).toHaveBeenNthCalledWith(2, mention, [], 'queue', expect.any(AbortSignal))
     expect(shell.snapshot.occurrences).toEqual([])
     expect(serializeReference).toHaveBeenCalledTimes(2)
   })
@@ -133,11 +136,12 @@ describe('reference submission', () => {
     })
     chip(shell)
     shell.submit()
+    // The serializer rejection restores the committed draft and chip into the
+    // still-untouched composer.
     await vi.waitFor(() => {
-      expect(shell.snapshot.phase).toBe('plain')
+      expect(shell.snapshot.draft).toBe('@Research ')
     })
     expect(sink).not.toHaveBeenCalled()
-    expect(shell.snapshot.draft).toBe('@Research ')
     expect(shell.snapshot.occurrences).toHaveLength(1)
     expect(shell.notices.getSnapshot()).toMatchObject({
       level: 'error',
@@ -161,7 +165,9 @@ describe('reference submission', () => {
     shell.dispose()
     expect(signal?.aborted).toBe(true)
     expect(shell.snapshot.phase).toBe('plain')
-    expect(shell.snapshot.draft).toBe('send this')
+    // The optimistic commit stands: disposal drops the settlement, so the
+    // sent draft is not restored into the dying composer.
+    expect(shell.snapshot.draft).toBe('')
   })
 
   it('retains a rejected default message without duplicating its prompt error notice', async () => {

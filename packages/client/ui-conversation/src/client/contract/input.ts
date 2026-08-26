@@ -375,9 +375,11 @@ export interface InputState {
 
 /**
  * One in-flight submission attempt: the ONLY id concept in the submit plane.
- * Created on enter; carried by adjudicated/submit-settled events; stale
- * attempts are dropped (anti-backwash). release/session teardown aborts the
- * current attempt, keeping the promise bounded.
+ * Created on enter; carried by adjudicated/submit-settled/sink-settled
+ * events; stale attempts are dropped (anti-backwash). Command attempts hold
+ * the single frozen in-flight slot; default-sink attempts run detached and
+ * concurrently. release/session teardown aborts them all, keeping every
+ * promise bounded.
  */
 export interface SubmitAttempt {
   readonly seq: number
@@ -421,6 +423,13 @@ export type InputEvent =
   | { readonly type: 'adjudicated'; readonly attempt: SubmitAttempt; readonly outcome: PickOutcome }
   | { readonly type: 'adjudication-failed'; readonly attempt: SubmitAttempt; readonly message: string }
   | { readonly type: 'submit-settled'; readonly attempt: SubmitAttempt; readonly ok: boolean; readonly outcome?: SubmitOutcome; readonly message?: string }
+  /**
+   * Settlement of one detached default-sink send. Independent of phase and of
+   * the command-plane in-flight slot: the composer committed optimistically at
+   * enter, so failure restores the enter-time draft and occurrences only while
+   * the composer is still untouched (empty plain draft).
+   */
+  | { readonly type: 'sink-settled'; readonly attempt: SubmitAttempt; readonly ok: boolean; readonly outcome?: SubmitOutcome; readonly message?: string }
   /** Commit an image-only send whose empty draft did not need an attempt. */
   | { readonly type: 'send-committed' }
   | { readonly type: 'release' }
@@ -433,5 +442,14 @@ export type InputEvent =
 export type InputEffect =
   | { readonly type: 'adjudicate'; readonly attempt: SubmitAttempt; readonly draft: string }
   | { readonly type: 'begin-submit'; readonly attempt: SubmitAttempt; readonly claim: CommandClaim; readonly args: string }
-  | { readonly type: 'default-sink'; readonly attempt: SubmitAttempt; readonly draft: string; readonly mode: InputSubmitMode }
+  /** Detached default send. The machine committed the composer clear at enter;
+   *  `occurrences` snapshots the reference table serialization needs (the live
+   *  table was cleared with the draft). */
+  | {
+    readonly type: 'default-sink'
+    readonly attempt: SubmitAttempt
+    readonly draft: string
+    readonly occurrences: readonly Occurrence[]
+    readonly mode: InputSubmitMode
+  }
   | { readonly type: 'notice'; readonly level: 'info' | 'error'; readonly text: string }

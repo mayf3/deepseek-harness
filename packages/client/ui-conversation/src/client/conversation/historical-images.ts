@@ -67,6 +67,29 @@ export class HistoricalImageCache {
     return pending
   }
 
+  /**
+   * Adopt an already-displayable URL for one durable reference (a submission
+   * echo's preview whose bytes are the just-admitted image). Ownership moves
+   * to this cache: the URL is revoked with the Session scope like a fetched
+   * one, and later resolve() calls reuse it without a byte round-trip.
+   * @param sessionId - Session authorization and lifetime scope.
+   * @param attachment - Durable image reference the URL displays.
+   * @param url - browser URL to adopt.
+   * @returns whether the cache took ownership (false: entry already present or unknown session — the caller keeps the URL).
+   */
+  seed(sessionId: SessionId, attachment: ImageAttachmentRef, url: string): boolean {
+    if (this.disposed) return false
+    const key = `${sessionId}:${attachment.attachmentId}`
+    if (this.entries.has(key)) return false
+    const binding = this.sessions.binding(sessionId)
+    if (binding === undefined) return false
+    this.bindScope(sessionId, binding.ctx)
+    const generation = this.generations.get(sessionId) ?? 0
+    this.urls.add(url)
+    this.entries.set(key, { sessionId, generation, pending: Promise.resolve(url) })
+    return true
+  }
+
   private bindScope(sessionId: SessionId, scope: Context): void {
     if (this.scopeDisposers.has(sessionId)) return
     const dispose = scope.effect(() => () => {

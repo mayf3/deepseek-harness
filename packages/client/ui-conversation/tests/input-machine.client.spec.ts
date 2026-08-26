@@ -71,13 +71,18 @@ describe('input-machine: plain × enter', () => {
     expect(m.state.phase).toBe('plain')
   })
 
-  it('non-command text falls to the default sink', () => {
+  it('non-command text falls to the default sink and commits the composer clear at enter', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'hello world' })
     const effect = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
     expect(effect).toMatchObject({ draft: 'hello world', mode: 'queue' })
     expect(effect.attempt.draftSnapshot).toBe('hello world')
-    expect(m.state.phase).toBe('submitting')
+    // Optimistic commit: the send is detached — the composer is already
+    // cleared, unlocked, and un-undoable while the flight runs.
+    expect(m.state.phase).toBe('plain')
+    expect(m.state.draft).toBe('')
+    expect(m.dispatch({ type: 'undo' })).toEqual([])
+    expect(m.state.draft).toBe('')
   })
 
   it('retains an explicit steer mode on the default sink effect', () => {
@@ -134,7 +139,7 @@ describe('input-machine: adjudication outcomes', () => {
     expect(effectAt(b.dispatch({ type: 'adjudicated', attempt: attemptB, outcome: { claim: claimOf('goal') } }), 0, 'begin-submit').args).toBe('x')
   })
 
-  it('undefined outcome falls back to the default sink', () => {
+  it('undefined outcome falls back to the default sink and commits the clear', () => {
     const m = new InputMachine()
     const attempt = enterAdjudicating(m, '/unknown thing', 'steer')
     expect(effectAt(
@@ -142,7 +147,8 @@ describe('input-machine: adjudication outcomes', () => {
       0,
       'default-sink',
     )).toMatchObject({ attempt, draft: '/unknown thing', mode: 'steer' })
-    expect(m.state.phase).toBe('submitting')
+    expect(m.state.phase).toBe('plain')
+    expect(m.state.draft).toBe('')
   })
 
   it("'handled' lands plain with zero effects (popup shell path)", () => {
@@ -525,20 +531,35 @@ describe('input-machine: undo / redo', () => {
     expect(m.state.draft).toBe('')
   })
 
-  it('keeps a suffix typed during the round-trip and drops interleaved edits with the commit', () => {
+  it('text typed during the detached flight is the next draft and survives both settlements', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'hello' })
     const effect = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
-    m.dispatch({ type: 'draft-changed', draft: 'hello world' })
-    m.dispatch({ type: 'submit-settled', attempt: effect.attempt, ok: true })
-    expect(m.state.draft).toBe(' world')
+    expect(m.state.draft).toBe('')
+    m.dispatch({ type: 'draft-changed', draft: 'world' })
+    m.dispatch({ type: 'sink-settled', attempt: effect.attempt, ok: true })
+    expect(m.state.draft).toBe('world')
 
+    // Failure with a non-empty composer keeps the typed content: the sent
+    // draft is NOT restored over it.
     const n = new InputMachine()
     n.dispatch({ type: 'draft-changed', draft: 'hello' })
     const second = effectAt(n.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
-    n.dispatch({ type: 'draft-changed', draft: 'hXello' })
-    n.dispatch({ type: 'submit-settled', attempt: second.attempt, ok: true })
-    expect(n.state.draft).toBe('')
+    n.dispatch({ type: 'draft-changed', draft: 'typed during flight' })
+    n.dispatch({ type: 'sink-settled', attempt: second.attempt, ok: false, message: 'boom' })
+    expect(n.state.draft).toBe('typed during flight')
+  })
+
+  it('a failed detached flight restores the sent draft and occurrences into an untouched composer', () => {
+    const m = new InputMachine()
+    m.dispatch({ type: 'draft-changed', draft: 'restore me' })
+    const effect = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    expect(m.state.draft).toBe('')
+    const fx = m.dispatch({ type: 'sink-settled', attempt: effect.attempt, ok: false, message: 'boom' })
+    expect(fx).toEqual([{ type: 'notice', level: 'error', text: 'boom' }])
+    expect(m.state.draft).toBe('restore me')
+    // A second settlement of the same attempt is a dropped stale event.
+    expect(m.dispatch({ type: 'sink-settled', attempt: effect.attempt, ok: false, message: 'again' })).toEqual([])
   })
 })
 

@@ -13,7 +13,7 @@ import {
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, DraftAttachmentId,
   EditRange, EditSelection, InputActions, InputEffect, InputNotice, InputState,
-  InputTriggerController, PasteComponent, PickOutcome, QueuedMessage, ReferenceInsert,
+  InputTriggerController, Occurrence, PasteComponent, PickOutcome, QueuedMessage, ReferenceInsert,
   SessionInput, SubmitAttempt, SubmitImageAttachment, SubmitOutcome, TokenSpan,
 } from '../contract/input.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
@@ -100,8 +100,6 @@ export class SessionInputShell implements SessionInput {
   private noticeSeq = 0
   private lastMirroredDraft = ''
   private imageIds: readonly DraftAttachmentId[] = []
-  /** One image-only send at a time: Enter during the Host round-trip is a no-op. */
-  private imageSendInFlight = false
   private disposed = false
   /** Draft persistence mirror (Conversation store write; receives the clipboard projection, never display-only ranges). */
   private mirrorFn: ((text: string) => void) | undefined
@@ -208,17 +206,19 @@ export class SessionInputShell implements SessionInput {
    */
   submit(mode: InputSubmitMode = 'queue'): void {
     if (this.snapshot.draft.trim() === '' && this.imageIds.length > 0) {
-      if (this.snapshot.phase === 'plain' && !this.imageSendInFlight) {
+      if (this.snapshot.phase === 'plain') {
+        // Optimistic image-only send: the rail clears now; a failed admission
+        // restores the same ids (they stay registered until release).
         const imageIds = [...this.imageIds]
-        this.imageSendInFlight = true
+        this.commitSend(imageIds)
         void this.deps.defaultSink('', imageIds, mode, new AbortController().signal).then((outcome) => {
-          this.imageSendInFlight = false
-          if (this.disposed) return
-          if (outcome.kind === 'success') this.commitSend(imageIds)
-          else if (outcome.text !== undefined) this.notify('error', outcome.text)
+          if (this.disposed || outcome.kind === 'success') return
+          this.restoreImages(imageIds)
+          if (outcome.text !== undefined) this.notify('error', outcome.text)
         }, (error: unknown) => {
-          this.imageSendInFlight = false
-          if (!this.disposed) this.notify('error', error instanceof Error ? error.message : String(error))
+          if (this.disposed) return
+          this.restoreImages(imageIds)
+          this.notify('error', error instanceof Error ? error.message : String(error))
         })
       }
       return
@@ -438,7 +438,7 @@ export class SessionInputShell implements SessionInput {
         return
       }
       case 'default-sink': {
-        this.sinkSerialized(fx.attempt, fx.draft, fx.mode)
+        this.sinkSerialized(fx.attempt, fx.draft, fx.occurrences, fx.mode)
         return
       }
       default:
@@ -449,15 +449,21 @@ export class SessionInputShell implements SessionInput {
   /**
    * Prompt serialization before the sink: expand each
    * inline reference range to its owner's model form via the session controller's
-   * codec routing. Owner missing / serialize failure / disposal blocks the
-   * send — notice + draft and chips retained, never a silent downgrade to
-   * the clipboard text. Chip-free drafts skip the async detour.
+   * codec routing. The composer committed at enter, so the draft images clear
+   * here (captured for the send) and a failure — owner missing, serialize
+   * rejection, transport, or admission — restores them beside the machine's
+   * untouched-draft restore. Chip-free drafts skip the async detour.
    */
-  private sinkSerialized(attempt: SubmitAttempt, draft: string, mode: InputSubmitMode): void {
+  private sinkSerialized(
+    attempt: SubmitAttempt,
+    draft: string,
+    occurrences: readonly Occurrence[],
+    mode: InputSubmitMode,
+  ): void {
     const imageIds = [...this.imageIds]
-    const occurrences = this.core.state.occurrences
+    this.imageIds = []
     if (occurrences.length === 0) {
-      this.settleSubmit(attempt, this.deps.defaultSink(draft.trim(), imageIds, mode, attempt.signal), imageIds)
+      this.settleSink(attempt, this.deps.defaultSink(draft.trim(), imageIds, mode, attempt.signal), imageIds)
       return
     }
     const inputTriggers = this.deps.inputTriggers?.()
@@ -481,32 +487,30 @@ export class SessionInputShell implements SessionInput {
           cursor = part.offset + part.length
         }
         out += draft.slice(cursor)
-        this.settleSubmit(attempt, this.deps.defaultSink(out.trim(), imageIds, mode, attempt.signal), imageIds)
+        this.settleSink(attempt, this.deps.defaultSink(out.trim(), imageIds, mode, attempt.signal), imageIds)
       },
       (error: unknown) => {
         controller.abort()
         if (this.dead(attempt)) return
+        this.restoreImages(imageIds)
         const message = error instanceof Error ? error.message : String(error)
-        this.run(this.core.dispatch({ type: 'submit-settled', attempt, ok: false, message }))
+        this.run(this.core.dispatch({ type: 'sink-settled', attempt, ok: false, message }))
       },
     )
   }
 
-  /** Settle one admission attempt; successful sends consume only their captured images. */
-  private settleSubmit(
+  /** Settle one detached default send; a failure returns its captured images to the rail. */
+  private settleSink(
     attempt: SubmitAttempt,
     pending: Promise<SubmitOutcome>,
-    imageIds: readonly DraftAttachmentId[] = [],
+    imageIds: readonly DraftAttachmentId[],
   ): void {
     pending.then(
       (outcome) => {
         if (this.dead(attempt)) return
-        if (outcome.kind === 'success' && imageIds.length > 0) {
-          const submitted = new Set(imageIds)
-          this.imageIds = this.imageIds.filter(id => !submitted.has(id))
-        }
+        if (outcome.kind !== 'success') this.restoreImages(imageIds)
         this.run(this.core.dispatch({
-          type: 'submit-settled',
+          type: 'sink-settled',
           attempt,
           ok: outcome.kind === 'success',
           outcome,
@@ -514,14 +518,25 @@ export class SessionInputShell implements SessionInput {
       },
       (error: unknown) => {
         if (this.dead(attempt)) return
+        this.restoreImages(imageIds)
         this.run(this.core.dispatch({
-          type: 'submit-settled',
+          type: 'sink-settled',
           attempt,
           ok: false,
           message: error instanceof Error ? error.message : String(error),
         }))
       },
     )
+  }
+
+  /** Return failed-send images to the head of the rail (ids still resolve — release happens only after success). */
+  private restoreImages(imageIds: readonly DraftAttachmentId[]): void {
+    if (imageIds.length === 0) return
+    const current = new Set(this.imageIds)
+    const restored = imageIds.filter(id => !current.has(id))
+    if (restored.length === 0) return
+    this.imageIds = [...restored, ...this.imageIds]
+    this.publish()
   }
 
   /** Enter adjudication: poll the session controller; failure = notice + draft retained (never a silent downgrade). */

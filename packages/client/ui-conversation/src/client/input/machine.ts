@@ -125,6 +125,12 @@ export class InputMachine {
     readonly attempt: SubmitAttempt
     readonly controller: AbortController
   } | undefined
+  /** Detached default-sink sends by attempt seq: the composer already committed; settlement only restores on failure. */
+  private readonly detached = new Map<number, {
+    readonly controller: AbortController
+    readonly draftSnapshot: string
+    readonly occurrences: readonly Occurrence[]
+  }>()
   private log: Transaction[] = []
   private redoStack: Transaction[] = []
   /** Open single-char typing run: the next contiguous char within the window coalesces. */
@@ -186,6 +192,7 @@ export class InputMachine {
       case 'adjudicated': return this.onAdjudicated(ev.attempt, ev.outcome)
       case 'adjudication-failed': return this.onAdjudicationFailed(ev.attempt, ev.message)
       case 'submit-settled': return this.onSubmitSettled(ev)
+      case 'sink-settled': return this.onSinkSettled(ev)
       case 'send-committed': return this.onSendCommitted()
       case 'release': return this.onRelease()
       default: return unreachable(ev)
@@ -480,6 +487,30 @@ export class InputMachine {
     return attempt
   }
 
+  /**
+   * Detach one default send and commit the composer clear in the same
+   * transaction: the draft, occurrence table, and undo history go now (a sent
+   * draft must not resurrect through Ctrl/Cmd-Z), while the snapshots ride
+   * the detached record so a failed settlement can restore an untouched
+   * composer. The phase stays 'plain' — typing and further sends continue
+   * during the flight.
+   */
+  private detachSink(attempt: SubmitAttempt, controller: AbortController): InputEffect {
+    const occurrences = this.occurrences
+    this.detached.set(attempt.seq, { controller, draftSnapshot: attempt.draftSnapshot, occurrences })
+    this.phase = 'plain'
+    this.claim = undefined
+    if (this.draft === attempt.draftSnapshot) {
+      this.occurrences = []
+      this.adopt('')
+      this.log = []
+      this.redoStack = []
+    }
+    this.typingRun = undefined
+    this.paste = undefined
+    return { type: 'default-sink', attempt, draft: attempt.draftSnapshot, occurrences, mode: attempt.mode }
+  }
+
   private onEnter(mode: InputSubmitMode): InputEffect[] {
     if (this.phase === 'adjudicating' || this.phase === 'submitting') return []
     if (this.phase === 'claimed' && this.claim !== undefined) {
@@ -496,9 +527,10 @@ export class InputMachine {
       this.phase = 'adjudicating'
       return [{ type: 'adjudicate', attempt, draft: this.draft }]
     }
-    const attempt = this.beginAttempt(mode)
-    this.phase = 'submitting'
-    return [{ type: 'default-sink', attempt, draft: this.draft, mode }]
+    const controller = new AbortController()
+    this.seq += 1
+    const attempt: SubmitAttempt = { seq: this.seq, signal: controller.signal, draftSnapshot: this.draft, mode }
+    return [this.detachSink(attempt, controller)]
   }
 
   private onAdjudicated(attempt: SubmitAttempt, outcome: Extract<InputEvent, { type: 'adjudicated' }>['outcome']): InputEffect[] {
@@ -517,13 +549,8 @@ export class InputMachine {
     // 'handled' (source dealt internally), {insert} (no enter-time span
     // semantics), or a miss: all land plain; only the miss flows to the sink.
     if (outcome === undefined) {
-      this.phase = 'submitting'
-      return [{
-        type: 'default-sink',
-        attempt,
-        draft: attempt.draftSnapshot,
-        mode: attempt.mode,
-      }]
+      this.inflight = undefined
+      return [this.detachSink(attempt, flight.controller)]
     }
     this.inflight = undefined
     this.phase = 'plain'
@@ -577,6 +604,31 @@ export class InputMachine {
     return text === undefined ? [] : [{ type: 'notice', level: 'error', text }]
   }
 
+  /**
+   * Settle one detached default send. Success has nothing left to commit (the
+   * clear happened at enter); failure restores the enter-time draft and
+   * occurrence table, but only into a still-untouched composer — an empty
+   * plain draft — so content typed during the flight always wins.
+   */
+  private onSinkSettled(ev: Extract<InputEvent, { type: 'sink-settled' }>): InputEffect[] {
+    const record = this.detached.get(ev.attempt.seq)
+    if (record === undefined) return []
+    this.detached.delete(ev.attempt.seq)
+    if (ev.ok) {
+      return ev.outcome?.text !== undefined
+        ? [{ type: 'notice', level: ev.outcome.kind === 'error' ? 'error' : 'info', text: ev.outcome.text }]
+        : []
+    }
+    if (this.phase === 'plain' && this.draft === '') {
+      this.occurrences = record.occurrences
+      this.adopt(record.draftSnapshot)
+      this.typingRun = undefined
+      this.paste = undefined
+    }
+    const text = ev.message ?? ev.outcome?.text
+    return text === undefined ? [] : [{ type: 'notice', level: 'error', text }]
+  }
+
   /** Cut undo state after an accepted image-only send. */
   private onSendCommitted(): InputEffect[] {
     if (this.phase !== 'plain') return []
@@ -595,6 +647,8 @@ export class InputMachine {
       this.inflight.controller.abort()
       this.inflight = undefined
     }
+    for (const record of this.detached.values()) record.controller.abort()
+    this.detached.clear()
     this.phase = 'plain'
     this.claim = undefined
     this.typingRun = undefined
