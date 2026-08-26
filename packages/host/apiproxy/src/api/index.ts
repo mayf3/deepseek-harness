@@ -37,7 +37,7 @@ export type {
   SubagentPromptReceipt, SubagentsApi,
 } from './subagents.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
-export type { AgentPresetsApi, AgentPresetEntry } from './agent-presets.ts'
+export type { AgentPresetsApi } from './agent-presets.ts'
 export type { SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView } from './settings.ts'
 export type { CredentialsApi, CredentialView } from './credentials.ts'
 export type { ConfigurableProviderView, DiscoveredModelView, LlmApi } from './llm.ts'

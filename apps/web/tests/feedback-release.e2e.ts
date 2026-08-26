@@ -84,7 +84,7 @@ describe('web e2e: feedback-gated release under the shipped default mode', () =>
       // Drift guard: the shared fixture must carry exactly the drive prompt.
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     }
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled()
     await input.fill(PROMPT)
@@ -100,7 +100,7 @@ describe('web e2e: feedback-gated release under the shipped default mode', () =>
     onTestFailed(() => saveFailureShot(page, 'web-e2e-feedback-release'))
     await page.getByText('LIGHTHOUSE', { exact: true }).waitFor({ timeout: 15_000 })
     expect(uploads).toEqual([])
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.fill('/feedback the diff view is unreadable')
     await input.press('Enter')
 
@@ -121,7 +121,7 @@ describe('web e2e: feedback-gated release under the shipped default mode', () =>
 
   it.skipIf(MODE === 'record')('releases only the records since the last handoff on a second feedback', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-feedback-release-suffix'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.fill('/feedback the second remark')
     await input.press('Enter')
     await expect.poll(() => uploads.length, { timeout: 15_000 }).toBe(2)
