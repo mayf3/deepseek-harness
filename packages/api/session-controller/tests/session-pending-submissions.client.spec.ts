@@ -99,7 +99,7 @@ describe('beginSubmission', () => {
 describe('prompt-coupled retirement', () => {
   it('a rejected identified prompt retires its echo immediately alongside promptError', async () => {
     const { api, session } = makeSession()
-    api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: '忙', details: {} }))
+    api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: '忙', details: { reason: 'busy' } }))
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
       text: '失败的',
@@ -122,7 +122,7 @@ describe('prompt-coupled retirement', () => {
 
   it('an unidentified prompt failure leaves registered echoes alone', async () => {
     const { api, session } = makeSession()
-    api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: '忙', details: {} }))
+    api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: '忙', details: { reason: 'busy' } }))
     session.beginSubmission({ text: '还在', images: [] })
     await session.prompt([{ type: 'text', text: '另一个' }], 'queue')
     expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)
