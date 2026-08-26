@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-brand` makes structurally identical strings non-interchangeable at the type level with its `Branded<B>` primitive: a `SessionId` cannot be passed where a `CallId` is expected even though both are plain `string`s at runtime. Comparison, logging, JSON serialization, and the wire format all behave exactly as for ordinary strings because the brand is erased at compile time. It is a type-only package with no runtime code and no dependency on other harness packages, so any package can brand the ids it owns without importing an unrelated capability package. Packages that own a cross-package id — `CallId` in `dsh-llm`, the shared agent/session `SessionId`, `JobId` in `dsh-jobs` — brand that id and construct it through a per-id factory.
+`dsh-brand` makes structurally identical strings non-interchangeable at the type level with its `Branded<B>` primitive: a `SessionId` cannot be passed where a `ToolCallId` is expected even though both are plain `string`s at runtime. Comparison, logging, JSON serialization, and the wire format all behave exactly as for ordinary strings because the brand is erased at compile time. It is a type-only package with no runtime code and no dependency on other harness packages, so any package can brand the ids it owns without importing an unrelated capability package. Packages that own a cross-package id — `ToolCallId` in `dsh-llm`, the shared agent/session `SessionId`, `JobId` in `dsh-jobs` — brand that id and construct it through a per-id factory.
 
 ## Table of Contents
 
@@ -44,7 +44,7 @@ The factory is a plain cast with zero runtime cost. Once branded, the id flows t
 
 ### When to brand
 
-Brand ids that cross package boundaries and could plausibly be confused — `CallId` in `dsh-llm`, the shared agent/session `SessionId` in `dsh-session`, `JobId` in `dsh-jobs`, `LspProviderId` in `dsh-lsp`. Do not brand every string: the cost is a factory at every construction site and a type import in every consumer, so ids that never leave their owning package do not earn it.
+Brand ids that cross package boundaries and could plausibly be confused — `ToolCallId` in `dsh-llm`, the shared agent/session `SessionId` in `dsh-session`, `JobId` in `dsh-jobs`, `LspProviderId` in `dsh-lsp`. Do not brand every string: the cost is a factory at every construction site and a type import in every consumer, so ids that never leave their owning package do not earn it.
 
 -----
 

@@ -99,7 +99,7 @@ interface PrunedEntry {
   /** Newly appended pruned tool-result event. */
   readonly replacementSeq: number
   /** Tool call shared by the original and replacement. */
-  readonly callId: CallId
+  readonly callId: ToolCallId
   /** Original text size in Unicode code points. */
   readonly charsBefore: number
   /** Replacement text size in Unicode code points. */
