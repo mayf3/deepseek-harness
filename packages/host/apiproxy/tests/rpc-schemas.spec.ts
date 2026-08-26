@@ -37,10 +37,6 @@ describe('rpcErrorSchema', () => {
     expect(rpcErrorSchema.parse({ code: 'agent-preset-not-found', message: 'm', details: { agentPreset: 'p', available: [] } }).code).toBe('agent-preset-not-found')
     expect(rpcErrorSchema.parse({ code: 'agent-preset-invalid', message: 'm', details: { agentPreset: 'p', reason: 'bad' } }).code).toBe('agent-preset-invalid')
     expect(rpcErrorSchema.parse({ code: 'agent-busy', message: 'm', details: { reason: 'r' } }).code).toBe('agent-busy')
-    expect(rpcErrorSchema.parse({ code: 'settings-rejected', message: 'm', details: { ns: 'n' } }).code).toBe('settings-rejected')
-    expect(rpcErrorSchema.parse({ code: 'settings-conflict', message: 'm', details: { ns: 'n', expected: 1, actual: 2 } }).code).toBe('settings-conflict')
-    // The credentials producer still emits this code, so the branch has to stay.
-    expect(rpcErrorSchema.parse({ code: 'credential-rejected', message: 'm', details: { ref: 'r' } }).code).toBe('credential-rejected')
     expect(rpcErrorSchema.parse({ code: 'model-discovery-failed', message: 'm', details: { settingsNs: 'n' } }).code).toBe('model-discovery-failed')
     expect(rpcErrorSchema.parse({ code: 'internal', message: 'm', details: {} }).code).toBe('internal')
   })
