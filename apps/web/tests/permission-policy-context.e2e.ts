@@ -106,7 +106,7 @@ describe('web e2e: current sandbox policy reaches the model before tools', () =>
       await writeComposerDraft(page, input, PROMPTS[index] as string)
       await input.press('Enter')
       sessionId = await settled
-      await expect.poll(() => input.getAttribute('contenteditable'), { timeout: 10_000 }).toBe('true')
+      await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 10_000 })
     }
 
     await writeComposerDraft(page, input, '/permission read-only')
