@@ -296,7 +296,14 @@ class _LogStream(io.TextIOBase):
             pos = 0
             if self._pending or self._pending_blocks:
                 newline = text.index("\n")
-                if self._pending_chars + newline + 3 > self._logs.remaining:
+                # The +3 cheap-bound overhead (quotes + separator) belongs to a
+                # NEW entry. While an `open` entry is accumulating, the closing
+                # line is that entry's TAIL: its cheap bound is the content
+                # length alone, matching `_push_locked`'s open-aware bound.
+                # Charging +3 here truncates an exact-fit merged tail or
+                # over-rejects it, then flushes a truncated prefix instead.
+                overhead = 3 if not self._logs._open_started else 0
+                if self._pending_chars + newline + overhead > self._logs.remaining:
                     # The reconstructed first line cannot fit the ledger, so
                     # LogBuffer would reject it whole: copy only the prefix that
                     # fails its cheap bound and drop the chunks. The slice is
@@ -331,7 +338,8 @@ class _LogStream(io.TextIOBase):
                 # prefix, which push still rejects on its own cheap bound (the
                 # prefix is longer than `remaining`), so the marker is emitted
                 # and the oversized line is never materialized.
-                if newline - pos + 3 > self._logs.remaining:
+                overhead = 3 if not self._logs._open_started else 0
+                if newline - pos + overhead > self._logs.remaining:
                     self._logs.push(text[pos:pos + self._logs.remaining + 4])
                     break
                 self._logs.push(text[pos:newline])

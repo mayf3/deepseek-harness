@@ -1995,6 +1995,28 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['a'.repeat(30) + 'b'.repeat(30)])
   }, 15_000)
 
+  it('does not over-reject an exact-fit closing line while an open entry accumulates', async () => {
+    // The write-path pre-check's cheap bound used +3 (quotes + separator) even
+    // while an open entry was accumulating, so an exact-fit merged TAIL was
+    // truncated: print('a'*29, flush) bills 32 (ledger 31 left), then
+    // print('b'*28, end=''); print('c') merges 29 more chars whose cheap bound
+    // is 29, not 32 — the +3 form saw 28 + 1 + 3 = 32 > 31 and truncated a
+    // line that fits (merged cost 2 + 58 + 1 = 61 <= 63).
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'import sys',
+        "sys.stdout.write('a' * 29)",
+        'sys.stdout.flush()',
+        "sys.stdout.write('b' * 30 + chr(10))",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['a'.repeat(29) + 'b'.repeat(30)])
+  }, 15_000)
+
   it('rejects a new open entry once the ledger has only two bytes left', async () => {
     // The jsonStringCostUpTo sub-2-byte guard: forged open frames drive the
     // host ledger down to 1 byte, then a new open entry's first-fragment cap

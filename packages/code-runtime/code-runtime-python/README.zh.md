@@ -55,7 +55,7 @@ kind: "package-reference"
 
 ### wire 契约
 
-帧为 `boot`／`run`（宿主 → 子进程）与 `boot-ack`／`call`／`log`／`done` 加每个 call 一个 `reply`（子进程 → 宿主）。`log` 帧的 `truncated` 标志标记的就是子进程账本自己的截断标记帧，因此宿主在与子进程相同的点停止捕获，而不是从自己的预算推断。`done.error.kind` 为 `exception`、`invalid-output`、`output-limit` 之一；墙钟／CPU 预算、中止与基底死亡在宿主侧观察，不以帧形式携带。
+帧为 `boot`／`run`（宿主 → 子进程）与 `boot-ack`／`call`／`log`／`done` 加每个 call 一个 `reply`（子进程 → 宿主）。`log` 帧的 `truncated` 标志标记的就是子进程账本自己的截断标记帧，因此宿主在与子进程相同的点停止捕获，而不是从自己的预算推断。`log` 帧的 `open` 标志标记由显式 flush 提交的未结束行：宿主把下一个 log 帧合并进同一条目，因此 `print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行（拆分计费算术在 fd-3 协议 Agent Note 的 wire-contract 段）。`done.error.kind` 为 `exception`、`invalid-output`、`output-limit` 之一；墙钟／CPU 预算、中止与基底死亡在宿主侧观察，不以帧形式携带。
 
 ### 无损 JSON 跨越
 
