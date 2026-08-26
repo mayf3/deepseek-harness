@@ -152,6 +152,10 @@ describe('SessionProjectionRegistry drive', () => {
     expect(() => ctx.sessions.create(undefined, {
       meta: { seedLength: 1 },
     })).toThrow(/seedLength 1 exceeds observed log length 0/)
+    expect(() => ctx.sessions.create(undefined, {
+      seed: [{ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }],
+      meta: { seedLength: 3 },
+    })).toThrow(/seedLength 3 exceeds observed log length 2/)
   })
 
   it('notifies onChanged with the validated view and the causing seq, and skips same-reference applies', async () => {

@@ -199,8 +199,8 @@ export class SessionProjectionRegistry extends Service {
   constructor(ctx: Context) {
     super(ctx, 'sessionProjections')
     ctx.on('session/created', (session: Session) => {
-      if (session.seq !== 0) return
       validateSeedLength(session.header, session.seq)
+      if (session.seq !== 0) return
       for (const registration of this.registrations.values()) {
         if (registration.cells.has(session)) continue
         registration.cells.set(session, {
