@@ -12,6 +12,10 @@ The CPython subprocess backend for Code Mode, built on the [fd-3 frame protocol]
 
 Independent corrections, each in the package that owns the defect.
 
+### A merged open-log entry is billed once, split across its fragments
+
+An explicit `flush()` of an unterminated line emits a `log` frame with `open: true`, and the host appends the next frame to the SAME entry (`print('a', end='', flush=True); print('b')` reads back as one `'ab'` entry, not a fake newline). The merged entry's wire cost — quotes, content, separator — is billed exactly once, split incrementally across its fragments on both sides (O(k) for k fragments, never a re-walk of the whole hold): the FIRST fragment pays the full JSON-string cost plus the separator, each continuation and the closing frame pay only their content. The host's exact-cost caps are `logBudget - 1` for a first fragment (the ledger's reserved byte, matching `admit`) and `logBudget + 2` for a continuation or closing frame (billed without the two quotes), with `jsonStringCostUpTo` returning `undefined` below a 2-byte cap; the child keys its split billing off `_open_started` alone, so a closing frame bills as the merged tail rather than a fresh entry (which would double-charge quotes+separator and truncate an exact-fit entry).
+
 ### Boot-write failure no longer rejects run()
 
 In [`src/index.ts`](../../../../packages/code-runtime/code-runtime-python/src/index.ts) the fd-3 boot-frame write is the last statement of `run()`'s synchronous setup. Its `catch` calls `finish()`, and `finish()` reads `wallTimer` and `onAbort` and — through `settle()` — `live`. Those bindings are `const` and were declared AFTER the boot-write, so on a synchronous write failure `finish()` touched them in their temporal dead zone and threw a `ReferenceError`. That escaped the Promise executor and REJECTED `run()`, violating the seam's "outcomes resolve" contract: the caller saw a thrown error instead of the `worker-exit` the catch constructs. The boot-write block is now emitted after `wallTimer`, `onAbort`, and `live` are initialized, and the `/* v8 ignore */` that had hidden the branch from coverage is removed so the catch is measured.

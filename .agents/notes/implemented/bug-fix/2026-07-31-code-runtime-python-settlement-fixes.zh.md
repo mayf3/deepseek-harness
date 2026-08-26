@@ -12,6 +12,10 @@ Status: implemented
 
 若干处相互独立的修正，各自位于拥有对应缺陷的包中。
 
+### 合并的 open 日志条目只计费一次，按片段分摊
+
+未结束行的显式 `flush()` 发出带 `open: true` 的 `log` 帧，宿主把下一个帧追加到同一条目（`print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行）。合并条目的线上成本——引号、内容、分隔符——恰好计费一次，在两侧按片段增量分摊（k 个片段 O(k)，绝不对整个持有重走）：首片段付完整 JSON 字符串成本加分隔符，每个续接与闭合帧只付内容。宿主的精确成本 cap 是首片段 `logBudget - 1`（账本预留字节，与 `admit` 一致）、续接或闭合帧 `logBudget + 2`（不含两个引号计费），且 `jsonStringCostUpTo` 在低于 2 字节 cap 时返回 `undefined`；子进程按 `_open_started` 单独键控拆分计费，因此闭合帧按合并尾部计费而非新条目（新条目会重复计引号加分隔符，并截断恰好适配的条目）。
+
 ### Boot-write failure no longer rejects run()
 
 在 [`src/index.ts`](../../../../packages/code-runtime/code-runtime-python/src/index.ts) 中，fd-3 引导帧写入是 `run()` 同步初始化阶段的最后一条语句。它的 `catch` 会调用 `finish()`，而 `finish()` 读取 `wallTimer` 和 `onAbort`，并通过 `settle()` 读取 `live`。这些绑定是 `const`，且声明在引导写入之后，因此在同步写入失败时，`finish()` 会在它们处于暂时性死区（temporal dead zone）时访问它们，从而抛出一个 `ReferenceError`。该错误逃出了 Promise executor 并 reject 了 `run()`，违反了 seam 的"结果一律 resolve"契约：调用方看到的是一个被抛出的错误，而不是 catch 构造的 `worker-exit`。现在引导写入代码块被放到 `wallTimer`、`onAbort` 和 `live` 初始化之后，并且那处曾把该分支从覆盖率中隐藏的 `/* v8 ignore */` 已被移除，从而使该 catch 被纳入度量。
