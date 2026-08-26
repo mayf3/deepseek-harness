@@ -9,6 +9,7 @@ import { gfmFromMarkdown } from 'mdast-util-gfm'
 import { gfm } from 'micromark-extension-gfm'
 import type { Nodes } from 'mdast'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { cleanDocSiteOutput, docSiteBuildOptions } from '../website/build.ts'
 import { docsPages, landingLink, routeLink, sectionSpec, type DocsPage } from '../website/docs.ts'
 import {
   addProjectionFrontmatter, emitRawMarkdownPages, llmsTxt, projectedPageContent, publishableImage,
@@ -67,6 +68,48 @@ describe('website source layout', () => {
       unexpectedWebsiteMarkdown(files),
       'Keep canonical Markdown under docs/ and publish it through website/docs.ts.',
     ).toEqual([])
+  })
+})
+
+describe('documentation site build', () => {
+  it.each([
+    { mode: 'SPA', mpa: false, expectedMpa: undefined },
+    { mode: 'MPA', mpa: true, expectedMpa: 'true' },
+  ])('$mode build removes stale output before writing', async ({ mpa, expectedMpa }) => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-doc-build-'))
+    roots.push(root)
+    const outDir = join(root, '.dist')
+    const stale = join(outDir, 'stale.md')
+    const fresh = join(outDir, 'index.html')
+    mkdirSync(outDir)
+    writeFileSync(stale, 'stale\n')
+
+    const options = docSiteBuildOptions(root, mpa)
+    expect(options.mpa).toBe(expectedMpa)
+    expect(existsSync(stale)).toBe(true)
+    await options.onAfterConfigResolve?.({ outDir } as never)
+    expect(existsSync(outDir)).toBe(false)
+    mkdirSync(outDir)
+    writeFileSync(fresh, 'fresh\n')
+
+    expect(readFileSync(fresh, 'utf8')).toBe('fresh\n')
+  })
+
+  it('refuses to remove the site root or an outside directory', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-doc-build-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-doc-build-outside-'))
+    roots.push(root, outside)
+    writeFileSync(join(root, 'keep'), 'root\n')
+    writeFileSync(join(outside, 'keep'), 'outside\n')
+
+    expect(() => {
+      cleanDocSiteOutput(root, root)
+    }).toThrow('must be a child of site root')
+    expect(() => {
+      cleanDocSiteOutput(root, outside)
+    }).toThrow('must be a child of site root')
+    expect(readFileSync(join(root, 'keep'), 'utf8')).toBe('root\n')
+    expect(readFileSync(join(outside, 'keep'), 'utf8')).toBe('outside\n')
   })
 })
 
