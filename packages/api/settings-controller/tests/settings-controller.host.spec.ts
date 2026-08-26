@@ -86,13 +86,14 @@ describe('the settings Remote namespace a configuration page calls', () => {
   it('reports the actionable configuration error while no settings provider is mounted', async () => {
     const ctx = new Context()
     await ctx.plugin(SettingsController)
-    for (const call of [
+    const calls: Array<() => unknown> = [
       () => ctx.settingsController.describe(),
       () => ctx.settingsController.update('ui-test', {}, undefined),
       () => ctx.settingsController.replace('ui-test', {}, undefined),
       () => ctx.settingsController.mutate('ui-test', [], undefined),
-    ]) {
-      const failure = await Promise.resolve().then(() => call()).catch((error: unknown) => error)
+    ]
+    for (const call of calls) {
+      const failure = await Promise.resolve().then(call).catch((error: unknown) => error)
       expect(failure).toBeInstanceOf(TypertRemoteFailure)
       expect((failure as TypertRemoteFailure).failure).toEqual({
         code: 'internal',
