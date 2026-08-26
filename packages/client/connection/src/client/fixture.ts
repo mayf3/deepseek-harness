@@ -22,6 +22,8 @@ import type {
   SessionHeader,
   SessionId,
 } from '@deepseek-ai/dsh-session/types'
+import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
+import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 // Type-only: the brand constructor is host-side; the fixture casts at its
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
@@ -73,8 +75,25 @@ interface FixtureProjectionsBlock {
 }
 
 interface FixtureHistoryEntry {
+  readonly type: 'event'
   readonly event: SessionEvent
 }
+
+type FixtureChunkRowEvent = {
+  [Kind in ChunkRow['type']]: {
+    readonly type: `chunkrow/${Kind}`
+    readonly seq: number
+    readonly time: number
+    readonly data: Extract<ChunkRow, { readonly type: Kind }>['data']
+  }
+}[ChunkRow['type']]
+
+interface FixtureHistoryChunkRun {
+  readonly type: 'chunks'
+  readonly event: FixtureChunkRowEvent
+}
+
+type FixtureHistoryRecord = FixtureHistoryEntry | FixtureHistoryChunkRun
 
 type FixtureSessionAddress =
   | { readonly kind: 'session'; readonly sessionId: SessionId }
@@ -102,11 +121,11 @@ type FixtureFollowFrame =
     readonly type: 'snapshot'
     readonly header: SessionHeader
     readonly cursor: number
-    readonly events: readonly FixtureHistoryEntry[]
+    readonly records: readonly FixtureHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: FixtureProjectionsBlock
   }
-  | ({ readonly type: 'event' } & FixtureHistoryEntry)
+  | FixtureHistoryEntry
 
 type FixtureFollowEventFrame = Extract<FixtureFollowFrame, { type: 'event' }>
 
@@ -1392,7 +1411,7 @@ function pageOf(
   log: readonly SessionEvent[],
   beforeSeq: number | undefined,
   maxMessages: number,
-): { events: FixtureHistoryEntry[]; hasMore: boolean } {
+): { records: FixtureHistoryRecord[]; hasMore: boolean } {
   const end = beforeSeq === undefined ? log.length : Math.max(0, Math.min(beforeSeq, log.length))
   let start = 0
   let messages = 0
@@ -1406,8 +1425,27 @@ function pageOf(
       break
     }
   }
-  const events = log.slice(start, end).map((event): FixtureHistoryEntry => ({ event }))
-  return { events, hasMore: start > 0 }
+  const records = packChunkRuns(log.slice(start, end)).map((record): FixtureHistoryRecord => {
+    if (!isChunkRow(record)) return { type: 'event', event: record }
+    switch (record.type) {
+      case 'text-chunks':
+        return {
+          type: 'chunks',
+          event: { type: 'chunkrow/text-chunks', seq: record.seq0, time: record.time0, data: record.data },
+        }
+      case 'reasoning-chunks':
+        return {
+          type: 'chunks',
+          event: { type: 'chunkrow/reasoning-chunks', seq: record.seq0, time: record.time0, data: record.data },
+        }
+      case 'tool-call-chunks':
+        return {
+          type: 'chunks',
+          event: { type: 'chunkrow/tool-call-chunks', seq: record.seq0, time: record.time0, data: record.data },
+        }
+    }
+  })
+  return { records, hasMore: start > 0 }
 }
 
 /** Fixture mirror of host session-scoped attachment authorization. */
@@ -1874,7 +1912,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     for (const conn of remoteEventConns.values()) conn.push(frame)
   }
   const emitFollow = (sessionId: SessionId, entry: FixtureHistoryEntry): void => {
-    for (const conn of followConns.get(sessionId) ?? []) conn.push({ type: 'event', ...entry })
+    for (const conn of followConns.get(sessionId) ?? []) conn.push(entry)
   }
 
   /** OK response echoing the caller's rpcId (contract: responses always backfill, never mint). */
@@ -1932,7 +1970,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const log = logOf(id)
     const event = { seq: log.length, time: Date.now(), ...e } as unknown as SessionEvent
     log.push(event)
-    emitFollow(id, { event })
+    emitFollow(id, { type: 'event', event })
     // Host eager-drive parallel: a unit-advancing event pushes its finished value.
     for (const frame of projectionFramesOf(id, log, event)) emitControl(frame)
     if (event.type === 'user/message' && event.data.source.kind === 'user') {
@@ -2234,18 +2272,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     })
     return { ok: true, value: goalView(projection) }
   }
-
-  const mapGoalResult = <T, U>(result: RpcResult<T>, map: (value: T) => U): RpcResult<U> => (
-    result.ok ? { ok: true, value: map(result.value) } : result
-  )
-
-  const goalRefResult = (result: RpcResult<FxGoalView>): RpcResult<{ ref: { id: never; revision: number } }> => (
-    mapGoalResult(result, view => ({ ref: { id: view.id as never, revision: view.revision } }))
-  )
-
-  const legacyGoalResponse = <P, T>(request: RpcRequest<P>, result: RpcResult<T>): Promise<RpcResponse<T>> => (
-    Promise.resolve({ rpcId: request.rpcId, result })
-  )
 
   /** At most one in-flight replay per session; cancel clears it. */
   const replays = new Map<SessionId, { timer: ReturnType<typeof setTimeout>; finish(aborted: boolean): void }>()
@@ -2968,7 +2994,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           ...(summary.agentPreset === undefined ? {} : { agentPreset: summary.agentPreset }),
         },
         cursor,
-        events: initial.events,
+        records: initial.records,
         hasMore: initial.hasMore,
         projections: { asOfSeq: cursor, values: projectionValuesOf(snapshot) },
       }
@@ -3301,46 +3327,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         })
       },
     },
-    goals: {
-      // Compatibility face only: old API Proxy payloads and acknowledgements
-      // adapt to the canonical fixture Remote implementation above.
-      create: request => legacyGoalResponse(
-        request,
-        mapGoalResult(
-          goalRemotes.create(request.payload.sessionId, {
-            objective: request.payload.objective,
-            ...request.payload.maxGoalRounds === undefined ? {} : { maxGoalRounds: request.payload.maxGoalRounds },
-          }),
-          value => ({ ref: { id: value.ref.id as never, revision: value.ref.revision } }),
-        ),
-      ),
-      edit: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.edit(request.payload.sessionId, request.payload.ref, {
-          ...request.payload.objective === undefined ? {} : { objective: request.payload.objective },
-          ...request.payload.maxGoalRounds === undefined ? {} : { maxGoalRounds: request.payload.maxGoalRounds },
-        })),
-      ),
-      pause: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.pause(request.payload.sessionId, request.payload.ref)),
-      ),
-      resume: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.resume(request.payload.sessionId, request.payload.ref)),
-      ),
-      complete: request => legacyGoalResponse(
-        request,
-        goalRefResult(goalRemotes.complete(request.payload.sessionId, request.payload.ref)),
-      ),
-      clear: request => legacyGoalResponse(
-        request,
-        mapGoalResult(
-          goalRemotes.clear(request.payload.sessionId, request.payload.ref),
-          () => ({ cleared: true as const }),
-        ),
-      ),
-    },
     settings: {
       // Only the resolved DeepSeek address needed by first-run readiness is
       // represented here. Fixture-backed journeys do not open its Models
@@ -3600,12 +3586,6 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'agentPreset.copy': return this.api.agentPresets.copy(request)
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
       case 'agentPreset.remove': return this.api.agentPresets.remove(request)
-      case 'goal.create': return this.api.goals.create(request)
-      case 'goal.edit': return this.api.goals.edit(request)
-      case 'goal.pause': return this.api.goals.pause(request)
-      case 'goal.resume': return this.api.goals.resume(request)
-      case 'goal.complete': return this.api.goals.complete(request)
-      case 'goal.clear': return this.api.goals.clear(request)
       case 'settings.describe': return this.api.settings.describe(request)
       case 'settings.openDocument': return this.api.settings.openDocument(request, signal)
       case 'settings.update': return this.api.settings.update(request)

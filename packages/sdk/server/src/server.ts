@@ -9,13 +9,11 @@ import type { Context } from '@deepseek-ai/cordis'
 import { resolve } from 'node:path'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { admitEncodedImages, type EncodedImageAttachment, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ReasoningEffortId, type ContentBlock, type LlmRuntime } from '@deepseek-ai/dsh-llm'
 import { carrierKeyOf, type Scoped } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
-import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type {
   InitializeParams,
@@ -61,8 +59,6 @@ function subagentParentOf(carrier: Scoped<SubagentRuntime>): Agent {
 export interface HarnessSdkJsonRpcServerOptions {
   /** Report max-token termination as an accepted result instead of an infrastructure error. */
   maxTokensAsSuccess?: boolean
-  /** Restrict each SDK-created root agent to an explicit subset of global tools. */
-  toolFilter?: ToolRestriction
 }
 
 function successStatus(reason: string, options: HarnessSdkJsonRpcServerOptions): 'ok' | 'error' {
@@ -79,6 +75,7 @@ export class HarnessSdkJsonRpcServer {
   private cwd = process.cwd()
   private provider = 'deepseek-official'
   private model = 'deepseek-official'
+  private reasoningEffort: ReturnType<typeof ReasoningEffortId> | undefined
   private maxTokens: number | undefined
   private llmFiber: { dispose(): Promise<void> } | undefined
   private readonly sessions = new Map<string, SessionRecord>()
@@ -86,6 +83,7 @@ export class HarnessSdkJsonRpcServer {
   private readonly disposers: (() => void)[] = []
   private shutdownTask: Promise<Record<string, never>> | undefined
   private shuttingDown = false
+  private initialized = false
 
   constructor(
     private readonly ctx: Context,
@@ -129,23 +127,43 @@ export class HarnessSdkJsonRpcServer {
   }
 
   /**
-   * Configure the SDK route, mounting the DeepSeek fallback only when unowned.
+   * Validate and configure the SDK route, mounting the DeepSeek fallback only when unowned.
    * @param params - SDK handshake parameters.
    * @returns server identity for the handshake.
    */
   async initialize(params: InitializeParams): Promise<InitializeResult> {
+    if (params.reasoningEffort !== undefined
+      && (typeof params.reasoningEffort !== 'string' || params.reasoningEffort.length === 0)) {
+      throw new TypeError('initialize reasoningEffort must be a non-empty string')
+    }
     if (params.maxTokens !== undefined
       && (!Number.isSafeInteger(params.maxTokens) || params.maxTokens <= 0)) {
       throw new TypeError('initialize maxTokens must be a positive safe integer')
     }
-    this.cwd = resolve(params.cwd)
-    this.provider = params.provider
-    this.model = params.model
-    this.maxTokens = params.maxTokens
-    if (!this.hasAdapterFor(this.provider)) {
-      if (this.provider !== 'deepseek-official') throw new Error(`no adapter registered for provider "${this.provider}"`)
+    const cwd = resolve(params.cwd)
+    const provider = params.provider
+    const model = params.model
+    const reasoningEffort = params.reasoningEffort === undefined
+      ? undefined
+      : ReasoningEffortId(params.reasoningEffort)
+    if (!this.hasAdapterFor(provider)) {
+      if (provider !== 'deepseek-official') throw new Error(`no adapter registered for provider "${provider}"`)
       this.llmFiber = await this.ctx.plugin(LlmDeepSeek, {})
     }
+    // Adapter presence was read from this service above; a successful fallback mount also requires it.
+    const llm = this.ctx.get('llm') as LlmRuntime
+    await llm.resolveCallConfig({
+      provider,
+      model,
+      ...reasoningEffort === undefined ? {} : { reasoningEffort },
+      ...params.maxTokens === undefined ? {} : { maxTokens: params.maxTokens },
+    })
+    this.cwd = cwd
+    this.provider = provider
+    this.model = model
+    this.reasoningEffort = reasoningEffort
+    this.maxTokens = params.maxTokens
+    this.initialized = true
     return { serverInfo: { name: 'deepseek-harness-sdk-runtime', version: '0.0.1' } }
   }
 
@@ -155,6 +173,7 @@ export class HarnessSdkJsonRpcServer {
    * @returns the durable message identity.
    */
   async prompt(params: SessionPromptParams): Promise<SessionPromptResult> {
+    if (!this.initialized) throw new Error('SDK server is not initialized')
     const rec = await this.getOrCreateSession(params.sessionId)
     // An agent-loop-only reload disposes the loop's agents while this record
     // survives; a retained agent accepts followup() silently, so validate the
@@ -256,18 +275,15 @@ export class HarnessSdkJsonRpcServer {
     // rows in the host plane, so this agent reads them from the global layer. A
     // deployment that configures a roster has to join one here first
     // (@deepseek-ai/dsh-agent-presets README, "Composing a child agent").
-    const toolFilter = this.options.toolFilter
     const handle = await this.ctx.agents.create({
       sessionId: SessionId(sessionId),
       meta: { cwd: this.cwd },
       agentOptions: {
         provider: this.provider,
         model: this.model,
+        ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
         ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
       },
-      ...toolFilter === undefined
-        ? {}
-        : { setup: (agentCtx: Context) => { agentCtx.tools.restrict(toolFilter) } },
     })
     const rec: SessionRecord = { handle }
     this.sessions.set(sessionId, rec)

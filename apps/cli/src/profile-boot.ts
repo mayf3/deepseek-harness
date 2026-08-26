@@ -103,20 +103,19 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
 }
 
 /**
- * Load a resolved profile for `name`: heal the shared module fallback, then
- * (re)write the empty root config. The root is always rewritten: the whole
- * composition is patch layers, and the vendored Loader's tree write-back (a
- * plugin self-disposing persists the current tree) can bake composed rows
- * into this file — which would duplicate every bundle insert on the next
- * boot. The file exists on disk only because the Loader needs a real include
- * root to anchor `baseUrl` at the profile directory (the config dump anchors
- * on the same file, so both compose over the identical base).
+ * Load a resolved profile for `name` and (re)write the empty root config. The
+ * root is always rewritten: the whole composition is patch layers, and the
+ * vendored Loader's tree write-back (a plugin self-disposing persists the
+ * current tree) can bake composed rows into this file — which would duplicate
+ * every bundle insert on the next boot. The file exists on disk only because
+ * the Loader needs a real include root to anchor `baseUrl` at the profile
+ * directory (the config dump anchors on the same file, so both compose over
+ * the identical base).
  * @param name - the profile name.
  * @param userLayer - `false` skips parsing `cordis.patch.yml` (the default dump).
  * @returns the loaded profile.
  */
-export async function prepareProfile(name: string, userLayer = true): Promise<Profile> {
-  await healProfilesModuleFallback(INSTALL_ANCHOR)
+export function prepareProfile(name: string, userLayer = true): Profile {
   const profile = loadProfile(NAME, name, INSTALL_ANCHOR, undefined, { userLayer })
   writeFileSync(join(profile.dir, PROFILE_ROOT_FILENAME), PROFILE_ROOT_CONFIG)
   return profile
@@ -158,7 +157,8 @@ async function composeProfile(
   name: string,
   patchFiles: readonly string[],
 ): Promise<ComposedProfile> {
-  const profile = await prepareProfile(name)
+  const profile = prepareProfile(name)
+  await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
   const bundlePatches = profile.layers.flatMap(layer => layer.patches)

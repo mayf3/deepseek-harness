@@ -24,7 +24,7 @@ Python SDK 分发一个私有 Node 应用，直接启动完整外部 `cordis.yml
 
 持久 SDK 自定义使用与直接 CLI 相同的 profile 接口。`dsh plugin --profile <name> ...` 管理外部依赖与 bundle 顺序，`$DSH_HOME/profiles/<name>/cordis.patch.yml` 负责持久配置项变更，home patch 对所有 profile 应用机器本地变更，Python `patches` 则提供单次启动 overlay。所选 profile 只有保留 SDK server 配置项时才有效。缺失 profile、bundle、server 配置项或非法 patch 都会直接失败，不存在完整配置回退；保持运行却不提供 JSON-RPC 服务的 profile 会在独立有界的初始化握手中失败，诊断会指明该 profile。
 
-[独立 sdk-minimal profile](2026-08-24-standalone-sdk-minimal-profile.zh.md)只列出一个仓库自有组合包，该组合包会插入不含 `dsh-base` 的完整显式配置树。持久 Bash 与字符串替换 editor 通过组合存在，而不是通过 server 筛选；动态运行时上下文、workspace 指令、settings、托管凭据、遥测、compaction 与其他所有 base 配置项均不存在。同一运行时仍会把完整 `sdk` 与 `web` profile 作为独立选择打包。
+[独立 sdk-minimal profile](2026-08-24-standalone-sdk-minimal-profile.zh.md)只列出一个仓库自有组合包，该组合包会插入不含 `dsh-base` 的完整显式配置树。持久 Bash 与字符串替换 editor 通过组合存在；共享 JSON-RPC server 不暴露根 agent 工具筛选器。动态运行时上下文、workspace 指令、settings、托管凭据、遥测、compaction 与其他所有 base 配置项均不存在。同一运行时仍会把完整 `sdk` 与 `web` profile 作为独立选择打包。
 
 运行时 wheel 安装 `dsh` 控制台命令。普通 profile 与 SDK 运行仍不需要 Node；外部包管理要求调用方自行安装 `pnpm`。
 

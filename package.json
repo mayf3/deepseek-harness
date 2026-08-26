@@ -89,6 +89,7 @@
     "verify-skill-invocation-metadata": "tsx scripts/verify-skill-invocation-metadata.ts",
     "verify-translation-prompt": "tsx scripts/verify-translation-prompt.ts",
     "verify-translation-pairing": "tsx scripts/verify-translation-pairing.ts",
+    "test:docs": "tsx scripts/run-gates.ts doc-quick",
     "resolve-translation-pairing-conflicts": "tsx scripts/merge-translation-pairing.ts --resolve",
     "gen-translation-brief": "tsx scripts/gen-translation-brief.ts",
     "verify-doc-budgets": "tsx scripts/verify-doc-budgets.ts",
@@ -152,6 +153,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-tool-session-query": "workspace:^",
+    "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",

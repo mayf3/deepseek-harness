@@ -42,7 +42,7 @@ describe('web e2e: settings modal and General preferences', () => {
     // the client derives from it (the English default has its own spec below).
     page = await browser.newPage({ viewport: { width: 1680, height: 1000 }, locale: ZH_BROWSER_LOCALE })
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
   }, 120_000)
 
@@ -314,7 +314,7 @@ describe('web e2e: settings modal and General preferences', () => {
     try {
       expect(second.baseUrl).not.toBe(scaffold.baseUrl)
       await secondPage.emulateMedia({ colorScheme: 'light' })
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
+      await secondPage.goto(second.authenticatedUrl, { waitUntil: 'load' })
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await expect.poll(async () => (await readState(secondPage)).attr, { timeout: 5_000 }).toBe(true)
       const secondState = await readState(secondPage)
@@ -346,6 +346,51 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('steps the content font size, applies it to body, and persists across reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-font-size'))
+    const readFontSize = async (target: Page = page): Promise<string> => await target.evaluate(
+      () => document.body.style.getPropertyValue('--dsh-content-font-size'),
+    )
+    expect(await readFontSize()).toBe('14px')
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.waitFor({ timeout: 10_000 })
+    // The stepper reveals its arrows on hover; the up arrow steps 14 → 15 → 16.
+    await dialog.getByText('14', { exact: true }).hover()
+    const increase = dialog.getByRole('button', { name: '增大字号' })
+    await increase.click()
+    await dialog.getByText('15', { exact: true }).waitFor({ timeout: 5_000 })
+    await increase.click()
+    await dialog.getByText('16', { exact: true }).waitFor({ timeout: 5_000 })
+    await expect.poll(readFontSize, { timeout: 5_000 }).toBe('16px')
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+      .toMatch(/ui-theme:\n(?:\s+\w+: .*\n)*?\s+fontSize: 16/)
+    await page.keyboard.press('Escape')
+
+    // Reload: the boot script embeds the durable size and ThemeRuntime seeds
+    // its initial snapshot from the boot-written body variable, so activation
+    // never flashes the default while the settings read is in flight.
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await expect.poll(readFontSize, { timeout: 5_000 }).toBe('16px')
+
+    // Restore the default for the specs that follow (and the dialog golden).
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const restored = page.getByRole('dialog', { name: '设置' })
+    await restored.waitFor({ timeout: 10_000 })
+    await restored.getByText('16', { exact: true }).hover()
+    const decrease = restored.getByRole('button', { name: '减小字号' })
+    await decrease.click()
+    await restored.getByText('15', { exact: true }).waitFor({ timeout: 5_000 })
+    await decrease.click()
+    await restored.getByText('14', { exact: true }).waitFor({ timeout: 5_000 })
+    await expect.poll(readFontSize, { timeout: 5_000 }).toBe('14px')
+    await page.keyboard.press('Escape')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
   it('persists the busy-state Enter behavior across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-enter-behavior'))
     await page.getByRole('button', { name: '设置', exact: true }).click()
@@ -372,7 +417,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const secondTripwire = watchConsole(secondPage)
     try {
       expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
+      await secondPage.goto(second.authenticatedUrl, { waitUntil: 'load' })
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await secondPage.getByRole('button', { name: '设置', exact: true }).click()
       await secondPage.getByRole('dialog', { name: '设置' })
@@ -438,7 +483,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const secondTripwire = watchConsole(secondPage)
     try {
       expect(second.baseUrl).not.toBe(scaffold.baseUrl)
-      await secondPage.goto(second.baseUrl, { waitUntil: 'load' })
+      await secondPage.goto(second.authenticatedUrl, { waitUntil: 'load' })
       await secondPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       await secondPage.getByRole('button', { name: 'Settings', exact: true }).click()
       await secondPage.getByRole('dialog', { name: 'Settings' })
@@ -472,7 +517,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const enTripwire = watchConsole(enPage)
     onTestFailed(() => saveFailureShot(enPage, 'web-e2e-settings-browser-language'))
     try {
-      await enPage.goto(fresh.baseUrl, { waitUntil: 'load' })
+      await enPage.goto(fresh.authenticatedUrl, { waitUntil: 'load' })
       await enPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       expect(await enPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
       await enPage.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -498,7 +543,7 @@ describe('web e2e: settings modal and General preferences', () => {
     const frTripwire = watchConsole(frPage)
     onTestFailed(() => saveFailureShot(frPage, 'web-e2e-settings-unshipped-language'))
     try {
-      await frPage.goto(fresh.baseUrl, { waitUntil: 'load' })
+      await frPage.goto(fresh.authenticatedUrl, { waitUntil: 'load' })
       await frPage.waitForSelector('[class*="frame"]', { timeout: 30_000 })
       expect(await frPage.evaluate(() => localStorage.getItem('dsh.locale'))).toBeNull()
       await frPage.getByRole('button', { name: 'Settings', exact: true }).click()

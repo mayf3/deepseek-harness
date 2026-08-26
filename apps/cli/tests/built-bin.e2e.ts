@@ -392,7 +392,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
-  }, 30_000)
+  }, process.platform === 'win32' ? 60_000 : 30_000)
 
   it('reports SDK startup failure when stdin reaches EOF first', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-sdk-startup-failure-'))
@@ -560,8 +560,9 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
   it('runs the headless profile through its app-owned task positional', async () => {
     const apiKey = 'built-dsh-headless-key'
     const server = await startMockLlmServer({
-      sequence: ['success'],
+      sequence: ['reasoning_success'],
       apiKey,
+      reasoningText: 'Inspecting the published entry.',
       successText: 'published headless profile reached the mock',
     })
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-headless-'))
@@ -574,7 +575,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       })
       expect(result.code, result.stderr).toBe(0)
       expect(result.stdout).toBe('published headless profile reached the mock')
-      expect(result.stderr).toBe('')
+      expect(result.stderr).toBe('dsh: reasoning:\nInspecting the published entry.')
       expect(server.requests.length).toBeGreaterThan(0)
       expect(server.requests.every(request => request.path === '/chat/completions')).toBe(true)
       expect(JSON.stringify(server.requests.map(request => request.body))).toContain('answer from the published entry')
@@ -911,6 +912,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       expect(stdout).toContain('agents: []')
       expect(stdout).toContain('# == @deepseek-ai/dsh-base')
       expect(stdout).toContain("name: '@deepseek-ai/dsh-host-webserver'")
+      expect(existsSync(join(home, 'profiles', 'node_modules'))).toBe(false)
     }, 30_000)
 
     it('prints the headless profile without Host or browser layers', async () => {

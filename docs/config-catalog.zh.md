@@ -168,9 +168,9 @@ export type PresetTrust = 'system' | 'user'
  * Bundle config: each field forwarded verbatim to the child that owns it —
  * `agents` to the agent loop (an app that pre-creates no agents, like the ACP
  * bridge, simply omits it), `includeHarnessIdentity`, `includeRuntimeContext`,
- * `persona`, `personaComplete`, and `toolOrder` to the system-prompt plugin
- * (the fixed opener, dynamic-context policy, deployment persona completeness,
- * and explicit model-facing tool order), the `tools` object to the tool
+ * `persona`, and `toolOrder` to the system-prompt plugin (the fixed opener,
+ * dynamic-context policy, deployment persona, and explicit model-facing tool
+ * order), the `tools` object to the tool
  * registry (its presentation `mode`),
  * `dshHome` to bash environment and local skill discovery, `sessionTitle` to
  * the fallback title service, `skills` to the
@@ -199,8 +199,6 @@ export interface Config {
   includeRuntimeContext?: SystemPromptConfig['includeRuntimeContext']
   /** The deployment persona (see dsh-system-prompt's `Config`). */
   persona?: SystemPromptConfig['persona']
-  /** Whether the deployment persona is the complete system prompt. */
-  personaComplete?: SystemPromptConfig['personaComplete']
   /** The explicit model-facing tool order (see dsh-system-prompt's `Config`). */
   toolOrder?: SystemPromptConfig['toolOrder']
   /** The tool registry's config — its presentation `mode` (see dsh-tools' `Config`). */
@@ -380,7 +378,7 @@ export type Config = LocalConfig
 
 ## `@deepseek-ai/dsh-client-connection`
 
-需要：`webServer`
+需要：`webServer` · `credentials`
 
 ```ts config-catalog
 /** Plugin config: the deployment's non-loopback serving authorities. */
@@ -390,16 +388,18 @@ export interface ConnectionConfig {
    * port-less `host` matching any port. The /api trust fence refuses any
    * request whose Host is neither loopback nor listed here, so a
    * non-loopback (`0.0.0.0`) deployment must declare the names it is reached
-   * by (the dsh CLI derives the machine's LAN IP literals itself). An entry
-   * that is not a bare, canonical authority fails the plugin load.
+   * by; the Web runtime derives LAN IP literals from an active all-interface
+   * bind. An entry that is not a bare, canonical authority fails plugin load.
    */
   trustedHosts?: string[]
+  /** Absolute browser-session lifetime in days. Default: 30. */
+  cookieMaxAgeDays?: number
   /** Maximum buffered JSON body for every `/api` request. Default: 300 MiB. */
   maxRequestBodyBytes?: number
 }
 ```
 
-来源：[`packages/client/connection/src/index.ts:52`](../packages/client/connection/src/index.ts)
+来源：[`packages/client/connection/src/index.ts:55`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -614,7 +614,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/experimental/tool-agent-team/src/index.ts:17`](../packages/experimental/tool-agent-team/src/index.ts)
+来源：[`packages/experimental/tool-agent-team/src/index.ts:18`](../packages/experimental/tool-agent-team/src/index.ts)
 
 <a id="deepseek-aidsh-file-reference-local"></a>
 
@@ -705,7 +705,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/bundle/headless/src/index.ts:31`](../packages/bundle/headless/src/index.ts)
+来源：[`packages/bundle/headless/src/index.ts:32`](../packages/bundle/headless/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-claude-code"></a>
 
@@ -818,7 +818,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-frontend-static`
 
-需要：`webServer`
+需要：`webServer` · `connection`
 
 ```ts config-catalog
 /** Plugin config: the dist anchor. */
@@ -828,7 +828,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
+来源：[`packages/host/frontend-static/src/index.ts:30`](../packages/host/frontend-static/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -1288,6 +1288,15 @@ export interface ReplayModelConfig {
    * omit one, so replay reconstructs the request header a live catalog produced.
    */
   defaultMaxTokens?: number
+  /**
+   * Optional flat visual-token price the replay route declares for every
+   * retained request image, so keyless scenarios exercise route-priced
+   * request pressure; each occurrence is priced at this value plus its
+   * request-preview handle text. Requires {@link inputModalities} to include
+   * `image` — a text-only route never sends visual tokens. Absent declares
+   * no image pricing.
+   */
+  imageRequestTokens?: number
   /** Optional reasoning-effort ids the replay route accepts, in display order. */
   reasoningEfforts?: string[]
   /**
@@ -1300,7 +1309,7 @@ export interface ReplayModelConfig {
 
 依赖：[`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-来源：[`packages/test-support/llm-replay/src/index.ts:892`](../packages/test-support/llm-replay/src/index.ts)
+来源：[`packages/test-support/llm-replay/src/index.ts:914`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 
@@ -1716,13 +1725,6 @@ export interface Config {
 export interface JsonRpcConfig {
   /** Report max-token turn/subagent termination as a successful SDK result. */
   maxTokensAsSuccess?: boolean
-  /** Per-root-agent model-facing tool filter; an allow list excludes later unnamed global tools. */
-  toolFilter?: {
-    /** Global tool names that remain visible. */
-    allow?: string[]
-    /** Global tool names removed from visibility. */
-    deny?: string[]
-  }
   /** Transport input override; production uses `process.stdin`. */
   input?: Readable
   /** Transport output override; production uses `process.stdout`. */
@@ -1822,14 +1824,15 @@ export type JournalMode = 'wal' | 'delete' | 'truncate' | 'persist'
 
 ## `@deepseek-ai/dsh-session-projection-cache`
 
-需要：`storageDomain` · `sessionProjections` · `sessionPersistence` · `sessions`
+需要：`storageDomain` · `sessionProjections` · `sessions`
 
 ```ts config-catalog
 /**
  * Plugin config. Both throttle triggers are deployment choices with no
  * universally correct value, so the composition states them explicitly
- * (cordis.yml); the two mandatory write points (`turn/end` and session
- * disposal) are policy, not tunables, and always fire.
+ * (cordis.yml); the three mandatory write points (session creation,
+ * `turn/end`, and session disposal) are policy, not tunables, and always
+ * fire.
  */
 export interface Config {
   /** Committed events per session that force a durable checkpoint write between mandatory points. */
@@ -1839,7 +1842,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/session/session-projection-cache/src/index.ts:46`](../packages/session/session-projection-cache/src/index.ts)
+来源：[`packages/session/session-projection-cache/src/index.ts:48`](../packages/session/session-projection-cache/src/index.ts)
 
 <a id="deepseek-aidsh-session-query-sqlite"></a>
 
@@ -2060,7 +2063,7 @@ export interface Config {
 ```ts config-catalog
 /** Local filesystem skill provider configuration. */
 export interface Config {
-  /** Unique provider name. Defaults to `local`. */
+  /** Unique provider name. Defaults to `filesystem`. */
   providerName?: string
   /** Whether project and user roots are included around custom roots. */
   includeDefaultRoots?: boolean
@@ -2175,12 +2178,12 @@ export interface Config {
  * location explicitly.
  */
 export interface Config {
-  /** Directory holding one `<unit>.json` file per unit. */
+  /** Directory holding one `<unit>.json` file (or `<unit>/` tree) per unit. */
   root: string
 }
 ```
 
-来源：[`packages/storage/storage-json/src/index.ts:27`](../packages/storage/storage-json/src/index.ts)
+来源：[`packages/storage/storage-json/src/index.ts:28`](../packages/storage/storage-json/src/index.ts)
 
 <a id="deepseek-aidsh-storage-sqlite"></a>
 
@@ -2265,7 +2268,7 @@ export interface Config {
    * `MAX_TIMER_DELAY_MS`.
    */
   disposeEofGraceMs?: number
-  /** Termination-escalation grace (ms); must not exceed `MAX_TIMER_DELAY_MS`. */
+  /** Failure-observation and termination-escalation grace (ms); must not exceed `MAX_TIMER_DELAY_MS`. */
   disposeGraceMs?: number
 }
 
@@ -2282,10 +2285,12 @@ export type PermissionPolicy = 'allow' | 'reject'
 需要：`subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned permission, environment, and process-release settings. */
+/** Deployment-owned model, permission, environment, and process-release settings. */
 export interface Config {
   /** Provider name on `ctx.subagents` (default `claude-code`). */
   providerName?: string
+  /** Native Claude model fixed for this instance; omitted to inherit Claude settings. */
+  model?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
@@ -2315,10 +2320,12 @@ export type ClaudeCodePermissionMode = typeof CLAUDE_CODE_PERMISSION_MODES[numbe
 需要：`subagents` · `subprocess`
 
 ```ts config-catalog
-/** Deployment-owned permission, environment, and process-release settings. */
+/** Deployment-owned model, permission, environment, and process-release settings. */
 export interface Config {
   /** Provider name on `ctx.subagents` (default `codex`). */
   providerName?: string
+  /** Native Codex model fixed for this instance; omitted to inherit Codex settings. */
+  model?: string
   /**
    * Explicit environment entries layered over the subprocess seam's
    * credential-scrubbed parent environment.
@@ -2393,7 +2400,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/subagent/subagent-dsh-sdk/src/index.ts:31`](../packages/subagent/subagent-dsh-sdk/src/index.ts)
+来源：[`packages/subagent/subagent-dsh-sdk/src/index.ts:34`](../packages/subagent/subagent-dsh-sdk/src/index.ts)
 
 <a id="deepseek-aidsh-subagent-fork-in-process"></a>
 
@@ -2459,8 +2466,6 @@ export interface Config {
    * `deployment:persona` shadows it; `{{variable}}` references are strict.
    */
   persona?: string
-  /** Treat the deployment persona as the complete system prompt (default false). */
-  personaComplete?: boolean
   /**
    * Model-facing tool names in order, with {@link TOOL_ORDER_REST} exactly once.
    * Invalid fields fail at load and unknown names fail at assembly; known names
@@ -2470,7 +2475,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:186`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -2790,7 +2795,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/workflow/tool-ralph/src/index.ts:23`](../packages/workflow/tool-ralph/src/index.ts)
+来源：[`packages/workflow/tool-ralph/src/index.ts:22`](../packages/workflow/tool-ralph/src/index.ts)
 
 <a id="deepseek-aidsh-tool-session-query"></a>
 
@@ -2842,7 +2847,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/fs/tool-str-replace-editor/src/index.ts:497`](../packages/fs/tool-str-replace-editor/src/index.ts)
+来源：[`packages/fs/tool-str-replace-editor/src/index.ts:505`](../packages/fs/tool-str-replace-editor/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent"></a>
 
@@ -2955,7 +2960,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/terminal/tool-terminal/src/index.ts:35`](../packages/terminal/tool-terminal/src/index.ts)
+来源：[`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal/tool-terminal/src/index.ts)
 
 <a id="deepseek-aidsh-tool-todo"></a>
 
@@ -3023,7 +3028,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/workflow/tool-workflow/src/index.ts:33`](../packages/workflow/tool-workflow/src/index.ts)
+来源：[`packages/workflow/tool-workflow/src/index.ts:32`](../packages/workflow/tool-workflow/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 
@@ -3154,7 +3159,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/bundle/web-app/src/index.ts:43`](../packages/bundle/web-app/src/index.ts)
+来源：[`packages/bundle/web-app/src/index.ts:45`](../packages/bundle/web-app/src/index.ts)
 
 <a id="deepseek-aidsh-web-fetch-http"></a>
 
@@ -3165,8 +3170,6 @@ export interface Config {
 ```ts config-catalog
 /** Plugin config: the provider's transport and size limits plus its `User-Agent` (all defaulted). */
 export interface Config {
-  /** Maximum accepted request URL length. */
-  maxUrlLength?: number
   /** Maximum response body size in bytes. */
   maxResponseBytes?: number
   /** Maximum decoded body length in characters. */
@@ -3428,6 +3431,7 @@ export interface Config {
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime-python`（[`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）

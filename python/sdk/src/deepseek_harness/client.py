@@ -34,7 +34,6 @@ class HarnessConfig:
     initialize_timeout_seconds: float = 30.0
     request_timeout_seconds: float | None = None
     shutdown_timeout_seconds: float | None = 1.0
-    _launch_args: tuple[str, ...] | None = None
 
 
 class HarnessClient:
@@ -47,7 +46,7 @@ class HarnessClient:
         _launch_args: tuple[str, ...] | None = None,
     ) -> None:
         self.config = config or HarnessConfig()
-        self._launch_args = _launch_args or self.config._launch_args
+        self._launch_args = _launch_args
         self._proc: subprocess.Popen[str] | None = None
         self._lock = threading.Lock()
         self._write_lock = threading.Lock()
@@ -137,6 +136,7 @@ class HarnessClient:
         cwd: str,
         provider: str,
         model: str,
+        reasoning_effort: str | None = None,
         max_tokens: int | None = None,
     ) -> InitializeResponse:
         payload: JsonObject = {
@@ -144,6 +144,8 @@ class HarnessClient:
             "provider": provider,
             "model": model,
         }
+        if reasoning_effort is not None:
+            payload["reasoningEffort"] = reasoning_effort
         if max_tokens is not None:
             payload["maxTokens"] = max_tokens
         try:

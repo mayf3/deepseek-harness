@@ -45,13 +45,13 @@ export function SessionId(id: string): SessionId {
  * wrong read). Only structural changes reach that bar: the header shape, the
  * {@link SessionEvent} envelope, core event semantics, or the surface
  * mechanism (the {@link SurfaceEventType} set and {@link SurfaceOp} variants).
- * Adding an ordinary event type does not bump — the per-event
- * {@link SessionEvent.ignorable} guard covers vocabulary growth instead. When
- * in doubt, bump: a near-identity upgrade step is almost free, a missed bump
- * makes older runtimes read new logs wrong silently. The full mechanism
+ * Adding an ordinary event type does not bump: the generated known-event guard
+ * makes older runtimes refuse logs containing a type they do not understand.
+ * When in doubt, bump: a near-identity upgrade step is almost free, a missed
+ * bump makes older runtimes read new logs wrong silently. The full mechanism
  * (upgrade-step chain, in-memory view conversion, migrate-on-continue) is
- * recorded in the session-log-version-mechanism Agent Note
- * (`.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md`).
+ * recorded in the fail-closed-session-event-vocabulary Agent Note
+ * (`.agents/notes/implemented/simplification/2026-08-25-fail-closed-session-event-vocabulary.md`).
  */
 export const SESSION_FORMAT_VERSION = 0
 
@@ -206,9 +206,11 @@ export interface RequestContext {
  * Why a `request/header` snapshot was appended: `'initial'` — the log's first
  * header (a new conversation); `'resume'` — a loop instance's first request
  * over a log that already has header events (process restart, fork seed);
- * `'change'` — a later request used a different header.
+ * `'change'` — a later request used a different header, with `startsSeries`
+ * preserving a coincident series boundary; `'series'` — an unchanged header
+ * began an explicitly distinct message series or followed a surface replacement.
  */
-export type RequestHeaderReason = 'initial' | 'resume' | 'change'
+export type RequestHeaderReason = 'initial' | 'resume' | 'change' | 'series'
 
 /**
  * The merge-extensible, append-only source of truth for an agent interaction.
@@ -286,7 +288,12 @@ export interface SessionEventMap {
    * Full header for the next request, appended inside its step before dispatch.
    * It is log-only; the latest snapshot reconstructs the request header.
    */
-  'request/header': { header: EpochHeader; reason: RequestHeaderReason }
+  'request/header': {
+    header: EpochHeader
+    reason: RequestHeaderReason
+    /** A changed header also begins a distinct model-message series. */
+    startsSeries?: true
+  }
   /**
    * Route metadata for the next request, logged only when the route or capacity
    * changes. It does not participate in request reconstruction or header equality.
@@ -394,17 +401,6 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
     /** Unix epoch milliseconds. */
     time: number
     data: SessionEventMap[K]
-    /**
-     * Marks an event a reader may safely skip when it does not recognize
-     * `type`. Absent means required: a reader meeting an unrecognized type
-     * without this marker MUST refuse to reconstruct the session instead of
-     * silently dropping the event, because an unrecognized required event may
-     * change how the rest of the log is interpreted. A writer sets `true` only
-     * on purely informational records whose loss cannot affect reconstruction;
-     * defaulting to required means a forgotten marker over-refuses (an
-     * inconvenience) rather than silently resuming a gutted session.
-     */
-    ignorable?: true
   } & (K extends SurfaceEventType ? {
     /**
      * Seq numbers of earlier events that this event cites as sources
