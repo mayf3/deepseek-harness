@@ -71,7 +71,6 @@ class Transformer {
   private readonly moduleRequests = new Set<string>()
   private readonly metaResolveRequests = new Set<string>()
   private readonly createRequireBindings = new Set<string>()
-  private readonly requireBindings = new Set<string>(['require'])
 
   constructor(source: string, private readonly path: string) {
     // A `#!` line is only legal at offset zero, and the prologue takes that spot;
@@ -157,12 +156,6 @@ class Transformer {
       this.fail('import attributes are not supported', node.start)
     }
     const source = node.source as Node
-    if (source.value === 'node:module' || source.value === 'module') {
-      for (const specifier of node.specifiers as Node[]) {
-        if (specifier.type !== 'ImportSpecifier' || nameOf(specifier.imported as Node) !== 'createRequire') continue
-        this.createRequireBindings.add(nameOf(specifier.local as Node))
-      }
-    }
     const request = `require(${this.literal(source)})`
     const specifiers = node.specifiers as Node[]
     if (specifiers.length === 0) {
@@ -322,7 +315,12 @@ class Transformer {
 
   // --- traversal ------------------------------------------------------------
 
-  private visit(node: unknown, context: { asyncGenerator: boolean; functionDepth: number; statement?: Node }): void {
+  private visit(node: unknown, context: {
+    asyncGenerator: boolean
+    functionDepth: number
+    moduleScope: boolean
+    statement?: Node
+  }): void {
     if (node === null || typeof node !== 'object') return
     if (Array.isArray(node)) {
       for (const child of node) this.visit(child, context)
@@ -346,21 +344,13 @@ class Transformer {
         if (argument !== undefined && typeof argument.value === 'string') this.moduleRequests.add(argument.value)
         break
       }
-      case 'VariableDeclarator': {
-        const id = record.id as Node
-        const init = record.init as Node | null
-        if (id.type === 'Identifier' && init !== null && this.isCreateRequireCall(init)) {
-          this.requireBindings.add(nameOf(id))
-        }
-        break
-      }
       case 'CallExpression': {
         // CommonJS bodies pass through untransformed, but literal calls through
-        // the wrapper's `require` or Node's `createRequire` are module requests
-        // all the same.
+        // the wrapper's `require` remain module requests. The ESM case accepts
+        // only a direct module-scope createRequire call with the importer URL.
         const callee = record.callee as Node
         const callArguments = record.arguments as Node[]
-        if (this.isRequireCall(callee) && callArguments.length === 1
+        if (this.isRequireCall(callee, context.moduleScope) && callArguments.length === 1
           && typeof callArguments[0]?.value === 'string') {
           this.moduleRequests.add(callArguments[0].value)
         }
@@ -400,6 +390,7 @@ class Transformer {
           if (context.functionDepth === 0) this.fail('a top-level for-await loop cannot run as CommonJS', record.start)
           this.forAwait(record)
         }
+        next = { ...next, moduleScope: false }
         break
       case 'LabeledStatement': {
         const body = record.body as Node
@@ -417,7 +408,16 @@ class Transformer {
         next = {
           asyncGenerator: record.async === true && record.generator === true,
           functionDepth: context.functionDepth + 1,
+          moduleScope: false,
         }
+        break
+      case 'BlockStatement':
+      case 'CatchClause':
+      case 'ClassBody':
+      case 'ForStatement':
+      case 'ForInStatement':
+      case 'SwitchStatement':
+        next = { ...next, moduleScope: false }
         break
       default: break
     }
@@ -431,12 +431,35 @@ class Transformer {
   private isCreateRequireCall(node: Node): boolean {
     if (node.type !== 'CallExpression') return false
     const callee = node.callee as Node
-    return callee.type === 'Identifier' && this.createRequireBindings.has(nameOf(callee))
+    const args = node.arguments as Node[]
+    if (callee.type !== 'Identifier' || !this.createRequireBindings.has(nameOf(callee)) || args.length !== 1) {
+      return false
+    }
+    const base = args[0] as Node
+    if (base.type !== 'MemberExpression' || base.computed === true) return false
+    const object = base.object as Node
+    const property = base.property as Node
+    return object.type === 'MetaProperty'
+      && (object.meta as Node).name === 'import'
+      && property.type === 'Identifier'
+      && property.name === 'url'
   }
 
-  private isRequireCall(callee: Node): boolean {
-    return (callee.type === 'Identifier' && this.requireBindings.has(nameOf(callee)))
-      || this.isCreateRequireCall(callee)
+  private isRequireCall(callee: Node, moduleScope: boolean): boolean {
+    return (callee.type === 'Identifier' && callee.name === 'require')
+      || (moduleScope && this.isCreateRequireCall(callee))
+  }
+
+  private indexCreateRequireImports(program: Node): void {
+    for (const statement of program.body as Node[]) {
+      if (statement.type !== 'ImportDeclaration') continue
+      const source = statement.source as Node
+      if (source.value !== 'node:module' && source.value !== 'module') continue
+      for (const specifier of statement.specifiers as Node[]) {
+        if (specifier.type !== 'ImportSpecifier' || nameOf(specifier.imported as Node) !== 'createRequire') continue
+        this.createRequireBindings.add(nameOf(specifier.local as Node))
+      }
+    }
   }
 
   run(): string {
@@ -456,7 +479,8 @@ class Transformer {
     } catch (reason) {
       this.fail(`parse failed: ${(reason as Error).message}`, 0)
     }
-    this.visit(program, { asyncGenerator: false, functionDepth: 0 })
+    this.indexCreateRequireImports(program)
+    this.visit(program, { asyncGenerator: false, functionDepth: 0, moduleScope: true })
     if (this.edits.length === 0 && !this.moduleSyntax) return this.source
 
     const prologue: string[] = []
@@ -568,9 +592,9 @@ export interface LoweredModule {
   readonly lowered: boolean
   /**
    * Static module requests the body makes: import and re-export sources,
-   * literal dynamic imports, and literal calls through `require` or an imported
-   * `createRequire`. Computed requests are absent — they resolve (and fail loud)
-   * at runtime only.
+   * literal dynamic imports and calls through `require`, plus module-scope
+   * direct literal calls through an imported `createRequire(import.meta.url)`.
+   * Computed and rebased requests resolve (and fail loud) at runtime only.
    */
   readonly moduleRequests: readonly string[]
   /**
