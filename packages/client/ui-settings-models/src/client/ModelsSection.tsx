@@ -16,7 +16,9 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, IconPlusOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: pulls this package's SlotMap merge (the two Models child slots).
+import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
@@ -42,11 +44,18 @@ export interface ModelsSectionInjected {
   t: (key: keyof typeof en) => string
 }
 
+/** The child slots this section declares and dispatches (see ./slot-contract.ts). */
+type ModelsChildSlots = 'settings.models.provider-card' | 'settings.models.footer'
+
+/** The child-slot dispatch function the renderer binds for the section. */
+type ModelsRenderSlot = PropsRenderSlots<ModelsChildSlots>['renderSlot']
+
 /**
  * Props delivered by the slot outlet: the inject face spread flat (the
- * renderer erases the share boundary at the render call).
+ * renderer erases the share boundary at the render call) plus the child-slot
+ * dispatch seat.
  */
-export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>>
+export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>> & Partial<PropsRenderSlots<ModelsChildSlots>>
 
 type ModelsSectionFace = InjectFace<ModelsSectionInjected>
 
@@ -139,6 +148,11 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
   return row.credential?.configured !== true
 }
 
+/** The provider-card seat's credential fact: a referenced key confirmed configured. */
+function keyConfiguredOf(row: ProviderRow): boolean {
+  return row.apiKeyEnv !== undefined && row.credential?.configured === true
+}
+
 function targetOf(row: ProviderRow): EditorTarget {
   const managedRef = deriveKeyRef(row.entry.provider)
   const credentialRef = row.apiKeyEnv === managedRef
@@ -175,15 +189,15 @@ export function providerCopy(template: string, target: ProviderIdentity): string
  * @returns the section, or null while the shell has not injected yet.
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, schema, t } = props
+  const { controller, useSnapshot, api, schema, t, renderSlot } = props
   if (
     controller === undefined || useSnapshot === undefined || api === undefined
-    || schema === undefined || t === undefined
+    || schema === undefined || t === undefined || renderSlot === undefined
   ) return null
-  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} />
+  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} renderSlot={renderSlot} />
 }
 
-function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
+function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
   const { controller, api, schema, t } = injected
   const state = injected.useSnapshot(snapshot => snapshot)
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
@@ -275,6 +289,12 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
   const addTarget = adding ? editing : undefined
   const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
+  // The draft's directory row, for the card extension seat. A refresh can drop
+  // the row mid-draft (the route was adopted or withdrawn elsewhere); the
+  // draft card stays while the seat simply has no row to dispatch.
+  const addRow = addTarget === undefined
+    ? undefined
+    : state.rows.find(row => row.entry.provider === addTarget.provider)
   // Hand-declared routes live in the pi-ai namespace, which is also the only
   // one whose schema names the protocols one may speak; without it mounted
   // there is nothing to declare and the entry point stays disabled.
@@ -324,6 +344,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                   readOnly: !state.writable,
                   onClose: (changed) => { closeSetup(changed, target) },
                 })}
+                {renderSlot(
+                  'settings.models.provider-card',
+                  { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
+                  { entryKey: row.entry.settingsNs },
+                )}
               </li>
             )
           }
@@ -399,6 +424,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                     : null}
                 </span>
               </div>
+              {renderSlot(
+                'settings.models.provider-card',
+                { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
+                { entryKey: row.entry.settingsNs },
+              )}
               {open
                 ? renderProviderEditor({
                   target,
@@ -449,6 +479,13 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                 readOnly={!state.writable}
                 onClose={(changed) => { closeEditor(changed, addTarget) }}
               />
+              {addRow === undefined
+                ? null
+                : renderSlot(
+                  'settings.models.provider-card',
+                  { provider: addRow.entry, configured: addRow.configured, keyConfigured: keyConfiguredOf(addRow) },
+                  { entryKey: addRow.entry.settingsNs },
+                )}
             </div>
           )
           : declaring
@@ -509,6 +546,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
               </div>
             )}
       </div>
+      {renderSlot('settings.models.footer', {})}
       <Modal
         open={deleteTarget !== undefined}
         onClose={closeDelete}

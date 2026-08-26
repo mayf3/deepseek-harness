@@ -150,6 +150,7 @@ async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
     api: scripted.face as never,
     schema: settingsSchema,
     t,
+    renderSlot: () => null,
   }
   render(<ModelsSection {...injected} />)
   return { ...scripted, controller }
