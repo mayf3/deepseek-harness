@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -636,6 +636,26 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     })
     expect(result.error?.kind).toBe('timeout')
     expect(result.value).toBeUndefined()
+  }, 20_000)
+
+  it('reports a timeout when the interpreter was started with SIGXCPU ignored (inherited state)', async () => {
+    // The child inherits the host's SIGXCPU disposition: a wrapper that
+    // ignores SIGXCPU before exec'ing python3 hands the child a soft
+    // RLIMIT_CPU that cannot stop it. The bootstrap resets SIGXCPU to SIG_DFL
+    // before model code runs, so a busy loop still ends as a timeout rather
+    // than running to the hard limit and being misclassified as worker-exit.
+    const wrapper = join(tmpdir(), `dsh-xcpu-ignore-${process.pid}.sh`)
+    writeFileSync(wrapper, '#!/bin/sh\ntrap "" XCPU\nexec python3 "$@"\n', { mode: 0o755 })
+    try {
+      const { runtime } = await setup({ maxWallMs: 30_000, cpuSeconds: 1, pythonBin: wrapper })
+      const result = await runtime.run({
+        program: ['while True: pass'].join('\n'),
+        bindings: [],
+      })
+      expect(result.error?.kind).toBe('timeout')
+    } finally {
+      rmSync(wrapper, { force: true })
+    }
   }, 20_000)
 
   it('reports a timeout when a program traps AND masks SIGXCPU and returns past the soft limit', async () => {

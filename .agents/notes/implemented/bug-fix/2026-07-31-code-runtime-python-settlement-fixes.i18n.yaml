@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-07-31-code-runtime-python-settlement-fixes.md
-2026-07-31-code-runtime-python-settlement-fixes.md: 318545fd769fc2b1e116ec3c679fd53ee1ff2311
-2026-07-31-code-runtime-python-settlement-fixes.zh.md: d24dc60a9a6f9699ac495389959430c83ad8fd1e
+2026-07-31-code-runtime-python-settlement-fixes.md: 33c0495fba322a9bc5545c1cdddd3df23d2f8df4
+2026-07-31-code-runtime-python-settlement-fixes.zh.md: 522f23ceba03440204e0f5b71334599434caa0b8
