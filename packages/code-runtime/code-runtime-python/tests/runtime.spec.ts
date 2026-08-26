@@ -14,7 +14,7 @@ import type { Config } from '../src/index.ts'
 // interpreters only reachable through the caller's PATH (Nix, pyenv). Baking
 // the resolved absolute path mirrors what resolvePythonBin does for the product
 // spawn.
-const PYABS = resolvePythonBin('python3')
+const PYABS = resolvePythonBin('python3') ?? 'python3'
 import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
 /**
