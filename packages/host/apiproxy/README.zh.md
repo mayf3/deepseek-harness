@@ -40,7 +40,7 @@ HTTP 载体在分发前以 415 拒绝非 JSON 的 POST 请求体，因此跨站�
 
 ### 网关暴露什么
 
-API 按领域分组：`sessions`（list、create、history、prompt、cancel、queue、models、selectModel、rename、fork、search、attachment）、`workspace`、`host`（describe、pickDirectory、listDirectory、createDirectory、openPath）、`skills`、`agentPresets`、`goals`、`settings`、`credentials`、`llm`、`events` 与 `downloads`。sessions、workspace 与 events 契约分别归 Session Controller、Workspace Controller 与 API Remotes 包所有；其余领域契约与 `RpcMethodMap` 位于 `src/api/`。
+API 按领域分组：`sessions`（list、create、history、prompt、cancel、queue、models、selectModel、rename、fork、search、attachment）、`workspace`、`host`（describe、openPath）、`skills`、`agentPresets`、`goals`、`settings`、`credentials`、`llm`、`events` 与 `downloads`。sessions、workspace 与 events 契约分别归 Session Controller、Workspace Controller 与 API Remotes 包所有；其余领域契约与 `RpcMethodMap` 位于 `src/api/`。
 
 ### 会话与历史
 
@@ -140,7 +140,6 @@ API 按领域分组：`sessions`（list、create、history、prompt、cancel、q
 - **预留 seam 不进入 `RpcMethodMap`**——`prompt.mode: 'inject'`、`job.list` 和描述字段 `hostInstanceId` 都是已记录的预留项；模型发现使用 `llm.models`。未知方法会在信封解析时直接失败，而不会返回「尚未实现」错误码。
 - **没有协议版本字段**——客户端与宿主一同发布；只有出现独立发布的客户端后，`host.describe` 才会增加版本协商字段。
 - **搜索失败会包含提供方诊断信息**——网关是单用户本地服务；将其暴露给多名用户的载体必须用可安全公开的诊断信息替代内部搜索细节。
-- **Linux 原生选择器依赖桌面工具**——在 `native` 能力下，Zenity 和 KDialog 均未安装时，`host.pickDirectory` 会给出包含解决建议的错误提示；组合层面的回退是浏览后端（见 [native 后端 README](../directory-picker-native/README.zh.md)）。
 - **冷列表提示只向“保持可见、排序偏旧”降级**——projection cache miss 或陈旧的 `lastPromptAt` 会回退到 `createdAt`，除非符合资格的小工件提供精确折叠。[有界空白验证决策](../../../.agents/notes/implemented/bug-fix/2026-08-13-bounded-cold-blank-verification.zh.md)规定了这个安全方向；权威且精确的最近时间索引仍属于[最后活动索引提案](../../../.agents/notes/proposed/architecture/2026-07-29-durable-last-activity-index.zh.md)的范围。
 
 <a id="dev-note"></a>

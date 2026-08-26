@@ -838,6 +838,9 @@ importers:
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../../client/store
+      '@deepseek-ai/dsh-host-directory-picker':
+        specifier: workspace:^
+        version: link:../../host/directory-picker
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -1615,6 +1618,9 @@ importers:
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../host/apiproxy
+      '@deepseek-ai/dsh-host-directory-picker':
+        specifier: workspace:^
+        version: link:../../host/directory-picker
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:^
         version: link:../../host/webserver
@@ -2252,9 +2258,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-client-connection':
+      '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:^
-        version: link:../connection
+        version: link:../../api/remotes
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
@@ -3675,6 +3681,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: workspace:^
+        version: link:../../api/remotes
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:^
         version: link:../../api/session-controller
@@ -3720,6 +3729,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
       '@deepseek-ai/dsh-util-workspace-path':
         specifier: workspace:^
         version: link:../../util/workspace-path

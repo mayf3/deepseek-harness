@@ -118,6 +118,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   webhookRuntime: 'webhook.md',
   workspaceRegistry: 'workspace.md',
   workspaceController: 'workspace.md',
+  directoryPickerController: 'workspace.md',
 }
 
 /**
@@ -595,6 +596,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ProjectionSnapshot: 'session-projection.md',
   ProjectionCheckpoint: 'session-projection.md',
   DirectoryPickerCapability: 'workspace.md',
+  DirectoryListing: 'workspace.md',
   TypertContribution: 'invariants.md',
   TypertRemoteEventSource: 'typert.md',
   TypertFace: 'invariants.md',

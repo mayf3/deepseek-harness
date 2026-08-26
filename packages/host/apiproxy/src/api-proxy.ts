@@ -41,7 +41,6 @@ import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@dee
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { RpcError, RpcRequest, RpcResponse } from './api/rpc.ts'
-import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
 
 /** Read live abort state across awaits without treating it as synchronously immutable. */
@@ -57,14 +56,6 @@ function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
 /** Wrap an error result echoing the request's rpcId. */
 function err<T>(request: RpcRequest<unknown>, error: RpcError): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: false, error } }
-}
-
-/** Map a browse-primitive failure onto the wire error vocabulary (unknown throws stay internal). */
-function directoryError(error: unknown): RpcError {
-  if (error instanceof DirectoryPickerError) {
-    return { code: error.code, message: error.message, details: { path: error.path } }
-  }
-  return { code: 'internal', message: error instanceof Error ? error.message : String(error), details: {} }
 }
 
 /** Deployment metadata and Host integrations consumed by the API implementation. */
@@ -288,72 +279,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           home: homedir(),
           canOpenPath: canOpenPaths(),
         }))
-      },
-
-      async pickDirectory(request, signal) {
-        const capability = ctx.directoryPicker.capability()
-        if (capability.kind !== 'native') {
-          return err(request, {
-            code: 'directory-picker-unavailable',
-            message: `host.pickDirectory needs the native capability; the composed picker serves "${capability.kind}"`,
-            details: { capability: capability.kind },
-          })
-        }
-        try {
-          const path = await capability.pick(signal)
-          return ok(request, { path })
-        } catch (error: unknown) {
-          if (signal.aborted) {
-            return err(request, {
-              code: 'cancelled',
-              message: 'directory picker was aborted',
-              details: {},
-            })
-          }
-          return err(request, {
-            code: 'internal',
-            message: `directory picker failed: ${error instanceof Error ? error.message : String(error)}`,
-            details: {},
-          })
-        }
-      },
-
-      async listDirectory(request, signal) {
-        const capability = ctx.directoryPicker.capability()
-        if (capability.kind !== 'browse') {
-          return err(request, {
-            code: 'directory-picker-unavailable',
-            message: `host.listDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-            details: { capability: capability.kind },
-          })
-        }
-        try {
-          // The carrier's signal follows the caller: a disconnect or timeout
-          // stops the backend's directory scan instead of outliving it.
-          return ok(request, await capability.list(request.payload.path, signal))
-        } catch (error: unknown) {
-          // An abort is the caller's own timeout/disconnect, not a server failure.
-          if (signal.aborted) {
-            return err(request, { code: 'cancelled', message: 'directory listing was aborted', details: {} })
-          }
-          return err(request, directoryError(error))
-        }
-      },
-
-      async createDirectory(request) {
-        const capability = ctx.directoryPicker.capability()
-        if (capability.kind !== 'browse') {
-          return err(request, {
-            code: 'directory-picker-unavailable',
-            message: `host.createDirectory needs the browse capability; the composed picker serves "${capability.kind}"`,
-            details: { capability: capability.kind },
-          })
-        }
-        try {
-          return ok(request, { path: await capability.createDirectory(request.payload.path, request.payload.name) })
-        } catch (error: unknown) {
-          return err(request, directoryError(error))
-        }
       },
 
       async openPath(request, signal) {

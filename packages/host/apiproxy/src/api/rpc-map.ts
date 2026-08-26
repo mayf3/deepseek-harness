@@ -18,9 +18,6 @@ import type { RpcResponse } from './rpc.ts'
  */
 export interface RpcMethodMap {
   'host.describe': HostApi['describe']
-  'host.pickDirectory': HostApi['pickDirectory']
-  'host.listDirectory': HostApi['listDirectory']
-  'host.createDirectory': HostApi['createDirectory']
   'host.openPath': HostApi['openPath']
   'skill.list': SkillsApi['list']
   'agentPreset.openDocument': AgentPresetsApi['openDocument']

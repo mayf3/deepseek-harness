@@ -31,7 +31,6 @@ declare module '@deepseek-ai/cordis' {
 // ---- Contract re-exports (browser-safe apiproxy channels + core types) ----
 export type {
   ApiProxy, HostApi,
-  DirectoryEntry, DirectoryListing,
   SkillsApi, SkillEntry,
   ModelCatalog, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   MessageId, ModelReasoningEffort, ModelSelection,

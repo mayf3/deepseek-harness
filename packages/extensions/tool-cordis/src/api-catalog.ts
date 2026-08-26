@@ -769,6 +769,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'directoryPickerController',
+    summary: 'Host service backing the generated `ctx.remote.directoryPicker` namespace.',
+    description: 'Host service backing the generated `ctx.remote.directoryPicker` namespace. The seam it exports is abstract and therefore never a Loader entry of its own, so this controller carries the wire verbs: one composed backend serves either the native chooser or the browse primitives, and a verb the composition cannot serve is refused rather than approximated.',
+    methods: [
+      {
+        signature: '@Remote(\'pick\') async pick(signal: AbortSignal): Promise<string | null>',
+        description: 'Open the host\'s OS chooser for a Remote caller.',
+        parameters: [{ name: 'signal', description: 'caller lifetime; abort terminates the chooser.' }],
+        returns: 'the chosen absolute path, or null when the operator cancels.',
+      },
+      {
+        signature: '@Remote(\'list\') async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>',
+        description: 'List one directory level for a Remote caller\'s in-app browser.',
+        parameters: [{ name: 'path', description: 'absolute directory to list; absent lists the home directory.' }, { name: 'signal', description: 'caller lifetime; abort stops the backend\'s scan instead of letting it outlive a disconnected caller.' }],
+        returns: 'the level\'s listing with its ancestry.',
+      },
+      {
+        signature: '@Remote(\'createDirectory\') async createDirectory(path: string, name: string): Promise<string>',
+        description: 'Create one child directory for a Remote caller\'s in-app browser.',
+        parameters: [{ name: 'path', description: 'absolute existing parent directory.' }, { name: 'name', description: 'single non-blank path segment.' }],
+        returns: 'the created directory\'s absolute path.',
+      },
+    ],
+  },
+  {
     key: 'e2b',
     summary: 'Creates one lazily consumable E2B SDK handle and deletes the sandbox at timeout or disposal.',
     description: 'Creates one lazily consumable E2B SDK handle and deletes the sandbox at timeout or disposal. Creation begins at plugin construction; adapters await getSandbox before their first operation.',
@@ -3661,6 +3686,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DiffResultView {\n    card: \'diff\';\n    title?: string;\n    diffs: FileDiff[];\n}',
   },
   {
+    name: 'DirectoryEntry',
+    declaration: 'export interface DirectoryEntry {\n    name: string;\n    path: string;\n    hidden: boolean;\n}',
+  },
+  {
+    name: 'DirectoryListing',
+    declaration: 'export interface DirectoryListing {\n    path: string;\n    home: string;\n    crumbs: DirectoryEntry[];\n    entries: DirectoryEntry[];\n    truncated: boolean;\n}',
+  },
+  {
     name: 'DirectoryPickerBrowseCapability',
     declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
   },
@@ -4422,7 +4455,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'directory-unreadable\': {\n        path: string;\n    };\n    \'directory-exists\': {\n        path: string;\n    };\n    \'directory-create-failed\': {\n        path: string;\n    };\n    \'directory-picker-unavailable\': {\n        capability: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n        available: readonly string[];\n    };\n    \'agent-preset-invalid\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-busy\': {\n        reason: string;\n    };\n    \'settings-rejected\': {\n        ns: string;\n    };\n    \'settings-conflict\': {\n        ns: string;\n        expected: number;\n        actual: number;\n    };\n    \'credential-rejected\': {\n        ref: string;\n    };\n    \'model-discovery-failed\': {\n        settingsNs: string;\n        baseURL?: string;\n    };\n    \'internal\': {};\n}',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n        available: readonly string[];\n    };\n    \'agent-preset-invalid\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-busy\': {\n        reason: string;\n    };\n    \'settings-rejected\': {\n        ns: string;\n    };\n    \'settings-conflict\': {\n        ns: string;\n        expected: number;\n        actual: number;\n    };\n    \'credential-rejected\': {\n        ref: string;\n    };\n    \'model-discovery-failed\': {\n        settingsNs: string;\n        baseURL?: string;\n    };\n    \'internal\': {};\n}',
   },
   {
     name: 'RpcId',
