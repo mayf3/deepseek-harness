@@ -1998,10 +1998,13 @@ describe('PythonCodeRuntime — programs and bindings', () => {
   it('does not over-reject an exact-fit closing line while an open entry accumulates', async () => {
     // The write-path pre-check's cheap bound used +3 (quotes + separator) even
     // while an open entry was accumulating, so an exact-fit merged TAIL was
-    // truncated: print('a'*29, flush) bills 32 (ledger 31 left), then
-    // print('b'*28, end=''); print('c') merges 29 more chars whose cheap bound
-    // is 29, not 32 — the +3 form saw 28 + 1 + 3 = 32 > 31 and truncated a
-    // line that fits (merged cost 2 + 58 + 1 = 61 <= 63).
+    // truncated. The recipe below goes through the SCAN pre-check (the
+    // newline-terminated write arrives with an empty pending buffer, so the
+    // buffered-chunks branch is skipped): 'a'*29 flush bills 32 (ledger 31
+    // left), then one write of 'b'*30 + newline merges 30 more chars whose
+    // cheap bound is 30, not 33 — the +3 form saw 30 + 3 = 33 > 31, sliced to
+    // a budget prefix, and pushed past the ledger, emitting the marker for a
+    // line that fits (merged cost 2 + 59 + 1 = 62 <= 63).
     const { runtime } = await setup({ maxLogBytes: 64 })
     const result = await runtime.run({
       program: [
@@ -2016,6 +2019,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.error).toBeUndefined()
     expect(result.logs).toEqual(['a'.repeat(29) + 'b'.repeat(30)])
   }, 15_000)
+
 
   it('rejects a new open entry once the ledger has only two bytes left', async () => {
     // The jsonStringCostUpTo sub-2-byte guard: forged open frames drive the

@@ -55,7 +55,7 @@ One direction of trust: the host treats every inbound frame as hostile (model co
 
 ### Wire contract
 
-The frames are `boot` / `run` (host → child) and `boot-ack` / `call` / `log` / `done` plus one `reply` per call (child → host). The `log` frame's `truncated` flag marks the frame that IS the child ledger's truncation marker, so the host stops capturing at the same point the child did instead of inferring it from its own budget. `done.error.kind` is one of `exception`, `invalid-output`, `output-limit`; wall/CPU budgets, aborts, and substrate death are observed host-side, not carried as frames.
+The frames are `boot` / `run` (host → child) and `boot-ack` / `call` / `log` / `done` plus one `reply` per call (child → host). The `log` frame's `truncated` flag marks the frame that IS the child ledger's truncation marker, so the host stops capturing at the same point the child did instead of inferring it from its own budget. The `log` frame's `open` flag marks an unterminated line committed by an explicit flush: the host merges the next log frame into the same entry, so `print('a', end='', flush=True); print('b')` reads back as one `'ab'` entry rather than a fake newline (the split-billing arithmetic lives in the fd-3 protocol Agent Note's wire-contract section). `done.error.kind` is one of `exception`, `invalid-output`, `output-limit`; wall/CPU budgets, aborts, and substrate death are observed host-side, not carried as frames.
 
 ### Lossless JSON crossing
 
