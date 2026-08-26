@@ -29,6 +29,7 @@ import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandDescriptor, CommandExecution, CommandResult } from '@deepseek-ai/dsh-commands/types'
+import type { DirectoryListing as FixtureDirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import type {
   ApiProxy, ClientRequest,
@@ -2178,6 +2179,55 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
   }
 
+  /**
+   * Canonical fixture implementation of the generated Directory Picker Remote
+   * contract. The pick is deterministic — the keyless lanes drive the full
+   * pick-then-adopt path without an OS chooser — over the same design-mock
+   * tree the browse primitives serve.
+   */
+  const directoryPickerRemotes = {
+    pick(): ConnectionRpcResult<string | null> {
+      return { ok: true, value: `${FIXTURE_HOME}/Documents/project` }
+    },
+    list(path?: string): ConnectionRpcResult<FixtureDirectoryListing> {
+      const target = path ?? FIXTURE_HOME
+      const children = childrenOf(target)
+      if (children === undefined) {
+        return {
+          ok: false,
+          error: { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } },
+        }
+      }
+      return {
+        ok: true,
+        value: {
+          path: target,
+          home: FIXTURE_HOME,
+          crumbs: crumbsOf(target),
+          entries: [...children].sort((a, b) => a.localeCompare(b))
+            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
+          // The fixture tree is tiny; no level ever reaches a backend bound.
+          truncated: false,
+        },
+      }
+    },
+    createDirectory(parent: string, name: string): ConnectionRpcResult<string> {
+      const children = childrenOf(parent)
+      if (children === undefined) {
+        return { ok: false, error: { code: 'directory-create-failed', message: `missing parent ${parent}`, details: { path: parent } } }
+      }
+      // Same root special case as list's entry paths: a plain join under '/'
+      // would mint '//name' and fork the tree's identity.
+      const target = parent === '/' ? `/${name}` : `${parent}/${name}`
+      if (children.includes(name)) {
+        return { ok: false, error: { code: 'directory-exists', message: `${target} already exists`, details: { path: target } } }
+      }
+      directoryTree.set(parent, [...children, name])
+      directoryTree.set(target, [])
+      return { ok: true, value: target }
+    },
+  }
+
   const goalRemotes = {
     create(id: SessionId, request: { objective: string; maxGoalRounds?: number }): RpcResult<{ ref: FxGoalRef }> {
       const missing = requireGoalSession(id)
@@ -3264,42 +3314,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       describe: request => ok(request, {
         version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
       }),
-      // Deterministic native pick: the keyless lanes drive the full
-      // pick-then-adopt path without an OS chooser (design-mock content,
-      // same tree the browse primitives serve).
-      pickDirectory: request => ok(request, { path: `${FIXTURE_HOME}/Documents/project` }),
-      listDirectory: (request) => {
-        const target = request.payload.path ?? FIXTURE_HOME
-        const children = childrenOf(target)
-        if (children === undefined) {
-          return err(request, { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } })
-        }
-        return ok(request, {
-          path: target,
-          home: FIXTURE_HOME,
-          crumbs: crumbsOf(target),
-          entries: [...children].sort((a, b) => a.localeCompare(b))
-            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
-          // The fixture tree is tiny; no level ever reaches a backend bound.
-          truncated: false,
-        })
-      },
-      createDirectory: (request) => {
-        const parent = request.payload.path
-        const children = childrenOf(parent)
-        if (children === undefined) {
-          return err(request, { code: 'directory-create-failed', message: `missing parent ${parent}`, details: { path: parent } })
-        }
-        // Same root special case as listDirectory's entry paths: a plain join
-        // under '/' would mint '//name' and fork the tree's identity.
-        const target = parent === '/' ? `/${request.payload.name}` : `${parent}/${request.payload.name}`
-        if (children.includes(request.payload.name)) {
-          return err(request, { code: 'directory-exists', message: `${target} already exists`, details: { path: target } })
-        }
-        directoryTree.set(parent, [...children, request.payload.name])
-        directoryTree.set(target, [])
-        return ok(request, { path: target })
-      },
       openPath: request => ok(request, { opened: true as const }),
     },
     agentPresets: {
@@ -3425,6 +3439,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           agentId: SessionId
           line?: string
           query?: string
+          path?: string
+          name?: string
           images?: readonly unknown[]
           ref?: { id: string; revision: number }
           agentPreset?: string
@@ -3442,6 +3458,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'commands/execute': return Promise.resolve(commandRemotes.execute(sessionId, args.line as string, args.images ?? []))
         case 'fileReferences/list': return Promise.resolve(referenceRemotes.files(sessionId, args.query ?? ''))
         case 'sessionReferenceResolver/candidates': return Promise.resolve(referenceRemotes.sessions(sessionId, args.query ?? ''))
+        case 'directoryPicker/pick': return Promise.resolve(directoryPickerRemotes.pick())
+        case 'directoryPicker/list': return Promise.resolve(directoryPickerRemotes.list(args.path))
+        case 'directoryPicker/createDirectory':
+          return Promise.resolve(directoryPickerRemotes.createDirectory(args.path ?? '', args.name ?? ''))
         case 'goals/create': return Promise.resolve(goalRemotes.create(sessionId, {
           objective: (request as { objective?: string } | undefined)?.objective as string,
           ...(request as { maxGoalRounds?: number } | undefined)?.maxGoalRounds === undefined
@@ -3596,9 +3616,6 @@ export class FixtureApiClient extends AbstractApiClient {
   ): Promise<RpcResponse<unknown>> {
     switch (method) {
       case 'host.describe': return this.api.host.describe(request)
-      case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
-      case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
-      case 'host.createDirectory': return this.api.host.createDirectory(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)

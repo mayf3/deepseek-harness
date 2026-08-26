@@ -7,7 +7,6 @@
 
 export type {
   ApiProxy, HostApi,
-  DirectoryEntry, DirectoryListing,
   ResponseValue,
   SkillsApi, SkillEntry,
   ModelCatalog, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,

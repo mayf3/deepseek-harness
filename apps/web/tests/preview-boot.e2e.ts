@@ -316,7 +316,6 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
     const exercised = await page.evaluate(async () => {
       type Result<T> = { result: { ok: true; value: T } | { ok: false; error: { code: string; message: string } } }
       interface PreviewApi {
-        host: { createDirectory(payload: { path: string; name: string }): Promise<Result<{ path: string }>> }
         skills: { list(payload: { sessionId: string }): Promise<Result<{ skills: unknown[] }>> }
         settings: {
           describe(payload: object): Promise<Result<{ namespaces: Array<{ ns: string; revision: number }> }>>
@@ -349,12 +348,26 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       const sessionId = sessions.result.value.items[0]?.sessionId
       if (sessionId === undefined) throw new Error('workspace adoption created no Session')
 
+      // Remote namespaces answer over the same unary carrier; the args object
+      // keys every wire parameter by its name.
+      const remote = async <T>(endpoint: string, args: object): Promise<T> => {
+        const answered = await transport.fetch(`/api/${endpoint}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            type: 'client-request', rpcId: `preview-${endpoint.replace('/', '-')}`,
+            method: endpoint, payload: { args },
+          }),
+        })
+        const body = await answered.json() as Result<T>
+        if (!body.result.ok) throw new Error(`${endpoint} failed: ${body.result.error.message}`)
+        return body.result.value
+      }
       const api = transport.createApiClient()
       const skills = await api.skills.list({ sessionId })
       if (!skills.result.ok) throw new Error(`skill.list failed: ${skills.result.error.message}`)
       const createDirectory = async (path: string, name: string): Promise<void> => {
-        const created = await api.host.createDirectory({ path, name })
-        if (!created.result.ok) throw new Error(`host.createDirectory failed: ${created.result.error.message}`)
+        await remote<string>('directoryPicker/createDirectory', { path, name })
         await new Promise((resolve) => { setTimeout(resolve, 250) })
         const refreshed = await api.skills.list({ sessionId })
         if (!refreshed.result.ok) throw new Error(`skill.list refresh failed: ${refreshed.result.error.message}`)

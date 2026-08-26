@@ -29,7 +29,7 @@ export type {
   ModelCatalog, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   ModelReasoningEffort, ModelSelection,
 } from '@deepseek-ai/dsh-api-session-controller/types'
-export type { DirectoryEntry, DirectoryListing, HostApi } from './host.ts'
+export type { HostApi } from './host.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
 export type { AgentPresetsApi } from './agent-presets.ts'
 export type { SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView } from './settings.ts'

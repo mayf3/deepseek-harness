@@ -174,7 +174,7 @@ describe('connection node half', () => {
   it('requires the same browser session for every method on every trusted authority', async () => {
     const { routes, connection, dispose } = await mounted({ trustedHosts: ['harness.example'] })
     const methods = [
-      'host.pickDirectory', 'host.openPath',
+      'host.openPath',
       'settings.describe', 'settings.update', 'credentials.describe', 'credentials.set',
       'llm.discoverModels', 'llm.models', 'agentPreset.openDocument',
     ]
@@ -503,7 +503,7 @@ describe('connection node half over a real HTTP server', () => {
       const methods = [
         'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',
         'credentials.describe', 'credentials.set', 'credentials.unset',
-        'host.pickDirectory', 'host.openPath',
+        'host.openPath',
         'llm.discoverModels',
         'agentPreset.openDocument',
         'llm.providers', 'llm.models',
