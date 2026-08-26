@@ -240,4 +240,55 @@ describe('ScheduleCatalogAction dismissal', () => {
     fireEvent.click(trigger)
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
   })
+
+  it('uses native Tab navigation and Enter or Space activation', () => {
+    render(
+      <>
+        <button type="button">Before</button>
+        <ScheduleCatalogAction {...props(active)} />
+        <button type="button">After</button>
+      </>,
+    )
+    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const before = screen.getByRole('button', { name: 'Before' })
+    const after = screen.getByRole('button', { name: 'After' })
+
+    trigger.focus()
+    expect(trigger.tabIndex).toBe(0)
+    expect(fireEvent.keyDown(trigger, { key: 'Tab' })).toBe(true)
+    after.focus()
+    expect(document.activeElement).toBe(after)
+    trigger.focus()
+    expect(fireEvent.keyDown(trigger, { key: 'Tab', shiftKey: true })).toBe(true)
+    before.focus()
+    expect(document.activeElement).toBe(before)
+
+    trigger.focus()
+    expect(fireEvent.keyDown(trigger, { key: 'Enter' })).toBe(true)
+    fireEvent.click(trigger, { detail: 0 })
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+
+    expect(fireEvent.keyDown(trigger, { key: ' ', code: 'Space' })).toBe(true)
+    fireEvent.click(trigger, { detail: 0 })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  })
+
+  it('stops the clock while closed or unmounted and restarts it when reopened', () => {
+    const view = render(<ScheduleCatalogAction {...props(active)} />)
+    const trigger = screen.getByRole('button')
+
+    expect(vi.getTimerCount()).toBe(0)
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(vi.getTimerCount()).toBe(1)
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(vi.getTimerCount()).toBe(0)
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(vi.getTimerCount()).toBe(1)
+
+    view.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })

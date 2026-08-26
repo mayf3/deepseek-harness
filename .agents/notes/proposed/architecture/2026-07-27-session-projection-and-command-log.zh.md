@@ -91,7 +91,7 @@ api-proxy 的历史处理器切出尾页后同步遍历注册表——全程没�
 
 只要某单元的状态引用发生变化（上文的 `Object.is` 闸门），框架就发出该帧；`seq` 是发出时该单元的水位线。这是实时推送状态，绝不入日志——与 tool-view 的 `view` slot 同一姿态：回放时在 host 重新计算。
 
-客户端对象层为每个会话维护一个**通用值仓（value store）**：`key → { value, seq }`。部分 list hint 与完整值 frame 使用 seq 高者胜。成功的 follow opening snapshot 会在其 durable cut 精确替换暂存 row。初次打开、resync 或 carrier 重连期间，Session 只保留最后一份捕获的 replacement baseline 及其后续 frame；只有该 baseline 的 cut 不早于 opening cut 时，它才会替换 opening 值，后续 frame 也必须推进所选的完整 cut。没有 `fromEvent`，没有按领域的 cell 注册，没有客户端侧领域折叠——领域交付投影支持只需**零客户端代码**（`SessionProjectionMap` merge 经 `/types` 出口同时服务两侧）。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。
+客户端对象层为每个会话维护一个**通用值仓（value store）**。部分 list hint、精确 opening baseline 与完整值 frame 统一遵循[已实现的客户端合并规则](../../implemented/architecture/2026-08-25-session-observations-and-projection-owned-client-state.zh.md)；暂存或陈旧输入不能覆盖权威完整切面。领域仍以**零客户端代码**交付投影支持：没有 `fromEvent`、按领域的 cell 注册或客户端侧领域折叠，`SessionProjectionMap` merge 经 `/types` 出口共享值。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。
 
 ### plan 走标准命令通道（完整示例）
 
@@ -177,7 +177,7 @@ host 侧命令执行器（`packages/interaction/commands`）在调用处理器�
 
 - 领域插件把按会话的日志派生状态送达 React，只需写：自己的持久事件声明、一个具有 `init(header)`、`apply` 和完整 `wire.view` 的确定性 host 单元、自己那份 `SessionProjectionMap` merge，以及 inject 回调——零客户端侧折叠代码，不改客户端 `Session` 类、`ConversationSnapshot`、api-proxy 或任何协议 schema 文件。live 与 detached 折叠接收提供对应事件的同一个不可变 header，规范化 seed 边界由注册表集中校验。
 - 历史尾页携带 `projections`，其 `asOfSeq` 等于窗口尾部 seq；loadOlder 页永不携带；未装注册表的部署照常返回不带该块的历史，客户端把所有 key 视为缺席。
-- Follow opening baseline 会精确替换暂存 cache row。opening 或重连期间，客户端只保留最后一份捕获的 replacement baseline 及其后续 frame；较新的完整 cut 胜出，只有高于所选 cut 的 frame 才会重放。在该替换边界之外，陈旧或重放 frame 不能让值仓倒退。
+- 客户端合并把 list hint 视为暂存输入，把成功的 opening baseline 视为权威完整切面，并按[已实现的客户端合并规则](../../implemented/architecture/2026-08-25-session-observations-and-projection-owned-client-state.zh.md)处理 live frame 的完整 key 更新。陈旧输入不能让驻留状态倒退。
 - 在一个标签页执行的斜杠命令，刷新后、在第二个标签页上、恢复之后都在 flow 中渲染出持久节点；未注册的命令渲染通用卡片；命令结果的 composer 通知路径彻底移除。
 - `useProjection` 经标准 props 套件抵达组件；没有任何钩子穿过 inject 约定（包括 `useSelection`）。
 - 会话标题搭乘这对通用机制（基线块 + 投影帧）；专设的 `session/title` 帧与客户端标题快照表彻底移除。
