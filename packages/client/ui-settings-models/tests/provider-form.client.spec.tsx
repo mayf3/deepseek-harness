@@ -672,6 +672,7 @@ describe('provider rows', () => {
       api={scripted.face as never}
       schema={settingsSchema}
       t={t}
+      renderSlot={() => null}
     />)
 
     // Absent is "unknown", never "shipped": an adapter that answers nothing

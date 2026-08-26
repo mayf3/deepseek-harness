@@ -229,7 +229,7 @@ async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
     api: face as never,
     schema: settingsSchema,
     t,
-    renderSlot: renderSlot as unknown as NonNullable<ModelsSectionProps['renderSlot']>,
+    renderSlot: renderSlot as unknown as ModelsSectionProps['renderSlot'],
   }
   const view = render(<ModelsSection {...injected} />)
   return { view, face, update, replace, mutate, set, unset, controller, mirror, renderSlot }
@@ -291,6 +291,22 @@ describe('ModelsSection', () => {
     renderSlot.mockClear()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, false, 'llm-pi-ai'])
+  })
+
+  it('derives the draft seat\'s key fact from the page\'s conventional reference', async () => {
+    const scripted = scriptedFace()
+    scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
+      credentials: Object.fromEntries(payload.refs.map(ref => [ref, {
+        configured: ref === 'OPENAI_API_KEY' || ref === 'ANTHROPIC_API_KEY',
+        writable: true,
+      }])),
+    })))
+    const { renderSlot } = await mountFace(scripted)
+    renderSlot.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    // The dormant row names no reference yet; the seat still reports the
+    // derived ANTHROPIC_API_KEY the editor itself displays as configured.
+    expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, true, 'llm-pi-ai'])
   })
 
   it('skips the draft seat when a refresh drops the dormant row', async () => {
@@ -415,7 +431,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
-      renderSlot={stubRenderSlot() as unknown as NonNullable<ModelsSectionProps['renderSlot']>}
+      renderSlot={() => null}
     />)
 
     const missing = screen.getByRole('img', { name: en.credentialMissing })
@@ -440,7 +456,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
-      renderSlot={stubRenderSlot() as unknown as NonNullable<ModelsSectionProps['renderSlot']>}
+      renderSlot={() => null}
     />)
     // Now a row with an Edit button, not an open card.
     expect(screen.getAllByText(en.edit).length).toBeGreaterThan(1)
@@ -1171,7 +1187,7 @@ describe('ModelsSection', () => {
         api={face as never}
         schema={settingsSchema}
         t={t}
-        renderSlot={stubRenderSlot() as unknown as NonNullable<ModelsSectionProps['renderSlot']>}
+        renderSlot={() => null}
       />)
       const key = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
       expect(key.placeholder).toBe(en.keyPlaceholder)
@@ -1311,7 +1327,7 @@ describe('ModelsSection', () => {
       api={face.face as never}
       schema={settingsSchema}
       t={t}
-      renderSlot={stubRenderSlot() as unknown as NonNullable<ModelsSectionProps['renderSlot']>}
+      renderSlot={() => null}
     />)
     expect(screen.getByText(/directory down/)).toBeTruthy()
     fireEvent.click(screen.getByText(en.retry))
@@ -1334,7 +1350,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
-      renderSlot={stubRenderSlot() as unknown as NonNullable<ModelsSectionProps['renderSlot']>}
+      renderSlot={() => null}
     />)
     expect(screen.getByText(en.readOnly)).toBeTruthy()
     expect(screen.getAllByText<HTMLButtonElement>(en.remove).every(button => button.disabled)).toBe(true)
@@ -1396,7 +1412,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
-      renderSlot={stubRenderSlot() as unknown as NonNullable<ModelsSectionProps['renderSlot']>}
+      renderSlot={() => null}
     />)
     await screen.findByText('DeepSeek')
   })

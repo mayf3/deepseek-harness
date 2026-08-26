@@ -53,9 +53,11 @@ type ModelsRenderSlot = PropsRenderSlots<ModelsChildSlots>['renderSlot']
 /**
  * Props delivered by the slot outlet: the inject face spread flat (the
  * renderer erases the share boundary at the render call) plus the child-slot
- * dispatch seat.
+ * dispatch seat. The seat is required: the renderer binds it at the render
+ * call itself — unlike the inject face it is never absent at runtime — and a
+ * direct render that forgets it fails to compile instead of mounting nothing.
  */
-export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>> & Partial<PropsRenderSlots<ModelsChildSlots>>
+export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>> & PropsRenderSlots<ModelsChildSlots>
 
 type ModelsSectionFace = InjectFace<ModelsSectionInjected>
 
@@ -148,9 +150,17 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
   return row.credential?.configured !== true
 }
 
-/** The provider-card seat's credential fact: a referenced key confirmed configured. */
+/**
+ * The provider-card seat's credential fact: the reference this page would use
+ * for the row — the profile's `apiKeyEnv`, or the page's derived
+ * `<ROUTE>_API_KEY` while the profile names none — confirmed configured. The
+ * derived half is what keeps the seat consistent with the editor on the
+ * add-provider draft, whose dormant row names no reference yet.
+ */
 function keyConfiguredOf(row: ProviderRow): boolean {
-  return row.apiKeyEnv !== undefined && row.credential?.configured === true
+  return row.apiKeyEnv !== undefined
+    ? row.credential?.configured === true
+    : row.derivedCredential?.configured === true
 }
 
 function targetOf(row: ProviderRow): EditorTarget {
@@ -192,7 +202,7 @@ export function ModelsSection(props: ModelsSectionProps): ReactNode {
   const { controller, useSnapshot, api, schema, t, renderSlot } = props
   if (
     controller === undefined || useSnapshot === undefined || api === undefined
-    || schema === undefined || t === undefined || renderSlot === undefined
+    || schema === undefined || t === undefined
   ) return null
   return <Loaded injected={{ controller, useSnapshot, api, schema, t }} renderSlot={renderSlot} />
 }

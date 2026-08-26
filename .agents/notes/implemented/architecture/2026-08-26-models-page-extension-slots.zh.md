@@ -30,4 +30,4 @@ Status: implemented
 
 ## Consequences
 
-仓库外插件现在无需改动产品即可把按家族的卡片 UI 集成进 Models 页；`llm-pi-ai-oauth` 是首个消费者。代价是一份公开契约：`ProviderCardExtrasOwnerProps` 在 `./client` 边界暴露 `ConfigurableProviderView`，且各分发位点（已保存卡片、setup 形态、新增草稿、footer）成为扩展方依赖的行为。每个适配器家族只有一个扩展所有者是刻意的限制——第二个插件认领同一 namespace 会被 keyed 注册表拒绝，而不是被静默合并。
+仓库外插件现在无需改动产品即可把按家族的卡片 UI 集成进 Models 页；`llm-pi-ai-oauth` 是首个消费者。代价是一份公开契约：`ProviderCardExtrasOwnerProps` 在 `./client` 边界暴露 `ConfigurableProviderView`，且各分发位点（已保存卡片、setup 形态、新增草稿、footer）成为扩展方依赖的行为。每个适配器家族的 keyed 单元格同一时刻只渲染一个所有者：同一 namespace 下同 priority 的第二次注册会被注册表拒绝，不同 priority 则是刻意的遮蔽（最低 priority 的条目渲染）——这是 slot 套件的标准覆盖通道，绝非静默合并。
