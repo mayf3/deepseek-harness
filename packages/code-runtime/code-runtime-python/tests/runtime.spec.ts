@@ -1901,8 +1901,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
   it('commits a flushed open prefix before the truncation marker', async () => {
     // A flushed unterminated line is billed and committed; when a later
     // over-budget write truncates, the committed prefix must appear BEFORE the
-    // marker — the ledger charged for it, so it cannot vanish. (The bug: all
-    // truncation arms pushed only the marker, dropping the held prefix.)
+    // marker — the ledger charged for it, so it cannot vanish.
     const { runtime } = await setup({ maxLogBytes: 64 })
     const result = await runtime.run({
       program: [
