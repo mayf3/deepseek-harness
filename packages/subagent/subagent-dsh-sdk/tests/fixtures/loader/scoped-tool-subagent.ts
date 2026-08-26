@@ -14,6 +14,16 @@ export const inject = ['agents', 'subagentModelSelection']
  */
 export function apply(ctx: Context, config: Config): void {
   ctx.on('agent/created', ({ agent }) => {
-    agent.ctx.plugin(ToolSubagent, { ...config, modelSelectionSettings: true })
+    agent.ctx.plugin(ToolSubagent, {
+      provider: config.provider,
+      toolName: config.toolName,
+      modelSelectionSettings: true,
+      enableRunInBackground: config.enableRunInBackground,
+      backgroundMode: config.backgroundMode,
+      agentOptions: config.agentOptions,
+      persona: config.persona,
+      toolFilter: config.toolFilter,
+      maxDepth: config.maxDepth,
+    })
   })
 }
