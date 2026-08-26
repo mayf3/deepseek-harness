@@ -451,7 +451,8 @@ export class SessionCommandController {
    * the standard completion notice — a human cancellation has no other
    * model-visible channel. The Agent lookup is live-only: a running job's
    * owner is alive by the registry's ownership contract, and listing never
-   * revives a Session, so neither does killing from its list.
+   * revives a Session, so neither does killing from its list. The service-wide
+   * subagent ownership fence applies exactly as it does to `cancel`.
    * @param request - Session whose task list carries the job, and the job id.
    * @returns the registry's admission of the kill request.
    */
@@ -461,12 +462,11 @@ export class SessionCommandController {
       reject('jobs-unavailable', 'background jobs are not available in this composition', {})
     }
     const agent = this.ctx.agents.get(request.sessionId)
+    if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
+      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
+    }
     try {
-      const outcome = jobs.kill(request.jobId, agent, {
-        reason: 'cancelled by the user',
-        reported: false,
-      })
-      return { outcome }
+      jobs.get(request.jobId, agent)
     } catch (error) {
       // `unknown job` and `belongs to another session` both mean this session's
       // list no longer carries a killable row; the client renders one story.
@@ -475,6 +475,14 @@ export class SessionCommandController {
         jobId: request.jobId,
       })
     }
+    // Same synchronous span as the lookup, so nothing can remove the job in
+    // between — and a producer-cancel throw now propagates per the registry
+    // contract (job state unchanged) instead of masquerading as job-not-found.
+    const outcome = jobs.kill(request.jobId, agent, {
+      reason: 'cancelled by the user',
+      reported: false,
+    })
+    return { outcome }
   }
 
   private async resolveAgent(sessionId: SessionId): Promise<Agent> {

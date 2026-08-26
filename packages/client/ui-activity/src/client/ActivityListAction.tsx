@@ -485,10 +485,13 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
     }
     setKillPhase({ key: row.key, state: 'pending' })
     void killJob(sessionId, jobId).then((ok) => {
-      // Success needs no local state: the jobs frame flips the row to
-      // `stopping`, which removes the button and clears the phase above.
-      setKillPhase(current => current?.key === row.key
-        ? (ok ? undefined : { key: row.key, state: 'failed' })
+      // An admitted kill stays pending: the unary response (HTTP) and the jobs
+      // frames (control stream) have no cross-carrier ordering, so re-enabling
+      // here could offer a duplicate kill while the row still reads `running`.
+      // The authoritative jobs frame flips the row to `stopping`, which removes
+      // the button and clears the phase through the killable-set effect above.
+      setKillPhase(current => current?.key === row.key && !ok
+        ? { key: row.key, state: 'failed' }
         : current)
     })
   }

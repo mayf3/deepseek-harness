@@ -117,4 +117,40 @@ describe('session.killJob', () => {
     expect(failureCode(() => commands.killJob({ sessionId: session.id, jobId: 'bash-1' as JobId })))
       .toBe('jobs-unavailable')
   })
+
+  it('propagates a producer cancel throw instead of masking it as job-not-found', async () => {
+    const { ctx, session, agent, commands } = await harness()
+    const id = ctx.jobs.start({
+      kind: 'bash',
+      label: 'flaky cancel',
+      owner: agent,
+      run: () => ({
+        cancel: () => { throw new Error('cancel boom') },
+        done: new Promise(() => {}),
+      }),
+    })
+    // The registry contract: a producer throw propagates with job state
+    // unchanged — the command must not rewrite it into a lookup failure.
+    expect(() => commands.killJob({ sessionId: session.id, jobId: id })).toThrow('cancel boom')
+    expect(ctx.jobs.get(id, agent)).toMatchObject({ status: 'running', reported: false })
+  })
+
+  it('rejects a subagent-owned live session with the ownership fence', async () => {
+    const { ctx, commands } = await harness()
+    const child = ctx.sessions.create(undefined, { meta: { origin: 'subagent' } })
+    const childAgent = {
+      id: child.id,
+      session: child,
+      inbox: new Inbox(child, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
+      status: 'idle',
+      ctx,
+    } as Agent
+    ctx.agents.register(childAgent)
+    const task = producer('child work')
+    const id = ctx.jobs.start({ ...task.spec, owner: childAgent })
+
+    expect(failureCode(() => commands.killJob({ sessionId: child.id, jobId: id })))
+      .toBe('agent-busy')
+    expect(ctx.jobs.get(id, childAgent).status).toBe('running')
+  })
 })

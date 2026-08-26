@@ -407,9 +407,11 @@ describe('ActivityListAction human kill', () => {
     expect(screen.getByTitle(zh['kill.confirm'])).toBe(stop)
     await act(async () => { fireEvent.click(stop) })
     expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-1')
-    // The accepted kill leaves row convergence to the jobs frames; the local
-    // phase resets so the control does not stick in pending.
-    expect(stop.getAttribute('data-kill-state')).toBe('idle')
+    // An admitted kill stays pending: the unary response and the jobs frames
+    // have no cross-carrier ordering, so only the authoritative frame (the row
+    // leaving the killable set) releases the control — never the response.
+    expect(stop.getAttribute('data-kill-state')).toBe('pending')
+    expect(stop.hasAttribute('disabled')).toBe(true)
   })
 
   it('an armed press disarms after the confirmation window', () => {

@@ -14,8 +14,8 @@
 
 - **`kill(id, caller?, options?)` 接受 `{ reason?, reported? }`。** `reported` 默认 `true`——即模型 `job_kill` 的原有语义。`reported: false` 只是不提出本次 kill 的认领，结算随即照常走完成播报员（唤醒/注入、唤醒预算、截断全部不变）。它绝不清除已有认领：模型已 kill 过的任务保持 reported，终态记录也保持结算时的原样。
 - **记录下来的 kill reason 合入 `killed` 结算的 detail**——生产者事实在前（`signal: SIGTERM; cancelled by the user`）——完成通知与 Web 行因此都能说清是谁停的工作，无需新快照字段或新通知模板。跑赢 kill 的任务（结算为 `completed`/`failed`）只保留生产者 detail。这正是 Codex 在 `<turn_aborted>` 指引里写明的对账原则：用户停掉了什么，要告诉模型，而不是让它去猜。
-- **`session.killJob` 是 Session Controller 的 Remote**，与 `cancel` 并列，同样只查活体 Agent（`ctx.agents.get`）：按注册表的所有权契约，在跑任务的 owner 必然活着；从列表里 kill 与列表本身一样绝不复活 Session。未知与他人任务合并为一个 `job-not-found` 拒绝；没有 `ctx.jobs` 的组合拒绝 `jobs-unavailable`。不加 approval 交互：这个单用户本地 BFF 把它视为与停轮按钮同级的操作。
-- **任务列表的停止控件为两击式**（先武装、3 秒内确认，对齐 Kimi 的 `s`+`y` 与 OpenCode 的双 Esc），只渲染在运行中的 job 行——即带 `jobId` 的行。独立 activity 行（workflow 运行）没有 kill 句柄也就没有按钮。请求进行中按钮禁用；jobs 帧把行翻成 `stopping` 即移除按钮，被拒绝的 kill 短暂提示。由于 kill 按 id 寻址 `ctx.jobs`，所有任务 kind 一次性获得该控件——bash、pwsh、pty 与一次性后台 subagent。
+- **`session.killJob` 是 Session Controller 的 Remote**，与 `cancel` 并列，同样只查活体 Agent（`ctx.agents.get`）：按注册表的所有权契约，在跑任务的 owner 必然活着；从列表里 kill 与列表本身一样绝不复活 Session。未知与他人任务合并为一个只作用于查找的 `job-not-found` 拒绝——生产者 cancel 抛错按注册表契约原样传播，绝不伪装成查找失败；没有 `ctx.jobs` 的组合拒绝 `jobs-unavailable`，服务级的 subagent 所有权栅栏与 `cancel` 完全一致地适用。不加 approval 交互：这个单用户本地 BFF 把它视为与停轮按钮同级的操作。
+- **任务列表的停止控件为两击式**（先武装、3 秒内确认，对齐 Kimi 的 `s`+`y` 与 OpenCode 的双 Esc），只渲染在运行中的 job 行——即带 `jobId` 的行。独立 activity 行（workflow 运行）没有 kill 句柄也就没有按钮。请求进行中按钮禁用，且受理成功后保持 pending——unary 响应与 jobs 帧没有跨载体顺序保证，只有权威帧（行离开可杀集合）才释放控件；被拒绝的 kill 短暂提示。由于 kill 按 id 寻址 `ctx.jobs`，所有任务 kind 一次性获得该控件——bash、pwsh、pty 与一次性后台 subagent。
 
 ## 备选方案
 

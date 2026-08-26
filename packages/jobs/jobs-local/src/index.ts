@@ -228,6 +228,8 @@ export class LocalJobRegistry extends JobRegistry {
     // Cancel first so a throw leaves both lifecycle and notice state unchanged.
     job.cancel(options?.reason)
     job.status = 'stopping'
+    // Last writer wins on purpose: the detail reports the latest kill intent,
+    // while `reported` above keeps first-claim-wins for notice delivery.
     if (options?.reason !== undefined) job.killReason = options.reason
     if (claims) job.reported = true
     this.notifyChanged(job.owner)
