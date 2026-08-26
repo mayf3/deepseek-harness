@@ -1898,6 +1898,64 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual([logTruncationMarker(64)])
   }, 15_000)
 
+  it('no-ops a closing frame once an open flood already truncated the ledger', async () => {
+    // The closing-frame branch's post-truncation arm: an open flood exhausts
+    // the ledger (logsTruncated set, marker pushed), then a closing frame
+    // arrives — it must be a no-op, not append content past the marker.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'for _ in range(2000):',
+        "    os.write(3, b'{\"type\":\"log\",\"text\":\"a\",\"open\":true}\\n')",
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"b\"}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual([logTruncationMarker(64)])
+  }, 15_000)
+
+  it('bills a merged open entry once, not per fragment', async () => {
+    // A merged entry's wire cost is billed ONCE, split across its fragments
+    // (first fragment pays quotes+separator, continuations pay only content).
+    // Under maxLogBytes: 64, 16 single-character flushes merge to one 16-char
+    // entry (2 quotes + 16 content + 1 separator = 19), which fits; per-
+    // fragment billing (each charged quotes+separator, ~4 bytes) would truncate
+    // at 16 x 4 = 64.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'for _ in range(16):',
+        "    print('x', end='', flush=True)",
+        "print('')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['x'.repeat(16)])
+  }, 15_000)
+
+  it('truncates when the closing frame of a merged entry overflows the budget', async () => {
+    // The merged entry's billed-once cost: an open fragment that nearly
+    // exhausts the budget, then a closing frame whose content no longer fits —
+    // the closing frame's exact-cost walk trips and the marker replaces the
+    // entry, exactly like any other over-budget log traffic.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        "print('x' * 40, end='', flush=True)",
+        "print('y' * 40)",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual([logTruncationMarker(64)])
+  }, 15_000)
+
   it('keeps a float completion exact when the program mutates the decimal context', async () => {
     // The float encoder's Decimal(repr(value)).normalize() used the process
     // GLOBAL decimal context: a legitimate program setting

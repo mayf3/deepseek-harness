@@ -1026,9 +1026,13 @@ export class PythonCodeRuntime extends CodeRuntime {
       let settled = false
       const logs: string[] = []
       // An unterminated line flushed with the `open` flag: the next log frame
-      // appends to it (no fake newline between entries), and finish() admits
-      // the residual if the run ends with it still open.
-      let openLog: string | undefined
+      // appends to it (no fake newline between entries), and finish() pushes
+      // the residual if the run ends with it still open. Held as a fragment
+      // ARRAY with an incrementally billed content cost, so k tiny open frames
+      // cost O(k) — re-joining and re-walking the whole held text per frame
+      // would be O(k * budget) (jsonStringCostUpTo re-walks from the start).
+      let openParts: string[] = []
+      let openCost = 0
 
       // One host-side ledger covers normal frames, forged frames, and stray stdout bytes.
       // The ledger starts one byte below maxLogBytes: each entry is charged its
@@ -1504,27 +1508,55 @@ export class PythonCodeRuntime extends CodeRuntime {
               // An explicit flush of an unterminated line: hold it so the next
               // frame appends to the SAME entry (print('a', end='', flush=True)
               // followed by print('b') reads back as one 'ab' entry, not a fake
-              // newline). The held fragment is BOUNDED by the ledger budget via
-              // the exact-cost walk (a forged open flood would otherwise grow
-              // openLog without touching logBudget — the same unbounded-retention
-              // attack the ledger exists to stop). The cost is NOT billed here:
-              // the closing frame's admit() bills the whole merged entry once.
+              // newline). Billed INCREMENTALLY so k tiny frames cost O(k), not
+              // O(k * budget) (re-walking the whole held text per frame): the
+              // first fragment is charged the full JSON-string cost plus the
+              // separator (quotes + content + newline), each continuation only
+              // its content (jsonStringCostUpTo includes the two quotes), and
+              // the closing frame only its own content — the merged entry's
+              // wire cost is billed exactly once, split across the fragments.
               if (!logsTruncated) {
-                const merged = (openLog ?? '') + message.text
-                if (jsonStringCostUpTo(merged, logBudget - 1) === undefined) {
+                const cost = jsonStringCostUpTo(message.text, logBudget - openCost)
+                if (cost === undefined) {
                   logsTruncated = true
                   logs.push(logTruncationMarker(this.config.maxLogBytes))
                   clearStray(strayOut)
                   clearStray(strayErr)
-                  openLog = undefined
+                  openParts = []
+                  openCost = 0
                 } else {
-                  openLog = merged
+                  const bill = openParts.length === 0 ? cost + 1 : Math.max(cost - 2, 0)
+                  logBudget -= bill
+                  openParts.push(message.text)
+                  openCost += bill
                 }
               }
               return
             }
-            admit((openLog ?? '') + message.text)
-            openLog = undefined
+            if (openParts.length > 0) {
+              // Closing frame: the held fragments are already billed; bill only
+              // this frame's own content (the quotes and separator ride on the
+              // first fragment) and push the merged entry once.
+              /* v8 ignore next -- logsTruncated is an invariant false here: an open
+               * frame that would trip the ledger resets openParts, so a non-empty
+               * hold implies the ledger never truncated. The guard is defensive. */
+              if (!logsTruncated) {
+                const cost = jsonStringCostUpTo(message.text, logBudget - openCost)
+                if (cost === undefined) {
+                  logsTruncated = true
+                  logs.push(logTruncationMarker(this.config.maxLogBytes))
+                  clearStray(strayOut)
+                  clearStray(strayErr)
+                } else {
+                  logBudget -= Math.max(cost - 2, 0)
+                  logs.push(openParts.join('') + message.text)
+                }
+              }
+              openParts = []
+              openCost = 0
+              return
+            }
+            admit(message.text)
             return
           case 'done': {
             if (message.error) {
@@ -1904,12 +1936,13 @@ export class PythonCodeRuntime extends CodeRuntime {
         // A spawn failure (ENOENT, EACCES) never produced a pid, so there is no
         // process to kill: settle now. Its `close` still fires later and reaches
         // the idempotent settle() again as a no-op.
-        // An unterminated flushed line never got a closing frame; admit it so
-        // the committed flush is not lost from logs.
-        if (openLog !== undefined) {
-          admit(openLog)
-          openLog = undefined
+        // An unterminated flushed line never got a closing frame; it was
+        // billed incrementally, so push it directly (admit would re-bill).
+        if (openParts.length > 0 && !logsTruncated) {
+          logs.push(openParts.join(''))
         }
+        openParts = []
+        openCost = 0
         if (child.pid === undefined) {
           settle(result)
           return

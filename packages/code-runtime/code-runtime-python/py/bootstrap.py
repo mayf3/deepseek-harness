@@ -117,6 +117,12 @@ class LogBuffer:
         # configured value for the marker's message text).
         self._remaining = max_bytes - 1
         self._truncated = False
+        # True while an `open` (unterminated-flush) entry is being accumulated:
+        # continuation fragments bill only their CONTENT (no quotes — they ride
+        # on the first fragment — and no separator), so a merged entry's wire
+        # cost is billed exactly once, split across its fragments, matching the
+        # host ledger.
+        self._open_started = False
         # Re-entrant so a caller may hold it across a compound read-modify-write
         # (``_LogStream.write`` reads ``remaining`` several times and then calls
         # ``push`` while still holding it). One lock is shared by this buffer and
@@ -161,7 +167,7 @@ class LogBuffer:
         # above the budget truncates without ever encoding it — the full encode
         # would allocate a second equally large string and could turn a
         # truncatable log into an RLIMIT_AS death.
-        if len(text) + 3 > self._remaining:
+        if (len(text) + 3 if not open or not self._open_started else len(text) + 1) > self._remaining:
             self._truncated = True
             self._sink(log_truncation_marker(self._max_bytes), truncated=True)
             return
@@ -187,12 +193,25 @@ class LogBuffer:
         # instead of emitting the truncation marker. The +1 also floors an empty
         # entry above zero, so a flood of blank ``print()`` lines exhausts the
         # budget instead of emitting unbounded zero-cost log frames.
-        cost = _json_string_cost(raw) + 1
+        # Split billing for an `open` entry: the first fragment pays the full
+        # JSON-string cost plus the separator; each continuation pays only its
+        # content (the quotes and the separator were billed on the first
+        # fragment). A closed entry pays the full cost as before.
+        if open and self._open_started:
+            cost = _json_string_cost(raw) - 2
+            if cost < 0:
+                cost = 0
+        else:
+            cost = _json_string_cost(raw) + 1
         if cost > self._remaining:
             self._truncated = True
             self._sink(log_truncation_marker(self._max_bytes), truncated=True)
             return
         self._remaining -= cost
+        if open:
+            self._open_started = True
+        else:
+            self._open_started = False
         self._sink(text, open=open)
 
 
