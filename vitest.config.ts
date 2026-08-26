@@ -306,6 +306,10 @@ export default defineConfig({
         // would put whole-workspace compiler analysis under v8
         // instrumentation — the coverage lane's longest tail.
         'packages/typert/generator/src/*.ts',
+        // Experimental webworker-runtime is outside the coverage requirement
+        // by decision: its correctness signal is its uninstrumented suite and
+        // the packer's end-to-end image spec.
+        'packages/experimental/webworker-runtime/src/**/*.ts',
         'packages/host/apiproxy/src/index.ts',
         'packages/host/apiproxy/src/invariant.ts',
         'packages/host/apiproxy/src/api-proxy.ts',
