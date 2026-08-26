@@ -365,21 +365,6 @@ async function bootPreview(origin: string, browser: Browser): Promise<void> {
       // Settings and credentials both answer over the Remote carrier, so this
       // half of the sweep posts the generated endpoints directly like the
       // session read above.
-      const remote = async <T>(endpoint: string, args: object): Promise<T> => {
-        const answered = await transport.fetch(`/api/${endpoint}`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            type: 'client-request',
-            rpcId: `preview-${endpoint.replace('/', '-')}`,
-            method: endpoint,
-            payload: { args },
-          }),
-        })
-        const body = await answered.json() as Result<T>
-        if (!body.result.ok) throw new Error(`${endpoint} failed: ${body.result.error.message}`)
-        return body.result.value
-      }
       const settings = await remote<{ namespaces: { ns: string; revision: number }[] }>(
         'settings/describe', {},
       )
