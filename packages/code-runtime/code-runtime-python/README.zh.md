@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 你得到什么
 
-包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）以及 `logTruncationMarker`（共享截断标记文本）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前对照 `PATH` 解析）。
+包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）以及 `logTruncationMarker`（共享截断标记文本）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前对照 `PATH` 解析；在 `PATH` 上无命中的裸名会在加载期被拒绝，而不是静默回退到平台默认 `PATH`）。
 
 ### wire
 

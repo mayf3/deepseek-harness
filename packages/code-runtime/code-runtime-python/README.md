@@ -29,7 +29,7 @@ Choose this package to run Python model code through the code-runtime seam: regi
 
 ### What you get
 
-The package's default export is the `PythonCodeRuntime` plugin. Its public surface also re-exports the host-side protocol vocabulary: `validateChildFrame` (rebuilds every inbound frame), the lossless-JSON codec and meters (`encodeJsonPlain`, `checkDoneValue`, `hasUnsafeIntegerToken`, `hasNonLosslessNumber`), and `logTruncationMarker` (the shared truncation-marker text). Every cap is a validated `Config` field with a default: `cpuSeconds` (60), `maxWallMs` (600000), `addressSpaceMb` (512, not applied on Darwin), `maxLogBytes` (65536), `maxValueBytes` (32768), `graceMs` (3000), and `pythonBin` (`python3`, resolved against `PATH` before the child spawns with an empty environment).
+The package's default export is the `PythonCodeRuntime` plugin. Its public surface also re-exports the host-side protocol vocabulary: `validateChildFrame` (rebuilds every inbound frame), the lossless-JSON codec and meters (`encodeJsonPlain`, `checkDoneValue`, `hasUnsafeIntegerToken`, `hasNonLosslessNumber`), and `logTruncationMarker` (the shared truncation-marker text). Every cap is a validated `Config` field with a default: `cpuSeconds` (60), `maxWallMs` (600000), `addressSpaceMb` (512, not applied on Darwin), `maxLogBytes` (65536), `maxValueBytes` (32768), `graceMs` (3000), and `pythonBin` (`python3`, resolved against `PATH` before the child spawns with an empty environment; a basename with no `PATH` match is rejected at load rather than silently falling to the platform default `PATH`).
 
 ### The wire
 

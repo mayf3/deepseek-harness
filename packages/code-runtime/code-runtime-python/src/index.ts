@@ -747,14 +747,16 @@ export class PythonCodeRuntime extends CodeRuntime {
     if (!Number.isSafeInteger(this.config.addressSpaceMb * 1024 * 1024)) {
       throw new Error(`dsh-code-runtime-python: config.addressSpaceMb must be at most ${Math.floor(Number.MAX_SAFE_INTEGER / (1024 * 1024))} (its byte count crosses the wire as an exact integer), got ${String(this.config.addressSpaceMb)}`)
     }
-    // `pythonBin` reaches `spawn` as the executable path, where two values the
+    // `pythonBin` reaches `spawn` as the executable path, where values the
     // string schema admits fail late and unhelpfully. An empty string makes
     // `spawn` throw `ERR_INVALID_ARG_VALUE` synchronously, and an embedded NUL
     // throws `ERR_INVALID_ARG_TYPE` — both from inside `run()`, so the method
     // REJECTS instead of resolving the `worker-exit` the seam promises for a
-    // child that cannot start. An empty basename also makes `resolvePythonBin`
-    // probe every PATH directory itself for the X_OK bit. Both are
-    // self-contained configuration errors, so they fail at load.
+    // child that cannot start. A basename with no `PATH` match would silently
+    // fall to execvp's platform default `PATH` under the empty spawn
+    // environment (see the resolvePythonBin JSDoc), so it is rejected here
+    // too. All three are self-contained configuration errors that fail at
+    // load.
     if (this.config.pythonBin === '' || this.config.pythonBin.includes('\0')) {
       throw new Error(`dsh-code-runtime-python: config.pythonBin must be a non-empty path without NUL bytes, got ${JSON.stringify(this.config.pythonBin)}`)
     }
