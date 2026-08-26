@@ -188,10 +188,10 @@ describe('SessionObservationReader', () => {
   it('contains a non-Error persistence rejection', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
+    const rejection = 'offline' as unknown as Error
     ctx.provide('sessionPersistence', {
       // Exercise containment of a backend that violates the Error rejection convention.
-      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario under test
-      borrowSession: () => Promise.reject('offline'),
+      borrowSession: () => Promise.reject(rejection),
     } as never)
 
     await expect(new SessionObservationReader(ctx).read(SessionId('failed'))).rejects.toMatchObject({
