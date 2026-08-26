@@ -162,11 +162,14 @@ export class AgentPresetSeatController {
         const { error } = result
         this.set({
           busy: false,
-          // A mount failure carries its cause twice: `message` wraps it in the
+          // A refusal carries its cause twice: `message` wraps it in the
           // roster's own frame, which names the preset the surface reporting
-          // this already names, and `details.reason` holds the same cause
-          // without it.
-          error: error.code === 'agent-preset-invalid' ? error.details.reason : error.message,
+          // this already names, and a `reason` detail holds the same cause
+          // without it. Read by the detail rather than by the code, because
+          // every refusal that has a cause to give names it the same way.
+          error: 'reason' in error.details && typeof error.details.reason === 'string'
+            ? error.details.reason
+            : error.message,
           current: presetOf(session) ?? '',
         })
         return
