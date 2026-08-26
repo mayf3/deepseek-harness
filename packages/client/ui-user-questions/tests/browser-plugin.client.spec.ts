@@ -122,6 +122,7 @@ describe('apply', () => {
     expect(entry.component).toBe(QuestionComposer)
     expect(entry.inject).toBeUndefined()
     expect(entry.locale).toBe('question')
+    expect(entry.store).toBeDefined()
     const pending = b.pending.getSnapshot()[0]!
     const select = entry.select as (
       owner: { pendingInteraction: PendingQuestion | undefined },
