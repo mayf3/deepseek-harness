@@ -1698,7 +1698,7 @@ export interface Config {
 
 Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/sandbox/sandbox-policy/src/index.ts:68`](../packages/sandbox/sandbox-policy/src/index.ts)
+Source: [`packages/sandbox/sandbox-policy/src/index.ts:70`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2970,7 +2970,7 @@ Source: [`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal
 
 ## `@deepseek-ai/dsh-tool-todo`
 
-Requires: `tools`
+Requires: `tools` · `sessionProjections`
 
 ```ts config-catalog
 /** Model-facing todo tool configuration. */

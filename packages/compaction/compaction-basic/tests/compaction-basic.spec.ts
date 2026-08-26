@@ -1908,6 +1908,7 @@ describe('route-priced image pressure', () => {
   function pricedContext(contextWindow = 1_000): Context {
     const ctx = new Context()
     void new LlmRuntime(ctx)
+    new SessionProjectionRegistry(ctx)
     void new TokenMeter(ctx)
     ctx.llm.registerAdapter([MODEL], new PricedContextAdapter(contextWindow))
     return ctx

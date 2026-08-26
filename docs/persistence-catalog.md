@@ -104,7 +104,7 @@ Sources: [`packages/core/session/src/types.ts:328`](../packages/core/session/src
 }
 ```
 
-Source: [`packages/core/agent/src/types.ts:57`](../packages/core/agent/src/types.ts)
+Source: [`packages/core/agent/src/types.ts:58`](../packages/core/agent/src/types.ts)
 
 ### `agent-preset/*`
 
