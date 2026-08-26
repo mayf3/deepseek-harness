@@ -1461,7 +1461,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-permission-presets`
 
-需要：`shell` · `approval` · `sessions` · `sessionProjections`
+需要：`shell` · `approval` · `sessions`
 
 ```ts config-catalog
 /** The {@link PermissionPresetService} config: preset table and composition default. */
@@ -1524,7 +1524,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-plan-mode`
 
-需要：`tools` · `systemPrompt` · `sessionProjections`
+需要：`tools` · `systemPrompt`
 
 ```ts config-catalog
 /** Deployment-owned plan guidance. */
@@ -1534,7 +1534,7 @@ export interface PlanModeConfig {
 }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:65`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

@@ -234,7 +234,7 @@ function resolveBlockReason(reason: unknown): GoalBlockReason {
 
 /** Goal service (`ctx.goals`) backed exclusively by the owning session log. */
 export class GoalService extends TypertRemoteService {
-  static inject = ['agents', 'sessionProjections']
+  static inject = ['agents']
 
   static Config: z<Config> = z.object({
     defaultMaxGoalRounds: z.number().default(256),
@@ -251,7 +251,9 @@ export class GoalService extends TypertRemoteService {
     ctx.on('agent/session-start', ({ agent }) => {
       this.runtimeState(agent.session).activation = 'disarmed'
     })
-    ctx.sessionProjections.register(goalProjectionDefinition)
+    ctx.inject(['sessionProjections'], (projectionCtx) => {
+      projectionCtx.sessionProjections.register(goalProjectionDefinition)
+    })
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'goal/change') return
       const runtime = this.runtimeState(session)
@@ -465,10 +467,11 @@ export class GoalService extends TypertRemoteService {
     }
   }
 
-  /** Read the current durable projection maintained by the registry. */
+  /** Read the current durable projection or fail at the first service access. */
   private state(session: Session): GoalProjection | null {
-    const state = this.ctx.sessionProjections.stateOf(session, 'goal')
-    /* v8 ignore next -- GoalService registers its required projection in the constructor. */
+    const projections = this.ctx.get('sessionProjections')
+    if (projections === undefined) throw new Error('goal: session projection registry is unavailable')
+    const state = projections.stateOf(session, 'goal')
     if (state === undefined) throw new Error('goal projection is not registered')
     if (state.failure !== null) throw new Error(state.failure)
     return state.current

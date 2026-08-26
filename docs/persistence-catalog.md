@@ -536,7 +536,7 @@ Source: [`packages/interaction/permission-presets/src/index.ts:46`](../packages/
 'plan/mode': { active: boolean }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:48`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:47`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 

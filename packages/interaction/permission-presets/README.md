@@ -87,7 +87,7 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 ### Read side and `custom`
 
-`current(events)` folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). A still-matching last selection wins shared-bundle ties; otherwise the first table match wins; otherwise the derived `CUSTOM_PRESET` is returned. The `permissions` projection unit applies the same fold one event at a time and serves the select to clients.
+`current(session)` reads the `permissions` projection, whose unit folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). A still-matching last selection wins shared-bundle ties; otherwise the first table match wins; otherwise the derived `CUSTOM_PRESET` is returned. A missing registry or projection key fails explicitly.
 
 ### Session pinning and blank reuse
 
@@ -95,7 +95,7 @@ Mounting pins every live and future session: a genuinely fresh session gains the
 
 ### Optional children
 
-The `permissions` projection unit registers only when a `ctx.sessionProjections` registry is composed; the `/permission` command registers only when a `ctx.commands` registry is composed. Headless assemblies without either registry stay unaffected.
+The `permissions` projection unit registers only when a `ctx.sessionProjections` registry is composed; the `/permission` command registers only when a `ctx.commands` registry is composed. Calls that derive the current preset or pin an initial selection require the projection and fail explicitly without its registry or key.
 
 </details>
 

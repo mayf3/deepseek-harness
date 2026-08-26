@@ -171,10 +171,10 @@ interface Registration {
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
  * calling fiber): an unloaded domain plugin's key disappears from snapshots
- * and clients read it as capability absence. Unit contributors and host
- * readers declare `sessionProjections` in their plugin `inject`, so a
- * composition without the registry fails activation instead of silently
- * degrading. Registrants sharing a key
+ * and clients read it as capability absence. A host reader either declares
+ * `sessionProjections` in its plugin `inject` or fails explicitly when the
+ * registry or required key is absent. Contributors may preserve optional
+ * registration through `ctx.inject(['sessionProjections'], ...)`. Registrants sharing a key
  * share one unit and are counted: the same tool package mounted in N agent
  * presets registers N times, and the key survives until the last one
  * unloads.

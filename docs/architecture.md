@@ -106,7 +106,7 @@ The session log is the source of the context the model sees. `deriveMessages()` 
 
 **Model-visible means logged.** Anything that reaches a model request must be reconstructable from the log, and a runtime invariant asserts it. This is why a new model-visible input requires a new session event: extend `SessionEventMap` and render from the log.
 
-**Projection seam.** `dsh-session-projection` owns `ctx.sessionProjections`: registered units fold committed events incrementally, host consumers read one typed state with `stateOf()`, and carriers batch cropped client views with `snapshot()`. Projection contributors and readers require this service, so an incomplete composition fails during activation. The agent loop registers shared `turnBoundary` state instead of making each consumer scan the log ([decision](../.agents/notes/implemented/architecture/2026-08-19-session-projection-mandatory-seam.md)).
+**Projection seam.** `dsh-session-projection` owns `ctx.sessionProjections`: registered units fold committed events incrementally, host consumers read one typed state with `stateOf()`, and carriers batch cropped client views with `snapshot()`. A host reader either requires this service during activation or fails explicitly when the registry or required key is absent. Contributors may retain `ctx.inject(['sessionProjections'], ...)` registration without silently defaulting a missing host value. The agent loop registers shared `turnBoundary` state for its readers ([decision](../.agents/notes/implemented/architecture/2026-08-19-session-projection-mandatory-seam.md)).
 
 ## Capability seams
 

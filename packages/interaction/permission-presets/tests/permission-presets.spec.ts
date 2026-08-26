@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -30,10 +30,11 @@ async function mounted(options: {
   config?: Config
   bashDefault?: SandboxMode | undefined
   approvalDefault?: ApprovalPolicy | undefined
+  projection?: boolean
 } = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
-  await ctx.plugin(SessionProjectionRegistry)
+  if (options.projection !== false) await ctx.plugin(SessionProjectionRegistry)
   ctx.provide('shell', {
     sandboxMode: 'bashDefault' in options ? options.bashDefault : 'workspace-write',
     resolve() { throw new Error('permission tests do not execute bash') },
@@ -83,6 +84,19 @@ describe('permission preset fold', () => {
 })
 
 describe('PermissionPresetService', () => {
+  it('fails on first state access when the projection registry is absent', async () => {
+    const ctx = await mounted({ projection: false })
+    expect(() => ctx.permissionPresets.current(freshSession('missing-permission-projections')))
+      .toThrow('permission: session projection registry is unavailable')
+  })
+
+  it('fails when the permissions projection key is absent', async () => {
+    const ctx = await mounted()
+    vi.spyOn(ctx.sessionProjections, 'stateOf').mockReturnValue(undefined)
+    expect(() => ctx.permissionPresets.current(freshSession('missing-permission-projection-key')))
+      .toThrow('permission: permissions session projection is not registered')
+  })
+
   it('advertises the preset table in declaration order and resolves bundles', async () => {
     const ctx = await mounted()
     expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access'])

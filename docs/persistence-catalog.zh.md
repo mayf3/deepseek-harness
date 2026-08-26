@@ -538,7 +538,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'plan/mode': { active: boolean }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:48`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:47`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 

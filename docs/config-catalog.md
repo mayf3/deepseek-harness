@@ -679,7 +679,7 @@ Source: [`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src
 
 ## `@deepseek-ai/dsh-goal`
 
-Requires: `agents` · `sessionProjections`
+Requires: `agents`
 
 ```ts config-catalog
 /** Deployment defaults for goal creation. */
@@ -1459,7 +1459,7 @@ Source: [`packages/feedback/message-feedback/src/index.ts:49`](../packages/feedb
 
 ## `@deepseek-ai/dsh-permission-presets`
 
-Requires: `shell` · `approval` · `sessions` · `sessionProjections`
+Requires: `shell` · `approval` · `sessions`
 
 ```ts config-catalog
 /** The {@link PermissionPresetService} config: preset table and composition default. */
@@ -1522,7 +1522,7 @@ Source: [`packages/preset/persona/src/index.ts:34`](../packages/preset/persona/s
 
 ## `@deepseek-ai/dsh-plan-mode`
 
-Requires: `tools` · `systemPrompt` · `sessionProjections`
+Requires: `tools` · `systemPrompt`
 
 ```ts config-catalog
 /** Deployment-owned plan guidance. */
@@ -1532,7 +1532,7 @@ export interface PlanModeConfig {
 }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:65`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 

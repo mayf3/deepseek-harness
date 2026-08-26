@@ -8,7 +8,7 @@
 
 ## 已记录状态与恢复
 
-`plan/mode`（`{ active: boolean }`）是仅记日志、整值替换的[会话事件](session.zh.md)：持久且可回放，绝不进入模型 transcript（文本记录）。必需的 `plan` 会话投影单元折叠已提交模式、命令结算结果和最近一次请求头记录的模式。`ctx.planMode` 通过 `stateOf()` 读取该 host 状态，而客户端只接收 `{ active, pending }`；恢复、fork 与压缩（compaction）都能从日志恢复两者。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)。
+`plan/mode`（`{ active: boolean }`）是仅记日志、整值替换的[会话事件](session.zh.md)：持久且可回放，绝不进入模型 transcript（文本记录）。可选注册的 `plan` 单元折叠已提交模式、命令结算结果和最近一次请求头记录的模式。`ctx.planMode` 通过 `stateOf()` 读取该状态；注册表、`plan` key 或 `turnBoundary` key 缺失时，第一次依赖它们的访问会失败。客户端只接收 `{ active, pending }`；恢复、fork 与压缩（compaction）都能从日志恢复两者。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)。
 
 ## 待生效选择与 pre-step 追加
 

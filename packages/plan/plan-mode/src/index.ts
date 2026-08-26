@@ -6,12 +6,11 @@
  * policy enforce restrictions independently and do not read or write plan
  * state.
  *
- * The required `plan` projection folds the session log, so resume and fork
- * restore the state without rescanning it in each consumer. User selections
- * remain pending until the next accepted in-turn pre-step. The service includes
- * the selected state in the proposed step assembly, then appends `plan/mode`
- * from `agent/pre-step` only when the step is accepted. Same-step request
- * retries reuse their assembly.
+ * The `plan` projection folds the session log, so resume and fork restore the
+ * state. User selections remain pending until the next accepted in-turn
+ * pre-step. The service includes the selected state in the proposed step
+ * assembly, then appends `plan/mode` from `agent/pre-step` only when the step
+ * is accepted. Same-step request retries reuse their assembly.
  *
  * The exit tool remains registered while plan mode is inactive, so entering
  * or leaving plan mode changes only the prompt section, not the request tool
@@ -170,7 +169,7 @@ export const planProjectionDefinition = {
  * Client carriers expose the projection's cropped `{ active, pending }` view.
  */
 export class PlanModeController extends Service {
-  static inject = ['tools', 'systemPrompt', 'sessionProjections']
+  static inject = ['tools', 'systemPrompt']
 
   /** Validated deployment-owned guidance. */
   private readonly section: string
@@ -365,16 +364,30 @@ export class PlanModeController extends Service {
   }
 
   private loggedActive(session: Session): boolean {
-    /* v8 ignore next -- plan-mode registers its own plan unit, so the key is always present */
-    return this.ctx.sessionProjections.stateOf(session, 'plan')?.active ?? false
+    return this.planState(session).active
+  }
+
+  private projectionRegistry(): Context['sessionProjections'] {
+    const projections = this.ctx.get('sessionProjections')
+    if (projections === undefined) throw new Error('plan-mode requires the session projection registry')
+    return projections
   }
 
   private hasOpenTurn(session: Session): boolean {
-    return (this.ctx.sessionProjections.stateOf(session, 'turnBoundary')?.openTurnStartSeq ?? null) !== null
+    const state = this.projectionRegistry().stateOf(session, 'turnBoundary')
+    if (state === undefined) throw new Error('plan-mode requires the turnBoundary session projection')
+    return state.openTurnStartSeq !== null
   }
 
   private loggedActiveAtLastHeader(session: Session): boolean | undefined {
-    return this.ctx.sessionProjections.stateOf(session, 'plan')?.activeAtLastHeader ?? undefined
+    return this.planState(session).activeAtLastHeader ?? undefined
+  }
+
+  /** Read the required plan projection state or fail at the first service access. */
+  private planState(session: Session): PlanUnitState {
+    const state = this.projectionRegistry().stateOf(session, 'plan')
+    if (state === undefined) throw new Error('plan-mode requires the plan session projection')
+    return state
   }
 
   /**

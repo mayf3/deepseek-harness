@@ -22,7 +22,7 @@ import type {} from '@deepseek-ai/dsh-shell'
 import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { APPROVAL_POLICIES, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-// Type-only: resolves ctx.sessionProjections and the optional command child.
+// Type-only: resolves the optional projection and command children.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { KnobState, PermissionSelect, PresetOption } from './types.ts'
@@ -149,7 +149,7 @@ export class PermissionPresetService extends Service {
     defaultPreset: z.string(),
   })
 
-  static inject = ['shell', 'approval', 'sessions', 'sessionProjections']
+  static inject = ['shell', 'approval', 'sessions']
 
   private readonly presets: Record<string, PresetSpec>
   private defaultSettings: () => PermissionSettings
@@ -201,25 +201,24 @@ export class PermissionPresetService extends Service {
       })),
       currentValue: zod.string().min(1),
     }) as unknown as zod.ZodType<PermissionSelect>
-    // The `permissions` projection unit folds the three whole-value knob
-    // events. `sessionProjections` is a hard injection, so the registration is
-    // synchronous and lands before the sweep below; otherwise the sweep would
-    // read an unregistered key and treat every existing session as fresh.
-    ctx.sessionProjections.register({
-      key: 'permissions',
-      stateVersion: 1,
-      stateSchema: knobStateSchema,
-      init: () => EMPTY_KNOBS,
-      apply: applyKnobEvent,
-      wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
+    // The projection child activates only when a registry is composed. Service
+    // reads reject a missing registry or key instead of substituting defaults.
+    ctx.inject(['sessionProjections'], (projectionCtx) => {
+      projectionCtx.sessionProjections.register({
+        key: 'permissions',
+        stateVersion: 1,
+        stateSchema: knobStateSchema,
+        init: () => EMPTY_KNOBS,
+        apply: applyKnobEvent,
+        wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
+      })
+      projectionCtx.on('session/created', (session) => {
+        this.pinInitialPermission(session)
+      })
+      for (const session of projectionCtx.sessions.list()) {
+        this.pinInitialPermission(session)
+      }
     })
-
-    ctx.on('session/created', (session) => {
-      this.pinInitialPermission(session)
-    })
-    for (const session of ctx.sessions.list()) {
-      this.pinInitialPermission(session)
-    }
 
     // The /permission command: the one write path a web client uses (the
     // popup contribution submits the picked preset as this line). The child
@@ -265,8 +264,9 @@ export class PermissionPresetService extends Service {
   }
 
   private knobs(session: Session): KnobState {
-    const state = this.ctx.sessionProjections.stateOf(session, 'permissions')
-    /* v8 ignore next -- this service registers the hard-required projection before exposing reads. */
+    const projections = this.ctx.get('sessionProjections')
+    if (projections === undefined) throw new Error('permission: session projection registry is unavailable')
+    const state = projections.stateOf(session, 'permissions')
     if (state === undefined) throw new Error('permission: permissions session projection is not registered')
     return state
   }

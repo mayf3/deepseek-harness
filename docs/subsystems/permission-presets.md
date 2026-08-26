@@ -45,7 +45,7 @@ The service requires a confining `ctx.shell` executor and `ctx.approval`, and mi
 
 ## Current preset and the derived `custom`
 
-`current(session)` derives the effective preset from the required `permissions` projection state, not from its own event alone. The unit folds the session's effective sandbox mode (falling back to the executor's configured mode), effective approval policy (falling back to the approval service config, then `ask`), and recorded selection. The service prefers a still-matching selection, then the first matching table entry in declaration order, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
+`current(session)` derives the effective preset from the optionally registered `permissions` projection. The unit folds the session's sandbox mode, approval policy, and recorded selection; values absent within that state fall back to the executor's configured mode and the approval service config, then `ask`. A missing registry or projection key fails explicitly. The service prefers a still-matching selection, then the first matching table entry in declaration order, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
 
 `names` lists the switchable presets in table declaration order; `optionOf(name)` builds the option a client renders for a table key (label falls back to the key) or for `custom`, and throws for any other name.
 
