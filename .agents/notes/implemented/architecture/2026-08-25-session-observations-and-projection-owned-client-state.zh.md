@@ -108,7 +108,7 @@ Projection 的三种交付状态含义不同：
 | Follow opening baseline | 对当前 Host composition 完整 | 精确 opening cursor | Capability 不存在 |
 | Projection frame | 单个完整 key | Frame 携带的 event sequence | 不适用 |
 
-Client 为每个 key 保存一条 `{ value, seq }` row。部分 list hint 与普通 projection frame 遵循 seq 高者胜，而成功的 follow opening baseline 是精确替换，即使暂存 cache row 声称更高 cut 也一样。初次打开、显式 resync 或 carrier 重连期间，Session 会记录到达的 control projection frame 与 replacement control baseline，先安装精确 opening 值，再按到达顺序重放这些 control 操作。Replacement control baseline 仍会先丢弃超出其 durable cut 的 row，再播种完整值。
+Client 为每个 key 保存一条 `{ value, seq }` row。部分 list hint 与普通 projection frame 遵循 seq 高者胜，而成功的 follow opening baseline 是精确替换，即使暂存 cache row 声称更高 cut 也一样。初次打开、显式 resync 或 carrier 重连期间，Session 会把捕获的 control 输入归一为最后一份 replacement baseline 及其后到达的 frame。安装精确 opening 值后，只有该 control baseline 的 durable cut 不早于 opening cut 时才应用它，随后也只应用能够推进所选完整 cut 的 frame。仍具权威性的 replacement control baseline 会先丢弃超出自身 durable cut 的 row，再播种完整值。
 
 List view 与已打开 Session 读取同一个 per-Session store。首次精确 opening 前，hint 可以填充 title、preset 和其他 list presentation；该 baseline 安装后，resident Session 会忽略迟到的 list hint，避免暂存 cache 数据重新进入已打开值。
 

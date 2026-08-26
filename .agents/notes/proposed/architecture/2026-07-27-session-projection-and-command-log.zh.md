@@ -91,7 +91,7 @@ api-proxy 的历史处理器切出尾页后同步遍历注册表——全程没�
 
 只要某单元的状态引用发生变化（上文的 `Object.is` 闸门），框架就发出该帧；`seq` 是发出时该单元的水位线。这是实时推送状态，绝不入日志——与 tool-view 的 `view` slot 同一姿态：回放时在 host 重新计算。
 
-客户端对象层为每个会话维护一个**通用值仓（value store）**：`key → { value, seq }`。部分 list hint 与完整值 frame 使用 seq 高者胜。成功的 follow opening snapshot 会在其 durable cut 精确替换暂存 row；初次打开、resync 或 carrier 重连期间到达的 control 操作会按到达顺序重放到该精确值之上。没有 `fromEvent`，没有按领域的 cell 注册，没有客户端侧领域折叠——领域交付投影支持只需**零客户端代码**（`SessionProjectionMap` merge 经 `/types` 出口同时服务两侧）。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。
+客户端对象层为每个会话维护一个**通用值仓（value store）**：`key → { value, seq }`。部分 list hint 与完整值 frame 使用 seq 高者胜。成功的 follow opening snapshot 会在其 durable cut 精确替换暂存 row。初次打开、resync 或 carrier 重连期间，Session 只保留最后一份捕获的 replacement baseline 及其后续 frame；只有该 baseline 的 cut 不早于 opening cut 时，它才会替换 opening 值，后续 frame 也必须推进所选的完整 cut。没有 `fromEvent`，没有按领域的 cell 注册，没有客户端侧领域折叠——领域交付投影支持只需**零客户端代码**（`SessionProjectionMap` merge 经 `/types` 出口同时服务两侧）。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。
 
 ### plan 走标准命令通道（完整示例）
 

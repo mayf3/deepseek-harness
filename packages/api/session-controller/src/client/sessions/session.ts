@@ -64,13 +64,12 @@ export interface SessionOptions {
   projections?: ProjectionValueStore
 }
 
-type ProjectionOperation =
-  | { readonly type: 'frame'; readonly frame: Extract<SessionControlFrame, { type: 'projection' }> }
-  | { readonly type: 'baseline'; readonly baseline: ProjectionsBaseline }
+type ProjectionFrame = Extract<SessionControlFrame, { type: 'projection' }>
 
 interface ProjectionCapture {
   readonly generation: number
-  readonly operations: ProjectionOperation[]
+  baseline?: ProjectionsBaseline
+  readonly frames: ProjectionFrame[]
 }
 
 /**
@@ -478,9 +477,9 @@ export class Session implements SessionFace {
    * Apply and, while an exact opening replacement is pending, retain one live projection frame.
    * @param frame - one live projection update for this Session.
    */
-  handleProjectionFrame(frame: Extract<SessionControlFrame, { type: 'projection' }>): void {
-    this.applyProjectionOperation({ type: 'frame', frame })
-    this.captureProjectionOperation({ type: 'frame', frame })
+  handleProjectionFrame(frame: ProjectionFrame): void {
+    this.projections.apply(frame.key, frame.value, frame.seq)
+    this.captureProjectionFrame(frame)
   }
 
   /**
@@ -488,8 +487,8 @@ export class Session implements SessionFace {
    * @param baseline - the complete projection baseline carried by the control stream.
    */
   replaceProjectionBaseline(baseline: ProjectionsBaseline): void {
-    this.applyProjectionOperation({ type: 'baseline', baseline })
-    this.captureProjectionOperation({ type: 'baseline', baseline })
+    this.applyProjectionBaseline(baseline)
+    this.captureProjectionBaseline(baseline)
   }
 
   /**
@@ -654,7 +653,7 @@ export class Session implements SessionFace {
       this.projections.replace(projections)
       this.exactProjectionBaselineInstalled = true
       this.projectionCapture = undefined
-      for (const operation of capture.operations) this.applyProjectionOperation(operation)
+      this.replayProjectionCapture(projections, capture)
     } else {
       if (projections !== undefined) this.projections.seed(projections)
       if (capture !== undefined) this.projectionCapture = undefined
@@ -696,22 +695,40 @@ export class Session implements SessionFace {
   /** Start one operation-local capture without dropping operations from a repeated carrier failure. */
   private beginProjectionCapture(generation: number): void {
     if (this.projectionCapture?.generation === generation) return
-    this.projectionCapture = { generation, operations: [] }
+    this.projectionCapture = { generation, frames: [] }
   }
 
-  /** Retain a control operation only while this generation awaits its exact baseline. */
-  private captureProjectionOperation(operation: ProjectionOperation): void {
-    this.projectionCapture?.operations.push(operation)
+  /** Retain one frame only while this generation awaits its exact baseline. */
+  private captureProjectionFrame(frame: ProjectionFrame): void {
+    this.projectionCapture?.frames.push(frame)
   }
 
-  /** Apply one captured operation under its ordinary live/control semantics. */
-  private applyProjectionOperation(operation: ProjectionOperation): void {
-    if (operation.type === 'frame') {
-      this.projections.apply(operation.frame.key, operation.frame.value, operation.frame.seq)
-      return
+  /** A replacement baseline supersedes every earlier captured control operation. */
+  private captureProjectionBaseline(baseline: ProjectionsBaseline): void {
+    const capture = this.projectionCapture
+    if (capture === undefined) return
+    capture.baseline = baseline
+    capture.frames.length = 0
+  }
+
+  /** Merge normalized control input over one exact opening cut without regressing it. */
+  private replayProjectionCapture(opening: ProjectionsBaseline, capture: ProjectionCapture): void {
+    const baseline = capture.baseline
+    let replayCut = opening.asOfSeq
+    if (baseline !== undefined && baseline.asOfSeq >= replayCut) {
+      this.applyProjectionBaseline(baseline)
+      replayCut = baseline.asOfSeq
     }
-    this.projections.truncate(operation.baseline.asOfSeq)
-    this.projections.seed(operation.baseline)
+    for (const frame of capture.frames) {
+      if (frame.seq <= replayCut) continue
+      this.projections.apply(frame.key, frame.value, frame.seq)
+    }
+  }
+
+  /** Apply one complete control-stream replacement to the live store. */
+  private applyProjectionBaseline(baseline: ProjectionsBaseline): void {
+    this.projections.truncate(baseline.asOfSeq)
+    this.projections.seed(baseline)
   }
 
   /** Drop only the capture owned by a failed or superseded generation. */

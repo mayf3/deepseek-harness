@@ -208,7 +208,7 @@ describe('Session tail-page seeding', () => {
     expect(session.projections.get('test/marks')).toEqual({ marks: ['during-3'] })
   })
 
-  it('replays control baselines and frames in arrival order', async () => {
+  it('replays a newer control baseline and only its subsequent frames', async () => {
     const api = new FakeApiClient()
     const session = new Session(SID, fakeRemote(api))
     const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
@@ -229,6 +229,74 @@ describe('Session tail-page seeding', () => {
     } as never))
     await opening
     expect(session.projections.get('test/marks')).toEqual({ marks: ['last-frame'] })
+  })
+
+  it('keeps a newer exact opening over an older captured control baseline', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api))
+    const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => history.promise
+
+    const opening = session.open()
+    session.replaceProjectionBaseline({
+      asOfSeq: 5, values: { 'test/marks': { marks: ['control-5'] } },
+    })
+    session.handleProjectionFrame({
+      type: 'projection', sessionId: SID, key: 'stale', value: 'frame-6', seq: 6,
+    })
+    history.resolve(ok({
+      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
+      projections: {
+        asOfSeq: 10,
+        values: {
+          'test/marks': { marks: ['opening-10'] },
+          'opening-only': 'present',
+        },
+      },
+    } as never))
+    await opening
+
+    expect(session.projections.values()).toEqual({
+      'test/marks': { marks: ['opening-10'] },
+      'opening-only': 'present',
+    })
+  })
+
+  it('uses the latest captured baseline generation before merging later frames', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api))
+    const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => history.promise
+
+    const opening = session.open()
+    session.replaceProjectionBaseline({
+      asOfSeq: 12, values: { 'test/marks': { marks: ['superseded-control-12'] } },
+    })
+    session.handleProjectionFrame({
+      type: 'projection', sessionId: SID, key: 'superseded', value: 'frame-13', seq: 13,
+    })
+    session.replaceProjectionBaseline({
+      asOfSeq: 8, values: { 'test/marks': { marks: ['latest-control-8'] } },
+    })
+    session.handleProjectionFrame({
+      type: 'projection', sessionId: SID, key: 'test/marks', value: { marks: ['frame-11'] }, seq: 11,
+    })
+    history.resolve(ok({
+      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
+      projections: {
+        asOfSeq: 10,
+        values: {
+          'test/marks': { marks: ['opening-10'] },
+          'opening-only': 'present',
+        },
+      },
+    } as never))
+    await opening
+
+    expect(session.projections.values()).toEqual({
+      'test/marks': { marks: ['frame-11'] },
+      'opening-only': 'present',
+    })
   })
 
   it('ignores a list hint after the exact baseline is installed but before open settles', async () => {
