@@ -387,11 +387,12 @@ export function readProcessStart(pid: number): string | undefined {
  * falls back to the platform default (`/usr/bin:/bin`) and misses interpreters
  * that live only on the caller's `PATH` (Nix, pyenv, Homebrew, conda). An
  * absolute or explicitly relative path is used verbatim. When no `PATH` entry
- * holds an executable match, the original value is returned unchanged so the
- * spawn produces its normal ENOENT `error` event (a settled `worker-exit`),
- * not a thrown exception here.
+ * holds an executable match, `undefined` is returned and the LOAD check rejects
+ * the configuration: falling back to the bare name would let spawn's `env: {}`
+ * execvp silently start a system interpreter from the platform default PATH
+ * that the caller never asked for.
  * @param bin - the configured interpreter (absolute path or bare command).
- * @returns an absolute path when resolvable, else `bin` unchanged.
+ * @returns an absolute path when resolvable, else `undefined`.
  */
 export function resolvePythonBin(bin: string): string | undefined {
   if (isAbsolute(bin) || bin.includes('/')) return bin
