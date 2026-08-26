@@ -170,7 +170,7 @@ describe('sendSession submission echo', () => {
       await expect(sending).resolves.toEqual({ kind: 'success' })
       expect(b.prompt).toHaveBeenCalledWith(
         [
-          { type: 'image', mediaType: 'image/png', data: expect.any(String), name: 'a.png' },
+          { type: 'image', mediaType: 'image/png', data: expect.any(String) as string, name: 'a.png' },
           { type: 'text', text: '带图' },
         ],
         'queue',

@@ -550,6 +550,38 @@ describe('input-machine: undo / redo', () => {
     expect(n.state.draft).toBe('typed during flight')
   })
 
+  it('runs concurrent detached sends and settles them independently in any order', () => {
+    const m = new InputMachine()
+    m.dispatch({ type: 'draft-changed', draft: '第一条' })
+    const first = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    m.dispatch({ type: 'draft-changed', draft: '第二条' })
+    const second = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    expect(m.state.phase).toBe('plain')
+    expect(m.state.draft).toBe('')
+    expect(second.attempt.seq).toBeGreaterThan(first.attempt.seq)
+    // Later attempt fails first: its draft restores into the empty composer.
+    m.dispatch({ type: 'sink-settled', attempt: second.attempt, ok: false, message: 'boom' })
+    expect(m.state.draft).toBe('第二条')
+    // The earlier failure then finds a non-empty composer and must not clobber it.
+    m.dispatch({ type: 'sink-settled', attempt: first.attempt, ok: false, message: 'boom' })
+    expect(m.state.draft).toBe('第二条')
+    // Release aborts nothing further: both settlements already consumed their records.
+    expect(m.dispatch({ type: 'release' })).toEqual([])
+  })
+
+  it('release aborts every in-flight detached send', () => {
+    const m = new InputMachine()
+    m.dispatch({ type: 'draft-changed', draft: 'A' })
+    const first = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    m.dispatch({ type: 'draft-changed', draft: 'B' })
+    const second = effectAt(m.dispatch({ type: 'enter', mode: 'queue' }), 0, 'default-sink')
+    m.dispatch({ type: 'release' })
+    expect(first.attempt.signal.aborted).toBe(true)
+    expect(second.attempt.signal.aborted).toBe(true)
+    // Settlements after release are dropped stale events.
+    expect(m.dispatch({ type: 'sink-settled', attempt: first.attempt, ok: false, message: 'late' })).toEqual([])
+  })
+
   it('a failed detached flight restores the sent draft and occurrences into an untouched composer', () => {
     const m = new InputMachine()
     m.dispatch({ type: 'draft-changed', draft: 'restore me' })

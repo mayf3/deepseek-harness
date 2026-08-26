@@ -2,7 +2,6 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { Session } from '../src/client/sessions/session.ts'
@@ -43,7 +42,7 @@ function promptEvent(seq: number, rpcId: SessionRequestId, refs: readonly ImageA
         ...refs.map(attachment => ({ type: 'image' as const, attachment })),
         { type: 'text' as const, text: '发送' },
       ],
-      source: { kind: 'user', rpcId } as MessageSource,
+      source: { kind: 'user', rpcId },
     }),
   } as unknown as SessionEvent
 }

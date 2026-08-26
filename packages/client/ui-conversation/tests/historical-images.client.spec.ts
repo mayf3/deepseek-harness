@@ -28,7 +28,7 @@ describe('HistoricalImageCache', () => {
 
   it('adopts a seeded URL, reuses it for later resolves, and revokes it with the Session scope', async () => {
     const revoked: string[] = []
-    const originalRevoke = URL.revokeObjectURL
+    const originalRevoke = URL.revokeObjectURL.bind(URL)
     URL.revokeObjectURL = (url: string) => { revoked.push(url) }
     try {
       const runtime = await SlotTestRuntime.create()

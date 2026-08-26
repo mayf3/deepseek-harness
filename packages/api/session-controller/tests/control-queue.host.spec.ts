@@ -83,9 +83,9 @@ describe('Session control queue projection', () => {
     const opened = await iterator.next()
     if (opened.done || opened.value.type !== 'baseline') throw new Error('missing baseline')
     const items = opened.value.value.queues['queue-session' as SessionId] ?? []
-    expect(items).toMatchObject([
+    expect(items.map(item => ({ id: item.id, placement: item.placement, rpcId: item.rpcId }))).toEqual([
       { id: identified.id, placement: 'queued', rpcId: 'req-42' },
-      { id: expect.anything(), placement: 'steering' },
+      { id: items[1]?.id, placement: 'steering', rpcId: undefined },
     ])
     expect('rpcId' in (items[1] ?? {})).toBe(false)
 
