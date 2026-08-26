@@ -32,7 +32,7 @@ import type { Session, UserMessage } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
-import type {} from '@deepseek-ai/dsh-commands'
+import type { CommandId } from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type { PlanProjection, PlanUnitState } from './types.ts'
@@ -116,7 +116,7 @@ export function resolveConfig(config: PlanModeConfig): PlanModeConfig {
 const planUnitStateSchema = zod.object({
   active: zod.boolean(),
   wanted: zod.boolean().nullable(),
-  running: zod.object({ commandId: zod.string(), wanted: zod.boolean() }).nullable(),
+  running: zod.object({ commandId: zod.string() as unknown as ZodType<CommandId>, wanted: zod.boolean() }).nullable(),
   activeAtLastHeader: zod.boolean().nullable(),
 })
 
@@ -367,7 +367,7 @@ export class PlanModeController extends Service {
   }
 
   private hasOpenTurn(session: Session): boolean {
-    return (this.ctx.sessionProjections.stateOf(session, 'turnBoundary')?.openTurn ?? null) !== null
+    return (this.ctx.sessionProjections.stateOf(session, 'turnBoundary')?.openTurnStartSeq ?? null) !== null
   }
 
   private loggedActiveAtLastHeader(session: Session): boolean | undefined {

@@ -8,6 +8,8 @@
  * @module @deepseek-ai/dsh-plan-mode/types
  */
 
+import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
+
 /**
  * The plan projection's wire value. `active` is the logged state in force
  * (the last `plan/mode`, inactive before the first); `pending` is true while
@@ -28,7 +30,7 @@ export interface PlanUnitState {
   /** The selection's target mode; null when no selection is outstanding. */
   wanted: boolean | null
   /** The latest plan command awaiting its paired settlement. */
-  running: { commandId: string; wanted: boolean } | null
+  running: { commandId: CommandId; wanted: boolean } | null
   /** Active state recorded by the latest `request/header`, or null. */
   activeAtLastHeader: boolean | null
 }

@@ -48,7 +48,6 @@ async function harness(
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: settingsFile, watch: false })
   await settingsFiber

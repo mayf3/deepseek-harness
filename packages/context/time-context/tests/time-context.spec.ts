@@ -415,22 +415,28 @@ describe('configuration and lifecycle', () => {
 })
 
 describe('time-context projection fold edges', () => {
-  it('keeps the same turn when a repeated turn/start lands', async () => {
+  it('clears the open-turn injection time at the next turn start', async () => {
     const { ctx } = await mount()
     const session = Session.create(SessionId('same-turn'))
     session.append('turn/start', { turn: 1 })
-    session.append('turn/start', { turn: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'reading' }],
+      source: { kind: 'plugin', plugin: 'time-context' },
+    }), { surfaceOp: 'append' })
+    expect(typeof ctx.sessionProjections.stateOf(session, 'timeContext')?.lastTurnInjectionTime).toBe('number')
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    session.append('turn/start', { turn: 2 })
     expect(ctx.sessionProjections.stateOf(session, 'timeContext')).toMatchObject({
-      currentTurn: 1,
+      lastTurnInjectionTime: null,
     })
   })
 
-  it('stays null when turn/end arrives without a turn/start', async () => {
+  it('keeps the open-turn injection time null when turn/end arrives first', async () => {
     const { ctx } = await mount()
     const session = Session.create(SessionId('end-without-start'))
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(ctx.sessionProjections.stateOf(session, 'timeContext')).toMatchObject({
-      currentTurn: null,
+      lastTurnInjectionTime: null,
     })
   })
 })

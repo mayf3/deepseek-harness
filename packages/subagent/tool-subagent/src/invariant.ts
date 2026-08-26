@@ -6,7 +6,7 @@
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import { hasSubagentModelSelection } from './model-selection-state.ts'
+import type {} from './model-selection-state.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-tool-subagent'
 
@@ -18,7 +18,7 @@ export const inject = ['invariants']
 /** Assert that a durable opt-in is represented by both model-facing definitions. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
   ctx.on('agent/pre-step', async ({ agent }, next) => {
-    if (hasSubagentModelSelection(agent.session)) {
+    if (ctx.sessionProjections.stateOf(agent.session, 'subagentModelSelectionEnabled') === true) {
       const schemas = ctx.tools.schemas(agent)
       const selectable = schemas.some((schema) => {
         const properties = (schema.parameters as { properties?: Record<string, unknown> }).properties
@@ -32,7 +32,7 @@ const install: InvariantInstaller = Object.assign((ctx: Context, fail: Invariant
     }
     return next()
   }, { global: true })
-}, { inject: ['tools'] })
+}, { inject: ['tools', 'sessionProjections'] })
 
 /**
  * Register this package's invariant companion.

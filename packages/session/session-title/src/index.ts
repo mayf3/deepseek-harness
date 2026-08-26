@@ -210,7 +210,30 @@ export function titleSnapshotFromState(state: TitleUnitState): SessionTitleSnaps
   })
 }
 
-const EMPTY_TITLE_INPUT: TitleInputState = { first: null, last: null, count: 0 }
+const EMPTY_TITLE_INPUT: TitleInputState = { first: null, count: 0, lastSeq: null }
+
+const sessionTitleUserMessageSchema: ZodType<SessionTitleUserMessage> = zod.object({
+  seq: zod.number().int().nonnegative(),
+  text: zod.string(),
+}).strict()
+
+const titleInputStateSchema: ZodType<TitleInputState> = zod.object({
+  first: sessionTitleUserMessageSchema.nullable(),
+  count: zod.number().int().nonnegative(),
+  lastSeq: zod.number().int().nonnegative().nullable(),
+}).strict().superRefine((state, context) => {
+  const empty = state.first === null && state.lastSeq === null && state.count === 0
+  const populated = state.first !== null
+    && state.lastSeq !== null
+    && state.count > 0
+    && state.first.seq <= state.lastSeq
+  if (!empty && !populated) {
+    context.addIssue({
+      code: 'custom',
+      message: 'title input state must pair its count with first and last message seqs',
+    })
+  }
+})
 
 /**
  * Collect eligible human text messages from a session log, in seq order.
@@ -333,16 +356,16 @@ export class SessionTitleService extends Service {
 
     ctx.sessionProjections.register<'titleInput', TitleInputState>({
       key: 'titleInput',
-      stateVersion: 2,
-      stateSchema: zod.custom<TitleInputState>(),
+      stateVersion: 3,
+      stateSchema: titleInputStateSchema,
       init: () => EMPTY_TITLE_INPUT,
       apply: (state, event) => {
         const message = sessionTitleUserMessageOf(event)
         if (message === undefined) return state
         return {
           first: state.first ?? message,
-          last: message,
           count: state.count + 1,
+          lastSeq: message.seq,
         }
       },
     })
@@ -429,8 +452,7 @@ export class SessionTitleService extends Service {
     }
     const registration = this.registration
     const input = this.titleInputOf(session)
-    const latest = input.last
-    if (registration === undefined || registration.closing || latest === null) {
+    if (registration === undefined || registration.closing || input.lastSeq === null) {
       // Explicit refresh is the unpin even without a provider: a standing
       // user title must not short-circuit ensureFallback into a no-op, so
       // re-derive and append the fallback over it when one is derivable.
@@ -450,7 +472,7 @@ export class SessionTitleService extends Service {
     const work = this.activate({
       registration,
       revision,
-      throughSeq: latest.seq,
+      throughSeq: input.lastSeq,
     }, state, signal)
     const config = session.requestHeader()?.config
     const route = config === undefined ? undefined : { provider: config.provider, model: config.model }

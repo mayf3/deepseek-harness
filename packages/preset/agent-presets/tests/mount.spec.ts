@@ -381,6 +381,7 @@ describe('a roster with nothing in it', () => {
   it('says so instead of naming an empty list of candidates', async () => {
     const bare = new Context()
     await bare.plugin(Loader)
+    await bare.plugin(SessionProjectionRegistry)
     await bare.plugin(AgentPresets, { default: 'standard', roots: [], includeShippedRoot: false, includeUserRoot: false })
 
     await expect(bare.agentPresets.resolve())

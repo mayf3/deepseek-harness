@@ -37,8 +37,6 @@ export type InboxTarget = 'next-turn' | 'next-step'
  * corrupt state — and never treat it as an error.
  */
 export interface TurnBoundaryProjection {
-  /** Open turn number, or null between turns. */
-  readonly openTurn: number | null
   /** Seq of the open turn's `turn/start`, or null between turns. */
   readonly openTurnStartSeq: number | null
   /** Seq of the latest `step/start` event, or null before the first step. */

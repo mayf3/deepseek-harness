@@ -16,7 +16,7 @@ import SubagentService, { seedDescriptorTurn, snapshotSubagentDescriptor } from 
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import TeamService, { TeamId, TeamMessageId } from '../src/index.ts'
-import { emptyTeamState, teamProjectionDefinition } from '../src/projection.ts'
+import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/index.ts'
 import { TestSessionQuery } from './test-session-query.ts'
 
@@ -31,11 +31,10 @@ function durable(agent: Agent): {
   tasks: TeamTaskSnapshot[]
   pendingMessages: TeamMessageSnapshot[]
 } {
-  let projected = teamProjectionDefinition.init()
+  let projected = teamProjectionDefinition.init(agent.session.header)
   for (const event of agent.session.events) projected = teamProjectionDefinition.apply(projected, event)
-  const selected = projected.teams.find(team => team.id === TeamId(agent.id))
-  if (selected?.failure !== undefined) throw new Error(selected.failure)
-  const state = selected ?? emptyTeamState(agent.id)
+  if (projected.failure !== undefined) throw new Error(projected.failure)
+  const state = projected
   return {
     members: state.members,
     tasks: state.tasks,

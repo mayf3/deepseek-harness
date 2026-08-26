@@ -14,6 +14,8 @@ import type {
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as tool from '../src/index.ts'
 import { testToolSignal, text } from './harness.ts'
 
@@ -58,6 +60,7 @@ class CatalogAdapter extends LlmAdapter {
 
 async function setupListTool() {
   const ctx = new Context()
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
@@ -80,6 +83,7 @@ function call(ctx: Context, args: unknown) {
 describe('list_subagent_models', () => {
   it('is omitted unless its delegation-tool instance owns discovery', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
@@ -90,6 +94,7 @@ describe('list_subagent_models', () => {
 
   it('stays registered without the optional LLM service and rejects discovery calls', async () => {
     const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(SubagentRuntime)
@@ -110,6 +115,8 @@ describe('list_subagent_models', () => {
 
   it('lists registered providers and follows live registration changes', async () => {
     const { ctx, fiber } = await setupListTool()
+    const session = Session.create(SessionId('projection-lifecycle'))
+    expect(ctx.sessionProjections.stateOf(session, 'subagentModelSelectionEnabled')).toBe(false)
     const empty = await call(ctx, {})
     expect(empty.isError).toBe(false)
     expect(text(empty)).toBe('(no LLM providers)')
@@ -125,6 +132,7 @@ describe('list_subagent_models', () => {
 
     await fiber.dispose()
     expect(ctx.tools.get('list_subagent_models')).toBeUndefined()
+    expect(ctx.sessionProjections.stateOf(session, 'subagentModelSelectionEnabled')).toBeUndefined()
   })
 
   it('lists one provider\'s advertised models without treating the catalog as a whitelist', async () => {

@@ -34,10 +34,8 @@ const timeContextStateSchema = zod.object({
   lastMessageTime: zod.number().nullable(),
   /** Time of this plugin's latest durable injection, or null. */
   lastInjectionTime: zod.number().nullable(),
-  /** Turn of the latest injection, or null (a same-turn injection answers precedingStepContextTime). */
-  lastInjectionTurn: zod.number().nullable(),
-  /** The open turn at the latest fold (null between turns); the injection's turn is captured at append. */
-  currentTurn: zod.number().nullable(),
+  /** Latest injection time in the open turn, or null before that turn receives one. */
+  lastTurnInjectionTime: zod.number().nullable(),
 })
 
 /** Folded time-context readings. */
@@ -151,15 +149,12 @@ export function apply(ctx: Context, config: Config): void {
 
   ctx.sessionProjections.register({
     key: 'timeContext',
-    stateVersion: 1,
+    stateVersion: 2,
     stateSchema: timeContextStateSchema,
-    init: () => ({ lastMessageTime: null, lastInjectionTime: null, lastInjectionTurn: null, currentTurn: null }),
+    init: () => ({ lastMessageTime: null, lastInjectionTime: null, lastTurnInjectionTime: null }),
     apply: (state, event) => {
-      if (event.type === 'turn/start') {
-        return state.currentTurn === event.data.turn ? state : { ...state, currentTurn: event.data.turn }
-      }
-      if (event.type === 'turn/end') {
-        return state.currentTurn === null ? state : { ...state, currentTurn: null }
+      if (event.type === 'turn/start' || event.type === 'turn/end') {
+        return state.lastTurnInjectionTime === null ? state : { ...state, lastTurnInjectionTime: null }
       }
       if (event.type === 'user/message') {
         const injected = event.data.source.kind === 'plugin' && event.data.source.plugin === name
@@ -170,7 +165,7 @@ export function apply(ctx: Context, config: Config): void {
         return {
           ...withMessage,
           lastInjectionTime: event.time,
-          lastInjectionTurn: state.currentTurn,
+          lastTurnInjectionTime: event.time,
         }
       }
       if (event.type === 'assistant/message' || event.type === 'tool/result') {
@@ -196,12 +191,10 @@ export function apply(ctx: Context, config: Config): void {
     }
     /* v8 ignore next 2 -- time-context registers its own unit in apply, so the key is always present */
     if (state === undefined) return decision
-    /* v8 ignore next 6 -- an injection always records a time, so the lastInjectionTime nullish fallback is unreachable */
+    /* v8 ignore next 6 -- every later step follows a recorded injection in the same turn */
     const previous = step === 1
       ? state.lastMessageTime ?? undefined
-      : state.lastInjectionTurn === turn
-        ? state.lastInjectionTime ?? undefined
-        : undefined
+      : state.lastTurnInjectionTime ?? undefined
     const messages = requestMessages(agent, turn, decision.messages)
     const browser = deriveBrowserTimeZoneContext(messages)
     const selectedTimeZone = browser.kind === 'resolved' ? browser.timeZone : fallbackTimeZone

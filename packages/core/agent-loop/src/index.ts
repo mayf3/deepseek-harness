@@ -41,7 +41,6 @@ const INACTIVE_STATES: ReadonlySet<FiberState> = new Set([
 ])
 
 const turnBoundaryProjectionSchema: zod.ZodType<TurnBoundaryProjection> = zod.object({
-  openTurn: zod.number().int().nonnegative().nullable(),
   openTurnStartSeq: zod.number().int().nonnegative().nullable(),
   lastStepStartSeq: zod.number().int().nonnegative().nullable(),
   lastStepBoundary: zod.object({
@@ -54,10 +53,9 @@ const turnBoundaryProjectionSchema: zod.ZodType<TurnBoundaryProjection> = zod.ob
 /** Host projection of agent turn and step boundaries. */
 export const turnBoundaryProjectionDefinition = {
   key: 'turnBoundary',
-  stateVersion: 1,
+  stateVersion: 2,
   stateSchema: turnBoundaryProjectionSchema,
   init: () => ({
-    openTurn: null,
     openTurnStartSeq: null,
     lastStepStartSeq: null,
     lastStepBoundary: null,
@@ -68,14 +66,12 @@ export const turnBoundaryProjectionDefinition = {
       case 'turn/start':
         return {
           ...state,
-          openTurn: event.data.turn,
           openTurnStartSeq: event.seq,
           lastTurn: event.data.turn,
         }
       case 'turn/end':
         return {
           ...state,
-          openTurn: null,
           openTurnStartSeq: null,
         }
       case 'step/start':

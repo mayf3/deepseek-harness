@@ -71,8 +71,8 @@ export interface TitleInputState {
   readonly first: SessionTitleUserMessage | null
   /** Total eligible messages folded so far. */
   readonly count: number
-  /** Newest eligible message, or null before any. */
-  readonly last: SessionTitleUserMessage | null
+  /** Seq of the newest eligible message, or null before any. */
+  readonly lastSeq: number | null
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

@@ -1,6 +1,7 @@
 /** Durable per-session state for the user-controlled model-selection opt-in. */
 
-import type { Session } from '@deepseek-ai/dsh-session'
+import { z as zod } from 'zod'
+import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
@@ -14,20 +15,18 @@ declare module '@deepseek-ai/dsh-session/types' {
   }
 }
 
-/**
- * Whether a session log records the enabled model-selection definition.
- * @param session - session whose durable decision is read.
- * @returns whether model-selectable delegation is enabled for the session.
- */
-export function hasSubagentModelSelection(session: Session): boolean {
-  return session.events.some(event => event.type === 'subagent/model-selection-enabled')
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Whether the session's delegation tool exposes child LLM route selection. */
+    subagentModelSelectionEnabled: boolean
+  }
 }
 
-/**
- * Append the enabled decision once, before its definition can reach a model request.
- * @param session - session receiving the enabled decision.
- */
-export function recordSubagentModelSelection(session: Session): void {
-  if (hasSubagentModelSelection(session)) return
-  session.append('subagent/model-selection-enabled', {})
-}
+/** Host-only projection of the durable model-selection decision. */
+export const subagentModelSelectionProjectionDefinition = {
+  key: 'subagentModelSelectionEnabled',
+  stateVersion: 1,
+  stateSchema: zod.boolean(),
+  init: () => false,
+  apply: (enabled, event) => enabled || event.type === 'subagent/model-selection-enabled',
+} satisfies ProjectionDefinition<'subagentModelSelectionEnabled', boolean>

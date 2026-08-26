@@ -33,13 +33,10 @@ import {
 import type { DelegationModelRequest } from './model-selection.ts'
 import { registerListSubagentModels } from './list-models.ts'
 import type {} from './model-selection-settings.ts'
-import {
-  hasSubagentModelSelection,
-  recordSubagentModelSelection,
-} from './model-selection-state.ts'
+import { subagentModelSelectionProjectionDefinition } from './model-selection-state.ts'
 
 export const name = 'tool-subagent'
-export const inject = ['tools', 'subagents', 'systemPrompt']
+export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
 
 /** Prompt order after bounded delegation policy and before child reporting. */
 const SUBAGENT_SECTION_ORDER = FIRST_PARTY_SECTION_ORDER.TOOL_SUBAGENT
@@ -324,6 +321,7 @@ export function apply(ctx: Context, config: Config): void {
   const toolName = config.toolName ?? 'subagent'
 
   const modelSelectionCapable = config.enableModelSelection === true || config.modelSelectionSettings === true
+  ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     if (typeof config.maxDepth === 'number' && !subagentProvider.capabilities.depthLimit) {
@@ -616,19 +614,21 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const selectForAgent = (agent: NonNullable<Context['agent']>): boolean => {
-    let enabled = hasSubagentModelSelection(agent.session)
+    const recorded = ctx.sessionProjections.stateOf(agent.session, 'subagentModelSelectionEnabled') === true
+    let enabled = recorded
     if (!enabled) {
       const parentId = agent.session.header.origin === 'subagent'
         ? agent.session.header.parentSession
         : undefined
       if (parentId !== undefined) {
         const parent = ctx.get('agents')?.get(parentId)
-        enabled = parent !== undefined && hasSubagentModelSelection(parent.session)
+        enabled = parent !== undefined
+          && ctx.sessionProjections.stateOf(parent.session, 'subagentModelSelectionEnabled') === true
       } else if (agent.session.firstLiveSeq === 0) {
         enabled = settings.currentEnabled()
       }
     }
-    if (enabled) recordSubagentModelSelection(agent.session)
+    if (enabled && !recorded) agent.session.append('subagent/model-selection-enabled', {})
     return enabled
   }
 

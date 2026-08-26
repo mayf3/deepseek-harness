@@ -10,6 +10,7 @@ import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as tool from '../src/index.ts'
@@ -17,7 +18,7 @@ import * as ToolInvariant from '../src/invariant.ts'
 import SubagentModelSelectionConfig, {
   SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE,
 } from '../src/model-selection-settings.ts'
-import { hasSubagentModelSelection } from '../src/model-selection-state.ts'
+import type {} from '../src/model-selection-state.ts'
 
 /** Writable in-memory settings provider for the package integration. */
 class MemorySettings extends SettingsProvider {
@@ -53,6 +54,7 @@ async function boot(): Promise<Context> {
   await ctx.plugin(MemorySettings)
   await ctx.plugin(SubagentModelSelectionConfig)
   await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
@@ -102,11 +104,11 @@ describe('SubagentModelSelectionConfig', () => {
     const ctx = await boot()
     const disabled = await createAgent(ctx, 'disabled')
     expect(selectable(ctx, disabled)).toBe(false)
-    expect(hasSubagentModelSelection(disabled.session)).toBe(false)
+    expect(ctx.sessionProjections.stateOf(disabled.session, 'subagentModelSelectionEnabled')).toBe(false)
 
     await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
     const enabled = await createAgent(ctx, 'enabled')
-    expect(hasSubagentModelSelection(enabled.session)).toBe(true)
+    expect(ctx.sessionProjections.stateOf(enabled.session, 'subagentModelSelectionEnabled')).toBe(true)
     expect(selectable(ctx, enabled)).toBe(true)
     expect(selectable(ctx, disabled)).toBe(false)
 
@@ -165,7 +167,7 @@ describe('SubagentModelSelectionConfig', () => {
       meta: { parentSession: parent.id, origin: 'subagent' },
     })
     expect(selectable(ctx, child)).toBe(true)
-    expect(hasSubagentModelSelection(child.session)).toBe(true)
+    expect(ctx.sessionProjections.stateOf(child.session, 'subagentModelSelectionEnabled')).toBe(true)
 
     const enabledSeed = Session.create(SessionId('enabled-seed'))
     enabledSeed.append('subagent/model-selection-enabled', {})
@@ -176,13 +178,14 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: true })
     const resumedDisabled = await createAgent(ctx, 'resumed-disabled', { seed: oldSeed.events })
     expect(selectable(ctx, resumedDisabled)).toBe(false)
-    expect(hasSubagentModelSelection(resumedDisabled.session)).toBe(false)
+    expect(ctx.sessionProjections.stateOf(resumedDisabled.session, 'subagentModelSelectionEnabled')).toBe(false)
     await ctx.fiber.dispose()
   })
 
   it('rejects ambiguous static and settings-controlled configuration', async () => {
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SubagentRuntime)
     expect(() => {
       tool.apply(ctx, {
@@ -197,6 +200,7 @@ describe('SubagentModelSelectionConfig', () => {
   it('requires both the Host setting owner and a composition scope', async () => {
     const withoutSettings = new Context()
     await mountAgentLoopTestDependencies(withoutSettings)
+    await withoutSettings.plugin(SessionProjectionRegistry)
     await withoutSettings.plugin(SubagentRuntime)
     expect(() => {
       tool.apply(withoutSettings, {

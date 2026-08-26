@@ -5,6 +5,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
 
@@ -24,6 +25,7 @@ export async function setup(toolConfig: tool.Config, mockConfig: Partial<mock.Co
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(SessionProjectionRegistry)
   await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
   await ctx.plugin(tool, toolConfig)
   return ctx

@@ -76,7 +76,21 @@ describe('title projection unit', () => {
     const state = ctx.sessionProjections.stateOf(session, 'titleInput')
     expect(state?.count).toBe(5_000)
     expect(state?.first?.text).toBe('message 0')
-    expect(state?.last?.text).toBe('message 4999')
+    expect(state?.lastSeq).toBe(session.seq - 1)
     expect(ctx.sessionProjections.checkpoint(session).titleInput).toBeDefined()
+  })
+
+  it('rejects a version-matching checkpoint with inconsistent title input counters', async () => {
+    const { ctx, session } = await harness(true)
+    const checkpoint = ctx.sessionProjections.checkpoint(session)
+    const row = checkpoint.titleInput
+    expect(row).toBeDefined()
+    const malformed = {
+      ...checkpoint,
+      titleInput: { ...row!, val: { first: null, count: 1, lastSeq: null } },
+    }
+
+    expect(() => ctx.sessionProjections.restore(malformed, [], 0, session.header))
+      .toThrow(/title input state must pair its count with first and last message seqs/)
   })
 })

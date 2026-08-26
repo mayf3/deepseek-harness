@@ -139,7 +139,7 @@ export interface TeamState {
  * @param rootId - root Session identity.
  * @returns mutable empty Team state.
  */
-export function emptyTeamState(rootId: SessionId): TeamProjectionEntry {
+export function emptyTeamState(rootId: SessionId): TeamProjectionState {
   return {
     id: toTeamId(rootId),
     members: [],
@@ -150,14 +150,9 @@ export function emptyTeamState(rootId: SessionId): TeamProjectionEntry {
   }
 }
 
-/** One checkpoint-safe Team state retained by its durable identity. */
-export interface TeamProjectionEntry extends TeamState {
+/** Checkpoint-safe state for the Team owned by the projected Session. */
+export interface TeamProjectionState extends TeamState {
   failure?: string
-}
-
-/** Plain-JSON Team states grouped by identity for fork isolation. */
-export interface TeamProjectionState {
-  readonly teams: TeamProjectionEntry[]
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -174,10 +169,6 @@ const teamProjectionEntrySchema = z.object({
   delivered: z.array(teamMessageIdSchema),
   nextTaskNumber: positiveSafeInteger,
   failure: z.string().optional(),
-}).strict() as z.ZodType<TeamProjectionEntry>
-
-const teamProjectionStateSchema = z.object({
-  teams: z.array(teamProjectionEntrySchema),
 }).strict() as z.ZodType<TeamProjectionState>
 
 /** Whether one event belongs to the Team domain. */
@@ -230,22 +221,17 @@ function parseCurrentTeamEvent(event: TeamSessionEvent): TeamSessionEvent {
 
 function applyProjectionEvent(state: TeamProjectionState, event: SessionEvent): void {
   if (!isTeamEvent(event)) return
-  const selector = parsePersisted(event.type, teamEventSelectorSchema, event.data)
-  const current = selector.version === 1 ? parseCurrentTeamEvent(event) : undefined
-  let team = state.teams.find(candidate => candidate.id === selector.teamId)
-  if (team === undefined) {
-    team = emptyTeamState(SessionId(selector.teamId))
-    state.teams.push(team)
-  }
-  if (team.failure !== undefined) return
+  if (state.failure !== undefined) return
   try {
-    if (current === undefined) {
+    const selector = parsePersisted(event.type, teamEventSelectorSchema, event.data)
+    if (selector.teamId !== state.id) return
+    if (selector.version !== 1) {
       throw new Error(`unsupported Agent Teams event version ${String(selector.version)}`)
     }
-    applyCurrentTeamEvent(team, current)
+    applyCurrentTeamEvent(state, parseCurrentTeamEvent(event))
   } catch (error: unknown) {
     /* v8 ignore next -- the owned Team transition throws Error instances. */
-    team.failure = error instanceof Error ? error.message : String(error)
+    state.failure = error instanceof Error ? error.message : String(error)
   }
 }
 
@@ -318,12 +304,12 @@ function applyCurrentTeamEvent(state: TeamState, event: TeamSessionEvent): void 
   }
 }
 
-/** Host-only Team projection grouped by durable Team identity. */
+/** Host-only Team projection selected by the projected Session identity. */
 export const teamProjectionDefinition = {
   key: 'team',
-  stateVersion: 1,
-  stateSchema: teamProjectionStateSchema,
-  init: (): TeamProjectionState => ({ teams: [] }),
+  stateVersion: 2,
+  stateSchema: teamProjectionEntrySchema,
+  init: header => emptyTeamState(header.id),
   apply: (state, event) => {
     applyProjectionEvent(state, event)
     return state

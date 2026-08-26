@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionEventMap, SessionEventType } from '@deepseek-ai/dsh-session'
-import { emptyTeamState, teamProjectionDefinition } from '../src/projection.ts'
+import { teamProjectionDefinition } from '../src/projection.ts'
 import type { TeamProjectionState, TeamState } from '../src/projection.ts'
 import { TeamId, TeamMessageId, TeamTaskId } from '../src/types.ts'
 import type { TeamMemberSnapshot, TeamMessageSnapshot, TeamTaskSnapshot } from '../src/types.ts'
@@ -14,20 +14,19 @@ function event<T extends SessionEventType>(type: T, data: SessionEventMap[T], se
   return { type, data, seq, time: seq } as SessionEvent<T>
 }
 
-function project(events: readonly SessionEvent[]): TeamProjectionState {
-  let state = teamProjectionDefinition.init()
+function project(rootId: SessionId, events: readonly SessionEvent[]): TeamProjectionState {
+  let state = teamProjectionDefinition.init({ version: 0, id: rootId, createdAt: 0 })
   for (const event of events) state = teamProjectionDefinition.apply(state, event)
   return state
 }
 
-function teamState(rootId: SessionId, projected: TeamProjectionState): TeamState {
-  const selected = projected.teams.find(team => team.id === TeamId(rootId))
-  if (selected?.failure !== undefined) throw new Error(selected.failure)
-  return selected ?? emptyTeamState(rootId)
+function teamState(projected: TeamProjectionState): TeamState {
+  if (projected.failure !== undefined) throw new Error(projected.failure)
+  return projected
 }
 
 function projectTeam(rootId: SessionId, events: readonly SessionEvent[]): TeamState {
-  return teamState(rootId, project(events))
+  return teamState(project(rootId, events))
 }
 
 /** Queued-minus-delivered mail retained by the projection. */
@@ -91,10 +90,9 @@ describe('Agent Teams projection events', () => {
       event('team/task', { version: 1, teamId: TEAM, task: task({ id: TeamTaskId('task-7') }) }, 3),
       event('team/message/queued', { version: 1, teamId: TEAM, message: message() }, 4),
     ]
-    const projected = project(records)
-    const state = teamState(ROOT, projected)
+    const projected = project(ROOT, records)
+    const state = teamState(projected)
 
-    expect(projected.teams.map(team => team.id)).toEqual([TeamId('ancestor'), TEAM])
     expect(state).toMatchObject({ id: TEAM })
     expect(state.members).toHaveLength(1)
     expect(state.tasks).toHaveLength(1)
@@ -305,7 +303,7 @@ describe('Agent Teams projection events', () => {
       teamId: TEAM,
       task: task(),
     }, 0)
-    const state = project([invalid]).teams[0]!
+    const state = project(ROOT, [invalid])
     expect(state.failure).toMatch(/unsupported Agent Teams event version 2/)
     expect(isEmptyState(state)).toBe(true)
   })
@@ -316,12 +314,12 @@ describe('Agent Teams projection events', () => {
       teamId: TeamId('ancestor'),
       task: task(),
     }, 0)
-    const projected = project([inherited])
-    expect(projected.teams[0]?.failure).toMatch(/unsupported Agent Teams event version 2/)
-    expect(isEmptyState(teamState(ROOT, projected))).toBe(true)
+    const projected = project(ROOT, [inherited])
+    expect(projected.failure).toBeUndefined()
+    expect(isEmptyState(teamState(projected))).toBe(true)
   })
 
-  it('still validates complete current-version records inherited from another Team', () => {
+  it('ignores malformed current-version records inherited from another Team', () => {
     const inherited = {
       ...event('team/task', {
         version: 1,
@@ -334,7 +332,6 @@ describe('Agent Teams projection events', () => {
         task: { ...task(), subject: 42 },
       },
     } as unknown as SessionEvent
-    expect(() => projectTeam(ROOT, [inherited]))
-      .toThrow(/persisted Agent Teams team\/task payload is invalid/)
+    expect(isEmptyState(projectTeam(ROOT, [inherited]))).toBe(true)
   })
 })

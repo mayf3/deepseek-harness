@@ -99,9 +99,19 @@ export interface GoalProjection {
   readonly updatedAt: number
 }
 
+/** Strict checkpoint state used to derive the current goal client value. */
+export interface GoalProjectionState {
+  /** Latest valid current goal, or null before creation and after clear. */
+  readonly current: GoalProjection | null
+  /** Goal identities already created in this Session, retained to reject reuse. */
+  readonly seenGoalIds: GoalId[]
+  /** First strict replay failure, or null while the durable stream is valid. */
+  readonly failure: string | null
+}
+
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    goal: GoalProjection | null
+    goal: GoalProjectionState
   }
   interface SessionProjectionMap {
     /**
