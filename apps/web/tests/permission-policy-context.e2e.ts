@@ -94,7 +94,7 @@ describe('web e2e: current sandbox policy reaches the model before tools', () =>
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual(PROMPTS)
     }
 
-    const input = page.locator('[data-composer-input]').first()
+    const input = page.locator('[data-composer-input][contenteditable="true"]').first()
     let sessionId: Awaited<ReturnType<WebScaffold['whenTurnSettled']>> | undefined
     for (const [index, preset] of ['read-only', 'danger-full-access', 'workspace-write'].entries()) {
       await input.fill(`/permission ${preset}`)
@@ -106,8 +106,7 @@ describe('web e2e: current sandbox policy reaches the model before tools', () =>
       await input.fill(PROMPTS[index] as string)
       await input.press('Enter')
       sessionId = await settled
-      await page.locator('[data-composer-input][contenteditable="true"]').first()
-        .waitFor({ timeout: 10_000 })
+      await input.waitFor({ timeout: 10_000 })
     }
 
     await input.fill('/permission read-only')
