@@ -1008,8 +1008,9 @@ export class PythonCodeRuntime extends CodeRuntime {
       // unaffected (it is a Python object, not the C-level stdio buffer).
       // Load validated that a basename resolves; absolute paths pass through.
       // The non-null assertion is the load-time contract (see the pythonBin
-      // load checks); PATH changing between load and run would fail the spawn
-      // with ENOENT, which the boot-write failure path settles as worker-exit.
+      // load checks); a PATH change between load and run would make this
+      // undefined and spawn throws synchronously, which the surrounding try
+      // settles as worker-exit like any other spawn failure.
       const resolvedPythonBin = resolvePythonBin(this.config.pythonBin) as string
       child = spawn(resolvedPythonBin, ['-u', '-I', bootstrapPath], {
         env: {},
@@ -1566,7 +1567,11 @@ export class PythonCodeRuntime extends CodeRuntime {
                 } else {
                   const bill = openParts.length === 0 ? cost + 1 : Math.max(cost - 2, 0)
                   logBudget -= bill
-                  openParts.push(message.text)
+                  // A zero-content continuation (text '') bills 0; holding it
+                  // would grow the fragment array without touching the ledger,
+                  // so a forged empty-open flood could grow host memory — skip
+                  // the push, the merge result is unchanged.
+                  if (message.text !== '') openParts.push(message.text)
                 }
               }
               return
