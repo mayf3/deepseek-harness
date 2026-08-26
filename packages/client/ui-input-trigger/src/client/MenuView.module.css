@@ -1,9 +1,3 @@
-/* Trigger candidate menu (figma SLASH 39:26572 MenuDropdown): menu surface,
- * r12, hairline border, shadow-lv3, 4px inset padding; anchored to the
- * composer top edge, left-aligned with the input text. Cells follow
- * .Menu_cell (min-h 40, r10, pad 10/8, gap 8, 14/22 primary label) with a
- * trailing dimmed description. */
-
 .menu {
   position: absolute;
   bottom: calc(100% + 4px);
@@ -60,6 +54,20 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+.sectionTitle {
+  flex: none;
+  min-height: 26px;
+  padding: 6px 10px 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.sectionTitle:not(:first-child) {
+  margin-top: 4px;
+}
+
 .itemIcon {
   display: inline-flex;
   flex: none;
@@ -85,6 +93,26 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* Trailing descent affordance on drillable rows (directories): a quiet
+   chevron that brightens on its own hover, separate from the row pick. */
+.drill {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  border-radius: 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.drill:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 /* Heading row above a source group: non-interactive small grey text,

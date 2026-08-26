@@ -6,7 +6,10 @@
  */
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { InputTriggerService } from './service.ts'
 import type { MenuViewInjected } from './slots.ts'
 import { MenuView } from './MenuView.tsx'
@@ -71,7 +74,7 @@ export function apply(ctx: ClientContext): void {
         const controller = inputTriggers.sessionOf(actx)
         return {
           menu: controller.menu,
-          onPick: (source, index) => { controller.pick(source, index) },
+          onPick: (source, index, action) => { controller.pick(source, index, action) },
           onDismiss: () => { controller.dismiss() },
         }
       },

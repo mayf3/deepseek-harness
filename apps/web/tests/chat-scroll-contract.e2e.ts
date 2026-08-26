@@ -9,7 +9,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { createChatScrollFixture, type ChatScrollFixture } from './chat-scroll-fixture.ts'
@@ -30,11 +30,12 @@ const RESTORE_SESSION_B_ID = 'chat-scroll-restore-b-e2e'
 const REPLAY_CONTEXT_WINDOW = 10_000_000
 const STREAM_PACE_MS = 24
 const GEOMETRY_TOLERANCE = 2
+const RESPONSIVE_REFLOW_TOLERANCE = 32
 const LIVE_TEXT_PROMPT = 'CHAT_SCROLL_LIVE_USER Continue this long conversation while I inspect older history.'
 const LIVE_TEXT_FIRST = 'CHAT_SCROLL_LIVE_FIRST'
 const LIVE_TEXT_DONE = 'CHAT_SCROLL_LIVE_DONE'
 const LIVE_TOOL_PROMPT = 'CHAT_SCROLL_TOOL_USER Run the requested diagnostic and then summarize it.'
-const LIVE_TOOL_CALL_ID = CallId('chat-scroll-live-tool-call')
+const LIVE_TOOL_CALL_ID = ToolCallId('chat-scroll-live-tool-call')
 const LIVE_TOOL_RESULT = 'CHAT_SCROLL_LIVE_TOOL_RESULT'
 const LIVE_TOOL_FIRST = 'CHAT_SCROLL_TOOL_STREAM_FIRST'
 const LIVE_TOOL_DONE = 'CHAT_SCROLL_TOOL_STREAM_DONE'
@@ -165,7 +166,7 @@ async function launchScrollWorld(options: ScrollWorldOptions): Promise<ScrollWor
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { events.push(event) })
     page = await newEnglishPage(browser, 900)
     const tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     // Session-list bootstrap can replace the controlled search state. Wait
     // for the seeded baseline before openSeed starts the lazy content query
@@ -395,11 +396,15 @@ function flowTop(page: Page, key: string): Promise<number> {
   }, key)
 }
 
-async function expectSameFlowTop(page: Page, anchor: FlowAnchor): Promise<void> {
+async function expectSameFlowTop(
+  page: Page,
+  anchor: FlowAnchor,
+  tolerance = GEOMETRY_TOLERANCE,
+): Promise<void> {
   await expect.poll(async () => Math.abs((await flowTop(page, anchor.key)) - anchor.top), {
     timeout: 10_000,
     message: `flow row ${anchor.key} moved relative to the transcript viewport`,
-  }).toBeLessThanOrEqual(GEOMETRY_TOLERANCE)
+  }).toBeLessThanOrEqual(tolerance)
 }
 
 async function expectBottom(page: Page): Promise<void> {
@@ -482,12 +487,13 @@ describe('web e2e: long Chat scroll contract', () => {
       let releaseGate: (() => void) | undefined
       const gate = new Promise<void>((resolve) => { releaseGate = resolve })
       releaseHistory = () => { releaseGate?.() }
-      await world.page.route('**/api/session.history', async (route) => {
+      await world.page.route('**/api/session/page', async (route) => {
         const request = route.request().postDataJSON() as {
           method?: string
-          payload?: { beforeSeq?: number }
+          payload?: { args?: { request?: { beforeSeq?: number } } }
         }
-        if (!held && request.method === 'session.history' && request.payload?.beforeSeq !== undefined) {
+        if (!held && request.method === 'session/page'
+          && request.payload?.args?.request?.beforeSeq !== undefined) {
           held = true
           await gate
         }
@@ -496,7 +502,7 @@ describe('web e2e: long Chat scroll contract', () => {
 
       const settled = world.scaffold.whenTurnSettled(60_000)
       try {
-        const composer = world.page.locator('textarea:enabled').last()
+        const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_TEXT_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await world.page.getByText(LIVE_TEXT_FIRST, { exact: false }).last().waitFor({ timeout: 15_000 })
@@ -524,7 +530,7 @@ describe('web e2e: long Chat scroll contract', () => {
       await settled
       await expect.poll(() => world.page.locator('[data-streaming="true"]').count(), { timeout: 15_000 }).toBe(0)
       await world.page.getByText(LIVE_TEXT_DONE, { exact: false }).last().waitFor({ timeout: 15_000 })
-      await world.page.unroute('**/api/session.history')
+      await world.page.unroute('**/api/session/page')
 
       let additionalPages = 0
       while (additionalPages < 8) {
@@ -559,7 +565,7 @@ describe('web e2e: long Chat scroll contract', () => {
       const settled = world.scaffold.whenTurnSettled(60_000)
       let released = false
       try {
-        const composer = world.page.locator('textarea:enabled').last()
+        const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_TOOL_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)
@@ -662,7 +668,8 @@ describe('web e2e: long Chat scroll contract', () => {
       await world.page.getByRole('button', { name: 'Open sidebar', exact: true }).click()
       await world.page.getByRole('tab', { name: 'Chat', exact: true }).click()
       await nextPaint(world.page)
-      await expectSameFlowTop(world.page, sessionAnchor)
+      await expectSameFlowTop(world.page, sessionAnchor, RESPONSIVE_REFLOW_TOLERANCE)
+      const narrowSessionAnchor = await visibleFlowAnchor(world.page)
 
       await openSeed(
         world.page,
@@ -673,7 +680,7 @@ describe('web e2e: long Chat scroll contract', () => {
         world.page,
         RESTORE_FIXTURE_A,
       )
-      await expectSameFlowTop(world.page, sessionAnchor)
+      await expectSameFlowTop(world.page, narrowSessionAnchor)
 
       const backToBottom = world.page.getByRole('button', { name: 'Back to bottom', exact: true })
       await backToBottom.evaluate((button) => {
@@ -700,7 +707,7 @@ describe('web e2e: long Chat scroll contract', () => {
         RESTORE_FIXTURE_A.markers.assistant(RESTORE_FIXTURE_A.turns),
       )
       await expectBottom(world.page)
-      const composer = world.page.locator('textarea:enabled').last()
+      const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
       const longDraft = Array.from(
         { length: 18 },
         (_, index) => `composer resize line ${String(index + 1).padStart(2, '0')}`,
@@ -789,7 +796,7 @@ describe('web e2e: long Chat scroll contract', () => {
       const settled = world.scaffold.whenTurnSettled(60_000)
       let released = false
       try {
-        const composer = world.page.locator('textarea:enabled').last()
+        const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_FLING_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)

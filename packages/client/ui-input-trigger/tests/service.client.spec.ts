@@ -9,8 +9,8 @@
  */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
-import { createScope, scopeOf } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import { createScope, scopeOf } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { InputTriggerController, InputTriggerService } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {
   BeginCommandRequest, ClientSessionContext, CommandClaim, InsertReferenceRequest, PickOutcome,
@@ -249,6 +249,16 @@ describe('track', () => {
     expect(state.highlight).toEqual({ source: 'command', index: 0 })
   })
 
+  it('carries source-title visibility from the roster through candidate settlement', async () => {
+    const reference = deferredSource('@', 'reference', { showGroupTitle: false })
+    const { controller } = controllerBench([reference.source])
+    controller.track('@r', 2, { tier: 'plain' }, 1)
+    expect(controller.menu.getSnapshot().groups[0]).toMatchObject({ showGroupTitle: false, status: 'pending' })
+    reference.pending[0]!.resolve([{ name: 'README.md', section: '文件与文件夹' }])
+    await tick()
+    expect(controller.menu.getSnapshot().groups[0]).toMatchObject({ showGroupTitle: false, status: 'ready' })
+  })
+
   it('stamps the caller draftRev into the hit span', () => {
     const cmd = deferredSource('/', 'command')
     const { controller } = controllerBench([cmd.source])
@@ -359,6 +369,7 @@ describe('programmatic source launcher', () => {
     const hit = {
       trigger: '/' as const,
       query: '',
+      quoted: false,
       position: 'leading' as const,
       span: { start: 2, end: 5, draftRev: 7 },
     }
@@ -385,6 +396,7 @@ describe('programmatic source launcher', () => {
     const hit = {
       trigger: '/' as const,
       query: '',
+      quoted: false,
       position: 'leading' as const,
       span: { start: 0, end: 0, draftRev: 1 },
     }
@@ -496,6 +508,18 @@ describe('pick / scoped input events', () => {
     expect(controller.menu.getSnapshot().open).toBe(false)
   })
 
+  it('forwards a continuing text outcome so a directory pick keeps completion open', async () => {
+    const { controller, actx } = pickBench(() => ({ text: '@src/', continue: true }))
+    const texts: Array<{ text: string; continue?: boolean }> = []
+    actx.on('slash/input-insert-text', (req) => {
+      texts.push(req)
+      return true
+    })
+    await tick()
+    controller.pick('command', 0)
+    expect(texts).toEqual([{ text: '@src/', continue: true, span: { start: 0, end: 2, draftRev: 3 } }])
+  })
+
   it('a text outcome the input declines answers false on the space path', async () => {
     const src: InputTriggerSource = {
       trigger: '/',
@@ -599,13 +623,13 @@ describe('lexicon', () => {
     expect(rolls.has('@')).toBe(false)
   })
 
-  it('a source lexicon notification republishes the aggregated store', () => {
-    let roll: readonly string[] | undefined = undefined
+  it('a source lexicon notification republishes the roll and refreshes an open menu', async () => {
+    let roll: readonly string[] | undefined = ['old']
     let notify: (() => void) | undefined
     const source: InputTriggerSource = {
       trigger: '/',
       name: 'skill',
-      candidates: () => Promise.resolve([]),
+      candidates: () => Promise.resolve((roll ?? []).map(name => ({ name }))),
       onPick: () => undefined,
       lexicon: () => roll,
       subscribeLexicon: (_session, listener) => {
@@ -614,12 +638,18 @@ describe('lexicon', () => {
       },
     }
     const { controller } = controllerBench([source])
-    expect(controller.lexicon.getSnapshot().size).toBe(0)
+    expect(controller.lexicon.getSnapshot().get('/')).toEqual(['old'])
+    controller.track('/', 1, { tier: 'plain' }, 1)
+    await tick()
+    expect(controller.menu.getSnapshot().groups[0]?.items).toEqual([{ name: 'old' }])
     const seen: number[] = []
     controller.lexicon.subscribe(() => { seen.push(controller.lexicon.getSnapshot().size) })
     roll = ['commit-helper']
     notify?.()
+    await tick()
+    await tick()
     expect(controller.lexicon.getSnapshot().get('/')).toEqual(['commit-helper'])
+    expect(controller.menu.getSnapshot().groups[0]?.items).toEqual([{ name: 'commit-helper' }])
     expect(seen).toEqual([1])
     controller.dispose()
     expect(notify).toBeUndefined()
@@ -681,6 +711,28 @@ describe('arbitrate', () => {
     const { controller } = await menuBench()
     expect(controller.arbitrate('escape', false)).toBe('consumed')
     expect(controller.menu.getSnapshot().open).toBe(false)
+  })
+
+  it('tab drills into a drillable highlight and passes on plain rows', async () => {
+    const drillable = readySource('/', 'command', [{ name: 'src', drill: true }, { name: 'plan' }], () => undefined)
+    const { controller } = controllerBench([drillable.source])
+    controller.track('/s', 2, { tier: 'plain' }, 1)
+    await tick()
+    expect(controller.arbitrate('tab', false)).toBe('consumed')
+    expect(drillable.picks[0]!.action).toBe('drill')
+    expect(drillable.picks[0]!.candidate.name).toBe('src')
+    // Plain row (no drill flag): the key passes so native focus stays intact.
+    controller.track('/s', 2, { tier: 'plain' }, 2)
+    await tick()
+    controller.arbitrate('down', false)
+    expect(controller.arbitrate('tab', false)).toBe('pass')
+    expect(drillable.picks).toHaveLength(1)
+  })
+
+  it('a settling pick reports the pick action', async () => {
+    const { controller, cmd } = await menuBench()
+    controller.arbitrate('enter', false)
+    expect(cmd.picks[0]!.action).toBe('pick')
   })
 
   it('IME composition passes every key untouched', async () => {

@@ -14,14 +14,22 @@
  * @module dsh-llm-pi-ai/config
  */
 
-import type { CacheRetention, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
+import type { CacheRetention, ChatTemplateKwargValue, ModelThinkingLevel, Provider, ThinkingBudgets, Transport } from '@earendil-works/pi-ai'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import { resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
 import type { ResolvedRetryPolicy, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
-import { MODALITIES, resolveRouteModels, SUPPORTED_THINKING_FORMATS, THINKING_LEVELS } from './catalog.ts'
+import {
+  CACHE_CONTROL_FORMATS,
+  CHAT_TEMPLATE_VARS,
+  MAX_TOKENS_FIELDS,
+  MODALITIES,
+  resolveRouteModels,
+  SUPPORTED_THINKING_FORMATS,
+  THINKING_LEVELS,
+} from './catalog.ts'
 import type {
   PiAiCompatProfile,
   PiAiModality,
@@ -38,12 +46,16 @@ export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
  * Default request-level bound on base64-encoded image payload. Every image in
  * history is re-encoded into every request body, so an unbounded conversation
  * eventually exceeds a provider or gateway request-size cap and the session
- * can never complete another request. The 20MiB default admits four images at
- * the attachment store's 3.5MiB raw-image default after base64 expansion and
- * reserves request capacity for system prompts, history, tools, and JSON.
+ * can never complete another request. The 20MiB default admits fifteen 1MiB
+ * request versions after base64 expansion and reserves request capacity for
+ * system prompts, history, tools, and JSON.
  * Deployments behind stricter gateways lower it per route.
  */
 export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
+/** Default total-pixel budget preserves the complete 2048px normalized attachment. */
+export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 2048 * 2048
+/** Default raw encoded-byte target before inline base64 expansion; the smallest quality-ladder output is used when no quality fits. */
+export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 
 /** Context capacity assumed for a model neither configuration nor the catalog sizes. */
 export const DEFAULT_CONTEXT_WINDOW = 262_144
@@ -102,10 +114,11 @@ export interface PiAiProviderProfile {
    */
   modelOverrides?: Record<string, PiAiModelOverride>
   /**
-   * Reasoning-dispatch switches for every `openai-completions` model on this
-   * route; each model's own `compat` overrides per field. What neither sets
-   * keeps the installed catalog entry's value, then pi-ai's baseURL-derived
-   * detection.
+   * pi-ai wire-compatibility switches defaulting every model on this route
+   * whose protocol declares them; each model's own `compat` overrides per
+   * field. What neither sets keeps the installed catalog entry's value, then
+   * pi-ai's own detection. A switch no model on the route could read is
+   * refused rather than left looking applied.
    */
   compat?: PiAiCompatProfile
   /**
@@ -154,6 +167,13 @@ export interface PiAiProviderProfile {
    * requests instead of being rejected by a request-size cap.
    */
   maxRequestImageBytes?: number
+  /** Total-pixel budget for each deterministic inline request version. */
+  requestImagePixelBudget?: number
+  /**
+   * Raw encoded-byte target for each deterministic inline request version;
+   * the smallest quality-ladder output is used when no quality fits.
+   */
+  requestImageMaxBytes?: number
   /** Provider-owned model-request retry policy; omission uses normal mode with five retries. */
   retryPolicy?: RetryPolicyConfig
 }
@@ -171,6 +191,10 @@ export interface ResolvedPiAiProviderProfile
   streamIdleTimeoutMs: number
   /** Positive request-level base64 image payload bound after defaulting. */
   maxRequestImageBytes: number
+  /** Positive total-pixel request-version budget after defaulting. */
+  requestImagePixelBudget: number
+  /** Positive raw request-version byte target after defaulting; the smallest quality-ladder output is used when no quality fits. */
+  requestImageMaxBytes: number
   /** Immutable retry policy captured with this provider route. */
   retryPolicy: ResolvedRetryPolicy
   /**
@@ -205,9 +229,47 @@ const thinkingBudgets = z.object({
   high: z.number(),
 })
 
+/**
+ * One `chat_template_kwargs` or `chat_template_args` value. The `$var` member
+ * is pi-ai's placeholder for a value dispatch fills from the request's
+ * thinking state, which makes a template-driven gateway configurable without
+ * restating its template.
+ */
+const chatTemplateKwarg: z<ChatTemplateKwargValue> = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.const(null),
+  z.object({
+    $var: z.union(CHAT_TEMPLATE_VARS).required(),
+    omitWhenOff: z.boolean(),
+  }),
+])
+
 const compatProfile: z<PiAiCompatProfile> = z.object({
-  thinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
+  supportsStore: z.boolean(),
+  supportsDeveloperRole: z.boolean(),
   supportsReasoningEffort: z.boolean(),
+  supportsUsageInStreaming: z.boolean(),
+  supportsFinishReason: z.boolean(),
+  maxTokensField: z.union(MAX_TOKENS_FIELDS),
+  requiresToolResultName: z.boolean(),
+  requiresAssistantAfterToolResult: z.boolean(),
+  requiresThinkingAsText: z.boolean(),
+  requiresReasoningContentOnAssistantMessages: z.boolean(),
+  thinkingFormat: z.union(SUPPORTED_THINKING_FORMATS),
+  chatTemplateKwargs: z.dict(chatTemplateKwarg),
+  chatTemplateArgs: z.dict(chatTemplateKwarg),
+  supportsThinkingTokenBudget: z.boolean(),
+  supportsStrictMode: z.boolean(),
+  cacheControlFormat: z.union(CACHE_CONTROL_FORMATS),
+  supportsLongCacheRetention: z.boolean(),
+  supportsEagerToolInputStreaming: z.boolean(),
+  supportsCacheControlOnTools: z.boolean(),
+  supportsTemperature: z.boolean(),
+  forceAdaptiveThinking: z.boolean(),
+  allowEmptySignature: z.boolean(),
+  supportsStrictTools: z.boolean(),
 })
 
 /**
@@ -269,6 +331,8 @@ const profile = z.object({
   websocketConnectTimeoutMs: z.natural(),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
+  requestImagePixelBudget: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET),
+  requestImageMaxBytes: z.number().step(1).min(1).default(DEFAULT_REQUEST_IMAGE_MAX_BYTES),
   retryPolicy: RetryPolicySchema,
 })
 
@@ -348,6 +412,14 @@ export function resolveProfiles(
     if (!Number.isInteger(maxRequestImageBytes) || maxRequestImageBytes <= 0) {
       throw new Error(`llm-pi-ai: provider "${provider}" maxRequestImageBytes must be a positive integer`)
     }
+    const requestImagePixelBudget = source.requestImagePixelBudget ?? DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET
+    if (!Number.isSafeInteger(requestImagePixelBudget) || requestImagePixelBudget <= 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" requestImagePixelBudget must be a positive safe integer`)
+    }
+    const requestImageMaxBytes = source.requestImageMaxBytes ?? DEFAULT_REQUEST_IMAGE_MAX_BYTES
+    if (!Number.isSafeInteger(requestImageMaxBytes) || requestImageMaxBytes <= 0) {
+      throw new Error(`llm-pi-ai: provider "${provider}" requestImageMaxBytes must be a positive safe integer`)
+    }
     // Detached from the configuration object because pi-ai types `Model.input`
     // mutable. The schema's explicit default covers an absent key, so an empty
     // list here is always one someone typed — and unlike an entry's, nothing
@@ -380,6 +452,8 @@ export function resolveProfiles(
       ...apiKeyEnv === undefined ? {} : { apiKeyEnv: credentialRef(apiKeyEnv) },
       streamIdleTimeoutMs,
       maxRequestImageBytes,
+      requestImagePixelBudget,
+      requestImageMaxBytes,
       retryPolicy: resolveRetryPolicy(retryPolicy, `llm-pi-ai: provider "${provider}" retryPolicy`),
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },

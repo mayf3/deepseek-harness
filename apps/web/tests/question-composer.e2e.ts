@@ -10,17 +10,18 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
-import type { Browser, Page } from 'playwright'
+import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
 
-const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/question-composer', import.meta.url))
+const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/question-composer', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const SIDEBAR_EXPECTED = join(SNAPSHOT_DIR, 'sidebar.expected.md')
@@ -29,6 +30,31 @@ const COMPOSED_EXPECTED = join(SNAPSHOT_DIR, 'composed.expected.md')
 // round trip and the final reply, the state the composer goldens cannot see.
 const ANSWERED_EXPECTED = join(SNAPSHOT_DIR, 'answered.expected.md')
 const MODE = webSnapshotMode()
+
+// The composer's own growth cap, in text lines (QuestionComposer.module.css
+// .fieldMirror). Asserted as TEXT lines, not as a box height: the two variants
+// carry different padding, and a cap measured in border-box pixels silently
+// means a different line count in each — which is exactly how the optionless
+// field came to stop two thirds of a line short.
+const CAP_LINES = 6
+
+/**
+ * Measure a saturated answer field: how many whole text lines it grew to, and
+ * whether it took over the scrolling once it stopped growing.
+ * @param field - the composer's custom-answer textarea.
+ * @returns whole text lines the content box holds, and whether the field scrolls.
+ */
+async function capMetrics(field: Locator): Promise<{ textLines: number; scrolls: boolean }> {
+  await field.fill('x\n'.repeat(40))
+  return field.evaluate((el: HTMLTextAreaElement) => {
+    const style = getComputedStyle(el)
+    const text = el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+    return {
+      textLines: Math.round(text / parseFloat(style.lineHeight)),
+      scrolls: el.scrollHeight > el.clientHeight,
+    }
+  })
+}
 
 // The options carry long descriptions on purpose: the squeeze assertion below
 // needs option copy that WRAPS, which is the only text layout that reproduces a
@@ -41,14 +67,15 @@ describe('web e2e: resident question composer round trip', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   const sessionEvents: SessionEvent[] = []
+  let answeredSession: SessionId | undefined
 
   beforeAll(async () => {
-    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15 })
+    scaffold = await launchWebScaffold(MODE === 'record' ? {} : { replayFixture: FIXTURE, paceMs: 15, compareReplaySession: true })
     scaffold.ctx.on('session/event', (_session, event: SessionEvent) => { sessionEvents.push(event) })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
-    await page.goto(scaffold.baseUrl, { waitUntil: 'load' })
+    await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
     // Fresh world: connect a Workspace so the composer scenarios start live.
     await connectFreshWorkspace(page, scaffold.workspaceCwd)
@@ -64,7 +91,7 @@ describe('web e2e: resident question composer round trip', () => {
     if (MODE !== 'record') {
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     }
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold.whenTurnSettled(MODE === 'record' ? 180_000 : 30_000)
     await input.fill(PROMPT)
@@ -132,13 +159,57 @@ describe('web e2e: resident question composer round trip', () => {
       await page.setViewportSize(original)
     }
 
+    // Multi-line custom answer: the field is a textarea whose hidden mirror
+    // owns the box height, so a soft-wrapped or line-broken draft GROWS the
+    // field instead of scrolling one line, and Shift+Enter breaks the line
+    // rather than continuing the flow. Measured on the live composer because
+    // only a real engine soft-wraps; growth stops at the mirror's cap, past
+    // which the textarea is the one thing that scrolls. Replay only, same as
+    // the squeeze above: record mode must reach the recording write.
+    const custom = composer.getByRole('textbox')
+    if (MODE !== 'record') {
+      const oneLineHeight = await custom.evaluate(el => el.getBoundingClientRect().height)
+      await custom.fill('a'.repeat(120))
+      const wrapped = await custom.evaluate(el => ({
+        height: el.getBoundingClientRect().height,
+        scrolls: el.scrollHeight > el.clientHeight,
+      }))
+      expect(wrapped.height).toBeGreaterThan(oneLineHeight * 1.5)
+      expect(wrapped.scrolls).toBe(false)
+
+      await custom.fill('')
+      await custom.press('Shift+Enter')
+      await custom.press('Shift+Enter')
+      expect(await custom.inputValue()).toBe('\n\n')
+      expect(await composer.getByText('Which color do you prefer?').count()).toBeGreaterThan(0)
+      expect(await custom.evaluate(el => el.getBoundingClientRect().height))
+        .toBeGreaterThan(oneLineHeight * 2.5)
+
+      expect(await capMetrics(custom)).toEqual({ textLines: CAP_LINES, scrolls: true })
+      await custom.fill('')
+    }
+
     const blue = composer.getByRole('checkbox', { name: 'Blue' })
     await blue.click()
-    const custom = composer.getByRole('textbox')
     await custom.fill('Include accessibility notes')
     expect(await blue.getAttribute('aria-checked')).toBe('true')
     expect(await custom.inputValue()).toBe('Include accessibility notes')
     if (MODE !== 'record') {
+      // A strict Session-slot switch remounts the composer. Open a fresh blank
+      // Session, then return to the still-waiting request and require its
+      // Session-scoped store to restore both option and free-text drafts.
+      const originalRow = page.locator('[role="treeitem"]')
+        .filter({ hasText: 'Use the ask_user_question tool' }).first()
+      await page.getByRole('button', { name: 'New session', exact: true }).last().click()
+      await page.getByText('New Session', { exact: true }).waitFor({ timeout: 15_000 })
+      await expect.poll(() => composer.count(), { timeout: 10_000 }).toBe(0)
+      await originalRow.click()
+      await composer.waitFor({ timeout: 15_000 })
+      expect(await blue.getAttribute('aria-checked')).toBe('true')
+      expect(await custom.inputValue()).toBe('Include accessibility notes')
+
+      // This golden now owns the composed state after a real A -> B -> A
+      // Session cycle, not merely the state before the remount.
       const snapshot = await captureStableAria(page, '[data-question-key]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(COMPOSED_EXPECTED, snapshot, MODE)
     }
@@ -149,6 +220,7 @@ describe('web e2e: resident question composer round trip', () => {
       await recordFixture(scaffold, sessionId, FIXTURE)
       return
     }
+    answeredSession = sessionId
     // World state: the tool result carries the chosen answer, and DONE lands.
     const results = sessionEvents.filter(e => e.type === 'tool/result')
     const answerText = results.flatMap(event => event.data.message.content.flatMap(block =>
@@ -163,7 +235,7 @@ describe('web e2e: resident question composer round trip', () => {
     // Composer gone; regular input restored.
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
-    await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     // Golden of the answered transcript: the ask_user_question round trip
     // rendered as history (question tool row + DONE), composer takeover gone.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
@@ -171,6 +243,47 @@ describe('web e2e: resident question composer round trip', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
+
+  // The fixture's question carries options, so the round trip above only ever
+  // exercises the inline shape. The optionless shape is the one that carries
+  // padding, which is where a cap measured in box pixels drifts off the line
+  // count — so it is asked straight through the user-questions seam (the same
+  // service the tool calls; no model round is involved in a layout metric).
+  it.skipIf(MODE === 'record')('grows the optionless answer to the same cap', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-question-optionless'))
+    const sessionId = answeredSession
+    expect(sessionId).toBeDefined()
+    const agent = scaffold.ctx.agents.get(sessionId as SessionId)
+    expect(agent).toBeDefined()
+    const asked = scaffold.ctx.userQuestions.ask({
+      agent: agent as NonNullable<typeof agent>,
+      questions: [{ id: 'free', header: 'More', question: 'Anything else?' }],
+    })
+
+    const composer = page.locator('[data-question-key]')
+    await composer.waitFor({ timeout: 30_000 })
+    const field = composer.getByRole('textbox')
+    // The empty field reserves its two lines AND the textarea fills that frame:
+    // a reserved box the control does not fill leaves a strip that looks like
+    // the field but takes no click.
+    expect(await field.evaluate((el) => {
+      const frame = el.parentElement as HTMLElement
+      const style = getComputedStyle(frame)
+      const inner = frame.getBoundingClientRect().height
+        - parseFloat(style.borderTopWidth) - parseFloat(style.borderBottomWidth)
+      return {
+        reserved: Math.round(frame.getBoundingClientRect().height),
+        fills: Math.abs(el.getBoundingClientRect().height - inner) < 0.5,
+      }
+    })).toEqual({ reserved: 64, fills: true })
+    // The same cap the inline shape stops at — the assertion a border-box cap fails.
+    expect(await capMetrics(field)).toEqual({ textLines: CAP_LINES, scrolls: true })
+
+    // Settle the wait so teardown is not racing a pending question.
+    await composer.getByRole('button', { name: 'Skip this question' }).click()
+    expect(await asked).toEqual({ answers: [{ id: 'free', selected: [] }] })
+    await expect.poll(() => page.locator('[data-question-key]').count(), { timeout: 10_000 }).toBe(0)
+  }, 60_000)
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [

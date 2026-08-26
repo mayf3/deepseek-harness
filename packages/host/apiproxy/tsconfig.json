@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../goal/goal"
-    },
-    {
       "path": "../../settings/settings"
     },
     {
@@ -24,7 +21,7 @@
       "path": "../../../vendor/schemastery"
     },
     {
-      "path": "../../api/remotes/tsconfig.host.json"
+      "path": "../../api/session-controller/tsconfig.host.json"
     },
     {
       "path": "../../util/brand"
@@ -48,58 +45,31 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../core/tools"
+      "path": "../../core/scope"
     },
     {
       "path": "../../session/session-persistence"
     },
     {
-      "path": "../../session/session-projection"
-    },
-    {
-      "path": "../../session/session-projection-cache"
-    },
-    {
       "path": "../../session-query/session-query"
-    },
-    {
-      "path": "../../session/session-title"
-    },
-    {
-      "path": "../../session-query/session-query"
-    },
-    {
-      "path": "../../subagent/subagent"
     },
     {
       "path": "../../skill/skill"
     },
     {
-      "path": "../../jobs/jobs"
-    },
-    {
       "path": "../../interaction/commands"
     },
     {
-      "path": "../../interaction/user-approval"
-    },
-    {
-      "path": "../../interaction/user-questions"
-    },
-    {
-      "path": "../../workspace/workspace"
-    },
-    {
       "path": "../directory-picker"
-    },
-    {
-      "path": "../../extensions/cordis-host-runner"
     },
     {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/native-command"
+    },
+    {
+      "path": "../../util/crypto"
     }
   ]
 }

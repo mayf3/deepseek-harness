@@ -8,6 +8,7 @@ import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-re
 import {
   ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
+import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
 import {
@@ -122,6 +123,14 @@ function wireNamespaces(): SettingsNamespaceView[] {
       secrets: [],
       revision: 0,
     },
+    {
+      ns: 'subagent-model-selection',
+      schema: JSON.parse(JSON.stringify(Schema.object({ enabled: Schema.boolean().default(false) }).toJSON())) as unknown,
+      value: { enabled: false },
+      applies: 'live',
+      secrets: [],
+      revision: 4,
+    },
   ]
 }
 
@@ -143,9 +152,10 @@ function scriptedFace(overrides: {
   set?: ReturnType<typeof vi.fn>
   unset?: ReturnType<typeof vi.fn>
 } = {}) {
-  const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
-  const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
-  const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(wireNamespaces()[2])))
+  const providerNamespace = wireNamespaces().find(view => view.ns === 'llm-pi-ai')!
+  const update = overrides.update ?? vi.fn(() => Promise.resolve(ok(providerNamespace)))
+  const replace = overrides.replace ?? vi.fn(() => Promise.resolve(ok(providerNamespace)))
+  const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(ok(providerNamespace)))
   const set = overrides.set ?? vi.fn(() => Promise.resolve(ok({})))
   const unset = overrides.unset ?? vi.fn(() => Promise.resolve(ok({})))
   const face = {
@@ -185,20 +195,44 @@ function scriptedFace(overrides: {
 
 type WireFace = ConstructorParameters<typeof ModelsSettingsStore>[0]
 
+/** One recorded child-slot dispatch: seat name, owner share, kind options. */
+type RenderSlotCall = [name: string, owner: Record<string, unknown>, opts?: { entryKey?: string }]
+
+/** Child-slot dispatch stub: records every seat occurrence, renders nothing. */
+function stubRenderSlot() {
+  return vi.fn((..._call: RenderSlotCall) => null)
+}
+
+/** The provider-card seat dispatches a stub recorded, as (route id, configured, keyConfigured, entryKey). */
+function cardSeatCalls(
+  renderSlot: ReturnType<typeof stubRenderSlot>,
+): Array<[string, boolean, boolean, string | undefined]> {
+  return renderSlot.mock.calls
+    .filter(call => call[0] === 'settings.models.provider-card')
+    .map(call => [
+      (call[1] as { provider: { provider: string } }).provider.provider,
+      (call[1] as { configured: boolean }).configured,
+      (call[1] as { keyConfigured: boolean }).keyConfigured,
+      call[2]?.entryKey,
+    ])
+}
+
 async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
   const { face, update, replace, mutate, set, unset } = scripted
   const mirror = new SettingsDescribeMirror(face as never)
   const controller = new ModelsSettingsStore(face as unknown as WireFace, settingsSchema, mirror)
   await controller.load()
+  const renderSlot = stubRenderSlot()
   const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
     api: face as never,
     schema: settingsSchema,
     t,
+    renderSlot: renderSlot as unknown as ModelsSectionProps['renderSlot'],
   }
   const view = render(<ModelsSection {...injected} />)
-  return { view, face, update, replace, mutate, set, unset, controller, mirror }
+  return { view, face, update, replace, mutate, set, unset, controller, mirror, renderSlot }
 }
 
 async function mountSection(overrides: Parameters<typeof scriptedFace>[0] = {}) {
@@ -234,6 +268,126 @@ describe('ModelsSection', () => {
     const uninjected = {} as ModelsSectionProps
     render(<ModelsSection {...uninjected} />)
     expect(document.body.textContent).toBe('')
+  })
+
+  it('dispatches the provider-card seat per rendered row, keyed by the owning namespace', async () => {
+    const { renderSlot } = await mountSection()
+    const cards = cardSeatCalls(renderSlot)
+    expect(cards).toContainEqual(['openai', true, true, 'llm-pi-ai'])
+    expect(cards).toContainEqual(['deepseek-official', true, false, 'llm-deepseek'])
+    // The footer seat renders once below the rows and the add controls.
+    expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.models.footer')).toEqual([
+      ['settings.models.footer', {}],
+    ])
+  })
+
+  it('dispatches the provider-card seat inside the first-run setup card', async () => {
+    const { renderSlot } = await mountFirstRun()
+    expect(cardSeatCalls(renderSlot)).toContainEqual(['deepseek-official', true, false, 'llm-deepseek'])
+  })
+
+  it('dispatches the provider-card seat on the add-provider draft with its dormant row', async () => {
+    const { renderSlot } = await mountSection()
+    renderSlot.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, false, 'llm-pi-ai'])
+  })
+
+  it('derives the draft seat\'s key fact from the page\'s conventional reference', async () => {
+    const scripted = scriptedFace()
+    scripted.face.credentials.describe.mockImplementation((payload: { refs: string[] }) => Promise.resolve(ok({
+      credentials: Object.fromEntries(payload.refs.map(ref => [ref, {
+        configured: ref === 'OPENAI_API_KEY' || ref === 'ANTHROPIC_API_KEY',
+        writable: true,
+      }])),
+    })))
+    const { renderSlot } = await mountFace(scripted)
+    renderSlot.mockClear()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    // The dormant row names no reference yet; the seat still reports the
+    // derived ANTHROPIC_API_KEY the editor itself displays as configured.
+    expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, true, 'llm-pi-ai'])
+  })
+
+  it('skips the draft seat when a refresh drops the dormant row', async () => {
+    const { renderSlot, face, controller } = await mountSection()
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    face.llm.providers.mockImplementation(() => Promise.resolve(ok({
+      providers: [
+        { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
+        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
+      ],
+    })))
+    renderSlot.mockClear()
+    await act(async () => { await controller.load() })
+    // The draft card is still open while its row is gone from the directory.
+    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
+    expect(cardSeatCalls(renderSlot).some(([provider]) => provider === 'anthropic')).toBe(false)
+  })
+
+  it('persists the default-off subagent model-selection switch for new sessions', async () => {
+    const enabledNamespace: SettingsNamespaceView = {
+      ...wireNamespaces().find(view => view.ns === 'subagent-model-selection')!,
+      value: { enabled: true },
+      user: { enabled: true },
+      revision: 5,
+    }
+    const update = vi.fn(() => Promise.resolve(ok(enabledNamespace)))
+    await mountSection({ update })
+
+    const toggle = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    fireEvent.click(toggle)
+
+    await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+    expect(update).toHaveBeenCalledWith({
+      ns: 'subagent-model-selection',
+      patch: { enabled: true },
+      expectedRevision: 4,
+    })
+    expect(screen.getByRole('status').textContent).toBe(en.subagentModelSelectionSaved)
+  })
+
+  it('reports rejected subagent model-selection updates and permits a retry', async () => {
+    const update = vi.fn()
+      .mockResolvedValueOnce(fail<SettingsNamespaceView>('revision changed'))
+      .mockResolvedValueOnce(ok({
+        ...wireNamespaces().find(view => view.ns === 'subagent-model-selection')!,
+        value: { enabled: true },
+        revision: 5,
+      }))
+    await mountSection({ update })
+
+    const toggle = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
+    fireEvent.click(toggle)
+    expect((await screen.findByRole('alert')).textContent).toBe('revision changed')
+
+    fireEvent.click(toggle)
+    await waitFor(() => { expect(toggle.getAttribute('aria-checked')).toBe('true') })
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps malformed and read-only subagent preferences off', () => {
+    const namespace = {
+      ...wireNamespaces().find(view => view.ns === 'subagent-model-selection')!,
+      value: null,
+    } as unknown as SettingsNamespaceView
+    const update = vi.fn()
+    render(
+      <SubagentModelSelectionCard
+        namespace={namespace}
+        writable={false}
+        api={{ settings: { update } } as never}
+        controller={{ acceptNamespace: vi.fn(), load: vi.fn() } as never}
+        t={t}
+      />,
+    )
+
+    const toggle = screen.getByRole('switch', { name: en.subagentModelSelectionToggle })
+    expect(toggle.getAttribute('aria-checked')).toBe('false')
+    expect((toggle as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.click(toggle)
+    expect(update).not.toHaveBeenCalled()
   })
 
   it('renders the unkeyed whole-section provider as an open setup card in the first-run posture', async () => {
@@ -277,6 +431,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
+      renderSlot={() => null}
     />)
 
     const missing = screen.getByRole('img', { name: en.credentialMissing })
@@ -301,6 +456,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
+      renderSlot={() => null}
     />)
     // Now a row with an Edit button, not an open card.
     expect(screen.getAllByText(en.edit).length).toBeGreaterThan(1)
@@ -385,9 +541,9 @@ describe('ModelsSection', () => {
       credentialOnly
       credentialRequired
       autoFocusCredential
-      cancelLabel="onboardingLater"
-      submitLabel="onboardingSave"
-      submitBusyLabel="onboardingSaving"
+      cancelLabelKey="onboardingLater"
+      submitLabelKey="onboardingSave"
+      submitBusyLabelKey="onboardingSaving"
       onClose={onClose}
     />)
 
@@ -1031,6 +1187,7 @@ describe('ModelsSection', () => {
         api={face as never}
         schema={settingsSchema}
         t={t}
+        renderSlot={() => null}
       />)
       const key = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
       expect(key.placeholder).toBe(en.keyPlaceholder)
@@ -1170,6 +1327,7 @@ describe('ModelsSection', () => {
       api={face.face as never}
       schema={settingsSchema}
       t={t}
+      renderSlot={() => null}
     />)
     expect(screen.getByText(/directory down/)).toBeTruthy()
     fireEvent.click(screen.getByText(en.retry))
@@ -1192,6 +1350,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
+      renderSlot={() => null}
     />)
     expect(screen.getByText(en.readOnly)).toBeTruthy()
     expect(screen.getAllByText<HTMLButtonElement>(en.remove).every(button => button.disabled)).toBe(true)
@@ -1253,6 +1412,7 @@ describe('ModelsSection', () => {
       api={face as never}
       schema={settingsSchema}
       t={t}
+      renderSlot={() => null}
     />)
     await screen.findByText('DeepSeek')
   })
