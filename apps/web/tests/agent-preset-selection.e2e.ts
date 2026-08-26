@@ -279,7 +279,7 @@ describe('web e2e: agent-preset selection', () => {
   }, 60_000)
 
   it('re-reads the slash catalog through the composition the switch installed', async () => {
-    // Continues the previous case: the chip has already applied `minimal` to
+    // Continues 'applies the staged pick': the chip has already applied `minimal` to
     // the blank session, and this one reads the menu that switch left behind.
     onTestFailed(() => saveFailureShot(page, 'web-e2e-agent-preset-slash-catalog'))
     const composer = page.locator('[data-composer-input][contenteditable="true"]').last()

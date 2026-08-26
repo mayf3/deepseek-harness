@@ -8,6 +8,8 @@ Status: implemented
 
 名单列为健康的 preset，仍可能根本无法组装。发现过程的健康检查只证明组装能以加载器方言解析、由具名行组成，并刻意止步于此——它不解析任何插件名，也不应用任何配置。
 
+本 note 部分取代了[损坏的 preset 是名单行](../bug-fix/2026-08-09-broken-preset-roster-rows.zh.md)：那份 note 在 Alternatives 中否决的「深度校验」正是这里落地的做法，而且原因也已移出卡片正面；它同时放宽了[插件自带内置 preset 根](../bug-fix/2026-08-20-plugin-owned-shipped-preset-root.zh.md)记录的随附名单断言。两份都已就地更新。
+
 但 `broken` 是承重的，不是卡片上的装饰。`presetOptions` 会把损坏的行从会话选择器里滤掉，好让选择的人不必等到会话启动失败才发现；`resolveMountable` 会在花费一次挂载之前拒绝它。因此下游一切都把「不是 broken」读作「能组装」。
 
 这个缺口在[仓库命名契约](2026-08-11-repository-naming-contract-and-rename-ledger.zh.md)按预发布立场重命名包时暴露出来。仓库内的引用随之更新；写在 `<dshHome>/.agent-presets` 下的 preset 没有，于是引用 `@deepseek-ai/dsh-workspace-context` 的那一个保住了健康的卡片、保住了在选择器里的位置，直到有人切换过去才失败。引用了被后续版本改名或卸载的包，正是手写 preset 真正的腐化方式，而它恰好是这项检查排除掉的那一类。
@@ -16,11 +18,11 @@ Status: implemented
 
 ## Decision
 
-**发现过程解析每一行它能证明会启动的行，且不 import 任何东西。** 解析这一趟跑在 `packages/preset/agent-presets/src/discovery.ts` 的形状检查之后，因此格式错误的组装仍然回答形状原因。包名先在磁盘上查——就是 Node 自己那套向上走 `node_modules`、停在 `<包>/package.json` 的做法——只有在磁盘上查不到的名字才交给 `import.meta.resolve` 确认，而它的拒绝会在本进程内记下来。preset 相对路径与绝对路径改用 stat，因为对这两类 `import.meta.resolve` 只做 URL 拼接，否则一个丢失了自带文件的 preset 会蒙混过关。两条路都不求值。
+**发现过程解析每一行它能证明会启动的行，且不 import 任何东西。** 解析这一趟跑在 `packages/preset/agent-presets/src/discovery.ts` 的形状检查之后，因此格式错误的组装仍然回答形状原因。包名先在磁盘上查——就是 Node 自己那套向上走 `node_modules`、停在 `<包>/package.json` 的做法。preset 相对路径与绝对路径改用 stat，因为对这两类 `import.meta.resolve` 只做 URL 拼接，否则一个丢失了自带文件的 preset 会蒙混过关。两条路都不求值。
 
-磁盘查找之所以是快路径，是因为解析器并非一件均质的事：只要注册了 ESM loader hook，每一次 `import.meta.resolve` 调用就变成一次到 hooks 线程的同步往返。在源码启动所用的 `tsx` hook 下，实测命中 2ms、未命中 5ms，而裸 Node 分别是 0.055ms 与 0.032ms——这让每次名单读取背上 238ms 的解析器时间。同样这 135 行，磁盘走法只要 0.7ms。把解析器留给磁盘找不到的名字，等于让一次读取只为它报出的失败付费，而不为它放行的每一行付费，同时也避免把只有 loader 能解析的包——经由 tsconfig paths 或 import map——判成损坏。Node 内建模块在两者之前直接短路。
+用磁盘查找而不是 `import.meta.resolve`，有两个理由。它便宜：只要注册了 ESM loader hook，每一次解析器调用就变成一次到 hooks 线程的同步往返，在源码启动所用的 `tsx` hook 下实测命中 2ms、未命中 5ms，而裸 Node 分别是 0.055ms 与 0.032ms——每次名单读取要背上 238ms 的解析器时间，而同样这 135 行磁盘走法只要 0.7ms。它也是唯一问得到「宿主」的：`import.meta.resolve` 的 `parentURL` 参数只在 `--experimental-import-meta-resolve` 下生效，而没有任何启动方式传它，因此它是相对调用方模块解析的，回答的是关于本包而不是关于部署的问题。真正认显式 parent 的是 Loader 的内部解析器，而它的 `resolveSync` 在 Node 22 与 24 上签名不同。Node 内建模块在磁盘查找之前直接短路。
 
-拒绝记录位于磁盘查找之后而非之前，因此后来装上的包会先在磁盘上被找到，已记下的拒绝不会在要紧的方向上过期。
+磁盘走法放弃了什么：只有经由 loader hook 才能解析的包——import map，或根本没有 `node_modules` 的目录树——会被报为损坏。任何受支持的安装都不会产出这种情况，因为 `dsh plugin install` 会把每个插件装在名单旁边。
 
 **只有一个分类器决定一行在哪里解析。** `src/specifier.ts` 拥有这个划分——`cordis:` 内建、preset 相对、绝对文件、包名——挂载的 import 覆写与发现过程的检查都读它。若发现过程按一个基准解析、而挂载按另一个基准 import，那一行会被报告为健康，然后加载失败。
 
@@ -30,7 +32,7 @@ Status: implemented
 
 **挂载诊断跟随携带信息多于自身 message 的 cause。** `mountDetail` 从 `AggregateError.errors` 取分支，或在 cause 是 `AggregateError` 时从 `error.cause.errors` 取；普通的 cause 链已被展平进 message，不再跟随，否则每一行都会打印两遍。嵌套分支在拥有它的那一行下缩进。
 
-**客户端把原因放到徽标上。** 卡片正面保留 preset 自己的描述，因为在那里一个包说明符不足以让选择的人采取行动。宿主给出的原因作为徽标的提示条服务于指针，另有一个视觉隐藏的 `role="alert"` 节点把它送达辅助技术——preset 损坏时卡片主体被禁用，因而离开 tab 序列，提示条也就没有键盘路径。
+**客户端把原因放到徽标上。** 卡片正面保留 preset 自己的描述，因为在那里一个包说明符不足以让选择的人采取行动。宿主给出的原因在悬停徽标或聚焦卡片时展开，另有一个视觉隐藏的 `role="alert"` 节点负责朗读。损坏的卡片用 `aria-disabled` 而非 `disabled` 表达这件事，并在自己的处理函数里拒绝这次选择：`disabled` 会把它移出 tab 序列，而原因已不在正面，那等于让不用指针的人完全够不到它。
 
 **被拒绝的切换要在被拒绝的地方说明原因。** chip 的标签会弹回会话仍在运行的那个 preset，因此不说话的话，这次选择看起来就像根本没发生。它经由共享的 `Toast` 在 composer 列上方自报，与旁边的模型选择器报告被拒绝的选择方式一致。只有人刚做出的选择会被自报——应用器在会话成为当前会话时也会运行，为那种情况弹横幅等于报告一个没人问过的拒绝。横幅停留八秒而非 primitive 默认的三秒，因为它承载的原因要点名包与行；`Toast` 为此获得了 `holdMs`，顺带也消除了「停留常量必须由人手与样式表保持同步」这一隐患。
 
@@ -58,7 +60,7 @@ Status: implemented
 
 **复用图标行的 `data-tip` 伪元素来做提示条。** 实测后否决：生成内容会并入元素的可访问文本，因此卡片的 aria 快照多出一份 alert 已经携带的原因的逐字副本。改用真实的 `aria-hidden` 元素后，可访问副本恰好只有一份——而且既有那条提示条是为图标标签准备的单行 `nowrap`，这一条要逐行列出包说明符。
 
-**把徽标做成真正可聚焦的控件，让提示条有键盘路径。** 暂不采用。徽标位于卡片自身的 `<button>` 内部，可聚焦的触发器意味着改造卡片头部结构；视觉隐藏的 alert 已经触达辅助技术，且没有任何键盘路径退化——被禁用的卡片主体从来就不在 tab 序列里。
+**把徽标本身做成可聚焦控件。** 否决：徽标位于卡片自身的 `<button>` 内部，在那里放可聚焦触发器意味着改造卡片头部结构。用 `aria-disabled` 让卡片保持可聚焦，同一次按键就能展开同一条提示条，且不改动任何布局。「原因只用指针可达」同样被否决——这次改动之前它无需任何交互就可见，因此把它藏到悬停之后，对用键盘阅读的人是退化，而不是一条本就不存在的路径。
 
 ## Consequences
 

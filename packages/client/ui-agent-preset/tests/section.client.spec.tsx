@@ -194,8 +194,12 @@ describe('the preset list', () => {
     // Reachable without a pointer: the disabled body leaves the tab order, so
     // this node is the only reading assistive technology gets.
     expect(within(ghost).getByRole('alert').textContent).toContain('is missing')
+    // `aria-disabled`, not `disabled`: the card stays in the tab order so a
+    // keyboard reaches the reason the face no longer shows, and refuses the
+    // pick itself rather than by being unreachable.
     const body = within(ghost).getByRole('button', { name: `${en.brokenBadge}: 幽灵预设` })
-    expect(body).toHaveProperty('disabled', true)
+    expect(body).toHaveProperty('disabled', false)
+    expect(body.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(body)
     expect(actions.makeDefault).not.toHaveBeenCalled()
     // Copying a broken preset would only mint another broken one; deleting

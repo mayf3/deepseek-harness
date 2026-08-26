@@ -256,14 +256,20 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       common act, so it should not hide behind a small button.
                       The action row sits outside it — nesting buttons is
                       invalid, and these act on the card rather than select it.
-                      A broken preset cannot compose a session, so its body is
-                      disabled; the reason rides the badge rather than the card
-                      face, which stays the preset's own description. */}
+                      A broken preset cannot compose a session, so its body
+                      refuses the pick; the reason rides the badge rather than
+                      the card face, which stays the preset's own
+                      description. */}
                     <button
                       type="button"
                       className={css.cardMain}
                       aria-pressed={row.isDefault}
-                      disabled={row.isDefault || row.broken !== undefined}
+                      // Broken says so through `aria-disabled` rather than
+                      // `disabled`, which would take the card out of the tab
+                      // order. With the reason moved onto the badge, that is
+                      // the only way anyone without a pointer reaches it.
+                      disabled={row.isDefault}
+                      aria-disabled={row.broken !== undefined}
                       // Without this the name is the whole card read aloud —
                       // title, badge, description, id.
                       aria-label={`${row.broken !== undefined ? t('brokenBadge') : row.isDefault ? t('inUse') : t('setDefault')}: ${text.name}`}
@@ -271,7 +277,10 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       // tooltips over one target would race, and the card's
                       // own label answers what clicking it would do.
                       title={row.broken !== undefined ? t('brokenBadge') : row.isDefault ? t('inUse') : t('setDefault')}
-                      onClick={() => { void props.makeDefault(row.id) }}
+                      onClick={() => {
+                        if (row.broken !== undefined) return
+                        void props.makeDefault(row.id)
+                      }}
                     >
                       <span className={css.cardHead}>
                         <span className={css.cardName}>{text.name}</span>

@@ -255,12 +255,13 @@ describe('rows naming a plugin that cannot be resolved', () => {
     const composition = '- id: a\n  name: no-such-a\n- id: b\n  name: no-such-b\n'
 
     expect(await scanned(composition)).toBe(
-      '2 rows name plugins that cannot be resolved:\n- "a": no-such-a\n- "b": no-such-b')
+      '2 rows name plugins that cannot be resolved:\n- row "a": no-such-a\n- row "b": no-such-b')
   })
 
   it('falls back to the row position when a row declares no id', async () => {
+    // One `row` prefix, not two: the label carries it either way.
     expect(await scanned('- name: no-such-plugin\n'))
-      .toMatch(/^row row 1 names a plugin/)
+      .toBe('row 1 names a plugin that cannot be resolved: no-such-plugin')
   })
 
   it('descends into a group and keeps the group in the label', async () => {
@@ -292,9 +293,18 @@ describe('rows naming a plugin that cannot be resolved', () => {
     expect(await scanned(composition)).toBeUndefined()
   })
 
-  it('checks a row that says it is enabled', async () => {
-    expect(await scanned('- id: on\n  name: no-such-plugin\n  disabled: false\n'))
+  it.each(['false', '0', "''"])('checks a row the loader would start (disabled: %s)', async (value) => {
+    // The Loader starts a row when `Boolean(options.disabled)` is false, so a
+    // falsy-but-present value names a row that does run.
+    expect(await scanned(`- id: on\n  name: no-such-plugin\n  disabled: ${value}\n`))
       .toMatch(/cannot be resolved/)
+  })
+
+  it('reports a file: URL whose target is not there', async () => {
+    // The Loader accepts a `file:` URL for the same thing an absolute path
+    // names; a resolver handed one only normalizes it and never looks.
+    const missing = pathToFileURL(join(tmpdir(), 'dsh-presets-absent', 'nope.mjs')).href
+    expect(await scanned(`- id: url\n  name: '${missing}'\n`)).toMatch(/cannot be resolved/)
   })
 
   it('reads an installed package off disk without asking the resolver', async () => {

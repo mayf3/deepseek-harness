@@ -121,15 +121,28 @@
   transition: opacity .12s;
 }
 
-.brokenBadge:hover .brokenTip {
+/* Focusing the card reveals it too: a broken card keeps its place in the tab
+   order (`aria-disabled`, not `disabled`), so this is the keyboard path to a
+   reason the card face no longer shows. */
+.brokenBadge:hover .brokenTip,
+.cardMain:focus-visible .brokenTip {
   opacity: 1;
 }
 
-/* The same reason, for assistive technology only. The card body is disabled
-   when a preset is broken, so it leaves the tab order and the badge's tooltip
-   has no keyboard or screen-reader path; this node is that path. Sighted
-   pointer users read the badge instead, which keeps a picker card showing the
-   preset's own description rather than a package specifier. */
+.cardMain[aria-disabled='true'] {
+  cursor: default;
+}
+
+.cardMain:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: -2px;
+}
+
+/* The same reason, for a screen reader. A pointer reveals the badge's tooltip
+   and a keyboard reveals it by focusing the card, but neither announces it;
+   this node is what does. Keeping it out of the card face is what lets a
+   picker card show the preset's own description rather than a package
+   specifier. */
 .cardBrokenReason {
   position: absolute;
   width: 1px;

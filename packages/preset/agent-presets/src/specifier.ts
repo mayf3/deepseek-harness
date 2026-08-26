@@ -22,7 +22,7 @@ export type RowSpecifier =
   | { readonly kind: 'builtin'; readonly specifier: string }
   /** A path relative to the preset's own directory; the preset ships the file. */
   | { readonly kind: 'preset'; readonly specifier: string }
-  /** An absolute path, already a file URL; it names one file and no base. */
+  /** An absolute path or `file:` URL; it names one file and no base. */
   | { readonly kind: 'file'; readonly specifier: string }
   /** A package name resolved from the installed harness. */
   | { readonly kind: 'package'; readonly specifier: string }
@@ -32,14 +32,18 @@ export type RowSpecifier =
  *
  * An absolute filesystem path becomes a file URL here rather than at each
  * call site, because Node's ESM resolver rejects a bare drive-letter path on
- * Windows. The `specifier` a caller receives is always the string to hand a
- * resolver; only `kind` decides which base it goes with.
+ * Windows. A `file:` URL is already one and joins it: the Loader accepts both
+ * spellings for the same thing, and treating the URL as a package name would
+ * hand it to a resolver that only normalizes it, reporting a file that is not
+ * there as present. The `specifier` a caller receives is always the string to
+ * hand a resolver; only `kind` decides which base it goes with.
  * @param name - the module specifier exactly as the row wrote it.
  * @returns the classification, carrying the specifier to resolve.
  */
 export function classifyRowSpecifier(name: string): RowSpecifier {
   if (name.startsWith('cordis:')) return { kind: 'builtin', specifier: name }
   if (name.startsWith('.')) return { kind: 'preset', specifier: name }
+  if (name.startsWith('file:')) return { kind: 'file', specifier: name }
   if (isAbsolute(name)) return { kind: 'file', specifier: pathToFileURL(name).href }
   return { kind: 'package', specifier: name }
 }

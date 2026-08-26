@@ -87,7 +87,6 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
   const [open, setOpen] = useState(false)
   // The seq keys the banner, so picking the same broken preset twice replays
   // it rather than leaving the first one silently in place.
-  const seatRef = useRef<HTMLButtonElement>(null)
   const toastSeq = useRef(0)
   const [toast, setToast] = useState<{ seq: number; text: string } | null>(null)
 
@@ -184,7 +183,6 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
         portal
         anchor={(
           <button
-            ref={seatRef}
             type="button"
             className={css.seat}
             aria-haspopup="menu"
@@ -206,13 +204,10 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
           icon={<IconWarningOutline16 />}
           holdMs={REFUSAL_HOLD_MS}
           // The composer card, which is the content column this chip sits
-          // above — not an ancestor of it, so the lookup is a page query
-          // rather than `closest`. Absent, the banner centers on the window,
-          // which is off-center whenever the sidebar is open.
-          anchor={
-            seatRef.current?.closest<HTMLElement>('[data-composer-card]')
-            ?? document.querySelector<HTMLElement>('[data-composer-card]')
-          }
+          // above rather than inside — hence a page query, not `closest`.
+          // Absent, the banner centers on the window, which is off-center
+          // whenever the sidebar is open.
+          anchor={document.querySelector<HTMLElement>('[data-composer-card]')}
           onDone={() => { setToast(null) }}
         />
       )}

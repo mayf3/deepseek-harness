@@ -124,35 +124,29 @@ function packageInstalled(name: string, base: string): boolean {
 }
 
 /**
- * Package specifiers a resolver has already refused, keyed by base and name.
- *
- * Consulted only after {@link packageInstalled} finds nothing, which is what
- * keeps a recorded refusal from going stale in the direction that matters: a
- * package installed since is found on disk and never reaches this set, so
- * fixing an install still takes effect on the next roster read. What it
- * removes is the repeat cost of confirming the same absent name on every
- * read, which a preset carrying several stale rows would otherwise pay
- * forever.
- */
-const refusedPackages = new Set<string>()
-
-/**
  * Whether one classified row names a module that exists, importing nothing.
  *
  * Each kind is checked by what actually answers it. A package name is looked
- * up on disk, then — only when that finds nothing — confirmed through
- * `import.meta.resolve`, which is authoritative but expensive: a registered
- * ESM loader hook turns each call into a synchronous round-trip to the hooks
- * thread, measured at 2ms for a hit and 5ms for a miss under the `tsx` hook
- * the source launch installs. Keeping it to the rows that look absent leaves
- * a roster read paying for the failures it reports rather than for every row
- * it clears, and keeps a package that only a loader can resolve — through
- * tsconfig paths, or an import map — from being called broken.
+ * up on disk — the same upward walk Node's own resolver starts with — and a
+ * relative or `file:` specifier is statted, because both name one file.
+ * Nothing is evaluated either way, so a row is judged without its plugin
+ * observing that discovery looked.
  *
- * A relative or `file:` specifier is statted, because `import.meta.resolve`
- * only joins URLs for those: a preset shipping a file that was deleted would
- * otherwise pass. Nothing is evaluated either way, so a row is judged without
- * its plugin observing that discovery looked.
+ * `import.meta.resolve` is deliberately not the fallback for a name the disk
+ * lookup misses. Its `parentURL` argument only takes effect under
+ * `--experimental-import-meta-resolve`, which no launch passes, so it would
+ * resolve from THIS module rather than from the harness — reporting a
+ * dependency visible only to this package as healthy, and a plugin the mount
+ * can import as broken. The resolver that does honour an explicit parent is
+ * the Loader's internal one, whose `resolveSync` signature differs between
+ * Node 22 and 24 (`ModuleLoader.fromInternal` tags the raw object rather than
+ * normalising it); reaching into that for a case the walk already covers buys
+ * nothing a supported deployment needs, because every plugin a preset names
+ * is installed beside the roster.
+ *
+ * What that gives up: a package resolvable ONLY through a loader hook — an
+ * import map, or a tree with no `node_modules` at all — is reported broken.
+ * No supported install produces one.
  * @param row - the classified specifier, from {@link classifyRowSpecifier}.
  * @param presetBase - directory URL a preset-relative specifier resolves against.
  * @param harnessBase - base URL a package name resolves against.
@@ -160,29 +154,14 @@ const refusedPackages = new Set<string>()
  */
 async function rowResolves(row: RowSpecifier, presetBase: string, harnessBase: string): Promise<boolean> {
   if (row.kind === 'builtin') return true
-  if (row.kind === 'package') {
-    if (isBuiltin(row.specifier)) return true
-    if (packageInstalled(row.specifier, harnessBase)) return true
-    const refusal = `${harnessBase}\u0000${row.specifier}`
-    if (refusedPackages.has(refusal)) return false
-    try {
-      import.meta.resolve(row.specifier, harnessBase)
-      return true
-    } catch {
-      // Absent package, dangling install link, missing subpath export: every
-      // resolution failure is the same answer to the only question asked here,
-      // and the reason names the row rather than repeating the resolver's text.
-      refusedPackages.add(refusal)
-      return false
-    }
-  }
+  if (row.kind === 'package') return isBuiltin(row.specifier) || packageInstalled(row.specifier, harnessBase)
   const url = row.kind === 'file' ? new URL(row.specifier) : new URL(row.specifier, presetBase)
   return await isFile(fileURLToPath(url))
 }
 
 /** One row that names a module no resolver can find. */
 interface UnresolvableRow {
-  /** The row's own id in quotes, or its position when it declares none. */
+  /** `row "id"`, or the row's position when it declares none. */
   readonly label: string
   /** The specifier exactly as the row wrote it. */
   readonly name: string
@@ -191,13 +170,14 @@ interface UnresolvableRow {
 /**
  * Rows whose module cannot be resolved.
  *
- * Only rows that will certainly be started are checked. `disabled` is the one
- * entry field the Loader interpolates — a `!!js` expression evaluates against
- * the loader context at mount time — so a row carrying anything but an absent,
- * null, or `false` value cannot be proven to load from a file alone. Skipping
- * those trades a missed name for the failure that matters more: calling a
- * usable preset broken makes it unselectable and uncopyable, which is worse
- * than reporting the same stale row at mount time as before.
+ * Only rows that will certainly be started are checked, and the test is the
+ * Loader's own: it starts a row when `Boolean(options.disabled)` is false, so
+ * `disabled: 0` names a row that DOES start and must be checked. A `!!js`
+ * expression is an object and therefore truthy, which skips exactly the rows
+ * whose value only the loader context can decide. Skipping those trades a
+ * missed name for the failure that matters more: calling a usable preset
+ * broken makes it unselectable and uncopyable, which is worse than reporting
+ * the same stale row at mount time as before.
  *
  * Shape is the caller's precondition: {@link entryListProblem} has already
  * proven every row is a map carrying a `name` string, and groups recurse the
@@ -217,15 +197,14 @@ async function unresolvableRows(
   const found: UnresolvableRow[] = []
   for (const [index, entry] of rows.entries()) {
     const row = entry as { id?: unknown; name: string; group?: unknown; config?: unknown; disabled?: unknown }
-    const { disabled } = row
-    if (disabled !== undefined && disabled !== null && disabled !== false) continue
+    if (Boolean(row.disabled)) continue
     const positional = at === '' ? `row ${String(index + 1)}` : `${at} row ${String(index + 1)}`
     if (row.group === true) {
       found.push(...await unresolvableRows(row.config as readonly unknown[], presetBase, harnessBase, positional))
       continue
     }
     if (await rowResolves(classifyRowSpecifier(row.name), presetBase, harnessBase)) continue
-    const label = typeof row.id === 'string' && row.id !== '' ? `"${row.id}"` : positional
+    const label = typeof row.id === 'string' && row.id !== '' ? `row "${row.id}"` : positional
     found.push({ label, name: row.name })
   }
   return found
@@ -268,7 +247,7 @@ async function compositionProblem(path: string, harnessBase: string): Promise<st
   const [first] = unresolvable
   if (first === undefined) return undefined
   if (unresolvable.length === 1) {
-    return `row ${first.label} names a plugin that cannot be resolved: ${first.name}`
+    return `${first.label} names a plugin that cannot be resolved: ${first.name}`
   }
   return `${String(unresolvable.length)} rows name plugins that cannot be resolved:\n`
     + unresolvable.map(row => `- ${row.label}: ${row.name}`).join('\n')
