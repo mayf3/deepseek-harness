@@ -6,14 +6,8 @@ import { carrierKeyOf, createScope } from '@deepseek-ai/dsh-scope'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ApprovalService, { ApprovalOutcome, ApprovalRequest, ApprovalRequestId, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
-
-function registerTurnBoundary(ctx: Context): void {
-  ctx.sessionProjections.register(turnBoundaryProjectionDefinition)
-}
+import ApprovalService, { ApprovalOutcome, ApprovalRequest, effectiveApprovalPolicy, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 
 /**
  * A minimal Agent stand-in — the service only reaches `agent.session.append`
@@ -21,10 +15,7 @@ function registerTurnBoundary(ctx: Context): void {
  * turn-enclosure precondition); pass `seed` to stage idle/closed logs.
  * Returns the recorded audit appends alongside the fake.
  */
-function fakeAgent(seed: Array<{ type: string; data?: Record<string, unknown>; seq?: number }> = [
-  { type: 'turn/start', seq: 0, data: { turn: 1 } },
-  { type: 'user/message', seq: 1, data: {} },
-]): { agent: Agent; appended: Array<{ type: string; data: Record<string, unknown> }> } {
+function fakeAgent(seed: Array<{ type: string }> = [{ type: 'turn/start' }, { type: 'user/message' }]): { agent: Agent; appended: Array<{ type: string; data: Record<string, unknown> }> } {
   const appended: Array<{ type: string; data: Record<string, unknown> }> = []
   const agent = {
     session: {
@@ -40,8 +31,6 @@ function fakeAgent(seed: Array<{ type: string; data?: Record<string, unknown>; s
 
 async function mounted(): Promise<Context> {
   const ctx = new Context()
-  await ctx.plugin(SessionProjectionRegistry)
-  registerTurnBoundary(ctx)
   await ctx.plugin(ApprovalService)
   return ctx
 }
@@ -61,10 +50,7 @@ describe('ApprovalService.request', () => {
 
   it('throws between turns — a closed turn does not satisfy the enclosure precondition', async () => {
     const ctx = await mounted()
-    const { agent, appended } = fakeAgent([
-      { type: 'turn/start', seq: 0, data: { turn: 1 } },
-      { type: 'turn/end', seq: 1, data: { turn: 1, reason: { kind: 'completed' } } },
-    ])
+    const { agent, appended } = fakeAgent([{ type: 'turn/start' }, { type: 'turn/end' }])
 
     await expect(ctx.approval.request(requestOf(agent))).rejects.toThrow(/outside an open turn/)
     expect(appended).toHaveLength(0)
@@ -130,8 +116,6 @@ describe('ApprovalService.request', () => {
   it('contains an approval/asked observer throw after append and still completes the pair', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService)
     const session = ctx.sessions.create(SessionId('asked-observer-throw'))
     session.append('turn/start', { turn: 1 })
@@ -155,8 +139,6 @@ describe('ApprovalService.request', () => {
   it('contains an approval/decided observer throw after append and still resolves', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService)
     const session = ctx.sessions.create(SessionId('decided-observer-throw'))
     session.append('turn/start', { turn: 1 })
@@ -182,7 +164,7 @@ describe('ApprovalService.request', () => {
     const failure = new Error('append failed before log growth')
     const agent = {
       session: {
-        events: [{ type: 'turn/start', seq: 0, data: { turn: 1 } }],
+        events: [{ type: 'turn/start' }],
         append: () => { throw failure },
       },
     } as unknown as Agent
@@ -382,43 +364,13 @@ describe('approval policy (the approval/policy fold)', () => {
     return { agent, session }
   }
 
-  it('folds to the last event, or undefined without one', async () => {
-    const ctx = await mounted()
+  it('folds to the last event, or undefined without one', () => {
     const { session } = sessionAgent('sess-fold')
-    expect(ctx.approval.overrideOf(session)).toBeUndefined()
+    expect(effectiveApprovalPolicy(session.events)).toBeUndefined()
     setApprovalPolicy(session, 'never')
     setApprovalPolicy(session, 'ask')
-    expect(ctx.approval.overrideOf(session)).toBe('ask')
+    expect(effectiveApprovalPolicy(session.events)).toBe('ask')
     expect(session.events.at(-1)).toMatchObject({ type: 'approval/policy', data: { policy: 'ask' } })
-  })
-
-  it('folds the pending audit pair without double-counting duplicates', async () => {
-    const ctx = await mounted()
-    const { session } = sessionAgent('sess-pending')
-    const asked = session.append('approval/asked', {
-      id: ApprovalRequestId('pending-1'),
-      callId: CallId('call-1'),
-      toolName: 'echo',
-    })
-    session.append('approval/asked', {
-      id: ApprovalRequestId('pending-1'),
-      callId: CallId('call-1'),
-      toolName: 'echo',
-    })
-    const pending = ctx.sessionProjections.snapshot(session).values.approvalPending ?? {}
-    expect(pending).toEqual({
-      'pending-1': { callId: 'call-1', seq: asked.seq },
-    })
-  })
-
-  it('ignores a decided event without a pending asked record', async () => {
-    const ctx = await mounted()
-    const { session } = sessionAgent('sess-unknown-decide')
-    session.append('approval/decided', {
-      id: ApprovalRequestId('never-asked'),
-      outcome: 'rejected',
-    })
-    expect(ctx.sessionProjections.snapshot(session).values.approvalPending).toEqual({})
   })
 
   it('rejects a policy outside the closed vocabulary before appending', () => {
@@ -434,8 +386,6 @@ describe('approval policy (the approval/policy fold)', () => {
     // Direct construction bypasses the plugin schema (the SystemPrompt-test
     // precedent for covering a defaulted Config field's type-narrowing ??).
     const ctx = new Context()
-    new SessionProjectionRegistry(ctx)
-    registerTurnBoundary(ctx)
     const service = new ApprovalService(ctx, {})
     const { agent } = sessionAgent('sess-bare-config')
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
@@ -444,8 +394,6 @@ describe('approval policy (the approval/policy fold)', () => {
 
   it('contains an answerer that throws SYNCHRONOUSLY as unavailable', async () => {
     const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService)
     const { agent } = sessionAgent('sess-syncthrow')
     ctx.on('approval/request', () => { throw new Error('sync bug') })
@@ -454,8 +402,6 @@ describe('approval policy (the approval/policy fold)', () => {
 
   it('a never config rejects deterministically without consulting any answerer', async () => {
     const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService, { policy: 'never' })
     const consulted = vi.fn()
     ctx.on('approval/request', (_req, next) => { consulted(); return next() })
@@ -470,8 +416,6 @@ describe('approval policy (the approval/policy fold)', () => {
   it('the gate decides FIRST even against an answerer registered before the service (prepend)', async () => {
     const ctx = new Context()
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService, { policy: 'never' })
     const { agent } = sessionAgent('sess-gate-2')
     await expect(ctx.approval.request({ agent, toolName: 'bash' })).resolves.toBe('rejected')
@@ -482,8 +426,6 @@ describe('approval policy (the approval/policy fold)', () => {
     // service could register — which is exactly why the 'never' decision lives inside request()
     // instead. This eager grant would bypass a listener-based gate and therefore must never run.
     const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService, { policy: 'never' })
     const consulted = vi.fn()
     ctx.on('approval/request', () => { consulted(); return Promise.resolve<ApprovalOutcome>('allowed-once') }, { prepend: true })
@@ -495,8 +437,6 @@ describe('approval policy (the approval/policy fold)', () => {
 
   it('a session override outranks the configured default, in both directions', async () => {
     const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService, { policy: 'never' })
     ctx.on('approval/request', () => Promise.resolve<ApprovalOutcome>('allowed-once'))
     const { agent, session } = sessionAgent('sess-gate-3')
@@ -510,8 +450,6 @@ describe('approval policy (the approval/policy fold)', () => {
 
   it('queues a live policy switch for the next model step', async () => {
     const ctx = new Context()
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService)
     const { agent, session } = sessionAgent('sess-policy-notice')
     const inject = vi.fn<Agent['inject']>()
@@ -520,7 +458,7 @@ describe('approval policy (the approval/policy fold)', () => {
     ctx.approval.setPolicy(liveAgent, 'never')
     ctx.approval.setPolicy(liveAgent, 'never')
 
-    expect(ctx.approval.overrideOf(session)).toBe('never')
+    expect(effectiveApprovalPolicy(session.events)).toBe('never')
     expect(inject).toHaveBeenCalledOnce()
     expect(inject.mock.calls[0]?.[0]).toMatchObject({
       content: [{
@@ -534,8 +472,6 @@ describe('approval policy (the approval/policy fold)', () => {
   it('contributes the complete current ask or never policy as cache-safe context', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService)
     const askAgent = sessionAgent('sess-sect-ask').agent
     const { agent: neverAgent, session } = sessionAgent('sess-sect-never')
@@ -551,8 +487,6 @@ describe('approval policy (the approval/policy fold)', () => {
   it('reflects the latest durable switch in cache-safe context and stays byte-stable while unchanged', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     await ctx.plugin(ApprovalService)
     const { agent, session } = sessionAgent('sess-context-switch')
     const contextFor = async () =>
@@ -569,8 +503,6 @@ describe('approval policy (the approval/policy fold)', () => {
   it('disposes the runtime-context contribution with the service', async () => {
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(SessionProjectionRegistry)
-    registerTurnBoundary(ctx)
     const fiber = await ctx.plugin(ApprovalService)
     const { agent } = sessionAgent('sess-hmr-service-live')
     const contextFor = async () =>

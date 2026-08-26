@@ -82,7 +82,7 @@ function foldedSandboxMode(ctx: Context, id: SessionId, events: readonly Session
 }
 
 function foldedApprovalPolicy(ctx: Context, id: SessionId, events: readonly SessionEvent[]): unknown {
-  return ctx.sessionProjections.snapshot(Session.create(id, events)).values.approvalPolicy
+  return ctx.approval.overrideOf(Session.create(id, events))
 }
 
 describe('continuable policy inheritance', () => {
