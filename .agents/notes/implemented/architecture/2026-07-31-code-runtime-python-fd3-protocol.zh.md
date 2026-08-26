@@ -24,7 +24,7 @@ Status: implemented
 
 ## Wire contract
 
-帧是 fd 3 上的 JSON-lines，每行一个对象，让 stdout/stderr 空出给程序自己的输出。Child → host：`boot-ack`、`call`、`log`、`done`。Host → child：`boot`（首帧）、`run`（在 `boot-ack` 之后）、以及每个 `call` 对应一个 `reply`。`log` 帧的 `truncated` 标志标记那个本身就是子进程 ledger 截断标记的帧，使 host 在与子进程相同的点停止捕获，而不是从自己的预算去推断。`log` 帧的 `open` 标志标记由显式 flush 提交的未结束行：宿主持有它（受账本预算约束）并把下一个帧追加到同一条目，因此显式 flush 后接更多文本读回为一行而不是假换行。`done.error.kind` 是 `exception`、`invalid-output`、`output-limit` 之一；wall/CPU 预算、abort、substrate 死亡都在 host 侧观测，不作为帧携带。
+帧是 fd 3 上的 JSON-lines，每行一个对象，让 stdout/stderr 空出给程序自己的输出。Child → host：`boot-ack`、`call`、`log`、`done`。Host → child：`boot`（首帧）、`run`（在 `boot-ack` 之后）、以及每个 `call` 对应一个 `reply`。`log` 帧的 `truncated` 标志标记那个本身就是子进程 ledger 截断标记的帧，使 host 在与子进程相同的点停止捕获，而不是从自己的预算去推断。`log` 帧的 `open` 标志标记由显式 flush 提交的未结束行：宿主持有它并把下一个帧追加到同一条目，因此显式 flush 后接更多文本读回为一行而不是假换行。合并条目的线上成本恰好计费一次，在两侧按片段增量分摊（k 个片段 O(k)，绝不对整个持有重走）：首片段付完整 JSON 字符串成本加分隔符，每个续接与闭合帧只付内容；宿主精确成本 cap 是首片段 `logBudget - 1`（账本预留字节，与 `admit` 一致）、续接或闭合帧 `logBudget + 2`（不含两个引号计费），且 `jsonStringCostUpTo` 在低于 2 字节 cap 时返回 `undefined`；子进程按 `_open_started` 单独键控拆分计费，因此闭合帧按合并尾部计费。`done.error.kind` 是 `exception`、`invalid-output`、`output-limit` 之一；wall/CPU 预算、abort、substrate 死亡都在 host 侧观测，不作为帧携带。
 
 ## Mirror alignment
 
