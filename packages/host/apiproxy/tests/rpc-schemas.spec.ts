@@ -11,9 +11,7 @@ import {
   hostListDirectoryRequestSchema, hostListDirectoryValueSchema,
 } from '../src/api/host.schema.ts'
 import { skillEntrySchema, skillListRequestSchema, skillListValueSchema } from '../src/api/skills.schema.ts'
-import {
-  agentPresetEntrySchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
-} from '../src/api/agent-presets.schema.ts'
+import { agentPresetOpenDocumentValueSchema } from '../src/api/agent-presets.schema.ts'
 import { subagentPromptRequestSchema } from '../src/api/subagents.schema.ts'
 
 describe('RpcId', () => {
@@ -178,20 +176,6 @@ describe('skills domain schemas', () => {
 })
 
 describe('agent-preset schemas', () => {
-  it('accepts a roster row and rejects an unknown trust', () => {
-    expect(agentPresetEntrySchema.parse({ id: 'standard', trust: 'system', isDefault: true }))
-      .toEqual({ id: 'standard', trust: 'system', isDefault: true })
-    expect(() => agentPresetEntrySchema.parse({ id: 'x', trust: 'root', isDefault: false })).toThrow()
-    expect(() => agentPresetEntrySchema.parse({ id: '', trust: 'user', isDefault: false })).toThrow()
-  })
-
-  it('accepts an empty roster', () => {
-    // A deployment composing no presets still reports its authoring and
-    // native-open capabilities, so a surface knows what to offer.
-    expect(agentPresetListValueSchema.parse({ presets: [], authorable: false, hasDocument: false }))
-      .toEqual({ presets: [], authorable: false, hasDocument: false })
-  })
-
   it('answers the open-document union by its discriminant', () => {
     expect(agentPresetOpenDocumentValueSchema.parse({ opened: true })).toEqual({ opened: true })
     expect(agentPresetOpenDocumentValueSchema.parse({ opened: false, path: '/presets/mine' }))

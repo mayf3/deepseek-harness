@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 键盘与鼠标
 
-菜单打开期间 textarea 保持焦点：行在 mousedown 时完成 pick，高亮由 `aria-activedescendant` 承载，指针落在菜单与所在 composer 卡片之外即关闭菜单。空格与回车裁决按注册序轮询可选的 `matchSpace`／`matchEnter` 钩子；第一个非 undefined 的应答胜出，source 也可以拒绝它无法整体消费的提交。
+菜单打开期间 composer 表面保持焦点：行在 mousedown 时完成 pick，高亮由 `aria-activedescendant` 承载，指针落在菜单与所在 composer 卡片之外即关闭菜单。空格与回车裁决按注册序轮询可选的 `matchSpace`／`matchEnter` 钩子；第一个非 undefined 的应答胜出，source 也可以拒绝它无法整体消费的提交。声明 `drill: true` 的候选行在选定 pick 之外携带第二个动词：行尾的 chevron 与 Tab 键把同一行以 `action: 'drill'` 送入 `onPick`（其余路径一律报告 `'pick'`）；未声明该标记的行上 Tab 原样放行，原生焦点遍历不受影响。
 
 -----
 

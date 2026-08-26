@@ -110,7 +110,7 @@ This section explains the design behind the roster and the standing mount; obser
 | [`src/authoring.ts`](src/authoring.ts) | Copy/delete/read of locally authored presets, permission tightening |
 | [`src/metadata.ts`](src/metadata.ts) | `preset.yml` display metadata |
 | [`src/session.ts`](src/session.ts) | `agent-preset/selected` event and the `agentPreset` Session projection |
-| [`src/types.ts`](src/types.ts) | Client-safe cordis event declaration |
+| [`src/types.ts`](src/types.ts) | Client-safe wire payloads and cordis event declaration |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: post-mount service-leak recheck, unjoined-agent failure |
 
 ### The standing mount
