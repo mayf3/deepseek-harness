@@ -14,7 +14,7 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import { SETTINGS_NAMESPACE, SHIPPED_PRESET_ROOT } from '@deepseek-ai/dsh-agent-presets'
 import { applyChildComposition, childSessionMeta } from '@deepseek-ai/dsh-subagent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-compaction-basic'
 import type {} from '@deepseek-ai/dsh-skill'
 import type {} from '@deepseek-ai/dsh-tools'
@@ -429,7 +429,7 @@ describe('the shipped Web composition', () => {
 
       // The preset's own loader tool resolves the global-layer skill.
       const loaded = await ctx.tools.execute({
-        callId: CallId('preset-skills-load'),
+        callId: ToolCallId('preset-skills-load'),
         name: 'skill',
         arguments: { name: 'dsh-badge' },
         signal: new AbortController().signal,
