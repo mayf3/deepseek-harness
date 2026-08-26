@@ -99,7 +99,7 @@ type ProjectionChangeListener = (
 
 ## 注册表：`ctx.sessionProjections`
 
-`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都会在首次触达（事件或读取）时先接收已校验的 `seedLength` 和可选的同名 header seed，再折叠内存日志。detached cache、history 与 Subagent restore 路径只把与持久事件同一次读取返回的不可变 header 用于派生这些窄输入。注册是一个 effect，其 disposer 随调用方 fiber 走：同一 key 以不同 `stateVersion` 重复注册时抛错，同版本注册方则共享一个单元并计数；最后一个注册方卸载后，该 key 与其 cell 才会消失。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
+`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：对于在事件流过之后才注册的单元，或比注册表更早的会话，注册表会先校验规范化的 seed 边界，再通过唯一一次 `init(header)` 调用把不可变的 `SessionHeader` 传给单元，随后在首次触达（事件或读取）时折叠内存日志。detached cache、history 与 Subagent restore 路径把与持久事件同一次读取返回的不可变 header 传给同一个初始化器。注册是一个 effect，其 disposer 随调用方 fiber 走：同一 key 以不同 `stateVersion` 重复注册时抛错，同版本注册方则共享一个单元并计数；最后一个注册方卸载后，该 key 与其 cell 才会消失。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
