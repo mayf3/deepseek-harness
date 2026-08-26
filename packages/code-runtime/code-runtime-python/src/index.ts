@@ -429,6 +429,11 @@ const TRUNCATION_MARKER = '… [truncated]'
  * The ellipsis is 3 bytes, so this is 15, not the string's 13 code units.
  */
 const TRUNCATION_MARKER_BYTES = Buffer.byteLength(TRUNCATION_MARKER, 'utf8')
+// Fatal UTF-8 decoder for fd-3 frames: `toString('utf8')` replaces illegal
+// bytes with U+FFFD, which would silently corrupt a completion or binding
+// payload a forged frame smuggled in; a fatal decode throws instead and the
+// frame is dropped. Non-stream mode keeps it stateless across lines.
+const UTF8_FATAL = new TextDecoder('utf-8', { fatal: true })
 
 /**
  * Serialized JSON byte width of one character, given its code point and the
@@ -1422,7 +1427,19 @@ export class PythonCodeRuntime extends CodeRuntime {
             // reject any frame past FRAME_PARSE_CAP_BYTES before this join, so
             // every line in this loop is within the cap by construction — a
             // per-line check would be dead code.
-            const text = line.toString('utf8')
+            // `toString('utf8')` would silently REPLACE illegal bytes with
+            // U+FFFD, corrupting a completion or binding payload a forged
+            // frame smuggled in (the honest child's lossless encoder never
+            // emits non-UTF-8, so such a frame is hostile traffic). The fatal
+            // decode throws on them and the frame is dropped — not accepted
+            // with a mangled value — the same treatment as the unsafe-integer
+            // check below.
+            let text: string
+            try {
+              text = UTF8_FATAL.decode(line)
+            } catch {
+              continue
+            }
             // JSON.parse would silently ROUND an integer token outside the
             // safe range before validation could see it, so a forged frame
             // could smuggle a corrupted value into a dispatch or completion.

@@ -1916,6 +1916,24 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['committed', logTruncationMarker(64)])
   }, 15_000)
 
+  it('drops a forged fd-3 frame with illegal UTF-8 instead of accepting a mangled value', async () => {
+    // toString('utf8') would replace the illegal 0xFF with U+FFFD, so a forged
+    // done frame could land a corrupted completion value; the fatal decode
+    // throws and the frame is dropped. The program's real return still settles
+    // the run with the honest value.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        "os.write(3, b'{\"type\":\"done\",\"value\":\"bad' + bytes([0xFF]) + b'\"}\\n')",
+        'return "ok"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('ok')
+  }, 15_000)
+
   it('no-ops a closing frame once an open flood already truncated the ledger', async () => {
     // The closing-frame branch's post-truncation arm: an open flood exhausts
     // the ledger (logsTruncated set, marker pushed), then a closing frame
