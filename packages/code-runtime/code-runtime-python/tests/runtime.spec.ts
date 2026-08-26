@@ -1895,7 +1895,25 @@ describe('PythonCodeRuntime — programs and bindings', () => {
       bindings: [],
     })
     expect(result.error).toBeUndefined()
-    expect(result.logs).toEqual([logTruncationMarker(64)])
+    expect(result.logs).toEqual(['a'.repeat(60), logTruncationMarker(64)])
+  }, 15_000)
+
+  it('commits a flushed open prefix before the truncation marker', async () => {
+    // A flushed unterminated line is billed and committed; when a later
+    // over-budget write truncates, the committed prefix must appear BEFORE the
+    // marker — the ledger charged for it, so it cannot vanish. (The bug: all
+    // truncation arms pushed only the marker, dropping the held prefix.)
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        "print('committed', end='', flush=True)",
+        "print('x' * 100)",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['committed', logTruncationMarker(64)])
   }, 15_000)
 
   it('no-ops a closing frame once an open flood already truncated the ledger', async () => {
@@ -1914,7 +1932,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
       bindings: [],
     })
     expect(result.error).toBeUndefined()
-    expect(result.logs).toEqual([logTruncationMarker(64)])
+    expect(result.logs).toEqual(['a'.repeat(60), logTruncationMarker(64)])
   }, 15_000)
 
   it('bills a merged open entry once, not per fragment', async () => {
@@ -2055,7 +2073,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
       bindings: [],
     })
     expect(result.error).toBeUndefined()
-    expect(result.logs).toEqual([logTruncationMarker(64)])
+    expect(result.logs).toEqual(['x'.repeat(40), logTruncationMarker(64)])
   }, 15_000)
 
   it('keeps a float completion exact when the program mutates the decimal context', async () => {

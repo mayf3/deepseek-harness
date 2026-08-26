@@ -1032,6 +1032,21 @@ export class PythonCodeRuntime extends CodeRuntime {
       // ARRAY, so k tiny open frames cost O(k) — re-joining and re-walking the
       // whole held text per frame would be O(k * budget).
       let openParts: string[] = []
+      // Every truncation arm funnels here: the committed open prefix was
+      // ALREADY billed, so it is pushed BEFORE the marker — a flushed line is
+      // never lost (only the marker stays last), and no ledger re-charge
+      // happens. openParts is emptied here, so no later arm or finish() sees
+      // it.
+      const truncateLogs = (): void => {
+        logsTruncated = true
+        if (openParts.length > 0) {
+          logs.push(openParts.join(''))
+          openParts = []
+        }
+        logs.push(logTruncationMarker(this.config.maxLogBytes))
+        clearStray(strayOut)
+        clearStray(strayErr)
+      }
 
       // One host-side ledger covers normal frames, forged frames, and stray stdout bytes.
       // The ledger starts one byte below maxLogBytes: each entry is charged its
@@ -1084,12 +1099,9 @@ export class PythonCodeRuntime extends CodeRuntime {
         // frame parse cap truncates here instead of allocating a
         // hundreds-of-megabytes escaped copy under a small maxLogBytes.
         if (text.length + 3 > logBudget) {
-          logsTruncated = true
-          logs.push(logTruncationMarker(this.config.maxLogBytes))
           // Release the buffered stray pipes: their bytes can never be
           // admitted now (see clearStray).
-          clearStray(strayOut)
-          clearStray(strayErr)
+          truncateLogs()
           return
         }
         // Past the lower bound, measure the exact serialized cost without
@@ -1098,10 +1110,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         // a sixfold-inflated `JSON.stringify` result. `+ 1` for the separator.
         const measured = jsonStringCostUpTo(text, logBudget - 1)
         if (measured === undefined) {
-          logsTruncated = true
-          logs.push(logTruncationMarker(this.config.maxLogBytes))
-          clearStray(strayOut)
-          clearStray(strayErr)
+          truncateLogs()
           return
         }
         logBudget -= measured + 1
@@ -1488,9 +1497,6 @@ export class PythonCodeRuntime extends CodeRuntime {
               // Both ledgers are keyed to the same `maxLogBytes`, so one marker
               // describes the run.
               if (!logsTruncated) {
-                logsTruncated = true
-                clearStray(strayOut)
-                clearStray(strayErr)
                 // The host's OWN marker, never the frame's text. `truncated` is
                 // attacker-reachable, so trusting the text let a program write
                 // `{"type":"log","truncated":true,"text":<1 MiB>}` and land all
@@ -1499,7 +1505,7 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // ceiling. Both ledgers key off the same `maxLogBytes`, so the
                 // marker the host generates says the same thing the child's
                 // would have.
-                logs.push(logTruncationMarker(this.config.maxLogBytes))
+                truncateLogs()
               }
               return
             }
@@ -1523,11 +1529,7 @@ export class PythonCodeRuntime extends CodeRuntime {
                 const cap = openParts.length === 0 ? logBudget - 1 : logBudget + 2
                 const cost = jsonStringCostUpTo(message.text, cap)
                 if (cost === undefined) {
-                  logsTruncated = true
-                  logs.push(logTruncationMarker(this.config.maxLogBytes))
-                  clearStray(strayOut)
-                  clearStray(strayErr)
-                  openParts = []
+                  truncateLogs()
                 } else {
                   const bill = openParts.length === 0 ? cost + 1 : Math.max(cost - 2, 0)
                   logBudget -= bill
@@ -1547,10 +1549,7 @@ export class PythonCodeRuntime extends CodeRuntime {
               if (!logsTruncated) {
                 const cost = jsonStringCostUpTo(message.text, logBudget + 2)
                 if (cost === undefined) {
-                  logsTruncated = true
-                  logs.push(logTruncationMarker(this.config.maxLogBytes))
-                  clearStray(strayOut)
-                  clearStray(strayErr)
+                  truncateLogs()
                 } else {
                   logBudget -= Math.max(cost - 2, 0)
                   logs.push(openParts.join('') + message.text)
@@ -1941,7 +1940,10 @@ export class PythonCodeRuntime extends CodeRuntime {
         // the idempotent settle() again as a no-op.
         // An unterminated flushed line never got a closing frame; it was
         // billed incrementally, so push it directly (admit would re-bill).
-        if (openParts.length > 0 && !logsTruncated) {
+        // logsTruncated implies openParts is already empty (truncateLogs
+        // committed and cleared it), so this is reachable only when the run
+        // ends with the hold still open and untruncated.
+        if (openParts.length > 0) {
           logs.push(openParts.join(''))
         }
         openParts = []
