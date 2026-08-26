@@ -31,18 +31,18 @@ describe('WorkflowRunPanel.module.css font-size axis', () => {
     ]))
   })
 
-  it('member status and the empty placeholder keep their 1px step under the body', () => {
+  it('member status and the empty placeholder read the secondary tier', () => {
     for (const selector of ['.memberStatus', '.empty']) {
       expect(declarations(selector)).toEqual(expect.arrayContaining([
-        'font-size: calc(13px + var(--dsh-content-font-delta, 0px))',
-        'line-height: calc(20px + var(--dsh-content-font-delta, 0px))',
+        'font-size: var(--dsh-content-font-size-secondary, 13px)',
+        'line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px))',
       ]))
     }
   })
 
   it('the phase status column widens with the text so larger sizes do not truncate', () => {
     expect(declarations('.phaseStatus')).toEqual(expect.arrayContaining([
-      'width: calc(132px + var(--dsh-content-font-delta, 0px) * 10)',
+      'width: calc(132px + var(--dsh-content-font-delta-secondary, 0px) * 10)',
     ]))
   })
 })
