@@ -1,7 +1,7 @@
 /** Tests for the documentation website projection adapter. */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, globSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { fromMarkdown } from 'mdast-util-from-markdown'
@@ -80,7 +80,6 @@ describe('documentation site build', () => {
     roots.push(root)
     const outDir = join(root, '.dist')
     const stale = join(outDir, 'stale.md')
-    const fresh = join(outDir, 'index.html')
     mkdirSync(outDir)
     writeFileSync(stale, 'stale\n')
 
@@ -89,10 +88,6 @@ describe('documentation site build', () => {
     expect(existsSync(stale)).toBe(true)
     await options.onAfterConfigResolve?.({ outDir } as never)
     expect(existsSync(outDir)).toBe(false)
-    mkdirSync(outDir)
-    writeFileSync(fresh, 'fresh\n')
-
-    expect(readFileSync(fresh, 'utf8')).toBe('fresh\n')
   })
 
   it('refuses to remove the site root or an outside directory', () => {
@@ -110,6 +105,41 @@ describe('documentation site build', () => {
     }).toThrow('must be a child of site root')
     expect(readFileSync(join(root, 'keep'), 'utf8')).toBe('root\n')
     expect(readFileSync(join(outside, 'keep'), 'utf8')).toBe('outside\n')
+  })
+
+  it('unlinks a link-shaped output without removing its target', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-doc-build-link-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-doc-build-link-target-'))
+    roots.push(root, outside)
+    const outDir = join(root, '.dist')
+    const keep = join(outside, 'keep')
+    writeFileSync(keep, 'outside\n')
+    symlinkSync(outside, outDir, 'junction')
+
+    cleanDocSiteOutput(root, outDir)
+
+    expect(existsSync(outDir)).toBe(false)
+    expect(readFileSync(keep, 'utf8')).toBe('outside\n')
+  })
+
+  it('refuses output whose nearest existing parent resolves outside the site root', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-doc-build-parent-link-root-'))
+    const outside = mkdtempSync(join(tmpdir(), 'dsh-doc-build-parent-link-target-'))
+    roots.push(root, outside)
+    const linkedParent = join(root, 'linked')
+    const outDir = join(linkedParent, 'missing', '.dist')
+    const keep = join(outside, 'keep')
+    writeFileSync(keep, 'outside\n')
+    symlinkSync(outside, linkedParent, 'junction')
+
+    try {
+      expect(() => {
+        cleanDocSiteOutput(root, outDir)
+      }).toThrow('must resolve inside site root')
+      expect(readFileSync(keep, 'utf8')).toBe('outside\n')
+    } finally {
+      unlinkSync(linkedParent)
+    }
   })
 })
 
