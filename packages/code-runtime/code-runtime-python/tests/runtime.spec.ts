@@ -1906,6 +1906,26 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['committed'])
   }, 15_000)
 
+  it('skips the hold for a zero-content open continuation', async () => {
+    // An empty open continuation bills 0 and is NOT pushed into the held
+    // fragment array (an empty fragment contributes nothing to the merged
+    // entry, and holding it would let a forged empty-open flood grow host
+    // memory without touching the ledger).
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"x\",\"open\":true}\\n')",
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"\",\"open\":true}\\n')",
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"y\"}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['xy'])
+  }, 15_000)
+
   it('bounds a forged open-frame flood against the log budget', async () => {
     // The open hold must be bounded by the ledger: without the exact-cost check
     // a forged open flood would grow the held fragment without touching
