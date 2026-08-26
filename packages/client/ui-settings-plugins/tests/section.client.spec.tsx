@@ -88,8 +88,7 @@ function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardS
     enabled: false,
     candidates: [],
     catalogStatus: 'idle',
-    catalogFailures: [],
-    saved: false,
+    catalogPartial: false,
     ...state,
   })
   const actions = {
@@ -335,10 +334,9 @@ describe('SubagentModelSelectionCard', () => {
     expect(actions.toggleEnabled).toHaveBeenCalledOnce()
   })
 
-  it('renders adapter candidates and reports a successful save', () => {
+  it('groups available adapter candidates by provider', () => {
     const actions = renderSubagentModelSelection({
       enabled: true,
-      saved: true,
       candidates: [{
         key: 'alpha\0fast',
         provider: 'alpha',
@@ -353,7 +351,7 @@ describe('SubagentModelSelectionCard', () => {
     fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
 
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
-    expect(screen.getByRole('status').textContent).toBe(en.subagentModelSelectionSaved)
+    expect(screen.getByText('Alpha API', { exact: true })).toBeTruthy()
     fireEvent.click(screen.getByRole('checkbox', { name: /Fast/ }))
     expect(actions.toggleModel).toHaveBeenCalledWith('alpha\0fast')
   })
@@ -374,7 +372,7 @@ describe('SubagentModelSelectionCard', () => {
     renderSubagentModelSelection({
       enabled: true,
       catalogStatus: 'ready',
-      catalogFailures: [{ id: 'beta', name: 'Beta', message: 'offline' }],
+      catalogPartial: true,
       candidates: [{
         key: 'legacy\0old',
         provider: 'legacy',
@@ -388,6 +386,7 @@ describe('SubagentModelSelectionCard', () => {
     fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
     expect(screen.getByText(en.subagentModelSelectionPartial)).toBeTruthy()
     expect(screen.getByText(en.subagentModelSelectionUnavailable)).toBeTruthy()
+    expect(screen.getByText(en.subagentModelSelectionUnavailableGroup)).toBeTruthy()
 
     cleanup()
     renderSubagentModelSelection({ enabled: true, catalogStatus: 'ready' })

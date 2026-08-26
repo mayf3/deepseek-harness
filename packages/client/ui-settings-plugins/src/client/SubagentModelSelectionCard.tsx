@@ -2,7 +2,10 @@
 
 import clsx from 'clsx'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { SubagentModelSelectionCardFace } from './subagent-model-selection-card-controller.ts'
+import type {
+  SubagentModelCandidate,
+  SubagentModelSelectionCardFace,
+} from './subagent-model-selection-card-controller.ts'
 import type {} from './slot-contract.ts'
 import { PluginCard } from './PluginCard.tsx'
 import css from './SubagentModelSelectionCard.module.css'
@@ -21,6 +24,43 @@ export type SubagentModelSelectionCardProps =
 export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProps) {
   const { t } = props
   const state = props.useSubagentModelSelectionCard(snapshot => snapshot)
+  const availableGroups = new Map<string, {
+    providerName: string
+    candidates: SubagentModelCandidate[]
+  }>()
+  const unavailable: SubagentModelCandidate[] = []
+  for (const candidate of state.candidates) {
+    if (!candidate.available) {
+      unavailable.push(candidate)
+      continue
+    }
+    const group = availableGroups.get(candidate.provider)
+    if (group === undefined) {
+      availableGroups.set(candidate.provider, {
+        providerName: candidate.providerName,
+        candidates: [candidate],
+      })
+    } else {
+      group.candidates.push(candidate)
+    }
+  }
+  const renderCandidate = (candidate: SubagentModelCandidate) => (
+    <label key={candidate.key} className={css.model}>
+      <input
+        type="checkbox"
+        checked={candidate.selected}
+        disabled={!state.writable || state.saving}
+        onChange={() => { props.toggleModel(candidate.key) }}
+      />
+      <span>
+        <span className={css.modelName}>{candidate.modelName}</span>
+        <span className={css.route}>{`${candidate.providerName} · ${candidate.provider}/${candidate.model}`}</span>
+      </span>
+      {!candidate.available
+        ? <span className={css.unavailable}>{t('subagentModelSelectionUnavailable')}</span>
+        : null}
+    </label>
+  )
   return (
     <PluginCard
       t={t}
@@ -61,30 +101,27 @@ export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProp
                 </div>
               )
               : null}
-            {state.catalogFailures.length > 0
+            {state.catalogPartial
               ? <p className={css.notice}>{t('subagentModelSelectionPartial')}</p>
               : null}
             {state.candidates.length > 0
               ? (
                 <fieldset className={css.models}>
                   <legend>{t('subagentModelSelectionAllowed')}</legend>
-                  {state.candidates.map(candidate => (
-                    <label key={candidate.key} className={css.model}>
-                      <input
-                        type="checkbox"
-                        checked={candidate.selected}
-                        disabled={!state.writable || state.saving}
-                        onChange={() => { props.toggleModel(candidate.key) }}
-                      />
-                      <span>
-                        <span className={css.modelName}>{candidate.modelName}</span>
-                        <span className={css.route}>{`${candidate.providerName} · ${candidate.provider}/${candidate.model}`}</span>
-                      </span>
-                      {!candidate.available
-                        ? <span className={css.unavailable}>{t('subagentModelSelectionUnavailable')}</span>
-                        : null}
-                    </label>
+                  {[...availableGroups].map(([provider, group]) => (
+                    <div key={provider} className={css.modelGroup}>
+                      <div className={css.providerName}>{group.providerName}</div>
+                      {group.candidates.map(renderCandidate)}
+                    </div>
                   ))}
+                  {unavailable.length > 0
+                    ? (
+                      <div className={css.modelGroup}>
+                        <div className={css.providerName}>{t('subagentModelSelectionUnavailableGroup')}</div>
+                        {unavailable.map(renderCandidate)}
+                      </div>
+                    )
+                    : null}
                 </fieldset>
               )
               : state.catalogStatus === 'ready'
@@ -94,7 +131,6 @@ export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProp
           </div>
         )
         : <p className={css.hint}>{t('subagentModelSelectionOff')}</p>}
-      {state.saved ? <p className={css.status} role="status">{t('subagentModelSelectionSaved')}</p> : null}
     </PluginCard>
   )
 }

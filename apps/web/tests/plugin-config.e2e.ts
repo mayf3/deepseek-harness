@@ -77,8 +77,8 @@ describe('web e2e: plugin configuration section', () => {
 
     // Every card the shipped web composition exposes: subagent selection, the
     // shell executor, the agent loop, and the DeepSeek search provider.
-    await dialog.getByText('Subagent 自选模型', { exact: true }).waitFor({ timeout: 10_000 })
-    expect(await dialog.getByRole('button', { name: '展开设置: Subagent 自选模型' }).count()).toBe(1)
+    await dialog.getByText('Subagent', { exact: true }).waitFor({ timeout: 10_000 })
+    expect(await dialog.getByRole('button', { name: '展开设置: Subagent' }).count()).toBe(1)
     await dialog.getByText('终端', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByText('Agent 循环', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('网页搜索', { exact: true }).count()).toBe(1)
@@ -93,11 +93,11 @@ describe('web e2e: plugin configuration section', () => {
   it('persists selected adapter routes as the subagent model allowlist', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-subagent-model-selection'))
     const dialog = await openPlugins()
-    await dialog.getByText('Subagent 自选模型', { exact: true }).click()
-    const toggle = dialog.getByRole('switch', { name: '允许 subagent 自选模型' })
+    await dialog.getByText('Subagent', { exact: true }).click()
+    const toggle = dialog.getByRole('switch', { name: '允许 Agent 为 Subagent 选择模型' })
 
     await toggle.click()
-    const models = dialog.getByRole('group', { name: '允许的模型' })
+    const models = dialog.getByRole('group', { name: 'Agent 可选择的模型' })
     await models.waitFor({ timeout: 10_000 })
     const firstModel = models.getByRole('checkbox').first()
     await firstModel.check()
@@ -110,7 +110,8 @@ describe('web e2e: plugin configuration section', () => {
     expect(await settingsDocument()).toContain('allowedModels:')
     expect(await settingsDocument()).toContain('provider:')
     expect(await settingsDocument()).toContain('model:')
-    expect(await dialog.getByRole('status').textContent()).toBe('已保存，新会话将使用此设置。')
+    await expect.poll(() => dialog.getByRole('button', { name: '保存', exact: true }).isDisabled()).toBe(true)
+    expect(await dialog.getByText('未保存', { exact: true }).count()).toBe(0)
 
     await toggle.click()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()

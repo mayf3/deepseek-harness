@@ -2,7 +2,6 @@
 
 import type {
   IApiClient,
-  ModelCatalogFailure,
   ModelProviderGroup,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -48,10 +47,8 @@ export interface SubagentModelSelectionCardState extends CardShell {
   candidates: readonly SubagentModelCandidate[]
   /** Adapter-directory request state. */
   catalogStatus: 'idle' | 'loading' | 'ready' | 'error'
-  /** Provider-local failures that did not block other candidates. */
-  catalogFailures: readonly ModelCatalogFailure[]
-  /** Whether the latest save landed. */
-  saved: boolean
+  /** Whether any provider-local catalog request failed. */
+  catalogPartial: boolean
 }
 
 /** Registration-side face for the subagent model-selection card. */
@@ -130,13 +127,12 @@ function sameRoutes(left: readonly AllowedSubagentModel[], right: readonly Allow
 /** Bridges one settings scope and the live adapter directory onto a staged card. */
 export class SubagentModelSelectionCardController {
   private catalogGroups: readonly ModelProviderGroup[] = []
-  private catalogFailures: readonly ModelCatalogFailure[] = []
+  private catalogPartial = false
   private catalogStatus: SubagentModelSelectionCardState['catalogStatus'] = 'idle'
   private draftEnabled: boolean | undefined
   private draftSelected: Set<string> | undefined
   private draftRevision: number | undefined
   private saving = false
-  private saved = false
   private failed = false
   private disposed = false
   private saveGeneration = 0
@@ -156,7 +152,6 @@ export class SubagentModelSelectionCardController {
     this.unsubscribe = scope.subscribe(() => {
       if (!this.saving && this.draftSelected !== undefined
         && this.scope.getSnapshot().revision !== this.draftRevision) {
-        this.saved = false
         this.failed = true
       }
       if (this.enabled() && this.catalogStatus === 'idle') void this.loadCatalog()
@@ -219,7 +214,6 @@ export class SubagentModelSelectionCardController {
     if (this.disposed || snapshot.status !== 'ready' || !snapshot.writable || this.saving) return
     this.beginDraft()
     this.draftEnabled = !this.draftEnabled
-    this.saved = false
     this.failed = false
     if (this.draftEnabled && this.catalogStatus === 'idle') void this.loadCatalog()
     this.publish()
@@ -231,7 +225,6 @@ export class SubagentModelSelectionCardController {
     const selected = this.beginDraft()
     if (selected.has(key)) selected.delete(key)
     else selected.add(key)
-    this.saved = false
     this.failed = false
     this.publish()
   }
@@ -241,7 +234,6 @@ export class SubagentModelSelectionCardController {
     this.draftEnabled = undefined
     this.draftSelected = undefined
     this.draftRevision = undefined
-    this.saved = false
     this.failed = false
     this.publish()
   }
@@ -264,14 +256,12 @@ export class SubagentModelSelectionCardController {
       || (this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired))
       || (desiredEnabled && desired.length === 0)) return
     if (this.draftSelected !== undefined && snapshot.revision !== this.draftRevision) {
-      this.saved = false
       this.failed = true
       this.publish()
       return
     }
     const generation = this.saveGeneration
     this.saving = true
-    this.saved = false
     this.failed = false
     this.publish()
     await this.scope.mutate([
@@ -281,7 +271,6 @@ export class SubagentModelSelectionCardController {
     if (generation !== this.saveGeneration) return
     const landed = this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired)
     this.saving = false
-    this.saved = landed
     this.failed = !landed
     if (landed) {
       this.draftEnabled = undefined
@@ -296,7 +285,7 @@ export class SubagentModelSelectionCardController {
     if (this.disposed) return
     this.catalogGeneration += 1
     this.catalogStatus = 'idle'
-    this.catalogFailures = []
+    this.catalogPartial = false
     if (this.enabled()) void this.loadCatalog()
     else this.publish()
   }
@@ -313,14 +302,14 @@ export class SubagentModelSelectionCardController {
     const generation = this.catalogGeneration
     this.catalogStatus = 'loading'
     this.catalogGroups = []
-    this.catalogFailures = []
+    this.catalogPartial = false
     this.publish()
     try {
       const response = await this.api.llm.models({})
       if (generation !== this.catalogGeneration) return
       if (!response.result.ok) throw new Error(response.result.error.message)
       this.catalogGroups = response.result.value.groups
-      this.catalogFailures = response.result.value.failures
+      this.catalogPartial = response.result.value.failures.length > 0
       this.catalogStatus = 'ready'
     } catch {
       if (generation !== this.catalogGeneration) return
@@ -344,8 +333,7 @@ export class SubagentModelSelectionCardController {
       enabled,
       candidates: this.candidates(),
       catalogStatus: this.catalogStatus,
-      catalogFailures: this.catalogFailures,
-      saved: this.saved,
+      catalogPartial: this.catalogPartial,
     }
   }
 

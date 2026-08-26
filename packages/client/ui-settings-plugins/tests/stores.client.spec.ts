@@ -480,7 +480,6 @@ describe('SubagentModelSelectionCardController', () => {
       enabled: true,
       dirty: false,
       saving: false,
-      saved: true,
       failed: false,
     })
   })
@@ -521,7 +520,6 @@ describe('SubagentModelSelectionCardController', () => {
       enabled: true,
       dirty: true,
       saving: false,
-      saved: false,
     })
   })
 
@@ -539,6 +537,7 @@ describe('SubagentModelSelectionCardController', () => {
     const face = controller.inject()
     const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
     await vi.waitFor(() => { expect(state().catalogStatus).toBe('ready') })
+    expect(state().catalogPartial).toBe(true)
 
     face.toggleModel('missing')
     expect(state().dirty).toBe(false)
@@ -576,7 +575,7 @@ describe('SubagentModelSelectionCardController', () => {
       ], 5)
     })
     expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
-      enabled: false, dirty: false, saved: true,
+      enabled: false, dirty: false,
     })
   })
 

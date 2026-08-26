@@ -25,8 +25,8 @@
   - tabpanel "插件配置":
     - list:
       - listitem:
-        - 'button "展开设置: Subagent 自选模型"':
-          - text: Subagent 自选模型 选择新会话允许为 subagent 自选的模型。运行中的会话不会改变。
+        - 'button "展开设置: Subagent"':
+          - text: Subagent 控制 Agent 为 Subagent 选择模型的权限。
           - img
       - listitem:
         - 'button "展开设置: 终端"':
