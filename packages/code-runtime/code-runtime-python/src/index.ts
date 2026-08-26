@@ -393,11 +393,11 @@ export function readProcessStart(pid: number): string | undefined {
  * @param bin - the configured interpreter (absolute path or bare command).
  * @returns an absolute path when resolvable, else `bin` unchanged.
  */
-export function resolvePythonBin(bin: string): string {
+export function resolvePythonBin(bin: string): string | undefined {
   if (isAbsolute(bin) || bin.includes('/')) return bin
   const path = process.env.PATH
   /* v8 ignore next -- PATH is set in every environment the runtime boots in; the guard is defensive. */
-  if (path === undefined) return bin
+  if (path === undefined) return undefined
   for (const dir of path.split(delimiter)) {
     // An empty PATH segment (a `::`, implicitly CWD on POSIX) and a RELATIVE
     // segment (`bin` or `.`) are skipped: a basename must never resolve against
@@ -417,7 +417,7 @@ export function resolvePythonBin(bin: string): string {
       // Not executable here; try the next PATH entry.
     }
   }
-  return bin
+  return undefined
 }
 
 /** The marker appended when a diagnostic message is byte-capped host-side. */
@@ -757,6 +757,14 @@ export class PythonCodeRuntime extends CodeRuntime {
     if (this.config.pythonBin === '' || this.config.pythonBin.includes('\0')) {
       throw new Error(`dsh-code-runtime-python: config.pythonBin must be a non-empty path without NUL bytes, got ${JSON.stringify(this.config.pythonBin)}`)
     }
+    // A basename that is not on PATH must fail at load, not silently fall to
+    // execvp's platform default PATH (spawn runs with an EMPTY environment, so
+    // execvp would resolve /usr/bin:/bin and could start a system interpreter
+    // the caller never asked for — the resolvePythonBin JSDoc promises an
+    // ENOENT for an unresolvable basename). Absolute paths pass through.
+    if (resolvePythonBin(this.config.pythonBin) === undefined) {
+      throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(this.config.pythonBin)} does not resolve on PATH`)
+    }
     // `maxWallMs` and `graceMs` are armed with setTimeout, which clamps any
     // delay past MAX_TIMER_DELAY_MS to 1 ms without a word — turning a
     // generous ceiling into an instant timeout and a generous grace period into
@@ -995,7 +1003,12 @@ export class PythonCodeRuntime extends CodeRuntime {
       // right after the done frame, before any finalization-time flush could
       // run. The `_LogStream` replacement of `sys.stdout`/`sys.stderr` is
       // unaffected (it is a Python object, not the C-level stdio buffer).
-      child = spawn(resolvePythonBin(this.config.pythonBin), ['-u', '-I', bootstrapPath], {
+      // Load validated that a basename resolves; absolute paths pass through.
+      // The non-null assertion is the load-time contract (see the pythonBin
+      // load checks); PATH changing between load and run would fail the spawn
+      // with ENOENT, which the boot-write failure path settles as worker-exit.
+      const resolvedPythonBin = resolvePythonBin(this.config.pythonBin) as string
+      child = spawn(resolvedPythonBin, ['-u', '-I', bootstrapPath], {
         env: {},
         detached: true, // Own process group — kill(-pid, sig) reaches subprocesses the model program spawns.
         stdio: ['pipe', 'pipe', 'pipe', 'pipe'],

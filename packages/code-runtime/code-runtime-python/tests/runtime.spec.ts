@@ -2149,6 +2149,11 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     const { runtime } = await setup({ maxValueBytes: 1024 * 1024, maxWallMs: 15_000 })
     const result = await runtime.run({
       program: [
+        'import sys',
+        // ExceptionGroup is a 3.11+ builtin; on 3.10 the NameError is the
+        // failure mode being probed, so skip to keep the assertion meaningful.
+        'if sys.version_info < (3, 11):',
+        '    raise ValueError("skip-old <model>")',
         'group = ValueError("leaf")',
         'for i in range(150):',
         '    group = ExceptionGroup(f"g{i}", [group])',
@@ -2333,13 +2338,15 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.value).toBe(7)
   })
 
-  it('spawns via an absolute python path resolved from a basename against PATH', async () => {
-    // resolvePythonBin turns the default basename into an absolute path before
-    // the empty-env spawn; a basename with no PATH match falls through to the
-    // normal ENOENT worker-exit rather than throwing.
-    const { runtime } = await setup({ pythonBin: 'definitely-no-such-python-xyz' })
-    const result = await runtime.run({ program: 'return 1', bindings: [] })
-    expect(result.error?.kind).toBe('worker-exit')
+  it('rejects at load a basename pythonBin with no PATH match', async () => {
+    // resolvePythonBin turns a basename into an absolute path before the
+    // empty-env spawn; a basename with no PATH match must fail at load (like an
+    // empty or NUL pythonBin) rather than silently falling to execvp's
+    // platform default PATH and starting a system interpreter the caller never
+    // asked for.
+    const ctx = new Context()
+    await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: 'definitely-no-such-python-xyz' }))
+      .rejects.toThrow(/does not resolve on PATH/)
   })
 
   it('rejects a memberNameProperty naming a constrained BaseException attribute', async () => {
