@@ -106,7 +106,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/agent/src/types.ts:38`](../packages/core/agent/src/types.ts)
+来源：[`packages/core/agent/src/types.ts:57`](../packages/core/agent/src/types.ts)
 
 ### `agent-preset/*`
 
@@ -144,12 +144,12 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'approval/asked': {
   id: ApprovalRequestId
   toolName: string
-  callId?: CallId
+  callId?: ToolCallId
   reason?: string
 }
 ```
 
-类型：[CallId](subsystems/core.zh.md)
+类型：[ToolCallId](subsystems/core.zh.md)
 
 来源：[`packages/interaction/user-approval/src/types.ts:44`](../packages/interaction/user-approval/src/types.ts)
 
@@ -515,13 +515,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * Records the selected preset as durable, log-only user intent. The knob
  * events follow in the same turn and control execution; this event stays
- * out of the model transcript and lets {@link effectivePermissionPreset}
+ * out of the model transcript and lets the permission projection unit
  * preserve a selection when bundles match.
  */
 'permission/preset': { preset: string }
 ```
 
-来源：[`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
+来源：[`packages/interaction/permission-presets/src/index.ts:46`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -533,12 +533,12 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * Whether plan mode is in force from this point on: log-only, non-surface,
  * whole-value replace. The last `plan/mode` wins; a log with none folds to
- * inactive through {@link foldPlanMode}.
+ * inactive through the projection unit's fold.
  */
 'plan/mode': { active: boolean }
 ```
 
-来源：[`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
+来源：[`packages/plan/plan-mode/src/index.ts:48`](../packages/plan/plan-mode/src/index.ts)
 
 ### `request/*`
 
@@ -586,7 +586,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * The session's sandbox mode was switched — log-only (like `approval/*`;
  * NOT a surface event, carries no `surfaceOp`): durable and replayable,
  * never in the model transcript. The LAST such event is the session's
- * override ({@link effectiveSandboxMode}). `source: 'delegation'` marks
+ * override (folded by the sandboxMode projection unit). `source: 'delegation'` marks
  * an override seeded into a child; an absent source is a runtime switch.
  */
 'sandbox/mode': {
@@ -664,7 +664,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[SessionTitleEventData](subsystems/session-title.zh.md)
 
-来源：[`packages/session/session-title/src/index.ts:100`](../packages/session/session-title/src/index.ts)
+来源：[`packages/session/session-title/src/index.ts:74`](../packages/session/session-title/src/index.ts)
 
 <a id="sessiontitle-llm-request--log-only"></a>
 
@@ -754,7 +754,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'subagent/model-selection-enabled': Record<string, never>
 ```
 
-来源：[`packages/subagent/tool-subagent/src/model-selection-state.ts:13`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
+来源：[`packages/subagent/tool-subagent/src/model-selection-state.ts:14`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
 ### `team/*`
 
@@ -842,10 +842,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * JSON string exactly as the model produced it (unparsed). `callId` pairs the
  * call with its `tool/result`.
  */
-'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
+'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
 ```
 
-类型：[CallId](subsystems/core.zh.md)
+类型：[ToolCallId](subsystems/core.zh.md)
 
 来源：[`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
 

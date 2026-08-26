@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   SESSION_FORMAT_VERSION,
   SessionId,
@@ -86,7 +86,7 @@ describe('tool-session-query with the real SQLite provider', () => {
     const execute = (name: string, args: unknown) => ctx.tools.execute({
       name,
       arguments: args,
-      callId: CallId(`integration-${++call}`),
+      callId: ToolCallId(`integration-${++call}`),
       signal: new AbortController().signal,
       agent: fakeAgent(caller),
     })
@@ -180,7 +180,7 @@ describe('tool-session-query with the real SQLite provider', () => {
     const execute = (args: unknown) => ctx.tools.execute({
       name: 'session_event_search',
       arguments: args,
-      callId: CallId(`fractional-integration-${++call}`),
+      callId: ToolCallId(`fractional-integration-${++call}`),
       signal: new AbortController().signal,
       agent: fakeAgent(caller),
     })

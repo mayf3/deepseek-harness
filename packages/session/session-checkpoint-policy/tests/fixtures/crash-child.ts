@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import { createUserMessage, CallId, type GenerateOptions, LlmAdapter, type StreamChunk  } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId, type GenerateOptions, LlmAdapter, type StreamChunk  } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as checkpointPolicy from '../../src/index.ts'
@@ -30,7 +30,7 @@ class CrashAdapter extends LlmAdapter {
     yield {
       type: 'block-end',
       index: 0,
-      block: { type: 'tool-call', id: CallId('crash-call'), name: 'crash_tool', arguments: '{}' },
+      block: { type: 'tool-call', id: ToolCallId('crash-call'), name: 'crash_tool', arguments: '{}' },
     }
     yield { type: 'finish', reason: { kind: 'tool-calls' } }
   }

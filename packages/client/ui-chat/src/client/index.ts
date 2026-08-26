@@ -25,7 +25,7 @@ export type {
   FinalAssistantChatData, ManualCompactionChatData, RetryChatData, ToolChatData,
   TurnTailChatData,
 } from './contract/chat-nodes.ts'
-export type { CallId, ChatStoreState, SelectionTarget } from './contract/store.ts'
+export type { ToolCallId, ChatStoreState, SelectionTarget } from './contract/store.ts'
 export type {
   AssistantActionOwnerProps, ChatFileMentions, ChatNodeOwnerProps, ChatNodeTurnDataInjected,
   ChatNodeViewProps, ChatScrollPosition, ChatStore, ChatViewInjected, ChatViewSlotProps,

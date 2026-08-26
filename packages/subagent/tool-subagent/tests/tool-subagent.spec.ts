@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import LlmRuntime, { CallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { ToolCallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
@@ -116,13 +116,13 @@ describe('dsh-tool-subagent', () => {
     const ctx = await setup({ provider: 'mock' })
     expect(ctx.tools.executionMode({
       signal: testToolSignal,
-      callId: CallId('subagent-foreground'),
+      callId: ToolCallId('subagent-foreground'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK' },
     })).toEqual({ kind: 'parallel' })
     expect(ctx.tools.executionMode({
       signal: testToolSignal,
-      callId: CallId('subagent-background'),
+      callId: ToolCallId('subagent-background'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK', run_in_background: true },
     })).toEqual({ kind: 'parallel' })
@@ -197,8 +197,8 @@ describe('dsh-tool-subagent', () => {
     const names = ctx.tools.schemas().map(s => s.name).filter(n => n.startsWith('subagent')).sort()
     expect(names).toEqual(['subagent', 'subagent_acp'])
 
-    const viaSpawn = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: fakeAgent() })
-    const viaAcp = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: fakeAgent() })
+    const viaSpawn = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c-spawn'), name: 'subagent', arguments: { description: 'd', prompt: 'p' }, agent: fakeAgent() })
+    const viaAcp = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c-acp'), name: 'subagent_acp', arguments: { description: 'd', prompt: 'p' }, agent: fakeAgent() })
     expect(text(viaSpawn)).toBe('from spawn')
     expect(text(viaAcp)).toBe('from acp')
   })
@@ -880,7 +880,7 @@ describe('dsh-tool-subagent background mode', () => {
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('resumable-one-shot'),
+      callId: ToolCallId('resumable-one-shot'),
       name: 'subagent_resumable',
       arguments: { description: 'work', prompt: 'go', run_in_background: true },
       agent: parent,
@@ -902,7 +902,7 @@ describe('dsh-tool-subagent background mode', () => {
 
     const collected = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('collect-1'),
+      callId: ToolCallId('collect-1'),
       name: 'job_output',
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
@@ -912,7 +912,7 @@ describe('dsh-tool-subagent background mode', () => {
     // Final-output reads are idempotent (not consumed).
     const again = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('collect-2'),
+      callId: ToolCallId('collect-2'),
       name: 'job_output',
       arguments: { job_id: 'subagent-1' },
       agent: parent,
@@ -930,7 +930,7 @@ describe('dsh-tool-subagent background mode', () => {
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('diagnostic-background-start'),
+      callId: ToolCallId('diagnostic-background-start'),
       name: 'subagent',
       arguments: { description: 'd', prompt: 'p', run_in_background: true },
       agent: parent,
@@ -939,7 +939,7 @@ describe('dsh-tool-subagent background mode', () => {
 
     const output = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('diagnostic-background-output'),
+      callId: ToolCallId('diagnostic-background-output'),
       name: 'job_output',
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
@@ -1066,7 +1066,7 @@ describe('dsh-tool-subagent background mode', () => {
 
     const started = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('broken-start'),
+      callId: ToolCallId('broken-start'),
       name: 'subagent_broken',
       arguments: { description: 'broken', prompt: 'p', run_in_background: true },
       agent: parent,
@@ -1074,7 +1074,7 @@ describe('dsh-tool-subagent background mode', () => {
     expect(text(started)).toBe('started background subagent job subagent-1')
     const output = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('broken-output'),
+      callId: ToolCallId('broken-output'),
       name: 'job_output',
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
@@ -1097,21 +1097,21 @@ describe('dsh-tool-subagent background mode', () => {
 
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('pending-start'),
+      callId: ToolCallId('pending-start'),
       name: 'subagent_pending',
       arguments: { description: 'pending', prompt: 'p', run_in_background: true },
       agent: parent,
     })
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('pending-kill'),
+      callId: ToolCallId('pending-kill'),
       name: 'job_kill',
       arguments: { job_id: 'subagent-1', reason: 'no longer needed' },
       agent: parent,
     })
     const output = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('pending-output'),
+      callId: ToolCallId('pending-output'),
       name: 'job_output',
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
@@ -1139,21 +1139,21 @@ describe('dsh-tool-subagent background mode', () => {
 
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('broken-rollback-start'),
+      callId: ToolCallId('broken-rollback-start'),
       name: 'subagent_broken_rollback',
       arguments: { description: 'broken rollback', prompt: 'p', run_in_background: true },
       agent: parent,
     })
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('broken-rollback-kill'),
+      callId: ToolCallId('broken-rollback-kill'),
       name: 'job_kill',
       arguments: { job_id: 'subagent-1' },
       agent: parent,
     })
     const output = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('broken-rollback-output'),
+      callId: ToolCallId('broken-rollback-output'),
       name: 'job_output',
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
@@ -1190,19 +1190,19 @@ describe('dsh-tool-subagent background mode', () => {
     // Direct apply preserves omitted agentOptions instead of applying schema defaults.
     tool.apply(ctx, { provider: 'hanging', toolName: 'subagent_hang' })
 
-    const startOne = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('h1'), name: 'subagent_hang', arguments: { description: 'one', prompt: 'p', run_in_background: true }, agent: parent })
-    const startTwo = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('h2'), name: 'subagent_hang', arguments: { description: 'two', prompt: 'p', run_in_background: true }, agent: parent })
+    const startOne = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('h1'), name: 'subagent_hang', arguments: { description: 'one', prompt: 'p', run_in_background: true }, agent: parent })
+    const startTwo = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('h2'), name: 'subagent_hang', arguments: { description: 'two', prompt: 'p', run_in_background: true }, agent: parent })
     expect(text(startOne)).toBe('started background subagent job subagent-1')
     expect(text(startTwo)).toBe('started background subagent job subagent-2')
 
-    const withReason = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('k1'), name: 'job_kill', arguments: { job_id: 'subagent-1', reason: 'superseded' }, agent: parent })
-    const withoutReason = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('k2'), name: 'job_kill', arguments: { job_id: 'subagent-2' }, agent: parent })
+    const withReason = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('k1'), name: 'job_kill', arguments: { job_id: 'subagent-1', reason: 'superseded' }, agent: parent })
+    const withoutReason = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('k2'), name: 'job_kill', arguments: { job_id: 'subagent-2' }, agent: parent })
     expect(text(withReason)).toBe('requested cancellation of job subagent-1')
     expect(text(withoutReason)).toBe('requested cancellation of job subagent-2')
     expect(cancels).toEqual(['superseded', 'background subagent task killed'])
 
     // The aborted children settle as killed tasks.
-    const killed = await ctx.tools.execute({ signal: testToolSignal, callId: CallId('w1'), name: 'job_output', arguments: { job_id: 'subagent-1', wait: true }, agent: parent })
+    const killed = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('w1'), name: 'job_output', arguments: { job_id: 'subagent-1', wait: true }, agent: parent })
     expect(text(killed)).toBe('(no new output)\n[status: killed]')
   })
 
@@ -1238,7 +1238,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
     const { ctx } = await continuableSetup()
     expect(ctx.tools.executionMode({
       signal: testToolSignal,
-      callId: CallId('subagent-continuable'),
+      callId: ToolCallId('subagent-continuable'),
       name: 'subagent',
       arguments: { description: 'do work', prompt: 'Reply OK' },
     })).toEqual({ kind: 'parallel' })
@@ -1337,7 +1337,7 @@ describe('dsh-tool-subagent continuable background mode', () => {
 
     const execute = (callId: string, description: string, signal: AbortSignal) => ctx.tools.execute({
       signal,
-      callId: CallId(callId),
+      callId: ToolCallId(callId),
       name: 'subagent_gated',
       arguments: { description, prompt: 'work', run_in_background: true },
       agent: parent,
@@ -1407,7 +1407,7 @@ describe('background preflight failure (no orphaned child, by construction)', ()
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('probe-1'),
+      callId: ToolCallId('probe-1'),
       name: 'subagent_probe',
       arguments: { description: 'd', prompt: 'p', run_in_background: true },
       agent: parent,

@@ -142,12 +142,12 @@ Source: [`packages/preset/agent-presets/src/session.ts:28`](../packages/preset/a
 'approval/asked': {
   id: ApprovalRequestId
   toolName: string
-  callId?: CallId
+  callId?: ToolCallId
   reason?: string
 }
 ```
 
-Types: [CallId](subsystems/core.md)
+Types: [ToolCallId](subsystems/core.md)
 
 Source: [`packages/interaction/user-approval/src/types.ts:44`](../packages/interaction/user-approval/src/types.ts)
 
@@ -840,10 +840,10 @@ Source: [`packages/todo/tool-todo/src/types.ts:31`](../packages/todo/tool-todo/s
  * JSON string exactly as the model produced it (unparsed). `callId` pairs the
  * call with its `tool/result`.
  */
-'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
+'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
 ```
 
-Types: [CallId](subsystems/core.md)
+Types: [ToolCallId](subsystems/core.md)
 
 Source: [`packages/core/session/src/types.ts:268`](../packages/core/session/src/types.ts)
 

@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { createUserMessage, CallId  } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId  } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -86,7 +86,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     })
     const result = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('ralph-integration'),
+      callId: ToolCallId('ralph-integration'),
       name: 'ralph',
       arguments: { objective: 'Complete both migration slices.', maxRounds: 2 },
       agent: parent,
@@ -138,7 +138,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('ralph-child-failure'),
+      callId: ToolCallId('ralph-child-failure'),
       name: 'ralph',
       arguments: { objective: 'Complete both migration slices.', maxRounds: 2 },
       agent: parent,
@@ -227,7 +227,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
 
     const result = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('ralph-script-enforcement'),
+      callId: ToolCallId('ralph-script-enforcement'),
       name: 'ralph',
       arguments: { objective: 'Complete the scoped work.', maxRounds: config.maxRounds },
       agent: parent,
@@ -254,7 +254,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     ctx.on('workflow/agent-end', (_run, child) => { outcomes.push(child.outcome) })
     const controller = new AbortController()
     const pending = ctx.tools.execute({
-      callId: CallId('ralph-real-cancel'),
+      callId: ToolCallId('ralph-real-cancel'),
       name: 'ralph',
       arguments: { objective: 'Keep working until cancelled.', maxRounds: 2 },
       agent: parent,
