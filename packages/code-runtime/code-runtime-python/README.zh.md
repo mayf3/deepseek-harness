@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 你得到什么
 
-包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）以及 `logTruncationMarker`（共享截断标记文本）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前对照 `PATH` 解析；在 `PATH` 上无命中的裸名会在加载期被拒绝，而不是静默回退到平台默认 `PATH`）。
+包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）、`logTruncationMarker`（共享截断标记文本），以及 `resolvePythonBin`（对照当前 `PATH` 的解释器查找）和 `readProcessStart`（供测试用的进程启动统计）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前对照 `PATH` 解析；在 `PATH` 上无命中的裸名会在加载期被拒绝，而不是静默回退到平台默认 `PATH`）。
 
 ### wire
 
@@ -118,7 +118,6 @@ kind: "package-reference"
 - **运行之间不保留状态**——每次请求都在全新子进程中执行；持久 REPL 风格内核在某个后端带来自己的日志方案之前保持延期。
 - **原始长度超过 64 MiB 的 fd-3 帧会让本次运行以 worker-exit 结算**——`maxLogBytes`/`maxValueBytes` 在加载期被限制到同一解析器上限，因此诚实子进程的帧总能放得下；模型构造的超过 64 MiB 的 binding 实参（一个在 seam 层没有预算的值）会触发同一上限——这是该 OOM 防护的已接受残余。
 - **组合日志与值的峰值不被加载门建模**——持续写入的模型 daemon 线程与完成值计量、分帧相加的峰值没有任何门会放行或拒绝；运行以 `worker-exit` 告终，隔离成立，只有失败分类降级。
-- **空 `open` 续接帧计费为零并占用一个宿主槽位**——伪造的 `{"type":"log","text":"","open":true}` 洪泛在不触碰 `logBudget` 的情况下增长持有的片段数组（每个空片段的计费为 `max(cost - 2, 0) = 0`）。接受的残余：每帧的宿主成本远低于其约 30 字节的 fd-3 线上成本，洪泛受管道吞吐限界，且模型代码的信任级别与 bash 相同。
 - **1 秒双限 `ulimit -t 1` CPU 超限被报告为 `worker-exit` 而非 timeout**——当宿主在一个与软限相等的硬 CPU 限下启动且该限为 1 时，`_clamped` 无法下调软限，内核在同一 tick SIGKILL 忙循环，SIGXCPU 永远不会送达；隔离成立，只有分类降级。
 - **中间 binding 值没有字节上限**——实现仍受无损 JSON 序列化成本与进程内存约束，提供方或执行器可能应用自己的获取上限。
 
