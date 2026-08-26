@@ -14,17 +14,17 @@
 
 **退休由观察驱动并延迟一帧；显示去重是渲染期的声明式规则。**Session 在带其 rpcId 的 durable `user/message` 或 queue occurrence 到达时（append、窗口安装或 control frame）标记回显为已观察，并在一个动画帧之后移除，晚于先注册的会话组装帧。ChatView 独立地隐藏 rpcId 出现在已渲染 user/steering 节点或 queue 行中的回显，因此无论 store 更新顺序如何，每一次渲染中回显与 durable 恰有一个可见。带标识的 prompt 失败、`abandon()` 或销毁使回显立即按 failed 退休；先到的 settlement 生效。
 
-**Composer 乐观提交。**Enter 在一个 machine 事务里清空草稿、occurrence 表和撤销历史，phase 保持 `plain`；发送作为 detached attempt 运行（允许并发发送，唯一的冻结 in-flight 槽只留给命令）。失败的 settlement 只把已发送的草稿、occurrence 和图片 id 还原进仍为空的 plain composer，飞行期间输入的内容始终优先。草稿图片保持注册直到回显退休：failed 时可供 rail 还原；observed 时逐张把 object URL 通过 `HistoricalImageCache.seed` 挂到 admitted 引用名下（URL 所有权与随 scope 的回收移交缓存），durable 节点因此无需字节往返即可渲染，没有加载闪烁。
+**Composer 乐观提交。**Enter 在一个 machine 事务里清空草稿、occurrence 表和撤销历史，phase 保持 `plain`；发送作为 detached attempt 运行，允许并发发送，唯一的冻结 in-flight 槽只留给命令。多个 detached 发送失败时，只要 composer 为空或仍是上一次自动还原的内容，就按提交顺序合并还原；用户编辑后停止这一轮自动还原。草稿图片由 detached attempt 持有到回显退休，因此图片离开 rail 后销毁 Session scope 仍能释放它们。回显以 observed 退休时，`HistoricalImageCache.seed` 把每个预览 URL 挂到 admitted 引用名下。缓存同步公开预览 URL，同时读取 durable 附件；读取完成后用规范化 URL 替换预览，并按各自生命周期撤销两个 URL。直接 subagent continuation 不注册回显，因为它的 transport 会分配另一个 RPC id，而且不支持图片输入。
 
 客户端图片编码从同步分块 `btoa` 循环换成 `FileReader.readAsDataURL`（原生编码）。browser→host 传输仍是一个 base64 JSON 整包；#2885 剩余的传输改造不在本决定范围内。
 
 ## 后果
 
-点击提交在当帧画出消息并让 composer 落底，文本与图片 prompt 一致，admission 时机不变。默认发送不再冻结 composer，飞行期间可以继续输入和发送；machine 的 `submitting` 阶段只在命令提交时出现。RPC 响应丢失但 admission 已成功的 prompt 通过观察收敛，不会重复发送。回显预览会固定原始图片 blob，直到 durable 字节本来也要被拉取为止；seed 进缓存的条目在 session scope 生命周期内保留原图而非归一化版本，用一些内存换零闪烁替换。
+普通文本与图片 prompt 点击提交后会在当帧显示消息并让 composer 落底，admission 时机不变。默认发送不再冻结 composer，发送期间可以继续输入和提交；machine 的 `submitting` 阶段只用于命令提交。RPC 响应丢失但 admission 已成功的 prompt 通过观察确认结果，不会重复发送。图片在 durable 字节返回前显示本地预览，随后显示 host 保存的版本，中间没有加载占位。
 
 ## 验证
 
-Session client spec 钉住同步插入、requestId 透传、event/queue/窗口观察、延帧移除、先到 settlement 生效、abandon 与销毁。Machine 与 shell spec 钉住乐观提交、detached settlement、未触碰 composer 的还原和图片纯发送的 rail 还原。ChatView spec 钉住流尾渲染、回显仍在 snapshot 时按节点与队列的去重，以及经 message-image slot 的预览移交。Host control spec 钉住 queue rpcId 投影；缓存 spec 钉住 seed 的接管、排他与 scope 回收。connection fixture 回显 `requestId`，组装 web 回放具备同样的退休语义。
+Session client spec 覆盖同步插入、requestId 透传、event、queue 与窗口观察、queue 和 durable 同时观察时只退休一次、延帧移除、abandon 与销毁。Machine 与 shell spec 覆盖乐观提交、并发 detached settlement、多个失败按提交顺序还原、图片纯发送的取消，以及图片随 scope 销毁而释放。ChatView spec 覆盖流尾渲染，以及回显仍在 snapshot 时按节点和队列去重。Host control spec 覆盖 queue rpcId 投影；缓存与附件 spec 覆盖 seed 首帧显示、规范化替换和 URL 撤销。connection fixture 回显 `requestId`，`fresh-round-trip` 的 recorded-session snapshot 在 durable admission 前记录本地回显。
 
 ## 考虑过的替代方案
 

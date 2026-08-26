@@ -78,7 +78,9 @@ function browserDraftAttachment(file: File): ComposerAttachment {
  * Fill the draft's intrinsic dimensions once the browser parses the image
  * header (a metadata read off the preview URL, not a full decode). Failures
  * and non-browser runtimes leave them absent — consumers size those images
- * from CSS constraints instead.
+ * from CSS constraints instead. The descriptors stay registry-owned; submit
+ * reads the dimensions into an immutable echo snapshot, so this late write
+ * does not require a store notification.
  */
 function probeDimensions(attachment: ComposerAttachment): void {
   if (typeof Image !== 'function') return
@@ -90,11 +92,23 @@ function probeDimensions(attachment: ComposerAttachment): void {
   probe.src = attachment.previewUrl
 }
 
-/** Resolve after the browser paints the frame in which a just-published submission echo renders. */
+/** Give the echo one paint opportunity without letting a throttled frame clock block admission. */
 function nextPaint(): Promise<void> {
   return new Promise((resolve) => {
     if (typeof requestAnimationFrame === 'function') {
-      requestAnimationFrame(() => { setTimeout(resolve, 0) })
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        setTimeout(resolve, 0)
+        return
+      }
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(fallback)
+        setTimeout(resolve, 0)
+      }
+      const fallback = setTimeout(finish, 100)
+      requestAnimationFrame(finish)
     } else {
       setTimeout(resolve, 0)
     }
@@ -193,6 +207,16 @@ export class ConversationController extends Service implements IConversation {
     if (attachments.length !== imageIds.length) {
       throw new Error('conversation.sendSession: one or more draft images are no longer available')
     }
+    if (session.getSnapshot().subagent !== null) {
+      const uploaded = await this.serializeImages(attachments.map(attachment => attachment.file))
+      const content = [...uploaded, ...(text === '' ? [] : [{ type: 'text' as const, text }])]
+      const result = await session.prompt(content, mode, signal)
+      return result.ok ? { kind: 'success' } : { kind: 'error' }
+    }
+    let finishRetirement: ((retirement: PendingSubmissionRetirement) => void) | undefined
+    const retirement = attachments.length === 0
+      ? undefined
+      : new Promise<PendingSubmissionRetirement>((resolve) => { finishRetirement = resolve })
     const submission = session.beginSubmission({
       text,
       images: attachments.map(attachment => ({
@@ -201,7 +225,10 @@ export class ConversationController extends Service implements IConversation {
         ...(attachment.width === undefined ? {} : { width: attachment.width }),
         ...(attachment.height === undefined ? {} : { height: attachment.height }),
       })),
-      onRetire: (retirement) => { this.settleSubmittedImages(session.sessionId, attachments, retirement) },
+      onRetire: (settlement) => {
+        this.settleSubmittedImages(session.sessionId, attachments, settlement)
+        finishRetirement?.(settlement)
+      },
     })
     let content: Parameters<SessionFace['prompt']>[0]
     try {
@@ -213,7 +240,9 @@ export class ConversationController extends Service implements IConversation {
       throw error
     }
     const result = await session.prompt(content, mode, signal, submission.requestId)
-    return result.ok ? { kind: 'success' } : { kind: 'error' }
+    if (!result.ok) return { kind: 'error' }
+    if (retirement !== undefined && (await retirement).reason !== 'observed') return { kind: 'error' }
+    return { kind: 'success' }
   }
 
   /**
@@ -333,9 +362,9 @@ export class ConversationController extends Service implements IConversation {
    * Settle one submission's draft images when its echo retires. Observed:
    * each image leaves the registry, handing its preview URL to the durable
    * image cache (seeded under the admitted reference so the transcript node
-   * renders without a byte round-trip) or revoking it when the cache already
-   * holds that reference. Failed: nothing changes — the ids stay registered
-   * for the composer's rail restore.
+   * renders immediately while the cache reads canonical bytes) or revoking it
+   * when the cache already holds that reference. Failed: nothing changes;
+   * the ids stay registered for the composer's rail restore.
    */
   private settleSubmittedImages(
     sessionId: SessionId,

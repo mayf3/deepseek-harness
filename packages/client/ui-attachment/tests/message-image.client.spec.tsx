@@ -47,6 +47,16 @@ const useChat: MessageImagesProps['useChat'] = selector => selector(EMPTY_CHAT_S
 const useTrajectory: MessageImagesProps['useTrajectory'] = selector => selector(emptyTrajectory)
 
 describe('MessageImage', () => {
+  it('renders a cached URL on the first frame while refreshing it', () => {
+    const load = Object.assign(vi.fn(() => new Promise<string>(() => {})), {
+      peek: vi.fn(() => 'blob:seeded'),
+    })
+    const view = render(<MessageImage image={{ attachment }} load={load} variant="single" labels={labels} />)
+    expect(view.queryByText('图片加载中…')).toBeNull()
+    expect((view.getByAltText('history.png') as HTMLImageElement).src).toContain('blob:seeded')
+    expect(load).toHaveBeenCalledWith(attachment)
+  })
+
   it('loads a session-authorized URL, bounds the thumbnail, and clicks into the original', async () => {
     const load = vi.fn().mockResolvedValue('blob:history')
     const view = render(<MessageImage image={{ attachment }} load={load} variant="single" labels={labels} />)
@@ -184,7 +194,7 @@ describe('MessageImage preview arm', () => {
 
   it('opens the lightbox from a preview thumbnail', () => {
     const view = render(
-      <MessageImage image={{ preview: { url: 'blob:box' } }} load={vi.fn()} variant="tile" labels={labels} />,
+      <MessageImage image={{ preview: { url: 'blob:box' } }} load={vi.fn(async () => '')} variant="tile" labels={labels} />,
     )
     fireEvent.click(view.getByRole('button', { name: '图片，点击查看原图' }))
     expect(view.getByRole('dialog', { name: '原图预览' })).toBeTruthy()

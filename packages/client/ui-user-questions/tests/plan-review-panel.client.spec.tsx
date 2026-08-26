@@ -67,6 +67,7 @@ const chatState: ChatState = {
   order: emptyKeys,
   nodes: { get: () => undefined, values: () => [] },
   locations: { getTurn: () => emptyKeys, getStep: () => emptyKeys },
+  navigation: { items: () => [] },
   timeline: { turnOrder: [], turns: new Map() },
   legacy: {
     nodes: [],

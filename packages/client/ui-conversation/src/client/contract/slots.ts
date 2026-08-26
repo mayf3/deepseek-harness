@@ -66,12 +66,17 @@ export type MessageImageSource =
     }
   }
 
+/** Durable image loader with an optional synchronous cache read. */
+export type MessageImageLoader = ((attachment: ImageAttachmentRef) => Promise<string>) & {
+  peek?: (attachment: ImageAttachmentRef) => string | undefined
+}
+
 /** Message image group handed to the optional attachment presentation plugin. */
 export interface MessageImagesOwnerProps {
   /** Durable references or submission-echo previews in source order. */
   images: readonly MessageImageSource[]
   /** Session-authorized image URL loader for the durable arm. */
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  loadImage: MessageImageLoader
   /** Horizontal placement inside the owning record. */
   align: 'start' | 'end'
 }
@@ -237,14 +242,14 @@ export interface ComposerBarOwnerProps {
   variant: 'hero' | 'composer'
   /** A feature-owned reason that makes message input inert while leaving model selection live. */
   blocked?: { readonly reason: string }
-  /** Lock all message actions while preserving the resident textarea. */
+  /** Lock all message actions while preserving the resident composer surface. */
   disabled?: boolean
   /** Whether the shared Workspace picker is expanded. */
   workspacePickerOpen?: boolean
-  /** Open the Workspace picker from the inert textarea. */
+  /** Open the Workspace picker from the inert composer surface. */
   onRequestWorkspace?: () => void
   placeholder?: string
-  /** Optional content rendered above the textarea. */
+  /** Optional content rendered above the composer surface. */
   accessory?: ReactNode
   /** Floating overlay content rendered inside the composer card. */
   overlay?: ReactNode

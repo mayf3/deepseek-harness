@@ -20,9 +20,15 @@ it('paints the submission echo on the send keystroke and swaps it for the durabl
   if (start === null) throw new Error('fixture Workspace new-session action missing')
   fireEvent.click(start)
 
-  const textarea = await screen.findByPlaceholderText('Describe what you want to build', {}, { timeout: 10_000 })
+  const composer = await waitFor(() => {
+    const surface = document.querySelector<HTMLElement>(
+      '[data-composer-input][data-placeholder="Describe what you want to build"]',
+    )
+    if (surface === null) throw new Error('composer surface missing')
+    return surface
+  }, { timeout: 10_000 })
   const image = new File([new Uint8Array([137, 80, 78, 71])], 'echoed.png', { type: 'image/png' })
-  fireEvent.paste(textarea, {
+  fireEvent.paste(composer, {
     clipboardData: {
       items: [{ kind: 'file', type: 'image/png', getAsFile: () => image }],
       getData: () => '',
@@ -33,8 +39,11 @@ it('paints the submission echo on the send keystroke and swaps it for the durabl
       throw new Error('attachment rail missing')
     }
   }, { timeout: 5_000 })
-  fireEvent.change(textarea, { target: { value: '回显这条消息' } })
-  fireEvent.keyDown(textarea, { key: 'Enter' })
+  fireEvent.paste(composer, {
+    clipboardData: { items: [], getData: () => '回显这条消息' },
+  })
+  await waitFor(() => { expect(composer.textContent).toBe('回显这条消息') })
+  fireEvent.keyDown(composer, { key: 'Enter' })
 
   // Synchronously after the keystroke: the echo bubble is in the flow with
   // the draft text and the object-URL preview, while the prompt has not even
@@ -44,8 +53,8 @@ it('paints the submission echo on the send keystroke and swaps it for the durabl
   if (echo === null) throw new Error('submission echo missing on the send keystroke')
   expect(echo.textContent).toContain('回显这条消息')
   expect(echo.querySelector('img')?.getAttribute('src')?.split(':')[0]).toBe('blob')
-  expect((textarea as HTMLTextAreaElement).value).toBe('')
-  expect((textarea as HTMLTextAreaElement).readOnly).toBe(false)
+  expect(composer.textContent).toBe('')
+  expect(composer.getAttribute('contenteditable')).toBe('true')
   expect(document.querySelector('[role="group"][aria-label="Pending images"]')).toBeNull()
 
   // The fixture's durable user/message (source.rpcId echoes the prompt

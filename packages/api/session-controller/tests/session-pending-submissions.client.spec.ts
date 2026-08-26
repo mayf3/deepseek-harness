@@ -191,6 +191,27 @@ describe('observed retirement', () => {
     expect(retirements).toEqual([{ reason: 'observed', attachments: [] }])
   })
 
+  it('retires once when the queue and durable event report the same request id', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => Promise.resolve(ok(historyValue([])))
+    await session.open()
+    const retirements: PendingSubmissionRetirement[] = []
+    const handle = session.beginSubmission({
+      text: '同一请求',
+      images: [],
+      onRetire: retirement => retirements.push(retirement),
+    })
+    session.handleControlFrame({
+      type: 'queue', sessionId: SID, items: [queuedItem(handle.requestId, [])],
+    })
+    await api.pushFollow(SID, {
+      type: 'event', event: promptEvent(0, handle.requestId) as never,
+    })
+    await settleFrames()
+    expect(retirements).toEqual([{ reason: 'observed', attachments: [] }])
+    expect(session.getSnapshot().pendingSubmissions).toEqual([])
+  })
+
   it('uses requestAnimationFrame for the retirement delay when the runtime provides one', async () => {
     const frames: FrameRequestCallback[] = []
     vi.stubGlobal('requestAnimationFrame', (fn: FrameRequestCallback) => {

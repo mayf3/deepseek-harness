@@ -4,8 +4,10 @@ import { ImageLightbox } from './ImageLightbox.tsx'
 import type { ImageLightboxLabels } from './ImageLightbox.tsx'
 import css from './MessageImage.module.css'
 
-/** Loads a session-authorized durable image URL. */
-export type ImageLoader = (attachment: ImageAttachmentRef) => Promise<string>
+/** Loads a session-authorized durable image URL and may expose a cached URL synchronously. */
+export type ImageLoader = ((attachment: ImageAttachmentRef) => Promise<string>) & {
+  peek?: (attachment: ImageAttachmentRef) => string | undefined
+}
 
 /** One gallery entry: a durable admitted reference, or a submission echo's local preview. */
 export type MessageImageSpec =
@@ -82,7 +84,8 @@ export function MessageImage({ image, load, variant, labels }: {
 }) {
   const preview = 'preview' in image ? image.preview : undefined
   const attachment = 'attachment' in image ? image.attachment : undefined
-  const [loaded, setLoaded] = useState<string | null>(null)
+  const [loaded, setLoaded] = useState<string | null>(() =>
+    attachment === undefined ? null : (load.peek?.(attachment) ?? null))
   const [error, setError] = useState(false)
   const [open, setOpen] = useState(false)
   // Retry re-arms the one load effect below, so every attempt — first load or
@@ -107,7 +110,7 @@ export function MessageImage({ image, load, variant, labels }: {
     if (attachment === undefined) return
     let live = true
     setError(false)
-    setLoaded(null)
+    setLoaded(load.peek?.(attachment) ?? null)
     void load(attachment).then((url) => { if (live) setLoaded(url) }).catch(() => { if (live) setError(true) })
     return () => { live = false }
   }, [attachment, load, attempt])

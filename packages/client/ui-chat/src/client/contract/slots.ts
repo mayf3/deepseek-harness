@@ -1,8 +1,7 @@
 /** Chat-owned Slot declarations and composed component props. */
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type {
-  ConversationTurnDataMap, MessageImagesOwnerProps, RenderMessageImages, TurnLocation,
+  ConversationTurnDataMap, MessageImageLoader, MessageImagesOwnerProps, RenderMessageImages, TurnLocation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore, SlotHookFactory,
@@ -102,7 +101,7 @@ export interface ChatViewInjected {
   openDetails: (target: SelectionTarget) => void
   openFile: (path: string) => Promise<void>
   loadOlder: () => void
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  loadImage: MessageImageLoader
   chatScroll: {
     save: (position: ChatScrollPosition | null) => void
     read: () => ChatScrollPosition | null

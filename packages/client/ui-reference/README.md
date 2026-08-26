@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-reference` is the unified Web `@file` and `@session` reference source: it registers the `reference` entry in the composer's inline-suggestion machinery so a user typing `@` sees file and session candidates in one list. Files order before sessions, sections are labelled with locale-registered terms, and either candidate domain can fail independently without blocking the other. A pick inserts an atomic inline reference — a file closes completion with an editable path text, a session inserts a canonical mention — so the sent text is the same natural text the shared grammar defines. Selecting a session routes through the session-reference service, which validates the mention and captures model context at the pre-step boundary; this package itself registers no prompt or tool.
+`dsh-client-ui-reference` is the unified Web `@file` and `@session` reference source: it registers the `reference` entry in the composer's inline-suggestion machinery so a user typing `@` sees file and session candidates in one list. Files order before sessions, sections are labelled with locale-registered terms, and either candidate domain can fail independently without blocking the other. A pick inserts an atomic inline reference — file, folder, and session alike — whose hidden serialized and clipboard form is the natural text the shared `@path` grammar defines; a directory row additionally carries a drill verb (Tab or the row's chevron) that keeps plain editable path text and the menu active at its trailing slash so the user can descend another level. Selecting a session routes through the session-reference service, which validates the mention and captures model context at the pre-step boundary; this package itself registers no prompt or tool.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ The source is active whenever the composition mounts this package and a Host `ct
 
 ### What a pick inserts
 
-A file closes completion as an atomic inline reference displayed with a file glyph and business-color filename. A directory remains plain editable path text with a folder glyph and keeps the menu active at its trailing slash, so you can descend another level. Paths containing whitespace use `@"path with spaces"`, and a quote the user opened explicitly remains quoted.
+A file closes completion as an atomic inline reference displayed with a file glyph and business-color filename. A directory row carries two verbs: the settling pick (row click or Enter) resolves the folder itself as the same kind of atomic reference — folder glyph, trailing-slash label, canonical `@dir/` mention as its serialized form — while the drill action (Tab or the row's chevron) keeps plain editable path text with a folder glyph and the menu active at its trailing slash, so you can descend another level. Paths containing whitespace use `@"path with spaces"`, and a quote the user opened explicitly remains quoted.
 
 A session pick inserts an atomic inline reference whose hidden `ref` and clipboard representation is the canonical `@[label](dsh-session:…)` mention returned by the Host; its visible form is a chat-bubble glyph plus the session title. Sending carries the mention through `session.prompt`, and the session-reference service validates it and captures model context at `agent/pre-step`.
 

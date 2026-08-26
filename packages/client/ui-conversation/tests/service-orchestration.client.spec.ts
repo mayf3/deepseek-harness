@@ -102,6 +102,28 @@ describe('ConversationController', () => {
     await b.runtime.dispose()
   })
 
+  it('releases an image removed from the rail by an unsettled optimistic send', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:detached')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
+    try {
+      const [attachment] = b.root.createDraftImages([
+        new File([Uint8Array.of(1)], 'detached.png', { type: 'image/png' }),
+      ])
+      if (attachment === undefined) throw new Error('draft attachment missing')
+      b.shell.addImages([attachment.id])
+      b.shell.submit()
+      expect(b.shell.snapshot.imageIds).toEqual([])
+      await b.runtime.sessions.remove('s1')
+      expect(b.root.draftImages([attachment.id])).toEqual([])
+      expect(revoked).toHaveBeenCalledWith('blob:detached')
+    } finally {
+      created.mockRestore()
+      revoked.mockRestore()
+    }
+    await b.runtime.dispose()
+  })
+
   it('validates every MIME type before allocating previews', async () => {
     const b = await bench()
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:preview')
@@ -167,7 +189,7 @@ describe('sendSession submission echo', () => {
         images: [expect.objectContaining({ previewUrl: 'blob:echo-1', name: 'a.png' })],
       }))
       expect(b.prompt).not.toHaveBeenCalled()
-      await expect(sending).resolves.toEqual({ kind: 'success' })
+      await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })
       expect(b.prompt).toHaveBeenCalledWith(
         [
           { type: 'image', mediaType: 'image/png', data: expect.any(String) as string, name: 'a.png' },
@@ -180,6 +202,7 @@ describe('sendSession submission echo', () => {
       // The draft stays registered until the echo's observed retirement.
       expect(b.root.draftImages([attachment!.id])).toHaveLength(1)
       b.retire.onRetire?.({ reason: 'observed', attachments: [] })
+      await expect(sending).resolves.toEqual({ kind: 'success' })
       expect(b.root.draftImages([attachment!.id])).toEqual([])
       expect(b.revoked).toHaveBeenCalledWith('blob:echo-1')
     } finally {
@@ -198,9 +221,11 @@ describe('sendSession submission echo', () => {
         new File([Uint8Array.of(9)], 'seeded.png', { type: 'image/png' }),
       ])
       const session = b.runtime.sessions.binding('s1')!.session
-      await b.root.sendSession(session, '', [attachment!.id], 'queue')
+      const sending = b.root.sendSession(session, '', [attachment!.id], 'queue')
+      await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })
       const ref = { attachmentId: 'att-1' }
       b.retire.onRetire?.({ reason: 'observed', attachments: [ref] })
+      await expect(sending).resolves.toEqual({ kind: 'success' })
       expect(seedImageUrl).toHaveBeenCalledWith('s1', ref, 'blob:echo-1')
       expect(b.root.draftImages([attachment!.id])).toEqual([])
       expect(b.revoked).not.toHaveBeenCalled()
@@ -271,6 +296,40 @@ describe('sendSession submission echo', () => {
       vi.unstubAllGlobals()
       b.restore()
     }
+    await b.runtime.dispose()
+  })
+
+  it('bounds the paint yield when the frame clock is throttled', async () => {
+    const b = await echoBench()
+    vi.stubGlobal('requestAnimationFrame', vi.fn(() => 1))
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      const sending = b.root.sendSession(session, '后台标签', [], 'queue')
+      expect(b.prompt).not.toHaveBeenCalled()
+      await expect(sending).resolves.toEqual({ kind: 'success' })
+      expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: '后台标签' }], 'queue', undefined, 'req-echo')
+    } finally {
+      vi.unstubAllGlobals()
+      b.restore()
+    }
+    await b.runtime.dispose()
+  })
+
+  it('sends a subagent continuation without registering an unobservable echo', async () => {
+    const b = await bench()
+    const session = b.runtime.sessions.binding('s1')!.session
+    const snapshot = session.getSnapshot()
+    const beginSubmission = vi.spyOn(session, 'beginSubmission')
+    vi.spyOn(session, 'getSnapshot').mockReturnValue({
+      ...snapshot,
+      subagent: {
+        address: { parentSessionId: 'parent', childSessionId: 'child', mode: 'continuable' } as never,
+      },
+    })
+    const prompt = vi.spyOn(session, 'prompt').mockResolvedValue({ ok: true, value: { accepted: true } })
+    await expect(b.root.sendSession(session, '继续', [], 'queue')).resolves.toEqual({ kind: 'success' })
+    expect(beginSubmission).not.toHaveBeenCalled()
+    expect(prompt).toHaveBeenCalledWith([{ type: 'text', text: '继续' }], 'queue', undefined)
     await b.runtime.dispose()
   })
 })
