@@ -60,11 +60,7 @@ Dispatch records queue admission, not model completion or user receipt. Framing 
 
 ### Read-only Web catalog
 
-[`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.md) reads the full active projection only after the current Session opens successfully. It derives localized frequency, browser-local target time, relative time, overdue state, and stable presentation order without persisting those values. The header entry is absent for missing or empty projections and closes when the last live record disappears.
-
-`ui-workspace` independently derives a non-interactive sidebar alarm for ordinary and search rows whose best-effort list projection is non-empty. Cache absence or staleness may briefly omit or retain that marker, and it never promises that a Schedule runtime is live.
-
-The catalog deliberately has no detail, mutation, retry, toast, raw UTC, Schedule id, or special transcript card. It is current active state, not a dispatch receipt; the ordinary Assistant turn remains the only delivery presentation. The Web bundle owns one disabled client row and its resolution dependency, while the Schedule overlay only enables that row together with the Host services. The [read-only catalog decision](2026-08-25-read-only-web-schedule-catalog.md) owns the header and sidebar presentation details.
+The Schedule overlay enables the otherwise-disabled [`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.md) client together with the Host service. The complete active projection also feeds [`dsh-client-ui-workspace`](../../../../packages/client/ui-workspace/README.md); the [read-only catalog decision](2026-08-25-read-only-web-schedule-catalog.md) owns both presentation surfaces. This projection is current active state, not a dispatch or delivery receipt, so ordinary Assistant turns remain the delivery presentation.
 
 ## Alternatives considered
 

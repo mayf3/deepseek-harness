@@ -5,3 +5,4 @@ composition: web-schedule
 recording: authored
 header:
   class: web-schedule
+  pin: true

@@ -199,14 +199,7 @@ export class SessionProjectionCache extends Service {
    */
   coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot {
     const rows = this.recordFor(meta.id, identityOf(meta))?.rows ?? {}
-    let restored: { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint }
-    try {
-      restored = this.ctx.sessionProjections.restore(rows, events, 0, meta)
-    } catch {
-      // Cached rows are disposable derived data. Retry from the supplied exact
-      // log so malformed state cannot make a valid Session unreadable.
-      restored = this.ctx.sessionProjections.restore({}, events, 0, meta)
-    }
+    const restored = this.ctx.sessionProjections.restore(rows, events, 0, meta)
     // Refresh the row so the next cold read seeds from it; fail-soft and
     // fire-and-forget — a failed write-back only costs a longer tail replay.
     void this.put(meta.id, identityOf(meta), restored.checkpoint).catch((error: unknown) => {

@@ -31,12 +31,11 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 const agentPresetSchema = z.union([z.string(), z.null()])
 
-/** Current Session preset, seeded from its same-name header field and advanced by selection events. */
+/** Current Session preset, initialized from its header and advanced by selection events. */
 export const agentPresetProjectionDefinition = {
   key: 'agentPreset',
   stateSchema: agentPresetSchema,
-  init: () => null,
-  applyHeaderSeed: (_state, agentPreset) => agentPreset ?? null,
+  init: header => header.agentPreset ?? null,
   apply: (state, event) => event.type === 'agent-preset/selected'
     ? event.data.agentPreset
     : state,

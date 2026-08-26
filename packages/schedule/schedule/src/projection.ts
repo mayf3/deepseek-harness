@@ -5,7 +5,7 @@
 
 import { z } from 'zod'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
-import { applyScheduleChange, decodeScheduleChange } from './domain.ts'
+import { applyScheduleChanges, decodeScheduleChange } from './domain.ts'
 import type { FoldedSchedules } from './domain.ts'
 import type { ScheduleChange, ScheduleId, ScheduleRecord } from './types.ts'
 
@@ -67,12 +67,12 @@ const scheduleProjectionStateSchema = z.object({
 export const scheduleProjectionDefinition = {
   key: 'schedule',
   stateSchema: scheduleProjectionStateSchema,
-  init: seedLength => ({ seedLength, active: [], seenIds: [] }),
+  init: header => ({ seedLength: header.seedLength ?? 0, active: [], seenIds: [] }),
   apply: (state, event) => {
     if (event.seq < state.seedLength || event.type !== 'schedule/change') return state
     return {
       seedLength: state.seedLength,
-      ...applyScheduleChange(state, decodeScheduleChange(event.data)),
+      ...applyScheduleChanges(state, [decodeScheduleChange(event.data)]),
     }
   },
   wire: {

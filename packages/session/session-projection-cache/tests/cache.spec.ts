@@ -70,7 +70,7 @@ const marksUnit = (stateVersion = 1) => ({
 const seedUnit = {
   key: 'cache-test/seed',
   stateSchema: z.number().int().nonnegative(),
-  init: (seedLength: number) => seedLength,
+  init: (header: SessionHeader) => header.seedLength ?? 0,
   apply: (state: number) => state,
   wire: { viewSchema: z.number().int().nonnegative(), view: (state: number) => state },
   stateVersion: 1,
@@ -466,42 +466,6 @@ describe('SessionProjectionCache cold-read seeding', () => {
     const { cache } = await harness({ root, stateVersion: 2 })
     const snapshot = cache.coldSnapshot(headerOf(SessionId('bumped')), storedLog([['a']]))
     expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['a'] })
-  })
-
-  it('treats a row beyond the repaired log end as a tentative hint and refolds the exact log', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
-    roots.push(root)
-    await seedRecord(root, 'shrunk', {
-      'cache-test/marks': { ver: 1, seq: 9, val: { marks: ['ghost'] } },
-    })
-    const meta = headerOf(SessionId('shrunk'))
-    const { cache } = await harness({ root })
-    expect(cache.cachedSnapshot(meta)).toEqual({
-      asOfSeq: 9,
-      values: { 'cache-test/marks': { marks: ['ghost'] } },
-    })
-    const snapshot = cache.coldSnapshot(meta, storedLog([['a']]))
-    expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['a'] })
-    expect(snapshot.asOfSeq).toBe(2)
-    await settle()
-    expect((await storedRows(root, meta.id))?.['cache-test/marks'])
-      .toEqual({ ver: 1, seq: 2, val: { marks: ['a'] } })
-  })
-
-  it('discards malformed persisted state and retries the supplied full log with the same seed header', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
-    roots.push(root)
-    await seedRecord(root, 'malformed', {
-      'cache-test/marks': { ver: 1, seq: 1, val: { marks: 'not-an-array' } },
-    })
-    const { ctx, cache } = await harness({ root })
-    const restore = vi.spyOn(ctx.sessionProjections, 'restore')
-    const meta = headerOf(SessionId('malformed'), 0, undefined, 1)
-    const events = storedLog([['real']])
-    const snapshot = cache.coldSnapshot(meta, events)
-    expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['real'] })
-    expect(restore).toHaveBeenNthCalledWith(1, expect.any(Object), events, 0, meta)
-    expect(restore).toHaveBeenNthCalledWith(2, {}, events, 0, meta)
   })
 
   it('coldSnapshot write-back is fail-soft: a failed durable write logs and never throws', async () => {

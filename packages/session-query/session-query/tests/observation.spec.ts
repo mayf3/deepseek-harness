@@ -30,7 +30,7 @@ const seedSchema = {
 const seedUnit = {
   key: 'observation-test/seed',
   stateSchema: seedSchema,
-  init: (seedLength: number) => seedLength,
+  init: (header: SessionHeader) => header.seedLength ?? 0,
   apply: (state: number) => state,
   wire: { viewSchema: seedSchema, view: (state: number) => state },
   stateVersion: 1,

@@ -66,7 +66,7 @@ const countUnit = (): ProjectionDefinition<'test/count', number> => ({
 const seedUnit = (): ProjectionDefinition<'test/seed', number> => ({
   key: 'test/seed',
   stateSchema: z.number().int().nonnegative(),
-  init: seedLength => seedLength,
+  init: header => header.seedLength ?? 0,
   apply: state => state,
   stateVersion: 1,
 })

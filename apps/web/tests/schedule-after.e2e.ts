@@ -733,6 +733,8 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     await assertFixtureInventory(CATALOG_SNAPSHOT_DIR, [
       'catalog.expected.md',
       'session.jsonl',
+      'system-prompt.expected.md',
+      'tool-schemas.expected.json',
     ])
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])

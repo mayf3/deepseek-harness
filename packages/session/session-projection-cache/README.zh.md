@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-projection-cache` 将每个已注册投影单元的状态存为 `session_projcache` 存储域 `per-record` 布局下的一份逐会话版本化文档。存储行是可丢弃的折叠捷径，绝不是权威：零 I/O 列表可以把它用作暂定 hint，但该行可能落后于日志，也可能越过后来崩溃修复形成的截断点。精确打开与冷读会用调用方提供的完整日志校验缓存状态，并在行不再适用时重新折叠；缓存自身绝不读取会话持久化层。三个必写点——会话创建、`turn/end` 与会话释放——加上可配置的条数与间隔节流，使记录足够新，可用于列表预热与加速冷折叠。
+`dsh-session-projection-cache` 将每个已注册投影单元的状态存为 `session_projcache` 存储域 `per-record` 布局下的一份逐会话版本化文档。存储行是可丢弃的折叠捷径，绝不是权威：零 I/O 列表可以把它用作暂定 hint，但该行可能落后于日志，也可能越过后来崩溃修复形成的截断点。精确 prepared-session 读取会用调用方提供的完整日志校验缓存状态，并在行不再适用时重新折叠；缓存自身绝不读取会话持久化层。三个必写点——会话创建、`turn/end` 与会话释放——加上可配置的条数与间隔节流，使记录足够新，可用于列表预热与加速冷折叠。
 
 ## 目录
 
@@ -58,9 +58,9 @@ kind: "package-reference"
 
 ### 读取缓存值
 
-`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回尽力而为的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体用该值预热之后也由 opening baseline 与 live frame 共用的客户端行；所有携带值都遵循同一条与来源无关的 higher-sequence-wins 规则，只有 replacement control baseline 可以先截断超出其持久 cut 的行。
+`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回尽力而为的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体只把该值作为暂存 hint：成功的 follow opening 会精确替换它，再重放 opening 期间到达的 control 更新。普通 hint 与 live frame 继续按 higher-sequence-wins，replacement control baseline 可以截断超出其持久 cut 的行。
 
-`coldSnapshot(meta, events)` 接受完整有序日志，以该精确范围校验每条 seed row、折叠所需事件，并在不访问持久化层的情况下刷新记录。`hydratePrepared(session, meta, events)` 对尚未发布的 prepared Session 执行同样的校验。若缓存状态畸形或越界，两条路径都会在所提供的完整日志上从 `init(seedLength)` 重试；若 definition 声明了 `applyHeaderSeed`，随后只向它传入同名的不可变 header 字段。持久事件流本身若已损坏，重试仍然失败，绝不会产出部分快照。
+`coldSnapshot(meta, events)` 接受完整有序日志，只以该精确范围校验一次每条 seed row，从 `init(header)` 折叠所需事件，并在不访问持久化层的情况下刷新记录。`hydratePrepared(session, meta, events)` 为尚未发布的 prepared Session 执行生产精确读取校验；若缓存状态畸形或越界，只有该路径会在所提供的完整日志上从 `init(header)` 重试。持久事件流本身若已损坏，重试仍然失败，绝不会产出部分快照。
 
 ### 缓存保证什么
 

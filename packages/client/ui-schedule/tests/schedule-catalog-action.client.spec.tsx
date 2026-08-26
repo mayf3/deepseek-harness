@@ -22,6 +22,7 @@ const START = Date.parse('2026-08-25T12:00:00.000Z')
 beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(START)
+  document.documentElement.lang = 'en'
 })
 
 afterEach(() => {
@@ -170,6 +171,16 @@ describe('ScheduleCatalogAction rows', () => {
     expect(formatScheduleFrequency(record('once', 'at', START + 1_000), tZh)).toBe('单次')
     expect(tZh('status.scheduled')).toBe('等待中')
     expect(tZh('status.overdue')).toBe('已逾期')
+  })
+
+  it('formats absolute time with the active document locale instead of the runtime default', () => {
+    document.documentElement.lang = 'de-DE'
+    const item = record('localized', 'at', START + 3_600_000)
+    const localized = formatScheduleLocalTime(item.scheduledAt, 'de-DE')
+    expect(localized).not.toBe(formatScheduleLocalTime(item.scheduledAt))
+    render(<ScheduleCatalogAction {...props([item])} />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(screen.getByRole('listitem').textContent).toContain(localized)
   })
 
   it('derives relative seconds, minutes, hours, days, and the exact due boundary', () => {

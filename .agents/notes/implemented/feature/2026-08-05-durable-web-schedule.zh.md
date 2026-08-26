@@ -60,11 +60,7 @@ dispatch 记录的是队列准入，而不是模型完成或用户收到提醒�
 
 ### 只读 Web 目录
 
-[`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.zh.md)只有在当前 Session 成功打开后才读取完整活动 projection。它在浏览器端派生本地化周期、浏览器本地目标时间、相对时间、逾期状态与稳定呈现顺序，不持久化这些值。projection 缺失或为空时 header 入口不存在，最后一条 live 记录消失时入口也会关闭。
-
-`ui-workspace` 会另行在尽力而为的列表 projection 非空时，为普通行与搜索结果派生不可交互的侧边栏闹钟。cache 缺失或陈旧可能造成短暂漏显或残留，而且该标识绝不保证 Schedule runtime 当前 live。
-
-该目录有意不提供详情、mutation、Retry、Toast、原始 UTC、Schedule id 或特殊 transcript 卡片。它表示当前活动状态，而非 dispatch 回执；普通 Assistant 轮次仍是唯一交付呈现。Web bundle 拥有一个 disabled client row 及其解析依赖，Schedule overlay 只负责与 Host 服务一起启用该 row。[只读目录决策](2026-08-25-read-only-web-schedule-catalog.zh.md)拥有 header 与侧边栏的呈现细节。
+Schedule overlay 会把默认禁用的 [`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.zh.md) client 与 Host 服务一同启用。完整活动 projection 也会交给 [`dsh-client-ui-workspace`](../../../../packages/client/ui-workspace/README.zh.md)；[只读目录决策](2026-08-25-read-only-web-schedule-catalog.zh.md)拥有这两个呈现面。该 projection 表示当前活动状态，而非 dispatch 或交付回执，因此普通 Assistant 轮次仍是交付呈现。
 
 ## 已考虑的替代方案
 

@@ -2,10 +2,10 @@
  * Generic per-session projection value store (push model; see the
  * session-projection subsystem page, docs/subsystems/session-projection.md):
  * the host is the only computation site; the client holds finished
- * whole values per key — `key → { value, seq }` — seeded by Session-list,
- * session-added, follow-opening, and control baselines, then updated by
- * Session Controller `projection` frames under the single rule **higher seq
- * wins**. No client-side domain folding exists: a domain ships projection
+ * whole values per key — `key → { value, seq }` — seeded by Session-list and
+ * session-added hints, exactly replaced by a successful follow opening, and
+ * updated by control baselines and Session Controller `projection` frames.
+ * Ordinary updates use **higher seq wins**. No client-side domain folding exists: a domain ships projection
  * support with zero client code. Per-key bare observable faces feed
  * `useProjection` (ui-renderer binds them).
  */
@@ -66,9 +66,10 @@ interface Channel {
 
 /**
  * One session's projection values. Framework semantics are uniform across
- * every source: a partial list block applies its carried keys, a complete
- * baseline also clears omitted keys at its cut, a push frame updates one row,
- * and in every path a lower-or-equal seq loses. A key the store has never seen
+ * ordinary source: a partial list block applies its carried keys, a control
+ * baseline clears omitted keys at its cut, and a push frame updates one row.
+ * The owning Session separately uses {@link replace} for an authoritative
+ * follow opening. A key the store has never seen
  * reads `undefined` (capability absent). Faces are identity-stable per key
  * (create-on-demand, cached) so the React side binds each exactly once; the
  * store-level channel (`subscribeAny`) serves coarse consumers.
@@ -154,6 +155,27 @@ export class ProjectionValueStore {
       if (row.seq > baseline.asOfSeq) continue
       this.rows.delete(key)
       this.changed(key)
+    }
+  }
+
+  /**
+   * Install an authoritative complete baseline exactly, regardless of rows
+   * previously supplied by tentative cache hints or an earlier stream
+   * generation.
+   * @param baseline - the opening response's complete projections block.
+   */
+  replace(baseline: ProjectionsBaseline): void {
+    const values = baseline.values as Record<string, unknown>
+    const keys = new Set([...this.rows.keys(), ...Object.keys(values)])
+    for (const key of keys) {
+      if (!Object.hasOwn(values, key)) {
+        if (this.rows.delete(key)) this.changed(key)
+        continue
+      }
+      const value = values[key]
+      const previous = this.rows.get(key)
+      this.rows.set(key, { value, seq: baseline.asOfSeq })
+      if (previous === undefined || !Object.is(previous.value, value)) this.changed(key)
     }
   }
 

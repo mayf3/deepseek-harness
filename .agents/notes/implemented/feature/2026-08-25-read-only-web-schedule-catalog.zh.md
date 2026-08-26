@@ -16,7 +16,7 @@ Schedule 注册一个可选的 `schedule` Session projection，由独立浏览�
 
 ### Projection 边界
 
-Schedule 单元复用领域的严格 transition，并发布完整的活动 `ScheduleRecord[]`；损坏的权威输入会使既有读取／打开路径失败，畸形的可丢弃 checkpoint 则从日志重建。共享的 [projection state 与 Client views 决策](../architecture/2026-08-19-session-projection-state-and-client-views.zh.md)拥有 `init(seedLength)`、可选的同名 header seed、checkpoint 校验，以及 live／cache／history／detached 驱动路径。本 Note 只拥有所得活动值在 Web 中的呈现方式。
+Schedule 单元复用领域的严格 transition，并发布完整的活动 `ScheduleRecord[]`；损坏的权威输入会使既有读取／打开路径失败，生产 prepared-session 路径可以从日志重建畸形的可丢弃 checkpoint。共享的 [projection state 与 Client views 决策](../architecture/2026-08-19-session-projection-state-and-client-views.zh.md)拥有 `init(header)`、集中 seed 边界校验、checkpoint 校验，以及 live／cache／history／detached 驱动路径。本 Note 只拥有所得活动值在 Web 中的呈现方式。
 
 `@deepseek-ai/dsh-schedule/client` 是持久记录词汇的纯类型浏览器安全出口。它不会把 Cordis 插件、runtime、timer、工具或 Node 依赖带入 client graph。
 

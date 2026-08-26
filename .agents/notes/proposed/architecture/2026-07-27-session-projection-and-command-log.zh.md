@@ -36,12 +36,8 @@ export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap,
   key: K
   stateSchema: ZodType<S>
   persist?: boolean // host-only units opt in; client-visible units always persist
-  /** State before any event is folded. */
-  init(seedLength: number): S
-  /** Optional seed from the immutable Session-header field with this key. */
-  applyHeaderSeed?: K extends keyof SessionHeader
-    ? (state: S, value: SessionHeader[K]) => S
-    : never
+  /** State before any event is folded, derived from immutable Session metadata. */
+  init(header: SessionHeader): S
   /** Pure transition: previous state + one event → next state. The framework drives it; domains hold no subscriptions. */
   apply(state: S, event: SessionEvent): S
   /** Client view; omitted for host-only units. */
@@ -60,8 +56,8 @@ declare module 'cordis' {
 
 - `SessionProjectionStateMap` 描述 host 折叠状态；`SessionProjectionMap` 继续作为协议块和 React 钩子经 `import type` 共享的唯一客户端 DTO 表。单元省略 `wire` 即保持 host-only。客户端值如何*渲染*是 slot 体系的事，永远不归投影层管。状态/视图拆分见[已实现的状态与客户端视图记录](../../implemented/architecture/2026-08-19-session-projection-state-and-client-views.zh.md)。
 - **host 是投影唯一的计算地点。** 框架主动驱动（eager drive）每个已注册的单元：每个已提交的会话事件都经过 `apply`；对某事件不感兴趣的单元返回同一个状态引用，而引用未变（`Object.is`）就不产生任何下游工作。客户端从不折叠领域事件——它们收到的是成品值（基线块 + 下文的推送帧）。这消除了双重实现陷阱（plan 的双事件折叠只在 host 写一遍），也消除了一切客户端侧领域代码。
-- **初始化输入不可变，并与事件来源一致。** `ProjectionDefinition.init(seedLength)` 只接收规范化后的继承前缀长度，而非环境可变状态。live cell 从 `session.header` 派生该值，cache、history 与 detached restore 则从提供对应事件的同一次持久读取所得 header 派生。注册表会校验 `seedLength` 不得超过已观察日志长度。projection key 同时也是 `SessionHeader` key 的 definition 可以通过 `applyHeaderSeed` 在 `init` 之后只接收这个同名不可变字段；任何 definition 都不会收到完整 header。
-- **状态永远靠计算得出，绝不入日志。** 日志只存事件；单元的状态住在框架的按会话水位线缓存里（每单元一份 `{state, observedSeq}`），并在后续阶段进入 domain-KV 存储 seam 上的**持久投影缓存（persisted projection cache）**：形如 `(sessionId, key, ver, seq, val)` 的行（`ver` = 单元的 `stateVersion`，`seq` = 水位线，`val` = 状态 JSON）。有效行可能陈旧，其 `seq` 精确说明陈旧到哪；畸形或不匹配的行会被丢弃并从权威日志重建。冷读与活读共用同一套读取配方：取可用的缓存状态（或 `init(seedLength)` 加可选的同名 header seed），只对超出其水位线的事件做正向 `apply`，再对结果做 `view`。冷列表（跨全部 workspace 列出每个会话的标题）变成一次索引读，至多外加一小段尾部回放；session-persistence seam 在同一后续阶段为这段尾部补一个按 seq 起读的原语。写入策略：节流（次数/间隔，可配置）外加两个强制点——`turn/end` 与 detach（由活转冷的时刻）。两次写入之间崩溃的代价是尾部回放更长一些，绝不会是值出错。
+- **初始化输入不可变，并与事件来源一致。** `ProjectionDefinition.init(header)` 接收与已观察事件配套的不可变 `SessionHeader`。live cell 使用 `session.header`，cache、history 与 detached restore 则使用提供对应事件的同一次持久读取所得 header。注册表集中校验规范化的 `header.seedLength ?? 0` 不得超过已观察日志长度；每个单元只解释自己拥有的创建事实。
+- **状态永远靠计算得出，绝不入日志。** 日志只存事件；单元的状态住在框架的按会话水位线缓存里（每单元一份 `{state, observedSeq}`），并在后续阶段进入 domain-KV 存储 seam 上的**持久投影缓存（persisted projection cache）**：形如 `(sessionId, key, ver, seq, val)` 的行（`ver` = 单元的 `stateVersion`，`seq` = 水位线，`val` = 状态 JSON）。有效行可能陈旧，其 `seq` 精确说明陈旧到哪；畸形或不匹配的行会被丢弃并从权威日志重建。冷读与活读共用同一套读取配方：取可用的缓存状态（或 `init(header)`），只对超出其水位线的事件做正向 `apply`，再对结果做 `view`。冷列表（跨全部 workspace 列出每个会话的标题）变成一次索引读，至多外加一小段尾部回放；session-persistence seam 在同一后续阶段为这段尾部补一个按 seq 起读的原语。写入策略：节流（次数/间隔，可配置）外加两个强制点——`turn/end` 与 detach（由活转冷的时刻）。两次写入之间崩溃的代价是尾部回放更长一些，绝不会是值出错。
 - 领域的输入事件集由领域自己选择：todos 只折叠 `todo/write`；plan 折叠 `plan/mode` 外加它自己的 `/plan` `command/run` 记录（见 plan 一节）；goal 折叠 `goal/change` 元数据；会话标题折叠其标题事件（顺带下线专设的 `session/title` 帧与客户端的标题快照表——这是该 seam 收编的第四个手工投影）。
 - 注册是 effect（disposer 随 fiber 走）：插件卸载后其 key 从后续响应中消失，客户端将其读作能力缺失——HMR（热模块替换）语义随之自动成立。key 重复直接 throw。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 - 该包拥有 `./invariant`（每个被服务的 key 都有一条存活的注册）。
@@ -95,7 +91,7 @@ api-proxy 的历史处理器切出尾页后同步遍历注册表——全程没�
 
 只要某单元的状态引用发生变化（上文的 `Object.is` 闸门），框架就发出该帧；`seq` 是发出时该单元的水位线。这是实时推送状态，绝不入日志——与 tool-view 的 `view` slot 同一姿态：回放时在 host 重新计算。
 
-客户端对象层为每个会话维护一个**通用值仓（value store）**：`key → { value, seq }`，由尾页的 projections 块播种、由该帧更新，唯一规则是 **seq 高者胜**。重放的基线无法把更新的帧往回滚；丢失一个帧的代价只是陈旧——到下一个帧或基线为止——绝不会出错。没有 `fromEvent`，没有按领域的 cell 注册，没有客户端侧领域折叠——领域交付投影支持只需**零客户端代码**（`SessionProjectionMap` merge 经 `/types` 出口同时服务两侧）。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。所有按领域自造的栅栏（#587 的三层、#527 的写 revision）都消融进这一条 seq 规则。
+客户端对象层为每个会话维护一个**通用值仓（value store）**：`key → { value, seq }`。部分 list hint 与完整值 frame 使用 seq 高者胜。成功的 follow opening snapshot 会在其 durable cut 精确替换暂存 row；初次打开、resync 或 carrier 重连期间到达的 control 操作会按到达顺序重放到该精确值之上。没有 `fromEvent`，没有按领域的 cell 注册，没有客户端侧领域折叠——领域交付投影支持只需**零客户端代码**（`SessionProjectionMap` merge 经 `/types` 出口同时服务两侧）。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。
 
 ### plan 走标准命令通道（完整示例）
 
@@ -153,7 +149,7 @@ host 侧命令执行器（`packages/interaction/commands`）在调用处理器�
 
 **专设一个 `session.projections` RPC**——不予采纳：基线刷新时刻与尾页拉取精确重合，单独的一元 RPC 只会换来第二次往返、第二个待调和的 seq，以及一个客户端「何时重取」决策——而搭载设计把这个决策整个删掉了。
 
-**不透明的 `get(agent)` 提供方约定**——否决：计算模型藏在领域内部时，框架永远无法为状态做检查点、无法服务冷会话（没有 agent、没有已加载的日志——`get` 无处可跑）、也无法从日志中段续算。注册 `(init(seedLength), applyHeaderSeed?, apply, view)` 单元把驱动权交给框架，领域只留纯数学；有 host 侧行为需求的领域，其服务订阅照旧自持，与投影单元互不牵连。
+**不透明的 `get(agent)` 提供方约定**——否决：计算模型藏在领域内部时，框架永远无法为状态做检查点、无法服务冷会话（没有 agent、没有已加载的日志——`get` 无处可跑）、也无法从日志中段续算。注册 `(init(header), apply, view)` 单元把驱动权交给框架，领域只留纯数学；有 host 侧行为需求的领域，其服务订阅照旧自持，与投影单元互不牵连。
 
 **为 plan 待定意图专设的仅实时叠加钩子（`live?(agent, base)`）**——不予采纳：它存在的唯一理由是用户的 plan *选择*不在日志里。让选择走标准命令通道后，`command/run` 上了账，待定态成为纯回放量，投影继续由纯折叠与可选客户端视图构成。
 
@@ -179,9 +175,9 @@ host 侧命令执行器（`packages/interaction/commands`）在调用处理器�
 
 ## 验收标准
 
-- 领域插件把按会话的日志派生状态送达 React，只需写：自己的持久事件声明、一个具有 `init(seedLength)`、可选同名 `applyHeaderSeed`、`apply` 和完整 `wire.view` 的确定性 host 单元、自己那份 `SessionProjectionMap` merge，以及 inject 回调——零客户端侧折叠代码，不改客户端 `Session` 类、`ConversationSnapshot`、api-proxy 或任何协议 schema 文件。live 与 detached 折叠从提供对应事件的同一个 header 接收相同的规范化 seed 边界，并在声明时接收同名不可变字段。
+- 领域插件把按会话的日志派生状态送达 React，只需写：自己的持久事件声明、一个具有 `init(header)`、`apply` 和完整 `wire.view` 的确定性 host 单元、自己那份 `SessionProjectionMap` merge，以及 inject 回调——零客户端侧折叠代码，不改客户端 `Session` 类、`ConversationSnapshot`、api-proxy 或任何协议 schema 文件。live 与 detached 折叠接收提供对应事件的同一个不可变 header，规范化 seed 边界由注册表集中校验。
 - 历史尾页携带 `projections`，其 `asOfSeq` 等于窗口尾部 seq；loadOlder 页永不携带；未装注册表的部署照常返回不带该块的历史，客户端把所有 key 视为缺席。
-- 陈旧的基线不能覆盖更新的 `session/projection` 帧，重放的帧也不能让值仓倒退（两条路径都做 seq 高者胜测试）。
+- Follow opening baseline 会精确替换暂存 cache row，而 opening 或重连期间到达的 control frame 与 replacement baseline 会按顺序重放；在该替换边界之外，陈旧或重放 frame 不能让值仓倒退。
 - 在一个标签页执行的斜杠命令，刷新后、在第二个标签页上、恢复之后都在 flow 中渲染出持久节点；未注册的命令渲染通用卡片；命令结果的 composer 通知路径彻底移除。
 - `useProjection` 经标准 props 套件抵达组件；没有任何钩子穿过 inject 约定（包括 `useSelection`）。
 - 会话标题搭乘这对通用机制（基线块 + 投影帧）；专设的 `session/title` 帧与客户端标题快照表彻底移除。

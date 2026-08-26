@@ -6,7 +6,7 @@
 
 ## 问题
 
-投影注册表会持久化各单元的内部折叠状态，却没有运行时 schema；与此同时，`SessionProjectionMap` 描述的是 `view` 返回的客户端值。这使恢复出的状态未经校验，也让同一张类型表看似同时描述两种可能不同的值。host 消费方还需要读取当前折叠状态，但不应为此序列化全部已注册客户端视图，也不应把内部状态暴露到客户端协议。最后，无参数 `init()` 无法接收 fork 边界，而把完整 Session header 交给每个单元又会暴露无关 metadata。
+投影注册表会持久化各单元的内部折叠状态，却没有运行时 schema；与此同时，`SessionProjectionMap` 描述的是 `view` 返回的客户端值。这使恢复出的状态未经校验，也让同一张类型表看似同时描述两种可能不同的值。host 消费方还需要读取当前折叠状态，但不应为此序列化全部已注册客户端视图，也不应把内部状态暴露到客户端协议。fork-sensitive 单元还需要把既有不可变 Session header 与每次观察到的日志一致校验。
 
 ## 决策
 
@@ -14,11 +14,11 @@
 
 如果一个单元的 key 也存在于 `SessionProjectionMap`，该单元就提供 `wire.viewSchema` 与 `wire.view`。每个单元的状态都会写入检查点——client-visible 与 host-only 一视同仁；`persist` 选择项已移除，任何单元都不能悄悄跳过持久化缓存。快照 API 只返回 `SessionProjectionMap`，因此内部状态不会进入 API 载荷。host 代码通过 `stateOf(session, key)` 读取一份当前状态；返回的是借用引用，不得修改。
 
-`ProjectionDefinition.init(seedLength)` 只接收规范化后的继承前缀事件数。注册表会在每条 live、cache、history 与 detached fold 路径上从 Session header 派生并校验该值，并在折叠前拒绝超过已观察日志长度的边界。projection key 同时也是 `SessionHeader` key 的 definition 可以声明 `applyHeaderSeed(state, value)`；注册表会在 `init` 之后、事件折叠之前只传入这个同名不可变字段。这条窄 hook 能保留 `agentPreset` 等创建时值，而不会让每个单元取得完整 header 或环境可变状态。
+`ProjectionDefinition.init(header)` 保留既有的不可变 header 合同。注册表会在每条 live、cache、history 与 detached 初始化路径上规范化 `header.seedLength ?? 0`，并拒绝超过已观察日志长度的边界。每个 definition 只解释自己拥有的不可变创建事实，例如 Schedule 的 fork 边界或初始 `agentPreset`，无需读取环境可变状态，也不增加第二初始化协议。
 
 ## 结果
 
-投影状态和客户端值分别获得类型与校验，同时不引入第二套客户端 DTO 词汇。单元可以保留更丰富的 host 状态，并暴露紧凑或兼容既有结构的客户端值。畸形缓存状态不能为 `viewCheckpoint` 提供数据；恢复会拒绝畸形状态，并由缓存既有的全量读取回退从日志重建。host 消费方可以用同一套增量折叠替换私有日志扫描。fork-sensitive 单元可以确定性地排除继承前缀，同名 header-backed 单元则能保留创建时值，而不获得宽泛的 Session metadata 访问权。
+投影状态和客户端值分别获得类型与校验，同时不引入第二套客户端 DTO 词汇。单元可以保留更丰富的 host 状态，并暴露紧凑或兼容既有结构的客户端值。畸形缓存状态不能为 `viewCheckpoint` 提供数据；精确 prepared-session 读取可以丢弃它并从日志重建。host 消费方可以用同一套增量折叠替换私有日志扫描。fork-sensitive 与创建值单元都直接从配套已观察事件的同一个不可变 header 派生状态。
 
 原始 [session-projection 提案](../../proposed/architecture/2026-07-27-session-projection-and-command-log.zh.md)已记录这次拆分。既有的 [subagent 身份投影](2026-08-06-subagent-list-identity-projection.zh.md)与[投影化 token 用量](2026-07-29-projected-token-usage-and-request-context.zh.md)决策仍然有效；其中的领域折叠迁入状态表，不改变面向用户的值。
 

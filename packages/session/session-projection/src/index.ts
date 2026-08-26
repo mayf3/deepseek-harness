@@ -31,15 +31,14 @@ import type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts
 
 export type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts'
 
-/** Normalize and validate the fork boundary for one observed Session log. */
-function seedLengthFor(header: SessionHeader, observedLength: number): number {
+/** Validate the normalized fork boundary for one observed Session log. */
+function validateSeedLength(header: SessionHeader, observedLength: number): void {
   const seedLength = header.seedLength ?? 0
   if (seedLength > observedLength) {
     throw new Error(
       `session projection header seedLength ${String(seedLength)} exceeds observed log length ${String(observedLength)}`,
     )
   }
-  return seedLength
 }
 
 /**
@@ -59,21 +58,11 @@ export interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State before any event is folded.
-   * @param seedLength - normalized count of inherited leading events.
+   * State for the empty log and its immutable Session metadata.
+   * @param header - immutable metadata for the Session being projected.
    * @returns the initial state.
    */
-  init(seedLength: number): NoInfer<S>
-  /**
-   * Optional adjustment from the immutable Session-header field whose name
-   * matches this projection key. The unit receives only that field value.
-   * @param state - the state returned by {@link init}.
-   * @param value - the same-name immutable Session-header field.
-   * @returns the state before event folding begins.
-   */
-  applyHeaderSeed?: K extends keyof SessionHeader
-    ? (state: NoInfer<S>, value: SessionHeader[K]) => NoInfer<S>
-    : never
+  init(header: SessionHeader): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -151,8 +140,7 @@ export type ProjectionCheckpoint = Record<string, ProjectionCheckpointRow>
 interface ErasedDefinition {
   key: string
   stateSchema: { parse(value: unknown): unknown }
-  init(seedLength: number): unknown
-  applyHeaderSeed: ((state: unknown, value: unknown) => unknown) | undefined
+  init(header: SessionHeader): unknown
   apply(state: unknown, event: SessionEvent): unknown
   wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
@@ -212,11 +200,11 @@ export class SessionProjectionRegistry extends Service {
     super(ctx, 'sessionProjections')
     ctx.on('session/created', (session: Session) => {
       if (session.seq !== 0) return
-      const seedLength = seedLengthFor(session.header, session.seq)
+      validateSeedLength(session.header, session.seq)
       for (const registration of this.registrations.values()) {
         if (registration.cells.has(session)) continue
         registration.cells.set(session, {
-          state: this.initialState(registration.def, session.header, seedLength),
+          state: registration.def.init(session.header),
           observedSeq: -1,
         })
       }
@@ -261,16 +249,10 @@ export class SessionProjectionRegistry extends Service {
       viewSchema: ZodType
       view(state: S): unknown
     } | undefined
-    const applyHeaderSeed = definition.applyHeaderSeed as
-      | ((state: S, value: unknown) => S)
-      | undefined
     const erased: ErasedDefinition = {
       key: definition.key,
       stateSchema: definition.stateSchema,
-      init: seedLength => definition.init(seedLength),
-      applyHeaderSeed: applyHeaderSeed === undefined
-        ? undefined
-        : (state, value) => applyHeaderSeed(state as S, value),
+      init: header => definition.init(header),
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
         ? undefined
@@ -510,7 +492,7 @@ export class SessionProjectionRegistry extends Service {
   ):
   { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint } {
     const endSeq = events.at(-1)?.seq ?? baseSeq - 1
-    const seedLength = seedLengthFor(header, endSeq + 1)
+    validateSeedLength(header, endSeq + 1)
     const values: Record<string, unknown> = {}
     const refreshed: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
@@ -526,9 +508,7 @@ export class SessionProjectionRegistry extends Service {
           + 'its checkpoint row is missing, version-mismatched, or beyond the supplied log end; re-read from seq 0',
         )
       }
-      let state = usable
-        ? def.stateSchema.parse(row.val)
-        : this.initialState(def, header, seedLength)
+      let state = usable ? def.stateSchema.parse(row.val) : def.init(header)
       const from = usable ? row.seq : baseSeq - 1
       const startIndex = from - baseSeq + 1
       for (let index = startIndex; index < events.length; index++) {
@@ -607,22 +587,10 @@ export class SessionProjectionRegistry extends Service {
     header: SessionHeader,
     events: readonly SessionEvent[],
   ): UnitCell {
-    const seedLength = seedLengthFor(header, events.length)
-    let state = this.initialState(def, header, seedLength)
+    validateSeedLength(header, events.length)
+    let state = def.init(header)
     for (const event of events) state = def.apply(state, event)
     return { state, observedSeq: (events.at(-1)?.seq ?? -1) }
-  }
-
-  /** Initialize one unit without exposing the complete Session header. */
-  private initialState(
-    def: ErasedDefinition,
-    header: SessionHeader,
-    seedLength: number,
-  ): unknown {
-    const state = def.init(seedLength)
-    return def.applyHeaderSeed === undefined
-      ? state
-      : def.applyHeaderSeed(state, header[def.key as keyof SessionHeader])
   }
 
   /** Read (or lazily build, folding the full in-memory log) one unit's cell. */

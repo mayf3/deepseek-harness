@@ -567,48 +567,50 @@ function dispatchedRecord(record: ScheduleRecord, change: DecodedDispatch): Sche
 }
 
 /**
- * Apply one already-decoded Schedule change to a complete fold value.
+ * Apply already-decoded Schedule changes to one complete fold value.
  *
  * This is the single transition authority shared by full-log replay and the
- * incremental Session projection. Inputs are never mutated; unchanged event
- * filtering remains the caller's responsibility.
- * @param folded - complete active records and used-id history before the change.
- * @param change - one strictly decoded durable mutation.
- * @returns the complete fold value after the mutation.
+ * incremental Session projection. One mutable Map/Set pair spans the whole
+ * batch; the returned arrays are materialized and frozen once.
+ * @param folded - complete active records and used-id history before the changes.
+ * @param changes - strictly decoded durable mutations in log order.
+ * @returns the complete fold value after every mutation.
  */
-export function applyScheduleChange(
+export function applyScheduleChanges(
   folded: FoldedSchedules,
-  change: ScheduleChange,
+  changes: Iterable<ScheduleChange>,
 ): FoldedSchedules {
   const active = new Map(folded.active.map(record => [record.id, record]))
   const seen = new Set(folded.seenIds)
-  switch (change.operation) {
-    case 'create':
-      if (seen.has(change.schedule.id)) {
-        throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
+  for (const change of changes) {
+    switch (change.operation) {
+      case 'create':
+        if (seen.has(change.schedule.id)) {
+          throw new ScheduleLogError(`schedule id ${JSON.stringify(change.schedule.id)} was reused`)
+        }
+        seen.add(change.schedule.id)
+        active.set(change.schedule.id, change.schedule)
+        break
+      case 'delete':
+        if (!active.delete(change.id)) {
+          throw new ScheduleLogError(`schedule delete targets inactive id ${JSON.stringify(change.id)}`)
+        }
+        break
+      case 'dispatch': {
+        const record = active.get(change.id)
+        if (record === undefined) {
+          throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
+        }
+        const next = dispatchedRecord(record, change)
+        if (next === undefined) active.delete(change.id)
+        else active.set(change.id, next)
+        break
       }
-      seen.add(change.schedule.id)
-      active.set(change.schedule.id, change.schedule)
-      break
-    case 'delete':
-      if (!active.delete(change.id)) {
-        throw new ScheduleLogError(`schedule delete targets inactive id ${JSON.stringify(change.id)}`)
+      /* v8 ignore next 3 -- decodeScheduleChange returns a closed operation union. */
+      default: {
+        const unreachable: never = change
+        throw new ScheduleLogError(`unknown decoded schedule change ${String(unreachable)}`)
       }
-      break
-    case 'dispatch': {
-      const record = active.get(change.id)
-      if (record === undefined) {
-        throw new ScheduleLogError(`schedule dispatch targets inactive id ${JSON.stringify(change.id)}`)
-      }
-      const next = dispatchedRecord(record, change)
-      if (next === undefined) active.delete(change.id)
-      else active.set(change.id, next)
-      break
-    }
-    /* v8 ignore next 3 -- decodeScheduleChange returns a closed operation union. */
-    default: {
-      const unreachable: never = change
-      throw new ScheduleLogError(`unknown decoded schedule change ${String(unreachable)}`)
     }
   }
   return Object.freeze({
@@ -630,15 +632,16 @@ export function foldScheduleEvents(
   if (!Number.isSafeInteger(seedLength) || seedLength < 0 || seedLength > events.length) {
     throw new ScheduleLogError('schedule seedLength must be within the supplied event log')
   }
-  let folded: FoldedSchedules = Object.freeze({
+  const initial: FoldedSchedules = Object.freeze({
     active: Object.freeze([]),
     seenIds: Object.freeze([]),
   })
-  for (const event of events.slice(seedLength)) {
-    if (event.type !== 'schedule/change') continue
-    folded = applyScheduleChange(folded, decodeScheduleChange(event.data))
+  const changes = function* (): Generator<ScheduleChange> {
+    for (const event of events.slice(seedLength)) {
+      if (event.type === 'schedule/change') yield decodeScheduleChange(event.data)
+    }
   }
-  return folded
+  return applyScheduleChanges(initial, changes())
 }
 
 /**

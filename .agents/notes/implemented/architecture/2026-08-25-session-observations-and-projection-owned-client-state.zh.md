@@ -108,11 +108,11 @@ Projection 的三种交付状态含义不同：
 | Follow opening baseline | 对当前 Host composition 完整 | 精确 opening cursor | Capability 不存在 |
 | Projection frame | 单个完整 key | Frame 携带的 event sequence | 不适用 |
 
-Client 为每个 key 保存一条 `{ value, seq }` row。List hint、opening baseline 中的值与 projection frame 都遵循同一条与来源无关的规则：只有 sequence 高于当前 row 时才写入。完整 baseline 还会清除其中缺失且现有 sequence 不高于该 cut 的 key；更新的 row 会保留。Replacement control baseline 是唯一会先丢弃超出其 durable cut 的 row 的输入，因为这些 row 可能描述 replacement Host 已不再拥有的进程状态；随后它仍按同一排序规则 seed 完整值。
+Client 为每个 key 保存一条 `{ value, seq }` row。部分 list hint 与普通 projection frame 遵循 seq 高者胜，而成功的 follow opening baseline 是精确替换，即使暂存 cache row 声称更高 cut 也一样。初次打开、显式 resync 或 carrier 重连期间，Session 会记录到达的 control projection frame 与 replacement control baseline，先安装精确 opening 值，再按到达顺序重放这些 control 操作。Replacement control baseline 仍会先丢弃超出其 durable cut 的 row，再播种完整值。
 
-List view 与已打开 Session 读取同一个 per-Session store。Hints 可以在 follow 完成前填充 title、preset 和其他 list presentation；opening baseline 随后收敛这份状态，而不会建立第二套 summary-only authority。
+List view 与已打开 Session 读取同一个 per-Session store。首次精确 opening 前，hint 可以填充 title、preset 和其他 list presentation；该 baseline 安装后，resident Session 会忽略迟到的 list hint，避免暂存 cache 数据重新进入已打开值。
 
-每个 Session 的 Client projection store 从不折叠 Session event；它只按 sequence 排序成品 hint、完整 baseline 与 whole-value frame，并把 replacement generation 截断作为唯一显式 reset 边界。
+每个 Session 的 Client projection store 从不折叠 Session event。它对 hint 与 whole-value frame 保持 seq 排序，为权威 follow baseline 提供精确替换，并在 Session 拥有的重连重放边界内应用 replacement-control 截断。
 
 不由单个 Session 派生的数据不进入 projection。`llm.models` 拥有当前 Host generation 的 model catalog，`agentPreset.list` 拥有可配置 preset roster。Selector 只在相应 catalog 与 Session 的 `modelSelection` 或 `agentPreset` projection 均就绪后组合两者。刷新时可以保留上一份完整 catalog；第一次获得完整输入前显示 loading，而不是展示猜测的名称或可用性结论。
 

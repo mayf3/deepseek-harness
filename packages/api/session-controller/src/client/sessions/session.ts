@@ -64,6 +64,15 @@ export interface SessionOptions {
   projections?: ProjectionValueStore
 }
 
+type ProjectionOperation =
+  | { readonly type: 'frame'; readonly frame: Extract<SessionControlFrame, { type: 'projection' }> }
+  | { readonly type: 'baseline'; readonly baseline: ProjectionsBaseline }
+
+interface ProjectionCapture {
+  readonly generation: number
+  readonly operations: ProjectionOperation[]
+}
+
 /**
  * Owns a session's event window, lifecycle state, and observable
  * snapshot. React bindings remain outside this data layer. Features see only
@@ -80,6 +89,10 @@ export class Session implements SessionFace {
   /** Bumped by stream replacement to invalidate an in-flight doOpen. Stale
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
+  /** Whether an authoritative event-stream projection baseline has replaced cache hints. */
+  private exactProjectionBaselineInstalled = false
+  /** Control operations that must be replayed after the current exact opening baseline. */
+  private projectionCapture: ProjectionCapture | undefined
   private loadingOlder = false
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
@@ -105,8 +118,10 @@ export class Session implements SessionFace {
   /**
    * Per-session projection value store (push model; see the session-projection
    * subsystem page, docs/subsystems/session-projection.md): finished whole
-   * values computed on the Host. Partial list blocks, the tail page, and
-   * Session Controller frames all use the same higher-seq-wins rule. Keys are
+   * values computed on the Host. Partial list hints and Session Controller
+   * frames use higher-seq-wins; a successful tail-page opening replaces those
+   * tentative rows exactly, then replays control operations received while it
+   * was in flight. Keys are
    * read via `projections.faceOf(key)`
    * (the useProjection resolution face); the conversation snapshot never
    * carries projection values, and no client-side domain folding exists.
@@ -341,7 +356,15 @@ export class Session implements SessionFace {
   async rename(title: string): Promise<ClientResult<{ title: string; seq: number }>> {
     try {
       const result = toSessionResult(await this.remote.session.rename({ sessionId: this.sessionId, title }))
-      if (result.ok) this.projections.apply('title', result.value.title, result.value.seq)
+      if (result.ok) {
+        this.handleProjectionFrame({
+          type: 'projection',
+          sessionId: this.sessionId,
+          key: 'title',
+          value: result.value.title,
+          seq: result.value.seq,
+        })
+      }
       return result
     } catch (error) {
       return transportResult(error)
@@ -365,6 +388,7 @@ export class Session implements SessionFace {
   open(): Promise<void> {
     if (this.openState === 'open') return Promise.resolve()
     if (this.openPromise !== null) return this.openPromise
+    this.beginProjectionCapture(this.openGeneration)
     const promise = this.doOpen(this.openGeneration).finally(() => {
       // Identity-guarded: a superseded open must not null out the promise resync just started.
       if (this.openPromise === promise) this.openPromise = null
@@ -398,6 +422,7 @@ export class Session implements SessionFace {
   async resync(): Promise<void> {
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
     this.openGeneration++
+    this.beginProjectionCapture(this.openGeneration)
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -447,6 +472,35 @@ export class Session implements SessionFace {
   handleControlFrame(frame: Extract<SessionControlFrame, { type: 'queue' }>): void {
     this.queueMirror.replace(frame.items)
     this.notifier.markDirty()
+  }
+
+  /**
+   * Apply and, while an exact opening replacement is pending, retain one live projection frame.
+   * @param frame - one live projection update for this Session.
+   */
+  handleProjectionFrame(frame: Extract<SessionControlFrame, { type: 'projection' }>): void {
+    this.applyProjectionOperation({ type: 'frame', frame })
+    this.captureProjectionOperation({ type: 'frame', frame })
+  }
+
+  /**
+   * Apply and retain one complete control-stream projection replacement.
+   * @param baseline - the complete projection baseline carried by the control stream.
+   */
+  replaceProjectionBaseline(baseline: ProjectionsBaseline): void {
+    this.applyProjectionOperation({ type: 'baseline', baseline })
+    this.captureProjectionOperation({ type: 'baseline', baseline })
+  }
+
+  /**
+   * Apply a tentative list/session-added cache hint until this Session has
+   * installed an exact event-stream baseline. Hints never join opening replay.
+   * @param baseline - a partial cache-backed projection hint.
+   */
+  handleProjectionHint(baseline: ProjectionsBaseline): void {
+    if (this.exactProjectionBaselineInstalled) return
+    const values = baseline.values as Record<string, unknown>
+    for (const key of Object.keys(values)) this.projections.apply(key, values[key], baseline.asOfSeq)
   }
 
   /**
@@ -527,6 +581,7 @@ export class Session implements SessionFace {
    */
   async dispose(): Promise<void> {
     this.openGeneration++
+    this.projectionCapture = undefined
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -542,7 +597,11 @@ export class Session implements SessionFace {
     const events = new SessionEventStream(this.remote, this.sessionAddress(), {
       publish: (change) => {
         if (generation !== this.openGeneration || this.events !== events) return
-        this.acceptEventChange(change)
+        this.acceptEventChange(change, generation)
+      },
+      carrierFailed: () => {
+        if (generation !== this.openGeneration || this.events !== events) return
+        this.beginProjectionCapture(generation)
       },
       failed: (error) => {
         this.failEventStream(events, generation, error)
@@ -556,6 +615,7 @@ export class Session implements SessionFace {
     } catch (error) {
       if (generation !== this.openGeneration || this.events !== events) return
       this.events = undefined
+      this.discardProjectionCapture(generation)
       this.openState = 'error'
       this.openError = openFailure(error)
     } finally {
@@ -564,10 +624,10 @@ export class Session implements SessionFace {
   }
 
   /** Apply one contiguous journal update already reconciled by the Remote stream. */
-  private acceptEventChange(change: SessionJournalChange): void {
+  private acceptEventChange(change: SessionJournalChange, generation: number): void {
     switch (change.type) {
       case 'replace':
-        this.installWindow(change.entries, change.hasMore, change.page.projections)
+        this.installWindow(change.entries, change.hasMore, generation, change.page.projections)
         return
       case 'prepend':
         this.prependWindow(change.entries, change.hasMore)
@@ -578,11 +638,27 @@ export class Session implements SessionFace {
   }
 
   /** Replace the complete contiguous window and apply page-owned projection metadata. */
-  private installWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
+  private installWindow(
+    entries: readonly SessionEventLikeEntry[],
+    hasMore: boolean,
+    generation: number,
+    projections?: ProjectionsBaseline,
+  ): void {
     this.baseSeq = entries[0]?.event.seq ?? 0
     this.hasMore = hasMore
     if (entries.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
-    if (projections !== undefined) this.projections.seed(projections)
+    const capture = this.projectionCapture?.generation === generation
+      ? this.projectionCapture
+      : undefined
+    if (projections !== undefined && capture !== undefined) {
+      this.projections.replace(projections)
+      this.exactProjectionBaselineInstalled = true
+      this.projectionCapture = undefined
+      for (const operation of capture.operations) this.applyProjectionOperation(operation)
+    } else {
+      if (projections !== undefined) this.projections.seed(projections)
+      if (capture !== undefined) this.projectionCapture = undefined
+    }
     this.eventSource.replace(entries, hasMore)
     this.notifier.markDirty()
   }
@@ -607,6 +683,7 @@ export class Session implements SessionFace {
   /** Publish a terminal background failure only while this stream still owns the Session. */
   private failEventStream(events: SessionEventStream, generation: number, error: unknown): void {
     if (generation !== this.openGeneration || this.events !== events) return
+    this.discardProjectionCapture(generation)
     this.openGeneration++
     this.events = undefined
     this.openPromise = null
@@ -614,6 +691,32 @@ export class Session implements SessionFace {
     this.openError = openFailure(error)
     void events.dispose()
     this.notifier.markDirty()
+  }
+
+  /** Start one operation-local capture without dropping operations from a repeated carrier failure. */
+  private beginProjectionCapture(generation: number): void {
+    if (this.projectionCapture?.generation === generation) return
+    this.projectionCapture = { generation, operations: [] }
+  }
+
+  /** Retain a control operation only while this generation awaits its exact baseline. */
+  private captureProjectionOperation(operation: ProjectionOperation): void {
+    this.projectionCapture?.operations.push(operation)
+  }
+
+  /** Apply one captured operation under its ordinary live/control semantics. */
+  private applyProjectionOperation(operation: ProjectionOperation): void {
+    if (operation.type === 'frame') {
+      this.projections.apply(operation.frame.key, operation.frame.value, operation.frame.seq)
+      return
+    }
+    this.projections.truncate(operation.baseline.asOfSeq)
+    this.projections.seed(operation.baseline)
+  }
+
+  /** Drop only the capture owned by a failed or superseded generation. */
+  private discardProjectionCapture(generation: number): void {
+    if (this.projectionCapture?.generation === generation) this.projectionCapture = undefined
   }
 
   private buildSnapshot(): SessionSnapshot {

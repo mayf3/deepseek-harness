@@ -174,7 +174,7 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
               <span className={css.metadata}>
                 <span>{formatScheduleFrequency(record, t)}</span>
                 <span aria-hidden="true">·</span>
-                <span>{formatScheduleLocalTime(record.scheduledAt)}</span>
+                <span>{formatScheduleLocalTime(record.scheduledAt, document.documentElement.lang)}</span>
                 <span aria-hidden="true">·</span>
                 <span className={overdue ? css.relativeOverdue : css.relative}>
                   {formatScheduleRelative(record.scheduledAt, now, t)}

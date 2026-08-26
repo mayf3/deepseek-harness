@@ -28,21 +28,11 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State before any event is folded.
-   * @param seedLength - normalized count of inherited leading events.
+   * State for the empty log and its immutable Session metadata.
+   * @param header - immutable metadata for the Session being projected.
    * @returns the initial state.
    */
-  init(seedLength: number): NoInfer<S>
-  /**
-   * Optional adjustment from the immutable Session-header field whose name
-   * matches this projection key. The unit receives only that field value.
-   * @param state - the state returned by {@link init}.
-   * @param value - the same-name immutable Session-header field.
-   * @returns the state before event folding begins.
-   */
-  applyHeaderSeed?: K extends keyof SessionHeader
-    ? (state: NoInfer<S>, value: SessionHeader[K]) => NoInfer<S>
-    : never
+  init(header: SessionHeader): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -73,7 +63,7 @@ interface ProjectionDefinition<
 }
 ```
 
-The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init(seedLength)` receives only the normalized inherited-prefix length, and the registry rejects a seed boundary beyond the observed log. A unit whose key is also a `SessionHeader` key may use `applyHeaderSeed` to receive only that same-name immutable field; definitions never receive the complete header or ambient mutable state.
+The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init(header)` receives the immutable `SessionHeader` that accompanies the observed events, and the registry rejects a normalized `header.seedLength ?? 0` beyond that log. Definitions may interpret relevant immutable fields but never consult ambient mutable state.
 
 ## The snapshot and the change feed
 

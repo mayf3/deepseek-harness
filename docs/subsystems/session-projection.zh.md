@@ -28,21 +28,11 @@ interface ProjectionDefinition<
   /** Validates persisted state before it seeds a fold. */
   stateSchema: ZodType<S>
   /**
-   * State before any event is folded.
-   * @param seedLength - normalized count of inherited leading events.
+   * State for the empty log and its immutable Session metadata.
+   * @param header - immutable metadata for the Session being projected.
    * @returns the initial state.
    */
-  init(seedLength: number): NoInfer<S>
-  /**
-   * Optional adjustment from the immutable Session-header field whose name
-   * matches this projection key. The unit receives only that field value.
-   * @param state - the state returned by {@link init}.
-   * @param value - the same-name immutable Session-header field.
-   * @returns the state before event folding begins.
-   */
-  applyHeaderSeed?: K extends keyof SessionHeader
-    ? (state: NoInfer<S>, value: SessionHeader[K]) => NoInfer<S>
-    : never
+  init(header: SessionHeader): NoInfer<S>
   /**
    * Pure transition: previous state + one committed event → next state. A
    * unit uninterested in an event MUST return the same state reference — an
@@ -73,7 +63,7 @@ interface ProjectionDefinition<
 }
 ```
 
-承重规则是确定性同步 fold 与完整 wire 值。领域可以拥有全量值事件，也可以拥有增量 transition，但它会在 Host 上校验并折叠这些事件；客户端既不回放这些事件，也不会收到 delta。`init(seedLength)` 只接收规范化后的继承前缀长度，注册表会拒绝超过已观察日志长度的 seed 边界。key 同时也是 `SessionHeader` key 的单元可以通过 `applyHeaderSeed` 只接收这个同名不可变字段；definition 不会收到完整 header 或环境可变状态。
+承重规则是确定性同步 fold 与完整 wire 值。领域可以拥有全量值事件，也可以拥有增量 transition，但它会在 Host 上校验并折叠这些事件；客户端既不回放这些事件，也不会收到 delta。`init(header)` 接收与已观察事件配套的不可变 `SessionHeader`，注册表会拒绝超过该日志长度的规范化 `header.seedLength ?? 0`。definition 可以解释相关的不可变字段，但不能读取环境中的可变状态。
 
 ## 快照与变更流
 

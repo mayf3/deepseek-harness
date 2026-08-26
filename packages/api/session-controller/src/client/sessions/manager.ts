@@ -490,11 +490,16 @@ export class SessionManager {
           }
           // Apply each row's projection values (cold values surface without
           // opening the session). The list block is partial, so an absent key
-          // must not clear; the shared higher-seq-wins rule keeps stale values
-          // from replacing a newer frame or opening baseline.
+          // must not clear. Once a resident Session has installed its exact
+          // opening baseline, it ignores later tentative list hints.
           for (const s of result.value.items) {
             const block = s.projections
             if (block === undefined) continue
+            const session = this.sessions.get(s.sessionId)
+            if (session !== undefined) {
+              session.handleProjectionHint(block)
+              continue
+            }
             const store = this.projectionStore(s.sessionId)
             const values = block.values as Record<string, unknown>
             for (const key of Object.keys(values)) store.apply(key, values[key], block.asOfSeq)
@@ -673,7 +678,9 @@ export class SessionManager {
       return
     }
     if (frame.type === 'projection') {
-      this.projectionStore(frame.sessionId).apply(frame.key, frame.value, frame.seq)
+      const session = this.sessions.get(frame.sessionId)
+      if (session === undefined) this.projectionStore(frame.sessionId).apply(frame.key, frame.value, frame.seq)
+      else session.handleProjectionFrame(frame)
       this.notifier.markDirty()
       return
     }
@@ -699,7 +706,13 @@ export class SessionManager {
     }
 
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
-      const store = this.projectionStore(sessionId as SessionId)
+      const id = sessionId as SessionId
+      const session = this.sessions.get(id)
+      if (session !== undefined) {
+        session.replaceProjectionBaseline(block)
+        continue
+      }
+      const store = this.projectionStore(id)
       store.truncate(block.asOfSeq)
       store.seed(block)
     }
@@ -718,9 +731,14 @@ export class SessionManager {
     this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
     const projections = summary.projections
     if (projections !== undefined) {
-      const store = this.projectionStore(summary.sessionId)
-      for (const [key, value] of Object.entries(projections.values)) {
-        store.apply(key, value, projections.asOfSeq)
+      const session = this.sessions.get(summary.sessionId)
+      if (session !== undefined) {
+        session.handleProjectionHint(projections)
+      } else {
+        const store = this.projectionStore(summary.sessionId)
+        for (const [key, value] of Object.entries(projections.values)) {
+          store.apply(key, value, projections.asOfSeq)
+        }
       }
     }
     if (summary.origin === 'subagent' && summary.parentSessionId !== undefined) {

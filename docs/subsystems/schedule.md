@@ -149,7 +149,7 @@ type ScheduleDispatchChange = OneShotScheduleDispatchChange | EveryScheduleDispa
 type ScheduleChange = ScheduleCreateChange | ScheduleDeleteChange | ScheduleDispatchChange
 ```
 
-The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The Schedule projection receives only the normalized boundary through `init(seedLength)`, uses the shared transition, and persists both active records and used-id history so cached restore preserves strict replay; it does not receive the complete header. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
+The strict decoder and fold reject unknown versions, extra fields, reused ids, mismatched one-shot or Every dispatch shapes, and delete or dispatch transitions against inactive records. A normal Session folds its complete event stream. A fork folds only events at or after `SessionHeader.seedLength`, so it retains history without adopting the parent Session's active reminders. The Schedule projection derives that boundary from the immutable header passed to `init(header)`, uses the shared transition, and persists both active records and used-id history so cached restore preserves strict replay; the registry validates the boundary against the observed log. The `schedule/change` declaration and source location are also indexed in the [persistence catalog](../persistence-catalog.md#schedulechange--log-only).
 
 ## Active views and management
 
@@ -179,15 +179,9 @@ The generated [tool catalog](../tool-catalog.md#deepseek-aidsh-schedule) owns th
 
 ## Read-only Web catalog
 
-When the optional Session projection registry is present, Schedule registers the client-visible `schedule` key whose value is the complete active `ScheduleRecord[]`. Live drive, lazy build, persisted-cache restore, Session history, and detached Subagent reads all receive the normalized seed boundary validated for their event cut, and reject a boundary beyond the observed log. A malformed authoritative event fails the existing read/open path. A malformed non-authoritative checkpoint is discarded and rebuilt from the log; no partial active array is published.
+When the optional Session projection registry is present, Schedule registers the client-visible `schedule` key whose value is the complete active `ScheduleRecord[]`. Live, cache, history, and detached reads use the same header-aware strict fold; malformed authoritative input fails the existing read path instead of publishing a partial value.
 
-The shipped Web bundle owns a disabled `ui-schedule` row and the package-resolution dependency. The explicit Schedule overlay enables that existing row together with `time-context` and the Schedule Host plugin, so ordinary Web startup keeps the client plugin inactive. After a Session opens successfully, [`dsh-client-ui-schedule`](../../packages/client/ui-schedule/README.md) reads the projection through `useProjection('schedule')`; an absent or empty value, or any non-open Session state, renders no entry.
-
-The header popover is a 336px read-only list. It shows complete plain-text prompts, localized Once or an exact unrounded Every interval, browser-local target time, browser-clock-relative time, and a separate scheduled or overdue status. Overdue rows sort first, then by target, with the projection's create order breaking exact ties. The trigger is the only tab stop; native Enter/Space activation, Escape focus return, outside-pointer dismissal, and no-focus-transfer unmount on the last live removal are the full interaction surface.
-
-The existing `ui-workspace` list projection separately derives only whether `projectionValues.schedule` is a non-empty array. Grouped, flat, and search rows render the same non-interactive alarm after the title (and before the ordinary-row update time), with localized tooltip and screen-reader text. A cold row shows it only when the identity-matching usable projection cache explicitly supplies a non-empty value; cache absence or staleness may cause a brief omission or residue, and the alarm never claims a Schedule runtime is live.
-
-The catalog is current active state, not a receipt or history. It exposes no Schedule id, raw UTC, detail, mutation, retry, toast, or special conversation card. A due reminder still appears only as the ordinary Assistant output described below.
+The shipped Web bundle keeps `ui-schedule` disabled by default, while the explicit Schedule overlay enables it together with the Host capability. [`dsh-client-ui-schedule`](../../packages/client/ui-schedule/README.md), [`dsh-client-ui-workspace`](../../packages/client/ui-workspace/README.md), and the [catalog decision](../../.agents/notes/implemented/feature/2026-08-25-read-only-web-schedule-catalog.md) own the presentation contracts. The shared value represents current active state, never delivery history or a receipt; due reminders still appear through the ordinary Assistant output described below.
 
 ## Live delivery
 

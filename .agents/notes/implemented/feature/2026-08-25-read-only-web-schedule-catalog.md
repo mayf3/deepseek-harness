@@ -16,7 +16,7 @@ Schedule registers an optional `schedule` Session projection and a separate brow
 
 ### Projection boundary
 
-The Schedule unit reuses the domain's strict transition and publishes the complete active `ScheduleRecord[]`; damaged authoritative input fails the existing read/open path, while a malformed disposable checkpoint is rebuilt from the log. The shared [projection state and Client views decision](../architecture/2026-08-19-session-projection-state-and-client-views.md) owns `init(seedLength)`, optional same-key header seeding, checkpoint validation, and the live/cache/history/detached drive paths. This note owns only how the resulting active value is presented in Web.
+The Schedule unit reuses the domain's strict transition and publishes the complete active `ScheduleRecord[]`; damaged authoritative input fails the existing read/open path, while the production prepared-session path can rebuild a malformed disposable checkpoint from the log. The shared [projection state and Client views decision](../architecture/2026-08-19-session-projection-state-and-client-views.md) owns `init(header)`, centralized seed-boundary validation, checkpoint validation, and the live/cache/history/detached drive paths. This note owns only how the resulting active value is presented in Web.
 
 `@deepseek-ai/dsh-schedule/client` is a type-only browser-safe export of the durable record vocabulary. It does not pull the Cordis plugin, runtime, timers, tools, or Node dependencies into the client graph.
 
