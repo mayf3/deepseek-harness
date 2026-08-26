@@ -152,6 +152,45 @@ describe('MessageImage', () => {
   })
 })
 
+describe('MessageImage preview arm', () => {
+  it('displays a local preview immediately, without the loader, sized by its probed dimensions', () => {
+    const load = vi.fn()
+    const view = render(
+      <MessageImage
+        image={{ preview: { url: 'blob:echo', name: 'echo.png', width: 640, height: 320 } }}
+        load={load}
+        variant="single"
+        labels={labels}
+      />,
+    )
+    expect(load).not.toHaveBeenCalled()
+    const img = view.getByAltText('echo.png') as HTMLImageElement
+    expect(img.src).toContain('blob:echo')
+    const frame = img.closest('button') as HTMLButtonElement
+    expect(frame.style.width).toBe('240px')
+    expect(frame.style.height).toBe('120px')
+  })
+
+  it('sizes an unprobed lone preview as a square crop and falls back to the image label', () => {
+    const load = vi.fn()
+    const view = render(
+      <MessageImage image={{ preview: { url: 'blob:unprobed' } }} load={load} variant="single" labels={labels} />,
+    )
+    const img = view.getByAltText('图片') as HTMLImageElement
+    const frame = img.closest('button') as HTMLButtonElement
+    expect(frame.style.width).toBe('240px')
+    expect(frame.style.height).toBe('240px')
+  })
+
+  it('opens the lightbox from a preview thumbnail', () => {
+    const view = render(
+      <MessageImage image={{ preview: { url: 'blob:box' } }} load={vi.fn()} variant="tile" labels={labels} />,
+    )
+    fireEvent.click(view.getByRole('button', { name: '图片，点击查看原图' }))
+    expect(view.getByRole('dialog', { name: '原图预览' })).toBeTruthy()
+  })
+})
+
 describe('ImageGallery', () => {
   it('renders nothing without images and an aligned wrapping group with them', async () => {
     const load = vi.fn().mockResolvedValue('blob:gallery')

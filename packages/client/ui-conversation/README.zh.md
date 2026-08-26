@@ -40,6 +40,8 @@ View 选择规则固定：有效且已注册的持久化选择优先，其次是
 
 常驻 composer 在无 Session 与有 Session 之间保持挂载。无 Session 时，同一个 textarea 保持 inert，Workspace picker 连接 blank Session；草稿文本镜像到逐 Session Conversation store。Queue 操作通过 scoped `ctx.conversation` service 寻址准确的 queue occurrence。繁忙时 Enter 行为保存在 Host-backed `ui-conversation` settings namespace。
 
+默认发送采用乐观提交：Enter 在同一事务里清空草稿、occurrence 表和撤销历史，composer 保持 `plain`，发送作为 detached attempt 运行，飞行期间可以继续输入和继续发送。`sendSession` 在序列化之前注册 Session 提交回显（`session.beginSubmission`），让出一帧使回显在点击当帧渲染，图片经浏览器原生 `FileReader` data-URL 路径编码。发送失败只把已发送的草稿、引用和图片 id 还原进仍未被触碰的空 composer；命令提交保持冻结的 `submitting` 阶段。回显以 observed 退休时，草稿预览把 object URL 移交 durable 图片缓存（`seedImageUrl`），transcript 节点无需字节往返即可显示。
+
 普通 composer 运行时，如果草稿为空或输入不可用，主指针操作保持为 Stop。可提交的文字或附件会把同一位置切换为 Queue Send；清空或成功提交草稿后恢复 Stop。繁忙态 Enter 设置继续选择 Queue 或 Steer 键盘操作。可继续 subagent 保留独立的 Send 与 Stop 操作（[决策](../../../.agents/notes/implemented/bug-fix/2026-08-20-running-draft-primary-send.zh.md)）。
 
 <a id="temporary-composer-entries"></a>

@@ -131,6 +131,183 @@ describe('ConversationController', () => {
   })
 })
 
+describe('sendSession submission echo', () => {
+  /** Bench with an observable beginSubmission on the session face. */
+  async function echoBench() {
+    const b = await bench()
+    const retire: { onRetire?: (retirement: unknown) => void } = {}
+    const abandon = vi.fn()
+    const beginSubmission = vi.fn((input: { onRetire?: (retirement: unknown) => void }) => {
+      retire.onRetire = input.onRetire
+      return { requestId: 'req-echo' as never, abandon }
+    })
+    await b.runtime.sessions.updateSessionSnapshot('s1', () => {})
+    const face = b.runtime.sessions.binding('s1')!.session as unknown as Record<string, unknown>
+    face['beginSubmission'] = beginSubmission
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:echo-1')
+    const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
+    const restore = () => {
+      created.mockRestore()
+      revoked.mockRestore()
+    }
+    return { ...b, beginSubmission, abandon, retire, revoked, restore }
+  }
+
+  it('registers the echo before serialization and prompts with its identity', async () => {
+    const b = await echoBench()
+    try {
+      const [attachment] = b.root.createDraftImages([
+        new File([Uint8Array.of(1, 2, 3)], 'a.png', { type: 'image/png' }),
+      ])
+      const session = b.runtime.sessions.binding('s1')!.session
+      const sending = b.root.sendSession(session, '带图', [attachment!.id], 'queue')
+      // Synchronous: the echo is registered before any encoding starts.
+      expect(b.beginSubmission).toHaveBeenCalledWith(expect.objectContaining({
+        text: '带图',
+        images: [expect.objectContaining({ previewUrl: 'blob:echo-1', name: 'a.png' })],
+      }))
+      expect(b.prompt).not.toHaveBeenCalled()
+      await expect(sending).resolves.toEqual({ kind: 'success' })
+      expect(b.prompt).toHaveBeenCalledWith(
+        [
+          { type: 'image', mediaType: 'image/png', data: expect.any(String), name: 'a.png' },
+          { type: 'text', text: '带图' },
+        ],
+        'queue',
+        undefined,
+        'req-echo',
+      )
+      // The draft stays registered until the echo's observed retirement.
+      expect(b.root.draftImages([attachment!.id])).toHaveLength(1)
+      b.retire.onRetire?.({ reason: 'observed', attachments: [] })
+      expect(b.root.draftImages([attachment!.id])).toEqual([])
+      expect(b.revoked).toHaveBeenCalledWith('blob:echo-1')
+    } finally {
+      b.restore()
+    }
+    await b.runtime.dispose()
+  })
+
+  it('hands the preview URL to the image cache on observed retirement instead of revoking it', async () => {
+    const b = await echoBench()
+    try {
+      const seedImageUrl = vi.fn(() => true)
+      b.runtime.ctx.provide('uiConversation')
+      b.runtime.ctx.set('uiConversation', { seedImageUrl })
+      const [attachment] = b.root.createDraftImages([
+        new File([Uint8Array.of(9)], 'seeded.png', { type: 'image/png' }),
+      ])
+      const session = b.runtime.sessions.binding('s1')!.session
+      await b.root.sendSession(session, '', [attachment!.id], 'queue')
+      const ref = { attachmentId: 'att-1' }
+      b.retire.onRetire?.({ reason: 'observed', attachments: [ref] })
+      expect(seedImageUrl).toHaveBeenCalledWith('s1', ref, 'blob:echo-1')
+      expect(b.root.draftImages([attachment!.id])).toEqual([])
+      expect(b.revoked).not.toHaveBeenCalled()
+      // Failed retirement keeps nothing to do; a second retire of released ids is a no-op.
+      b.retire.onRetire?.({ reason: 'observed', attachments: [ref] })
+    } finally {
+      b.restore()
+    }
+    await b.runtime.dispose()
+  })
+
+  it('keeps the drafts registered when the echo retires as failed (composer restore path)', async () => {
+    const b = await echoBench()
+    try {
+      b.prompt.mockResolvedValueOnce({
+        ok: false, error: { code: 'attachment-error', message: 'nope', details: {} },
+      } as never)
+      const [attachment] = b.root.createDraftImages([
+        new File([Uint8Array.of(7)], 'kept.png', { type: 'image/png' }),
+      ])
+      const session = b.runtime.sessions.binding('s1')!.session
+      await expect(b.root.sendSession(session, '失败', [attachment!.id], 'queue'))
+        .resolves.toEqual({ kind: 'error' })
+      b.retire.onRetire?.({ reason: 'failed' })
+      expect(b.root.draftImages([attachment!.id])).toHaveLength(1)
+      expect(b.revoked).not.toHaveBeenCalled()
+    } finally {
+      b.restore()
+    }
+    await b.runtime.dispose()
+  })
+
+  it('abandons the echo when encoding fails before the prompt', async () => {
+    const b = await echoBench()
+    class FailingReader {
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+      error = new Error('read failed')
+      readAsDataURL(): void {
+        queueMicrotask(() => this.onerror?.())
+      }
+    }
+    vi.stubGlobal('FileReader', FailingReader)
+    try {
+      const [attachment] = b.root.createDraftImages([
+        new File([Uint8Array.of(1)], 'broken.png', { type: 'image/png' }),
+      ])
+      const session = b.runtime.sessions.binding('s1')!.session
+      await expect(b.root.sendSession(session, 'x', [attachment!.id], 'queue'))
+        .rejects.toThrow('read failed')
+      expect(b.abandon).toHaveBeenCalledOnce()
+      expect(b.prompt).not.toHaveBeenCalled()
+    } finally {
+      vi.unstubAllGlobals()
+      b.restore()
+    }
+    await b.runtime.dispose()
+  })
+
+  it('yields through the macrotask fallback where no frame clock exists', async () => {
+    const b = await echoBench()
+    vi.stubGlobal('requestAnimationFrame', undefined)
+    try {
+      const session = b.runtime.sessions.binding('s1')!.session
+      await expect(b.root.sendSession(session, '纯文本', [], 'queue')).resolves.toEqual({ kind: 'success' })
+      expect(b.prompt).toHaveBeenCalledWith([{ type: 'text', text: '纯文本' }], 'queue', undefined, 'req-echo')
+    } finally {
+      vi.unstubAllGlobals()
+      b.restore()
+    }
+    await b.runtime.dispose()
+  })
+})
+
+describe('draft image dimension probe', () => {
+  it('fills intrinsic dimensions from the header probe and skips runtimes without Image', async () => {
+    const b = await bench()
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:probe')
+    class InstantImage {
+      onload: (() => void) | null = null
+      naturalWidth = 0
+      naturalHeight = 0
+      set src(_value: string) {
+        this.naturalWidth = 640
+        this.naturalHeight = 480
+        this.onload?.()
+      }
+    }
+    vi.stubGlobal('Image', InstantImage)
+    try {
+      const [probed] = b.root.createDraftImages([
+        new File([Uint8Array.of(1)], 'probed.png', { type: 'image/png' }),
+      ])
+      expect(probed).toMatchObject({ width: 640, height: 480 })
+      vi.stubGlobal('Image', undefined)
+      const [unprobed] = b.root.createDraftImages([
+        new File([Uint8Array.of(2)], 'unprobed.png', { type: 'image/png' }),
+      ])
+      expect(unprobed?.width).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+      created.mockRestore()
+    }
+    await b.runtime.dispose()
+  })
+})
+
 describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
   const row = (id: string): QueuedMessage => ({
     id: id as never,

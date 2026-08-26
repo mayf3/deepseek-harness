@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The browser Chat target for Conversation assembly. It registers Chat event definitions and snapshot construction, supplies `useChat`, renders transcript nodes and details, and owns Chat-specific stores, actions, localization, and scroll restoration; historical image URLs resolve through the Conversation-owned per-session cache (`ctx.uiConversation.imageUrl`). Its Assistant and Turn Tail definitions fold packed historical Assistant runs without expanding their members.
+The browser Chat target for Conversation assembly. It registers Chat event definitions and snapshot construction, supplies `useChat`, renders transcript nodes and details, and owns Chat-specific stores, actions, localization, and scroll restoration; historical image URLs resolve through the Conversation-owned per-session cache (`ctx.uiConversation.imageUrl`). Its Assistant and Turn Tail definitions fold packed historical Assistant runs without expanding their members. The flow tail renders the session's local submission echoes (`SessionSnapshot.pendingSubmissions`) with the same bubble as their eventual durable user nodes, hidden per render once a user/steering node or queue occurrence carries the echo's prompt `rpcId`, so the echo-to-durable swap is atomic.
 
 ## Table of Contents
 
