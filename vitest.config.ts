@@ -251,6 +251,12 @@ export default defineConfig({
         // coverage lane exists.
         'packages/experimental/webworker-runtime/src/**',
         'packages/experimental/webworker-packer/src/*',
+        // Inspector behavior spans a Node Worker, the Host isolate, and a real
+        // browser realm. Its focused specs cover pure logic, while its Worker,
+        // Debugger, Chromium, and Loader suites run the assembled paths that
+        // the parent Vitest process cannot attribute. TODO(inspector): remove
+        // when the coverage lane can merge cross-realm V8 coverage.
+        'packages/experimental/inspector/src/**',
         'packages/client/modules/src/client/system.ts',
         'packages/client/hmr/src/client/index.ts',
         // Web config-tree boot round: the new host-side web-transport halves
