@@ -1961,11 +1961,14 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // The review's arithmetic check: an open frame whose full JSON cost is 63
     // (maxLogBytes: 64 -> ledger 63) must be rejected by the first-fragment
     // cap logBudget - 1 (62), not admitted with a bill of 64 that pushes the
-    // ledger negative.
+    // ledger negative. The frame is FORGED on fd 3 so the child ledger cannot
+    // truncate first: a reverted cap of logBudget (63) would admit the frame,
+    // hold it, and flush it at settlement, so the marker assertion fails.
     const { runtime } = await setup({ maxLogBytes: 64 })
     const result = await runtime.run({
       program: [
-        "print('x' * 61, end='', flush=True)",
+        'import os',
+        "os.write(3, ('{\"type\":\"log\",\"text\":\"' + 'x' * 61 + '\",\"open\":true}\\n').encode())",
         'return "done"',
       ].join('\n'),
       bindings: [],

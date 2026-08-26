@@ -14,7 +14,7 @@ Status: implemented
 
 ### 合并的 open 日志条目只计费一次，按片段分摊
 
-未结束行的显式 `flush()` 发出带 `open: true` 的 `log` 帧，宿主把下一个帧追加到同一条目（`print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行）。合并条目的线上成本——引号、内容、分隔符——恰好计费一次，在两侧按片段增量分摊（k 个片段 O(k)，绝不对整个持有重走）：首片段付完整 JSON 字符串成本加分隔符，每个续接与闭合帧只付内容。宿主的精确成本 cap 是首片段 `logBudget - 1`（账本预留字节，与 `admit` 一致）、续接或闭合帧 `logBudget + 2`（不含两个引号计费），且 `jsonStringCostUpTo` 在低于 2 字节 cap 时返回 `undefined`；子进程按 `_open_started` 单独键控拆分计费，因此闭合帧按合并尾部计费而非新条目（新条目会重复计引号加分隔符，并截断恰好适配的条目）。
+未结束行的显式 `flush()` 发出带 `open: true` 的 `log` 帧，宿主把下一个帧追加到同一条目（`print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行）。拆分计费算术——首片段付引号加内容加分隔符、续接与闭合帧只付内容、宿主 cap `logBudget - 1`／`logBudget + 2`、低于 2 字节的 walk guard、子进程的 `_open_started` 键控——只登记一次，见 [fd-3 协议 note 的 wire-contract 段](../architecture/2026-07-31-code-runtime-python-fd3-protocol.zh.md)。
 
 ### Boot-write failure no longer rejects run()
 
