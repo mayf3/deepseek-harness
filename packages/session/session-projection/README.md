@@ -11,7 +11,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 - `ctx.sessionProjections.register(definition): () => void` Register one domain's unit. Duplicate keys and invalid `stateVersion` throw; the registration is an effect on the calling fiber, so an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots — clients read that as capability absence.
 - `ctx.sessionProjections.onChanged(listener): () => void` Subscribe to the change feed: one call per client-visible unit whose state reference changed, per committed event, carrying the schema-validated view and the causing seq. Effect-tied like `register`.
 - `ctx.sessionProjections.stateOf(session, key)` Read one registered unit's current host state without computing unrelated views. The returned value is a live read-only reference; callers must not mutate it.
-- `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` One consistent synchronous cut over every registered client-visible unit — `{ asOfSeq, values }` with `asOfSeq` = the seq of the last event every value reflects (`-1` for an empty log). Host-only state is available only through `stateOf`.
+- `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` One consistent synchronous cut over every registered client-visible unit — `{ asOfSeq, values }` with `asOfSeq` = the seq of the last event every value reflects (`-1` for an empty log). Host-only state is structurally absent and is available only through keyed state reads.
 
 ### Key Types
 
@@ -26,7 +26,7 @@ Session-projection Service Definition and drive registry. It owns `ctx.sessionPr
 - **Whole-value event rule (load-bearing).** A state-carrying log event MUST carry the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
 - **Synchronous unit discipline.** `init`/`apply`/`wire.view` MUST be synchronous; carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut. An accidentally async view returns a Promise, which fails `wire.viewSchema.parse`.
 - **State is validated plain JSON, `stateVersion` is its invalidation anchor.** The persisted projection cache stores `(sessionId, key, ver, seq, val)` rows and validates `val` with `stateSchema` before use; bump `stateVersion` whenever the state fields or fold semantics change. Every unit's state is checkpointed — client-visible and host-only alike.
-- **No wire vocabulary here.** The registry exposes only the change feed and the snapshot read face; carriers (api-proxy) mint their own frames (`session/projection`) and blocks from them.
+- **Wire snapshots and host state are separate faces.** `snapshot()`, `cachedSnapshot()`, and `viewCheckpoint()` iterate only definitions with `wire`; host code reads other state through `stateOf()`. A carrier cannot accidentally serialize every internal state by omitting a filter flag.
 - **Required for units and host reads.** Plugins that contribute or read projection units inject `sessionProjections`, so incomplete compositions fail during activation. The lower-level api-proxy factory remains tolerant for isolated tests and diagnostics and omits projection blocks and frames when the registry is absent.
 
 ## Role

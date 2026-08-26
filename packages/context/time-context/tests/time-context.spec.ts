@@ -420,7 +420,7 @@ describe('time-context projection fold edges', () => {
     const session = Session.create(SessionId('same-turn'))
     session.append('turn/start', { turn: 1 })
     session.append('turn/start', { turn: 1 })
-    expect(ctx.sessionProjections.snapshot(session).values.timeContext).toMatchObject({
+    expect(ctx.sessionProjections.stateOf(session, 'timeContext')).toMatchObject({
       currentTurn: 1,
     })
   })
@@ -429,7 +429,7 @@ describe('time-context projection fold edges', () => {
     const { ctx } = await mount()
     const session = Session.create(SessionId('end-without-start'))
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    expect(ctx.sessionProjections.snapshot(session).values.timeContext).toMatchObject({
+    expect(ctx.sessionProjections.stateOf(session, 'timeContext')).toMatchObject({
       currentTurn: null,
     })
   })

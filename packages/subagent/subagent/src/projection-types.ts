@@ -60,6 +60,8 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     subagent: SubagentIdentityProjection | null
   }
   interface SessionProjectionMap {
+    /** Durable mode and label for a descriptor-backed subagent session. */
+    subagent: SubagentIdentityProjection | null
     /** Active-turn duration for a descriptor-backed subagent session. */
     subagentTiming: SubagentTimingProjection
   }

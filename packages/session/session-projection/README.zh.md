@@ -10,8 +10,8 @@
 
 - `ctx.sessionProjections.register(definition): () => void` 注册一个领域的单元。key 重复或 `stateVersion` 非法都会 throw；注册是挂在调用方 fiber 上的 effect，领域插件卸载后其 key（连同缓存的 cell）从后续驱动与快照中消失——客户端将其读作能力缺失。
 - `ctx.sessionProjections.onChanged(listener): () => void` 订阅变更流：每个已提交事件、每个状态引用发生变化的客户端可见单元各回调一次，携带经 schema 校验的 view 与致因 seq。与 `register` 一样绑定 effect。
-- `ctx.sessionProjections.stateOf(session, key)` 读取一个已注册单元的当前 host 状态，不计算无关 view。返回值是活的只读引用；调用方不得修改。
-- `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` 对全部已注册客户端可见单元做一次一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` = 所有值共同反映到的最后一个事件的 seq（空日志为 `-1`）。host-only 状态只能通过 `stateOf` 读取。
+- `ctx.sessionProjections.stateOf(session, key)` 读取一个已注册单元的当前 host 状态，不计算无关 view。返回的是在线只读引用；调用方不得修改。
+- `ctx.sessionProjections.snapshot(session): ProjectionSnapshot` 对全部已注册客户端可见单元做一次一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` = 所有值共同反映到的最后一个事件的 seq（空日志为 `-1`）。host-only 状态在结构上缺席，只能通过按 key 的状态读取面取得。
 
 ### 关键类型
 
@@ -26,7 +26,7 @@
 - **全量值事件规则（承重）。** 携带状态的日志事件必须携带变更后的完整状态，绝不携带裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
 - **单元的同步纪律。**`init`/`apply`/`wire.view` 必须是同步的；载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此。误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 - **状态是经校验的纯 JSON，`stateVersion` 是其失效锚点。** 持久投影缓存存储 `(sessionId, key, ver, seq, val)` 行，并在使用前以 `stateSchema` 校验 `val`；状态字段或折叠语义一旦变化就递增 `stateVersion`。每个单元的状态都会被检查点化——client-visible 与 host-only 一视同仁。
-- **本层没有协议词汇。** 注册表只暴露变更流与快照读取面；载体（api-proxy）据此自铸各自的帧（`session/projection`）与块。
+- **wire 快照与 host 状态是分离的读取面。** `snapshot()`、`cachedSnapshot()` 与 `viewCheckpoint()` 只遍历带 `wire` 的定义；host 代码通过 `stateOf()` 读取其他状态。载体无法因漏传过滤标记而意外序列化全部内部状态。
 - **单元与 host 读取方必需。** 贡献或读取投影单元的插件注入 `sessionProjections`，因此不完整的组合会在激活时失败。较低层的 api-proxy factory 仍对隔离测试和诊断保持容错，注册表缺席时省略投影块与帧。
 
 ## 职责

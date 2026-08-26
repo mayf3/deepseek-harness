@@ -78,7 +78,7 @@ function policyEvents(events: readonly SessionEvent[]) {
 }
 
 function foldedSandboxMode(ctx: Context, id: SessionId, events: readonly SessionEvent[]): unknown {
-  return ctx.sessionProjections.snapshot(Session.create(id, events)).values.sandboxMode
+  return ctx.sessionProjections.stateOf(Session.create(id, events), 'sandboxMode')
 }
 
 function foldedApprovalPolicy(ctx: Context, id: SessionId, events: readonly SessionEvent[]): unknown {

@@ -166,4 +166,5 @@ export const subagentIdentityProjectionDefinition = {
     const identity = descriptorIdentity(event)
     return identity === undefined ? null : identity
   },
+  wire: { viewSchema: identitySchema, view: state => state },
 } satisfies ProjectionDefinition<'subagent', SubagentIdentityProjection | null>
