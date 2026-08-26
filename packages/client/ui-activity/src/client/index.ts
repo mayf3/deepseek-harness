@@ -44,6 +44,13 @@ export function apply(ctx: ClientContext): void {
       inject: (): ActivityListInjected => ({
         hooks: { activity: ctx.activityFeed.state },
         observe: id => ctx.activityFeed.observe(id),
+        killJob: async (sessionId, jobId) => {
+          // The binding exists for every session whose header renders this
+          // control; the guard covers a row pressed while its scope prunes.
+          const session = ctx.sessions.binding(sessionId)?.session
+          if (session === undefined) return false
+          return (await session.killJob(jobId)).ok
+        },
       }),
     }, ActivityListAction),
   )

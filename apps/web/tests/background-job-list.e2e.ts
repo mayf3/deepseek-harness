@@ -107,12 +107,25 @@ describe.skipIf(MODE === 'record')('web e2e: background job list', () => {
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
-  it('flips the open list to the cancelled outcome when the registry settles it', async () => {
+  it('kills the running job from the two-press stop control and settles the row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-background-job-settled'))
-    expect(scaffold.ctx.jobs.kill(jobId, agent, 'web e2e cancellation')).toBe('requested')
+    // The whole human path: arm, confirm, session.killJob, registry kill,
+    // jobs frames flipping the row — no registry call from the test.
+    const stop = page.locator('[data-kill-state]')
+    await stop.waitFor({ timeout: 10_000 })
+    await stop.click()
+    await expect.poll(() => stop.getAttribute('data-kill-state')).toBe('armed')
+    await stop.click()
 
-    const idle = page.getByRole('button', { name: '1 task' })
+    // Exact: the running trigger's name ('1 task running') contains this label.
+    const idle = page.getByRole('button', { name: '1 task', exact: true })
     await idle.waitFor({ timeout: 20_000 })
+    // The unclaimed report's reason lands in the settled row's detail.
+    await expect.poll(
+      () => page.getByRole('list', { name: 'Tasks' }).textContent(),
+      { timeout: 15_000 },
+    ).toContain('cancelled by the user')
+    expect(scaffold.ctx.jobs.get(jobId, agent).status).toBe('killed')
 
     const snapshot = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)

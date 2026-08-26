@@ -145,6 +145,7 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
+  onKillJob: (payload: unknown) => Promise<RpcResponse<{ outcome: 'requested' | 'already-finished' }>> = () => Promise.resolve(ok({ outcome: 'requested' as const }))
 
   onDescribe: (payload: unknown) => Promise<RpcResponse<{
     version: string
@@ -308,6 +309,7 @@ export class FakeApiClient implements IApiClient {
         attachment: payload => this.remoteResult('session.attachment', payload, this.onAttachment(payload)),
         updateQueue: payload => this.remoteResult('session.updateQueue', payload, this.onUpdateQueue(payload)),
         cancel: payload => this.remoteResult('session.cancel', payload, this.onCancel(payload)),
+        killJob: payload => this.remoteResult('session.killJob', payload, this.onKillJob(payload)),
         page: request => this.page(request),
         follow: (request, signal) => this.openFollow(request, signal),
         control: signal => this.openControl(signal),

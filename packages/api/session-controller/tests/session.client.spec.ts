@@ -279,6 +279,29 @@ describe('prompt and cancel errors', () => {
     })
   })
 
+  it('passes a killJob through to the session Remote and returns the admission', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, api, fakeRemote(api), {})
+    await session.open()
+    const killed = await session.killJob('bash-3')
+    expect(killed).toEqual({ ok: true, value: { outcome: 'requested' } })
+    expect(api.callsOf('session.killJob')).toEqual([{ sessionId: SID, jobId: 'bash-3' }])
+    // Row state converges through the jobs frames; a kill leaves no local error state.
+    expect(session.getSnapshot().promptError).toBeNull()
+  })
+
+  it('returns a killJob business failure without touching promptError', async () => {
+    const api = new FakeApiClient()
+    api.onKillJob = () => Promise.resolve(err({
+      code: 'job-not-found', message: 'unknown job bash-9', details: { sessionId: SID, jobId: 'bash-9' },
+    }) as never)
+    const session = new Session(SID, api, fakeRemote(api), {})
+    await session.open()
+    const killed = await session.killJob('bash-9')
+    expect(killed).toMatchObject({ ok: false, error: { code: 'job-not-found' } })
+    expect(session.getSnapshot().promptError).toBeNull()
+  })
+
   it('lands an interrupt business failure in promptError with op=stop', async () => {
     const api = new FakeApiClient()
     api.onSubagentInterrupt = () => Promise.resolve(err({

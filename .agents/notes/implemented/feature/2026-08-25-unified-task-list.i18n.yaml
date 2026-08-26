@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-25-unified-task-list.md
-2026-08-25-unified-task-list.md: e67ca84d96424e723f6a5660cbb2b02733e42892
-2026-08-25-unified-task-list.zh.md: 2a71b04ec33b635478bd4897e8777abb3081a8df
+2026-08-25-unified-task-list.md: e4ba43e9e599df7f5d7c4557986fbe0e693bedc3
+2026-08-25-unified-task-list.zh.md: fde7acbec5ad037722b00551b0e75fc1557dc705

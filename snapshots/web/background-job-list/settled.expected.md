@@ -1,5 +1,5 @@
 - list "Tasks":
   - listitem:
     - button "Show live output of sleep 45":
-      - text: "bash sleep 45 signal: SIGTERM {{duration}}"
+      - text: "bash sleep 45 signal: SIGTERM; cancelled by the user {{duration}}"
       - img

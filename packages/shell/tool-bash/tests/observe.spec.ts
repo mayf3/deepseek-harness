@@ -105,7 +105,7 @@ describe('background bash observation', () => {
     const job = ctx.jobs.list()[0]
     const snapshot = await until(() =>
       ctx.activities.list().find(row => row.correlation?.jobId === job!.id))
-    ctx.jobs.kill(job!.id, undefined, 'test cleanup')
+    ctx.jobs.kill(job!.id, undefined, { reason: 'test cleanup' })
     await until(() => ctx.activities.get(snapshot.id).status === 'killed' ? true : undefined)
     expect(ctx.activities.get(snapshot.id).detail).toMatch(/signal|killed before exit/)
   })

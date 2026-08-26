@@ -66,6 +66,14 @@ export interface ISession {
    */
   cancel(): Promise<ClientResult<{ accepted: true }>>
   /**
+   * Kill one background job from this session's task list. The owning agent
+   * still receives the standard completion notice, because a human kill has no
+   * other model-visible channel; row state converges through the jobs frames.
+   * @param jobId - the job row's registry id.
+   * @returns the registry's admission, or the business/transport error.
+   */
+  killJob(jobId: string): Promise<ClientResult<{ outcome: 'requested' | 'already-finished' }>>
+  /**
    * Rename this session (explicit user title; pins it against automatic
    * regeneration).
    * @param title - raw title text (the host normalizes acceptance).

@@ -199,6 +199,8 @@ export interface SessionErrorDetailsMap {
   'attachment-error': { readonly reason: string }
   'queue-item-not-found': { readonly itemId: MessageId }
   'steer-unavailable': { readonly itemId: MessageId }
+  'job-not-found': { readonly sessionId: SessionId; readonly jobId: JobId }
+  'jobs-unavailable': Record<never, never>
   'title-invalid': { readonly sessionId: SessionId }
   'fork-unavailable': { readonly sessionId: SessionId }
   'subagent-not-found': {
@@ -338,6 +340,17 @@ export interface SessionCancelRequest {
 /** Receipt after cancellation is admitted to the live Agent. */
 export interface SessionCancelValue {
   readonly accepted: true
+}
+
+/** Human-initiated cancellation of one background job visible to a Session. */
+export interface SessionKillJobRequest {
+  readonly sessionId: SessionId
+  readonly jobId: JobId
+}
+
+/** Receipt after the registry accepted the human kill request. */
+export interface SessionKillJobValue {
+  readonly outcome: 'requested' | 'already-finished'
 }
 
 /** Client-minted prompt identity used to reconcile optimistic and durable messages. */

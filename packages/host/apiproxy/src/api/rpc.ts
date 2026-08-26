@@ -40,6 +40,8 @@ export interface RpcErrorDetailsMap {
   'agent-preset-not-found': { agentPreset: string; available: readonly string[] }
   'agent-preset-invalid': { agentPreset: string; reason: string }
   'agent-busy': { reason: string }
+  'job-not-found': { sessionId: SessionId; jobId: string }
+  'jobs-unavailable': {}
   /**
    * A settings write was refused (schema validation, unknown namespace,
    * read-only provider, or storage failure); the message is the seam's text.

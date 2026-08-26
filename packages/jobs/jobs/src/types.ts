@@ -127,6 +127,26 @@ export interface JobSnapshot {
   reported: boolean
 }
 
+/** Options for {@link JobRegistry.kill}. */
+export interface JobKillOptions {
+  /**
+   * Cancellation reason: forwarded verbatim to the producer's cancel hook, and
+   * merged into the terminal `detail` when the job settles `killed`, so both
+   * the model and observers can see why the work stopped.
+   */
+  reason?: string
+  /**
+   * Whether this kill itself reports the terminal state to the model (default
+   * `true`): the killer's own result is the delivery, so the settlement notice
+   * is suppressed exactly as before. Pass `false` for a killer with no
+   * model-visible channel (a human cancellation from a client UI) — the job
+   * settles unreported and the standard completion notice stays due under the
+   * completion reporter's own delivery rules. `false` never clears an existing
+   * claim: a job the model already killed stays reported.
+   */
+  reported?: boolean
+}
+
 /** Output and post-read state returned by {@link JobRegistry.read}. */
 export interface JobRead {
   /**

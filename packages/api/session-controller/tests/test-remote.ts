@@ -30,6 +30,8 @@ import type {
   SessionForkValue,
   SessionFollowFrame,
   SessionFollowRequest,
+  SessionKillJobRequest,
+  SessionKillJobValue,
   SessionListRequest,
   SessionListValue,
   SessionPage,
@@ -58,6 +60,7 @@ export interface TestSessionRemote {
   attachment(request: SessionAttachmentRequest): Promise<RemoteResult<SessionAttachmentValue>>
   updateQueue(request: SessionUpdateQueueRequest): Promise<RemoteResult<SessionUpdateQueueValue>>
   cancel(request: SessionCancelRequest): Promise<RemoteResult<SessionCancelValue>>
+  killJob(request: SessionKillJobRequest): Promise<RemoteResult<SessionKillJobValue>>
   page(request: SessionPageRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPage>>
   follow(request: SessionFollowRequest, signal?: AbortSignal): AsyncIterable<SessionFollowFrame>
   control(signal?: AbortSignal): AsyncIterable<SessionControlFrame>
@@ -239,6 +242,7 @@ export function createSessionTestRemote(
     attachment: request => remoteResult(() => direct.attachment(request)),
     updateQueue: request => remoteResult(() => direct.updateQueue(request)),
     cancel: request => remoteResult(() => direct.cancel(request)),
+    killJob: request => remoteResult(() => direct.killJob(request)),
     page: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.page(request, signal),
       signal,

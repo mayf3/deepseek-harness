@@ -568,6 +568,26 @@ describe('completion notice delivery', () => {
     expect(inject).not.toHaveBeenCalled()
   })
 
+  it('delivers the completion notice for a human kill, reason included', async () => {
+    const { ctx } = await setup()
+    const inject = vi.fn()
+    const owner = fakeAgent(ctx, 'sess-1', { inject })
+    const p = producer({ owner, label: 'pnpm run watch' })
+    const id = ctx.jobs.start(p.spec)
+
+    // A kill with an unclaimed report (the web client's stop button) leaves
+    // the notice due; the model's own job_kill would have claimed it instead.
+    ctx.jobs.kill(id, owner, { reason: 'cancelled by the user', reported: false })
+    p.settle({ status: 'killed', detail: 'signal: SIGTERM' })
+    await tick()
+    expect(inject).toHaveBeenCalledTimes(1)
+    const message = inject.mock.calls[0]![0] as { content: readonly { type: string; text: string }[] }
+    expect(message.content[0]!.text).toBe(
+      'background job bash-1 (bash: pnpm run watch) finished '
+      + '[status: killed, signal: SIGTERM; cancelled by the user]. Read its output with job_output.',
+    )
+  })
+
   it('never wakes an idle owner under quiet delivery', async () => {
     const { ctx } = await setup({ completionDelivery: 'quiet' })
     const inject = vi.fn()

@@ -134,13 +134,14 @@ describe('Session control jobs updates', () => {
 
     const task = producer()
     const id = ctx.jobs.start({ ...task.spec, owner: agent })
-    ctx.jobs.kill(id, agent, 'test')
+    ctx.jobs.kill(id, agent, { reason: 'test' })
     task.settle({ status: 'killed', detail: 'signal: SIGTERM' })
 
     const frames = await collected
     expect(frames.map(frame => frame.sessionId)).toEqual([session.id, session.id, session.id])
     expect(frames.map(frame => frame.jobs[0]?.status)).toEqual(['running', 'stopping', 'killed'])
-    expect(frames[2]?.jobs[0]?.detail).toBe('signal: SIGTERM')
+    // The registry merges the recorded kill reason into the killed detail.
+    expect(frames[2]?.jobs[0]?.detail).toBe('signal: SIGTERM; test')
     expect(frames[2]?.jobs[0]?.finishedAt).toBeTypeOf('number')
   })
 
@@ -205,7 +206,7 @@ describe('Session control jobs updates', () => {
 
     const task = producer()
     const id = ctx.jobs.start({ ...task.spec, owner: agent })
-    ctx.jobs.kill(id, agent, 'test')
+    ctx.jobs.kill(id, agent, { reason: 'test' })
     task.settle({ status: 'killed', detail: 'signal: SIGTERM' })
     await collected
 

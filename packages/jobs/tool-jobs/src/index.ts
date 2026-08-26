@@ -389,7 +389,9 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute(args, exec) {
       const id = validateJobId(args.job_id)
-      const result = ctx.jobs.kill(id, exec.agent, args.reason)
+      // The model's own kill claims the terminal report: this tool result is
+      // its delivery, so the settlement notice stays suppressed (the default).
+      const result = ctx.jobs.kill(id, exec.agent, args.reason === undefined ? {} : { reason: args.reason })
       // A snapshot describes current state without consuming pending output.
       const snapshot = publicJob(ctx.jobs.get(id, exec.agent))
       return Promise.resolve({

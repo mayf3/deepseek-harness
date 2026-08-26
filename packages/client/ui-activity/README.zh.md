@@ -31,6 +31,8 @@ kind: "package-reference"
 
 jobs 与 activity 保持为两个独立的面（[缘由](../../../.agents/notes/implemented/feature/2026-08-24-activity-observation-seam.zh.md)）；合并逐行发生在本组件内。job 行保留来自 `jobsBySession` 镜像的生命周期、时长与模型可见 `detail`，当某个 activity 以 `correlation.jobId` 关联到它时获得可展开的输出面板；没有 job 的 activity 保留自己的行。没有可观察 activity 的行渲染为无展开交互的静态行。
 
+运行中的 job 行还带一个两击式停止控件：首击武装、三秒内的确认击调用 `session.killJob`，行状态经 jobs 帧收敛（先 `stopping`，再入已结束分组）。该 kill 不认领终态报告，任务的 owner agent 因此照常收到标准完成通知——模型被明确告知用户停止了它的任务，而不是留给它去猜（[决策](../../../.agents/notes/implemented/feature/2026-08-26-human-job-kill.zh.md)）。
+
 ### 展开的面板
 
 展开可观察的行即把该 activity 在 `ctx.activityFeed` 上的观察流打开进内嵌终端面板。面板的复制控件复制命令（而非输出），命令与输出行完整换行，输出在固定高度内滚动而非折叠，且不画自己的运行状态点——上方的行已携带状态。保留缺口与流失败以面板上方的提示呈现。
@@ -79,7 +81,7 @@ jobs 与 activity 保持为两个独立的面（[缘由](../../../.agents/notes/
 
 这些限制是当前包约束，不是任务积压。
 
-- **没有 kill 控件**——取消仍走模型的 `job_kill`；人工 kill 被 [web job display Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-web-background-job-display.zh.md) 记录的 jobs `reported` 契约问题阻塞。
+- **独立 activity 没有停止控件**——workflow 运行没有 job 句柄，取消只触达带 `jobId` 的行；要停 activity-only 的工作，先让其生产者注册 job。
 - **不渲染通道标签**——stdout 与 stderr chunk 连接成一条流；分通道着色是后续呈现优化。
 
 <a id="dev-note"></a>

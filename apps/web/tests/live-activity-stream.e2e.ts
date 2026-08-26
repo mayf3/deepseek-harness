@@ -114,7 +114,7 @@ describe.skipIf(MODE === 'record')('web e2e: live activity stream', () => {
 
   it('settles the open panel when the job is killed, keeping the streamed tail', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-live-activity-settled'))
-    expect(scaffold.ctx.jobs.kill(jobId, agent, 'web e2e cancellation')).toBe('requested')
+    expect(scaffold.ctx.jobs.kill(jobId, agent, { reason: 'web e2e cancellation' })).toBe('requested')
 
     // Settlement arrives on the observation stream itself, so the open panel
     // flips without any further interaction; the roster trigger follows.

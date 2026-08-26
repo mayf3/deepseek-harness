@@ -9,13 +9,14 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
-  JobDoneListener, JobId, JobRead, JobSnapshot, JobStart, JobsChangedListener,
+  JobDoneListener, JobId, JobKillOptions, JobRead, JobSnapshot, JobStart, JobsChangedListener,
 } from './types.ts'
 
 export { JobId } from './types.ts'
 export type {
   JobDoneListener,
   JobHooks,
+  JobKillOptions,
   JobKind,
   JobKindMap,
   JobOutcome,
@@ -109,15 +110,18 @@ export abstract class JobRegistry extends Service {
   abstract read(id: JobId, caller?: Agent): JobRead
 
   /**
-   * Request cancellation, then mark the job stopping and reported. A producer
-   * throw propagates without changing job state. Throws for an unknown or
-   * foreign job.
+   * Request cancellation, then mark the job stopping. By default the kill also
+   * claims the terminal report ({@link JobKillOptions.reported}); a kill with
+   * `reported: false` leaves the settlement notice due instead. A recorded
+   * {@link JobKillOptions.reason} merges into the terminal `detail` when the
+   * job settles `killed`. A producer throw propagates without changing job
+   * state. Throws for an unknown or foreign job.
    * @param id - job to cancel.
    * @param caller - killing agent checked against the owner.
-   * @param reason - logged reason forwarded to the producer.
+   * @param options - cancellation reason and terminal-report claim.
    * @returns `requested` for live work, otherwise `already-finished`.
    */
-  abstract kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished'
+  abstract kill(id: JobId, caller?: Agent, options?: JobKillOptions): 'requested' | 'already-finished'
 
   /**
    * Wait for settlement or timeout without cancelling the job. Caller abort

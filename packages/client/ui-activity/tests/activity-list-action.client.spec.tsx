@@ -53,6 +53,7 @@ function props(
   snapshot: Partial<ActivityFeedSnapshot>,
   observe: ActivityListActionProps['observe'] = () => () => {},
   jobs: readonly SessionJob[] = [],
+  killJob: ActivityListActionProps['killJob'] = async () => true,
 ): ActivityListActionProps {
   const state: ActivityFeedSnapshot = {
     rowsBySession: {},
@@ -67,7 +68,7 @@ function props(
   function useSessions<T>(select: (value: typeof sessionsState) => T): T {
     return select(sessionsState)
   }
-  return { sessionId: SESSION, useSessions, useActivity, observe, t } as unknown as ActivityListActionProps
+  return { sessionId: SESSION, useSessions, useActivity, observe, killJob, t } as unknown as ActivityListActionProps
 }
 
 function openList(): void {
@@ -377,5 +378,114 @@ describe('ActivityListAction rows and observation', () => {
     }, observe)} />)
     expect(stop).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: zh['row.collapseAria'].replace('{label}', 'other') })).toBeNull()
+  })
+})
+
+describe('ActivityListAction human kill', () => {
+  const stopTitle = (label: string): string => zh['kill.stop'].replace('{label}', label)
+
+  it('offers the stop control only on running job rows', () => {
+    render(<ActivityListAction {...props({
+      rowsBySession: { [SESSION]: [row({ id: 'wf-1' as ActivityId, kind: 'workflow', label: 'standalone' })] },
+    }, undefined, [job(), job({ id: 'bash-2' as SessionJob['id'], label: 'done', status: 'completed', finishedAt: 1_700_000_100_000 })])} />)
+    openList()
+    // The running job row offers it; the settled job and the standalone
+    // activity row (workflow) have no kill handle.
+    expect(screen.getByTitle(stopTitle('pnpm run build'))).toBeDefined()
+    expect(screen.queryByTitle(stopTitle('done'))).toBeNull()
+    expect(screen.queryByTitle(stopTitle('standalone'))).toBeNull()
+  })
+
+  it('arms on the first press and kills on the confirming press', async () => {
+    const killJob = vi.fn(async () => true)
+    render(<ActivityListAction {...props({}, undefined, [job()], killJob)} />)
+    openList()
+    const stop = screen.getByTitle(stopTitle('pnpm run build'))
+    fireEvent.click(stop)
+    expect(killJob).not.toHaveBeenCalled()
+    expect(stop.getAttribute('data-kill-state')).toBe('armed')
+    expect(screen.getByTitle(zh['kill.confirm'])).toBe(stop)
+    await act(async () => { fireEvent.click(stop) })
+    expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-1')
+    // The accepted kill leaves row convergence to the jobs frames; the local
+    // phase resets so the control does not stick in pending.
+    expect(stop.getAttribute('data-kill-state')).toBe('idle')
+  })
+
+  it('an armed press disarms after the confirmation window', () => {
+    vi.useFakeTimers()
+    const killJob = vi.fn(async () => true)
+    render(<ActivityListAction {...props({}, undefined, [job()], killJob)} />)
+    openList()
+    const stop = screen.getByTitle(stopTitle('pnpm run build'))
+    fireEvent.click(stop)
+    expect(stop.getAttribute('data-kill-state')).toBe('armed')
+    act(() => { vi.advanceTimersByTime(3_000) })
+    expect(stop.getAttribute('data-kill-state')).toBe('idle')
+    expect(killJob).not.toHaveBeenCalled()
+  })
+
+  it('a rejected kill shows its hint and then resets', async () => {
+    // Fake timers from the start so the failed-hint reset arms on the fake clock.
+    vi.useFakeTimers()
+    const killJob = vi.fn(async () => false)
+    render(<ActivityListAction {...props({}, undefined, [job()], killJob)} />)
+    openList()
+    const stop = screen.getByTitle(stopTitle('pnpm run build'))
+    fireEvent.click(stop)
+    await act(async () => { fireEvent.click(stop) })
+    expect(stop.getAttribute('data-kill-state')).toBe('failed')
+    expect(screen.getByTitle(zh['kill.failed'])).toBe(stop)
+    act(() => { vi.advanceTimersByTime(4_000) })
+    expect(stop.getAttribute('data-kill-state')).toBe('idle')
+  })
+
+  it('arming a second row disarms the first', () => {
+    render(<ActivityListAction {...props({}, undefined, [
+      job(),
+      job({ id: 'bash-2' as SessionJob['id'], label: 'pnpm run watch' }),
+    ])} />)
+    openList()
+    const first = screen.getByTitle(stopTitle('pnpm run build'))
+    fireEvent.click(first)
+    expect(first.getAttribute('data-kill-state')).toBe('armed')
+    const second = screen.getByTitle(stopTitle('pnpm run watch'))
+    fireEvent.click(second)
+    expect(second.getAttribute('data-kill-state')).toBe('armed')
+    expect(first.getAttribute('data-kill-state')).toBe('idle')
+  })
+
+  it('a kill resolving after another row armed leaves the newer phase alone', async () => {
+    let resolveKill!: (ok: boolean) => void
+    const killJob = vi.fn(() => new Promise<boolean>((resolve) => { resolveKill = resolve }))
+    render(<ActivityListAction {...props({}, undefined, [
+      job(),
+      job({ id: 'bash-2' as SessionJob['id'], label: 'pnpm run watch' }),
+    ], killJob)} />)
+    openList()
+    const first = screen.getByTitle(stopTitle('pnpm run build'))
+    fireEvent.click(first)
+    fireEvent.click(first)
+    expect(killJob).toHaveBeenCalledTimes(1)
+    // While the first kill is in flight, the user arms the second row; the
+    // late resolution must not clobber that newer phase.
+    const second = screen.getByTitle(stopTitle('pnpm run watch'))
+    fireEvent.click(second)
+    expect(second.getAttribute('data-kill-state')).toBe('armed')
+    await act(async () => { resolveKill(false) })
+    expect(second.getAttribute('data-kill-state')).toBe('armed')
+    expect(first.getAttribute('data-kill-state')).toBe('idle')
+  })
+
+  it('clears an armed phase whose row stopped being killable', () => {
+    const { rerender } = render(<ActivityListAction {...props({}, undefined, [job()])} />)
+    openList()
+    const stop = screen.getByTitle(stopTitle('pnpm run build'))
+    fireEvent.click(stop)
+    expect(stop.getAttribute('data-kill-state')).toBe('armed')
+    rerender(<ActivityListAction {...props({}, undefined, [job({ status: 'stopping' })])} />)
+    // The stopping row offers no kill control any more, and the stale phase is gone.
+    expect(screen.queryByTitle(stopTitle('pnpm run build'))).toBeNull()
+    expect(document.querySelector('[data-kill-state]')).toBeNull()
   })
 })

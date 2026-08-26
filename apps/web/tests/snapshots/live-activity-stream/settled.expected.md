@@ -1,7 +1,7 @@
 - list "Tasks":
   - listitem:
     - button "Hide live output of printf 'streamed-%s\\n' marker-line; sleep 45" [expanded]:
-      - text: "bash printf 'streamed-%s\\n' marker-line; sleep 45 signal: SIGTERM {{duration}}"
+      - text: "bash printf 'streamed-%s\\n' marker-line; sleep 45 signal: SIGTERM; web e2e cancellation {{duration}}"
       - img
     - text: $ printf 'streamed-%s\n' marker-line; sleep 45
     - button "Copy"

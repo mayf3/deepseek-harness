@@ -17,7 +17,7 @@ import type { ScopeLayer } from '@deepseek-ai/dsh-scope'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobDoneListener, JobKind, JobOutcome, JobRead, JobSnapshot, JobStart, JobStatus,
+  JobDoneListener, JobKillOptions, JobKind, JobOutcome, JobRead, JobSnapshot, JobStart, JobStatus,
   JobsChangedListener,
 } from '@deepseek-ai/dsh-jobs'
 
@@ -52,6 +52,8 @@ interface TrackedTask {
   startedAt: number
   finishedAt: number | undefined
   reported: boolean
+  /** Reason recorded by {@link LocalJobRegistry.kill}, merged into a `killed` settlement's detail. */
+  killReason: string | undefined
   /** Resolves once the terminal snapshot is recorded and listeners notified. */
   settled: Promise<void>
   /** Resolver for {@link settled}, called by the first effective settlement. */
@@ -168,6 +170,7 @@ export class LocalJobRegistry extends JobRegistry {
       startedAt: Date.now(),
       finishedAt: undefined,
       reported: false,
+      killReason: undefined,
       settled,
       markSettled,
       waiters: 0,
@@ -212,17 +215,21 @@ export class LocalJobRegistry extends JobRegistry {
     return { text, snapshot: this.snapshot(job) }
   }
 
-  kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished' {
+  kill(id: JobId, caller?: Agent, options?: JobKillOptions): 'requested' | 'already-finished' {
     const job = this.expect(id)
     this.assertAccess(job, caller)
+    // An unreporting kill never clears an existing claim, so `false` only
+    // withholds this call's own claim rather than resurrecting a suppressed notice.
+    const claims = options?.reported ?? true
     if (isTerminal(job.status)) {
-      job.reported = true
+      if (claims) job.reported = true
       return 'already-finished'
     }
     // Cancel first so a throw leaves both lifecycle and notice state unchanged.
-    job.cancel(reason)
+    job.cancel(options?.reason)
     job.status = 'stopping'
-    job.reported = true
+    if (options?.reason !== undefined) job.killReason = options.reason
+    if (claims) job.reported = true
     this.notifyChanged(job.owner)
     return 'requested'
   }
@@ -416,7 +423,13 @@ export class LocalJobRegistry extends JobRegistry {
   private settle(job: TrackedTask, outcome: JobOutcome): void {
     if (isTerminal(job.status)) return
     job.status = outcome.status
-    job.detail = outcome.detail
+    // A killed settlement carries the recorded kill reason in its detail:
+    // producer facts first (`signal: SIGTERM; cancelled by the user`). A job
+    // that outran its kill request (settled `completed`/`failed`) keeps the
+    // producer detail alone — the reason describes a kill that never landed.
+    job.detail = outcome.status === 'killed' && job.killReason !== undefined
+      ? (outcome.detail !== undefined ? `${outcome.detail}; ${job.killReason}` : job.killReason)
+      : outcome.detail
     job.output = outcome.output
     job.finishedAt = Date.now()
     if (job.waiters > 0) job.reported = true

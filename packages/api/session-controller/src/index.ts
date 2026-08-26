@@ -28,6 +28,8 @@ import type {
   SessionFollowRequest,
   SessionForkRequest,
   SessionForkValue,
+  SessionKillJobRequest,
+  SessionKillJobValue,
   SessionListRequest,
   SessionListValue,
   SessionPage,
@@ -274,6 +276,17 @@ export class SessionController extends TypertRemoteService {
   @Remote('cancel')
   cancel(request: SessionCancelRequest): SessionCancelValue {
     return this.commands.cancel(request)
+  }
+
+  /**
+   * Kill one background job on a human's behalf, leaving the terminal report
+   * unclaimed so the owning agent still receives the completion notice.
+   * @param request - Session whose task list carries the job, and the job id.
+   * @returns the registry's admission of the kill request.
+   */
+  @Remote('killJob')
+  killJob(request: SessionKillJobRequest): SessionKillJobValue {
+    return this.commands.killJob(request)
   }
 
   /**

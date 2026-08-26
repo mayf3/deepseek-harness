@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
@@ -98,6 +99,32 @@ describe('SessionController facade', () => {
     })
     abort.abort()
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+  })
+
+  it('delegates killJob to the command controller', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    ctx.jobs.attachController('controller-facade-test')
+    ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
+      list: () => Promise.resolve([]),
+      inspect: () => Promise.resolve(undefined),
+    }) as never)
+    const controller = createSessionTestController(ctx, defaults)
+    const session = ctx.sessions.create()
+    // An unowned job is killable from any session, live agent or not.
+    let settle!: (outcome: { status: 'killed' }) => void
+    const id = ctx.jobs.start({
+      kind: 'bash',
+      label: 'facade kill',
+      run: () => ({
+        cancel: () => { settle({ status: 'killed' }) },
+        done: new Promise((resolve) => { settle = resolve }),
+      }),
+    })
+    expect(controller.killJob({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'requested' })
+    await ctx.fiber.dispose()
   })
 
   it.each(['success', 'domain-error', 'throw'] as const)(

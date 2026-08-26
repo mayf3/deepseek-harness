@@ -398,7 +398,7 @@ describe('LocalJobRegistry.kill', () => {
     const p = producer()
     const id = ctx.jobs.start(p.spec)
 
-    expect(ctx.jobs.kill(id, undefined, 'no longer needed')).toBe('requested')
+    expect(ctx.jobs.kill(id, undefined, { reason: 'no longer needed' })).toBe('requested')
     expect(p.cancels).toEqual(['no longer needed'])
     expect(ctx.jobs.list()[0]).toMatchObject({ status: 'stopping', reported: true })
 
@@ -442,6 +442,79 @@ describe('LocalJobRegistry.kill', () => {
 
     broken = false
     expect(ctx.jobs.kill(id)).toBe('already-finished')
+  })
+
+  it('an unreporting kill leaves the notice due and stamps its reason into the killed detail', async () => {
+    const ctx = await harness()
+    const seen: JobSnapshot[] = []
+    ctx.jobs.onJobDone(snapshot => void seen.push(snapshot))
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+
+    expect(ctx.jobs.kill(id, undefined, { reason: 'cancelled by the user', reported: false })).toBe('requested')
+    expect(p.cancels).toEqual(['cancelled by the user'])
+    expect(ctx.jobs.list()[0]).toMatchObject({ status: 'stopping', reported: false })
+
+    p.settle({ status: 'killed', detail: 'signal: SIGTERM' })
+    await tick()
+    // Unreported settlement: the completion notice stays due, and the killed
+    // detail carries producer facts first, then the recorded reason.
+    expect(seen[0]).toMatchObject({
+      id,
+      status: 'killed',
+      reported: false,
+      detail: 'signal: SIGTERM; cancelled by the user',
+    })
+  })
+
+  it('a kill reason stands alone as detail when the killed outcome has none', async () => {
+    const ctx = await harness()
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    ctx.jobs.kill(id, undefined, { reason: 'cancelled by the user', reported: false })
+    p.settle({ status: 'killed' })
+    await tick()
+    expect(ctx.jobs.get(id).detail).toBe('cancelled by the user')
+  })
+
+  it('a job that outruns its kill keeps the producer detail alone', async () => {
+    const ctx = await harness()
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    ctx.jobs.kill(id, undefined, { reason: 'cancelled by the user', reported: false })
+    // The process won the race and exited normally before the kill landed.
+    p.settle({ status: 'completed', detail: 'exit code: 0' })
+    await tick()
+    expect(ctx.jobs.get(id)).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
+  })
+
+  it('an unreporting kill never clears an existing claim', async () => {
+    const ctx = await harness()
+    const seen: JobSnapshot[] = []
+    ctx.jobs.onJobDone(snapshot => void seen.push(snapshot))
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    // The model killed first (its tool result is the delivery)…
+    expect(ctx.jobs.kill(id, undefined, { reason: 'superseded' })).toBe('requested')
+    // …then a human kill arrives; withholding its own claim must not
+    // resurrect the notice the model already has.
+    expect(ctx.jobs.kill(id, undefined, { reason: 'cancelled by the user', reported: false })).toBe('requested')
+    expect(ctx.jobs.list()[0]).toMatchObject({ status: 'stopping', reported: true })
+    p.settle({ status: 'killed' })
+    await tick()
+    expect(seen[0]).toMatchObject({ id, reported: true })
+  })
+
+  it('an unreporting kill of a settled job does not claim the pending notice bit', async () => {
+    const ctx = await harness()
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    p.settle({ status: 'completed', detail: 'exit code: 0' })
+    await tick()
+    expect(ctx.jobs.kill(id, undefined, { reported: false })).toBe('already-finished')
+    // The default kill marks a terminal record reported; the unreporting one
+    // leaves the record exactly as the settlement left it.
+    expect(ctx.jobs.get(id).reported).toBe(false)
   })
 })
 

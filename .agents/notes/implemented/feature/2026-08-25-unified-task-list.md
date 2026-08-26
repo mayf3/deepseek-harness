@@ -42,5 +42,5 @@ Component suites cover the join (job lifecycle wins, activity supplies the panel
 ## Consequences
 
 - The two web e2e scenarios (`background-job-list`, `live-activity-stream`) now assert one "Tasks" list; the job-list scenario's row gained a live-output panel, which is the join working end to end.
-- A human kill control on live rows is still blocked on the jobs `reported` contract question recorded in the job-display note.
+- The human kill control on live rows shipped later, once [the human job kill note](2026-08-26-human-job-kill.md) resolved the jobs `reported` contract question.
 - The `job` locale namespace is gone with its package; `activity` owns the merged copy including the duration vocabulary.

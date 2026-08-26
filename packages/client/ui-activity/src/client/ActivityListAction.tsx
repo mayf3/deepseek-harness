@@ -3,8 +3,9 @@ import type {
   ActivityFeedSnapshot, ActivityId, ActivityRow, ObservedActivity,
 } from '@deepseek-ai/dsh-api-activity-controller/client'
 import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  IconChevronDownOutline14, StateDot, TerminalBlock, useDismissOnOutsidePointer,
+  IconChevronDownOutline14, IconStopFill16, StateDot, TerminalBlock, useDismissOnOutsidePointer,
   type StateDotState, type TerminalBlockLabels,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -26,6 +27,12 @@ export interface ActivityListInjected {
    * Reference-counted by the client feed, so panels can overlap safely.
    */
   observe: (id: ActivityId) => () => void
+  /**
+   * Kill one background job on the human's behalf. Resolves `true` when the
+   * registry admitted the request (`requested` or `already-finished`); row
+   * state itself converges through the jobs control frames.
+   */
+  killJob: (sessionId: SessionId, jobId: string) => Promise<boolean>
 }
 
 /** Full props for the session-header task-list action. */
@@ -53,6 +60,8 @@ interface TaskRow {
   finishedAt?: number
   /** Present when this row's live output can be observed. */
   activityId?: ActivityId
+  /** Present for job rows: the registry id a human kill can address. */
+  jobId?: string
 }
 
 /** Stable empty lists so a session with no work keeps one array identity. */
@@ -61,6 +70,12 @@ const NO_JOBS: readonly SessionJob[] = []
 
 /** Minimum gap kept between the popover and the viewport edges (the Menu primitive's portal margin). */
 const VIEWPORT_MARGIN = 12
+
+/** How long an armed kill waits for its confirming press before disarming. */
+const KILL_ARM_MS = 3_000
+
+/** How long a failed kill keeps its hint before the button resets. */
+const KILL_FAILED_MS = 4_000
 
 
 function isLive(row: TaskRow): boolean {
@@ -189,6 +204,7 @@ function mergeRows(
       startedAt: job.startedAt,
       ...job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {},
       ...activity !== undefined ? { activityId: activity.id } : {},
+      jobId: String(job.id),
     }
   })
   for (const activity of byJob.values()) rows.push(activityTask(activity))
@@ -211,14 +227,24 @@ function ordered(rows: readonly TaskRow[]): TaskRow[] {
   })
 }
 
+/**
+ * Two-press kill affordance state: `armed` waits for the confirming second
+ * press (and disarms on a timer), `pending` covers the in-flight RPC until the
+ * row's own status flip removes the button, `failed` shows briefly after a
+ * rejected kill.
+ */
+type KillState = 'idle' | 'armed' | 'pending' | 'failed'
+
 /** One task row plus, when observable and expanded, its live output panel. */
-function TaskItem({ row, view, expanded, now, onToggle, t }: {
+function TaskItem({ row, view, expanded, now, onToggle, kill, t }: {
   row: TaskRow
   view: ObservedActivity | undefined
   expanded: boolean
   /** Clock sample live rows derive their running duration from. */
   now: number
   onToggle: () => void
+  /** Present on running job rows: the human-kill button state and press handler. */
+  kill?: { state: KillState; onPress: () => void }
   t: TranslateNS<typeof NS>
 }) {
   const live = isLive(row)
@@ -262,25 +288,51 @@ function TaskItem({ row, view, expanded, now, onToggle, t }: {
         {observable ? <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
       </>
     )
+  const killTitle = kill === undefined
+    ? undefined
+    : kill.state === 'armed'
+      ? t('kill.confirm')
+      : kill.state === 'failed' ? t('kill.failed') : t('kill.stop', { label: row.label })
   return (
     <li className={css.item}>
-      {observable
-        ? (
-          <button
-            type="button"
-            className={live ? css.row : `${css.row} ${css.rowSettled}`}
-            aria-expanded={expanded}
-            aria-label={t(expanded ? 'row.collapseAria' : 'row.expandAria', { label: row.label })}
-            onClick={onToggle}
-          >
-            {body}
-          </button>
-        )
-        : (
-          <span className={live ? `${css.row} ${css.rowStatic}` : `${css.row} ${css.rowSettled} ${css.rowStatic}`}>
-            {body}
-          </span>
-        )}
+      <div className={css.rowLine}>
+        {observable
+          ? (
+            <button
+              type="button"
+              className={live ? css.row : `${css.row} ${css.rowSettled}`}
+              aria-expanded={expanded}
+              aria-label={t(expanded ? 'row.collapseAria' : 'row.expandAria', { label: row.label })}
+              onClick={onToggle}
+            >
+              {body}
+            </button>
+          )
+          : (
+            <span className={live ? `${css.row} ${css.rowStatic}` : `${css.row} ${css.rowSettled} ${css.rowStatic}`}>
+              {body}
+            </span>
+          )}
+        {kill !== undefined
+          ? (
+            <button
+              type="button"
+              className={
+                kill.state === 'armed'
+                  ? `${css.stop} ${css.stopArmed}`
+                  : kill.state === 'failed' ? `${css.stop} ${css.stopFailed}` : css.stop
+              }
+              data-kill-state={kill.state}
+              disabled={kill.state === 'pending'}
+              aria-label={killTitle}
+              title={killTitle}
+              onClick={kill.onPress}
+            >
+              <IconStopFill16 size={12} />
+            </button>
+          )
+          : null}
+      </div>
       {expanded && view !== undefined
         ? (
           <div className={css.panel}>
@@ -318,13 +370,15 @@ function TaskItem({ row, view, expanded, now, onToggle, t }: {
  *   hooks, the observation control, and the namespace translator.
  * @returns the trigger and its popover list, or null when there is nothing to show.
  */
-export function ActivityListAction({ sessionId, useSessions, useActivity, observe, t }: ActivityListActionProps) {
+export function ActivityListAction({ sessionId, useSessions, useActivity, observe, killJob, t }: ActivityListActionProps) {
   const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_JOBS
   const owned = useActivity(state => state.rowsBySession[sessionId]) ?? NO_ROWS
   const unowned = useActivity(state => state.rowsBySession['']) ?? NO_ROWS
   const observedViews = useActivity(state => state.observed)
   const [open, setOpen] = useState(false)
   const [expandedKey, setExpandedKey] = useState<string | undefined>(undefined)
+  // One kill affordance advances at a time: arming a row disarms any other.
+  const [killPhase, setKillPhase] = useState<{ key: string; state: Exclude<KillState, 'idle'> } | undefined>(undefined)
   const [now, setNow] = useState(() => Date.now())
   const rootRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -399,6 +453,46 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
     }
   }, [rows, expandedKey])
 
+  // An armed kill disarms on a timer, and a failed one clears its hint; the
+  // pending phase instead waits for the RPC (or the row's own status flip).
+  // The cleanup clears the timer on every phase change, so a firing timer
+  // always describes the current phase and may reset unconditionally.
+  useEffect(() => {
+    if (killPhase === undefined || killPhase.state === 'pending') return
+    const timer = setTimeout(
+      () => { setKillPhase(undefined) },
+      killPhase.state === 'armed' ? KILL_ARM_MS : KILL_FAILED_MS,
+    )
+    return () => { clearTimeout(timer) }
+  }, [killPhase])
+
+  // A phase whose row stopped being killable (settled, stopping, removed)
+  // has no button to describe any more.
+  useEffect(() => {
+    if (killPhase !== undefined
+      && !rows.some(row => row.key === killPhase.key && row.jobId !== undefined && row.status === 'running')) {
+      setKillPhase(undefined)
+    }
+  }, [rows, killPhase])
+
+  const pressKill = (row: TaskRow): void => {
+    /* v8 ignore next -- the button only renders for job rows. */
+    if (row.jobId === undefined) return
+    const jobId = row.jobId
+    if (killPhase?.key !== row.key || killPhase.state !== 'armed') {
+      setKillPhase({ key: row.key, state: 'armed' })
+      return
+    }
+    setKillPhase({ key: row.key, state: 'pending' })
+    void killJob(sessionId, jobId).then((ok) => {
+      // Success needs no local state: the jobs frame flips the row to
+      // `stopping`, which removes the button and clears the phase above.
+      setKillPhase(current => current?.key === row.key
+        ? (ok ? undefined : { key: row.key, state: 'failed' })
+        : current)
+    })
+  }
+
   if (rows.length === 0) return null
 
   const countKey = liveRows.length > 0
@@ -423,6 +517,14 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
       onToggle={() => {
         setExpandedKey(current => current === row.key ? undefined : row.key)
       }}
+      {...row.jobId !== undefined && row.status === 'running'
+        ? {
+          kill: {
+            state: killPhase?.key === row.key ? killPhase.state : 'idle' as const,
+            onPress: () => { pressKill(row) },
+          },
+        }
+        : {}}
       t={t}
     />
   )

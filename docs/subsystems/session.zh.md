@@ -685,6 +685,14 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
 @Remote('cancel') cancel(request: SessionCancelRequest): SessionCancelValue
 
 /**
+ * Kill one background job on a human's behalf, leaving the terminal report
+ * unclaimed so the owning agent still receives the completion notice.
+ * @param request - Session whose task list carries the job, and the job id.
+ * @returns the registry's admission of the kill request.
+ */
+@Remote('killJob') killJob(request: SessionKillJobRequest): SessionKillJobValue
+
+/**
  * Read one cold-safe, message-aligned Session history page.
  * @param request - durable address, backward cursor, and page budget.
  * @param signal - cancellation for persistence reads.

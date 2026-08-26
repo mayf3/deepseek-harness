@@ -322,7 +322,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:58`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:60`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 

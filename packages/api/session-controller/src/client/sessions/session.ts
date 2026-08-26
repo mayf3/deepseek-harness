@@ -6,6 +6,7 @@ import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-atta
 import type {
   IApiClient, SubagentAddress,
 } from '@deepseek-ai/dsh-client-connection/client'
+import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
@@ -324,6 +325,23 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
     }
     return result
+  }
+
+  /**
+   * Kill one background job from this session's task list. Pure RPC passthrough:
+   * row state converges through the jobs control frames, and the caller (the
+   * task-list control) owns error presentation, so no snapshot state changes here.
+   * @param jobId - the job row's registry id.
+   * @returns the registry's admission of the kill request.
+   */
+  async killJob(jobId: string): Promise<ClientResult<{ outcome: 'requested' | 'already-finished' }>> {
+    try {
+      // The brand is nominal typing only; a client program stamps it at the
+      // wire boundary rather than value-importing the host-side constructor.
+      return toSessionResult(await this.remote.session.killJob({ sessionId: this.sessionId, jobId: jobId as JobId }))
+    } catch (error) {
+      return transportResult(error)
+    }
   }
 
   /**

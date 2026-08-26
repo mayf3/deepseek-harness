@@ -31,6 +31,8 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 Jobs and activities stay separate planes ([why](../../../.agents/notes/implemented/feature/2026-08-24-activity-observation-seam.md)); the join happens per row in this component. A job row keeps the job's lifecycle, duration, and model-visible `detail` from the `jobsBySession` mirror, and gains an expandable output panel when an activity carries its `correlation.jobId`; an activity without a job keeps its own row. Rows without an observable activity render as static rows with no expansion affordance.
 
+Running job rows also carry a two-press stop control: the first press arms it, the confirming press within three seconds calls `session.killJob`, and the row converges through the jobs frames (`stopping`, then the settled section). The kill leaves the terminal report unclaimed, so the owning agent still receives the standard completion notice — the model is told the user stopped its task rather than left to infer it ([decision](../../../.agents/notes/implemented/feature/2026-08-26-human-job-kill.md)).
+
 ### The expanded panel
 
 Expanding an observable row opens that activity's observation stream from `ctx.activityFeed` into an embedded terminal panel. The panel copies the command (not the output), wraps commands and output lines in full, scrolls its output inside a fixed height instead of folding, and draws no run-state dot of its own — the row above carries the state. Retention gaps and stream failures render as notices above the panel.
@@ -79,7 +81,7 @@ None; the package never assembles or sends provider requests.
 
 These limits define current package constraints, not a task backlog.
 
-- **No kill control** — cancellation stays with the model's `job_kill`; a human kill is blocked on the jobs `reported` contract question recorded in the [web job display Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-web-background-job-display.md).
+- **Standalone activities offer no stop control** — a workflow run has no job handle, so cancellation reaches only rows with a `jobId`; stopping activity-only work needs its producer to register a job first.
 - **Channel labels are not rendered** — stdout and stderr chunks concatenate into one stream; per-channel tinting is a presentation follow-up.
 
 <a id="dev-note"></a>

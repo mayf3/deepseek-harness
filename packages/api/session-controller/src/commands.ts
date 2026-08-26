@@ -10,6 +10,7 @@ import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-jobs'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -35,6 +36,8 @@ import type {
   SessionCreateValue,
   SessionForkRequest,
   SessionForkValue,
+  SessionKillJobRequest,
+  SessionKillJobValue,
   SessionPromptRequest,
   SessionPromptValue,
   SessionRenameRequest,
@@ -440,6 +443,38 @@ export class SessionCommandController {
     }
     agent.cancel({ kind: 'user' }, { keepInbox: true })
     return { accepted: true }
+  }
+
+  /**
+   * Kill one background job on a human's behalf. The kill leaves the terminal
+   * report unclaimed (`reported: false`), so the owning agent still receives
+   * the standard completion notice — a human cancellation has no other
+   * model-visible channel. The Agent lookup is live-only: a running job's
+   * owner is alive by the registry's ownership contract, and listing never
+   * revives a Session, so neither does killing from its list.
+   * @param request - Session whose task list carries the job, and the job id.
+   * @returns the registry's admission of the kill request.
+   */
+  killJob(request: SessionKillJobRequest): SessionKillJobValue {
+    const jobs = this.ctx.get('jobs')
+    if (jobs === undefined) {
+      reject('jobs-unavailable', 'background jobs are not available in this composition', {})
+    }
+    const agent = this.ctx.agents.get(request.sessionId)
+    try {
+      const outcome = jobs.kill(request.jobId, agent, {
+        reason: 'cancelled by the user',
+        reported: false,
+      })
+      return { outcome }
+    } catch (error) {
+      // `unknown job` and `belongs to another session` both mean this session's
+      // list no longer carries a killable row; the client renders one story.
+      reject('job-not-found', String(error), {
+        sessionId: request.sessionId,
+        jobId: request.jobId,
+      })
+    }
   }
 
   private async resolveAgent(sessionId: SessionId): Promise<Agent> {

@@ -95,7 +95,7 @@ A running one-shot background subagent therefore appears both there and in the s
 
 **No web path calls `ctx.jobs.read()`.** It consumes the single output cursor, so a browser read would silently take bytes the model's `job_output` will never see. This is an invariant worth a test rather than a convention, because the failure is invisible at the call site.
 
-**No cancellation.** That phase owes a decision the seam does not currently answer: `kill()` marks terminal delivery reported, so a human interrupt written against the `kill()` contract would leave the model believing its task is still running.
+**No cancellation.** That phase owed a decision the seam then did not answer: `kill()` marked terminal delivery reported, so a human interrupt written against the `kill()` contract would leave the model believing its task is still running. The [human job kill note](2026-08-26-human-job-kill.md) later resolved it: `kill` now takes an explicit `reported` claim, and the web stop control passes `reported: false` so the completion notice stays due.
 
 **No output watermark on the frame.** The output phase's delta channel is where an anchor field earns its place; one added now would have no reader.
 
@@ -129,7 +129,7 @@ Below it, [`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts
 
 **Settled rows accumulate.** The registry retains settled tasks until owner disposal, so a long session with many background commands grows a long list. Capping the settled tail is a presentation change, not a protocol one, if it becomes a real complaint.
 
-**`stopping` is rarely visible.** Only the model's `job_kill` produces it, so the state is rendered but rarely seen until human cancellation lands. It is in the union now because leaving a status out would have made that phase a wire change.
+**`stopping` is visible on every kill path.** The model's `job_kill` and the web stop control both produce it; carrying it in the union from the start is what kept the human-kill phase off the wire format.
 
 **Two entry points for one running subagent.** Accepted deliberately, and bounded to one-shot background delegations. If it reads as noise in practice, the fix is presentational — the catalog row can cite the task rather than the task list hiding the kind.
 
