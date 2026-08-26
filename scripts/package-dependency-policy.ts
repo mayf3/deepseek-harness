@@ -6,6 +6,7 @@ const CLIENT_FACE_INCLUDE: readonly string[] = []
 /** Packages exempted from automatic Client/Host treatment despite declaring `dsh.client`. */
 const CLIENT_FACE_EXCLUDE: readonly string[] = [
   '@deepseek-ai/dsh-api-session-controller',
+  '@deepseek-ai/dsh-api-workspace-controller',
 ]
 
 /** Host-only packages whose peer relays are deliberately flattened. */
@@ -14,11 +15,40 @@ const HOST_DEPENDENCY_PACKAGES: readonly string[] = [
   '@deepseek-ai/dsh-session',
 ]
 
+/**
+ * Runtime exports whose values remain valid when npm installs another package copy.
+ */
+const SAFE_HOST_DEPENDENCY_EXPORTS = {
+  '@deepseek-ai/dsh-api-session-controller/remote-events': ['SESSION_CONTROLLER_REMOTE_EVENTS'],
+  '@deepseek-ai/dsh-credentials': ['credentialKey'],
+  '@deepseek-ai/dsh-host-apiproxy': ['toFetchHandler'],
+  '@deepseek-ai/dsh-host-apiproxy/api': ['RpcId', 'clientRequestSchema'],
+  '@deepseek-ai/dsh-llm': ['MessageId', 'callConfigEquals', 'deepFreeze', 'freezeMessage'],
+  '@deepseek-ai/dsh-llm/brand': ['ToolCallId'],
+  '@deepseek-ai/dsh-session': ['isJsonValue'],
+  '@deepseek-ai/dsh-settings': ['settingsNamespace'],
+  '@deepseek-ai/dsh-system-prompt': ['FIRST_PARTY_SECTION_ORDER'],
+  '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
+  '@deepseek-ai/dsh-util-crypto': ['randomUUID'],
+  '@deepseek-ai/schemastery': ['default'],
+} as const satisfies HostDependencyExports
+
+/** Runtime exports that require every consumer to resolve the provider's shared peer instance. */
+const PEER_REQUIRED_HOST_EXPORTS = {
+  '@deepseek-ai/dsh-scope': ['carrierKeyOf', 'scopeOf', 'scopeTarget'],
+  '@deepseek-ai/dsh-typert-protocol': ['TypertLookupFailure', 'TypertRemoteFailure', 'remoteMethods'],
+} as const satisfies HostDependencyExports
+
+/** Exact import specifier to reviewed runtime exports. */
+type HostDependencyExports = Readonly<Record<string, readonly string[]>>
+
 /** Complete configurable input to package dependency classification. */
 export interface PackageDependencyPolicy {
   readonly clientFaceInclude: readonly string[]
   readonly clientFaceExclude: readonly string[]
   readonly hostPackages: readonly string[]
+  readonly safeHostDependencyExports: HostDependencyExports
+  readonly peerRequiredHostExports: HostDependencyExports
 }
 
 /** Repository dependency policy consumed by verification and benchmarking. */
@@ -26,6 +56,8 @@ export const PACKAGE_DEPENDENCY_POLICY: PackageDependencyPolicy = {
   clientFaceInclude: CLIENT_FACE_INCLUDE,
   clientFaceExclude: CLIENT_FACE_EXCLUDE,
   hostPackages: HOST_DEPENDENCY_PACKAGES,
+  safeHostDependencyExports: SAFE_HOST_DEPENDENCY_EXPORTS,
+  peerRequiredHostExports: PEER_REQUIRED_HOST_EXPORTS,
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

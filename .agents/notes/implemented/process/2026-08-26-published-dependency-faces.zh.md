@@ -30,11 +30,40 @@ Client bundle 使用的 workspace import、纯类型 import、模块扩充、`ds
 
 验证器读取源码 manifest 和源码文件，因此可以在没有已构建 `lib/` 的干净工作树上运行。未分类的 Host 运行期导出属于策略违规，会阻止 `--fix` 的全部写入；维护者必须审查该导出，并选择分类该导出、修改源码关系或修改选包范围。源码安全检查通过后，`--fix` 只执行分类所确定的区段与范围变更，并删除失效的 peer 元数据。
 
+### 维护流程
+
+不带 `--fix` 运行验证器，会以只读方式检查选包范围、导出分类、依赖区段、workspace range 与 peer metadata。未分类的运行期 import 会按每个导出分别报告可点击的 `path:line:column` 诊断。
+
+```sh
+pnpm run verify-package-dependencies
+```
+
+生成 manifest 前，在 [`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) 中分类每个新增 Host 运行期导出。`safeHostDependencyExports` 允许普通 dependency；`peerRequiredHostExports` 让整个提供包依赖边保留在范围一致的 peer 与开发区段。一个导出只能出现在一个表中。把 peer-required 导出重构到重复安装安全后，将该精确 specifier 与导出移入 safe 表；只有当一条依赖边的所有 import 都不再使用 peer-required 导出时，它才会成为普通 dependency。
+
+生成受管 manifest 区段后，单独刷新 lockfile，并审查两部分结果。存在策略违规时，`--fix` 不写任何文件；成功后，它会分别打印普通 dependency 与 peer-required 依赖边，但不会更新 lockfile。
+
+```sh
+pnpm run verify-package-dependencies -- --fix
+pnpm install --lockfile-only
+git diff -- packages pnpm-lock.yaml
+```
+
+通过仅 metadata 的本地 registry 测量工作树依赖图与 Git ref。每轮都会创建全新 consumer 与 npm cache，执行 `npm install --package-lock-only`，拒绝下载包归档，并保持仓库不变。`--runs` 控制重复次数，`--timeout-ms` 限制单轮耗时，可选 `--max-ms` 会在最慢一轮超过阈值时让命令失败。
+
+```sh
+pnpm run benchmark:npm-resolution -- --runs=5 --timeout-ms=300000
+pnpm run benchmark:npm-resolution -- --ref=origin/master --runs=5 --timeout-ms=300000
+```
+
+计算下一项 Host 包时，命令会在内存中应用当前策略、测量 baseline、逐个尝试可达且未配置的包，并串行复测粗筛中最快的候选。正数 `gainSeconds` 等于 `baseline median - candidate median`；`--candidates` 限定名册，`--jobs` 控制粗筛并发度，两个阶段都不写 manifest。选中的候选仍需先完成导出分类，才能加入 `hostPackages`。
+
+```sh
+pnpm run benchmark:npm-resolution:next -- --runs=1 --finalist-runs=5 --finalists=5 --jobs=8 --timeout-ms=120000
+```
+
 ### 性能验证
 
-[`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) 把当前策略应用到内存中的本地 registry，测量当前 CLI 依赖图，并逐个尝试每个可达且未配置的 Host 包。并发运行用于得到粗筛名单；由于 metadata 请求的完成顺序会让 npm 的 peer 放置搜索走不同路径，最终候选会串行复测。
-
-Benchmark 是手动诊断工具而非 CI 门禁。它在全新 consumer 中执行仅 metadata 的安装，因此相对结果可以定位 peer 中继，但不测量 registry 延迟或包归档下载。
+[`benchmark-npm-resolution`](../../../../scripts/benchmark-npm-resolution.ts) 与 [`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) 保持为手动工具而非 CI 门禁，因为 resolver 耗时会随机器负载和 metadata 完成顺序变化。它们通过全新 consumer 和仅 metadata 的运行，把 npm 依赖树计算与 registry 延迟、包归档下载分离，因此相对结果可以定位 peer 中继，但不构成发布时性能承诺。
 
 ## 考虑过的替代方案
 

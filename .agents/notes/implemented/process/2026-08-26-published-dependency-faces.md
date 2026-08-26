@@ -30,11 +30,40 @@ Workspace imports used by the Client bundle, type-only imports, module augmentat
 
 The verifier reads source manifests and source files, so it runs on a clean tree without built `lib/`. An unclassified Host runtime export is a policy violation that blocks all `--fix` writes; a maintainer must review the export and classify it, change the source relationship, or change the package selection. Once source safety passes, `--fix` performs only the section and range changes implied by the classification and removes stale peer metadata.
 
+### Maintainer workflow
+
+Run the verifier without `--fix` for a read-only check of package selection, export classifications, dependency sections, workspace ranges, and peer metadata. An unclassified runtime import reports one clickable `path:line:column` diagnostic per imported export.
+
+```sh
+pnpm run verify-package-dependencies
+```
+
+Classify each new Host runtime export in [`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) before generating manifests. `safeHostDependencyExports` permits an ordinary dependency; `peerRequiredHostExports` keeps the whole provider package edge in matching peer and development sections. An export may appear in exactly one table. After refactoring a peer-required export so duplicate package copies are safe, move that exact specifier and export to the safe table; an edge becomes an ordinary dependency only after none of its imported exports remain peer-required.
+
+Generate managed manifest sections, refresh the lockfile separately, and review both results. `--fix` writes nothing while a policy violation exists; after success it prints the ordinary-dependency and peer-required edge lists, but does not update the lockfile.
+
+```sh
+pnpm run verify-package-dependencies -- --fix
+pnpm install --lockfile-only
+git diff -- packages pnpm-lock.yaml
+```
+
+Measure the working-tree graph and a Git ref through the local metadata-only registry. Each run creates a fresh consumer and npm cache, executes `npm install --package-lock-only`, rejects archive downloads, and leaves the repository unchanged. `--runs` controls repetitions, `--timeout-ms` bounds each run, and optional `--max-ms` makes the command fail when the slowest run exceeds a threshold.
+
+```sh
+pnpm run benchmark:npm-resolution -- --runs=5 --timeout-ms=300000
+pnpm run benchmark:npm-resolution -- --ref=origin/master --runs=5 --timeout-ms=300000
+```
+
+Rank the next Host package by applying the current policy in memory, measuring a baseline, trying each reachable unconfigured package, and serially retesting the fastest coarse candidates. Positive `gainSeconds` is `baseline median - candidate median`; `--candidates` limits the roster, `--jobs` controls coarse concurrency, and neither phase writes manifests. A selected candidate still requires export classification before it joins `hostPackages`.
+
+```sh
+pnpm run benchmark:npm-resolution:next -- --runs=1 --finalist-runs=5 --finalists=5 --jobs=8 --timeout-ms=120000
+```
+
 ### Performance verification
 
-[`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) applies the current policy to an in-memory local registry, measures the current CLI graph, and tries every reachable unconfigured Host package one at a time. Concurrent runs provide a coarse shortlist; finalists run serially because npm's peer-placement search can take different paths when metadata request completion order changes.
-
-The benchmark is manual rather than a CI gate. It performs metadata-only installs in fresh consumers, so its relative results identify peer relays without measuring registry latency or archive downloads.
+[`benchmark-npm-resolution`](../../../../scripts/benchmark-npm-resolution.ts) and [`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) remain manual rather than CI gates because resolver time varies with machine load and metadata completion order. Their fresh-consumer, metadata-only runs isolate npm's dependency-tree calculation from registry latency and archive downloads, so relative results identify peer relays without creating a release-time performance promise.
 
 ## Alternatives considered
 
