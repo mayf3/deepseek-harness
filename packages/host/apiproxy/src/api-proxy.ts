@@ -178,8 +178,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     return defaults.openPath !== undefined || canOpenNativePath()
   }
 
-
-
   return {
     host: {
       describe(request) {
