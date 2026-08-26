@@ -239,7 +239,7 @@ const FRAME_ENVELOPE_BYTES = 64
  * smallest N that admits its own marker is 63 (51 + 2 + 6 + 4 = 63); 64 is the
  * floor with one byte of room. The marker itself remains envelope, not
  * payload, so a truncated run with admitted entries serializes to at most
- * `maxLogBytes + marker + envelope`; that bound is recorded in the README.
+ * `maxLogBytes + marker + envelope`.
  * `maxValueBytes` has no floor beyond the positive-integer requirement: a
  * completion can be as small as a single byte (`1`), and the done-frame
  * envelope is seam protocol cost, not the advertised completion budget.
@@ -763,8 +763,7 @@ export class PythonCodeRuntime extends CodeRuntime {
     // A basename that is not on PATH must fail at load, not silently fall to
     // execvp's platform default PATH (spawn runs with an EMPTY environment, so
     // execvp would resolve /usr/bin:/bin and could start a system interpreter
-    // the caller never asked for — the resolvePythonBin JSDoc promises an
-    // ENOENT for an unresolvable basename). Absolute paths pass through.
+    // the caller never asked for). Absolute paths pass through.
     if (resolvePythonBin(this.config.pythonBin) === undefined) {
       throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(this.config.pythonBin)} does not resolve on PATH`)
     }
@@ -818,8 +817,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // must serialize within the budget, or a marker-only truncated run
       // returns more than the configured cap. (With admitted entries the
       // marker is envelope, so the serialized logs run to
-      // `maxLogBytes + marker + envelope`; that bound is recorded in the
-      // README's Known Limitations.)
+      // `maxLogBytes + marker + envelope`.)
       if (key === 'maxLogBytes' && this.config[key] < MIN_LOG_BYTES) {
         throw new Error(`dsh-code-runtime-python: config.maxLogBytes must be at least ${MIN_LOG_BYTES} (a smaller budget cannot serialize the truncation marker itself, so a marker-only truncated run would return more than the configured cap), got ${String(this.config[key])}`)
       }
@@ -1007,10 +1005,10 @@ export class PythonCodeRuntime extends CodeRuntime {
       // run. The `_LogStream` replacement of `sys.stdout`/`sys.stderr` is
       // unaffected (it is a Python object, not the C-level stdio buffer).
       // Load validated that a basename resolves; absolute paths pass through.
-      // The non-null assertion is the load-time contract (see the pythonBin
-      // load checks); a PATH change between load and run would make this
-      // undefined and spawn throws synchronously, which the surrounding try
-      // settles as worker-exit like any other spawn failure.
+      // The type assertion is the load-time contract (see the pythonBin load
+      // checks); a PATH change between load and run would make this undefined
+      // and spawn throws synchronously, which the surrounding try settles as
+      // worker-exit like any other spawn failure.
       const resolvedPythonBin = resolvePythonBin(this.config.pythonBin) as string
       child = spawn(resolvedPythonBin, ['-u', '-I', bootstrapPath], {
         env: {},
