@@ -63,6 +63,16 @@ describe('next package benchmark graph', () => {
         ['@f/types', ['packages/g/probe/src/types.ts']],
       ]),
       hostRuntimeSourceUses: new Map([['@f/runtime', ['packages/g/probe/src/index.ts']]]),
+      hostRuntimeExportUses: [{
+        packageName: '@f/runtime',
+        specifier: '@f/runtime',
+        exportName: 'runtimeValue',
+        sourcePath: 'packages/g/probe/src/index.ts',
+        line: 1,
+        column: 10,
+        sourceLine: "import { runtimeValue } from '@f/runtime'",
+      }],
+      peerRequiredHostDependencies: new Set(),
       clientInject: new Set(),
     }
     const index = new Map<string, Map<string, MutableRegistryManifest>>([

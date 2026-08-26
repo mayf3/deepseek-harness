@@ -14,9 +14,9 @@ The package that chooses a Client build input is the shipped profile, while a Ho
 
 ### Package selection
 
-[`verify-package-dependencies`](../../../../scripts/verify-package-dependencies.ts) owns dependency-section policy. It always covers packages under `packages/client/` and every non-experimental package that declares `dsh.client`. The directory includes static Client inputs without a dynamic row, while `dsh.client` identifies dynamically loaded packages outside it; a `"./client"` export alone is an API and does not select npm dependency policy. Every selected package's Host entry is scanned, including entries under `packages/client/`.
+[`verify-package-dependencies`](../../../../scripts/verify-package-dependencies.ts) owns dependency-section policy. It always covers packages under `packages/client/` and every non-experimental package that declares `dsh.client`. Inside the directory, `dsh.client` marks a Client/Host package whose Host entry is scanned; a package without that declaration is a Client-only static build input. Outside the directory, `dsh.client` selects the same Client/Host scan. A `"./client"` export alone is an API and does not select npm dependency policy.
 
-[`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) provides explicit Client-face include and exclude lists. An include handles an exceptional package without `dsh.client`, while an exclude removes an automatically discovered dual-face package outside `packages/client/`. The verifier rejects unknown, stale, redundant, duplicate, overlapping, and ineffective entries. The include list is empty; the exclude list contains `@deepseek-ai/dsh-api-session-controller`, because adding it back would migrate nine more Host edges while its five-run candidate retest improved median resolution by only 0.15 seconds.
+[`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) provides explicit Client-face include and exclude lists. An include handles an exceptional package without `dsh.client`, while an exclude removes an automatically discovered dual-face package outside `packages/client/`. The verifier rejects unknown, stale, redundant, duplicate, overlapping, and ineffective entries. The include list is empty; the exclude list contains `@deepseek-ai/dsh-api-session-controller` and `@deepseek-ai/dsh-api-workspace-controller`. Adding Session Controller back would migrate nine more Host edges while its five-run candidate retest improved median resolution by only 0.15 seconds.
 
 Host-only packages join the same policy through a separate explicit list. The list contains `@deepseek-ai/dsh-llm` and `@deepseek-ai/dsh-session`; source imports do not expand it.
 
@@ -24,9 +24,11 @@ Host-only packages join the same policy through a separate explicit list. The li
 
 Every covered package keeps `@deepseek-ai/cordis` in matching `peerDependencies` and `devDependencies`. Cordis is the shared plugin runtime whose identity the application controls.
 
-A workspace package reached by a runtime value import from the Host entry closure belongs only in `dependencies`. Workspace imports used by the Client bundle, type-only imports, module augmentations, `dsh.client.inject`, invariant companions, and existing metadata-only peers belong only in `devDependencies`. Existing third-party dependencies outside these managed relationships keep their declared section. Workspace references use `workspace:^`.
+A workspace package reached by a runtime value import from the Host entry closure belongs only in `dependencies` when every imported runtime export appears in the policy's `safeHostDependencyExports` table. An export whose constructor identity or module state must be shared appears in `peerRequiredHostExports`; importing one such export keeps the whole package edge in matching `peerDependencies` and `devDependencies`. Each table key is an exact module specifier and each value is a reviewed export set. The verifier follows runtime local imports from the Host entry, records named and default imports and re-exports, and rejects exports present in neither table; namespace, dynamic, and side-effect imports remain unbounded and cannot enter either table.
 
-The verifier reads source manifests and source files, so it runs on a clean tree without built `lib/`. Its `--fix` mode performs only the section and range changes implied by this classification and removes stale peer metadata.
+Workspace imports used by the Client bundle, type-only imports, module augmentations, `dsh.client.inject`, invariant companions, and existing metadata-only peers belong only in `devDependencies`. Existing third-party dependencies outside these managed relationships keep their declared section. Workspace references use `workspace:^`.
+
+The verifier reads source manifests and source files, so it runs on a clean tree without built `lib/`. An unclassified Host runtime export is a policy violation that blocks all `--fix` writes; a maintainer must review the export and classify it, change the source relationship, or change the package selection. Once source safety passes, `--fix` performs only the section and range changes implied by the classification and removes stale peer metadata.
 
 ### Performance verification
 
@@ -48,8 +50,8 @@ The benchmark is manual rather than a CI gate. It performs metadata-only install
 
 ## Consequences
 
-The published dependency graph follows artifact ownership instead of source-directory coupling. Client bundles and shipped profiles provide browser identities, Host modules install the values they load, and only Cordis remains a repository-wide peer for covered packages.
+The published dependency graph follows artifact ownership instead of source-directory coupling. Client bundles and shipped profiles provide browser identities, Host modules install duplicate-safe values they load, and Cordis plus explicitly peer-required Host exports retain shared package instances.
 
 Moving a public type-only relationship to `devDependencies` means a standalone TypeScript consumer must install the referenced type package when it consumes that declaration. The shipped profiles install the complete supported package family; supporting independently assembled TypeScript consumers would require a different policy.
 
-The explicit overrides and Host list are reviewable decisions. Adding an exception changes the installed graph and requires the focused verifier tests plus a fresh next-package benchmark. The metadata-only benchmark is diagnostic evidence, not a release-time performance promise.
+The explicit overrides, Host list, and export classifications are reviewable decisions. Class constructors used by `instanceof`, symbols, and accessors for module-private registries require peers when their identity or state crosses package boundaries; being a value import alone does not make an export duplicate-safe. Changing a classification changes the installed graph and requires the focused verifier tests plus a fresh next-package benchmark. The metadata-only benchmark is diagnostic evidence, not a release-time performance promise.

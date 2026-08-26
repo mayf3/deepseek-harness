@@ -2,14 +2,14 @@
 
 import { existsSync, globSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, extname, join, normalize, relative, resolve, sep } from 'node:path'
+import ts from 'typescript'
 import {
   hasClientDeclaration,
   PACKAGE_DEPENDENCY_POLICY,
   type PackageDependencyPolicy,
 } from './package-dependency-policy.ts'
 import {
-  collectLocalSourceSpecifiers,
-  collectRuntimeSourcePackageUses,
+  collectRuntimeLocalSourceSpecifiers,
   collectSourcePackageUses,
 } from './verify-client-packages.ts'
 
@@ -24,7 +24,7 @@ const WORKSPACE_MANIFEST_GLOBS = [
 ]
 
 type DependencySection = 'dependencies' | 'devDependencies' | 'optionalDependencies' | 'peerDependencies'
-export type PackageDependencyRole = 'client-host' | 'configured-host'
+export type PackageDependencyRole = 'client-only' | 'client-host' | 'configured-host'
 
 /** Manifest fields read and repaired by the package dependency policy. */
 export interface PackageDependencyManifest {
@@ -55,7 +55,20 @@ export interface PackageDependencyFacts {
   readonly workspaceNames: ReadonlySet<string>
   readonly allSourceUses: ReadonlyMap<string, readonly string[]>
   readonly hostRuntimeSourceUses: ReadonlyMap<string, readonly string[]>
+  readonly hostRuntimeExportUses: readonly HostRuntimeExportUse[]
+  readonly peerRequiredHostDependencies: ReadonlySet<string>
   readonly clientInject: ReadonlySet<string>
+}
+
+/** One runtime export reached from a package's Host source closure. */
+export interface HostRuntimeExportUse {
+  readonly packageName: string
+  readonly specifier: string
+  readonly exportName: string
+  readonly sourcePath: string
+  readonly line: number
+  readonly column: number
+  readonly sourceLine: string
 }
 
 /** Complete policy input read from the repository. */
@@ -154,13 +167,13 @@ export function discoverPackageDependencyScope(
   const selected: Array<WorkspacePackageManifest & { role: PackageDependencyRole }> = []
   for (const pkg of packages) {
     const clientDirectory = pkg.manifestPath.startsWith('packages/client/')
-    const clientHost = clientDirectory
-      || ((hasClientDeclaration(pkg.manifest.dsh) || include.has(pkg.name)) && !exclude.has(pkg.name))
+    const clientHost = (hasClientDeclaration(pkg.manifest.dsh) || include.has(pkg.name)) && !exclude.has(pkg.name)
+    const clientOnly = clientDirectory && !clientHost
     const configuredHost = host.has(pkg.name)
-    if (configuredHost && clientHost) {
+    if (configuredHost && (clientHost || clientOnly)) {
       violations.push(`hostPackages redundantly names Client-faced package ${pkg.name}`)
     }
-    const role = clientHost ? 'client-host' : configuredHost ? 'configured-host' : undefined
+    const role = clientHost ? 'client-host' : clientOnly ? 'client-only' : configuredHost ? 'configured-host' : undefined
     if (role !== undefined) selected.push({ ...pkg, role })
   }
   return {
@@ -175,6 +188,95 @@ function addUse(target: Map<string, string[]>, name: string, path: string): void
   target.set(name, paths)
 }
 
+const NAMESPACE_RUNTIME_EXPORT = '*'
+const SIDE_EFFECT_RUNTIME_EXPORT = '(side effect)'
+
+interface RuntimeSourceExportUse {
+  readonly specifier: string
+  readonly exportName: string
+  readonly line: number
+  readonly column: number
+  readonly sourceLine: string
+}
+
+/** Collect exact runtime exports imported or re-exported by one source file. */
+export function collectRuntimeSourceExportUses(path: string, source: string): RuntimeSourceExportUse[] {
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  const uses = new Map<string, RuntimeSourceExportUse>()
+  const sourceLines = source.split(/\r?\n/u)
+  const record = (specifier: string, exportName: string, locationNode: ts.Node): void => {
+    const key = `${specifier}\0${exportName}`
+    if (uses.has(key)) return
+    const position = sourceFile.getLineAndCharacterOfPosition(locationNode.getStart(sourceFile))
+    uses.set(key, {
+      specifier,
+      exportName,
+      line: position.line + 1,
+      column: position.character + 1,
+      sourceLine: sourceLines[position.line]?.trim() ?? '',
+    })
+  }
+  const add = (
+    specifierNode: ts.Expression | undefined,
+    exportName: string,
+    locationNode: ts.Node = specifierNode ?? sourceFile,
+  ): void => {
+    if (specifierNode === undefined || !ts.isStringLiteralLike(specifierNode)) return
+    if (packageNameOf(specifierNode.text) === undefined) return
+    record(specifierNode.text, exportName, locationNode)
+  }
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      const clause = node.importClause
+      if (clause === undefined) {
+        add(node.moduleSpecifier, SIDE_EFFECT_RUNTIME_EXPORT)
+      } else if (clause.phaseModifier !== ts.SyntaxKind.TypeKeyword) {
+        if (clause.name !== undefined) add(node.moduleSpecifier, 'default', clause.name)
+        const bindings = clause.namedBindings
+        if (bindings !== undefined && ts.isNamespaceImport(bindings)) {
+          add(node.moduleSpecifier, NAMESPACE_RUNTIME_EXPORT, bindings.name)
+        } else if (bindings !== undefined && bindings.elements.length === 0) {
+          add(node.moduleSpecifier, SIDE_EFFECT_RUNTIME_EXPORT)
+        } else if (bindings !== undefined) {
+          for (const element of bindings.elements) {
+            const imported = element.propertyName ?? element.name
+            if (!element.isTypeOnly) add(node.moduleSpecifier, imported.text, imported)
+          }
+        }
+      }
+    } else if (ts.isExportDeclaration(node) && !node.isTypeOnly) {
+      const clause = node.exportClause
+      if (clause === undefined || ts.isNamespaceExport(clause)) {
+        add(node.moduleSpecifier, NAMESPACE_RUNTIME_EXPORT)
+      } else if (clause.elements.length === 0) {
+        add(node.moduleSpecifier, SIDE_EFFECT_RUNTIME_EXPORT)
+      } else {
+        for (const element of clause.elements) {
+          const imported = element.propertyName ?? element.name
+          if (!element.isTypeOnly) add(node.moduleSpecifier, imported.text, imported)
+        }
+      }
+    } else if (ts.isImportEqualsDeclaration(node)
+      && !node.isTypeOnly
+      && ts.isExternalModuleReference(node.moduleReference)) {
+      add(node.moduleReference.expression, NAMESPACE_RUNTIME_EXPORT, node.name)
+    } else if (ts.isCallExpression(node)
+      && (node.expression.kind === ts.SyntaxKind.ImportKeyword
+        || ts.isIdentifier(node.expression) && node.expression.text === 'require')) {
+      add(node.arguments[0], NAMESPACE_RUNTIME_EXPORT)
+    } else if (ts.isJsxElement(node) || ts.isJsxSelfClosingElement(node) || ts.isJsxFragment(node)) {
+      record('react/jsx-runtime', NAMESPACE_RUNTIME_EXPORT, node)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return [...uses.values()].sort((left, right) =>
+    left.specifier.localeCompare(right.specifier)
+    || left.exportName.localeCompare(right.exportName)
+    || left.line - right.line
+    || left.column - right.column)
+}
+
 function resolveLocal(importer: string, specifier: string): string | undefined {
   const raw = resolve(dirname(importer), specifier)
   const candidates = extname(raw) === ''
@@ -183,8 +285,12 @@ function resolveLocal(importer: string, specifier: string): string | undefined {
   return candidates.find(candidate => existsSync(candidate))
 }
 
-function readHostRuntimeUses(root: string, pkg: WorkspacePackageManifest): Map<string, string[]> {
-  const uses = new Map<string, string[]>()
+function readHostRuntimeUses(root: string, pkg: WorkspacePackageManifest): {
+  packageUses: Map<string, string[]>
+  exportUses: HostRuntimeExportUse[]
+} {
+  const packageUses = new Map<string, string[]>()
+  const exportUses = new Map<string, HostRuntimeExportUse>()
   const seen = new Set<string>()
   const visit = (path: string): void => {
     const normalized = normalize(path)
@@ -192,14 +298,29 @@ function readHostRuntimeUses(root: string, pkg: WorkspacePackageManifest): Map<s
     seen.add(normalized)
     const source = readFileSync(normalized, 'utf8')
     const displayPath = normalizePath(relative(root, normalized))
-    for (const name of collectRuntimeSourcePackageUses(normalized, source)) addUse(uses, name, displayPath)
-    for (const specifier of collectLocalSourceSpecifiers(normalized, source)) {
+    for (const use of collectRuntimeSourceExportUses(normalized, source)) {
+      const name = packageNameOf(use.specifier)
+      if (name === undefined) continue
+      addUse(packageUses, name, displayPath)
+      const fact = { packageName: name, ...use, sourcePath: displayPath }
+      exportUses.set(`${use.specifier}\0${use.exportName}\0${displayPath}\0${String(use.line)}\0${String(use.column)}`, fact)
+    }
+    for (const specifier of collectRuntimeLocalSourceSpecifiers(normalized, source)) {
       const target = resolveLocal(normalized, specifier)
       if (target !== undefined) visit(target)
     }
   }
   visit(resolve(root, pkg.dir, 'src/index.ts'))
-  return uses
+  return {
+    packageUses,
+    exportUses: [...exportUses.values()].sort((left, right) =>
+      left.packageName.localeCompare(right.packageName)
+      || left.specifier.localeCompare(right.specifier)
+      || left.exportName.localeCompare(right.exportName)
+      || left.sourcePath.localeCompare(right.sourcePath)
+      || left.line - right.line
+      || left.column - right.column),
+  }
 }
 
 function readAllSourceUses(root: string, pkg: WorkspacePackageManifest): Map<string, string[]> {
@@ -218,17 +339,80 @@ export function readPackageDependencyFacts(
   pkg: WorkspacePackageManifest,
   role: PackageDependencyRole,
   workspaceNames: ReadonlySet<string>,
+  policy: PackageDependencyPolicy = PACKAGE_DEPENDENCY_POLICY,
 ): PackageDependencyFacts {
   const inject = pkg.manifest.dsh?.client?.inject ?? []
+  const hostRuntime = role === 'client-only'
+    ? { packageUses: new Map<string, string[]>(), exportUses: [] }
+    : readHostRuntimeUses(root, pkg)
   return {
     manifestPath: pkg.manifestPath,
     role,
     manifest: pkg.manifest,
     workspaceNames,
     allSourceUses: readAllSourceUses(root, pkg),
-    hostRuntimeSourceUses: readHostRuntimeUses(root, pkg),
+    hostRuntimeSourceUses: hostRuntime.packageUses,
+    hostRuntimeExportUses: hostRuntime.exportUses,
+    peerRequiredHostDependencies: new Set(hostRuntime.exportUses
+      .filter(use => policy.peerRequiredHostExports[use.specifier]?.includes(use.exportName) === true)
+      .map(use => use.packageName)),
     clientInject: new Set(inject.map(packageNameOf).filter(name => name !== undefined)),
   }
+}
+
+/** Validate reviewed Host export classifications against current source facts. */
+export function collectHostDependencyExportPolicyViolations(
+  facts: readonly PackageDependencyFacts[],
+  workspaceNames: ReadonlySet<string>,
+  policy: Pick<PackageDependencyPolicy, 'peerRequiredHostExports' | 'safeHostDependencyExports'>,
+): string[] {
+  const violations: string[] = []
+  const allRuntimeUses = facts.flatMap(fact => fact.hostRuntimeExportUses)
+  const classifications = [
+    ['safeHostDependencyExports', policy.safeHostDependencyExports],
+    ['peerRequiredHostExports', policy.peerRequiredHostExports],
+  ] as const
+  for (const [field, entries] of classifications) {
+    for (const [specifier, exportNames] of Object.entries(entries)) {
+      const provider = packageNameOf(specifier)
+      if (provider === undefined || !workspaceNames.has(provider)) {
+        violations.push(`${field} specifier ${specifier} is not a workspace package`)
+      }
+      if (exportNames.length === 0) {
+        violations.push(`${field} lists no exports for ${specifier}`)
+      }
+      for (const exportName of duplicates(exportNames)) {
+        violations.push(`${field} lists ${specifier} export ${exportName} more than once`)
+      }
+      for (const exportName of exportNames) {
+        if (exportName === '' || exportName === NAMESPACE_RUNTIME_EXPORT || exportName === SIDE_EFFECT_RUNTIME_EXPORT) {
+          violations.push(`${field} cannot classify unbounded ${specifier} export ${exportName}`)
+          continue
+        }
+        if (!allRuntimeUses.some(use => use.specifier === specifier && use.exportName === exportName)) {
+          violations.push(`${field} lists unused ${specifier} export ${exportName}`)
+        }
+        if (field === 'safeHostDependencyExports'
+          && policy.peerRequiredHostExports[specifier]?.includes(exportName) === true) {
+          violations.push(`${specifier} export ${exportName} appears in both Host export classifications`)
+        }
+      }
+    }
+  }
+
+  for (const fact of facts) {
+    for (const use of fact.hostRuntimeExportUses) {
+      if (use.packageName === fact.manifest.name || use.packageName === CORDIS) continue
+      if (!workspaceNames.has(use.packageName) && fact.manifest.peerDependencies?.[use.packageName] === undefined) continue
+      if (policy.safeHostDependencyExports[use.specifier]?.includes(use.exportName) === true) continue
+      if (policy.peerRequiredHostExports[use.specifier]?.includes(use.exportName) === true) continue
+      violations.push(
+        `${use.sourcePath}:${String(use.line)}:${String(use.column)}: `
+        + `${use.specifier}#${use.exportName} is not classified as safe or peer-required — ${use.sourceLine}`,
+      )
+    }
+  }
+  return violations.sort()
 }
 
 /** Read every package covered by the current dependency policy. */
@@ -239,10 +423,15 @@ export function readPackageDependencyState(
   const packages = readWorkspacePackageManifests(root)
   const workspaceNames = new Set(packages.all.map(pkg => pkg.name))
   const discovered = discoverPackageDependencyScope(packages.release, policy)
+  const facts = discovered.selected.map(pkg =>
+    readPackageDependencyFacts(root, pkg, pkg.role, workspaceNames, policy))
   return {
-    facts: discovered.selected.map(pkg => readPackageDependencyFacts(root, pkg, pkg.role, workspaceNames)),
+    facts,
     packages: packages.release,
-    policyViolations: discovered.violations,
+    policyViolations: [
+      ...discovered.violations,
+      ...collectHostDependencyExportPolicyViolations(facts, workspaceNames, policy),
+    ].sort(),
     workspaceNames,
   }
 }
@@ -255,9 +444,11 @@ export function expectedPackageDependencies(
   const add = (name: string, sectionName: ExpectedPackageDependency['section'], origin: string): void => {
     if (name === facts.manifest.name || name === CORDIS) return
     const current = expected.get(name)
-    const section = current?.section === 'dependencies' || sectionName === 'dependencies'
-      ? 'dependencies'
-      : 'devDependencies'
+    const section = current?.section === 'peer-dev' || sectionName === 'peer-dev'
+      ? 'peer-dev'
+      : current?.section === 'dependencies' || sectionName === 'dependencies'
+        ? 'dependencies'
+        : 'devDependencies'
     expected.set(name, { section, origins: new Set([...(current?.origins ?? []), origin]) })
   }
 
@@ -274,7 +465,8 @@ export function expectedPackageDependencies(
   }
   for (const [name, paths] of facts.hostRuntimeSourceUses) {
     if (!facts.workspaceNames.has(name) && facts.manifest.peerDependencies?.[name] === undefined) continue
-    for (const path of paths) add(name, 'dependencies', path)
+    const expectedSection = facts.peerRequiredHostDependencies.has(name) ? 'peer-dev' : 'dependencies'
+    for (const path of paths) add(name, expectedSection, path)
   }
   return new Map([...expected].map(([name, rule]) => [name, {
     section: rule.section,
@@ -282,23 +474,46 @@ export function expectedPackageDependencies(
   }]))
 }
 
-/** Format the managed Host runtime edges that remain ordinary dependencies. */
+interface ManagedRuntimeEdge {
+  readonly consumer: string
+  readonly dependency: string
+  readonly exports: readonly string[]
+}
+
+function managedRuntimeEdges(
+  state: PackageDependencyState,
+  expectedSection: 'dependencies' | 'peer-dev',
+): ManagedRuntimeEdge[] {
+  return state.facts.flatMap(facts => [...expectedPackageDependencies(facts)]
+    .filter(([name, rule]) => name !== CORDIS && rule.section === expectedSection)
+    .map(([dependency]) => ({
+      consumer: facts.manifest.name ?? facts.manifestPath,
+      dependency,
+      exports: [...new Set(facts.hostRuntimeExportUses
+        .filter(use => use.packageName === dependency)
+        .map(use => `${use.specifier}#${use.exportName}`))].sort(),
+    })))
+    .sort((left, right) =>
+      left.consumer.localeCompare(right.consumer) || left.dependency.localeCompare(right.dependency))
+}
+
+/** Format Host runtime edges whose reviewed exports permit ordinary dependencies. */
 export function formatManagedRuntimeDependencies(state: PackageDependencyState): string[] {
-  const rows = state.facts.flatMap((facts) => {
-    const dependencies = [...expectedPackageDependencies(facts)]
-      .filter(([, rule]) => rule.section === 'dependencies')
-      .map(([name]) => name)
-      .sort()
-    if (dependencies.length === 0) return []
-    return [{
-      name: facts.manifest.name ?? facts.manifestPath,
-      dependencies,
-    }]
-  }).sort((left, right) => left.name.localeCompare(right.name))
-  const edges = rows.reduce((total, row) => total + row.dependencies.length, 0)
+  const rows = managedRuntimeEdges(state, 'dependencies')
+  const packages = new Set(rows.map(row => row.consumer)).size
   return [
-    `${GATE}: ${String(edges)} managed Host runtime dependency edge(s) remain in dependencies across ${String(rows.length)} package(s):`,
-    ...rows.map(row => `  ${row.name}: ${row.dependencies.join(', ')}`),
+    `${GATE}: ${String(rows.length)} managed Host runtime edge(s) remain in dependencies across ${String(packages)} package(s):`,
+    ...rows.map(row => `  ${row.consumer} -> ${row.dependency}: ${row.exports.join(', ')}`),
+  ]
+}
+
+/** Format Host runtime edges retained as peers by their imported export classification. */
+export function formatPeerRequiredRuntimeDependencies(state: PackageDependencyState): string[] {
+  const rows = managedRuntimeEdges(state, 'peer-dev')
+  const packages = new Set(rows.map(row => row.consumer)).size
+  return [
+    `${GATE}: ${String(rows.length)} Host runtime edge(s) remain in peerDependencies because their exports require shared identity across ${String(packages)} package(s):`,
+    ...rows.map(row => `  ${row.consumer} -> ${row.dependency}: ${row.exports.join(', ')}`),
   ]
 }
 
@@ -323,6 +538,7 @@ function describeSections(sections: readonly DependencySection[]): string {
 /** Return all manifest and policy violations in stable order. */
 export function collectPackageDependencyViolations(state: PackageDependencyState): string[] {
   const violations = [...state.policyViolations]
+  if (violations.length > 0) return [...new Set(violations)].sort()
   for (const facts of state.facts) {
     for (const [name, rule] of expectedPackageDependencies(facts)) {
       const actual = declaredSections(facts.manifest, name)
@@ -454,9 +670,13 @@ function main(): void {
   let state = readPackageDependencyState(root)
   const fix = process.argv.includes('--fix')
   if (fix) {
-    const changed = fixPackageDependencies(root, state)
-    console.log(`${GATE}: fixed ${String(changed.length)} manifest(s).`)
-    state = readPackageDependencyState(root)
+    if (state.policyViolations.length > 0) {
+      console.error(`${GATE}: --fix skipped because dependency policy review failed.`)
+    } else {
+      const changed = fixPackageDependencies(root, state)
+      console.log(`${GATE}: fixed ${String(changed.length)} manifest(s).`)
+      state = readPackageDependencyState(root)
+    }
   }
   const violations = collectPackageDependencyViolations(state)
   if (violations.length > 0) {
@@ -468,11 +688,13 @@ function main(): void {
   const roles = Object.groupBy(state.facts, fact => fact.role)
   console.log(
     `${GATE}: ${String(state.facts.length)} package(s) match the published dependency policy`
-    + ` (${String(roles['client-host']?.length ?? 0)} Client/Host,`
+    + ` (${String(roles['client-only']?.length ?? 0)} Client-only,`
+    + ` ${String(roles['client-host']?.length ?? 0)} Client/Host,`
     + ` ${String(roles['configured-host']?.length ?? 0)} configured Host).`,
   )
   if (fix) {
     for (const line of formatManagedRuntimeDependencies(state)) console.log(line)
+    for (const line of formatPeerRequiredRuntimeDependencies(state)) console.log(line)
   }
 }
 

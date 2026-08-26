@@ -7,10 +7,13 @@ import {
   type PackageDependencyPolicy,
 } from './package-dependency-policy.ts'
 import {
+  collectHostDependencyExportPolicyViolations,
   collectPackageDependencyViolations,
+  collectRuntimeSourceExportUses,
   discoverPackageDependencyScope,
   fixPackageDependencies,
   formatManagedRuntimeDependencies,
+  formatPeerRequiredRuntimeDependencies,
   readPackageDependencyFacts,
   repairPackageDependencyManifest,
   type PackageDependencyFacts,
@@ -43,6 +46,8 @@ function policy(fields: Partial<PackageDependencyPolicy> = {}): PackageDependenc
     clientFaceInclude: [],
     clientFaceExclude: [],
     hostPackages: [],
+    safeHostDependencyExports: {},
+    peerRequiredHostExports: {},
     ...fields,
   }
 }
@@ -66,6 +71,16 @@ function facts(manifest: PackageDependencyManifest): PackageDependencyFacts {
     hostRuntimeSourceUses: new Map([
       ['@deepseek-ai/dsh-runtime', ['packages/core/probe/src/index.ts']],
     ]),
+    hostRuntimeExportUses: [{
+      packageName: '@deepseek-ai/dsh-runtime',
+      specifier: '@deepseek-ai/dsh-runtime',
+      exportName: 'runtimeValue',
+      sourcePath: 'packages/core/probe/src/index.ts',
+      line: 1,
+      column: 10,
+      sourceLine: "import { runtimeValue } from '@deepseek-ai/dsh-runtime'",
+    }],
+    peerRequiredHostDependencies: new Set(),
     clientInject: new Set(),
   }
 }
@@ -74,10 +89,18 @@ describe('package dependency scope', () => {
   it('keeps the measured Host relay roster explicit', () => {
     expect(PACKAGE_DEPENDENCY_POLICY.clientFaceExclude).toEqual([
       '@deepseek-ai/dsh-api-session-controller',
+      '@deepseek-ai/dsh-api-workspace-controller',
     ])
     expect(PACKAGE_DEPENDENCY_POLICY.hostPackages).toEqual([
       '@deepseek-ai/dsh-llm',
       '@deepseek-ai/dsh-session',
+    ])
+    expect(PACKAGE_DEPENDENCY_POLICY.safeHostDependencyExports['@deepseek-ai/schemastery']).toEqual(['default'])
+    expect(PACKAGE_DEPENDENCY_POLICY.peerRequiredHostExports['@deepseek-ai/dsh-scope']).toEqual([
+      'carrierKeyOf', 'scopeOf', 'scopeTarget',
+    ])
+    expect(PACKAGE_DEPENDENCY_POLICY.peerRequiredHostExports['@deepseek-ai/dsh-typert-protocol']).toEqual([
+      'TypertLookupFailure', 'TypertRemoteFailure', 'remoteMethods',
     ])
   })
 
@@ -103,7 +126,7 @@ describe('package dependency scope', () => {
       ['@f/dual', 'client-host'],
       ['@f/forced-client', 'client-host'],
       ['@f/dynamic-client', 'client-host'],
-      ['@f/static', 'client-host'],
+      ['@f/static', 'client-only'],
       ['@f/host', 'configured-host'],
     ])
   })
@@ -129,6 +152,49 @@ describe('package dependency scope', () => {
       expect.stringContaining('unknown release package @f/missing'),
     ]))
   })
+
+  it('rejects stale, duplicate, and unbounded safe Host export entries', () => {
+    const consumer = pkg('@f/consumer', 'packages/core/consumer/package.json')
+    const provider = pkg('@f/provider', 'packages/core/provider/package.json')
+    const workspaceNames = new Set([CORDIS, consumer.name, provider.name])
+    const consumerFacts: PackageDependencyFacts = {
+      manifestPath: consumer.manifestPath,
+      role: 'configured-host',
+      manifest: consumer.manifest,
+      workspaceNames,
+      allSourceUses: new Map(),
+      hostRuntimeSourceUses: new Map([[provider.name, ['packages/core/consumer/src/index.ts']]]),
+      hostRuntimeExportUses: [{
+        packageName: provider.name,
+        specifier: `${provider.name}/api`,
+        exportName: 'safeValue',
+        sourcePath: 'packages/core/consumer/src/index.ts',
+        line: 1,
+        column: 10,
+        sourceLine: "import { safeValue } from '@f/provider/api'",
+      }],
+      peerRequiredHostDependencies: new Set(),
+      clientInject: new Set(),
+    }
+
+    expect(collectHostDependencyExportPolicyViolations(
+      [consumerFacts],
+      workspaceNames,
+      {
+        safeHostDependencyExports: {
+          [`${provider.name}/api`]: ['safeValue', 'safeValue', '*', 'staleValue'],
+        },
+        peerRequiredHostExports: {
+          [`${provider.name}/api`]: ['safeValue'],
+        },
+      },
+    )).toEqual(expect.arrayContaining([
+      expect.stringContaining('export safeValue more than once'),
+      expect.stringContaining('cannot classify unbounded'),
+      expect.stringContaining('unused @f/provider/api export staleValue'),
+      expect.stringContaining('appears in both Host export classifications'),
+    ]))
+  })
 })
 
 describe('face-aware source classification', () => {
@@ -142,9 +208,11 @@ describe('face-aware source classification', () => {
       'packages/g/dual/src/index.ts': [
         "import { value } from '@f/runtime'",
         "import type { Shared } from '@f/types'",
+        "import type { Hidden } from './types.ts'",
         "export { nested } from './nested.ts'",
       ].join('\n'),
       'packages/g/dual/src/nested.ts': "export { nested } from '@f/nested'",
+      'packages/g/dual/src/types.ts': "import { hidden } from '@f/hidden'; export type Hidden = typeof hidden",
       'packages/g/dual/src/client/index.ts': "import { browser } from '@f/browser'",
     }
     for (const [path, source] of Object.entries(files)) {
@@ -153,11 +221,63 @@ describe('face-aware source classification', () => {
     }
 
     const found = readPackageDependencyFacts(root, subject, 'client-host', new Set([
-      CORDIS, '@f/runtime', '@f/types', '@f/nested', '@f/browser', '@f/injected',
+      CORDIS, '@f/runtime', '@f/types', '@f/nested', '@f/hidden', '@f/browser', '@f/injected',
     ]))
 
     expect([...found.hostRuntimeSourceUses.keys()].sort()).toEqual(['@f/nested', '@f/runtime'])
-    expect([...found.allSourceUses.keys()].sort()).toEqual(['@f/browser', '@f/nested', '@f/runtime', '@f/types'])
+    expect(found.hostRuntimeExportUses).toEqual([
+      {
+        packageName: '@f/nested',
+        specifier: '@f/nested',
+        exportName: 'nested',
+        sourcePath: 'packages/g/dual/src/nested.ts',
+        line: 1,
+        column: 10,
+        sourceLine: "export { nested } from '@f/nested'",
+      },
+      {
+        packageName: '@f/runtime',
+        specifier: '@f/runtime',
+        exportName: 'value',
+        sourcePath: 'packages/g/dual/src/index.ts',
+        line: 1,
+        column: 10,
+        sourceLine: "import { value } from '@f/runtime'",
+      },
+    ])
+    expect([...found.allSourceUses.keys()].sort()).toEqual([
+      '@f/browser', '@f/hidden', '@f/nested', '@f/runtime', '@f/types',
+    ])
+  })
+
+  it('identifies exact runtime exports without treating type imports as values', () => {
+    const source = [
+      "import defaultValue, { value as local, type Kind } from '@f/root'",
+      "import * as namespace from '@f/namespace'",
+      "import '@f/effect'",
+      "import type { TypeOnly } from '@f/types'",
+      "export { source as renamed, type SourceType } from '@f/reexport'",
+      "export * from '@f/star'",
+      "void import('@f/dynamic')",
+      "void require('@f/required')",
+      'void defaultValue; void local; void namespace',
+    ].join('\n')
+    const uses = collectRuntimeSourceExportUses('probe.ts', source)
+    expect(uses.map(({ specifier, exportName }) => ({ specifier, exportName }))).toEqual([
+      { specifier: '@f/dynamic', exportName: '*' },
+      { specifier: '@f/effect', exportName: '(side effect)' },
+      { specifier: '@f/namespace', exportName: '*' },
+      { specifier: '@f/reexport', exportName: 'source' },
+      { specifier: '@f/required', exportName: '*' },
+      { specifier: '@f/root', exportName: 'default' },
+      { specifier: '@f/root', exportName: 'value' },
+      { specifier: '@f/star', exportName: '*' },
+    ])
+    expect(uses.find(use => use.specifier === '@f/root' && use.exportName === 'value')).toMatchObject({
+      line: 1,
+      column: 24,
+      sourceLine: "import defaultValue, { value as local, type Kind } from '@f/root'",
+    })
   })
 })
 
@@ -186,8 +306,73 @@ describe('dependency sections', () => {
     expect(formatManagedRuntimeDependencies({
       facts: [subject], packages: [], policyViolations: [], workspaceNames: subject.workspaceNames,
     })).toEqual([
-      'verify-package-dependencies: 1 managed Host runtime dependency edge(s) remain in dependencies across 1 package(s):',
-      '  @deepseek-ai/dsh-probe: @deepseek-ai/dsh-runtime',
+      'verify-package-dependencies: 1 managed Host runtime edge(s) remain in dependencies across 1 package(s):',
+      '  @deepseek-ai/dsh-probe -> @deepseek-ai/dsh-runtime: @deepseek-ai/dsh-runtime#runtimeValue',
+    ])
+  })
+
+  it('reports an unapproved Host runtime export without rewriting its dependency section', () => {
+    const manifest: PackageDependencyManifest = {
+      name: '@deepseek-ai/dsh-probe',
+      dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:^' },
+      peerDependencies: { [CORDIS]: 'workspace:^' },
+    }
+    const subject = facts(manifest)
+    const safetyViolations = collectHostDependencyExportPolicyViolations(
+      [subject],
+      subject.workspaceNames,
+      { safeHostDependencyExports: {}, peerRequiredHostExports: {} },
+    )
+    const state = {
+      facts: [subject], packages: [], policyViolations: safetyViolations, workspaceNames: subject.workspaceNames,
+    }
+
+    expect(safetyViolations).toEqual([
+      'packages/core/probe/src/index.ts:1:10: @deepseek-ai/dsh-runtime#runtimeValue is not classified as '
+      + 'safe or peer-required — import { runtimeValue } from \'@deepseek-ai/dsh-runtime\'',
+    ])
+    expect(fixPackageDependencies('/unused', state)).toEqual([])
+    expect(manifest.dependencies).toEqual({ '@deepseek-ai/dsh-runtime': 'workspace:^' })
+  })
+
+  it('keeps an edge as a peer when one imported export requires shared identity', () => {
+    const manifest: PackageDependencyManifest = {
+      name: '@deepseek-ai/dsh-probe',
+      dependencies: { '@deepseek-ai/dsh-runtime': 'workspace:^' },
+      devDependencies: { [CORDIS]: 'workspace:^', '@deepseek-ai/dsh-types': 'workspace:^' },
+      peerDependencies: { [CORDIS]: 'workspace:^' },
+    }
+    const subject: PackageDependencyFacts = {
+      ...facts(manifest),
+      peerRequiredHostDependencies: new Set(['@deepseek-ai/dsh-runtime']),
+    }
+    expect(collectHostDependencyExportPolicyViolations(
+      [subject],
+      subject.workspaceNames,
+      {
+        safeHostDependencyExports: {},
+        peerRequiredHostExports: {
+          '@deepseek-ai/dsh-runtime': ['runtimeValue'],
+        },
+      },
+    )).toEqual([])
+
+    repairPackageDependencyManifest(subject)
+    expect(manifest.dependencies).toBeUndefined()
+    expect(manifest.peerDependencies).toMatchObject({
+      [CORDIS]: 'workspace:^',
+      '@deepseek-ai/dsh-runtime': 'workspace:^',
+    })
+    expect(manifest.devDependencies).toMatchObject({
+      [CORDIS]: 'workspace:^',
+      '@deepseek-ai/dsh-runtime': 'workspace:^',
+    })
+    expect(formatPeerRequiredRuntimeDependencies({
+      facts: [subject], packages: [], policyViolations: [], workspaceNames: subject.workspaceNames,
+    })).toEqual([
+      'verify-package-dependencies: 1 Host runtime edge(s) remain in peerDependencies because their exports require shared identity across 1 package(s):',
+      '  @deepseek-ai/dsh-probe -> @deepseek-ai/dsh-runtime: @deepseek-ai/dsh-runtime#runtimeValue',
     ])
   })
 

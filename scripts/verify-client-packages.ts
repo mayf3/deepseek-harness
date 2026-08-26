@@ -100,6 +100,17 @@ export function collectLocalSourceSpecifiers(path: string, source: string): Set<
   return collectSourceFileUses(sourceFile, false, 'local')
 }
 
+/**
+ * Collect relative module specifiers retained by one production source file.
+ * @param path - File path used to select TypeScript's parser mode.
+ * @param source - Source text to inspect.
+ * @returns Relative imports, exports, and requires that survive compilation.
+ */
+export function collectRuntimeLocalSourceSpecifiers(path: string, source: string): Set<string> {
+  const sourceFile = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, true)
+  return collectSourceFileUses(sourceFile, true, 'local')
+}
+
 function importCarriesRuntimeValue(node: ts.ImportDeclaration): boolean {
   const clause = node.importClause
   if (clause === undefined) return true

@@ -14,9 +14,9 @@ Client 构建输入由发布 profile 选择，而 Host value import 由导入它
 
 ### 包选择
 
-[`verify-package-dependencies`](../../../../scripts/verify-package-dependencies.ts) 统一负责依赖区段策略。它始终覆盖 `packages/client/` 下的包，以及声明 `dsh.client` 的每个非实验包。该目录包含没有动态 row 的静态 Client 输入，而 `dsh.client` 标识目录外的动态装载包；仅有 `"./client"` export 只是 API，不参与 npm 依赖策略选包。每个选中包的 Host 入口都会接受扫描，包括 `packages/client/` 下的入口。
+[`verify-package-dependencies`](../../../../scripts/verify-package-dependencies.ts) 统一负责依赖区段策略。它始终覆盖 `packages/client/` 下的包，以及声明 `dsh.client` 的每个非实验包。在该目录内，`dsh.client` 标记需要扫描 Host 入口的 Client/Host 包；没有该声明的包是仅供 Client 编译的静态输入。在目录外，`dsh.client` 选择相同的 Client/Host 扫描。仅有 `"./client"` export 只是 API，不参与 npm 依赖策略选包。
 
-[`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) 提供显式 Client 门面 include 与 exclude 列表。include 用于没有 `dsh.client` 的例外包，exclude 用于移除 `packages/client/` 之外自动发现的双面包。验证器拒绝未知、失效、冗余、重复、相互重叠和无法生效的配置项。include 列表为空；exclude 列表包含 `@deepseek-ai/dsh-api-session-controller`，因为把它加回会多迁移九条 Host 边，而五次候选复测的 resolver 中位数仅改善 0.15 秒。
+[`package-dependency-policy.ts`](../../../../scripts/package-dependency-policy.ts) 提供显式 Client 门面 include 与 exclude 列表。include 用于没有 `dsh.client` 的例外包，exclude 用于移除 `packages/client/` 之外自动发现的双面包。验证器拒绝未知、失效、冗余、重复、相互重叠和无法生效的配置项。include 列表为空；exclude 列表包含 `@deepseek-ai/dsh-api-session-controller` 和 `@deepseek-ai/dsh-api-workspace-controller`。把 Session Controller 加回会多迁移九条 Host 边，而五次候选复测的 resolver 中位数仅改善 0.15 秒。
 
 Host-only 包通过另一份显式列表加入同一策略。该列表包含 `@deepseek-ai/dsh-llm` 和 `@deepseek-ai/dsh-session`；源码 import 不会自动扩大列表。
 
@@ -24,9 +24,11 @@ Host-only 包通过另一份显式列表加入同一策略。该列表包含 `@d
 
 每个受管包都把 `@deepseek-ai/cordis` 保持在范围一致的 `peerDependencies` 和 `devDependencies` 中。Cordis 是由应用控制身份的共享插件运行时。
 
-Host 入口闭包中的运行期 value import 所到达的 workspace 包只属于 `dependencies`。Client bundle 使用的 workspace import、纯类型 import、模块扩充、`dsh.client.inject`、invariant companion 和仅有元数据的现存 peer 只属于 `devDependencies`。不属于这些受管关系的现有第三方 dependency 保持原区段。Workspace 引用使用 `workspace:^`。
+Host 入口闭包中的运行期 value import 所到达的 workspace 包，只有在每个运行期导出都列入策略的 `safeHostDependencyExports` 表时才只属于 `dependencies`。constructor 身份或模块状态必须共享的导出列入 `peerRequiredHostExports`；一旦使用这类导出，整条包依赖边就保留在范围一致的 `peerDependencies` 与 `devDependencies` 中。表的每个 key 都是精确 module specifier，每个 value 都是经审查的导出集合。验证器从 Host 入口沿运行期本地 import 扫描，记录具名与默认 import 和 re-export，并拒绝两个表都未收录的导出；namespace、dynamic 和 side-effect import 无法限定导出范围，因此不能进入任一表。
 
-验证器读取源码 manifest 和源码文件，因此可以在没有已构建 `lib/` 的干净工作树上运行。其 `--fix` 模式只执行分类所确定的区段与范围变更，并删除失效的 peer 元数据。
+Client bundle 使用的 workspace import、纯类型 import、模块扩充、`dsh.client.inject`、invariant companion 和仅有元数据的现存 peer 只属于 `devDependencies`。不属于这些受管关系的现有第三方 dependency 保持原区段。Workspace 引用使用 `workspace:^`。
+
+验证器读取源码 manifest 和源码文件，因此可以在没有已构建 `lib/` 的干净工作树上运行。未分类的 Host 运行期导出属于策略违规，会阻止 `--fix` 的全部写入；维护者必须审查该导出，并选择分类该导出、修改源码关系或修改选包范围。源码安全检查通过后，`--fix` 只执行分类所确定的区段与范围变更，并删除失效的 peer 元数据。
 
 ### 性能验证
 
@@ -48,8 +50,8 @@ Benchmark 是手动诊断工具而非 CI 门禁。它在全新 consumer 中执�
 
 ## 结果
 
-发布依赖图按产物归属而不是源码目录耦合分类。Client bundle 与发布 profile 提供浏览器运行时身份，Host 模块安装自己加载的实体，而 Cordis 是受管包中唯一的全仓 peer。
+发布依赖图按产物归属而不是源码目录耦合分类。Client bundle 与发布 profile 提供浏览器运行时身份，Host 模块安装自己加载的可重复实体，而 Cordis 和显式标为 peer-required 的 Host 导出继续共享包实例。
 
 把公开纯类型关系放进 `devDependencies`，意味着独立 TypeScript 消费者在使用该声明时必须自行安装被引用的类型包。发布 profile 会安装完整的受支持包族；若要支持独立组装的 TypeScript 消费者，需要另一套策略。
 
-显式 override 与 Host 列表都是需要评审的决策。增加例外会改变安装图，因此需要运行聚焦 verifier 测试并重新执行 next-package benchmark。仅 metadata benchmark 是诊断证据，不是发布时安装耗时承诺。
+显式 override、Host 列表与导出分类都是需要评审的决策。当 class constructor、symbol 和访问模块私有 registry 的函数跨包传递身份或状态时，它们要求 peer；仅仅属于 value import 并不能证明导出可重复安装。修改分类会改变安装图，因此需要运行聚焦 verifier 测试并重新执行 next-package benchmark。仅 metadata benchmark 是诊断证据，不是发布时安装耗时承诺。
