@@ -40,11 +40,11 @@ interface ResolvedCredential {
  * lets the whole read half cross the Remote wire.
  */
 interface CredentialInfo {
-  /** Whether `CredentialProvider.resolve` would currently return a value. */
+  /** Whether resolving the reference would currently return a value. */
   configured: boolean
   /** Source layer currently supplying the value; absent while unconfigured. */
   source?: string
-  /** Whether `CredentialProvider.set` would currently succeed for this reference. */
+  /** Whether the active provider can write this reference. */
   writable: boolean
 }
 ```
