@@ -776,7 +776,7 @@ Source: [`packages/hooks/hooks-codex/src/index.ts:45`](../packages/hooks/hooks-c
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `sessionController`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `sessionQuery` · `sessionController`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
