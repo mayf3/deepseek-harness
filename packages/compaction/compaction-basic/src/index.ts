@@ -22,13 +22,30 @@ import {
   resolveTargetPolicy,
   TargetPressureConfigError,
 } from './config.ts'
+import type { ResolvedTargetPolicy } from './types.ts'
 import {
   assertNoActiveCompaction,
   compactSurfaceRegion,
+  selectAdmittedCompactionRange,
   selectCompactableRange,
+  validateSurfaceRegion,
 } from './region.ts'
-import { summarizeWithLlm } from './summarizer.ts'
+import { compactionInstructionMessage, resolveSummarizationTarget, summarizeWithLlm } from './summarizer.ts'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
+import { evaluateAdmission, renderAdmission } from './admission.ts'
+import { resolveCapacitySnapshot } from './capacity.ts'
+import type { ResolvedCapacitySnapshot } from './capacity.ts'
+import {
+  classifyFailure,
+  DeterministicCompactionError,
+  heldLatchRecord,
+  PASS_POLICY_REVISION,
+  recordDeterministicFailure,
+} from './latch.ts'
+import type {
+  CompactionLatchBasis,
+  LatchRecord,
+} from './latch.ts'
 import type {
   BasicCompactionConfig,
   ModelCompactPolicyConfig,
@@ -44,6 +61,27 @@ export type {
   ResolvedRetention,
   ResolvedTargetPolicy,
 } from './types.ts'
+export { evaluateAdmission, renderAdmission } from './admission.ts'
+export type { AdmissionComponents, AdmissionDecision } from './admission.ts'
+export { resolveCapacitySnapshot } from './capacity.ts'
+export type { CapacityTarget, ResolvedCapacitySnapshot } from './capacity.ts'
+export {
+  basisEquals,
+  classifyFailure,
+  DeterministicCompactionError,
+  heldLatchRecord,
+  PASS_POLICY_REVISION,
+  recordDeterministicFailure,
+} from './latch.ts'
+export type {
+  CompactionLatchBasis,
+  CompactionLatchKey,
+  DeterministicFailureClass,
+  FailureClassification,
+  LatchRecord,
+} from './latch.ts'
+export { selectAdmittedCompactionRange, selectCompactableRange } from './region.ts'
+export { compactionInstructionMessage, resolveSummarizationTarget } from './summarizer.ts'
 
 /** The region transaction's view of this service's dynamically dispatched summarizer. */
 type RegionSummarize = (input: SummarizationInput, agent: Agent, signal?: AbortSignal) => Promise<SummaryResult>
@@ -76,6 +114,7 @@ const retainTokensSchema = z.number().step(1).min(0)
 const summarizationProviderSchema = z.string()
 const summarizationModelSchema = z.string()
 const maxTokensSchema = z.number().step(1).min(1)
+const tokenizerSafetyMarginSchema = z.number().step(1).min(0)
 const compactionRetriesSchema = z.number().step(1).min(0)
 const maxOverflowRetriesSchema = z.number().step(1).min(0)
 
@@ -88,6 +127,7 @@ const modelPolicy: z<ModelCompactPolicyConfig> = z.object({
   summarizationProvider: summarizationProviderSchema,
   summarizationModel: summarizationModelSchema,
   maxTokens: maxTokensSchema,
+  tokenizerSafetyMargin: tokenizerSafetyMarginSchema,
   compactionRetries: compactionRetriesSchema,
   maxOverflowRetries: maxOverflowRetriesSchema,
 })
@@ -110,6 +150,7 @@ export class BasicCompactionEngine extends CompactionEngine {
     summarizationProvider: summarizationProviderSchema,
     summarizationModel: summarizationModelSchema,
     maxTokens: maxTokensSchema,
+    tokenizerSafetyMargin: tokenizerSafetyMarginSchema,
     compactionRetries: compactionRetriesSchema,
     maxOverflowRetries: maxOverflowRetriesSchema,
     modelPolicies: z.array(modelPolicy),
@@ -122,6 +163,8 @@ export class BasicCompactionEngine extends CompactionEngine {
   private readonly warnedPressureConfigTargets = new Set<string>()
   private readonly overflowRetries = new WeakMap<Agent, number>()
   private readonly overflowAgents = new WeakMap<Session, Agent>()
+  /** In-memory deterministic latch records per session; durable replacements obsolete them. */
+  private readonly latches = new WeakMap<Session, Map<string, LatchRecord>>()
 
   constructor(ctx: Context, config: BasicCompactionConfig = {}) {
     super(ctx)
@@ -238,18 +281,15 @@ export class BasicCompactionEngine extends CompactionEngine {
     agent: Agent,
     signal?: AbortSignal,
   ): Promise<SummaryResult> {
-    const target = conversationTarget(agent)
-    const config = target === undefined
-      ? this.config
-      : resolveTargetPolicy(this.config, target)
-    return summarizeWithLlm(this.ctx, config, input, agent, signal)
+    return summarizeWithLlm(this.ctx, this._policyFor(agent), input, agent, signal)
   }
 
   /**
    * Compact for replayed step-boundary pressure or one provider-confirmed context
    * overflow. Both triggers price the latest durable routed request envelope;
    * overflow bypasses the normal threshold and retained-tail policy so it can
-   * force one useful balanced reduction.
+   * force one useful balanced reduction. Every summarization call is gated by
+   * combined-context admission and the deterministic failure latch.
    * @param agent - agent whose latest durable routed request is measured.
    * @param trigger - normal step-boundary pressure or context-overflow recovery.
    * @param signal - live turn cancellation signal forwarded to summarization.
@@ -287,7 +327,18 @@ export class BasicCompactionEngine extends CompactionEngine {
       }
       const range = selectCompactableRange(agent.session, measurement, 0)
       if (range === null) return null
-      return this.compactRegion(range.start, range.end, agent, signal)
+      return this._latchedAttempt(agent, policy, 0, signal, async (operation) => {
+        const budget = this._selectedMessagesBudget(operation, policy)
+        if (budget <= 0) throw this._admissionImpossible(operation, policy)
+        const admitted = selectAdmittedCompactionRange(agent.session, measurement, 0, budget)
+        if (admitted === null) {
+          throw new DeterministicCompactionError(
+            'no-balanced-eligible-span',
+            `context-overflow compaction: no balanced span fits the ${budget}-token selected-messages budget`,
+          )
+        }
+        return this.compactRegion(admitted.start, admitted.end, agent, signal)
+      })
     }
 
     const context = (await this.ctx.llm.resolveModelInfo(target.provider, target.model, signal)).context
@@ -311,29 +362,54 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
     if (measurement.totalTokens < spec.thresholdTokens) return null
 
-    let result: CompactionResult | null = null
-    for (let attempt = 0; attempt <= spec.compactionRetries; attempt += 1) {
-      const range = selectCompactableRange(agent.session, measurement, spec.retainTokens)
-      if (range === null) {
-        /* v8 ignore else -- concrete replacement preserves a compactable checkpoint; subclass hooks cannot mutate it. */
-        if (result === null) return null
-        /* v8 ignore next -- paired with the defensive post-success branch above. */
-        break
+    return this._latchedAttempt(agent, policy, spec.retainTokens, signal, async (operation) => {
+      const session = agent.session
+      let current = measurement
+      let result: CompactionResult | null = null
+      const maxPasses = spec.compactionRetries + 1
+      for (let pass = 1; pass <= maxPasses; pass += 1) {
+        if (selectCompactableRange(session, current, spec.retainTokens) === null) {
+          /* v8 ignore else -- a landed pass preserves a compactable checkpoint; selection cannot outlive the surface. */
+          if (result === null) return null
+          /* v8 ignore next -- paired with the defensive post-success branch above. */
+          break
+        }
+        const budget = this._selectedMessagesBudget(operation, policy)
+        if (budget <= 0) throw this._admissionImpossible(operation, policy)
+        const range = selectAdmittedCompactionRange(session, current, spec.retainTokens, budget)
+        if (range === null) {
+          throw new DeterministicCompactionError(
+            'no-balanced-eligible-span',
+            `pass ${pass} of ${maxPasses}: no balanced span fits the ${budget}-token selected-messages budget`,
+          )
+        }
+        const beforeSurface = current.surfaceTokens
+        result = await this.compactRegion(range.start, range.end, agent, signal)
+        current = meter.measure(session)
+        /* v8 ignore next 5
+         * -- the per-pass summary-smaller invariant guarantees the strict decrease; this guard only fails loud on a meter regression. */
+        if (current.surfaceTokens >= beforeSurface) {
+          throw new DeterministicCompactionError(
+            'no-progress',
+            `pass ${pass} of ${maxPasses} did not reduce surface tokens `
+              + `(${current.surfaceTokens} >= ${beforeSurface})`,
+          )
+        }
+        if (current.totalTokens < spec.thresholdTokens) return result
       }
-      result = await this.compactRegion(range.start, range.end, agent, signal)
-      measurement = meter.measure(agent.session)
-      if (measurement.totalTokens < spec.thresholdTokens) return result
-    }
-
-    throw new Error(
-      `compaction still above threshold after ${spec.compactionRetries + 1} compaction attempts `
-      + `(${measurement.totalTokens} estimated tokens >= threshold ${spec.thresholdTokens})`,
-    )
+      throw new DeterministicCompactionError(
+        'pass-bound-exceeded',
+        `compaction still above threshold after ${maxPasses} admitted passes `
+          + `(${current.totalTokens} estimated tokens >= threshold ${spec.thresholdTokens})`,
+      )
+    })
   }
 
   /**
    * Compact one inclusive positional range from the agent-owned surface using
-   * the effective token meter for all retention and shrink pricing.
+   * the effective token meter for all retention and shrink pricing. The exact
+   * requested span must satisfy combined-context admission; a span that cannot
+   * be admitted fails loud rather than being truncated or narrowed.
    * @param start - inclusive first surface-node seq.
    * @param end - inclusive last surface-node seq.
    * @param agent - owner of the target session, used by the summarizer.
@@ -346,9 +422,28 @@ export class BasicCompactionEngine extends CompactionEngine {
     agent: Agent,
     signal?: AbortSignal,
   ): Promise<CompactionResult> {
+    const session = agent.session
+    validateSurfaceRegion(session, start, end)
+    const policy = this._policyFor(agent)
+    const inputs = await this._resolveAdmissionInputs(agent, policy, signal)
+    if (inputs !== undefined) {
+      const components = {
+        pricedSystem: inputs.envelope.systemTokens,
+        pricedTools: inputs.envelope.toolsTokens,
+        pricedSelectedMessages: this._pricedSurfaceSpan(session, start, end),
+        pricedInstruction: inputs.pricedInstruction,
+        effectiveOutputReserve: policy.maxTokens,
+        tokenizerSafetyMargin: policy.tokenizerSafetyMargin,
+        effectiveContextBudget: inputs.capacity.effectiveContextBudget,
+      }
+      const decision = evaluateAdmission(components)
+      if (!decision.admitted) {
+        throw new DeterministicCompactionError('admission-impossible', renderAdmission(components))
+      }
+    }
     return compactSurfaceRegion(
       this.regionDependencies(),
-      agent.session,
+      session,
       start,
       end,
       agent,
@@ -360,6 +455,10 @@ export class BasicCompactionEngine extends CompactionEngine {
   /**
    * Force one useful idle-session compaction below the pressure threshold, and
    * resolve only after its standalone marker pair is durably checkpointed.
+   * This is the one explicit manual probe: it runs even under a held latch,
+   * never deletes the held key first, re-latches immediately when the same
+   * deterministic failure reproduces, and obsoletes the latch through its
+   * replacement when it succeeds.
    * @param agent - idle agent whose next-turn admission this call reserves.
    * @param signal - cancellation scoped to this compaction request.
    * @param sourceCommandId - initiating command identity for presentation correlation.
@@ -376,28 +475,49 @@ export class BasicCompactionEngine extends CompactionEngine {
         const operationSignal = AbortSignal.any([agentSignal, signal])
         try {
           operationSignal.throwIfAborted()
-          const range = selectCompactableRange(
-            agent.session,
-            this.ctx.tokenMeter.measure(agent.session),
-            0,
-          )
-          if (range === null) return null
-          return await compactSurfaceRegion(
-            this.regionDependencies(),
-            agent.session,
-            range.start,
-            range.end,
-            agent,
-            {
-              owner: null,
-              stability: 'selected-span',
-              ...sourceCommandId === undefined ? {} : { sourceCommandId },
-              flush: async () => {
-                await this.ctx.sessions.flush(agent.session)
-              },
-            },
-            operationSignal,
-          )
+          const session = agent.session
+          const meter = this.ctx.tokenMeter
+          const measurement = meter.measure(session)
+          if (selectCompactableRange(session, measurement, 0) === null) return null
+          const policy = this._policyFor(agent)
+          const inputs = await this._resolveAdmissionInputs(agent, policy, operationSignal)
+          if (inputs !== undefined) {
+            const basis = this._latchBasis(agent, policy, inputs, 0)
+            try {
+              const budget = this._selectedMessagesBudget(inputs, policy)
+              if (budget <= 0) throw this._admissionImpossible(inputs, policy)
+              const range = selectAdmittedCompactionRange(session, meter.measure(session), 0, budget)
+              if (range === null) {
+                throw new DeterministicCompactionError(
+                  'no-balanced-eligible-span',
+                  `manual compaction: no balanced span fits the ${budget}-token selected-messages budget`,
+                )
+              }
+              const result = await compactSurfaceRegion(
+                this.regionDependencies(),
+                session,
+                range.start,
+                range.end,
+                agent,
+                this._manualTransactionOptions(session, sourceCommandId),
+                operationSignal,
+              )
+              this.latches.delete(session)
+              return result
+            } catch (error: unknown) {
+              this._recordLatchOutcome(session, basis, error)
+              if (error instanceof ManualCompactionError) throw error
+              if (error instanceof DeterministicCompactionError) {
+                throw new ManualCompactionError(
+                  'summary',
+                  'manual compaction could not admit or replace its selected span',
+                  { cause: error },
+                )
+              }
+              throw error
+            }
+          }
+          return await this._manualUnroutedCompaction(agent, sourceCommandId, operationSignal)
         } catch (error: unknown) {
           if (agentSignal.aborted && operationSignal.reason === agentSignal.reason) {
             throw new ManualCompactionError(
@@ -419,6 +539,187 @@ export class BasicCompactionEngine extends CompactionEngine {
     }
   }
 
+  /** Resolve the conversation policy the summarizer itself would use. */
+  private _policyFor(agent: Agent): ResolvedTargetPolicy | ResolvedConfig {
+    const target = conversationTarget(agent)
+    return target === undefined ? this.config : resolveTargetPolicy(this.config, target)
+  }
+
+  /** Priced fixed components plus the resolved capacity for admission. */
+  private async _resolveAdmissionInputs(
+    agent: Agent,
+    policy: AdmissionPolicy,
+    signal?: AbortSignal,
+  ): Promise<AdmissionInputs | undefined> {
+    const target = resolveSummarizationTarget(policy, agent)
+    if (target === undefined) return undefined
+    const capacity = await resolveCapacitySnapshot(this.ctx, target, signal)
+    return {
+      capacity,
+      envelope: this.ctx.tokenMeter.estimateEnvelopeParts(agent.session.requestHeader()),
+      pricedInstruction: this.ctx.tokenMeter.estimateMessage(compactionInstructionMessage()),
+    }
+  }
+
+  /** The selected-messages budget left after every fixed component and reserve. */
+  private _selectedMessagesBudget(inputs: AdmissionInputs, policy: AdmissionPolicy): number {
+    return evaluateAdmission({
+      pricedSystem: inputs.envelope.systemTokens,
+      pricedTools: inputs.envelope.toolsTokens,
+      pricedSelectedMessages: 0,
+      pricedInstruction: inputs.pricedInstruction,
+      effectiveOutputReserve: policy.maxTokens,
+      tokenizerSafetyMargin: policy.tokenizerSafetyMargin,
+      effectiveContextBudget: inputs.capacity.effectiveContextBudget,
+    }).selectedMessagesBudget
+  }
+
+  /** The fail-loud no-span-can-ever-fit admission verdict for diagnostics. */
+  private _admissionImpossible(inputs: AdmissionInputs, policy: AdmissionPolicy): DeterministicCompactionError {
+    return new DeterministicCompactionError('admission-impossible', renderAdmission({
+      pricedSystem: inputs.envelope.systemTokens,
+      pricedTools: inputs.envelope.toolsTokens,
+      pricedSelectedMessages: 0,
+      pricedInstruction: inputs.pricedInstruction,
+      effectiveOutputReserve: policy.maxTokens,
+      tokenizerSafetyMargin: policy.tokenizerSafetyMargin,
+      effectiveContextBudget: inputs.capacity.effectiveContextBudget,
+    }))
+  }
+
+  /** Sum of metered node prices across one inclusive surface span. */
+  private _pricedSurfaceSpan(session: Session, start: number, end: number): number {
+    const nodes = this.ctx.tokenMeter.measure(session).nodes
+    const startIndex = nodes.findIndex(node => node.seq === start)
+    const endIndex = nodes.findIndex(node => node.seq === end)
+    if (startIndex === -1 || endIndex === -1 || startIndex > endIndex) {
+      throw new Error('compaction: selected surface changed before summarization began')
+    }
+    let total = 0
+    for (let index = startIndex; index <= endIndex; index += 1) {
+      // oxlint-disable-next-line typescript/no-non-null-assertion
+      total += nodes[index]!.tokens
+    }
+    return total
+  }
+
+  /** Build the latch basis for one operation; a conversation-less session keys on its summarization route. */
+  private _latchBasis(
+    agent: Agent,
+    policy: AdmissionPolicy,
+    inputs: AdmissionInputs,
+    effectiveRetainTokens: number,
+  ): CompactionLatchBasis {
+    const conversation = conversationTarget(agent) ?? {
+      provider: inputs.capacity.target.provider,
+      model: inputs.capacity.target.model,
+    }
+    return {
+      replaceGeneration: agent.session.surface.replaceGeneration,
+      conversation,
+      summarization: { provider: inputs.capacity.target.provider, model: inputs.capacity.target.model },
+      capacityIdentity: inputs.capacity.identity,
+      effectiveOutputReserve: policy.maxTokens,
+      tokenizerSafetyMargin: policy.tokenizerSafetyMargin,
+      passPolicy: { maxPasses: policy.compactionRetries + 1, retainTokens: effectiveRetainTokens },
+      passPolicyRevision: PASS_POLICY_REVISION,
+    }
+  }
+
+  /**
+   * Run one automatic compaction attempt under the deterministic latch. A held
+   * key reports its cause and makes no summarization call; a deterministic
+   * failure records toward the two-call latch bound; a durable success
+   * obsoletes any held key through its `replaceGeneration` advance.
+   */
+  private async _latchedAttempt(
+    agent: Agent,
+    policy: AdmissionPolicy,
+    effectiveRetainTokens: number,
+    signal: AbortSignal | undefined,
+    run: (operation: AdmissionInputs) => Promise<CompactionResult | null>,
+  ): Promise<CompactionResult | null> {
+    const session = agent.session
+    const inputs = await this._resolveAdmissionInputs(agent, policy, signal)
+    /* v8 ignore next 4
+     * -- compactIfNeeded callers pass through a durable routed target, so the summarization target always resolves here. */
+    if (inputs === undefined) {
+      throw new Error(
+        'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
+      )
+    }
+    const basis = this._latchBasis(agent, policy, inputs, effectiveRetainTokens)
+    const held = heldLatchRecord(this.latches.get(session), basis)
+    if (held !== undefined) {
+      this.ctx.logger.warn(
+        `automatic compaction held (${held.key.failureClass}): ${held.cause}`,
+      )
+      return null
+    }
+    try {
+      const result = await run(inputs)
+      if (result !== null) this.latches.delete(session)
+      return result
+    } catch (error: unknown) {
+      this._recordLatchOutcome(session, basis, error)
+      throw error
+    }
+  }
+
+  /** Record one deterministic outcome; transient and cancelled failures leave the latches unchanged. */
+  private _recordLatchOutcome(session: Session, basis: CompactionLatchBasis, error: unknown): void {
+    const classification = classifyFailure(error)
+    if (classification.kind !== 'deterministic') return
+    const records = this.latches.get(session) ?? new Map<string, LatchRecord>()
+    this.latches.set(session, records)
+    recordDeterministicFailure(
+      records,
+      basis,
+      classification.failureClass,
+      /* v8 ignore next -- only classified failures reach the recorder, and every deterministic class is an Error. */
+      error instanceof Error ? error.message : String(error),
+    )
+  }
+
+  /** Manual compaction fallback when no summarization target exists at all. */
+  private async _manualUnroutedCompaction(
+    agent: Agent,
+    sourceCommandId: CommandId | undefined,
+    operationSignal: AbortSignal,
+  ): Promise<CompactionResult> {
+    const range = selectCompactableRange(
+      agent.session,
+      this.ctx.tokenMeter.measure(agent.session),
+      0,
+    )
+    /* v8 ignore next -- compactNow already rejected a nothing-compactable surface before resolving admission inputs. */
+    if (range === null) throw new Error('manual compaction: no compactable range after admission resolution')
+    return compactSurfaceRegion(
+      this.regionDependencies(),
+      agent.session,
+      range.start,
+      range.end,
+      agent,
+      this._manualTransactionOptions(agent.session, sourceCommandId),
+      operationSignal,
+    )
+  }
+
+  /** Shared standalone-bracket transaction options for both manual paths. */
+  private _manualTransactionOptions(
+    session: Session,
+    sourceCommandId: CommandId | undefined,
+  ): { owner: null; stability: 'selected-span'; sourceCommandId?: CommandId; flush: () => Promise<void> } {
+    return {
+      owner: null,
+      stability: 'selected-span',
+      ...sourceCommandId === undefined ? {} : { sourceCommandId },
+      flush: async () => {
+        await this.ctx.sessions.flush(session)
+      },
+    }
+  }
+
   /** Bind the effective token meter and dynamically dispatched summarizer hook. */
   private regionDependencies(): { meter: TokenMeter; summarize: RegionSummarize } {
     return {
@@ -426,6 +727,16 @@ export class BasicCompactionEngine extends CompactionEngine {
       summarize: (input, owner, abort) => this.summarize(input, owner, abort),
     }
   }
+}
+
+/** Policy whose fields admission and latch keys consume, before or after target matching. */
+type AdmissionPolicy = ResolvedTargetPolicy | ResolvedConfig
+
+/** Fixed priced components plus resolved capacity backing admission decisions. */
+interface AdmissionInputs {
+  readonly capacity: ResolvedCapacitySnapshot
+  readonly envelope: { systemTokens: number; toolsTokens: number }
+  readonly pricedInstruction: number
 }
 
 export default BasicCompactionEngine

@@ -20,7 +20,7 @@ import type {
 } from './types.ts'
 import { contextBreakdownProjectionDefinition } from './breakdown-projection.ts'
 import { contextPressureProjectionDefinition, tokenUsageProjectionDefinition } from './usage-projection.ts'
-import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from './estimate.ts'
+import { estimateContent, estimateHeader, estimateMessage, estimateSystemTokens, estimateToolsTokens, ROLE_OVERHEAD } from './estimate.ts'
 import { foldSurfaceTokens } from './surface-fold.ts'
 
 export type * from './types.ts'
@@ -154,6 +154,19 @@ export class TokenMeter extends Service {
    */
   estimateMessage(message: Message): number {
     return estimateMessage(message)
+  }
+
+  /**
+   * Price the system-prompt and tool-schema parts of one canonical request
+   * envelope (instance face of the pure `estimateSystemTokens` and
+   * `estimateToolsTokens` exports from `estimate.ts`). Combined-context
+   * admission prices the exact envelope representation an adapter will send
+   * through the same fixed heuristic as every other figure.
+   * @param header - canonical envelope, or `undefined` before any request.
+   * @returns heuristic system and tool tokens; each is 0 when absent.
+   */
+  estimateEnvelopeParts(header: EpochHeader | undefined): { systemTokens: number; toolsTokens: number } {
+    return { systemTokens: estimateSystemTokens(header), toolsTokens: estimateToolsTokens(header) }
   }
 
   /** Catch one session's fold up to the current durable tail. */

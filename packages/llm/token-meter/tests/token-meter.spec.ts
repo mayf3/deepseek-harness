@@ -145,6 +145,23 @@ describe('TokenMeter pricing', () => {
     expect(service.estimateMessage(textMessage('abcd'))).toBe(9)
   })
 
+  it('prices the system and tool parts of one canonical request envelope', () => {
+    const service = meter()
+    expect(service.estimateEnvelopeParts(undefined)).toEqual({ systemTokens: 0, toolsTokens: 0 })
+    expect(service.estimateEnvelopeParts({
+      config: { provider: 'p', model: 'm' },
+    })).toEqual({ systemTokens: 0, toolsTokens: 0 })
+    expect(service.estimateEnvelopeParts({
+      config: { provider: 'p', model: 'm' },
+      system: 'abcdefgh',
+    }).systemTokens).toBe(6)
+    const tools = [{ name: 'read', description: 'd', parameters: {} }]
+    expect(service.estimateEnvelopeParts({
+      config: { provider: 'p', model: 'm' },
+      tools,
+    }).toolsTokens).toBe(Math.ceil(JSON.stringify(tools).length / 4) + 4)
+  })
+
   it('returns a detached deeply immutable empty measurement', () => {
     const service = meter()
     const session = Session.create(SessionId('empty'))

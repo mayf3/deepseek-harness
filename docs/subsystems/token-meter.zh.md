@@ -82,6 +82,17 @@ measure(session: Session, requestHeader?: EpochHeader): TokenMeasurement
  * @returns content and role-framing tokens under the fixed service heuristic.
  */
 estimateMessage(message: Message): number
+
+/**
+ * Price the system-prompt and tool-schema parts of one canonical request
+ * envelope (instance face of the pure `estimateSystemTokens` and
+ * `estimateToolsTokens` exports from `estimate.ts`). Combined-context
+ * admission prices the exact envelope representation an adapter will send
+ * through the same fixed heuristic as every other figure.
+ * @param header - canonical envelope, or `undefined` before any request.
+ * @returns heuristic system and tool tokens; each is 0 when absent.
+ */
+estimateEnvelopeParts(header: EpochHeader | undefined): { systemTokens: number; toolsTokens: number }
 ```
 
 Types: [EpochHeader](session.md) · [Message](llm-streaming.md) · [Session](session.md)

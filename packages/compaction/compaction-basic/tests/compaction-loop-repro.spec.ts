@@ -46,7 +46,7 @@ class StepwiseToolAdapter extends LlmAdapter {
       provider,
       id: model,
       name: model,
-      context: { contextWindow: 400 },
+      context: { contextWindow: 2_048 },
     })
   }
 
@@ -91,7 +91,7 @@ class OverflowRecoveryAdapter extends LlmAdapter {
       provider,
       id: model,
       name: model,
-      context: { contextWindow: 128 },
+      context: { contextWindow: 8_192 },
     })
   }
 
@@ -158,16 +158,16 @@ async function harness(toolSteps: number): Promise<{ ctx: Context; compact: Repr
     description: 'does work',
     parameters: { i: { type: 'number' } },
     async execute() {
-      return [{ type: 'text', text: 'work result' }]
+      return [{ type: 'text', text: `work result ${'detail '.repeat(80)}` }]
     },
   }))
   // Small window so several tool steps cross the threshold and compaction
   // fires within the runaway turn after enough history can shrink.
   const compact = new ReproCompactionEngine(ctx, {
     auto: true,
-    thresholdRatio: 0.5,
+    thresholdRatio: 0.25,
     retainTokens: 50,
-    maxTokens: 8192,
+    maxTokens: 64,
     compactionRetries: 1,
   })
   return { ctx, compact }

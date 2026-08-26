@@ -30,6 +30,7 @@ const POLICY_CONFIG_KEYS = [
   'summarizationProvider',
   'summarizationModel',
   'maxTokens',
+  'tokenizerSafetyMargin',
   'compactionRetries',
   'maxOverflowRetries',
 ] as const
@@ -40,6 +41,12 @@ const BASIC_COMPACT_CONFIG_KEYS: ReadonlySet<string> = new Set([
   'modelPolicies',
   'auto',
 ])
+
+/** Default provider generation cap for the summarization call. */
+const DEFAULT_MAX_TOKENS = 8192
+
+/** Default extra admission reserve against estimator drift. */
+const DEFAULT_TOKENIZER_SAFETY_MARGIN = 0
 
 /** Complete exact-target override key set. */
 const MODEL_POLICY_KEYS: ReadonlySet<string> = new Set([
@@ -88,7 +95,8 @@ export function resolveConfig(config: BasicCompactionConfig = {}): ResolvedConfi
     ...retention,
     summarizationProvider: config.summarizationProvider ?? '',
     summarizationModel: config.summarizationModel ?? '',
-    maxTokens: config.maxTokens ?? 8192,
+    maxTokens: config.maxTokens ?? DEFAULT_MAX_TOKENS,
+    tokenizerSafetyMargin: config.tokenizerSafetyMargin ?? DEFAULT_TOKENIZER_SAFETY_MARGIN,
     compactionRetries: config.compactionRetries ?? 1,
     maxOverflowRetries: config.maxOverflowRetries ?? 1,
     modelPolicies,
@@ -119,6 +127,7 @@ export function resolveTargetPolicy(
     summarizationProvider: override?.summarizationProvider ?? config.summarizationProvider,
     summarizationModel: override?.summarizationModel ?? config.summarizationModel,
     maxTokens: override?.maxTokens ?? config.maxTokens,
+    tokenizerSafetyMargin: override?.tokenizerSafetyMargin ?? config.tokenizerSafetyMargin,
     compactionRetries: override?.compactionRetries ?? config.compactionRetries,
     maxOverflowRetries: override?.maxOverflowRetries ?? config.maxOverflowRetries,
   })
@@ -161,6 +170,7 @@ export function resolveCompactSpec(
     summarizationProvider: policy.summarizationProvider,
     summarizationModel: policy.summarizationModel,
     maxTokens: policy.maxTokens,
+    tokenizerSafetyMargin: policy.tokenizerSafetyMargin,
     compactionRetries: policy.compactionRetries,
     maxOverflowRetries: policy.maxOverflowRetries,
   })
@@ -232,6 +242,7 @@ function validatePolicy(
   const retainRatio = config.retainRatio
   const retainTokens = config.retainTokens
   const maxTokens = config.maxTokens
+  const tokenizerSafetyMargin = config.tokenizerSafetyMargin
   const compactionRetries = config.compactionRetries
   const maxOverflowRetries = config.maxOverflowRetries
   if (thresholdRatio !== undefined) assertRatio(`${name}.thresholdRatio`, thresholdRatio)
@@ -241,6 +252,9 @@ function validatePolicy(
     throw new Error(`${name}: retainRatio and retainTokens are mutually exclusive`)
   }
   if (maxTokens !== undefined) assertPositiveInteger(`${name}.maxTokens`, maxTokens)
+  if (tokenizerSafetyMargin !== undefined) {
+    assertNonNegativeInteger(`${name}.tokenizerSafetyMargin`, tokenizerSafetyMargin)
+  }
   if (compactionRetries !== undefined) {
     assertNonNegativeInteger(`${name}.compactionRetries`, compactionRetries)
   }

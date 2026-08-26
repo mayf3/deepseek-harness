@@ -23,6 +23,7 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { frameSummary } from './summarizer.ts'
 import type { SummarizationInput, SummaryResult } from './summarizer.ts'
+import { DeterministicCompactionError } from './latch.ts'
 
 interface RegionDependencies {
   readonly meter: TokenMeter
@@ -100,6 +101,41 @@ export function selectCompactableRange(
   measurement: TokenMeasurement,
   retainTokens: number,
 ): { start: number; end: number } | null {
+  return selectHeadRange(session, measurement, retainTokens, undefined)
+}
+
+/**
+ * Resolve the largest balanced head range whose priced messages fit the
+ * selected-messages budget left by combined-context admission. When the whole
+ * retained-tail-respecting range already fits, the result equals
+ * `selectCompactableRange`; otherwise the prefix shrinks to the largest
+ * balanced span within `maxRegionTokens` tokens.
+ * @param session - session supplying authoritative current surface positions.
+ * @param measurement - unified pressure and surface measurement from the conversation meter.
+ * @param retainTokens - minimum recent tail budget retained verbatim.
+ * @param maxRegionTokens - admission budget for the selected messages themselves.
+ * @returns the inclusive positional seq range to compact, or `null` when no
+ * non-empty balanced prefix fits the budget.
+ */
+export function selectAdmittedCompactionRange(
+  session: Session,
+  measurement: TokenMeasurement,
+  retainTokens: number,
+  maxRegionTokens: number,
+): { start: number; end: number } | null {
+  return selectHeadRange(session, measurement, retainTokens, maxRegionTokens)
+}
+
+/**
+ * Shared head-anchored selection: retain the priced tail, keep cuts balanced,
+ * and optionally cap the selected prefix by its priced tokens.
+ */
+function selectHeadRange(
+  session: Session,
+  measurement: TokenMeasurement,
+  retainTokens: number,
+  maxRegionTokens: number | undefined,
+): { start: number; end: number } | null {
   const pricedNodes = measurement.nodes
   if (pricedNodes.length === 0) return null
 
@@ -126,10 +162,30 @@ export function selectCompactableRange(
   }
   if (keepFromIdx === 0) return null
 
+  let endIdx = keepFromIdx - 1
+  if (maxRegionTokens !== undefined) {
+    let prefix = 0
+    for (let index = 0; index <= endIdx; index += 1) {
+      // oxlint-disable-next-line typescript/no-non-null-assertion
+      prefix += pricedNodes[index]!.tokens
+    }
+    while (endIdx >= 0 && prefix > maxRegionTokens) {
+      // oxlint-disable-next-line typescript/no-non-null-assertion
+      prefix -= pricedNodes[endIdx]!.tokens
+      endIdx -= 1
+    }
+    while (endIdx >= 0
+      // oxlint-disable-next-line typescript/no-non-null-assertion
+      && !toolPairingBalancedBefore(session, surfaceNodes[endIdx + 1]!)) {
+      endIdx -= 1
+    }
+    if (endIdx < 0) return null
+  }
+
   // oxlint-disable-next-line typescript/no-non-null-assertion
   const first = surfaceNodes[0]!
   // oxlint-disable-next-line typescript/no-non-null-assertion
-  const cutoff = surfaceNodes[keepFromIdx - 1]!
+  const cutoff = surfaceNodes[endIdx]!
   return { start: first, end: cutoff }
 }
 
@@ -311,8 +367,16 @@ export function assertNoActiveCompaction(session: Session, stage: string): void 
   )
 }
 
-/** Validate one requested surface-position span before asynchronous work begins. */
-function validateSurfaceRegion(session: Session, start: number, end: number): SurfaceSelection {
+/**
+ * Validate one requested surface-position span: both endpoints present, in
+ * order, and on balanced tool-pairing boundaries. Admission and callers price
+ * or reject a span only after this positional validation.
+ * @param session - session whose current surface positions are inspected.
+ * @param start - inclusive first surface-node seq.
+ * @param end - inclusive last surface-node seq.
+ * @returns the validated selection with its shadowed seqs.
+ */
+export function validateSurfaceRegion(session: Session, start: number, end: number): SurfaceSelection {
   const nodes = session.surface.nodes
   const startIdx = nodes.indexOf(start)
   const endIdx = nodes.indexOf(end)
@@ -372,7 +436,8 @@ async function summarizeCompaction(
   })
   const framedSummaryTokenCount = dependencies.meter.estimateMessage(checkpointMessage)
   if (framedSummaryTokenCount >= prepared.shadowedTokenCount) {
-    throw new Error(
+    throw new DeterministicCompactionError(
+      'summary-not-smaller',
       `summary is not smaller than the shadowed content (${framedSummaryTokenCount} estimated framed tokens >= ${prepared.shadowedTokenCount})`,
     )
   }

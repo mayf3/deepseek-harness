@@ -14,11 +14,14 @@
 - **路由策略**：主动压力从拥有最新持久提供方／模型路由的适配器解析容量，再将默认策略与可选的精确目标覆盖缩放为具体 token 预算。模型发现仍仅供参考，不参与此处的策略解析。
 - **不依赖模型的剪枝**：在压力或规范溢出符合条件后，可选的 [`ctx.toolResultPruner`](../compaction-tool-result-pruner/README.md) 服务会在选择范围之前改写超大工具结果。Compact-basic 通过 `ctx.tokenMeter` 重新测量；如果压力已回到安全范围，就跳过摘要，否则对已剪枝的表层进行摘要。低于压力的步骤检查绝不剪枝。
 - **保留**：压缩最旧的完整表层单元，同时保留近期尾部，并通过 [`dsh-compaction` 边界 helper](../compaction/README.md#tool-pairing-boundaries) 将切分点调整到工具调用／结果配对平衡的位置。轮次边界不会保护失控轮次内的旧步骤。尚未闭合且不可分的尾部会在闭合前拒绝压缩。当闭合的超大工具单元以文本型结果为可移除主体时，可选 pruner 可以修复它；不可分的非工具单元与不可剪枝的工具剩余部分不在范围内。
+- **组合上下文准入**：每次摘要调用在发出前都证明 `pricedSystem + pricedTools + pricedSelectedMessages + pricedInstruction + effectiveOutputReserve + tokenizerSafetyMargin <= effectiveContextBudget`。计价使用适配器实际发送的请求表示；输出预留是摘要调用的实际 `maxTokens`（包括继承的 8192 默认值），绝不假设为零；预算按操作为精确摘要目标解析一次，经由适配器拥有的容量接缝（今天的 `resolveModelInfo().context.contextWindow`；`capacity.ts` 是唯一的 WINDOW 对接点）。无法准入的 span 会 fail loud —— 压缩绝不截断输入，也不替换多于其实际摘要的范围。路由缺少已披露容量时，会点名该路由并 fail loud。
+- **有界平衡多趟**：当最大平衡旧区域超出准入预算时，每趟只摘要能够装入预算的最大平衡前缀，并恰好替换该 span，落下自己的检查点并保留完整溯源（`shadowedRange`、`shadowedSeqs`、`shadowedTokenCount`、`sourceEventSeqs`）。趟上限为 `compactionRetries + 1`；每趟必须严格降低计量表层 token；到达上限、失去进展，或找不到可准入的平衡 span，都以分类的确定性错误 fail loud，而不是循环。
 - **收敛**：最多按 `compactionRetries` 重试头部检查点压缩；拒绝不能缩小源内容的摘要，如果重试仍无法回到阈值以下，则抛出异常。
 - **摘要**：直接 `llm/stream` 调用使用已配置的提供方／模型对与上限，回退到最新已记录请求目标，然后再回退到 agent（智能体）目标，而不运行仅用于 agent loop 的 `agent/request` 扩展点。该调用会逐字回放会话自身的系统提示词、工具与已遮蔽区域消息（包括图片引用），并将压缩指令作为最后一条 user 消息追加，从而复用提供方的热前缀 cache，而非使它失效。所选适配器必须解析或明确拒绝这些图片。它将 `GenerateOptions.purpose` 设为 `compaction`，适配器可将其作为请求归因转发（DeepSeek 适配器发送 `x-deepseek-harness-compact: 1`），但不会触碰模型可见的请求体。只有返回的文本会进入检查点；推理（reasoning）和工具调用都会被排除，以免泄露私有推理或产生遗留调用；图片输出会以 `UNSUPPORTED_CONTENT` 失败，而不是消失。
 - **框定**：替换 user 消息使用 `<compacted-summary>` 标签标记已建立的检查点上下文。原始摘要保留在 `compaction/summary` 事件上，后续自动周期会合并之前的检查点。
 - **生命周期**：所有入口点共享一个先记录标记的区域事务。它会验证范围与活动锁，同步追加 `compaction/start`，准备并等待摘要，重新验证，再追加 `compaction/summary` 和替换，最后恰好进行一次闭合尝试。自动调用和显式范围调用要求数字标识的开放轮次归属，并要求整个表层保持稳定；串行 `agent/pre-step` listener 会在派生请求之前检查压力，而规范提供方溢出则经由 `agent/request-error` 进入，并且只在表层取得持久进展后才允许重试。`compactNow()` 会预留空闲接纳，使用 `turn: null`，允许所选 span 之外追加仅追加上下文，flush 每次已闭合尝试，并在 `finally` 中释放接纳预留。
-- **溢出恢复**：提供方已确认的溢出不需容量元数据。它会绕过常规压力与保留，执行剪枝，再尝试一次最大平衡头部缩减，并留下最新不可分单元。只要 `surface.replaceGeneration` 前进，就允许重试，包括剪枝在后续摘要工作抛出异常前已落地的情况。如果没有替换、目标特定上限已耗尽、已取消，或遇到未知／非规范错误，则保留原始提供方失败。
+- **溢出恢复**：提供方已确认的溢出绕过常规压力与保留，执行剪枝，再尝试一次受准入约束的平衡头部缩减，并留下最新不可分单元。只要 `surface.replaceGeneration` 前进，就允许重试，包括剪枝在后续摘要工作抛出异常前已落地的情况。如果没有替换、目标特定上限已耗尽、已取消，或遇到未知／非规范错误，则保留原始提供方失败。
+- **确定性失败闩锁**：本地可复现的失败（准入不可能、无平衡可选 span、趟上限或无进展耗尽、摘要不缩小、提供方已确认的 `CONTEXT_WINDOW_EXCEEDED`、请求尺寸类 `INVALID_REQUEST` 措辞）会记录一个精确 key，覆盖 `replaceGeneration`、会话目标与摘要目标、容量身份、输出预留、安全余量、趟策略及其修订号，外加失败分类。允许一次确认 —— 同一未变化 key 下至多两次摘要调用以确定性失败结束 —— 之后闩锁保持：自动压力与溢出恢复进行零次摘要调用，同时持续报告 held 原因。普通的 assistant／tool／user 追加不会清除它；持久替换改变 `replaceGeneration` 使其失效；手动压缩授予恰好一次显式探针而不先删除 held key，同一分类复现时立即重新闩锁。`TRANSPORT`、`SERVER`、`TIMEOUT`、`ABORTED`、限速与配额失败、`terminated`、`fetch failed`、不完整流，以及未分类提供方失败都是瞬时的，绝不闩锁。闩锁按会话保存在内存中，与请求层 `maxOverflowRetries` 预算并存；后者继续独立授权有证明的请求重试。
 - **失败处理**：活动的未匹配 `compaction/start` 是持久锁。位于较新 `session/end-seed` 之前的未匹配标记，是先前生命周期留下的陈旧证据，不会阻塞；位于该边界之后的标记报告 `busy`。摘要和 span 变更失败会以错误闭合，并保持会话表层不变，但日志中仍保留该尝试。闭合失败会有意留下阻塞性的未匹配标记。压力检查中的运行故障会发出警告并继续；只有此前没有替换推进表层时，溢出恢复失败才保留原始提供方错误。完成清理与持久化后，取消仍具有最终决定权。
 
 受保护的 `summarize()` 方法是唯一的子类钩子。基于模板或远程摘要器的子类可以覆盖该方法，同时压力、保留、被引用的源事件、缩减验证与已遮蔽 token 计量仍由 `ctx.tokenMeter` 负责。钩子返回安全摘要，以及完整提供方输出、调用 envelope 和可用时的 usage（`{ summary, rawOutput?, llmStreamCall?, provider, model, maxTokens?, usage? }`）；`llmStreamCall: true` 表示生成该结果时恰好通过此上下文的 `ctx.llm.stream()` 发起了一次调用，且必须提供完整的 `rawOutput`；未带标记的 `rawOutput` 并不能判定调用路径。事务会在 `compaction/summary` 上保留这些字段。
@@ -35,6 +38,7 @@
 | `summarizationProvider` | 否（默认 `''`） | 与 `summarizationModel` 一起设置；空对会解析为最新已记录请求目标，再回退到 `AgentOptions` 对。 |
 | `summarizationModel` | 否（默认 `''`） | 与 `summarizationProvider` 一起设置；空对会解析为最新已记录请求目标，再回退到 `AgentOptions` 对。 |
 | `maxTokens` | 否（默认 `8192`） | 摘要调用的提供方生成上限；可包含推理 token。 |
+| `tokenizerSafetyMargin` | 否（默认 `0`） | 在所有已计价组件之外针对估算器漂移额外预留的 token，计入组合上下文准入，并进入确定性闩锁 key。 |
 | `compactionRetries` | 否（默认 `1`） | 压力仍高于阈值时，在首次尝试后进行的额外尝试次数。 |
 | `maxOverflowRetries` | 否（默认 `1`） | 规范上下文窗口溢出后的最大重试次数；`0` 只禁用恢复。 |
 | `modelPolicies` | 否（默认 `[]`） | 精确的 `{ provider, model, ...partialPolicy }` 覆盖；匹配使用两个字段，不依赖 `listModels()`。 |
@@ -161,4 +165,5 @@ Rules:
 - **溢出分类由适配器维护**：提供方措辞可能改变；两个 DeepSeek 适配器将当前可识别的上下文限制失败规范化为 `CONTEXT_WINDOW_EXCEEDED`。
 - **部分不可分单元与仅 envelope 溢出仍不在表层压缩范围内**：恢复无法缩减系统／工具／前缀、拆分不可分的非工具节点，或修复不可剪枝剩余部分仍超出窗口的工具单元。可选 pruner 可以缩减原本不可分工具对内的文本型工具结果主体。
 - **`compactRegion` 要求存在未结束的轮次**：在完全关闭的会话上手动调用会抛出异常（「no open turn」），而不是执行压缩。
-- **摘要失败会保留最新持久表层**：任何替换前，自动路径会记录警告，并携带完整超预算历史继续。如果剪枝已落地，后续摘要失败会从该持久剪枝表层继续。因达到 `maxTokens` 而发生的摘要截断（隐藏推理 token 可能会耗尽该额度）遵循同一规则。
+- **摘要失败会保留最新持久表层**：任何替换前，自动路径会记录警告，并携带完整超预算历史继续。如果剪枝已落地，后续摘要失败会从该持久剪枝表层继续。因达到 `maxTokens` 而发生的摘要截断（隐藏推理 token 可能会耗尽该额度）遵循同一规则。held 确定性闩锁会抑制后续自动尝试，直到其 key 发生变化。
+- **准入预算针对单一通用容量**：在 WINDOW 词汇落地其适配器拥有的容量快照之前，准入预算就是路由唯一的 `contextWindow`；不推断百分比、上限或提供方元数据。`llm/stream` 重路由拦截器可能将调用派发到与准入计价不同的路由；实际派发的路由仍会记录在 `compaction/summary` 上。
