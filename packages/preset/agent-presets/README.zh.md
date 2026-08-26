@@ -110,7 +110,7 @@ agent-presets:
 | [`src/authoring.ts`](src/authoring.ts) | 本地创作 preset 的复制/删除/读取、权限收紧 |
 | [`src/metadata.ts`](src/metadata.ts) | `preset.yml` 展示元数据 |
 | [`src/session.ts`](src/session.ts) | `agent-preset/selected` 事件与 `agentPreset` Session 投影 |
-| [`src/types.ts`](src/types.ts) | client-safe 的 cordis 事件声明 |
+| [`src/types.ts`](src/types.ts) | client-safe 的线上载荷与 cordis 事件声明 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：挂载后的服务泄漏复查、未加入 agent 的失败 |
 
 ### 常驻挂载
