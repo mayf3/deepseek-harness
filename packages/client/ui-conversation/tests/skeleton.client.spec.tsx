@@ -44,16 +44,32 @@ function fakeWiring() {
   return { wiring: shell, sink, shell }
 }
 
-/** jsdom has no ResizeObserver; the composer seat publishes its height through one. */
+/** jsdom has no ResizeObserver; the root publishes its width and the composer
+ * seat its height through one. Observed targets are recorded so a case can
+ * fire the callback against a chosen element. */
+const resizeObservers: { callback: ResizeObserverCallback; targets: Element[] }[] = []
 class ResizeObserverStub {
-  observe(): void {}
+  targets: Element[] = []
+  constructor(callback: ResizeObserverCallback) {
+    resizeObservers.push({ callback, targets: this.targets })
+  }
+
+  observe(target: Element): void { this.targets.push(target) }
   unobserve(): void {}
-  disconnect(): void {}
+  disconnect(): void { this.targets.length = 0 }
+}
+
+/** Fires every recorded observer whose target list includes the element. */
+function fireResize(el: Element): void {
+  for (const entry of resizeObservers) {
+    if (entry.targets.includes(el)) entry.callback([], undefined as never)
+  }
 }
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  resizeObservers.length = 0
 })
 beforeEach(() => {
   localStorage.clear()
@@ -565,5 +581,72 @@ describe('ConversationRoot resident composer', () => {
     }))
     expect(b.view.getByRole('alert').textContent).toContain('Message send failed (offline)')
     expect(b.view.queryByRole('button', { name: 'Retry' })).toBeNull()
+  })
+
+  it('publishes the column width as a px variable for the shared width axis', () => {
+    const b = mount(sessionSnapshotOf())
+    const root = b.view.container.querySelector('[data-phase]') as HTMLElement
+    // jsdom offsetWidth is 0 until faked: the observer publishes whatever the
+    // layout reports, and the CSS clamp() floors the axis at 680px either way.
+    Object.defineProperty(root, 'offsetWidth', { value: 1200, configurable: true })
+    act(() => { fireResize(root) })
+    expect(root.style.getPropertyValue('--dsh-conversation-column-width')).toBe('1200px')
+    // No dragged preference: the user-width override stays absent so the
+    // adaptive clamp term applies.
+    expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('')
+  })
+
+  it('drag → persist → window clamp round-trip on a width handle', () => {
+    const b = mount(sessionSnapshotOf())
+    const root = b.view.container.querySelector('[data-phase]') as HTMLElement
+    Object.defineProperty(root, 'offsetWidth', { value: 1600, configurable: true })
+    act(() => { fireResize(root) })
+    const handle = b.view.container.querySelector('[data-width-handle="right"]') as HTMLElement
+    expect(handle).not.toBeNull()
+    // jsdom lacks pointer capture: emulate per-element so hasPointerCapture
+    // gates pass; the finally block restores the original descriptors so the
+    // stubs cannot leak into later tests.
+    const names = ['setPointerCapture', 'releasePointerCapture', 'hasPointerCapture'] as const
+    const originals = names.map(name =>
+      [name, Object.getOwnPropertyDescriptor(Element.prototype, name)] as const)
+    const captured = new Set<Element>()
+    Element.prototype.setPointerCapture = function () { captured.add(this) }
+    Element.prototype.releasePointerCapture = function () { captured.delete(this) }
+    Element.prototype.hasPointerCapture = function () { return captured.has(this) }
+    try {
+      // Base resolves from the adaptive clamp: min(1600*0.64, 920) = 920.
+      // Dragging the right handle outward by 25px widens by 2×25 = 50 → 970,
+      // inside both bounds (max = 1600 − 176 = 1424 keeps the handles on-column).
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerUp(handle, { pointerId: 1, clientX: 825, clientY: 300 })
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('970px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
+      // Window shrinks: the displayed width re-clamps (900 − 176 = 724) but the
+      // preference stays.
+      Object.defineProperty(root, 'offsetWidth', { value: 900, configurable: true })
+      act(() => { fireResize(root) })
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
+      // A press without travel (a real double-click delivers two such
+      // press/release rounds) must not commit the clamped display value over
+      // the stored preference.
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      fireEvent.pointerUp(handle, { pointerId: 1, clientX: 800, clientY: 300 })
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
+      expect(root.style.getPropertyValue('--dsh-chat-user-width')).toBe('724px')
+      // No reset affordance on the handle: double-click leaves the preference alone.
+      fireEvent.doubleClick(handle)
+      expect(localStorage.getItem('dsh.conversation.contentWidth')).toBe('970')
+    } finally {
+      for (const [name, descriptor] of originals) {
+        if (descriptor === undefined) Reflect.deleteProperty(Element.prototype, name)
+        else Object.defineProperty(Element.prototype, name, descriptor)
+      }
+    }
+  })
+
+  it('hero phase renders no width handles (no transcript to size)', () => {
+    const b = mount(sessionSnapshotOf({ blank: true }))
+    expect(b.view.container.querySelector('[data-width-handle]')).toBeNull()
   })
 })

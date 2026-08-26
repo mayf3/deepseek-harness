@@ -2,9 +2,10 @@
  * Out-of-process SDK subagent backend. Each child is a complete DeepSeek
  * Harness runtime in its own process — own named profile and patch composition,
  * session, model route, and tools — driven over stdio JSON-RPC through the
- * TypeScript SDK client, so it shares no Cordis context and advertises no
- * parent-enforced start capabilities; the ONE thing it reads off
- * `request.parent` is the session's workspace cwd. This plugin uses named
+ * TypeScript SDK client, so it shares no Cordis context. It accepts the
+ * provider/model/reasoning/maxTokens subset of `agentOptions`; other start
+ * features remain unsupported. The ONE thing it reads off `request.parent`
+ * is the session's workspace cwd. This plugin uses named
  * exports only; a default would hide its loader metadata (see
  * `docs/postmortem/0001-acp-default-export-drops-inject.md`).
  * @module @deepseek-ai/dsh-subagent-dsh-sdk
@@ -14,12 +15,14 @@ import type { Context } from '@deepseek-ai/cordis'
 import { statSync } from 'node:fs'
 import { isAbsolute, resolve } from 'node:path'
 import z from '@deepseek-ai/schemastery'
+import type { AgentOptions } from '@deepseek-ai/dsh-agent'
 import type { SubagentCapabilities, SubagentProvider, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
 import { assertPositiveFinite, NO_START_CAPABILITIES, resolveChildCwd, validateConfiguredCwd } from '@deepseek-ai/dsh-subagent'
 import {
   DEFAULT_DISPOSE_EOF_GRACE_MS,
   DEFAULT_DISPOSE_GRACE_MS,
   DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  sdkConfigurationFailure,
   startSdkRun,
   type SdkRunSpec,
 } from './run.ts'
@@ -103,28 +106,61 @@ function resolveConfiguredFile(field: string, value: string): string {
   throw new TypeError(`subagent-dsh-sdk ${field} must name an existing file: ${path}`)
 }
 
+/** DSH SDK can apply Agent route options while the other start features remain child-owned. */
+const SDK_START_CAPABILITIES: SubagentCapabilities = Object.freeze({
+  ...NO_START_CAPABILITIES,
+  agentOptions: true,
+})
+
+/** Merge the request's supported route fields over this provider instance's defaults. */
+function resolveSdkRoute(config: ResolvedConfig, requested: AgentOptions | undefined): Pick<
+  SdkRunSpec,
+  'provider' | 'model' | 'reasoningEffort' | 'maxTokens'
+> {
+  const maxTokens = requested?.maxTokens ?? config.maxTokens
+  return {
+    provider: requested?.provider ?? config.provider,
+    model: requested?.model ?? config.model,
+    ...requested?.reasoningEffort === undefined ? {} : { reasoningEffort: requested.reasoningEffort },
+    ...maxTokens === undefined ? {} : { maxTokens },
+  }
+}
+
 /**
- * The SDK provider. Advertises NO start-time capabilities: an out-of-process
- * child cannot honor `agentOptions`/`outputSchema`/`maxDepth`/`toolFilter`/`persona` (the
- * service rejects a request needing any of them before `start` runs).
+ * The SDK provider. It resolves Agent route options into the child runtime's
+ * process-wide handshake; output schema, depth, tool filter, and persona stay
+ * unsupported because their ownership does not cross this process boundary.
  */
 class SdkSubagentProvider implements SubagentProvider {
-  readonly capabilities: SubagentCapabilities = NO_START_CAPABILITIES
+  readonly capabilities = SDK_START_CAPABILITIES
+  readonly agentRouteDefaults: Readonly<{ provider: string; model: string }>
   // Context contract: an out-of-process SDK child starts fresh — no parent conversation crosses the process boundary.
   readonly inheritsParentContext = false
 
-  constructor(readonly name: string, private readonly ctx: Context, private readonly config: ResolvedConfig) {}
+  constructor(readonly name: string, private readonly ctx: Context, private readonly config: ResolvedConfig) {
+    this.agentRouteDefaults = Object.freeze({ provider: config.provider, model: config.model })
+  }
 
   start(request: SubagentStartRequest) {
+    if (request.signal.aborted) {
+      throw new Error('subagent request was aborted before the SDK child started')
+    }
+    let cwd: string
+    try {
+      cwd = resolveChildCwd('subagent-dsh-sdk', this.config.cwd, request.parent.session.header.cwd)
+    } catch (error: unknown) {
+      const failure = sdkConfigurationFailure(error)
+      this.ctx.logger.warn(`subagent-dsh-sdk "${this.name}": child start failed: %o`, error)
+      throw failure
+    }
+    const route = resolveSdkRoute(this.config, request.agentOptions)
     const spec: SdkRunSpec = {
       ...this.config.dshBin === undefined ? {} : { dshBin: this.config.dshBin },
       profile: this.config.profile,
       patches: this.config.patches,
       dshHome: this.config.dshHome,
-      cwd: resolveChildCwd('subagent-dsh-sdk', this.config.cwd, request.parent.session.header.cwd),
-      provider: this.config.provider,
-      model: this.config.model,
-      ...this.config.maxTokens === undefined ? {} : { maxTokens: this.config.maxTokens },
+      cwd,
+      ...route,
       env: this.config.env,
       shutdownTimeoutMs: this.config.shutdownTimeoutMs,
       disposeEofGraceMs: this.config.disposeEofGraceMs,
