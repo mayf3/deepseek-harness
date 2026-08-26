@@ -250,8 +250,8 @@ export function TrajectoryView({
         const turn = request?.turn ?? node?.turn
         const step = request?.step ?? node?.step
         if (turn === undefined || step === undefined) continue
-        const provider = request?.provenance?.provider ?? node?.provenance?.provider
-        const model = request?.provenance?.model ?? node?.provenance?.model
+        const provider = request?.providerInfo?.provider ?? node?.providerInfo?.provider
+        const model = request?.providerInfo?.model ?? node?.providerInfo?.model
         const requestConfig = request?.requestConfig ?? node?.requestConfig
         numbered.push({
           seq: entry.seq,
@@ -292,12 +292,12 @@ export function TrajectoryView({
         ...(request.error === undefined ? {} : { error: request.error }),
         ...(request.errorCode === undefined ? {} : { errorCode: request.errorCode }),
         resultSeq: request.startSeq,
-        ...(request.provenance?.provider === undefined
+        ...(request.providerInfo?.provider === undefined
           ? {}
-          : { provider: request.provenance.provider }),
-        ...(request.provenance?.model === undefined
+          : { provider: request.providerInfo.provider }),
+        ...(request.providerInfo?.model === undefined
           ? {}
-          : { model: request.provenance.model }),
+          : { model: request.providerInfo.model }),
         ...(request.requestConfig === undefined ? {} : { requestConfig: request.requestConfig }),
         ...(usage === undefined ? {} : { usage }),
         ...(cumulativeUsage === undefined ? {} : { cumulativeUsage }),
