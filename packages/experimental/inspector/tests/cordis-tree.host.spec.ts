@@ -4,11 +4,13 @@ import { Context } from '@deepseek-ai/cordis'
 import WebSocket, { type RawData } from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CordisTreeCollector } from '../src/shared/cordis/collector.ts'
+import { observeCordisTree } from '../src/shared/cordis/observer.ts'
 import { startInspector, type InspectorHandle } from '../src/host/bridge/controller.ts'
 import { publishCordisTree as publishHostCordisTree } from '../src/host/inspection/cordis.ts'
 import { parseCordisTreeSnapshot, type CordisTreeNode } from '../src/shared/cordis/snapshot.ts'
 import { inspectorId } from '../src/shared/bridge/ids.ts'
 import type { InspectorJsonValue } from '../src/shared/json.ts'
+import { jsonByteLength } from '../src/shared/json.ts'
 import type { InspectorSourceDescriptor } from '../src/shared/bridge/messages/observation.ts'
 import { CordisTreeStore } from '../src/worker/inspection/cordis-store.ts'
 import { InspectorClientFixture } from './fixtures/client-source.host.ts'
@@ -131,6 +133,106 @@ describe('Cordis tree inspection', () => {
 
     collector.close()
     await fiber.dispose()
+  })
+
+  it('marks snapshots truncated when a Context ancestry exceeds the traversal limit', async () => {
+    const root = new Context()
+    let context = root
+    for (let depth = 0; depth < 102; depth++) context = context.isolate(`depth-${String(depth)}`)
+    const fiber = context.plugin({ name: 'deep-child', apply() {} })
+    await fiber.await()
+    const collector = new CordisTreeCollector(root, { maxNodes: 1_000, maxBytes: 1024 * 1024 })
+
+    expect(collector.snapshot().truncated).toBe(true)
+
+    collector.close()
+    await fiber.dispose()
+  })
+
+  it('bounds snapshots by node count and encoded byte size', async () => {
+    const root = new Context()
+    const parent = root.isolate('parent')
+    const child = parent.isolate('child')
+    const fiber = child.plugin({ name: 'bounded-child', apply() {} })
+    await fiber.await()
+    const completeCollector = new CordisTreeCollector(root, { maxNodes: 100, maxBytes: 64 * 1_024 })
+    const complete = completeCollector.snapshot()
+    const rootOnlyBytes = jsonByteLength({
+      ...complete,
+      objectRegistryId: 'x'.repeat(complete.objectRegistryId.length),
+      root: { ...complete.root, children: [] },
+      truncated: true,
+    })
+    completeCollector.close()
+
+    const nodeBound = new CordisTreeCollector(root, { maxNodes: 1, maxBytes: 64 * 1_024 })
+    expect(nodeBound.snapshot()).toMatchObject({ truncated: true, root: { children: [] } })
+    nodeBound.close()
+
+    const directRoot = new Context()
+    const directFiber = directRoot.plugin({ name: 'direct-child', apply() {} })
+    await directFiber.await()
+    const fiberBound = new CordisTreeCollector(directRoot, { maxNodes: 2, maxBytes: 64 * 1_024 })
+    expect(fiberBound.snapshot()).toMatchObject({ truncated: true, root: { children: [] } })
+    fiberBound.close()
+
+    const byteBound = new CordisTreeCollector(root, { maxNodes: 100, maxBytes: rootOnlyBytes })
+    expect(byteBound.snapshot()).toMatchObject({ truncated: true, root: { children: [] } })
+    byteBound.close()
+
+    const impossible = new CordisTreeCollector(root, { maxNodes: 0, maxBytes: 1 })
+    expect(() => impossible.snapshot()).toThrow('maxNodes cannot retain the root Context')
+    impossible.close()
+
+    const rootTooLarge = new CordisTreeCollector(new Context(), { maxNodes: 2, maxBytes: 1 })
+    expect(() => rootTooLarge.snapshot()).toThrow('Cordis root exceeds the source-frame byte limit')
+    rootTooLarge.close()
+    await directFiber.dispose()
+    await fiber.dispose()
+  })
+
+  it('coalesces Cordis notifications and ignores a queued publication after disposal', async () => {
+    const root = new Context()
+    const listener = vi.fn()
+    const dispose = observeCordisTree(root, listener, { maxNodes: 100, maxBytes: 64 * 1_024 })
+    expect(listener).toHaveBeenCalledTimes(1)
+
+    root.emit('internal/plugin', root.fiber)
+    root.emit('internal/plugin', root.fiber)
+    await Promise.resolve()
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    root.emit('internal/plugin', root.fiber)
+    dispose()
+    dispose()
+    await Promise.resolve()
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores disposed Fibers and non-Context listener owners while unwrapping Cordis shadows', async () => {
+    const root = new Context()
+    const fiber = root.plugin({ name: 'temporarily-disposed', apply() {} })
+    await fiber.await()
+    const runtimeFiber = fiber.ctx.fiber
+    const uidDescriptor = Object.getOwnPropertyDescriptor(runtimeFiber, 'uid')
+    Object.defineProperty(runtimeFiber, 'uid', { ...uidDescriptor, value: null })
+    const hooks = root.events._hooks as unknown as Record<PropertyKey, Array<{ ctx: unknown }> | undefined>
+    const probe = Symbol('inspector-collector-probe')
+    const empty = Symbol('inspector-collector-empty')
+    const shadow = Object.create(root) as object
+    Object.defineProperty(shadow, Symbol.for('cordis.shadow'), { value: true })
+    hooks[probe] = [{ ctx: {} }, { ctx: shadow }, { ctx: runtimeFiber.ctx }]
+    hooks[empty] = undefined
+    const collector = new CordisTreeCollector(root, { maxNodes: 100, maxBytes: 64 * 1_024 })
+    try {
+      expect(collector.snapshot().root.kind).toBe('context')
+    } finally {
+      collector.close()
+      Reflect.deleteProperty(hooks, probe)
+      Reflect.deleteProperty(hooks, empty)
+      if (uidDescriptor !== undefined) Object.defineProperty(runtimeFiber, 'uid', uidDescriptor)
+      await fiber.dispose()
+    }
   })
 
   it('freezes a disconnected snapshot and replaces it with the reconnect generation', () => {

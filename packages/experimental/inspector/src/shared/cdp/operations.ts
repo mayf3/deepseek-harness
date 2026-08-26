@@ -16,9 +16,15 @@ export type RuntimeCallArgument<Handle extends string> =
   | { readonly kind: 'object'; readonly handle: Handle }
   | { readonly kind: 'undefined' }
 
+/** Backend-local selector for a native execution context within one realm. */
+export type RuntimeExecutionContext =
+  | { readonly kind: 'numeric'; readonly id: number }
+  | { readonly kind: 'unique'; readonly id: string }
+
 /** Engine-independent evaluation options supported by Runtime backends. */
 export interface RuntimeEvaluateRequest {
   readonly expression: string
+  readonly context?: RuntimeExecutionContext
   readonly objectGroup?: string
   readonly includeCommandLineAPI?: boolean
   readonly silent?: boolean
@@ -46,6 +52,7 @@ export interface RuntimeGetPropertiesRequest<Handle extends string> {
 /** Function invocation request within one inspected realm. */
 export interface RuntimeCallFunctionRequest<Handle extends string> {
   readonly functionDeclaration: string
+  readonly context?: RuntimeExecutionContext
   readonly receiver?: Handle
   readonly arguments?: readonly RuntimeCallArgument<Handle>[]
   readonly objectGroup?: string

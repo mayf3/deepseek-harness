@@ -1,6 +1,12 @@
 /** Dispatch of validated Worker frames accepted by the Host MessagePort. */
 
-import type { SourceAcceptedFrame, SourceRejectedFrame, SourceResnapshotFrame, WorkerToSourceFrame } from '../../shared/bridge/messages/observation.ts'
+import type {
+  SourceAcceptedFrame,
+  SourceAppendAcknowledgedFrame,
+  SourceRejectedFrame,
+  SourceResnapshotFrame,
+  WorkerToSourceFrame,
+} from '../../shared/bridge/messages/observation.ts'
 import { rejectConsoleBridgeCommand } from '../cdp/console.ts'
 import { rejectRuntimeBridgeCommand } from '../cdp/runtime.ts'
 import { rejectSourcesBridgeCommand } from '../cdp/sources.ts'
@@ -8,6 +14,7 @@ import { rejectSourcesBridgeCommand } from '../cdp/sources.ts'
 /** Operations invoked for source-lifecycle frames addressed to the Host. */
 export interface HostBridgeFrameHandlers {
   accepted(frame: SourceAcceptedFrame): void
+  acknowledged(frame: SourceAppendAcknowledgedFrame): void
   resnapshot(frame: SourceResnapshotFrame): void
   rejected(frame: SourceRejectedFrame): void
 }
@@ -22,6 +29,9 @@ export function dispatchBridgeFrame(frame: WorkerToSourceFrame, handlers: HostBr
     case 'source/accepted':
       handlers.accepted(frame)
       return
+    case 'source/append-acknowledged':
+      handlers.acknowledged(frame)
+      return
     case 'source/resnapshot':
       handlers.resnapshot(frame)
       return
@@ -30,6 +40,9 @@ export function dispatchBridgeFrame(frame: WorkerToSourceFrame, handlers: HostBr
       return
     case 'client-runtime/request':
       return rejectRuntimeBridgeCommand(frame.command)
+    case 'client-runtime/cancel':
+    case 'client-runtime/response-acknowledged':
+      return
     case 'client-console/enable':
     case 'client-console/disable':
       return rejectConsoleBridgeCommand(frame.t)

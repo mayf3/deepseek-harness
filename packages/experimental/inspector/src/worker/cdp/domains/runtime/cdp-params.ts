@@ -194,7 +194,7 @@ export function parseReleaseObjectGroup(params: Readonly<Record<string, unknown>
  * @returns The validated context selector.
  */
 export function parseGlobalLexicalScopeNames(params: Readonly<Record<string, unknown>>): CdpExecutionContextSelector {
-  exactKeys(params, ['executionContextId', 'uniqueContextId'], 'Runtime.globalLexicalScopeNames params')
+  exactKeys(params, ['executionContextId'], 'Runtime.globalLexicalScopeNames params')
   return parseContextSelector(params, 'executionContextId')
 }
 

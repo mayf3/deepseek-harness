@@ -251,6 +251,13 @@ export class InspectorSourceRegistry {
     state.expectedSequence = frame.firstSequence + frame.records.length
     for (const consumer of this.consumers) consumer.append(state.source, records)
     this.count(state, frame.records)
+    connection.send({
+      v: INSPECTOR_PROTOCOL_VERSION,
+      t: 'source/append-acknowledged',
+      sourceId: state.source.sourceId,
+      generation: state.source.generation,
+      nextSequence: state.expectedSequence,
+    })
     this.notifyStatus()
   }
 

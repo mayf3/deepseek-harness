@@ -1,20 +1,20 @@
 # Agent Note: Inspector 执行环境与协议平面
 
-Status: proposed
+Status: implemented
 
 [English](2026-08-26-inspector-execution-realms-and-protocol-planes.md) | 中文
 
 ## Problem
 
-Inspector 包的代码运行在三个 JavaScript 环境中：浏览器 Client、Host Node 主线程和 Inspector Worker thread。当前源码树把执行归属与功能名称混在一起：浏览器和 Host producer 使用互不对应的目录结构，代表 Client 与 Host 的 Worker 代码位于笼统的 backend 目录，而一个 protocol 目录同时包含 transport frame、Cordis 数据、network observation 与面向 CDP 的 Runtime value。因此，文件路径无法说明代码在哪里运行，也无法说明它可以持有哪些标识符。
+Inspector 包的代码运行在三个 JavaScript 环境中：浏览器 Client、Host Node 主线程和 Inspector Worker thread。只按功能命名目录时，文件路径无法说明代码在哪里运行，也无法说明它可以持有哪些标识符。
 
 这种含糊会带来风险，因为 Host 与 Client 的支持能力有意不同，但架构必须保持可比较。Host Runtime 与 Debugger 委托 Node inspector protocol；Client Runtime 与 Console 通过内部 bridge 模拟同一套 backend 语义。如果两边的文件、接口与 unsupported operation 在结构上分叉，每增加一种协议方法都容易产生第二套路由模型。同样，只需要 Cordis 运行时树的消费方不应继承 debugger activation、Chrome 连接状态或 CDP 标识符。
 
-现有的[跨 realm CDP Inspector 决策](../../implemented/architecture/2026-08-23-cross-realm-cdp-inspector.zh.md)继续负责 Worker、transport、Runtime、debugger 与安全行为。[Cordis 运行时树检查决策](../../implemented/architecture/2026-08-24-cordis-runtime-tree-inspection.zh.md)继续负责 Cordis 树语义、对象路由与 DOM projection。本提案只负责源码位置、依赖方向，以及领域数据、backend 语义、内部 transport 和 Chrome CDP 状态之间的分隔。
+现有的[跨 realm CDP Inspector 决策](2026-08-23-cross-realm-cdp-inspector.zh.md)负责 Worker、transport、Runtime、debugger 与安全行为。[Cordis 运行时树检查决策](2026-08-24-cordis-runtime-tree-inspection.zh.md)负责 Cordis 树语义、对象路由与 DOM projection。本决策负责源码位置、依赖方向，以及领域数据、backend 语义、内部 transport 和 Chrome CDP 状态之间的分隔。
 
-## Proposal
+## Decision
 
-顶层源码目录将标识执行归属。`client/` 只包含浏览器 Client 代码，`host/` 只包含 Host Node 主线程代码，`worker/` 只包含 Worker thread 代码，`shared/` 只包含在所有环境中都安全的代码。即使某个模块代表 Client，只要它实际在 Worker 中执行，就仍属于 `worker/`，而不是 `client/`。
+顶层源码目录标识执行归属。`client/` 只包含浏览器 Client 代码，`host/` 只包含 Host Node 主线程代码，`worker/` 只包含 Worker thread 代码，`shared/` 只包含在所有环境中都安全的代码。即使某个模块代表 Client，只要它实际在 Worker 中执行，就仍属于 `worker/`，而不是 `client/`。
 
 仓库要求的 `src/index.ts` 与 `src/invariant.ts` 发现入口是仅有的源码根目录例外。它们暴露 Host package entry 及其 service type，或注册 invariant companion，不包含 Inspector 运行时实现，并为仓库工具保留在固定路径。
 
@@ -26,9 +26,9 @@ src/
   worker/   Worker transport, repositories, realm backends, and CDP endpoint
 ```
 
-`client/` 与 `host/` 将拥有相同的相对目录和文件名。共同角色包括 plugin entry、bridge lifecycle 与 RPC、Cordis 和 network inspection，以及面向 CDP 的 Runtime、Console、Debugger、Sources、Profiler 和 HeapProfiler adapter。支持程度可以不同：不可用的操作仍保留在对应的镜像模块中，并返回共享的 capability-unavailable 或类型化 unsupported 结果。镜像结构统一的是能力实现位置，而不是宣称两个引擎支持相同功能。
+`client/` 与 `host/` 拥有相同的相对目录和文件名。共同角色包括 plugin entry、bridge lifecycle 与 RPC、Cordis 和 network inspection，以及面向 CDP 的 Runtime、Console、Debugger、Sources、Profiler 和 HeapProfiler adapter。支持程度可以不同：不可用的操作仍保留在对应的镜像模块中，并返回共享的 capability-unavailable 或类型化 unsupported 结果。镜像结构统一的是能力实现位置，而不是宣称两个引擎支持相同功能。
 
-Worker 侧 realm adapter 在 `worker/realms/client/` 与 `worker/realms/host/` 下遵守相同规则。这些 adapter 通过共享的面向 CDP backend 接口，规范化 Client 模拟行为与 Node inspector 行为。它们不拥有 Chrome wire message 或连接局部的 CDP 标识符。
+Worker 侧 realm adapter 在 `worker/realms/client/` 与 `worker/realms/host/` 下遵守相同规则。这些 adapter 通过共享的面向 CDP backend 接口规范化 Client 模拟行为与 Node inspector 行为。它们不拥有 Chrome wire message 或连接局部的 CDP 标识符。
 
 ## Execution ownership
 
@@ -62,13 +62,16 @@ Worker 继续作为唯一的 Chrome CDP wire 与状态 owner。Client 代码模�
 
 本能力继续保留在同一个 `@deepseek-ai/dsh-experimental-inspector` 包中，并使用显式 Client 与 Host compiler face。目录分隔是执行与依赖规则，不是拆包方案。
 
-## Migration order
+## Verification
 
-首先把现有 Cordis 实现及其语义类型移动到 `shared/cordis/`。随后把当前 protocol 目录拆成 `shared/bridge/`、`shared/cdp/` 与 `shared/network/`，同时保留已验证的 frame discriminant 与限制。
-
-接下来把顶层 Client 与 Host 文件移动到严格镜像的路径。缺失支持使用显式表示，使镜像保持完整。然后把 Worker Client 与 Node backend 移动到镜像的 `worker/realms/client/` 和 `worker/realms/host/` 目录，并在架构接口上把 Node 命名统一为 Host。
-
-最后把 source transport 与 routing 移到 `worker/bridge/`，Cordis、network 与 query repository 移到 `worker/inspection/`，Chrome endpoint 与 domain 移到 `worker/cdp/`。imports、显式 compiler-face file list、package entry 与聚焦测试随所属层一起修改。最终源码树不保留笼统的顶层 `protocol/`、`cordis/` 或 `worker/backends/` 目录。
+- 每个运行时实现都通过 `shared/`、`client/`、`host/` 或 `worker/` 拥有明确的执行 owner；只有仓库要求的 package 与 invariant 转发入口留在源码根目录。
+- 顶层 Client/Host 树与 Worker Client/Host realm 树分别拥有相同的相对实现路径；不同能力支持使用显式类型表示。
+- Cordis 与 network reader 无需导入 debugger、source、transport 或 CDP session 模块即可使用。
+- 内部 message 包含 source 层 identity 与已验证领域值，但不包含 Chrome 连接局部 id。
+- 规范化 realm backend interface 同时支持 Host 委托与 Client 模拟，且两种实现都不构造 Chrome CDP message。
+- 只有 Worker CDP 模块分配 Chrome id，并持有 DevTools 连接的 enable、object、script、node 与 call-frame 状态。
+- Host Runtime 与 debugging、Client Runtime 与 Console、Network capture、Cordis Elements projection、断联保留与语义 query 行为均有聚焦测试覆盖。
+- compiler face、import check 与结构测试能够拒绝环境泄漏和 Client/Host 镜像漂移。
 
 ## Alternatives considered
 
@@ -82,18 +85,7 @@ Worker 继续作为唯一的 Chrome CDP wire 与状态 owner。Client 代码模�
 
 **把 Client、Host、protocol 与 Worker 拆成多个包。** 实验阶段拒绝。部署单元仍是一个 Client/Host Cordis plugin；包边界会增加构建和发布协作，却不能改善所需的执行环境分隔。
 
-## Acceptance criteria
-
-- 每个运行时实现都通过 `shared/`、`client/`、`host/` 或 `worker/` 拥有明确的执行 owner；只有仓库要求的 package 与 invariant 转发入口留在源码根目录。
-- 顶层 Client/Host 树与 Worker Client/Host realm 树分别拥有相同的相对实现路径；不同能力支持使用显式类型表示。
-- Cordis 与 network reader 无需导入 debugger、source、transport 或 CDP session 模块即可使用。
-- 内部 message 包含 source 层 identity 与已验证领域值，但不包含 Chrome 连接局部 id。
-- 规范化 realm backend interface 同时支持 Host 委托与 Client 模拟，且两种实现都不构造 Chrome CDP message。
-- 只有 Worker CDP 模块分配 Chrome id，并持有 DevTools 连接的 enable、object、script、node 与 call-frame 状态。
-- 移动后继续覆盖现有 Host Runtime 与 debugging、Client Runtime 与 Console、Network capture、Cordis Elements projection、断联保留与语义 query 行为。
-- compiler face、import check 与结构测试能够拒绝环境泄漏和 Client/Host 镜像漂移。
-
-## Risks
+## Consequences
 
 严格镜像会为不支持的能力增加小型 adapter 文件。这些文件是两个实现之间有意保留的兼容点，但必须保持轻薄，也不能制造虚假行为。
 
@@ -101,4 +93,4 @@ Worker 继续作为唯一的 Chrome CDP wire 与状态 owner。Client 代码模�
 
 如果不加约束地添加规范化类型，`shared/cdp/` 可能变成第二份 Chrome protocol。只有两个 realm 实现或公共 Worker projector 会消费的类型才属于这里；Chrome session bookkeeping 与 wire-only field 保留在 `worker/cdp/`。
 
-本地迁移步骤之间可能暂时无法编译。完整变更必须在 review 前恢复两个 compiler face 与行为测试。
+显式 Client/Host compiler face 与聚焦行为测试增加了维护工作，但会持续暴露环境泄漏和镜像结构漂移。

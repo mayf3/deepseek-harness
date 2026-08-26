@@ -69,20 +69,10 @@ function projectContext(node: Extract<CordisTreeNode, { kind: 'context' }>): Cor
 }
 
 function projectNode(node: CordisTreeNode): CordisRuntimeNode {
-  switch (node.kind) {
-    case 'context':
-      return projectContext(node)
-    case 'fiber':
-      return {
-        kind: 'fiber',
-        uid: node.uid,
-        children: [projectContext(node.children[0])],
-      }
-    default:
-      return assertNever(node)
+  if (node.kind === 'context') return projectContext(node)
+  return {
+    kind: 'fiber',
+    uid: node.uid,
+    children: [projectContext(node.children[0])],
   }
-}
-
-function assertNever(value: never): never {
-  throw new Error(`Unexpected Cordis tree node: ${JSON.stringify(value)}`)
 }

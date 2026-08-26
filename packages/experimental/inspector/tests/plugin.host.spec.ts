@@ -22,8 +22,8 @@ describe('experimental Inspector Host plugin', () => {
   })
 
   it('starts the Worker, provides ctx.inspector, injects Client bootstrap, and disposes', async () => {
-    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     context = new Context()
+    const log = vi.spyOn(context.logger, 'info').mockImplementation(() => undefined)
     context.provide('webServer', {} as WebServer)
     const fiber = context.plugin(
       { name, inject: [...inject], Config, apply },

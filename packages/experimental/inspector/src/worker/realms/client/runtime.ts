@@ -41,7 +41,12 @@ export class ClientRuntimeBackend implements RuntimeBackend {
 
   async evaluate(request: Parameters<RuntimeBackend['evaluate']>[0]): ReturnType<RuntimeBackend['evaluate']> {
     assertClientEvaluationOptions(request)
-    const { throwOnSideEffect: _throwOnSideEffect, serializationOptions: _serializationOptions, ...supported } = request
+    const {
+      context: _context,
+      throwOnSideEffect: _throwOnSideEffect,
+      serializationOptions: _serializationOptions,
+      ...supported
+    } = request
     return clientCompletion(
       expectResult(await this.request({ op: 'evaluate', ...supported }), 'evaluate'),
       scriptKey => this.scriptIds.toRuntime(scriptKey),
@@ -74,6 +79,7 @@ export class ClientRuntimeBackend implements RuntimeBackend {
     assertClientCallOptions(request)
     const {
       receiver,
+      context: _context,
       arguments: args,
       throwOnSideEffect: _throwOnSideEffect,
       serializationOptions: _serializationOptions,
@@ -102,7 +108,8 @@ export class ClientRuntimeBackend implements RuntimeBackend {
     )
   }
 
-  async globalLexicalScopeNames(): Promise<readonly string[]> {
+  async globalLexicalScopeNames(context?: Parameters<RuntimeBackend['globalLexicalScopeNames']>[0]): Promise<readonly string[]> {
+    if (context !== undefined) throw new Error('Client Runtime does not support native execution contexts')
     return expectResult(await this.request({ op: 'global-lexical-scope-names' }), 'global-lexical-scope-names').names
   }
 
@@ -140,6 +147,7 @@ function expectResult<Operation extends ClientRuntimeResult['op']>(
 }
 
 function assertClientEvaluationOptions(request: Parameters<RuntimeBackend['evaluate']>[0]): void {
+  if (request.context !== undefined) throw new Error('Client Runtime does not support native execution contexts')
   if (request.throwOnSideEffect === true) throw new Error('Client Runtime does not support throwOnSideEffect')
   if (request.serializationOptions !== undefined) throw new Error('Client Runtime does not support serializationOptions')
   if (request.disableBreaks === true) throw new Error('Client Runtime does not support disableBreaks')
@@ -152,6 +160,7 @@ function assertClientEvaluationOptions(request: Parameters<RuntimeBackend['evalu
 }
 
 function assertClientCallOptions(request: Parameters<RuntimeBackend['callFunction']>[0]): void {
+  if (request.context !== undefined) throw new Error('Client Runtime does not support native execution contexts')
   if (request.throwOnSideEffect === true) throw new Error('Client Runtime does not support throwOnSideEffect')
   if (request.serializationOptions !== undefined) throw new Error('Client Runtime does not support serializationOptions')
   if (request.userGesture === true) throw new Error('Client Runtime does not support userGesture')

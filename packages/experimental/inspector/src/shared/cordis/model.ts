@@ -146,8 +146,7 @@ function parseNode(value: unknown, state: ParseState, depth: number): CordisRunt
   if (record.kind === 'context') {
     return { kind: 'context', children: record.children.map(child => parseNode(child, state, depth + 1)) }
   }
-  if (record.kind !== 'fiber'
-    || !Number.isSafeInteger(record.uid)
+  if (!Number.isSafeInteger(record.uid)
     || (record.uid as number) < 1
     || record.children.length !== 1) {
     throw new Error('inspector protocol: invalid Cordis runtime Fiber')

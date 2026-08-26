@@ -48,10 +48,11 @@ export class CordisTreeCollector {
    * @returns A detached JSON snapshot whose retained objects replace the prior generation atomically.
    */
   snapshot(): CordisTreeSnapshot {
-    const tree = collectContexts(this.root)
+    const collected = collectContexts(this.root)
+    const tree = collected.root
     const objects = this.objects.begin()
     let nodeCount = 0
-    let truncated = false
+    let truncated = collected.truncated
 
     const contextNode = (info: ContextInfo): MutableContextNode | undefined => {
       if (nodeCount >= this.limits.maxNodes) {
@@ -82,8 +83,7 @@ export class CordisTreeCollector {
         return undefined
       }
       nodeCount++
-      const context = contextNode(owned)
-      if (context === undefined) throw new Error('inspector: reserved Fiber Context was not collected')
+      const context = contextNode(owned) as MutableContextNode
       return {
         kind: 'fiber',
         objectHandle: objects.retain(fiber).handle,
@@ -120,10 +120,14 @@ export class CordisTreeCollector {
   }
 }
 
-function collectContexts(root: Context): ContextInfo {
+function collectContexts(root: Context): { readonly root: ContextInfo; readonly truncated: boolean } {
   const contexts = new Map<Context, ContextInfo>()
+  let truncated = false
   const ensure = (candidate: unknown, depth = 0): ContextInfo | undefined => {
-    if (depth > 100) return undefined
+    if (depth > 100) {
+      truncated = true
+      return undefined
+    }
     const value = unwrapContext(candidate)
     if (!Context.is(value)) return undefined
     const existing = contexts.get(value)
@@ -142,8 +146,7 @@ function collectContexts(root: Context): ContextInfo {
     return info
   }
 
-  const rootInfo = ensure(root)
-  if (rootInfo === undefined) throw new Error('inspector: Cordis root context is not reachable')
+  const rootInfo = ensure(root) as ContextInfo
   for (const runtime of root.registry.values()) {
     for (const fiber of runtime.fibers) {
       if (fiber.uid === null) continue
@@ -158,7 +161,7 @@ function collectContexts(root: Context): ContextInfo {
   for (const info of contexts.values()) {
     info.children.sort((left, right) => order(left) - order(right))
   }
-  return rootInfo
+  return { root: rootInfo, truncated }
 }
 
 function describeContext(value: Context): ContextInfo {

@@ -15,6 +15,7 @@ import type {
   RuntimePropertyDescriptor,
   RuntimeRemoteObject,
   RuntimeRemoteObjectDescriptor,
+  RuntimeExecutionContext,
   RuntimeStackTrace,
 } from '../../../shared/cdp/index.ts'
 import type { HostInspectorNotification, HostInspectorSession } from './bridge.ts'
@@ -43,6 +44,7 @@ export class HostRuntimeBackend implements RuntimeBackend {
   async evaluate(request: Parameters<RuntimeBackend['evaluate']>[0]): ReturnType<RuntimeBackend['evaluate']> {
     return this.completion(await this.target.request('Runtime.evaluate', {
       expression: request.expression,
+      ...nativeContext(request.context, 'contextId'),
       ...optionalNativeField('objectGroup', request.objectGroup),
       ...optionalNativeField('includeCommandLineAPI', request.includeCommandLineAPI),
       ...optionalNativeField('silent', request.silent),
@@ -72,13 +74,15 @@ export class HostRuntimeBackend implements RuntimeBackend {
 
   async callFunction(request: Parameters<RuntimeBackend['callFunction']>[0]): ReturnType<RuntimeBackend['callFunction']> {
     const receiver = request.receiver
-    const contextId = receiver === undefined ? this.defaultContextId : undefined
-    if (receiver === undefined && contextId === undefined) {
+    const context = receiver === undefined
+      ? nativeContext(request.context ?? defaultContext(this.defaultContextId), 'executionContextId')
+      : undefined
+    if (receiver === undefined && context === undefined) {
       throw new Error('Host Runtime default execution context is unavailable')
     }
     return this.completion(await this.target.request('Runtime.callFunctionOn', {
       functionDeclaration: request.functionDeclaration,
-      ...(receiver === undefined ? { executionContextId: contextId } : { objectId: receiver }),
+      ...(receiver === undefined ? context : { objectId: receiver }),
       ...(request.arguments === undefined ? {} : { arguments: request.arguments.map(toNativeArgument) }),
       ...optionalNativeField('objectGroup', request.objectGroup),
       ...optionalNativeField('silent', request.silent),
@@ -99,9 +103,9 @@ export class HostRuntimeBackend implements RuntimeBackend {
     }))
   }
 
-  async globalLexicalScopeNames(): Promise<readonly string[]> {
+  async globalLexicalScopeNames(context?: RuntimeExecutionContext): Promise<readonly string[]> {
     const response = await this.target.request('Runtime.globalLexicalScopeNames', {
-      ...optionalNativeField('executionContextId', this.defaultContextId),
+      ...nativeContext(context ?? defaultContext(this.defaultContextId), 'executionContextId'),
     })
     if (!Array.isArray(response.names) || !response.names.every(name => typeof name === 'string')) {
       throw new Error('Host Runtime returned invalid lexical scope names')
@@ -301,6 +305,18 @@ export class HostRuntimeBackend implements RuntimeBackend {
       return undefined
     }
   }
+}
+
+function defaultContext(contextId: number | undefined): RuntimeExecutionContext | undefined {
+  return contextId === undefined ? undefined : { kind: 'numeric', id: contextId }
+}
+
+function nativeContext(
+  context: RuntimeExecutionContext | undefined,
+  numericKey: 'contextId' | 'executionContextId',
+): Readonly<Record<string, number | string>> | undefined {
+  if (context === undefined) return undefined
+  return context.kind === 'numeric' ? { [numericKey]: context.id } : { uniqueContextId: context.id }
 }
 
 function toNativeArgument(value: RuntimeCallArgument<RuntimeBackendObjectHandle>): Readonly<Record<string, unknown>> {

@@ -30,6 +30,26 @@ export interface ClientRuntimeRequestFrame {
   readonly command: ClientRuntimeCommand
 }
 
+/** Worker cancellation of one outstanding Client Runtime request. */
+export interface ClientRuntimeCancelFrame {
+  readonly v: typeof INSPECTOR_PROTOCOL_VERSION
+  readonly t: 'client-runtime/cancel'
+  readonly sourceId: InspectorSourceId
+  readonly generation: InspectorSourceGeneration
+  readonly sessionId: ClientRuntimeSessionId
+  readonly requestId: ClientRuntimeRequestId
+}
+
+/** Worker acknowledgement that commits one successful Client Runtime response. */
+export interface ClientRuntimeResponseAcknowledgedFrame {
+  readonly v: typeof INSPECTOR_PROTOCOL_VERSION
+  readonly t: 'client-runtime/response-acknowledged'
+  readonly sourceId: InspectorSourceId
+  readonly generation: InspectorSourceGeneration
+  readonly sessionId: ClientRuntimeSessionId
+  readonly requestId: ClientRuntimeRequestId
+}
+
 /** Client response to one typed Runtime request. */
 export interface ClientRuntimeResponseFrame {
   readonly v: typeof INSPECTOR_PROTOCOL_VERSION
@@ -83,6 +103,48 @@ export function parseClientRuntimeRequestFrame(value: Record<string, unknown>): 
     sessionId: wireId<'ClientRuntimeSessionId'>(value.sessionId, 'sessionId'),
     requestId: wireId<'ClientRuntimeRequestId'>(value.requestId, 'requestId'),
     command: parseClientRuntimeCommand(value.command),
+  }
+}
+
+/**
+ * Parse and rebuild one Worker-to-Client Runtime cancellation.
+ * @param value - Untrusted cancellation frame.
+ * @returns The validated cancellation frame.
+ */
+export function parseClientRuntimeCancelFrame(value: Record<string, unknown>): ClientRuntimeCancelFrame {
+  exactKeys(value, ['v', 't', 'sourceId', 'generation', 'sessionId', 'requestId'], 'Client Runtime cancellation')
+  if (value.v !== INSPECTOR_PROTOCOL_VERSION || value.t !== 'client-runtime/cancel') {
+    throw new Error('inspector protocol: invalid Client Runtime cancellation envelope')
+  }
+  return {
+    v: INSPECTOR_PROTOCOL_VERSION,
+    t: 'client-runtime/cancel',
+    sourceId: wireId<'InspectorSourceId'>(value.sourceId, 'sourceId'),
+    generation: wireId<'InspectorSourceGeneration'>(value.generation, 'generation'),
+    sessionId: wireId<'ClientRuntimeSessionId'>(value.sessionId, 'sessionId'),
+    requestId: wireId<'ClientRuntimeRequestId'>(value.requestId, 'requestId'),
+  }
+}
+
+/**
+ * Parse and rebuild one Worker acknowledgement for a Client Runtime response.
+ * @param value - Untrusted acknowledgement frame.
+ * @returns The validated acknowledgement frame.
+ */
+export function parseClientRuntimeResponseAcknowledgedFrame(
+  value: Record<string, unknown>,
+): ClientRuntimeResponseAcknowledgedFrame {
+  exactKeys(value, ['v', 't', 'sourceId', 'generation', 'sessionId', 'requestId'], 'Client Runtime response acknowledgement')
+  if (value.v !== INSPECTOR_PROTOCOL_VERSION || value.t !== 'client-runtime/response-acknowledged') {
+    throw new Error('inspector protocol: invalid Client Runtime response acknowledgement envelope')
+  }
+  return {
+    v: INSPECTOR_PROTOCOL_VERSION,
+    t: 'client-runtime/response-acknowledged',
+    sourceId: wireId<'InspectorSourceId'>(value.sourceId, 'sourceId'),
+    generation: wireId<'InspectorSourceGeneration'>(value.generation, 'generation'),
+    sessionId: wireId<'ClientRuntimeSessionId'>(value.sessionId, 'sessionId'),
+    requestId: wireId<'ClientRuntimeRequestId'>(value.requestId, 'requestId'),
   }
 }
 

@@ -81,6 +81,7 @@ export class HostInspectorSource extends InspectorSourceConnection {
       && (frame.sourceId !== this.source.sourceId || frame.generation !== this.source.generation)) return
     dispatchBridgeFrame(frame, {
       accepted: () => { this.queries.connectPort(this.source) },
+      acknowledged: (acknowledged) => { this.publisher.acknowledge(acknowledged.nextSequence) },
       resnapshot: () => { this.publisher.replace() },
       rejected: (rejected) => { this.queries.disconnect(`Inspector Host source rejected: ${rejected.message}`) },
     })

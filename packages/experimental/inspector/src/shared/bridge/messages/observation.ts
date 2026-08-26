@@ -9,7 +9,9 @@ import {
   parseClientConsoleControlFrame,
   parseClientConsoleEventFrame,
   parseClientRuntimeCapability,
+  parseClientRuntimeCancelFrame,
   parseClientRuntimeRequestFrame,
+  parseClientRuntimeResponseAcknowledgedFrame,
   parseClientRuntimeResponseFrame,
   parseClientRuntimeSessionClosedFrame,
   type ClientConsoleCapability,
@@ -17,7 +19,9 @@ import {
   type ClientConsoleEnableFrame,
   type ClientConsoleEventFrame,
   type ClientRuntimeCapability,
+  type ClientRuntimeCancelFrame,
   type ClientRuntimeRequestFrame,
+  type ClientRuntimeResponseAcknowledgedFrame,
   type ClientRuntimeResponseFrame,
   type ClientRuntimeSessionClosedFrame,
 } from './runtime/index.ts'
@@ -114,6 +118,15 @@ export interface SourceAcceptedFrame {
   readonly generation: InspectorSourceGeneration
 }
 
+/** Worker acknowledgement that releases one Host MessagePort batch credit. */
+export interface SourceAppendAcknowledgedFrame {
+  readonly v: typeof INSPECTOR_PROTOCOL_VERSION
+  readonly t: 'source/append-acknowledged'
+  readonly sourceId: InspectorSourceId
+  readonly generation: InspectorSourceGeneration
+  readonly nextSequence: number
+}
+
 /** Worker request for a complete source-state replacement. */
 export interface SourceResnapshotFrame {
   readonly v: typeof INSPECTOR_PROTOCOL_VERSION
@@ -135,11 +148,14 @@ export interface SourceRejectedFrame {
 /** Every Worker-to-source control frame. */
 export type WorkerToSourceFrame =
   | SourceAcceptedFrame
+  | SourceAppendAcknowledgedFrame
   | SourceResnapshotFrame
   | SourceRejectedFrame
   | ClientConsoleEnableFrame
   | ClientConsoleDisableFrame
+  | ClientRuntimeCancelFrame
   | ClientRuntimeRequestFrame
+  | ClientRuntimeResponseAcknowledgedFrame
   | ClientRuntimeSessionClosedFrame
   | ClientSourceRequestFrame
   | ClientSourceSessionClosedFrame
@@ -165,6 +181,10 @@ export function parseWorkerSourceFrame(value: unknown): WorkerToSourceFrame {
     return { v: INSPECTOR_PROTOCOL_VERSION, t: 'source/rejected', code: value.code, message: value.message }
   }
   if (value.t === 'client-runtime/request') return parseClientRuntimeRequestFrame(value)
+  if (value.t === 'client-runtime/cancel') return parseClientRuntimeCancelFrame(value)
+  if (value.t === 'client-runtime/response-acknowledged') {
+    return parseClientRuntimeResponseAcknowledgedFrame(value)
+  }
   if (value.t === 'client-runtime/session-closed') return parseClientRuntimeSessionClosedFrame(value)
   if (value.t === 'client-sources/request') return parseClientSourceRequestFrame(value)
   if (value.t === 'client-sources/session-closed') return parseClientSourceSessionClosedFrame(value)
@@ -179,6 +199,14 @@ export function parseWorkerSourceFrame(value: unknown): WorkerToSourceFrame {
   if (value.t === 'source/accepted') {
     exactKeys(value, ['v', 't', 'sourceId', 'generation'], 'source/accepted frame')
     return { ...common, t: 'source/accepted' }
+  }
+  if (value.t === 'source/append-acknowledged') {
+    exactKeys(value, ['v', 't', 'sourceId', 'generation', 'nextSequence'], 'source append acknowledgement')
+    return {
+      ...common,
+      t: 'source/append-acknowledged',
+      nextSequence: natural(value.nextSequence, 'nextSequence'),
+    }
   }
   if (value.t === 'source/resnapshot'
     && typeof value.reason === 'string') {

@@ -3,18 +3,29 @@
 import type {
   ClientConsoleDisableFrame,
   ClientConsoleEnableFrame,
+  ClientRuntimeCancelFrame,
   ClientRuntimeRequestFrame,
+  ClientRuntimeResponseAcknowledgedFrame,
   ClientRuntimeSessionClosedFrame,
 } from '../../shared/bridge/messages/runtime/index.ts'
 import type { ClientSourceRequestFrame, ClientSourceSessionClosedFrame } from '../../shared/bridge/messages/sources/index.ts'
-import type { SourceAcceptedFrame, SourceRejectedFrame, SourceResnapshotFrame, WorkerToSourceFrame } from '../../shared/bridge/messages/observation.ts'
+import type {
+  SourceAcceptedFrame,
+  SourceAppendAcknowledgedFrame,
+  SourceRejectedFrame,
+  SourceResnapshotFrame,
+  WorkerToSourceFrame,
+} from '../../shared/bridge/messages/observation.ts'
 
 /** Operations invoked for each Worker-to-Client frame family. */
 export interface ClientBridgeFrameHandlers {
   accepted(frame: SourceAcceptedFrame): void
+  acknowledged(frame: SourceAppendAcknowledgedFrame): void
   resnapshot(frame: SourceResnapshotFrame): void
   rejected(frame: SourceRejectedFrame): void
   runtime(frame: ClientRuntimeRequestFrame): void
+  runtimeCanceled(frame: ClientRuntimeCancelFrame): void
+  runtimeAcknowledged(frame: ClientRuntimeResponseAcknowledgedFrame): void
   runtimeClosed(frame: ClientRuntimeSessionClosedFrame): void
   consoleEnabled(frame: ClientConsoleEnableFrame): void
   consoleDisabled(frame: ClientConsoleDisableFrame): void
@@ -32,6 +43,9 @@ export function dispatchBridgeFrame(frame: WorkerToSourceFrame, handlers: Client
     case 'source/accepted':
       handlers.accepted(frame)
       return
+    case 'source/append-acknowledged':
+      handlers.acknowledged(frame)
+      return
     case 'source/resnapshot':
       handlers.resnapshot(frame)
       return
@@ -40,6 +54,12 @@ export function dispatchBridgeFrame(frame: WorkerToSourceFrame, handlers: Client
       return
     case 'client-runtime/request':
       handlers.runtime(frame)
+      return
+    case 'client-runtime/cancel':
+      handlers.runtimeCanceled(frame)
+      return
+    case 'client-runtime/response-acknowledged':
+      handlers.runtimeAcknowledged(frame)
       return
     case 'client-runtime/session-closed':
       handlers.runtimeClosed(frame)

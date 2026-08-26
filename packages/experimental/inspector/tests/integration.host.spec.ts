@@ -1,6 +1,7 @@
 /** Host-driven integration over an isolated Client fixture. */
 
 import { createServer, type Server } from 'node:http'
+import { createContext, runInContext } from 'node:vm'
 import WebSocket, { type RawData } from 'ws'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { startInspector, type InspectorHandle } from '../src/host/bridge/controller.ts'
@@ -250,6 +251,62 @@ describe('experimental Inspector real Worker', () => {
     expect((await secondCdp.call('Runtime.getProperties', { objectId: disabledObjectId })).error).toBeDefined()
   })
 
+  it('cancels Client Runtime work when the Worker deadline expires', async () => {
+    inspector = await startInspector({ port: 0, captureFetch: false, clientRuntimeTimeoutMs: 20 })
+    client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Timeout Client' })
+    cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
+    await cdp.call('Runtime.enable')
+    const contextId = await clientContext(cdp)
+
+    const timedOut = await cdp.call('Runtime.evaluate', {
+      expression: 'new Promise(() => {})',
+      contextId,
+      awaitPromise: true,
+    })
+    expect(timedOut.error?.message).toContain('timed out after 20ms')
+    expect((await cdp.call('Runtime.evaluate', {
+      expression: '42',
+      contextId,
+      returnByValue: true,
+    })).result?.result).toMatchObject({ type: 'number', value: 42 })
+  })
+
+  it('preserves native Host execution-context selectors', async () => {
+    inspector = await startInspector({ port: 0, captureFetch: false })
+    cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
+    await cdp.call('Runtime.enable')
+    const context = createContext({}, { name: 'Inspector VM Context' })
+    runInContext('globalThis.vmMarker = "selected-vm"; let vmLexicalMarker = 1', context)
+
+    let contextId: number | undefined
+    let uniqueContextId: string | undefined
+    await vi.waitFor(() => {
+      const created = runtimeContexts(cdp!).find(candidate => candidate.name === 'Inspector VM Context')
+      contextId = created?.id as number | undefined
+      uniqueContextId = created?.uniqueId as string | undefined
+      expect(contextId).toBeTypeOf('number')
+      expect(uniqueContextId).toBeTypeOf('string')
+    })
+    const evaluated = await cdp.call('Runtime.evaluate', {
+      expression: 'globalThis.vmMarker',
+      contextId,
+      returnByValue: true,
+    })
+    expect(evaluated.result?.result).toMatchObject({ type: 'string', value: 'selected-vm' })
+    expect((await cdp.call('Runtime.evaluate', {
+      expression: 'globalThis.vmMarker',
+      uniqueContextId,
+      returnByValue: true,
+    })).result?.result).toMatchObject({ type: 'string', value: 'selected-vm' })
+    expect((await cdp.call('Runtime.callFunctionOn', {
+      executionContextId: contextId,
+      functionDeclaration: 'function () { return globalThis.vmMarker }',
+      returnByValue: true,
+    })).result?.result).toMatchObject({ type: 'string', value: 'selected-vm' })
+    expect((await cdp.call('Runtime.globalLexicalScopeNames', { executionContextId: contextId })).result?.names)
+      .toContain('vmLexicalMarker')
+  })
+
   it('uses the same Runtime value model for Host and Client realms', async () => {
     inspector = await startInspector({ port: 0, captureFetch: false })
     client = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Compatibility Client' })
@@ -397,7 +454,7 @@ describe('experimental Inspector real Worker', () => {
       callFrameId: 'client:unsupported-frame',
       expression: '1',
     })).error?.message).toContain('Client native debugging is unavailable')
-  })
+  }, 15_000)
 
   it('projects full Host fetch data through the Network domain', async () => {
     server = createServer((request, response) => {

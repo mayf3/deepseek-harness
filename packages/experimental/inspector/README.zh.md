@@ -111,7 +111,7 @@ fetch 采集默认开启，记录完整 URL、全部请求与响应 headers、�
 
 配置的 body 上限限制保留量，而不选择字段：采集保留前缀并标记 truncated。`Network.getRequestPostData` 与 `Network.getResponseBody` 读取 Worker 保留的字节。`Network.streamResourceContent` 返回已缓冲的前缀，并仅为发起调用的 DevTools 连接把后续 response 字节附加到 `Network.dataReceived`，以驱动实时 Response 与 EventStream 视图。直接调用 Undici Client/Dispatcher，以及插件激活前保存的 fetch 引用，不在观察范围内。
 
-response headers 到达后，调用方 abort 会结束 clone 采集，并保留一份可能 truncated 的 response，而不会把整个请求标记为失败。response headers 到达前发生的 fetch rejection 仍然是失败请求。
+response headers 到达后，如果调用方 abort，已采集的字节仍可通过 `Network.getResponseBody` 读取，同时请求以 `Network.loadingFailed { canceled: true }` 结束。response headers 到达前发生的 fetch rejection 也走相同的取消失败路径。
 
 <a id="security"></a>
 ## 安全

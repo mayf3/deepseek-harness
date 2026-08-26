@@ -145,8 +145,7 @@ export class NetworkStore implements InspectorRecordConsumer {
     for (const event of this.journal) {
       replay.push(event)
       if (event.type !== 'response-received' || event.mimeType !== 'text/event-stream') continue
-      const request = this.requests.get(event.requestKey)
-      if (request === undefined) continue
+      const request = this.requests.get(event.requestKey) as CapturedRequest
       const messages = new InspectorEventSourceParser().push(Buffer.concat(request.responseBody))
       let eventId = 0
       for (const message of messages) {
@@ -301,18 +300,23 @@ export class NetworkStore implements InspectorRecordConsumer {
         })
         return
       }
-      case 'fetch/error':
+      case 'fetch/error': {
+        if (request.completed) return
+        const errorText = stringField(payload, 'message')
+        if (request.responseSeen) {
+          request.responseBodyTruncated = true
+          request.responseCaptureError = errorText
+        }
         this.complete(request, {
           type: 'request-failed',
           requestKey: key,
           requestId: request.requestId,
           timestampMs,
-          errorText: stringField(payload, 'message'),
+          errorText,
           canceled: booleanField(payload, 'canceled'),
         })
         return
-      default:
-        return
+      }
     }
   }
 
@@ -359,10 +363,8 @@ export class NetworkStore implements InspectorRecordConsumer {
 
   private enforceRetention(): void {
     while (this.requests.size > this.options.maxRetainedRequests || this.journalBytes > this.options.maxJournalBytes) {
-      const key = this.completed.shift() ?? this.oldestActiveRequestKey()
-      if (key === undefined) return
-      const request = this.requests.get(key)
-      if (request === undefined) continue
+      const key = (this.completed.shift() ?? this.requests.keys().next().value) as string
+      const request = this.requests.get(key) as CapturedRequest
       if (!request.completed) {
         request.completed = true
         this.publish({
@@ -378,21 +380,12 @@ export class NetworkStore implements InspectorRecordConsumer {
     }
   }
 
-  private oldestActiveRequestKey(): string | undefined {
-    for (const request of this.requests.values()) {
-      if (!request.completed) return request.key
-    }
-    return undefined
-  }
-
   private evictCompletedFor(bytes: number, protectedKey: string): void {
     while (this.journalBytes + bytes > this.options.maxJournalBytes) {
       const index = this.completed.findIndex(key => key !== protectedKey)
       if (index === -1) return
-      const [key] = this.completed.splice(index, 1)
-      if (key === undefined) return
-      const request = this.requests.get(key)
-      if (request !== undefined) this.evict(request)
+      const key = this.completed.splice(index, 1)[0] as string
+      this.evict(this.requests.get(key) as CapturedRequest)
     }
   }
 

@@ -120,6 +120,14 @@ export function installFetchObserver(
         controller.signal,
         (data) => { publisher.publish('fetch/response-body-chunk', { requestId, data }) },
       ).then((outcome) => {
+        if (request.signal.aborted && outcome.captureError !== undefined) {
+          publisher.publish('fetch/error', {
+            requestId,
+            message: outcome.captureError,
+            canceled: true,
+          })
+          return
+        }
         publisher.publish('fetch/end', {
           requestId,
           capturedBytes: outcome.capturedBytes,

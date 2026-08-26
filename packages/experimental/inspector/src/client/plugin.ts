@@ -47,15 +47,38 @@ export function apply(ctx: Context): void {
   const bootstrap = parseInspectorClientBootstrap(injected)
   ctx.effect(() => {
     const source = startInspectorClient(bootstrap)
-    const disposeCordis = publishCordisTree(ctx, source, {
-      maxNodes: bootstrap.maxCordisNodes,
-      maxBytes: bootstrap.maxFrameBytes - 4_096,
-    })
-    const disposeService = ctx.provide('inspector', createInspectorService(source))
-    return () => {
-      disposeService()
-      disposeCordis()
-      source.close()
+    const disposers: Array<() => unknown> = []
+    try {
+      disposers.push(publishCordisTree(ctx, source, {
+        maxNodes: bootstrap.maxCordisNodes,
+        maxBytes: bootstrap.maxFrameBytes - 4_096,
+      }))
+      disposers.push(ctx.provide('inspector', createInspectorService(source)))
+    } catch (error) {
+      try {
+        disposeInspectorClient(source, disposers)
+      } catch (cleanupError) {
+        ctx.logger.error('experimental-inspector: Client initialization rollback failed', cleanupError)
+      }
+      throw error
     }
+    return () => { disposeInspectorClient(source, disposers) }
   }, 'experimental-inspector: Client source')
+}
+
+function disposeInspectorClient(source: ReturnType<typeof startInspectorClient>, disposers: readonly (() => unknown)[]): void {
+  const failures: unknown[] = []
+  for (const dispose of [...disposers].reverse()) {
+    try {
+      dispose()
+    } catch (error) {
+      failures.push(error)
+    }
+  }
+  try {
+    source.close()
+  } catch (error) {
+    failures.push(error)
+  }
+  if (failures.length > 0) throw new AggregateError(failures, 'experimental-inspector: Client disposal failed')
 }

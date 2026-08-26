@@ -162,6 +162,55 @@ describe('Client Runtime executor', () => {
       .toMatchObject({ descriptor: { value: true } })
   })
 
+  it('rolls back a canceled function call instead of returning its cancellation as a JavaScript exception', async () => {
+    const runtime = new ClientRuntimeExecutor({
+      maxObjectsPerSession: 1,
+      maxPropertiesPerResult: 100,
+      maxResponseBytes: 32_768,
+    })
+    const controller = new AbortController()
+    const pending = runtime.execute(frame({
+      op: 'call-function',
+      functionDeclaration: 'function () { return new Promise(() => {}) }',
+      awaitPromise: true,
+    }), controller.signal)
+    controller.abort()
+
+    await expect(pending).resolves.toMatchObject({ outcome: { ok: false, error: { code: 'timeout' } } })
+    await expect(runtime.execute(frame({
+      op: 'evaluate',
+      expression: '({ retainedAfterCancellation: true })',
+    }))).resolves.toMatchObject({ outcome: { ok: true } })
+  })
+
+  it('keeps response handles provisional until the Worker accepts or cancels them', async () => {
+    const runtime = new ClientRuntimeExecutor({
+      maxObjectsPerSession: 2,
+      maxPropertiesPerResult: 100,
+      maxResponseBytes: 32_768,
+    })
+    const canceledFrame = frame({ op: 'evaluate', expression: '({ canceled: true })' })
+    const canceled = success(await runtime.execute(canceledFrame, undefined, true), 'evaluate')
+    const canceledHandle = canceled.completion.result.object?.handle
+    if (canceledHandle === undefined) throw new Error('deferred response did not retain an object')
+    runtime.cancel(canceledFrame.sessionId, canceledFrame.requestId)
+    expect((await runtime.execute(frame({ op: 'get-properties', handle: canceledHandle }))).outcome)
+      .toMatchObject({ ok: false, error: { code: 'object-not-found' } })
+
+    const acceptedFrame = frame({ op: 'evaluate', expression: '({ accepted: true })' })
+    const accepted = success(await runtime.execute(acceptedFrame, undefined, true), 'evaluate')
+    const acceptedHandle = accepted.completion.result.object?.handle
+    if (acceptedHandle === undefined) throw new Error('deferred response did not retain an object')
+    runtime.acknowledge(acceptedFrame.sessionId, acceptedFrame.requestId)
+    const properties = success(await runtime.execute(frame({
+      op: 'get-properties',
+      handle: acceptedHandle,
+      ownProperties: true,
+    })), 'get-properties')
+    expect(properties.properties.find(property => property.name === 'accepted')?.value)
+      .toMatchObject({ descriptor: { value: true } })
+  })
+
   it('rejects oversized by-value results before they enter the source transport', async () => {
     const runtime = new ClientRuntimeExecutor({
       maxObjectsPerSession: 100,

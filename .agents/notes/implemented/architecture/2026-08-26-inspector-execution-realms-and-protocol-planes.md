@@ -1,20 +1,20 @@
 # Agent Note: Inspector execution realms and protocol planes
 
-Status: proposed
+Status: implemented
 
 English | [中文](2026-08-26-inspector-execution-realms-and-protocol-planes.zh.md)
 
 ## Problem
 
-The Inspector package executes code in three JavaScript environments: the browser Client, the Host Node main thread, and an Inspector Worker thread. Its current source tree mixes execution ownership with feature names: browser and Host producers have unrelated layouts, Worker-executed Client and Host backends sit under a generic backend directory, and one protocol directory combines transport frames, Cordis data, network observations, and CDP-oriented Runtime values. A file path therefore does not establish where code runs or which identifiers it may own.
+The Inspector package executes code in three JavaScript environments: the browser Client, the Host Node main thread, and an Inspector Worker thread. Without execution-oriented directories, feature names alone do not establish where code runs or which identifiers it may own.
 
 This ambiguity is risky because Host and Client support intentionally differs while their architecture must remain comparable. Host Runtime and Debugger delegate to Node's inspector protocol; Client Runtime and Console simulate the same backend semantics over an internal bridge. If their files, interfaces, and unsupported operations diverge structurally, each new protocol method encourages a second routing model. Likewise, consumers that only need the Cordis runtime tree must not inherit debugger activation, Chrome connection state, or CDP identifiers.
 
-The [cross-realm CDP inspector decision](../../implemented/architecture/2026-08-23-cross-realm-cdp-inspector.md) continues to own Worker, transport, Runtime, debugger, and security behavior. The [Cordis runtime tree inspection decision](../../implemented/architecture/2026-08-24-cordis-runtime-tree-inspection.md) continues to own Cordis tree semantics, object routing, and DOM projection. This proposal owns source placement, dependency direction, and the separation between domain data, backend semantics, internal transport, and Chrome CDP state.
+The [cross-realm CDP inspector decision](2026-08-23-cross-realm-cdp-inspector.md) owns Worker, transport, Runtime, debugger, and security behavior. The [Cordis runtime tree inspection decision](2026-08-24-cordis-runtime-tree-inspection.md) owns Cordis tree semantics, object routing, and DOM projection. This decision owns source placement, dependency direction, and the separation between domain data, backend semantics, internal transport, and Chrome CDP state.
 
-## Proposal
+## Decision
 
-Top-level source directories will identify execution ownership. `client/` will contain only browser Client code, `host/` only Host Node-main-thread code, `worker/` only Worker-thread code, and `shared/` code that is safe in every environment. A module that executes in the Worker on behalf of a Client still belongs under `worker/`, not `client/`.
+Top-level source directories identify execution ownership. `client/` contains only browser Client code, `host/` only Host Node-main-thread code, `worker/` only Worker-thread code, and `shared/` code that is safe in every environment. A module that executes in the Worker on behalf of a Client belongs under `worker/`, not `client/`.
 
 The repository-required `src/index.ts` and `src/invariant.ts` discovery entries are the only root-level source exceptions. They expose the Host package entry and its service type or register the invariant companion, contain no Inspector runtime implementation, and remain at fixed paths for repository tooling.
 
@@ -26,9 +26,9 @@ src/
   worker/   Worker transport, repositories, realm backends, and CDP endpoint
 ```
 
-`client/` and `host/` will have the same relative directories and filenames. Their common roles are plugin entry, bridge lifecycle and RPC, Cordis and network inspection, and CDP-oriented Runtime, Console, Debugger, Sources, Profiler, and HeapProfiler adapters. Support may differ: an unavailable operation remains in the corresponding mirrored module and returns the shared capability-unavailable or typed-unsupported result. Mirroring standardizes where a capability is implemented; it does not claim equal engine support.
+`client/` and `host/` have the same relative directories and filenames. Their common roles are plugin entry, bridge lifecycle and RPC, Cordis and network inspection, and CDP-oriented Runtime, Console, Debugger, Sources, Profiler, and HeapProfiler adapters. Support may differ: an unavailable operation remains in the corresponding mirrored module and returns the shared capability-unavailable or typed-unsupported result. Mirroring standardizes where a capability is implemented; it does not claim equal engine support.
 
-Worker-side realm adapters will use the same rule under `worker/realms/client/` and `worker/realms/host/`. These adapters normalize Client simulation and Node inspector behavior behind shared CDP-oriented backend interfaces. They do not own Chrome wire messages or connection-local CDP identifiers.
+Worker-side realm adapters use the same rule under `worker/realms/client/` and `worker/realms/host/`. These adapters normalize Client simulation and Node inspector behavior behind shared CDP-oriented backend interfaces. They do not own Chrome wire messages or connection-local CDP identifiers.
 
 ## Execution ownership
 
@@ -62,13 +62,16 @@ Top-level `client/` and `host/` import `shared/` but never each other or `worker
 
 The package remains one `@deepseek-ai/dsh-experimental-inspector` package with explicit Client and Host compiler faces. Directory separation is an execution and dependency rule, not a package split.
 
-## Migration order
+## Verification
 
-First, the current Cordis implementation and its semantic types move into `shared/cordis/`. The current protocol directory then separates into `shared/bridge/`, `shared/cdp/`, and `shared/network/` while preserving validated frame discriminants and limits.
-
-Next, top-level Client and Host files move into exact mirrored paths. Missing support is represented explicitly so the mirrors remain complete. Worker Client and Node backends then move to mirrored `worker/realms/client/` and `worker/realms/host/` directories, with Node renamed to Host at the architectural interface.
-
-Finally, source transport and routing move under `worker/bridge/`, Cordis, network, and query repositories under `worker/inspection/`, and Chrome endpoint and domains under `worker/cdp/`. Imports, explicit compiler-face file lists, package entries, and focused tests change with each owning layer. The final tree has no generic top-level `protocol/` or `cordis/` directory and no generic `worker/backends/` directory.
+- Every runtime implementation has an unambiguous execution owner through `shared/`, `client/`, `host/`, or `worker/`; only the repository-required package and invariant forwarding entries remain at the source root.
+- Top-level Client and Host trees, and Worker Client and Host realm trees, have identical relative implementation paths; unequal capability support is explicit and typed.
+- Cordis and network readers are usable without importing debugger, source, transport, or CDP session modules.
+- Internal messages contain source-level identities and validated domain values but no Chrome connection-local ids.
+- Normalized realm backend interfaces support Host delegation and Client simulation without either implementation constructing Chrome CDP messages.
+- Only Worker CDP modules allocate Chrome ids and own DevTools connection enable, object, script, node, and call-frame state.
+- Host Runtime and debugging, Client Runtime and Console, Network capture, Cordis Elements projection, disconnect retention, and semantic query behavior have focused coverage.
+- Compiler faces, import checks, and the structural layout test reject environment leaks and Client/Host mirror drift.
 
 ## Alternatives considered
 
@@ -82,18 +85,7 @@ Finally, source transport and routing move under `worker/bridge/`, Cordis, netwo
 
 **Split Client, Host, protocol, and Worker into separate packages.** Rejected for the experimental phase. The deployment unit remains one Client/Host Cordis plugin, and package boundaries would add build and release coordination without improving the required execution separation.
 
-## Acceptance criteria
-
-- Every runtime implementation has an unambiguous execution owner through `shared/`, `client/`, `host/`, or `worker/`; only the repository-required package and invariant forwarding entries remain at the source root.
-- Top-level Client and Host trees, and Worker Client and Host realm trees, have identical relative implementation paths; unequal capability support is explicit and typed.
-- Cordis and network readers can be used without importing debugger, source, transport, or CDP session modules.
-- Internal messages contain source-level identities and validated domain values but no Chrome connection-local ids.
-- Normalized realm backend interfaces support Host delegation and Client simulation without either implementation constructing Chrome CDP messages.
-- Only Worker CDP modules allocate Chrome ids and own DevTools connection enable, object, script, node, and call-frame state.
-- Existing Host Runtime and debugging, Client Runtime and Console, Network capture, Cordis Elements projection, disconnect retention, and semantic query behavior remain covered after the move.
-- Compiler faces, import checks, and a structural test reject environment leaks and Client/Host mirror drift.
-
-## Risks
+## Consequences
 
 Exact mirroring adds small adapter files for unsupported capabilities. Those files are intentional compatibility points between implementations, but they must stay thin and must not manufacture fake behavior.
 
@@ -101,4 +93,4 @@ Moving types without changing behavior can still expose hidden dependency cycles
 
 `shared/cdp/` can become a second copy of the Chrome protocol if normalized types are added indiscriminately. A shared type belongs there only when both realm implementations or a common Worker projector consume it; Chrome session bookkeeping and wire-only fields remain under `worker/cdp/`.
 
-The migration may temporarily leave the package uncompilable between local move steps. The completed change must restore both compiler faces and behavior tests before review.
+Explicit Client and Host compiler faces and focused behavior tests add maintenance work, but they keep environment leaks and mirror drift visible.

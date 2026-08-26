@@ -1,7 +1,11 @@
 /** Client observation and Runtime endpoint over the Inspector Worker's ingest WebSocket. */
 
 import type { InspectorClientBootstrap } from '../../shared/bridge/messages/control.ts'
-import type { InspectorSourceGeneration } from '../../shared/bridge/ids.ts'
+import type {
+  ClientRuntimeRequestId,
+  ClientRuntimeSessionId,
+  InspectorSourceGeneration,
+} from '../../shared/bridge/ids.ts'
 import { isJsonValue, jsonByteLength } from '../../shared/json.ts'
 import {
   INSPECTOR_PROTOCOL_VERSION,
@@ -34,6 +38,10 @@ export class ClientInspectorSource extends InspectorSourceConnection {
   private accepted = false
   private closed = false
   private readonly runtime: ClientRuntimeExecutor
+  private readonly runtimeRequests = new Map<ClientRuntimeRequestId, {
+    readonly controller: AbortController
+    readonly sessionId: ClientRuntimeSessionId
+  }>()
   private readonly console: ClientConsoleObserver
   protected readonly queries: ClientBridgeRpc
   private readonly lifecycle: ClientBridgeLifecycle
@@ -92,6 +100,7 @@ export class ClientInspectorSource extends InspectorSourceConnection {
     if (this.closed) return
     this.closed = true
     this.console.close()
+    this.cancelRuntimeRequests()
     this.runtime.reset()
     this.queries.close('Inspector Client source closed')
     this.lifecycle.close()
@@ -116,6 +125,7 @@ export class ClientInspectorSource extends InspectorSourceConnection {
   private connect(): void {
     if (this.closed) return
     this.console.reset()
+    this.cancelRuntimeRequests()
     this.runtime.reset()
     this.queries.disconnect('Inspector Client source reconnecting')
     const source = this.realmSource.connect(this.sourceCatalog !== undefined)
@@ -153,6 +163,7 @@ export class ClientInspectorSource extends InspectorSourceConnection {
             this.queries.connectSocket(source, socket)
             this.publisher.accept(socket)
           },
+          acknowledged: () => {},
           resnapshot: () => { this.publisher.replace(socket) },
           rejected: (rejected) => {
             console.error(`[inspector] Client source rejected: ${rejected.message}`)
@@ -164,7 +175,12 @@ export class ClientInspectorSource extends InspectorSourceConnection {
               socket.close(1011, 'Client Runtime transport failed')
             })
           },
+          runtimeCanceled: (canceled) => { this.cancelRuntime(canceled.sessionId, canceled.requestId) },
+          runtimeAcknowledged: (acknowledged) => {
+            this.acknowledgeRuntime(acknowledged.sessionId, acknowledged.requestId)
+          },
           runtimeClosed: (closed) => {
+            this.cancelRuntimeSession(closed.sessionId)
             this.console.disable(closed.sessionId)
             this.runtime.closeSession(closed.sessionId)
           },
@@ -189,6 +205,7 @@ export class ClientInspectorSource extends InspectorSourceConnection {
       this.accepted = false
       this.publisher.disconnect(socket)
       this.console.reset()
+      this.cancelRuntimeRequests()
       this.runtime.reset()
       this.queries.disconnect('Inspector Client source disconnected')
       this.lifecycle.reconnect(() => { this.connect() })
@@ -203,9 +220,48 @@ export class ClientInspectorSource extends InspectorSourceConnection {
     generation: InspectorSourceGeneration,
     frame: Extract<ReturnType<typeof parseWorkerSourceFrame>, { t: 'client-runtime/request' }>,
   ): Promise<void> {
-    const response = await this.runtime.execute(frame)
-    if (this.closed || this.socket !== socket || this.generation !== generation || socket.readyState !== WebSocket.OPEN) return
+    const controller = new AbortController()
+    const operation = { controller, sessionId: frame.sessionId }
+    this.runtimeRequests.set(frame.requestId, operation)
+    const response = await this.runtime.execute(frame, controller.signal, true)
+    if (this.runtimeRequests.get(frame.requestId) !== operation) return
+    if (this.closed || this.socket !== socket || this.generation !== generation || socket.readyState !== WebSocket.OPEN) {
+      this.cancelRuntime(frame.sessionId, frame.requestId)
+      return
+    }
     socket.send(JSON.stringify(response))
+  }
+
+  private acknowledgeRuntime(sessionId: ClientRuntimeSessionId, requestId: ClientRuntimeRequestId): void {
+    const operation = this.runtimeRequests.get(requestId)
+    if (operation === undefined || operation.sessionId !== sessionId) return
+    this.runtimeRequests.delete(requestId)
+    this.runtime.acknowledge(sessionId, requestId)
+  }
+
+  private cancelRuntime(sessionId: ClientRuntimeSessionId, requestId: ClientRuntimeRequestId): void {
+    const operation = this.runtimeRequests.get(requestId)
+    if (operation === undefined || operation.sessionId !== sessionId) return
+    this.runtimeRequests.delete(requestId)
+    operation.controller.abort()
+    this.runtime.cancel(sessionId, requestId)
+  }
+
+  private cancelRuntimeSession(sessionId: ClientRuntimeSessionId): void {
+    for (const [requestId, operation] of this.runtimeRequests) {
+      if (operation.sessionId !== sessionId) continue
+      operation.controller.abort()
+      this.runtime.cancel(sessionId, requestId)
+      this.runtimeRequests.delete(requestId)
+    }
+  }
+
+  private cancelRuntimeRequests(): void {
+    for (const [requestId, operation] of this.runtimeRequests) {
+      operation.controller.abort()
+      this.runtime.cancel(operation.sessionId, requestId)
+    }
+    this.runtimeRequests.clear()
   }
 
   private async executeSourceRequest(

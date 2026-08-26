@@ -124,6 +124,15 @@ describe('Inspector source protocol', () => {
       ...request,
       command: { ...request.command, unversionedExtension: true },
     })).toThrow('unknown field')
+
+    expect(parseWorkerSourceFrame({
+      v: 0,
+      t: 'client-runtime/response-acknowledged',
+      sourceId: 'client-1',
+      generation: 'g-1',
+      sessionId: 'session-1',
+      requestId: 'request-1',
+    })).toMatchObject({ t: 'client-runtime/response-acknowledged', requestId: 'request-1' })
   })
 
   it('rejects invalid RemoteObject representations', () => {

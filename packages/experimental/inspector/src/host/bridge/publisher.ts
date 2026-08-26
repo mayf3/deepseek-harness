@@ -10,6 +10,7 @@ import type { InspectorSourceDescriptor } from '../../shared/bridge/messages/obs
 export class HostBridgePublisher implements InspectorStatePublisher {
   private readonly records: InspectorSourceBuffer
   private flushScheduled = false
+  private inFlightNextSequence: number | undefined
   private closed = false
 
   constructor(
@@ -34,23 +35,39 @@ export class HostBridgePublisher implements InspectorStatePublisher {
 
   /** Send the retained state as a complete source replacement. */
   replace(): void {
+    this.inFlightNextSequence = undefined
     this.port.postMessage(this.records.replacement(this.source.sourceId, this.source.generation))
+    this.scheduleFlush()
   }
 
-  /** Flush every currently queued observation batch. */
+  /** Send one queued batch when no earlier MessagePort batch awaits acknowledgement. */
   flush(): void {
-    let frame = this.records.takeBatch(this.source.sourceId, this.source.generation)
-    while (frame !== undefined) {
-      this.port.postMessage(frame)
-      frame = this.records.takeBatch(this.source.sourceId, this.source.generation)
-    }
+    if (this.closed || this.inFlightNextSequence !== undefined) return
+    const frame = this.records.takeBatch(this.source.sourceId, this.source.generation)
+    if (frame === undefined) return
+    this.port.postMessage(frame)
+    this.inFlightNextSequence = frame.firstSequence + frame.records.length
   }
 
-  /** Flush pending observations and reject later publication. */
+  /**
+   * Release one in-flight batch and schedule the next bounded transfer.
+   * @param nextSequence - First sequence expected by the Worker after the accepted batch.
+   */
+  acknowledge(nextSequence: number): void {
+    if (this.closed || this.inFlightNextSequence === undefined) return
+    if (nextSequence !== this.inFlightNextSequence) {
+      throw new Error('inspector: Host source acknowledgement does not match the in-flight batch')
+    }
+    this.inFlightNextSequence = undefined
+    this.scheduleFlush()
+  }
+
+  /** Send at most one final batch, discard later queued observations, and reject publication. */
   close(): void {
     if (this.closed) return
     this.flush()
     this.closed = true
+    this.records.discardPending()
   }
 
   private scheduleFlush(): void {

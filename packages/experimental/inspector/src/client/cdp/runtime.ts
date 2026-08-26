@@ -12,7 +12,11 @@ import type {
   ClientRuntimeResult,
   ClientRuntimeRemoteObject,
 } from '../../shared/bridge/messages/runtime/index.ts'
-import type { ClientRemoteObjectHandle, ClientRuntimeSessionId } from '../../shared/bridge/ids.ts'
+import type {
+  ClientRemoteObjectHandle,
+  ClientRuntimeRequestId,
+  ClientRuntimeSessionId,
+} from '../../shared/bridge/ids.ts'
 import { isJsonValue, jsonByteLength } from '../../shared/json.ts'
 import { INSPECTOR_PROTOCOL_VERSION } from '../../shared/bridge/version.ts'
 import { ClientRuntimeExecutionError } from './errors.ts'
@@ -42,6 +46,11 @@ export interface ClientRuntimeLimits {
 /** Executes Runtime requests while isolating object handles by DevTools session. */
 export class ClientRuntimeExecutor {
   private readonly sessions = new Map<ClientRuntimeSessionId, ClientRuntimeSession>()
+  private readonly responseAllocations = new Map<ClientRuntimeRequestId, {
+    readonly sessionId: ClientRuntimeSessionId
+    readonly session: ClientRuntimeSession
+    readonly allocation: ClientObjectAllocation
+  }>()
 
   constructor(
     private readonly limits: ClientRuntimeLimits,
@@ -51,13 +60,22 @@ export class ClientRuntimeExecutor {
   /**
    * Execute one request and preserve its source, generation, session, and request identities.
    * @param frame - Validated command envelope from the Worker.
+   * @param signal - Optional cancellation for an operation awaiting user code.
+   * @param deferObjectCommit - Keep new object handles provisional until {@link acknowledge}.
    * @returns A success or transport-error response for the same request.
    */
-  async execute(frame: ClientRuntimeRequestFrame): Promise<ClientRuntimeResponseFrame> {
+  async execute(
+    frame: ClientRuntimeRequestFrame,
+    signal?: AbortSignal,
+    deferObjectCommit = false,
+  ): Promise<ClientRuntimeResponseFrame> {
     const session = this.session(frame.sessionId)
     const allocation = session.beginAllocation()
     try {
-      const result = await session.execute(frame.command, allocation)
+      const result = await session.execute(frame.command, allocation, signal)
+      if (signal?.aborted === true) {
+        throw new ClientRuntimeExecutionError('timeout', 'Client Runtime request was canceled')
+      }
       const response = responseFrame(frame, { ok: true, result })
       if (!isJsonValue(response) || jsonByteLength(response) > this.limits.maxResponseBytes) {
         session.rollback(allocation)
@@ -66,7 +84,18 @@ export class ClientRuntimeExecutor {
           error: { code: 'result-too-large', message: 'Client Runtime result exceeds the source-frame byte limit' },
         })
       }
-      session.commitAllocation(allocation)
+      if (deferObjectCommit) {
+        if (this.responseAllocations.has(frame.requestId)) {
+          session.rollback(allocation)
+          return responseFrame(frame, {
+            ok: false,
+            error: { code: 'invalid-request', message: 'Client Runtime request id is already pending' },
+          })
+        }
+        this.responseAllocations.set(frame.requestId, { sessionId: frame.sessionId, session, allocation })
+      } else {
+        session.commitAllocation(allocation)
+      }
       return response
     } catch (error) {
       session.rollback(allocation)
@@ -75,10 +104,37 @@ export class ClientRuntimeExecutor {
   }
 
   /**
+   * Commit handles after the Worker accepts one Runtime response.
+   * @param sessionId - Session that owns the response.
+   * @param requestId - Correlation id acknowledged by the Worker.
+   */
+  acknowledge(sessionId: ClientRuntimeSessionId, requestId: ClientRuntimeRequestId): void {
+    const pending = this.responseAllocations.get(requestId)
+    if (pending === undefined || pending.sessionId !== sessionId) return
+    this.responseAllocations.delete(requestId)
+    pending.session.commitAllocation(pending.allocation)
+  }
+
+  /**
+   * Roll back handles from a canceled or otherwise unaccepted Runtime response.
+   * @param sessionId - Session that owns the response.
+   * @param requestId - Correlation id rejected by the Worker.
+   */
+  cancel(sessionId: ClientRuntimeSessionId, requestId: ClientRuntimeRequestId): void {
+    const pending = this.responseAllocations.get(requestId)
+    if (pending === undefined || pending.sessionId !== sessionId) return
+    this.responseAllocations.delete(requestId)
+    pending.session.rollback(pending.allocation)
+  }
+
+  /**
    * Release all values retained for one closed DevTools connection.
    * @param sessionId - Runtime session owned by that DevTools connection.
    */
   closeSession(sessionId: ClientRuntimeSessionId): void {
+    for (const [requestId, pending] of this.responseAllocations) {
+      if (pending.sessionId === sessionId) this.responseAllocations.delete(requestId)
+    }
     this.sessions.get(sessionId)?.close()
     this.sessions.delete(sessionId)
   }
@@ -170,6 +226,7 @@ export class ClientRuntimeExecutor {
 
   /** Release all sessions when a source generation ends or reconnects. */
   reset(): void {
+    this.responseAllocations.clear()
     for (const session of this.sessions.values()) session.close()
     this.sessions.clear()
   }
@@ -211,18 +268,22 @@ class ClientRuntimeSession {
     this.objects.rollback(allocation)
   }
 
-  async execute(command: ClientRuntimeCommand, allocation: ClientObjectAllocation): Promise<ClientRuntimeResult> {
+  async execute(
+    command: ClientRuntimeCommand,
+    allocation: ClientObjectAllocation,
+    signal?: AbortSignal,
+  ): Promise<ClientRuntimeResult> {
     switch (command.op) {
       case 'evaluate':
-        return { op: command.op, completion: await this.evaluate(command, allocation) }
+        return { op: command.op, completion: await this.evaluate(command, allocation, signal) }
       case 'get-properties': {
         const result = getClientProperties(this.objects, command, this.maxProperties, allocation)
         return { op: command.op, ...result }
       }
       case 'call-function':
-        return { op: command.op, completion: await this.callFunction(command, allocation) }
+        return { op: command.op, completion: await this.callFunction(command, allocation, signal) }
       case 'await-promise':
-        return { op: command.op, completion: await this.awaitPromise(command, allocation) }
+        return { op: command.op, completion: await this.awaitPromise(command, allocation, signal) }
       case 'release-object':
         this.objects.release(command.handle)
         return { op: command.op }
@@ -274,11 +335,12 @@ class ClientRuntimeSession {
   private async evaluate(
     command: Extract<ClientRuntimeCommand, { op: 'evaluate' }>,
     allocation: ClientObjectAllocation,
+    signal?: AbortSignal,
   ): Promise<ClientRuntimeCompletion> {
     let value: unknown
     try {
       value = globalThis.eval(command.expression) as unknown
-      if (command.awaitPromise === true) value = await awaitWithTimeout(value, command.timeoutMs)
+      if (command.awaitPromise === true) value = await awaitWithCancellation(value, signal, command.timeoutMs)
     } catch (error) {
       if (error instanceof ClientRuntimeExecutionError) throw error
       return this.exception(error, command.objectGroup, allocation)
@@ -295,6 +357,7 @@ class ClientRuntimeSession {
   private async callFunction(
     command: Extract<ClientRuntimeCommand, { op: 'call-function' }>,
     allocation: ClientObjectAllocation,
+    signal?: AbortSignal,
   ): Promise<ClientRuntimeCompletion> {
     const receiver = command.receiver === undefined ? globalThis : this.objects.get(command.receiver)
     const inheritedGroup = command.receiver === undefined ? undefined : this.objects.group(command.receiver)
@@ -305,8 +368,9 @@ class ClientRuntimeSession {
       const fn = globalThis.eval(`(${command.functionDeclaration}\n)`) as unknown
       if (typeof fn !== 'function') throw new TypeError('functionDeclaration did not evaluate to a function')
       value = Reflect.apply(fn, receiver, args)
-      if (command.awaitPromise === true) value = await value
+      if (command.awaitPromise === true) value = await awaitWithCancellation(value, signal)
     } catch (error) {
+      if (error instanceof ClientRuntimeExecutionError) throw error
       return this.exception(error, group, allocation)
     }
     return this.completion(value, allocation, group, command.generatePreview, command.returnByValue)
@@ -315,11 +379,12 @@ class ClientRuntimeSession {
   private async awaitPromise(
     command: Extract<ClientRuntimeCommand, { op: 'await-promise' }>,
     allocation: ClientObjectAllocation,
+    signal?: AbortSignal,
   ): Promise<ClientRuntimeCompletion> {
     const group = this.objects.group(command.promise)
     let value: unknown
     try {
-      value = await this.objects.get(command.promise)
+      value = await awaitWithCancellation(this.objects.get(command.promise), signal)
     } catch (error) {
       if (error instanceof ClientRuntimeExecutionError) throw error
       return this.exception(error, group, allocation)
@@ -401,20 +466,33 @@ function clientUrl(): { readonly url?: string } {
   return typeof href === 'string' ? { url: href } : {}
 }
 
-async function awaitWithTimeout(value: unknown, timeoutMs: number | undefined): Promise<unknown> {
-  if (timeoutMs === undefined) return await value
+async function awaitWithCancellation(
+  value: unknown,
+  signal: AbortSignal | undefined,
+  timeoutMs?: number,
+): Promise<unknown> {
+  if (signal?.aborted === true) throw new ClientRuntimeExecutionError('timeout', 'Client Runtime request was canceled')
   let timer: ReturnType<typeof setTimeout> | undefined
+  let onAbort: (() => void) | undefined
   try {
-    return await Promise.race([
-      Promise.resolve(value),
-      new Promise<never>((_resolve, reject) => {
+    const limits: Promise<never>[] = []
+    if (timeoutMs !== undefined) {
+      limits.push(new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
           reject(new ClientRuntimeExecutionError('timeout', `Client evaluation exceeded ${String(timeoutMs)}ms`))
         }, timeoutMs)
-      }),
-    ])
+      }))
+    }
+    if (signal !== undefined) {
+      limits.push(new Promise<never>((_resolve, reject) => {
+        onAbort = () => { reject(new ClientRuntimeExecutionError('timeout', 'Client Runtime request was canceled')) }
+        signal.addEventListener('abort', onAbort, { once: true })
+      }))
+    }
+    return await Promise.race([Promise.resolve(value), ...limits])
   } finally {
     if (timer !== undefined) clearTimeout(timer)
+    if (onAbort !== undefined) signal?.removeEventListener('abort', onAbort)
   }
 }
 

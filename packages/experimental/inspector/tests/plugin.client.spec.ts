@@ -179,6 +179,61 @@ describe('experimental Inspector Client plugin', () => {
     await fiber.dispose()
   })
 
+  it('cancels an outstanding Client Runtime operation without sending a late response', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    globalThis.__DSH_INSPECTOR__ = bootstrap
+    const ctx = new Context()
+    const fiber = ctx.plugin({ apply })
+    await fiber.await()
+    const socket = FakeWebSocket.sockets[0]!
+    socket.open()
+    const open = JSON.parse(socket.sent[0]!) as {
+      source: { sourceId: string; generation: string }
+    }
+    socket.receive({
+      v: 0,
+      t: 'source/accepted',
+      sourceId: open.source.sourceId,
+      generation: open.source.generation,
+    })
+    socket.receive({
+      v: 0,
+      t: 'client-runtime/request',
+      sourceId: open.source.sourceId,
+      generation: open.source.generation,
+      sessionId: 'devtools-cancel',
+      requestId: 'runtime-cancel',
+      command: { op: 'evaluate', expression: 'new Promise(() => {})', awaitPromise: true },
+    })
+    socket.receive({
+      v: 0,
+      t: 'client-runtime/cancel',
+      sourceId: open.source.sourceId,
+      generation: open.source.generation,
+      sessionId: 'devtools-cancel',
+      requestId: 'runtime-cancel',
+    })
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(socket.sent.map(value => JSON.parse(value) as { requestId?: string })
+      .some(frame => frame.requestId === 'runtime-cancel')).toBe(false)
+
+    socket.receive({
+      v: 0,
+      t: 'client-runtime/request',
+      sourceId: open.source.sourceId,
+      generation: open.source.generation,
+      sessionId: 'devtools-cancel',
+      requestId: 'runtime-after-cancel',
+      command: { op: 'evaluate', expression: '42', returnByValue: true },
+    })
+    await vi.waitFor(() => {
+      expect(socket.sent.map(value => JSON.parse(value) as { requestId?: string })
+        .some(frame => frame.requestId === 'runtime-after-cancel')).toBe(true)
+    })
+
+    await fiber.dispose()
+  })
+
   it('does not report queue loss again after a replacement absorbs it', async () => {
     globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
     globalThis.__DSH_INSPECTOR__ = { ...bootstrap, maxQueuedRecords: 1 }
@@ -297,6 +352,22 @@ describe('experimental Inspector Client plugin', () => {
     const ctx = new Context()
     const fiber = ctx.plugin({ apply })
     await expect(fiber).rejects.toThrow('Host bootstrap is missing')
+    await fiber.dispose()
+  })
+
+  it('closes the Client source when a later plugin registration fails', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    globalThis.__DSH_INSPECTOR__ = bootstrap
+    const ctx = new Context()
+    ctx.provide('inspector', {
+      publish: () => undefined,
+      cordis: { getTree: () => Promise.reject(new Error('unused test service')) },
+    })
+
+    const fiber = ctx.plugin({ apply })
+    await expect(fiber.await()).rejects.toThrow('service "inspector" has been registered')
+    expect(FakeWebSocket.sockets).toHaveLength(1)
+    expect(FakeWebSocket.sockets[0]?.readyState).toBe(FakeWebSocket.CLOSED)
     await fiber.dispose()
   })
 })

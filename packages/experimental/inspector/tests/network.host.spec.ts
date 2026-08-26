@@ -6,6 +6,7 @@ import { NetworkStore } from '../src/worker/inspection/network-store.ts'
 import { inspectorId } from '../src/shared/bridge/ids.ts'
 import type { InspectorSourceDescriptor } from '../src/shared/bridge/messages/observation.ts'
 import type { IngestedInspectorRecord } from '../src/worker/bridge/hub.ts'
+import type { InspectorJsonValue } from '../src/shared/json.ts'
 
 const source: InspectorSourceDescriptor = {
   sourceId: inspectorId<'InspectorSourceId'>('host-network', 'sourceId'),
@@ -160,6 +161,201 @@ describe('Inspector Network domain', () => {
     expect(replay).toHaveBeenNthCalledWith(1, 'Network.requestWillBeSent', expect.any(Object))
     expect(replay).toHaveBeenNthCalledWith(2, 'Network.responseReceived', expect.any(Object))
     expect(replay).toHaveBeenNthCalledWith(3, 'Network.loadingFinished', expect.any(Object))
+  })
+
+  it('retains partial response bytes while reporting a post-header cancellation as failed', () => {
+    const sendEvent = vi.fn()
+    const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
+    const network = new NetworkDomain(store)
+    network.enable({ sendEvent })
+    const records = requestRecords('canceled', 'partial')
+    store.append(source, [
+      ...records.slice(0, 3),
+      {
+        sequence: 4,
+        monotonicMs: 4,
+        topic: 'fetch/error',
+        payload: { requestId: 'canceled', message: 'AbortError: aborted', canceled: true },
+      },
+    ])
+
+    expect(sendEvent).toHaveBeenCalledWith('Network.loadingFailed', expect.objectContaining({
+      requestId: requestId('canceled'),
+      type: 'Fetch',
+      errorText: 'AbortError: aborted',
+      canceled: true,
+    }))
+    expect(network.handle('Network.getResponseBody', { requestId: requestId('canceled') }, { sendEvent: vi.fn() }))
+      .toMatchObject({
+        body: Buffer.from('partial').toString('base64'),
+        dshInspectorTruncated: true,
+        dshInspectorCaptureError: 'AbortError: aborted',
+      })
+  })
+
+  it('retains request capture metadata and isolates malformed observations', () => {
+    const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
+    const observed: unknown[] = []
+    store.subscribe(() => { throw new Error('broken observer') })
+    const unsubscribe = store.subscribe((event) => { observed.push(event) })
+    const start = requestRecords('metadata', 'response')[0]!
+    store.append(source, [
+      { ...start, topic: 'ignored/topic' },
+      { ...start, payload: null },
+      start,
+      start,
+      { sequence: 2, monotonicMs: 2, topic: 'fetch/request-body-chunk', payload: { requestId: 'metadata', data: Buffer.from('body').toString('base64') } },
+      { sequence: 3, monotonicMs: 3, topic: 'fetch/request-body-end', payload: { requestId: 'metadata', truncated: true, captureError: 'request capture failed' } },
+    ])
+    expect(store.requestBody(requestId('metadata'))).toMatchObject({
+      bytes: Buffer.from('body'),
+      truncated: true,
+      captureError: 'request capture failed',
+      complete: false,
+    })
+    expect(() => store.responseBody(requestId('metadata'))).toThrow('response headers have not arrived')
+
+    store.append(source, [
+      requestRecords('metadata', 'response')[1]!,
+      requestRecords('metadata', 'response')[2]!,
+      {
+        sequence: 4,
+        monotonicMs: 4,
+        topic: 'fetch/end',
+        payload: {
+          requestId: 'metadata',
+          capturedBytes: 8,
+          responseBodyTruncated: true,
+          responseCaptureError: 'response capture failed',
+        },
+      },
+      {
+        sequence: 5,
+        monotonicMs: 5,
+        topic: 'fetch/error',
+        payload: { requestId: 'metadata', message: 'late failure', canceled: false },
+      },
+    ])
+    expect(store.responseBody(requestId('metadata'))).toMatchObject({
+      bytes: Buffer.from('response'),
+      truncated: true,
+      captureError: 'response capture failed',
+      complete: true,
+    })
+    expect(observed).toHaveLength(4)
+    unsubscribe()
+    store.dispose()
+    expect(() => store.requestBody(requestId('metadata'))).toThrow('No resource with given identifier')
+    expect(() => store.requestBody(1)).toThrow('Network requestId must be a string')
+  })
+
+  it('closes only active requests from the selected source and supports replacement', () => {
+    const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
+    const observed: Array<{ type: string; requestId?: string }> = []
+    store.subscribe((event) => { observed.push(event) })
+    const clientSource: InspectorSourceDescriptor = {
+      ...source,
+      sourceId: inspectorId<'InspectorSourceId'>('other-network', 'sourceId'),
+      generation: inspectorId<'InspectorSourceGeneration'>('other-generation', 'generation'),
+      kind: 'client',
+    }
+    store.append(source, requestRecords('complete', 'done'))
+    store.append(source, requestRecords('active', 'partial').slice(0, 3))
+    store.append(clientSource, requestRecords('other', 'partial').slice(0, 3))
+
+    store.close(source, 'source closed')
+    expect(observed.filter(event => event.type === 'request-failed')).toEqual([
+      expect.objectContaining({ requestId: requestId('active') }),
+    ])
+    store.close(source, 'source closed again')
+    store.replace(clientSource, [])
+    expect(observed.filter(event => event.type === 'request-failed')).toHaveLength(2)
+  })
+
+  it('rejects malformed fetch fields without losing later valid records', () => {
+    const store = new NetworkStore({ maxRetainedRequests: 20, maxJournalBytes: 1_024 })
+    const validStart = requestRecords('valid', 'ok')[0]!
+    const malformed: IngestedInspectorRecord[] = [
+      { ...validStart, payload: null },
+      { ...validStart, payload: { ...validStart.payload as object, requestId: 1 } },
+      { ...validStart, payload: { ...validStart.payload as object, wallTimeMs: Number.POSITIVE_INFINITY } },
+      { ...validStart, payload: { ...validStart.payload as object, headers: {} } },
+      { ...validStart, payload: { ...validStart.payload as object, headers: [[1, 'value']] } },
+      { ...validStart, payload: { ...validStart.payload as object, hasBody: 'yes' } },
+    ]
+    store.append(source, [...malformed, validStart])
+    const invalidPayloads: InspectorJsonValue[] = [
+      { requestId: 'valid', data: '' },
+      { requestId: 'valid', data: 'abc' },
+      { requestId: 'valid', data: '!!!!' },
+      { requestId: 'valid', data: 'ZE==' },
+    ]
+    store.append(source, invalidPayloads.map((payload, index) => ({
+      sequence: index + 2,
+      monotonicMs: index + 2,
+      topic: 'fetch/request-body-chunk',
+      payload,
+    })))
+    store.append(source, [
+      { sequence: 10, monotonicMs: 10, topic: 'fetch/request-body-end', payload: { requestId: 'valid', truncated: 'yes' } },
+      { sequence: 11, monotonicMs: 11, topic: 'fetch/request-body-end', payload: { requestId: 'valid', truncated: false, captureError: 1 } },
+      { sequence: 12, monotonicMs: 12, topic: 'fetch/response', payload: { requestId: 'valid', url: 'https://example.test', status: '200', statusText: 'OK', headers: [], mimeType: 'text/plain' } },
+      { sequence: 13, monotonicMs: 13, topic: 'fetch/response', payload: { requestId: 'valid', url: 'https://example.test', status: 200, statusText: 'OK', headers: [['bad']], mimeType: 'text/plain' } },
+      requestRecords('valid', 'ok')[1]!,
+      requestRecords('valid', 'ok')[2]!,
+      requestRecords('valid', 'ok')[3]!,
+      requestRecords('valid', 'ok')[3]!,
+    ])
+
+    expect(store.responseBody(requestId('valid')).bytes).toEqual(Buffer.from('ok'))
+
+    const failedStart = requestRecords('failed-before-response', '')[0]!
+    store.append(source, [failedStart, {
+      sequence: 20,
+      monotonicMs: 20,
+      topic: 'fetch/error',
+      payload: { requestId: 'failed-before-response', message: 'connection failed', canceled: false },
+    }])
+  })
+
+  it('tracks zero-byte truncation and evicts a completed request before an active request', () => {
+    const store = new NetworkStore({ maxRetainedRequests: 1, maxJournalBytes: 1 })
+    store.append(source, requestRecords('completed', 'a'))
+    const active = requestRecords('active', 'bc')
+    store.append(source, [
+      active[0]!,
+      {
+        sequence: 2,
+        monotonicMs: 2,
+        topic: 'fetch/request-body-chunk',
+        payload: { requestId: 'active', data: Buffer.from('x').toString('base64') },
+      },
+      active[1]!,
+      active[2]!,
+    ])
+
+    expect(() => store.requestBody(requestId('completed'))).toThrow('No resource with given identifier')
+    expect(store.responseBody(requestId('active'))).toMatchObject({
+      bytes: Buffer.alloc(0),
+      truncated: true,
+      complete: false,
+    })
+
+    store.append(source, [{
+      sequence: 4,
+      monotonicMs: 4,
+      topic: 'fetch/request-body-chunk',
+      payload: { requestId: 'active', data: Buffer.from('d').toString('base64') },
+    }])
+    expect(store.requestBody(requestId('active'))).toMatchObject({ bytes: Buffer.from('x'), truncated: true })
+  })
+
+  it('rejects a non-list header field without dropping the active request', () => {
+    const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
+    const start = requestRecords('headers', 'ok')[0]!
+    store.append(source, [{ ...start, payload: { ...start.payload as object, headers: null } }, start])
+
+    expect(store.requestBody(requestId('headers')).complete).toBe(false)
   })
 })
 

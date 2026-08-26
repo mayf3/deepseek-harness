@@ -154,8 +154,10 @@ export class ClientRuntimeRouter {
     const requestId = inspectorId<'ClientRuntimeRequestId'>(randomUUID(), 'requestId')
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(requestId)
-        reject(new Error(`Client Runtime ${command.op} timed out after ${String(this.timeoutMs)}ms`))
+        const pending = this.pending.get(requestId)
+        if (pending === undefined) return
+        this.cancelClientResponse(target.source, sessionId, requestId)
+        this.rejectPending(requestId, new Error(`Client Runtime ${command.op} timed out after ${String(this.timeoutMs)}ms`))
       }, this.timeoutMs)
       timer.unref()
       this.pending.set(requestId, { target, sessionId, op: command.op, resolve, reject, timer })
@@ -278,26 +280,76 @@ export class ClientRuntimeRouter {
 
   private settle(source: InspectorSourceDescriptor, frame: ClientRuntimeResponseFrame): void {
     const pending = this.pending.get(frame.requestId)
-    if (pending === undefined) return
+    if (pending === undefined) {
+      this.cancelClientResponse(source, frame.sessionId, frame.requestId)
+      return
+    }
     if (pending.target.source.sourceId !== source.sourceId
       || pending.target.source.generation !== source.generation
       || pending.sessionId !== frame.sessionId) {
+      this.cancelClientResponse(source, frame.sessionId, frame.requestId)
+      this.cancelClientResponse(pending.target.source, pending.sessionId, frame.requestId)
       this.rejectPending(frame.requestId, new Error('Client Runtime response correlation mismatch'))
       return
     }
     if (!frame.outcome.ok) {
+      this.acknowledgeClientResponse(source, frame.sessionId, frame.requestId)
       this.rejectPending(frame.requestId, new ClientRuntimeRemoteError(frame.outcome.error.code, frame.outcome.error.message))
       return
     }
     if (frame.outcome.result.op !== pending.op) {
+      this.cancelClientResponse(source, frame.sessionId, frame.requestId)
       this.rejectPending(frame.requestId, new Error(
         `Client Runtime response op ${frame.outcome.result.op} does not match ${pending.op}`,
       ))
       return
     }
+    if (!this.acknowledgeClientResponse(source, frame.sessionId, frame.requestId)) {
+      this.rejectPending(frame.requestId, new Error('Client execution context disconnected before acknowledgement'))
+      return
+    }
     clearTimeout(pending.timer)
     this.pending.delete(frame.requestId)
     pending.resolve(frame.outcome.result)
+  }
+
+  private acknowledgeClientResponse(
+    source: InspectorSourceDescriptor,
+    sessionId: ClientRuntimeSessionId,
+    requestId: ClientRuntimeRequestId,
+  ): boolean {
+    try {
+      return this.sources.send(source, {
+        v: INSPECTOR_PROTOCOL_VERSION,
+        t: 'client-runtime/response-acknowledged',
+        sourceId: source.sourceId,
+        generation: source.generation,
+        sessionId,
+        requestId,
+      })
+    } catch {
+      // A failed acknowledgement rejects the Worker request; source teardown releases Client handles.
+      return false
+    }
+  }
+
+  private cancelClientResponse(
+    source: InspectorSourceDescriptor,
+    sessionId: ClientRuntimeSessionId,
+    requestId: ClientRuntimeRequestId,
+  ): void {
+    try {
+      this.sources.send(source, {
+        v: INSPECTOR_PROTOCOL_VERSION,
+        t: 'client-runtime/cancel',
+        sourceId: source.sourceId,
+        generation: source.generation,
+        sessionId,
+        requestId,
+      })
+    } catch {
+      // Cancellation settlement does not depend on delivery to a source that may be closing.
+    }
   }
 
   private rejectPending(requestId: ClientRuntimeRequestId, error: Error): void {

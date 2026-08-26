@@ -42,6 +42,7 @@ export class InspectorSourceBuffer {
 
   /**
    * Validate and enqueue one observation, dropping the oldest prefix as needed.
+   * A record larger than one transport frame is dropped after consuming its sequence number.
    * @param topic - Declared domain topic.
    * @param payload - Lossless JSON payload.
    * @param monotonicMs - Finite source-clock timestamp.
@@ -97,11 +98,9 @@ export class InspectorSourceBuffer {
     if (this.queue.length === 0) return undefined
     const batch: QueuedRecord[] = []
     let batchBytes = SOURCE_FRAME_OVERHEAD_BYTES
-    const first = this.queue[0]
-    if (first === undefined) throw new Error('inspector: non-empty source queue has no first record')
+    const first = this.queue[0] as QueuedRecord
     while (batch.length < this.options.maxRecordsPerFrame && this.queue.length > 0) {
-      const candidate = this.queue[0]
-      if (candidate === undefined) break
+      const candidate = this.queue[0] as QueuedRecord
       if (candidate.sequence !== first.sequence + batch.length) break
       if (batch.length > 0 && batchBytes + candidate.bytes > this.options.maxFrameBytes) break
       this.queue.shift()
@@ -121,6 +120,12 @@ export class InspectorSourceBuffer {
     }
     this.expectedSequence = firstSequence + frame.records.length
     return frame
+  }
+
+  /** Discard observations that have not entered a transport frame. */
+  discardPending(): void {
+    this.queue.length = 0
+    this.queuedBytes = 0
   }
 
   private record(topic: string, payload: InspectorJsonValue, monotonicMs: number): InspectorRecordInput {
@@ -144,8 +149,7 @@ export class InspectorSourceBuffer {
     this.queue.push({ sequence, bytes, record })
     this.queuedBytes += bytes
     while (this.queue.length > this.options.maxQueuedRecords || this.queuedBytes > this.options.maxQueuedBytes) {
-      const dropped = this.queue.shift()
-      if (dropped === undefined) break
+      const dropped = this.queue.shift() as QueuedRecord
       this.queuedBytes -= dropped.bytes
     }
   }

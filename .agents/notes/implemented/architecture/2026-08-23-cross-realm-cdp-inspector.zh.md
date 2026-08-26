@@ -28,7 +28,7 @@ Chrome DevTools 消费一个 page 类型 target。Runtime 方法按 execution co
 
 MessagePort 与 WebSocket carrier 使用同一组 JSON 值和判别联合帧。source 标识一个逻辑 producer 和一个连接 generation，声明 capability 与 topic，发送初始 replace，再追加带 sequence 的 batch。Worker 在读取 domain 字段前拒绝畸形、超限、旧 generation 和未声明 topic 的帧。
 
-投递有序且尽力而为。producer 不在应用路径上等待 acknowledgement。有界 producer 队列通过 sequence gap 报告被丢弃的前缀；无法解释的 gap 会让 Worker 请求新 snapshot。domain store 只保留有界状态，并在 source 断开时明确关闭未完成操作。
+投递有序且尽力而为。producer 不在应用路径上等待 acknowledgement。有界 producer 队列通过 sequence gap 报告被丢弃的前缀；Host MessagePort carrier 同时只允许一个 append batch 在途，并在 Worker 确认消费后发送下一批。无法解释的 gap 会让 Worker 请求新 snapshot。domain store 只保留有界状态，并在 source 断开时明确关闭未完成操作。
 
 Runtime 帧使用封闭的 command 与 result 联合，而不是 method 字符串加无类型 parameter record。每个 request 携带 source id、source generation、DevTools Runtime session id、request id 和 command；每个 result 重复这些身份与 command 判别符。Console lifecycle/event、分块 source 读取和非 CDP 语义查询使用各自独立的关联帧。RemoteObject value、preview、property descriptor、call argument、exception、Console event、debugger frame、script 与 error 都有独立的精确 decoder。
 
@@ -38,7 +38,7 @@ Runtime 帧使用封闭的 command 与 result 联合，而不是 method 字符�
 
 Client Runtime 子集包括 `Runtime.evaluate`、`Runtime.getProperties`、`Runtime.callFunctionOn`、`Runtime.awaitPromise`、`Runtime.releaseObject`、`Runtime.releaseObjectGroup` 和 `Runtime.globalLexicalScopeNames`。Client 在页面 realm 中执行命令，并在按 DevTools Runtime session 隔离的表中保留实时对象。Client 只返回不透明 handle 与 JSON-safe metadata；Worker 验证结果并分配连接私有的 CDP object id。对象参数只能由同一 Client source generation 与 DevTools session 使用。source 断开、Runtime disable、DevTools 关闭、释放对象或释放 object group 都会移除对应 handle。
 
-JavaScript exception 是携带 `exceptionDetails` 的成功 Runtime response；transport failure 使用独立的 error 联合。有限的命令 deadline、对象数、属性数、source 字节数与帧字节数约束保留或返回的状态。
+JavaScript exception 是携带 `exceptionDetails` 的成功 Runtime response；transport failure 使用独立的 error 联合。Worker deadline 会向 Client 发送 request-scoped cancellation。response 分配的 handle 在 Worker 确认该 response 前保持 provisional，因此 cancellation 和 late response 不会留下无法访问的对象。有限的命令 deadline、对象数、属性数、source 字节数与帧字节数约束保留或返回的状态。
 
 Client Console observer 保持原始页面调用行为，并为每个已启用的 DevTools session 异步发出一份 event。每个 session 把 argument 序列化到自己的 `console` object group，因此断联、Runtime disable 或 `Runtime.discardConsoleEntries` 可以释放一条连接而不使其他连接失效。Context 与 Fiber argument 使用和求值结果相同的语义引用及 DOM 反向映射。
 

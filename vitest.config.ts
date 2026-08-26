@@ -251,12 +251,26 @@ export default defineConfig({
         // coverage lane exists.
         'packages/experimental/webworker-runtime/src/**',
         'packages/experimental/webworker-packer/src/*',
-        // Inspector behavior spans a Node Worker, the Host isolate, and a real
-        // browser realm. Its focused specs cover pure logic, while its Worker,
-        // Debugger, Chromium, and Loader suites run the assembled paths that
-        // the parent Vitest process cannot attribute. TODO(inspector): remove
-        // when the coverage lane can merge cross-realm V8 coverage.
-        'packages/experimental/inspector/src/**',
+        // Inspector execution adapters run in a Node Worker, the Host native
+        // inspector session, or a browser realm, outside attributable parent
+        // Vitest coverage.
+        'packages/experimental/inspector/src/client/**',
+        'packages/experimental/inspector/src/host/bridge/**',
+        'packages/experimental/inspector/src/host/cdp/**',
+        'packages/experimental/inspector/src/worker/bridge/**',
+        'packages/experimental/inspector/src/worker/cdp/**',
+        'packages/experimental/inspector/src/worker/realms/**',
+        'packages/experimental/inspector/src/worker/{entry,server}.ts',
+        // Keep already-complete Inspector modules under the per-file gate and
+        // enumerate the remaining direct-test debt instead of exempting src/**.
+        // TODO(inspector): close these branch gaps and remove the entries.
+        'packages/experimental/inspector/src/host/plugin.ts',
+        'packages/experimental/inspector/src/shared/bridge/{control-codec,rpc}.ts',
+        'packages/experimental/inspector/src/shared/bridge/messages/observation.ts',
+        'packages/experimental/inspector/src/shared/bridge/messages/query/codec.ts',
+        'packages/experimental/inspector/src/shared/bridge/messages/runtime/{command-codec,console-frames,frames,value-codec}.ts',
+        'packages/experimental/inspector/src/shared/bridge/messages/sources/{codec,frames}.ts',
+        'packages/experimental/inspector/src/worker/inspection/{cordis-store,query-router,realm-store}.ts',
         'packages/client/modules/src/client/system.ts',
         'packages/client/hmr/src/client/index.ts',
         // Web config-tree boot round: the new host-side web-transport halves

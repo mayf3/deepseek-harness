@@ -12,6 +12,7 @@ import type {
   RuntimeCallFrameEvaluationRequest,
   RuntimeEvaluateRequest,
   RuntimeGetPropertiesRequest,
+  RuntimeExecutionContext,
   RuntimeProperties,
   RuntimeScript,
 } from './index.ts'
@@ -63,8 +64,12 @@ export interface RuntimeBackend {
   awaitPromise(
     request: RuntimeAwaitPromiseRequest<RuntimeBackendObjectHandle>,
   ): Promise<RuntimeCompletion<RuntimeBackendObjectHandle>>
-  /** @returns Names visible in the realm's global lexical scope. */
-  globalLexicalScopeNames(): Promise<readonly string[]>
+  /**
+   * Read names visible in one backend execution context's global lexical scope.
+   * @param context - Native sub-context selector, or the realm default when omitted.
+   * @returns Names visible in the selected global lexical scope.
+   */
+  globalLexicalScopeNames(context?: RuntimeExecutionContext): Promise<readonly string[]>
   /**
    * Release one backend object reference.
    * @param handle - Handle owned by this realm session.

@@ -3,6 +3,7 @@
 import type { InspectorSourceDescriptor } from '../../../../shared/bridge/messages/observation.ts'
 import type { InspectorRealmId, RuntimeBackendObjectHandle } from '../../../../shared/cdp/ids.ts'
 import type { RuntimeCallArgument, RuntimeCompletion, RuntimeRemoteObject } from '../../../../shared/cdp/index.ts'
+import type { RuntimeExecutionContext } from '../../../../shared/cdp/operations.ts'
 import type { RuntimeBackend } from '../../../../shared/cdp/realm.ts'
 import { cdpError, respondToCdpRequest, type CdpRequest, type CdpTransport } from '../../protocol.ts'
 import type { InspectorRealmSession } from '../../../inspection/realm.ts'
@@ -228,7 +229,10 @@ export class RuntimeDomainSession {
   private async evaluate(params: Readonly<Record<string, unknown>>): Promise<object> {
     const parsed = parseEvaluate(params)
     const realm = this.realmFromSelector(parsed, 'contextId')
-    const completion = await runtimeBackend(realm).evaluate(parsed.request)
+    const completion = await runtimeBackend(realm).evaluate({
+      ...parsed.request,
+      ...this.backendContext(realm, parsed, 'contextId'),
+    })
     return this.objects.completion(realm, completion, parsed.request.objectGroup)
   }
 
@@ -260,6 +264,7 @@ export class RuntimeDomainSession {
       const group = parsed.request.objectGroup ?? receiver?.group
       const completion = await runtimeBackend(realm).callFunction({
         ...parsed.request,
+        ...this.backendContext(realm, parsed, 'executionContextId'),
         ...(receiver === undefined ? {} : { receiver: receiver.handle }),
         arguments: parsed.arguments.map(argument => this.routeArgument(realm, argument)),
       })
@@ -309,7 +314,8 @@ export class RuntimeDomainSession {
   private async globalLexicalScopeNames(params: Readonly<Record<string, unknown>>): Promise<object> {
     const parsed = parseGlobalLexicalScopeNames(params)
     const realm = this.realmFromSelector(parsed, 'executionContextId')
-    return { names: await runtimeBackend(realm).globalLexicalScopeNames() }
+    const context = this.backendContext(realm, parsed, 'executionContextId').context
+    return { names: await runtimeBackend(realm).globalLexicalScopeNames(context) }
   }
 
   private async discardConsoleEntries(): Promise<object> {
@@ -347,6 +353,19 @@ export class RuntimeDomainSession {
       return this.realms.host()
     }
     return undefined
+  }
+
+  private backendContext(
+    realm: InspectorRealmSession,
+    params: CdpExecutionContextSelector,
+    numericKey: 'contextId' | 'executionContextId',
+  ): { readonly context?: RuntimeExecutionContext } {
+    if (realm.context.kind !== 'native') return {}
+    const numeric = params[numericKey]
+    if (typeof numeric === 'number') return { context: { kind: 'numeric', id: numeric } }
+    return params.uniqueContextId === undefined
+      ? {}
+      : { context: { kind: 'unique', id: params.uniqueContextId } }
   }
 
   private routeArgument(
