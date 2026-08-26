@@ -466,6 +466,20 @@ describe('experimental Inspector real Worker', () => {
           && (event.params?.response as Record<string, unknown> | undefined)?.mimeType === 'text/event-stream')
         requestId = received?.params?.requestId as string | undefined
         expect(requestId).toBeTypeOf('string')
+        expect(received?.params).toMatchObject({
+          type: 'EventSource',
+          response: { encodedDataLength: -1 },
+        })
+        expect(cdp!.events.find(event =>
+          event.method === 'Network.requestWillBeSent'
+          && event.params?.requestId === requestId)?.params?.type).toBe('EventSource')
+        expect(cdp!.events.find(event =>
+          event.method === 'Network.eventSourceMessageReceived'
+          && event.params?.requestId === requestId)?.params).toMatchObject({
+          eventName: 'message',
+          eventId: '1',
+          data: 'first',
+        })
         expect(cdp!.events.some(event =>
           event.method === 'Network.dataReceived'
           && event.params?.requestId === requestId)).toBe(true)
@@ -488,6 +502,13 @@ describe('experimental Inspector real Worker', () => {
             && typeof event.params?.data === 'string')
           .map(event => Buffer.from(String(event.params!.data), 'base64'))
         expect(Buffer.concat(streamed).toString('utf8')).toBe(laterChunk)
+        expect(cdp!.events.slice(laterEventOffset).find(event =>
+          event.method === 'Network.eventSourceMessageReceived'
+          && event.params?.requestId === requestId)?.params).toMatchObject({
+          eventName: 'update',
+          eventId: '2',
+          data: 'second\nline',
+        })
       })
 
       const body = await cdp.call('Network.getResponseBody', { requestId })

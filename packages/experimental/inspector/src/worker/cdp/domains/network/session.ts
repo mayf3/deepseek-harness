@@ -9,10 +9,15 @@ export interface NetworkSink {
   sendEvent(method: string, params: Readonly<Record<string, unknown>>): void
 }
 
+type RequestStartedEvent = Extract<NetworkStoreEvent, { readonly type: 'request-started' }>
+type NetworkResourceType = 'EventSource' | 'Fetch'
+
 /** Projects retained and live network observations into connection-local CDP state. */
 export class NetworkDomain {
   private readonly enabled = new Set<NetworkSink>()
   private readonly streamedRequests = new Map<NetworkSink, Set<string>>()
+  private readonly pendingStarts = new Map<NetworkSink, Map<string, RequestStartedEvent>>()
+  private readonly requestTypes = new Map<NetworkSink, Map<string, NetworkResourceType>>()
   private readonly unsubscribe: () => void
 
   constructor(private readonly store: NetworkStore) {
@@ -25,8 +30,10 @@ export class NetworkDomain {
    */
   enable(session: NetworkSink): void {
     if (this.enabled.has(session)) return
-    for (const event of this.store.replay()) this.send(session, event)
     this.enabled.add(session)
+    this.pendingStarts.set(session, new Map())
+    this.requestTypes.set(session, new Map())
+    for (const event of this.store.replay()) this.send(session, event)
   }
 
   /**
@@ -36,6 +43,8 @@ export class NetworkDomain {
   disable(session: NetworkSink): void {
     this.enabled.delete(session)
     this.streamedRequests.delete(session)
+    this.pendingStarts.delete(session)
+    this.requestTypes.delete(session)
   }
 
   /**
@@ -51,6 +60,8 @@ export class NetworkDomain {
     this.unsubscribe()
     this.enabled.clear()
     this.streamedRequests.clear()
+    this.pendingStarts.clear()
+    this.requestTypes.clear()
   }
 
   /**
@@ -112,6 +123,8 @@ export class NetworkDomain {
         requests.delete(event.requestKey)
         if (requests.size === 0) this.streamedRequests.delete(session)
       }
+      for (const requests of this.pendingStarts.values()) requests.delete(event.requestKey)
+      for (const requests of this.requestTypes.values()) requests.delete(event.requestKey)
       return
     }
     for (const session of this.enabled) this.send(session, event)
@@ -121,29 +134,17 @@ export class NetworkDomain {
     const timestamp = (event.timestampMs - performance.timeOrigin) / 1_000
     switch (event.type) {
       case 'request-started':
-        session.sendEvent('Network.requestWillBeSent', {
-          requestId: event.requestId,
-          loaderId: 'dsh-inspector-loader',
-          documentURL: 'dsh://host',
-          request: {
-            url: event.url,
-            method: event.method,
-            headers: cdpHeaders(event.headers),
-            hasPostData: event.hasBody,
-          },
-          timestamp,
-          wallTime: event.wallTimeMs / 1_000,
-          initiator: { type: 'other' },
-          type: 'Fetch',
-        })
+        this.pendingStarts.get(session)?.set(event.requestKey, event)
         return
-      case 'response-received':
+      case 'response-received': {
+        const resourceType = event.mimeType === 'text/event-stream' ? 'EventSource' : 'Fetch'
+        this.sendRequestStart(session, event.requestKey, resourceType)
         session.sendEvent('Network.responseReceived', {
           requestId: event.requestId,
           loaderId: 'dsh-inspector-loader',
           frameId: 'dsh-inspector-host-frame',
           timestamp,
-          type: 'Fetch',
+          type: resourceType,
           response: {
             url: event.url,
             status: event.status,
@@ -152,9 +153,19 @@ export class NetworkDomain {
             mimeType: event.mimeType,
             connectionReused: false,
             connectionId: 0,
-            encodedDataLength: 0,
+            encodedDataLength: resourceType === 'EventSource' ? -1 : 0,
             securityState: 'neutral',
           },
+        })
+        return
+      }
+      case 'event-source-message':
+        session.sendEvent('Network.eventSourceMessageReceived', {
+          requestId: event.requestId,
+          timestamp,
+          eventName: event.eventName,
+          eventId: event.eventId,
+          data: event.data,
         })
         return
       case 'response-data':
@@ -167,34 +178,62 @@ export class NetworkDomain {
         })
         return
       case 'request-finished':
+        this.sendRequestStart(session, event.requestKey, 'Fetch')
         session.sendEvent('Network.loadingFinished', {
           requestId: event.requestId,
           timestamp,
           encodedDataLength: event.encodedDataLength,
           dshInspectorTruncated: event.truncated,
         })
-        this.stopStreaming(event.requestKey)
+        this.stopRequest(session, event.requestKey)
         return
-      case 'request-failed':
+      case 'request-failed': {
+        this.sendRequestStart(session, event.requestKey, 'Fetch')
+        const resourceType = this.requestTypes.get(session)?.get(event.requestKey) ?? 'Fetch'
         session.sendEvent('Network.loadingFailed', {
           requestId: event.requestId,
           timestamp,
-          type: 'Fetch',
+          type: resourceType,
           errorText: event.errorText,
           canceled: event.canceled,
         })
-        this.stopStreaming(event.requestKey)
+        this.stopRequest(session, event.requestKey)
         return
+      }
       default:
         return assertNever(event)
     }
   }
 
-  private stopStreaming(requestKey: string): void {
-    for (const [session, requests] of this.streamedRequests) {
-      requests.delete(requestKey)
-      if (requests.size === 0) this.streamedRequests.delete(session)
-    }
+  private sendRequestStart(session: NetworkSink, requestKey: string, resourceType: NetworkResourceType): void {
+    const pending = this.pendingStarts.get(session)
+    const event = pending?.get(requestKey)
+    if (event === undefined) return
+    pending?.delete(requestKey)
+    this.requestTypes.get(session)?.set(requestKey, resourceType)
+    session.sendEvent('Network.requestWillBeSent', {
+      requestId: event.requestId,
+      loaderId: 'dsh-inspector-loader',
+      documentURL: 'dsh://host',
+      request: {
+        url: event.url,
+        method: event.method,
+        headers: cdpHeaders(event.headers),
+        hasPostData: event.hasBody,
+      },
+      timestamp: (event.timestampMs - performance.timeOrigin) / 1_000,
+      wallTime: event.wallTimeMs / 1_000,
+      initiator: { type: 'other' },
+      type: resourceType,
+    })
+  }
+
+  private stopRequest(session: NetworkSink, requestKey: string): void {
+    const streamed = this.streamedRequests.get(session)
+    streamed?.delete(requestKey)
+    if (streamed?.size === 0) this.streamedRequests.delete(session)
+    this.pendingStarts.get(session)?.delete(requestKey)
+    this.requestTypes.get(session)?.delete(requestKey)
   }
 }
 

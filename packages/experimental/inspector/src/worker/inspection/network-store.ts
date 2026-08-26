@@ -3,6 +3,7 @@
 import { Buffer } from 'node:buffer'
 import { FETCH_TOPICS } from '../../shared/bridge/messages/network.ts'
 import type { InspectorHeader } from '../../shared/network/observation.ts'
+import { InspectorEventSourceParser } from '../../shared/network/event-source.ts'
 import { isPlainObject } from '../../shared/json.ts'
 import type { InspectorSourceDescriptor } from '../../shared/bridge/messages/observation.ts'
 import type { IngestedInspectorRecord, InspectorRecordConsumer } from '../bridge/hub.ts'
@@ -51,6 +52,12 @@ export type NetworkStoreEvent =
     readonly byteLength: number
   }
   | NetworkEventBase & {
+    readonly type: 'event-source-message'
+    readonly eventName: string
+    readonly eventId: string
+    readonly data: string
+  }
+  | NetworkEventBase & {
     readonly type: 'request-finished'
     readonly encodedDataLength: number
     readonly truncated: boolean
@@ -62,6 +69,9 @@ export type NetworkStoreEvent =
   }
   | { readonly type: 'request-evicted'; readonly requestKey: string }
 
+type JournalNetworkEvent = Exclude<NetworkStoreEvent, {
+  readonly type: 'response-data' | 'event-source-message' | 'request-evicted'
+}>
 type ReplayableNetworkEvent = Exclude<NetworkStoreEvent, { readonly type: 'response-data' | 'request-evicted' }>
 
 interface CapturedRequest {
@@ -78,13 +88,15 @@ interface CapturedRequest {
   responseCaptureError?: string
   responseSeen: boolean
   completed: boolean
+  eventSourceParser: InspectorEventSourceParser | undefined
+  nextEventSourceId: number
 }
 
 /** Validated Network observation store independent of CDP connection state. */
 export class NetworkStore implements InspectorRecordConsumer {
   readonly topics = new Set<string>(FETCH_TOPICS)
   private readonly requests = new Map<string, CapturedRequest>()
-  private readonly journal: ReplayableNetworkEvent[] = []
+  private readonly journal: JournalNetworkEvent[] = []
   private readonly completed: string[] = []
   private readonly listeners = new Set<(event: NetworkStoreEvent) => void>()
   private journalBytes = 0
@@ -129,7 +141,26 @@ export class NetworkStore implements InspectorRecordConsumer {
    * @returns Events in observation order.
    */
   replay(): readonly ReplayableNetworkEvent[] {
-    return this.journal
+    const replay: ReplayableNetworkEvent[] = []
+    for (const event of this.journal) {
+      replay.push(event)
+      if (event.type !== 'response-received' || event.mimeType !== 'text/event-stream') continue
+      const request = this.requests.get(event.requestKey)
+      if (request === undefined) continue
+      const messages = new InspectorEventSourceParser().push(Buffer.concat(request.responseBody))
+      let eventId = 0
+      for (const message of messages) {
+        replay.push({
+          type: 'event-source-message',
+          requestKey: request.key,
+          requestId: request.requestId,
+          timestampMs: event.timestampMs,
+          ...message,
+          eventId: String(++eventId),
+        })
+      }
+    }
+    return replay
   }
 
   /**
@@ -191,6 +222,8 @@ export class NetworkStore implements InspectorRecordConsumer {
         responseBodyTruncated: false,
         responseSeen: false,
         completed: false,
+        eventSourceParser: undefined,
+        nextEventSourceId: 0,
       }
       this.requests.set(key, request)
       this.publish({
@@ -221,6 +254,10 @@ export class NetworkStore implements InspectorRecordConsumer {
       }
       case 'fetch/response':
         request.responseSeen = true
+        const mimeType = stringField(payload, 'mimeType').toLowerCase()
+        request.eventSourceParser = mimeType === 'text/event-stream'
+          ? new InspectorEventSourceParser()
+          : undefined
         this.publish({
           type: 'response-received',
           requestKey: key,
@@ -230,12 +267,23 @@ export class NetworkStore implements InspectorRecordConsumer {
           status: numberField(payload, 'status'),
           statusText: stringField(payload, 'statusText'),
           headers: headerField(payload, 'headers'),
-          mimeType: stringField(payload, 'mimeType'),
+          mimeType,
         })
         return
       case 'fetch/response-body-chunk': {
         const data = stringField(payload, 'data')
-        const byteLength = this.appendBody(request, 'response', data)
+        const bytes = this.appendBody(request, 'response', data)
+        const byteLength = bytes.byteLength
+        for (const message of request.eventSourceParser?.push(bytes) ?? []) {
+          this.emit({
+            type: 'event-source-message',
+            requestKey: key,
+            requestId: request.requestId,
+            timestampMs,
+            ...message,
+            eventId: String(++request.nextEventSourceId),
+          })
+        }
         this.emit({ type: 'response-data', requestKey: key, requestId: request.requestId, timestampMs, data, byteLength })
         return
       }
@@ -268,7 +316,7 @@ export class NetworkStore implements InspectorRecordConsumer {
     }
   }
 
-  private appendBody(request: CapturedRequest, side: 'request' | 'response', encoded: string): number {
+  private appendBody(request: CapturedRequest, side: 'request' | 'response', encoded: string): Buffer {
     const bytes = decodeBase64(encoded)
     this.evictCompletedFor(bytes.byteLength, request.key)
     const retained = bytes.subarray(0, Math.max(0, this.options.maxJournalBytes - this.journalBytes))
@@ -283,10 +331,10 @@ export class NetworkStore implements InspectorRecordConsumer {
     }
     this.journalBytes += retained.byteLength
     this.enforceRetention()
-    return bytes.byteLength
+    return bytes
   }
 
-  private complete(request: CapturedRequest, event: ReplayableNetworkEvent): void {
+  private complete(request: CapturedRequest, event: JournalNetworkEvent): void {
     if (request.completed) return
     request.completed = true
     this.publish(event)
@@ -294,7 +342,7 @@ export class NetworkStore implements InspectorRecordConsumer {
     this.enforceRetention()
   }
 
-  private publish(event: ReplayableNetworkEvent): void {
+  private publish(event: JournalNetworkEvent): void {
     this.journal.push(event)
     this.emit(event)
   }

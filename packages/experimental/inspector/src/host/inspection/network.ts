@@ -108,7 +108,7 @@ export function installFetchObserver(
       status: response.status,
       statusText: response.statusText,
       headers: headerEntries(response.headers),
-      mimeType: response.headers.get('content-type')?.split(';', 1)[0]?.trim() ?? '',
+      mimeType: response.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase() ?? '',
     })
 
     try {

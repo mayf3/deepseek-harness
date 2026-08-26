@@ -89,6 +89,50 @@ describe('Inspector Network domain', () => {
     expect(secondSend.mock.calls.findLast(call => call[0] === 'Network.dataReceived')?.[1]).toMatchObject({ data: later })
   })
 
+  it('projects and replays parsed Server-Sent Events through the CDP EventSource path', () => {
+    const liveSend = vi.fn()
+    const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
+    const network = new NetworkDomain(store)
+    network.enable({ sendEvent: liveSend })
+    store.append(source, eventStreamRecords('events'))
+
+    expect(liveSend).toHaveBeenNthCalledWith(1, 'Network.requestWillBeSent', expect.objectContaining({
+      type: 'EventSource',
+    }))
+    expect(liveSend).toHaveBeenCalledWith('Network.responseReceived', expect.objectContaining({
+      type: 'EventSource',
+    }))
+    expect(liveSend.mock.calls
+      .filter(call => call[0] === 'Network.eventSourceMessageReceived')
+      .map(call => call[1] as unknown))
+      .toEqual([
+        expect.objectContaining({ eventName: 'message', eventId: '1', data: 'first' }),
+        expect.objectContaining({ eventName: 'update', eventId: '2', data: 'second\nline' }),
+      ])
+    expect(liveSend.mock.calls.map(call => String(call[0]))).toEqual([
+      'Network.requestWillBeSent',
+      'Network.responseReceived',
+      'Network.eventSourceMessageReceived',
+      'Network.dataReceived',
+      'Network.eventSourceMessageReceived',
+      'Network.dataReceived',
+      'Network.loadingFinished',
+    ])
+
+    const replay = vi.fn()
+    network.enable({ sendEvent: replay })
+    expect(replay).toHaveBeenNthCalledWith(1, 'Network.requestWillBeSent', expect.objectContaining({
+      type: 'EventSource',
+    }))
+    expect(replay.mock.calls
+      .filter(call => call[0] === 'Network.eventSourceMessageReceived')
+      .map(call => call[1] as unknown))
+      .toEqual([
+        expect.objectContaining({ eventName: 'message', eventId: '1', data: 'first' }),
+        expect.objectContaining({ eventName: 'update', eventId: '2', data: 'second\nline' }),
+      ])
+  })
+
   it('bounds active request metadata and does not retain per-chunk events for replay', () => {
     const firstSend = vi.fn()
     const store = new NetworkStore({ maxRetainedRequests: 1, maxJournalBytes: 1_024 })
@@ -144,6 +188,50 @@ function requestRecords(localId: string, body: string): IngestedInspectorRecord[
       monotonicMs: 4,
       topic: 'fetch/end',
       payload: { requestId: localId, capturedBytes: body.length, responseBodyTruncated: false },
+    },
+  ]
+}
+
+function eventStreamRecords(localId: string): IngestedInspectorRecord[] {
+  const first = 'id: 1\ndata: first\n\n'
+  const second = 'id: 2\nevent: update\ndata: second\ndata: line\n\n'
+  return [
+    {
+      sequence: 1,
+      monotonicMs: 1,
+      topic: 'fetch/start',
+      payload: { requestId: localId, url: 'https://example.test/events', method: 'GET', headers: [], hasBody: false, wallTimeMs: 1 },
+    },
+    {
+      sequence: 2,
+      monotonicMs: 2,
+      topic: 'fetch/response',
+      payload: {
+        requestId: localId,
+        url: 'https://example.test/events',
+        status: 200,
+        statusText: 'OK',
+        headers: [['content-type', 'text/event-stream; charset=utf-8']],
+        mimeType: 'TEXT/EVENT-STREAM',
+      },
+    },
+    {
+      sequence: 3,
+      monotonicMs: 3,
+      topic: 'fetch/response-body-chunk',
+      payload: { requestId: localId, data: Buffer.from(first).toString('base64') },
+    },
+    {
+      sequence: 4,
+      monotonicMs: 4,
+      topic: 'fetch/response-body-chunk',
+      payload: { requestId: localId, data: Buffer.from(second).toString('base64') },
+    },
+    {
+      sequence: 5,
+      monotonicMs: 5,
+      topic: 'fetch/end',
+      payload: { requestId: localId, capturedBytes: first.length + second.length, responseBodyTruncated: false },
     },
   ]
 }

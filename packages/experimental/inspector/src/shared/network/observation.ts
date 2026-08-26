@@ -46,6 +46,13 @@ export interface FetchEndPayload extends FetchIdentity {
   readonly responseCaptureError?: string
 }
 
+/** One parsed Server-Sent Event independent of its CDP projection. */
+export interface InspectorEventSourceMessage {
+  readonly eventName: string
+  readonly eventId: string
+  readonly data: string
+}
+
 /** Fetch rejected before returning a Response. */
 export interface FetchErrorPayload extends FetchIdentity {
   readonly message: string
