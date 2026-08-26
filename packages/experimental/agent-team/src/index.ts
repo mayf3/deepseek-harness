@@ -34,7 +34,6 @@ export type * from './types.ts'
 export type { TeamMembership } from './roster.ts'
 export { TeamId, TeamMessageId, TeamTaskId } from './types.ts'
 export { TeamError } from './error.ts'
-export { foldTeam } from './fold.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -114,10 +113,16 @@ export class TeamService extends TypertRemoteService {
       const membership = this.roster.tryMembership(agent)
       if (membership !== undefined) this.activity.notify(membership.id)
     })
-    ctx.effect(function* (this: TeamService) {
-      yield ctx.sessionProjections.register(teamProjectionDefinition)
-      yield () => this.disposeRuntime()
-    }.bind(this), 'agentTeams.runtimeLifecycle()')
+    ctx.effect(() => {
+      const disposeProjection = ctx.root.sessionProjections.register(teamProjectionDefinition)
+      return async () => {
+        try {
+          await this.disposeRuntime()
+        } finally {
+          disposeProjection()
+        }
+      }
+    }, 'agentTeams.runtimeLifecycle()')
     for (const agent of ctx.agents.list()) this.scheduleRecovery(agent)
   }
 
