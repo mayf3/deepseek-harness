@@ -1992,6 +1992,25 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['a'.repeat(30) + 'b'.repeat(30)])
   }, 15_000)
 
+  it('rejects a new open entry once the ledger has only two bytes left', async () => {
+    // The jsonStringCostUpTo sub-2-byte guard: forged open frames drive the
+    // host ledger down to 1 byte, then a new open entry's first-fragment cap
+    // (logBudget - 1 = 0) trips the guard and truncates.
+    const { runtime } = await setup({ maxLogBytes: 64 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        "os.write(3, ('{\"type\":\"log\",\"text\":\"' + 'a' * 28 + '\",\"open\":true}\\n').encode())",
+        "os.write(3, ('{\"type\":\"log\",\"text\":\"' + 'a' * 31 + '\"}\\n').encode())",
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"x\",\"open\":true}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['a'.repeat(59), logTruncationMarker(64)])
+  }, 15_000)
+
   it('truncates when the closing frame of a merged entry overflows the budget', async () => {
     // The merged entry's billed-once cost: an open fragment that nearly
     // exhausts the budget, then a closing frame whose content no longer fits —
