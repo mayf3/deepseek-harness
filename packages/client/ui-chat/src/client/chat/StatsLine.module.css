@@ -1,5 +1,6 @@
-/* Session stats row: 12/20 tertiary text under the flow, aligned to the
-   shared message column axis (--dsh-chat-content-width). */
+/* Session stats row: 13/20 tertiary text (the secondary content tier) under
+   the flow, aligned to the shared message column axis
+   (--dsh-chat-content-width). */
 
 .root {
   /* Block, not flex: text-overflow only elides a block's inline content, so

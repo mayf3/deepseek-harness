@@ -24,7 +24,7 @@ The conversation's body text size was fixed (14px after the 0.875 markdown-ladde
 
 **Scaling via a multiplier (`em`/percentage) instead of a px delta.** Rejected: multiplying spreads the 12–17px range disproportionately across the ladder (21px h1 would swing ~18–25.5px) and produces fractional line heights; the fixed px shift keeps every step integer and the hierarchy's px gaps intact.
 
-**Scaling every font token (small, code).** Rejected: those variants are dense by design; at −2 the small ladder would hit 10px and code 9px, below legibility. The table variants instead join the secondary tier, whose 13px floor keeps them legible at every setting.
+**Scaling every font token (small, code).** Rejected: those variants are dense by design; at −2 the small ladder would hit 10px and code 9px, below legibility. The table variants instead join the secondary tier, bottoming out at 11px at the 12px setting — the same size think text reaches there.
 
 ## Consequences
 

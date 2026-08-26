@@ -1,8 +1,10 @@
 /**
  * WorkflowRunPanel's font-size-axis adoption as CSS text. jsdom has no
  * layout, so these read the declarations that make the run/phase headers and
- * the expanded member rows follow the Settings font-size preference through
- * --dsh-content-font-size / --dsh-content-font-delta.
+ * the expanded member rows follow the Settings font-size preference: member
+ * labels at the body size (--dsh-content-font-size / --dsh-content-font-delta),
+ * the chrome around them on the secondary tier
+ * (--dsh-content-font-size-secondary / --dsh-content-font-delta-secondary).
  */
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
