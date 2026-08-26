@@ -142,7 +142,7 @@ describe('ScheduleCatalogAction rows', () => {
     expect(rows[1]?.textContent).toContain('in 5 minutes')
     expect(rows[2]?.textContent).toContain('Once')
     expect(rows[2]?.textContent).toContain('in 1 hour')
-    expect(rows[2]?.textContent).toContain(formatScheduleLocalTime(at.scheduledAt))
+    expect(rows[2]?.textContent).toContain(formatScheduleLocalTime(at.scheduledAt, 'en'))
     expect(document.querySelector('img')).toBeNull()
     const text = screen.getByRole('list').textContent ?? ''
     expect(text).not.toContain('hidden-id')
