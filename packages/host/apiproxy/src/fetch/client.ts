@@ -13,8 +13,7 @@ import { RpcId } from '../api/rpc.ts'
 import type { Wire } from '../api/rpc.schema.ts'
 import { serverResponseSchema } from '../api/rpc.schema.ts'
 import {
-  hostCreateDirectoryValueSchema, hostDescribeValueSchema,
-  hostListDirectoryValueSchema, hostOpenPathValueSchema, hostPickDirectoryValueSchema,
+  hostDescribeValueSchema, hostOpenPathValueSchema,
 } from '../api/host.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
 import {
@@ -44,9 +43,6 @@ import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSc
 export interface IApiClient {
   host: {
     describe(payload: RequestPayload<'host.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.describe'>>>
-    pickDirectory(payload: RequestPayload<'host.pickDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.pickDirectory'>>>
-    listDirectory(payload: RequestPayload<'host.listDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.listDirectory'>>>
-    createDirectory(payload: RequestPayload<'host.createDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.createDirectory'>>>
     openPath(payload: RequestPayload<'host.openPath'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.openPath'>>>
   }
   skills: {
@@ -80,9 +76,6 @@ export interface IApiClient {
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
   'host.describe': hostDescribeValueSchema,
-  'host.pickDirectory': hostPickDirectoryValueSchema,
-  'host.listDirectory': hostListDirectoryValueSchema,
-  'host.createDirectory': hostCreateDirectoryValueSchema,
   'host.openPath': hostOpenPathValueSchema,
   'skill.list': skillListValueSchema,
   'agentPreset.openDocument': agentPresetOpenDocumentValueSchema,
@@ -102,9 +95,6 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
 const DEFAULT_TIMEOUT_MS = 30_000
 
-/** Whether a unary call uses the transport health deadline or only caller/connection cancellation. */
-type UnaryTimeoutPolicy = 'default' | 'caller-signal-only'
-
 /** URL base for in-process handler injection (fake authority, opencode precedent). */
 const INTERNAL_BASE = 'http://dsh.internal'
 
@@ -122,7 +112,7 @@ export abstract class AbstractApiClient implements IApiClient {
   private flushScheduled = false
   private readonly envelopeListeners = new Set<(batch: readonly RpcMessage[]) => void>()
 
-  /** @param timeoutMs - timeout for bounded unary calls; user-paced calls do not use it. */
+  /** @param timeoutMs - timeout for unary calls. */
   constructor(protected readonly timeoutMs: number = DEFAULT_TIMEOUT_MS) {}
 
   /** Transport aspect: browser fetch, injected handler.fetch, IPC bridge, ... */
@@ -178,24 +168,21 @@ export abstract class AbstractApiClient implements IApiClient {
 
   /**
    * Shared POST leg of unary calls: JSON body,
-   * optional default timeout merged with the caller's external signal, non-2xx → transport throw.
+   * default timeout merged with the caller's external signal, non-2xx → transport throw.
    */
   private async postJson(
     path: string,
     body: ClientRequest,
     signal: AbortSignal | undefined,
-    timeoutPolicy: UnaryTimeoutPolicy = 'default',
   ): Promise<Response> {
-    const requestSignal = timeoutPolicy === 'default'
-      ? signal === undefined
-        ? AbortSignal.timeout(this.timeoutMs)
-        : AbortSignal.any([AbortSignal.timeout(this.timeoutMs), signal])
-      : signal
+    const requestSignal = signal === undefined
+      ? AbortSignal.timeout(this.timeoutMs)
+      : AbortSignal.any([AbortSignal.timeout(this.timeoutMs), signal])
     const response = await this.doFetch(new URL(path, this.resolveBase()), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      ...requestSignal === undefined ? {} : { signal: requestSignal },
+      signal: requestSignal,
     })
     if (!response.ok) throw new Error(`transport failure for ${path}: HTTP ${response.status}`)
     return response
@@ -210,11 +197,10 @@ export abstract class AbstractApiClient implements IApiClient {
     method: K,
     payload: RequestPayload<K>,
     signal?: AbortSignal,
-    timeoutPolicy: UnaryTimeoutPolicy = 'default',
   ): Promise<RpcResponse<ResponseValue<K>>> {
     const message: ClientRequest = { type: 'client-request', rpcId: this.mintRpcId(), method, payload }
     this.onEnvelope(message)
-    const response = await this.postJson(`/api/${method}`, message, signal, timeoutPolicy)
+    const response = await this.postJson(`/api/${method}`, message, signal)
     const full = serverResponseSchema.parse(await response.json())
     this.onEnvelope(full)
     if (full.rpcId !== message.rpcId) throw new Error(`rpcId mismatch for ${method}: sent ${message.rpcId}, got ${full.rpcId}`)
@@ -229,13 +215,6 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly host: IApiClient['host'] = {
     describe: (payload, signal) => this.callUnary('host.describe', payload, signal),
-    // A native system dialog is user-paced and may legitimately stay open
-    // longer than the normal unary deadline. Caller/connection aborts remain.
-    pickDirectory: (payload, signal) => this.callUnary(
-      'host.pickDirectory', payload, signal, 'caller-signal-only',
-    ),
-    listDirectory: (payload, signal) => this.callUnary('host.listDirectory', payload, signal),
-    createDirectory: (payload, signal) => this.callUnary('host.createDirectory', payload, signal),
     openPath: (payload, signal) => this.callUnary('host.openPath', payload, signal),
   }
 

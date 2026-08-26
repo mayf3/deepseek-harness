@@ -15,9 +15,7 @@ import { RpcId } from '../api/rpc.ts'
 import type { Wire } from '../api/rpc.schema.ts'
 import { clientRequestSchema } from '../api/rpc.schema.ts'
 import {
-  hostCreateDirectoryRequestSchema, hostDescribeRequestSchema,
-  hostListDirectoryRequestSchema, hostOpenPathRequestSchema,
-  hostPickDirectoryRequestSchema,
+  hostDescribeRequestSchema, hostOpenPathRequestSchema,
 } from '../api/host.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
 import {
@@ -50,9 +48,6 @@ type UnaryRoutes = {
 
 const UNARY_ROUTES: UnaryRoutes = {
   'host.describe': { schema: hostDescribeRequestSchema, invoke: (api, r) => api.host.describe(r) },
-  'host.pickDirectory': { schema: hostPickDirectoryRequestSchema, invoke: (api, r, signal) => api.host.pickDirectory(r, signal) },
-  'host.listDirectory': { schema: hostListDirectoryRequestSchema, invoke: (api, r, signal) => api.host.listDirectory(r, signal) },
-  'host.createDirectory': { schema: hostCreateDirectoryRequestSchema, invoke: (api, r) => api.host.createDirectory(r) },
   'host.openPath': { schema: hostOpenPathRequestSchema, invoke: (api, r, signal) => api.host.openPath(r, signal) },
   'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
   'agentPreset.openDocument': { schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal) },

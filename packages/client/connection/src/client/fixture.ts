@@ -3314,42 +3314,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       describe: request => ok(request, {
         version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
       }),
-      // Deterministic native pick: the keyless lanes drive the full
-      // pick-then-adopt path without an OS chooser (design-mock content,
-      // same tree the browse primitives serve).
-      pickDirectory: request => ok(request, { path: `${FIXTURE_HOME}/Documents/project` }),
-      listDirectory: (request) => {
-        const target = request.payload.path ?? FIXTURE_HOME
-        const children = childrenOf(target)
-        if (children === undefined) {
-          return err(request, { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } })
-        }
-        return ok(request, {
-          path: target,
-          home: FIXTURE_HOME,
-          crumbs: crumbsOf(target),
-          entries: [...children].sort((a, b) => a.localeCompare(b))
-            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
-          // The fixture tree is tiny; no level ever reaches a backend bound.
-          truncated: false,
-        })
-      },
-      createDirectory: (request) => {
-        const parent = request.payload.path
-        const children = childrenOf(parent)
-        if (children === undefined) {
-          return err(request, { code: 'directory-create-failed', message: `missing parent ${parent}`, details: { path: parent } })
-        }
-        // Same root special case as listDirectory's entry paths: a plain join
-        // under '/' would mint '//name' and fork the tree's identity.
-        const target = parent === '/' ? `/${request.payload.name}` : `${parent}/${request.payload.name}`
-        if (children.includes(request.payload.name)) {
-          return err(request, { code: 'directory-exists', message: `${target} already exists`, details: { path: target } })
-        }
-        directoryTree.set(parent, [...children, request.payload.name])
-        directoryTree.set(target, [])
-        return ok(request, { path: target })
-      },
       openPath: request => ok(request, { opened: true as const }),
     },
     agentPresets: {
@@ -3652,9 +3616,6 @@ export class FixtureApiClient extends AbstractApiClient {
   ): Promise<RpcResponse<unknown>> {
     switch (method) {
       case 'host.describe': return this.api.host.describe(request)
-      case 'host.pickDirectory': return this.api.host.pickDirectory(request, new AbortController().signal)
-      case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
-      case 'host.createDirectory': return this.api.host.createDirectory(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
       case 'skill.list': return this.api.skills.list(request)
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)

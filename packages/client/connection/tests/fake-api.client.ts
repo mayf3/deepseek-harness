@@ -50,30 +50,13 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({
       version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
     }))
-  onPickDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string | null }>> =
-    () => Promise.resolve(ok({ path: null }))
   onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
     () => Promise.resolve(ok({ opened: true as const }))
-
-  onListDirectory: (payload: unknown) => Promise<RpcResponse<{
-    path: string
-    home: string
-    crumbs: { name: string; path: string; hidden: boolean }[]
-    entries: { name: string; path: string; hidden: boolean }[]
-    truncated: boolean
-  }>> =
-    () => Promise.resolve(ok({ path: '/home/fake', home: '/home/fake', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false }))
-
-  onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
-    () => Promise.resolve(ok({ path: '/home/fake/new' }))
 
   private readonly generationConns: StreamConn[] = []
 
   readonly host: IApiClient['host'] = {
     describe: payload => this.record('host.describe', payload, this.onDescribe(payload)),
-    pickDirectory: payload => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
-    listDirectory: payload => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
-    createDirectory: payload => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: payload => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 
