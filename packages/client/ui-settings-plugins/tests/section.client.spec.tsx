@@ -337,15 +337,26 @@ describe('SubagentModelSelectionCard', () => {
   it('groups available adapter candidates by provider', () => {
     const actions = renderSubagentModelSelection({
       enabled: true,
-      candidates: [{
-        key: 'alpha\0fast',
-        provider: 'alpha',
-        model: 'fast',
-        providerName: 'Alpha API',
-        modelName: 'Fast',
-        available: true,
-        selected: true,
-      }],
+      candidates: [
+        {
+          key: 'alpha\0fast',
+          provider: 'alpha',
+          model: 'fast',
+          providerName: 'Alpha API',
+          modelName: 'Fast',
+          available: true,
+          selected: true,
+        },
+        {
+          key: 'alpha\0deep',
+          provider: 'alpha',
+          model: 'deep',
+          providerName: 'Alpha API',
+          modelName: 'Deep',
+          available: true,
+          selected: false,
+        },
+      ],
       catalogStatus: 'ready',
     })
     fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
@@ -353,7 +364,9 @@ describe('SubagentModelSelectionCard', () => {
     expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
     expect(screen.getByText('Alpha API', { exact: true })).toBeTruthy()
     fireEvent.click(screen.getByRole('checkbox', { name: /Fast/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /Deep/ }))
     expect(actions.toggleModel).toHaveBeenCalledWith('alpha\0fast')
+    expect(actions.toggleModel).toHaveBeenCalledWith('alpha\0deep')
   })
 
   it('renders directory progress, failures, unavailable routes, and validation', () => {
