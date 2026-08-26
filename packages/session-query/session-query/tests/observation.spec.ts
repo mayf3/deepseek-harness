@@ -190,7 +190,8 @@ describe('SessionObservationReader', () => {
     await ctx.plugin(SessionStore)
     ctx.provide('sessionPersistence', {
       // Exercise containment of a backend that violates the Error rejection convention.
-      borrowSession: () => Promise.reject('offline'), // oxlint-disable-line typescript/prefer-promise-reject-errors
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario under test
+      borrowSession: () => Promise.reject('offline'),
     } as never)
 
     await expect(new SessionObservationReader(ctx).read(SessionId('failed'))).rejects.toMatchObject({
