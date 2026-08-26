@@ -1,10 +1,22 @@
+.permission {
+  display: grid;
+  gap: 6px;
+  padding: 12px 0;
+}
+
 .toggleRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--dsw-alias-label-secondary);
+}
+
+.toggleLabel {
+  flex: 1;
+  min-width: 0;
 }
 
 .switch {

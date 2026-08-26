@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -69,7 +69,7 @@ function renderConfigurable(namespaces: string[], cards: Record<string, string> 
   render(<ConfigurablePluginsTab {...props} />)
 }
 
-function renderBash(state: Partial<BashCardState> = {}) {
+function renderBashCard(state: Partial<BashCardState> = {}) {
   const store = createSnapshotStore<BashCardState>({
     ...settled,
     timeoutMs: field('60000'),
@@ -79,7 +79,11 @@ function renderBash(state: Partial<BashCardState> = {}) {
   const actions = cardActions()
   const props = { ...actions, t, useBashCard: bindSnapshotSelector(store) } as unknown as BashCardProps
   render(<BashCard {...props} />)
-  return actions
+  return { actions, store }
+}
+
+function renderBash(state: Partial<BashCardState> = {}) {
+  return renderBashCard(state).actions
 }
 
 function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardState> = {}) {
@@ -319,6 +323,30 @@ describe('BashCard', () => {
     fireEvent.click(screen.getByText(en.bashTitle))
 
     expect(screen.queryByLabelText(en.bashTimeoutMs)).toBeNull()
+  })
+
+  it('collapses after a successful save settles', () => {
+    const { actions, store } = renderBashCard({ dirty: true })
+    fireEvent.click(screen.getByText(en.bashTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+    expect(actions.save).toHaveBeenCalledOnce()
+
+    act(() => { store.set({ ...store.getSnapshot(), saving: true }) })
+    act(() => { store.set({ ...store.getSnapshot(), dirty: false, saving: false }) })
+
+    expect(screen.queryByLabelText(en.bashTimeoutMs)).toBeNull()
+  })
+
+  it('keeps a failed save open', () => {
+    const { store } = renderBashCard({ dirty: true })
+    fireEvent.click(screen.getByText(en.bashTitle))
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+
+    act(() => { store.set({ ...store.getSnapshot(), saving: true }) })
+    act(() => { store.set({ ...store.getSnapshot(), failed: true, saving: false }) })
+
+    expect(screen.getByLabelText(en.bashTimeoutMs)).toBeTruthy()
+    expect(screen.getByText(en.saveFailed)).toBeTruthy()
   })
 })
 

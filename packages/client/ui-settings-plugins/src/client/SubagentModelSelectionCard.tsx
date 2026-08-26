@@ -70,24 +70,28 @@ export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProp
       onSave={props.save}
       onDiscard={props.discard}
     >
-      <div className={css.toggleRow}>
-        <span>{t('subagentModelSelectionToggle')}</span>
-        <button
-          type="button"
-          role="switch"
-          aria-checked={state.enabled}
-          aria-label={t('subagentModelSelectionToggle')}
-          className={clsx(css.switch, state.enabled && css.switchOn)}
-          disabled={!state.writable || state.saving}
-          onClick={props.toggleEnabled}
-        >
-          <span className={css.thumb} />
-        </button>
+      <div className={css.permission}>
+        <div className={css.toggleRow}>
+          <span className={css.toggleLabel}>{t('subagentModelSelectionToggle')}</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={state.enabled}
+            aria-label={t('subagentModelSelectionToggle')}
+            className={clsx(css.switch, state.enabled && css.switchOn)}
+            disabled={!state.writable || state.saving}
+            onClick={props.toggleEnabled}
+          >
+            <span className={css.thumb} />
+          </button>
+        </div>
+        <p className={css.hint}>
+          {t(state.enabled ? 'subagentModelSelectionChoose' : 'subagentModelSelectionOff')}
+        </p>
       </div>
       {state.enabled
         ? (
           <div className={css.selection}>
-            <p className={css.hint}>{t('subagentModelSelectionChoose')}</p>
             {state.catalogStatus === 'loading'
               ? <p className={css.notice} role="status">{t('subagentModelSelectionLoading')}</p>
               : null}
@@ -130,7 +134,7 @@ export function SubagentModelSelectionCard(props: SubagentModelSelectionCardProp
             {state.invalid ? <p className={css.invalid}>{t('subagentModelSelectionRequired')}</p> : null}
           </div>
         )
-        : <p className={css.hint}>{t('subagentModelSelectionOff')}</p>}
+        : null}
     </PluginCard>
   )
 }
