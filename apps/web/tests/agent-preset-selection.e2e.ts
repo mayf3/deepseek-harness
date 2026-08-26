@@ -256,6 +256,10 @@ describe('web e2e: agent-preset selection', () => {
     // remains outside every preset.
     expect(onMinimal.some(option => option.startsWith('goal'))).toBe(false)
     expect(onMinimal.some(option => option.startsWith('model'))).toBe(true)
+    // Escape closes the menu before clearing: Playwright's fill('') leaves no
+    // caret, so trigger tracking never sees the emptied draft, and the open
+    // full-width menu would swallow the preset-seat click below.
+    await page.keyboard.press('Escape')
     await composer.fill('')
 
     // Switching back up reaches the host at all — the chip compares the pick
@@ -273,6 +277,7 @@ describe('web e2e: agent-preset selection', () => {
     expect(onStandard.some(option => option.startsWith('compact'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('goal'))).toBe(true)
     expect(onStandard.some(option => option.startsWith('plan'))).toBe(true)
+    await page.keyboard.press('Escape')
     await composer.fill('')
   }, 90_000)
 
