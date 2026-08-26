@@ -300,8 +300,16 @@ class _LogStream(io.TextIOBase):
                 # NEW entry. While an `open` entry is accumulating, the closing
                 # line is that entry's TAIL: its cheap bound is the content
                 # length alone, matching `_push_locked`'s open-aware bound.
-                # Charging +3 here truncates an exact-fit merged tail or
-                # over-rejects it, then flushes a truncated prefix instead.
+                # This bound's observable behavior is invariant under the
+                # overhead either way: when the +3 form trips and the open-aware
+                # form does not (pending + newline in [remaining - 2, remaining]),
+                # _push_bounded_prefix re-slices the SAME line text (the extra
+                # slice `text[:newline]` carries no newline) and _push_locked
+                # admits it under the same open-aware billing, byte for byte.
+                # The open-aware form only keeps _push_bounded_prefix's "certain
+                # to reject" precondition true, which is exactly what the scan
+                # pre-check below does NOT preserve (its slice carries the
+                # newline, so push genuinely rejects and truncates).
                 overhead = 3 if not self._logs._open_started else 0
                 if self._pending_chars + newline + overhead > self._logs.remaining:
                     # The reconstructed first line cannot fit the ledger, so
