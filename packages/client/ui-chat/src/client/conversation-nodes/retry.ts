@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  ConversationLocation, ConversationNodeDefinition, ModelRetryNode,
+  ConversationLocation, ConversationMatch, ConversationNodeDefinition, ModelRetryNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import type { RetryChatData } from '../contract/chat-nodes.ts'
@@ -20,7 +20,7 @@ export interface RetryState {
   readonly attempts: readonly ModelRetryNode[]
 }
 
-function scheduledNode(match: Parameters<ConversationNodeDefinition['start']>[1]): ModelRetryNode | undefined {
+function scheduledNode(match: ConversationMatch): ModelRetryNode | undefined {
   if (match.event.type !== 'llm/retry') return undefined
   return {
     kind: 'model-retry',

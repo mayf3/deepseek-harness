@@ -43,7 +43,7 @@ function row(record: StorageRecord): EventRow {
     data: bound.data,
     source_event_seqs: bound.sourceEventSeqs,
     surface_op: bound.surfaceOp,
-    ignorable: bound.ignorable,
+    is_packed: bound.isPacked,
   }
 }
 
@@ -160,7 +160,7 @@ describe('SQLite compression', () => {
     expect(() => decodeStorageRecord(record)).toThrow(/malformed .* storage row/)
   })
 
-  it('decodes the schema-17 row vocabulary without another package codec', () => {
+  it('decodes the schema-18 row vocabulary without another package codec', () => {
     const fixture: EventRow = {
       seq: 7,
       type: 'text-chunks',
@@ -168,7 +168,7 @@ describe('SQLite compression', () => {
       data: JSON.stringify({ turn: 2, step: 3, index: 1, dt: [2, -1], texts: ['a', 'b', 'c'] }),
       source_event_seqs: null,
       surface_op: null,
-      ignorable: 0,
+      is_packed: 1,
     }
     expect(decodeRow(fixture)).toEqual([
       { ...chunk(7, 'a'), time: 90, data: { turn: 2, step: 3, chunk: { type: 'text-delta', index: 1, text: 'a' } } },
@@ -192,22 +192,21 @@ describe('SQLite compression', () => {
 
   it('rejects the packed discriminator on a scalar event type', () => {
     const scalar = row({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } })
-    expect(() => decodeRow({ ...scalar, ignorable: 0 }))
+    expect(() => decodeRow({ ...scalar, is_packed: 1 }))
       .toThrow(/packed discriminator requires a chunk tag/)
   })
 
   it.each(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])(
-    'preserves an ignorable logical event named %s as a scalar row',
+    'preserves a logical event named %s as a scalar row',
     (type) => {
       const logical = {
         type,
         seq: 0,
         time: 1,
         data: { future: true },
-        ignorable: true,
       } as unknown as SessionEvent
       const physical = row(logical)
-      expect(physical.ignorable).toBe(1)
+      expect(physical.is_packed).toBe(0)
       expect(decodeRow(physical)).toEqual([logical])
     },
   )
@@ -288,7 +287,7 @@ describe('SQLite compression', () => {
       data: ' '.repeat(MAX_PACKED_DATA_BYTES + 1),
       source_event_seqs: null,
       surface_op: null,
-      ignorable: 0,
+      is_packed: 1,
     }
     expect(() => decodeRow(oversized)).toThrow(/data exceeds/)
   })
@@ -308,7 +307,7 @@ describe('SQLite compression', () => {
       data: zstdCompressSync(serialized),
       source_event_seqs: null,
       surface_op: null,
-      ignorable: 0,
+      is_packed: 1,
     }
     expect(() => decodeRow(oversized)).toThrow(/Buffer larger than/)
   })
@@ -350,7 +349,7 @@ describe('SQLite compression', () => {
       data: JSON.stringify({ turn: 1, step: 1, index: 0, dt: [], texts: ['a', 'b'] }),
       source_event_seqs: null,
       surface_op: null,
-      ignorable: 0,
+      is_packed: 1,
     }
     expect(scanRows([malformed])).toEqual({ preserved: [], tornFrom: 0 })
   })

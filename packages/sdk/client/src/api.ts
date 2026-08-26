@@ -8,7 +8,7 @@
 
 import { randomUUID } from 'node:crypto'
 import { resolve } from 'node:path'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, TurnEndReason } from '@deepseek-ai/dsh-session'
 import { createProcessHarnessClient, HarnessClient, isRecord, SdkProtocolError } from './client.ts'
 import type { RuntimeProcessOptions } from './launch.ts'
 import type { ContentBlock, DeepSeekHarnessOptions, HarnessNotification, RunResult, SdkPromptContentBlock } from './types.ts'
@@ -25,11 +25,12 @@ export class DeepSeekHarness implements AsyncDisposable {
   private readonly cwd: string
   private readonly provider: string
   private readonly model: string
+  private readonly reasoningEffort: DeepSeekHarnessOptions['reasoningEffort']
   private readonly maxTokens: number | undefined
   private initialized: Promise<void> | undefined
   private closed = false
 
-  /** @param options - dsh launch configuration plus the session route. */
+  /** @param options - dsh launch configuration plus the session route, effort, and output cap. */
   constructor(options?: DeepSeekHarnessOptions)
   constructor(options: DeepSeekHarnessOptions = {}, clientFactory?: () => HarnessClient) {
     this.createClient = clientFactory ?? (() => new HarnessClient(options))
@@ -40,13 +41,15 @@ export class DeepSeekHarness implements AsyncDisposable {
     this.cwd = resolve(options.cwd ?? options.processCwd ?? process.cwd())
     this.provider = options.provider ?? 'deepseek-official'
     this.model = options.model ?? 'deepseek-v4-flash'
+    this.reasoningEffort = options.reasoningEffort
     this.maxTokens = options.maxTokens
   }
 
   /**
    * The underlying JSON-RPC client (exposed for low-level access). A failed
-   * handshake reaps its runtime and swaps in a fresh instance, so do not
-   * cache this across a failed {@link start}.
+   * handshake swaps in a fresh instance only after cleanup proves the runtime
+   * exited; cleanup failure retains this client, so do not cache it across a
+   * failed {@link start}.
    * @returns the client currently owning the runtime subprocess.
    */
   get client(): HarnessClient {
@@ -55,9 +58,12 @@ export class DeepSeekHarness implements AsyncDisposable {
 
   /**
    * Start the subprocess and perform the `initialize` handshake once. On
-   * failure the runtime is reaped and a fresh client replaces it
-   * (`HarnessClient.close` is permanent), so a later call retries with a new
-   * subprocess — unless {@link close} already ended this harness.
+   * failure, successful SDK-owned cleanup reaps the runtime and installs a
+   * fresh client (`HarnessClient.close` is permanent), so a later call retries
+   * with a new subprocess unless {@link close} already ended this harness. If
+   * cleanup also fails, rejects with an `AggregateError` whose ordered errors
+   * preserve both causes and retains the failed client rather than spawning
+   * alongside a process whose exit was not proved.
    * @returns settlement of the (memoized) handshake.
    */
   start(): Promise<void> {
@@ -68,11 +74,19 @@ export class DeepSeekHarness implements AsyncDisposable {
           cwd: this.cwd,
           provider: this.provider,
           model: this.model,
+          ...this.reasoningEffort === undefined ? {} : { reasoningEffort: this.reasoningEffort },
           ...this.maxTokens === undefined ? {} : { maxTokens: this.maxTokens },
         })
       } catch (error) {
         this.initialized = undefined
-        await this.clientInstance.close()
+        try {
+          await this.clientInstance.close()
+        } catch (cleanupError: unknown) {
+          throw new AggregateError(
+            [error, cleanupError],
+            'DeepSeek Harness initialization and cleanup failed',
+          )
+        }
         if (!this.closed) this.clientInstance = this.createClient()
         throw error
       }
@@ -219,6 +233,33 @@ export function normalizeInput(input: string | SdkPromptContentBlock[]): SdkProm
   return typeof input === 'string' ? [{ type: 'text', text: input }] : input
 }
 
+/** Validate the provider-read fields of one wire turn-end reason. */
+function validatedTurnEndReason(value: unknown): TurnEndReason {
+  if (!isRecord(value) || typeof value.kind !== 'string') {
+    throw new SdkProtocolError(`turn/end carried no reason envelope: ${JSON.stringify(value)}`)
+  }
+  if (value.kind === 'aborted') {
+    if (!isRecord(value.reason) || typeof value.reason.kind !== 'string') {
+      throw new SdkProtocolError(`turn/end carried a malformed aborted reason: ${JSON.stringify(value)}`)
+    }
+    switch (value.reason.kind) {
+      case 'user':
+      case 'parent':
+      case 'disposed':
+      case 'legacy':
+        break
+      case 'hook':
+        if (typeof value.reason.reason !== 'string') {
+          throw new SdkProtocolError(`turn/end carried a malformed hook abort reason: ${JSON.stringify(value)}`)
+        }
+        break
+      default:
+        throw new SdkProtocolError(`turn/end carried an unknown abort reason: ${JSON.stringify(value)}`)
+    }
+  }
+  return value as unknown as TurnEndReason
+}
+
 /** Validate the fields in a wire `session.event` envelope before returning the typed result. */
 function validatedSessionEvent(value: unknown): SessionEvent {
   if (!isRecord(value) || typeof value.type !== 'string') {
@@ -233,6 +274,13 @@ function validatedSessionEvent(value: unknown): SessionEvent {
     if (!Array.isArray(content) || !content.every(block => isRecord(block) && typeof block.type === 'string')) {
       throw new SdkProtocolError(`assistant/message event carried malformed content: ${JSON.stringify(value)}`)
     }
+  }
+  if (value.type === 'turn/end') {
+    const data = isRecord(value.data) ? value.data : undefined
+    if (data === undefined) {
+      throw new SdkProtocolError(`turn/end event carried malformed data: ${JSON.stringify(value)}`)
+    }
+    validatedTurnEndReason(data.reason)
   }
   return value as unknown as SessionEvent
 }
