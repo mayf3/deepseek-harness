@@ -134,7 +134,7 @@ describe('CI workflow', () => {
     ))
     const nativeTestCommand = nativeTestCommands.map(step => step.run).join('\n')
     expect(nativeTestCommand).toContain('--no-file-parallelism')
-    expect(nativeTestCommand).toContain('--testTimeout 30000')
+    expect(nativeTestCommand).toContain('--testTimeout 90000')
     expect(nativeTestCommand).toContain('tool-pwsh/tests/loader.spec.ts')
     expect(nativeTestCommand).toContain('workflow-worker-thread.spec.ts')
 

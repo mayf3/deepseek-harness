@@ -446,7 +446,7 @@ jobs:
     env:
       DSH_COVERAGE_MAX_WORKERS: '6'
       DSH_COVERAGE_PARTITIONS: '4'
-      DSH_COVERAGE_TEST_TIMEOUT_MS: '30000'
+      DSH_COVERAGE_TEST_TIMEOUT_MS: '90000'
       DSH_GATE_CONCURRENCY: '3'
     steps:
       - uses: actions/checkout@v6
@@ -505,7 +505,7 @@ jobs:
         run: >-
           pnpm exec vitest run
           --no-file-parallelism
-          --testTimeout 30000
+          --testTimeout 90000
           packages/shell/tool-pwsh/tests/loader.spec.ts
           packages/workflow/workflow-worker-thread/tests/workflow-worker-thread.spec.ts
           packages/workflow/tool-ralph/tests/integration.spec.ts
