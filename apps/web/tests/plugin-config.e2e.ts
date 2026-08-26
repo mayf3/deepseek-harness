@@ -103,24 +103,29 @@ describe('web e2e: plugin configuration section', () => {
     await firstModel.check()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
 
-    await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('true')
+    const expandSubagent = dialog.getByRole('button', { name: '展开设置: Subagent' })
+    await expandSubagent.waitFor({ timeout: 5_000 })
     await expect.poll(async () => (await settingsDocument()).includes('subagent-model-selection:'), { timeout: 10_000 })
       .toBe(true)
     expect(await settingsDocument()).toContain('enabled: true')
     expect(await settingsDocument()).toContain('allowedModels:')
     expect(await settingsDocument()).toContain('provider:')
     expect(await settingsDocument()).toContain('model:')
+    await expandSubagent.click()
+    await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('true')
     await expect.poll(() => dialog.getByRole('button', { name: '保存', exact: true }).isDisabled()).toBe(true)
     expect(await dialog.getByText('未保存', { exact: true }).count()).toBe(0)
 
     await toggle.click()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
-    await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('false')
+    await expandSubagent.waitFor({ timeout: 5_000 })
     await expect.poll(async () => (await settingsDocument()).includes('enabled: false'), { timeout: 10_000 })
       .toBe(true)
     expect(await settingsDocument()).toContain('allowedModels:')
     expect(await settingsDocument()).toContain('provider:')
     expect(await settingsDocument()).toContain('model:')
+    await expandSubagent.click()
+    await expect.poll(() => toggle.getAttribute('aria-checked'), { timeout: 5_000 }).toBe('false')
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
@@ -145,6 +150,9 @@ describe('web e2e: plugin configuration section', () => {
 
     await expect.poll(async () => (await settingsDocument()).includes('timeoutMs: 12000'), { timeout: 10_000 })
       .toBe(true)
+    const expandTerminal = dialog.getByRole('button', { name: '展开设置: 终端' })
+    await expandTerminal.waitFor({ timeout: 5_000 })
+    await expandTerminal.click()
     // Presence in the user layer is what the badge reports, and the reset is
     // offered only for a field that has one.
     await expect.poll(() => dialog.getByText('已覆盖').count(), { timeout: 5_000 }).toBe(1)
@@ -203,6 +211,9 @@ describe('web e2e: plugin configuration section', () => {
 
     await expect.poll(async () => (await settingsDocument()).includes('timeoutMs'), { timeout: 10_000 })
       .toBe(false)
+    const expandTerminal = dialog.getByRole('button', { name: '展开设置: 终端' })
+    await expandTerminal.waitFor({ timeout: 5_000 })
+    await expandTerminal.click()
     expect(await timeout.inputValue()).toBe('60000')
     expect(await dialog.getByText('已覆盖').count()).toBe(0)
     expect(tripwire.pageErrors).toEqual([])
