@@ -936,7 +936,7 @@ async function continueConversation(
     readonly checkpointInterval?: number
   },
 ): Promise<ConversationReport> {
-  const composer = world.page.locator('textarea:enabled').last()
+  const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
   await composer.waitFor({ timeout: 15_000 })
   const retainedBefore = await retainedBrowserState(cdp, world.page)
   const checkpoints: RetainedCheckpoint[] = [{ turns: options.startingTurns, state: retainedBefore }]
@@ -947,8 +947,8 @@ async function continueConversation(
     const spec = options.turnSpec(index)
     const composerFill = await measure(cdp, async () => {
       await composer.fill(spec.prompt)
-      await expect.poll(() => composer.inputValue()).toBe(spec.prompt)
-      return (await composer.inputValue()).length
+      await expect.poll(() => composer.textContent()).toBe(spec.prompt)
+      return ((await composer.textContent()) ?? '').length
     })
     expect(composerFill.value).toBe(spec.prompt.length)
 
@@ -1064,11 +1064,11 @@ async function measurePostSoakUserRender(
   if (spec.toolResultMarker !== undefined) {
     throw new Error('post-soak render probe must remain a text-only turn')
   }
-  const composer = world.page.locator('textarea:enabled').last()
+  const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
   const composerFill = await measure(cdp, async () => {
     await composer.fill(spec.prompt)
-    await expect.poll(() => composer.inputValue()).toBe(spec.prompt)
-    return (await composer.inputValue()).length
+    await expect.poll(() => composer.textContent()).toBe(spec.prompt)
+    return ((await composer.textContent()) ?? '').length
   })
   expect(composerFill.value).toBe(spec.prompt.length)
 

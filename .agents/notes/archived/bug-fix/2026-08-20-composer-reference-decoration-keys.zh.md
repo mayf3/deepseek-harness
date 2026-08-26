@@ -1,6 +1,7 @@
 # Agent Note: 输入框引用装饰按草稿顺序序号取 key
 
 Status: implemented
+Archived: 2026-08-20
 
 [English](2026-08-20-composer-reference-decoration-keys.md) | 中文
 
