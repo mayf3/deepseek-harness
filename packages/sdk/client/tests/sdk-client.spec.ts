@@ -9,7 +9,8 @@ import { mkdir, mkdtemp, readFile, realpath, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { isAbsolute, join, relative, resolve as resolvePath } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import {
   DeepSeekHarness,
   HarnessClient,
@@ -155,13 +156,14 @@ describe('DeepSeekHarness', () => {
     await harness.close()
   })
 
-  it('sends the configured cwd/provider/model/maxTokens in the handshake exactly once', async () => {
+  it('sends the configured cwd/provider/model/reasoningEffort/maxTokens in the handshake exactly once', async () => {
     const dir = await tempDir('sdk-client-init-')
     const recordFile = join(dir, 'init.jsonl')
     const harness = createProcessDeepSeekHarness(fakeLaunch({ FAKE_RECORD_INIT: recordFile }), {
       cwd: dir,
       provider: 'custom-provider',
       model: 'custom-model',
+      reasoningEffort: ReasoningEffortId('max'),
       maxTokens: 4096,
     })
     cleanups.push(() => harness.close())
@@ -173,6 +175,7 @@ describe('DeepSeekHarness', () => {
       cwd: dir,
       provider: 'custom-provider',
       model: 'custom-model',
+      reasoningEffort: 'max',
       maxTokens: 4096,
     }])
   })
@@ -213,6 +216,48 @@ describe('DeepSeekHarness', () => {
     expect(failure).toMatchObject({ code: 7, message: 'scripted init failure', data: { hint: 'fake' } })
     // The failed handshake reset lets a later start retry instead of wedging.
     await expect(harness.run('later')).rejects.toThrow()
+  })
+
+  it('preserves both initialize and SDK-owned cleanup failures', async () => {
+    const initializeError = new SdkProtocolError('malformed initialize')
+    const cleanupError = new Error('cleanup failed')
+    const start = vi.spyOn(HarnessClient.prototype, 'start').mockImplementation(() => {})
+    const initialize = vi.spyOn(HarnessClient.prototype, 'initialize').mockRejectedValue(initializeError)
+    const close = vi.spyOn(HarnessClient.prototype, 'close').mockRejectedValue(cleanupError)
+    try {
+      const harness = createProcessDeepSeekHarness(fakeLaunch())
+      const failedClient = harness.client
+      const failure = await harness.start().catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(AggregateError)
+      expect((failure as AggregateError).errors).toEqual([initializeError, cleanupError])
+      expect((failure as Error).message).toBe('DeepSeek Harness initialization and cleanup failed')
+      expect(harness.client).toBe(failedClient)
+    } finally {
+      start.mockRestore()
+      initialize.mockRestore()
+      close.mockRestore()
+    }
+  })
+
+  it('does not replace the client after terminal close wins a failed handshake', async () => {
+    let rejectInitialize!: (error: Error) => void
+    const initializeResult = new Promise<never>((_resolve, reject) => { rejectInitialize = reject })
+    const start = vi.spyOn(HarnessClient.prototype, 'start').mockImplementation(() => {})
+    const initialize = vi.spyOn(HarnessClient.prototype, 'initialize').mockReturnValue(initializeResult)
+    const close = vi.spyOn(HarnessClient.prototype, 'close').mockResolvedValue()
+    try {
+      const harness = createProcessDeepSeekHarness(fakeLaunch())
+      const original = harness.client
+      const pending = harness.start()
+      await harness.close()
+      rejectInitialize(new SdkProtocolError('late initialize failure'))
+      await expect(pending).rejects.toThrow('late initialize failure')
+      expect(harness.client).toBe(original)
+    } finally {
+      start.mockRestore()
+      initialize.mockRestore()
+      close.mockRestore()
+    }
   })
 
   it('retries a failed handshake with a fresh runtime process', async () => {
@@ -531,6 +576,18 @@ describe('wire payload validation', () => {
   it('rejects an assistant/message without a data member as a protocol error', async () => {
     const harness = harnessWith({ FAKE_MESSAGE_WITHOUT_DATA: '1' })
     await expect(harness.run('no-data')).rejects.toThrow(SdkProtocolError)
+  })
+
+  it.each(['1', 'aborted', 'abort-unknown', 'hook', 'no-data'])('rejects malformed turn/end input %s as a protocol error', async (mode) => {
+    const harness = harnessWith({ FAKE_MALFORMED_REASON: mode })
+    await expect(harness.run('bad-reason')).rejects.toThrow(SdkProtocolError)
+  })
+
+  it('accepts the complete hook cancellation cause', async () => {
+    const harness = harnessWith({ FAKE_REASON_KIND: 'aborted', FAKE_ABORT_REASON_KIND: 'hook' })
+    const result = await harness.run('hook-abort')
+    const end = result.events.findLast(event => event.type === 'turn/end')
+    expect(end?.data.reason).toEqual({ kind: 'aborted', reason: { kind: 'hook', reason: 'scripted hook abort' } })
   })
 
 })

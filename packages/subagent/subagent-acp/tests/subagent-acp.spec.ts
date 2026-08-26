@@ -4,6 +4,7 @@ import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { chmodSync, existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
+import { PassThrough, type Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -118,6 +119,63 @@ function tapBoundedExitWait(child: SubprocessHandle, onWait: () => void): Subpro
       if (signal !== undefined) onWait()
       return child.waitForExit(signal)
     },
+  }
+}
+
+function replaceProtocolStreams(
+  child: SubprocessHandle,
+  stdin: PassThrough,
+  stdout: Readable,
+): SubprocessHandle {
+  if (child.stdin === undefined) throw new Error('expected piped child stdin')
+  stdin.pipe(child.stdin)
+  return {
+    pid: child.pid,
+    stdin,
+    stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done,
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
+  }
+}
+
+function closeProtocolImmediately(child: SubprocessHandle): SubprocessHandle {
+  const stdout = new PassThrough()
+  stdout.end()
+  return replaceProtocolStreams(child, new PassThrough(), stdout)
+}
+
+function closeProtocolOnPrompt(child: SubprocessHandle, onClose: () => void = () => {}): SubprocessHandle {
+  if (child.stdout === undefined) throw new Error('expected piped child stdout')
+  const stdin = new PassThrough()
+  const stdout = new PassThrough()
+  child.stdout.pipe(stdout)
+  let requestText = ''
+  let closed = false
+  stdin.on('data', (chunk: Buffer) => {
+    if (closed) return
+    requestText += chunk.toString('utf8')
+    if (!requestText.includes('"session/prompt"')) return
+    closed = true
+    child.stdout?.unpipe(stdout)
+    stdout.end()
+    onClose()
+  })
+  return replaceProtocolStreams(child, stdin, stdout)
+}
+
+function replaceProcessOutcome(child: SubprocessHandle, outcome: SubprocessOutcome): SubprocessHandle {
+  return {
+    pid: child.pid,
+    stdin: child.stdin,
+    stdout: child.stdout,
+    stderr: child.stderr,
+    collected: child.collected,
+    done: child.done.then(() => outcome),
+    terminate: () => { child.terminate() },
+    waitForExit: (signal?: AbortSignal) => child.waitForExit(signal),
   }
 }
 
@@ -589,18 +647,16 @@ describe('dsh-subagent-acp', () => {
     )
   })
 
-  // Windows anonymous pipes do not surface a child stdout half-close while
-  // the child stays alive.
-  it.skipIf(process.platform === 'win32')('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
+  it('reports initialize-stage transport when the child closes the protocol but stays alive', async () => {
     const error = await startAcpRun(request(), {
       command: process.execPath,
       args: [mockServer],
       cwd: process.cwd(),
       permission: 'reject',
-      env: { MOCK_CLOSE_PROTOCOL_ON_INITIALIZE: '1' },
+      env: {},
       disposeEofGraceMs: 50,
       disposeGraceMs: 50,
-      spawn: spawnSubprocess,
+      spawn: spec => closeProtocolImmediately(spawnSubprocess(spec)),
     }).catch((cause: unknown) => cause)
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toBe(
@@ -938,18 +994,16 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  // Windows anonymous pipes do not surface a child stdout half-close while
-  // the child stays alive.
-  it.skipIf(process.platform === 'win32')('classifies a prompt transport failure without copying SDK text', async () => {
+  it('classifies a prompt transport failure without copying SDK text', async () => {
     const run = await startAcpRun(request('private prompt text'), {
       command: process.execPath,
       args: [mockServer],
       cwd: process.cwd(),
       permission: 'reject',
-      env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
+      env: { MOCK_HANG: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 100,
-      spawn: spawnSubprocess,
+      spawn: spec => closeProtocolOnPrompt(spawnSubprocess(spec)),
     })
     const result = await run.result
     expect(result).toEqual({
@@ -961,9 +1015,7 @@ describe('dsh-subagent-acp', () => {
     await run.dispose()
   })
 
-  // Windows anonymous pipes do not surface a child stdout half-close while
-  // the child stays alive.
-  it.skipIf(process.platform === 'win32')('lets local cancellation interrupt prompt-failure process observation', async () => {
+  it('lets local cancellation interrupt prompt-failure process observation', async () => {
     const controller = new AbortController()
     const protocolEnded = Promise.withResolvers<undefined>()
     let boundedExitWaits = 0
@@ -972,13 +1024,15 @@ describe('dsh-subagent-acp', () => {
       args: [mockServer],
       cwd: process.cwd(),
       permission: 'reject',
-      env: { MOCK_CLOSE_PROTOCOL_ON_PROMPT: '1' },
+      env: { MOCK_HANG: '1' },
       disposeEofGraceMs: 100,
       disposeGraceMs: 5000,
       spawn: (spec) => {
         const child = spawnSubprocess(spec)
-        child.stdout?.once('end', () => { protocolEnded.resolve(undefined) })
-        return tapBoundedExitWait(child, () => { boundedExitWaits += 1 })
+        return closeProtocolOnPrompt(
+          tapBoundedExitWait(child, () => { boundedExitWaits += 1 }),
+          () => { protocolEnded.resolve(undefined) },
+        )
       },
     })
     await protocolEnded.promise
@@ -1001,6 +1055,29 @@ describe('dsh-subagent-acp', () => {
     expect(result).toEqual({
       output: [{ type: 'text', text: 'partial answer' }],
       diagnostic: expectedFailure('stage: process; category: process-exit; exit code: 17'),
+      stopReason: 'error',
+    })
+    await run.dispose()
+  })
+
+  it('reports a signal-only process outcome', async () => {
+    const run = await startAcpRun(request(), {
+      command: process.execPath,
+      args: [mockServer],
+      cwd: process.cwd(),
+      permission: 'reject',
+      env: { MOCK_CRASH_AFTER_CHUNK: '1' },
+      disposeEofGraceMs: DEFAULT_DISPOSE_EOF_GRACE_MS,
+      disposeGraceMs: DEFAULT_DISPOSE_GRACE_MS,
+      spawn: spec => replaceProcessOutcome(
+        spawnSubprocess(spec),
+        { exitCode: null, signal: 'SIGTERM' },
+      ),
+    })
+    const result = await run.result
+    expect(result).toEqual({
+      output: [{ type: 'text', text: 'mock child answer' }],
+      diagnostic: expectedFailure('stage: process; category: process-exit; signal: SIGTERM'),
       stopReason: 'error',
     })
     await run.dispose()
