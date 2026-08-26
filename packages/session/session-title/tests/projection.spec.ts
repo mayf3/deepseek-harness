@@ -85,12 +85,27 @@ describe('title projection unit', () => {
     const checkpoint = ctx.sessionProjections.checkpoint(session)
     const row = checkpoint.titleInput
     expect(row).toBeDefined()
-    const malformed = {
-      ...checkpoint,
-      titleInput: { ...row!, val: { first: null, count: 1, lastSeq: null } },
+    const invalidStates = [
+      { first: null, count: 1, lastSeq: null },
+      { first: { seq: 1, text: 'first' }, count: 1, lastSeq: null },
+      { first: { seq: 1, text: 'first' }, count: 0, lastSeq: 1 },
+      { first: { seq: 2, text: 'first' }, count: 1, lastSeq: 1 },
+    ]
+    for (const state of invalidStates) {
+      const malformed = {
+        ...checkpoint,
+        titleInput: { ...row!, val: state },
+      }
+      expect(() => ctx.sessionProjections.restore(malformed, [], 0, session.header))
+        .toThrow(/title input state must pair its count with first and last message seqs/)
     }
 
-    expect(() => ctx.sessionProjections.restore(malformed, [], 0, session.header))
-      .toThrow(/title input state must pair its count with first and last message seqs/)
+    expect(() => ctx.sessionProjections.restore({
+      ...checkpoint,
+      titleInput: {
+        ...row!,
+        val: { first: { seq: 1, text: 'first' }, count: 1, lastSeq: 1 },
+      },
+    }, [], 0, session.header)).not.toThrow()
   })
 })

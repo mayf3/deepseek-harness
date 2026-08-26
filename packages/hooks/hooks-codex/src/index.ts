@@ -279,6 +279,7 @@ export function apply(ctx: Context, config: Config): void {
 /* jscpd:ignore-start */
 function lastTurn(ctx: Context, agent: Agent | undefined): number {
   if (!agent) return 0
+  /* v8 ignore next -- agent-present hook points run inside AgentLoop, which owns this projection. */
   return ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')?.lastTurn ?? 0
 }
 

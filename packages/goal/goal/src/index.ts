@@ -583,6 +583,7 @@ export class GoalService extends TypertRemoteService {
     runtime.pendingActivation = { seq: agent.session.seq, activation }
     try {
       const event = agent.session.append('goal/change', change)
+      /* v8 ignore next -- Session.append returns the event committed at the pre-append seq. */
       if (runtime.pendingActivation.seq === event.seq) runtime.activation = activation
     } finally {
       runtime.pendingActivation = undefined

@@ -363,6 +363,22 @@ describe('switching one session\'s composition', () => {
     expect(recordedPreset(agent)).toEqual({ agentPreset: 'minimal' })
   })
 
+  it('fails loudly when a composition omits the turn boundary projection', async () => {
+    const ctx = await harness()
+    const agent = await agentOn(ctx, 'sel-no-turn-boundary', 'standard')
+    const stateOf = ctx.sessionProjections.stateOf.bind(ctx.sessionProjections)
+    vi.spyOn(ctx.sessionProjections, 'stateOf').mockImplementation((session, key) => (
+      key === 'turnBoundary' ? undefined : stateOf(session, key)
+    ))
+
+    const failure = await remoteFailure(ctx.agentPresets.select(agent, 'minimal'))
+
+    expect(failure).toMatchObject({
+      code: 'internal',
+      message: expect.stringContaining('select requires the turnBoundary session projection') as string,
+    })
+  })
+
   it('serializes two concurrent switches on one session', async () => {
     const ctx = await harness()
     const agent = await agentOn(ctx, 'sel-race', 'standard')

@@ -1008,6 +1008,27 @@ describe('workspace context request injection', () => {
     expect(workspaceContext.inject).toEqual(['sessionProjections'])
   })
 
+  it('rejects a file-touch projection when the turn boundary unit is absent', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionProjectionRegistry)
+    await ctx.plugin(workspaceContext, { maxBytes: 65536 })
+    const exec = stubToolExecution({
+      callId: ToolCallId('missing-turn-boundary'),
+      name: 'read',
+      arguments: { file_path: 'file.txt' },
+      agent: stubAgent('/virtual/repo'),
+      signal: testToolSignal,
+    })
+
+    expect(() => {
+      ctx.emit('tools/result', exec, {
+        content: [{ type: 'text', text: 'ok' }],
+        isError: false,
+        value: null,
+      })
+    }).toThrow('agent-instructions requires the turnBoundary session projection')
+  })
+
   it('does not inject baseline context when no filesystem provider is present', async () => {
     const ctx = new Context()
     try {

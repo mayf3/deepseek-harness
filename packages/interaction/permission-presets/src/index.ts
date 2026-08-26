@@ -265,7 +265,10 @@ export class PermissionPresetService extends Service {
   }
 
   private knobs(session: Session): KnobState {
-    return this.ctx.sessionProjections.stateOf(session, 'permissions') ?? EMPTY_KNOBS
+    const state = this.ctx.sessionProjections.stateOf(session, 'permissions')
+    /* v8 ignore next -- this service registers the hard-required projection before exposing reads. */
+    if (state === undefined) throw new Error('permission: permissions session projection is not registered')
+    return state
   }
 
   /**

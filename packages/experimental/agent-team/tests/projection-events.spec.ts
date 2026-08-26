@@ -303,7 +303,12 @@ describe('Agent Teams projection events', () => {
       teamId: TEAM,
       task: task(),
     }, 0)
-    const state = project(ROOT, [invalid])
+    const later = event('team/task', {
+      version: 1,
+      teamId: TEAM,
+      task: task(),
+    }, 1)
+    const state = project(ROOT, [invalid, later])
     expect(state.failure).toMatch(/unsupported Agent Teams event version 2/)
     expect(isEmptyState(state)).toBe(true)
   })

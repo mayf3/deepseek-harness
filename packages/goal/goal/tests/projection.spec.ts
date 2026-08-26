@@ -167,6 +167,7 @@ describe('goal projection unit', () => {
       current: { ...current, roundsStarted: current.goal.maxGoalRounds + 1 },
     }).success).toBe(false)
     const empty = goalProjectionDefinition.init()
+    expect(goalProjectionDefinition.stateSchema.parse(empty)).toEqual(empty)
     expect(applyGoalProjection(empty, user)).toBe(empty)
     const admittedRound = {
       type: 'user/message', seq: 1, time: 2,
@@ -209,6 +210,13 @@ describe('goal projection unit', () => {
     // A declared goal/change record with a foreign payload kind is an owned-stream failure.
     const foreignKind = { type: 'goal/change', seq: 4, time: 5, data: { kind: 'not-a-goal-change' } } as never
     expect(applyGoalProjection(state, foreignKind).failure).toMatch(/invalid kind/)
+
+    const missingTimestamps = {
+      ...state,
+      current: { ...current, createdAt: undefined, updatedAt: undefined },
+    } as never
+    expect(applyGoalProjection(missingTimestamps, admittedRound).failure)
+      .toMatch(/current goal fold lacks timestamps/)
   })
 
   it('fails host goal access when the projection retained a replay failure', async () => {
