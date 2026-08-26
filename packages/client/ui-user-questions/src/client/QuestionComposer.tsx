@@ -168,7 +168,6 @@ function QuestionFlow({ pending, t, useStore, actions }: QuestionFlowProps) {
   const cancelFlow = (): void => {
     setBusy('cancel')
     setError(null)
-    replaceProgress(index, drafts)
     void pending.cancel()
       .then(() => { actions.clear(pending.key) })
       .catch((cause: unknown) => {
