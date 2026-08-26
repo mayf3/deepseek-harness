@@ -269,10 +269,12 @@ class TestCompactionEngine extends BasicCompactionEngine {
 }
 
 function service(
-  config: BasicCompactionConfig = { auto: false },
+  config: BasicCompactionConfig = {},
   ctx = createContext(),
 ): TestCompactionEngine {
-  return new TestCompactionEngine(ctx, config)
+  // A small output reserve keeps combined-context admission satisfiable inside
+  // the 1_000-token default fixture window unless a test overrides it.
+  return new TestCompactionEngine(ctx, { auto: false, maxTokens: 64, ...config })
 }
 
 async function compactIfNeeded(
@@ -294,6 +296,7 @@ describe('compact configuration and defaults', () => {
       summarizationProvider: '',
       summarizationModel: '',
       maxTokens: 8192,
+      tokenizerSafetyMargin: 0,
       compactionRetries: 1,
       maxOverflowRetries: 1,
       modelPolicies: [],
@@ -542,25 +545,48 @@ describe('pressure measurement and retention', () => {
     await expect(compactIfNeeded(compact, session)).resolves.not.toBeNull()
   })
 
-  it('requires capacity only for proactive pressure, not provider-confirmed overflow', async () => {
-    const ctx = new Context()
-    void new LlmRuntime(ctx)
-    void new TokenMeter(ctx)
-    ctx.llm.registerAdapter(['unknown-context'], new ContextAdapter(1_000))
-    vi.spyOn(ctx.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
+  it('requires summarization capacity for pressure and overflow alike, and honors an explicit summary pair', async () => {
+    const stripped = new Context()
+    void new LlmRuntime(stripped)
+    void new TokenMeter(stripped)
+    stripped.llm.registerAdapter(['unknown-context'], new ContextAdapter(1_000))
+    vi.spyOn(stripped.llm, 'resolveModelInfo').mockImplementation((provider, model) => Promise.resolve({
       provider,
       id: model,
       name: model,
     }))
-    const compact = service(compactConfig, ctx)
+    const headerless = conversation(4)
+    headerless.append('request/header', {
+      header: { config: { provider: 'unknown-context', model: 'model' } },
+      reason: 'resume',
+    })
+
+    // With every capacity resolution stripped, both triggers fail loud naming
+    // the exact route that lacks capacity.
+    const capacityless = service({
+      summarizationProvider: 'unknown-context',
+      summarizationModel: 'model',
+    }, stripped)
+    await expect(compactIfNeeded(capacityless, headerless, 'pressure'))
+      .rejects.toThrow(/no context capacity for unknown-context\/model/)
+    await expect(compactIfNeeded(capacityless, headerless, 'context-overflow'))
+      .rejects.toThrow(/no context capacity for summarization target unknown-context\/model/)
+
+    // An explicit summarization pair whose route discloses capacity admits the
+    // same conversation's overflow recovery.
+    const ctx = new Context()
+    void new LlmRuntime(ctx)
+    void new TokenMeter(ctx)
+    ctx.llm.registerAdapter(['unknown-context', 'capacity'], new ContextAdapter(1_000))
     const session = conversation(4)
     session.append('request/header', {
       header: { config: { provider: 'unknown-context', model: 'model' } },
       reason: 'resume',
     })
-
-    await expect(compactIfNeeded(compact, session, 'pressure'))
-      .rejects.toThrow(/no context capacity for unknown-context\/model/)
+    const compact = service({
+      summarizationProvider: 'capacity',
+      summarizationModel: 'model',
+    }, ctx)
     await expect(compactIfNeeded(compact, session, 'context-overflow'))
       .resolves.not.toBeNull()
   })
@@ -619,9 +645,9 @@ describe('pressure measurement and retention', () => {
   it('counts the durable routed request envelope without putting it on the surface', async () => {
     const compact = service({
       auto: false,
-      thresholdRatio: 0.9,
+      thresholdRatio: 0.4,
       retainTokens: 50,
-    })
+    }, createContext(2_000))
     const session = conversation(2, 'x'.repeat(600))
     expect(await compactIfNeeded(compact, session)).toBeNull()
 
@@ -698,7 +724,7 @@ describe('pressure measurement and retention', () => {
     }))
 
     await expect(compactIfNeeded(compact, conversation(4)))
-      .rejects.toThrow(/still above threshold after 1 compaction attempts/)
+      .rejects.toThrow(/still above threshold after 1 admitted passes/)
   })
 
   it('rounds a retention cut head-ward to preserve tool-call/result pairing', async () => {
@@ -776,6 +802,7 @@ describe('optional model-free tool-result pruning', () => {
       auto: false,
       thresholdRatio: 0.8,
       retainTokens: 100,
+      maxTokens: 64,
     })
     const session = oversizedToolResult()
     const pruneSession = vi.spyOn(prune, 'pruneSession')
@@ -793,6 +820,7 @@ describe('optional model-free tool-result pruning', () => {
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 50,
+      maxTokens: 64,
     })
     const session = oversizedToolResult()
 
@@ -804,12 +832,13 @@ describe('optional model-free tool-result pruning', () => {
   })
 
   it('summarizes the pruned surface when pruning is insufficient', async () => {
-    const ctx = createContext(2_000)
+    const ctx = createContext(5_000)
     void new ToolResultPruner(ctx, pruneConfig)
     const compact = new TestCompactionEngine(ctx, {
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 50,
+      maxTokens: 64,
     })
     const session = toolConversation()
 
@@ -825,6 +854,7 @@ describe('optional model-free tool-result pruning', () => {
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 50,
+      maxTokens: 64,
     })
     const session = oversizedToolResult(3_000, true)
 
@@ -978,9 +1008,13 @@ describe('compaction region transaction', () => {
     const ctx = createContext()
     const meter = ctx.tokenMeter
     const original = meter.measure.bind(meter)
-    vi.spyOn(meter, 'measure').mockImplementationOnce((session) => {
+    // The first measure prices admission; the second lands inside the
+    // transaction's preparation and must observe the changed snapshot.
+    let measures = 0
+    vi.spyOn(meter, 'measure').mockImplementation((session) => {
+      measures += 1
       const measurement = original(session)
-      return { ...measurement, nodes: measurement.nodes.slice(1) }
+      return measures === 1 ? measurement : { ...measurement, nodes: measurement.nodes.slice(1) }
     })
     const compact = service({ auto: false }, ctx)
     const session = conversation(2)
@@ -1118,6 +1152,15 @@ class ScriptedAdapter extends LlmAdapter {
     private readonly finish: (StreamChunk & { type: 'finish' })['reason'] = { kind: 'stop' },
   ) {
     super()
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({
+      provider,
+      id: model,
+      name: model,
+      context: { contextWindow: 100_000 },
+    })
   }
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
@@ -1467,6 +1510,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 0.5,
       retainTokens: 180,
+      maxTokens: 64,
     })
     const pressured = conversation(4)
     await preStep(ctx, agent(pressured, 'unconfigured-agent-fallback'))
@@ -1483,6 +1527,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 0.5,
       retainTokens: 180,
+      maxTokens: 64,
     })
     const pressured = conversation(4)
     const compactIfNeeded = vi.spyOn(compact, 'compactIfNeeded')
@@ -1501,6 +1546,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 0.5,
       retainTokens: 180,
+      maxTokens: 64,
     })
     compact.error = 'temporary failure'
     const session = conversation(4)
@@ -1522,6 +1568,7 @@ describe('automatic listener and loader composition', () => {
     void new TestCompactionEngine(ctx, {
       thresholdRatio: 0.5,
       retainTokens: 180,
+      maxTokens: 64,
     })
     const session = conversation(4)
 
@@ -1540,6 +1587,7 @@ describe('automatic listener and loader composition', () => {
     void new TestCompactionEngine(ctx, {
       thresholdRatio: 0.5,
       retainTokens: 500,
+      maxTokens: 64,
     })
     const session = conversation(4)
 
@@ -1556,6 +1604,7 @@ describe('automatic listener and loader composition', () => {
     void new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 900,
+      maxTokens: 64,
     })
     const session = conversation(3)
     const beforeGeneration = session.surface.replaceGeneration
@@ -1580,6 +1629,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 900,
+      maxTokens: 64,
     })
     const session = oversizedToolResult()
 
@@ -1599,6 +1649,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 900,
+      maxTokens: 64,
     })
     const session = toolConversation()
 
@@ -1620,6 +1671,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 900,
+      maxTokens: 64,
     })
     compact.error = new Error('summary unavailable after prune')
     const session = oversizedToolResult(3_000, true)
@@ -1643,6 +1695,7 @@ describe('automatic listener and loader composition', () => {
     const compact = new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 900,
+      maxTokens: 64,
     })
     compact.mutateDuringSummary = () => { controller.abort('cancelled during summary') }
     compact.error = new Error('summary cancelled after prune')
@@ -1653,10 +1706,11 @@ describe('automatic listener and loader composition', () => {
   })
 
   it('preserves the newest whole tool-call/result pair during forced overflow compaction', async () => {
-    const ctx = createContext()
+    const ctx = createContext(10_000)
     void new TestCompactionEngine(ctx, {
       thresholdRatio: 1,
       retainTokens: 90,
+      maxTokens: 64,
     })
     const session = toolConversation()
     const newestAssistant = session.surface.nodes.at(-2)!
@@ -1673,7 +1727,7 @@ describe('automatic listener and loader composition', () => {
 
   it('does not retry when a backend reports success without replacing the surface', async () => {
     const ctx = createContext()
-    const compact = new TestCompactionEngine(ctx)
+    const compact = new TestCompactionEngine(ctx, { maxTokens: 64 })
     const session = conversation(2)
     const fakeResult: CompactionResult = {
       compactionId: CompactionId('fake-compaction'),
@@ -1693,7 +1747,7 @@ describe('automatic listener and loader composition', () => {
 
   it('delegates downstream exactly once when no replacement is available', async () => {
     const ctx = createContext()
-    const compact = new TestCompactionEngine(ctx)
+    const compact = new TestCompactionEngine(ctx, { maxTokens: 64 })
     vi.spyOn(compact, 'compactIfNeeded').mockResolvedValue(null)
     const downstream = new Error('downstream recovery failed')
     let calls = 0
@@ -1715,7 +1769,7 @@ describe('automatic listener and loader composition', () => {
     const ctx = createContext()
     const warnings: string[] = []
     ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
-    const compact = new TestCompactionEngine(ctx)
+    const compact = new TestCompactionEngine(ctx, { maxTokens: 64 })
     compact.error = new Error('summary unavailable')
     const original = overflow('original provider overflow')
 
@@ -1731,7 +1785,7 @@ describe('automatic listener and loader composition', () => {
     const ctx = createContext()
     const warnings: string[] = []
     ctx.logger.warn = ((message: string) => void warnings.push(message)) as typeof ctx.logger.warn
-    const compact = new TestCompactionEngine(ctx)
+    const compact = new TestCompactionEngine(ctx, { maxTokens: 64 })
     compact.error = 'non-error recovery failure'
     const session = conversation(3)
     const generation = session.surface.replaceGeneration
@@ -1755,7 +1809,10 @@ describe('automatic listener and loader composition', () => {
 
   it('recovers an overflow for an unlisted routed model', async () => {
     const ctx = createContext()
-    void new TestCompactionEngine(ctx)
+    // Admission resolves the unlisted route's capacity through its provider
+    // adapter; exact-target policy lookup itself stays list-independent.
+    ctx.llm.registerAdapter(['unknown-routed-provider'], new ContextAdapter(1_000))
+    void new TestCompactionEngine(ctx, { maxTokens: 64 })
     const session = conversation(2)
     session.append('request/header', {
       header: { config: { provider: 'unknown-routed-provider', model: 'unknown-routed-model' } },
@@ -1767,7 +1824,7 @@ describe('automatic listener and loader composition', () => {
 
   it('delegates canonical overflow when no durable routed target exists', async () => {
     const ctx = createContext()
-    void new TestCompactionEngine(ctx)
+    void new TestCompactionEngine(ctx, { maxTokens: 64 })
     const session = Session.create(SessionId('headerless-overflow'))
     session.append('turn/start', {
       turn: 1,
@@ -1778,7 +1835,7 @@ describe('automatic listener and loader composition', () => {
 
   it('honors retry caps and ignores non-context failures', async () => {
     const ctx = createContext()
-    const compact = new TestCompactionEngine(ctx, { maxOverflowRetries: 1 })
+    const compact = new TestCompactionEngine(ctx, { maxOverflowRetries: 1, maxTokens: 64 })
     const compactSpy = vi.spyOn(compact, 'compactIfNeeded')
     const owner = agent(conversation(3), MODEL)
     expect(await recover(ctx, owner, Object.assign(new Error('rate limit'), { code: 'RATE_LIMIT' })))
@@ -1793,6 +1850,7 @@ describe('automatic listener and loader composition', () => {
     const ctx = createContext()
     const compact = new TestCompactionEngine(ctx, {
       maxOverflowRetries: 2,
+      maxTokens: 64,
       modelPolicies: [{
         provider: MODEL,
         model: MODEL,
@@ -1810,7 +1868,7 @@ describe('automatic listener and loader composition', () => {
 
   it('does not retry when cancellation lands during an awaited compaction', async () => {
     const ctx = createContext()
-    const compact = new TestCompactionEngine(ctx)
+    const compact = new TestCompactionEngine(ctx, { maxTokens: 64 })
     const controller = new AbortController()
     compact.mutateDuringSummary = () => { controller.abort('cancelled during summary') }
     const session = conversation(3)
@@ -1826,6 +1884,7 @@ describe('automatic listener and loader composition', () => {
       maxOverflowRetries: 0,
       thresholdRatio: 0.5,
       retainTokens: 180,
+      maxTokens: 64,
     })
     const session = conversation(4)
     await preStep(ctx, agent(session, MODEL))
@@ -1841,6 +1900,7 @@ describe('automatic listener and loader composition', () => {
       auto: false,
       thresholdRatio: 0.5,
       retainTokens: 180,
+      maxTokens: 64,
     })
     const session = conversation(4)
     await preStep(ctx, agent(session, MODEL))

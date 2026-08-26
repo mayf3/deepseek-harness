@@ -14,6 +14,7 @@ The estimator has no settings. It intentionally uses one fixed heuristic: four c
 
 - `measure(session, requestHeader?)` returns request pressure and the current priced surface at one consumed-log revision.
 - `estimateMessage(message)` prices one message with the fixed heuristic.
+- `estimateEnvelopeParts(header)` prices the system-prompt and tool-schema parts of one canonical request envelope for combined-context admission.
 
 `measure()` synchronizes once and returns one detached, deeply immutable snapshot. `totalTokens` is request-and-response pressure, while `surfaceTokens` is the surface-only heuristic total and equals the sum of `nodes[].tokens`. A `requestHeader` override affects pressure fields only; the surface fields still describe the current session. Every call clones the positional nodes, so measurement is O(surface).
 

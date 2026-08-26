@@ -7,7 +7,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { contentHasImage, createUserMessage, BlockAssembler, LlmError } from '@deepseek-ai/dsh-llm'
 import type {
-  ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema,
+  ContentBlock, FinishReason, GenerateOptions, Message, TokenUsage, ToolSchema, UserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 
@@ -108,6 +108,45 @@ export type SummaryResult = {
 )
 
 /**
+ * The final user message appended after the replayed conversation: the
+ * compaction instruction. Exported so combined-context admission prices the
+ * exact message representation the summarization call will send.
+ * @returns the instruction message in the adapter-boundary representation.
+ */
+export function compactionInstructionMessage(): UserMessage {
+  return createUserMessage({
+    content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
+    source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
+  })
+}
+
+/**
+ * Resolve the exact summarization target: an explicitly configured pair, else
+ * the latest durably routed request target, else the agent fallback pair.
+ * Admission, the deterministic latch key, and the default summarizer all use
+ * this one resolution so they cannot disagree about which model was targeted.
+ * @param config - resolved policy carrying the explicit pair (empty when unset).
+ * @param agent - agent supplying routed-model history and the fallback pair.
+ * @returns the exact provider/model target, or `undefined` when none exists.
+ */
+export function resolveSummarizationTarget(
+  config: Pick<SummaryConfig, 'summarizationProvider' | 'summarizationModel'>,
+  agent: Agent,
+): { provider: string; model: string } | undefined {
+  const latest = agent.session.requestHeader()?.config
+  const configured = config.summarizationProvider.length === 0
+    ? undefined
+    : { provider: config.summarizationProvider, model: config.summarizationModel }
+  const agentTarget = agent.options.provider !== undefined
+    && agent.options.provider.length > 0
+    && agent.options.model !== undefined
+    && agent.options.model.length > 0
+    ? { provider: agent.options.provider, model: agent.options.model }
+    : undefined
+  return configured ?? latest ?? agentTarget
+}
+
+/**
  * Run the default cache-reusing `ctx.llm.stream()` summarization call: replay
  * the conversation prefix, then append the compaction instruction as the final
  * user message so the provider's warm prefix cache is reused.
@@ -125,17 +164,7 @@ export async function summarizeWithLlm(
   agent: Agent,
   signal?: AbortSignal,
 ): Promise<SummaryResult> {
-  const latest = agent.session.requestHeader()?.config
-  const configured = config.summarizationProvider.length === 0
-    ? undefined
-    : { provider: config.summarizationProvider, model: config.summarizationModel }
-  const agentTarget = agent.options.provider !== undefined
-    && agent.options.provider.length > 0
-    && agent.options.model !== undefined
-    && agent.options.model.length > 0
-    ? { provider: agent.options.provider, model: agent.options.model }
-    : undefined
-  const target = configured ?? latest ?? agentTarget
+  const target = resolveSummarizationTarget(config, agent)
   if (target === undefined) {
     throw new Error(
       'no provider/model available for summarization: set both BasicCompactionConfig summarization fields, route one request, or set both AgentOptions fields',
@@ -145,10 +174,7 @@ export async function summarizeWithLlm(
   const assembler = new BlockAssembler()
   const messages: Message[] = [
     ...input.messages,
-    createUserMessage({
-      content: [{ type: 'text', text: COMPACTION_INSTRUCTION }],
-      source: { kind: 'plugin', plugin: 'dsh-compaction-basic' },
-    }),
+    compactionInstructionMessage(),
   ]
   const options: GenerateOptions = {
     provider: target.provider,

@@ -14,6 +14,7 @@
 
 - `measure(session, requestHeader?)` 在同一个已消费日志 revision 上返回请求压力与当前已计价表层。
 - `estimateMessage(message)` 使用固定启发式规则为一条消息计价。
+- `estimateEnvelopeParts(header)` 为组合上下文准入计价一份规范化请求 envelope 的系统提示词与工具 schema 部分。
 
 `measure()` 会同步一次，并返回一个独立且深度不可变的快照。`totalTokens` 是请求与响应压力，`surfaceTokens` 是仅表层启发式总量，等于 `nodes[].tokens` 之和。`requestHeader` 覆盖只影响压力字段；表层字段仍描述当前会话。每次调用都会克隆带位置的节点，因此测量是 O(surface)。
 
