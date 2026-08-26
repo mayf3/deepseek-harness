@@ -40,7 +40,7 @@ The HTTP carrier refuses non-JSON POST bodies with 415 before dispatch, so cross
 
 ### What the gateway exposes
 
-The API is grouped into domains: `sessions` (list, create, history, prompt, cancel, queue, models, selectModel, rename, fork, search, attachment), `workspace`, `host` (describe, pickDirectory, listDirectory, createDirectory, openPath), `skills`, `agentPresets`, `goals`, `settings`, `credentials`, `llm`, `events`, and `downloads`. The sessions, workspace, and events contracts are owned by the Session Controller, Workspace Controller, and API Remotes packages respectively; the remaining domain contracts and the `RpcMethodMap` live in `src/api/`.
+The API is grouped into domains: `sessions` (list, create, history, prompt, cancel, queue, models, selectModel, rename, fork, search, attachment), `workspace`, `host` (describe, openPath), `skills`, `agentPresets`, `goals`, `settings`, `credentials`, `llm`, `events`, and `downloads`. The sessions, workspace, and events contracts are owned by the Session Controller, Workspace Controller, and API Remotes packages respectively; the remaining domain contracts and the `RpcMethodMap` live in `src/api/`.
 
 ### Sessions and history
 
@@ -140,7 +140,6 @@ These limits define where the gateway is a poor fit; they are current package co
 - **Reserved seams stay out of `RpcMethodMap`** — `prompt.mode: 'inject'`, `job.list`, and a describe `hostInstanceId` are documented reservations; model discovery uses `llm.models`. An unknown method fails loud at envelope parse rather than getting a not-implemented code.
 - **No protocol version field** — client and host ship together; `host.describe` gains a version negotiation field only when an independently released client exists.
 - **Search failures include provider diagnostics** — the gateway is a single-user local service; a carrier that exposes it to multiple users must replace internal search details with a public-safe diagnostic.
-- **Linux native picker requires desktop tooling** — under the `native` capability, `host.pickDirectory` reports an actionable error when neither Zenity nor KDialog is installed; the browse backend is the composition-level fallback (see the [native backend README](../directory-picker-native/README.md)).
 - **Cold-list hints degrade only toward visibility and older ordering** — a projection-cache miss or stale `lastPromptAt` falls back to `createdAt` unless an eligible small artifact supplies an exact fold. The [bounded blank-verification decision](../../../.agents/notes/implemented/bug-fix/2026-08-13-bounded-cold-blank-verification.md) owns this safety direction; an authoritative exact recency index remains scoped in the [last-activity-index proposal](../../../.agents/notes/proposed/architecture/2026-07-29-durable-last-activity-index.md).
 
 <a id="dev-note"></a>
