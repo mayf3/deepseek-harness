@@ -110,7 +110,7 @@ describe('Session tail-page seeding', () => {
     const api = new FakeApiClient()
     const projections = new ProjectionValueStore()
     projections.apply('test/marks', { marks: ['cached'] }, 5)
-    const session = new Session(SID, api, fakeRemote(api), { projections })
+    const session = new Session(SID, fakeRemote(api), { projections })
     api.onHistory = () => Promise.resolve(err({
       code: 'session-not-found',
       message: 'gone',
@@ -125,7 +125,7 @@ describe('Session tail-page seeding', () => {
 
   it('seeds the store from a history response carrying a projections block', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote(api))
+    const session = new Session(SID, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({
       records: entries(plainTurn(0, 0, '问', '答')) as never[], hasMore: false,
       projections: { asOfSeq: 5, values: { 'test/marks': { marks: ['from-baseline'] } } },
@@ -138,7 +138,7 @@ describe('Session tail-page seeding', () => {
     const api = new FakeApiClient()
     const projections = new ProjectionValueStore()
     projections.apply('test/marks', { marks: ['cached'] }, 9)
-    const session = new Session(SID, api, fakeRemote(api), { projections })
+    const session = new Session(SID, fakeRemote(api), { projections })
     api.onHistory = () => Promise.resolve(ok({
       records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
       projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['older-baseline'] } } },
@@ -156,7 +156,7 @@ describe('Session tail-page seeding', () => {
     api.onHistory = () => history.promise
     const projections = new ProjectionValueStore()
     projections.apply('test/marks', { marks: ['cached-9'] }, 9)
-    const session = new Session(SID, api, fakeRemote(api), { projections })
+    const session = new Session(SID, fakeRemote(api), { projections })
 
     const opening = session.open()
     session.projections.apply('test/marks', { marks: ['live-3'] }, 3)
@@ -171,7 +171,7 @@ describe('Session tail-page seeding', () => {
 
   it('a resync serving a stale block keeps the newer pushed value (seq rule end to end)', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote(api))
+    const session = new Session(SID, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({
       records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
       projections: { asOfSeq: 5, values: { 'test/marks': { marks: ['baseline'] } } },
@@ -184,7 +184,7 @@ describe('Session tail-page seeding', () => {
 
   it('treats a blockless response as no reset: pushed values survive', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote(api))
+    const session = new Session(SID, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({ records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false }))
     await session.open()
     session.projections.apply('test/marks', { marks: ['pushed'] }, 9)
@@ -198,7 +198,7 @@ describe('manager frame routing', () => {
 
   it('lands projection frames before instantiation and the Session adopts the same store', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote(api))
+    const manager = new SessionManager(fakeRemote(api))
     manager.handleControlFrame({
       type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['early'] }, seq: 7,
     })
@@ -213,7 +213,7 @@ describe('manager frame routing', () => {
 
   it('projects the title key into list rows and truncates phantom rows on the control baseline', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote(api))
+    const manager = new SessionManager(fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
       items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
     }) as never)
@@ -238,7 +238,7 @@ describe('manager frame routing', () => {
 
   it('projects every retained value into list rows with stable snapshot identity', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote(api))
+    const manager = new SessionManager(fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
       items: [{
         sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
@@ -265,7 +265,7 @@ describe('manager frame routing', () => {
 
   it('drops the projection store with the removed session', async () => {
     const api = new FakeApiClient()
-    const manager = new SessionManager(api, fakeRemote(api))
+    const manager = new SessionManager(fakeRemote(api))
     api.onList = () => Promise.resolve(ok({
       items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
     }) as never)

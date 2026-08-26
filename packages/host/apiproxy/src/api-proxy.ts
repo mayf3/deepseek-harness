@@ -8,18 +8,16 @@ import { dirname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import type { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { SubagentError } from '@deepseek-ai/dsh-subagent'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { isUserInvocable } from '@deepseek-ai/dsh-skill'
 import {
-  InvalidPresetIdError, PresetExistsError, PresetMountError,
+  InvalidPresetIdError, PresetExistsError,
   PresetNotWritableError, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type {
   ApiProxy, ConfigurableProviderView, CredentialView,
   SettingsNamespaceView,
 } from './api/index.ts'
-import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import { buildModelCatalog } from '@deepseek-ai/dsh-api-session-controller'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import {
@@ -46,25 +44,6 @@ import type { RpcError, RpcRequest, RpcResponse } from './api/rpc.ts'
 import { DirectoryPickerError } from '@deepseek-ai/dsh-host-directory-picker'
 import { canOpenNativePath, openNativePath, openNativeTextFile } from './native-path-opener.ts'
 
-/** Strict browser-zone profile: UTC or an IANA Area/Location-style identifier. */
-const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
-
-/** Validate and canonicalize one browser-supplied IANA zone at the wire boundary. */
-function canonicalClientTimeZone(value: string): string | undefined {
-  if (value.length === 0 || value.trim() !== value
-    || (value !== 'UTC' && !IANA_TIME_ZONE.test(value))) return undefined
-  try {
-    const canonical = new Intl.DateTimeFormat('en-US', { timeZone: value })
-      .resolvedOptions().timeZone
-    /* v8 ignore next -- Intl returns UTC or a canonical IANA Area/Location for accepted input. */
-    if (canonical !== 'UTC' && !IANA_TIME_ZONE.test(canonical)) return undefined
-    return canonical
-  } catch {
-    // Intl rejects unsupported zone names; the RPC maps that parser rejection below.
-    return undefined
-  }
-}
-
 /** Read live abort state across awaits without treating it as synchronously immutable. */
 function isAborted(signal: AbortSignal): boolean {
   return signal.aborted
@@ -78,42 +57,6 @@ function ok<T>(request: RpcRequest<unknown>, value: T): RpcResponse<T> {
 /** Wrap an error result echoing the request's rpcId. */
 function err<T>(request: RpcRequest<unknown>, error: RpcError): RpcResponse<T> {
   return { rpcId: request.rpcId, result: { ok: false, error } }
-}
-
-/**
- * Map an agent-preset selection failure onto its stable RPC refusal, or leave
- * unrelated failures to the caller.
- * @param request - the request being answered.
- * @param error - the thrown value.
- * @returns the refusal, or undefined when the caller should keep handling.
- */
-function presetFailure(request: RpcRequest<unknown>, error: unknown): RpcResponse<never> | undefined {
-  if (error instanceof UnknownPresetError) {
-    return err(request, {
-      code: 'agent-preset-not-found',
-      message: error.message,
-      details: { agentPreset: error.presetId, available: [...error.available] },
-    })
-  }
-  if (error instanceof PresetMountError) {
-    return err(request, {
-      code: 'agent-preset-invalid',
-      message: error.message,
-      details: { agentPreset: error.presetId, reason: error.reason },
-    })
-  }
-  return undefined
-}
-
-/**
- * Whether the session's conversation has started: no turn has run yet (a
- * turn is one model-loop execution). Standalone plugin events — command
- * lifecycle records, plan/mode, titles, goals — never open a turn, so
- * running `/plan` or `/goal` on a fresh session keeps it blank
- * (list-hidden, reusable).
- */
-function sessionBlank(session: Session): boolean {
-  return !session.events.some(event => event.type === 'turn/start')
 }
 
 /** Map a browse-primitive failure onto the wire error vocabulary (unknown throws stay internal). */
@@ -146,63 +89,6 @@ export interface ApiProxyDefaults {
   canOpenPath?: () => boolean
 }
 
-/** Map continuation admission failures without exposing provider details. */
-function subagentPromptError(
-  request: RpcRequest<{ childSessionId: SessionId }>,
-  error: unknown,
-  signal: AbortSignal,
-): RpcResponse<never> {
-  const childSessionId = request.payload.childSessionId
-  if (signal.aborted) {
-    return err(request, { code: 'cancelled', message: 'subagent prompt was cancelled', details: {} })
-  }
-  if (error instanceof SubagentError) {
-    switch (error.code) {
-      case 'NOT_RESUMABLE':
-        return err(request, {
-          code: 'subagent-not-resumable',
-          message: 'subagent cannot be resumed',
-          details: { childSessionId },
-        })
-      case 'UNAUTHORIZED':
-        return err(request, {
-          code: 'subagent-unauthorized',
-          message: 'subagent does not belong to this parent',
-          details: { childSessionId },
-        })
-      case 'DRAINING':
-      case 'ACTIVATION_CLOSING':
-      case 'CONTINUATION_UNAVAILABLE':
-      case 'PERSISTENCE_UNAVAILABLE':
-        return err(request, {
-          code: 'subagent-delivery-unavailable',
-          message: 'subagent follow-up is temporarily unavailable',
-          details: { childSessionId },
-        })
-      default:
-        break
-    }
-  }
-  return err(request, { code: 'internal', message: 'subagent prompt failed', details: {} })
-}
-
-/** Stable RPC face of the missing projections capability, shared by every catalog read path. */
-function projectionsUnavailableError(): RpcError {
-  return {
-    code: 'internal',
-    message: 'subagent catalog is unavailable: this deployment does not mount the sessionProjections registry (load @deepseek-ai/dsh-session-projection)',
-    details: {},
-  }
-}
-
-/**
- * The requested preset differs from the one this session already runs.
- *
- * A session's composition is fixed at creation: its history was produced under
- * that preset's tools, so adopting the identity under a different one would
- * replay tool calls the rebuilt agent cannot make. Naming a different preset
- * is therefore a caller error rather than a switch.
- */
 /** The roster is absent: this deployment composes no agent presets at all. */
 function noRoster(agentPreset: string): RpcError {
   return {
@@ -239,17 +125,6 @@ function presetError(agentPreset: string, error: unknown): RpcError {
 export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiProxy {
   const sessionExportCompressionLevel = defaults.sessionExportCompressionLevel
     ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL
-  /**
-   * Serializes `agentPreset.select` per session. Two concurrent selects both
-   * pass the blank check, and the second `unmountPresetFor` then finds nothing
-   * to unmount because the first already removed the record — leaving two
-   * compositions registered into one agent layer. The client's `busy` flag is
-   * not enforcement: the wire is reachable directly.
-   */
-  const presetSwitches = new Map<SessionId, Promise<unknown>>()
-  const agentFor = (sessionId: SessionId) =>
-    ctx.sessionController.resolveAgent(sessionId)
-
   /** Resolve a Session's live or standing preset scope without resuming it. */
   async function sessionScopeFor(
     sessionId: SessionId,
@@ -396,99 +271,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
   }
 
   return {
-    subagents: {
-      async list(request, signal) {
-        try {
-          const entries = await ctx.subagents.listChildren(request.payload.parentSessionId, signal)
-          return ok(request, {
-            entries: entries.map(entry => entry.kind === 'child'
-              ? {
-                ...entry,
-                activity: ctx.agents.get(entry.id)?.status === 'running' ? 'running' : 'inactive',
-              }
-              : entry),
-            parentAvailable: ctx.agents.get(request.payload.parentSessionId) !== undefined,
-          })
-        } catch (error: unknown) {
-          if (signal?.aborted || (error instanceof SubagentError && error.code === 'CANCELLED')) {
-            return err(request, {
-              code: 'cancelled',
-              message: 'subagent catalog read was cancelled',
-              details: {},
-            })
-          }
-          if (error instanceof SubagentError && error.code === 'SUBAGENT_CONTROL_PROJECTIONS_UNAVAILABLE') {
-            return err(request, projectionsUnavailableError())
-          }
-          return err(request, {
-            code: 'internal',
-            message: 'subagent catalog read failed',
-            details: {},
-          })
-        }
-      },
-
-      async prompt(request, signal) {
-        const { parentSessionId, childSessionId, content, clientTimeZone } = request.payload
-        const canonicalTimeZone = clientTimeZone === undefined
-          ? undefined
-          : canonicalClientTimeZone(clientTimeZone)
-        if (clientTimeZone !== undefined && canonicalTimeZone === undefined) {
-          return err(request, {
-            code: 'invalid-time-zone',
-            message: 'clientTimeZone must be UTC or a valid IANA Area/Location name',
-            details: { value: clientTimeZone },
-          })
-        }
-        const parent = ctx.agents.get(parentSessionId)
-        if (parent === undefined) {
-          return err(request, {
-            code: 'subagent-parent-unavailable',
-            message: `parent session "${parentSessionId}" is not live`,
-            details: { parentSessionId },
-          })
-        }
-        try {
-          const messageId = await ctx.subagents.followup(parent, childSessionId, content, {
-            source: {
-              kind: 'user',
-              rpcId: request.rpcId as unknown as SessionRequestId,
-              ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
-            },
-            signal,
-          })
-          return ok(request, { messageId })
-        } catch (error: unknown) {
-          return subagentPromptError(request, error, signal)
-        }
-      },
-
-      // Deliberately no catalog, history, persistence, or parent Agent lookup:
-      // the core primitive alone authorizes the durable address against the
-      // live Activation, which is what keeps a live child interruptible while
-      // its parent Agent is offline. Absent targets are accepted no-ops there.
-      interrupt(request) {
-        const { parentSessionId, childSessionId } = request.payload
-        try {
-          ctx.subagents.interrupt(childSessionId, { kind: 'user', parentSessionId })
-        } catch (error: unknown) {
-          if (error instanceof SubagentError && error.code === 'UNAUTHORIZED') {
-            return Promise.resolve(err(request, {
-              code: 'subagent-unauthorized',
-              message: 'subagent does not belong to this parent',
-              details: { childSessionId },
-            }))
-          }
-          return Promise.resolve(err(request, {
-            code: 'internal',
-            message: 'subagent interrupt failed',
-            details: {},
-          }))
-        }
-        return Promise.resolve(ok(request, { accepted: true as const }))
-      },
-    },
-
     host: {
       describe(request) {
         // TODO(apiproxy-version): read the version from apps/cli/package.json.
@@ -580,112 +362,8 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     },
 
     agentPresets: {
-      // A deployment with no roster answers with an empty list rather than an
-      // error: composing no presets is a valid deployment, and the browser
-      // simply offers no choice.
-      async list(request) {
-        const presets = ctx.get('agentPresets')
-        if (presets === undefined) return ok(request, { presets: [], authorable: false, hasDocument: false })
-        const defaultId = presets.defaultId
-        return ok(request, {
-          presets: (await presets.list()).map(preset => ({
-            id: preset.id,
-            trust: preset.trust,
-            isDefault: preset.id === defaultId,
-            ...preset.name === undefined ? {} : { name: preset.name },
-            ...preset.description === undefined ? {} : { description: preset.description },
-            ...preset.broken === undefined ? {} : { broken: preset.broken },
-          })),
-          authorable: presets.authorable,
-          hasDocument: canOpenPaths(),
-        })
-      },
-
-      // Recomposing is limited to a blank session because a started
-      // conversation's history was produced under its preset's tools; the
-      // agent and the session survive, only the composition is swapped.
-      async select(request) {
-        const { sessionId, agentPreset } = request.payload
-        const presets = ctx.get('agentPresets')
-        if (presets === undefined) {
-          return err(request, {
-            code: 'agent-preset-not-found',
-            message: 'this deployment composes no agent presets',
-            details: { agentPreset, available: [] },
-          })
-        }
-        const found = await agentFor(sessionId)
-        if ('error' in found) return err(request, found.error)
-        const { agent } = found
-        const swap = async (): Promise<RpcResponse<{ agentPreset: string }>> => {
-          // Re-read inside the queue: an earlier switch may have run, and a
-          // conversation may have started, since this request arrived.
-          if (!sessionBlank(agent.session)) {
-            return err(request, {
-              code: 'agent-preset-locked',
-              message: `session "${sessionId}" has already started; its agent preset is fixed`,
-              details: { sessionId, agentPreset },
-            })
-          }
-          try {
-            const preset = await presets.recompose(agent.ctx, agentPreset)
-            // Recorded only after the swap committed: the log states what the
-            // agent runs, and a rejected mount leaves the previous composition.
-            agent.session.append('agent-preset/selected', { agentPreset: preset.id })
-            return ok(request, { agentPreset: preset.id })
-          } catch (error: unknown) {
-            const refused = presetFailure(request, error)
-            if (refused !== undefined) return refused
-            return err(request, {
-              code: 'internal',
-              message: `failed to select agent preset "${agentPreset}": ${String(error)}`,
-              details: {},
-            })
-          }
-        }
-        const queued = presetSwitches.get(sessionId) ?? Promise.resolve()
-        const turn = queued.then(swap)
-        presetSwitches.set(sessionId, turn.catch(() => undefined))
-        try {
-          return await turn
-        } finally {
-          if (presetSwitches.get(sessionId) === turn) presetSwitches.delete(sessionId)
-        }
-      },
-
-      // A composition names the plugins a session runs, so reading one is
-      // reconnaissance, and copy/remove/openDocument manage the roster and
-      // drive the host desktop. Connection authenticates the complete API.
-      async read(request) {
-        const { agentPreset } = request.payload
-        const presets = ctx.get('agentPresets')
-        if (presets === undefined) return err(request, noRoster(agentPreset))
-        try {
-          const preset = await presets.resolve(agentPreset)
-          return ok(request, {
-            agentPreset: preset.id,
-            trust: preset.trust,
-            content: await presets.read(preset.id),
-            ...preset.name === undefined ? {} : { name: preset.name },
-            ...preset.description === undefined ? {} : { description: preset.description },
-          })
-        } catch (error: unknown) {
-          return err(request, presetError(agentPreset, error))
-        }
-      },
-
-      async copy(request) {
-        const { from, agentPreset, name } = request.payload
-        const presets = ctx.get('agentPresets')
-        if (presets === undefined) return err(request, noRoster(agentPreset))
-        try {
-          await presets.copy(from, agentPreset, name)
-          return ok(request, { agentPreset })
-        } catch (error: unknown) {
-          return err(request, presetError(agentPreset, error))
-        }
-      },
-
+      // Only the desktop opener remains here: the roster, selection, and
+      // authoring calls are the AgentPresets service's own Remote namespace.
       async openDocument(request, signal) {
         const { agentPreset } = request.payload
         const presets = ctx.get('agentPresets')
@@ -704,18 +382,6 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           const directory = dirname(preset.path)
           if (!canOpenPaths()) return ok(request, { opened: false as const, path: directory })
           return await openPath(request, directory, signal)
-        } catch (error: unknown) {
-          return err(request, presetError(agentPreset, error))
-        }
-      },
-
-      async remove(request) {
-        const { agentPreset } = request.payload
-        const presets = ctx.get('agentPresets')
-        if (presets === undefined) return err(request, noRoster(agentPreset))
-        try {
-          await presets.remove(agentPreset)
-          return ok(request, {})
         } catch (error: unknown) {
           return err(request, presetError(agentPreset, error))
         }

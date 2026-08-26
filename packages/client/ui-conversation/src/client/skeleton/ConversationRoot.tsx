@@ -153,10 +153,13 @@ export function ConversationRoot({
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
-  // Publishes the seat's live height as --dsh-composer-height on the scroll
-  // body so floating View controls clear the composer as
-  // it grows. Callback ref, not an effect; stable identity prevents observer
-  // churn while the first blank session fills the resident body outlet.
+  // Publishes the two live measurements floating View chrome reads off the
+  // scroll body: the seat's height as --dsh-composer-height, so controls clear
+  // the composer as it grows, and the scrollport's own height as
+  // --dsh-conversation-viewport-height, so a control can sit in the band the
+  // seat leaves visible. Callback ref, not an effect; stable identity prevents
+  // observer churn while the first blank session fills the resident body
+  // outlet.
   const seatObserver = useRef<ResizeObserver | null>(null)
   const seatResizeRef = useCallback((seat: HTMLDivElement | null): void => {
     seatObserver.current?.disconnect()
@@ -165,8 +168,13 @@ export function ConversationRoot({
     if (seat === null || scroller === null) return
     seatObserver.current = new ResizeObserver(() => {
       scroller.style.setProperty('--dsh-composer-height', `${seat.offsetHeight}px`)
+      scroller.style.setProperty(
+        '--dsh-conversation-viewport-height',
+        `${scroller.clientHeight}px`,
+      )
     })
     seatObserver.current.observe(seat)
+    seatObserver.current.observe(scroller)
   }, [])
 
   // Publishes the column's live width as --dsh-conversation-column-width so
