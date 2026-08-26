@@ -147,9 +147,9 @@ check(
 {
   const direct = lowerModuleSource({
     filename: 'node_modules/p/direct.js',
-    source: "import { createRequire } from 'node:module'\ncreateRequire(import.meta.url)('@xterm/headless')\n",
+    source: "import { createRequire } from 'node:module'\ncreateRequire(import.meta.url)('external-package')\n",
   })
-  check('literal createRequire call is a module request', direct.moduleRequests, ['node:module', '@xterm/headless'])
+  check('literal createRequire call is a module request', direct.moduleRequests, ['node:module', 'external-package'])
 
   const assigned = lowerModuleSource({
     filename: 'node_modules/p/assigned.js',
