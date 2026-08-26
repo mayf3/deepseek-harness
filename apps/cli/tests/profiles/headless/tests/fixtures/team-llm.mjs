@@ -1,4 +1,4 @@
-/** Deterministic keyless Agent Teams adapter for the real headless Loader snapshot. */
+/** Deterministic keyless Agent Teams adapter shared by profile snapshot and CLI e2e. */
 
 import { ToolCallId, LlmAdapter } from '@deepseek-ai/dsh-llm'
 

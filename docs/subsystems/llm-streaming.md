@@ -411,7 +411,7 @@ One model call is a fully-assembled `GenerateOptions`. The adapter answers with 
 
 Source: [`packages/llm/llm/src/types.ts`](../../packages/llm/llm/src/types.ts)
 
-Provider and model discovery uses small provider-neutral descriptors. A model catalog is advisory: routing still keys on a registered provider, and an adapter may accept unlisted model ids.
+Provider and model discovery uses small provider-neutral descriptors. A model catalog is advisory: routing still keys on a registered provider.
 
 Registering an adapter returns a handle: the disposer, plus the atomic route replacement a plugin whose route set is user-configurable needs.
 

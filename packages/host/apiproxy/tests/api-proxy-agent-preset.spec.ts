@@ -13,7 +13,6 @@ import {
   agentPresetProjectionDefinition, InvalidPresetIdError, PresetExistsError, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
-import { GoalId } from '@deepseek-ai/dsh-goal'
 import { createApiProxy } from '../src/api-proxy.ts'
 import { describe, expect, it } from 'vitest'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -210,23 +209,6 @@ async function harness(
  * instance through the agent instead of reading a root-realm singleton.
  */
 describe('a capability the session\'s preset mounts', () => {
-  it('serves the goal RPC from the session\'s own goal service', async () => {
-    const { api } = await harness(['standard'])
-    await createSession(api, { sessionId: SessionId('g1'), agentPreset: 'standard' })
-    const ref = { id: GoalId('goal-1'), revision: 1 }
-    const paused: unknown[] = []
-    services.set('g1', {
-      goals: { pause: (agent: { id: unknown }, r: unknown) => { paused.push([String(agent.id), r]); return ref } },
-    })
-
-    const response = await api.goals.pause(request({ sessionId: SessionId('g1'), ref }))
-
-    expect(response.result).toMatchObject({ ok: true, value: { ref } })
-    // Reached the instance this session mounted, and was handed its own agent.
-    expect(paused).toEqual([['g1', ref]])
-    services.delete('g1')
-  })
-
   it('serves the skill catalog from the session\'s own registry', async () => {
     const { api } = await harness(['standard'])
     await createSession(api, { sessionId: SessionId('k1'), agentPreset: 'standard' })

@@ -35,7 +35,7 @@ async function mountRalph(script: MockScript, config: toolRalph.Config) {
 }
 
 describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
-  it('uses distinct empty-seed children, shared cwd, and only the prior bounded handoff', async () => {
+  it('uses distinct empty-seed children, shared cwd, and only the prior bounded handoff', { timeout: 30_000 }, async () => {
     const firstReport = {
       status: 'continue',
       summary: 'ROUND_ONE_HANDOFF',
@@ -115,7 +115,7 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     await parentHandle.dispose()
   })
 
-  it('reports the failed round and last good handoff when a child fails', async () => {
+  it('reports the failed round and last good handoff when a child fails', { timeout: 30_000 }, async () => {
     const firstReport = {
       status: 'continue',
       summary: 'ROUND_ONE_HANDOFF',

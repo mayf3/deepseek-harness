@@ -364,6 +364,9 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:^
         version: link:../../packages/experimental/agent-team
+      '@deepseek-ai/dsh-experimental-agent-team-profile':
+        specifier: workspace:^
+        version: link:../../packages/experimental/agent-team-profile
       '@deepseek-ai/dsh-experimental-tool-agent-team':
         specifier: workspace:^
         version: link:../../packages/experimental/tool-agent-team
@@ -1087,6 +1090,9 @@ importers:
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:^
         version: link:../../session/session-projection
+      '@deepseek-ai/dsh-session-projection-cache':
+        specifier: workspace:^
+        version: link:../../session/session-projection-cache
       '@deepseek-ai/dsh-session-query-sqlite':
         specifier: workspace:^
         version: link:../../session-query/session-query-sqlite
@@ -1120,6 +1126,15 @@ importers:
       '@deepseek-ai/dsh-spill-policy':
         specifier: workspace:^
         version: link:../../spill/spill-policy
+      '@deepseek-ai/dsh-storage':
+        specifier: workspace:^
+        version: link:../../storage/storage
+      '@deepseek-ai/dsh-storage-domain':
+        specifier: workspace:^
+        version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-json':
+        specifier: workspace:^
+        version: link:../../storage/storage-json
       '@deepseek-ai/dsh-subagent':
         specifier: workspace:^
         version: link:../../subagent/subagent
@@ -1529,24 +1544,12 @@ importers:
       '@deepseek-ai/dsh-session-log-export':
         specifier: workspace:^
         version: link:../../session-query/session-log-export
-      '@deepseek-ai/dsh-session-projection-cache':
-        specifier: workspace:^
-        version: link:../../session/session-projection-cache
       '@deepseek-ai/dsh-session-reference':
         specifier: workspace:^
         version: link:../../context/session-reference
       '@deepseek-ai/dsh-session-stats':
         specifier: workspace:^
         version: link:../../session/session-stats
-      '@deepseek-ai/dsh-storage':
-        specifier: workspace:^
-        version: link:../../storage/storage
-      '@deepseek-ai/dsh-storage-domain':
-        specifier: workspace:^
-        version: link:../../storage/storage-domain
-      '@deepseek-ai/dsh-storage-json':
-        specifier: workspace:^
-        version: link:../../storage/storage-json
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
@@ -1597,12 +1600,12 @@ importers:
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
-      '@deepseek-ai/dsh-credentials':
-        specifier: workspace:^
-        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:^
+        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-host-apiproxy':
         specifier: workspace:^
         version: link:../../host/apiproxy
@@ -4589,6 +4592,28 @@ importers:
         specifier: workspace:^
         version: link:../../subagent/subagent-spawn-in-process
 
+  packages/experimental/agent-team-profile:
+    dependencies:
+      '@deepseek-ai/dsh-experimental-agent-team':
+        specifier: workspace:^
+        version: link:../agent-team
+      '@deepseek-ai/dsh-experimental-tool-agent-team':
+        specifier: workspace:^
+        version: link:../tool-agent-team
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-include':
+        specifier: workspace:^
+        version: link:../../../vendor/include
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.1
+
   packages/experimental/tool-agent-team:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -5559,9 +5584,6 @@ importers:
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
-      '@deepseek-ai/dsh-goal':
-        specifier: workspace:^
-        version: link:../../goal/goal
       '@deepseek-ai/dsh-host-directory-picker':
         specifier: workspace:^
         version: link:../directory-picker
@@ -7122,9 +7144,6 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
-      '@deepseek-ai/dsh-session-persistence':
-        specifier: workspace:^
-        version: link:../session-persistence
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:^
         version: link:../session-projection
@@ -7134,6 +7153,9 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-json':
+        specifier: workspace:^
+        version: link:../../storage/storage-json
 
   packages/session/session-stats:
     dependencies:
@@ -8103,6 +8125,9 @@ importers:
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
+      '@deepseek-ai/dsh-storage-json':
+        specifier: workspace:^
+        version: link:../../storage/storage-json
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
