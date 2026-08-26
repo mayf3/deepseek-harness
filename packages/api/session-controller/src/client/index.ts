@@ -40,7 +40,14 @@ export type {
   SessionProjectionMap,
   UseProjection,
 } from './sessions/projection-store.ts'
-export type { ISession, ProjectionsFace, SessionFace } from './contract/session.ts'
+export type {
+  BeginSubmissionInput,
+  ISession,
+  PendingSubmissionRetirement,
+  ProjectionsFace,
+  SessionFace,
+  SubmissionHandle,
+} from './contract/session.ts'
 export type { ISessions } from './contract/sessions.ts'
 export { MutableSessionEventSource } from './contract/events.ts'
 export type {
@@ -53,6 +60,8 @@ export type {
 } from './contract/events.ts'
 export type {
   OpenState,
+  PendingSubmission,
+  PendingSubmissionImage,
   PromptError,
   QueuedMessage,
   SessionSnapshot,
