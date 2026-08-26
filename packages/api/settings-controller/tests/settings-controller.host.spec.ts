@@ -92,7 +92,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
       () => ctx.settingsController.replace('ui-test', {}, undefined),
       () => ctx.settingsController.mutate('ui-test', [], undefined),
     ]) {
-      const failure = await Promise.resolve().then(call).catch((error: unknown) => error)
+      const failure = await Promise.resolve().then(() => call()).catch((error: unknown) => error)
       expect(failure).toBeInstanceOf(TypertRemoteFailure)
       expect((failure as TypertRemoteFailure).failure).toEqual({
         code: 'internal',
