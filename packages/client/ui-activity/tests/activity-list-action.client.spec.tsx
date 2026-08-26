@@ -405,6 +405,8 @@ describe('ActivityListAction human kill', () => {
     expect(killJob).not.toHaveBeenCalled()
     expect(stop.getAttribute('data-kill-state')).toBe('armed')
     expect(screen.getByTitle(zh['kill.confirm'])).toBe(stop)
+    // The armed step is legible without hover: the button carries the label.
+    expect(stop.textContent).toBe(zh['kill.confirmAction'])
     await act(async () => { fireEvent.click(stop) })
     expect(killJob).toHaveBeenCalledWith(SESSION, 'bash-1')
     // An admitted kill stays pending: the unary response and the jobs frames

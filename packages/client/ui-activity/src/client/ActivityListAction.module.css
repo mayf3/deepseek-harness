@@ -119,15 +119,26 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* The armed press widens into a labeled danger pill so the confirm step is
+   legible without hover; the state-error token is the one StateDot uses. */
 .stopArmed,
 .stopArmed:hover,
 .stopArmed:focus-visible {
-  background: var(--dsw-alias-fill-l1);
-  color: var(--dsw-alias-label-error, var(--dsw-alias-label-secondary));
+  gap: 4px;
+  width: auto;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.stopLabel {
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
 }
 
 .stopFailed {
-  color: var(--dsw-alias-label-error, var(--dsw-alias-label-secondary));
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .row {
@@ -268,5 +279,5 @@
 }
 
 .noticeError {
-  color: var(--dsw-alias-label-error, var(--dsw-alias-label-secondary));
+  color: var(--dsw-alias-state-error-primary);
 }

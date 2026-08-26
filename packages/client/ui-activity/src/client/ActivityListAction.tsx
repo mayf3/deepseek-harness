@@ -329,6 +329,9 @@ function TaskItem({ row, view, expanded, now, onToggle, kill, t }: {
               onClick={kill.onPress}
             >
               <IconStopFill16 size={12} />
+              {/* The armed press must be legible without hover: the button
+                  widens into a labeled confirm pill instead of a tint only. */}
+              {kill.state === 'armed' ? <span className={css.stopLabel}>{t('kill.confirmAction')}</span> : null}
             </button>
           )
           : null}
