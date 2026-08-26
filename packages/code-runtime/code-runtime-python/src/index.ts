@@ -393,7 +393,7 @@ export function readProcessStart(pid: number): string | undefined {
  * @param bin - the configured interpreter (absolute path or bare command).
  * @returns an absolute path when resolvable, else `bin` unchanged.
  */
-function resolvePythonBin(bin: string): string {
+export function resolvePythonBin(bin: string): string {
   if (isAbsolute(bin) || bin.includes('/')) return bin
   const path = process.env.PATH
   /* v8 ignore next -- PATH is set in every environment the runtime boots in; the guard is defensive. */

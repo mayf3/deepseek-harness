@@ -4,9 +4,17 @@ import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { PythonCodeRuntime, readProcessStart } from '../src/index.ts'
+import { PythonCodeRuntime, readProcessStart, resolvePythonBin } from '../src/index.ts'
 import { logTruncationMarker } from '../src/protocol.ts'
 import type { Config } from '../src/index.ts'
+
+// Absolute interpreter path for the shell wrappers: the runtime spawns the
+// child with env:{} (an empty environment by design), so a bare 'python3' in a
+// wrapper resolves against /bin/sh's compiled-in default PATH, which misses
+// interpreters only reachable through the caller's PATH (Nix, pyenv). Baking
+// the resolved absolute path mirrors what resolvePythonBin does for the product
+// spawn.
+const PYABS = resolvePythonBin('python3')
 import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
 /**
@@ -503,7 +511,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     const wrapper = join(dir, 'python3-capped')
     // 256 MiB, half the 512 MiB addressSpaceMb default, so the requested cap is
     // unambiguously above the inherited ceiling.
-    await writeFile(wrapper, '#!/bin/sh\nulimit -v 262144\nexec python3 "$@"\n', { mode: 0o755 })
+    await writeFile(wrapper, `#!/bin/sh\nulimit -v 262144\nexec ${PYABS} "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper })
     const result = await runtime.run({
       program: 'import resource\nreturn resource.getrlimit(resource.RLIMIT_AS)[1]',
@@ -529,7 +537,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // (macOS ignores `ulimit -v`); there the run proceeds.
     const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
     const wrapper = join(dir, 'python3-tight')
-    await writeFile(wrapper, '#!/bin/sh\nulimit -v 131072\nexec python3 "$@"\n', { mode: 0o755 })
+    await writeFile(wrapper, `#!/bin/sh\nulimit -v 131072\nexec ${PYABS} "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, maxLogBytes: 32 * 1024 * 1024, addressSpaceMb: 512 })
     const result = await runtime.run({ program: 'return 1', bindings: [] })
     if (process.platform === 'darwin') {
@@ -572,7 +580,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-soft-'))
     const wrapper = join(dir, 'python3-soft-capped')
     // Soft CPU 5 s, well below the configured 30 s, hard left unlimited.
-    await writeFile(wrapper, '#!/bin/sh\nulimit -S -t 5\nexec python3 "$@"\n', { mode: 0o755 })
+    await writeFile(wrapper, `#!/bin/sh\nulimit -S -t 5\nexec ${PYABS} "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30 })
     const result = await runtime.run({
       program: 'import resource\nreturn resource.getrlimit(resource.RLIMIT_CPU)[0]',
@@ -597,7 +605,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-dual-'))
     const wrapper = join(dir, 'python3-dual-capped')
     // Both soft and hard CPU 2 s; configured cpuSeconds 30 s.
-    await writeFile(wrapper, '#!/bin/sh\nulimit -t 2\nexec python3 "$@"\n', { mode: 0o755 })
+    await writeFile(wrapper, `#!/bin/sh\nulimit -t 2\nexec ${PYABS} "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30, maxWallMs: 12_000 })
     const result = await runtime.run({
       program: [
@@ -645,7 +653,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // before model code runs, so a busy loop still ends as a timeout rather
     // than running to the hard limit and being misclassified as worker-exit.
     const wrapper = join(tmpdir(), `dsh-xcpu-ignore-${process.pid}.sh`)
-    writeFileSync(wrapper, '#!/bin/sh\ntrap "" XCPU\nexec python3 "$@"\n', { mode: 0o755 })
+    writeFileSync(wrapper, `#!/bin/sh\ntrap "" XCPU\nexec ${PYABS} "$@"\n`, { mode: 0o755 })
     try {
       const { runtime } = await setup({ maxWallMs: 30_000, cpuSeconds: 1, pythonBin: wrapper })
       const result = await runtime.run({
@@ -699,7 +707,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // re-deliver SIGXCPU so the host classifies the run as a timeout.
     const dir = await mkdtemp(join(tmpdir(), 'dsh-cpu-recheck-'))
     const wrapper = join(dir, 'python3-cpu-capped')
-    await writeFile(wrapper, '#!/bin/sh\nulimit -S -t 1\nexec python3 "$@"\n', { mode: 0o755 })
+    await writeFile(wrapper, `#!/bin/sh\nulimit -S -t 1\nexec ${PYABS} "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30, maxWallMs: 12_000 })
     const result = await runtime.run({
       program: [
