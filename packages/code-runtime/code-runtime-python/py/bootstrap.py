@@ -1195,6 +1195,17 @@ async def _run(channel: ProtocolChannel) -> None:
             # can `except ToolCallError as e:` and read the member property.
             namespaces[declared["name"]] = error_class
 
+    # The child inherits the host's SIGXCPU disposition and signal mask. If
+    # the host ignores or blocks SIGXCPU, the soft RLIMIT_CPU fires but cannot
+    # stop the child — the hard limit's SIGKILL then classifies a definite CPU
+    # overrun as substrate death (worker-exit) instead of a timeout. Reset to
+    # the default disposition and unblock before any model code runs (the
+    # settle-time enforcer already restores SIG_DFL for a program that traps or
+    # masks the signal mid-run; this closes the inherited-state gap).
+    signal.signal(signal.SIGXCPU, signal.SIG_DFL)
+    if getattr(signal, "pthread_sigmask", None) is not None:
+        signal.pthread_sigmask(signal.SIG_UNBLOCK, (signal.SIGXCPU,))
+
     channel.send_sync({"type": "boot-ack"})
 
     # 3. Start a reply-pump task before the run message: replies can arrive
