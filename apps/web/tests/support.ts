@@ -117,6 +117,13 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
  * selection, and the batched edit lands on a null selection and is silently
  * dropped, leaving the previous draft in place. Real keystrokes leave room for
  * `selectionchange` between keys, which is also what a user's typing does.
+ *
+ * Waits for the surface to be editable first. A running turn disables the
+ * composer by setting `contenteditable="false"` on the same element, where
+ * `fill()` throws immediately instead of waiting (a disabled `<textarea>`
+ * held it back via actionability) and `isEnabled()` reports `true` for a
+ * `<div>` regardless — so a gesture directly after a turn settles must gate
+ * on the attribute, not on enablement.
  * @param page - the page under test.
  * @param input - the `[data-composer-input]` surface locator.
  * @param text - the replacement draft; `''` clears the draft. Must not
@@ -127,6 +134,7 @@ export async function writeComposerDraft(
   input: ReturnType<Page['locator']>,
   text: string,
 ): Promise<void> {
+  await page.locator('[data-composer-input][contenteditable="true"]').first().waitFor({ timeout: 15_000 })
   await input.click()
   await page.keyboard.press('ControlOrMeta+A')
   if (text === '') await page.keyboard.press('Backspace')
