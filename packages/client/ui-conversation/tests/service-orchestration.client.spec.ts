@@ -135,7 +135,7 @@ describe('sendSession submission echo', () => {
   /** Bench with an observable beginSubmission on the session face. */
   async function echoBench() {
     const b = await bench()
-    const retire: { onRetire?: (retirement: unknown) => void } = {}
+    const retire: { onRetire?: ((retirement: unknown) => void) | undefined } = {}
     const abandon = vi.fn()
     const beginSubmission = vi.fn((input: { onRetire?: (retirement: unknown) => void }) => {
       retire.onRetire = input.onRetire
