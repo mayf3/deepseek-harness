@@ -268,17 +268,17 @@ function TaskItem({ row, view, expanded, now, onToggle, kill, t }: {
         <span className={css.main}>
           <span className={css.primary}>
             <span className={css.label} title={row.label}>{row.label}</span>
-            {durationCell}
           </span>
-          <span className={css.secondary}>
+          <span className={css.secondary} title={row.detail ?? status}>
             <span className={css.kind}>{row.kind}</span>
-            <span className={css.status} title={row.detail ?? status}>{row.detail ?? status}</span>
+            {row.detail !== undefined ? <span className={css.status}>{row.detail}</span> : null}
+            {durationCell}
           </span>
         </span>
         {observable
           ? (
             <span className={css.chevronBox}>
-              <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
+              <IconChevronDownOutline14 size={12} className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
             </span>
           )
           : null}
@@ -334,7 +334,7 @@ function TaskItem({ row, view, expanded, now, onToggle, kill, t }: {
               title={killTitle}
               onClick={kill.onPress}
             >
-              <IconStopFill16 size={12} />
+              <IconStopFill16 size={10} />
               {/* The armed press must be legible without hover: the button
                   widens into a labeled confirm pill instead of a tint only. */}
               {kill.state === 'armed' ? <span className={css.stopLabel}>{t('kill.confirmAction')}</span> : null}
@@ -386,6 +386,12 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
   const observedViews = useActivity(state => state.observed)
   const [open, setOpen] = useState(false)
   const [expandedKey, setExpandedKey] = useState<string | undefined>(undefined)
+  // Settled-section fold: an explicit user toggle wins; before one, the tail
+  // folds only while live work exists (a settled-only list opens expanded).
+  const [settledOpen, setSettledOpen] = useState<boolean | undefined>(undefined)
+  // Rows the user cleared from the settled tail (client-side hide only; the
+  // registry keeps its records and a later settlement reappears normally).
+  const [clearedKeys, setClearedKeys] = useState<ReadonlySet<string>>(() => new Set())
   // One kill affordance advances at a time: arming a row disarms any other.
   const [killPhase, setKillPhase] = useState<{ key: string; state: Exclude<KillState, 'idle'> } | undefined>(undefined)
   const [now, setNow] = useState(() => Date.now())
@@ -401,7 +407,12 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
     [jobs, owned, unowned],
   )
   const liveRows = useMemo(() => rows.filter(isLive), [rows])
-  const settledRows = useMemo(() => rows.filter(row => !isLive(row)), [rows])
+  const settledRows = useMemo(
+    () => rows.filter(row => !isLive(row) && !clearedKeys.has(row.key)),
+    [rows, clearedKeys],
+  )
+  const settledExpanded = settledOpen ?? liveRows.length === 0
+  const visibleCount = liveRows.length + settledRows.length
 
   useDismissOnOutsidePointer(rootRef, open, setOpen)
 
@@ -449,11 +460,11 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
     return observe(activeActivity)
   }, [activeActivity, observe])
 
-  // The last task disappearing removes this control; close first so focus
-  // does not vanish from an unmounting node.
+  // The last visible task disappearing removes this control; close first so
+  // focus does not vanish from an unmounting node.
   useEffect(() => {
-    if (rows.length === 0 && open) setOpen(false)
-  }, [rows.length, open])
+    if (visibleCount === 0 && open) setOpen(false)
+  }, [visibleCount, open])
 
   // An expanded row that left the list (owner disposal) folds its panel.
   useEffect(() => {
@@ -505,12 +516,23 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
     })
   }
 
-  if (rows.length === 0) return null
+  if (visibleCount === 0) return null
 
   const countKey = liveRows.length > 0
     ? (liveRows.length === 1 ? 'count.live.one' : 'count.live.other')
-    : (rows.length === 1 ? 'count.idle.one' : 'count.idle.other')
-  const countLabel = t(countKey, { count: liveRows.length > 0 ? liveRows.length : rows.length })
+    : (visibleCount === 1 ? 'count.idle.one' : 'count.idle.other')
+  const countLabel = t(countKey, { count: liveRows.length > 0 ? liveRows.length : visibleCount })
+
+  const clearSettled = (): void => {
+    setClearedKeys((current) => {
+      const next = new Set(current)
+      for (const row of settledRows) next.add(row.key)
+      return next
+    })
+    if (expandedKey !== undefined && settledRows.some(row => row.key === expandedKey)) {
+      setExpandedKey(undefined)
+    }
+  }
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key !== 'Escape' || !open) return
@@ -570,9 +592,24 @@ export function ActivityListAction({ sessionId, useSessions, useActivity, observ
               : null}
             {liveRows.map(item)}
             {settledRows.length > 0
-              ? <li className={css.sectionHeader} aria-hidden="true">{t('section.settled')}</li>
+              ? (
+                <li className={css.sectionHeader}>
+                  <button
+                    type="button"
+                    className={css.sectionToggle}
+                    aria-expanded={settledExpanded}
+                    onClick={() => { setSettledOpen(!settledExpanded) }}
+                  >
+                    <IconChevronDownOutline14 size={12} className={settledExpanded ? `${css.sectionChevron} ${css.sectionChevronOpen}` : css.sectionChevron} />
+                    {t('section.settledCount', { count: settledRows.length })}
+                  </button>
+                  <button type="button" className={css.sectionClear} onClick={clearSettled}>
+                    {t('section.clear')}
+                  </button>
+                </li>
+              )
               : null}
-            {settledRows.map(item)}
+            {settledExpanded ? settledRows.map(item) : null}
           </ul>
         )
         : null}

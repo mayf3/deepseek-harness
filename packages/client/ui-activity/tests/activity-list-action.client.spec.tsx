@@ -146,16 +146,34 @@ describe('ActivityListAction merged rows', () => {
     expect(screen.getByText('pnpm run build')).toBeDefined()
   })
 
-  it('labels each non-empty section and drops the heading of an empty one', () => {
-    const settled = [job({ id: 'bash-2' as SessionJob['id'], status: 'completed', finishedAt: 1_700_000_012_000 })]
+  it('folds the settled tail behind its count while live work exists, and clears on demand', () => {
+    const settled = [job({ id: 'bash-2' as SessionJob['id'], label: 'settled work', status: 'completed', finishedAt: 1_700_000_012_000 })]
     const { rerender } = render(<ActivityListAction {...props({}, undefined, [job(), ...settled])} />)
     openList()
     expect(screen.getByText(zh['section.live'])).toBeDefined()
-    expect(screen.getByText(zh['section.settled'])).toBeDefined()
-    // A live-only list keeps its own heading and drops the settled one.
+    const toggle = screen.getByRole('button', { name: zh['section.settledCount'].replace('{count}', '1') })
+    // Folded by default while something runs; the toggle expands it.
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('settled work')).toBeNull()
+    fireEvent.click(toggle)
+    expect(screen.getByText('settled work')).toBeDefined()
+    // Clearing hides the tail client-side and drops the whole section line.
+    fireEvent.click(screen.getByRole('button', { name: zh['section.clear'] }))
+    expect(screen.queryByText('settled work')).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['section.clear'] })).toBeNull()
+    // A live-only list keeps its own heading and no settled section.
     rerender(<ActivityListAction {...props({}, undefined, [job()])} />)
     expect(screen.getByText(zh['section.live'])).toBeDefined()
-    expect(screen.queryByText(zh['section.settled'])).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['section.clear'] })).toBeNull()
+  })
+
+  it('opens the settled tail by default when nothing is live', () => {
+    render(<ActivityListAction {...props({}, undefined, [
+      job({ status: 'completed', finishedAt: 1_700_000_012_000 }),
+    ])} />)
+    openList()
+    expect(screen.getByText('pnpm run build')).toBeDefined()
+    expect(screen.getByRole('button', { name: zh['section.settledCount'].replace('{count}', '1') }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('shows a settled duration and ticks a live one', () => {
@@ -167,6 +185,7 @@ describe('ActivityListAction merged rows', () => {
       job({ id: 'bash-4' as SessionJob['id'], status: 'completed', startedAt: 1_699_999_900_000, finishedAt: 1_699_999_972_000 }),
     ])} />)
     openList()
+    fireEvent.click(screen.getByRole('button', { name: zh['section.settledCount'].replace('{count}', '3') }))
     expect(screen.getByText('5秒')).toBeDefined()
     expect(screen.getByText('12秒')).toBeDefined()
     expect(screen.getByText('1小时3分')).toBeDefined()
@@ -187,12 +206,16 @@ describe('ActivityListAction rows and observation', () => {
       },
     })} />)
     openList()
+    fireEvent.click(screen.getByRole('button', { name: zh['section.settledCount'].replace('{count}', '1') }))
     const list = screen.getByRole('list', { name: zh['list.aria'] })
     const items = within(list).getAllByRole('listitem')
-    expect(items).toHaveLength(2)
+    // The section line is a listitem too now: live row, section, settled row.
+    expect(items).toHaveLength(3)
     expect(items[0]?.textContent).toContain('pnpm run build')
-    expect(items[0]?.textContent).toContain(zh['status.running'])
-    expect(items[1]?.textContent).toContain('exit code: 3')
+    // A live row's second line is kind · duration; the status word only
+    // appears through a detail (none while running).
+    expect(items[0]?.textContent).toMatch(/小时|分|秒/)
+    expect(items[2]?.textContent).toContain('exit code: 3')
   })
 
   it('marks killed rows, renders every output line unfolded, and copies the command', async () => {
@@ -247,9 +270,11 @@ describe('ActivityListAction rows and observation', () => {
       },
     })} />)
     openList()
+    fireEvent.click(screen.getByRole('button', { name: zh['section.settledCount'].replace('{count}', '5') }))
     const labels = within(screen.getByRole('list', { name: zh['list.aria'] }))
       .getAllByRole('listitem')
       .map(item => item.querySelector('[title]')?.getAttribute('title'))
+      .filter(title => title !== undefined)
     expect(labels).toEqual([
       'live-2', 'live-1', 'settled-d', 'settled-a', 'settled-c', 'settled-b', 'settled-e',
     ])
