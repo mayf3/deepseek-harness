@@ -3,7 +3,7 @@
  * `pnpm`, `npm`, and `tar`, and each needs one of three failure behaviours.
  */
 
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
@@ -81,6 +81,26 @@ export function run(command: string, args: readonly string[], options: RunOption
   const result = spawnSync(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit' })
   if (result.error !== undefined) throw result.error
   if (result.status !== 0) throw new Error(`${command} ${args.join(' ')} exited with ${String(result.status)}`)
+}
+
+/**
+ * Run a command with inherited streams without blocking the event loop, so a
+ * caller can hold several commands in flight, and fail on a non-zero exit.
+ * Concurrent children interleave their output at line granularity.
+ * @param command - executable name.
+ * @param args - command arguments.
+ * @param options - working directory and environment.
+ * @returns Resolves when the command exits with status zero.
+ */
+export function runConcurrent(command: string, args: readonly string[], options: RunOptions = {}): Promise<void> {
+  return new Promise((resolveRun, rejectRun) => {
+    const child = spawn(command, [...args], { cwd: options.cwd, env: options.env, stdio: 'inherit' })
+    child.once('error', rejectRun)
+    child.once('close', (status, signal) => {
+      if (status === 0) resolveRun()
+      else rejectRun(new Error(`${command} ${args.join(' ')} exited with ${String(status ?? signal)}`))
+    })
+  })
 }
 
 /**
