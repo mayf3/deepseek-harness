@@ -12,7 +12,7 @@ const fixtureDir = fileURLToPath(new URL(
   import.meta.url,
 ))
 const driver = join(fixtureDir, 'driver.ts')
-const configPath = join(fixtureDir, 'cordis.yml')
+const configPath = join(fixtureDir, 'codex.patch.yml')
 const packageDir = fileURLToPath(new URL('..', import.meta.url))
 const manifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as {
   dsh?: { bundle?: { patch?: string } }
@@ -40,7 +40,7 @@ describe('Codex provider public Loader composition', () => {
 
     expect(stderr).toBe('')
     expect(JSON.parse(stdout)).toEqual({
-      providers: ['codex-primary', 'codex-secondary', 'codex'],
+      providers: ['codex', 'codex-primary', 'codex-secondary'],
       providerDetails: [
         {
           name: 'codex',
