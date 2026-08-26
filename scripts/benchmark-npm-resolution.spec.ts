@@ -7,6 +7,7 @@ import {
   buildRegistryIndex,
   parseBenchmarkOptions,
   publishWorkspaceRange,
+  resolveNpmPackageLock,
   type RegistryIndex,
 } from './benchmark-npm-resolution.ts'
 
@@ -80,5 +81,27 @@ describe('npm resolution benchmark', () => {
     expect(result.registryRequests).toBeGreaterThan(0)
     expect(result.archiveRequests).toBe(0)
     expect(result.unknownPackages).toEqual([])
+  })
+
+  it('returns npm placement for two aliased package versions without requesting archives', async () => {
+    const index: RegistryIndex = new Map([[
+      '@deepseek-ai/dsh',
+      new Map([
+        ['0.1.0', { name: '@deepseek-ai/dsh', version: '0.1.0' }],
+        ['0.2.0', { name: '@deepseek-ai/dsh', version: '0.2.0' }],
+      ]),
+    ]])
+
+    const result = await resolveNpmPackageLock(index, {
+      '@deepseek-ai/dsh': '0.2.0',
+      'dsh-previous': 'npm:@deepseek-ai/dsh@0.1.0',
+    }, 10_000)
+
+    expect(result.archiveRequests).toBe(0)
+    expect(result.packageLock.packages['node_modules/@deepseek-ai/dsh']?.version).toBe('0.2.0')
+    expect(result.packageLock.packages['node_modules/dsh-previous']).toMatchObject({
+      name: '@deepseek-ai/dsh',
+      version: '0.1.0',
+    })
   })
 })

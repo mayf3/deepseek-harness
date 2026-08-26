@@ -69,6 +69,27 @@ export interface BenchmarkRun {
   readonly unknownPackages: readonly string[]
 }
 
+/** Published-package fields retained in npm's package-lock layout. */
+export interface NpmLockPackage {
+  readonly name?: string
+  readonly version?: string
+  readonly dependencies?: Readonly<Record<string, string>>
+  readonly optionalDependencies?: Readonly<Record<string, string>>
+  readonly peerDependencies?: Readonly<Record<string, string>>
+  readonly peerDependenciesMeta?: Readonly<Record<string, { readonly optional?: boolean }>>
+}
+
+/** The installed paths selected by npm without materializing package archives. */
+export interface NpmPackageLock {
+  readonly lockfileVersion: number
+  readonly packages: Readonly<Record<string, NpmLockPackage>>
+}
+
+/** npm resolution observations together with its computed install layout. */
+export interface NpmPackageLockResolution extends BenchmarkRun {
+  readonly packageLock: NpmPackageLock
+}
+
 /** Parse one positive-integer command-line option or use its default. */
 export function parsePositiveIntegerOption(raw: string | undefined, fallback: number, name: string): number {
   if (raw === undefined) return fallback
@@ -250,6 +271,19 @@ function npmExecutable(): string {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm'
 }
 
+function readNpmPackageLock(path: string): NpmPackageLock {
+  const parsed: unknown = JSON.parse(readFileSync(path, 'utf8'))
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('npm produced an invalid package-lock.json')
+  }
+  const { lockfileVersion, packages } = parsed as Record<string, unknown>
+  if (!Number.isSafeInteger(lockfileVersion) || packages === null
+    || typeof packages !== 'object' || Array.isArray(packages)) {
+    throw new Error('npm produced an invalid package-lock.json')
+  }
+  return parsed as NpmPackageLock
+}
+
 async function runNpm(
   cwd: string,
   registry: string,
@@ -302,17 +336,17 @@ async function runNpm(
 }
 
 /**
- * Resolve the CLI install graph once without downloading package archives.
+ * Ask npm to compute an install layout without downloading package archives.
  * @param index - Package metadata exposed through the local registry.
- * @param targetVersion - Version of `@deepseek-ai/dsh` to install.
+ * @param dependencies - Root dependencies whose install layout npm computes.
  * @param timeoutMs - Hard wall-clock limit for the npm child process.
- * @returns Timing and registry-request observations.
+ * @returns The package lock plus timing and registry-request observations.
  */
-export async function benchmarkNpmResolution(
+export async function resolveNpmPackageLock(
   index: RegistryIndex,
-  targetVersion: string,
+  dependencies: Readonly<Record<string, string>>,
   timeoutMs: number,
-): Promise<BenchmarkRun> {
+): Promise<NpmPackageLockResolution> {
   let registryRequests = 0
   let archiveRequests = 0
   const unknownPackages = new Set<string>()
@@ -357,7 +391,7 @@ export async function benchmarkNpmResolution(
       name: 'dsh-npm-resolution-benchmark',
       version: '0.0.0',
       private: true,
-      dependencies: { [TARGET_PACKAGE]: targetVersion },
+      dependencies,
     }, null, 2)}\n`)
     const result = await runNpm(consumer, registry, timeoutMs)
     if (result.timedOut) throw new Error(`npm resolution exceeded ${String(timeoutMs)} ms`)
@@ -366,10 +400,32 @@ export async function benchmarkNpmResolution(
       registryRequests,
       archiveRequests,
       unknownPackages: [...unknownPackages].sort(),
+      packageLock: readNpmPackageLock(join(consumer, 'package-lock.json')),
     }
   } finally {
     await close(server)
     rmSync(consumer, { recursive: true, force: true })
+  }
+}
+
+/**
+ * Resolve the CLI install graph once without downloading package archives.
+ * @param index - Package metadata exposed through the local registry.
+ * @param targetVersion - Version of `@deepseek-ai/dsh` to install.
+ * @param timeoutMs - Hard wall-clock limit for the npm child process.
+ * @returns Timing and registry-request observations.
+ */
+export async function benchmarkNpmResolution(
+  index: RegistryIndex,
+  targetVersion: string,
+  timeoutMs: number,
+): Promise<BenchmarkRun> {
+  const result = await resolveNpmPackageLock(index, { [TARGET_PACKAGE]: targetVersion }, timeoutMs)
+  return {
+    durationMs: result.durationMs,
+    registryRequests: result.registryRequests,
+    archiveRequests: result.archiveRequests,
+    unknownPackages: result.unknownPackages,
   }
 }
 

@@ -56,6 +56,12 @@ pnpm run benchmark:npm-resolution -- --runs=5 --timeout-ms=300000
 pnpm run benchmark:npm-resolution -- --ref=origin/master --runs=5 --timeout-ms=300000
 ```
 
+Verify package placement through two incompatible synthetic DSH releases. The verifier copies every current DSH manifest into `0.1.0` and `0.2.0`, asks npm for a package lock only, and rejects cross-release DSH resolution, unexpected DSH locations, unequal release inventories, multiple Cordis installations, and package archive requests. The local index contains only installed current-platform metadata, so npm-accepted probes for unavailable optional packages are reported without failing the check.
+
+```sh
+pnpm run verify-npm-install-layout
+```
+
 Rank the next Host package by applying the current policy in memory, measuring a baseline, trying each reachable unconfigured package, and serially retesting the fastest coarse candidates. Positive `gainSeconds` is `baseline median - candidate median`; `--candidates` limits the roster, `--jobs` controls coarse concurrency, and neither phase writes manifests. A selected candidate still requires export classification before it joins `hostPackages`.
 
 ```sh
@@ -64,7 +70,7 @@ pnpm run benchmark:npm-resolution:next -- --runs=1 --finalist-runs=5 --finalists
 
 ### Performance verification
 
-[`benchmark-npm-resolution`](../../../../scripts/benchmark-npm-resolution.ts) and [`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) remain manual rather than CI gates because resolver time varies with machine load and metadata completion order. Their fresh-consumer, metadata-only runs isolate npm's dependency-tree calculation from registry latency and archive downloads, so relative results identify peer relays without creating a release-time performance promise.
+[`verify-npm-install-layout`](../../../../scripts/verify-npm-install-layout.ts) is a deterministic package-path and version check in the `Release (dsh)` workflow on every pull request and master push; it does not enforce resolver duration. [`benchmark-npm-resolution`](../../../../scripts/benchmark-npm-resolution.ts) and [`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) remain manual because resolver time varies with machine load and metadata completion order. Their fresh-consumer, metadata-only runs isolate npm's dependency-tree calculation from registry latency and archive downloads, so relative results identify peer relays without creating a release-time performance promise.
 
 ## Alternatives considered
 
@@ -84,4 +90,4 @@ The published dependency graph follows artifact ownership instead of source-dire
 
 Moving a public type-only relationship to `devDependencies` means a standalone TypeScript consumer must install the referenced type package when it consumes that declaration. The shipped profiles install the complete supported package family; supporting independently assembled TypeScript consumers would require a different policy.
 
-The explicit overrides, Host list, and export classifications are reviewable decisions. Class constructors used by `instanceof`, symbols, and accessors for module-private registries require peers when their identity or state crosses package boundaries; being a value import alone does not make an export duplicate-safe. Changing a classification changes the installed graph and requires the focused verifier tests plus a fresh next-package benchmark. The metadata-only benchmark is diagnostic evidence, not a release-time performance promise.
+The explicit overrides, Host list, and export classifications are reviewable decisions. Class constructors used by `instanceof`, symbols, and accessors for module-private registries require peers when their identity or state crosses package boundaries; being a value import alone does not make an export duplicate-safe. Changing a classification changes the installed graph and requires the focused verifier tests, the two-release layout check, and a fresh next-package benchmark. The metadata-only benchmark is diagnostic evidence, not a release-time performance promise.

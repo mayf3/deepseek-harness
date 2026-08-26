@@ -107,6 +107,7 @@
     "verify-runtime-closure": "tsx scripts/verify-runtime-closure.ts",
     "verify-application-entrypoints": "tsx scripts/verify-application-entrypoints.ts",
     "verify-package-dependencies": "tsx scripts/verify-package-dependencies.ts",
+    "verify-npm-install-layout": "tsx scripts/verify-npm-install-layout.ts",
     "verify-client-packages": "tsx scripts/verify-client-packages.ts",
     "verify-client-ui-i18n": "tsx scripts/verify-client-ui-i18n.ts",
     "verify-vendored-links": "tsx scripts/verify-vendored-links.ts",

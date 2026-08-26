@@ -56,6 +56,12 @@ pnpm run benchmark:npm-resolution -- --runs=5 --timeout-ms=300000
 pnpm run benchmark:npm-resolution -- --ref=origin/master --runs=5 --timeout-ms=300000
 ```
 
+通过两个互不兼容的 DSH 合成版本验证包落位。验证器把每份当前 DSH manifest 分别复制为 `0.1.0` 和 `0.2.0`，只要求 npm 生成 package lock，并拒绝跨版本 DSH 解析、非预期 DSH 路径、两套版本清单不一致、多个 Cordis 实例以及包归档请求。本地索引只包含当前平台已安装的 metadata，因此只报告而不拒绝 npm 已接受的不可用可选包探测。
+
+```sh
+pnpm run verify-npm-install-layout
+```
+
 计算下一项 Host 包时，命令会在内存中应用当前策略、测量 baseline、逐个尝试可达且未配置的包，并串行复测粗筛中最快的候选。正数 `gainSeconds` 等于 `baseline median - candidate median`；`--candidates` 限定名册，`--jobs` 控制粗筛并发度，两个阶段都不写 manifest。选中的候选仍需先完成导出分类，才能加入 `hostPackages`。
 
 ```sh
@@ -64,7 +70,7 @@ pnpm run benchmark:npm-resolution:next -- --runs=1 --finalist-runs=5 --finalists
 
 ### 性能验证
 
-[`benchmark-npm-resolution`](../../../../scripts/benchmark-npm-resolution.ts) 与 [`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) 保持为手动工具而非 CI 门禁，因为 resolver 耗时会随机器负载和 metadata 完成顺序变化。它们通过全新 consumer 和仅 metadata 的运行，把 npm 依赖树计算与 registry 延迟、包归档下载分离，因此相对结果可以定位 peer 中继，但不构成发布时性能承诺。
+[`verify-npm-install-layout`](../../../../scripts/verify-npm-install-layout.ts) 是 `Release (dsh)` workflow 在每个 pull request 和 master push 上运行的确定性包路径与版本检查；它不限制 resolver 耗时。[`benchmark-npm-resolution`](../../../../scripts/benchmark-npm-resolution.ts) 与 [`benchmark-next-package-dependency`](../../../../scripts/benchmark-next-package-dependency.ts) 保持为手动工具，因为 resolver 耗时会随机器负载和 metadata 完成顺序变化。它们通过全新 consumer 和仅 metadata 的运行，把 npm 依赖树计算与 registry 延迟、包归档下载分离，因此相对结果可以定位 peer 中继，但不构成发布时性能承诺。
 
 ## 考虑过的替代方案
 
@@ -84,4 +90,4 @@ pnpm run benchmark:npm-resolution:next -- --runs=1 --finalist-runs=5 --finalists
 
 把公开纯类型关系放进 `devDependencies`，意味着独立 TypeScript 消费者在使用该声明时必须自行安装被引用的类型包。发布 profile 会安装完整的受支持包族；若要支持独立组装的 TypeScript 消费者，需要另一套策略。
 
-显式 override、Host 列表与导出分类都是需要评审的决策。当 class constructor、symbol 和访问模块私有 registry 的函数跨包传递身份或状态时，它们要求 peer；仅仅属于 value import 并不能证明导出可重复安装。修改分类会改变安装图，因此需要运行聚焦 verifier 测试并重新执行 next-package benchmark。仅 metadata benchmark 是诊断证据，不是发布时安装耗时承诺。
+显式 override、Host 列表与导出分类都是需要评审的决策。当 class constructor、symbol 和访问模块私有 registry 的函数跨包传递身份或状态时，它们要求 peer；仅仅属于 value import 并不能证明导出可重复安装。修改分类会改变安装图，因此需要运行聚焦 verifier 测试、双版本布局检查并重新执行 next-package benchmark。仅 metadata benchmark 是诊断证据，不是发布时安装耗时承诺。
