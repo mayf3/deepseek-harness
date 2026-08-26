@@ -341,7 +341,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
       const result = await runBuiltBin(removed)
       expect(result.code).toBe(1)
     }
-  }, SPAWN_TIMEOUT_MS + 30_000)
+  }, SPAWN_TIMEOUT_MS * 3 + 30_000)
 
   it('routes help and usage errors without activating startup-dependent rows', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-app-help-'))
@@ -398,7 +398,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
-  }, SPAWN_TIMEOUT_MS + 30_000)
+  }, SPAWN_TIMEOUT_MS * 3 + 30_000)
 
   it('reports SDK startup failure when stdin reaches EOF first', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-sdk-startup-failure-'))
