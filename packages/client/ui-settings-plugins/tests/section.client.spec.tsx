@@ -93,6 +93,7 @@ function renderSubagentModelSelection(state: Partial<SubagentModelSelectionCardS
     candidates: [],
     catalogStatus: 'idle',
     catalogPartial: false,
+    conflicted: false,
     ...state,
   })
   const actions = {
@@ -433,6 +434,14 @@ describe('SubagentModelSelectionCard', () => {
     renderSubagentModelSelection({ enabled: true, catalogStatus: 'ready' })
     fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
     expect(screen.getByText(en.subagentModelSelectionEmpty)).toBeTruthy()
+  })
+
+  it('distinguishes a stale draft from a rejected save', () => {
+    renderSubagentModelSelection({ dirty: true, conflicted: true })
+    fireEvent.click(screen.getByText(en.subagentModelSelectionTitle))
+
+    expect(screen.getByText(en.subagentModelSelectionConflict)).toBeTruthy()
+    expect(screen.queryByText(en.saveFailed)).toBeNull()
   })
 
   it('stays hidden when unavailable and disables writes when read-only', () => {

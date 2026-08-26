@@ -187,7 +187,7 @@ describe('ui-settings-plugins apply', () => {
 
   it('refreshes the subagent catalog after model inputs change or the connection resets', async () => {
     const refresh = vi.spyOn(SubagentModelSelectionCardController.prototype, 'refreshCatalog')
-    const reset = vi.spyOn(SubagentModelSelectionCardController.prototype, 'resetCatalog')
+    const reset = vi.spyOn(SubagentModelSelectionCardController.prototype, 'resetConnection')
     const { ctx, slots, remote } = await bench(['subagent-model-selection'])
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()

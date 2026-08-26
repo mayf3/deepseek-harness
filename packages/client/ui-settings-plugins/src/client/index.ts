@@ -90,7 +90,7 @@ export function apply(ctx: ClientContext): void {
     'ui-settings-plugins: subagent settings invalidations',
   )
   ctx.effect(
-    () => ctx.on('connection/reset', () => { subagentModelSelection.resetCatalog() }),
+    () => ctx.on('connection/reset', () => { subagentModelSelection.resetConnection() }),
     'ui-settings-plugins: subagent connection generation',
   )
   ctx.effect(() => () => { subagentModelSelection.dispose() }, 'ui-settings-plugins: subagent preference')

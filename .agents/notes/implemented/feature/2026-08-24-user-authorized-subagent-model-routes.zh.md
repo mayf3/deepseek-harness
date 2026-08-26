@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 开关与 `allowedModels`，后者是由精确 `{ provider, model }` 路由组成的数组。启用时必须至少有一条路由；关闭时可以保留已选路由，供以后重新启用。Plugins 设置卡通过 `llm.models` 读取实时适配器目录，让用户暂存开关与路由，再在一次带 revision 限制的设置 mutation 中保存两个字段。它不保存适配器自有的显示名称、描述或推理强度元数据。当前目录中缺失的已存路由仍显示为不可用并允许移除；某个提供方的目录失败不会阻塞其他提供方，也不会清除已存授权。
+Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 开关与 `allowedModels`，后者是由精确 `{ provider, model }` 路由组成的数组。启用时必须至少有一条路由；关闭时可以保留已选路由，供以后重新启用。Plugins 设置卡通过 `llm.models` 读取实时适配器目录，让用户暂存开关与路由，再在一次带 revision 限制的设置 mutation 中保存两个字段。它不保存适配器自有的显示名称、描述或推理强度元数据。当前目录中缺失的已存或暂存路由仍显示为不可用并允许移除；某个提供方的目录失败不会阻塞其他提供方，也不会清除已存授权或未保存选择。连接重置会丢弃草稿，因为 namespace revision 只能在同一个 Host 进程内比较。
 
 设置启用时，新组合的顶层 Session 会在模型可选定义进入请求之前，把路由列表快照记录为 `subagent/model-selection-policy`。事件存在就表示模型选择已启用；事件不保存全局开关。子 Session 从在线父级继承同一份精确列表，恢复的 Session 使用已记录事件而不是当前设置。因此，设置修改只影响之后组合的顶层 Session，而已有非空日志但没有该事件的 Session 仍保持禁用。
 
@@ -36,7 +36,7 @@ Host 自有的 `subagent-model-selection` 设置 section 保存显式 `enabled` 
 - 适配器移除或目录失败可以减少发现当前列出的内容，但不会删除已存路由决定；即使建议性目录省略某条精确已授权路由，只要适配器接受它，该路由仍然可用。
 - 允许列表本身不消耗父级请求 token。只有 `list_subagent_models` 结果进入 transcript。
 - 策略事件仅存在于日志，并在 Agent 组合期间、两套 SDK 开始订阅运行前追加。随附 SDK profile 不启用这项 Web 自有偏好，因此该事件不会改变任一 SDK 的预期通知或持久 Session 输出；其持久投影由包级恢复测试负责，不会为了发出该事件而虚构 SDK 组合。
-- 单元覆盖固定设置校验、异常持久值、Session 取样与继承、发现交集、执行器拒绝、UI 实时目录失效、暂存后的整数组写入、过期 revision 拒绝，以及作用域安装失败后的重试。组装 Web 场景固定真实设置文档与 Plugins 设置卡流程。
+- 单元覆盖固定设置校验、异常持久值、Session 取样与继承、发现交集、执行器拒绝、UI 实时目录失效、暂存路由保留、连接换代失效、暂存后的整数组写入、陈旧 revision 拒绝，以及作用域安装失败后的重试。组装 Web 场景固定真实设置文档与 Plugins 设置卡流程。
 
 ## Related decisions
 

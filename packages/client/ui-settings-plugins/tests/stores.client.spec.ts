@@ -614,15 +614,120 @@ describe('SubagentModelSelectionCardController', () => {
       revision: 5,
       value: { enabled: true, allowedModels: [{ provider: 'other', model: 'new' }] },
     })
-    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({ failed: true, dirty: true })
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      conflicted: true, failed: false, dirty: true,
+    })
     face.save()
     await Promise.resolve()
 
     expect(host.mutate).not.toHaveBeenCalled()
     face.discard()
     expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
-      failed: false, dirty: false, enabled: true,
+      conflicted: false, failed: false, dirty: false, enabled: true,
     })
+  })
+
+  it('settles a draft when a newer Host revision already contains it', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const models = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
+    })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    host.publish({
+      status: 'ready', writable: true, revision: 4,
+      value: { enabled: false, allowedModels: [] }, user: {},
+    })
+    const face = controller.inject()
+    face.toggleEnabled()
+    await vi.waitFor(() => { expect(face.hooks.subagentModelSelectionCard.getSnapshot().candidates).toHaveLength(1) })
+    face.toggleModel('alpha\0fast')
+
+    host.publish({
+      revision: 5,
+      value: { enabled: true, allowedModels: [{ provider: 'alpha', model: 'fast' }] },
+    })
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      conflicted: false, dirty: false, enabled: true,
+    })
+  })
+
+  it('retains unsaved routes across a catalog refresh', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    acceptWrites(host)
+    host.publish({
+      status: 'ready', writable: true, revision: 2,
+      value: { enabled: false, allowedModels: [] }, user: {},
+    })
+    const refreshed = deferred<never>()
+    const models = vi.fn()
+      .mockResolvedValueOnce({
+        rpcId: 'catalog-1',
+        result: { ok: true, value: {
+          groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
+          failures: [],
+        } },
+      })
+      .mockImplementationOnce(() => refreshed.promise)
+    const controller = new SubagentModelSelectionCardController(
+      host.scope, { llm: { models } } as never,
+    )
+    const face = controller.inject()
+    const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
+    face.toggleEnabled()
+    await vi.waitFor(() => { expect(state().candidates).toHaveLength(1) })
+    face.toggleModel('alpha\0fast')
+
+    controller.refreshCatalog()
+    expect(state()).toMatchObject({
+      catalogStatus: 'loading',
+      candidates: [expect.objectContaining({ key: 'alpha\0fast', selected: true })],
+    })
+    refreshed.resolve({
+      rpcId: 'catalog-2',
+      result: { ok: true, value: { groups: [], failures: [] } },
+    } as never)
+    await vi.waitFor(() => { expect(state().catalogStatus).toBe('ready') })
+    expect(state().candidates).toEqual([
+      expect.objectContaining({ key: 'alpha\0fast', available: false, selected: true }),
+    ])
+
+    face.save()
+    await vi.waitFor(() => {
+      expect(host.mutate).toHaveBeenCalledWith([
+        { op: 'set', path: ['enabled'], value: true },
+        { op: 'set', path: ['allowedModels'], value: [{ provider: 'alpha', model: 'fast' }] },
+      ], 2)
+    })
+  })
+
+  it('drops a draft when the connection generation changes', async () => {
+    const host = stubSettingsScope<SubagentModelSelectionSettings>()
+    const models = modelsApi({
+      groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
+    })
+    host.publish({
+      status: 'ready', writable: true, revision: 4,
+      value: { enabled: false, allowedModels: [] }, user: {},
+    })
+    const controller = new SubagentModelSelectionCardController(host.scope, models.api)
+    const face = controller.inject()
+    face.toggleEnabled()
+    await vi.waitFor(() => { expect(face.hooks.subagentModelSelectionCard.getSnapshot().candidates).toHaveLength(1) })
+    face.toggleModel('alpha\0fast')
+
+    controller.resetConnection()
+    host.publish({
+      revision: 4,
+      value: { enabled: true, allowedModels: [{ provider: 'other', model: 'new' }] },
+    })
+
+    expect(face.hooks.subagentModelSelectionCard.getSnapshot()).toMatchObject({
+      conflicted: false, dirty: false, enabled: true,
+    })
+    face.save()
+    await Promise.resolve()
+    expect(host.mutate).not.toHaveBeenCalled()
   })
 
   it('reloads the model catalog after invalidation', async () => {
@@ -739,7 +844,7 @@ describe('SubagentModelSelectionCardController', () => {
 
     controller.dispose()
     controller.refreshCatalog()
-    controller.resetCatalog()
+    controller.resetConnection()
     face.toggleEnabled()
     face.retryCatalog()
     face.save()

@@ -49,6 +49,8 @@ export interface SubagentModelSelectionCardState extends CardShell {
   catalogStatus: 'idle' | 'loading' | 'ready' | 'error'
   /** Whether any provider-local catalog request failed. */
   catalogPartial: boolean
+  /** Whether a newer Host revision invalidated the current draft. */
+  conflicted: boolean
 }
 
 /** Registration-side face for the subagent model-selection card. */
@@ -130,10 +132,11 @@ export class SubagentModelSelectionCardController {
   private catalogPartial = false
   private catalogStatus: SubagentModelSelectionCardState['catalogStatus'] = 'idle'
   private draftEnabled: boolean | undefined
-  private draftSelected: Set<string> | undefined
+  private draftRoutes: Map<string, AllowedSubagentModel> | undefined
   private draftRevision: number | undefined
   private saving = false
   private failed = false
+  private conflicted = false
   private disposed = false
   private saveGeneration = 0
   private catalogGeneration = 0
@@ -150,9 +153,11 @@ export class SubagentModelSelectionCardController {
   ) {
     this.store = createSnapshotStore(this.projection())
     this.unsubscribe = scope.subscribe(() => {
-      if (!this.saving && this.draftSelected !== undefined
+      if (!this.saving && this.draftRoutes !== undefined
         && this.scope.getSnapshot().revision !== this.draftRevision) {
-        this.failed = true
+        if (this.currentEnabled() === this.enabled()
+          && sameRoutes(this.currentRoutes(), this.desiredRoutes())) this.clearDraft()
+        else this.conflicted = true
       }
       if (this.enabled() && this.catalogStatus === 'idle') void this.loadCatalog()
       this.publish()
@@ -192,21 +197,23 @@ export class SubagentModelSelectionCardController {
   }
 
   private selected(): Set<string> {
-    return this.draftSelected ?? new Set(this.currentRoutes().map(subagentModelKey))
+    return new Set(this.draftRoutes?.keys() ?? this.currentRoutes().map(subagentModelKey))
   }
 
   private enabled(): boolean {
     return this.draftEnabled ?? this.currentEnabled()
   }
 
-  private beginDraft(): Set<string> {
-    if (this.draftSelected === undefined) {
+  private beginDraft(): Map<string, AllowedSubagentModel> {
+    if (this.draftRoutes === undefined) {
       const snapshot = this.scope.getSnapshot()
       this.draftEnabled = snapshot.value?.enabled ?? false
-      this.draftSelected = new Set(snapshot.value?.allowedModels.map(subagentModelKey) ?? [])
+      this.draftRoutes = new Map(
+        snapshot.value?.allowedModels.map(route => [subagentModelKey(route), { ...route }]) ?? [],
+      )
       this.draftRevision = snapshot.revision
     }
-    return this.draftSelected
+    return this.draftRoutes
   }
 
   private toggleEnabled(): void {
@@ -221,31 +228,37 @@ export class SubagentModelSelectionCardController {
 
   private toggleModel(key: string): void {
     if (!this.enabled() || this.saving || !this.scope.getSnapshot().writable) return
-    if (!this.candidates().some(candidate => candidate.key === key)) return
-    const selected = this.beginDraft()
-    if (selected.has(key)) selected.delete(key)
-    else selected.add(key)
+    const candidate = this.candidates().find(candidate => candidate.key === key)
+    if (candidate === undefined) return
+    const routes = this.beginDraft()
+    if (routes.has(key)) routes.delete(key)
+    else routes.set(key, { provider: candidate.provider, model: candidate.model })
     this.failed = false
     this.publish()
+  }
+
+  private clearDraft(): void {
+    this.draftEnabled = undefined
+    this.draftRoutes = undefined
+    this.draftRevision = undefined
+    this.failed = false
+    this.conflicted = false
   }
 
   private discard(): void {
     if (this.saving) return
-    this.draftEnabled = undefined
-    this.draftSelected = undefined
-    this.draftRevision = undefined
-    this.failed = false
+    this.clearDraft()
     this.publish()
   }
 
   private candidates(): SubagentModelCandidate[] {
-    return subagentModelCandidates(this.catalogGroups, this.currentRoutes(), this.selected())
+    const retained = new Map(this.currentRoutes().map(route => [subagentModelKey(route), route]))
+    for (const [key, route] of this.draftRoutes ?? []) retained.set(key, route)
+    return subagentModelCandidates(this.catalogGroups, [...retained.values()], this.selected())
   }
 
   private desiredRoutes(): AllowedSubagentModel[] {
-    return this.candidates()
-      .filter(candidate => candidate.selected)
-      .map(({ provider, model }) => ({ provider, model }))
+    return [...this.draftRoutes?.values() ?? this.currentRoutes()].map(route => ({ ...route }))
   }
 
   private async save(): Promise<void> {
@@ -255,14 +268,15 @@ export class SubagentModelSelectionCardController {
     if (this.disposed || snapshot.status !== 'ready' || !snapshot.writable || this.saving
       || (this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired))
       || (desiredEnabled && desired.length === 0)) return
-    if (this.draftSelected !== undefined && snapshot.revision !== this.draftRevision) {
-      this.failed = true
+    if (this.draftRoutes !== undefined && snapshot.revision !== this.draftRevision) {
+      this.conflicted = true
       this.publish()
       return
     }
     const generation = this.saveGeneration
     this.saving = true
     this.failed = false
+    this.conflicted = false
     this.publish()
     await this.scope.mutate([
       { op: 'set', path: ['enabled'], value: desiredEnabled },
@@ -272,11 +286,7 @@ export class SubagentModelSelectionCardController {
     const landed = this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired)
     this.saving = false
     this.failed = !landed
-    if (landed) {
-      this.draftEnabled = undefined
-      this.draftSelected = undefined
-      this.draftRevision = undefined
-    }
+    if (landed) this.clearDraft()
     this.publish()
   }
 
@@ -290,9 +300,12 @@ export class SubagentModelSelectionCardController {
     else this.publish()
   }
 
-  /** Clear Host-specific candidates and reload after reconnecting. */
-  resetCatalog(): void {
+  /** Drop Host-specific candidates and drafts, then reload after reconnecting. */
+  resetConnection(): void {
     if (this.disposed) return
+    this.saveGeneration += 1
+    this.saving = false
+    this.clearDraft()
     this.catalogGroups = []
     this.refreshCatalog()
   }
@@ -301,7 +314,6 @@ export class SubagentModelSelectionCardController {
     if (this.disposed || this.catalogStatus === 'loading') return
     const generation = this.catalogGeneration
     this.catalogStatus = 'loading'
-    this.catalogGroups = []
     this.catalogPartial = false
     this.publish()
     try {
@@ -334,6 +346,7 @@ export class SubagentModelSelectionCardController {
       candidates: this.candidates(),
       catalogStatus: this.catalogStatus,
       catalogPartial: this.catalogPartial,
+      conflicted: this.conflicted,
     }
   }
 

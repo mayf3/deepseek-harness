@@ -212,8 +212,8 @@ Use subagent in the background by default. Start independent delegations togethe
 
 - **后台运行不通过本工具公开结果**——一次性任务的最终输出通过通用 Task 接口收集，可继续子 agent 的输出留在其自身会话中，按其 subagent id 读取。结算通知会说明该子 agent 如何结束，并携带可能存在的最终 assistant 消息，但它不是本次调用的返回值，也无法在此等待。
 - **等待中的一次性实例较晚才发现重复名称**（`TODO(subagent-dup-toolname)`）——可继续实例会在插件应用期间预留提示词 section 名称，但若要阻止等待中的一次性实例回滚提供方注册，仍需要一份预期名称注册表。
-- **随附 fork 工具无法选择子级 LLM 路由**：它们会继承父级的提供方与模型，使复制的对话前缀仍可供 KV Cache 复用。只有在路由变化仍能保留复用，或接口能公开一项有界的重算成本时，才重新启用这些字段。
-- **每个实例的非路由子 agent 策略固定**：其他 persona、工具过滤器或深度上限都需要另一个名称不同的工具。LLM 提供方／模型／推理强度选择要求每 Session 偏好已启用，并要求 subagent 提供方声明 `agentOptions`；进程外提供方目前会拒绝启用它，而不是忽略它。
+- **随附 fork 工具不能选择子级 LLM 路由**——它们继承父级提供方与模型，使复制的对话前缀仍有资格复用 KV Cache。仅当路由变更能保留复用或公开有界重算成本时，才重新启用选择。
+- **非路由子 agent 策略按实例固定**——另一个 persona、工具过滤器或深度上限需要另一个名称不同的工具。LLM 选择要求启用逐 Session 偏好，且提供方必须声明 `agentOptions`；两个进程内提供方和 DSH SDK 会声明该能力，而 ACP、Codex 与 Claude Code 会拒绝它，而不是忽略它。
 
 <a id="dev-note"></a>
 ### 开发备注
