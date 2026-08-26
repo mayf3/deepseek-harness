@@ -75,8 +75,8 @@ describe('web e2e: plugin configuration section', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-plugin-config-cards'))
     const dialog = await openPlugins()
 
-    // Every card the shipped web composition exposes: subagent selection, the
-    // shell executor, the agent loop, and the DeepSeek search provider.
+    // Every card the shipped web composition exposes: the shell executor, the
+    // agent loop, subagent selection, and the DeepSeek search provider.
     await dialog.getByText('Subagent', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await dialog.getByRole('button', { name: '展开设置: Subagent' }).count()).toBe(1)
     await dialog.getByText('终端', { exact: true }).waitFor({ timeout: 10_000 })

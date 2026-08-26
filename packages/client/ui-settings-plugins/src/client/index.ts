@@ -167,12 +167,6 @@ export function apply(ctx: ClientContext): void {
   ctx.slots.inject('settings.plugin.item', function* () {
     yield ctx.slots.register({
       name: 'settings.plugin.item',
-      key: SUBAGENT_MODEL_SELECTION_NS,
-      locale: NS,
-      inject: () => subagentModelSelection.inject(),
-    }, SubagentModelSelectionCard)
-    yield ctx.slots.register({
-      name: 'settings.plugin.item',
       key: SHELL_NS,
       locale: NS,
       inject: () => bash.inject(),
@@ -183,6 +177,12 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => agentLoop.inject(),
     }, AgentLoopCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: SUBAGENT_MODEL_SELECTION_NS,
+      locale: NS,
+      inject: () => subagentModelSelection.inject(),
+    }, SubagentModelSelectionCard)
     yield ctx.slots.register({
       name: 'settings.plugin.item',
       key: WEB_SEARCH_NS,

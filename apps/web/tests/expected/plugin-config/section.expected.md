@@ -25,16 +25,16 @@
   - tabpanel "插件配置":
     - list:
       - listitem:
-        - 'button "展开设置: Subagent"':
-          - text: Subagent 控制 Agent 为 Subagent 选择模型的权限。
-          - img
-      - listitem:
         - 'button "展开设置: 终端"':
           - text: 终端 限制 agent 运行的每一条命令。
           - img
       - listitem:
         - 'button "展开设置: Agent 循环"':
           - text: Agent 循环 Agent 如何派发工具调用。
+          - img
+      - listitem:
+        - 'button "展开设置: Subagent"':
+          - text: Subagent 控制 Agent 为 Subagent 选择模型的权限。
           - img
       - listitem:
         - 'button "展开设置: 网页搜索"':
