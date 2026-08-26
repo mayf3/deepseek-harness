@@ -1,6 +1,7 @@
 # Agent Note: 输入框的编辑自带它所作用的范围
 
 Status: implemented
+Archived: 2026-08-20
 
 [English](2026-08-20-composer-edit-range-from-selection.md) | 中文
 
@@ -14,7 +15,7 @@ Status: implemented
 
 此时草稿看上去仍然正确，却已不携带任何结构化引用，提交走的是无 occurrence 的那条路，把草稿原样发出。宿主收到的是给人看的标签而不是所有者的模型形式，什么也解析不出来。专为阻止这种降级而存在的序列化守卫从不运行，因为它只在还有 occurrence 需要序列化时才触发。
 
-这条路径是在引用[变成字面内联文本](../feature/2026-07-27-web-file-and-session-references.zh.md)之后才可达的。此前一个引用占据一个 `U+FFFC`——任何按键都打不出的字符，扫描无从撞车。
+这条路径是在引用[变成字面内联文本](../feature/2026-07-27-web-file-and-session-references.md)之后才可达的。此前一个引用占据一个 `U+FFFC`——任何按键都打不出的字符，扫描无从撞车。
 
 ## 决策
 

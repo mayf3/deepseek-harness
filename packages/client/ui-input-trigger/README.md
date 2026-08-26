@@ -29,7 +29,7 @@ Mount this plugin alongside `ui-conversation`; the menu then appears in the inpu
 
 ### Keyboard and mouse
 
-The textarea keeps focus while the menu is open: rows pick on mousedown, the highlight rides `aria-activedescendant`, and a pointer press outside both the menu and the composer card dismisses it. Space and Enter adjudication polls the optional `matchSpace`/`matchEnter` hooks in registration order; the first non-undefined answer wins, and a source can refuse a submission it cannot consume whole.
+The composer surface keeps focus while the menu is open: rows pick on mousedown, the highlight rides `aria-activedescendant`, and a pointer press outside both the menu and the composer card dismisses it. Space and Enter adjudication polls the optional `matchSpace`/`matchEnter` hooks in registration order; the first non-undefined answer wins, and a source can refuse a submission it cannot consume whole. A candidate declaring `drill: true` carries a second verb beside the settling pick: its trailing chevron and the Tab key route the same row through `onPick` with `action: 'drill'` (every other path reports `'pick'`), and Tab passes untouched on rows without the flag so native focus traversal survives.
 
 -----
 
