@@ -150,6 +150,8 @@ function startProfileLifecycle(fixture: ProfileLifecycleFixture, args: readonly 
   return execa(process.execPath, [dshBin, '--profile', 'lifecycle', ...args], {
     cwd: fixture.home,
     input: '',
+    timeout: SPAWN_TIMEOUT_MS,
+    killSignal: 'SIGKILL',
     reject: false,
     env: {
       DSH_HOME: fixture.home,
@@ -396,7 +398,7 @@ describe.skipIf(!existsSync(dshBin))('dsh BUILT bin (node lib/bin.js, no tsx)', 
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
-  }, process.platform === 'win32' ? 60_000 : 30_000)
+  }, SPAWN_TIMEOUT_MS + 30_000)
 
   it('reports SDK startup failure when stdin reaches EOF first', async () => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-built-sdk-startup-failure-'))
