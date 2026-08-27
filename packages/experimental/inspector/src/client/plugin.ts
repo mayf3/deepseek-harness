@@ -38,15 +38,18 @@ export const name = 'experimental-inspector'
 /** This transport root has no Client service dependencies. */
 export const inject: string[] = []
 
-/** Mount the Client source and shared `ctx.inspector` publishing API. */
-export function apply(ctx: Context): void {
+/**
+ * Mount the Client source and shared `ctx.inspector` publishing API.
+ * @param ctx - Client Cordis context whose page identity and lifecycle own the source.
+ */
+export async function apply(ctx: Context): Promise<void> {
   const injected = globalThis.__DSH_INSPECTOR__
   if (injected === undefined) {
     throw new Error('experimental inspector: Host bootstrap is missing')
   }
   const bootstrap = parseInspectorClientBootstrap(injected)
-  ctx.effect(() => {
-    const source = startInspectorClient(bootstrap)
+  await ctx.effect(async () => {
+    const source = await startInspectorClient(bootstrap)
     const disposers: Array<() => unknown> = []
     try {
       disposers.push(publishCordisTree(ctx, source, {
@@ -66,7 +69,10 @@ export function apply(ctx: Context): void {
   }, 'experimental-inspector: Client source')
 }
 
-function disposeInspectorClient(source: ReturnType<typeof startInspectorClient>, disposers: readonly (() => unknown)[]): void {
+function disposeInspectorClient(
+  source: Awaited<ReturnType<typeof startInspectorClient>>,
+  disposers: readonly (() => unknown)[],
+): void {
   const failures: unknown[] = []
   for (const dispose of [...disposers].reverse()) {
     try {

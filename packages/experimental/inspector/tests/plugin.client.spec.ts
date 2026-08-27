@@ -3,6 +3,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.ts'
+import { ClientRealmSource } from '../src/client/inspection/realm.ts'
 import type { InspectorClientBootstrap } from '../src/shared/bridge/messages/control.ts'
 
 class FakeWebSocket extends EventTarget {
@@ -66,9 +67,11 @@ describe('experimental Inspector Client plugin', () => {
   const nativeFetch = globalThis.fetch
 
   afterEach(() => {
+    vi.restoreAllMocks()
     FakeWebSocket.sockets.length = 0
     globalThis.WebSocket = nativeWebSocket
     globalThis.fetch = nativeFetch
+    sessionStorage.clear()
     delete globalThis.__DSH_INSPECTOR__
     Reflect.deleteProperty(globalThis, '__DSH_BOOT__')
   })
@@ -176,6 +179,92 @@ describe('experimental Inspector Client plugin', () => {
     expect(secondOpen.source.sourceId).toBe(firstOpen.source.sourceId)
     expect(secondOpen.source.generation).not.toBe(firstOpen.source.generation)
 
+    await fiber.dispose()
+  })
+
+  it('keeps the logical source id when the Client plugin is recreated after a page refresh', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    globalThis.__DSH_INSPECTOR__ = bootstrap
+    const firstContext = new Context()
+    const firstFiber = firstContext.plugin({ apply })
+    await firstFiber.await()
+    const firstSocket = FakeWebSocket.sockets[0]!
+    firstSocket.open()
+    const firstOpen = JSON.parse(firstSocket.sent[0]!) as {
+      source: { sourceId: string; generation: string }
+    }
+    await firstFiber.dispose()
+
+    const secondContext = new Context()
+    const secondFiber = secondContext.plugin({ apply })
+    await secondFiber.await()
+    const secondSocket = FakeWebSocket.sockets[1]!
+    secondSocket.open()
+    const secondOpen = JSON.parse(secondSocket.sent[0]!) as {
+      source: { sourceId: string; generation: string }
+    }
+
+    expect(secondOpen.source.sourceId).toBe(firstOpen.source.sourceId)
+    expect(secondOpen.source.generation).not.toBe(firstOpen.source.generation)
+    await secondFiber.dispose()
+  })
+
+  it('rotates a copied session identity while its original page remains live', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, 'locks')
+    const held = new Set<string>()
+    const request = async (
+      name: string,
+      _options: LockOptions,
+      callback: (lock: Lock | null) => unknown,
+    ): Promise<unknown> => {
+      const acquired = !held.has(name)
+      if (acquired) held.add(name)
+      try {
+        return await callback(acquired ? { name, mode: 'exclusive' } : null)
+      } finally {
+        if (acquired) held.delete(name)
+      }
+    }
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request },
+    })
+    let first: ClientRealmSource | undefined
+    let duplicate: ClientRealmSource | undefined
+    let refreshed: ClientRealmSource | undefined
+    try {
+      first = await ClientRealmSource.claim('first')
+      duplicate = await ClientRealmSource.claim('duplicate')
+      expect(duplicate.sourceId).not.toBe(first.sourceId)
+
+      first.close()
+      await vi.waitFor(() => { expect(held.size).toBe(1) })
+      sessionStorage.setItem('dsh.experimental-inspector.client-source-id.v0', first.sourceId)
+      refreshed = await ClientRealmSource.claim('refreshed')
+      expect(refreshed.sourceId).toBe(first.sourceId)
+    } finally {
+      first?.close()
+      duplicate?.close()
+      refreshed?.close()
+      if (descriptor === undefined) Reflect.deleteProperty(navigator, 'locks')
+      else Object.defineProperty(navigator, 'locks', descriptor)
+    }
+  })
+
+  it('falls back to a page-lifetime source id when session storage is unavailable', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    globalThis.__DSH_INSPECTOR__ = bootstrap
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('storage disabled', 'SecurityError')
+    })
+    const ctx = new Context()
+    const fiber = ctx.plugin({ apply })
+    await fiber.await()
+    const socket = FakeWebSocket.sockets[0]!
+    socket.open()
+    const open = JSON.parse(socket.sent[0]!) as { source: { sourceId: string } }
+
+    expect(open.source.sourceId).toMatch(/^client-/u)
     await fiber.dispose()
   })
 

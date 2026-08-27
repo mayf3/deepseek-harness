@@ -112,6 +112,8 @@
     "rescope-vendor": "tsx scripts/rescope-vendor.ts",
     "rescope-vendor:check": "tsx scripts/rescope-vendor.ts --check",
     "verify-client-domain-graph": "tsx scripts/verify-client-domain-graph.ts",
+    "gen-tsconfig-paths": "tsx scripts/gen-tsconfig-paths.ts",
+    "verify-tsconfig-paths": "tsx scripts/gen-tsconfig-paths.ts --check",
     "gen-cordis-catalog": "tsx scripts/gen-cordis-catalog.ts",
     "verify-cordis-catalog": "tsx scripts/gen-cordis-catalog.ts --check",
     "gen-cordis-api": "tsx scripts/gen-cordis-api.ts",
@@ -147,7 +149,7 @@
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
-    "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.patch.yml",
+    "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs"
