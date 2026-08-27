@@ -395,7 +395,7 @@ export class SessionManager {
           })
         }
       } catch (error: unknown) {
-        const folded = transportResult<never>(error)
+        const folded = transportResult<never>(error) as Extract<ClientResult<never>, { ok: false }>
         this.catalogs.set(parentSessionId, {
           entries: this.withCatalogMutations(
             previous?.entries ?? [], expandableRows, activityRows,
@@ -405,7 +405,7 @@ export class SessionManager {
               ?? previous?.parentAvailable,
           ),
           state: 'error',
-          error: folded.ok ? null : folded.error,
+          error: folded.error,
         })
       } finally {
         this.catalogInflight.delete(parentSessionId)
