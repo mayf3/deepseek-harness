@@ -7,14 +7,12 @@
  * must stub); implementation-internal entry points (history staging, wire-frame
  * dispatch) stay on the class, invisible out here.
  */
-import type {
-  AttachmentIdType, ImageAttachmentRef, PromptContentPart,
-} from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { QueueAction, SessionRequestId } from '../../types.ts'
+import type { PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
 import type { ClientResult } from './result.ts'
 import type { PendingSubmissionImage, SessionSnapshot } from './snapshot.ts'
 

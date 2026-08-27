@@ -30,9 +30,15 @@ describe('Client Cordis inspect catalog', () => {
 
   it('includes the current referenced type closure for the Sessions service', () => {
     const result = queryServiceApi('sessions') as {
-      referencedTypes: readonly { name: string }[]
+      referencedTypes: readonly { name: string; declaration: string }[]
     }
     expect(result.referencedTypes.length).toBeGreaterThan(0)
+    expect(result.referencedTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'PromptContentPart',
+        declaration: expect.stringContaining("readonly type: 'image'"),
+      }),
+    ]))
     expect(result.referencedTypes.map(type => type.name)).not.toEqual(expect.arrayContaining([
       'ConversationSnapshot',
       'PendingInteraction',
