@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import LocalActivityRegistry from '@deepseek-ai/dsh-activity-local'
@@ -214,5 +216,64 @@ describe('background pwsh observation', () => {
     scripted.finish()
     await until(() => ctx.activities.get(row.id).status === 'completed' ? true : undefined)
     expect(ctx.activities.get(row.id).outputTotal).toBe(0)
+  })
+})
+
+describe('owned and degraded observation (pwsh)', () => {
+  it('mirrors an owned background run under the owning session', async () => {
+    const { ctx, pwsh } = await setup()
+    const owner = {
+      id: SessionId('pwsh-observe-owner'),
+      session: { id: SessionId('pwsh-observe-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    const scripted = observableProcess()
+    pwsh.backgroundHandler = () => scripted.proc
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('pwsh-observe-owned'),
+      name: 'pwsh',
+      arguments: { command: 'Get-Slow', description: 'test command', run_in_background: true },
+      agent: owner,
+    })
+    const job = ctx.jobs.list(owner)[0]
+    expect(job).toBeDefined()
+    const row = await until(() => ctx.activities.list(owner).find(item => item.correlation?.jobId === job!.id))
+    expect(row.ownerSession).toBe(owner.id)
+    scripted.finish()
+    await until(() => ctx.jobs.get(job!.id, owner).status === 'completed' ? true : undefined)
+  })
+
+  it('swallows a throwing observation registry and keeps the job alive', async () => {
+    // The FakePwsh composition with a synchronously throwing open(): the
+    // failure lands in the outer observation catch and the job runs on.
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(ToolTasks)
+    await ctx.plugin({
+      name: 'broken-activities-probe',
+      apply(child: Context) {
+        child.provide('activities', { open() { throw new Error('observation boom') } })
+      },
+    })
+    await ctx.plugin(BashEnvPlugin)
+    await ctx.plugin(FakePwsh)
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    await ctx.plugin(ToolPwsh, { activityPollMs: 5 })
+    const pwsh = ctx.shell as FakePwsh
+    const scripted = observableProcess()
+    pwsh.backgroundHandler = () => scripted.proc
+    await call(ctx, { command: 'Get-Slow', description: 'test command', run_in_background: true })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('activity observation unavailable'))
+    const job = ctx.jobs.list()[0]
+    expect(job?.status).toBe('running')
+    scripted.finish()
+    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
   })
 })

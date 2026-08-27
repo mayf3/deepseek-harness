@@ -4,9 +4,11 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import LocalActivityRegistry from '@deepseek-ai/dsh-activity-local'
@@ -260,5 +262,30 @@ describe('background bash observation', () => {
       return value.text.includes('resilient') ? value : undefined
     })
     expect(read.snapshot.status).toBe('completed')
+  })
+})
+
+describe('owned background observation', () => {
+  it('mirrors an owned background run under the owning session', async () => {
+    const ctx = await setup()
+    const owner = {
+      id: SessionId('observe-owner'),
+      session: { id: SessionId('observe-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('observe-owned-1'),
+      name: 'bash',
+      arguments: { command: 'echo owned', description: 'test command', run_in_background: true },
+      agent: owner,
+    })
+    const job = ctx.jobs.list(owner)[0]
+    expect(job).toBeDefined()
+    const row = await until(() => ctx.activities.list(owner).find(item => item.correlation?.jobId === job!.id))
+    expect(row.ownerSession).toBe(owner.id)
+    await until(() => ctx.jobs.get(job!.id, owner).status === 'completed' ? true : undefined)
   })
 })
