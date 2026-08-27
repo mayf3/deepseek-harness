@@ -1170,6 +1170,39 @@ export async function captureStableAria(
 }
 
 /**
+ * Capture a stable aria snapshot with every eligible Turn process expanded,
+ * then restore the controls that were closed before the capture.
+ * @param page - the page under test.
+ * @param selector - the region locator selector.
+ * @param workspaceCwd - normalization input.
+ * @returns the stable normalized expanded snapshot.
+ */
+export async function captureExpandedTurnProcessAria(
+  page: Page,
+  selector: string,
+  workspaceCwd: string,
+): Promise<string> {
+  const controls = page.locator('[data-turn-process]')
+  const count = await controls.count()
+  expect(count).toBeGreaterThan(0)
+  const opened: number[] = []
+  for (let index = 0; index < count; index++) {
+    const control = controls.nth(index)
+    if (!await control.isVisible() || await control.getAttribute('aria-expanded') === 'true') continue
+    await control.click()
+    opened.push(index)
+  }
+  try {
+    return await captureStableAria(page, selector, workspaceCwd)
+  } finally {
+    for (const index of opened.reverse()) {
+      const control = controls.nth(index)
+      if (await control.getAttribute('aria-expanded') === 'true') await control.click()
+    }
+  }
+}
+
+/**
  * Compare a normalized golden, or rewrite it under refresh. Refresh is the
  * ONLY writer: a missing golden in replay mode fails with the healing command
  * instead of silently self-bootstrapping.

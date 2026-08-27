@@ -1961,6 +1961,10 @@ importers:
         version: 18.3.1(react@18.3.1)
 
   packages/client/ui-chat:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -2004,6 +2008,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-session':
         specifier: workspace:^
         version: link:../ui-session
+      '@deepseek-ai/dsh-client-ui-settings':
+        specifier: workspace:^
+        version: link:../ui-settings
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
@@ -2031,6 +2038,9 @@ importers:
       '@deepseek-ai/dsh-session-stats':
         specifier: workspace:^
         version: link:../../session/session-stats
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:^
+        version: link:../../settings/settings
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:^
         version: link:../../llm/token-meter

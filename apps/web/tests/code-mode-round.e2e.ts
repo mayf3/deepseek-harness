@@ -8,10 +8,10 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  captureExpandedTurnProcessAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/code-mode-round/session.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/code-mode-round/ui.expected.md', import.meta.url))
@@ -94,6 +94,7 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
     // The parent run_code row wears the code variant with the model-authored
     // description as its summary (the presentCall contract).
     const codeRow = page.locator('[data-variant="code"]').first()
+    await expandOwningTurnProcess(page, codeRow)
     await codeRow.waitFor({ timeout: 10_000 })
     const nest = page.locator('[data-subcalls]').first()
     await nest.waitFor({ timeout: 10_000 })
@@ -106,13 +107,18 @@ describe('web e2e: Code Mode round renders nested sub-calls', () => {
     const nest = page.locator('[data-subcalls]').first()
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
+    await expandOwningTurnProcess(page, nest)
     await nest.locator('[data-sample="bash"]').first().click()
     await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
   })
 
-  it.skipIf(MODE === 'record')('matches the conversation aria golden with stable anchors', async () => {
+  it.skipIf(MODE === 'record')('matches the expanded conversation aria golden with stable anchors', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-code-mode-aria'))
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    const snapshot = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold.workspaceCwd,
+    )
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
   })
 

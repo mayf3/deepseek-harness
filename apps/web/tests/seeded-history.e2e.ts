@@ -22,15 +22,19 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { TokenMeter } from '@deepseek-ai/dsh-token-meter'
 import { join } from 'node:path'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, parseSeedFixture, realizeSeedFixture, recordFixture, renderSeedFixture, seedSession, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/seeded-history', import.meta.url))
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/ui.expected.md', import.meta.url))
+const UI_EXPANDED_EXPECTED = fileURLToPath(
+  new URL('../../../snapshots/web/seeded-history/ui-expanded.expected.md', import.meta.url),
+)
 // Command-row goldens over the same conversation after direct host commands.
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/feedback-row.expected.md', import.meta.url))
@@ -278,6 +282,14 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await expect.poll(() => page.getByText(/^Compacted \d+ history items \(~\d+ tokens\)$/).count(), {
       timeout: 10_000,
     }).toBe(1)
+    const process = page.locator('[data-turn-process="1"]')
+    await process.waitFor({ state: 'visible', timeout: 10_000 })
+    expect(await process.getAttribute('aria-expanded')).toBe('false')
+    const processBottom = await process.evaluate(element => element.getBoundingClientRect().bottom)
+    const answerTop = await page.getByText('DONE', { exact: true }).evaluate(element =>
+      element.getBoundingClientRect().top)
+    // Collapsed control row keeps its own 8px margin plus the 8px flow gap.
+    expect(answerTop).toBe(processBottom + 16)
     expect(await page.getByText('Context compacted', { exact: true }).count()).toBe(0)
     // Tool cards render from logged tool/call + tool/result alone (views are
     // host-recomputed per page; the generic card is the documented default).
@@ -331,6 +343,12 @@ describe('web e2e: seeded history renders through cold resume', () => {
     const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
+    const expanded = (await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold.workspaceCwd,
+    )).split(SEED_ID).join('{{seededId}}')
+    await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
   })
 
   it.skipIf(MODE === 'record')('matches the Figma context disclosure geometry', async () => {
@@ -395,6 +413,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // file links (not expand-in-place / not details). Runs after the golden
     // capture; still zero model calls.
     const fileLink = page.locator('[data-variant="read"] button').first()
+    await expandOwningTurnProcess(page, fileLink)
     await fileLink.waitFor({ timeout: 10_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
@@ -552,6 +571,9 @@ describe('web e2e: seeded history renders through cold resume', () => {
     // stream would have failed the turn loudly. Cleanliness pins the wire.
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-    await assertFixtureInventory(SNAPSHOT_DIR, ['command-row.expected.md', 'feedback-row.expected.md', 'file-open-failure.expected.md', 'session.jsonl', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'command-row.expected.md', 'feedback-row.expected.md', 'file-open-failure.expected.md',
+      'session.jsonl', 'ui.expected.md', 'ui-expanded.expected.md',
+    ])
   })
 })
