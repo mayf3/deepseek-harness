@@ -7047,6 +7047,13 @@ importers:
         version: link:../../subagent/subagent
 
   packages/session-query/session-log-export:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -7057,6 +7064,12 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: workspace:^
         version: link:../../core/agent
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-client-connection':
+        specifier: workspace:^
+        version: link:../../client/connection
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../../client/locale
@@ -7090,6 +7103,12 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-persistence':
+        specifier: workspace:^
+        version: link:../../session/session-persistence
+      '@deepseek-ai/dsh-session-query':
+        specifier: workspace:^
+        version: link:../session-query
       '@types/react':
         specifier: ~18.3.1
         version: 18.3.31
