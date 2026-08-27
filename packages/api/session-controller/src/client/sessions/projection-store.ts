@@ -136,7 +136,9 @@ export class ProjectionValueStore {
   }
 
   /**
-   * Apply a partial cache-backed hint while no complete authoritative cut exists.
+   * Apply the latest partial cache-backed hint while no complete authoritative
+   * cut exists. Arrival order, not the cached watermark, orders tentative rows:
+   * crash repair may legitimately lower the durable sequence.
    * @param hint - partial projection values from the Session list cache.
    */
   prewarm(hint: ProjectionsBaseline): void {
@@ -145,14 +147,12 @@ export class ProjectionValueStore {
     for (const key of Object.keys(values)) {
       const previous = this.rows.get(key)
       if (previous?.provenance === 'authoritative') continue
-      if (previous !== undefined && hint.asOfSeq <= previous.seq) continue
-      this.rows.set(key, {
+      this.installRow(key, {
         value: values[key],
         seq: hint.asOfSeq,
         provenance: 'tentative',
         revision: ++this.revision,
       })
-      this.changed(key)
     }
   }
 
@@ -232,6 +232,40 @@ export class ProjectionValueStore {
     this.completeBaselineInstalled = true
     this.latestControlBaseline = { revision, asOfSeq: baseline.asOfSeq }
     this.installCompleteBaseline(baseline, revision)
+  }
+
+  /**
+   * Replace state for a Session omitted from a new control generation. The
+   * Host cut invalidates prior authoritative rows, while the latest retained
+   * list block may immediately repopulate tentative sidebar values.
+   * @param hint - latest partial list-cache block retained for the Session.
+   */
+  replaceControlOmission(hint?: ProjectionsBaseline): void {
+    const revision = ++this.revision
+    this.completeBaselineInstalled = false
+    this.latestControlBaseline = undefined
+    if (hint === undefined) {
+      for (const key of this.rows.keys()) {
+        this.rows.delete(key)
+        this.changed(key)
+      }
+      return
+    }
+    const values = hint.values as Record<string, unknown>
+    const keys = new Set([...this.rows.keys(), ...Object.keys(values)])
+    for (const key of keys) {
+      if (!Object.hasOwn(values, key)) {
+        this.rows.delete(key)
+        this.changed(key)
+        continue
+      }
+      this.installRow(key, {
+        value: values[key],
+        seq: hint.asOfSeq,
+        provenance: 'tentative',
+        revision,
+      })
+    }
   }
 
   private changed(key: string): void {

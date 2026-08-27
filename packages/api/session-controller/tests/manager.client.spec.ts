@@ -5,7 +5,10 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
+import type {
+  SessionControlFrame,
+  SessionProjectionHints,
+} from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-session-title/client'
 import { SessionManager } from '../src/client/sessions/manager.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok, remoteErr, remoteOk } from './fake-api.client.ts'
@@ -21,6 +24,7 @@ type SummaryOver = Partial<{
   cwd: string
   parentSessionId: SessionId
   origin: 'subagent'
+  projections: SessionProjectionHints
 }>
 
 function summary(sessionId: SessionId, over: SummaryOver = {}) {
@@ -212,6 +216,97 @@ describe('list lifecycle', () => {
     })
     expect(manager.getListSnapshot().items[0]?.title).toBe('Recovered')
     expect(session.projections.get('title')).toBe('Recovered')
+  })
+
+  it('uses the latest list hint when a later control generation omits the cold Session', async () => {
+    const api = new FakeApiClient()
+    api.onList = () => Promise.resolve(ok({
+      items: [summary(S1, {
+        projections: { asOfSeq: 4, values: { title: 'Repaired cache' } },
+      })] as never[],
+    }))
+    const manager = new SessionManager(fakeRemote(api))
+    manager.handleControlFrame({
+      type: 'projection', sessionId: S1, key: 'title', value: 'Stale live', seq: 9,
+    })
+
+    await manager.refreshList()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Stale live')
+    manager.handleControlFrame({
+      type: 'baseline', value: { queues: {}, jobs: {}, projections: {} },
+    })
+
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Repaired cache')
+  })
+
+  it('accepts a repaired lower-sequence list hint after an omitted control baseline', async () => {
+    const api = new FakeApiClient()
+    api.onList = () => Promise.resolve(ok({
+      items: [summary(S1, {
+        projections: { asOfSeq: 12, values: { title: 'Older cache' } },
+      })] as never[],
+    }))
+    const manager = new SessionManager(fakeRemote(api))
+    await manager.refreshList()
+    manager.handleControlFrame({
+      type: 'projection', sessionId: S1, key: 'title', value: 'Stale live', seq: 20,
+    })
+
+    const response = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    api.onList = () => response.promise
+    const refresh = manager.refreshList()
+    manager.handleControlFrame({
+      type: 'baseline', value: { queues: {}, jobs: {}, projections: {} },
+    })
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Older cache')
+
+    response.resolve(ok({
+      items: [summary(S1, {
+        projections: { asOfSeq: 3, values: { title: 'Repaired lower cache' } },
+      })] as never[],
+    }))
+    await refresh
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Repaired lower cache')
+  })
+
+  it('replays a newer session-added hint over an in-flight list response', async () => {
+    const api = new FakeApiClient()
+    const response = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    api.onList = () => response.promise
+    const manager = new SessionManager(fakeRemote(api))
+    const refresh = manager.refreshList()
+
+    manager.handleSessionAdded(summary(S1, {
+      projections: { asOfSeq: 8, values: { title: 'Later added hint' } },
+    }))
+    response.resolve(ok({
+      items: [summary(S1, {
+        projections: { asOfSeq: 9, values: { title: 'Earlier pull hint' } },
+      })] as never[],
+    }))
+    await refresh
+
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Later added hint')
+  })
+
+  it('does not recreate a projection store for a Session removed during a list response', async () => {
+    const api = new FakeApiClient()
+    const response = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
+    api.onList = () => response.promise
+    const manager = new SessionManager(fakeRemote(api))
+    const refresh = manager.refreshList()
+
+    manager.handleSessionRemoved(S1)
+    response.resolve(ok({
+      items: [summary(S1, {
+        projections: { asOfSeq: 9, values: { title: 'Removed pull hint' } },
+      })] as never[],
+    }))
+    await refresh
+
+    expect(manager.getListSnapshot().items).toEqual([])
+    manager.handleSessionAdded(summary(S1, { blank: true }))
+    expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
   })
 })
 

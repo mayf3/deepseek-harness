@@ -26,7 +26,7 @@ describe('Session projection value semantics', () => {
     expect(store.faceOf('test/marks')).toBe(store.faceOf('test/marks'))
   })
 
-  it('lets the first authoritative frame replace a newer hint, then uses higher-seq-wins', () => {
+  it('orders tentative hints by arrival, then lets authoritative frames win by sequence', () => {
     const store = new ProjectionValueStore()
     store.prewarm({
       asOfSeq: 9,
@@ -36,6 +36,7 @@ describe('Session projection value semantics', () => {
       asOfSeq: 8,
       values: { 'test/marks': { marks: ['older-hint'] } },
     })
+    expect(store.get('test/marks')).toEqual({ marks: ['older-hint'] })
 
     store.apply('test/marks', { marks: ['frame-3'] }, 3)
     store.prewarm({
@@ -50,6 +51,27 @@ describe('Session projection value semantics', () => {
       'hint-only': 'hint',
       'other-hint': 'other',
     })
+  })
+
+  it('resets a Session omitted from a control generation to its retained list hint', () => {
+    const store = new ProjectionValueStore()
+    store.replaceControlBaseline({
+      asOfSeq: 9,
+      values: { 'test/marks': { marks: ['old-control'] }, 'control-only': true },
+    })
+
+    store.replaceControlOmission({
+      asOfSeq: 4,
+      values: { 'test/marks': { marks: ['repaired-cache'] } },
+    })
+    expect(store.values()).toEqual({ 'test/marks': { marks: ['repaired-cache'] } })
+
+    store.apply('test/marks', { marks: ['authoritative'] }, 3)
+    store.prewarm({ asOfSeq: 99, values: { 'test/marks': { marks: ['late-cache'] } } })
+    expect(store.get('test/marks')).toEqual({ marks: ['authoritative'] })
+
+    store.replaceControlOmission()
+    expect(store.values()).toEqual({})
   })
 
   it('opening replaces pre-opening state and retains only newer post-token frames', () => {

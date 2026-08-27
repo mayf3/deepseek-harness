@@ -10,6 +10,7 @@ import type {
   SessionControlFrame,
   SessionQueuedItem,
   SessionError,
+  SessionProjectionHints,
   SessionSummary,
   SessionJob as JobView,
 } from '../../types.ts'
@@ -488,14 +489,7 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          // Apply each row's tentative projection values (cold values surface
-          // without opening the session). The store owns hint precedence and
-          // ignores them after a complete authoritative baseline.
-          for (const s of result.value.items) {
-            const block = s.projections
-            if (block === undefined) continue
-            this.projectionStore(s.sessionId).prewarm(block)
-          }
+          this.reconcileListProjectionHints(result.value.items, mutations)
         } else {
           this.listState = 'error'
           this.listError = result.error
@@ -695,6 +689,13 @@ export class SessionManager {
       if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
     }
 
+    const projected = new Set(Object.keys(baseline.projections))
+    const summaries = new Map(this.summaries.map(summary => [summary.sessionId, summary]))
+    for (const [sessionId, store] of this.projectionStores) {
+      if (!projected.has(sessionId)) {
+        store.replaceControlOmission(summaries.get(sessionId)?.projections)
+      }
+    }
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
       this.projectionStore(sessionId as SessionId).replaceControlBaseline(block)
     }
@@ -702,6 +703,31 @@ export class SessionManager {
       session.replaceControl(this.queues.get(sessionId) ?? [])
     }
     this.notifier.markDirty()
+  }
+
+  /**
+   * Apply pull-time hints before later list mutations without letting a stale
+   * in-flight response overwrite a newer session-added hint or recreate a
+   * Session removed while the request was pending.
+   */
+  private reconcileListProjectionHints(
+    items: readonly SessionSummary[],
+    mutations: readonly SessionListMutation[],
+  ): void {
+    const hints = new Map<SessionId, SessionProjectionHints>()
+    for (const summary of items) {
+      if (summary.projections !== undefined) hints.set(summary.sessionId, summary.projections)
+    }
+    for (const mutation of mutations) {
+      if (mutation.kind === 'remove') {
+        hints.delete(mutation.sessionId)
+      } else if (mutation.kind === 'upsert' && mutation.summary.projections !== undefined) {
+        hints.set(mutation.summary.sessionId, mutation.summary.projections)
+      }
+    }
+    for (const [sessionId, hint] of hints) {
+      this.projectionStore(sessionId).prewarm(hint)
+    }
   }
 
   /**
@@ -970,9 +996,12 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
           ? { parentSessionId: mutation.summary.parentSessionId } : {}),
         ...(existing.origin === undefined && mutation.summary.origin !== undefined
           ? { origin: mutation.summary.origin } : {}),
+        ...(mutation.summary.projections === undefined
+          ? {} : { projections: mutation.summary.projections }),
       }
       if (filled.cwd === existing.cwd && filled.parentSessionId === existing.parentSessionId
         && filled.origin === existing.origin && filled.blank === existing.blank
+        && filled.projections === existing.projections
       ) return [...summaries]
       return summaries.map(summary => summary.sessionId === mutation.summary.sessionId ? filled : summary)
     }

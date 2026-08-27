@@ -35,9 +35,9 @@ The shipped Web graph already resolves `@deepseek-ai/dsh-client-ui-schedule` thr
 
 ### Read and dismiss the catalog
 
-Each row shows the complete wrapping prompt, a separate Scheduled or Overdue status, localized Once or the largest exact whole unit for a repeating interval, browser-local target time, and browser-clock-relative time. Intervals are never rounded. The 336px popover scrolls vertically when needed and exposes no Schedule id, raw UTC value, details, or action controls.
+Each row shows the complete wrapping prompt, a separate Scheduled or Overdue status, localized Once or the largest exact whole unit for a repeating interval, browser-local target time, and browser-clock-relative time. Intervals are never rounded, and the three metadata fields wrap across lines instead of clipping valid large values. The 336px popover scrolls vertically when needed and exposes no Schedule id, raw UTC value, details, or action controls.
 
-Only the native trigger button enters the tab order. Enter and Space use normal button activation; Escape closes the popover and restores trigger focus; an outside pointer press dismisses it. If a live update removes the final record, the component closes and unmounts without moving focus to another header action. A failed Session open hides the trigger even when a tentative cached projection exists.
+Only the native trigger button enters the tab order. Enter and Space use normal button activation; while the popover is open, Escape closes it and restores trigger focus even after native Tab moves focus to another header action; an outside pointer press dismisses it. If a live update removes the final record, the component closes and unmounts without moving focus to another header action. A failed Session open hides the trigger even when a tentative cached projection exists.
 
 -----
 

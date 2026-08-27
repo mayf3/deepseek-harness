@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import { IconChevronDownOutline14, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
@@ -122,6 +122,18 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
   }, [open])
 
   useEffect(() => {
+    if (!open) return
+    const dismissOnEscape = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      setOpen(false)
+      triggerRef.current?.focus()
+    }
+    document.addEventListener('keydown', dismissOnEscape)
+    return () => { document.removeEventListener('keydown', dismissOnEscape) }
+  }, [open])
+
+  useEffect(() => {
     if (visible || !open) return
     setOpen(false)
   }, [visible, open])
@@ -132,12 +144,6 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
 
   const countKey = records.length === 1 ? 'trigger.one' : 'trigger.other'
   const countLabel = t(countKey, { count: records.length })
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key !== 'Escape' || !open) return
-    event.preventDefault()
-    setOpen(false)
-    triggerRef.current?.focus()
-  }
   const toggleCatalog = (): void => {
     setNow(Date.now())
     setOpen(current => !current)
@@ -176,7 +182,7 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
                 <span aria-hidden="true">·</span>
                 <span>{formatScheduleLocalTime(record.scheduledAt, document.documentElement.lang)}</span>
                 <span aria-hidden="true">·</span>
-                <span className={overdue ? css.relativeOverdue : css.relative}>
+                <span className={overdue ? css.relativeOverdue : undefined}>
                   {formatScheduleRelative(record.scheduledAt, now, t)}
                 </span>
               </span>
@@ -188,7 +194,7 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
     : null
 
   return (
-    <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
+    <div ref={rootRef} className={css.root}>
       {trigger}
       {catalog}
     </div>

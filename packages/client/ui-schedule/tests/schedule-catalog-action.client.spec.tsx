@@ -162,6 +162,7 @@ describe('ScheduleCatalogAction rows', () => {
       [7_200, 'Every 2 hours', '2小时一次'],
       [300, 'Every 5 minutes', '5分钟一次'],
       [301, 'Every 301 seconds', '301秒一次'],
+      [200_000_000_001, 'Every 200000000001 seconds', '200000000001秒一次'],
     ] as const
     for (const [seconds, english, chinese] of samples) {
       const item = record(String(seconds), 'every', START + 1_000, { everySeconds: seconds })
@@ -171,6 +172,20 @@ describe('ScheduleCatalogAction rows', () => {
     expect(formatScheduleFrequency(record('once', 'at', START + 1_000), tZh)).toBe('单次')
     expect(tZh('status.scheduled')).toBe('等待中')
     expect(tZh('status.overdue')).toBe('已逾期')
+  })
+
+  it('renders every required metadata value for a valid large recurrence', () => {
+    const item = record('large', 'every', START + 200_000_000_001_000, {
+      everySeconds: 200_000_000_001,
+    })
+    const t = makeTranslate(en)
+    render(<ScheduleCatalogAction {...props([item])} />)
+    fireEvent.click(screen.getByRole('button'))
+
+    const row = screen.getByRole('listitem')
+    expect(row.textContent).toContain(formatScheduleFrequency(item, t))
+    expect(row.textContent).toContain(formatScheduleLocalTime(item.scheduledAt, 'en'))
+    expect(row.textContent).toContain(formatScheduleRelative(item.scheduledAt, START, t))
   })
 
   it('formats absolute time with the active document locale instead of the runtime default', () => {
@@ -216,14 +231,16 @@ describe('ScheduleCatalogAction rows', () => {
 describe('ScheduleCatalogAction dismissal', () => {
   const active = [record('active', 'after', START + 60_000)]
 
-  it('closes on Escape, restores trigger focus, and ignores unrelated or closed keys', () => {
-    render(<ScheduleCatalogAction {...props(active)} />)
-    const trigger = screen.getByRole('button')
+  it('closes on Escape after focus leaves the catalog and restores trigger focus', () => {
+    render(<><ScheduleCatalogAction {...props(active)} /><button type="button">Sibling</button></>)
+    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    const sibling = screen.getByRole('button', { name: 'Sibling' })
     fireEvent.keyDown(trigger, { key: 'Escape' })
     fireEvent.click(trigger)
     fireEvent.keyDown(trigger, { key: 'ArrowDown' })
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.keyDown(trigger, { key: 'Escape' })
+    sibling.focus()
+    fireEvent.keyDown(sibling, { key: 'Escape' })
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
     expect(document.activeElement).toBe(trigger)
   })

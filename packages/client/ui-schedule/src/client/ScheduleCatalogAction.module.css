@@ -112,20 +112,13 @@
 
 .metadata {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 5px;
   min-width: 0;
   color: var(--dsw-alias-label-tertiary);
   font-size: 11px;
   line-height: 16px;
-  white-space: nowrap;
-}
-
-.relative,
-.relativeOverdue {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .relativeOverdue {
