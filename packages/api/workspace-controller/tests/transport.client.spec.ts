@@ -197,18 +197,7 @@ async function waitFor(check: () => void): Promise<void> {
 
 function provideClientServices(ctx: Context, remote: WorkspaceRemote): void {
   const connection: ConnectionHandle = {
-    api: {} as ConnectionHandle['api'],
     isLoopback: true,
-    hostDescription: {
-      getSnapshot: () => ({
-        version: 'fixture',
-        cwd: '/fixture',
-        attachedSessions: 0,
-        home: '/home/fixture',
-        canOpenPath: true,
-      }),
-      subscribe: () => () => {},
-    },
     generation: AVAILABLE_CONNECTION.generation,
     rpc: {
       call: () => Promise.reject(new Error('unexpected generic RPC call')),

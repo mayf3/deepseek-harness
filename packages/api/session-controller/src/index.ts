@@ -3,7 +3,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
-import { openNativePath } from '@deepseek-ai/dsh-native-command'
+import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -67,12 +67,16 @@ declare module '@deepseek-ai/cordis' {
 export interface Config {
   /** Maximum cold Session artifact size eligible for one full projection observation. */
   readonly coldBlankProbeMaxBytes?: number
+  /** Override platform desktop-opener detection. */
+  readonly nativeOpen?: boolean
 }
 
 /** Host integrations replaceable by direct unit tests. */
 export interface SessionControllerInternals {
   /** Native default-application handoff. */
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
+  /** Native handoff availability probe. */
+  readonly canOpenPath?: () => boolean
 }
 
 /** Host service backing the generated `ctx.remote.session` namespace. */
@@ -91,6 +95,7 @@ export class SessionController extends TypertRemoteService {
 
   static Config: z<Config> = z.object({
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
+    nativeOpen: z.boolean(),
   })
 
   private readonly agents: ApiSessionAgentController
@@ -99,6 +104,7 @@ export class SessionController extends TypertRemoteService {
   private readonly history: SessionHistoryController
   private readonly listState: ApiSessionList
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
+  private readonly canOpenPath: () => boolean
   private readonly promotions = new Set<Promise<void>>()
 
   /**
@@ -122,6 +128,8 @@ export class SessionController extends TypertRemoteService {
       config.coldBlankProbeMaxBytes ?? DEFAULT_COLD_BLANK_PROBE_MAX_BYTES,
     )
     this.openPath = internals.openPath ?? openNativePath
+    this.canOpenPath = internals.canOpenPath
+      ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionSkillCatalog)
 
@@ -240,6 +248,15 @@ export class SessionController extends TypertRemoteService {
   @Remote('modelCatalog')
   modelCatalog(): Promise<ModelCatalog> {
     return buildModelCatalog(this.ctx)
+  }
+
+  /**
+   * Report whether this deployment can hand a Session workspace path to a native desktop.
+   * @returns true when the matching open operation is available.
+   */
+  @Remote
+  canOpenWorkspacePath(): boolean {
+    return this.canOpenPath()
   }
 
   /**

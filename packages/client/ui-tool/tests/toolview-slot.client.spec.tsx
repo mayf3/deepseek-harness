@@ -60,9 +60,8 @@ const LAYOUT_CHILDREN = {
 async function bench(nodes: ToolResultNode[]) {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('connection', {
-    api: { settings: {} },
     isLoopback: false,
-    hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
+    generation: { getSnapshot: () => undefined, subscribe: () => () => {} },
   })
   const openWorkspacePath = vi.fn(async () => ({ ok: true, value: { opened: true } }))
   new TestRemote(runtime.ctx, { session: { openWorkspacePath } })
@@ -207,9 +206,8 @@ describe('registrant declaration injection', () => {
   it('runs a registrant before ui-tool and waits on the actual toolview declaration', async () => {
     const runtime = await SlotTestRuntime.create()
     runtime.ctx.provide('connection', {
-      api: { settings: {} },
       isLoopback: false,
-      hostDescription: { getSnapshot: () => undefined, subscribe: () => () => {} },
+      generation: { getSnapshot: () => undefined, subscribe: () => () => {} },
     })
     new TestRemote(runtime.ctx, {
       session: {

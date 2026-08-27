@@ -51,6 +51,7 @@ import type {
 
 /** Direct test face matching the generated `ctx.remote.session` unary methods. */
 export interface TestSessionRemote {
+  canOpenWorkspacePath(): Promise<RemoteResult<boolean>>
   list(request: SessionListRequest, signal?: AbortSignal): Promise<RemoteResult<SessionListValue>>
   search(request: SessionSearchRequest, signal?: AbortSignal): Promise<RemoteResult<SessionSearchValue>>
   create(request: SessionCreateRequest): Promise<RemoteResult<SessionCreateValue>>
@@ -76,8 +77,10 @@ export interface TestSessionRemoteDefaults {
   readonly defaultModelSelection: () => AgentModelSelection
   readonly cwd: string
   readonly coldBlankProbeMaxBytes?: number
+  readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
+  readonly canOpenPath?: () => boolean
 }
 
 const installed = new WeakMap<Context, SessionController>()
@@ -185,10 +188,16 @@ function installControllers(
   try {
     controller = new SessionController(
       ctx,
-      defaults.coldBlankProbeMaxBytes === undefined
-        ? {}
-        : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
-      defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
+      {
+        ...defaults.coldBlankProbeMaxBytes === undefined
+          ? {}
+          : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
+        ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
+      },
+      {
+        ...defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
+        ...defaults.canOpenPath === undefined ? {} : { canOpenPath: defaults.canOpenPath },
+      },
     )
   } finally {
     cwd.mockRestore()
@@ -233,6 +242,7 @@ export function createSessionTestRemote(
 ): TestSessionRemote {
   const direct = createSessionTestController(ctx, defaults)
   return {
+    canOpenWorkspacePath: () => remoteResult(() => direct.canOpenWorkspacePath()),
     list: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.list(request, signal),
       signal,

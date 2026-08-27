@@ -168,7 +168,7 @@ describe('AskQuestionRow', () => {
   })
 
   it('user cancellation shows the original questions without raw JSON or an error body', () => {
-    // ASK_CANCELLED: the apiproxy ask_user_question handler's cancel error.
+    // ASK_CANCELLED: the ask_user_question handler's cancel error.
     const view = render(<AskQuestionRow {...rowProps(resultNode(READABLE_ARGS, null,
       { isError: true, error: { name: 'UserQuestionError', code: 'ASK_CANCELLED' } }))} />)
     expect(screen.getByText('已取消')).toBeTruthy()
@@ -184,7 +184,7 @@ describe('AskQuestionRow', () => {
   })
 
   it('a turn abort shows the original questions with stopped semantics', () => {
-    // ASK_ABORTED: the apiproxy ask handler's turn-abort settlement.
+    // ASK_ABORTED: the ask handler's turn-abort settlement.
     const view = render(<AskQuestionRow {...rowProps(resultNode(READABLE_ARGS, null,
       { isError: true, error: { name: 'UserQuestionError', code: 'ASK_ABORTED' } }))} />)
     expect(screen.getByText('已中断')).toBeTruthy()
