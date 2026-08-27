@@ -13,6 +13,8 @@ import { BrowserAuth } from './browser-auth.ts'
 import { HostConnectionService } from './rpc-host.ts'
 
 export type {
+  ConnectionFetchMethod,
+  ConnectionFetchRoute,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionRpcEndpointMatcher,
@@ -22,6 +24,7 @@ export type {
   ConnectionRpcResult,
   ConnectionTrustRequest,
   HostConnectionHandle,
+  HostConnectionFetch,
   HostConnectionRpc,
 } from './rpc.ts'
 export { HostConnectionService } from './rpc-host.ts'

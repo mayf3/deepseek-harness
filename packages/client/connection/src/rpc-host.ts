@@ -17,6 +17,8 @@ import type { BrowserAuth } from './browser-auth.ts'
 import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
+  ConnectionFetchRoute,
+  HostConnectionFetch,
   ConnectionRpcEndpointMatcher,
   ConnectionRpcHandler,
   ConnectionRpcResult,
@@ -35,6 +37,11 @@ interface ConnectionRpcInterceptor {
   readonly fetchHandler: FetchHandler
 }
 
+interface RegisteredFetchRoute {
+  readonly methods: ReadonlySet<string>
+  readonly fetch: ConnectionFetchRoute['fetch']
+}
+
 interface ConnectionServerResponse {
   readonly type: 'server-response'
   readonly rpcId: RpcIdType
@@ -51,6 +58,7 @@ declare module '@deepseek-ai/cordis' {
 /** Host Connection service whose channel registrations belong to the caller fiber. */
 export class HostConnectionService extends Service implements HostConnectionHandle {
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
+  private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
 
   /**
    * Provide the Host half over the active HTTP server.
@@ -73,6 +81,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
       handle: (channel, handler) => this.register(owner, channel, handler),
       intercept: (channel, matches, handler) =>
         this.registerInterceptor(owner, channel, matches, handler),
+    }
+  }
+
+  /** Exact Fetch-route registry scoped to the Context reading this service. */
+  get fetch(): HostConnectionFetch {
+    const owner = this.ctx
+    return {
+      register: route => this.registerFetchRoute(owner, route),
     }
   }
 
@@ -104,7 +120,10 @@ export class HostConnectionService extends Service implements HostConnectionHand
   ): FetchHandler {
     return {
       fetch: (request) => {
-        const endpoint = endpointFromPath(channel, new URL(request.url).pathname)
+        const pathname = new URL(request.url).pathname
+        const route = this.fetchRoutes.get(pathname)
+        if (route?.methods.has(request.method) === true) return route.fetch(request)
+        const endpoint = endpointFromPath(channel, pathname)
         const interceptor = this.interceptors.get(channel)
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
           return fallback.fetch(request)
@@ -112,6 +131,24 @@ export class HostConnectionService extends Service implements HostConnectionHand
         return interceptor.fetchHandler.fetch(request)
       },
     }
+  }
+
+  private registerFetchRoute(
+    owner: Context,
+    route: ConnectionFetchRoute,
+  ): () => Promise<void> {
+    assertFetchRoute(route)
+    const registered: RegisteredFetchRoute = {
+      methods: new Set(route.methods),
+      fetch: route.fetch,
+    }
+    return owner.effect(() => {
+      if (this.fetchRoutes.has(route.path)) {
+        throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} is already registered`)
+      }
+      this.fetchRoutes.set(route.path, registered)
+      return () => { this.fetchRoutes.delete(route.path) }
+    }, `client-connection: ${route.path} Fetch route`)
   }
 
   private register(
@@ -244,5 +281,23 @@ function fullResponse(rpcId: RpcIdType, result: ConnectionRpcResult<unknown>): R
 function assertChannel(channel: string): void {
   if (!CHANNEL_PATTERN.test(channel) || channel === '/api') {
     throw new Error(`connection: invalid or reserved RPC channel ${JSON.stringify(channel)}`)
+  }
+}
+
+function assertFetchRoute(route: ConnectionFetchRoute): void {
+  if (endpointFromPath(API_PATH, route.path) === undefined) {
+    throw new Error(`connection: invalid exact Fetch route ${JSON.stringify(route.path)}`)
+  }
+  if (route.methods.length === 0) {
+    throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} declares no methods`)
+  }
+  const methods = new Set(route.methods)
+  if (methods.size !== route.methods.length) {
+    throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} repeats a method`)
+  }
+  for (const method of methods) {
+    if (method !== 'GET' && method !== 'HEAD') {
+      throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} has unsupported method ${JSON.stringify(method)}`)
+    }
   }
 }

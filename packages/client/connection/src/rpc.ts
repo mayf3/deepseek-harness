@@ -43,6 +43,29 @@ export type ConnectionRpcHandler = (
 /** Synchronous ownership test for one endpoint on a shared RPC channel. */
 export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean
 
+/** HTTP methods supported by exact Fetch routes on the shared API channel. */
+export type ConnectionFetchMethod = 'GET' | 'HEAD'
+
+/** One exact, transport-independent Fetch route owned by a Host feature. */
+export interface ConnectionFetchRoute {
+  /** Absolute path below `/api`; query parameters remain available on the request URL. */
+  readonly path: string
+  /** Methods this route owns. Other methods continue through normal shared-channel dispatch. */
+  readonly methods: readonly ConnectionFetchMethod[]
+  /** Handle one request after the physical carrier has applied its trust and authentication policy. */
+  readonly fetch: (request: Request) => Promise<Response>
+}
+
+/** Host registry for exact Fetch routes that cannot use JSON Remote invocation. */
+export interface HostConnectionFetch {
+  /**
+   * Register one exact route on the shared API channel.
+   * @param route - path, methods, and Fetch-shaped implementation.
+   * @returns asynchronous disposer removing this exact contribution.
+   */
+  register(route: ConnectionFetchRoute): () => Promise<void>
+}
+
 /** Host registry for logical RPC channels carried by the current transport. */
 export interface HostConnectionRpc {
   /**
@@ -74,6 +97,8 @@ export interface HostConnectionRpc {
 export interface HostConnectionHandle {
   /** Generic RPC channel registry. */
   readonly rpc: HostConnectionRpc
+  /** Exact Fetch routes for streaming or browser-native responses. */
+  readonly fetch: HostConnectionFetch
 
   /**
    * Apply Connection's Host/Origin checks and browser authentication to
