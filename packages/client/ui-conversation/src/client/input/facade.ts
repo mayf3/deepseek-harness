@@ -159,6 +159,7 @@ export class SessionInputShell implements SessionInput {
       nodes: [ReferenceChipNode, TextRefNode],
       onError: (error) => { throw error },
     })
+    this.state = createSnapshotStore<InputState>(this.compose())
     this.unregister = mergeRegister(
       registerPlainText(this.editor),
       registerHistory(this.editor, createEmptyHistoryState(), HISTORY_MERGE_DELAY_MS),
@@ -166,9 +167,8 @@ export class SessionInputShell implements SessionInput {
       registerClaimDecoration(this.editor, () => this.activeClaimToken()),
       registerTextRefDecoration(this.editor, () => this.lexicon.getSnapshot(), () => this.activeClaimToken()),
       () => { this.lexiconOff?.() },
+      deps.inbox?.subscribe(() => { this.publish() }) ?? (() => {}),
     )
-    this.state = createSnapshotStore<InputState>(this.compose())
-    deps.inbox?.subscribe(() => { this.publish() })
   }
 
   // ---- editor plumbing ----
