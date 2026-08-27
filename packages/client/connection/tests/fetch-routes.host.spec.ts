@@ -19,17 +19,16 @@ async function mounted(): Promise<{
 }
 
 describe('Connection exact Fetch routes', () => {
-  it('dispatches owned methods before the transitional fallback', async () => {
+  it('dispatches owned methods and returns 404 for unclaimed requests', async () => {
     const { connection, dispose: disposeFiber } = await mounted()
     const route = vi.fn(async (request: Request) =>
       Response.json({ query: new URL(request.url).searchParams.get('sessionId') }))
-    const fallback = vi.fn(async () => new Response('fallback', { status: 418 }))
     const dispose = connection.fetch.register({
       path: '/api/session.export',
       methods: ['GET', 'HEAD'],
       fetch: route,
     })
-    const shared = connection.createSharedFetchHandler('/api', { fetch: fallback })
+    const shared = connection.createSharedFetchHandler('/api')
 
     const response = await shared.fetch(new Request(
       'http://host/api/session.export?sessionId=session-1',
@@ -37,16 +36,12 @@ describe('Connection exact Fetch routes', () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({ query: 'session-1' })
     expect(route).toHaveBeenCalledOnce()
-    expect(fallback).not.toHaveBeenCalled()
-
     const post = await shared.fetch(new Request('http://host/api/session.export', { method: 'POST' }))
-    expect(post.status).toBe(418)
-    expect(fallback).toHaveBeenCalledOnce()
+    expect(post.status).toBe(404)
 
     await dispose()
     const withdrawn = await shared.fetch(new Request('http://host/api/session.export'))
-    expect(withdrawn.status).toBe(418)
-    expect(fallback).toHaveBeenCalledTimes(2)
+    expect(withdrawn.status).toBe(404)
     await disposeFiber()
   })
 
@@ -61,10 +56,6 @@ describe('Connection exact Fetch routes', () => {
     expect(() => connection.fetch.register({
       path: '/api/session.export', methods: ['GET', 'GET'], fetch,
     })).toThrow('repeats a method')
-    expect(() => connection.fetch.register({
-      path: '/api/session.export', methods: ['POST' as 'GET'], fetch,
-    })).toThrow('unsupported method')
-
     const dispose = connection.fetch.register({
       path: '/api/session.export', methods: ['GET'], fetch,
     })

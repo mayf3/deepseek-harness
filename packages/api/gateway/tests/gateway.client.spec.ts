@@ -1809,7 +1809,7 @@ describe('Client Typert API', () => {
     })
   })
 
-  it('publishes the Fixture Host description after Remote events report ready', async () => {
+  it('publishes the Fixture Host facts after Remote events report ready', async () => {
     const locationDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'location')
     Object.defineProperty(globalThis, 'location', {
       configurable: true,
@@ -1824,7 +1824,6 @@ describe('Client Typert API', () => {
       if (connection === undefined) throw new Error('fixture Connection service is unavailable')
 
       await vi.waitFor(() => {
-        expect(connection.hostDescription.getSnapshot()?.home).toBe('/home/fixture')
         expect(connection.generation.getSnapshot()?.host.home).toBe('/home/fixture')
       })
     } finally {

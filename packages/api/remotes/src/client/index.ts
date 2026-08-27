@@ -54,8 +54,8 @@ export type {} from '@deepseek-ai/dsh-api-session-controller/types'
  * the carrier's runtime values stay behind their own module edge.
  */
 export type {
-  ConnectionHandle, ConnectionSinks, ContentBlock, IApiClient,
-  MessageId, ModelCatalogFailure, ModelProviderGroup, ModelReasoningEffort, ModelSelection,
+  ConnectionHandle, ConnectionSinks, ContentBlock,
+  MessageId,
   RpcError, RpcId, RpcRequest, RpcResponse, RpcResult, SessionId,
   StreamChunk,
 } from '@deepseek-ai/dsh-client-connection/client'

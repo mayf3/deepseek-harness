@@ -3,13 +3,11 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import {
-  clientRequestSchema,
   RpcId,
   type ClientRequest,
-  type RpcError,
-  type RpcErrorDetailsMap,
   type RpcId as RpcIdType,
-} from '@deepseek-ai/dsh-host-apiproxy/api'
+} from './rpc.ts'
+import { clientRequestSchema } from './rpc-schema.ts'
 import { bridge, type FetchHandler } from './http-bridge.ts'
 import { isTrustedApiRequest } from './api-request-trust.ts'
 import { API_PATH } from './api-path.ts'
@@ -18,8 +16,10 @@ import type {
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionFetchRoute,
+  ConnectionFetchHandler,
   HostConnectionFetch,
   ConnectionRpcEndpointMatcher,
+  ConnectionRpcFailure,
   ConnectionRpcHandler,
   ConnectionRpcResult,
   ConnectionRequestRejection,
@@ -109,15 +109,13 @@ export class HostConnectionService extends Service implements HostConnectionHand
   }
 
   /**
-   * Compose one shared-channel Fetch handler from its interceptor and fallback.
+   * Compose one shared-channel Fetch handler from exact routes and its interceptor.
    * @param channel - shared channel mounted by Connection.
-   * @param fallback - handler for endpoints not claimed by the interceptor.
-   * @returns Fetch handler that selects exactly one target for each request.
+   * @returns Fetch handler that selects one owner or returns 404.
    */
   createSharedFetchHandler(
     channel: '/api',
-    fallback: FetchHandler,
-  ): FetchHandler {
+  ): ConnectionFetchHandler {
     return {
       fetch: (request) => {
         const pathname = new URL(request.url).pathname
@@ -126,7 +124,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
         const endpoint = endpointFromPath(channel, pathname)
         const interceptor = this.interceptors.get(channel)
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
-          return fallback.fetch(request)
+          return Promise.resolve(new Response('not found', { status: 404 }))
         }
         return interceptor.fetchHandler.fetch(request)
       },
@@ -248,7 +246,7 @@ function rpcFetchHandler(
   }
 }
 
-function invalidEnvelopeResponse(body: unknown, issues: RpcErrorDetailsMap['bad-request']['issues']): Response {
+function invalidEnvelopeResponse(body: unknown, issues: readonly object[]): Response {
   const rawId = (body as { rpcId?: unknown } | null)?.rpcId
   const rpcId = typeof rawId === 'string' ? RpcId(rawId) : INVALID_REQUEST_RPC_ID
   return errorResponse(rpcId, {
@@ -269,7 +267,7 @@ function endpointFromPath(channel: string, pathname: string): string | undefined
   return endpoint
 }
 
-function errorResponse(rpcId: RpcIdType, error: RpcError): Response {
+function errorResponse(rpcId: RpcIdType, error: ConnectionRpcFailure): Response {
   return fullResponse(rpcId, { ok: false, error })
 }
 
@@ -294,10 +292,5 @@ function assertFetchRoute(route: ConnectionFetchRoute): void {
   const methods = new Set(route.methods)
   if (methods.size !== route.methods.length) {
     throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} repeats a method`)
-  }
-  for (const method of methods) {
-    if (method !== 'GET' && method !== 'HEAD') {
-      throw new Error(`connection: exact Fetch route ${JSON.stringify(route.path)} has unsupported method ${JSON.stringify(method)}`)
-    }
   }
 }

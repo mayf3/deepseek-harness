@@ -1,5 +1,3 @@
-import type { HostDescription, IApiClient } from './api.ts'
-
 /** Stable Host facts delivered by one established Remote event generation. */
 export interface ConnectionHostInfo {
   /** Host account home used only to abbreviate displayed filesystem paths. */
@@ -52,8 +50,8 @@ export type ConnectionState = 'connected' | 'reconnecting'
 
 /** Connection-generation callbacks owned by API Gateway. */
 export interface ConnectionSinks {
-  /** After the generation source is ready and host.describe succeeds, first connect included. */
-  onConnected?: (description: HostDescription, host: ConnectionHostInfo) => void
+  /** After the generation source reports ready, first connect included. */
+  onConnected?: (host: ConnectionHostInfo) => void
   /** Coarse state transitions (deduplicated: fires only on change). The initial pre-connect
    *  span reports nothing — the UI treats "no state yet" as connecting, not as an outage. */
   onStateChange?: (state: ConnectionState) => void
@@ -86,7 +84,6 @@ export class ConnectionController {
   private readonly config: Required<ConnectionConfig>
 
   constructor(
-    private readonly api: IApiClient,
     private readonly source: ConnectionGenerationSource,
     private readonly sinks: ConnectionSinks = {},
     config: ConnectionConfig = {},
@@ -173,27 +170,16 @@ export class ConnectionController {
       })
 
       try {
-        // The source reports ready only after its incremental listeners exist;
-        // describe may complete in parallel, but consumers see neither result
-        // until both sides of the baseline-plus-increment handshake are ready.
-        const [description, host] = await Promise.race([
-          Promise.all([
-            this.api.host.describe({}, ac.signal),
-            waitForReady(ready, this.config.generationReadyTimeoutMs, ac.signal),
-          ]),
+        const host = await Promise.race([
+          waitForReady(ready, this.config.generationReadyTimeoutMs, ac.signal),
           sourceLost,
         ])
-        const descriptionResult = description.result
-        if (!descriptionResult.ok) {
-          throw new Error(`host.describe failed: ${descriptionResult.error.code}: ${descriptionResult.error.message}`)
-        }
         if (ac.signal.aborted) throw new Error('generation aborted during readiness handshake')
         this.attempt = 0
         this.emitState('connected')
-        // A state sink may synchronously stop this controller. Do not publish
-        // a description for a generation that no longer exists afterward.
+        // A state sink may synchronously stop this controller.
         if (this.isGenerationActive(ac)) {
-          this.callSink(() => { this.sinks.onConnected?.(descriptionResult.value, host) })
+          this.callSink(() => { this.sinks.onConnected?.(host) })
         }
       } catch {
         // Transport failure: treat as generation failure, fall through to the shared backoff.
