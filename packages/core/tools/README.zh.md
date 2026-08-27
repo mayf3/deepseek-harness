@@ -61,7 +61,7 @@ ctx.tools.register(defineTool({
 
 ### 配置呈现模式
 
-`mode` 配置决定模型看到什么：`native`（每个可见 schema）、`code`（只有 `run_code` 加一份生成 SDK）或 `both`。
+`mode` 配置决定模型看到什么：`native`（每个可见 schema）、`ptc`（只有 `run_code` 加一份生成 SDK）或 `both`。
 
 ```yaml
 - name: '@deepseek-ai/dsh-tools'
@@ -122,7 +122,7 @@ ctx.tools.register(defineTool({
 
 ### PTC mode
 
-在 `ptc` 或 `both` 下，注册表公开保留的 `run_code` 传输以及按所加载运行时语言生成的确定性 SDK。每个 SDK 绑定调用都会在日志中与外层调用关联，重新进入完整工具流水线，并通过复用原生并发约定的每次运行独有池调度。在纯 `code` 下，模型直呼其他任何可见工具都会在策略之前解析为 `UNKNOWN_TOOL`——通告面与可调用面保持一致。中间绑定值只存在于执行局部；只有外层 `run_code` 结果有硬大小上限。[执行器塌缩 note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.zh.md) 拥有该收束约定。
+在 `ptc` 或 `both` 下，注册表公开保留的 `run_code` 传输以及按所加载运行时语言生成的确定性 SDK。每个 SDK 绑定调用都会在日志中与外层调用关联，重新进入完整工具流水线，并通过复用原生并发约定的每次运行独有池调度。在纯 `ptc` 下，模型直呼其他任何可见工具都会在策略之前解析为 `UNKNOWN_TOOL`——通告面与可调用面保持一致。中间绑定值只存在于执行局部；只有外层 `run_code` 结果有硬大小上限。[执行器塌缩 note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.zh.md) 拥有该收束约定。
 
 <a id="extension-points"></a>
 ### 扩展点
