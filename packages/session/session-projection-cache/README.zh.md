@@ -58,7 +58,7 @@ kind: "package-reference"
 
 ### 读取缓存值
 
-`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回尽力而为的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体把该值作为暂定 hint 交给逐 Session 的 Client projection store。较高 sequence 的 hint 会替换较早的暂定 row；首个权威 frame 无论 sequence 如何都会替换暂定 row，后续 frame 则必须具有更高 sequence。成功的 follow opening 为 store 提供一份完整 cut：它替换 opening 前的 row，只保留 opening 开始后到达且新于该 cut 的权威 frame。control generation baseline 也会精确替换该 Session 的完整值，包括等 sequence row 与缺失 key；若它在 opening 期间以等于或新于 opening cut 的 cut 到达，它保持权威。
+`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回尽力而为的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体把该值作为暂定 hint 交给逐 Session 的 Client projection store。对于每个携带的 key，后到的列表 block 按到达顺序替换先前的暂定 row，即使崩溃修复使其持久水位降低；首个权威 frame 无论 sequence 如何都会替换暂定 row，后续 frame 则必须具有更高 sequence。成功的 follow opening 为 store 提供一份完整 cut：它替换 opening 前的 row，只保留 opening 开始后到达且新于该 cut 的权威 frame。control generation baseline 也会精确替换该 Session 的完整值，包括等 sequence row 与缺失 key；若它在 opening 期间以等于或新于 opening cut 的 cut 到达，它保持权威。
 
 `coldSnapshot(meta, events)` 接受完整有序日志，只以该精确范围校验一次每条 seed row，从 `init(header)` 折叠所需事件，并在不访问持久化层的情况下刷新记录。`hydratePrepared(session, meta, events)` 为尚未发布的 prepared Session 执行生产精确读取校验；若缓存状态畸形或越界，只有该路径会在所提供的完整日志上从 `init(header)` 重试。持久事件流本身若已损坏，重试仍然失败，绝不会产出部分快照。
 

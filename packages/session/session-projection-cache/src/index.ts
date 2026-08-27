@@ -111,11 +111,11 @@ export class SessionProjectionCache extends Service {
 
   /**
    * The zero-I/O listing read: whole values viewed straight from the stored
-   * rows (version-matching keys only), each cut carried with its watermark so
-   * a client value store can apply the same higher-seq-wins rule used for all
-   * projection sources. The caller's header keeps unrelated lifecycles out;
-   * the value remains a best-effort cached observation until a fresher cut
-   * arrives.
+   * rows (version-matching keys only), with the lowest served watermark carried
+   * for later authoritative reconciliation. The caller's header keeps unrelated
+   * lifecycles out; repeated list blocks are arrival-ordered tentative hints
+   * because crash repair may lower the durable sequence; authoritative frames
+   * replace matching rows, and complete baselines replace the full set.
    * @param meta - the listed session's header (identity witness; no log read).
    * @param keys - optional projection keys required by the caller's audience.
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
@@ -130,9 +130,10 @@ export class SessionProjectionCache extends Service {
     const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, keys)
     const servedKeys = Object.keys(values)
     if (servedKeys.length === 0) return undefined
-    // The block carries ONE cut: the lowest served watermark is the seq every
-    // value is at least current as of. Under-claiming is safe under
-    // higher-seq-wins; over-claiming could outrank a fresher observation.
+    // The block carries ONE cut: the lowest served watermark is the sequence
+    // through which every value is known current. The Client orders tentative
+    // list blocks by arrival so a crash-repaired lower watermark can replace an
+    // older hint; authoritative frames and baselines own later reconciliation.
     const asOfSeq = Math.min(...servedKeys.map(key => (record.rows[key] as { seq: number }).seq))
     return { asOfSeq, values }
   }

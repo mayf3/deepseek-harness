@@ -1503,7 +1503,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'cachedSnapshot( meta: SessionHeader, keys?: readonly Extract<keyof SessionProjectionMap, string>[], ): ProjectionSnapshot | undefined',
-        description: 'The zero-I/O listing read: whole values viewed straight from the stored rows (version-matching keys only), each cut carried with its watermark so a client value store can apply the same higher-seq-wins rule used for all projection sources. The caller\'s header keeps unrelated lifecycles out; the value remains a best-effort cached observation until a fresher cut arrives.',
+        description: 'The zero-I/O listing read: whole values viewed straight from the stored rows (version-matching keys only), with the lowest served watermark carried for later authoritative reconciliation. The caller\'s header keeps unrelated lifecycles out; repeated list blocks are arrival-ordered tentative hints because crash repair may lower the durable sequence; authoritative frames replace matching rows, and complete baselines replace the full set.',
         parameters: [{ name: 'meta', description: 'the listed session\'s header (identity witness; no log read).' }, { name: 'keys', description: 'optional projection keys required by the caller\'s audience.' }],
         returns: 'the cut (`asOfSeq` = lowest served-row watermark), or `undefined` when no usable row exists for this lifecycle.',
       },
