@@ -144,6 +144,7 @@ describe('connection lifecycle', () => {
     { label: 'ends normally', fail: () => Promise.resolve() },
     {
       label: 'rejects with a non-Error reason',
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- the non-Error rejection is the scenario under test
       fail: () => Promise.reject('fixture offline'),
     },
   ])('retries when the generation source $label before reporting ready', async ({ fail }) => {
