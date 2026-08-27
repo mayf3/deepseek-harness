@@ -29,6 +29,7 @@ interface CdpNode {
   readonly backendNodeId: number
   readonly localName: string
   readonly attributes?: string[]
+  readonly childNodeCount?: number
   readonly children?: CdpNode[]
 }
 
@@ -359,7 +360,7 @@ describe('Cordis tree inspection', () => {
 
     let document: CdpNode | undefined
     await vi.waitFor(async () => {
-      const response = await cdp!.call('DOM.getDocument')
+      const response = await cdp!.call('DOM.getDocument', { depth: -1 })
       expect(response.error).toBeUndefined()
       document = response.result?.root as CdpNode
       expect(hostContainer(document)).toBeDefined()
@@ -488,7 +489,7 @@ describe('Cordis tree inspection', () => {
     const firstResolved = await cdp.call('DOM.resolveNode', { backendNodeId: clientNode.backendNodeId })
     const firstObjectId = (firstResolved.result?.object as Record<string, unknown>).objectId
     secondCdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
-    const secondDocument = (await secondCdp.call('DOM.getDocument')).result?.root as CdpNode
+    const secondDocument = (await secondCdp.call('DOM.getDocument', { depth: -1 })).result?.root as CdpNode
     const secondNode = walk(secondDocument).find(node => node.backendNodeId === clientNode.backendNodeId)
     expect(secondNode).toBeDefined()
     const secondResolved = await secondCdp.call('DOM.resolveNode', { backendNodeId: clientNode.backendNodeId })
@@ -506,7 +507,7 @@ describe('Cordis tree inspection', () => {
       expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
     })
 
-    const disconnectedDocument = (await cdp.call('DOM.getDocument')).result?.root as CdpNode
+    const disconnectedDocument = (await cdp.call('DOM.getDocument', { depth: -1 })).result?.root as CdpNode
     const disconnectedClient = clientContainers(disconnectedDocument)[0]
     expect(disconnectedClient).toBeDefined()
     expect(walk(disconnectedClient!).find(node => node.backendNodeId === clientNode.backendNodeId)?.nodeId)
@@ -531,13 +532,18 @@ describe('Cordis tree inspection', () => {
 
     let offset = cdp.events.length
     clientSource = await InspectorClientFixture.start(inspector.endpoint.client, { label: 'Incremental Client' })
+    let insertedClient: CdpNode | undefined
     await vi.waitFor(() => {
       const events = cdp!.events.slice(offset)
       const inserted = events.find(event => event.method === 'DOM.childNodeInserted')
       expect(inserted?.params?.parentNodeId).toBe(clientsNode.nodeId)
       expect(inserted?.params?.node).toMatchObject({ localName: 'client' })
       expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
+      insertedClient = inserted?.params?.node as CdpNode
     })
+    // The collapsed insert payload withholds the realm subtree; expand it to follow deeper changes.
+    expect(insertedClient?.children).toBeUndefined()
+    await cdp.call('DOM.requestChildNodes', { nodeId: insertedClient!.nodeId, depth: -1 })
 
     const firstTree = (await cdp.call('DSHInspector.getCordisTree')).result?.tree as {
       clients: Array<{ revision: number }>
@@ -573,6 +579,88 @@ describe('Cordis tree inspection', () => {
       expect(removed?.params?.nodeId).toBe(insertedNodeId)
       expect(events.some(event => event.method === 'DOM.documentUpdated')).toBe(false)
     })
+  })
+
+  it('serves three document levels by default and withheld levels on demand', async () => {
+    inspector = await startInspector({ port: 0, captureFetch: false, maxCordisNodes: 100 })
+    const host = new Context()
+    let innerFiber: { uid: number | null } | undefined
+    const outer = host.plugin({
+      name: 'outer',
+      apply(ctx: Context) { innerFiber = ctx.plugin({ name: 'inner', apply() {} }) },
+    })
+    fibers.push(outer)
+    await outer.await()
+    const innerUid = innerFiber?.uid
+    if (innerFiber === undefined || innerUid === null || innerUid === undefined) {
+      throw new Error('nested plugin did not register a uid')
+    }
+    observers.push(publishHostCordisTree(host, inspector.source, { maxNodes: 100, maxBytes: 64 * 1_024 }))
+    cdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
+
+    // Default document depth ends at the first Fiber layer: children withheld, count advertised.
+    let outerNode: CdpNode | undefined
+    await vi.waitFor(async () => {
+      const document = (await cdp!.call('DOM.getDocument')).result?.root as CdpNode
+      outerNode = hostContainer(document)?.children?.[0]?.children
+        ?.find(node => node.localName === 'fiber' && node.attributes?.includes(String(outer.uid)))
+      expect(outerNode).toBeDefined()
+    })
+    expect(outerNode?.children).toBeUndefined()
+    expect(outerNode?.childNodeCount).toBe(1)
+
+    // Expanding serves exactly one more level by default.
+    let offset = cdp.events.length
+    await cdp.call('DOM.requestChildNodes', { nodeId: outerNode!.nodeId })
+    const expanded = cdp.events.slice(offset).find(event => event.method === 'DOM.setChildNodes')
+    expect(expanded?.params?.parentId).toBe(outerNode!.nodeId)
+    const outerContext = (expanded?.params?.nodes as CdpNode[])[0]
+    expect(outerContext).toMatchObject({ localName: 'context', childNodeCount: 1 })
+    expect(outerContext?.children).toBeUndefined()
+
+    // Expand-recursively requests the entire subtree.
+    offset = cdp.events.length
+    await cdp.call('DOM.requestChildNodes', { nodeId: outerNode!.nodeId, depth: -1 })
+    const recursive = cdp.events.slice(offset).find(event => event.method === 'DOM.setChildNodes')
+    const recursiveContext = (recursive?.params?.nodes as CdpNode[])[0]
+    expect(recursiveContext?.children?.[0]).toMatchObject({
+      localName: 'fiber',
+      attributes: ['uid', String(innerUid)],
+    })
+    expect((await cdp.call('DOM.getDocument', { depth: 0 })).error?.message).toContain('depth')
+
+    // A NodeId leaving through search or object lookup pushes the not-yet-sent ancestor levels first.
+    secondCdp = await CdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
+    await secondCdp.call('Runtime.enable')
+    const secondDocument = (await secondCdp.call('DOM.getDocument')).result?.root as CdpNode
+    const secondOuter = walk(secondDocument).find(node => node.attributes?.includes(String(outer.uid)))
+    const described = (await secondCdp.call('DOM.describeNode', { nodeId: secondOuter?.nodeId })).result?.node as CdpNode
+    expect(described.children?.[0]?.localName).toBe('context')
+    expect(described.children?.[0]?.children).toBeUndefined()
+
+    const search = await secondCdp.call('DOM.performSearch', { query: `uid=${JSON.stringify(String(innerUid))}` })
+    expect(search.result?.resultCount).toBe(1)
+    offset = secondCdp.events.length
+    const results = await secondCdp.call('DOM.getSearchResults', {
+      searchId: search.result?.searchId,
+      fromIndex: 0,
+      toIndex: 1,
+    })
+    const innerNodeId = (results.result?.nodeIds as number[])[0]
+    const pushed = secondCdp.events.slice(offset).filter(event => event.method === 'DOM.setChildNodes')
+    expect(pushed).toHaveLength(2)
+    await expect(secondCdp.call('DOM.getAttributes', { nodeId: innerNodeId })).resolves.toMatchObject({
+      result: { attributes: ['uid', String(innerUid)] },
+    })
+
+    Reflect.set(globalThis, '__cordisHostProbe', innerFiber)
+    const evaluated = await secondCdp.call('Runtime.evaluate', { expression: 'globalThis.__cordisHostProbe' })
+    expect(evaluated.result?.result).toMatchObject({ subtype: 'node', className: 'Fiber' })
+    offset = secondCdp.events.length
+    await expect(secondCdp.call('DOM.requestNode', {
+      objectId: (evaluated.result?.result as Record<string, unknown>).objectId,
+    })).resolves.toMatchObject({ result: { nodeId: innerNodeId } })
+    expect(secondCdp.events.slice(offset).some(event => event.method === 'DOM.setChildNodes')).toBe(false)
   })
 
   it('restores a disconnected Client tree from a new transport generation', async () => {

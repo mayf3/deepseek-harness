@@ -21,16 +21,27 @@ const READ_ONLY_METHODS = new Set([
   'DOM.setOuterHTML', 'DOM.removeNode', 'DOM.moveTo', 'DOM.copyTo',
 ])
 
+/**
+ * Children levels `DOM.getDocument` serves when the caller omits `depth`;
+ * deeper levels arrive through `DOM.requestChildNodes` on expand.
+ */
+const DEFAULT_DOCUMENT_DEPTH = 3
+
 interface BoundDomObject {
   readonly backendNodeId: CdpBackendNodeId
   readonly sourceId: string
   readonly generation: string
 }
 
-/** Connection-local NodeId, search, and RemoteObject mapping owner. */
+/**
+ * Connection-local NodeId, search, and RemoteObject mapping owner. Node payloads are depth-limited;
+ * withheld levels are fetched through `DOM.requestChildNodes` or pushed with the ancestor chain
+ * when a NodeId leaves through search or object lookup.
+ */
 export class CordisDomSession {
   private readonly nodeIdByBackend = new Map<CdpBackendNodeId, CdpNodeId>()
   private readonly backendByNodeId = new Map<CdpNodeId, CdpBackendNodeId>()
+  private readonly childrenSent = new Set<CdpBackendNodeId>()
   private readonly backendByObjectId = new Map<CdpRemoteObjectId, BoundDomObject>()
   private readonly objectIdsByGroup = new Map<string, Set<CdpRemoteObjectId>>()
   private readonly searches = new Map<string, CdpNodeId[]>()
@@ -118,21 +129,23 @@ export class CordisDomSession {
         return {}
       case 'DOM.getDocument':
         this.enabled = true
-        return { root: this.serialize(this.backend.document().root, 0, true) }
+        return { root: this.serialize(this.backend.document().root, 0, depthParam(params.depth, DEFAULT_DOCUMENT_DEPTH), true) }
       case 'DOM.requestChildNodes': {
         const node = this.fromNodeId(params.nodeId)
+        const depth = depthParam(params.depth, 1)
+        this.childrenSent.add(node.backendNodeId)
         this.transport.send({
           method: 'DOM.setChildNodes',
           params: {
             parentId: numberParam(params.nodeId, 'nodeId'),
-            nodes: node.children.map(child => this.serialize(child, this.nodeId(node), true)),
+            nodes: node.children.map(child => this.serialize(child, this.nodeId(node), depth - 1, true)),
           },
         })
         return {}
       }
       case 'DOM.describeNode': {
         const node = this.selectNode(params)
-        return { node: this.serialize(node, this.parentNodeId(node), true) }
+        return { node: this.serialize(node, this.parentNodeId(node), depthParam(params.depth, 1), false) }
       }
       case 'DOM.getAttributes':
         return { attributes: this.fromNodeId(params.nodeId).attributes.flat() }
@@ -144,7 +157,9 @@ export class CordisDomSession {
           nodeIds: params.backendNodeIds.map((value) => {
             if (!Number.isSafeInteger(value) || (value as number) < 1) return 0
             const node = this.backend.document().byBackendId.get(cdpBackendNodeId(value, 'backendNodeId'))
-            return node === undefined ? 0 : this.nodeId(node)
+            if (node === undefined) return 0
+            this.pushNodePath(node)
+            return this.nodeId(node)
           }),
         }
       }
@@ -156,6 +171,7 @@ export class CordisDomSession {
         if (binding === undefined) throw new Error('RemoteObject is not a current Cordis node')
         const node = this.backend.document().byBackendId.get(binding.backendNodeId)
         if (node === undefined) throw new Error('Cordis node is no longer available')
+        this.pushNodePath(node)
         return { nodeId: this.nodeId(node) }
       }
       case 'DOM.performSearch': {
@@ -169,9 +185,13 @@ export class CordisDomSession {
       }
       case 'DOM.getSearchResults': {
         const ids = this.searches.get(stringParam(params.searchId, 'searchId')) ?? []
-        return {
-          nodeIds: ids.slice(nonNegativeInteger(params.fromIndex, 'fromIndex'), nonNegativeInteger(params.toIndex, 'toIndex')),
+        const nodeIds = ids.slice(nonNegativeInteger(params.fromIndex, 'fromIndex'), nonNegativeInteger(params.toIndex, 'toIndex'))
+        for (const nodeId of nodeIds) {
+          const backendId = this.backendByNodeId.get(nodeId)
+          const node = backendId === undefined ? undefined : this.backend.document().byBackendId.get(backendId)
+          if (node !== undefined) this.pushNodePath(node)
         }
+        return { nodeIds }
       }
       case 'DOM.discardSearchResults':
         this.searches.delete(stringParam(params.searchId, 'searchId'))
@@ -244,9 +264,13 @@ export class CordisDomSession {
     return node
   }
 
-  private serialize(node: CordisDomNode, parentId: CdpNodeId | 0, children: boolean): object {
+  private serialize(node: CordisDomNode, parentId: CdpNodeId | 0, remaining: number, delivery: boolean): object {
     const nodeId = this.nodeId(node)
     const document = node.name === '#document'
+    const withChildren = remaining > 0
+    // `DOM.describeNode` results are out-of-band descriptions the frontend does not merge into its tree,
+    // so only delivery payloads record which nodes already carried their children.
+    if (delivery && withChildren) this.childrenSent.add(node.backendNodeId)
     return {
       nodeId,
       backendNodeId: node.backendNodeId,
@@ -257,9 +281,36 @@ export class CordisDomSession {
       ...(parentId === 0 ? {} : { parentId }),
       ...(document ? { documentURL: 'dsh://cordis', baseURL: 'dsh://cordis' } : {}),
       childNodeCount: node.children.length,
-      ...(children ? { children: node.children.map(child => this.serialize(child, nodeId, true)) } : {}),
+      ...(withChildren ? { children: node.children.map(child => this.serialize(child, nodeId, remaining - 1, delivery)) } : {}),
       attributes: node.attributes.flat(),
     }
+  }
+
+  /** Deliver the not-yet-sent ancestor levels of one node so its NodeId attaches to the frontend tree. */
+  private pushNodePath(node: CordisDomNode): void {
+    const document = this.backend.document()
+    const chain: CordisDomNode[] = []
+    let backendId = document.parentByBackendId.get(node.backendNodeId)
+    while (backendId !== undefined) {
+      const parent = document.byBackendId.get(backendId)
+      if (parent === undefined) break
+      chain.unshift(parent)
+      backendId = document.parentByBackendId.get(parent.backendNodeId)
+    }
+    for (const ancestor of chain) {
+      if (this.childrenSent.has(ancestor.backendNodeId)) continue
+      const parentId = this.nodeId(ancestor)
+      this.childrenSent.add(ancestor.backendNodeId)
+      this.transport.send({
+        method: 'DOM.setChildNodes',
+        params: { parentId, nodes: ancestor.children.map(child => this.serialize(child, parentId, 0, true)) },
+      })
+    }
+  }
+
+  private forgetSubtree(node: CordisDomNode): void {
+    this.childrenSent.delete(node.backendNodeId)
+    for (const child of node.children) this.forgetSubtree(child)
   }
 
   private nodeId(node: CordisDomNode): CdpNodeId {
@@ -285,6 +336,7 @@ export class CordisDomSession {
     this.backendByObjectId.clear()
     this.objectIdsByGroup.clear()
     this.searches.clear()
+    this.childrenSent.clear()
   }
 
   private updateDocument(event: CordisDomChange): void {
@@ -309,12 +361,14 @@ export class CordisDomSession {
           ? 0
           : this.nodeIdByBackend.get(mutation.previousBackendNodeId)
         if (previousNodeId === undefined) return
+        // A reconnected source reuses backend ids; the collapsed payload resets any earlier delivery record.
+        this.forgetSubtree(mutation.node)
         this.transport.send({
           method: 'DOM.childNodeInserted',
           params: {
             parentNodeId,
             previousNodeId,
-            node: this.serialize(mutation.node, parentNodeId, true),
+            node: this.serialize(mutation.node, parentNodeId, 0, true),
           },
         })
         return
@@ -322,6 +376,7 @@ export class CordisDomSession {
       case 'child-removed': {
         const parentNodeId = this.nodeIdByBackend.get(mutation.parentBackendNodeId)
         const nodeId = this.nodeIdByBackend.get(mutation.node.backendNodeId)
+        this.forgetSubtree(mutation.node)
         if (parentNodeId === undefined || nodeId === undefined) return
         this.transport.send({ method: 'DOM.childNodeRemoved', params: { parentNodeId, nodeId } })
         return
@@ -329,11 +384,14 @@ export class CordisDomSession {
       case 'children-replaced': {
         const parentNodeId = this.nodeIdByBackend.get(mutation.parentBackendNodeId)
         if (parentNodeId === undefined) return
+        // Replacement payloads carry no grandchildren, so the frontend forgets any it knew below this parent.
+        for (const child of mutation.children) this.forgetSubtree(child)
+        this.childrenSent.add(mutation.parentBackendNodeId)
         this.transport.send({
           method: 'DOM.setChildNodes',
           params: {
             parentId: parentNodeId,
-            nodes: mutation.children.map(child => this.serialize(child, parentNodeId, true)),
+            nodes: mutation.children.map(child => this.serialize(child, parentNodeId, 0, true)),
           },
         })
         return
@@ -366,6 +424,9 @@ export class CordisDomSession {
       if (document.byBackendId.has(backendNodeId)) continue
       this.nodeIdByBackend.delete(backendNodeId)
       this.backendByNodeId.delete(nodeId)
+    }
+    for (const backendNodeId of this.childrenSent) {
+      if (!document.byBackendId.has(backendNodeId)) this.childrenSent.delete(backendNodeId)
     }
     for (const [objectId, binding] of this.backendByObjectId) {
       const node = document.byBackendId.get(binding.backendNodeId)
@@ -414,6 +475,13 @@ function searchable(node: CordisDomNode): string {
 
 function numberParam(value: unknown, name: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`${name} must be a non-negative integer`)
+  return value as number
+}
+
+function depthParam(value: unknown, fallback: number): number {
+  if (value === undefined) return fallback
+  if (value === -1) return Number.POSITIVE_INFINITY
+  if (!Number.isSafeInteger(value) || (value as number) < 1) throw new Error('depth must be -1 or a positive integer')
   return value as number
 }
 
