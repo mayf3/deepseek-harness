@@ -33,12 +33,8 @@ describe('Client Cordis inspect catalog', () => {
       referencedTypes: readonly { name: string; declaration: string }[]
     }
     expect(result.referencedTypes.length).toBeGreaterThan(0)
-    expect(result.referencedTypes).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        name: 'PromptContentPart',
-        declaration: expect.stringContaining("readonly type: 'image'"),
-      }),
-    ]))
+    const promptContentPart = result.referencedTypes.find(type => type.name === 'PromptContentPart')
+    expect(promptContentPart?.declaration).toContain("readonly type: 'image'")
     expect(result.referencedTypes.map(type => type.name)).not.toEqual(expect.arrayContaining([
       'ConversationSnapshot',
       'PendingInteraction',
