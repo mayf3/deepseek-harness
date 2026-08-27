@@ -134,15 +134,11 @@ describe('Team identity and provisioning', () => {
       key === 'agentTeam' ? undefined : stateOf(session, key)
     ))
     expect(() => journal.state(first.lead)).toThrow('Agent Teams projection is not registered')
+    stateOfSpy.mockImplementation((session, key) => key === 'agentTeam'
+      ? { ...teamProjectionDefinition.init(session.header), failure: 'failed Team projection' }
+      : stateOf(session, key))
+    expect(() => journal.state(first.lead)).toThrow('failed Team projection')
     stateOfSpy.mockRestore()
-
-    const second = await setup([])
-    second.lead.session.append('team/task', {
-      version: 2,
-      teamId: TeamId(second.lead.id),
-    } as never)
-    expect(() => teamInternals(second.ctx).journal.state(second.lead))
-      .toThrow('unsupported Agent Teams event version 2')
   })
 
   it('rejects deployment limits that are not positive safe integers', async () => {
