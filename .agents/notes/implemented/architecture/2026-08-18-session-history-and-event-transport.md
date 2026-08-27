@@ -70,11 +70,11 @@ In-process `connection.rpc.open` uses the same logical endpoint semantics while 
 
 The Gateway-internal `$events` logical stream is the sole generation source for `ConnectionHandle`. It does not depend on whether any business `$on` subscription exists, so connection health does not vary with the number of UI listeners.
 
-The Host event source installs incremental listeners synchronously before returning its first frame. Gateway then sends `{ type: 'ready' }` with a `clientId`; this frame proves that the current generation can receive increments.
+The Host event source installs incremental listeners synchronously before returning its first frame. Gateway then sends `{ type: 'ready', clientId, host: { home } }`; this frame proves that the current generation can receive increments and carries the stable Host path-display fact.
 
-`ConnectionController` waits for `$events` readiness and `host.describe` in parallel. It publishes `connected` only after both complete, so a Session or Workspace baseline cannot be read before Host incremental listeners are ready.
+`ConnectionController` publishes `connected` only after `$events` readiness, so a Session or Workspace baseline cannot be read before Host incremental listeners are ready.
 
-Unexpected normal completion of `$events`, a Host error, a malformed opening frame, or a carrier failure ends the current Connection generation. Connection withdraws `hostDescription`, then re-establishes `$events` and `host.describe` after backoff.
+Unexpected normal completion of `$events`, a Host error, a malformed opening frame, or a carrier failure ends the current Connection generation. Connection withdraws the generation, then re-establishes `$events` after backoff.
 
 Gateway stream generation, Connection generation, and a Session business open epoch are three independent counters: the first identifies physical replacement of one logical stream, the second identifies a Host-availability handshake, and the last prevents an obsolete Session open from writing into current state.
 
@@ -332,7 +332,7 @@ API Proxy carries only independent business APIs it owns. Session, Workspace, Re
 
 Gateway mux tests pin connection without logical streams, idle residency, configurable Ping/Pong without application messages, initial-failure and disconnect recovery, active-stream carrier failure, cancellation, and no reconnect after disposal.
 
-Connection tests pin missing, duplicate, and withdrawn generation sources; the race between `$events` ready and `host.describe`; and description withdrawal and rebuilding after generation failure.
+Connection tests pin missing, duplicate, and withdrawn generation sources, readiness timeout, and generation withdrawal and rebuilding after failure.
 
 `RemoteStream` tests pin single consumption, retry reset after opening acceptance, generation-only `restart()`, no retry for terminal errors, and disposal quiescence.
 

@@ -650,6 +650,12 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
 @Remote('modelCatalog') modelCatalog(): Promise<ModelCatalog>
 
 /**
+ * Report whether this deployment can hand a Session workspace path to a native desktop.
+ * @returns true when the matching open operation is available.
+ */
+@Remote canOpenWorkspacePath(): boolean
+
+/**
  * Open one path prepared by a Session-aware caller on the Host desktop.
  * @param request - path after best-effort Session workspace resolution.
  * @param signal - caller lifetime; abort terminates the native command.

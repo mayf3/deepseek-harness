@@ -1,6 +1,7 @@
 # Agent Note: GUI layering and the RPC protocol — host/client layering by capability provider, the four-quadrant message model, and the fetch carrier
 
 Status: implemented
+Archived: 2026-08-27
 
 English | [中文](2026-07-19-gui-layering-and-rpc-protocol.zh.md)
 

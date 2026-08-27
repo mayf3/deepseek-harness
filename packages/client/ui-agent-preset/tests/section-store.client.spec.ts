@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { ClientRemote, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import { AgentPresetSectionController, draftBlocker } from '../src/client/section-store.ts'
 import type { CopyDraft, PresetRow } from '../src/client/section-store.ts'
 
@@ -41,35 +41,15 @@ interface FakeOptions {
   authorable?: boolean
   /** Whether the host can open a preset directory on a desktop. */
   hasDocument?: boolean
-  /** Reject `host.describe`, as a dead transport does. */
-  throwDescribe?: boolean
+  /** Reject the opener capability read, as a dead transport does. */
+  throwCapability?: boolean
   /** Hold `remove` until this resolves, to observe the in-flight state. */
   holdRemove?: Promise<void>
 }
 
-const ok = (value: unknown) => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value } })
 const remoteOk = (value: unknown) => Promise.resolve({ ok: true as const, value })
 const remoteFail = (message: string) =>
   Promise.resolve({ ok: false as const, error: { code: 'internal', message, details: {} } })
-
-/**
- * The carried wire face: the desktop opener, the default write, and the opener
- * capability the page joins onto the roster.
- * @param defaultId - the preset a session with no choice gets.
- * @param options - failure injection and call recording.
- * @returns the fake client.
- */
-function fakeApi(
-  options: FakeOptions = {},
-): Pick<IApiClient, 'host'> {
-  return {
-    host: {
-      describe: () => (options.throwDescribe === true
-        ? Promise.reject(new Error('socket closed'))
-        : ok({ canOpenPath: options.hasDocument ?? true })),
-    },
-  } as Pick<IApiClient, 'host'>
-}
 
 /**
  * The Remote namespace over an in-memory preset store: copies land, so the
@@ -143,6 +123,12 @@ function fakeRemote(
       },
     },
     settings: {
+      canOpenAgentPresetDirectory: () => {
+        record('canOpenAgentPresetDirectory', {})
+        return options.throwCapability === true
+          ? Promise.reject(new Error('socket closed'))
+          : remoteOk(options.hasDocument ?? true)
+      },
       update: (ns: string, patch: { default?: string }) => {
         record('settings.update', { ns, patch })
         if (options.failSettings !== undefined) return remoteFail(options.failSettings)
@@ -176,7 +162,6 @@ function harness(options: FakeOptions = {}) {
   let rosterChanges = 0
   const wired = { ...options, calls: options.calls ?? calls }
   const controller = new AgentPresetSectionController(
-    fakeApi(wired),
     fakeRemote(presets, defaultId, wired),
     () => { rosterChanges += 1 },
   )
@@ -191,11 +176,11 @@ function copyOf(controller: AgentPresetSectionController): CopyDraft {
 
 describe('loading the roster', () => {
   it('still lists the roster when the opener capability cannot be read', async () => {
-    const { controller } = harness({ throwDescribe: true })
+    const { controller } = harness({ throwCapability: true })
 
     await controller.load()
 
-    // The two reads are independent: a refused `host.describe` costs the
+    // The two reads are independent: a refused capability query costs the
     // open-directory affordance, not the page.
     const state = controller.store.getSnapshot()
     expect(state.status).toBe('ready')
@@ -572,7 +557,6 @@ describe('deleting', () => {
     await controller.load()
     presets.clear()
     const broken = new AgentPresetSectionController(
-      { host: {} } as unknown as Pick<IApiClient, 'host'>,
       {
         agentPresets: {
           list: () => Promise.reject(new Error('gone')),
@@ -596,7 +580,7 @@ describe('a controller with no roster listener', () => {
     const presets = seed()
     const defaultId = { id: 'standard' }
     const alone = new AgentPresetSectionController(
-      fakeApi(), fakeRemote(presets, defaultId))
+      fakeRemote(presets, defaultId))
     await alone.load()
     alone.confirmDelete('mine')
 

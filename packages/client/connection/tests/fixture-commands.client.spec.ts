@@ -169,7 +169,7 @@ describe('createFixtureApi commands/skills', () => {
   })
 })
 
-describe('FixtureApiClient command/skill dispatch', () => {
+describe('fixture Connection command/skill dispatch', () => {
   it('routes the Remote command and skill rows through one state graph', async () => {
     const { rpc } = createFixtureFaces()
     const commands = await callRemote<{ name: string }[]>(rpc, 'commands/list', { agentId: sid('fx-alpha') })

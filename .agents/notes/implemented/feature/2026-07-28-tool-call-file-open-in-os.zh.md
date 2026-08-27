@@ -12,7 +12,7 @@ Status: implemented
 
 文件工具的路径摘要（`read`／`write`／`edit` 参数中的 `path` 或 `file_path`）渲染为静止状态下即带下划线的链接，并使用 pointer 光标。点击路径会经聊天视图的 `openFile` injection 调用 `session/openWorkspacePath`；聊天视图会在目标 Session 的 cwd 已知时据此解析相对路径。带文件链接的行关闭参数展开（左侧图标不可点）；工具行（含 bash 与 todo 注册）去掉整行点击、整行悬停底色，以及点击打开 details 的手势。details 面板及其 inject 面仍保留供程序化选择；工具行不再驱动它们。
 
-`session/openWorkspacePath` 使用经过认证的 Remote carrier，而产品 UI 只在 loopback 页面且 `host.describe.canOpenPath` 为 true 时提供该手势。平台适配器不经 shell 打开：macOS 为 `open`，Windows 为 PowerShell `Invoke-Item`，桌面 Linux 为 `xdg-open`；浏览器可渲染的文档会在 macOS 与桌面 Linux 上优先使用指定的默认浏览器。尽管 Node 将 WSL 报告为 `linux`，WSL 仍是一种独立的宿主形态：适配器根据其环境或 Microsoft 内核 release 识别它，用 `wslpath -w` 转换 Linux 路径，并将所得 Windows/UNC 路径交给同一 PowerShell 交接。打开器的平台信息和命令运行器可在测试中注入。仅含 URL 的 read 参数（`web_fetch`）不是文件链接。
+`session/openWorkspacePath` 使用经过认证的 Remote carrier，而产品 UI 只在 loopback 页面且 `session/canOpenWorkspacePath` 结果为 true 时提供该手势。平台适配器不经 shell 打开：macOS 为 `open`，Windows 为 PowerShell `Invoke-Item`，桌面 Linux 为 `xdg-open`；浏览器可渲染的文档会在 macOS 与桌面 Linux 上优先使用指定的默认浏览器。尽管 Node 将 WSL 报告为 `linux`，WSL 仍是一种独立的宿主形态：适配器根据其环境或 Microsoft 内核 release 识别它，用 `wslpath -w` 转换 Linux 路径，并将所得 Windows/UNC 路径交给同一 PowerShell 交接。打开器的平台信息和命令运行器可在测试中注入。仅含 URL 的 read 参数（`web_fetch`）不是文件链接。
 
 ## 考虑过的替代方案
 

@@ -13,7 +13,9 @@ import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
-import ApiProxyService, { createApiProxy, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
+import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
+import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
+import * as SessionLogExport from '../src/index.ts'
 
 const sid = (id: string): SessionId => id as SessionId
 
@@ -76,6 +78,7 @@ async function buildApi(
   } = {},
 ) {
   const ctx = new Context()
+  ctx.provide('commands', { register: () => () => {} } as never)
   const query = services.query ?? true
   const persistence = services.persistence ?? true
   if (query) {
@@ -110,13 +113,32 @@ async function buildApi(
     } as never)
   }
   if (services.sessions !== undefined) ctx.provide('sessions', services.sessions as never)
-  return createApiProxy(ctx, {
-    defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
-    cwd: '/tmp',
+  const connection = new HostConnectionService(ctx, [], {} as BrowserAuth)
+  const fiber = ctx.plugin(SessionLogExport, {
     ...services.compressionLevel === undefined
       ? {}
-      : { sessionExportCompressionLevel: services.compressionLevel },
+      : { compressionLevel: services.compressionLevel },
   })
+  await fiber.await()
+  const handler = connection.createSharedFetchHandler('/api')
+  return {
+    fetch: handler,
+    downloads: {
+      sessionLog: (
+        request: { sessionId: SessionId; includeDescendants: boolean },
+        signal: AbortSignal,
+      ): Promise<Response> => {
+        const url = new URL(`http://host${SessionLogExport.SESSION_LOG_EXPORT_PATH}`)
+        url.searchParams.set('sessionId', request.sessionId)
+        url.searchParams.set('includeDescendants', String(request.includeDescendants))
+        return handler.fetch(new Request(url, { signal }))
+      },
+    },
+  }
+}
+
+function toFetchHandler(api: Awaited<ReturnType<typeof buildApi>>): { fetch(request: Request): Promise<Response> } {
+  return api.fetch
 }
 
 async function responseBytes(response: Response): Promise<Uint8Array> {
@@ -125,15 +147,15 @@ async function responseBytes(response: Response): Promise<Uint8Array> {
 
 describe('session export compression config', () => {
   it('defaults to level 6 and rejects values outside the integer 0-9 range', () => {
-    expect(ApiProxyService.Config({})).toEqual({
-      sessionExportCompressionLevel: 6,
+    expect(SessionLogExport.Config({})).toEqual({
+      compressionLevel: 6,
     })
-    expect(ApiProxyService.Config({ sessionExportCompressionLevel: 0 }))
-      .toEqual({ sessionExportCompressionLevel: 0 })
-    expect(ApiProxyService.Config({ sessionExportCompressionLevel: 9 }))
-      .toEqual({ sessionExportCompressionLevel: 9 })
+    expect(SessionLogExport.Config({ compressionLevel: 0 }))
+      .toEqual({ compressionLevel: 0 })
+    expect(SessionLogExport.Config({ compressionLevel: 9 }))
+      .toEqual({ compressionLevel: 9 })
     for (const value of [-1, 10, 1.5]) {
-      expect(() => ApiProxyService.Config({ sessionExportCompressionLevel: value } as never)).toThrow()
+      expect(() => SessionLogExport.Config({ compressionLevel: value } as never)).toThrow()
     }
   })
 })
@@ -463,12 +485,16 @@ describe('session.export download endpoint', () => {
       controller.signal,
     )
     await response.arrayBuffer()
+    const rootSignal = reads[0]?.signal
+    if (rootSignal === undefined) throw new Error('missing root signal')
     const producerSignal = traces[0]
     if (producerSignal === undefined) throw new Error('missing lineage signal')
-    expect(reads[0]).toEqual({ id: sid('session-root'), signal: controller.signal })
+    expect(reads[0]?.id).toBe(sid('session-root'))
     expect(reads[1]).toEqual({ id: sid('child-a'), signal: producerSignal })
     const cancellation = new Error('request cancelled after response')
     controller.abort(cancellation)
+    expect(rootSignal.aborted).toBe(true)
+    expect(rootSignal.reason).toBe(cancellation)
     expect(producerSignal.aborted).toBe(true)
     expect(producerSignal.reason).toBe(cancellation)
   })

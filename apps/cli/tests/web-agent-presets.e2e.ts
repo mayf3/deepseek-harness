@@ -84,6 +84,9 @@ async function bootWeb(
     { id: 'skill-badge', disabled: false },
     { id: 'modules', disabled: true },
     { id: 'connection', disabled: true },
+    // Export owns a Connection Fetch route, so this Host-only composition
+    // disables it with the transport service above.
+    { id: 'session-log-download', disabled: true },
     // The always-on reload chain waits for the browser roster and bound port
     // disabled above.
     { id: 'client-hmr', disabled: true },

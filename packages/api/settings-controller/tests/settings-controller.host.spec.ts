@@ -82,6 +82,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     expect(controller.typertRemote.namespace).toBe('settings')
     expect(remoteMethods(controller)).toEqual([
       { method: 'describe', invocation: { kind: 'direct' } },
+      { method: 'canOpenAgentPresetDirectory', invocation: { kind: 'direct' } },
       { method: 'update', invocation: { kind: 'direct' } },
       { method: 'replace', invocation: { kind: 'direct' } },
       { method: 'mutate', invocation: { kind: 'direct' } },
@@ -348,6 +349,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     } as never)
     const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
     const openable = new SettingsController(ctx, { nativeOpen: true }, { openPath })
+    expect(openable.canOpenAgentPresetDirectory()).toBe(true)
     const signal = new AbortController().signal
     await expect(openable.openAgentPresetDirectory('mine', signal))
       .resolves.toEqual({ opened: true })
@@ -360,6 +362,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
       }),
     } as never)
     const reveal = new SettingsController(headless, { nativeOpen: false })
+    expect(reveal.canOpenAgentPresetDirectory()).toBe(false)
     await expect(reveal.openAgentPresetDirectory('mine', new AbortController().signal))
       .resolves.toEqual({ opened: false, path: '/presets/mine' })
   })

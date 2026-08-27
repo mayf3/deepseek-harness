@@ -14,7 +14,7 @@
  * more than the row it targeted.
  */
 
-import type { ClientRemote, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { beginRosterRead, messageOf, writeDefaultPreset } from './settings-store.ts'
 
@@ -133,7 +133,6 @@ export class AgentPresetSectionController {
   readonly store: SnapshotStore<AgentPresetSectionState> = createSnapshotStore(INITIAL)
 
   constructor(
-    private readonly api: Pick<IApiClient, 'host'>,
     private readonly remote: Pick<ClientRemote, 'agentPresets' | 'settings'>,
     /**
      * Called after this page changes the roster DIRECTORY, so the other
@@ -168,13 +167,13 @@ export class AgentPresetSectionController {
     // Issued together: one round trip decides the page, and a load that waited
     // for them in turn would hold the section in `loading` twice as long,
     // where a concurrent reload silently returns instead of refreshing.
-    const opener = this.api.host.describe({})
+    const opener = this.remote.settings.canOpenAgentPresetDirectory()
     const roster = await beginRosterRead(this.remote, this.store)
     // A refused describe leaves the reveal-the-path path, which needs no opener.
     const described = await opener.catch(() => undefined)
     if (roster === undefined) return
     const { presets, authorable } = roster
-    const hasDocument = described?.result.ok === true && described.result.value.canOpenPath
+    const hasDocument = described?.ok === true && described.value
     if (presets.length === 0) {
       // Nothing to manage leaves nothing to keep a dialog open over.
       this.set({ status: 'unavailable', rows: [], authorable, hasDocument, copy: null, view: null })

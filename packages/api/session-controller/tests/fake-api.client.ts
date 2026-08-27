@@ -1,8 +1,8 @@
-// Test-local programmable IApiClient fake (NOT the fixture: fixture is a demo
+// Test-local programmable Remote fake (NOT the fixture: fixture is a demo
 // data source on a real clock; behavior tests need per-case responses and
 // deferred-controlled timing). Session streams are hand pumps: pushFollow/pushControl.
 import type {
-  IApiClient, MessageId,
+  MessageId,
   RpcError, RpcResponse, SessionId, SessionSearchItem,
   SubagentCatalog, SubagentInterruptReceipt, SubagentPromptReceipt,
   WorkspaceId, WorkspaceView,
@@ -32,10 +32,8 @@ import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 import { historyRecordLastSeq } from '../src/client/sessions/history-records.ts'
 
 const AVAILABLE_STREAM_CONNECTION = {
-  hostDescription: {
-    getSnapshot: () => ({
-      version: 'fixture', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
-    }),
+  generation: {
+    getSnapshot: () => ({ id: 1, host: { home: '/h' } }),
     subscribe: () => () => {},
   },
 }
@@ -124,7 +122,7 @@ export function fakeRemote(api = new FakeApiClient()): RuntimeRemotes {
   return api.sessionRemotes()
 }
 
-export class FakeApiClient implements IApiClient {
+export class FakeApiClient {
   /** Chronological call record: [method, payload]. */
   readonly calls: { method: string; payload: unknown }[] = []
   /** Session ids in physical follow-generation opening order. */
@@ -159,16 +157,6 @@ export class FakeApiClient implements IApiClient {
   onOpenWorkspacePath: (payload: unknown) => Promise<RemoteResult<{ opened: true }>> =
     () => Promise.resolve(remoteOk({ opened: true as const }))
 
-  onDescribe: (payload: unknown) => Promise<RpcResponse<{
-    version: string
-    cwd: string
-    attachedSessions: number
-    home: string
-    canOpenPath: boolean
-  }>> =
-    () => Promise.resolve(ok({
-      version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
-    }))
   private readonly followConns = new Map<SessionId, ValueStreamConn<SessionFollowFrame>[]>()
   private readonly controlConns: ValueStreamConn<SessionControlFrame>[] = []
   private readonly workspaceConns: ValueStreamConn<WorkspaceFollowFrame>[] = []
@@ -192,10 +180,6 @@ export class FakeApiClient implements IApiClient {
 
   onSubagentInterrupt: (payload: unknown) => Promise<RemoteResult<SubagentInterruptReceipt>>
     = () => Promise.resolve(remoteOk({ accepted: true as const }))
-
-  readonly host: IApiClient['host'] = {
-    describe: (payload: unknown) => this.record('host.describe', payload, this.onDescribe(payload)),
-  }
 
   onWorkspaceCreate: (payload: unknown) => Promise<RemoteResult<{ workspace: WorkspaceView; created: boolean }>> =
     () => Promise.resolve(remoteOk({ workspace: fakeWorkspace('fk-ws'), created: true }))
@@ -225,6 +209,7 @@ export class FakeApiClient implements IApiClient {
         execute: () => Promise.resolve({ ok: true, value: undefined }),
       },
       session: {
+        canOpenWorkspacePath: () => Promise.resolve(remoteOk(true)),
         list: payload => this.remoteResult('session.list', payload, this.onList(payload)),
         modelCatalog: () => Promise.resolve({
           ok: true,

@@ -1,6 +1,7 @@
 # Agent Note: GUI 分层与 RPC 协议——host/client 按能力提供方分层、四象限消息模型与 fetch 载体
 
 Status: implemented
+Archived: 2026-08-27
 
 [English](2026-07-19-gui-layering-and-rpc-protocol.md) | 中文
 
