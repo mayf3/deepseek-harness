@@ -55,6 +55,9 @@
       "path": "../../settings/settings"
     },
     {
+      "path": "../../subagent/subagent"
+    },
+    {
       "path": "../../interaction/user-approval"
     },
     {
@@ -62,6 +65,9 @@
     },
     {
       "path": "../session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../settings-controller"
     },
     {
       "path": "../workspace-controller/tsconfig.client.json"

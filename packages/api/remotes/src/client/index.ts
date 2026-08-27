@@ -3,12 +3,14 @@
 import type { Context } from '@deepseek-ai/cordis'
 import agentPresetsRemote from '@deepseek-ai/dsh-agent-presets/remote'
 import commandsRemote from '@deepseek-ai/dsh-commands/remote'
+import settingsControllerRemote from '@deepseek-ai/dsh-api-settings-controller/remote'
 import goalsRemote from '@deepseek-ai/dsh-goal/remote'
 import dynamicRemote from '@deepseek-ai/dsh-cordis-host-runner/remote'
 import fileReferencesRemote from '@deepseek-ai/dsh-file-reference/remote'
 import pluginInventoryRemote from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 import messageFeedbackRemote from '@deepseek-ai/dsh-message-feedback/remote'
 import sessionReferencesRemote from '@deepseek-ai/dsh-session-reference/remote'
+import subagentsRemote from '@deepseek-ai/dsh-subagent/remote'
 import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
@@ -17,11 +19,14 @@ export type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
 export type { PluginInventorySnapshot } from '@deepseek-ai/dsh-host-plugin-inventory/types'
 export type {} from '@deepseek-ai/dsh-agent-presets/remote'
 export type {} from '@deepseek-ai/dsh-commands/remote'
+export type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 export type {} from '@deepseek-ai/dsh-file-reference/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
 export type {} from '@deepseek-ai/dsh-host-plugin-inventory/remote'
 export type {} from '@deepseek-ai/dsh-message-feedback/remote'
 export type {} from '@deepseek-ai/dsh-session-reference/remote'
+export type {} from '@deepseek-ai/dsh-subagent/remote'
+export type * from '@deepseek-ai/dsh-subagent/client'
 export type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 export type * from '@deepseek-ai/dsh-api-session-controller/types'
 export type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
@@ -50,11 +55,10 @@ export type {} from '@deepseek-ai/dsh-api-session-controller/types'
  */
 export type {
   ConfigurableProviderView, ConnectionHandle, ConnectionSinks, ContentBlock,
-  CredentialView, DirectoryListing, DiscoveredModelView, IApiClient,
+  DiscoveredModelView, IApiClient,
   MessageId, ModelCatalog, ModelCatalogFailure, ModelProviderGroup, ModelReasoningEffort, ModelSelection,
   RpcError, RpcId, RpcRequest, RpcResponse, RpcResult, SessionId,
-  SettingsNamespaceView, SettingsPathOpView, SkillEntry, StreamChunk,
-  SubagentAddress, SubagentCatalog,
+  SkillEntry, StreamChunk,
 } from '@deepseek-ai/dsh-client-connection/client'
 export type {} from '@deepseek-ai/dsh-api-gateway/client'
 export type {} from '@deepseek-ai/dsh-cordis-host-runner/remote'
@@ -100,6 +104,13 @@ export type {
 // reason: a Client contribution names what it sends without importing a Host
 // package, and this assembly is where both planes legitimately meet.
 export type { JsonValue } from '@deepseek-ai/dsh-session/types'
+// Credential state vocabulary for the credentials namespace (values never ride it).
+export type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
+// Redacted namespace vocabulary for the settings namespace (secrets never ride
+// it). It travels with its seam, whose `./types` the Client face already reads.
+export type {
+  SettingsDescribeValue, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView,
+} from '@deepseek-ai/dsh-settings/types'
 // Reference-discovery result vocabulary for the fileReferences and
 // sessionReferenceResolver namespaces.
 export type { FileReferenceCandidate } from '@deepseek-ai/dsh-file-reference/types'
@@ -110,6 +121,9 @@ export type ClientFailure =
   | import('@deepseek-ai/dsh-client-connection/client').RpcError
   | import('@deepseek-ai/dsh-agent-presets/types').AgentPresetError
   | import('@deepseek-ai/dsh-api-session-controller/types').SessionError
+  | import('@deepseek-ai/dsh-api-settings-controller/types').CredentialError
+  | import('@deepseek-ai/dsh-api-settings-controller/types').SettingsError
+  | import('@deepseek-ai/dsh-subagent/client').SubagentControlError
   | import('@deepseek-ai/dsh-api-workspace-controller/types').WorkspaceError
 
 /** Success or failure returned by Client operations spanning both API families. */
@@ -136,9 +150,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     for (const contribution of [
-      agentPresetsRemote, commandsRemote, goalsRemote, dynamicRemote, fileReferencesRemote,
+      agentPresetsRemote, commandsRemote, settingsControllerRemote, goalsRemote, dynamicRemote,
+      fileReferencesRemote,
       pluginInventoryRemote, messageFeedbackRemote, sessionReferencesRemote,
-      sessionRemote, workspaceRemote,
+      subagentsRemote, sessionRemote, workspaceRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

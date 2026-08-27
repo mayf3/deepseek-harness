@@ -267,7 +267,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   it('keeps known descendants reachable across a stale empty catalog response', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-stale-catalog'))
-    const pattern = '**/api/subagent.list'
+    const pattern = '**/api/subagents/list'
     let firstClaimed = false
     let emptyDelivered = false
     let trailingRequested = false
@@ -373,7 +373,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   it('keeps a restored child neutral until its parent availability arrives', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-subagent-restore'))
-    const pattern = '**/api/subagent.list'
+    const pattern = '**/api/subagents/list'
     let requested = false
     let releaseCatalog = (): void => {}
     const catalogHeld = new Promise<void>((resolve) => { releaseCatalog = resolve })
@@ -393,7 +393,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       expect(await page.locator('[data-composer-seat]').evaluate(element =>
         getComputedStyle(element).visibility)).toBe('hidden')
       releaseCatalog()
-      const input = page.getByRole('textbox', { name: 'Message the agent' })
+      const input = page.getByRole('textbox', { name: 'Message or run a task... / commands, @ files or sessions' })
       await input.waitFor({ timeout: 15_000 })
       await expect.poll(() => input.isEnabled(), { timeout: 15_000 }).toBe(true)
       acknowledgeReloadConnectionLoss(tripwire, warningStart)
@@ -417,7 +417,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
         resolveEnded()
       })
     })
-    const input = page.getByRole('textbox', { name: 'Message the agent' })
+    const input = page.getByRole('textbox', { name: 'Message or run a task... / commands, @ files or sessions' })
     await input.fill(FOLLOWUP)
     await input.press('Enter')
     await expect.poll(
@@ -500,7 +500,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       .click()
     await page.getByRole('button', { name: '3 subagents' }).hover()
     await page.getByRole('treeitem', { name: new RegExp(LABEL) }).click()
-    await page.getByRole('textbox', { name: 'Message the agent' }).waitFor()
+    await page.getByRole('textbox', { name: 'Message or run a task... / commands, @ files or sessions' }).waitFor()
     const forkResponse = page.waitForResponse(response =>
       new URL(response.url()).pathname === '/api/session/fork')
     await page.getByRole('button', { name: 'Branch into a new conversation' }).last().click()
@@ -546,7 +546,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const input = page.locator('[data-composer-input][contenteditable="true"]').first()
     await input.waitFor()
     const promptResponse = page.waitForResponse(response =>
-      new URL(response.url()).pathname === '/api/subagent.prompt')
+      new URL(response.url()).pathname === '/api/subagents/prompt')
     await input.fill(POST_FORK_FOLLOWUP)
     await input.press('Enter')
     const promptReceipt = await (await promptResponse).json() as {

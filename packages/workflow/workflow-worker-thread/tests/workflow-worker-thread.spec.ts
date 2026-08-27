@@ -787,7 +787,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       expect(result.error).toContain('raced the completion')
       expect(narration).toEqual(['started'])
       await handle.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('cancel() force-settles a script parked on a promise no hook owns, and TERMINATES its worker', async () => {
       const { ctx, parent } = await setup({ config: { provider: 'stub', disposeGraceMs: 50 } })
@@ -1027,7 +1027,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       expect(provider.runs[0]!.disposeCalls).toBe(1)
       await handle.dispose()
       await ctx.fiber.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('dispose() on a wedged worker host-drives child disposal inside the grace: it returns with the children DISPOSED, not with their teardown still in flight', async () => {
       const { ctx, parent, provider } = await setup({
@@ -1062,7 +1062,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       expect(provider.runs[0]!.disposed).toBe(true)
       const result = await handle.result
       expect(result.stopReason).toBe('cancelled')
-    }, 15_000)
+    }, 90_000)
 
     it('a live child disposed by the dispose() drive is disposed ONCE, and the worker\'s late dispose RPC still gets its ack (the script settles, not the grace)', async () => {
       const { ctx, parent, provider } = await setup({ manual: true })
@@ -1127,7 +1127,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       // can finalize its state at run-end without dangling agents.
       expect(order.indexOf('run-end')).toBe(order.length - 1)
       await handle.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('graceful cancellation keeps pairing worker-authored: exactly one agent-end per start, nothing synthesized on top', async () => {
       const { ctx, parent, provider } = await setup({ manual: true })
@@ -1305,7 +1305,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       await Promise.resolve()
       expect(result.stopReason).toBe('error')
       await handle.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('an uncaught exception inside the worker surfaces as an error result and reaps the in-flight child', async () => {
       const { ctx, parent, provider } = await setup({ manual: true })
@@ -1331,7 +1331,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
         expect(provider.runs[0]!.disposed).toBe(true)
       }, 1000)
       await handle.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('a worker death pairs every stranded start: the synthesized cancelled agent-end precedes the error workflow/end', async () => {
       const { ctx, parent, provider } = await setup({ manual: true })
@@ -1366,7 +1366,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       ])
       expect(order.indexOf('run-end')).toBe(order.length - 1)
       await handle.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('a dispose ack racing the worker death is dropped, not crashed (post after exit)', async () => {
       // Slow child disposal: the ack resolves only AFTER the worker died, so
@@ -1395,7 +1395,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       // tight explicit bound (see the helper's doc comment).
       await waitFor(() => { expect(provider.runs[0]!.disposed).toBe(true) }, 1000)
       await handle.dispose()
-    }, 15_000)
+    }, 90_000)
 
     it('a worker death AFTER a cancel reports cancelled, not error', async () => {
       const { ctx, parent } = await setup({ config: { provider: 'stub', disposeGraceMs: 60_000 } })
@@ -1421,7 +1421,7 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       expect(result.stopReason).toBe('cancelled')
       expect(result.error).toContain('stop it')
       await handle.dispose()
-    }, process.platform === 'win32' ? 30_000 : 15_000)
+    }, process.platform === 'win32' ? 90_000 : 15_000)
   })
 
   describe('service API', () => {

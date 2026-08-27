@@ -2,8 +2,9 @@
 // data source on a real clock; behavior tests need per-case responses and
 // deferred-controlled timing). Session streams are hand pumps: pushFollow/pushControl.
 import type {
-  IApiClient,
+  IApiClient, MessageId,
   RpcError, RpcResponse, SessionId, SessionSearchItem, SkillEntry,
+  SubagentCatalog, SubagentInterruptReceipt, SubagentPromptReceipt,
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
@@ -20,7 +21,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { WorkspaceRemote } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { WorkspaceFollowFrame } from '@deepseek-ai/dsh-api-workspace-controller/types'
-import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
+import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RemoteStream,
   RemoteStreamError,
@@ -84,8 +85,18 @@ export function err<T>(error: RpcError): RpcResponse<T> {
 }
 
 /** Successful generated Remote result for programmable domain fakes. */
-function remoteOk<T>(value: T): RemoteResult<T> {
+export function remoteOk<T>(value: T): RemoteResult<T> {
   return { ok: true, value }
+}
+
+/**
+ * Failed generated Remote result carrying an owner's own failure vocabulary,
+ * which the carrier's closed RPC code set does not contain.
+ * @param error - the owner-declared failure.
+ * @returns the failure branch of a Remote result.
+ */
+export function remoteErr<T>(error: RemoteFailure): RemoteResult<T> {
+  return { ok: false, error }
 }
 
 type ValueStreamItem<F> =
@@ -156,22 +167,8 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({
       version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
     }))
-  onPickDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string | null }>> =
-    () => Promise.resolve(ok({ path: null }))
   onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
     () => Promise.resolve(ok({ opened: true as const }))
-
-  onListDirectory: (payload: unknown) => Promise<RpcResponse<{
-    path: string
-    home: string
-    crumbs: { name: string; path: string; hidden: boolean }[]
-    entries: { name: string; path: string; hidden: boolean }[]
-    truncated: boolean
-  }>> =
-    () => Promise.resolve(ok({ path: '/home/fake', home: '/home/fake', crumbs: [{ name: '/', path: '/', hidden: false }], entries: [], truncated: false }))
-
-  onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
-    () => Promise.resolve(ok({ path: '/home/fake/new' }))
 
   private readonly followConns = new Map<SessionId, ValueStreamConn<SessionFollowFrame>[]>()
   private readonly controlConns: ValueStreamConn<SessionControlFrame>[] = []
@@ -189,25 +186,16 @@ export class FakeApiClient implements IApiClient {
   }
   lastSearchSignal: AbortSignal | undefined
 
-  onSubagentList: (payload: unknown) => Promise<RpcResponse<{ entries: never[]; parentAvailable: boolean }>>
-    = () => Promise.resolve(ok({ entries: [], parentAvailable: true }))
-  onSubagentPrompt: (payload: unknown) => Promise<RpcResponse<{ messageId: never }>>
-    = () => Promise.resolve(ok({ messageId: 'fake-message' as never }))
+  onSubagentList: (payload: unknown) => Promise<RemoteResult<SubagentCatalog>>
+    = () => Promise.resolve(remoteOk({ entries: [], parentAvailable: true }))
+  onSubagentPrompt: (payload: unknown) => Promise<RemoteResult<SubagentPromptReceipt>>
+    = () => Promise.resolve(remoteOk({ messageId: 'fake-message' as MessageId }))
 
-  onSubagentInterrupt: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>>
-    = () => Promise.resolve(ok({ accepted: true as const }))
-
-  readonly subagents: IApiClient['subagents'] = {
-    list: (payload: unknown) => this.record('subagent.list', payload, this.onSubagentList(payload)),
-    prompt: (payload: unknown) => this.record('subagent.prompt', payload, this.onSubagentPrompt(payload)),
-    interrupt: (payload: unknown) => this.record('subagent.interrupt', payload, this.onSubagentInterrupt(payload)),
-  }
+  onSubagentInterrupt: (payload: unknown) => Promise<RemoteResult<SubagentInterruptReceipt>>
+    = () => Promise.resolve(remoteOk({ accepted: true as const }))
 
   readonly host: IApiClient['host'] = {
     describe: (payload: unknown) => this.record('host.describe', payload, this.onDescribe(payload)),
-    pickDirectory: (payload: unknown) => this.record('host.pickDirectory', payload, this.onPickDirectory(payload)),
-    listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
-    createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 
@@ -246,17 +234,7 @@ export class FakeApiClient implements IApiClient {
   }
 
   readonly settings: IApiClient['settings'] = {
-    describe: payload => this.record('settings.describe', payload, Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: [] }))),
     openDocument: payload => this.record('settings.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
-    update: payload => this.record('settings.update', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
-    replace: payload => this.record('settings.replace', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
-    mutate: payload => this.record('settings.mutate', payload, Promise.resolve(ok({ ns: 'fake', schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0 }))),
-  }
-
-  readonly credentials: IApiClient['credentials'] = {
-    describe: payload => this.record('credentials.describe', payload, Promise.resolve(ok({ credentials: {} }))),
-    set: payload => this.record('credentials.set', payload, Promise.resolve(ok({}))),
-    unset: payload => this.record('credentials.unset', payload, Promise.resolve(ok({}))),
   }
 
   readonly llm: IApiClient['llm'] = {
@@ -300,6 +278,19 @@ export class FakeApiClient implements IApiClient {
         page: request => this.page(request),
         follow: (request, signal) => this.openFollow(request, signal),
         control: signal => this.openControl(signal),
+      },
+      subagents: {
+        list: parentSessionId => this.record(
+          'subagents.list',
+          parentSessionId,
+          this.onSubagentList(parentSessionId),
+        ),
+        prompt: request => this.record('subagents.prompt', request, this.onSubagentPrompt(request)),
+        interruptByParent: (childSessionId, parentSessionId, mode) => this.record(
+          'subagents.interruptByParent',
+          { childSessionId, parentSessionId, mode },
+          this.onSubagentInterrupt({ childSessionId, parentSessionId, mode }),
+        ),
       },
       workspace: {
         create: payload => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),
