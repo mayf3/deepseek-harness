@@ -58,7 +58,7 @@ import {
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
-import { LlmAdapter } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
@@ -1061,6 +1061,41 @@ export async function seedBlankSession(
     time: meta.createdAt,
     data: {},
   }])
+  return meta.id
+}
+
+/** Seed one detached non-blank Session with accepted next-turn input still pending. */
+export async function seedQueuedSession(
+  scaffold: WebScaffold,
+  id: string,
+  text: string,
+): Promise<SessionId> {
+  const meta: SessionHeader = {
+    version: SESSION_FORMAT_VERSION,
+    id: SessionId(id),
+    createdAt: Date.now() - 60_000,
+    cwd: scaffold.workspaceCwd,
+    delegationDepth: 0,
+  }
+  const pending = createUserMessage({
+    content: [{ type: 'text', text }],
+    source: { kind: 'user' },
+  })
+  await persistSeedSession(scaffold, meta, [
+    { type: 'turn/start', seq: 0, time: meta.createdAt, data: { turn: 1 } },
+    {
+      type: 'turn/end',
+      seq: 1,
+      time: meta.createdAt + 1,
+      data: { turn: 1, reason: { kind: 'blocked' } },
+    },
+    {
+      type: 'agent/inbox/spliced',
+      seq: 2,
+      time: meta.createdAt + 2,
+      data: { target: 'next-turn', start: 0, inserted: [pending] },
+    },
+  ])
   return meta.id
 }
 

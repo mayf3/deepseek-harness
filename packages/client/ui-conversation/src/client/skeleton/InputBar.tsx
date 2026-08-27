@@ -130,7 +130,7 @@ export function InputBar({
   const editorDisabled = removed || (locked && !workspaceTrigger)
   const editable = live && !locked && !machineBusy
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && subagent === null
-    && input.queue.some(row => row.placement === 'queued')
+    && input.queue.length > 0
 
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return

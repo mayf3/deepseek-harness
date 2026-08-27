@@ -56,7 +56,6 @@ function renderToolDetailsProbe(owners?: DetailsToolOwnerProps[]): DetailsSlotPr
 function sessionSnapshot(): SessionSnapshot {
   return {
     sessionId: SID,
-    queue: [],
     running: false,
     removed: false,
     openState: 'open',

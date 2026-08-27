@@ -2,6 +2,7 @@
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type {
   ConversationTimelineSnapshot, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -173,7 +174,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
+  useSession, useProjection, useChat, useSessions, useStore, renderSlot, sessionId,
+  openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
   fileMentions, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
@@ -183,7 +185,7 @@ export function ChatView({
   // Turn enters, leaves, or changes its preview.
   const turnNavigationItems = useChat(s => s.navigation.items())
   const timeline = useChat(s => s.timeline)
-  const inbox = useSession(s => s.queue)
+  const inbox = useProjection('inbox') as unknown as InboxState | undefined
   // Workspace root off the session list row: path summaries display relative to it.
   const cwd = useSessions(s => s.byId[sessionId]?.cwd)
   const running = useSession(s => s.running)
@@ -231,7 +233,7 @@ export function ChatView({
   }, [])
 
   const pendingSteering = useMemo(
-    () => inbox.filter(item => item.placement === 'steering'),
+    () => inbox?.['next-step'].filter(message => message.source.kind === 'user') ?? [],
     [inbox],
   )
   const renderMessageImages = useCallback<RenderMessageImages>(

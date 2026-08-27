@@ -171,7 +171,7 @@ describe('manager frame routing', () => {
     manager.handleControlFrame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {},
+        jobs: {},
         projections: { [sid('s1')]: { asOfSeq: 2, values: {} } },
       },
     })

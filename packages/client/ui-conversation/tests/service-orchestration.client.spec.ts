@@ -6,7 +6,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { makeTranslate, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import type { QueuedMessage } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController, UnsupportedImageMediaTypeError } from '../src/client/service.ts'
@@ -132,20 +133,25 @@ describe('ConversationController', () => {
 })
 
 describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
-  const row = (id: string): QueuedMessage => ({
-    id: id as never,
-    messageId: `message-${id}` as never,
-    placement: 'queued',
+  const row = (id: string): UserMessage => ({
+    id: id as MessageId,
+    role: 'user',
     content: [{ type: 'text', text: id }],
-    preview: id,
-    text: id,
+    source: { kind: 'user' },
+  })
+
+  const setInbox = (
+    runtime: SlotTestRuntime,
+    nextTurn: UserMessage[],
+    nextStep: UserMessage[] = [],
+  ) => runtime.sessions.setProjection('s1', 'inbox', {
+    'next-turn': nextTurn,
+    'next-step': nextStep,
   })
 
   it('steers every queued row in FIFO order and leaves steering rows alone', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-1'), { ...row('q-2'), placement: 'steering' }, row('q-3')]
-    })
+    await setInbox(b.runtime, [row('q-1'), row('q-3')], [row('q-2')])
     b.shell.steerQueue()
     await vi.waitFor(() => {
       expect(b.updateQueue).toHaveBeenCalledTimes(2)
@@ -158,9 +164,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('converges silently when the turn closes or a row is claimed mid-steer', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-1'), row('q-2')]
-    })
+    await setInbox(b.runtime, [row('q-1'), row('q-2')])
     // The turn closes before the second row: the flush stops, silently.
     b.updateQueue.mockResolvedValueOnce({
       ok: false, error: { code: 'steer-unavailable', message: 'closed', details: {} },
@@ -171,9 +175,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
     // A row the host already claimed (e.g. a repeated empty-draft chord):
     // the duplicate strict steer is a silent no-op.
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-3')]
-    })
+    await setInbox(b.runtime, [row('q-3')])
     b.updateQueue.mockResolvedValueOnce({
       ok: false, error: { code: 'queue-item-not-found', message: 'claimed', details: {} },
     } as never)
@@ -185,9 +187,7 @@ describe('InputHub queue steering (empty-draft accelerated Enter)', () => {
 
   it('surfaces one notice on a genuine steer failure and stops', async () => {
     const b = await bench()
-    await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => {
-      draft.queue = [row('q-1'), row('q-2')]
-    })
+    await setInbox(b.runtime, [row('q-1'), row('q-2')])
     b.updateQueue.mockResolvedValueOnce({
       ok: false, error: { code: 'internal', message: 'broken', details: {} },
     } as never)

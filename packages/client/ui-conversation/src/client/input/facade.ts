@@ -9,6 +9,7 @@
  * listeners onto it.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import {
   createSnapshotStore, type ObservableSnapshot, type SnapshotStore,
 } from '@deepseek-ai/dsh-client-store'
@@ -23,7 +24,7 @@ import { mergeRegister } from '@lexical/utils'
 import type {
   ArbitrateKey, ArbitrateOutcome, CommandClaim, ConsumeTokenRequest, DraftAttachmentId,
   InputActions, InputEffect, InputNotice, InputState, InputTriggerController, PickOutcome,
-  QueuedMessage, ReferenceInsert, SessionInput, SubmitAttempt, SubmitImageAttachment,
+  ReferenceInsert, SessionInput, SubmitAttempt, SubmitImageAttachment,
   SubmitOutcome, TokenSpan,
 } from '../contract/input.ts'
 import type { InputSubmitMode } from '../contract/composer-submission.ts'
@@ -53,8 +54,8 @@ export interface SessionInputDeps {
   inputTriggers?: (() => InputTriggerController | undefined) | undefined
   /** PopupSelect shell face resolver (dismissal on submit lock / escape). */
   popup?: (() => PopupDismissFace | undefined) | undefined
-  /** Queue read face; overlaid onto InputState.queue (absent = empty). */
-  queue?: ObservableSnapshot<readonly QueuedMessage[]> | undefined
+  /** Agent Inbox projection; its next-turn list is overlaid onto InputState.queue. */
+  inbox?: ObservableSnapshot<InboxState | undefined> | undefined
   /**
    * Steer every still-pending queued message into the running turn, in FIFO
    * order (the empty-draft accelerated-Enter gesture); absent = unsupported.
@@ -97,7 +98,7 @@ function projectionContentChanged(prev: EditorProjection, next: EditorProjection
   })
 }
 
-const EMPTY_QUEUE: readonly QueuedMessage[] = []
+const EMPTY_QUEUE: InboxState['next-turn'] = []
 
 /** No-pipeline lexicon: zero text-ref decorations. */
 const EMPTY_LEXICON: ReadonlyMap<'/' | '@', readonly string[]> = new Map()
@@ -167,7 +168,7 @@ export class SessionInputShell implements SessionInput {
       () => { this.lexiconOff?.() },
     )
     this.state = createSnapshotStore<InputState>(this.compose())
-    deps.queue?.subscribe(() => { this.publish() })
+    deps.inbox?.subscribe(() => { this.publish() })
   }
 
   // ---- editor plumbing ----
@@ -792,7 +793,7 @@ export class SessionInputShell implements SessionInput {
       phase: core.phase,
       ...(core.claim !== undefined ? { claim: core.claim } : {}),
       occurrences: this.projection.occurrences,
-      queue: this.deps.queue?.getSnapshot() ?? EMPTY_QUEUE,
+      queue: this.deps.inbox?.getSnapshot()?.['next-turn'] ?? EMPTY_QUEUE,
     }
   }
 

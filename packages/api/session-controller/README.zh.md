@@ -29,7 +29,7 @@ kind: "package-reference"
 
 `session.updateQueue` 会先解析普通 Session 的 Agent，再定位被寻址的 `MessageId`，因此 Host 重启后，编辑或移除操作仍可修改从持久 Inbox 投影重建的待处理行。持久 Session 不存在时（包括 Host 未组装 persistence 后端）会映射为 `queue-item-not-found`；其他恢复失败保留其类型化错误，由 subagent 拥有的 identity 仍会被拒绝。成功的变更通过 Agent 的 Inbox 追加标准 `agent/inbox/spliced` 事件。
 
-Client adapter 提供 `SessionEventStream`，即绑定到一个普通 Session 或 direct subagent address 的 Gateway `RemoteJournalStream`。它在读取首个 page 前打开 follow，只发布连续的 `replace`、`prepend` 和 `append` 变更，并通过 tail page 修复重连或 seq 缺口。普通 record 覆盖 `[event.seq, event.seq]`，packed row 覆盖 `[event.seq, event.seq + memberCount - 1]`。业务、persistence 或无法恢复的连续性错误会终止 stream，只有物理载体断开才触发自动恢复。`SessionControlStream` 是 Gateway `RemoteSnapshotStream`；每代都以完整的进程本地 baseline 开始，因此重连会替换 queue、jobs 和 projection 状态，而不会把瞬态值当作 durable event。每次 inbox 变更时，Host 会先发布 projection frame，再从同一份已校验的折叠后值派生 queue replacement，因此监听器注册顺序不会产生陈旧的 queue frame。
+Client adapter 提供 `SessionEventStream`，即绑定到一个普通 Session 或 direct subagent address 的 Gateway `RemoteJournalStream`。它在读取首个 page 前打开 follow，只发布连续的 `replace`、`prepend` 和 `append` 变更，并通过 tail page 修复重连或 seq 缺口。普通 record 覆盖 `[event.seq, event.seq]`，packed row 覆盖 `[event.seq, event.seq + memberCount - 1]`。业务、persistence 或无法恢复的连续性错误会终止 stream，只有物理载体断开才触发自动恢复。`SessionControlStream` 是 Gateway `RemoteSnapshotStream`；每代都以完整的进程本地 baseline 开始，因此重连会替换 jobs 和 projection 状态，而不会把瞬态值当作 durable event。通用 projection carrier 会为 live Agent 和冷持久 Session 投递由领域拥有的 `inbox` 值；系统没有专用 queue frame，也没有枚举 live Agent 的 queue mirror。
 
 -----
 

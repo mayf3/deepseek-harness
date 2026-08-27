@@ -199,7 +199,6 @@ type FixtureControlFrame =
   | {
     readonly type: 'baseline'
     readonly value: {
-      readonly queues: Readonly<Record<string, readonly never[]>>
       readonly jobs: Readonly<Record<string, readonly never[]>>
       readonly approvals: readonly never[]
       readonly questions: readonly never[]
@@ -3061,11 +3060,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
 
   const controlBaseline = (): Extract<FixtureControlFrame, { type: 'baseline' }> => {
-    const queues: Record<string, readonly never[]> = {}
     const jobs: Record<string, readonly never[]> = {}
     const projections: Record<string, FixtureProjectionsBlock> = {}
     for (const summary of sessions) {
-      queues[summary.sessionId] = []
       jobs[summary.sessionId] = []
       const log = logs.get(summary.sessionId) ?? []
       projections[summary.sessionId] = {
@@ -3076,7 +3073,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     return {
       type: 'baseline',
       value: {
-        queues,
         jobs,
         approvals: [],
         questions: [],

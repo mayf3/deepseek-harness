@@ -7,8 +7,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { useSyncExternalStore } from 'react'
 import type {
-  QueuedMessage, SessionListState, SessionSnapshot,
+  SessionListState, SessionSnapshot, UseProjection,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
+import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -17,7 +20,6 @@ import {
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { QueueItemId } from '../src/client/contract/queue.ts'
 import type { InputState } from '../src/client/contract/input.ts'
 import { zh } from '../src/client/locales.ts'
 import { QueueDock, queueDockEntry, type QueueDockInjected, type QueueDockProps } from '../src/client/queue/QueueDock.tsx'
@@ -25,26 +27,35 @@ import { QueueDock, queueDockEntry, type QueueDockInjected, type QueueDockProps 
 afterEach(cleanup)
 
 const SID = 's1' as SessionId
-const iid = (id: string): QueueItemId => id as QueueItemId
+const iid = (id: string): MessageId => id as MessageId
 
-function row(id: string, text: string | null, preview = text ?? '[image]'): QueuedMessage {
+function row(id: string, text: string | null, preview = text ?? '[image]'): UserMessage {
   return {
-    id: iid(id), messageId: `message-${id}` as never, placement: 'queued',
-    content: text === null ? [{ type: 'image', data: 'x' } as never] : [{ type: 'text', text }],
-    preview, text,
+    id: iid(id), role: 'user', source: { kind: 'user' },
+    content: text === null
+      ? [
+        ...(preview === '[image]' ? [] : [{ type: 'text' as const, text: preview.replace(/ \[image\]$/u, '') }]),
+        { type: 'image', data: 'x' } as never,
+      ]
+      : [{ type: 'text', text }],
   }
 }
 
-function snapshotWith(queue: QueuedMessage[]): SessionSnapshot {
+interface TestSnapshot extends SessionSnapshot {
+  readonly testInbox: InboxState
+}
+
+function snapshotWith(queue: UserMessage[], nextStep: UserMessage[] = []): TestSnapshot {
   return {
-    sessionId: SID, queue, running: true, removed: false, openState: 'open', openError: null,
+    sessionId: SID, running: true, removed: false, openState: 'open', openError: null,
     hasMore: false, loadingOlder: false, promptError: null, blank: false, subagent: null,
     lastAgentError: null, promptAttempted: true, awaitingFirstTurn: false,
+    testInbox: { 'next-turn': queue, 'next-step': nextStep },
   }
 }
 
-/** Minimal live source backing the useSession stub. */
-function liveSession(initial: SessionSnapshot) {
+/** Minimal live source backing the Session and Inbox projection hooks. */
+function liveSession(initial: TestSnapshot) {
   let snapshot = initial
   const listeners = new Set<() => void>()
   const useSession: SnapshotSelectorHook<SessionSnapshot> = selector =>
@@ -55,9 +66,20 @@ function liveSession(initial: SessionSnapshot) {
       },
       () => selector(snapshot),
     )
+  const useProjection = ((
+    key: string,
+    selector: (value: InboxState | undefined) => unknown = value => value,
+  ) => useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    () => selector(key === 'inbox' ? snapshot.testInbox : undefined),
+  )) as UseProjection
   return {
     useSession,
-    push(next: SessionSnapshot): void {
+    useProjection,
+    push(next: TestSnapshot): void {
       snapshot = next
       for (const listener of [...listeners]) listener()
     },
@@ -95,22 +117,21 @@ describe('QueueDock', () => {
   it('renders null while the queue is empty', () => {
     const snap = snapshotWith([])
     const source = liveSession(snap)
-    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
+    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(container.innerHTML).toBe('')
   })
 
   it('leaves pending steering to the conversation flow', () => {
-    const steering = { ...row('s-1', 'interrupt'), placement: 'steering' as const }
-    const snap = snapshotWith([steering])
+    const snap = snapshotWith([], [row('s-1', 'interrupt')])
     const source = liveSession(snap)
-    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
+    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(container.innerHTML).toBe('')
   })
 
   it('renders one row directly and defaults multiple rows to a collapsible count header', () => {
     const single = snapshotWith([row('i-1', 'one')])
     const source = liveSession(single)
-    const view = render(<QueueDock {...kitFor(single)} useSession={source.useSession} />)
+    const view = render(<QueueDock {...kitFor(single)} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(view.queryByRole('button', { name: '1 条排队消息' })).toBeNull()
     expect(view.getByText('one')).toBeTruthy()
 
@@ -134,7 +155,7 @@ describe('QueueDock', () => {
   it('keeps an active single-row editor visible when another item arrives', () => {
     const single = snapshotWith([row('i-edit', 'before')])
     const source = liveSession(single)
-    const view = render(<QueueDock {...kitFor(single)} useSession={source.useSession} />)
+    const view = render(<QueueDock {...kitFor(single)} useSession={source.useSession} useProjection={source.useProjection} />)
 
     fireEvent.click(view.getByLabelText('编辑排队消息'))
     fireEvent.change(view.getByLabelText('编辑排队消息'), { target: { value: 'draft' } })
@@ -160,7 +181,7 @@ describe('QueueDock', () => {
     let finishUpdate: (() => void) | undefined
     const updateQueue = vi.fn(() => new Promise<void>((resolve) => { finishUpdate = resolve }))
     const view = render(
-      <QueueDock {...kitFor(single, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(single, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(view.getByLabelText('删除排队消息'))
@@ -188,7 +209,7 @@ describe('QueueDock', () => {
   it('defaults a new multi-row queue to collapsed after the prior queue empties', () => {
     const first = snapshotWith([row('i-1', 'one'), row('i-2', 'two')])
     const source = liveSession(first)
-    const view = render(<QueueDock {...kitFor(first)} useSession={source.useSession} />)
+    const view = render(<QueueDock {...kitFor(first)} useSession={source.useSession} useProjection={source.useProjection} />)
     fireEvent.click(view.getByRole('button', { name: '2 条排队消息' }))
     expect(view.getByText('one')).toBeTruthy()
 
@@ -209,7 +230,9 @@ describe('QueueDock', () => {
       row('i-2', null, 'image [image]'),
     ])
     const source = liveSession(snap)
-    const { container, getByRole } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
+    const { container, getByRole } = render(
+      <QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />,
+    )
     fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
     expect([...container.querySelectorAll('li')].map(item => item.textContent))
       .toEqual(['第一条排队消息', 'image [image]'])
@@ -228,7 +251,7 @@ describe('QueueDock', () => {
     const source = liveSession(snap)
     const updateQueue = vi.fn(() => Promise.resolve())
     const { getByLabelText, queryByLabelText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(getByLabelText('编辑排队消息'))
@@ -252,7 +275,7 @@ describe('QueueDock', () => {
     const source = liveSession(snap)
     const updateQueue = vi.fn(() => Promise.resolve())
     const { getByLabelText, getByText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(getByLabelText('编辑排队消息'))
@@ -271,7 +294,7 @@ describe('QueueDock', () => {
     const source = liveSession(snap)
     const updateQueue = vi.fn(() => Promise.resolve())
     const { getByLabelText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(getByLabelText('编辑排队消息'))
@@ -289,7 +312,7 @@ describe('QueueDock', () => {
     const source = liveSession(snap)
     const updateQueue = vi.fn(() => Promise.resolve())
     const { getAllByLabelText, getByRole } = render(
-      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(getByRole('button', { name: '2 条排队消息' }))
@@ -304,7 +327,7 @@ describe('QueueDock', () => {
     const source = liveSession(running)
     const updateQueue = vi.fn(() => Promise.resolve())
     const rendered = render(
-      <QueueDock {...kitFor(running, { updateQueue })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(running, { updateQueue })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     const button = rendered.getByLabelText('插话发送')
@@ -333,7 +356,7 @@ describe('QueueDock', () => {
     }
     const source = liveSession(snap)
     const view = render(
-      <QueueDock {...kitFor(snap)} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     expect(view.getByText('pending child follow-up')).toBeTruthy()
@@ -348,7 +371,7 @@ describe('QueueDock', () => {
     const notify = vi.fn()
     const updateQueue = vi.fn(() => Promise.reject(new Error('transport failed')))
     const { getByLabelText, getByText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue, notify })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { updateQueue, notify })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(getByLabelText('插话发送'))
@@ -367,7 +390,7 @@ describe('QueueDock', () => {
     const notify = vi.fn()
     const updateQueue = vi.fn(() => Promise.reject(new Error('not found')))
     const { getByLabelText, getByText } = render(
-      <QueueDock {...kitFor(snap, { updateQueue, notify })} useSession={source.useSession} />,
+      <QueueDock {...kitFor(snap, { updateQueue, notify })} useSession={source.useSession} useProjection={source.useProjection} />,
     )
 
     fireEvent.click(getByLabelText('删除排队消息'))
@@ -380,7 +403,7 @@ describe('QueueDock', () => {
   it('follows authoritative retirement back to null', () => {
     const snap = snapshotWith([row('i-1', '在场')])
     const source = liveSession(snap)
-    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} />)
+    const { container } = render(<QueueDock {...kitFor(snap)} useSession={source.useSession} useProjection={source.useProjection} />)
     expect(container.textContent).toContain('在场')
     act(() => { source.push(snapshotWith([])) })
     expect(container.innerHTML).toBe('')

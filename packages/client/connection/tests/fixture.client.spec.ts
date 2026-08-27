@@ -97,7 +97,6 @@ type FixtureControlFrame =
   | {
     readonly type: 'baseline'
     readonly value: {
-      readonly queues: Readonly<Record<string, readonly unknown[]>>
       readonly jobs: Readonly<Record<string, readonly unknown[]>>
       readonly approvals: readonly unknown[]
       readonly questions: readonly unknown[]

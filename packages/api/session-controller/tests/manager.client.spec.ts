@@ -185,7 +185,7 @@ describe('list lifecycle', () => {
     frame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {},
+        jobs: {},
         projections: { [S1]: { asOfSeq: 2, values: {} } },
       },
     })
@@ -198,7 +198,7 @@ describe('list lifecycle', () => {
     frame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {},
+        jobs: {},
         projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
       },
     })
@@ -967,7 +967,7 @@ describe('background-job mirror', () => {
     manager.handleControlFrame(tasksFrame(S1, [view()]))
     manager.handleControlFrame({
       type: 'baseline',
-      value: { queues: {}, jobs: {}, projections: {} },
+      value: { jobs: {}, projections: {} },
     })
     expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
   })

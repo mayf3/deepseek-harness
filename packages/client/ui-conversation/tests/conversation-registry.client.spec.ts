@@ -20,7 +20,6 @@ const SESSION_ID = 'resident' as SessionId
 function sessionSnapshot(): SessionSnapshot {
   return {
     sessionId: SESSION_ID,
-    queue: [],
     running: false,
     subagent: null,
     removed: false,

@@ -13,6 +13,9 @@ import type {
 import type {
   SessionListState, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
+import type { UserMessage } from '@deepseek-ai/dsh-llm/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -47,10 +50,18 @@ beforeEach(() => {
 const SID = 's1' as SessionId
 type RoutedChatNodeOwner = ChatNodeOwnerProps & { readonly node: ChatNode }
 
+function pendingMessage(id: string, text: string): UserMessage {
+  return {
+    id: id as MessageId,
+    role: 'user',
+    content: [{ type: 'text', text }],
+    source: { kind: 'user' },
+  }
+}
+
 function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
     sessionId: SID,
-    queue: [],
     running: false,
     removed: false,
     openState: 'open',
@@ -180,8 +191,11 @@ function makeHarness(
   chatSlice: ChatSlice = {},
   sessionInit: Partial<SessionSnapshot> = {},
   chatSnapshot?: ChatSnapshot,
+  inboxInit: InboxState = { 'next-turn': [], 'next-step': [] },
 ) {
   const session = makeSessionSource(sessionInit)
+  const inbox = createSnapshotStore<InboxState | undefined>(inboxInit)
+  const useInbox = bindSnapshotSelector(inbox)
   const chatSource = makeChatSource(chatSlice, chatSnapshot)
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
@@ -304,7 +318,10 @@ function makeHarness(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
     ),
     useWorkspaces: emptyWorkspaces(),
-    useProjection: (() => undefined),
+    useProjection: ((
+      key: string,
+      selector: (value: unknown) => unknown = value => value,
+    ) => useInbox(value => selector(key === 'inbox' ? value : undefined))),
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
@@ -333,6 +350,7 @@ function makeHarness(
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     setSession: session.set, setChat: chatSource.set, ChatView, props,
+    setInbox: (value: InboxState) => { inbox.set(value) },
     openDetails, openFile, loadOlder, openView,
     chatScroll, forkAt, setSelection, toolOwners,
   }
@@ -640,25 +658,13 @@ describe('ChatView', () => {
       configurable: true,
       value: { writeText },
     })
-    const pending = {
-      id: 'steer-occurrence' as never,
-      messageId: 'steer-message' as never,
-      placement: 'steering' as const,
-      content: [{ type: 'text' as const, text: 'interrupt now' }],
-      preview: 'interrupt now',
-      text: 'interrupt now',
-    }
-    const queued = {
-      id: 'queued-occurrence' as never,
-      messageId: 'queued-message' as never,
-      placement: 'queued' as const,
-      content: [{ type: 'text' as const, text: 'later' }],
-      preview: 'later',
-      text: 'later',
-    }
+    const pending = pendingMessage('steer-message', 'interrupt now')
+    const queued = pendingMessage('queued-message', 'later')
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
-      { queue: [queued, pending], running: true },
+      { running: true },
+      undefined,
+      { 'next-turn': [queued], 'next-step': [pending] },
     )
     const view = render(<h.ChatView {...h.props} />)
 
@@ -673,12 +679,12 @@ describe('ChatView', () => {
       & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
 
     act(() => {
-      h.setSession({ queue: [queued] })
+      h.setInbox({ 'next-turn': [queued], 'next-step': [] })
       h.setChat({
         nodes: [
           assistant(1, 'working'),
           {
-            kind: 'steering', messageId: pending.messageId,
+            kind: 'steering', messageId: pending.id,
             seq: 2, time: 2_000,
             content: [{ type: 'text', text: 'interrupt now' }], source: null,
           },
@@ -708,20 +714,13 @@ describe('ChatView', () => {
   })
 
   it('keeps a later pending occurrence visible when it reuses a durable MessageId', () => {
-    const pending = {
-      id: 'steer-occurrence-later' as never,
-      messageId: 'shared-steer-message' as never,
-      placement: 'steering' as const,
-      content: [{ type: 'text' as const, text: 'same steering' }],
-      preview: 'same steering',
-      text: 'same steering',
-    }
+    const pending = pendingMessage('shared-steer-message', 'same steering')
     const h = makeHarness({
       nodes: [{
-        kind: 'user', seq: 2, time: 2_000,
+        kind: 'steering', messageId: pending.id, seq: 2, time: 2_000,
         content: pending.content, source: null,
       }],
-    }, { queue: [pending], running: true })
+    }, { running: true }, undefined, { 'next-turn': [], 'next-step': [pending] })
     const view = render(<h.ChatView {...h.props} />)
 
     expect(view.getAllByText('same steering')).toHaveLength(2)
@@ -1132,14 +1131,10 @@ describe('ChatView', () => {
     expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
     expect(status.querySelector('[aria-hidden="true"]')).not.toBeNull()
     act(() => {
-      h.setSession({ queue: [{
-        id: 'steering-occurrence' as never,
-        messageId: 'steering-message' as never,
-        placement: 'steering',
-        content: [{ type: 'text', text: 'also' }],
-        preview: 'also',
-        text: 'also',
-      }] })
+      h.setInbox({
+        'next-turn': [],
+        'next-step': [pendingMessage('steering-message', 'also')],
+      })
     })
     expect(status.textContent).toMatch(/^深度求索中\.\.\.2分0\d秒$/)
   })

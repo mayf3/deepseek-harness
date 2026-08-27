@@ -14,10 +14,11 @@ import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
 // error, so scope resolution goes through the sessions service (scopeOf
 // method) instead of the standalone helper.
 import type { ISessions, SessionFace } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { QueueAction } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ComposerAttachment } from './contract/slots.ts'
-import type { QueueAction, QueueItemId } from './contract/queue.ts'
 import type { ComposerBlocks } from './contract/composer-blocks.ts'
 import type {
   DraftAttachmentId, SessionInputResolver, SubmitImageAttachment, SubmitOutcome,
@@ -49,7 +50,7 @@ export interface IConversation {
    * @param action - requested queue operation.
    * @returns completion; converged strict-steer races resolve, while other failures reject.
    */
-  updateQueue(itemId: QueueItemId, action: QueueAction): Promise<void>
+  updateQueue(itemId: MessageId, action: QueueAction): Promise<void>
   /**
    * Cancel the scoped session's in-flight turn while preserving its pending Queue.
    * @returns completion; failures reject as in send.
@@ -215,7 +216,7 @@ export class ConversationController extends Service implements IConversation {
   }
 
   /** Apply one operation to a pending queue occurrence. */
-  async updateQueue(itemId: QueueItemId, action: QueueAction): Promise<void> {
+  async updateQueue(itemId: MessageId, action: QueueAction): Promise<void> {
     const session = this.scopedSession('updateQueue')
     const result = await session.updateQueue(itemId, action)
     if (!result.ok) {

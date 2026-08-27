@@ -8,13 +8,13 @@ Status: implemented
 
 Web 停止按钮调用 `session.cancel`，后者映射到广义 `agent.cancel({ kind: 'user' })`。在活动轮次期间，普通 composer 提交已经被接纳为可独立寻址的 Queue 入队项。用户只想停止当前生成时，广义取消却会丢弃所有入队项，混淆了轮次中断与 Queue 的显式删除操作。
 
-浏览器无法通过重发可见行修复这一损失。它不拥有这些行的实时 `InboxItemId`、唤醒策略或认领竞态；重发还可能重复 Host 已认领的工作。
+浏览器无法通过重发可见行修复这一损失。它不拥有这些行的 `MessageId` 准入、唤醒策略或认领竞态；重发还可能重复 Host 已认领的工作。
 
 ## 决策
 
-`session.cancel` 是 Web Host API 面向普通会话的活动轮次停止操作。它会以 `agent-busy` 拒绝由会话支撑的 subagent；否则会调用 `agent.cancel({ kind: 'user' }, { keepInbox: true })`，在协作式中止当前轮次的同时保留待处理 inbox 工作。底层选项会保留 queued 和 steering 入队项；Web Queue 投影继续只暴露 queued 入队项。
+`session.cancel` 是 Web Host API 面向普通会话的活动轮次停止操作。它会以 `agent-busy` 拒绝由会话支撑的 subagent；否则会调用 `agent.cancel({ kind: 'user' }, { keepInbox: true })`，在协作式中止当前轮次的同时保留待处理 Inbox 工作。标准 `inbox` 投影携带两份列表；QueueDock 只读取 `next-turn`。
 
-AgentLoop 不会启动并发的替代轮次。它会关闭并 flush 被中断的轮次，达到取消的完全停稳，然后通过现有 FIFO 驱动器认领下一个可唤醒的 queued 入队项。该认领会发出 `agent/inbox/dequeue`，因此 Host 的权威 `session/queue` 快照会退役已认领行，并使剩余队尾保持可见。浏览器既不重发，也不提升任何行。忽略取消的工作会延迟这一交接，直到该工作结算。
+AgentLoop 不会启动并发的替代轮次。它会关闭并 flush 被中断的轮次，达到取消的完全停稳，然后通过现有 FIFO 驱动器认领下一条可唤醒的 queued 消息。该认领会记录一条持久纯删除 `agent/inbox/spliced` 事件，因此标准 `inbox` 投影会退役已认领行，并使剩余队尾保持可见。浏览器既不重发，也不提升任何行。忽略取消的工作会延迟这一转换，直到该工作结算。
 
 该映射只更改 Web 客户端使用的 Host `session.cancel` 端点。`Agent.cancel()` 默认约定仍为广义取消，ACP 和 TUI 保留既有取消策略，`AgentHandle.dispose()` 在拆卸期间仍会清除待处理工作。移除 Queue 行仍是用于丢弃单个待处理入队项的显式 Web 操作。
 

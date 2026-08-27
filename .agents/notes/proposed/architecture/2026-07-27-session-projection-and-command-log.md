@@ -65,7 +65,7 @@ declare module 'cordis' {
 
 The registry's two read faces serve [subagent list identity via the projection unit](../../implemented/architecture/2026-08-06-subagent-list-identity-projection.md): a `subagent` unit folds durable mode/label identity last-wins from `subagent/descriptor`, and `SubagentRuntime.listChildren` reads it through `snapshot()` for a live child and `restore({}, events, 0)` over one persistence inspection for a cold one. An absent value remains that consumer's signal, and how absence renders is its own decision.
 
-The Agent registry contributes Inbox's operation-folding unit whenever the projection registry is composed. Like other units, it folds the complete session log, including inherited fork seed events, while preserving one projection state owner.
+The Agent registry contributes Inbox's operation-folding unit whenever the projection registry is composed, as recorded by [durable Web queue recovery](../../implemented/bug-fix/2026-08-17-durable-web-queue-recovery.md). Like other units, it folds the complete session log, including inherited fork seed events, while preserving one projection state owner.
 
 ### Wire: projections block on the history tail page
 

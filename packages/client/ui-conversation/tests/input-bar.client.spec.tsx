@@ -14,6 +14,8 @@ import { $getRoot, $isTextNode } from 'lexical'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { conversationSnapshot as conversationFixture, makeTranslate, sessionSnapshot as sessionFixture } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import type { Context } from '@deepseek-ai/cordis'
@@ -71,8 +73,8 @@ interface BenchOptions {
   workspacePickerOpen?: boolean
   onRequestWorkspace?: () => void
   promptError?: SessionSnapshot['promptError']
-  /** Authoritative queue rows served to the machine overlay (empty = none). */
-  queue?: SessionSnapshot['queue']
+  /** Pending next-turn messages served to the machine overlay (empty = none). */
+  queue?: InboxState['next-turn']
   /** The hub's steer-all face (empty-draft accelerated Enter). */
   steerQueue?: () => void
   variant?: 'hero' | 'composer'
@@ -90,12 +92,9 @@ interface BenchOptions {
   toggleCommandMenu?: (selection: { start: number; end: number }) => void
 }
 
-/** One pending queue row (the runtime snapshot shape, as the dock tests build it). */
-function row(id: string): SessionSnapshot['queue'][number] {
-  return {
-    id: id as never, messageId: `message-${id}` as never, placement: 'queued',
-    content: [{ type: 'text', text: id }], preview: id, text: id,
-  }
+/** One pending next-turn message. */
+function row(id: string): InboxState['next-turn'][number] {
+  return createUserMessage({ content: [{ type: 'text', text: id }], source: { kind: 'user' } })
 }
 
 /** Real machine behind the bar entry: sink spy, no slash pipeline (plain text goes straight to the sink). */
@@ -112,17 +111,17 @@ function bench(over?: BenchOptions) {
     subagent: over?.subagent ?? null,
     removed: over?.disabled ?? false,
     promptError: over?.promptError ?? null,
-    queue: over?.queue ?? [],
   }))
+  const inbox = createSnapshotStore<InboxState | undefined>({
+    'next-turn': over?.queue ?? [],
+    'next-step': [],
+  })
   type ShellDeps = ConstructorParameters<typeof SessionInputShell>[0]
   const shell = new SessionInputShell({
     actx: SCTX,
     defaultSink: sink,
+    inbox,
     commandImages: { serialize: () => Promise.resolve([]), release: () => {}, unsupportedNotice: (token: string) => `${token.trim()} images-unsupported` },
-    queue: {
-      getSnapshot: () => session.getSnapshot().queue,
-      subscribe: fn => session.subscribe(fn),
-    },
     ...(over?.steerQueue !== undefined ? { steerQueue: over.steerQueue } : {}),
     // Lexicon-only stub: adjudication untouched (undefined slash methods are
     // never reached — these benches drive plain-draft flows only).
@@ -528,7 +527,7 @@ describe('Enter semantics', () => {
     expect(ctrl.sink).not.toHaveBeenCalled()
   })
 
-  it('queue steering stays gated: idle, subagent, plain Enter, empty queue, or steering-only rows', () => {
+  it('queue steering stays gated while idle, addressed to a subagent, on plain Enter, or with an empty queue', () => {
     // Idle: the gesture falls through to the machine's empty-draft no-op.
     const idle = bench({ queue: [row('q-1')], steerQueue: vi.fn() })
     fireEvent.keyDown(idle.textarea, { key: 'Enter', metaKey: true })
@@ -561,15 +560,6 @@ describe('Enter semantics', () => {
     expect(none.steerQueue).not.toHaveBeenCalled()
     expect(none.sink).not.toHaveBeenCalled()
 
-    // Pending steering rows are not the queue: nothing to flush.
-    const steering = bench({
-      running: true,
-      queue: [{ ...row('s-1'), placement: 'steering' }],
-      steerQueue: vi.fn(),
-    })
-    fireEvent.keyDown(steering.textarea, { key: 'Enter', metaKey: true })
-    expect(steering.steerQueue).not.toHaveBeenCalled()
-    expect(steering.sink).not.toHaveBeenCalled()
   })
 
   it('draft content outranks the queue: accelerated Enter steers the draft only', () => {

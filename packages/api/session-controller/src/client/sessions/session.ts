@@ -15,8 +15,6 @@ import type {
   PromptContentPart,
   QueueAction,
   SessionAddress,
-  SessionControlFrame,
-  SessionQueuedItem,
   SessionRequestId,
   SessionError,
 } from '../../types.ts'
@@ -36,7 +34,6 @@ import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
-import { SessionQueueMirror } from './queue-mirror.ts'
 
 /** Messages requested per history page. */
 export const PAGE_MESSAGES = 50
@@ -81,8 +78,6 @@ export class Session implements SessionFace {
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
   private loadingOlder = false
-  /** Authoritative stream-only inbox snapshot; pending work never hits history. */
-  private readonly queueMirror = new SessionQueueMirror()
   private running = false
   private address: SubagentAddress | undefined
   private parentAvailable: boolean | undefined
@@ -393,7 +388,7 @@ export class Session implements SessionFace {
   }
 
   /** Rebuild an opened history source after address replacement.
-   *  Invalidates any in-flight open first; queue state belongs to the independently
+   *  Invalidates any in-flight open first; projection state belongs to the independently
    *  reconnecting control stream and remains untouched. */
   async resync(): Promise<void> {
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
@@ -430,24 +425,6 @@ export class Session implements SessionFace {
   }
 
   // ---- Manager-only entry points (@internal; never called by the UI) ----
-
-  /**
-   * Replace every transient control value for this Session from one stream baseline.
-   * @param queue - complete pending queue for this Session.
-   */
-  replaceControl(queue: readonly SessionQueuedItem[]): void {
-    this.queueMirror.replace(queue)
-    this.notifier.markDirty()
-  }
-
-  /**
-   * Apply one Session-addressed live control update.
-   * @param frame - queue replacement addressed to this Session.
-   */
-  handleControlFrame(frame: Extract<SessionControlFrame, { type: 'queue' }>): void {
-    this.queueMirror.replace(frame.items)
-    this.notifier.markDirty()
-  }
 
   /**
    * Running-bit relay from the host stream (list entry and snapshot stay consistent).
@@ -599,9 +576,8 @@ export class Session implements SessionFace {
     const event = entry.event
     const awaitingFirstTurn = this.firstPromptPendingTurn
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
-    const queueChanged = this.queueMirror.acceptDurable(event)
     this.eventSource.append(entry)
-    return queueChanged || awaitingFirstTurn !== this.firstPromptPendingTurn
+    return awaitingFirstTurn !== this.firstPromptPendingTurn
   }
 
   /** Publish a terminal background failure only while this stream still owns the Session. */
@@ -619,7 +595,6 @@ export class Session implements SessionFace {
   private buildSnapshot(): SessionSnapshot {
     return {
       sessionId: this.sessionId,
-      queue: this.queueMirror.snapshot(),
       running: this.running,
       subagent: this.address === undefined
         ? null

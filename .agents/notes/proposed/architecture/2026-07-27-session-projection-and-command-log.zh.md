@@ -65,7 +65,7 @@ declare module 'cordis' {
 
 注册表的两处读取接口服务于[通过投影单元读取 subagent 列表身份](../../implemented/architecture/2026-08-06-subagent-list-identity-projection.zh.md)：`subagent` 单元从 `subagent/descriptor` 按 last-wins 规则折叠持久化的 mode/label 身份，`SubagentRuntime.listChildren` 对 live child 通过 `snapshot()` 读取，对 cold child 则通过一次持久化检查结果调用 `restore({}, events, 0)` 读取。值缺席仍是该消费方的信号，如何呈现缺席仍由消费方自行决定。
 
-Agent 注册表会在投影注册表已组合时贡献 Inbox 的操作折叠单元。该单元与其他单元一样折叠完整会话日志，包括 fork 继承的 seed 事件，同时维持唯一的投影状态所有者。
+Agent 注册表会在投影注册表已组合时贡献 Inbox 的操作折叠单元，详见[持久化 Web Queue 恢复](../../implemented/bug-fix/2026-08-17-durable-web-queue-recovery.zh.md)。该单元与其他单元一样折叠完整会话日志，包括 fork 继承的 seed 事件，同时维持唯一的投影状态所有者。
 
 ### 协议层：历史尾页上的 projections 块
 

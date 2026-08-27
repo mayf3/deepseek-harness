@@ -7,10 +7,10 @@
  * here is the submit plane (phase, claim, attempt) alone.
  */
 import type { Context } from '@deepseek-ai/cordis'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
 import type { ObservableSnapshot, SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LexicalEditor } from 'lexical'
-import type { QueueRow } from './queue.ts'
 import type { InputSubmitMode } from './composer-submission.ts'
 
 /** Pick-time draft span guarded by the input revision. */
@@ -276,9 +276,6 @@ export interface ComposerKeyboard {
   dismissPopup(): void
 }
 
-/** One independently addressable row projected from the transient queue snapshot. */
-export type QueuedMessage = QueueRow
-
 /** Guard union of the scoped consume-token event, checked by the shell. */
 export type ConsumeTokenGuard = ConsumeTokenRequest['guard']
 
@@ -330,8 +327,8 @@ export interface InputState {
   readonly claim?: { readonly token: string; readonly hint?: string; readonly images?: boolean }
   /** Reference occurrence view of the editor's chips, sorted by offset. */
   readonly occurrences: readonly Occurrence[]
-  /** Read-only transient inbox projection from Session control, including pending steering. */
-  readonly queue: readonly QueuedMessage[]
+  /** Messages still waiting for their own turn. */
+  readonly queue: InboxState['next-turn']
 }
 
 /**

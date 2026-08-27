@@ -1,18 +1,36 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { useEffect, useId, useMemo, useState } from 'react'
+import type { InboxState } from '@deepseek-ai/dsh-agent/types'
+import type { QueueAction } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import { useEffect, useId, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   IconCheckOutline16, IconChevronDownOutline14, IconChevronUpOutline14, IconCloseOutline16,
   IconEditOutline16, IconQueueOutline14, IconSendOutline14, IconTrashOutline16, projectUserText, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { QueueAction, QueueItemId } from '../contract/queue.ts'
 import { NS } from '../locales.ts'
 import css from './QueueDock.module.css'
 
+const QUEUE_PREVIEW_CHARS = 200
+const EMPTY_QUEUE = [] as const
+
+function previewOf(content: InboxState['next-turn'][number]['content']): string {
+  const flat = content
+    .map(block => (block.type === 'text' ? block.text : `[${block.type}]`))
+    .join(' ').replace(/\s+/g, ' ').trim()
+  const chars = Array.from(flat)
+  return chars.length > QUEUE_PREVIEW_CHARS ? `${chars.slice(0, QUEUE_PREVIEW_CHARS).join('')}…` : flat
+}
+
+function textOf(content: InboxState['next-turn'][number]['content']): string | null {
+  if (!content.every(block => block.type === 'text')) return null
+  return content.map(block => block.text).join('')
+}
+
 /** Queue operations injected by the session-scoped registration. */
 export interface QueueDockInjected {
-  updateQueue: (itemId: QueueItemId, action: QueueAction) => Promise<void>
+  updateQueue: (itemId: MessageId, action: QueueAction) => Promise<void>
   notify: (level: 'info' | 'error', text: string) => void
 }
 
@@ -23,13 +41,13 @@ export type QueueDockProps = PropsRuntime<'conversation.input.dock'> & QueueDock
  * Queue strip: one item renders directly; multiple items default to a
  * collapsible count header; an empty queue renders nothing.
  */
-export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps) {
-  const inbox = useSession(s => s.queue)
-  const queue = useMemo(() => inbox.filter(row => row.placement === 'queued'), [inbox])
+export function QueueDock({ useSession, useProjection, updateQueue, notify, t }: QueueDockProps) {
+  const inbox = useProjection('inbox') as unknown as InboxState | undefined
+  const queue = inbox?.['next-turn'] ?? EMPTY_QUEUE
   const running = useSession(s => s.running)
   const queueMutable = useSession(s => s.subagent === null)
-  const [editing, setEditing] = useState<{ id: QueueItemId; text: string } | null>(null)
-  const [busy, setBusy] = useState<QueueItemId | null>(null)
+  const [editing, setEditing] = useState<{ id: MessageId; text: string } | null>(null)
+  const [busy, setBusy] = useState<MessageId | null>(null)
   const [collapsed, setCollapsed] = useState(true)
   const listId = useId()
 
@@ -45,7 +63,7 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
   const listVisible = queue.length === 1 || expanded
 
   const applyAction = async (
-    itemId: QueueItemId,
+    itemId: MessageId,
     action: QueueAction,
     failure: string,
   ): Promise<boolean> => {
@@ -90,18 +108,19 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
           </button>
         )}
         <ul id={listId} className={css.list} hidden={!listVisible}>
-          {listVisible && queue.map(row => (
-            <li key={row.id} className={css.row}>
+          {listVisible && queue.map((message) => {
+            const text = textOf(message.content)
+            return <li key={message.id} className={css.row}>
               {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
               {queue.length === 1 && <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>}
-              {editing?.id === row.id
+              {editing?.id === message.id
                 ? (
                   <input
                     autoFocus
                     className={css.editor}
                     aria-label={t('queue.edit')}
                     value={editing.text}
-                    onChange={(event) => { setEditing({ id: row.id, text: event.currentTarget.value }) }}
+                    onChange={(event) => { setEditing({ id: message.id, text: event.currentTarget.value }) }}
                     onKeyDown={(event) => {
                       if (event.key === 'Escape') {
                         setEditing(null)
@@ -114,9 +133,9 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                     }}
                   />
                 )
-                : <span className={css.preview}>{projectUserText(row.preview, [])}</span>}
+                : <span className={css.preview}>{projectUserText(previewOf(message.content), [])}</span>}
               {queueMutable && <div className={css.actions}>
-                {editing?.id === row.id
+                {editing?.id === message.id
                   ? (
                     <>
                       <Tooltip label={t('queue.save')} side="bottom" delayMs={500}>
@@ -145,17 +164,17 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                   )
                   : (
                     <>
-                      <Tooltip label={t('queue.edit')} side="bottom" delayMs={500} disabled={row.text === null}>
+                      <Tooltip label={t('queue.edit')} side="bottom" delayMs={500} disabled={text === null}>
                         <button
                           type="button"
                           className={css.action}
                           aria-label={t('queue.edit')}
                           // Disabled buttons fire no hover events, so the
                           // unsupported hint stays a native title.
-                          title={row.text === null ? t('queue.edit.unsupported') : undefined}
-                          disabled={busy !== null || row.text === null}
+                          title={text === null ? t('queue.edit.unsupported') : undefined}
+                          disabled={busy !== null || text === null}
                           onClick={() => {
-                            if (row.text !== null) setEditing({ id: row.id, text: row.text })
+                            if (text !== null) setEditing({ id: message.id, text })
                           }}
                         >
                           <IconEditOutline16 size={14} />
@@ -169,7 +188,7 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                           disabled={busy !== null}
                           onClick={() => {
                             void applyAction(
-                              row.id,
+                              message.id,
                               { kind: 'remove' },
                               t('queue.removeFailed'),
                             )
@@ -187,7 +206,7 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                           disabled={busy !== null || !running}
                           onClick={() => {
                             void applyAction(
-                              row.id,
+                              message.id,
                               { kind: 'steer' },
                               t('queue.steerFailed'),
                             )
@@ -200,7 +219,7 @@ export function QueueDock({ useSession, updateQueue, notify, t }: QueueDockProps
                   )}
               </div>}
             </li>
-          ))}
+          })}
         </ul>
       </div>
     </div>

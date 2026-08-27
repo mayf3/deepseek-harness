@@ -1,7 +1,7 @@
-/** Live Session queue, jobs, and projection state with reconnect baselines. */
+/** Live Session jobs and projection state with reconnect baselines. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent, InboxState } from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {
   JsonValue, Session, SessionId,
@@ -12,7 +12,6 @@ import type {
   SessionJob,
   SessionProjectionBaseline,
   SessionProjectionValues,
-  SessionQueuedItem,
 } from './types.ts'
 
 /** Owns the Host-wide Session control stream. */
@@ -29,14 +28,6 @@ export class SessionControlController {
           key,
           value: value as JsonValue,
           seq,
-        })
-        if (key !== 'inbox') return
-        const agent = this.ctx.agents.get(session.id)
-        if (agent?.session !== session) return
-        this.broadcast({
-          type: 'queue',
-          sessionId: session.id,
-          items: queueItemsFromInbox(value as InboxState),
         })
       })
     })
@@ -73,15 +64,12 @@ export class SessionControlController {
 
   private baseline(): SessionControlBaseline {
     const sessions = this.ctx.sessions.list()
-    const queues = Object.create(null) as Record<SessionId, readonly SessionQueuedItem[]>
     const jobs = Object.create(null) as Record<SessionId, readonly SessionJob[]>
     for (const session of sessions) {
       const agent = this.ctx.agents.get(session.id)
-      queues[session.id] = agent?.session === session ? queueItems(agent) : []
       jobs[session.id] = this.jobsFor(agent)
     }
     return {
-      queues,
       jobs,
       projections: this.projectionBaseline(sessions),
     }
@@ -168,28 +156,6 @@ class ControlQueue {
       this.end()
     }
   }
-}
-
-function queueItems(agent: Agent): SessionQueuedItem[] {
-  return queueItemsFromInbox({
-    'next-turn': agent.inbox.nextTurn,
-    'next-step': agent.inbox.nextStep,
-  })
-}
-
-function queueItemsFromInbox(inbox: InboxState): SessionQueuedItem[] {
-  return [
-    ...inbox['next-turn'].map(message => ({
-      id: message.id,
-      placement: 'queued' as const,
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
-    })),
-    ...inbox['next-step'].map(message => ({
-      id: message.id,
-      placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
-      message: { id: message.id, content: message.content as unknown as JsonValue[] },
-    })),
-  ]
 }
 
 function jobView(job: JobSnapshot): SessionJob {

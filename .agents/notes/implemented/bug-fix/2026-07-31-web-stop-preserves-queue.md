@@ -8,13 +8,13 @@ English | [中文](2026-07-31-web-stop-preserves-queue.zh.md)
 
 The Web stop button reached `session.cancel`, which mapped to broad `agent.cancel({ kind: 'user' })`. During an active turn, ordinary composer submissions are already accepted as independently addressable Queue occurrences. Broad cancellation discarded every occurrence when the user intended to stop only the current generation, conflating turn interruption with the Queue's explicit delete operation.
 
-The browser cannot repair that loss by resending visible rows. It does not own their live `InboxItemId`, wake policy, or claim race, and a resend can duplicate work that the Host has already claimed.
+The browser cannot repair that loss by resending visible rows. It does not own their `MessageId` admission, wake policy, or claim race, and a resend can duplicate work that the Host has already claimed.
 
 ## Decision
 
-`session.cancel` is the Web Host API's active-turn stop for ordinary sessions. It rejects session-backed subagents with `agent-busy`; otherwise it calls `agent.cancel({ kind: 'user' }, { keepInbox: true })`, preserving pending inbox work while cooperatively aborting the current turn. The underlying option preserves queued and steering entries; the Web Queue projection continues to expose only queued entries.
+`session.cancel` is the Web Host API's active-turn stop for ordinary sessions. It rejects session-backed subagents with `agent-busy`; otherwise it calls `agent.cancel({ kind: 'user' }, { keepInbox: true })`, preserving pending Inbox work while cooperatively aborting the current turn. The standard `inbox` projection carries both lists; QueueDock reads only `next-turn`.
 
-The AgentLoop starts no concurrent replacement turn. It closes and flushes the interrupted turn, reaches cancellation quiescence, and then claims the next waking queued occurrence through its existing FIFO driver. That claim emits `agent/inbox/dequeue`, so the Host's authoritative `session/queue` snapshot retires the claimed row and leaves the remaining tail visible. The browser neither resends nor promotes any row. Work that ignores cancellation delays this handoff until it settles.
+The AgentLoop starts no concurrent replacement turn. It closes and flushes the interrupted turn, reaches cancellation quiescence, and then claims the next waking queued message through its existing FIFO driver. That claim records a durable pure-deletion `agent/inbox/spliced` event, so the standard `inbox` projection retires the claimed row and leaves the remaining tail visible. The browser neither resends nor promotes any row. Work that ignores cancellation delays this transition until it settles.
 
 This mapping changes only the Host `session.cancel` endpoint used by Web clients. The default `Agent.cancel()` contract remains broad, ACP and TUI retain their existing cancellation policies, and `AgentHandle.dispose()` still clears pending work during teardown. Queue row removal remains the explicit Web action for discarding one pending occurrence.
 

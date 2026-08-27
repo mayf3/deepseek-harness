@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-空草稿的 Cmd/Ctrl+Enter 现在会把仍在排队（`placement: 'queued'`）的 Inbox 行按 FIFO 顺序全部插话进运行中的轮次，仅限报告 running 的主会话。手势在 `InputBar.onKeyDown` 解码：加速 Enter + 去空白后为空草稿 + `running` + 无 subagent 地址 + 至少一条 `queued` 行时，改走新的 `ComposerKeyboard.steerQueue()` 动词而不是 `submit()`。`SessionInputShell.steerQueue()` 委托给 hub 编排的流程：重新读取权威的 `session/queue` 快照，过滤 `placement: 'queued'`（pending steering 行已经在本轮内），并逐条顺序执行 Queue 面板的严格 steer 操作 `session.updateQueue(itemId, { kind: 'steer' })`，从而在 host 侧保证 FIFO 顺序。`steer-unavailable`（flush 中途轮次关闭）或 `queue-item-not-found`（行已被占用）静默收敛；其他失败弹出一条 composer 通知（「插话发送失败，请重试。」）。无 wire、磁盘或 agent-loop 改动：严格 steer 边界本来就在 host 侧。
+空草稿的 Cmd/Ctrl+Enter 现在会把仍在 `next-turn` 的 Inbox 消息按 FIFO 顺序全部插话进运行中的轮次，仅限报告 running 的主会话。手势在 `InputBar.onKeyDown` 解码：加速 Enter + 去空白后为空草稿 + `running` + 无 subagent 地址 + 至少一条排队消息时，改走新的 `ComposerKeyboard.steerQueue()` 动词而不是 `submit()`。`SessionInputShell.steerQueue()` 委托给 hub 编排的流程：重新读取 `inbox['next-turn']`，并逐条顺序执行 Queue 面板的严格 steer 操作 `session.updateQueue(itemId, { kind: 'steer' })`，从而在 host 侧保证 FIFO 顺序。`steer-unavailable`（flush 中途轮次关闭）或 `queue-item-not-found`（行已被占用）静默收敛；其他失败弹出一条 composer 通知（「插话发送失败，请重试。」）。无磁盘或 agent-loop 改动：严格 steer 操作本来就在 host 侧。
 
 该手势严格限定为加速组合键。空草稿 + 普通 Enter 仍然无操作（即使 busy-Enter 偏好为 Steer）；草稿内容优先于队列（加速 Enter 只插话当前草稿）；idle 或 subagent 会话保持原有空草稿无操作，因为没有可插入的运行中轮次。
 
@@ -30,4 +30,4 @@ Status: implemented
 - **逐条用 `session.prompt(mode: 'steer')` 插话。** 已拒绝：那会铸造新消息而不是转移 pending 行，破坏 dock 的不可变消息契约；`updateQueue({ kind: 'steer' })` 已经原子地转移了确切的那条。
 - **并发触发所有行。** 已拒绝：host 到达顺序无法保证，而插话顺序对模型可见；顺序 await 保证 FIFO。
 - **为 steer-all 新增 host RPC。** 已拒绝：现有逐条操作已足够幂等——每行一次严格 steer，中途关闭静默收敛——协议改动没有收益。
-- **发送按钮 tooltip。** 已拒绝：主按钮在空草稿的运行窗口内是 Stop，而这也正是整队列手势唯一可用的窗口。placeholder 恰好在该窗口显示，可以直接说明这项键盘操作。
+- **发送按钮 tooltip。** 已拒绝：普通会话运行时，主按钮是 Stop，这也是整队列手势唯一可用的窗口。空草稿时的 placeholder 恰好在该窗口显示，可以直接说明这项键盘操作。

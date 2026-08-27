@@ -54,7 +54,6 @@ export type {
 export type {
   OpenState,
   PromptError,
-  QueuedMessage,
   SessionSnapshot,
 } from './contract/snapshot.ts'
 export type { ClientFailure, ClientResult } from './contract/result.ts'
