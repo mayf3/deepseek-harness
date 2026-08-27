@@ -614,6 +614,74 @@ export interface Config {
 
 来源：[`packages/experimental/agent-team/src/types.ts:125`](../packages/experimental/agent-team/src/types.ts)
 
+<a id="deepseek-aidsh-experimental-inspector"></a>
+
+## `@deepseek-ai/dsh-experimental-inspector`
+
+需要：`webServer`
+
+```ts config-catalog
+/** Host plugin configuration. Fetch capture is enabled by default. */
+export interface Config extends Omit<InspectorOptions, 'clientOrigins'> {
+  /** Browser origins allowed to open the Client ingest WebSocket. */
+  clientOrigins?: string[]
+}
+
+/** User-facing Host options; every memory and lifecycle bound is configurable. */
+export interface InspectorOptions {
+  /** Loopback address used by the Worker HTTP and WebSocket endpoint. */
+  readonly host?: '127.0.0.1'
+  /** First port to bind; occupied ports advance until one is available. */
+  readonly port?: number
+  /** Additional exact browser origins admitted to the Client ingest socket. */
+  readonly clientOrigins?: readonly string[]
+  /** Whether to observe calls made through the current global fetch function. */
+  readonly captureFetch?: boolean
+  /** Maximum request-body prefix retained for one fetch. */
+  readonly maxRequestBodyBytes?: number
+  /** Maximum response-body prefix retained for one fetch. */
+  readonly maxResponseBodyBytes?: number
+  /** Maximum raw bytes encoded into one body observation. */
+  readonly maxBodyChunkBytes?: number
+  /** Maximum total request and response body bytes retained by the Worker. */
+  readonly maxJournalBytes?: number
+  /** Maximum active and completed fetch requests retained by the Worker. */
+  readonly maxRetainedRequests?: number
+  /** Maximum encoded bytes accepted in one source transport frame. */
+  readonly maxSourceFrameBytes?: number
+  /** Maximum observation records accepted in one source batch. */
+  readonly maxSourceRecordsPerFrame?: number
+  /** Maximum records waiting in one producer queue. */
+  readonly maxQueuedRecords?: number
+  /** Maximum encoded bytes waiting in one producer queue. */
+  readonly maxQueuedBytes?: number
+  /** Maximum time allowed for the Worker to become ready. */
+  readonly startupTimeoutMs?: number
+  /** Grace period before a stopping Worker is terminated. */
+  readonly stopTimeoutMs?: number
+  /** Initial upper bound for randomized Client reconnect delay. */
+  readonly clientReconnectBaseMs?: number
+  /** Maximum upper bound for randomized Client reconnect delay. */
+  readonly clientReconnectMaxMs?: number
+  /** Deadline for one Worker-to-Client Runtime or Sources request. */
+  readonly clientRuntimeTimeoutMs?: number
+  /** Deadline for one non-CDP semantic query. */
+  readonly queryTimeoutMs?: number
+  /** Maximum live object handles retained per Client Runtime session. */
+  readonly maxClientRuntimeObjects?: number
+  /** Maximum descriptors returned by one Client property request. */
+  readonly maxClientRuntimeProperties?: number
+  /** Maximum encoded bytes read for one Client script or source map. */
+  readonly maxClientSourceBytes?: number
+  /** Maximum Context and Fiber nodes retained in one realm snapshot. */
+  readonly maxCordisNodes?: number
+  /** Disconnected Cordis snapshots retained after their live realm closes. */
+  readonly maxDisconnectedCordisTrees?: number
+}
+```
+
+来源：[`packages/experimental/inspector/src/index.ts:66`](../packages/experimental/inspector/src/index.ts)
+
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-tool-agent-team`
