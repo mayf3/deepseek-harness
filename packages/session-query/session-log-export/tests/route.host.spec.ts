@@ -56,8 +56,7 @@ async function mounted(withServices: boolean): Promise<{
 describe('Session log export Fetch route', () => {
   it('registers one GET/HEAD route and removes it with the plugin fiber', async () => {
     const { connection, dispose } = await mounted(true)
-    const fallback = { fetch: async () => new Response('fallback', { status: 418 }) }
-    const shared = connection.createSharedFetchHandler('/api', fallback)
+    const shared = connection.createSharedFetchHandler('/api')
 
     const response = await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`,
@@ -76,14 +75,12 @@ describe('Session log export Fetch route', () => {
     await dispose()
     expect((await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`,
-    ))).status).toBe(418)
+    ))).status).toBe(404)
   })
 
   it('validates the query before reporting missing export services', async () => {
     const { connection, dispose } = await mounted(false)
-    const shared = connection.createSharedFetchHandler('/api', {
-      fetch: async () => new Response('fallback', { status: 418 }),
-    })
+    const shared = connection.createSharedFetchHandler('/api')
     expect((await shared.fetch(new Request(`http://host${SESSION_LOG_EXPORT_PATH}`))).status).toBe(400)
     expect((await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1&includeDescendants=1`,

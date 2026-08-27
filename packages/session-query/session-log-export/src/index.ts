@@ -80,11 +80,16 @@ export function apply(ctx: Context, config: Config = {}): void {
   connectionOf(ctx).fetch.register({
     path: SESSION_LOG_EXPORT_PATH,
     methods: ['GET', 'HEAD'],
-    fetch: request => sessionLogExportResponse(
-      ctx,
-      request,
-      config.compressionLevel ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
-    ),
+    fetch: async (request) => {
+      const response = await sessionLogExportResponse(
+        ctx,
+        request,
+        config.compressionLevel ?? DEFAULT_SESSION_LOG_COMPRESSION_LEVEL,
+      )
+      if (request.method === 'GET') return response
+      await response.body?.cancel()
+      return new Response(null, { status: response.status, headers: response.headers })
+    },
   })
 }
 
@@ -153,7 +158,5 @@ async function sessionLogExportResponse(
       },
     },
   )
-  if (request.method === 'GET') return response
-  await response.body?.cancel()
-  return new Response(null, { status: response.status, headers: response.headers })
+  return response
 }
