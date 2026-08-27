@@ -27,6 +27,7 @@ export {
   resolveProxyPolicy,
   DIRECT_POLICY,
   LOOPBACK_NO_PROXY,
+  PROXY_ENV_NAMES,
   type ProxyConfig,
   type ProxyDiagnostic,
   type ProxyPolicy,

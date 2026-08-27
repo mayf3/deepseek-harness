@@ -11,6 +11,7 @@
  * @module @deepseek-ai/dsh-loader-smoke
  */
 
+import { PROXY_ENV_NAMES } from '@deepseek-ai/dsh-http-proxy'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -29,6 +30,14 @@ export const LOADER_SMOKE_TEST_TIMEOUT_MS = DEFAULT_PROCESS_TIMEOUT_MS + 15_000
 
 /** Which artifact an example bin is booted from: unbuilt `src` via tsx, or built `lib` via plain Node. */
 export type ExampleMode = 'src' | 'lib'
+
+/**
+ * Proxy names cleared from every smoke child.
+ * @returns an environment overlay removing each name that carries proxy configuration.
+ */
+function clearedProxyEnv(): NodeJS.ProcessEnv {
+  return Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, undefined]))
+}
 
 /** Environment variable selecting the mode; CI sets it to `lib`, dev leaves it unset (`src`). */
 export const EXAMPLE_MODE_ENV = 'DSH_EXAMPLE_MODE'
@@ -109,7 +118,11 @@ function toLibBin(srcBin: string): string {
 export function resolveExampleLaunch(options: ExampleLaunchOptions): ExampleLaunch {
   const mode = options.mode ?? resolveExampleMode()
   const configArgs = options.configArgs ?? []
-  const env: NodeJS.ProcessEnv = { ...options.env }
+  // A smoke launches a real `dsh` against local fixtures, so it must not inherit the machine's
+  // network policy: the harness honors the proxy environment, and a runner that exports one would
+  // send a fixture-server request to a proxy that cannot resolve the fixture host. `undefined`
+  // removes the name from the child rather than setting it empty.
+  const env: NodeJS.ProcessEnv = { ...clearedProxyEnv(), ...options.env }
 
   if (mode === 'src') {
     if (options.tsconfigPath === undefined) {

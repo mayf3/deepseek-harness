@@ -955,7 +955,7 @@ export interface ProxyConfig {
 }
 ```
 
-Source: [`packages/net/http-proxy/src/index.ts:49`](../packages/net/http-proxy/src/index.ts)
+Source: [`packages/net/http-proxy/src/index.ts:50`](../packages/net/http-proxy/src/index.ts)
 
 <a id="deepseek-aidsh-invariants"></a>
 

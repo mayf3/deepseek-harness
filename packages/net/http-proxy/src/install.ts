@@ -9,18 +9,8 @@
  */
 
 import type { Agent, Dispatcher } from 'undici'
-import { DIRECT_POLICY, proxyForUrl, type ProxyPolicy } from './policy.ts'
+import { DIRECT_POLICY, POLICY_ENV_NAMES, proxyForUrl, type ProxyPolicy } from './policy.ts'
 
-/**
- * The environment names each policy field owns, lowercase first. Both casings are written together:
- * undici reads the lowercase name first, so leaving a stale uppercase value behind would let it
- * shadow the resolved one on Windows, where the two names are the same variable.
- */
-const POLICY_ENV_NAMES = {
-  httpProxy: ['http_proxy', 'HTTP_PROXY'],
-  httpsProxy: ['https_proxy', 'HTTPS_PROXY'],
-  noProxy: ['no_proxy', 'NO_PROXY'],
-} as const
 
 /** The active policy, or `undefined` until one is installed. Process-wide, like the dispatcher it tracks. */
 let active: ProxyPolicy | undefined

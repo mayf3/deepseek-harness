@@ -20,6 +20,27 @@ import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environm
  */
 export const LOOPBACK_NO_PROXY: readonly string[] = ['localhost', '127.0.0.1', '::1', '[::1]']
 
+/**
+ * The environment names each policy field owns, lowercase first — undici reads the lowercase name
+ * first, so both casings are always written or cleared together.
+ */
+export const POLICY_ENV_NAMES = {
+  httpProxy: ['http_proxy', 'HTTP_PROXY'],
+  httpsProxy: ['https_proxy', 'HTTPS_PROXY'],
+  noProxy: ['no_proxy', 'NO_PROXY'],
+} as const
+
+/**
+ * Every environment name that carries proxy configuration, including the `ALL_PROXY` fallback this
+ * package resolves but never writes back. A caller that must isolate a child from the machine's
+ * network policy clears exactly these.
+ */
+export const PROXY_ENV_NAMES: readonly string[] = [
+  ...Object.values(POLICY_ENV_NAMES).flat(),
+  'all_proxy',
+  'ALL_PROXY',
+]
+
 /** Proxy URL schemes this package routes through. Everything else is reported, never silently dropped. */
 const SUPPORTED_PROTOCOLS = new Set(['http:', 'https:'])
 
