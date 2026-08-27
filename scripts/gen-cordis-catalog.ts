@@ -240,6 +240,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   AgentFactory: 'core.md',
   AgentHandle: 'core.md',
   ModelSelection: 'core.md',
+  AllowedModelRoute: 'subagent.md',
+  SubagentModelSelectionSettings: 'subagent.md',
   AgentOptions: 'core.md',
   AgentStatus: 'core.md',
   ContentBlock: 'llm-streaming.md',

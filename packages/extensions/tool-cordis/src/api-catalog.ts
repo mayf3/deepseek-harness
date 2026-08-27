@@ -1708,7 +1708,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async listCandidates( agent: Agent, query: string = \'\', limit: number = this.config.candidateLimit, signal?: AbortSignal, ): Promise<SessionReferenceCandidate[]>',
-        description: 'List reference candidates, ranked by working-directory affinity.',
+        description: 'List reference candidates, ranked by working-directory affinity.\n\nDiscovery runs at keystroke rate, so a title only ever comes from a projection read: see SessionReferenceResolver.projectedTitle for which sessions can answer one and which fall back to their id.',
         parameters: [{ name: 'agent', description: 'target agent; self is excluded and its cwd drives ranking.' }, { name: 'query', description: 'optional case-insensitive session-id/cwd/title substring.' }, { name: 'limit', description: 'optional positive result cap.' }, { name: 'signal', description: 'optional cancellation boundary for host autocomplete teardown.' }],
         returns: 'candidates labeled by latest title or, when absent, session id.',
       },
@@ -2086,10 +2086,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Singleton settings owner read by delegation tools when an Agent is published.',
     methods: [
       {
-        signature: 'currentEnabled(): boolean',
-        description: 'Read the preference for the next eligible Agent publication.',
+        signature: 'current(): SubagentModelSelectionSettings',
+        description: 'Read a detached selection preference for the next eligible Agent publication.',
         parameters: [],
-        returns: 'whether that Agent should receive model-selectable delegation.',
+        returns: 'the enabled state and exact allowed routes.',
       },
     ],
   },
@@ -4864,7 +4864,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionQueuedItem',
-    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
+    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
   },
   {
     name: 'SessionRawArtifact',
@@ -4876,7 +4876,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionReferenceCandidate',
-    declaration: 'export interface SessionReferenceCandidate {\n    sessionId: SessionId;\n    label: string;\n    cwd?: string;\n    createdAt: number;\n}',
+    declaration: 'export interface SessionReferenceCandidate {\n    sessionId: SessionId;\n    label: string;\n    cwd?: string;\n    sameWorkspace: boolean;\n    createdAt: number;\n}',
   },
   {
     name: 'SessionReferenceInput',

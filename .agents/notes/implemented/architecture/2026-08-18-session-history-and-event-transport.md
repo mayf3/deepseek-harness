@@ -62,6 +62,8 @@ API Proxy owns neither the Session or Workspace Remote namespace nor the Host do
 
 The browser's Client Remote plugin starts `RemoteStreamMuxClient` idempotently on activation and connects to `/api/remote.mux` immediately. The physical WebSocket remains resident even when there is no business logical stream.
 
+The Host sends one RFC 6455 Ping control frame to every open mux socket at the configured `websocketHeartbeatIntervalMs` interval (30 seconds by default). The browser replies with Pong at the protocol layer; neither control frame enters the Remote stream JSON union or changes Connection generation state. The Host imposes no Pong deadline, so half-open detection remains with TCP and network intermediaries.
+
 After an initial connection failure or the loss of a connected socket, the mux rebuilds the physical connection with capped jittered backoff. Logical streams not yet opened share that reconnect loop; streams already open end their current physical generation with `RemoteStreamCarrierError`.
 
 In-process `connection.rpc.open` uses the same logical endpoint semantics while bypassing the browser WebSocket mux.
@@ -76,7 +78,7 @@ Unexpected normal completion of `$events`, a Host error, a malformed opening fra
 
 Gateway stream generation, Connection generation, and a Session business open epoch are three independent counters: the first identifies physical replacement of one logical stream, the second identifies a Host-availability handshake, and the last prevents an obsolete Session open from writing into current state.
 
-Plugin disposal stops backoff, cancels candidate and active sockets, ends logical streams, and awaits quiescence of background loops and consumers.
+Host plugin disposal stops the heartbeat timer, terminates mux sockets, and waits for active iterators. Client plugin disposal stops backoff, cancels candidate and active sockets, ends logical streams, and awaits quiescence of background loops and consumers.
 
 ### General Remote stream model
 
@@ -320,13 +322,15 @@ API Proxy carries only independent business APIs it owns. Session, Workspace, Re
 
 **Use an independent physical WebSocket or duplex stream for Remote Event.** Gateway mux already provides authenticated upgrade, multiplexing, cancellation, error mapping, and reconnect. Downlink `$events` plus HTTP `$events/result` expresses request/response without a third connection.
 
+**Send application-level JSON heartbeat frames.** This would expand the strict Remote stream message union and require browser handling for traffic with no business meaning. WebSocket Ping/Pong provides carrier activity without changing logical-stream semantics.
+
 **Retain API Proxy's Host mux.** This keeps the handwritten union, schema, response envelope, and second stream lifecycle, and prevents Session and Workspace Controllers from owning their data protocols independently.
 
 **Update Session list time from aggregate `session/event`.** List correctness would depend on which Sessions a browser consumes and would mistake arbitrary plugin events for user activity. The durable `lastPromptAt` projection expresses the ordering fact directly.
 
 ## Verification
 
-Gateway mux tests pin connection without logical streams, idle residency, initial-failure and disconnect recovery, active-stream carrier failure, cancellation, and no reconnect after disposal.
+Gateway mux tests pin connection without logical streams, idle residency, configurable Ping/Pong without application messages, initial-failure and disconnect recovery, active-stream carrier failure, cancellation, and no reconnect after disposal.
 
 Connection tests pin missing, duplicate, and withdrawn generation sources; the race between `$events` ready and `host.describe`; and description withdrawal and rebuilding after generation failure.
 
@@ -363,6 +367,8 @@ The browser can read a durable Session while its Agent is stopped. Opening an or
 Durable logs repair a missing suffix by sequence number and page; Session control and Workspace state converge through opening snapshots; ordinary Remote Events promise no replay. Recovery semantics follow the data kind instead of imitating one another.
 
 Gateway owns only transport, generation, pending waterfalls, and strict wire validation, not Session or Workspace business fields. A domain Controller supplies only openers, cursor rules, baseline reducers, and error presentation.
+
+Each resident browser connection adds one empty Ping/Pong exchange per configured interval. Deployments can shorten the interval for stricter idle timeouts without changing the Remote stream protocol or browser code.
 
 Session and Workspace Host APIs, stream adapters, and Client data models each have an explicit owner. API Proxy is no longer their intermediary.
 

@@ -1,5 +1,6 @@
 /** Register the Chat Conversation target, renderers, stats, and details surface. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { BoundActions, ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -100,7 +101,10 @@ export function apply(ctx: Context): void {
             return ctx.uiWorkspace.openPath(resolveWorkspacePath(cwd, path))
           },
           loadOlder: () => { void session.loadOlder() },
-          loadImage: attachment => ctx.uiConversation.imageUrl(sessionId, attachment),
+          loadImage: Object.assign(
+            (attachment: ImageAttachmentRef) => ctx.uiConversation.imageUrl(sessionId, attachment),
+            { peek: (attachment: ImageAttachmentRef) => ctx.uiConversation.peekImageUrl(sessionId, attachment) },
+          ),
           chatScroll: {
             save: (position) => {
               if (position === null) chatScrollPositions.delete(sessionId)

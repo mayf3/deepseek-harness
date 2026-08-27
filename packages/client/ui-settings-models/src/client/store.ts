@@ -137,23 +137,14 @@ export class ModelsSettingsStore {
   private generation = 0
 
   /**
-   * @param api - the page's wire faces (credentials Remote, llm reads, settings writes).
+   * @param api - the page's credentials Remote and LLM wire faces.
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
-    private readonly api: ModelsWire,
+    private readonly api: Pick<ModelsWire, 'credentials' | 'llm'>,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
-
-  /**
-   * Fold one successful settings write into the shared mirror before rejoining
-   * this page's rows.
-   * @param view - namespace view returned by the settings wire method.
-   */
-  acceptNamespace(view: SettingsNamespaceView): void {
-    this.describeFace.acceptView(view)
-  }
 
   /**
    * Refresh the whole page snapshot: the provider directory and the mirror's

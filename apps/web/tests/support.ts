@@ -106,7 +106,7 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容… / 调用指令 @ 文件或会话"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容… / 调用指令 @ 文件或对话"]')
     .waitFor({ timeout: 15_000 })
 }
 

@@ -738,9 +738,9 @@ Source: [`packages/core/session/src/types.ts:239`](../packages/core/session/src/
 
 Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
 
-<a id="subagentmodel-selection-enabled--log-only"></a>
+<a id="subagentmodel-selection-policy--log-only"></a>
 
-#### `subagent/model-selection-enabled` — log-only
+#### `subagent/model-selection-policy` — log-only
 
 ```ts persistence-catalog
 /**
@@ -749,10 +749,13 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent
  * request; absence means the fixed-route definition. Log-only: it carries
  * no `surfaceOp` and never enters model history.
  */
-'subagent/model-selection-enabled': Record<string, never>
+'subagent/model-selection-policy': {
+  /** Exact routes this Session may select explicitly for a child. */
+  allowedModels: AllowedModelRoute[]
+}
 ```
 
-Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:14`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
+Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:17`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
 ### `team/*`
 

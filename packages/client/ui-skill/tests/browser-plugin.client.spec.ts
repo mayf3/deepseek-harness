@@ -103,7 +103,7 @@ const sid = (id: string) => id as SessionId
 const proj = (id: string): ClientSessionContext => ({ sessionId: sid(id) })
 
 const req = (query: string, signal?: AbortSignal) =>
-  ({ query, position: 'leading' as const, signal: signal ?? new AbortController().signal })
+  ({ query, position: 'leading' as const, drilled: false, signal: signal ?? new AbortController().signal })
 
 describe('apply', () => {
   it('declares the services it binds', () => {

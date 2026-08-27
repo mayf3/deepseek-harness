@@ -51,6 +51,7 @@ function sessionSnapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnaps
   return {
     sessionId: SID,
     queue: [],
+    pendingSubmissions: [],
     running: false,
     removed: false,
     openState: 'open',
@@ -412,6 +413,34 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('leaves the turn rail unrendered when an unrelated Chat update commits', () => {
+    const snapshot = chatSnapshotFixture({
+      nodes: [
+        userInTurn(1, 'first prompt', 1),
+        assistant(2, 'first response', 1),
+        userInTurn(4, 'second prompt', 2),
+        assistant(5, 'second response', 2),
+      ],
+      turnEnds: new Map([[1, 3], [2, 6]]),
+    })
+    const h = makeHarness({}, {}, snapshot)
+    // The rail asks for its own accessible name once per render, so counting
+    // that key counts renders without reaching into the component.
+    let railRenders = 0
+    const translate = h.props.t
+    const counting = ((key: string, vars?: Record<string, unknown>) => {
+      if (key === 'chat.turnNavigation.label') railRenders += 1
+      return (translate as (k: string, v?: Record<string, unknown>) => string)(key, vars)
+    }) as ChatViewSlotProps['t']
+    render(<h.ChatView {...h.props} t={counting} />)
+    const afterMount = railRenders
+    expect(afterMount).toBeGreaterThan(0)
+
+    act(() => { h.setSelection({ turnSeq: 3, callId: 'a', toolName: 'bash' }) })
+
+    expect(railRenders).toBe(afterMount)
+  })
+
   it('projects loaded turns into prompt and response navigation previews', () => {
     const snapshot = chatSnapshotFixture({
       nodes: [
@@ -726,6 +755,99 @@ describe('ChatView', () => {
 
     expect(view.getAllByText('same steering')).toHaveLength(2)
     expect(view.container.querySelectorAll('[data-pending-steering]')).toHaveLength(1)
+  })
+
+  it('renders local submission echoes at the flow tail and swaps atomically with the durable node', () => {
+    const h = makeHarness(
+      { nodes: [assistant(1, 'working')] },
+      {
+        pendingSubmissions: [
+          { requestId: 'req-1' as never, time: 5_000, text: '即发即显', images: [] },
+        ],
+      },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('即发即显').closest('[data-submission-echo]')).not.toBeNull()
+
+    // The durable node arrives while the echo is STILL in the session
+    // snapshot: the render-time rpcId dedupe keeps exactly one bubble.
+    act(() => {
+      h.setChat({
+        nodes: [
+          assistant(1, 'working'),
+          {
+            kind: 'user', seq: 2, time: 2_000,
+            content: [{ type: 'text', text: '即发即显' }] as never,
+            source: { kind: 'user', rpcId: 'req-1' },
+          },
+        ],
+      })
+    })
+    expect(view.getAllByText('即发即显')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+
+    // The delayed snapshot retirement changes nothing visible.
+    act(() => { h.setSession({ pendingSubmissions: [] }) })
+    expect(view.getAllByText('即发即显')).toHaveLength(1)
+  })
+
+  it('hides an echo once its queue occurrence carries the rpcId (running-turn submission)', () => {
+    const h = makeHarness(
+      { nodes: [assistant(1, 'working')] },
+      {
+        running: true,
+        pendingSubmissions: [
+          { requestId: 'req-q' as never, time: 6_000, text: '排队中', images: [] },
+        ],
+      },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.getByText('排队中')).toBeTruthy()
+    act(() => {
+      h.setSession({
+        queue: [{
+          id: 'q-occurrence' as never,
+          messageId: 'q-message' as never,
+          placement: 'queued' as const,
+          rpcId: 'req-q' as never,
+          content: [{ type: 'text' as const, text: '排队中' }],
+          preview: '排队中',
+          text: '排队中',
+        }],
+      })
+    })
+    // The queued occurrence renders in the queue dock, not the flow; the
+    // flow-tail echo yields to it in the same snapshot.
+    expect(view.queryByText('排队中')).toBeNull()
+  })
+
+  it('an image echo renders its previews through the message-image slot', () => {
+    const h = makeHarness(
+      { nodes: [] },
+      {
+        pendingSubmissions: [{
+          requestId: 'req-img' as never,
+          time: 7_000,
+          text: '',
+          images: [
+            { previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
+            { previewUrl: 'blob:echo-b' },
+          ],
+        }],
+      },
+    )
+    const baseRenderSlot = h.props.renderSlot
+    const renderSlot = ((key: string, owner: object, opts?: { fallback?: React.ReactNode }) => {
+      if (key !== 'conversation.message.images') return baseRenderSlot(key as never, owner as never, opts as never)
+      const images = (owner as { images: readonly unknown[] }).images
+      return <div data-testid="echo-images" data-count={images.length} data-first={JSON.stringify(images[0])} />
+    }) as unknown as ChatViewSlotProps['renderSlot']
+    const view = render(<h.ChatView {...{ ...h.props, renderSlot }} />)
+    const gallery = view.getByTestId('echo-images')
+    expect(gallery.getAttribute('data-count')).toBe('2')
+    expect(JSON.parse(gallery.getAttribute('data-first') ?? '{}')).toEqual({
+      preview: { url: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
+    })
   })
 
   it('animates only the latest unresolved model retry', () => {

@@ -276,6 +276,22 @@ Depends on: [`ToolPresentationMode`](subsystems/tools.md)
 
 Source: [`packages/core/agent-tool-presentation/src/index.ts:38`](../packages/core/agent-tool-presentation/src/index.ts)
 
+<a id="deepseek-aidsh-api-gateway"></a>
+
+## `@deepseek-ai/dsh-api-gateway`
+
+Requires: `typert`
+
+```ts config-catalog
+/** Gateway transport configuration. */
+export interface Config {
+  /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 30000 */
+  readonly websocketHeartbeatIntervalMs?: number
+}
+```
+
+Source: [`packages/api/gateway/src/index.ts:114`](../packages/api/gateway/src/index.ts)
+
 <a id="deepseek-aidsh-api-session-controller"></a>
 
 ## `@deepseek-ai/dsh-api-session-controller`
@@ -2869,12 +2885,9 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
-  /** Let the model discover and select the child LLM route (default false). */
-  enableModelSelection?: boolean
   /**
    * Sample the Host `subagent-model-selection` user setting for each new
-   * top-level session and inherit that decision in its child sessions. Mutually
-   * exclusive with `enableModelSelection`.
+   * top-level session and inherit that decision in its child sessions.
    */
   modelSelectionSettings?: boolean
   /**
@@ -2924,7 +2937,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:45`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:50`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 
@@ -3323,7 +3336,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 
 - `@deepseek-ai/dsh-acp-app` — requires `cmdlineArgs` ([`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts))
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
-- `@deepseek-ai/dsh-api-gateway` — requires `typert` ([`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
 - `@deepseek-ai/dsh-api-settings-controller` ([`packages/api/settings-controller/src/index.ts`](../packages/api/settings-controller/src/index.ts))
 - `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))

@@ -740,9 +740,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
 
-<a id="subagentmodel-selection-enabled--log-only"></a>
+<a id="subagentmodel-selection-policy--log-only"></a>
 
-#### `subagent/model-selection-enabled` — log-only
+#### `subagent/model-selection-policy` — 仅日志
 
 ```ts persistence-catalog
 /**
@@ -751,10 +751,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * request; absence means the fixed-route definition. Log-only: it carries
  * no `surfaceOp` and never enters model history.
  */
-'subagent/model-selection-enabled': Record<string, never>
+'subagent/model-selection-policy': {
+  /** Exact routes this Session may select explicitly for a child. */
+  allowedModels: AllowedModelRoute[]
+}
 ```
 
-来源：[`packages/subagent/tool-subagent/src/model-selection-state.ts:14`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
+来源：[`packages/subagent/tool-subagent/src/model-selection-state.ts:17`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
 ### `team/*`
 
