@@ -49,7 +49,8 @@ export async function apply(ctx: Context, config: HostPluginConfig): Promise<voi
       disposers.push(ctx.on('webserver/index-inject', (table: IndexInjection[]) => {
         table.push({ kind: 'global', name: '__DSH_INSPECTOR__', value: handle.endpoint.client })
       }))
-      ctx.logger.info(`dsh inspector: ${handle.endpoint.devtoolsFrontendUrl}`)
+      // This readiness URL is emitted while the plugin tree is still loading, before a logger sink is guaranteed.
+      console.log(`dsh inspector: ${handle.endpoint.devtoolsFrontendUrl}`)
     } catch (error) {
       await disposeInspector(handle, disposers).catch((cleanupError: unknown) => {
         ctx.logger.error('experimental-inspector: initialization rollback failed', cleanupError)
