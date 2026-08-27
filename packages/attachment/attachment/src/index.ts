@@ -23,6 +23,7 @@ export type {
   ImageAttachmentRef,
   ImageRequestPolicy,
   ImageMediaType,
+  PromptContentPart,
   RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,

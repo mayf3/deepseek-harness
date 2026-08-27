@@ -208,28 +208,15 @@ export class Session implements SessionFace {
           },
         }
       } else {
-        if (content.some(part => part.type === 'image')) {
-          result = {
-            ok: false,
-            error: {
-              code: 'attachment-error',
-              message: 'Image input is unavailable for subagent continuations.',
-              details: { reason: 'SUBAGENT_IMAGE_UNSUPPORTED' },
-            },
-          }
-        } else {
-          const routed = toSessionResult(await this.remote.subagents.prompt({
-            requestId: randomUUID() as SessionRequestId,
-            parentSessionId: this.address.parentSessionId,
-            childSessionId: this.address.childSessionId,
-            mode: this.address.mode,
-            content: content.flatMap(part => part.type === 'text'
-              ? [{ type: 'text' as const, text: part.text }]
-              : []),
-            clientTimeZone: resolvedClientTimeZone(),
-          }, signal))
-          result = routed.ok ? { ok: true, value: { accepted: true } } : routed
-        }
+        const routed = toSessionResult(await this.remote.subagents.prompt({
+          requestId: randomUUID() as SessionRequestId,
+          parentSessionId: this.address.parentSessionId,
+          childSessionId: this.address.childSessionId,
+          mode: this.address.mode,
+          content,
+          clientTimeZone: resolvedClientTimeZone(),
+        }, signal))
+        result = routed.ok ? { ok: true, value: { accepted: true } } : routed
       }
     } catch (error) {
       result = transportResult(error)

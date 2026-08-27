@@ -6,9 +6,9 @@
  * @module @deepseek-ai/dsh-subagent/control-types
  */
 
+import type { PromptContentPart } from '@deepseek-ai/dsh-attachment/types'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { z as zCore } from 'zod'
 
@@ -103,8 +103,12 @@ export interface SubagentPromptRequest {
   readonly childSessionId: SessionId
   /** Required discriminator retained from the browser control address. */
   readonly mode: 'continuable'
-  /** Content delivered as the child's user message. */
-  readonly content: ContentBlock[]
+  /**
+   * Browser prompt parts delivered as the child's user message. The Host
+   * admits and persists image parts before delivery, so the wire never
+   * carries a durable attachment reference the caller could fabricate.
+   */
+  readonly content: readonly PromptContentPart[]
   /** Optional browser zone sampled for this exact human prompt. */
   readonly clientTimeZone?: string
 }
@@ -127,6 +131,8 @@ export interface SubagentInterruptReceipt {
  */
 export interface SubagentControlErrorDetailsMap {
   'bad-request': { readonly issues: zCore.core.$ZodIssue[] }
+  /** Image admission or model image-capability refusal; `reason` carries the stable admission code. */
+  'attachment-error': { readonly reason: string }
   cancelled: Record<never, never>
   'invalid-time-zone': { readonly value: string }
   'subagent-parent-unavailable': { readonly parentSessionId: SessionId }

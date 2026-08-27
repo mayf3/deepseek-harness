@@ -4,6 +4,7 @@ import type { AttachmentStore, ImageMediaType } from '@deepseek-ai/dsh-attachmen
 import {
   ToolCallId,
   createUserMessage,
+  durablePromptContent,
   offloadedImageText,
   offloadedImagePrefixCount,
   offloadRequestImagesWithPolicy,
@@ -357,6 +358,36 @@ describe('projectImagesForTextModel', () => {
           { type: 'text', text: 'after' },
         ],
       },
+    ])
+  })
+})
+
+describe('durablePromptContent', () => {
+  it('converts text-only prompts without touching the attachment store', async () => {
+    const store = { saveImages: () => { throw new Error('text-only prompts must not reach the store') } }
+    await expect(durablePromptContent(store as unknown as AttachmentStore, [
+      { type: 'text', text: 'hello' },
+    ])).resolves.toEqual([{ type: 'text', text: 'hello' }])
+  })
+
+  it('replaces image parts with admitted references in part order', async () => {
+    const store = {
+      saveImages: (inputs: readonly { data: Uint8Array }[]) => Promise.resolve(inputs.map((input, index) => ({
+        attachmentId: AttachmentId(`att-${index}`),
+        mediaType: 'image/png' as ImageMediaType,
+        bytes: input.data.byteLength,
+        width: 1,
+        height: 1,
+      }))),
+    }
+    await expect(durablePromptContent(store as unknown as AttachmentStore, [
+      { type: 'image', mediaType: 'image/png', data: 'AQ==' },
+      { type: 'text', text: 'between' },
+      { type: 'image', mediaType: 'image/png', data: 'Ag==' },
+    ])).resolves.toEqual([
+      { type: 'image', attachment: { attachmentId: 'att-0', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
+      { type: 'text', text: 'between' },
+      { type: 'image', attachment: { attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1 } },
     ])
   })
 })

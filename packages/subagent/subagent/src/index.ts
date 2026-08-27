@@ -34,6 +34,7 @@ import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
 import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock, MessageId } from '@deepseek-ai/dsh-llm'
+import { durablePromptContent } from '@deepseek-ai/dsh-llm'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -418,13 +419,15 @@ export class SubagentRuntime extends TypertRemoteService {
    * validated browser zone on the accepted message. Success identifies the
    * message the child's FIFO inbox accepted; later execution is independent of
    * this call.
+   * Image parts are admitted and persisted through the attachment store
+   * before delivery, and the child's model must accept image input.
    * @param request - durable address, minted identity, content, and optional browser zone.
    * @param signal - carrier cancellation, owning the call until inbox acceptance.
    * @returns the accepted message's inbox identity.
    * @throws {TypertRemoteFailure} `bad-request`, `invalid-time-zone`,
-   *   `subagent-parent-unavailable`, `subagent-not-resumable`,
-   *   `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or
-   *   `internal`.
+   *   `attachment-error`, `subagent-parent-unavailable`,
+   *   `subagent-not-resumable`, `subagent-unauthorized`,
+   *   `subagent-delivery-unavailable`, `cancelled`, or `internal`.
    */
   @Remote('prompt')
   async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt> {
@@ -453,8 +456,10 @@ export class SubagentRuntime extends TypertRemoteService {
       rpcId: request.requestId,
       ...(canonicalTimeZone === undefined ? {} : { clientTimeZone: canonicalTimeZone }),
     }
-    const content: ContentBlock[] = [...request.content]
     try {
+      // Admission precedes delivery: image parts become durable references
+      // here, so the child inbox only ever accepts Host-persisted attachments.
+      const content: ContentBlock[] = await durablePromptContent(this.ctx.attachments, request.content)
       return { messageId: await this.followup(parent, childSessionId, content, { source, signal }) }
     } catch (error: unknown) {
       return rejectPrompt(error, childSessionId, signal)

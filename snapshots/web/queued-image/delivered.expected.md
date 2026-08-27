@@ -1,0 +1,82 @@
+- banner:
+  - navigation "Session hierarchy":
+    - button "Reply with a one-sentence description" [disabled]
+  - img
+  - text: Standard mode
+  - button "Session log":
+    - text: Session log
+    - img
+  - tablist:
+    - tab "Chat" [selected]
+    - tab "Trajectory"
+- navigation "Turn navigation":
+  - button "Jump to turn 1"
+  - button "Jump to turn 2"
+  - button "Jump to turn 3"
+- button "System prompt":
+  - img
+  - img
+  - text: System prompt
+- text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
+- button "Copy":
+  - img
+- button "Context injection @deepseek-ai/dsh-system-prompt":
+  - img
+  - img
+  - text: Context injection @deepseek-ai/dsh-system-prompt
+- paragraph: partial
+- text: Stopped
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}} TTFT {{duration}}
+- button "queued.png, click to view original":
+  - img "queued.png"
+- text: Compare with this screenshot {{clock}}
+- button "Copy":
+  - img
+- button "Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.":
+  - img
+  - img
+  - text: Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.
+- paragraph: Event sourcing is a pattern where all changes to an application's state are stored as an immutable, append-only sequence of events, rather than persisting only the current state, enabling full auditability, temporal queries, and event-driven architectures.
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s Continue with the queued comparison {{clock}}
+- button "Copy":
+  - img
+- button "Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.":
+  - img
+  - img
+  - text: Think The user is asking for a one-sentence description of event sourcing. This is a straightforward knowledge question that doesn't require any skill loading or tool calls.
+- paragraph: Event sourcing is a pattern where all changes to an application's state are stored as an immutable, append-only sequence of events, rather than persisting only the current state, enabling full auditability, temporal queries, and event-driven architectures.
+- button "Copy":
+  - img
+- button "Good response":
+  - img
+- button "Bad response":
+  - img
+- button "Branch into a new conversation":
+  - img
+- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- textbox "Message or run a task... / commands, @ files or sessions"
+- button "Commands":
+  - img
+- 'button "Access mode, current: Workspace Write"': Workspace Write
+- button "Select model, current DeepSeek-V4-Flash":
+  - text: DeepSeek-V4-Flash
+  - img
+- button "6% of context used"
+- button "Send message" [disabled]
+- text: 3 turns · 3 steps LLM {{duration}} TTFT avg {{duration}} · {{throughput}} tok/s Cache hit 99% Input 15.6K tok · Output 158 tok

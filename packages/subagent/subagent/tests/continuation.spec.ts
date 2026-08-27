@@ -523,6 +523,74 @@ describe('SubagentRuntime.startContinuable', () => {
   })
 })
 
+describe('continuable image follow-ups', () => {
+  const imageBlock = {
+    type: 'image' as const,
+    attachment: {
+      attachmentId: 'att-1' as never, mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1,
+    },
+  }
+
+  it('refuses an image follow-up when the child model declines image input, leaving no partial message', async () => {
+    const { ctx, parent } = await setup([textResponse('child work')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo')
+      .mockResolvedValue({ inputModalities: ['text'] } as never)
+
+    await expect(ctx.subagents.followup(parent, started.childId, [
+      { type: 'text' as const, text: 'see this' },
+      imageBlock,
+    ], { source: { kind: 'user' }, signal: testSignal }))
+      .rejects.toMatchObject({ code: 'MODEL_DOES_NOT_SUPPORT_IMAGES' })
+
+    expect(resolve).toHaveBeenCalledWith('mock', 'mock', testSignal)
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(hasUserText(loaded.events, 'see this')).toBe(false)
+    await drainManager(ctx)
+  })
+
+  it('delivers an image follow-up when the child model accepts image input', async () => {
+    const { ctx, parent } = await setup([textResponse('child work'), textResponse('image reply')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    vi.spyOn(ctx.llm, 'resolveModelInfo')
+      .mockResolvedValue({ inputModalities: ['text', 'image'] } as never)
+
+    await ctx.subagents.followup(parent, started.childId, [
+      { type: 'text' as const, text: 'compare' },
+      imageBlock,
+    ], { source: { kind: 'user' }, signal: testSignal })
+    await waitNoActivation(ctx, started.childId)
+
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const delivered = loaded.events.find(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'image'))
+    expect(delivered?.type === 'user/message' && delivered.data.content).toEqual([
+      { type: 'text', text: 'compare' },
+      imageBlock,
+    ])
+    await drainManager(ctx)
+  })
+
+  it('defers to the text-only projection when the descriptor declares no model route', async () => {
+    const { ctx } = await setup([])
+    const routeless = ctx.agentLoop.create(SessionId('routeless-image'), {})
+    const started = await ctx.subagents.startContinuable(startSpec(routeless))
+    await waitNoActivation(ctx, started.childId)
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo')
+
+    // Acceptance is the success boundary: with no declared route there is no
+    // model to refuse against, so the image message enters the child inbox.
+    await ctx.subagents.followup(routeless, started.childId, [imageBlock], {
+      source: { kind: 'user' }, signal: testSignal,
+    })
+
+    expect(resolve).not.toHaveBeenCalled()
+    await drainManager(ctx)
+  })
+})
+
 describe('SubagentRuntime.followup residency routing', () => {
   it('fails a cold follow-up when Session query is unavailable', async () => {
     const { ctx, parent } = await setupWith(new MockAdapter([]), {

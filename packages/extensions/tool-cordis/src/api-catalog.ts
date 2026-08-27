@@ -2168,10 +2168,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'prompt\') async prompt(request: SubagentPromptRequest, signal: AbortSignal): Promise<SubagentPromptReceipt>',
-        description: 'Deliver one browser-authored message to a continuable child through the exact live direct parent, retaining the caller-minted request identity and validated browser zone on the accepted message. Success identifies the message the child\'s FIFO inbox accepted; later execution is independent of this call.',
+        description: 'Deliver one browser-authored message to a continuable child through the exact live direct parent, retaining the caller-minted request identity and validated browser zone on the accepted message. Success identifies the message the child\'s FIFO inbox accepted; later execution is independent of this call. Image parts are admitted and persisted through the attachment store before delivery, and the child\'s model must accept image input.',
         parameters: [{ name: 'request', description: 'durable address, minted identity, content, and optional browser zone.' }, { name: 'signal', description: 'carrier cancellation, owning the call until inbox acceptance.' }],
         returns: 'the accepted message\'s inbox identity.',
-        throws: ['{TypertRemoteFailure} `bad-request`, `invalid-time-zone`, `subagent-parent-unavailable`, `subagent-not-resumable`, `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or `internal`.'],
+        throws: ['{TypertRemoteFailure} `bad-request`, `invalid-time-zone`, `attachment-error`, `subagent-parent-unavailable`, `subagent-not-resumable`, `subagent-unauthorized`, `subagent-delivery-unavailable`, `cancelled`, or `internal`.'],
       },
       {
         signature: '@Remote(\'interruptByParent\') interruptByParent( childSessionId: SessionId, parentSessionId: SessionId, mode: \'continuable\', ): SubagentInterruptReceipt',
@@ -5228,7 +5228,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SubagentPromptRequest',
-    declaration: 'export interface SubagentPromptRequest {\n    readonly requestId: SubagentPromptRequestId;\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: \'continuable\';\n    readonly content: ContentBlock[];\n    readonly clientTimeZone?: string;\n}',
+    declaration: 'export interface SubagentPromptRequest {\n    readonly requestId: SubagentPromptRequestId;\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: \'continuable\';\n    readonly content: readonly PromptContentPart[];\n    readonly clientTimeZone?: string;\n}',
   },
   {
     name: 'SubagentPromptRequestId',

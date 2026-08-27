@@ -8239,6 +8239,9 @@ importers:
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
+      '@deepseek-ai/dsh-attachment':
+        specifier: workspace:^
+        version: link:../../attachment/attachment
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand

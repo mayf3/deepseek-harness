@@ -98,7 +98,7 @@ turn/end
 
 `turn/*`、`step/*`、`user/message`、`assistant/*` 和 `tool/*` 是持久会话事件；其余是分属三个事件域的实时扩展点。`agent/pre-step`、`agent/request`、`llm/stream` 和三个 `tools/*` 事件是 waterfall（瀑布式事件），其监听器必须调用 `next()` 才能委托下去；`agent/turn-stopping` 是 serial 事件，没有 `next()`。
 
-输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。
+输入通过同一个 inbox 到达驱动器。有些消息会立即唤醒它；注入的上下文会留在 inbox 中，直到另一条消息将其唤醒。在轮次收尾期间到达的唤醒消息会在驱动器干净退出时由新轮次认领；取消与步骤拒绝则把已接受但未认领的输入停放到下一次唤醒发送。
 
 `agent/pre-step` 决定模型看到什么。监听器可以改写已领取的消息，也可以直接拒绝它们；首次领取被拒绝或被改写为空时，仍会关闭一个不含步骤的持久轮次，因此日志会记录这次尝试。enter 决策还可以设置 `startsRequestSeries` 来开启独立的模型消息序列：loop 会随之记录一个新的 `request/header`（原因为 `series`，或在封装同时变化时为携带 `startsSeries: true` 的 `change`）。重建下游 enter 决策的监听器必须展开它（`{ ...decision, messages }`），该声明才能存活。每个步骤读取插件注册的提示词片段和工具 schema。
 

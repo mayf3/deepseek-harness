@@ -1530,3 +1530,83 @@ describe('agent loop', () => {
     expect(replayed.events.at(-1)?.type).toBe('session/end-seed')
   })
 })
+
+describe('closing-turn wake races', () => {
+  /**
+   * Schedule one send in the closing turn's final microtask window: the
+   * synchronous turn/end dispatch queues the microtask before the driver's
+   * exit continuation, so it lands after the final inbox check and before the
+   * driver boundary — the race a live send cannot latch a wake for.
+   */
+  function sendOnTurnEnd(ctx: Context, agent: Agent, deliver: () => void): void {
+    const dispose = ctx.on('session/event', (session, event) => {
+      if (session !== agent.session || event.type !== 'turn/end') return
+      dispose()
+      queueMicrotask(deliver)
+    })
+  }
+
+  it('delivers a steer that lands while a clean turn is closing', async () => {
+    const adapter = new MockAdapter([textResponse('first'), textResponse('second')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('closing-steer'), { provider: 'mock', model: 'mock' })
+    sendOnTurnEnd(ctx, agent, () => {
+      agent.steer(createUserMessage({ content: [{ type: 'text', text: 'late steer' }], source: { kind: 'user' } }))
+    })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    await agent.whenIdle()
+
+    expect(userTexts(agent)).toEqual(['first', 'late steer'])
+    expect(adapter.requests).toHaveLength(2)
+    expect(agent.inbox.hasPending).toBe(false)
+  })
+
+  it('delivers a follow-up that lands while a clean turn is closing', async () => {
+    const adapter = new MockAdapter([textResponse('first'), textResponse('second')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('closing-followup'), { provider: 'mock', model: 'mock' })
+    sendOnTurnEnd(ctx, agent, () => { send(agent, 'late follow-up') })
+
+    send(agent, 'first')
+    await waitForIdle(ctx, agent)
+    await agent.whenIdle()
+
+    expect(userTexts(agent)).toEqual(['first', 'late follow-up'])
+    expect(adapter.requests).toHaveLength(2)
+    expect(agent.inbox.hasPending).toBe(false)
+  })
+
+  it('leaves injected context parked when a clean turn closes without a waking message', async () => {
+    const adapter = new MockAdapter([textResponse('only')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('closing-inject'), { provider: 'mock', model: 'mock' })
+    sendOnTurnEnd(ctx, agent, () => {
+      agent.inject(createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'user' } }))
+    })
+
+    send(agent, 'only')
+    await waitForIdle(ctx, agent)
+    await agent.whenIdle()
+
+    expect(userTexts(agent)).toEqual(['only'])
+    expect(adapter.requests).toHaveLength(1)
+    expect(agent.inbox.nextStep).toHaveLength(1)
+  })
+
+  it('a refused duplicate splice keeps the parked injection and registers no wake', async () => {
+    const adapter = new MockAdapter([])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('duplicate-splice'), { provider: 'mock', model: 'mock' })
+    const message = createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'user' } })
+    agent.inject(message)
+
+    expect(() => { agent.steer(message) }).toThrow(`message "${message.id}" is already pending`)
+    await agent.whenIdle()
+
+    expect(agent.inbox.nextStep).toHaveLength(1)
+    expect(agent.status).toBe('idle')
+    expect(adapter.requests).toHaveLength(0)
+  })
+})

@@ -7,6 +7,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import { z } from 'zod'
@@ -148,8 +149,13 @@ export function rejectPrompt(error: unknown, childSessionId: SessionId, signal: 
   if (isCancellation(error, signal)) {
     return rejectControl('cancelled', 'subagent prompt was cancelled', {})
   }
+  if (error instanceof AttachmentError) {
+    return rejectControl('attachment-error', error.message, { reason: error.code })
+  }
   if (error instanceof SubagentError) {
     switch (error.code) {
+      case 'MODEL_DOES_NOT_SUPPORT_IMAGES':
+        return rejectControl('attachment-error', error.message, { reason: error.code })
       case 'NOT_RESUMABLE':
         return rejectControl('subagent-not-resumable', 'subagent cannot be resumed', { childSessionId })
       case 'UNAUTHORIZED':

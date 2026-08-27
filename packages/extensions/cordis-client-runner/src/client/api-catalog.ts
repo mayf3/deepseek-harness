@@ -607,10 +607,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ProjectionsFace {\n    faceOf(key: string): ObservableSnapshot<unknown>;\n}',
   },
   {
-    name: 'PromptContentPart',
-    declaration: 'export type PromptContentPart = {\n    readonly type: \'text\';\n    readonly text: string;\n} | {\n    readonly type: \'image\';\n    readonly mediaType: ImageMediaType;\n    readonly data: string;\n    readonly name?: string;\n};',
-  },
-  {
     name: 'PromptError',
     declaration: 'export interface PromptError {\n    readonly op: \'send\' | \'stop\';\n    readonly error: ClientFailure;\n}',
   },

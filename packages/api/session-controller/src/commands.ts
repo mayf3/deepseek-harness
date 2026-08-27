@@ -4,12 +4,12 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { PresetMountError, UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'
-import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
-  ReasoningEffortId, createUserMessage, freezeMessage,
+  ReasoningEffortId, createUserMessage, durablePromptContent, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -319,7 +319,7 @@ export class SessionCommandController {
             )
           }
         }
-        const content = await durablePromptContent(this.ctx, request.content)
+        const content = await durablePromptContent(this.ctx.attachments, request.content)
         const message: UserMessage = createUserMessage({ content, source })
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)
@@ -509,21 +509,6 @@ function rejectFailure(error: { readonly code: string; readonly message: string;
 
 function reject(code: string, message: string, details: object): never {
   throw new TypertRemoteFailure({ code, message, details })
-}
-
-async function durablePromptContent(
-  ctx: Context,
-  content: readonly SessionPromptRequest['content'][number][],
-): Promise<ContentBlock[]> {
-  if (content.every(part => part.type === 'text')) {
-    return content.map(part => ({ type: 'text', text: part.text }))
-  }
-  const refs = await admitEncodedImages(ctx.attachments, content.filter(part => part.type === 'image'))
-  let next = 0
-  return content.map(part => part.type === 'text'
-    ? { type: 'text', text: part.text }
-    // admitEncodedImages returns one reference per image part in order.
-    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
 }
 
 function imageBlockIn(

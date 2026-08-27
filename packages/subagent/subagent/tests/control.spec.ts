@@ -5,6 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SubagentRuntime, {
@@ -19,6 +20,8 @@ const OTHER = SessionId('other')
 const BROKEN = SessionId('broken')
 const REQUEST_ID = 'req-1' as SubagentPromptRequestId
 const signal = new AbortController().signal
+/** Durable-reference base for the fake store; per-test ids and media types override. */
+const IMAGE_REF = { attachmentId: 'att', mediaType: 'image/png', bytes: 2, width: 1, height: 1 }
 
 /** The runtime plus a programmable live-Agent registry, omitted to compose none. */
 async function bench(live?: Record<string, { status: 'running' | 'idle' }>) {
@@ -158,14 +161,70 @@ describe('subagent prompt Remote', () => {
     expect(followup).not.toHaveBeenCalled()
   })
 
-  it('forwards non-text content blocks without narrowing them', async () => {
-    const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
+  it('admits ordered image parts into durable references before delivery', async () => {
+    const { ctx, subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const saveImages = vi.fn(async (inputs: readonly { mediaType: string }[]) =>
+      inputs.map((input, index) => ({ ...IMAGE_REF, attachmentId: `att-${index}`, mediaType: input.mediaType })))
+    ctx.provide('attachments', { saveImages } as never)
     const followup = vi.spyOn(subagents, 'followup').mockResolvedValue('m-content' as MessageId)
-    const content = [{ type: 'reasoning' as const, text: 'retain this block' }]
+    const content = [
+      { type: 'text' as const, text: 'before' },
+      { type: 'image' as const, mediaType: 'image/png' as const, data: 'aGk=' },
+      { type: 'text' as const, text: 'after' },
+    ]
 
     await expect(subagents.prompt({ ...promptRequest(), content }, signal))
       .resolves.toEqual({ messageId: 'm-content' })
-    expect(followup.mock.calls[0]?.[2]).toEqual(content)
+    expect(followup.mock.calls[0]?.[2]).toEqual([
+      { type: 'text', text: 'before' },
+      { type: 'image', attachment: { ...IMAGE_REF, attachmentId: 'att-0', mediaType: 'image/png' } },
+      { type: 'text', text: 'after' },
+    ])
+  })
+
+  it('maps a refused image batch to attachment-error and delivers nothing', async () => {
+    const { ctx, subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    ctx.provide('attachments', {
+      saveImages: async () => {
+        throw new AttachmentError('Image batch exceeds the configured image-count limit.', 'TOO_MANY_IMAGES')
+      },
+    } as never)
+    const followup = vi.spyOn(subagents, 'followup')
+
+    await expect(subagents.prompt({
+      ...promptRequest(),
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'aGk=' }],
+    }, signal)).rejects.toMatchObject({
+      failure: { code: 'attachment-error', details: { reason: 'TOO_MANY_IMAGES' } },
+    })
+    expect(followup).not.toHaveBeenCalled()
+  })
+
+  it('maps non-canonical base64 to attachment-error without touching the store', async () => {
+    const { ctx, subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const saveImages = vi.fn()
+    ctx.provide('attachments', { saveImages } as never)
+    const followup = vi.spyOn(subagents, 'followup')
+
+    await expect(subagents.prompt({
+      ...promptRequest(),
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'not base64!' }],
+    }, signal)).rejects.toMatchObject({
+      failure: { code: 'attachment-error', details: { reason: 'INVALID_IMAGE_BASE64' } },
+    })
+    expect(saveImages).not.toHaveBeenCalled()
+    expect(followup).not.toHaveBeenCalled()
+  })
+
+  it('maps a text-only child model refusal to attachment-error', async () => {
+    const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    vi.spyOn(subagents, 'followup').mockRejectedValue(
+      new SubagentError('Model "text-only" does not support image input.', 'MODEL_DOES_NOT_SUPPORT_IMAGES'),
+    )
+
+    await expect(subagents.prompt(promptRequest(), signal)).rejects.toMatchObject({
+      failure: { code: 'attachment-error', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } },
+    })
   })
 
   it('delivers the content under the caller-minted identity and canonical browser zone', async () => {

@@ -30,7 +30,7 @@ import type {
   AgentSetupCommit,
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
-import { ReasoningEffortId, boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, boundContextSummary, contentHasImage, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -522,6 +522,11 @@ export class SubagentContinuationManager {
          * "cold-resumes a delivery that lost the race with final disposal". */
         if (activation.disposal !== undefined) {
           return activation.disposal.then(() => undefined, () => undefined)
+        }
+        // Guarded call: text-only delivery must not gain an await hop inside
+        // the per-child lock, where it would reorder against drain admission.
+        if (contentHasImage(content)) {
+          await this.assertImageCapable(activation.handle.agent, options.signal)
         }
         return this.submitAdmitted(activation, content, options.source, parent, options.signal)
       })
@@ -1021,12 +1026,46 @@ export class SubagentContinuationManager {
     signal: AbortSignal,
   ): Promise<MessageId> {
     try {
+      if (contentHasImage(content)) {
+        await this.assertImageCapable(activation.handle.agent, signal)
+      }
       return this.submitAdmitted(activation, content, source, parent, signal)
     } catch (error: unknown) {
       /* v8 ignore next -- rollback disposal failures must not mask the
        * pre-acceptance signal, drain, or lifecycle failure. */
       await this.dispose(activation).catch(() => undefined)
       throw error
+    }
+  }
+
+  /**
+   * Refuse image content addressed to a child whose model accepts text only.
+   * Callers guard with `contentHasImage`, so text-only delivery never awaits.
+   * The check runs inside the per-child delivery lock, before the message
+   * exists, so a rejection leaves no partial user message. When the child's
+   * route is not fixed by its options (a request-waterfall listener owns it)
+   * or no LLM registry is composed, delivery proceeds and the LLM layer's
+   * text-only projection replaces each image with its stable placeholder.
+   * @param agent - the live or freshly materialized child agent.
+   * @param signal - caller cancellation bounding the model-info read.
+   * @throws {SubagentError} `MODEL_DOES_NOT_SUPPORT_IMAGES` when the child's resolved model declines image input.
+   */
+  private async assertImageCapable(
+    agent: Agent,
+    signal: AbortSignal,
+  ): Promise<void> {
+    const { provider, model } = agent.options
+    if (provider === undefined || model === undefined) return
+    const llm = this.ctx.get('llm')
+    /* v8 ignore next -- a deployment without the LLM registry serves no model
+     * to refuse against; delivery then defers to the text-only projection. */
+    if (llm === undefined) return
+    const info = await llm.resolveModelInfo(provider, model, signal)
+    if (info.inputModalities !== undefined && !info.inputModalities.includes('image')) {
+      throw new SubagentError(
+        `Model "${model}" does not support image input.`,
+        'MODEL_DOES_NOT_SUPPORT_IMAGES',
+      )
     }
   }
 
