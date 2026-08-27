@@ -119,6 +119,13 @@ describe('web e2e: queued image submission', () => {
     await input.fill('Continue with the queued comparison')
     await input.press('Enter')
     await settled
+    // The queued image message and the waking text run as two further turns;
+    // wait for both to end so the final snapshot never captures a mid-reply
+    // frame (the aborted first turn precedes them).
+    await expect.poll(
+      () => sessionEvents.flatMap(event => event.type === 'turn/end' ? [event.data.reason.kind] : []),
+      { timeout: 15_000 },
+    ).toEqual(['aborted', 'completed', 'completed'])
 
     // The delivered user message renders its image in Chat from the durable
     // reference, and the dock row is gone.

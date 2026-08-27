@@ -459,7 +459,14 @@ export class SubagentRuntime extends TypertRemoteService {
     try {
       // Admission precedes delivery: image parts become durable references
       // here, so the child inbox only ever accepts Host-persisted attachments.
-      const content: ContentBlock[] = await durablePromptContent(this.ctx.attachments, request.content)
+      let content: ContentBlock[]
+      if (request.content.every((part): part is { readonly type: 'text'; readonly text: string } => part.type === 'text')) {
+        content = request.content.map(part => ({ type: 'text', text: part.text }))
+      } else {
+        const attachments = this.ctx.get('attachments')
+        if (attachments === undefined) throw new Error('subagent image prompt requires an attachment store')
+        content = await durablePromptContent(attachments, request.content)
+      }
       return { messageId: await this.followup(parent, childSessionId, content, { source, signal }) }
     } catch (error: unknown) {
       return rejectPrompt(error, childSessionId, signal)

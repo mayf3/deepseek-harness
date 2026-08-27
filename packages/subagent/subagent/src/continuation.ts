@@ -516,17 +516,25 @@ export class SubagentContinuationManager {
         if (activation === undefined) return this.coldResume(parent, childId, content, options)
         // A delivery that arrives after the disposal transaction began must not
         // reach a handle being torn down; wait for release, then cold-resume.
+        const disposal = activation.disposal
         /* v8 ignore next 3 -- the send-versus-dispose cutoff: reaching this arm needs a
          * delivery to observe the transaction inside the same critical section that opened it,
          * which no test can schedule deterministically. The behavior is covered end-to-end by
          * "cold-resumes a delivery that lost the race with final disposal". */
-        if (activation.disposal !== undefined) {
-          return activation.disposal.then(() => undefined, () => undefined)
+        if (disposal !== undefined) {
+          return disposal.then(() => undefined, () => undefined)
         }
-        // Guarded call: text-only delivery must not gain an await hop inside
-        // the per-child lock, where it would reorder against drain admission.
+        // Text-only delivery stays await-free, so the disposal-cutoff check
+        // above and the submit share one critical window. The image path
+        // awaits a capability read, so it re-checks the cutoff afterwards; a
+        // disposal that began during the read is waited out and retried like
+        // one observed on entry.
         if (contentHasImage(content)) {
           await this.assertImageCapable(activation.handle.agent, options.signal)
+          if (activation.disposal !== undefined) {
+            await Promise.allSettled([activation.disposal])
+            return undefined
+          }
         }
         return this.submitAdmitted(activation, content, options.source, parent, options.signal)
       })
@@ -1027,7 +1035,13 @@ export class SubagentContinuationManager {
   ): Promise<MessageId> {
     try {
       if (contentHasImage(content)) {
+        // The capability read awaits with the activation already published, so
+        // the disposal cutoff is re-checked before the submit; a drain that
+        // began during the read turns into a clean closing rejection.
         await this.assertImageCapable(activation.handle.agent, signal)
+        if (activation.disposal !== undefined) {
+          throw new SubagentError(`subagent "${activation.childId}" is closing`, 'ACTIVATION_CLOSING')
+        }
       }
       return this.submitAdmitted(activation, content, source, parent, signal)
     } catch (error: unknown) {

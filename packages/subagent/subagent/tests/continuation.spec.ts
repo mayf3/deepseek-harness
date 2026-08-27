@@ -550,10 +550,17 @@ describe('continuable image follow-ups', () => {
     await drainManager(ctx)
   })
 
-  it('delivers an image follow-up when the child model accepts image input', async () => {
-    const { ctx, parent } = await setup([textResponse('child work'), textResponse('image reply')])
+  it('delivers an image follow-up to a resident child when its model accepts image input', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('child work'), gate: releaseFirst.promise },
+      { chunks: textResponse('image reply') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    await waitNoActivation(ctx, started.childId)
+    await vi.waitFor(() => {
+      expect(adapter.requests).toHaveLength(1)
+    })
     vi.spyOn(ctx.llm, 'resolveModelInfo')
       .mockResolvedValue({ inputModalities: ['text', 'image'] } as never)
 
@@ -561,6 +568,7 @@ describe('continuable image follow-ups', () => {
       { type: 'text' as const, text: 'compare' },
       imageBlock,
     ], { source: { kind: 'user' }, signal: testSignal })
+    releaseFirst.resolve(undefined)
     await waitNoActivation(ctx, started.childId)
 
     const loaded = await ctx.sessionPersistence.load(started.childId)
@@ -571,6 +579,50 @@ describe('continuable image follow-ups', () => {
       imageBlock,
     ])
     await drainManager(ctx)
+  })
+
+  it('re-checks the disposal cutoff when a drain begins during a live image capability read', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('child work'), gate: releaseFirst.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const capability = Promise.withResolvers<{ inputModalities: string[] }>()
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo').mockReturnValue(capability.promise as never)
+
+    const delivery = ctx.subagents.followup(parent, started.childId, [imageBlock], {
+      source: { kind: 'user' }, signal: testSignal,
+    })
+    delivery.catch(() => undefined)
+    await vi.waitFor(() => { expect(resolve).toHaveBeenCalled() })
+    releaseFirst.resolve(undefined)
+    const draining = drainManager(ctx)
+    capability.resolve({ inputModalities: ['text', 'image'] })
+
+    await expect(delivery).rejects.toMatchObject({ code: 'DRAINING' })
+    await draining
+  })
+
+  it('rejects a materialized image follow-up whose capability read raced a drain', async () => {
+    const { ctx, parent } = await setup([textResponse('child work')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const capability = Promise.withResolvers<{ inputModalities: string[] }>()
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo').mockReturnValue(capability.promise as never)
+
+    const delivery = ctx.subagents.followup(parent, started.childId, [imageBlock], {
+      source: { kind: 'user' }, signal: testSignal,
+    })
+    delivery.catch(() => undefined)
+    await vi.waitFor(() => { expect(resolve).toHaveBeenCalled() })
+    const draining = drainManager(ctx)
+    capability.resolve({ inputModalities: ['text', 'image'] })
+
+    await expect(delivery).rejects.toMatchObject({ code: 'ACTIVATION_CLOSING' })
+    await draining
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(loaded.events.some(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'image'))).toBe(false)
   })
 
   it('defers to the text-only projection when the descriptor declares no model route', async () => {

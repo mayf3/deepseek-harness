@@ -216,6 +216,19 @@ describe('subagent prompt Remote', () => {
     expect(followup).not.toHaveBeenCalled()
   })
 
+  it('rejects an image prompt when no attachment store is composed', async () => {
+    const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
+    const followup = vi.spyOn(subagents, 'followup')
+
+    await expect(subagents.prompt({
+      ...promptRequest(),
+      content: [{ type: 'image' as const, mediaType: 'image/png' as const, data: 'aGk=' }],
+    }, signal)).rejects.toMatchObject({
+      failure: { code: 'internal', message: 'subagent prompt failed' },
+    })
+    expect(followup).not.toHaveBeenCalled()
+  })
+
   it('maps a text-only child model refusal to attachment-error', async () => {
     const { subagents } = await bench({ [PARENT]: { status: 'idle' } })
     vi.spyOn(subagents, 'followup').mockRejectedValue(

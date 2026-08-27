@@ -72,8 +72,10 @@ export class ReactLoopAgent implements Agent {
   private activityDone: Promise<void> = Promise.resolve()
   /**
    * Identities of waking sends still awaiting a claim. Claim and discard
-   * notifications prune the set, and {@link cancel} clears it because a
-   * cancellation parks accepted-but-unclaimed input for a later waking send.
+   * notifications prune the set per message, while {@link cancel} and a
+   * pre-step rejection clear the set. Parking consumes every outstanding
+   * wake, including follow-ups unrelated to the rejected claim,
+   * because the next waking send resumes the complete parked queue anyway.
    * A non-empty set at driver exit therefore means a steer or follow-up lost
    * the race with a normally or erroneously closing turn, and the exit must
    * start a fresh driver to deliver it. Injected context never enters the
