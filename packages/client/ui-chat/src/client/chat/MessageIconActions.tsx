@@ -1,14 +1,12 @@
 // Shared IconActions chrome for user and assistant messages: copy
 // live, optional branch wiring, and an optional date-aware clock.
 
-import { Fragment, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   IconBranchOutline16, IconCheckOutline16, IconCopyOutline16, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import {
-  formatLatencySeconds, formatMessageClock, formatRunDuration, formatTokensPerSecond,
-} from './message-chrome.ts'
+import { formatMessageClock } from './message-chrome.ts'
 import { useCalendarDay } from './use-calendar-day.ts'
 import css from './MessageIconActions.module.css'
 
@@ -17,12 +15,6 @@ export interface MessageIconActionsProps {
   text: string
   /** Unix epoch ms for the clock label; omitted for transient messages. */
   time?: number | undefined
-  /** Turn wall time in ms, appended to the clock as `· Ran for 15s`; omitted when the turn's start is unknown. */
-  runMs?: number | undefined
-  /** Turn decode throughput, appended as `· 34 tok/s`; omitted when unrecorded. */
-  tokensPerSecond?: number | undefined
-  /** Turn first-step TTFT in ms, appended as `· TTFT 1.2s`; omitted when unrecorded. */
-  ttftMs?: number | undefined
   /** Clock before icons (user) or after (assistant). */
   clock: 'start' | 'end'
   /** Fork the session at this message; omission hides the branch action. */
@@ -51,7 +43,7 @@ export interface MessageIconActionsProps {
  * @returns The actions row element.
  */
 export function MessageIconActions({
-  text, time, runMs, tokensPerSecond, ttftMs, clock, onBranch, branchUnavailable = false, className,
+  text, time, clock, onBranch, branchUnavailable = false, className,
   extraActions, usageAction, t,
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
@@ -82,30 +74,9 @@ export function MessageIconActions({
       }, 1000)
     })
   }, [copied, text])
-  // The dots are decorative and stay hidden, but their margins separate the
-  // readings only on screen: without the flanking spaces a reader hears one
-  // run-on string ("8/26 22:08Ran for 13s") instead of separate facts.
-  const meta: string[] = []
-  if (time !== undefined) meta.push(formatMessageClock(time, t, day))
-  if (runMs !== undefined) meta.push(t('message.ranFor', { duration: formatRunDuration(runMs, t) }))
-  if (tokensPerSecond !== undefined) {
-    meta.push(t('message.turnUsage.speed', { tps: formatTokensPerSecond(tokensPerSecond) }))
-  }
-  if (ttftMs !== undefined) meta.push(t('message.ttft', { seconds: formatLatencySeconds(ttftMs) }))
-  const clockEl = meta.length === 0 ? null : (
+  const clockEl = time === undefined ? null : (
     <span className={clock === 'start' ? css.timeStart : css.timeEnd}>
-      {meta.map((segment, index) => (
-        <Fragment key={segment}>
-          {index > 0 && (
-            <>
-              {' '}
-              <span className={css.runTimeDot} aria-hidden>·</span>
-              {' '}
-            </>
-          )}
-          {segment}
-        </Fragment>
-      ))}
+      {formatMessageClock(time, t, day)}
     </span>
   )
   return (
@@ -137,9 +108,6 @@ export function MessageIconActions({
         <span id={reasonId} className={css.visuallyHidden}>{t('message.branchUnavailable')}</span>
       )}
       {usageAction}
-      {usageAction != null && clock === 'end' && clockEl !== null && (
-        <span className={css.actionsDot} aria-hidden>·</span>
-      )}
       {clock === 'end' ? clockEl : null}
     </div>
   )

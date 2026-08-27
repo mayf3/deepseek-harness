@@ -20,34 +20,14 @@
   white-space: nowrap;
 }
 
-/* The assistant tail's clock reads the secondary tier: its row carries the
-   detailed-usage cluster, so the whole meta line sits one step under body. */
+/* The assistant tail's clock sits at the row end after the stat pills; the
+   row's 8px flex gap spaces it, and it reads the secondary tier so it matches
+   the pill labels beside it. */
 .timeEnd {
-  padding-left: 12px;
   font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
-}
-
-/* Separator between the clock and the run-time label (time · Ran for 15s). */
-.runTimeDot {
-  margin: 0 5px;
-}
-
-/* Separator between the usage pill and the plain meta text; the row's 8px
-   flex gap spaces it, so the meta line drops its own 12px inset. The negative
-   margin rebates most of the pill's internal 8px padding so the label-to-dot
-   distance reads like the dot's other side, while keeping 2px clear of the
-   pill's hover background. */
-.actionsDot {
-  margin-left: -6px;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.actionsDot + .timeEnd {
-  padding-left: 0;
 }
 
 /* Row containers (user rows and turn tails) opt in with

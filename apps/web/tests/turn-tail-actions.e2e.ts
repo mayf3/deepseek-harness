@@ -173,10 +173,12 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     const trigger = page.getByRole('button', { name: /Usage 15\.8K tok/ })
     await expect.poll(() => trigger.count(), { timeout: 10_000 }).toBe(1)
     expect(await trigger.getAttribute('aria-expanded')).toBe('false')
-    // The pill carries the icon, the turn total, and the cache-hit rate;
-    // timing facts stay in the plain meta line beside it.
-    expect(await trigger.textContent()).toBe('Usage 15.8K tok · Cache hit 49.7%')
-    expect(await page.getByText(/^.+ · Ran for .+ · \d+ tok\/s · TTFT \S+$/).count()).toBe(1)
+    // The usage pill carries the icon and the turn total; the time pill beside
+    // it carries the run time, and both keep their details dialog-only.
+    expect(await trigger.textContent()).toBe('Usage 15.8K tok')
+    const timeTrigger = page.getByRole('button', { name: /^Ran for \S+$/ })
+    expect(await timeTrigger.count()).toBe(1)
+    expect(await page.locator('[data-turn-tail]').getByText(/tok\/s|TTFT/).count()).toBe(0)
     expect(await page.getByRole('dialog').count()).toBe(0)
 
     await trigger.click()
@@ -189,6 +191,16 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     expect(await dialog.getByText('7,808 tok', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('112 tok (42 tok reasoning)', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('15,811 tok', { exact: true }).count()).toBe(1)
+    await page.keyboard.press('Escape')
+    expect(await page.getByRole('dialog').count()).toBe(0)
+
+    await timeTrigger.click()
+    const timeDialog = page.getByRole('dialog', { name: 'Turn time and speed' })
+    expect(await timeDialog.count()).toBe(1)
+    expect(await timeDialog.getByText(/tok\/s/).count()).toBe(1)
+    expect(await timeDialog.getByText('Average time to first token (TTFT)', { exact: true }).count()).toBe(1)
+    await page.keyboard.press('Escape')
+    await trigger.click()
 
     const expanded = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(USAGE_EXPANDED_EXPECTED, expanded, MODE)

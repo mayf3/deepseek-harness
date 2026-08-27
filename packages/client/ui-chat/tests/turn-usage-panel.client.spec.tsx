@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
-import { TurnUsagePanel } from '../src/client/chat/TurnUsagePanel.tsx'
+import { TurnTimePanel, TurnUsagePanel } from '../src/client/chat/TurnUsagePanel.tsx'
 import type { TurnTokenUsage } from '../src/client/contract/chat-nodes.ts'
 import { en } from '../src/client/locale.ts'
 
@@ -26,7 +26,7 @@ describe('TurnUsagePanel', () => {
     const view = render(<TurnUsagePanel usage={usage} t={t} />)
 
     const trigger = view.getByRole('button')
-    expect(trigger.textContent).toBe('Usage 15.8K tok · Cache hit 49.4%')
+    expect(trigger.textContent).toBe('Usage 15.8K tok')
     expect(trigger.querySelector('svg')).not.toBeNull()
     expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
     expect(trigger.getAttribute('aria-expanded')).toBe('false')
@@ -36,9 +36,9 @@ describe('TurnUsagePanel', () => {
     expect(trigger.getAttribute('aria-expanded')).toBe('true')
     const dialog = view.getByRole('dialog')
     expect(dialog.getAttribute('aria-label')).toBe('Turn usage')
-    // Portaled out of the trigger's row, with a visible heading above the rows.
+    // Portaled out of the trigger's row, with a heading row carrying the total.
     expect(dialog.parentElement).toBe(document.body)
-    expect(dialog.firstChild?.textContent).toBe('Turn usage')
+    expect(dialog.firstChild?.textContent).toBe('Turn usage15,800 tok')
     const details = dialog.querySelector('[data-turn-usage-details]') as HTMLElement
     expect(details).toBeTruthy()
     expect(details.textContent).toContain('Provider / modeldeepseek/deepseek-chat')
@@ -47,7 +47,7 @@ describe('TurnUsagePanel', () => {
     expect(details.textContent).toContain('Cached input4,940 tok')
     expect(details.textContent).toContain('Cache write0 tok')
     expect(details.textContent).toContain('Output5,800 tok (42 tok reasoning)')
-    expect(details.textContent).toContain('Total15,800 tok')
+    expect(details.textContent).not.toContain('Total')
   })
 
   it('omits unavailable optional facts instead of inventing values', () => {
@@ -77,9 +77,9 @@ describe('TurnUsagePanel', () => {
     }
     const view = render(<TurnUsagePanel usage={usage} t={t} />)
     const trigger = view.getByRole('button')
-    // The pill carries the compact total and cache-hit rate; exact token
+    // The pill carries the compact total; cache-hit rate and exact token
     // counts stay in the dialog.
-    expect(trigger.textContent).toBe('Usage 1.1K tok · Cache hit 99.9%')
+    expect(trigger.textContent).toBe('Usage 1.1K tok')
 
     fireEvent.click(trigger)
     const dialog = view.getByRole('dialog')
@@ -94,5 +94,89 @@ describe('TurnUsagePanel', () => {
     expect(view.queryByRole('dialog')).toBeTruthy()
     fireEvent.pointerDown(document.body)
     expect(view.queryByRole('dialog')).toBeNull()
+  })
+
+  it('TEMPORARY flat variant: the whole meta line triggers a dialog with usage and time sections', () => {
+    const usage: TurnTokenUsage = {
+      uncachedInputTokens: 5_060,
+      cacheReadTokens: 4_940,
+      outputTokens: 5_800,
+      totalTokens: 15_800,
+    }
+    const view = render(
+      <TurnUsagePanel
+        usage={usage}
+        variant="flat"
+        time={Date.now()}
+        runMs={19_000}
+        tokensPerSecond={20}
+        ttftMs={1_200}
+        t={t}
+      />,
+    )
+    const trigger = view.getByRole('button')
+    // Separator dots live in spaced spans, so textContent carries bare `·`.
+    expect(trigger.textContent)
+      .toMatch(/^.+·Ran for 19s·Usage 15\.8K tok·Cache hit 49\.4%·20 tok\/s·TTFT 1\.2s$/)
+    expect(trigger.querySelector('svg')).toBeNull()
+
+    fireEvent.click(trigger)
+    const dialog = view.getByRole('dialog')
+    expect(dialog.firstChild?.textContent).toBe('Turn usage15,800 tok')
+    expect(dialog.textContent).toContain('Turn time and speed')
+    const timeDetails = dialog.querySelector('[data-turn-time-details]') as HTMLElement
+    expect(timeDetails.textContent).toContain('Total run time19s')
+    expect(timeDetails.textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(timeDetails.textContent).toContain('Average time to first token (TTFT)1.2s')
+  })
+
+  it('TEMPORARY flat variant: absent time facts leave no Turn-time section', () => {
+    const usage: TurnTokenUsage = {
+      uncachedInputTokens: 120,
+      outputTokens: 30,
+      totalTokens: 150,
+    }
+    const view = render(<TurnUsagePanel usage={usage} variant="flat" t={t} />)
+    const trigger = view.getByRole('button')
+    expect(trigger.textContent).toBe('Usage 150 tok')
+    fireEvent.click(trigger)
+    const dialog = view.getByRole('dialog')
+    expect(dialog.textContent).not.toContain('Turn time')
+    expect(dialog.querySelector('[data-turn-time-details]')).toBeNull()
+  })
+})
+
+describe('TurnTimePanel', () => {
+  it('shows a clock-and-duration pill and opens the time dialog on click', () => {
+    const view = render(
+      <TurnTimePanel runMs={19_000} tokensPerSecond={20} ttftMs={1_200} t={t} />,
+    )
+    const trigger = view.getByRole('button')
+    expect(trigger.textContent).toBe('Ran for 19s')
+    expect(trigger.querySelector('svg')).not.toBeNull()
+    expect(trigger.getAttribute('aria-haspopup')).toBe('dialog')
+    expect(view.queryByRole('dialog')).toBeNull()
+
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    const dialog = view.getByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toBe('Turn time and speed')
+    expect(dialog.parentElement).toBe(document.body)
+    const details = dialog.querySelector('[data-turn-time-details]') as HTMLElement
+    expect(details.textContent).toContain('Total run time19s')
+    expect(details.textContent).toContain('Tokens per second (TPS)20 tok/s')
+    expect(details.textContent).toContain('Average time to first token (TTFT)1.2s')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(view.queryByRole('dialog')).toBeNull()
+  })
+
+  it('omits unrecorded speed and TTFT rows', () => {
+    const view = render(<TurnTimePanel runMs={3_000} t={t} />)
+    fireEvent.click(view.getByRole('button'))
+    const dialog = view.getByRole('dialog')
+    expect(dialog.textContent).toContain('Total run time3s')
+    expect(dialog.textContent).not.toContain('Tokens per second')
+    expect(dialog.textContent).not.toContain('Time to first token')
   })
 })

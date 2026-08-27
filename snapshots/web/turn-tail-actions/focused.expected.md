@@ -41,10 +41,13 @@
   - img
 - button "Branch into a new conversation":
   - img
-- button "Usage 15.8K tok · Cache hit 49.7%":
+- button "Usage 15.8K tok":
   - img
-  - text: Usage 15.8K tok · Cache hit 49.7%
-- text: {{clock}} Ran for {{duration}} {{throughput}} tok/s TTFT {{duration}}
+  - text: Usage 15.8K tok
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img

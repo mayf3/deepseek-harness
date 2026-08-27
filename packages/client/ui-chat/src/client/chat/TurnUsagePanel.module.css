@@ -7,6 +7,13 @@
   min-width: 0;
 }
 
+/* Adjacent stat pills (usage then time) rebate part of their combined internal
+   padding so the pair reads as one cluster inside the row's 8px flex gap,
+   while keeping 2px clear between their hover backgrounds. */
+.root + .root {
+  margin-left: -6px;
+}
+
 /* Same pill rules as the sibling `.action` icon buttons (28px hit height,
    15px glyph, tertiary → secondary on hover with the interactive hover
    background), widened to carry the turn-total label. */
@@ -36,6 +43,36 @@
   text-overflow: ellipsis;
 }
 
+/* TEMPORARY (usage-variant debug): the flat whole-line trigger reads like the
+   plain meta text, brightening on hover to hint clickability. The margin
+   widens the row's 8px flex gap off the branch icon beside it. */
+.flatTrigger {
+  min-width: 0;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
+  font-variant-numeric: tabular-nums;
+  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.flatTrigger:hover,
+.flatTrigger[aria-expanded='true'] {
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* TEMPORARY (usage-variant debug): flat-line separators breathe wider than the
+   plain meta line's 5px runTimeDot rhythm. */
+.flatDot {
+  margin: 0 8px;
+}
+
 .trigger svg {
   width: calc(15px + var(--dsh-content-font-delta, 0px));
   height: calc(15px + var(--dsh-content-font-delta, 0px));
@@ -46,6 +83,13 @@
 .trigger[aria-expanded='true'] {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
+}
+
+/* Narrow viewport: the pills collapse to bare icons; the dialogs keep the words. */
+@media (max-width: 480px) {
+  .trigger .label {
+    display: none;
+  }
 }
 
 /* Portal surface: fixed in the viewport, left/top supplied inline from the
@@ -73,11 +117,44 @@
   cursor: default;
 }
 
-/* Dialog heading, same size and weight as the total row it concludes with. */
+/* Dialog heading row: the section name left, the section's headline value
+   (the usage total) right, both at the primary weight. */
 .title {
-  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
+}
+
+/* Second-section heading (Turn time), spaced well off the usage rows above. */
+.timeTitle {
+  margin-top: 20px;
+}
+
+/* Rule under each section heading, above its rows. */
+.titleRule {
+  margin-bottom: 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.titleValue {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Section-heading glyph seated left of the section name. */
+.titleLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.titleLabel svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
 }
 
 .details {
@@ -107,18 +184,4 @@
 .reasoning {
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
-}
-
-/* Full-bleed rule above the total row: the grid's column gap would break a
-   per-cell border-top, so the line is its own row spanning both columns. */
-.separator {
-  grid-column: 1 / -1;
-  margin: 4px 0;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-}
-
-.totalLabel,
-.details .totalValue {
-  color: var(--dsw-alias-label-primary);
-  font-weight: 500;
 }
