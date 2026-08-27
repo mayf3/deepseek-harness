@@ -293,6 +293,25 @@ describe('track', () => {
     expect(controller.menu.getSnapshot().groups[0]!.items).toEqual([{ name: 'goal' }])
   })
 
+  it('refinement keeps the settled items on screen until the new fetch lands', async () => {
+    const cmd = deferredSource('/', 'command')
+    const { controller } = controllerBench([cmd.source])
+    controller.track('/g', 2, { tier: 'plain' }, 1)
+    cmd.pending[0]!.resolve([{ name: 'goal' }])
+    await tick()
+
+    // Stale-while-revalidate: the pending group still carries the items.
+    controller.track('/go', 3, { tier: 'plain' }, 1)
+    expect(controller.menu.getSnapshot().groups[0]).toEqual(
+      { source: 'command', status: 'pending', items: [{ name: 'goal' }] },
+    )
+    cmd.pending[1]!.resolve([{ name: 'goat' }])
+    await tick()
+    expect(controller.menu.getSnapshot().groups[0]).toEqual(
+      { source: 'command', status: 'ready', items: [{ name: 'goat' }] },
+    )
+  })
+
   it('same hit re-track refreshes the span stamp without refetching', () => {
     const cmd = deferredSource('/', 'command')
     const { controller } = controllerBench([cmd.source])

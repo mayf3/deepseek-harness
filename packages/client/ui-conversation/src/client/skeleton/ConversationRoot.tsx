@@ -378,22 +378,24 @@ export function ConversationRoot({
   return (
     <div ref={rootResizeRef} className={css.root} data-phase={phase}>
       {sessionId === undefined ? null : renderSlot('conversation.session.header', {})}
-      <div className={css.scrollBody} data-conversation-scroll="">
-        {sessionId === undefined ? null : renderSlot('conversation.session', {})}
-        {composerSeat}
+      <div className={css.body}>
+        <div className={css.scrollBody} data-conversation-scroll="">
+          {sessionId === undefined ? null : renderSlot('conversation.session', {})}
+          {composerSeat}
+        </div>
+        {/* Width handles only while a transcript is on screen; the hero has no
+            content column to size. */}
+        {phase === 'active' && (['left', 'right'] as const).map(side => (
+          <WidthHandle
+            key={side}
+            side={side}
+            onStart={onHandleStart}
+            onDrag={onHandleDrag}
+            onCommit={onHandleCommit}
+            onEnd={onHandleEnd}
+          />
+        ))}
       </div>
-      {/* Width handles only while a transcript is on screen; the hero has no
-          content column to size. */}
-      {phase === 'active' && (['left', 'right'] as const).map(side => (
-        <WidthHandle
-          key={side}
-          side={side}
-          onStart={onHandleStart}
-          onDrag={onHandleDrag}
-          onCommit={onHandleCommit}
-          onEnd={onHandleEnd}
-        />
-      ))}
     </div>
   )
 }
