@@ -92,7 +92,9 @@ function makeSessionSource(init: Partial<SessionSnapshot> = {}) {
   }
 }
 
-type ChatSlice = Partial<LegacyConversationSlice>
+type ChatSlice = Partial<LegacyConversationSlice> & {
+  readonly turnUsages?: NonNullable<Parameters<typeof chatSnapshotFixture>[0]>['turnUsages']
+}
 type HarnessUpdate = ChatSlice & Partial<SessionSnapshot> & { readonly chat?: ChatSnapshot }
 
 /** Scripted Chat target source, independent from Session lifecycle state. */
@@ -205,7 +207,7 @@ function makeHarness(
   chatSnapshot?: ChatSnapshot,
 ) {
   const {
-    chat: initialChat, nodes, partial, runningCalls, turnTimings, turnEnds,
+    chat: initialChat, nodes, partial, runningCalls, turnTimings, turnEnds, turnUsages,
     ...sessionInit
   } = init
   const chatSlice: ChatSlice = {
@@ -214,6 +216,7 @@ function makeHarness(
     ...(runningCalls === undefined ? {} : { runningCalls }),
     ...(turnTimings === undefined ? {} : { turnTimings }),
     ...(turnEnds === undefined ? {} : { turnEnds }),
+    ...(turnUsages === undefined ? {} : { turnUsages }),
   }
   const session = makeSessionSource({ ...sessionInit, ...sessionOverrides })
   const chatSource = makeChatSource(chatSlice, initialChat ?? chatSnapshot)
@@ -1536,7 +1539,7 @@ describe('ChatView', () => {
     expect(view.container.querySelector('[data-turn-tail="1"]')?.textContent).toContain('用时 19秒')
   })
 
-  it('the settled footer appends first-step ttft and turn decode throughput', () => {
+  it('the settled footer exposes ttft, decode throughput, and usage as the details trigger', () => {
     const first: AssistantMessageNode = {
       kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'mid' }],
       timing: { stepStartTime: 1_000, firstTokenTime: 2_200, completedTime: 5_200 },
@@ -1551,12 +1554,42 @@ describe('ChatView', () => {
       nodes: [user(1, 'hi'), first, second],
       turnTimings: new Map([[1, { startTime: 1_000, endTime: 20_000 }]]),
       turnEnds: new Map([[1, 20]]),
+      turnUsages: new Map([[1, {
+        uncachedInputTokens: 5_060,
+        cacheReadTokens: 4_940,
+        outputTokens: 100,
+        totalTokens: 10_100,
+      }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // First-step ttft (1.2s) plus 100 tokens over 5s of decode.
-    expect(view.container.querySelector('[data-turn-tail="1"]')?.textContent).toContain('用时 19秒')
-    expect(view.getAllByText(/首 token 1\.2秒/)).toHaveLength(1)
-    expect(view.getAllByText(/20 tok\/s/)).toHaveLength(1)
+    // First-step ttft (1.2s) plus 100 tokens over 5s of decode: the whole
+    // meta line (clock, run time, usage metrics) is one clickable trigger.
+    const trigger = view.getByRole('button', { name: /本轮用量 10\.1K tok/ })
+    expect(trigger.textContent).toMatch(
+      /^.+ · 用时 19秒 · 本轮用量 10\.1K tok · 缓存命中率 49\.4% · 速度 20 tok\/s · 首 token 1\.2秒$/,
+    )
+    expect(view.queryByRole('dialog')).toBeNull()
+    fireEvent.click(trigger)
+    const dialog = view.getByRole('dialog')
+    expect(dialog.getAttribute('aria-label')).toBe('本轮用量')
+    expect(dialog.textContent).toContain('未缓存输入5,060 tok')
+    expect(dialog.textContent).toContain('缓存命中率49.4%')
+    expect(dialog.textContent).toContain('总计10,100 tok')
+  })
+
+  it('withholds the usage-details trigger when turn usage is outside the window', () => {
+    const settled: AssistantMessageNode = {
+      kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'answer' }],
+      timing: { stepStartTime: 1_000, firstTokenTime: 2_200, completedTime: 5_200 },
+      usage: { outputTokens: 40 },
+    }
+    const h = makeHarness({
+      nodes: [user(1, 'hi'), settled],
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 20_000 }]]),
+      turnEnds: new Map([[1, 20]]),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryByText(/首 token|tok\/s/)).toBeNull()
   })
 
   it('withholds ttft and throughput while the turn is still running', () => {
@@ -1574,15 +1607,28 @@ describe('ChatView', () => {
     expect(view.queryByText(/首 token|tok\/s/)).toBeNull()
   })
 
-  it('user and assistant message containers scope the hover-revealed time chrome', () => {
+  it('user rows scope the hover clock; turn tails gate the whole row by recency', () => {
     const h = makeHarness({
-      nodes: [user(1, 'hi'), assistant(2, 'answer')],
-      turnTimings: new Map([[1, { startTime: 1_000, endTime: 2_000 }]]),
-      turnEnds: new Map([[1, 2]]),
+      nodes: [
+        user(1, 'hi'),
+        assistant(2, 'answer'),
+        user(4, 'again'),
+        assistant(5, 'later answer', 2),
+      ],
+      turnTimings: new Map([
+        [1, { startTime: 1_000, endTime: 2_000 }],
+        [2, { startTime: 4_000, endTime: 5_000 }],
+      ]),
+      turnEnds: new Map([[1, 3], [2, 6]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // The user row and the settled assistant's Turn Tail each own one clock scope.
+    // Only the user rows keep the time-hover scope; assistant tails moved to
+    // the recency-gated whole-row reveal.
     expect(view.container.querySelectorAll('[data-time-hover-root]')).toHaveLength(2)
+    const tails = view.container.querySelectorAll('[data-actions-reveal]')
+    expect(new Map([...tails].map(tail => [
+      tail.getAttribute('data-turn-tail'), tail.getAttribute('data-actions-reveal'),
+    ]))).toEqual(new Map([['1', 'hover'], ['2', 'always']]))
   })
 
   it('the run-time label is withheld when the turn start is outside the window', () => {
