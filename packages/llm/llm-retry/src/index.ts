@@ -108,7 +108,7 @@ interface RetryStateEntry {
 
 type LlmRetryState = Record<string, RetryStateEntry>
 
-// Zod cannot express the branded retry id without a runtime transform.
+// The cast bridges the branded retry id, which Zod cannot express directly.
 const llmRetryStateSchema: zod.ZodType<LlmRetryState> = zod.record(zod.string(), zod.object({
   retry: zod.number().int().nonnegative(),
   retryId: zod.string(),
@@ -128,7 +128,7 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
     stateSchema: llmRetryStateSchema,
     init: () => ({}),
     apply: (state, event) => {
-      if (event.type === 'step/start' || event.type === 'turn/end') return Object.keys(state).length === 0 ? state : {}
+      if (event.type === 'step/start' || event.type === 'turn/end') return {}
       if (event.type !== 'llm/retry') return state
       const key = retryStateKey(event.data.provider, event.data.policyKey)
       const entry = state[key]
