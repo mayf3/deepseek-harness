@@ -408,6 +408,36 @@ describe('web e2e: settings modal and General preferences', () => {
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 
+  it('persists the completed-Turn transcript mode across reload', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-transcript-view'))
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '设置' })
+    await dialog.waitFor({ timeout: 10_000 })
+    await dialog.getByText('对话显示', { exact: true }).waitFor({ timeout: 10_000 })
+    await dialog.getByRole('button', { name: 'Compact', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Normal', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Normal', exact: true }).waitFor({ timeout: 10_000 })
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+      .toMatch(/ui-chat:\n\s+transcriptView: normal/)
+    await page.keyboard.press('Escape')
+
+    const warningStart = tripwire.warnings.length
+    await page.reload({ waitUntil: 'load' })
+    await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    acknowledgeReloadConnectionLoss(tripwire, warningStart)
+    await page.getByRole('button', { name: '设置', exact: true }).click()
+    const reloaded = page.getByRole('dialog', { name: '设置' })
+    await reloaded.getByRole('button', { name: 'Normal', exact: true }).waitFor({ timeout: 10_000 })
+
+    await reloaded.getByRole('button', { name: 'Normal', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Compact', exact: true }).click()
+    await reloaded.getByRole('button', { name: 'Compact', exact: true }).waitFor({ timeout: 10_000 })
+    await expect.poll(async () => readFile(join(scaffold.harnessHome, 'settings.yaml'), 'utf8'), { timeout: 5_000 })
+      .toMatch(/ui-chat:\n\s+transcriptView: compact/)
+    await page.keyboard.press('Escape')
+    expect(tripwire.pageErrors).toEqual([])
+  }, 90_000)
+
   it('persists the busy-state Enter behavior across reload and a distinct port', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-settings-enter-behavior'))
     await page.getByRole('button', { name: '设置', exact: true }).click()

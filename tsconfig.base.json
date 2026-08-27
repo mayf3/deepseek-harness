@@ -125,6 +125,7 @@
       "@deepseek-ai/dsh-experimental-tool-agent-team/invariant": ["./packages/experimental/tool-agent-team/src/invariant.ts"],
       "@deepseek-ai/dsh-experimental-webworker-runtime/invariant": ["./packages/experimental/webworker-runtime/src/invariant.ts"],
       "@deepseek-ai/dsh-experimental-webworker-packer/invariant": ["./packages/experimental/webworker-packer/src/invariant.ts"],
+      "@deepseek-ai/dsh-experimental-inspector/invariant": ["./packages/experimental/inspector/src/invariant.ts"],
       "@deepseek-ai/dsh-util-crypto/invariant": ["./packages/util/crypto/src/invariant.ts"],
       "@deepseek-ai/dsh-*/invariant": [
         "./packages/core/*/src/invariant.ts",
@@ -271,6 +272,8 @@
       "@deepseek-ai/dsh-experimental-tool-agent-team": ["./packages/experimental/tool-agent-team/src"],
       "@deepseek-ai/dsh-experimental-webworker-runtime": ["./packages/experimental/webworker-runtime/src"],
       "@deepseek-ai/dsh-experimental-webworker-packer": ["./packages/experimental/webworker-packer/src"],
+      "@deepseek-ai/dsh-experimental-inspector": ["./packages/experimental/inspector/src"],
+      "@deepseek-ai/dsh-experimental-inspector/client": ["./packages/experimental/inspector/src/client/index.ts"],
       "@deepseek-ai/dsh-util-crypto": ["./packages/util/crypto/src"],
       "@deepseek-ai/dsh-*": [
         "./packages/core/*/src",

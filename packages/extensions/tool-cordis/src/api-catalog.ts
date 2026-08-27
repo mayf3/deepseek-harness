@@ -1016,6 +1016,23 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'inspector',
+    summary: 'Shared Host/Client service façade over the realm\'s source publisher.',
+    description: 'Shared Host/Client service façade over the realm\'s source publisher.',
+    methods: [
+      {
+        signature: 'publish(topic: string, payload: InspectorJsonValue, monotonicMs?: number): void',
+        description: 'Publish one JSON observation without waiting for Worker delivery.',
+        parameters: [{ name: 'topic', description: 'Domain-owned topic name.' }, { name: 'payload', description: 'JSON value validated before it reaches the carrier.' }, { name: 'monotonicMs', description: 'Source-clock timestamp; defaults to `performance.now()`.' }],
+      },
+      {
+        signature: 'readonly cordis: CordisRuntimeTreeReader',
+        description: 'Read-only Cordis topology queries independent of CDP sessions.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'invariants',
     summary: 'Package-owned invariant registry with global and regex-based selection.',
     description: 'Package-owned invariant registry with global and regex-based selection.',
@@ -3679,6 +3696,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CordisInspectRequestId = Branded<\'CordisInspectRequestId\'>;',
   },
   {
+    name: 'CordisRuntimeConnection',
+    declaration: 'export type CordisRuntimeConnection = {\n    readonly state: \'connected\';\n} | {\n    readonly state: \'disconnected\';\n    readonly reason: string;\n};',
+  },
+  {
+    name: 'CordisRuntimeContext',
+    declaration: 'export interface CordisRuntimeContext {\n    readonly kind: \'context\';\n    readonly children: readonly CordisRuntimeNode[];\n}',
+  },
+  {
+    name: 'CordisRuntimeFiber',
+    declaration: 'export interface CordisRuntimeFiber {\n    readonly kind: \'fiber\';\n    readonly uid: number;\n    readonly children: readonly [\n        CordisRuntimeContext\n    ];\n}',
+  },
+  {
+    name: 'CordisRuntimeNode',
+    declaration: 'export type CordisRuntimeNode = CordisRuntimeContext | CordisRuntimeFiber;',
+  },
+  {
+    name: 'CordisRuntimeRealm',
+    declaration: 'export interface CordisRuntimeRealm {\n    readonly source: CordisRuntimeSource;\n    readonly connection: CordisRuntimeConnection;\n    readonly revision: number;\n    readonly truncated: boolean;\n    readonly root: CordisRuntimeContext;\n}',
+  },
+  {
+    name: 'CordisRuntimeSource',
+    declaration: 'export interface CordisRuntimeSource {\n    readonly sourceId: CordisRuntimeSourceId;\n    readonly kind: CordisRuntimeSourceKind;\n    readonly label: string;\n}',
+  },
+  {
+    name: 'CordisRuntimeSourceId',
+    declaration: 'export type CordisRuntimeSourceId = InspectorId<\'CordisRuntimeSourceId\'>;',
+  },
+  {
+    name: 'CordisRuntimeSourceKind',
+    declaration: 'export type CordisRuntimeSourceKind = \'host\' | \'client\';',
+  },
+  {
+    name: 'CordisRuntimeTree',
+    declaration: 'export interface CordisRuntimeTree {\n    readonly schemaVersion: typeof CORDIS_RUNTIME_TREE_SCHEMA_VERSION;\n    readonly host: CordisRuntimeRealm | null;\n    readonly clients: readonly CordisRuntimeRealm[];\n}',
+  },
+  {
+    name: 'CordisRuntimeTreeReader',
+    declaration: 'export interface CordisRuntimeTreeReader {\n    getTree(): Promise<CordisRuntimeTree>;\n}',
+  },
+  {
     name: 'CreateAgentOptions',
     declaration: 'export interface CreateAgentOptions {\n    readonly sessionId: SessionId;\n    readonly meta?: {\n        readonly cwd?: string;\n        readonly parentSession?: SessionId;\n        readonly seedLength?: number;\n        readonly origin?: \'subagent\';\n        readonly delegationDepth?: number;\n        readonly agentPreset?: string;\n    };\n    readonly seed?: readonly SessionEvent[];\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
   },
@@ -4005,6 +4062,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'InspectorId',
+    declaration: 'export type InspectorId<Role extends string> = Branded<Role>;',
+  },
+  {
+    name: 'InspectorJsonObject',
+    declaration: 'export interface InspectorJsonObject {\n    readonly [key: string]: InspectorJsonValue;\n}',
+  },
+  {
+    name: 'InspectorJsonPrimitive',
+    declaration: 'export type InspectorJsonPrimitive = null | boolean | number | string;',
+  },
+  {
+    name: 'InspectorJsonValue',
+    declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
   },
   {
     name: 'InvariantFailure',

@@ -11,6 +11,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
   ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, DetailsInjected,
@@ -25,7 +26,10 @@ import { StatsLine } from './chat/StatsLine.tsx'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { DetailsPanel } from './details/DetailsPanel.tsx'
 import { en, NS, zh } from './locale.ts'
+import { TranscriptViewRow, type TranscriptViewRowInjected } from './settings/TranscriptViewRow.tsx'
 import { createChatStore } from './stores.ts'
+import { TranscriptViewPolicy } from './transcript-view.ts'
+import { CHAT_SETTINGS_NAMESPACE, type ChatSettings } from '../chat-settings.ts'
 
 const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
   hooks: {
@@ -42,7 +46,7 @@ const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
 
 /** Services required by the Chat target and its presentation registrations. */
 export const inject = [
-  'slots', 'sessions', 'uiSession', 'uiConversation', 'uiWorkspace', 'layout', 'locale',
+  'slots', 'sessions', 'uiSession', 'uiConversation', 'uiWorkspace', 'layout', 'locale', 'settingsScope',
 ]
 
 /**
@@ -74,6 +78,20 @@ export function apply(ctx: Context): void {
   const t = ctx.locale.bind(NS)
   const chatStore = createChatStore()
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
+  const transcriptView = new TranscriptViewPolicy(
+    ctx.settingsScope.bind<ChatSettings>({ namespace: CHAT_SETTINGS_NAMESPACE }),
+  )
+
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'transcript-view',
+    order: 12,
+    locale: NS,
+    inject: (): TranscriptViewRowInjected => ({
+      hooks: { transcriptView: transcriptView.mode },
+      setTranscriptView: (mode) => { transcriptView.setMode(mode) },
+    }),
+  }, TranscriptViewRow))
 
   ctx.slots.inject('conversation.view', () => {
     const disposeView = ctx.slots.register({
@@ -91,6 +109,7 @@ export function apply(ctx: Context): void {
         const session = ctx.sessions.binding(sessionId)?.session
         if (session === undefined) throw new Error(`ui-chat: unknown session "${sessionId}"`)
         return {
+          hooks: { transcriptView: transcriptView.mode },
           openDetails: (target) => {
             actions.select(target)
             ctx.layout.openDetails()
