@@ -31,16 +31,14 @@ declare module '@deepseek-ai/cordis' {
 // ---- Contract re-exports (browser-safe apiproxy channels + core types) ----
 export type {
   ApiProxy, HostApi,
-  DirectoryEntry, DirectoryListing,
   SkillsApi, SkillEntry,
   ModelCatalog, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   MessageId, ModelReasoningEffort, ModelSelection,
-  SubagentsApi, SubagentAddress, SubagentCatalog, SubagentListEntry, SubagentPromptReceipt,
   RpcRequest, RpcResponse, RpcResult, RpcError, RpcErrorCode,
   ClientRequest, ServerResponse, RpcMessage,
   HostDescription, IApiClient, SessionId, SessionEvent, ContentBlock, StreamChunk,
-  SettingsApi, SettingsNamespaceView, SettingsPathOpView, SettingsSecretView,
-  CredentialsApi, CredentialView, ConfigurableProviderView, DiscoveredModelView, LlmApi,
+  SettingsApi,
+  ConfigurableProviderView, DiscoveredModelView, LlmApi,
 } from './api.ts'
 export {
   RpcId,

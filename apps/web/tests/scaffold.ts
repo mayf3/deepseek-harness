@@ -54,6 +54,7 @@ import {
   composeEntries,
   healProfilesModuleFallback,
   loadOverlayPatches,
+  type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -238,6 +239,11 @@ export interface LaunchOptions {
    */
   extraOverlayPath?: string
   /**
+   * Additional source-checkout package manifests whose dependency closures
+   * supply private profile layers named by {@link extraOverlayPath}.
+   */
+  extraInstallAnchors?: string[]
+  /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
    * answers). Omit for scenarios issuing no model calls — a stray stream then
@@ -323,12 +329,14 @@ export interface LaunchOptions {
     default: string
   }
   /**
-   * Mount the shipped telemetry row in FULL mode against this exporter URL
-   * instead of disabling it. Used to pin a real backend disclosure in
-   * assembled coverage; point the URL at a local dead endpoint so no record
-   * leaves the process.
+   * Mount the shipped telemetry row against this exporter URL instead of
+   * disabling it. Used to pin a real backend disclosure in assembled
+   * coverage; point the URL at a local endpoint (a dead port, or a scenario's
+   * own mock collector) so no record leaves the machine.
    */
   telemetryUrl?: string
+  /** Uploading mode for the mounted telemetry row. Defaults to `FULL`. */
+  telemetryMode?: 'FULL' | 'FEEDBACK_ONLY'
   /**
    * Browse through a trusted non-loopback hostname that the browser resolves
    * to loopback (for example `*.localhost`). The test server stays bound to
@@ -491,7 +499,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       : {
         id: 'session-telemetry-otel',
         config: {
-          mode: 'FULL',
+          mode: options.telemetryMode ?? 'FULL',
           exporter: { url: options.telemetryUrl },
           shutdownTimeoutMillis: 1_000,
         },
@@ -569,11 +577,35 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   let replayHandle: ReplayHandle | undefined
   try {
     process.chdir(workspaceCwd)
-    // The production module-resolution setup: an empty profile root inside the temp
-    // harness home, with bare plugin names resolving through the flat module
-    // fallback the launcher heals under <home>/profiles.
-    await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, home: harnessHome })
     const profileDir = join(harnessHome, 'profiles', 'scaffold')
+    const extraLayers: Profile['layers'] = await Promise.all((options.extraInstallAnchors ?? []).map(async (anchor) => {
+      const manifest = JSON.parse(await readFile(anchor, 'utf8')) as { name?: unknown }
+      if (typeof manifest.name !== 'string' || manifest.name === '') {
+        throw new Error(`web scaffold extra install anchor has no package name: ${anchor}`)
+      }
+      const packageDir = dirname(anchor)
+      return {
+        packageName: manifest.name,
+        packageDir,
+        patchPath: join(packageDir, 'cordis.patch.yml'),
+        patches: [],
+      }
+    }))
+    // Mirror the production launcher: the shared installation closure keeps
+    // its carrier-specific fallback, while private bundle dependencies stay
+    // isolated to this synthetic scaffold profile.
+    await healProfilesModuleFallback({
+      installAnchor: INSTALL_ANCHOR,
+      home: harnessHome,
+      profile: {
+        name: 'scaffold',
+        dir: profileDir,
+        layers: extraLayers,
+        patchPath: join(profileDir, 'cordis.patch.yml'),
+        patches: [],
+        patchReload: 'startup',
+      },
+    })
     await mkdir(profileDir, { recursive: true })
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
@@ -1064,11 +1096,23 @@ async function persistSeedSession(
  * on one machine (measured 69 → 70 tok/s) and swings wildly on a fast replay
  * (26333 tok/s for a 3 ms stream).
  */
-function normalizeAria(snapshot: string, workspaceCwd: string): string {
+/**
+ * Relative-time buckets rendered by a dated row, in both dictionaries.
+ *
+ * Opt-in per capture: a session-tree golden asserts its own literal age (a
+ * fresh row reads `now`, an older one does not), so collapsing the vocabulary
+ * everywhere would delete that assertion. A region whose rows are dated from
+ * live wall-clock state asks for it instead. Anchored on an aria label's
+ * closing quote, where the bucket is always last.
+ */
+const ARIA_AGE =
+  /(?:now|\d+min|\d+h|\d+d|\d+mo|\d+y|刚刚|\d+分钟|\d+小时|\d+天|\d+个月|\d+年)(?=")/g
+
+function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): string {
   // The session heading renders the workspace's basename, not the full
   // path, so both spellings must collapse to the token.
   const base = workspaceCwd.split('/').pop()!
-  return snapshot
+  return (age ? snapshot.replace(ARIA_AGE, '{{age}}') : snapshot)
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
@@ -1103,18 +1147,59 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
  * @param page - the page under test.
  * @param selector - the region locator selector.
  * @param workspaceCwd - normalization input.
+ * @param options - `normalizeAge` collapses relative-time buckets to `{{age}}`
+ *   for a region whose rows are dated from live wall-clock state.
  * @returns the stable normalized snapshot.
  */
-export async function captureStableAria(page: Page, selector: string, workspaceCwd: string): Promise<string> {
+export async function captureStableAria(
+  page: Page,
+  selector: string,
+  workspaceCwd: string,
+  options: { normalizeAge?: boolean } = {},
+): Promise<string> {
   const region = page.locator(selector).first()
-  let previous = normalizeAria(await region.ariaSnapshot(), workspaceCwd)
+  const age = options.normalizeAge === true
+  let previous = normalizeAria(await region.ariaSnapshot(), workspaceCwd, age)
   await expect.poll(async () => {
-    const current = normalizeAria(await region.ariaSnapshot(), workspaceCwd)
+    const current = normalizeAria(await region.ariaSnapshot(), workspaceCwd, age)
     const stable = current === previous
     previous = current
     return stable
   }, { timeout: 5_000, message: 'aria snapshot did not stabilize' }).toBe(true)
   return previous
+}
+
+/**
+ * Capture a stable aria snapshot with every eligible Turn process expanded,
+ * then restore the controls that were closed before the capture.
+ * @param page - the page under test.
+ * @param selector - the region locator selector.
+ * @param workspaceCwd - normalization input.
+ * @returns the stable normalized expanded snapshot.
+ */
+export async function captureExpandedTurnProcessAria(
+  page: Page,
+  selector: string,
+  workspaceCwd: string,
+): Promise<string> {
+  const controls = page.locator('[data-turn-process]')
+  const count = await controls.count()
+  expect(count).toBeGreaterThan(0)
+  const opened: number[] = []
+  for (let index = 0; index < count; index++) {
+    const control = controls.nth(index)
+    if (!await control.isVisible() || await control.getAttribute('aria-expanded') === 'true') continue
+    await control.click()
+    opened.push(index)
+  }
+  try {
+    return await captureStableAria(page, selector, workspaceCwd)
+  } finally {
+    for (const index of opened.reverse()) {
+      const control = controls.nth(index)
+      if (await control.getAttribute('aria-expanded') === 'true') await control.click()
+    }
+  }
 }
 
 /**

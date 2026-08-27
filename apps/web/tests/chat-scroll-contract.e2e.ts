@@ -9,7 +9,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { createChatScrollFixture, type ChatScrollFixture } from './chat-scroll-fixture.ts'
@@ -20,7 +20,7 @@ import {
   webSnapshotMode,
   type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const MODE = webSnapshotMode()
 const HISTORY_SESSION_ID = 'chat-scroll-history-e2e'
@@ -35,7 +35,7 @@ const LIVE_TEXT_PROMPT = 'CHAT_SCROLL_LIVE_USER Continue this long conversation 
 const LIVE_TEXT_FIRST = 'CHAT_SCROLL_LIVE_FIRST'
 const LIVE_TEXT_DONE = 'CHAT_SCROLL_LIVE_DONE'
 const LIVE_TOOL_PROMPT = 'CHAT_SCROLL_TOOL_USER Run the requested diagnostic and then summarize it.'
-const LIVE_TOOL_CALL_ID = CallId('chat-scroll-live-tool-call')
+const LIVE_TOOL_CALL_ID = ToolCallId('chat-scroll-live-tool-call')
 const LIVE_TOOL_RESULT = 'CHAT_SCROLL_LIVE_TOOL_RESULT'
 const LIVE_TOOL_FIRST = 'CHAT_SCROLL_TOOL_STREAM_FIRST'
 const LIVE_TOOL_DONE = 'CHAT_SCROLL_TOOL_STREAM_DONE'
@@ -355,7 +355,7 @@ async function wheelUntilVisible(page: Page, selector: string, deltaY: number): 
 
 function visibleFlowAnchor(page: Page): Promise<FlowAnchor> {
   return page.locator('[data-conversation-scroll]').evaluate((host) => {
-    const rows = [...host.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')]
+    const rows = [...host.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden])')]
     const viewport = host.getBoundingClientRect()
     const composer = host.querySelector<HTMLElement>('[data-composer-seat]')
     const visibleBottom = composer?.getBoundingClientRect().top ?? viewport.bottom
@@ -431,12 +431,19 @@ async function expectMarkerAboveComposer(page: Page, marker: string): Promise<vo
 async function loadEarlierWithAnchor(page: Page): Promise<void> {
   await wheelToHistoryStart(page)
   const older = page.getByRole('button', { name: 'Load earlier', exact: true })
+  const loading = page.getByRole('button', { name: 'Loading…', exact: true })
   await older.waitFor({ timeout: 10_000 })
   const anchor = await visibleFlowAnchor(page)
   const before = await loadedFlowRows(page)
   await older.click()
-  await expect.poll(() => loadedFlowRows(page), { timeout: 30_000 }).toBeGreaterThan(before)
+  await expect.poll(async () => (
+    await loadedFlowRows(page) > before && await loading.count() === 0
+  ), { timeout: 30_000 }).toBe(true)
   await nextPaint(page)
+  if (await page.getByRole('button', { name: 'Load earlier', exact: true }).count() === 0) {
+    expect(await page.locator('[data-turn-process][aria-expanded="false"]').count()).toBeGreaterThan(0)
+    return
+  }
   await expectSameFlowTop(page, anchor)
 }
 
@@ -502,7 +509,7 @@ describe('web e2e: long Chat scroll contract', () => {
 
       const settled = world.scaffold.whenTurnSettled(60_000)
       try {
-        const composer = world.page.locator('textarea:enabled').last()
+        const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_TEXT_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await world.page.getByText(LIVE_TEXT_FIRST, { exact: false }).last().waitFor({ timeout: 15_000 })
@@ -565,7 +572,7 @@ describe('web e2e: long Chat scroll contract', () => {
       const settled = world.scaffold.whenTurnSettled(60_000)
       let released = false
       try {
-        const composer = world.page.locator('textarea:enabled').last()
+        const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_TOOL_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)
@@ -614,6 +621,7 @@ describe('web e2e: long Chat scroll contract', () => {
 
       const liveRowSelector = `[data-chat-call-id="${LIVE_TOOL_CALL_ID}"] [data-sample="bash"]`
       const liveRow = world.page.locator(liveRowSelector)
+      await expandOwningTurnProcess(world.page, liveRow)
       await wheelUntilVisible(world.page, liveRowSelector, -300)
       const toolAnchor = await liveRow.evaluate((row) => {
         const flow = row.closest<HTMLElement>('[data-chat-anchor-key]')
@@ -707,7 +715,7 @@ describe('web e2e: long Chat scroll contract', () => {
         RESTORE_FIXTURE_A.markers.assistant(RESTORE_FIXTURE_A.turns),
       )
       await expectBottom(world.page)
-      const composer = world.page.locator('textarea:enabled').last()
+      const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
       const longDraft = Array.from(
         { length: 18 },
         (_, index) => `composer resize line ${String(index + 1).padStart(2, '0')}`,
@@ -762,6 +770,7 @@ describe('web e2e: long Chat scroll contract', () => {
       const lastToolRow = world.page.locator(
         `[data-chat-call-id="chat-scroll-${String(INPUTS_FIXTURE.turns).padStart(3, '0')}-1"] [data-sample="bash"]`,
       )
+      await expandOwningTurnProcess(world.page, lastToolRow)
       await lastToolRow.focus()
       await world.page.keyboard.press('End')
       await expectBottom(world.page)
@@ -796,7 +805,7 @@ describe('web e2e: long Chat scroll contract', () => {
       const settled = world.scaffold.whenTurnSettled(60_000)
       let released = false
       try {
-        const composer = world.page.locator('textarea:enabled').last()
+        const composer = world.page.locator('[data-composer-input][contenteditable="true"]').last()
         await composer.fill(LIVE_FLING_PROMPT)
         await world.page.getByRole('button', { name: 'Send message', exact: true }).click()
         await expect.poll(() => fileExists(readyPath), { timeout: 15_000 }).toBe(true)

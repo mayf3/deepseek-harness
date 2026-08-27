@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SettingsWireFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -14,17 +15,43 @@ import {
   AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController, messageOf,
 } from '../src/client/settings-store.ts'
 
+/** The two faces the row reads: the roster Remote and the settings wire. */
+interface FakeWire {
+  api: SettingsWireFace
+  remote: Pick<ClientRemote, 'agentPresets'>
+}
+
 /** Controller over a real mirror derived from the same fake wire. */
-function derivedController(api: IApiClient) {
-  return new AgentPresetSettingsController(api, new SettingsDescribeMirror(api))
+function derivedController(wire: FakeWire) {
+  return new AgentPresetSettingsController(wire.api, wire.remote, new SettingsDescribeMirror(wire.api))
 }
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
 
 type SeatSession = Pick<SessionSummary, 'id' | 'blank' | 'projectionValues'>
 
-interface Recorded { ns: string; patch: unknown }
+interface Recorded { ns: string; ops: unknown }
 
-/** A client whose roster and write outcome the test controls. */
+/** A roster Remote answering a fixed set of rows, or refusing. */
+function fakeRoster(
+  presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
+  options: { failList?: string; failListCode?: string; throwOnList?: boolean } = {},
+): Pick<ClientRemote, 'agentPresets'> {
+  return {
+    agentPresets: {
+      list: () => {
+        if (options.throwOnList === true) return Promise.reject(new Error('socket closed'))
+        return Promise.resolve(options.failList === undefined
+          ? { ok: true as const, value: { presets, authorable: true } }
+          : {
+            ok: false as const,
+            error: { code: options.failListCode ?? 'internal', message: options.failList, details: {} },
+          })
+      },
+    },
+  } as unknown as Pick<ClientRemote, 'agentPresets'>
+}
+
+/** A wire whose roster and write outcome the test controls. */
 function fakeApi(
   presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
   options: {
@@ -34,37 +61,33 @@ function fakeApi(
     failWriteWith?: Error
     readOnly?: boolean
   } = {},
-): IApiClient {
-  return {
-    agentPresets: {
-      list: () => Promise.resolve(options.failList === undefined
-        ? { rpcId: 'r', result: { ok: true as const, value: { presets } } }
-        : { rpcId: 'r', result: { ok: false as const, error: { code: 'internal', message: options.failList, details: {} } } }),
-    },
+): FakeWire {
+  const api = {
     settings: {
       // Host persistence is enabled in production only on the selected client path; a read-only provider answers writable:false
       // and the row disables its control instead of offering a refused write.
       describe: () => Promise.resolve({
-        rpcId: 'r',
-        result: {
-          ok: true as const,
-          value: { writable: options.readOnly !== true, hasDocument: true, namespaces: [] },
-        },
+        ok: true as const,
+        value: { writable: options.readOnly !== true, hasDocument: true, namespaces: [] },
       }),
-      update: (payload: { ns: string; patch: unknown }) => {
-        options.writes?.push({ ns: payload.ns, patch: payload.patch })
+      update: (ns: string, patch: { default?: unknown }) => {
+        options.writes?.push({ ns, ops: patch })
         if (options.failWriteWith !== undefined) return Promise.reject(options.failWriteWith)
         if (options.failWrite !== undefined) {
-          return Promise.resolve({ rpcId: 'r', result: { ok: false as const, error: { code: 'internal', message: options.failWrite, details: {} } } })
+          return Promise.resolve({ ok: false as const, error: { code: 'internal', message: options.failWrite, details: {} } })
         }
         // A committed write moves the roster's default.
         for (const preset of presets) {
-          preset.isDefault = preset.id === (payload.patch as { default?: string }).default
+          preset.isDefault = preset.id === patch.default
         }
-        return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: {} } })
+        return Promise.resolve({ ok: true as const, value: {} })
       },
     },
-  } as unknown as IApiClient
+  } as unknown as SettingsWireFace
+  return {
+    api,
+    remote: fakeRoster(presets, options.failList === undefined ? {} : { failList: options.failList }),
+  }
 }
 
 describe('the agent-preset settings controller', () => {
@@ -138,6 +161,20 @@ describe('the agent-preset settings controller', () => {
     expect(controller.store.getSnapshot().error).toBeNull()
   })
 
+  it('treats an unavailable optional namespace as an empty roster', async () => {
+    const controller = derivedController({
+      api: {} as SettingsWireFace,
+      remote: fakeRoster([], {
+        failList: 'no active Remote method exports this endpoint',
+        failListCode: 'invocation-unavailable',
+      }),
+    })
+
+    await controller.load()
+
+    expect(controller.store.getSnapshot()).toMatchObject({ status: 'unavailable', error: null, options: [] })
+  })
+
   it('writes only the default field, into the agent-presets namespace', async () => {
     const writes: Recorded[] = []
     const controller = derivedController(fakeApi([
@@ -148,7 +185,10 @@ describe('the agent-preset settings controller', () => {
 
     await controller.select('minimal')
 
-    expect(writes).toEqual([{ ns: AGENT_PRESET_SETTINGS_NS, patch: { default: 'minimal' } }])
+    expect(writes).toEqual([{
+      ns: AGENT_PRESET_SETTINGS_NS,
+      ops: { default: 'minimal' },
+    }])
     expect(controller.store.getSnapshot().currentValue).toBe('minimal')
   })
 
@@ -221,8 +261,9 @@ describe('the agent-preset settings controller', () => {
 
   it('reports a transport that rejects rather than answering', async () => {
     const controller = derivedController({
-      agentPresets: { list: () => Promise.reject(new Error('socket closed')) },
-    } as unknown as IApiClient)
+      api: {} as SettingsWireFace,
+      remote: fakeRoster([], { throwOnList: true }),
+    })
 
     await controller.load()
 
@@ -249,27 +290,43 @@ describe('the new-session chip controller', () => {
   function chip(
     presets: { id: string; trust: 'system' | 'user'; isDefault: boolean }[],
     current: SeatSession | undefined | (() => SeatSession | undefined),
-    options: { writes?: Recorded[]; failSelect?: string; failList?: string; throwOn?: 'list' | 'select' } = {},
+    options: {
+      writes?: Recorded[]
+      failSelect?: string
+      failList?: string
+      failListCode?: string
+      throwOn?: 'list' | 'select'
+    } = {},
   ): AgentPresetSeatController {
-    const api = {
+    const remote = {
       agentPresets: {
         list: () => {
           if (options.throwOn === 'list') return Promise.reject(new Error('socket closed'))
           return Promise.resolve(options.failList === undefined
-            ? { rpcId: 'r', result: { ok: true as const, value: { presets } } }
-            : { rpcId: 'r', result: { ok: false as const, error: { code: 'internal', message: options.failList, details: {} } } })
+            ? { ok: true as const, value: { presets, authorable: true } }
+            : {
+              ok: false as const,
+              error: { code: options.failListCode ?? 'internal', message: options.failList, details: {} },
+            })
         },
-        select: (payload: { agentPreset: string }) => {
+        select: (agentId: SessionId, agentPreset: string) => {
           if (options.throwOn === 'select') return Promise.reject(new Error('socket closed'))
-          options.writes?.push({ ns: 'select', patch: payload.agentPreset })
+          options.writes?.push({ ns: 'select', ops: agentPreset })
           return Promise.resolve(options.failSelect === undefined
-            ? { rpcId: 'r', result: { ok: true as const, value: { agentPreset: payload.agentPreset } } }
-            : { rpcId: 'r', result: { ok: false as const, error: { code: 'agent-preset-locked', message: options.failSelect, details: {} } } })
+            ? { ok: true as const, value: agentPreset }
+            : {
+              ok: false as const,
+              error: {
+                code: 'agent-preset-locked',
+                message: options.failSelect,
+                details: { sessionId: agentId, agentPreset },
+              },
+            })
         },
       },
-    } as unknown as IApiClient
+    } as unknown as Pick<ClientRemote, 'agentPresets'>
     return new AgentPresetSeatController(
-      api,
+      remote,
       typeof current === 'function' ? current : () => current,
     )
   }
@@ -325,6 +382,17 @@ describe('the new-session chip controller', () => {
     expect(controller.store.getSnapshot().current).toBe('')
   })
 
+  it('opens on nothing when the optional namespace is unavailable', async () => {
+    const controller = chip([], undefined, {
+      failList: 'no active Remote method exports this endpoint',
+      failListCode: 'invocation-unavailable',
+    })
+
+    await controller.load()
+
+    expect(controller.store.getSnapshot()).toMatchObject({ current: '', error: null, options: [] })
+  })
+
   it('stages a pick made before any session exists', async () => {
     const writes: Recorded[] = []
     const controller = chip(ROSTER, undefined, { writes })
@@ -367,7 +435,7 @@ describe('the new-session chip controller', () => {
     await controller.load()
     await controller.select('minimal')
 
-    expect(writes).toEqual([{ ns: 'select', patch: 'minimal' }])
+    expect(writes).toEqual([{ ns: 'select', ops: 'minimal' }])
     expect(controller.store.getSnapshot().current).toBe('minimal')
   })
 
@@ -386,7 +454,7 @@ describe('the new-session chip controller', () => {
 
     // Every later list movement calls apply(); an unspent stage would keep
     // switching sessions the user never picked for.
-    expect(writes).toEqual([{ ns: 'select', patch: 'minimal' }])
+    expect(writes).toEqual([{ ns: 'select', ops: 'minimal' }])
   })
 
   it('drops the stage against a session that already started', async () => {
@@ -468,7 +536,7 @@ describe('the new-session chip controller', () => {
     await controller.select('standard')
     await first
 
-    expect(writes).toEqual([{ ns: 'select', patch: 'minimal' }])
+    expect(writes).toEqual([{ ns: 'select', ops: 'minimal' }])
   })
 
   it('keeps a staged pick across a roster refresh', async () => {
@@ -500,18 +568,12 @@ describe('the new-session chip controller', () => {
   })
 
   it('degrades to a read-only row while the mirror holds no answer', async () => {
-    const api = {
-      agentPresets: {
-        list: () => Promise.resolve({
-          rpcId: 'r',
-          result: { ok: true as const, value: { presets: [{ id: 'standard', trust: 'system', isDefault: true }], authorable: true } },
-        }),
-      },
+    const controller = derivedController({
       // The roster answered; the mirror's read is what failed, so the row
       // shows the current default without offering a write it never confirmed.
-      settings: { describe: () => Promise.reject(new Error('socket closed')) },
-    } as unknown as IApiClient
-    const controller = derivedController(api)
+      api: { settings: { describe: () => Promise.reject(new Error('socket closed')) } } as unknown as SettingsWireFace,
+      remote: fakeRoster([{ id: 'standard', trust: 'system', isDefault: true }]),
+    })
 
     await controller.load()
 

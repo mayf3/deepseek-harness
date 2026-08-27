@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -97,7 +97,7 @@ let callCounter = 0
 function call(ctx: Context, args: Record<string, unknown>) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: CallId(`pwsh-observe-${++callCounter}`),
+    callId: ToolCallId(`pwsh-observe-${++callCounter}`),
     name: 'pwsh',
     arguments: args,
   })
@@ -385,7 +385,7 @@ describe('owned and degraded observation (pwsh)', () => {
     pwsh.backgroundHandler = () => scripted.proc
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('pwsh-observe-owned'),
+      callId: ToolCallId('pwsh-observe-owned'),
       name: 'pwsh',
       arguments: { command: 'Get-Slow', description: 'test command', run_in_background: true },
       agent: owner,

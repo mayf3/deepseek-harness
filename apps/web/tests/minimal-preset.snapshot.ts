@@ -5,7 +5,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
-import { CallId, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -85,14 +85,14 @@ describe('minimal agent preset', () => {
     const signal = new AbortController().signal
     await scaffold.ctx.tools.execute({
       signal,
-      callId: CallId('minimal-bash-state-setup'),
+      callId: ToolCallId('minimal-bash-state-setup'),
       name: 'bash',
       arguments: { command: `cd ${JSON.stringify(stateDir)} && export DSH_MINIMAL_STATE=PERSISTED` },
       agent: agentHandle.agent,
     })
     const bash = await scaffold.ctx.tools.execute({
       signal,
-      callId: CallId('minimal-bash-state-read'),
+      callId: ToolCallId('minimal-bash-state-read'),
       name: 'bash',
       arguments: { command: 'printf \'%s:%s\n\' "$DSH_MINIMAL_STATE" "$PWD"' },
       agent: agentHandle.agent,
@@ -101,7 +101,7 @@ describe('minimal agent preset', () => {
     await writeFile(seedPath, 'MINIMAL_EDITOR_OK\n')
     const editor = await scaffold.ctx.tools.execute({
       signal,
-      callId: CallId('minimal-editor-smoke'),
+      callId: ToolCallId('minimal-editor-smoke'),
       name: 'str_replace_editor',
       arguments: { command: 'view', path: seedPath },
       agent: agentHandle.agent,
@@ -153,6 +153,12 @@ describe('minimal agent preset', () => {
     await sessionRow.waitFor({ timeout: 10_000 })
     await sessionRow.click()
     await page.getByText('MINIMAL_PRESET_REQUEST_OK', { exact: true }).waitFor({ timeout: 15_000 })
+
+    const process = page.locator('[data-turn-process]')
+    await process.waitFor({ timeout: 15_000 })
+    await expect.poll(() => process.getAttribute('aria-expanded')).toBe('false')
+    await process.click()
+    await expect.poll(() => process.getAttribute('aria-expanded')).toBe('true')
 
     const row = page.locator('[data-sample="bash"]').first()
     await row.waitFor({ timeout: 15_000 })

@@ -28,6 +28,10 @@ export interface ComposerAttachment {
   id: DraftAttachmentId
   file: File
   previewUrl: string
+  /** Intrinsic pixel width, filled asynchronously by the intake header probe. */
+  width?: number
+  /** Intrinsic pixel height, filled asynchronously by the intake header probe. */
+  height?: number
 }
 
 /** Input state handed to the optional attachment presentation plugin. */
@@ -44,12 +48,35 @@ export interface ComposerAttachmentsOwnerProps {
   dropLimits?: { readonly count: number; readonly size: string } | undefined
 }
 
-/** Durable image group handed to the optional attachment presentation plugin. */
+/**
+ * One image inside a message record: a durable admitted reference, or the
+ * local preview of a submission echo whose admission is still in flight.
+ */
+export type MessageImageSource =
+  | { readonly attachment: ImageAttachmentRef }
+  | {
+    readonly preview: {
+      /** Browser-owned preview URL (lifecycle stays with the submitter). */
+      readonly url: string
+      readonly name?: string
+      /** Intrinsic pixel width, when the intake probe has resolved it. */
+      readonly width?: number
+      /** Intrinsic pixel height, when the intake probe has resolved it. */
+      readonly height?: number
+    }
+  }
+
+/** Durable image loader with an optional synchronous cache read. */
+export type MessageImageLoader = ((attachment: ImageAttachmentRef) => Promise<string>) & {
+  peek?: (attachment: ImageAttachmentRef) => string | undefined
+}
+
+/** Message image group handed to the optional attachment presentation plugin. */
 export interface MessageImagesOwnerProps {
-  /** Durable image references in source order. */
-  images: readonly { readonly attachment: ImageAttachmentRef }[]
-  /** Session-authorized image URL loader. */
-  loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  /** Durable references or submission-echo previews in source order. */
+  images: readonly MessageImageSource[]
+  /** Session-authorized image URL loader for the durable arm. */
+  loadImage: MessageImageLoader
   /** Horizontal placement inside the owning record. */
   align: 'start' | 'end'
 }
@@ -215,14 +242,14 @@ export interface ComposerBarOwnerProps {
   variant: 'hero' | 'composer'
   /** A feature-owned reason that makes message input inert while leaving model selection live. */
   blocked?: { readonly reason: string }
-  /** Lock all message actions while preserving the resident textarea. */
+  /** Lock all message actions while preserving the resident composer surface. */
   disabled?: boolean
   /** Whether the shared Workspace picker is expanded. */
   workspacePickerOpen?: boolean
-  /** Open the Workspace picker from the inert textarea. */
+  /** Open the Workspace picker from the inert composer surface. */
   onRequestWorkspace?: () => void
   placeholder?: string
-  /** Optional content rendered above the textarea. */
+  /** Optional content rendered above the composer surface. */
   accessory?: ReactNode
   /** Floating overlay content rendered inside the composer card. */
   overlay?: ReactNode

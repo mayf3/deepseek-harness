@@ -19,7 +19,7 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { newEnglishPage, saveFailureShot } from './support.ts'
+import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/navigation-panes', import.meta.url))
 const SEED = join(SNAPSHOT_DIR, 'session.jsonl')
@@ -156,7 +156,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
 
   it.skipIf(MODE !== 'record')('records the two-turn seed live through the composer', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-record'))
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     let sessionId: Awaited<ReturnType<WebScaffold['whenTurnSettled']>> | undefined
     for (const prompt of [PROMPT_TURN1, PROMPT_TURN2]) {
@@ -335,7 +335,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     await ensureSeedOpen(observer)
 
     try {
-      const input = page.locator('textarea').first()
+      const input = page.locator('[data-composer-input]').first()
       const slashDownloadPromise = page.waitForEvent('download', { timeout: 30_000 })
       await input.fill('/export')
       await page.getByRole('option', { name: /export/u }).waitFor({ timeout: 10_000 })
@@ -390,6 +390,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-navigation-details'))
     await ensureSeedOpen(page)
     const bashRow = page.locator('[data-sample="bash"]').first()
+    await expandOwningTurnProcess(page, bashRow)
     await bashRow.waitFor({ timeout: 15_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
@@ -425,6 +426,7 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     // Expanded, the recorded command's own output sits in the message flow,
     // derived from the logged call/result presentations alone.
     const bashRow = page.locator('[data-sample="bash"]').first()
+    await expandOwningTurnProcess(page, bashRow)
     await bashRow.waitFor({ timeout: 15_000 })
     if (await bashRow.getAttribute('aria-expanded') !== 'true') await bashRow.click()
     const card = page.locator('[data-sample="bash"] ~ div [data-terminal]').first()

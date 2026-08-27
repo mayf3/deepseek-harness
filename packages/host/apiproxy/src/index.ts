@@ -15,6 +15,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import type {} from '@deepseek-ai/dsh-api-session-controller'
+import type {} from '@deepseek-ai/dsh-host-directory-picker'
 import type { ApiProxy } from './api/index.ts'
 import { createApiProxy } from './api-proxy.ts'
 import {
@@ -62,7 +63,7 @@ export interface Config {
  */
 export class ApiProxyService extends Service implements ApiProxy {
   static inject = [
-    'agentDefaultModel', 'agents', 'attachments', 'directoryPicker', 'llm', 'sessions', 'subagents', 'sessionQuery',
+    'agentDefaultModel', 'agents', 'attachments', 'directoryPicker', 'llm', 'sessions', 'sessionQuery',
     'sessionController',
   ]
 
@@ -72,12 +73,10 @@ export class ApiProxyService extends Service implements ApiProxy {
       .default(DEFAULT_SESSION_LOG_COMPRESSION_LEVEL) as z<SessionLogCompressionLevel>,
   })
 
-  readonly subagents: ApiProxy['subagents']
   readonly host: ApiProxy['host']
   readonly skills: ApiProxy['skills']
   readonly agentPresets: ApiProxy['agentPresets']
   readonly settings: ApiProxy['settings']
-  readonly credentials: ApiProxy['credentials']
   readonly llm: ApiProxy['llm']
   readonly downloads: ApiProxy['downloads']
 
@@ -91,12 +90,10 @@ export class ApiProxyService extends Service implements ApiProxy {
         ? {}
         : { sessionExportCompressionLevel: config.sessionExportCompressionLevel }),
     })
-    this.subagents = api.subagents
     this.host = api.host
     this.skills = api.skills
     this.agentPresets = api.agentPresets
     this.settings = api.settings
-    this.credentials = api.credentials
     this.llm = api.llm
     this.downloads = api.downloads
   }

@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -43,7 +43,7 @@ let callCounter = 0
 function call(ctx: Context, args: Record<string, unknown>) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: CallId(`observe-call-${++callCounter}`),
+    callId: ToolCallId(`observe-call-${++callCounter}`),
     name: 'bash',
     arguments: args,
   })
@@ -381,7 +381,7 @@ describe('owned background observation', () => {
     ctx.agents.register(owner)
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: CallId('observe-owned-1'),
+      callId: ToolCallId('observe-owned-1'),
       name: 'bash',
       arguments: { command: 'sleep 0.3', description: 'test command', run_in_background: true },
       agent: owner,

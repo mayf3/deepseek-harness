@@ -7,6 +7,9 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+- navigation "Turn navigation":
+  - button "Jump to turn 1"
+  - button "Jump to turn 2"
 - button "System prompt":
   - img
   - img
@@ -56,7 +59,7 @@
 - button "Branch into a new conversation":
   - img
 - text: 7/25 {{clock}} Ran for {{duration}}
-- textbox "Message the agent"
+- textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img
 - 'button "Access mode, current: Workspace Write"': Workspace Write

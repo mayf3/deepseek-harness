@@ -1,6 +1,6 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { CallId } from '@deepseek-ai/dsh-llm/brand'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { ActivityId } from './brand.ts'
 
@@ -33,7 +33,7 @@ export type ActivityChannel = 'stdout' | 'stderr'
  */
 export interface ActivityCorrelation {
   /** Tool call that started the work, when a tool produced it. */
-  callId?: CallId
+  callId?: ToolCallId
   /** Background job carrying the model-facing control surface, when one exists. */
   jobId?: JobId
 }
