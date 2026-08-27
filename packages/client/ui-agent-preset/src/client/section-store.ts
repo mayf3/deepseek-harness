@@ -15,7 +15,6 @@
  */
 
 import type { ClientRemote, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SettingsWireFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { beginRosterRead, messageOf, writeDefaultPreset } from './settings-store.ts'
 
@@ -134,8 +133,8 @@ export class AgentPresetSectionController {
   readonly store: SnapshotStore<AgentPresetSectionState> = createSnapshotStore(INITIAL)
 
   constructor(
-    private readonly api: SettingsWireFace & Pick<IApiClient, 'agentPresets' | 'host'>,
-    private readonly remote: Pick<ClientRemote, 'agentPresets'>,
+    private readonly api: Pick<IApiClient, 'host'>,
+    private readonly remote: Pick<ClientRemote, 'agentPresets' | 'settings'>,
     /**
      * Called after this page changes the roster DIRECTORY, so the other
      * surfaces reading the same roster re-read it. A settings field moving is
@@ -296,13 +295,13 @@ export class AgentPresetSectionController {
    */
   async openLocation(id: string): Promise<void> {
     try {
-      const response = await this.api.agentPresets.openDocument({ agentPreset: id })
-      if (!response.result.ok) {
-        this.set({ error: response.result.error.message })
+      const result = await this.remote.settings.openAgentPresetDirectory(id)
+      if (!result.ok) {
+        this.set({ error: result.error.message })
         return
       }
-      if (response.result.value.opened) return
-      const { path } = response.result.value
+      if (result.value.opened) return
+      const { path } = result.value
       this.set({ revealedPaths: { ...this.store.getSnapshot().revealedPaths, [id]: path } })
     } catch (error) {
       this.set({ error: messageOf(error) })
@@ -350,7 +349,7 @@ export class AgentPresetSectionController {
    * @returns once the write settled and the roster was re-read.
    */
   async makeDefault(id: string): Promise<void> {
-    const failure = await writeDefaultPreset(this.api, id)
+    const failure = await writeDefaultPreset(this.remote, id)
     if (failure !== undefined) {
       this.set({ error: failure })
       return

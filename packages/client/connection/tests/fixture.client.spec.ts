@@ -20,6 +20,7 @@ import type {
   ClientConnectionRpc, ConnectionRpcResult,
 } from '../src/rpc.ts'
 import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
+import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
 
 const sid = (id: string): SessionId => id as SessionId
 type WorkspaceId = string & { readonly __fixtureWorkspaceId: 'WorkspaceId' }
@@ -175,6 +176,7 @@ type FixtureSessionClient = {
 }
 
 interface FixtureSessionRemote {
+  modelCatalog(): Promise<ConnectionRpcResult<ModelCatalog>>
   follow(sessionId: SessionId, signal: AbortSignal): AsyncIterable<FixtureFollowFrame>
   control(signal: AbortSignal): AsyncIterable<FixtureControlFrame>
 }
@@ -446,6 +448,8 @@ function createSessionRemote(rpc: ClientConnectionRpc): FixtureSessionRemote {
     return stream as AsyncIterable<F>
   }
   return {
+    modelCatalog: () => rpc.call('/api', 'session/modelCatalog', { args: {} }) as
+      Promise<ConnectionRpcResult<ModelCatalog>>,
     follow: (sessionId, signal) => open<FixtureFollowFrame>('session/follow', {
       request: { address: { kind: 'session', sessionId } },
     }, signal),
@@ -732,10 +736,10 @@ describe('createFixtureApi', () => {
   it('serves grouped models and keeps a selection for later history and fixture requests', async () => {
     const api = createFixtureApi()
     const sessionId = sid('fx-alpha')
-    const catalog = await api.llm.models(req({}))
-    if (!catalog.result.ok) throw new Error('models failed')
-    expect(catalog.result.value.groups.map(group => group.name)).toEqual(['DeepSeek', 'OpenAI'])
-    expect(catalog.result.value.groups[0]?.models.map(model => model.id))
+    const catalog = await api.sessionRemote.modelCatalog()
+    if (!catalog.ok) throw new Error('models failed')
+    expect(catalog.value.groups.map(group => group.name)).toEqual(['DeepSeek', 'OpenAI'])
+    expect(catalog.value.groups[0]?.models.map(model => model.id))
       .toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
 
     const selected = await api.sessions.selectModel(req({

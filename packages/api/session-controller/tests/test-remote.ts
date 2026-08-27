@@ -19,6 +19,7 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import SessionController from '../src/index.ts'
 import type {
+  ModelCatalog,
   SessionAttachmentRequest,
   SessionAttachmentValue,
   SessionCancelRequest,
@@ -32,6 +33,8 @@ import type {
   SessionFollowRequest,
   SessionListRequest,
   SessionListValue,
+  SessionOpenWorkspacePathRequest,
+  SessionOpenWorkspacePathValue,
   SessionPage,
   SessionPageRequest,
   SessionPromptRequest,
@@ -52,12 +55,17 @@ export interface TestSessionRemote {
   search(request: SessionSearchRequest, signal?: AbortSignal): Promise<RemoteResult<SessionSearchValue>>
   create(request: SessionCreateRequest): Promise<RemoteResult<SessionCreateValue>>
   selectModel(request: SessionSelectModelRequest): Promise<RemoteResult<SessionSelectModelValue>>
+  modelCatalog(): Promise<RemoteResult<ModelCatalog>>
   rename(request: SessionRenameRequest): Promise<RemoteResult<SessionRenameValue>>
   fork(request: SessionForkRequest): Promise<RemoteResult<SessionForkValue>>
   prompt(request: SessionPromptRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPromptValue>>
   attachment(request: SessionAttachmentRequest): Promise<RemoteResult<SessionAttachmentValue>>
   updateQueue(request: SessionUpdateQueueRequest): Promise<RemoteResult<SessionUpdateQueueValue>>
   cancel(request: SessionCancelRequest): Promise<RemoteResult<SessionCancelValue>>
+  openWorkspacePath(
+    request: SessionOpenWorkspacePathRequest,
+    signal?: AbortSignal,
+  ): Promise<RemoteResult<SessionOpenWorkspacePathValue>>
   page(request: SessionPageRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPage>>
   follow(request: SessionFollowRequest, signal?: AbortSignal): AsyncIterable<SessionFollowFrame>
   control(signal?: AbortSignal): AsyncIterable<SessionControlFrame>
@@ -69,6 +77,7 @@ export interface TestSessionRemoteDefaults {
   readonly cwd: string
   readonly coldBlankProbeMaxBytes?: number
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
+  readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
 }
 
 const installed = new WeakMap<Context, SessionController>()
@@ -174,9 +183,13 @@ function installControllers(
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(defaults.cwd)
   let controller: SessionController
   try {
-    controller = new SessionController(ctx, defaults.coldBlankProbeMaxBytes === undefined
-      ? {}
-      : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes })
+    controller = new SessionController(
+      ctx,
+      defaults.coldBlankProbeMaxBytes === undefined
+        ? {}
+        : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
+      defaults.openPath === undefined ? {} : { openPath: defaults.openPath },
+    )
   } finally {
     cwd.mockRestore()
   }
@@ -230,6 +243,7 @@ export function createSessionTestRemote(
     ),
     create: request => remoteResult(() => direct.create(request)),
     selectModel: request => remoteResult(() => direct.selectModel(request)),
+    modelCatalog: () => remoteResult(() => direct.modelCatalog()),
     rename: request => remoteResult(() => direct.rename(request)),
     fork: request => remoteResult(() => direct.fork(request)),
     prompt: (request, signal = new AbortController().signal) => remoteResult(
@@ -239,6 +253,10 @@ export function createSessionTestRemote(
     attachment: request => remoteResult(() => direct.attachment(request)),
     updateQueue: request => remoteResult(() => direct.updateQueue(request)),
     cancel: request => remoteResult(() => direct.cancel(request)),
+    openWorkspacePath: (request, signal = new AbortController().signal) => remoteResult(
+      () => direct.openWorkspacePath(request, signal),
+      signal,
+    ),
     page: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.page(request, signal),
       signal,

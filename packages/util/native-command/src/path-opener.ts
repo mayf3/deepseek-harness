@@ -1,16 +1,17 @@
 /**
- * Cross-platform native path and text-document openers used by the local GUI
- * carrier.
+ * Cross-platform native path and text-document openers for Host UI
+ * integrations.
  *
  * The default intent prefers the default browser for documents it renders when
  * the platform can name one, then falls back to the default application. WSL
  * translates every path for the Windows desktop instead of assuming a Linux
  * GUI. The text-editor intent never consults the browser.
+ * @module @deepseek-ai/dsh-native-command/path-opener
  */
 
 import { release as osRelease } from 'node:os'
 import { extname } from 'node:path'
-import { runNativeCommand, type NativeCommandRunner } from '@deepseek-ai/dsh-native-command'
+import { runNativeCommand, type NativeCommandRunner } from './runner.ts'
 
 /** Testable command boundary; native implementations never invoke a shell. */
 export type PathOpenerRunner = NativeCommandRunner

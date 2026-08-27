@@ -8,11 +8,8 @@
 export type {
   ApiProxy, HostApi,
   ResponseValue,
-  SkillsApi, SkillEntry,
   ModelCatalog, ModelCatalogFailure, ModelCatalogModel, ModelProviderGroup, ModelReasoning,
   ModelReasoningEffort, ModelSelection,
-  SettingsApi,
-  ConfigurableProviderView, DiscoveredModelView, LlmApi,
 } from '@deepseek-ai/dsh-host-apiproxy/api'
 export type {
   RpcRequest, RpcResponse, RpcResult, RpcError, RpcErrorCode,

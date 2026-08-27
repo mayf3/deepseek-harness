@@ -6,8 +6,6 @@ import {
 } from '../src/api/rpc.schema.ts'
 import { z } from 'zod'
 import { hostDescribeRequestSchema, hostDescribeValueSchema } from '../src/api/host.schema.ts'
-import { skillEntrySchema, skillListRequestSchema, skillListValueSchema } from '../src/api/skills.schema.ts'
-import { agentPresetOpenDocumentValueSchema } from '../src/api/agent-presets.schema.ts'
 
 describe('RpcId', () => {
   it('brands a raw string at zero runtime cost', () => {
@@ -37,7 +35,6 @@ describe('rpcErrorSchema', () => {
     expect(rpcErrorSchema.parse({ code: 'agent-preset-not-found', message: 'm', details: { agentPreset: 'p', available: [] } }).code).toBe('agent-preset-not-found')
     expect(rpcErrorSchema.parse({ code: 'agent-preset-invalid', message: 'm', details: { agentPreset: 'p', reason: 'bad' } }).code).toBe('agent-preset-invalid')
     expect(rpcErrorSchema.parse({ code: 'agent-busy', message: 'm', details: { reason: 'r' } }).code).toBe('agent-busy')
-    expect(rpcErrorSchema.parse({ code: 'model-discovery-failed', message: 'm', details: { settingsNs: 'n' } }).code).toBe('model-discovery-failed')
     expect(rpcErrorSchema.parse({ code: 'internal', message: 'm', details: {} }).code).toBe('internal')
   })
 
@@ -95,34 +92,5 @@ describe('host domain schemas', () => {
     expect(() => hostDescribeValueSchema.parse({
       version: '1', cwd: '/x', attachedSessions: 0, canOpenPath: true,
     })).toThrow()
-  })
-})
-
-describe('skills domain schemas', () => {
-  it('validates the list request/value pair', () => {
-    expect(skillListRequestSchema.parse({ sessionId: 's1' })).toEqual({ sessionId: 's1' })
-    // The wire is session-addressed only: a sessionId-less payload fails.
-    expect(() => skillListRequestSchema.parse({})).toThrow()
-    expect(skillListValueSchema.parse({ skills: [] }).skills).toEqual([])
-    const value = skillListValueSchema.parse({ skills: [
-      { name: 'commit-helper', description: 'Git commits', whenToUse: 'when committing', modelInvocable: true },
-      { name: 'bare', description: 'No guidance', modelInvocable: false },
-    ] })
-    expect(value.skills[0]?.whenToUse).toBe('when committing')
-    expect(value.skills[1]?.whenToUse).toBeUndefined()
-    expect(value.skills[1]?.modelInvocable).toBe(false)
-    expect(() => skillEntrySchema.parse({ name: '', description: 'd', modelInvocable: true })).toThrow()
-    // modelInvocable is required wire data: an entry without it fails.
-    expect(() => skillEntrySchema.parse({ name: 'n', description: 'd' })).toThrow()
-  })
-})
-
-describe('agent-preset schemas', () => {
-  it('answers the open-document union by its discriminant', () => {
-    expect(agentPresetOpenDocumentValueSchema.parse({ opened: true })).toEqual({ opened: true })
-    expect(agentPresetOpenDocumentValueSchema.parse({ opened: false, path: '/presets/mine' }))
-      .toEqual({ opened: false, path: '/presets/mine' })
-    // A closed reply must carry the path the surface shows instead.
-    expect(() => agentPresetOpenDocumentValueSchema.parse({ opened: false })).toThrow()
   })
 })
