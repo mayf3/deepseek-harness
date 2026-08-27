@@ -37,6 +37,11 @@ export type * from './types.ts'
 
 const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1) })
 
+/** Read abort state afresh after an awaited provider or opener call. */
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
+}
+
 /** Native document-opening policy. */
 export interface Config {
   /** Override platform desktop-opener detection. */
@@ -185,23 +190,23 @@ export class SettingsController extends TypertRemoteService {
   @Remote
   async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue> {
     const settings = this.provider()
-    if (signal.aborted) throw cancelled('settings document open was aborted')
+    if (isAborted(signal)) throw cancelled('settings document open was aborted')
     let path: string | undefined
     try {
       path = await settings.prepareDocument()
     } catch (error: unknown) {
-      if (signal.aborted) throw cancelled('settings document preparation was aborted')
+      if (isAborted(signal)) throw cancelled('settings document preparation was aborted')
       throw internal(`settings document preparation failed: ${messageOf(error)}`)
     }
     if (path === undefined) {
       throw internal('settings provider has no local document to open')
     }
-    if (signal.aborted) throw cancelled('settings document open was aborted')
+    if (isAborted(signal)) throw cancelled('settings document open was aborted')
     try {
       await this.openTextFile(path, signal)
       return { opened: true }
     } catch (error: unknown) {
-      if (signal.aborted) throw cancelled('settings document open was aborted')
+      if (isAborted(signal)) throw cancelled('settings document open was aborted')
       throw internal(`path open failed: ${messageOf(error)}`)
     }
   }

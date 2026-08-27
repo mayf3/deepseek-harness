@@ -263,13 +263,15 @@ describe('the settings Remote namespace a configuration page calls', () => {
 
   it('preserves settings-document absence, failure, and cancellation', async () => {
     const absent = await boot()
-    await expect(absent.controller.openSettingsDocument(new AbortController().signal))
-      .rejects.toMatchObject({ failure: { code: 'internal', message: expect.stringContaining('no local document') } })
+    const missingDocument = absent.controller.openSettingsDocument(new AbortController().signal)
+    await expect(missingDocument).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(missingDocument).rejects.toThrow('no local document')
 
     const failed = await boot(DocumentSettings)
     vi.spyOn(failed.ctx.settings, 'prepareDocument').mockRejectedValue(new Error('read failed'))
-    await expect(failed.controller.openSettingsDocument(new AbortController().signal))
-      .rejects.toMatchObject({ failure: { code: 'internal', message: expect.stringContaining('read failed') } })
+    const failedRead = failed.controller.openSettingsDocument(new AbortController().signal)
+    await expect(failedRead).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(failedRead).rejects.toThrow('read failed')
 
     const cancelled = new AbortController()
     cancelled.abort(new Error('cancelled'))
@@ -412,7 +414,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
     ['unexpected preset failure', 'internal'],
   ] as const)('maps Agent preset resolution failure %#', async (error, code) => {
     const ctx = new Context()
-    ctx.provide('agentPresets', { resolve: () => Promise.reject(error) } as never)
+    ctx.provide('agentPresets', { resolve: async () => { throw error } } as never)
     const controller = new SettingsController(ctx)
 
     await expect(controller.openAgentPresetDirectory('mine', new AbortController().signal))

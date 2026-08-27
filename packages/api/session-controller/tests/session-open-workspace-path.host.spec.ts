@@ -114,11 +114,11 @@ describe('session/openWorkspacePath', () => {
     }, aborted.signal)).rejects.toMatchObject({ failure: { code: 'cancelled' } })
 
     inspect.mockRejectedValueOnce('storage offline')
-    await expect(controller.openWorkspacePath({
+    const failed = controller.openWorkspacePath({
       sessionId: SessionId('inspection-failed'), path: 'result.html',
-    }, new AbortController().signal)).rejects.toMatchObject({
-      failure: { code: 'internal', message: expect.stringContaining('storage offline') },
-    })
+    }, new AbortController().signal)
+    await expect(failed).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(failed).rejects.toThrow('storage offline')
   })
 
   it('classifies opener cancellation and non-Error failures', async () => {

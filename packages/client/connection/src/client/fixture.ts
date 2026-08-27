@@ -3657,12 +3657,10 @@ export class FixtureApiClient extends AbstractApiClient {
 
   /** Method-key dispatch into the in-memory contract impl (a real carrier routes by URL path instead). */
   private dispatch(
-    method: keyof RpcMethodMap,
+    _method: keyof RpcMethodMap,
     request: RpcRequest<never>,
   ): Promise<RpcResponse<unknown>> {
-    switch (method) {
-      case 'host.describe': return this.api.host.describe(request)
-    }
+    return this.api.host.describe(request)
   }
 
 }

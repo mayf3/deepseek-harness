@@ -668,7 +668,7 @@ describe('SubagentModelSelectionCardController', () => {
       })
       .mockImplementationOnce(() => refreshed.promise)
     const controller = new SubagentModelSelectionCardController(
-      host.scope, { modelCatalog: models } as never,
+      host.scope, { modelCatalog: models },
     )
     const face = controller.inject()
     const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
@@ -747,7 +747,7 @@ describe('SubagentModelSelectionCardController', () => {
         },
       })
     const controller = new SubagentModelSelectionCardController(
-      host.scope, { modelCatalog: models } as never,
+      host.scope, { modelCatalog: models },
     )
     const state = () => controller.inject().hooks.subagentModelSelectionCard.getSnapshot()
     await vi.waitFor(() => { expect(state().candidates[0]?.provider).toBe('alpha') })
@@ -802,7 +802,7 @@ describe('SubagentModelSelectionCardController', () => {
 
     const pending = deferred<never>()
     const models = vi.fn(() => pending.promise)
-    const controller = new SubagentModelSelectionCardController(host.scope, { modelCatalog: models } as never)
+    const controller = new SubagentModelSelectionCardController(host.scope, { modelCatalog: models })
     const face = controller.inject()
     face.toggleEnabled()
     face.retryCatalog()
@@ -814,7 +814,7 @@ describe('SubagentModelSelectionCardController', () => {
     const pendingResolve = deferred<never>()
     const resolving = new SubagentModelSelectionCardController(
       host.scope,
-      { modelCatalog: () => pendingResolve.promise } as never,
+      { modelCatalog: () => pendingResolve.promise },
     )
     const resolvingFace = resolving.inject()
     resolvingFace.toggleEnabled()

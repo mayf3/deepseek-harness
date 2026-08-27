@@ -183,10 +183,9 @@ describe('SessionSkillCatalog', () => {
     } as never)
     const catalog = new SessionSkillCatalog(ctx)
 
-    await expect(catalog.list({ sessionId }, new AbortController().signal))
-      .rejects.toMatchObject({
-        failure: { code: 'internal', message: expect.stringContaining('skill registry is absent') },
-      })
+    const failed = catalog.list({ sessionId }, new AbortController().signal)
+    await expect(failed).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(failed).rejects.toThrow('skill registry is absent')
   })
 
   it('rejects observations without projections or a project cwd', async () => {
@@ -199,14 +198,12 @@ describe('SessionSkillCatalog', () => {
     ctx.provide('sessionQuery', { observeSession } as never)
     const catalog = new SessionSkillCatalog(ctx)
 
-    await expect(catalog.list({ sessionId }, new AbortController().signal))
-      .rejects.toMatchObject({
-        failure: { code: 'internal', message: expect.stringContaining('projected Session observation') },
-      })
-    await expect(catalog.list({ sessionId }, new AbortController().signal))
-      .rejects.toMatchObject({
-        failure: { code: 'internal', message: expect.stringContaining('has no project cwd') },
-      })
+    const unprojected = catalog.list({ sessionId }, new AbortController().signal)
+    await expect(unprojected).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(unprojected).rejects.toThrow('projected Session observation')
+    const cwdless = catalog.list({ sessionId }, new AbortController().signal)
+    await expect(cwdless).rejects.toMatchObject({ failure: { code: 'internal' } })
+    await expect(cwdless).rejects.toThrow('has no project cwd')
   })
 
   it('classifies a provider listing failure', async () => {
