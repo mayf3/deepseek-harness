@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -80,6 +80,8 @@ describe('the settings Remote namespace a configuration page calls', () => {
       { method: 'update', invocation: { kind: 'direct' } },
       { method: 'replace', invocation: { kind: 'direct' } },
       { method: 'mutate', invocation: { kind: 'direct' } },
+      { method: 'openSettingsDocument', invocation: { kind: 'direct' } },
+      { method: 'openAgentPresetDirectory', invocation: { kind: 'direct' } },
     ])
   })
 
@@ -91,6 +93,7 @@ describe('the settings Remote namespace a configuration page calls', () => {
       () => ctx.settingsController.update('ui-test', {}, undefined),
       () => ctx.settingsController.replace('ui-test', {}, undefined),
       () => ctx.settingsController.mutate('ui-test', [], undefined),
+      () => ctx.settingsController.openSettingsDocument(new AbortController().signal),
     ]
     for (const call of calls) {
       const failure = await Promise.resolve().then(call).catch((error: unknown) => error)
@@ -238,5 +241,109 @@ describe('the settings Remote namespace a configuration page calls', () => {
     const { code, message } = (failure as TypertRemoteFailure).failure
     expect(code).toBe('internal')
     expect(message).toContain('was disposed after the mutate')
+  })
+
+  it('prepares and opens the provider-owned settings document', async () => {
+    const ctx = new Context()
+    await ctx.plugin(DocumentSettings)
+    const prepare = vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
+    const openTextFile = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
+    const controller = new SettingsController(ctx, {}, { openTextFile })
+    const signal = new AbortController().signal
+
+    await expect(controller.openSettingsDocument(signal)).resolves.toEqual({ opened: true })
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(openTextFile).toHaveBeenCalledWith('/tmp/settings.yaml', signal)
+  })
+
+  it('preserves settings-document absence, failure, and cancellation', async () => {
+    const absent = await boot()
+    await expect(absent.controller.openSettingsDocument(new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code: 'internal', message: expect.stringContaining('no local document') } })
+
+    const failed = await boot(DocumentSettings)
+    vi.spyOn(failed.ctx.settings, 'prepareDocument').mockRejectedValue(new Error('read failed'))
+    await expect(failed.controller.openSettingsDocument(new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code: 'internal', message: expect.stringContaining('read failed') } })
+
+    const cancelled = new AbortController()
+    cancelled.abort(new Error('cancelled'))
+    const prepare = vi.spyOn(failed.ctx.settings, 'prepareDocument')
+    prepare.mockClear()
+    await expect(failed.controller.openSettingsDocument(cancelled.signal))
+      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+    expect(prepare).not.toHaveBeenCalled()
+  })
+
+  it('does not open a settings document cancelled during preparation', async () => {
+    const ctx = new Context()
+    await ctx.plugin(DocumentSettings)
+    const prepared = Promise.withResolvers<string | undefined>()
+    vi.spyOn(ctx.settings, 'prepareDocument').mockReturnValue(prepared.promise)
+    const openTextFile = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
+    const controller = new SettingsController(ctx, {}, { openTextFile })
+    const abort = new AbortController()
+
+    const opening = controller.openSettingsDocument(abort.signal)
+    abort.abort(new Error('cancelled'))
+    prepared.resolve('/tmp/settings.yaml')
+
+    await expect(opening).rejects.toMatchObject({ failure: { code: 'cancelled' } })
+    expect(openTextFile).not.toHaveBeenCalled()
+  })
+
+  it('maps native settings-document opener failures', async () => {
+    const ctx = new Context()
+    await ctx.plugin(DocumentSettings)
+    vi.spyOn(ctx.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
+    const controller = new SettingsController(ctx, {}, {
+      openTextFile: () => Promise.reject(new Error('no default editor')),
+    })
+
+    await expect(controller.openSettingsDocument(new AbortController().signal))
+      .rejects.toMatchObject({
+        failure: { code: 'internal', message: 'path open failed: no default editor' },
+      })
+  })
+
+  it('opens a user Agent preset directory or returns its path without a native opener', async () => {
+    const ctx = new Context()
+    ctx.provide('agentPresets', {
+      resolve: (id: string) => Promise.resolve({
+        id, trust: 'user', path: `/presets/${id}/agent.cordis.yml`,
+      }),
+    } as never)
+    const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
+    const openable = new SettingsController(ctx, { nativeOpen: true }, { openPath })
+    const signal = new AbortController().signal
+    await expect(openable.openAgentPresetDirectory('mine', signal))
+      .resolves.toEqual({ opened: true })
+    expect(openPath).toHaveBeenCalledWith('/presets/mine', signal)
+
+    const headless = new Context()
+    headless.provide('agentPresets', {
+      resolve: (id: string) => Promise.resolve({
+        id, trust: 'user', path: `/presets/${id}/agent.cordis.yml`,
+      }),
+    } as never)
+    const reveal = new SettingsController(headless, { nativeOpen: false })
+    await expect(reveal.openAgentPresetDirectory('mine', new AbortController().signal))
+      .resolves.toEqual({ opened: false, path: '/presets/mine' })
+  })
+
+  it('refuses a shipped Agent preset and a missing preset provider', async () => {
+    const ctx = new Context()
+    ctx.provide('agentPresets', {
+      resolve: (id: string) => Promise.resolve({
+        id, trust: 'system', path: `/presets/${id}/agent.cordis.yml`,
+      }),
+    } as never)
+    const controller = new SettingsController(ctx)
+    await expect(controller.openAgentPresetDirectory('standard', new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code: 'agent-preset-read-only' } })
+
+    const missing = new SettingsController(new Context())
+    await expect(missing.openAgentPresetDirectory('mine', new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code: 'agent-preset-not-found' } })
   })
 })

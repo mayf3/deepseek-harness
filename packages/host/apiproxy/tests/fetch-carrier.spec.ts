@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ApiProxy } from '../src/api/index.ts'
-import type { RpcMessage, RpcRequest } from '../src/api/rpc.ts'
+import type { RpcMessage } from '../src/api/rpc.ts'
 import { toFetchHandler } from '../src/fetch/handler.ts'
 import { AbstractApiClient, InProcessApiClient } from '../src/fetch/client.ts'
 
@@ -17,46 +17,6 @@ function fakeApi(overrides: Partial<{ crashOn: string }> = {}): ApiProxy {
             value: { version: 'v', cwd: '/w', attachedSessions: 0, home: '/h', canOpenPath: true },
           },
         }
-      },
-      async openPath(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
-      },
-    },
-    agentPresets: {
-      openDocument(request: RpcRequest<{ agentPreset: string }>) {
-        return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value: { opened: true as const } } })
-      },
-    },
-    skills: {
-      async list(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } } }
-      },
-    },
-    settings: {
-      async openDocument(request) {
-        return { rpcId: request.rpcId, result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } } }
-      },
-    },
-    llm: {
-      async providers(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { providers: [] } } }
-      },
-      async models(request) {
-        return {
-          rpcId: request.rpcId,
-          result: {
-            ok: true,
-            value: {
-              default: { provider: 'test', model: 'test' },
-              routableProviders: [],
-              groups: [],
-              failures: [],
-            },
-          },
-        }
-      },
-      async discoverModels(request) {
-        return { rpcId: request.rpcId, result: { ok: true, value: { models: [] } } }
       },
     },
     downloads: {
@@ -79,85 +39,16 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
   })
 
   it('carries a business error as 200 + error result', async () => {
-    const response = await client().settings.openDocument({})
+    const api = fakeApi()
+    api.host.describe = request => Promise.resolve({
+      rpcId: request.rpcId,
+      result: { ok: false, error: { code: 'internal', message: 'stub', details: {} } },
+    })
+    const response = await client(api).host.describe({})
     expect(response.result.ok).toBe(false)
     if (!response.result.ok) expect(response.result.error.code).toBe('internal')
   })
 
-  it('round-trips the agent-preset document opener', async () => {
-    // The opener is the domain's whole carried surface: its request schema is
-    // registered in both halves, so a missing registration fails here rather
-    // than in the browser.
-    expect((await client().agentPresets.openDocument({ agentPreset: 'mine' })).result)
-      .toEqual({ ok: true, value: { opened: true } })
-  })
-
-  it('round-trips host.openPath through the wire form', async () => {
-    const api = fakeApi()
-    let opened: string | undefined
-    api.host.openPath = async (request) => {
-      opened = request.payload.path
-      return { rpcId: request.rpcId, result: { ok: true, value: { opened: true as const } } }
-    }
-    const response = await client(api).host.openPath({ path: '/tmp/a.txt' })
-    expect(opened).toBe('/tmp/a.txt')
-    expect(response.result).toEqual({ ok: true, value: { opened: true } })
-  })
-
-  it('round-trips skill.list through the wire form', async () => {
-    const c = client()
-    const skills = await c.skills.list({ sessionId: 's' as never })
-    expect(skills.result).toEqual({ ok: true, value: { skills: [{ name: 'commit-helper', description: 'Git commits', modelInvocable: true }] } })
-  })
-
-  it('keeps caller and connection aborts on a signal-taking unary', async () => {
-    const api = fakeApi()
-    const started = Promise.withResolvers<AbortSignal>()
-    api.host.openPath = async (request, signal) => {
-      started.resolve(signal)
-      if (!signal.aborted) {
-        await new Promise<void>((resolve) => {
-          signal.addEventListener('abort', () => { resolve() }, { once: true })
-        })
-      }
-      return {
-        rpcId: request.rpcId,
-        result: { ok: false, error: { code: 'cancelled', message: 'aborted', details: {} } },
-      }
-    }
-    const controller = new AbortController()
-    const execution = client(api).host.openPath({ path: '/tmp/a.txt' }, controller.signal)
-    const handlerSignal = await started.promise
-
-    controller.abort(new Error('connection closed'))
-
-    await expect(execution).rejects.toThrow('connection closed')
-    expect(handlerSignal.aborted).toBe(true)
-  })
-
-  it('propagates the carrier Request signal into host.openPath', async () => {
-    const api = fakeApi()
-    api.host.openPath = async (request, signal) => {
-      if (!signal.aborted) {
-        await new Promise<void>((resolve) => {
-          signal.addEventListener('abort', () => { resolve() }, { once: true })
-        })
-      }
-      return {
-        rpcId: request.rpcId,
-        result: { ok: false, error: { code: 'cancelled', message: 'aborted', details: {} } },
-      }
-    }
-    const handler = toFetchHandler(api)
-    const controller = new AbortController()
-    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-opener', method: 'host.openPath', payload: { path: '/tmp/a.txt' } })
-    const pending = handler.fetch(new Request('http://x/api/host.openPath', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: controller.signal,
-    }))
-    controller.abort()
-    const parsed = await (await pending).json() as { result: { error?: { code: string } } }
-    expect(parsed.result.error?.code).toBe('cancelled')
-  })
 })
 
 describe('handler carrier-layer statuses', () => {
@@ -182,17 +73,9 @@ describe('handler carrier-layer statuses', () => {
     expect(body.result.error?.code).toBe('bad-request')
   })
 
-  it('rejects a method/path mismatch echoing the envelope rpcId', async () => {
-    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-9', method: 'host.describe', payload: {} })
-    const response = await handler.fetch(new Request('http://x/api/skill.list', { method: 'POST', headers: { 'content-type': 'application/json' }, body }))
-    const parsed = await response.json() as { rpcId: string; result: { error?: { message: string } } }
-    expect(parsed.rpcId).toBe('r-9')
-    expect(parsed.result.error?.message).toContain('does not match path')
-  })
-
   it('rejects an invalid payload with the zod issues attached', async () => {
-    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-10', method: 'host.openPath', payload: {} })
-    const response = await handler.fetch(new Request('http://x/api/host.openPath', { method: 'POST', headers: { 'content-type': 'application/json' }, body }))
+    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-10', method: 'host.describe', payload: null })
+    const response = await handler.fetch(new Request('http://x/api/host.describe', { method: 'POST', headers: { 'content-type': 'application/json' }, body }))
     const parsed = await response.json() as { result: { error?: { code: string; details: { issues: unknown[] } } } }
     expect(parsed.result.error?.code).toBe('bad-request')
     expect(parsed.result.error?.details.issues.length).toBeGreaterThan(0)
@@ -263,7 +146,7 @@ describe('envelope observation', () => {
     const c = client()
     const batches: (readonly RpcMessage[])[] = []
     c.subscribeEnvelopes((batch) => { batches.push(batch) })
-    await Promise.all([c.host.describe({}), c.skills.list({ sessionId: 's1' as never })])
+    await Promise.all([c.host.describe({}), c.host.describe({})])
     await new Promise((resolve) => { setTimeout(resolve, 0) })
     const total = batches.reduce((n, batch) => n + batch.length, 0)
     expect(total).toBe(4)

@@ -577,6 +577,12 @@ What a persistence backend relies on: the durable log persists every event lossl
 
 The backends that consume this contract are on [persistence.md](persistence.md).
 
+## Remote catalog and workspace opening
+
+`ModelCatalog` is the Host-generation model directory returned by `session/modelCatalog`: it carries the deployment default, routable provider ids, successful provider groups, and isolated provider failures. It is not derived from one Session and remains separate from Session projections.
+
+`SessionOpenWorkspacePathRequest` carries a `sessionId` and an absolute or Session-workspace-relative `path`. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. The controller inspects the Session without activating its Agent, resolves a relative path against the recorded cwd, and reports missing Sessions, cancellation, and opener failures through the Session Remote error vocabulary.
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -636,6 +642,21 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
  * @returns the normalized selection installed for the Session.
  */
 @Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
+
+/**
+ * Describe every currently routable model for Host-generation selectors.
+ * @returns provider-grouped models, the deployment default, and isolated provider failures.
+ */
+@Remote('modelCatalog') modelCatalog(): Promise<ModelCatalog>
+
+/**
+ * Open a path resolved against one Session's workspace on the Host desktop.
+ * @param request - Session identity and absolute or workspace-relative path.
+ * @param signal - caller lifetime; abort terminates inspection or the native command.
+ * @returns confirmation after the native opener accepts the path.
+ * @throws TypertRemoteFailure when the request is invalid, the Session is missing, or the opener fails.
+ */
+@Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
 
 /**
  * Rename one Session after explicitly resuming it.

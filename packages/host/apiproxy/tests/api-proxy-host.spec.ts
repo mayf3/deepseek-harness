@@ -25,7 +25,6 @@ function expectOk<T>(response: { readonly result: { readonly ok: true; readonly 
 
 async function harness(
   extras: {
-    openPath?: (path: string, signal: AbortSignal) => Promise<void>
     canOpenPath?: () => boolean
   } = {},
 ) {
@@ -35,13 +34,12 @@ async function harness(
   const api = createApiProxy(ctx, {
     defaultModelSelection: () => ({ provider: 'test', model: 'test-model' }),
     cwd: '/tmp/dsh-apiproxy-host',
-    ...extras.openPath === undefined ? {} : { openPath: extras.openPath },
     ...extras.canOpenPath === undefined ? {} : { canOpenPath: extras.canOpenPath },
   })
   return { api }
 }
 
-describe('host.openPath', () => {
+describe('host.describe', () => {
   it('describes whether the deployment can reach a native desktop', async () => {
     const visible = await harness({ canOpenPath: () => true })
     const headless = await harness({ canOpenPath: () => false })
@@ -50,27 +48,4 @@ describe('host.openPath', () => {
     expect(expectOk(await visible.api.host.describe(request({}))).home).toBe(homedir())
   })
 
-  it('opens through the injected native boundary', async () => {
-    const opened: string[] = []
-    const { api } = await harness({
-      openPath: async (path) => { opened.push(path) },
-    })
-    expect((await api.host.openPath(
-      request({ path: '/tmp/a.txt' }),
-      new AbortController().signal,
-    )).result).toEqual({ ok: true, value: { opened: true } })
-    expect(opened).toEqual(['/tmp/a.txt'])
-  })
-
-  it('propagates abort into the native boundary as a cancelled RPC error', async () => {
-    const { api } = await harness({
-      openPath: (_path, signal) => new Promise((_resolve, reject) => {
-        signal.addEventListener('abort', () => { reject(new Error('aborted')) }, { once: true })
-      }),
-    })
-    const abort = new AbortController()
-    const pending = api.host.openPath(request({ path: '/tmp/a.txt' }), abort.signal)
-    abort.abort()
-    expect((await pending).result).toMatchObject({ ok: false, error: { code: 'cancelled' } })
-  })
 })

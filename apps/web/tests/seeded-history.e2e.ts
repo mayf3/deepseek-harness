@@ -417,11 +417,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
     await fileLink.waitFor({ timeout: 10_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: { ok: true, value: { opened: true as const } },
-      }))
+    const openPath = vi.spyOn(scaffold.ctx.sessionController, 'openWorkspacePath')
+      .mockResolvedValue({ opened: true })
     try {
       await fileLink.click()
       await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
@@ -436,14 +433,8 @@ describe('web e2e: seeded history renders through cold resume', () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-file-open-failure'))
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: {
-          ok: false as const,
-          error: { code: 'internal', message: 'xdg-open is not available', details: {} },
-        },
-      }))
+    const openPath = vi.spyOn(scaffold.ctx.sessionController, 'openWorkspacePath')
+      .mockRejectedValue(new Error('xdg-open is not available'))
     try {
       await fileLink.click()
       const dialog = page.getByRole('dialog', { name: 'Couldn’t open file' })
@@ -454,7 +445,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
         .toContain('path open failed: xdg-open is not available')
       await page.getByRole('button', { name: 'Retry' }).click()
       await expect.poll(() => openPath.mock.calls.length, { timeout: 5_000 }).toBe(2)
-      expect(openPath.mock.calls[0]![0].payload).toEqual(openPath.mock.calls[1]![0].payload)
+      expect(openPath.mock.calls[0]![0]).toEqual(openPath.mock.calls[1]![0])
       await page.getByRole('button', { name: 'Cancel' }).click()
       await expect.poll(() => page.getByRole('dialog', { name: 'Couldn’t open file' }).count(), {
         timeout: 5_000,

@@ -581,6 +581,12 @@ interface TurnEndReasonMap {
 
 消费此约定的后端见 [persistence.md](persistence.zh.md)。
 
+## Remote 目录与 workspace 打开
+
+`ModelCatalog` 是 `session/modelCatalog` 返回的 Host generation 模型目录：它携带部署默认值、可路由 provider id、成功的 provider 分组与相互隔离的 provider 失败。它不由某个 Session 派生，因此与 Session projection 分开保存。
+
+`SessionOpenWorkspacePathRequest` 携带 `sessionId` 与绝对路径或相对于 Session workspace 的 `path`。`SessionOpenWorkspacePathValue` 确认 Host 已接受原生交接。controller 在不激活 Agent 的前提下检查 Session，基于记录的 cwd 解析相对路径，并通过 Session Remote 错误词汇表报告 Session 缺失、取消与打开器失败。
+
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
 <a id="cordis-surface"></a>
@@ -640,6 +646,21 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
  * @returns the normalized selection installed for the Session.
  */
 @Remote('selectModel') selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>
+
+/**
+ * Describe every currently routable model for Host-generation selectors.
+ * @returns provider-grouped models, the deployment default, and isolated provider failures.
+ */
+@Remote('modelCatalog') modelCatalog(): Promise<ModelCatalog>
+
+/**
+ * Open a path resolved against one Session's workspace on the Host desktop.
+ * @param request - Session identity and absolute or workspace-relative path.
+ * @param signal - caller lifetime; abort terminates inspection or the native command.
+ * @returns confirmation after the native opener accepts the path.
+ * @throws TypertRemoteFailure when the request is invalid, the Session is missing, or the opener fails.
+ */
+@Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
 
 /**
  * Rename one Session after explicitly resuming it.

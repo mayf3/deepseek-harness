@@ -3,7 +3,7 @@
 // deferred-controlled timing). Session streams are hand pumps: pushFollow/pushControl.
 import type {
   IApiClient, MessageId,
-  RpcError, RpcResponse, SessionId, SessionSearchItem, SkillEntry,
+  RpcError, RpcResponse, SessionId, SessionSearchItem,
   SubagentCatalog, SubagentInterruptReceipt, SubagentPromptReceipt,
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
@@ -156,6 +156,8 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
   onUpdateQueue: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RpcResponse<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
+  onOpenWorkspacePath: (payload: unknown) => Promise<RemoteResult<{ opened: true }>> =
+    () => Promise.resolve(remoteOk({ opened: true as const }))
 
   onDescribe: (payload: unknown) => Promise<RpcResponse<{
     version: string
@@ -167,9 +169,6 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({
       version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
     }))
-  onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
-    () => Promise.resolve(ok({ opened: true as const }))
-
   private readonly followConns = new Map<SessionId, ValueStreamConn<SessionFollowFrame>[]>()
   private readonly controlConns: ValueStreamConn<SessionControlFrame>[] = []
   private readonly workspaceConns: ValueStreamConn<WorkspaceFollowFrame>[] = []
@@ -196,7 +195,6 @@ export class FakeApiClient implements IApiClient {
 
   readonly host: IApiClient['host'] = {
     describe: (payload: unknown) => this.record('host.describe', payload, this.onDescribe(payload)),
-    openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
   }
 
   onWorkspaceCreate: (payload: unknown) => Promise<RemoteResult<{ workspace: WorkspaceView; created: boolean }>> =
@@ -217,37 +215,6 @@ export class FakeApiClient implements IApiClient {
   onWorkspaceArchiveSession: (payload: unknown) => Promise<RemoteResult<{ archivedSessionIds: SessionId[] }>> =
     payload => Promise.resolve(remoteOk({ archivedSessionIds: [(payload as { sessionId: SessionId }).sessionId] }))
 
-  // Payloads stay `unknown` (lint-lane note above); response rows are the real
-  // wire shapes so cases can program requires-bearing catalogs and dual-address
-  // skill lists without casts.
-  onSkillList: (payload: unknown) => Promise<RpcResponse<{ skills: SkillEntry[] }>>
-    = () => Promise.resolve(ok({ skills: [] }))
-
-
-  readonly agentPresets: IApiClient['agentPresets'] = {
-    openDocument: (payload: { agentPreset: string }) =>
-      this.record('agentPreset.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
-  }
-
-  readonly skills: IApiClient['skills'] = {
-    list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
-  }
-
-  readonly settings: IApiClient['settings'] = {
-    openDocument: payload => this.record('settings.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
-  }
-
-  readonly llm: IApiClient['llm'] = {
-    providers: payload => this.record('llm.providers', payload, Promise.resolve(ok({ providers: [] }))),
-    models: payload => this.record('llm.models', payload, Promise.resolve(ok({
-      default: { provider: 'fixture', model: 'fixture' },
-      routableProviders: [],
-      groups: [],
-      failures: [],
-    }))),
-    discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
-  }
-
   /** Remote namespaces bound to this fake's programmable unary slots and stream pumps. */
   sessionRemotes(): RuntimeRemotes {
     return {
@@ -259,6 +226,15 @@ export class FakeApiClient implements IApiClient {
       },
       session: {
         list: payload => this.remoteResult('session.list', payload, this.onList(payload)),
+        modelCatalog: () => Promise.resolve({
+          ok: true,
+          value: {
+            default: { provider: 'fixture', model: 'fixture' },
+            routableProviders: [],
+            groups: [],
+            failures: [],
+          },
+        }),
         search: (payload, signal) => {
           this.lastSearchSignal = signal
           return this.remoteResult('session.search', payload, this.onSearch(payload))
@@ -275,6 +251,11 @@ export class FakeApiClient implements IApiClient {
         attachment: payload => this.remoteResult('session.attachment', payload, this.onAttachment(payload)),
         updateQueue: payload => this.remoteResult('session.updateQueue', payload, this.onUpdateQueue(payload)),
         cancel: payload => this.remoteResult('session.cancel', payload, this.onCancel(payload)),
+        openWorkspacePath: payload => this.record(
+          'session.openWorkspacePath',
+          payload,
+          this.onOpenWorkspacePath(payload),
+        ),
         page: request => this.page(request),
         follow: (request, signal) => this.openFollow(request, signal),
         control: signal => this.openControl(signal),

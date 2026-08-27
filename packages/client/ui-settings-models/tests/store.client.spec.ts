@@ -58,10 +58,33 @@ function api(overrides: {
   describeCredentials?: (refs: readonly string[]) => Promise<RemoteAnswer<Record<string, unknown>>>
 } = {}) {
   const seenRefs: string[][] = []
+  const providers = overrides.providers ?? (() => Promise.resolve(ok({ providers: DIRECTORY })))
+  let providerBatch: Promise<RpcResponse<{ providers: typeof DIRECTORY }>> | undefined
+  let providerBatchReads = 0
+  const readProviderBatch = (): Promise<RpcResponse<{ providers: typeof DIRECTORY }>> => {
+    providerBatch ??= providers()
+    const current = providerBatch
+    providerBatchReads += 1
+    if (providerBatchReads % 2 === 0) providerBatch = undefined
+    return current
+  }
+  const mapProviderBatch = async <T>(
+    project: (rows: typeof DIRECTORY) => T,
+  ): Promise<RemoteAnswer<T>> => {
+    const response = await readProviderBatch()
+    return response.result.ok
+      ? remoteOk(project(response.result.value.providers))
+      : remoteFail(response.result.error.message)
+  }
   const face = {
     llm: {
-      providers: overrides.providers ?? (() => Promise.resolve(ok({ providers: DIRECTORY }))),
-      models: () => Promise.resolve(ok({ groups: [], failures: [] })),
+      listProviders: () => mapProviderBatch(rows => rows
+        .filter(row => row.active)
+        .map(row => ({ id: row.provider, name: row.displayName }))),
+      listConfigurableProviders: () => mapProviderBatch(rows => rows
+        .filter(row => row.settingsNs !== '')
+        .map(({ active: _active, ...row }) => row)),
+      discoverModels: () => Promise.resolve(remoteOk([])),
     },
     settings: {
       describe: overrides.describeSettings

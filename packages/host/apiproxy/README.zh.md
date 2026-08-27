@@ -1,5 +1,5 @@
 ---
-description: "web GUI 宿主客户端共享的 API 网关：浏览器安全的 API 约定、fetch 载体，以及每种客户端形态都使用的宿主侧网关服务。"
+description: "Host 启动元数据与 Session 日志 ZIP 流下载的旧版 HTTP 载体；普通业务操作由生成的 Typert Remote 持有。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-web GUI 宿主的每个客户端都通过 `dsh-host-apiproxy` 调用同一套类型化 API——会话与历史、工作区、目录选择、模型选择、agent preset、skill、目标、设置、LLM 目录、事件与会话导出——由 fetch 载体经由 HTTP 或进程内搬运。约定层零 Node 依赖、可从浏览器导入，因此一套类型化 API 同时服务 Web 服务器、Electron 与任何未来的客户端形态。随发行版交付的 Web 组合在 [`dsh-web-app`](../../bundle/web-app/README.zh.md) 中组装网关。选择载体、调用领域 API 与配置网关在前；协议内部细节放在下方可折叠的开发者章节中。
+`dsh-host-apiproxy` 承载尚不属于生成业务 Remote 的两项 Host 操作：`host.describe` 启动快照与流式 Session 日志 ZIP 下载。它的浏览器安全 envelope 与 fetch adapter 服务 HTTP 和进程内客户端，其余普通业务操作由 API Gateway 承载。随发行版交付的 Web 组合在 [`dsh-web-app`](../../bundle/web-app/README.zh.md) 中组装两种传输。
 
 ## 目录
 
@@ -25,7 +25,7 @@ web GUI 宿主的每个客户端都通过 `dsh-host-apiproxy` 调用同一套类
 <a id="use-this-package"></a>
 ## 使用本包
 
-当 GUI 宿主的客户端需要会话、工作区与配置 API 时组合网关：加载 `ApiProxyService`，把 `ctx.apiProxy` 包进一个载体，然后调用类型化的领域方法。
+当 GUI Host 需要启动元数据与 Session 日志导出时组合本包：加载 `ApiProxyService`，把 `ctx.apiProxy` 包进一个载体，其他业务调用使用生成的 Remote。
 
 ### 选择载体
 
@@ -33,30 +33,18 @@ web GUI 宿主的每个客户端都通过 `dsh-host-apiproxy` 调用同一套类
 
 ```text
 const client = new InProcessApiClient(toFetchHandler(ctx.apiProxy))
-const response = await client.sessions.list({})
+const response = await client.host.describe({})
 ```
 
 HTTP 载体在分发前以 415 拒绝非 JSON 的 POST 请求体，因此跨站「简单请求」永远无法盲目执行有副作用的方法。浏览器载体对每个 Host API 方法实施相同的 Host/Origin 检查与签名 cookie 认证（[`dsh-client-connection`](../../client/connection/README.zh.md)）；各 Client 功能仍可以在非 loopback 页面上拒绝原生操作或持久化操作。
 
 ### 网关暴露什么
 
-API 按领域分组：`sessions`（list、create、history、prompt、cancel、queue、models、selectModel、rename、fork、search、attachment）、`workspace`、`host`（describe、openPath）、`skills`、`agentPresets`、`goals`、`settings`、`llm`、`events` 与 `downloads`。sessions、workspace 与 events 契约分别归 Session Controller、Workspace Controller 与 API Remotes 包所有；其余领域契约与 `RpcMethodMap` 位于 `src/api/`。
-
-### 会话与历史
-
-`session.history` 对会话的追加消息流分页（`maxMessages` 统计以追加方式进入 surface 的 `user/message` 与 `assistant/message` 事件，因此仅供模型使用的替换副本不占用配额），并让每一页保持一段连续的原始事件区间，这使压缩的仅日志摘要与引用它的替换留在同一页。尾页可选携带 `projections` 块——每个已注册投影单元的水位线快照——网关会为状态发生变化的单元推送实时的 `session/projection` 帧。`session.search` 是对 `session.list` 可见会话的有界内容搜索投影：至多 20 个命中、每个摘要至多 240 个码点，且每个命中都对照可见集合重新校验。
-
-### 工作区与会话列表
-
-`session.list` 与 `workspace.list` 是彼此独立的重连基线。空白会话在首轮开始前保持隐藏，归档会把会话从分组表面隐藏而不触碰其日志，注销注册则保留目录与会话日志。冷摘要通过探测一个小型合格工件来验证空白状态；projection cache miss 或陈旧提示会回退到 `createdAt`，因此最近工作过的大型会话可能在下一个 checkpoint 前排得偏低。
+一元映射只包含 `host.describe`；直接下载路由是 `GET` 或 `HEAD /api/session.export`。Session、workspace、settings、credentials、LLM、skill、file-reference、command 与 interaction 操作都是由各业务包持有、并由 [`dsh-api-remotes`](../../api/remotes/README.zh.md) 组装的生成 Remote。
 
 ### 导出会话
 
 `GET /api/session.export?sessionId=…&includeDescendants=true` 流式输出一个 ZIP，其中每个会话的已存工件文本原样包含，每个子代理后代位于 `subagents/<id>/` 下，每张被引用的图片位于 `media/<attachmentId>.<ext>` 下。`HEAD` 在无请求体的情况下运行同样的根准备，因此浏览器能在把 GET 交给下载管理器之前检测到流前失败。响应边生成边分块输出，`sessionExportCompressionLevel`（0–9，默认 6）在 CPU 与延迟之间权衡归档大小。缺少 persistence、session-query 或 attachment 服务时回答 500，后端没有按会话原始工件时回答 501，根会话缺失时回答 404。
-
-### 模型选择、preset、命令与配置
-
-`session.models` 把当前 `ModelSelection` 与按提供方分组的咨询模型分开报告，`session.selectModel` 通过共享的 `agent-default-model` settings 分节把已接受的切换保存为部署默认值——指向不可用提供方的默认值仍会作为 `current` 送到选择器，而不是被静默替换。每次访问都先解析进程内选择，再读会话最新的 `request/header`，最后使用部署默认值。日志中标记为适配器默认值的推理强度不会进入恢复后的选择，因此下一次解析不会把它提升为显式选择，也不会记录虚假 header 变更。`agentPreset.list` 暴露部署的 preset 名单，每行带 `trust`，preset 无法组合会话时带 `broken` 原因；`agentPreset.select` 替换空白会话的组合，一旦跑过一轮即被拒绝。`skill.list` 为 composer 菜单提供每个 skill 的 `modelInvocable` 标志，`command.execute` 以纯准入语义运行斜杠命令，其结局由落账的 `command/run`／`command/done` 事件对承载。剩余配置操作是 `settings.openDocument` 与 `llm.*` 领域；生成的 settings 与凭据方法归 [`@deepseek-ai/dsh-api-settings-controller`](../../api/settings-controller/README.zh.md) 所有。
 
 ### 配置
 
@@ -88,19 +76,18 @@ API 按领域分组：`sessions`（list、create、history、prompt、cancel、q
 | [`src/fetch/client.ts`](src/fetch/client.ts) | 客户端载体：`AbstractApiClient` 及平台子类、`InProcessApiClient` |
 | [`src/api-proxy.ts`](src/api-proxy.ts) | 网关实现：基于所组合宿主上下文的 `createApiProxy` |
 | [`src/session-export.ts`](src/session-export.ts) | 会话日志 ZIP 导出：原始工件读取、媒体收集、fflate 流式输出 |
-| [`src/native-path-opener.ts`](src/native-path-opener.ts) | 平台路径打开器（`open`／`Invoke-Item`／`xdg-open`、WSL 转换） |
 
 ### 网关服务
 
-`ApiProxyService` 提供 `ctx.apiProxy`，并基于所组合的宿主上下文实现约定——会话、工作区注册表、目录选择器、agent preset、设置、LLM、事件与下载。Host cwd 是默认项目目录。网关只在 `host.describe` 报告的部署元数据中消费 `ctx.agentDefaultModel`；保存已接受的切换由 Session Controller 的 `session.selectModel` 通过共享的 agent-default-model settings 分节完成。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。
+`ApiProxyService` 提供 `ctx.apiProxy`，通过 `host.describe` 报告进程元数据，并把 Session 归档生成委派给 persistence、query、attachment 与 live Session 服务。Host cwd 是默认项目目录。产品的 `dsh --profile headless` 是直连 core 的入口，不挂载本包。
 
 ### 请求流
 
-请求进入载体，载体分两层解析信封与业务载荷、按方法分发，并返回回显请求 `rpcId` 的响应。服务器推送——会话与工作区 follow 流——搭乘 API Gateway 的 `/api/remote.mux` WebSocket，投递 `opened` 及之后无间隙的 `event` 帧，由客户端解码。一元请求携带载体的中止信号，因此调用方／连接的取消会传播到底层工作。
+`host.describe` 请求进入 fetch 载体，载体解析 envelope 与 payload、分发方法，并返回回显请求 `rpcId` 的响应。Session 导出不使用该 envelope，因为其流式 ZIP body 与 HTTP 状态就是结果。
 
 ### 网关拥有什么
 
-网关是协议约定外加一层对别处所拥有服务的宿主侧投影：它不发出任何 cordis 事件，它所投影的会话／agent 事件流由各自所属包的伴生插件断言。载体不持有其他领域的知识——每个投影值在注册表内部已经过其单元自己的 schema。
+本包持有旧版 envelope、Host 启动快照与归档下载。API Gateway 持有生成的 Remote 分发与流；业务包持有各自的方法和结果类型。
 
 </details>
 
@@ -135,12 +122,7 @@ API 按领域分组：`sessions`（list、create、history、prompt、cancel、q
 
 这些限制说明网关在何处不合适；它们是当前包约束，不是任务积压。
 
-- **转发的 Remote 事件搭乘网关流帧封装**——投递路径复用 API Gateway 的 Remote 流 mux、不必新开第三条下行通道，因此读起来像是本包拥有 Remote 事件契约。并非如此：名单归 `dsh-api-remotes`，消费端动词是 `ctx.remote.$on`（[原委](../../../.agents/notes/implemented/architecture/2026-08-10-remote-event-delivery.zh.md)）。
-- **待处理交互状态位于宿主侧**——浏览器的待处理交互快照由插件注册的待处理领域（用户提问与审批）折叠而成；wire 未定义专门的 respond 路由，也没有 `RpcReceipt` 类型。
-- **预留 seam 不进入 `RpcMethodMap`**——`prompt.mode: 'inject'`、`job.list` 和描述字段 `hostInstanceId` 都是已记录的预留项；模型发现使用 `llm.models`。未知方法会在信封解析时直接失败，而不会返回「尚未实现」错误码。
 - **没有协议版本字段**——客户端与宿主一同发布；只有出现独立发布的客户端后，`host.describe` 才会增加版本协商字段。
-- **搜索失败会包含提供方诊断信息**——网关是单用户本地服务；将其暴露给多名用户的载体必须用可安全公开的诊断信息替代内部搜索细节。
-- **冷列表提示只向“保持可见、排序偏旧”降级**——projection cache miss 或陈旧的 `lastPromptAt` 会回退到 `createdAt`，除非符合资格的小工件提供精确折叠。[有界空白验证决策](../../../.agents/notes/implemented/bug-fix/2026-08-13-bounded-cold-blank-verification.zh.md)规定了这个安全方向；权威且精确的最近时间索引仍属于[最后活动索引提案](../../../.agents/notes/proposed/architecture/2026-07-29-durable-last-activity-index.zh.md)的范围。
 
 <a id="dev-note"></a>
 ### 开发备注
