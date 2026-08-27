@@ -1926,6 +1926,28 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['xy'])
   }, 15_000)
 
+  it('seals the open hold past MAX_PENDING_CHUNKS without changing the merged entry', async () => {
+    // A budget-sized single-character open flood would otherwise accumulate
+    // thousands of fragment array slots (each a slot plus string header, ~30x
+    // overhead the byte cap cannot see). The hold seals into one block past
+    // MAX_PENDING_CHUNKS; the merged entry is byte-identical.
+    const { runtime } = await setup({ maxLogBytes: 65536 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"x\",\"open\":true}\\n')",
+        // 3000 single-character open continuations (over MAX_PENDING_CHUNKS).
+        'for _ in range(3000):',
+        "    os.write(3, b'{\"type\":\"log\",\"text\":\"a\",\"open\":true}\\n')",
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"y\"}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['x' + 'a'.repeat(3000) + 'y'])
+  }, 15_000)
+
   it('bounds a forged open-frame flood against the log budget', async () => {
     // The open hold must be bounded by the ledger: without the exact-cost check
     // a forged open flood would grow the held fragment without touching
