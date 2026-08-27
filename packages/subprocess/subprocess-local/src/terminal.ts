@@ -139,7 +139,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     if (this.exited) return
     if (this.rootIdentity !== undefined) {
       try {
-        this.inspector.signalProcess(this.rootIdentity, 'SIGKILL', this.inspector.snapshot())
+        this.inspector.signalProcess(this.rootIdentity, 'SIGKILL')
       } catch (_rootExitedDuringHostExit) {
         // Exact identity signalling contains both exit races and PID reuse.
       }
@@ -175,6 +175,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   }
 
   private async waitForMembers(members: ProcessIdentity[]): Promise<ProcessIdentity[]> {
+    if (members.length === 0) return []
     const until = Date.now() + this.graceMs
     let survivors = this.survivors(members, this.inspector.snapshot())
     while (survivors.length > 0 && Date.now() < until) {
@@ -185,10 +186,11 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   }
 
   private signalMembers(members: ProcessIdentity[], signal: 'SIGTERM' | 'SIGKILL'): void {
-    const observed = this.inspector.snapshot()
     for (const member of members) {
       try {
-        this.inspector.signalProcess(member, signal, observed)
+        // Each signal reads its own identity fence, inside this try: a failed
+        // read must cost one target, never the rest of a teardown round.
+        this.inspector.signalProcess(member, signal)
       } catch (_alreadyExitedDuringSignal) {
         // The exact process identity is rechecked; a same-tick exit is success.
       }
@@ -264,9 +266,9 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     // (the same console-list agent), so the tiers verify the shell's absence
     // through the inspector instead of waiting on `done` alone.
     const shellGone = (): boolean =>
-      this.exited || (this.rootIdentity !== undefined && !this.inspector.snapshot().alive(this.rootIdentity))
+      this.exited || (this.rootIdentity !== undefined && !this.inspector.isAlive(this.rootIdentity))
     if (!shellGone() && this.rootIdentity !== undefined) {
-      this.inspector.signalProcess(this.rootIdentity, 'SIGTERM', this.inspector.snapshot())
+      this.inspector.signalProcess(this.rootIdentity, 'SIGTERM')
       await this.waitForWindowsShellExit()
     }
     if (!shellGone() && this.rootIdentity === undefined) {
@@ -278,7 +280,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
       await Promise.race([this.done.then(() => undefined), delay(this.graceMs)])
     }
     if (!shellGone() && this.rootIdentity !== undefined) {
-      this.inspector.signalProcess(this.rootIdentity, 'SIGKILL', this.inspector.snapshot())
+      this.inspector.signalProcess(this.rootIdentity, 'SIGKILL')
       await this.waitForWindowsShellExit()
     }
     if (!shellGone()) throw new Error(`terminal cleanup failed; surviving pid: ${this.pid}`)
@@ -287,7 +289,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
   private async waitForWindowsShellExit(): Promise<void> {
     const until = Date.now() + this.graceMs
     while (!this.exited && Date.now() < until) {
-      if (this.rootIdentity !== undefined && !this.inspector.snapshot().alive(this.rootIdentity)) return
+      if (this.rootIdentity !== undefined && !this.inspector.isAlive(this.rootIdentity)) return
       await delay(Math.min(25, Math.max(1, until - Date.now())))
     }
   }
@@ -317,7 +319,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     if (this.exited) return
     /* v8 ignore next -- stopShellWindows() verified the shell is gone or threw;
        the identity re-check is a defensive fence for a future caller. */
-    if (this.rootIdentity !== undefined && this.inspector.snapshot().alive(this.rootIdentity)) return
+    if (this.rootIdentity !== undefined && this.inspector.isAlive(this.rootIdentity)) return
     this.exited = true
     this.output.end()
     this.outcome.resolve({ exitCode: null, signal: null })

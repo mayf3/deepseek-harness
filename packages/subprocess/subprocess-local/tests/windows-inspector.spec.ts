@@ -16,10 +16,12 @@ function fakeInternals() {
   const entries: ProcessEntry[] = []
   const states = new Map<number, WindowsProcessState>()
   const kills: Array<[number, boolean]> = []
+  const counts = { enumerations: 0, stateReads: 0 }
   return {
+    counts,
     internals: {
-      snapshot: () => [...entries],
-      processState: pid => states.get(pid),
+      snapshot: () => { counts.enumerations += 1; return [...entries] },
+      processState: (pid) => { counts.stateReads += 1; return states.get(pid) },
       taskkill: (pid: number, force: boolean) => { kills.push([pid, force]) },
     } satisfies WindowsProcessInspectorInternals,
     add(entry: ProcessEntry, started?: string, active = true): void {
@@ -29,6 +31,29 @@ function fakeInternals() {
     kills,
   }
 }
+
+describe('WindowsProcessInspector table enumeration', () => {
+  it('enumerates the process table only for questions that need it', () => {
+    const fake = fakeInternals()
+    fake.add({ pid: 10, parentPid: 0 }, 't10')
+    fake.add({ pid: 11, parentPid: 10 }, 't11')
+    const inspector = new WindowsProcessInspector(fake.internals)
+
+    // Liveness is a per-handle question on Windows, so a snapshot asked only
+    // for liveness must not pay a Toolhelp32 walk. The terminal's Windows
+    // teardown polls exactly this way, every 25 ms.
+    const observed = inspector.snapshot()
+    expect(observed.alive({ pid: 11, started: 't11' })).toBe(true)
+    expect(fake.counts.enumerations).toBe(0)
+
+    expect(observed.tree(10)).toHaveLength(2)
+    expect(fake.counts.enumerations).toBe(1)
+
+    // A second tree question reuses the same observation.
+    observed.tree(10)
+    expect(fake.counts.enumerations).toBe(1)
+  })
+})
 
 describe('windowsProcessTree', () => {
   it('walks a table children-first with readable identities only', () => {
@@ -78,12 +103,12 @@ describe('WindowsProcessInspector (injected internals)', () => {
       { pid: 11, started: 't11' },
       { pid: 10, started: 't10' },
     ])
-    expect(inspector.snapshot().alive({ pid: 11, started: 't11' })).toBe(true)
-    expect(inspector.snapshot().alive({ pid: 11, started: 'stale' })).toBe(false)
-    expect(inspector.snapshot().alive({ pid: 99, started: 't99' })).toBe(false)
+    expect(inspector.isAlive({ pid: 11, started: 't11' })).toBe(true)
+    expect(inspector.isAlive({ pid: 11, started: 'stale' })).toBe(false)
+    expect(inspector.isAlive({ pid: 99, started: 't99' })).toBe(false)
 
     fake.add({ pid: 12, parentPid: 10 }, 't12', false)
-    expect(inspector.snapshot().alive({ pid: 12, started: 't12' })).toBe(false)
+    expect(inspector.isAlive({ pid: 12, started: 't12' })).toBe(false)
   })
 
   it('maps SIGKILL to a forced taskkill and other signals to the grace form', () => {
@@ -100,9 +125,9 @@ describe('WindowsProcessInspector (injected internals)', () => {
     fake.add({ pid: 10, parentPid: 0 }, 't10')
     fake.add({ pid: 11, parentPid: 10 }, 't11', false)
     const inspector = new WindowsProcessInspector(fake.internals)
-    inspector.signalProcess({ pid: 10, started: 't10' }, 'SIGKILL', inspector.snapshot())
-    inspector.signalProcess({ pid: 11, started: 't11' }, 'SIGKILL', inspector.snapshot())
-    inspector.signalProcess({ pid: 10, started: 'stale' }, 'SIGTERM', inspector.snapshot())
+    inspector.signalProcess({ pid: 10, started: 't10' }, 'SIGKILL')
+    inspector.signalProcess({ pid: 11, started: 't11' }, 'SIGKILL')
+    inspector.signalProcess({ pid: 10, started: 'stale' }, 'SIGTERM')
     expect(fake.kills).toEqual([[10, true]])
   })
 
@@ -139,12 +164,10 @@ win32('WindowsProcessInspector over the real koffi bindings', () => {
 
   it('reports unreadable identities for absent processes and no-ops tree signalling', () => {
     const inspector = createWindowsProcessInspector()
-    expect(inspector.snapshot().alive({ pid: 0x7FFFFFFF, started: 'absent' })).toBe(false)
+    expect(inspector.isAlive({ pid: 0x7FFFFFFF, started: 'absent' })).toBe(false)
     expect(() => { inspector.signalGroup(0x7FFFFFFF, 'SIGKILL') }).not.toThrow()
     expect(() => { inspector.signalGroup(0x7FFFFFFF, 'SIGTERM') }).not.toThrow()
     expect(() => { inspector.signalGroup(0, 'SIGKILL') }).not.toThrow()
-    expect(() => {
-      inspector.signalProcess({ pid: 0x7FFFFFFF, started: 'absent' }, 'SIGKILL', inspector.snapshot())
-    }).not.toThrow()
+    expect(() => { inspector.signalProcess({ pid: 0x7FFFFFFF, started: 'absent' }, 'SIGKILL') }).not.toThrow()
   })
 })

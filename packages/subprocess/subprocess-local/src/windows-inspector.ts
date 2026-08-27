@@ -97,18 +97,25 @@ export class WindowsProcessInspector implements ProcessInspector {
     return false
   }
 
+  isAlive(identity: ProcessIdentity): boolean {
+    const state = this.internals.processState(identity.pid)
+    return state?.active === true && state.started === identity.started
+  }
+
   snapshot(): ProcessSnapshot {
-    const entries = this.internals.snapshot()
+    // Enumerated on the first question that reads the table. Liveness never
+    // does — wait state is a per-handle question here — so the Windows
+    // teardown poll, which asks only for liveness, pays no Toolhelp32 walk.
+    let entries: ProcessEntry[] | undefined
     return {
-      tree: rootPid => windowsProcessTree(entries, rootPid, pid => this.internals.processState(pid)?.started),
+      tree: rootPid => windowsProcessTree(
+        entries ??= this.internals.snapshot(),
+        rootPid,
+        pid => this.internals.processState(pid)?.started,
+      ),
       // Windows has no POSIX sessions; the shell pid stands in as a pseudo group.
       session: () => [],
-      alive: (identity) => {
-        // Wait state is a per-handle question, not a Toolhelp32 column, so
-        // liveness reads the live process object rather than `entries`.
-        const state = this.internals.processState(identity.pid)
-        return state?.active === true && state.started === identity.started
-      },
+      alive: identity => this.isAlive(identity),
     }
   }
 
@@ -116,8 +123,8 @@ export class WindowsProcessInspector implements ProcessInspector {
     this.internals.taskkill(pgid, signal === 'SIGKILL')
   }
 
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL', observed: ProcessSnapshot): void {
-    if (observed.alive(identity)) this.internals.taskkill(identity.pid, signal === 'SIGKILL')
+  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL'): void {
+    if (this.isAlive(identity)) this.internals.taskkill(identity.pid, signal === 'SIGKILL')
   }
 }
 /* jscpd:ignore-end */

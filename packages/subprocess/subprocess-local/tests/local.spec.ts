@@ -303,6 +303,7 @@ describe('LocalSubprocessRuntime', () => {
       foregroundPgid: () => undefined,
       isStdinWaiting: () => false,
       snapshot: () => ({ tree: () => [], session: () => [], alive: () => false }),
+      isAlive: () => false,
       signalGroup: () => {},
       signalProcess: () => {},
     }
@@ -372,6 +373,7 @@ describe('LocalSubprocessRuntime', () => {
           session: () => [],
           alive: identity => alive.has(identity.pid),
         }),
+        isAlive: identity => alive.has(identity.pid),
         signalGroup: () => {},
         signalProcess: () => {},
       }

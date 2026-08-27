@@ -34,6 +34,7 @@ class FakeInspector implements ProcessInspector {
       alive: (identity: ProcessIdentity) => this.alive.has(identity.pid),
     }
   }
+  isAlive(identity: ProcessIdentity) { return this.alive.has(identity.pid) }
   signalGroup(pgid: number, signal: TerminalSignal) {
     if (this.throwGroup) throw new Error('group failed')
     this.groups.push([pgid, signal])

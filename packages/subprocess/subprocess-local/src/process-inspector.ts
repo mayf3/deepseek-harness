@@ -20,15 +20,16 @@ interface FileStatus {
  * One observation of the platform process table, shared by every question a
  * single readiness poll or teardown pass asks.
  *
- * The table is read once, at capture — a `/bin/ps` fork on macOS, a `/proc`
- * walk on Linux, a Toolhelp32 enumeration on Windows. Answering {@link tree},
- * {@link session}, or {@link alive} never re-reads it, which is what keeps a
- * poll's cost independent of how many descendants the running command spawned.
- * Windows liveness additionally consults the live process handle, because wait
- * state is not a table column there.
+ * The table is read at most once, on the first question that needs it — a
+ * `/bin/ps` fork on macOS, a `/proc` walk on Linux, a Toolhelp32 enumeration on
+ * Windows. Later questions never re-read it, which is what keeps a poll's cost
+ * independent of how many descendants the running command spawned. Windows
+ * liveness needs no table at all: wait state is a per-handle question there, so
+ * a snapshot asked only for liveness never enumerates.
  *
- * A snapshot is a point-in-time view. Take a fresh one per poll or teardown
- * pass; a stale one must never decide that a process is still worth signalling.
+ * A snapshot answers what the process table showed, which is what batch
+ * filtering wants and what signalling must not use: {@link ProcessInspector.isAlive}
+ * is the fence a signal takes, because it reads current state instead.
  */
 export interface ProcessSnapshot {
   /**
@@ -64,17 +65,34 @@ export interface ProcessInspector {
   isStdinWaiting(pgid: number, shellPid: number): boolean
   /**
    * Read the process table once and answer tree, session, and liveness from it.
-   * @returns A point-in-time process-table observation.
+   * @returns A process-table observation whose reads are shared.
    */
   snapshot(): ProcessSnapshot
+  /**
+   * Return whether the exact identity is a non-quiescent process right now.
+   *
+   * Reads the narrowest per-identity source the platform offers rather than a
+   * whole table, so a signalling round can re-check every target without
+   * paying for a scan. Callers filtering many members at once want
+   * {@link ProcessSnapshot.alive} instead.
+   *
+   * @param identity - PID plus start identity to match.
+   * @returns Whether that exact identity — not merely that PID — is running.
+   */
+  isAlive(identity: ProcessIdentity): boolean
   signalGroup(pgid: number, signal: SubprocessTerminalSignal): void
   /**
    * Signal one exact process identity, fenced against PID reuse.
+   *
+   * The fence reads current state immediately before the signal. An observation
+   * taken earlier in the same round cannot stand in for it: the observation
+   * preserves the original PID-to-start-time pairing, so a recycled PID would
+   * still match and take a signal meant for the process that exited.
+   *
    * @param identity - PID plus start identity to signal.
    * @param signal - termination signal to deliver.
-   * @param observed - observation the identity fence reads; pass one taken for this teardown pass.
    */
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL', observed: ProcessSnapshot): void
+  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL'): void
 }
 
 /** Testable boundary around filesystem, process-table, and signal syscalls. */
@@ -333,13 +351,14 @@ abstract class PosixProcessInspector implements ProcessInspector {
   abstract foregroundPgid(shellPid: number): number | undefined
   abstract isStdinWaiting(pgid: number, shellPid: number): boolean
   abstract snapshot(): ProcessSnapshot
+  abstract isAlive(identity: ProcessIdentity): boolean
 
   signalGroup(pgid: number, signal: SubprocessTerminalSignal): void {
     this.internals.kill(-pgid, signal)
   }
 
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL', observed: ProcessSnapshot): void {
-    if (observed.alive(identity)) this.internals.kill(identity.pid, signal)
+  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL'): void {
+    if (this.isAlive(identity)) this.internals.kill(identity.pid, signal)
   }
 }
 
@@ -438,6 +457,11 @@ class LinuxProcessInspector extends PosixProcessInspector {
     return false
   }
 
+  isAlive(identity: ProcessIdentity): boolean {
+    const stat = readLinuxStat(this.internals, identity.pid)
+    return stat?.started === identity.started && !quiescent(stat.state)
+  }
+
   snapshot(): ProcessSnapshot {
     return new PosixProcessSnapshot(numericEntries(this.internals, '/proc').flatMap((pid) => {
       const stat = readLinuxStat(this.internals, pid)
@@ -481,6 +505,11 @@ class MacProcessInspector extends PosixProcessInspector {
 
   isStdinWaiting(_pgid: number, _shellPid: number): boolean {
     return false
+  }
+
+  isAlive(identity: ProcessIdentity): boolean {
+    return macProcessTable(this.internals)
+      .some(entry => entry.pid === identity.pid && entry.started === identity.started)
   }
 
   snapshot(): ProcessSnapshot {

@@ -138,14 +138,15 @@ describe('Linux process inspector', () => {
     expect(observed.alive({ pid: 10, started: '500' })).toBe(true)
     expect(observed.alive({ pid: 10, started: 'old' })).toBe(false)
     inspector.signalGroup(40, 'SIGINT')
-    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGTERM', observed)
-    inspector.signalProcess({ pid: 10, started: 'old' }, 'SIGKILL', observed)
+    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGTERM')
+    inspector.signalProcess({ pid: 10, started: 'old' }, 'SIGKILL')
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
     fake.files.set('/proc/10/stat', stat(10, 20, 30, 40, '500', 1, 'Z'))
-    // A zombie is present in the table but never signallable; a fresh capture sees the new state.
-    const afterExit = inspector.snapshot()
-    expect(afterExit.alive({ pid: 10, started: '500' })).toBe(false)
-    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGKILL', afterExit)
+    // A zombie is present in the table but never signallable; both the batch
+    // view and the signal fence report it quiescent once the state changes.
+    expect(inspector.snapshot().alive({ pid: 10, started: '500' })).toBe(false)
+    expect(inspector.isAlive({ pid: 10, started: '500' })).toBe(false)
+    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGKILL')
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
   })
 
@@ -298,8 +299,8 @@ describe('macOS process inspector', () => {
     expect(observed.session(10)).toEqual([])
     expect(observed.alive({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' })).toBe(true)
     inspector.signalGroup(55, 'SIGTSTP')
-    inspector.signalProcess({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' }, 'SIGKILL', observed)
-    inspector.signalProcess({ pid: 12, started: 'missing' }, 'SIGTERM', observed)
+    inspector.signalProcess({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' }, 'SIGKILL')
+    inspector.signalProcess({ pid: 12, started: 'missing' }, 'SIGTERM')
     expect(fake.kills).toEqual([[-55, 'SIGTSTP'], [11, 'SIGKILL']])
 
     fake.setPs(' 10 11 Mon Jul 21 10:00:00 2026\n 11 10 Mon Jul 21 10:00:01 2026\n')
@@ -307,6 +308,20 @@ describe('macOS process inspector', () => {
       { pid: 11, started: 'Mon Jul 21 10:00:01 2026' },
       { pid: 10, started: 'Mon Jul 21 10:00:00 2026' },
     ])
+  })
+
+  it('re-reads the process table before signalling instead of trusting an earlier observation', () => {
+    const fake = fakeInternals()
+    fake.setPs(' 11 10 Mon Jul 21 10:00:01 2026\n')
+    const inspector = createProcessInspector('darwin', 'arm64', fake.internals)
+    inspector.snapshot()
+    // The member exits after that observation; a recycled pid would otherwise
+    // inherit the observed identity and take the signal meant for the original.
+    fake.setPs('')
+
+    inspector.signalProcess({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' }, 'SIGKILL')
+
+    expect(fake.kills).toEqual([])
   })
 
   it('returns undefined for missing or invalid foreground groups and dispatches platform inspectors', () => {

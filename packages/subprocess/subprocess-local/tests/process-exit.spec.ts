@@ -68,10 +68,9 @@ function cleanupTree(state: TreeState | undefined, identities: ProcessIdentity[]
     return
   }
   const inspector = createProcessInspector()
-  const observed = inspector.snapshot()
   for (const identity of identities) {
     try {
-      inspector.signalProcess(identity, 'SIGKILL', observed)
+      inspector.signalProcess(identity, 'SIGKILL')
     } catch (_alreadyGone) {
       // Exact start identity prevents PID-reuse cleanup from reaching another process.
     }

@@ -76,23 +76,29 @@ class FakeInspector implements ProcessInspector {
   readTree: () => ProcessIdentity[] = () => this.root === undefined ? this.members : [this.root, ...this.members]
   readSession: () => ProcessIdentity[] = () => this.sessionMembers
   readAlive: (identity: ProcessIdentity) => boolean = identity => this.alive.has(identity.pid)
+  /** Liveness as of right now; tests diverge it from readAlive to stage an exit between scan and signal. */
+  readCurrentAlive: (identity: ProcessIdentity) => boolean = identity => this.readAlive(identity)
+  /** Counts process-table captures so read-amplification cases can pin them. */
+  captures = 0
 
   snapshot(): ProcessSnapshot {
+    this.captures += 1
     return {
       tree: () => this.readTree(),
       session: () => this.readSession(),
       alive: identity => this.readAlive(identity),
     }
   }
+
+  isAlive(identity: ProcessIdentity) { return this.readCurrentAlive(identity) }
   signalGroup(pgid: number, signal: SubprocessTerminalSignal) {
     if (this.throwGroup) throw new Error('group failed')
     this.groups.push([pgid, signal])
   }
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL', observed: ProcessSnapshot) {
+  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL') {
     // Mirrors the real inspectors' alive-gated signalling.
-    if (!this.alive.has(identity.pid)) return
     if (this.throwProcess) throw new Error('process raced')
-    if (!observed.alive(identity)) return
+    if (!this.isAlive(identity)) return
     this.processes.push([identity.pid, signal])
     if (this.removeOnSignal) this.alive.delete(identity.pid)
   }
@@ -116,8 +122,8 @@ describe('LocalTerminalHandle', () => {
     inspector.alive.add(pty.pid)
     inspector.alive.add(first.pid)
     const signalProcess = inspector.signalProcess.bind(inspector)
-    inspector.signalProcess = (identity, signal, observed) => {
-      signalProcess(identity, signal, observed)
+    inspector.signalProcess = (identity, signal) => {
+      signalProcess(identity, signal)
       if (identity.pid === pty.pid) {
         inspector.members = [first, late]
         inspector.alive.add(late.pid)
@@ -524,6 +530,37 @@ describe('LocalTerminalHandle on Windows', () => {
     await handle.terminate()
     expect(pty.kills).toHaveLength(1)
     expect(inspector.processes).toEqual([])
+  })
+})
+
+describe('signalling freshness and containment', () => {
+  it('keeps synchronous host exit going when the process table cannot be captured', () => {
+    const pty = new FakePty()
+    const inspector = new FakeInspector()
+    inspector.alive.add(pty.pid)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10)
+    inspector.snapshot = () => { throw new Error('process table unavailable') }
+
+    expect(() => { handle.terminateForHostExit() }).not.toThrow()
+
+    // forceStopShell still runs: a failed scan must not cost the PTY root.
+    expect(inspector.processes).toEqual([[pty.pid, 'SIGKILL']])
+  })
+
+  it('captures no process table for a signalling round with no members', () => {
+    const pty = new FakePty()
+    const inspector = new FakeInspector()
+    inspector.alive.add(pty.pid)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10)
+    // Only the shell exists, so every descendant scan yields an empty round.
+    inspector.readTree = () => [{ pid: pty.pid, started: 'shell' }]
+    inspector.captures = 0
+
+    handle.terminateForHostExit()
+
+    // Two descendant scans and nothing else: no capture for either empty
+    // signalling round, and none for the identity-fenced shell kill.
+    expect(inspector.captures).toBe(2)
   })
 })
 

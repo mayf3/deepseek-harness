@@ -30,19 +30,23 @@ Teardown has the same structure. `signalProcess` fences each signal against PID 
 
 Each caller captures one snapshot and answers every question of a single pass from it. `LocalTerminalHandle.descendants()` takes a snapshot, reads the tree and session from it, and filters survivors through the same `alive`, so a readiness poll costs one table read regardless of descendant count. `waitForMembers` captures a fresh snapshot per polling iteration, because its whole purpose is observing change.
 
-`signalProcess(identity, signal, observed)` takes the caller's observation rather than reading the table itself. The PID-reuse fence stays, and `signalMembers` now captures once for a whole signalling round instead of once per member. Passing the observation explicitly is what keeps Linux teardown from regressing: `alive` there is answered from a `/proc` walk the snapshot already paid for, not from a fresh walk per member.
+Signalling does not share that observation. `ProcessInspector.isAlive(identity)` answers current state from the narrowest per-identity source a platform offers — one `/proc/<pid>/stat` read on Linux, one `ps` table on macOS, one process-handle check on Windows — and `signalProcess` takes that fence immediately before delivering the signal. An observation cannot stand in for it: the observation preserves the original PID-to-start-time pairing, so a recycled PID would still match it and take a signal meant for the process that exited. Reading the fence per target also keeps a failed read costing one target instead of the rest of a teardown round, which is what the [synchronous exit-cleanup contract](../bug-fix/2026-08-11-synchronous-subprocess-exit-cleanup.md) requires.
+
+`signalMembers` and `waitForMembers` return before capturing anything when a round has no members, so a command that spawned no descendants pays no table read for its teardown sweeps.
 
 Platform differences live in how a snapshot is built, not in what it promises:
 
 - **macOS** builds it from one `ps` table. That table exposes neither a session id nor a state column, so `session` is empty and `alive` reports presence with a matching start identity.
 - **Linux** walks `/proc` once, carrying each entry's parent, start identity, session, and state. `alive` treats the `Z`, `X`, and `x` states as quiescent, as a per-pid `stat` read did.
-- **Windows** captures the Toolhelp32 enumeration for `tree`, has no POSIX sessions, and answers `alive` from the live process handle, because wait state is not a table column there.
+- **Windows** enumerates Toolhelp32 lazily, on the first `tree` question. It has no POSIX sessions, and answers `alive` from the live process handle, because wait state is not a table column there — so a snapshot asked only for liveness never enumerates. The terminal's Windows teardown polls liveness every 25 ms and would otherwise walk and discard the whole table each time.
 
 `PosixProcessSnapshot` holds both POSIX shapes: a row's `session` and `state` are `undefined` where the platform's table omits them, which is what makes the macOS answers fall out of the shared implementation instead of a second class.
 
 ## Testing
 
-`packages/subprocess/subprocess-local/tests/terminal.spec.ts` drives a real `MacProcessInspector` over an injected `exec` and asserts one foreground inspection performs exactly one `-axo` table read at 0, 2, and 10 descendants. That count, not wall time, is the durable invariant: it holds on any host and fails the moment a caller re-reads the table per member.
+`packages/subprocess/subprocess-local/tests/terminal.spec.ts` drives a real `MacProcessInspector` over an injected `exec` and asserts one foreground inspection performs exactly one `-axo` table read at 0, 2, and 10 descendants. That count, not wall time, is the durable invariant: it holds on any host and fails the moment a caller re-reads the table per member. The same file pins that a signalling round with no members captures nothing, and that a capture failure during synchronous host exit still lets the PTY root be killed.
+
+`process-inspector.spec.ts` pins the fence directly: an identity observed alive and then absent from the table takes no signal. `windows-inspector.spec.ts` pins that a snapshot answering only liveness performs no Toolhelp32 enumeration.
 
 ## Alternatives considered
 
@@ -50,7 +54,7 @@ Platform differences live in how a snapshot is built, not in what it promises:
 
 **Caching the macOS table inside `MacProcessInspector` behind a short TTL.** This needs no interface change, but it makes staleness invisible: a caller cannot tell whether a liveness answer came from this instant or from the end of the previous poll, and a signal decided on a stale row is exactly what the PID-reuse fence exists to prevent. Hidden caching also conflicts with the repository's preference for explicit defaulting and explicit boundaries.
 
-**Keeping `isAlive` on the inspector next to `snapshot()`.** This avoids touching the signalling call sites, at the cost of two ways to ask one question, where only one of them is cheap in a loop. The asymmetry would have to be re-explained at every call site.
+**Fencing signals with the round's shared observation.** This removes the last per-member read and was the shape first implemented here. Review rejected it: the fence exists to defeat PID reuse, and an observation defeats the fence instead, because it carries the original PID-to-start-time pairing forward. The window is narrow — the kills in one round are microseconds apart, against a PID space of 99999 on macOS and 4194304 on Linux — but the `README` states the guarantee without qualification, and buying microseconds of teardown time by weakening it is the wrong trade. Keeping both `snapshot().alive` and `isAlive` is therefore not two ways to ask one question: one asks what the table showed, the other asks what is true now, and only the second may decide a signal.
 
 **Making `exec` asynchronous instead of reducing the read count.** An async `execFile` stops the poll from blocking the loop but still forks N+1 processes per poll; on a busy machine that trades a stall for sustained fork pressure. It remains a worthwhile follow-up on top of the reduced count, not a substitute for it.
 
@@ -58,9 +62,9 @@ Platform differences live in how a snapshot is built, not in what it promises:
 
 A readiness poll's process-table cost is now constant in descendant count. On macOS one poll performs one full table read plus the small `tpgid` read, which is the 0-descendant cost in the table above for every descendant count.
 
-Liveness for a single identity on Linux costs a full `/proc` walk rather than one `stat` read. Every caller that asks about several identities amortizes that walk across them, which is why `signalProcess` takes an observation rather than capturing its own; a future caller that genuinely needs one isolated liveness answer pays more than it did.
+Teardown keeps its previous per-signal cost: one narrow liveness read per target, which on macOS is one `ps` fork per member. That cost was never the measured problem — a terminal tears down once, while its readiness path polls up to 600 times — so the fix deliberately spends it to keep the fence reading current state.
 
-A snapshot is a point-in-time view, and the type's documentation says so. Holding one across an `await` and then signalling from it would widen the PID-reuse window that the fence narrows; `waitForMembers` re-captures per iteration for exactly this reason.
+A snapshot is a point-in-time view, and the type's documentation says so. `waitForMembers` re-captures per iteration because observing change is its purpose, and no signal is ever decided from a captured view.
 
 Every `ProcessInspector` implementation and test fake carries the new shape, including the Windows inspector and the `dsh-terminal-bash` session fake. Test fakes that previously replaced `processTree`, `processSession`, or `isAlive` to stage a scan now replace the corresponding per-question read hook, which keeps their staging behavior and call-counting identical.
 
