@@ -50,9 +50,10 @@ export class ClientInspectorSource extends InspectorSourceConnection {
     private readonly bootstrap: InspectorClientBootstrap,
     label = document.title || 'Client',
     private readonly sourceCatalog: ClientSourceCatalog | undefined = discoverInspectorClientSourceCatalog(),
+    realmSource = new ClientRealmSource(label),
   ) {
     super()
-    this.realmSource = new ClientRealmSource(label)
+    this.realmSource = realmSource
     this.lifecycle = new ClientBridgeLifecycle(bootstrap.reconnectBaseMs, bootstrap.reconnectMaxMs)
     this.publisher = new ClientBridgePublisher({
       topics: ['*'],
@@ -107,19 +108,23 @@ export class ClientInspectorSource extends InspectorSourceConnection {
     this.publisher.close()
     const socket = this.socket
     const generation = this.generation
-    if (socket?.readyState === WebSocket.OPEN && generation !== undefined) {
-      const frame: SourceCloseFrame = {
-        v: INSPECTOR_PROTOCOL_VERSION,
-        t: 'source/close',
-        sourceId: this.realmSource.sourceId,
-        generation,
+    try {
+      if (socket?.readyState === WebSocket.OPEN && generation !== undefined) {
+        const frame: SourceCloseFrame = {
+          v: INSPECTOR_PROTOCOL_VERSION,
+          t: 'source/close',
+          sourceId: this.realmSource.sourceId,
+          generation,
+        }
+        socket.send(JSON.stringify(frame))
+        socket.close(1000, 'Client source closed')
+      } else {
+        socket?.close()
       }
-      socket.send(JSON.stringify(frame))
-      socket.close(1000, 'Client source closed')
-    } else {
-      socket?.close()
+    } finally {
+      this.socket = undefined
+      this.realmSource.close()
     }
-    this.socket = undefined
   }
 
   private connect(): void {
