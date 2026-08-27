@@ -170,29 +170,34 @@ describe('Inspector Network domain', () => {
     expect(replay).toHaveBeenNthCalledWith(3, 'Network.loadingFinished', expect.any(Object))
   })
 
-  it('retains partial response bytes while reporting a post-header cancellation as failed', () => {
+  it('finishes a response whose observer clone ended with a capture error', () => {
     const sendEvent = vi.fn()
     const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
     const network = new NetworkDomain(store)
     network.enable({ sendEvent })
-    const records = requestRecords('canceled', 'partial')
+    const records = requestRecords('capture-error', 'partial')
     store.append(source, [
       ...records.slice(0, 3),
       {
         sequence: 4,
         monotonicMs: 4,
-        topic: 'fetch/error',
-        payload: { requestId: 'canceled', message: 'AbortError: aborted', canceled: true },
+        topic: 'fetch/end',
+        payload: {
+          requestId: 'capture-error',
+          capturedBytes: 7,
+          responseBodyTruncated: true,
+          responseCaptureError: 'AbortError: aborted',
+        },
       },
     ])
 
-    expect(sendEvent).toHaveBeenCalledWith('Network.loadingFailed', expect.objectContaining({
-      requestId: requestId('canceled'),
-      type: 'Fetch',
-      errorText: 'AbortError: aborted',
-      canceled: true,
+    expect(sendEvent).toHaveBeenCalledWith('Network.loadingFinished', expect.objectContaining({
+      requestId: requestId('capture-error'),
+      encodedDataLength: 7,
+      dshInspectorTruncated: true,
     }))
-    expect(network.handle('Network.getResponseBody', { requestId: requestId('canceled') }, { sendEvent: vi.fn() }))
+    expect(sendEvent.mock.calls.some(call => call[0] === 'Network.loadingFailed')).toBe(false)
+    expect(network.handle('Network.getResponseBody', { requestId: requestId('capture-error') }, { sendEvent: vi.fn() }))
       .toMatchObject({
         body: Buffer.from('partial').toString('base64'),
         dshInspectorTruncated: true,

@@ -113,7 +113,7 @@ Fetch capture is on by default and records the complete URL, all request and res
 
 The configured body limits bound retention rather than select fields: capture keeps the prefix and marks the result truncated. `Network.getRequestPostData` and `Network.getResponseBody` read the Worker's retained bytes. `Network.streamResourceContent` returns the buffered prefix and adds later response bytes to `Network.dataReceived` for that DevTools connection, which drives live Response and EventStream views. Direct Undici Client/Dispatcher calls and fetch references retained before plugin activation are outside this observer.
 
-After response headers arrive, bytes captured before a caller-side abort remain available through `Network.getResponseBody`, while the request ends with `Network.loadingFailed { canceled: true }`. A fetch rejection before response headers follows the same canceled failure path.
+After response headers arrive, a caller-side abort can stop the observer's clone; captured bytes remain available through `Network.getResponseBody`, capture metadata records the error and truncation, and CDP emits `Network.loadingFinished` because fetch returned a Response. A fetch rejection before response headers emits `Network.loadingFailed`, with `canceled: true` for an abort.
 
 <a id="security"></a>
 ## Security

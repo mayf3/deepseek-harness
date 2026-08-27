@@ -574,6 +574,51 @@ describe('experimental Inspector real Worker', () => {
       continueResponse.resolve(true)
     }
   })
+
+  it('keeps captured EventSource data readable when the caller aborts after response headers', async () => {
+    const eventStream = 'data: first\n\ndata: [DONE]\n\n'
+    server = createServer((_request, response) => {
+      response.writeHead(200, { 'content-type': 'text/event-stream; charset=utf-8' })
+      response.write(eventStream)
+    })
+    await new Promise<void>((resolve) => { server!.listen(0, '127.0.0.1', () => { resolve() }) })
+    const port = (server.address() as import('node:net').AddressInfo).port
+    inspector = await startInspector({ port: 0 })
+    cdp = await TestCdpClient.connect(inspector.endpoint.webSocketDebuggerUrl)
+    await cdp.call('Network.enable')
+    const abort = new AbortController()
+
+    const response = await fetch(`http://127.0.0.1:${String(port)}/aborted-events`, { signal: abort.signal })
+    const reader = response.body?.getReader()
+    if (reader === undefined) throw new Error('SSE response did not expose a body')
+    expect(Buffer.from((await reader.read()).value ?? []).toString('utf8')).toBe(eventStream)
+
+    let requestId: string | undefined
+    await vi.waitFor(() => {
+      const received = cdp!.events.find(event =>
+        event.method === 'Network.responseReceived'
+        && String((event.params?.response as Record<string, unknown> | undefined)?.url).includes('/aborted-events'))
+      requestId = received?.params?.requestId as string | undefined
+      expect(requestId).toBeTypeOf('string')
+      expect(cdp!.events.filter(event =>
+        event.method === 'Network.eventSourceMessageReceived'
+        && event.params?.requestId === requestId).map(event => event.params?.data)).toEqual(['first', '[DONE]'])
+    })
+    abort.abort()
+
+    await vi.waitFor(() => {
+      expect(cdp!.events.some(event =>
+        event.method === 'Network.loadingFinished'
+        && event.params?.requestId === requestId)).toBe(true)
+    })
+    expect(cdp.events.some(event =>
+      event.method === 'Network.loadingFailed'
+      && event.params?.requestId === requestId)).toBe(false)
+    const body = await cdp.call('Network.getResponseBody', { requestId })
+    expect(Buffer.from(String(body.result?.body), 'base64').toString('utf8')).toBe(eventStream)
+    expect(body.result?.dshInspectorTruncated).toBe(true)
+    expect(String(body.result?.dshInspectorCaptureError)).toContain('AbortError')
+  })
 })
 
 async function clientContext(client: TestCdpClient): Promise<number> {

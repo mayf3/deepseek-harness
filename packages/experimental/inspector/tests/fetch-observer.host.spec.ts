@@ -80,7 +80,7 @@ describe('full fetch observer', () => {
     expect(payload(records, 'fetch/end')).toMatchObject({ capturedBytes: 4, responseBodyTruncated: true })
   })
 
-  it('retains captured bytes and reports cancellation after response headers', async () => {
+  it('finishes response capture when the caller aborts after response headers', async () => {
     const records: InspectorRecordInput[] = []
     Object.defineProperty(globalThis, 'fetch', {
       value: vi.fn(async (request: Request) => new Response(new ReadableStream<Uint8Array>({
@@ -104,14 +104,15 @@ describe('full fetch observer', () => {
     const response = await fetch('https://example.test/cancel-body', { signal: abort.signal })
     abort.abort()
     await expect(response.text()).rejects.toThrow()
-    await vi.waitFor(() => { expect(records.some(record => record.topic === 'fetch/error')).toBe(true) })
+    await vi.waitFor(() => { expect(records.some(record => record.topic === 'fetch/end')).toBe(true) })
 
     expect(decodeChunks(records, 'fetch/response-body-chunk')).toBe('first')
-    expect(payload(records, 'fetch/error')).toMatchObject({
-      message: 'AbortError: aborted',
-      canceled: true,
+    expect(payload(records, 'fetch/end')).toMatchObject({
+      capturedBytes: 5,
+      responseBodyTruncated: true,
+      responseCaptureError: 'AbortError: aborted',
     })
-    expect(records.some(record => record.topic === 'fetch/end')).toBe(false)
+    expect(records.some(record => record.topic === 'fetch/error')).toBe(false)
   })
 
   it('reports a fetch rejected before response headers as a canceled request', async () => {
