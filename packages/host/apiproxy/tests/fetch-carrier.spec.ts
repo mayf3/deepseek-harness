@@ -81,6 +81,16 @@ describe('handler carrier-layer statuses', () => {
     expect(parsed.result.error?.details.issues.length).toBeGreaterThan(0)
   })
 
+  it('rejects a request whose envelope method does not match its path', async () => {
+    const body = JSON.stringify({ type: 'client-request', rpcId: 'r-mismatch', method: 'other.method', payload: {} })
+    const response = await handler.fetch(new Request('http://x/api/host.describe', { method: 'POST', headers: { 'content-type': 'application/json' }, body }))
+    const parsed = await response.json() as { result: { error?: { code: string; message: string } } }
+    expect(parsed.result.error).toMatchObject({
+      code: 'bad-request',
+      message: 'method "other.method" does not match path "host.describe"',
+    })
+  })
+
   it('500s when the impl itself throws', async () => {
     const crashing = toFetchHandler(fakeApi({ crashOn: 'host.describe' }))
     const body = JSON.stringify({ type: 'client-request', rpcId: 'r-11', method: 'host.describe', payload: {} })

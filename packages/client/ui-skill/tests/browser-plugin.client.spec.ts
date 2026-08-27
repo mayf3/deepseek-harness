@@ -102,7 +102,7 @@ const req = (query: string, signal?: AbortSignal) =>
 
 describe('apply', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['inputTriggers', 'connection', 'sessions', 'slots', 'locale', 'remote'])
+    expect(inject).toEqual(['inputTriggers', 'connection', 'sessions', 'slots', 'locale', 'remote', 'remote.skills'])
   })
 
   it('registers the dedicated skill row and its locale dictionaries', async () => {
