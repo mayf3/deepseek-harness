@@ -12,6 +12,10 @@ Status: implemented
 
 若干处相互独立的修正，各自位于拥有对应缺陷的包中。
 
+### unknown-binding 预览从 1 KiB 前缀转义
+
+unknown-binding 回复用 `JSON.stringify` 对完整的限幅 target（`global` 加 `.` 加 `name`，各最多 `maxValueBytes` 个 code unit）构造消息——在控制字符密集字段下转义形式可达输入的约 6 倍，在 `maxValueBytes` 上限附近产生数亿字节峰值，这是任何敌意对等方边界都不会放行的。预览现在从 target 的 1 KiB 前缀转义（足以辨识 binding）；`capMessage` 仍执行回复预算。
+
 ### 合并的 open 日志条目只计费一次，按片段分摊
 
 未结束行的显式 `flush()` 发出带 `open: true` 的 `log` 帧，宿主把下一个帧追加到同一条目（`print('a', end='', flush=True); print('b')` 读回为一条 `'ab'` 条目而不是假换行）。拆分计费算术——首片段付引号加内容加分隔符、续接与闭合帧只付内容、宿主 cap `logBudget - 1`／`logBudget + 2`、低于 2 字节的 walk guard、子进程的 `_open_started` 键控——只登记一次，见 [fd-3 协议 note 的 wire-contract 段](../architecture/2026-07-31-code-runtime-python-fd3-protocol.zh.md)。

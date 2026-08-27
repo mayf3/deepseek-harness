@@ -12,6 +12,10 @@ The CPython subprocess backend for Code Mode, built on the [fd-3 frame protocol]
 
 Independent corrections, each in the package that owns the defect.
 
+### The unknown-binding preview is escaped from a 1 KiB prefix
+
+The unknown-binding reply built its message with `JSON.stringify` over the WHOLE capped target (`global` + `.` + `name`, each up to `maxValueBytes` code units) — the escaped form could reach ~6x the input under control-heavy fields, a multi-hundred-MB spike near the `maxValueBytes` ceiling that no hostile-peer bound would have admitted. The preview is now escaped from a 1 KiB prefix of the target (enough to identify the binding); `capMessage` still enforces the reply budget.
+
 ### A merged open-log entry is billed once, split across its fragments
 
 An explicit `flush()` of an unterminated line emits a `log` frame with `open: true`, and the host appends the next frame to the SAME entry (`print('a', end='', flush=True); print('b')` reads back as one `'ab'` entry, not a fake newline). The split-billing arithmetic — first fragment pays quotes+content+separator, continuations and the closing frame pay content only, host caps `logBudget - 1`/`logBudget + 2`, the sub-2-byte walk guard, the child's `_open_started` keying — is stated once, in the [fd-3 protocol note's wire-contract section](../architecture/2026-07-31-code-runtime-python-fd3-protocol.md).
