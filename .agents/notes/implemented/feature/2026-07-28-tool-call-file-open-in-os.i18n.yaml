@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-28-tool-call-file-open-in-os.md
-2026-07-28-tool-call-file-open-in-os.md: c8ede5c5c2fbdc9797edd9bf80673442c39873c2
-2026-07-28-tool-call-file-open-in-os.zh.md: 1e51dd4dced25bd14272358199baef82f396635a
+2026-07-28-tool-call-file-open-in-os.md: a8d5bd116b3f4cf1434d44b643dad3d883763a82
+2026-07-28-tool-call-file-open-in-os.zh.md: b486ec0972356419c2df5abbc148dc57a4586920

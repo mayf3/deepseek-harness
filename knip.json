@@ -460,11 +460,6 @@
         "tests/**/*.ts"
       ]
     },
-    "packages/context/file-reference": {
-      "ignoreDependencies": [
-        "zod"
-      ]
-    },
     "packages/context/session-reference": {
       "ignoreDependencies": [
         "zod"

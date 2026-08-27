@@ -1384,10 +1384,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'openWorkspacePath\') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>',
-        description: 'Open a path resolved against one Session\'s workspace on the Host desktop.',
-        parameters: [{ name: 'request', description: 'Session identity and absolute or workspace-relative path.' }, { name: 'signal', description: 'caller lifetime; abort terminates inspection or the native command.' }],
+        description: 'Open one path prepared by a Session-aware caller on the Host desktop.',
+        parameters: [{ name: 'request', description: 'path after best-effort Session workspace resolution.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
         returns: 'confirmation after the native opener accepts the path.',
-        throws: ['TypertRemoteFailure when the request is invalid, the Session is missing, or the opener fails.'],
+        throws: ['TypertRemoteFailure when the request is invalid, cancelled, or the opener fails.'],
       },
       {
         signature: '@Remote(\'rename\') rename(request: SessionRenameRequest): Promise<SessionRenameValue>',
@@ -4960,7 +4960,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionOpenWorkspacePathRequest',
-    declaration: 'export interface SessionOpenWorkspacePathRequest {\n    readonly sessionId: SessionId;\n    readonly path: string;\n}',
+    declaration: 'export interface SessionOpenWorkspacePathRequest {\n    readonly path: string;\n}',
   },
   {
     name: 'SessionOpenWorkspacePathValue',

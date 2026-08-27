@@ -3501,9 +3501,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           })
         }
         case 'session/openWorkspacePath': {
-          const pathRequest = request as { readonly sessionId: SessionId; readonly path: string }
-          const missing = requireRemoteSession(pathRequest)
-          return missing ?? sessionOk({ opened: true as const })
+          return sessionOk({ opened: true as const })
         }
         case 'session/modelCatalog': return Promise.resolve({
           ok: true,

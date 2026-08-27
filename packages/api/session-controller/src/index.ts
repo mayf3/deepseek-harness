@@ -7,9 +7,7 @@ import { openNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 import {
-  ApiSessionNotFound,
   ApiSessionAgentController,
   inspectApiSession,
   type ApiSessionAgentResult,
@@ -245,11 +243,11 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
-   * Open a path resolved against one Session's workspace on the Host desktop.
-   * @param request - Session identity and absolute or workspace-relative path.
-   * @param signal - caller lifetime; abort terminates inspection or the native command.
+   * Open one path prepared by a Session-aware caller on the Host desktop.
+   * @param request - path after best-effort Session workspace resolution.
+   * @param signal - caller lifetime; abort terminates the native command.
    * @returns confirmation after the native opener accepts the path.
-   * @throws TypertRemoteFailure when the request is invalid, the Session is missing, or the opener fails.
+   * @throws TypertRemoteFailure when the request is invalid, cancelled, or the opener fails.
    */
   @Remote('openWorkspacePath')
   async openWorkspacePath(
@@ -264,30 +262,8 @@ export class SessionController extends TypertRemoteService {
       })
     }
     signal.throwIfAborted()
-    let cwd: string | undefined
     try {
-      cwd = (await this.inspect(request.sessionId, signal)).meta.cwd
-    } catch (error: unknown) {
-      if (signal.aborted) {
-        throw new TypertRemoteFailure({
-          code: 'cancelled', message: 'path open was aborted', details: {},
-        })
-      }
-      if (error instanceof ApiSessionNotFound) {
-        throw new TypertRemoteFailure({
-          code: 'session-not-found',
-          message: error.message,
-          details: { sessionId: request.sessionId },
-        })
-      }
-      throw new TypertRemoteFailure({
-        code: 'internal',
-        message: `session "${request.sessionId}" could not be inspected: ${String(error)}`,
-        details: {},
-      })
-    }
-    try {
-      await this.openPath(resolveWorkspacePath(cwd, request.path), signal)
+      await this.openPath(request.path, signal)
       return { opened: true }
     } catch (error: unknown) {
       if (signal.aborted) {

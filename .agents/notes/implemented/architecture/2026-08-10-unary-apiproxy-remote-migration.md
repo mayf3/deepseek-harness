@@ -8,7 +8,7 @@ English | [中文](2026-08-10-unary-apiproxy-remote-migration.zh.md)
 
 The Host API Proxy duplicated simple unary operations across business Services, API Proxy interfaces, Zod schemas, route tables, client stubs, and Client callers. [Typert Remote calls](2026-08-02-typert-remote-method-calls.md) already let a business package own this class of call, but moving an endpoint without its lifecycle and projection policy could change observable behavior.
 
-Agent-bound calls require particular care. Shared lookup policy reuses live Agents, resumes ordinary cold Sessions with their recorded presets, deduplicates concurrent resumes, and rejects subagent-owned identities. Skill listing instead must inspect a Session without activating its Agent. Native desktop operations must keep the browser from choosing an arbitrary Host path.
+Agent-bound calls require particular care. Shared lookup policy reuses live Agents, resumes ordinary cold Sessions with their recorded presets, deduplicates concurrent resumes, and rejects subagent-owned identities. Skill listing instead must inspect a Session without activating its Agent. Settings and preset operations keep their Host-owned document paths out of browser requests; Session file links preserve their caller-resolved path behavior.
 
 ## Decision
 
@@ -30,11 +30,11 @@ Simple unary operations live on their natural business Remote owner. The busines
 | `workspace.list`, `workspace.insertSessionBefore`, `workspace.archiveSession` | Equivalent `workspace/*` methods | The Workspace registry owns detached snapshots and serialized mutations. |
 | `skill.list` | `skills/list` | `SessionSkillCatalog` observes the Session and its recorded preset, uses a live Agent only when one already exists, and never activates an Agent for listing. |
 | `fileReferences/list` | `fileReferences/list` | `SessionFileReferences` supplies the Session Controller's established Agent lookup to the provider; cold lookup behavior remains unchanged. |
-| `host.openPath` | `session/openWorkspacePath` | `SessionController` resolves the path against the addressed Session's workspace before native opening. |
+| `host.openPath` | `session/openWorkspacePath` | The Session-aware Client resolves relative paths against the known workspace before `SessionController` hands them to the native opener. |
 
 The shared Agent and Session resolver remains the authority for endpoints that accept those objects. It provides the same live reuse, cold restoration, concurrent deduplication, preset setup, persistence failures, and subagent ownership fence that legacy API Proxy calls used. `TypertLookupFailure` preserves resolver-owned RPC errors instead of collapsing them into `internal`.
 
-The native path implementation lives in `@deepseek-ai/dsh-native-command`. Session and Settings controllers select the target; the utility only performs platform detection, WSL translation, browser preference, text-editor intent, and shell-free command execution.
+The native path implementation lives in `@deepseek-ai/dsh-native-command`. Settings controllers select Host-owned targets, while Session-aware Clients resolve workspace paths before calling `SessionController`; the utility only performs platform detection, WSL translation, browser preference, text-editor intent, and shell-free command execution.
 
 ## Browser authentication
 
@@ -50,7 +50,7 @@ Focused Host and Client tests cover Remote calls, lookup and no-activation polic
 
 **Move every unary operation.** Rejected because `host.describe` combines deployment facts and Connection readiness, while Session export is a streamed download rather than a unary business method.
 
-**Put native opening in one controller.** Rejected because Session, Settings, and the retained Host description consume the same platform operation. A Host utility avoids controller-to-controller imports without making the browser authoritative for filesystem targets.
+**Put native opening in one controller.** Rejected because Session, Settings, and the retained Host description consume the same platform operation. A Host utility avoids controller-to-controller imports and duplicated platform logic.
 
 ## Consequences
 

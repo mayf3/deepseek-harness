@@ -581,7 +581,7 @@ The backends that consume this contract are on [persistence.md](persistence.md).
 
 `ModelCatalog` is the Host-generation model directory returned by `session/modelCatalog`: it carries the deployment default, routable provider ids, successful provider groups, and isolated provider failures. It is not derived from one Session and remains separate from Session projections.
 
-`SessionOpenWorkspacePathRequest` carries a `sessionId` and an absolute or Session-workspace-relative `path`. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. The controller inspects the Session without activating its Agent, resolves a relative path against the recorded cwd, and reports missing Sessions, cancellation, and opener failures through the Session Remote error vocabulary.
+`SessionOpenWorkspacePathRequest` carries an absolute or workspace-resolved `path`. `SessionOpenWorkspacePathValue` confirms that the Host accepted the native handoff. A Session-aware Client resolves relative paths against its current Session cwd when known; the controller hands the path to the opener unchanged and reports invalid requests, cancellation, and opener failures through the Session Remote error vocabulary.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -650,11 +650,11 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<{ meta: SessionH
 @Remote('modelCatalog') modelCatalog(): Promise<ModelCatalog>
 
 /**
- * Open a path resolved against one Session's workspace on the Host desktop.
- * @param request - Session identity and absolute or workspace-relative path.
- * @param signal - caller lifetime; abort terminates inspection or the native command.
+ * Open one path prepared by a Session-aware caller on the Host desktop.
+ * @param request - path after best-effort Session workspace resolution.
+ * @param signal - caller lifetime; abort terminates the native command.
  * @returns confirmation after the native opener accepts the path.
- * @throws TypertRemoteFailure when the request is invalid, the Session is missing, or the opener fails.
+ * @throws TypertRemoteFailure when the request is invalid, cancelled, or the opener fails.
  */
 @Remote('openWorkspacePath') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>
 

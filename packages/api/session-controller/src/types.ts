@@ -362,10 +362,9 @@ export interface SessionCancelValue {
   readonly accepted: true
 }
 
-/** Session-addressed request to open one workspace path on the Host desktop. */
+/** Request to open one path prepared by a Session-aware caller on the Host desktop. */
 export interface SessionOpenWorkspacePathRequest {
-  readonly sessionId: SessionId
-  /** Absolute or Session-workspace-relative path. */
+  /** Path after best-effort Session workspace resolution, in Host filesystem syntax. */
   readonly path: string
 }
 

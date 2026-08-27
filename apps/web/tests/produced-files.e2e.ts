@@ -158,7 +158,7 @@ describe('web e2e: a finished turn ends with the files it produced', () => {
       ])
       expect(response.status()).toBe(200)
       expect(openPath).toHaveBeenCalledTimes(1)
-      expect(openPath.mock.calls[0]![0]).toMatchObject({ path: '.' })
+      expect(openPath.mock.calls[0]![0]).toMatchObject({ path: `${scaffold.workspaceCwd}/.` })
     } finally {
       openPath.mockRestore()
     }

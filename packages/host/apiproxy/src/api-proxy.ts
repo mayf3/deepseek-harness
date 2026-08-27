@@ -34,9 +34,7 @@ export interface ApiProxyDefaults {
   /** Validated DEFLATE level for session-log ZIP entries; defaults to 6. */
   sessionExportCompressionLevel?: SessionLogCompressionLevel
   /**
-   * Whether handing a path to the native opener can work at all — the
-   * `hasDocument` capability the preset roster reports, and the switch
-   * between opening a preset directory and answering its path as text.
+   * Whether `host.describe` reports that the Client may offer native path actions.
    * Absent, platform detection decides ({@link canOpenNativePath}).
    */
   canOpenPath?: () => boolean

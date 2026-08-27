@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-10-unary-apiproxy-remote-migration.md
-2026-08-10-unary-apiproxy-remote-migration.md: 027376cbf772043cce21f487c94288cad6bece1c
-2026-08-10-unary-apiproxy-remote-migration.zh.md: f7507959a992dd17ca60883ada7769c7196fdc3a
+2026-08-10-unary-apiproxy-remote-migration.md: 11254099556113d921da502f0150522886a718f3
+2026-08-10-unary-apiproxy-remote-migration.zh.md: 50b303876863e992566f6ed6fb0bd0a89326344f

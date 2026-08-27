@@ -44,7 +44,6 @@
     { "path": "../../subagent/subagent" },
     { "path": "../../typert/protocol" },
     { "path": "../../typert/registry" },
-    { "path": "../../util/workspace-path" },
     { "path": "../../workspace/workspace" }
   ]
 }
