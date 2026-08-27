@@ -376,11 +376,28 @@ describe('image draft rail', () => {
     sink.mockImplementationOnce(() => new Promise<SubmitOutcome>((resolve) => { settle = resolve }))
     fireEvent.keyDown(textarea, { key: 'Enter' })
     expect(sink).toHaveBeenCalledWith('', ['draft-1'], 'queue', expect.any(AbortSignal))
-    expect(attachmentOwner(result.slotCalls).attachments).toEqual([attachments[0]])
+    // Optimistic commit: the rail clears at submit, before the admission settles.
+    expect(attachmentOwner(result.slotCalls).attachments).toEqual([])
     await act(async () => { settle({ kind: 'success' }) })
+    expect(attachmentOwner(result.slotCalls).attachments).toEqual([])
+  })
+
+  it('returns an image-only draft to the rail when its admission fails', async () => {
+    const file = new File([Uint8Array.of(1)], 'pixel.png', { type: 'image/png' })
+    const attachments = [
+      { kind: 'image' as const, id: 'draft-1' as DraftAttachmentId, file, previewUrl: 'blob:draft-1' },
+    ]
+    const result = bench({ attachments })
+    const { textarea, sink } = result
+    let fail!: (outcome: SubmitOutcome) => void
+    sink.mockImplementationOnce(() => new Promise<SubmitOutcome>((resolve) => { fail = resolve }))
+    fireEvent.keyDown(textarea, { key: 'Enter' })
+    expect(attachmentOwner(result.slotCalls).attachments).toEqual([])
+    await act(async () => { fail({ kind: 'error', text: '图片发送失败' }) })
     await vi.waitFor(() => {
-      expect(attachmentOwner(result.slotCalls).attachments).toEqual([])
+      expect(attachmentOwner(result.slotCalls).attachments).toEqual([attachments[0]])
     })
+    expect(result.view.getByRole('alert').textContent).toContain('图片发送失败')
   })
 
   it('announces an image-intake rejection as a fading toast, repeatable for the same reason', () => {

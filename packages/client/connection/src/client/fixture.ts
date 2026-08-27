@@ -2962,9 +2962,14 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         attachments.set(String(attachment.attachmentId), { attachment, data: block.data })
         return { type: 'image', attachment }
       })
+      // The host echoes the prompt's requestId as the user source's rpcId;
+      // the Session object retires its local submission echo on it. The
+      // user-rpc source member is declared by dsh-api-session-controller,
+      // which this standalone fixture does not import — hence the assertion.
+      const promptSource = { kind: 'user', rpcId: request.requestId } as MessageSource
       if (mode === 'steer' && replays.has(id)) {
         // Steering: the durable user/message lands inside the current turn; the replay continues.
-        append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable) })
+        append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable, promptSource) })
         return sessionOk({ accepted: true as const })
       }
       const turn = nextTurn.get(id) ?? 0
@@ -2977,7 +2982,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       if (plan.wanted !== null && plan.wanted !== plan.active) {
         append(id, { type: 'plan/mode', data: { active: plan.wanted } })
       }
-      append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable) })
+      append(id, { type: 'user/message', surfaceOp: 'append', data: userMessage(durable, promptSource) })
       // Capacity parallel of the host token-meter's request/context record:
       // log-only, appended inside the open turn, and deduplicated against the
       // route already recorded (the fixture never varies contextWindow).

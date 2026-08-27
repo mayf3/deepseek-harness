@@ -25,6 +25,7 @@ import { connectFreshWorkspace, newEnglishPage, REPO_ROOT, saveFailureShot } fro
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/ui.expected.md', import.meta.url))
+const ECHO_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/submission-echo.expected.md', import.meta.url))
 const WEB_CONTEXT_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/web-context.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -72,7 +73,21 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     // Arm the host-side settled barrier BEFORE the send click.
     const settled = scaffold.whenTurnSettled()
     await input.fill(PROMPT)
-    await input.press('Enter')
+    const echoSnapshot = await input.evaluate(async (element, prompt) => {
+      element.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+      }))
+      // sendSession registered its paint yield first. This frame observes the
+      // committed echo while admission remains queued on the following task.
+      await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve() }) })
+      const echo = document.querySelector<HTMLElement>('[data-submission-echo]')
+      return [
+        `echo: ${echo?.textContent?.includes(prompt) === true ? prompt : '(missing)'}`,
+        `composer: ${JSON.stringify(element.textContent ?? '')}`,
+        `contenteditable: ${element.getAttribute('contenteditable')}`,
+      ].join('\n')
+    }, PROMPT)
+    await compareOrRefreshGolden(ECHO_EXPECTED, echoSnapshot, MODE)
     const sessionId = await settled
     settledSessionId = sessionId
     if (MODE === 'record') {
@@ -188,6 +203,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.jsonl',
+      'submission-echo.expected.md',
       'system-prompt.expected.md',
       'tool-schemas.expected.json',
       'web-context.expected.md',

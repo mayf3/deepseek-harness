@@ -2086,10 +2086,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Singleton settings owner read by delegation tools when an Agent is published.',
     methods: [
       {
-        signature: 'currentEnabled(): boolean',
-        description: 'Read the preference for the next eligible Agent publication.',
+        signature: 'current(): SubagentModelSelectionSettings',
+        description: 'Read a detached selection preference for the next eligible Agent publication.',
         parameters: [],
-        returns: 'whether that Agent should receive model-selectable delegation.',
+        returns: 'the enabled state and exact allowed routes.',
       },
     ],
   },
@@ -4864,7 +4864,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionQueuedItem',
-    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
+    declaration: 'export interface SessionQueuedItem {\n    readonly id: MessageId;\n    readonly placement: \'queued\' | \'steering\' | \'context\';\n    readonly rpcId?: SessionRequestId;\n    readonly message: {\n        readonly id: MessageId;\n        readonly content: readonly JsonValue[];\n    };\n}',
   },
   {
     name: 'SessionRawArtifact',

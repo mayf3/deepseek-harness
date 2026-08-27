@@ -188,14 +188,22 @@ function queueItems(
     ...project('next-turn').map(message => ({
       id: message.id,
       placement: 'queued' as const,
+      ...promptRpcId(message),
       message: { id: message.id, content: message.content as unknown as JsonValue[] },
     })),
     ...project('next-step').map(message => ({
       id: message.id,
       placement: message.source.kind === 'user' ? 'steering' as const : 'context' as const,
+      ...promptRpcId(message),
       message: { id: message.id, content: message.content as unknown as JsonValue[] },
     })),
   ]
+}
+
+/** Prompt-RPC identity carried by a browser-submitted message's user source. */
+function promptRpcId(message: UserMessage): Pick<SessionQueuedItem, 'rpcId'> {
+  const source = message.source
+  return source.kind === 'user' && 'rpcId' in source ? { rpcId: source.rpcId } : {}
 }
 
 function jobView(job: JobSnapshot): SessionJob {

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import LlmRuntime, { ToolCallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import { assembleContextFor, type Agent } from '@deepseek-ai/dsh-agent'
@@ -21,7 +21,15 @@ import { MockAdapter, textResponse } from '../../../core/agent-loop/tests/mock-a
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { callSubagent, fakeAgent, setup, testToolSignal, text } from './harness.ts'
+import {
+  callSubagent,
+  disposeSetupProvider,
+  fakeAgent,
+  modelSelectionSetupAgent,
+  setup,
+  testToolSignal,
+  text,
+} from './harness.ts'
 
 /**
  * Drives the REAL plugin body: mounts `dsh-tool-subagent` on a real
@@ -221,36 +229,19 @@ describe('dsh-tool-subagent', () => {
   })
 
   it('merges model overrides over provider-owned route defaults before preflight', async () => {
-    let seen: { agentOptions?: { provider?: string; model?: string; reasoningEffort?: string; maxTokens?: number } } | undefined
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SubagentRuntime)
-    ctx.subagents.registerProvider({
-      name: 'capture',
-      capabilities: { agentOptions: true, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
-      inheritsParentContext: false,
+    let seen: SubagentStartRequest | undefined
+    const ctx = await setup({
+      provider: 'mock',
+      withModelSelection: true,
+      agentOptions: { reasoningEffort: ReasoningEffortId('high'), maxTokens: 321 },
+      maxDepth: 'provider-managed',
+    }, {
       agentRouteDefaults: { provider: 'alpha', model: 'child-model' },
-      start: async (request) => {
-        seen = request
-        return {
-          id: SessionId('capture-child'),
-          localAgent: undefined,
-          result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
-          dispose: async () => {},
-        }
-      },
+      onStart: (request) => { seen = request },
     })
     ctx.llm.registerAdapter(['alpha'], new MockAdapter([], {
       efforts: [{ id: ReasoningEffortId('high'), name: 'High' }],
     }))
-    await ctx.plugin(tool, {
-      provider: 'capture',
-      enableModelSelection: true,
-      agentOptions: { reasoningEffort: ReasoningEffortId('high'), maxTokens: 321 },
-      maxDepth: 'provider-managed',
-    })
 
     await callSubagent(ctx, {
       description: 'd',
@@ -258,7 +249,7 @@ describe('dsh-tool-subagent', () => {
       provider: 'alpha',
       model: 'child-model',
     })
-    expect(ctx.tools.schemas().find(schema => schema.name === 'subagent')?.description)
+    expect(ctx.tools.schemas(modelSelectionSetupAgent(ctx)).find(schema => schema.name === 'subagent')?.description)
       .toContain('this provider\'s route defaults')
     expect(seen?.agentOptions).toEqual({
       provider: 'alpha',
@@ -270,40 +261,21 @@ describe('dsh-tool-subagent', () => {
 
   it('does not inherit parent effort for a provider-owned route default', async () => {
     let seen: SubagentStartRequest | undefined
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SubagentRuntime)
-    ctx.subagents.registerProvider({
-      name: 'provider-defaults',
-      capabilities: { agentOptions: true, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
-      inheritsParentContext: false,
-      agentRouteDefaults: { provider: 'alpha', model: 'child-model' },
-      start: async (request) => {
-        seen = request
-        return {
-          id: SessionId('provider-default-child'),
-          localAgent: undefined,
-          result: Promise.resolve({ output: [{ type: 'text', text: 'ok' }], stopReason: 'completed' as const }),
-          dispose: async () => {},
-        }
-      },
-    })
-    ctx.llm.registerAdapter(['alpha'], new MockAdapter([]))
-    await ctx.plugin(tool, {
-      provider: 'provider-defaults',
-      enableModelSelection: true,
-      maxDepth: 'provider-managed',
-    })
-    const parent = {
-      ...fakeAgent('same-route-parent'),
-      options: {
+    const ctx = await setup({
+      provider: 'mock',
+      withModelSelection: true,
+      parentAgentOptions: {
         provider: 'alpha',
         model: 'child-model',
         reasoningEffort: ReasoningEffortId('high'),
       },
-    } as Agent
+      maxDepth: 'provider-managed',
+    }, {
+      agentRouteDefaults: { provider: 'alpha', model: 'child-model' },
+      onStart: (request) => { seen = request },
+    })
+    ctx.llm.registerAdapter(['alpha'], new MockAdapter([]))
+    const parent = modelSelectionSetupAgent(ctx)
 
     const result = await callSubagent(ctx, {
       description: 'd',
@@ -312,6 +284,7 @@ describe('dsh-tool-subagent', () => {
       model: 'child-model',
     }, { agent: parent })
 
+    if (result.isError) throw new Error(text(result))
     expect(result.isError).toBe(false)
     expect(seen?.agentOptions).toEqual({ provider: 'alpha', model: 'child-model' })
   })
@@ -964,7 +937,10 @@ describe('dsh-tool-subagent background mode', () => {
   })
 
   it('skips background startup when cancellation wins asynchronous route preflight', async () => {
-    const ctx = await backgroundSetup({ provider: 'mock', enableModelSelection: true })
+    const ctx = await backgroundSetup({
+      provider: 'mock',
+      agentOptions: { provider: 'alpha', model: 'selected-model' },
+    })
     const parent = ownerAgent(ctx, 'sess-parent')
     const adapter = new MockAdapter([])
     let releasePreflight!: () => void
@@ -979,8 +955,6 @@ describe('dsh-tool-subagent background mode', () => {
     const resultPromise = callSubagent(ctx, {
       description: 'cancelled selection',
       prompt: 'do it',
-      provider: 'alpha',
-      model: 'selected-model',
       run_in_background: true,
     }, { agent: parent, signal: controller.signal })
     await vi.waitFor(() => { expect(resolveModel).toHaveBeenCalledOnce() })
@@ -993,24 +967,15 @@ describe('dsh-tool-subagent background mode', () => {
   })
 
   it('rejects startup when the provider changes during asynchronous route preflight', async () => {
-    const ctx = new Context()
-    await ctx.plugin(LlmRuntime)
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(SubagentRuntime)
-    const oldStart = vi.fn(async (): Promise<never> => { throw new Error('old provider must not start') })
+    const oldStart = vi.fn()
     const replacementStart = vi.fn(async (): Promise<never> => { throw new Error('replacement provider must not start') })
-    const disposeOld = ctx.subagents.registerProvider({
-      name: 'swapped',
-      capabilities: { agentOptions: true, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
-      inheritsParentContext: false,
-      agentRouteDefaults: { provider: 'alpha', model: 'selected-model' },
-      start: oldStart,
-    })
-    await ctx.plugin(tool, {
-      provider: 'swapped',
-      enableModelSelection: true,
+    const ctx = await setup({
+      provider: 'mock',
+      withModelSelection: true,
       maxDepth: 'provider-managed',
+    }, {
+      agentRouteDefaults: { provider: 'alpha', model: 'selected-model' },
+      onStart: oldStart,
     })
     const adapter = new MockAdapter([])
     let releasePreflight!: () => void
@@ -1028,9 +993,9 @@ describe('dsh-tool-subagent background mode', () => {
       model: 'selected-model',
     })
     await vi.waitFor(() => { expect(resolveModel).toHaveBeenCalledOnce() })
-    disposeOld()
+    await disposeSetupProvider(ctx)
     ctx.subagents.registerProvider({
-      name: 'swapped',
+      name: 'mock',
       capabilities: { agentOptions: true, outputSchema: false, depthLimit: false, toolFilter: false, persona: false },
       inheritsParentContext: false,
       agentRouteDefaults: { provider: 'beta', model: 'replacement-model' },
