@@ -329,12 +329,14 @@ export interface LaunchOptions {
     default: string
   }
   /**
-   * Mount the shipped telemetry row in FULL mode against this exporter URL
-   * instead of disabling it. Used to pin a real backend disclosure in
-   * assembled coverage; point the URL at a local dead endpoint so no record
-   * leaves the process.
+   * Mount the shipped telemetry row against this exporter URL instead of
+   * disabling it. Used to pin a real backend disclosure in assembled
+   * coverage; point the URL at a local endpoint (a dead port, or a scenario's
+   * own mock collector) so no record leaves the machine.
    */
   telemetryUrl?: string
+  /** Uploading mode for the mounted telemetry row. Defaults to `FULL`. */
+  telemetryMode?: 'FULL' | 'FEEDBACK_ONLY'
   /**
    * Browse through a trusted non-loopback hostname that the browser resolves
    * to loopback (for example `*.localhost`). The test server stays bound to
@@ -497,7 +499,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       : {
         id: 'session-telemetry-otel',
         config: {
-          mode: 'FULL',
+          mode: options.telemetryMode ?? 'FULL',
           exporter: { url: options.telemetryUrl },
           shutdownTimeoutMillis: 1_000,
         },
