@@ -5,6 +5,7 @@ import WebSocket, { type RawData } from 'ws'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
+import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import {
   bindTypertRemote,
   Remote,
@@ -17,6 +18,7 @@ import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { provideBrowserCredentials } from './browser-credentials.ts'
 import TypertGatewayService, {
   TypertGatewayError,
+  type Config as GatewayConfig,
   type TypertRemoteEventDispatch,
   type TypertRemoteEventInvocation,
   type TypertRemoteEventOutcome,
@@ -211,6 +213,15 @@ afterEach(async () => {
 })
 
 describe('Typert Remote streams', () => {
+  it('validates the WebSocket heartbeat timer range', () => {
+    expect(TypertGatewayService.Config({})).toEqual({ websocketHeartbeatIntervalMs: 30_000 })
+    expect(TypertGatewayService.Config({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS }))
+      .toEqual({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS })
+    for (const websocketHeartbeatIntervalMs of [0, 1.5, MAX_TIMER_DELAY_MS + 1]) {
+      expect(() => TypertGatewayService.Config({ websocketHeartbeatIntervalMs })).toThrow()
+    }
+  })
+
   it('opens decoded carrier payloads through the in-process wire adapter', async () => {
     const { ctx } = await setup(false)
     const source = await ctx.typertGateway.wireStream.open(
@@ -278,6 +289,19 @@ describe('Typert Remote streams', () => {
     await expect(ctx.typertGateway.stream({
       namespace: 'feed', method: 'unary', args: { label: 'a' },
     })).rejects.toMatchObject({ code: 'signature-invalid' } satisfies Partial<TypertGatewayError>)
+  })
+
+  it('uses the configured WebSocket heartbeat interval', { timeout: 1_000 }, async () => {
+    const { ctx } = await setup(true, { websocketHeartbeatIntervalMs: 20 })
+    const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
+      headers: { cookie: browserCookie(ctx) },
+    })
+    const ping = once(socket, 'ping')
+    await once(socket, 'open')
+    expect((await ping)[0]).toEqual(Buffer.alloc(0))
+
+    socket.close()
+    await once(socket, 'close')
   })
 
   it('multiplexes independent streams over one WebSocket and propagates cancellation', async () => {
@@ -964,7 +988,10 @@ describe('Typert Remote streams', () => {
   })
 })
 
-async function setup(transport: boolean): Promise<{ readonly ctx: Context; readonly service: FeedService }> {
+async function setup(
+  transport: boolean,
+  gatewayConfig: GatewayConfig = {},
+): Promise<{ readonly ctx: Context; readonly service: FeedService }> {
   const ctx = new Context()
   roots.push(ctx)
   if (transport) {
@@ -972,7 +999,7 @@ async function setup(transport: boolean): Promise<{ readonly ctx: Context; reado
     provideBrowserCredentials(ctx)
   }
   await ctx.plugin(TypertRegistry)
-  await ctx.plugin(TypertGatewayService)
+  await ctx.plugin(TypertGatewayService, gatewayConfig)
   if (transport) {
     await ctx.plugin({ inject: [...connectionInject], apply: applyConnection })
   }

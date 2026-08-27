@@ -144,12 +144,12 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'approval/asked': {
   id: ApprovalRequestId
   toolName: string
-  callId?: CallId
+  callId?: ToolCallId
   reason?: string
 }
 ```
 
-类型：[CallId](subsystems/core.zh.md)
+类型：[ToolCallId](subsystems/core.zh.md)
 
 来源：[`packages/interaction/user-approval/src/types.ts:44`](../packages/interaction/user-approval/src/types.ts)
 
@@ -740,9 +740,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
 
-<a id="subagentmodel-selection-enabled--log-only"></a>
+<a id="subagentmodel-selection-policy--log-only"></a>
 
-#### `subagent/model-selection-enabled` — log-only
+#### `subagent/model-selection-policy` — 仅日志
 
 ```ts persistence-catalog
 /**
@@ -751,10 +751,13 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * request; absence means the fixed-route definition. Log-only: it carries
  * no `surfaceOp` and never enters model history.
  */
-'subagent/model-selection-enabled': Record<string, never>
+'subagent/model-selection-policy': {
+  /** Exact routes this Session may select explicitly for a child. */
+  allowedModels: AllowedModelRoute[]
+}
 ```
 
-来源：[`packages/subagent/tool-subagent/src/model-selection-state.ts:13`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
+来源：[`packages/subagent/tool-subagent/src/model-selection-state.ts:14`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
 ### `team/*`
 
@@ -842,10 +845,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * JSON string exactly as the model produced it (unparsed). `callId` pairs the
  * call with its `tool/result`.
  */
-'tool/call': { turn: number; step: number; callId: CallId; name: string; arguments: string }
+'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
 ```
 
-类型：[CallId](subsystems/core.zh.md)
+类型：[ToolCallId](subsystems/core.zh.md)
 
 来源：[`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
 

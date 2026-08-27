@@ -9,7 +9,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import {
@@ -85,7 +85,7 @@ describe.skipIf(MODE === 'record')('web e2e: live activity stream', () => {
 
     const started = await scaffold.ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('live-activity-stream-e2e'),
+      callId: ToolCallId('live-activity-stream-e2e'),
       name: 'bash',
       arguments: { command: COMMAND, description: 'Emit one live line then hold', run_in_background: true },
       agent,

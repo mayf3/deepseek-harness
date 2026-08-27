@@ -14,17 +14,24 @@ import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, REPO_ROOT, saveFailureShot } from './support.ts'
+import {
+  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
+} from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/ui.expected.md', import.meta.url))
+const ECHO_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/submission-echo.expected.md', import.meta.url))
+const UI_EXPANDED_EXPECTED = fileURLToPath(
+  new URL('../../../snapshots/web/fresh-round-trip/ui-expanded.expected.md', import.meta.url),
+)
 const WEB_CONTEXT_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/web-context.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 
@@ -67,12 +74,26 @@ describe('web e2e: fresh round trip through the real assembly', () => {
       // Drift guard: the committed fixture must carry exactly the drive prompt.
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT])
     }
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     // Arm the host-side settled barrier BEFORE the send click.
     const settled = scaffold.whenTurnSettled()
     await input.fill(PROMPT)
-    await input.press('Enter')
+    const echoSnapshot = await input.evaluate(async (element, prompt) => {
+      element.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'Enter', code: 'Enter', bubbles: true, cancelable: true,
+      }))
+      // sendSession registered its paint yield first. This frame observes the
+      // committed echo while admission remains queued on the following task.
+      await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve() }) })
+      const echo = document.querySelector<HTMLElement>('[data-submission-echo]')
+      return [
+        `echo: ${echo?.textContent?.includes(prompt) === true ? prompt : '(missing)'}`,
+        `composer: ${JSON.stringify(element.textContent ?? '')}`,
+        `contenteditable: ${element.getAttribute('contenteditable')}`,
+      ].join('\n')
+    }, PROMPT)
+    await compareOrRefreshGolden(ECHO_EXPECTED, echoSnapshot, MODE)
     const sessionId = await settled
     settledSessionId = sessionId
     if (MODE === 'record') {
@@ -99,7 +120,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     if (agent === undefined) throw new Error(`the settled Web agent ${settledSessionId} is no longer live`)
     const result = await scaffold.ctx.tools.execute({
       signal: AbortSignal.timeout(5_000),
-      callId: CallId('web-url-probe'),
+      callId: ToolCallId('web-url-probe'),
       name: 'bash',
       arguments: {
         command: 'printf \'%s\\n\' "$DSH_WEB_URL"',
@@ -148,10 +169,17 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     }).waitFor({ timeout: 10_000 })
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
+    const expanded = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold.workspaceCwd,
+    )
+    await compareOrRefreshGolden(UI_EXPANDED_EXPECTED, expanded, MODE)
   })
 
-  it.skipIf(MODE === 'record')('renders the system prompt as a collapsed expandable disclosure', async () => {
+  it.skipIf(MODE === 'record')('renders the system prompt disclosure inside the expanded Turn process', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-round-trip-system-prompt'))
+    await expandTurnProcesses(page)
     const disclosure = page.getByRole('button', { name: 'System prompt', exact: true })
     const body = page.locator('[data-system-prompt-body]')
     await expect.poll(() => disclosure.count(), { timeout: 10_000 }).toBe(1)
@@ -175,6 +203,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     // tier pins the same gesture against FixtureApiClient; this one runs on
     // follow-stream-fed state). Runs after the golden capture so the committed
     // aria surface stays the untouched settled state.
+    await expandTurnProcesses(page)
     const think = page.getByRole('button', { name: /^Think/ }).first()
     expect(await think.getAttribute('aria-expanded')).toBe('false')
     await think.click()
@@ -188,10 +217,12 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
       'session.jsonl',
+      'submission-echo.expected.md',
       'system-prompt.expected.md',
       'tool-schemas.expected.json',
       'web-context.expected.md',
       'ui.expected.md',
+      'ui-expanded.expected.md',
     ])
   })
 })

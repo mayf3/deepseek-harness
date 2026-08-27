@@ -23,7 +23,8 @@ import { deriveReplayScript, parseSessionLog } from '@deepseek-ai/dsh-llm-replay
 import type { ReplayEntry, ReplayOverrideDoc } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
-  assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
+  assertFixtureInventory, captureExpandedTurnProcessAria, captureStableAria,
+  compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -34,10 +35,12 @@ const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
 // state, and the other four capture what remains after cancel, after a
 // non-retryable failure, after retry recovery, and after retry exhaustion.
 const CANCEL_EXPECTED = join(SNAPSHOT_DIR, 'cancel.expected.md')
+const CANCEL_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'cancel-expanded.expected.md')
 const LOADING_EXPECTED = join(SNAPSHOT_DIR, 'loading.expected.md')
 const RUNNING_DRAFT_EXPECTED = join(SNAPSHOT_DIR, 'running-draft.expected.md')
 const ERROR_EXPECTED = join(SNAPSHOT_DIR, 'error-auth.expected.md')
 const RETRY_EXPECTED = join(SNAPSHOT_DIR, 'retry.expected.md')
+const RETRY_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'retry-expanded.expected.md')
 const RETRY_EXHAUSTED_EXPECTED = join(SNAPSHOT_DIR, 'retry-exhausted.expected.md')
 const MODE = webSnapshotMode()
 const AUTH_PROVIDER_MESSAGE = 'Authentication Fails, Your api key: sk-preview-secret is invalid'
@@ -117,7 +120,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
    * can act mid-turn (the cancel scenario's whole point).
    */
   async function sendPrompt(timeoutMs?: number): Promise<{ settled: ReturnType<WebScaffold['whenTurnSettled']> }> {
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const settled = scaffold!.whenTurnSettled(timeoutMs)
     await input.fill(PROMPT)
@@ -158,7 +161,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     const loadingSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(LOADING_EXPECTED, loadingSnapshot, MODE)
 
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.fill(RUNNING_DRAFT)
     const send = page.getByRole('button', { name: 'Send message', exact: true })
     await send.waitFor({ timeout: 10_000 })
@@ -166,7 +169,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     const runningDraftSnapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RUNNING_DRAFT_EXPECTED, runningDraftSnapshot, MODE)
     await send.click()
-    await expect.poll(() => input.inputValue(), { timeout: 10_000 }).toBe('')
+    await expect.poll(() => input.textContent(), { timeout: 10_000 }).toBe('')
     const queuedRow = page.locator('[data-queue-dock]').getByRole('listitem').filter({ hasText: RUNNING_DRAFT })
     await queuedRow.waitFor({ timeout: 10_000 })
     await page.getByRole('button', { name: 'Stop generating', exact: true }).waitFor({ timeout: 10_000 })
@@ -179,12 +182,18 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // Composer recovered; no streaming node lingers. The host settled first
     // (awaited above), but the abort frame reaches the browser over SSE — the
     // frozen-partial swap is eventually consistent, so poll rather than count.
-    await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     await expect.poll(() => page.locator('[data-streaming="true"]').count(), { timeout: 10_000 }).toBe(0)
     // Golden of the aborted end-state: the prompt bubble plus the frozen
     // partial ('partial' is the hang entry's replayed prefix) and no more.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(CANCEL_EXPECTED, snapshot, MODE)
+    const expanded = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold!.workspaceCwd,
+    )
+    await compareOrRefreshGolden(CANCEL_EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
@@ -199,7 +208,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('error')
     // AUTH is outside llm-retry's retryable set: no retry record.
     expect(sessionEvents.filter(e => e.type === 'llm/retry').length).toBe(0)
-    await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     expect(await page.locator('[data-streaming="true"]').count()).toBe(0)
     const errorStatus = page.getByRole('status').filter({ hasText: 'This turn failed' })
     await errorStatus.waitFor({ timeout: 10_000 })
@@ -268,6 +277,12 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     // while the settled retry row remains as durable recovery context.
     const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)
     await compareOrRefreshGolden(RETRY_EXPECTED, snapshot, MODE)
+    const expanded = await captureExpandedTurnProcessAria(
+      page,
+      '[class*="centerCol"]',
+      scaffold!.workspaceCwd,
+    )
+    await compareOrRefreshGolden(RETRY_EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 120_000)
@@ -288,7 +303,7 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
     await settled
     expect(turnEndReasons(sessionEvents).at(-1)).toBe('error')
     expect(sessionEvents.filter(e => e.type === 'llm/retry').length).toBe(2)
-    await expect.poll(() => page.locator('textarea').first().isEnabled(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
     expect(await page.locator('[data-streaming="true"]').count()).toBe(0)
     // The terminal error row must render even though the turn owns a retry
     // chain: exhausted recovery shares the failing turn, so suppressing the
@@ -307,8 +322,9 @@ describe('web e2e: live-turn interactions (cancel / error / retry)', () => {
 
   it.skipIf(MODE === 'record')('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.jsonl', 'cancel.expected.md', 'loading.expected.md', 'running-draft.expected.md',
-      'error-auth.expected.md', 'retry.expected.md', 'retry-exhausted.expected.md',
+      'session.jsonl', 'cancel.expected.md', 'cancel-expanded.expected.md',
+      'loading.expected.md', 'running-draft.expected.md', 'error-auth.expected.md',
+      'retry.expected.md', 'retry-expanded.expected.md', 'retry-exhausted.expected.md',
     ])
   })
 })

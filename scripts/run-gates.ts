@@ -507,7 +507,10 @@ function ciWindowsCompleteGates(): Gate[] {
     .map(gate => ({
       ...gate,
       allowFailure: true,
-      after: [...new Set([...coverageAfter, ...(gate.after ?? [])])],
+      after: [...new Set([
+        ...coverageAfter,
+        ...(gate.after ?? []).map(id => id === 'docs-site-build' ? 'windows-site' : id),
+      ])],
     }))
   return [
     ciBuildGate(),
@@ -518,7 +521,7 @@ function ciWindowsCompleteGates(): Gate[] {
 }
 
 function ciWindowsObservationalGates(): Gate[] {
-  return [
+  const predecessors = [
     ...ciStaticGates({ ownsBuild: true }),
     // Linux owns required lint and snapshots; Windows omits those duplicates.
     pnpmScript('duplication', 'duplication'),
@@ -528,7 +531,15 @@ function ciWindowsObservationalGates(): Gate[] {
       needs: ['build'],
     }),
     builtPackageInvariantsGate(['build']),
-    builtBinSmokeGate(),
+  ]
+  return [
+    ...predecessors,
+    {
+      ...builtBinSmokeGate(),
+      // This smoke starts real application children with bounded startup
+      // deadlines. Let other Windows processes settle before measuring startup.
+      after: predecessors.map(gate => gate.id),
+    },
   ]
 }
 
@@ -750,6 +761,7 @@ function builtBinSmokeGate(needs: string[] = ['build']): Gate {
     'packages/subagent/subagent-codex/tests/loader-composition.e2e.ts',
     'packages/subagent/subagent-claude-code/tests/loader-composition.e2e.ts',
     'packages/api/remotes/tests/built-lib.e2e.ts',
+    'packages/experimental/agent-team/tests/built-lib.e2e.ts',
     // Built execution consumers: the only automated proof that package-name
     // imports reach their lib/ entrypoints under plain Node. The e2e lane runs
     // unbuilt, so these files self-skip there.

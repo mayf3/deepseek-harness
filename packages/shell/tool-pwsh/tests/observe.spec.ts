@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -90,7 +90,7 @@ let callCounter = 0
 function call(ctx: Context, args: Record<string, unknown>) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: CallId(`pwsh-observe-${++callCounter}`),
+    callId: ToolCallId(`pwsh-observe-${++callCounter}`),
     name: 'pwsh',
     arguments: args,
   })

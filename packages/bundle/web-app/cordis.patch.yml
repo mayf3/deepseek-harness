@@ -42,7 +42,7 @@
 # window.__DSH_BOOT__; the modules row is simultaneously a host row.
 - insert:
     # Host-owned opt-in sampled when a new Web session receives its preset
-    # delegation tools. The Models page edits this settings namespace.
+    # delegation tools. The Plugins page edits this settings namespace.
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
@@ -85,6 +85,11 @@
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
+
+    # Configuration-surface reads and writes over Typert Remote. Each method
+    # reports an actionable error when its settings-domain provider is absent.
+    - id: settings-controller
+      name: '@deepseek-ai/dsh-api-settings-controller'
 
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller

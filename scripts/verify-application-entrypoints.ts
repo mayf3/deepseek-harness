@@ -49,6 +49,7 @@ const EXECUTABLE_SOURCE_ALLOWLIST = new Map<string, string>([
 /** Root demos are application wrappers and therefore must visibly select dsh. */
 const ROOT_DEMO_POLICIES = new Map<string, DemoPolicy>([
   ['demo:code-mode', { kind: 'dsh-wrapper', wrapper: 'scripts/demo-code-mode.mjs' }],
+  ['demo:inspector', { kind: 'dsh-direct' }],
 ])
 
 const SOURCE_PATTERNS = [

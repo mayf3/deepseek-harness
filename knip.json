@@ -45,6 +45,15 @@
         "@deepseek-ai/dsh-client-ui-directory-picker-native"
       ]
     },
+    "packages/experimental/inspector": {
+      "entry": [
+        "tests/**/*.e2e.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/extensions/cordis-host-runner": {
       "entry": [
         "tests/**/*.spec.ts"
@@ -77,11 +86,6 @@
       ]
     },
     "packages/api/activity-controller": {
-      "ignoreDependencies": [
-        "zod"
-      ]
-    },
-    "packages/api/workspace-controller": {
       "ignoreDependencies": [
         "zod"
       ]
@@ -706,8 +710,7 @@
         "@deepseek-ai/dsh-llm-deepseek",
         "@deepseek-ai/dsh-session-checkpoint-policy",
         "@deepseek-ai/dsh-session-persistence-jsonl",
-        "@deepseek-ai/dsh-skill-filesystem",
-        "@deepseek-ai/dsh-tool-subagent"
+        "@deepseek-ai/dsh-skill-filesystem"
       ]
     },
     "packages/shell/tool-pwsh": {
@@ -759,6 +762,17 @@
     "packages/bundle/sdk-minimal": {
       "ignoreDependencies": [
         "@deepseek-ai/.+"
+      ]
+    },
+    "packages/experimental/agent-team": {
+      "entry": [
+        "tests/**/*.spec.ts",
+        "tests/**/*.e2e.ts"
+      ]
+    },
+    "packages/experimental/agent-team-web-profile": {
+      "ignoreDependencies": [
+        "@deepseek-ai/dsh-experimental-client-ui-agent-team"
       ]
     },
     "packages/bundle/web-app": {

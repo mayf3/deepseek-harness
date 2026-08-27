@@ -15,7 +15,7 @@ import {
   type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, REPO_ROOT, saveFailureShot,
+  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, REPO_ROOT, saveFailureShot,
 } from './support.ts'
 
 const MODE = webSnapshotMode()
@@ -72,7 +72,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
   it('shows the live member, opens its local child, then retains the settled record beside the tool row', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workflow-run-live'))
     const settled = waitForParentSettlement()
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.fill(prompt)
     await input.press('Enter')
 
@@ -161,6 +161,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     const sessions = page.getByRole('tree', { name: 'Sessions' })
     await sessions.getByRole('treeitem', { name: /Use the workflow tool exactly/ }).click()
     await settled
+    await expandTurnProcesses(page)
     await page.locator('[data-workflow-run][data-run-status="completed"]').waitFor()
 
     expect(await page.locator('[data-chat-flow-kind="tool-call"]').count()).toBeGreaterThanOrEqual(1)
@@ -186,6 +187,7 @@ describe.skipIf(MODE === 'record')('web e2e: durable workflow run in Chat', () =
     onTestFailed(() => saveFailureShot(page, 'web-e2e-workflow-run-history'))
     await page.reload({ waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
+    await expandTurnProcesses(page)
     const workflow = page.getByRole('button', { name: /^snapshot-flow/ })
     await workflow.waitFor({ timeout: 15_000 })
     expect(await workflow.getAttribute('aria-expanded')).toBe('false')

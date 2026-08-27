@@ -173,7 +173,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-来源：[`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+来源：[`packages/preset/agent-presets/src/preset.ts:54`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-spine-demo"></a>
 
@@ -296,7 +296,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-api-activity-controller`
 
-需要：`typert`
+Requires: `typert`
 
 ```ts config-catalog
 /** Configuration for the Activity Remote owner. */
@@ -309,6 +309,22 @@ export interface Config {
 ```
 
 来源：[`packages/api/activity-controller/src/index.ts:26`](../packages/api/activity-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-gateway"></a>
+
+## `@deepseek-ai/dsh-api-gateway`
+
+需要：`typert`
+
+```ts config-catalog
+/** Gateway transport configuration. */
+export interface Config {
+  /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 30000 */
+  readonly websocketHeartbeatIntervalMs?: number
+}
+```
+
+来源：[`packages/api/gateway/src/index.ts:114`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -632,6 +648,74 @@ export interface Config {
 
 来源：[`packages/experimental/agent-team/src/types.ts:125`](../packages/experimental/agent-team/src/types.ts)
 
+<a id="deepseek-aidsh-experimental-inspector"></a>
+
+## `@deepseek-ai/dsh-experimental-inspector`
+
+需要：`webServer`
+
+```ts config-catalog
+/** Host plugin configuration. Fetch capture is enabled by default. */
+export interface Config extends Omit<InspectorOptions, 'clientOrigins'> {
+  /** Browser origins allowed to open the Client ingest WebSocket. */
+  clientOrigins?: string[]
+}
+
+/** User-facing Host options; every memory and lifecycle bound is configurable. */
+export interface InspectorOptions {
+  /** Loopback address used by the Worker HTTP and WebSocket endpoint. */
+  readonly host?: '127.0.0.1'
+  /** First port to bind; occupied ports advance until one is available. */
+  readonly port?: number
+  /** Additional exact browser origins admitted to the Client ingest socket. */
+  readonly clientOrigins?: readonly string[]
+  /** Whether to observe calls made through the current global fetch function. */
+  readonly captureFetch?: boolean
+  /** Maximum request-body prefix retained for one fetch. */
+  readonly maxRequestBodyBytes?: number
+  /** Maximum response-body prefix retained for one fetch. */
+  readonly maxResponseBodyBytes?: number
+  /** Maximum raw bytes encoded into one body observation. */
+  readonly maxBodyChunkBytes?: number
+  /** Maximum total request and response body bytes retained by the Worker. */
+  readonly maxJournalBytes?: number
+  /** Maximum active and completed fetch requests retained by the Worker. */
+  readonly maxRetainedRequests?: number
+  /** Maximum encoded bytes accepted in one source transport frame. */
+  readonly maxSourceFrameBytes?: number
+  /** Maximum observation records accepted in one source batch. */
+  readonly maxSourceRecordsPerFrame?: number
+  /** Maximum records waiting in one producer queue. */
+  readonly maxQueuedRecords?: number
+  /** Maximum encoded bytes waiting in one producer queue. */
+  readonly maxQueuedBytes?: number
+  /** Maximum time allowed for the Worker to become ready. */
+  readonly startupTimeoutMs?: number
+  /** Grace period before a stopping Worker is terminated. */
+  readonly stopTimeoutMs?: number
+  /** Initial upper bound for randomized Client reconnect delay. */
+  readonly clientReconnectBaseMs?: number
+  /** Maximum upper bound for randomized Client reconnect delay. */
+  readonly clientReconnectMaxMs?: number
+  /** Deadline for one Worker-to-Client Runtime or Sources request. */
+  readonly clientRuntimeTimeoutMs?: number
+  /** Deadline for one non-CDP semantic query. */
+  readonly queryTimeoutMs?: number
+  /** Maximum live object handles retained per Client Runtime session. */
+  readonly maxClientRuntimeObjects?: number
+  /** Maximum descriptors returned by one Client property request. */
+  readonly maxClientRuntimeProperties?: number
+  /** Maximum encoded bytes read for one Client script or source map. */
+  readonly maxClientSourceBytes?: number
+  /** Maximum Context and Fiber nodes retained in one realm snapshot. */
+  readonly maxCordisNodes?: number
+  /** Disconnected Cordis snapshots retained after their live realm closes. */
+  readonly maxDisconnectedCordisTrees?: number
+}
+```
+
+来源：[`packages/experimental/inspector/src/index.ts:66`](../packages/experimental/inspector/src/index.ts)
+
 <a id="deepseek-aidsh-experimental-tool-agent-team"></a>
 
 ## `@deepseek-ai/dsh-experimental-tool-agent-team`
@@ -810,7 +894,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-apiproxy`
 
-需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `subagents` · `sessionQuery` · `sessionController`
+需要：`agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `sessionQuery` · `sessionController`
 
 ```ts config-catalog
 /** Gateway plugin configuration. */
@@ -1343,7 +1427,7 @@ export interface ReplayModelConfig {
 
 依赖：[`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts)
 
-来源：[`packages/test-support/llm-replay/src/index.ts:914`](../packages/test-support/llm-replay/src/index.ts)
+来源：[`packages/test-support/llm-replay/src/index.ts:918`](../packages/test-support/llm-replay/src/index.ts)
 
 <a id="deepseek-aidsh-llm-retry"></a>
 
@@ -2789,7 +2873,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/shell/tool-pwsh/src/index.ts:60`](../packages/shell/tool-pwsh/src/index.ts)
+来源：[`packages/shell/tool-pwsh/src/index.ts:61`](../packages/shell/tool-pwsh/src/index.ts)
 
 <a id="deepseek-aidsh-tool-pwsh-persistent"></a>
 
@@ -2903,12 +2987,9 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
-  /** Let the model discover and select the child LLM route (default false). */
-  enableModelSelection?: boolean
   /**
    * Sample the Host `subagent-model-selection` user setting for each new
-   * top-level session and inherit that decision in its child sessions. Mutually
-   * exclusive with `enableModelSelection`.
+   * top-level session and inherit that decision in its child sessions.
    */
   modelSelectionSettings?: boolean
   /**
@@ -3066,7 +3147,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/workflow/tool-workflow/src/index.ts:32`](../packages/workflow/tool-workflow/src/index.ts)
+来源：[`packages/workflow/tool-workflow/src/index.ts:33`](../packages/workflow/tool-workflow/src/index.ts)
 
 <a id="deepseek-aidsh-tools"></a>
 
@@ -3357,8 +3438,8 @@ export interface Config {
 
 - `@deepseek-ai/dsh-acp-app` — 需要 `cmdlineArgs`（[`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts)）
 - `@deepseek-ai/dsh-agent`（[`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts)）
-- `@deepseek-ai/dsh-api-gateway` — 需要 `typert`（[`packages/api/gateway/src/index.ts`](../packages/api/gateway/src/index.ts)）
 - `@deepseek-ai/dsh-api-remotes` — 需要 `typertGateway`（[`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts)）
+- `@deepseek-ai/dsh-api-settings-controller`（[`packages/api/settings-controller/src/index.ts`](../packages/api/settings-controller/src/index.ts)）
 - `@deepseek-ai/dsh-api-workspace-controller` — 需要 `typert` · `workspaceRegistry`（[`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts)）
 - `@deepseek-ai/dsh-authorization` — 需要 `credentials`（[`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts)）
 - `@deepseek-ai/dsh-client-locale`（[`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts)）
@@ -3405,6 +3486,7 @@ export interface Config {
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-deepseek-llm-api-extensions`（[`packages/llm/deepseek-llm-api-extensions/src/index.ts`](../packages/llm/deepseek-llm-api-extensions/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-client-ui-agent-team`（[`packages/experimental/client-ui-agent-team/src/index.ts`](../packages/experimental/client-ui-agent-team/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
 - `@deepseek-ai/dsh-fs-observation-policy`（[`packages/fs/fs-observation-policy/src/index.ts`](../packages/fs/fs-observation-policy/src/index.ts)）
 - `@deepseek-ai/dsh-goal-round-driver` — 需要 `agents` · `goals` · `sessions`（[`packages/goal/goal-round-driver/src/index.ts`](../packages/goal/goal-round-driver/src/index.ts)）
@@ -3471,6 +3553,7 @@ export interface Config {
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime-python`（[`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-agent-team-profile`（[`packages/experimental/agent-team-profile/src/index.ts`](../packages/experimental/agent-team-profile/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-agent-team-web-profile`（[`packages/experimental/agent-team-web-profile/src/index.ts`](../packages/experimental/agent-team-web-profile/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-packer`（[`packages/experimental/webworker-packer/src/index.ts`](../packages/experimental/webworker-packer/src/index.ts)）
 - `@deepseek-ai/dsh-experimental-webworker-runtime`（[`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）

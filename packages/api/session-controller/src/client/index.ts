@@ -40,7 +40,14 @@ export type {
   SessionProjectionMap,
   UseProjection,
 } from './sessions/projection-store.ts'
-export type { ISession, ProjectionsFace, SessionFace } from './contract/session.ts'
+export type {
+  BeginSubmissionInput,
+  ISession,
+  PendingSubmissionRetirement,
+  ProjectionsFace,
+  SessionFace,
+  SubmissionHandle,
+} from './contract/session.ts'
 export type { ISessions } from './contract/sessions.ts'
 export { MutableSessionEventSource } from './contract/events.ts'
 export type {
@@ -53,6 +60,8 @@ export type {
 } from './contract/events.ts'
 export type {
   OpenState,
+  PendingSubmission,
+  PendingSubmissionImage,
   PromptError,
   QueuedMessage,
   SessionSnapshot,
@@ -73,6 +82,7 @@ export const inject = [
   'remote',
   'remote.commands',
   'remote.session',
+  'remote.subagents',
 ]
 
 /**
@@ -82,7 +92,7 @@ export const inject = [
 export function apply(ctx: Context): void {
   const connection = ctx.get('connection') as ConnectionHandle
   const remotes = ctx.remote as unknown as SessionRemotes
-  const sessions = new ClientSessions(ctx, connection.api, remotes)
+  const sessions = new ClientSessions(ctx, remotes)
   ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
   ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
   ctx.remote.$on('api-session/status', (sessionId, running) => {

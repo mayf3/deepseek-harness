@@ -13,27 +13,16 @@ import { RpcId } from '../api/rpc.ts'
 import type { Wire } from '../api/rpc.schema.ts'
 import { serverResponseSchema } from '../api/rpc.schema.ts'
 import {
-  hostCreateDirectoryValueSchema, hostDescribeValueSchema,
-  hostListDirectoryValueSchema, hostOpenPathValueSchema, hostPickDirectoryValueSchema,
+  hostDescribeValueSchema, hostOpenPathValueSchema,
 } from '../api/host.schema.ts'
 import { skillListValueSchema } from '../api/skills.schema.ts'
 import {
-  agentPresetCopyValueSchema, agentPresetListValueSchema, agentPresetOpenDocumentValueSchema,
-  agentPresetReadValueSchema, agentPresetRemoveValueSchema, agentPresetSelectValueSchema,
+  agentPresetOpenDocumentValueSchema,
 } from '../api/agent-presets.schema.ts'
 import {
-  settingsDescribeValueSchema, settingsMutateValueSchema, settingsOpenDocumentValueSchema,
-  settingsReplaceValueSchema, settingsUpdateValueSchema,
+  settingsOpenDocumentValueSchema,
 } from '../api/settings.schema.ts'
-import {
-  credentialsDescribeValueSchema, credentialsSetValueSchema, credentialsUnsetValueSchema,
-} from '../api/credentials.schema.ts'
 import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
-import {
-  subagentInterruptValueSchema,
-  subagentListValueSchema,
-  subagentPromptValueSchema,
-} from '../api/subagents.schema.ts'
 
 /**
  * Client consumption face of the contract (shape a): same domain tree as ApiProxy, but unary
@@ -48,40 +37,18 @@ import {
  * Derived per method key from RpcMethodMap so a map row addition updates this mechanically.
  */
 export interface IApiClient {
-  subagents: {
-    list(payload: RequestPayload<'subagent.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.list'>>>
-    prompt(payload: RequestPayload<'subagent.prompt'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.prompt'>>>
-    interrupt(payload: RequestPayload<'subagent.interrupt'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'subagent.interrupt'>>>
-  }
   host: {
     describe(payload: RequestPayload<'host.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.describe'>>>
-    pickDirectory(payload: RequestPayload<'host.pickDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.pickDirectory'>>>
-    listDirectory(payload: RequestPayload<'host.listDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.listDirectory'>>>
-    createDirectory(payload: RequestPayload<'host.createDirectory'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.createDirectory'>>>
     openPath(payload: RequestPayload<'host.openPath'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.openPath'>>>
   }
   skills: {
     list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
   }
   agentPresets: {
-    list(payload: RequestPayload<'agentPreset.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.list'>>>
-    select(payload: RequestPayload<'agentPreset.select'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.select'>>>
-    read(payload: RequestPayload<'agentPreset.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.read'>>>
-    copy(payload: RequestPayload<'agentPreset.copy'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.copy'>>>
     openDocument(payload: RequestPayload<'agentPreset.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.openDocument'>>>
-    remove(payload: RequestPayload<'agentPreset.remove'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.remove'>>>
   }
   settings: {
-    describe(payload: RequestPayload<'settings.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.describe'>>>
     openDocument(payload: RequestPayload<'settings.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.openDocument'>>>
-    update(payload: RequestPayload<'settings.update'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.update'>>>
-    replace(payload: RequestPayload<'settings.replace'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.replace'>>>
-    mutate(payload: RequestPayload<'settings.mutate'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.mutate'>>>
-  }
-  credentials: {
-    describe(payload: RequestPayload<'credentials.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.describe'>>>
-    set(payload: RequestPayload<'credentials.set'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.set'>>>
-    unset(payload: RequestPayload<'credentials.unset'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'credentials.unset'>>>
   }
   llm: {
     providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
@@ -95,29 +62,11 @@ export interface IApiClient {
  * mirror of the handler's request table; key coverage compiler-enforced against RpcMethodMap).
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
-  'subagent.list': subagentListValueSchema,
-  'subagent.prompt': subagentPromptValueSchema,
-  'subagent.interrupt': subagentInterruptValueSchema,
   'host.describe': hostDescribeValueSchema,
-  'host.pickDirectory': hostPickDirectoryValueSchema,
-  'host.listDirectory': hostListDirectoryValueSchema,
-  'host.createDirectory': hostCreateDirectoryValueSchema,
   'host.openPath': hostOpenPathValueSchema,
   'skill.list': skillListValueSchema,
-  'agentPreset.list': agentPresetListValueSchema,
-  'agentPreset.select': agentPresetSelectValueSchema,
-  'agentPreset.read': agentPresetReadValueSchema,
-  'agentPreset.copy': agentPresetCopyValueSchema,
   'agentPreset.openDocument': agentPresetOpenDocumentValueSchema,
-  'agentPreset.remove': agentPresetRemoveValueSchema,
-  'settings.describe': settingsDescribeValueSchema,
   'settings.openDocument': settingsOpenDocumentValueSchema,
-  'settings.update': settingsUpdateValueSchema,
-  'settings.replace': settingsReplaceValueSchema,
-  'settings.mutate': settingsMutateValueSchema,
-  'credentials.describe': credentialsDescribeValueSchema,
-  'credentials.set': credentialsSetValueSchema,
-  'credentials.unset': credentialsUnsetValueSchema,
   'llm.providers': llmProvidersValueSchema,
   'llm.models': llmModelsValueSchema,
   'llm.discoverModels': llmDiscoverModelsValueSchema,
@@ -125,9 +74,6 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
 const DEFAULT_TIMEOUT_MS = 30_000
-
-/** Whether a unary call uses the transport health deadline or only caller/connection cancellation. */
-type UnaryTimeoutPolicy = 'default' | 'caller-signal-only'
 
 /** URL base for in-process handler injection (fake authority, opencode precedent). */
 const INTERNAL_BASE = 'http://dsh.internal'
@@ -146,7 +92,7 @@ export abstract class AbstractApiClient implements IApiClient {
   private flushScheduled = false
   private readonly envelopeListeners = new Set<(batch: readonly RpcMessage[]) => void>()
 
-  /** @param timeoutMs - timeout for bounded unary calls; user-paced calls do not use it. */
+  /** @param timeoutMs - timeout for unary calls. */
   constructor(protected readonly timeoutMs: number = DEFAULT_TIMEOUT_MS) {}
 
   /** Transport aspect: browser fetch, injected handler.fetch, IPC bridge, ... */
@@ -202,24 +148,21 @@ export abstract class AbstractApiClient implements IApiClient {
 
   /**
    * Shared POST leg of unary calls: JSON body,
-   * optional default timeout merged with the caller's external signal, non-2xx → transport throw.
+   * default timeout merged with the caller's external signal, non-2xx → transport throw.
    */
   private async postJson(
     path: string,
     body: ClientRequest,
     signal: AbortSignal | undefined,
-    timeoutPolicy: UnaryTimeoutPolicy = 'default',
   ): Promise<Response> {
-    const requestSignal = timeoutPolicy === 'default'
-      ? signal === undefined
-        ? AbortSignal.timeout(this.timeoutMs)
-        : AbortSignal.any([AbortSignal.timeout(this.timeoutMs), signal])
-      : signal
+    const requestSignal = signal === undefined
+      ? AbortSignal.timeout(this.timeoutMs)
+      : AbortSignal.any([AbortSignal.timeout(this.timeoutMs), signal])
     const response = await this.doFetch(new URL(path, this.resolveBase()), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
-      ...requestSignal === undefined ? {} : { signal: requestSignal },
+      signal: requestSignal,
     })
     if (!response.ok) throw new Error(`transport failure for ${path}: HTTP ${response.status}`)
     return response
@@ -234,11 +177,10 @@ export abstract class AbstractApiClient implements IApiClient {
     method: K,
     payload: RequestPayload<K>,
     signal?: AbortSignal,
-    timeoutPolicy: UnaryTimeoutPolicy = 'default',
   ): Promise<RpcResponse<ResponseValue<K>>> {
     const message: ClientRequest = { type: 'client-request', rpcId: this.mintRpcId(), method, payload }
     this.onEnvelope(message)
-    const response = await this.postJson(`/api/${method}`, message, signal, timeoutPolicy)
+    const response = await this.postJson(`/api/${method}`, message, signal)
     const full = serverResponseSchema.parse(await response.json())
     this.onEnvelope(full)
     if (full.rpcId !== message.rpcId) throw new Error(`rpcId mismatch for ${method}: sent ${message.rpcId}, got ${full.rpcId}`)
@@ -251,21 +193,8 @@ export abstract class AbstractApiClient implements IApiClient {
 
   // ---- IApiClient API (arrow properties so destructured/passed references stay bound) ----
 
-  readonly subagents: IApiClient['subagents'] = {
-    list: (payload, signal) => this.callUnary('subagent.list', payload, signal),
-    prompt: (payload, signal) => this.callUnary('subagent.prompt', payload, signal),
-    interrupt: (payload, signal) => this.callUnary('subagent.interrupt', payload, signal),
-  }
-
   readonly host: IApiClient['host'] = {
     describe: (payload, signal) => this.callUnary('host.describe', payload, signal),
-    // A native system dialog is user-paced and may legitimately stay open
-    // longer than the normal unary deadline. Caller/connection aborts remain.
-    pickDirectory: (payload, signal) => this.callUnary(
-      'host.pickDirectory', payload, signal, 'caller-signal-only',
-    ),
-    listDirectory: (payload, signal) => this.callUnary('host.listDirectory', payload, signal),
-    createDirectory: (payload, signal) => this.callUnary('host.createDirectory', payload, signal),
     openPath: (payload, signal) => this.callUnary('host.openPath', payload, signal),
   }
 
@@ -279,26 +208,11 @@ export abstract class AbstractApiClient implements IApiClient {
   // the whole gateway, and with it the host `Context` merges, into every
   // Client program that imports this carrier.
   readonly agentPresets: IApiClient['agentPresets'] = {
-    list: (payload, signal) => this.callUnary('agentPreset.list', payload, signal),
-    select: (payload, signal) => this.callUnary('agentPreset.select', payload, signal),
-    read: (payload, signal) => this.callUnary('agentPreset.read', payload, signal),
-    copy: (payload, signal) => this.callUnary('agentPreset.copy', payload, signal),
     openDocument: (payload, signal) => this.callUnary('agentPreset.openDocument', payload, signal),
-    remove: (payload, signal) => this.callUnary('agentPreset.remove', payload, signal),
   }
 
   readonly settings: IApiClient['settings'] = {
-    describe: (payload, signal) => this.callUnary('settings.describe', payload, signal),
     openDocument: (payload, signal) => this.callUnary('settings.openDocument', payload, signal),
-    update: (payload, signal) => this.callUnary('settings.update', payload, signal),
-    replace: (payload, signal) => this.callUnary('settings.replace', payload, signal),
-    mutate: (payload, signal) => this.callUnary('settings.mutate', payload, signal),
-  }
-
-  readonly credentials: IApiClient['credentials'] = {
-    describe: (payload, signal) => this.callUnary('credentials.describe', payload, signal),
-    set: (payload, signal) => this.callUnary('credentials.set', payload, signal),
-    unset: (payload, signal) => this.callUnary('credentials.unset', payload, signal),
   }
 
   readonly llm: IApiClient['llm'] = {

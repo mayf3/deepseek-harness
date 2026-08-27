@@ -432,6 +432,8 @@ export type SessionFollowFrame =
 export interface SessionQueuedItem {
   readonly id: MessageId
   readonly placement: 'queued' | 'steering' | 'context'
+  /** Prompt-RPC identity from the queued message's user source; clients retire the matching local submission echo on it. */
+  readonly rpcId?: SessionRequestId
   /** JSON-safe message fields consumed by pending-queue presentation. */
   readonly message: {
     readonly id: MessageId

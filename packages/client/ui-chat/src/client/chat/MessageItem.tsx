@@ -1,7 +1,9 @@
 import type { ModelRetryNode, TurnErrorNode, UserMessageNode } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { memo, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { JsonBlock, MessageText, ReferenceIcon, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { PendingSubmission } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { MessageImageSource } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { JsonBlock, projectUserText, StateDot } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatNodeViewProps, ChatViewSlotProps } from '../contract/slots.ts'
 import { CompactionItem } from './CompactionItem.tsx'
 import { ContextInjectionRow } from './ContextInjectionRow.tsx'
@@ -144,77 +146,9 @@ function TurnMaxTokensItem({ t }: {
   )
 }
 
-/**
- * Display projection of reference forms in a user bubble (free geometry — no
- * textarea alignment constraint here); everything else stays plain text. The
- * logged model text remains the single truth; this is presentation only.
- * Plain-text `/name` / `@name` word-boundary tokens decorate (the sent text
- * IS the reference — the bubble uses the same plainest token
- * scan as the composer, minus the lexicon: sent tokens were validated at
- * compose time, so shape alone decorates).
- */
-function projectUserText(text: string, sessionLabels: readonly string[]): ReactNode {
-  const ranges: { start: number; end: number; label: string; kind: 'session' | 'plain' }[] = []
-  for (const rawLabel of [...new Set(sessionLabels)].sort((a, b) => b.length - a.length)) {
-    const label = `@${rawLabel}`
-    let start = text.indexOf(label)
-    while (start >= 0) {
-      ranges.push({ start, end: start + label.length, label, kind: 'session' })
-      start = text.indexOf(label, start + label.length)
-    }
-  }
-  const re = /(^|\s)(\/[\w-]+|@"[^"\n]+"|@[^\s]+)/gu
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
-    const tokenStart = m.index + (m[1]?.length ?? 0)
-    const rawLabel = m[2] ?? ''
-    const label = rawLabel.startsWith('@"')
-      ? rawLabel
-      : rawLabel.replace(/[.,;:!?，。；：！？]+$/gu, '')
-    if (label.length <= 1) continue
-    ranges.push({ start: tokenStart, end: tokenStart + label.length, label, kind: 'plain' })
-  }
-  ranges.sort((a, b) => a.start - b.start
-    || (a.kind === b.kind ? b.end - a.end : a.kind === 'session' ? -1 : 1))
-  const parts: ReactNode[] = []
-  let cursor = 0
-  for (const range of ranges) {
-    if (range.start < cursor) continue
-    const { start: tokenStart, end, label, kind } = range
-    if (tokenStart > cursor) parts.push(<MessageText key={cursor} text={text.slice(cursor, tokenStart)} />)
-    const referenceKind = kind === 'session'
-      ? 'session'
-      : label.startsWith('@')
-        ? label.endsWith('/') ? 'folder' : 'file'
-        : undefined
-    const displayLabel = referenceKind === undefined
-      ? label
-      : referenceKind === 'session'
-        ? label.slice(1)
-        : label.slice(1).replace(/^"|"$/gu, '').split(/[\\/]/u).filter(Boolean).at(-1) ?? label.slice(1)
-    parts.push(
-      <span
-        key={tokenStart}
-        className={css.refChip}
-        data-ref-chip={referenceKind ?? 'skill'}
-        title={label}
-      >
-        {referenceKind !== undefined && (
-          <ReferenceIcon kind={referenceKind} size={16} className={css.refIcon} />
-        )}
-        {displayLabel}
-      </span>,
-    )
-    cursor = end
-  }
-  if (parts.length === 0) return <MessageText text={text} />
-  if (cursor < text.length) parts.push(<MessageText key={cursor} text={text.slice(cursor)} />)
-  return <>{parts}</>
-}
-
 /** Right-aligned bubble shared by user and steering rows. */
 function UserStyleBubble({
-  content, renderMessageImages, actions, pending = false, referenceLabels = [], t,
+  content, renderMessageImages, actions, pending = false, echo = false, referenceLabels = [], previewImages, t,
 }: {
   content: readonly unknown[]
   renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
@@ -222,15 +156,25 @@ function UserStyleBubble({
   actions?: (text: string) => ReactNode
   /** Whether this is the Host-authoritative pre-admission steering projection. */
   pending?: boolean
+  /** Whether this is a local submission echo (invisible marker; the echo renders exactly like its durable replacement). */
+  echo?: boolean
   /** Exact session mention labels associated by the adjacent recall node. */
   referenceLabels?: readonly string[]
+  /** Local submission-echo previews replacing the content-derived image group. */
+  previewImages?: readonly MessageImageSource[]
   t: ChatViewSlotProps['t']
 }): ReactNode {
-  const { text, images, rest } = contentParts(content)
+  const { text, images: contentImages, rest } = contentParts(content)
+  const images = previewImages ?? contentImages
   const truncated = (total: number): string => t('json.truncated', { total })
   const showBubble = text !== '' || rest.length > 0
   return (
-    <div className={css.userRow} data-pending-steering={pending || undefined} data-time-hover-root>
+    <div
+      className={css.userRow}
+      data-pending-steering={pending || undefined}
+      data-submission-echo={echo || undefined}
+      data-time-hover-root
+    >
       <div className={css.userStack}>
         {renderMessageImages({ images, align: 'end' })}
         {showBubble && <div className={css.bubble}>
@@ -268,6 +212,54 @@ export function PendingSteeringBubble({ content, renderMessageImages, t }: {
       actions={text => (
         <MessageIconActions
           text={text}
+          clock="start"
+          className={css.actions}
+          t={t}
+        />
+      )}
+    />
+  )
+}
+
+/**
+ * Render one local submission echo with the exact visual language of the
+ * durable user node that replaces it: draft text plus object-URL previews,
+ * visible from the submit click until the durable `user/message` (or its
+ * queue occurrence) renders.
+ * @param props - the session snapshot's pending submission and render seats.
+ * @returns the echoed user bubble.
+ */
+export function PendingSubmissionBubble({ submission, renderMessageImages, t }: {
+  submission: PendingSubmission
+  renderMessageImages: ChatNodeOwnerProps['renderMessageImages']
+  t: ChatViewSlotProps['t']
+}): ReactNode {
+  const content = useMemo(
+    () => (submission.text === '' ? [] : [{ type: 'text', text: submission.text }]),
+    [submission.text],
+  )
+  const previewImages = useMemo<readonly MessageImageSource[]>(
+    () => submission.images.map(image => ({
+      preview: {
+        url: image.previewUrl,
+        ...(image.name === undefined ? {} : { name: image.name }),
+        ...(image.width === undefined ? {} : { width: image.width }),
+        ...(image.height === undefined ? {} : { height: image.height }),
+      },
+    })),
+    [submission.images],
+  )
+  return (
+    <UserStyleBubble
+      content={content}
+      previewImages={previewImages}
+      renderMessageImages={renderMessageImages}
+      echo
+      t={t}
+      actions={text => (
+        <MessageIconActions
+          text={text}
+          time={submission.time}
           clock="start"
           className={css.actions}
           t={t}

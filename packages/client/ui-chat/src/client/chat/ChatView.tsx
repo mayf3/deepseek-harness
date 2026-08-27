@@ -7,8 +7,10 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import { PendingSteeringBubble } from './MessageItem.tsx'
+import type { ChatSnapshot, TurnNavigationItem } from '../contract/snapshot.ts'
+import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
+import { TurnNavigator } from './TurnNavigator.tsx'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -28,10 +30,36 @@ interface PagingAnchor {
 
 /** Find an already-rendered row without interpolating a selector. */
 function anchorElement(list: HTMLElement, key: string): HTMLElement | null {
-  for (const row of list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')) {
+  for (const row of list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden])')) {
     if (row.dataset.chatAnchorKey === key) return row
   }
   return null
+}
+
+/**
+ * Turn owning the row at a scrollport line. Scroll frames are hot, so this
+ * hit-tests the line first and falls back to one row scan when layout cannot
+ * answer (jsdom, pre-paint); neither path queries per navigation item.
+ * @param list - the ChatView list element.
+ * @param line - viewport y of the reading line.
+ * @returns the Turn number, or null when no loaded row covers the line.
+ */
+function turnAtLine(list: HTMLElement, line: number): number | null {
+  const content = list.getBoundingClientRect()
+  if (typeof document.elementsFromPoint === 'function' && content.width > 0) {
+    for (const element of document.elementsFromPoint(content.left + content.width / 2, line)) {
+      const row = element instanceof HTMLElement ? element.closest<HTMLElement>('[data-chat-turn]') : null
+      const turn = Number(row?.dataset.chatTurn)
+      if (row !== null && list.contains(row) && Number.isSafeInteger(turn)) return turn
+    }
+  }
+  let found: number | null = null
+  for (const row of list.querySelectorAll<HTMLElement>('[data-chat-turn]')) {
+    if (row.getBoundingClientRect().top > line) break
+    const turn = Number(row.dataset.chatTurn)
+    if (Number.isSafeInteger(turn)) found = turn
+  }
+  return found
 }
 
 /** Row position in scrollport coordinates (viewport-independent). */
@@ -59,7 +87,9 @@ function pagingAnchor(list: HTMLElement, scrollport: HTMLElement): HTMLElement |
       if (row !== null && list.contains(row)) return row
     }
   }
-  const rows = list.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty)')
+  const rows = list.querySelectorAll<HTMLElement>(
+    '[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])',
+  )
   let low = 0
   let high = rows.length
   while (low < high) {
@@ -96,10 +126,37 @@ function isFolderOpenPath(path: string): boolean {
   return path === '.'
 }
 
+/**
+ * Prompt-RPC identities already rendered by durable material: user/steering
+ * node sources plus queue occurrences. A submission echo whose identity
+ * appears here is hidden in the same render, so the echo→durable swap is
+ * atomic — no duplicate, no gap — regardless of when the echo leaves the
+ * session snapshot.
+ */
+function observedRpcIds(
+  order: readonly string[],
+  nodes: ChatSnapshot['nodes'],
+  queue: readonly { readonly rpcId?: string }[],
+): ReadonlySet<string> {
+  const observed = new Set<string>()
+  for (const key of order) {
+    const node = nodes.get(key)
+    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
+    const source = (node.data as { readonly source?: unknown }).source as
+      | { readonly kind?: unknown; readonly rpcId?: unknown }
+      | undefined
+    if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
+  }
+  for (const item of queue) {
+    if (item.rpcId !== undefined) observed.add(item.rpcId)
+  }
+  return observed
+}
+
 function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
   let latest: number | null = null
   for (const turn of timeline.turns.values()) {
-    if (turn.status === 'open' && turn.start !== undefined) latest = turn.start.time
+    if (turn.status === 'open') latest = turn.start?.time ?? null
   }
   return latest
 }
@@ -145,11 +202,15 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
-  fileMentions, t,
+  useSession, useChat, useSessions, useStore, actions, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
+  fileMentions, useTranscriptView, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
+  // The rail's items are accumulated in the Chat snapshot, so this selector is
+  // both the data and its change signal: the array identity moves only when a
+  // Turn enters, leaves, or changes its preview.
+  const turnNavigationItems = useChat(s => s.navigation.items())
   const timeline = useChat(s => s.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -160,6 +221,7 @@ export function ChatView({
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
   const selectedCallId = useStore(s => s.selection?.callId)
+  const compactTranscript = useTranscriptView(mode => mode === 'compact')
   const inspectCall = useCallback((callId: string) => {
     openView('trajectory', callId)
   }, [openView])
@@ -202,6 +264,15 @@ export function ChatView({
     () => inbox.filter(item => item.placement === 'steering'),
     [inbox],
   )
+  const pendingSubmissions = useSession(s => s.pendingSubmissions)
+  // Submission echoes still awaiting their durable counterpart. `order` is the
+  // recompute trigger: durable user material always arrives as an append, and
+  // every append replaces the order array.
+  const visibleSubmissions = useMemo(() => {
+    if (pendingSubmissions.length === 0) return pendingSubmissions
+    const observed = observedRpcIds(order, nodeStore, inbox)
+    return pendingSubmissions.filter(submission => !observed.has(submission.requestId))
+  }, [pendingSubmissions, order, nodeStore, inbox])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
@@ -210,8 +281,13 @@ export function ChatView({
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
-  const atBottomRef = useRef(true)
-  const [atBottom, setAtBottom] = useState(true)
+  // A saved position starts disarmed; the first layout effect synchronously
+  // restores it and normalizes a floor-clamped position back to following.
+  const [atBottom, setAtBottom] = useState(() => chatScroll.read() === null)
+  const atBottomRef = useRef(atBottom)
+  const [activeTurn, setActiveTurn] = useState<number | null>(
+    () => turnNavigationItems.at(-1)?.turn ?? null,
+  )
   /** Last position delivered or written on the main thread. */
   const observedTopRef = useRef(0)
   /** Paging anchor: semantic row/position at click, updated by reader scrolls
@@ -221,6 +297,7 @@ export function ChatView({
   const openedRef = useRef(false)
   const lastKeyRef = useRef<string | null>(null)
   const lastSteeringIdRef = useRef<string | null>(null)
+  const lastSubmissionIdRef = useRef<string | null>(null)
   /** Flow tip signature — follow-scroll only when this moves, never on a
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
@@ -231,7 +308,60 @@ export function ChatView({
   const lastKey = order.at(-1) ?? null
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
   const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
-  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
+  const lastSubmissionId = visibleSubmissions[visibleSubmissions.length - 1]?.requestId ?? null
+  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}:${lastSubmissionId ?? ''}`
+
+  const syncActiveTurn = useCallback((): void => {
+    const local = listRef.current
+    const first = turnNavigationItems[0]
+    if (local === null || first === undefined) {
+      setActiveTurn(null)
+      return
+    }
+    const el = scrollerOf(local)
+    const readingLine = el.getBoundingClientRect().top + Math.min(96, el.clientHeight * 0.2)
+    const reading = turnAtLine(local, readingLine)
+    // No row reaches the line yet: the flow head still owns the mark. Otherwise
+    // the row's Turn may be one the rail does not offer (all its nodes hidden),
+    // so the newest offered Turn at or above it owns the mark.
+    let next = first.turn
+    if (reading !== null) {
+      for (const item of turnNavigationItems) {
+        if (item.turn > reading) break
+        next = item.turn
+      }
+    }
+    if (el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1) {
+      next = turnNavigationItems.at(-1)?.turn ?? next
+    }
+    setActiveTurn(current => current === next ? current : next)
+  }, [turnNavigationItems])
+
+  const activeTurnRef = useRef<(() => void) | null>(null)
+  const activeFrameRef = useRef<number | null>(null)
+  const scheduleActiveTurn = useCallback((): void => {
+    if (activeFrameRef.current !== null) return
+    if (typeof requestAnimationFrame === 'undefined') {
+      syncActiveTurn()
+      return
+    }
+    activeFrameRef.current = requestAnimationFrame(() => {
+      activeFrameRef.current = null
+      syncActiveTurn()
+    })
+  }, [syncActiveTurn])
+
+  useEffect(() => () => {
+    if (activeFrameRef.current !== null && typeof cancelAnimationFrame !== 'undefined') {
+      cancelAnimationFrame(activeFrameRef.current)
+    }
+  }, [])
+
+  activeTurnRef.current = scheduleActiveTurn
+
+  useLayoutEffect(() => {
+    scheduleActiveTurn()
+  }, [scheduleActiveTurn])
 
   const toBottom = (el: HTMLElement): void => {
     anchorRef.current = null
@@ -240,6 +370,7 @@ export function ChatView({
     atBottomRef.current = true
     setAtBottom(true)
     chatScroll.save(null)
+    setActiveTurn(turnNavigationItems.at(-1)?.turn ?? null)
   }
 
   useLayoutEffect(() => {
@@ -270,6 +401,7 @@ export function ChatView({
       firstSeqRef.current = firstSeq
       lastKeyRef.current = lastKey
       lastSteeringIdRef.current = lastSteeringId
+      lastSubmissionIdRef.current = lastSubmissionId
       followSigRef.current = followSig
       return
     }
@@ -286,6 +418,7 @@ export function ChatView({
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
       lastKeyRef.current = lastKey
       lastSteeringIdRef.current = lastSteeringId
+      lastSubmissionIdRef.current = lastSubmissionId
       followSigRef.current = followSig
       return
     }
@@ -294,13 +427,15 @@ export function ChatView({
     // (send lives in the composer, so arrival is detected here, not armed there).
     const appendedUser = lastKey !== lastKeyRef.current && lastNode?.kind === 'user'
     const appendedSteering = lastSteeringId !== null && lastSteeringId !== lastSteeringIdRef.current
+    const appendedSubmission = lastSubmissionId !== null && lastSubmissionId !== lastSubmissionIdRef.current
     const tipMoved = followSigRef.current !== followSig
     lastKeyRef.current = lastKey
     lastSteeringIdRef.current = lastSteeringId
+    lastSubmissionIdRef.current = lastSubmissionId
     followSigRef.current = followSig
     // Follow new flow content while pinned; do NOT re-pin on every render
     // merely because atBottomRef is true (scroll threshold → setState → snap).
-    if (appendedUser || appendedSteering || (tipMoved && atBottomRef.current)) toBottom(el)
+    if (appendedUser || appendedSteering || appendedSubmission || (tipMoved && atBottomRef.current)) toBottom(el)
   })
 
   const onScrollRef = useRef(() => {})
@@ -338,6 +473,7 @@ export function ChatView({
     if (isAtBottom) chatScroll.save(null)
     else if (position !== null) chatScroll.save(position)
     observedTopRef.current = el.scrollTop
+    scheduleActiveTurn()
   }
 
   // Bind the scroll listener on the resolved scrollport once per mount;
@@ -376,7 +512,12 @@ export function ChatView({
     if (column === null || local === null || typeof ResizeObserver === 'undefined') return
     const scrollport = scrollerOf(local)
     const composer = scrollport.querySelector<HTMLElement>('[data-composer-seat]')
-    const observer = new ResizeObserver(() => { followRef.current?.() })
+    // Flow-height changes (image loads, tool disclosures) move rows across the
+    // reading line without a scroll event, so the active mark resyncs here too.
+    const observer = new ResizeObserver(() => {
+      followRef.current?.()
+      activeTurnRef.current?.()
+    })
     observer.observe(column)
     if (composer !== null) observer.observe(composer)
     return () => { observer.disconnect() }
@@ -404,9 +545,39 @@ export function ChatView({
     loadOlder()
   }
 
+  // Identity feeds the memoized rail; a fresh closure per render would defeat it.
+  const navigateToTurn = useCallback((item: TurnNavigationItem): void => {
+    const local = listRef.current
+    if (local === null) return
+    const row = anchorElement(local, item.anchorKey)
+    if (row === null) return
+    const el = scrollerOf(local)
+    el.scrollTop += flowTop(row, el) - 24
+    observedTopRef.current = el.scrollTop
+    // A pending older page still has to compensate the prepended height, so
+    // navigation moves that anchor to the new position instead of dropping it.
+    const landed = loadingOlder ? pagingAnchor(local, el) : null
+    anchorRef.current = landed === null || landed.dataset.chatAnchorKey === undefined
+      ? null
+      : { key: landed.dataset.chatAnchorKey, top: flowTop(landed, el) }
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
+    atBottomRef.current = isAtBottom
+    setAtBottom(isAtBottom)
+    setActiveTurn(item.turn)
+    const position = isAtBottom ? null : scrollPosition(local, el)
+    if (isAtBottom) chatScroll.save(null)
+    else if (position !== null) chatScroll.save(position)
+  }, [loadingOlder, chatScroll])
+
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
+        <TurnNavigator
+          items={turnNavigationItems}
+          activeTurn={activeTurn}
+          onNavigate={navigateToTurn}
+          t={t}
+        />
         <div ref={columnRef} className={css.column} data-chat-flow="">
           {openState === 'loading' && <div className={css.hint}>{t('chat.loadingHistory')}</div>}
           {openState === 'error' && openError !== null && (
@@ -425,7 +596,11 @@ export function ChatView({
             <ChatNodeSeat
               key={nodeKey}
               nodeKey={nodeKey}
+              historyIncomplete={hasMore}
+              compactTranscript={compactTranscript}
               useChat={useChat}
+              useStore={useStore}
+              actions={actions}
               selectedCallId={selectedCallId}
               cwd={cwd}
               openFile={requestOpenFile}
@@ -447,6 +622,14 @@ export function ChatView({
             <PendingSteeringBubble
               key={item.id}
               content={item.content}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
+          ))}
+          {visibleSubmissions.map(submission => (
+            <PendingSubmissionBubble
+              key={submission.requestId}
+              submission={submission}
               renderMessageImages={renderMessageImages}
               t={t}
             />

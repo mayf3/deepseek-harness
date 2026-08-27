@@ -3,7 +3,7 @@
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ActivityId } from '@deepseek-ai/dsh-activity/brand'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
-import type { CallId } from '@deepseek-ai/dsh-llm/brand'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 
 export type { ActivityId } from '@deepseek-ai/dsh-activity/brand'
 
@@ -13,7 +13,7 @@ export type ActivityRowStatus = 'running' | 'completed' | 'failed' | 'killed'
 /** Links one roster row to the tool call and background job for the same work. */
 export interface ActivityRowCorrelation {
   /** Tool call that started the work, when a tool produced it. */
-  readonly callId?: CallId
+  readonly callId?: ToolCallId
   /** Background job carrying the model-facing control surface, when one exists. */
   readonly jobId?: JobId
 }

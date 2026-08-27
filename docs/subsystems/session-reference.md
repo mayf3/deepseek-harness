@@ -34,7 +34,7 @@ interface SessionReferenceInput {
 }
 ```
 
-`SessionReferenceCandidate` is host-facing discovery output. Its label uses the latest session title when present, while filtering still searches only session id and cwd and never transcript text.
+`SessionReferenceCandidate` is host-facing discovery output. Its label uses the latest session title when present, and filtering searches that label alongside session id and cwd, never transcript text.
 
 ```ts type-equiv
 /** One host-facing candidate from exact session metadata. */
@@ -45,6 +45,12 @@ interface SessionReferenceCandidate {
   label: string
   /** Source session working directory, when recorded. */
   cwd?: string
+  /**
+   * True when {@link SessionReferenceCandidate.cwd} is recorded and equals the
+   * requesting agent's. Hosts that only surface a distinguishing location
+   * read this instead of comparing paths they never received.
+   */
+  sameWorkspace: boolean
   /** Source session creation time in Unix epoch milliseconds. */
   createdAt: number
 }
@@ -138,6 +144,10 @@ Exact-read consumer that prepares immutable cross-session message context.
 ```ts cordis-catalog
 /**
  * List reference candidates, ranked by working-directory affinity.
+ *
+ * Discovery runs at keystroke rate, so a title only ever comes from a
+ * projection read: see {@link SessionReferenceResolver.projectedTitle} for
+ * which sessions can answer one and which fall back to their id.
  * @param agent - target agent; self is excluded and its cwd drives ranking.
  * @param query - optional case-insensitive session-id/cwd/title substring.
  * @param limit - optional positive result cap.

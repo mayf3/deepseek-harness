@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
@@ -40,7 +40,7 @@ let callCounter = 0
 function call(ctx: Context, args: Record<string, unknown>) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: CallId(`observe-call-${++callCounter}`),
+    callId: ToolCallId(`observe-call-${++callCounter}`),
     name: 'bash',
     arguments: args,
   })

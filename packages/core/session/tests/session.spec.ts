@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage, CallId, createMessage, createToolResultMessage, MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId, createMessage, createToolResultMessage, MessageId, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import SessionStore, {
   adoptSessionEvent,
   SESSION_FORMAT_VERSION,
@@ -33,7 +33,7 @@ describe('Session', () => {
         role: 'assistant',
         content: [
           { type: 'text', text: 'let me check' },
-          { type: 'tool-call', id: CallId('c1'), name: 'echo', arguments: '{}' },
+          { type: 'tool-call', id: ToolCallId('c1'), name: 'echo', arguments: '{}' },
         ],
         source: {
           kind: 'model',
@@ -44,7 +44,7 @@ describe('Session', () => {
     session.append('tool/result', {
       turn: 1, step: 1,
       message: createToolResultMessage({
-        callId: CallId('c1'),
+        callId: ToolCallId('c1'),
         content: [{ type: 'text', text: 'ok' }],
         isError: false,
       }),
@@ -55,7 +55,7 @@ describe('Session', () => {
     expect(messages.map(m => m.role)).toEqual(['user', 'assistant', 'user'])
     // raw chunks must NOT appear in derived history
     expect(messages[1]!.content).toHaveLength(2)
-    expect(messages[2]!.content[0]).toMatchObject({ type: 'tool-result', toolCallId: CallId('c1') })
+    expect(messages[2]!.content[0]).toMatchObject({ type: 'tool-result', toolCallId: ToolCallId('c1') })
   })
 
   it('accepts and round-trips a max-tokens turn/end reason', () => {
@@ -442,7 +442,7 @@ describe('Session', () => {
     session.append('tool/result', {
       turn: 1, step: 1,
       message: createToolResultMessage({
-        callId: CallId('c1'),
+        callId: ToolCallId('c1'),
         content: [{ type: 'text', text: 'tool out' }],
         isError: false,
       }),

@@ -18,7 +18,7 @@ import {
   captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import { connectFreshWorkspace, expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/cordis-tool-round/session.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/cordis-tool-round/ui.expected.md', import.meta.url))
@@ -106,7 +106,7 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     if (MODE !== 'record') {
       expect(fixtureUserPrompts(await readFile(FIXTURE, 'utf8'))).toEqual([PROMPT, STOP_PROMPT])
     }
-    const input = page.locator('textarea').first()
+    const input = page.locator('[data-composer-input]').first()
     await input.waitFor({ timeout: 10_000 })
     const runTurnSettled = scaffold.whenTurnSettled()
     await input.fill(PROMPT)
@@ -162,6 +162,7 @@ describe('web e2e: Cordis tools use their owned cards', () => {
       .toBeGreaterThanOrEqual(1)
 
     const inspectRow = page.locator('[data-tool="cordis_inspect_self"]').filter({ hasText: 'Inspect' }).first()
+    await expandOwningTurnProcess(page, inspectRow)
     await inspectRow.waitFor({ timeout: 10_000 })
 
     // cordis_define does NOT go through the generic row: ui-cordis registers a
@@ -169,6 +170,7 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     // title here is the CARD's ("Cordis Plugin"), and the expanded body is the
     // card's own two code sections rather than a generic args dump.
     const defineRow = page.locator('[data-tool="cordis_define"]').filter({ hasText: 'Cordis Plugin' }).first()
+    await expandOwningTurnProcess(page, defineRow)
     await defineRow.waitFor({ timeout: 10_000 })
     // The whole summary row is the expand toggle (unified tool-row interaction).
     await defineRow.locator('[aria-expanded]').first().click()
@@ -177,10 +179,12 @@ describe('web e2e: Cordis tools use their owned cards', () => {
     await expect.poll(() => defineRow.textContent()).toContain(PACKAGE_CODE)
 
     const runRow = page.locator('[data-tool="cordis_run"]').filter({ hasText: 'Run Cordis Plugin' }).first()
+    await expandOwningTurnProcess(page, runRow)
     await runRow.waitFor({ timeout: 10_000 })
     await expect.poll(() => runRow.textContent()).toContain('snap-')
 
     const stopRow = page.locator('[data-tool="cordis_stop"]').filter({ hasText: 'Stop Cordis Plugin' }).first()
+    await expandOwningTurnProcess(page, stopRow)
     await stopRow.waitFor({ timeout: 10_000 })
     await expect.poll(() => stopRow.textContent()).toContain('snap-')
     await expect(stopRow.getAttribute('data-state')).resolves.toBe('ok')

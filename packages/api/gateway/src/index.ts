@@ -9,6 +9,8 @@ import { randomUUID } from 'node:crypto'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
 import type { WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
+import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import z from '@deepseek-ai/schemastery'
 import {
   remoteMethods,
   TypertLookupFailure,
@@ -106,6 +108,17 @@ interface PendingRemoteEvent {
 type ConnectionRpcResult = Awaited<ReturnType<ConnectionRpcHandler>>
 type ConnectionRpcError = Extract<ConnectionRpcResult, { readonly ok: false }>['error']
 const NEVER_ABORTED_SIGNAL = new AbortController().signal
+const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 30_000
+
+/** Gateway transport configuration. */
+export interface Config {
+  /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 30000 */
+  readonly websocketHeartbeatIntervalMs?: number
+}
+
+interface ResolvedConfig extends Config {
+  readonly websocketHeartbeatIntervalMs: number
+}
 
 /** Dispatch failure produced outside the invoked business method. */
 export class TypertGatewayError extends Error {
@@ -156,6 +169,10 @@ class RemoteInvocationCancelled extends Error {
  */
 export class TypertGatewayService extends Service implements TypertGateway {
   static inject = ['typert']
+  static Config: z<Config> = z.object({
+    websocketHeartbeatIntervalMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS)
+      .default(DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS),
+  })
 
   /** Carrier adapter shared by the WebSocket mux and local Host transports. */
   readonly wireStream: TypertGatewayWireStream = {
@@ -171,9 +188,11 @@ export class TypertGatewayService extends Service implements TypertGateway {
   /**
    * Register the Gateway against the active Typert registry.
    * @param ctx - owning Host Context with Typert registry access.
+   * @param config - validated Gateway transport configuration.
    */
-  constructor(ctx: Context) {
+  constructor(ctx: Context, config: Config) {
     super(ctx, 'typertGateway')
+    const resolved = config as ResolvedConfig
     ctx.on('internal/service', () => {
       this.srcClaims = undefined
     })
@@ -188,6 +207,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       const mux = new RemoteStreamMuxServer(
         (endpoint, payload, signal) => this.openWireStream(endpoint, payload, signal),
         this.wireStream.failure,
+        resolved.websocketHeartbeatIntervalMs,
       )
       webCtx.effect(() => {
         const route: WebUpgradeRoute = {

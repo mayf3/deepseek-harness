@@ -29,46 +29,34 @@ import { AgentPresetSeatController } from '../src/client/seat-store.ts'
 // FALLBACK_LOCALE (en); each bench stages zh explicitly on the locale instead.
 
 const ROSTER_ONE = {
-  rpcId: 'r',
-  result: {
-    ok: true as const,
-    value: {
-      presets: [{ id: 'standard', trust: 'system', isDefault: true }],
-      authorable: true,
-      hasDocument: true,
-    },
+  ok: true as const,
+  value: {
+    presets: [{ id: 'standard', trust: 'system', isDefault: true }],
+    authorable: true,
   },
 }
 
 /** The roster after this browser copied one preset of its own. */
 const ROSTER_AUTHORED = {
-  rpcId: 'r',
-  result: {
-    ok: true as const,
-    value: {
-      presets: [
-        { id: 'standard', trust: 'system', isDefault: true },
-        { id: 'mine', trust: 'user', isDefault: false },
-      ],
-      authorable: true,
-      hasDocument: true,
-    },
+  ok: true as const,
+  value: {
+    presets: [
+      { id: 'standard', trust: 'system', isDefault: true },
+      { id: 'mine', trust: 'user', isDefault: false },
+    ],
+    authorable: true,
   },
 }
 
 /** The same roster with a second preset carrying the default. */
 const ROSTER_MOVED = {
-  rpcId: 'r',
-  result: {
-    ok: true as const,
-    value: {
-      presets: [
-        { id: 'standard', trust: 'system', isDefault: false },
-        { id: 'minimal', trust: 'system', isDefault: true },
-      ],
-      authorable: true,
-      hasDocument: true,
-    },
+  ok: true as const,
+  value: {
+    presets: [
+      { id: 'standard', trust: 'system', isDefault: false },
+      { id: 'minimal', trust: 'system', isDefault: true },
+    ],
+    authorable: true,
   },
 }
 
@@ -82,40 +70,59 @@ async function bench() {
   const locale = new LocaleRuntime(ctx)
   locale.setLocale('zh')
   ctx.provide('locale', locale)
-  const remote = new TestRemote(ctx)
   const calls: string[] = []
+  // The row reads `describe` to learn whether this browser may write at all,
+  // and its default write is the one op this spec records.
+  const settings = {
+    describe: () => Promise.resolve({
+      ok: true as const,
+      value: { writable: true, hasDocument: true, namespaces: [] },
+    }),
+    update: (_ns: string, patch: unknown) => {
+      calls.push(`settings:${JSON.stringify(patch)}`)
+      return Promise.resolve({ ok: true as const, value: {} })
+    },
+  }
+  const remote = new TestRemote(ctx, { settings })
+  // The roster and the switch are the AgentPresets Remote namespace; the
+  // shared double carries no generated namespaces, so this spec stages its
+  // own. Registered twice on purpose: the nested key satisfies the plugin's
+  // `inject`, and the property is what `ctx.remote.agentPresets` reads,
+  // because the double is a plain provided object rather than a Service.
+  const agentPresets = {
+    list: () => { calls.push('list'); return Promise.resolve(ROSTER) },
+    read: () => Promise.resolve({
+      ok: true as const,
+      value: { agentPreset: 'standard', trust: 'system', content: '' },
+    }),
+    copy: (_from: string, id: string) => {
+      calls.push(`copy:${id}`)
+      // The host's roster now contains it, which is the whole point of the
+      // copy and what every surface must converge on.
+      ROSTER = ROSTER_AUTHORED
+      return Promise.resolve({ ok: true as const, value: undefined })
+    },
+    deletePreset: () => Promise.resolve({ ok: true as const, value: undefined }),
+    select: (_agentId: SessionId, agentPreset: string) => {
+      calls.push(`select:${agentPreset}`)
+      return Promise.resolve({ ok: true as const, value: agentPreset })
+    },
+  }
+  ctx.provide('remote.agentPresets', agentPresets as never)
+  Object.assign(remote, { agentPresets })
   ctx.provide('connection', {
     api: {
-      agentPresets: {
-        list: () => { calls.push('list'); return Promise.resolve(ROSTER) },
-        read: () => Promise.resolve({
+      host: {
+        describe: () => Promise.resolve({
           rpcId: 'r',
-          result: { ok: true as const, value: { agentPreset: 'standard', trust: 'system', content: '' } },
+          result: { ok: true as const, value: { canOpenPath: true } },
         }),
-        copy: (payload: { from: string; agentPreset: string }) => {
-          calls.push(`copy:${payload.agentPreset}`)
-          // The host's roster now contains it, which is the whole point of the
-          // copy and what every surface must converge on.
-          ROSTER = ROSTER_AUTHORED
-          return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { agentPreset: payload.agentPreset } } })
-        },
+      },
+      agentPresets: {
         openDocument: (payload: { agentPreset: string }) => {
           calls.push(`openDocument:${payload.agentPreset}`)
           return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { opened: true as const } } })
         },
-        remove: () => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: {} } }),
-        select: (payload: { agentPreset: string }) => {
-          calls.push(`select:${payload.agentPreset}`)
-          return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { agentPreset: payload.agentPreset } } })
-        },
-      },
-      settings: {
-        // The row reads this to learn whether this browser may write at all.
-        describe: () => Promise.resolve({
-          rpcId: 'r',
-          result: { ok: true as const, value: { writable: true, hasDocument: true, namespaces: [] } },
-        }),
-        update: (payload: { patch: unknown }) => { calls.push(`settings:${JSON.stringify(payload.patch)}`); return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: {} } }) },
       },
     },
   } as never)
@@ -179,7 +186,9 @@ function sessionsDouble(state: {
 
 describe('ui-agent-preset apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual([
+      'slots', 'locale', 'connection', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+    ])
   })
 
   it('registers the General row and the settings section', async () => {
@@ -600,8 +609,7 @@ describe('AgentPresetSeatController reconciliation', () => {
     {
       name: 'RPC rejection',
       select: () => Promise.resolve({
-        rpcId: 'r',
-        result: { ok: false as const, error: { code: 'failed', message: 'selection rejected', details: {} } },
+        ok: false as const, error: { code: 'failed', message: 'selection rejected', details: {} },
       }),
       message: 'selection rejected',
     },
@@ -620,5 +628,26 @@ describe('AgentPresetSeatController reconciliation', () => {
     expect(controller.store.getSnapshot()).toMatchObject({
       busy: false, current: '', error: message,
     })
+  })
+
+  it('keeps the bare cause of a mount failure, not the frame that names the preset again', async () => {
+    const reason = 'failed to import loader entry ctx (@deepseek-ai/dsh-gone): Cannot find package'
+    const controller = new AgentPresetSeatController({
+      agentPresets: {
+        select: () => Promise.resolve({
+          ok: false as const,
+          error: {
+            code: 'agent-preset-invalid',
+            message: `agent-presets: preset "broken" failed to mount: ${reason}`,
+            details: { agentPreset: 'broken', reason },
+          },
+        }),
+      },
+    } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
+
+    // The surface reporting this names the preset itself, so carrying the
+    // roster's own "preset X failed to mount" frame would say it twice.
+    expect(await controller.select('broken')).toBe(reason)
+    expect(controller.store.getSnapshot().error).toBe(reason)
   })
 })
