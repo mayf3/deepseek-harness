@@ -95,7 +95,10 @@ export class FakeApiClient implements IApiClient {
     return response
   }
 
-  private async openGeneration(signal: AbortSignal, onOpen: () => void): Promise<void> {
+  private async openGeneration(
+    signal: AbortSignal,
+    onOpen: (host: { readonly home: string }) => void,
+  ): Promise<void> {
     const inbox: StreamItem[] = []
     let wake: (() => void) | null = null
     const conn: StreamConn = {
@@ -105,8 +108,9 @@ export class FakeApiClient implements IApiClient {
       },
     }
     this.generationConns.push(conn)
-    if (this.holdGenerationReady) this.heldOpens.push(onOpen)
-    else if (!this.suppressGenerationReady) onOpen()
+    const ready = (): void => { onOpen({ home: '/h' }) }
+    if (this.holdGenerationReady) this.heldOpens.push(ready)
+    else if (!this.suppressGenerationReady) ready()
     try {
       while (!signal.aborted) {
         while (inbox.length > 0) {

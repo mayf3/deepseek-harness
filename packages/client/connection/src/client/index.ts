@@ -7,9 +7,9 @@ import type { HostDescription, IApiClient } from './api.ts'
 import {
   ConnectionController,
   type ConnectionConfig,
+  type ConnectionGeneration,
   type ConnectionGenerationSource,
   type ConnectionSinks,
-  type ConnectionState,
 } from './connection.ts'
 import { FixtureApiClient } from './fixture.ts'
 import { WebApiClient } from './web-api-client.ts'
@@ -45,7 +45,14 @@ export {
 
 // Connection loop types are public through ConnectionHandle.start; the
 // controller remains package-internal.
-export type { ConnectionConfig, ConnectionGenerationSource, ConnectionSinks, ConnectionState }
+export type {
+  ConnectionConfig,
+  ConnectionGeneration,
+  ConnectionGenerationSource,
+  ConnectionHostInfo,
+  ConnectionSinks,
+  ConnectionState,
+} from './connection.ts'
 export type {
   ClientConnectionRpc, ConnectionRpcFailure, ConnectionRpcResult,
 } from '../rpc.ts'
@@ -56,6 +63,14 @@ export interface HostDescriptionSource {
   /** Latest connected-generation description; absent before connect and while reconnecting. */
   getSnapshot(): HostDescription | undefined
   /** Subscribe to description replacement and connection loss. */
+  subscribe(listener: () => void): () => void
+}
+
+/** Observable identity and Host facts for the active connection generation. */
+export interface ConnectionGenerationState {
+  /** Active generation, or undefined before readiness and while reconnecting. */
+  getSnapshot(): ConnectionGeneration | undefined
+  /** Subscribe to generation establishment, replacement, and loss. */
   subscribe(listener: () => void): () => void
 }
 
@@ -113,6 +128,8 @@ export interface ConnectionHandle {
   readonly isLoopback: boolean
   /** Generation-scoped Host facts, including the account home and native path-open capability. */
   readonly hostDescription: HostDescriptionSource
+  /** Current Remote event generation and the Host facts carried by its opening frame. */
+  readonly generation: ConnectionGenerationState
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
   /**
@@ -151,6 +168,9 @@ export function apply(ctx: Context): void {
   const rpc = fixtureClient?.rpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
+  let generationId = 0
+  let generation: ConnectionGeneration | undefined
+  const generationListeners = new Set<() => void>()
   let description: HostDescription | undefined
   const descriptionListeners = new Set<() => void>()
   const publishDescription = (next: HostDescription | undefined): void => {
@@ -164,10 +184,22 @@ export function apply(ctx: Context): void {
       }
     }
   }
+  const publishGeneration = (next: ConnectionGeneration | undefined): void => {
+    if (Object.is(generation, next)) return
+    generation = next
+    for (const listener of [...generationListeners]) {
+      try {
+        listener()
+      } catch (error) {
+        console.error('[connection] generation listener threw:', error)
+      }
+    }
+  }
   const releaseOwner = (current: ConnectionOwner): void => {
     if (owner !== current) return
     owner = undefined
     current.controller.stop()
+    publishGeneration(undefined)
     publishDescription(undefined)
   }
   const handle: ConnectionHandle = {
@@ -178,6 +210,13 @@ export function apply(ctx: Context): void {
       subscribe: (listener) => {
         descriptionListeners.add(listener)
         return () => { descriptionListeners.delete(listener) }
+      },
+    },
+    generation: {
+      getSnapshot: () => generation,
+      subscribe: (listener) => {
+        generationListeners.add(listener)
+        return () => { generationListeners.delete(listener) }
       },
     },
     rpc,
@@ -201,17 +240,23 @@ export function apply(ctx: Context): void {
       const ownsGeneration = (): boolean => owner?.token === token
       const controller = new ConnectionController(api, source, {
         ...sinks,
-        onConnected: (next) => {
+        onConnected: (next, host) => {
+          const nextGeneration = { id: ++generationId, host }
+          publishGeneration(nextGeneration)
+          if (!ownsGeneration() || !Object.is(generation, nextGeneration)) return
           publishDescription(next)
           // A description subscriber may synchronously stop the loop. In that
           // case publishDescription(undefined) has already retracted this
           // generation, so do not leak its stale connected notification to
           // the consumer sink afterward.
           if (!ownsGeneration() || !Object.is(description, next)) return
-          sinks.onConnected?.(next)
+          sinks.onConnected?.(next, host)
         },
         onStateChange: (state) => {
-          if (state === 'reconnecting') publishDescription(undefined)
+          if (state === 'reconnecting') {
+            publishGeneration(undefined)
+            publishDescription(undefined)
+          }
           if (!ownsGeneration()) return
           sinks.onStateChange?.(state)
         },

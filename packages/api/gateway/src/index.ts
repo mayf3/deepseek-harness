@@ -48,6 +48,7 @@ import {
   type RemoteEventCancellationFrame,
   type RemoteEventClientId,
   type RemoteEventEmitFrame,
+  type RemoteEventHostInfo,
   type RemoteEventId,
   type RemoteEventInvocationFrame,
   type RemoteEventReadyFrame,
@@ -66,6 +67,7 @@ export type {
   TypertRemoteEventOutcome,
   TypertRemoteEventSource,
 } from './types.ts'
+export type { RemoteEventHostInfo } from './stream-protocol.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown
@@ -88,6 +90,7 @@ interface PreparedInvocation {
 interface RegisteredRemoteEventSource {
   readonly lifetime: AbortController
   readonly done: Promise<void>
+  readonly host: RemoteEventHostInfo
 }
 
 interface RemoteEventClient {
@@ -233,9 +236,13 @@ export class TypertGatewayService extends Service implements TypertGateway {
   /**
    * Register the sole application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
+   * @param host - stable Host facts included in each Client generation's opening frame.
    * @returns disposer removing this source and cancelling its active streams.
    */
-  registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void> {
+  registerRemoteEvents(
+    source: TypertRemoteEventSource,
+    host: RemoteEventHostInfo,
+  ): () => Promise<void> {
     if (this.remoteEvents !== undefined) {
       throw new Error('typert gateway: forwarded Remote event source is already registered')
     }
@@ -247,7 +254,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       this.remoteEvents = undefined
       lifetime.abort(error)
     })
-    const registration: RegisteredRemoteEventSource = { lifetime, done }
+    const registration: RegisteredRemoteEventSource = { lifetime, done, host: { home: host.home } }
     this.remoteEvents = registration
     return async () => {
       if (this.remoteEvents === registration) {
@@ -417,7 +424,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     this.remoteEventClients.set(clientId, client)
     for (const pending of this.pendingRemoteEvents.values()) this.deliverRemoteEvent(pending, client)
     try {
-      yield { ...REMOTE_EVENT_STREAM_READY, clientId }
+      yield { ...REMOTE_EVENT_STREAM_READY, clientId, host: registration.host }
       yield* client.queue.iterate(lifetime)
     } finally {
       this.removeRemoteEventClient(client)

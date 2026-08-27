@@ -483,7 +483,7 @@ class RemoteEventCarrier {
     const abort = (): void => { connection.wake?.() }
     signal.addEventListener('abort', abort, { once: true })
     try {
-      yield { type: 'ready', clientId }
+      yield { type: 'ready', clientId, host: { home: '/home/fixture' } }
       while (!signal.aborted) {
         while (connection.items.length > 0) {
           const item = connection.items.shift() as EventStreamItem
@@ -1769,7 +1769,7 @@ describe('Client Typert API', () => {
       socket.receive({
         type: 'item',
         streamId: opened.streamId,
-        value: { type: 'ready', clientId: 'browser-client' },
+        value: { type: 'ready', clientId: 'browser-client', host: { home: '/home/browser' } },
       })
       await run.ready
       socket.receive({
@@ -1825,6 +1825,7 @@ describe('Client Typert API', () => {
 
       await vi.waitFor(() => {
         expect(connection.hostDescription.getSnapshot()?.home).toBe('/home/fixture')
+        expect(connection.generation.getSnapshot()?.host.home).toBe('/home/fixture')
       })
     } finally {
       await ctx.fiber.dispose()
@@ -1841,6 +1842,10 @@ describe('Client Typert API', () => {
     { type: 'ready' },
     { type: 'ready', clientId: '' },
     { type: 'ready', clientId: 'client', extra: true },
+    { type: 'ready', clientId: 'client', host: null },
+    { type: 'ready', clientId: 'client', host: {} },
+    { type: 'ready', clientId: 'client', host: { home: 1 } },
+    { type: 'ready', clientId: 'client', host: { home: '/home', extra: true } },
     { type: 'emit', event: 'fixture/changed', args: ['too early'] },
   ])('rejects malformed forwarded-event readiness item %#', async (opening) => {
     const open: NonNullable<ConnectionHandle['rpc']['open']> = () => (async function *() {

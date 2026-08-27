@@ -37,7 +37,7 @@ class GenerationProbe {
     }
     this.active.add(finish)
     signal.addEventListener('abort', finish, { once: true })
-    ready()
+    ready({ home: '/h' })
     if (signal.aborted) finish()
   })
 

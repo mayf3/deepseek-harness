@@ -64,6 +64,24 @@ async function mount(initialHost?: HostDescription): Promise<Bench> {
         return () => { hostListeners.delete(listener) }
       },
     },
+    generation: {
+      getSnapshot: () => host === undefined
+        ? undefined
+        : { id: 1, host: { home: host.home } },
+      subscribe: (listener) => {
+        hostListeners.add(listener)
+        return () => { hostListeners.delete(listener) }
+      },
+    },
+    generation: {
+      getSnapshot: () => host === undefined
+        ? undefined
+        : { id: 1, host: { home: host.home } },
+      subscribe: (listener) => {
+        hostListeners.add(listener)
+        return () => { hostListeners.delete(listener) }
+      },
+    },
     rpc: {
       call: () => Promise.reject(new Error('unexpected generic RPC call')),
     },

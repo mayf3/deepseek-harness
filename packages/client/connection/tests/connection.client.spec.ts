@@ -192,7 +192,7 @@ describe('connection lifecycle', () => {
     const controller = new ConnectionController(api, (signal, ready) => {
       sourceCalls++
       if (sourceCalls === 1) return fail()
-      ready()
+      ready({ home: '/h' })
       return new Promise<void>((resolve) => {
         signal.addEventListener('abort', () => { resolve() }, { once: true })
       })

@@ -32,10 +32,8 @@ import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 import { historyRecordLastSeq } from '../src/client/sessions/history-records.ts'
 
 const AVAILABLE_STREAM_CONNECTION = {
-  hostDescription: {
-    getSnapshot: () => ({
-      version: 'fixture', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
-    }),
+  generation: {
+    getSnapshot: () => ({ id: 1, host: { home: '/h' } }),
     subscribe: () => () => {},
   },
 }
