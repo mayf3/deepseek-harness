@@ -116,6 +116,32 @@ describe('QueueDock', () => {
     expect(container.innerHTML).toBe('')
   })
 
+  it('renders a queued local echo in the dock and hands off by rpcId', () => {
+    const pending = {
+      ...snapshotWith([]),
+      pendingSubmissions: [{
+        requestId: 'req-local-queue' as never,
+        placement: 'queued' as const,
+        time: 1,
+        text: '等待上传',
+        images: [{ previewUrl: 'blob:queue-preview', name: 'queue.png' }],
+      }],
+    }
+    const source = liveSession(pending)
+    const view = render(<QueueDock {...kitFor(pending)} useSession={source.useSession} />)
+    expect(view.getByText('等待上传').closest('[data-submission-echo]')).not.toBeNull()
+    expect(view.getByRole('img', { name: '排队消息图片' }).getAttribute('src')).toBe('blob:queue-preview')
+
+    act(() => {
+      source.push({
+        ...pending,
+        queue: [{ ...row('accepted', '等待上传'), rpcId: 'req-local-queue' as never }],
+      })
+    })
+    expect(view.getAllByText('等待上传')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+  })
+
   it('leaves pending steering to the conversation flow', () => {
     const steering = { ...row('s-1', 'interrupt'), placement: 'steering' as const }
     const snap = snapshotWith([steering])

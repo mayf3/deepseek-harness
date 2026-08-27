@@ -62,6 +62,7 @@ export type {
   OpenState,
   PendingSubmission,
   PendingSubmissionImage,
+  PendingSubmissionPlacement,
   PromptError,
   QueuedMessage,
   SessionSnapshot,

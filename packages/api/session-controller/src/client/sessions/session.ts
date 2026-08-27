@@ -189,6 +189,7 @@ export class Session implements SessionFace {
     const requestId = randomUUID() as SessionRequestId
     this.pendingSubmissions = [...this.pendingSubmissions, {
       requestId,
+      placement: input.placement,
       time: Date.now(),
       text: input.text,
       images: input.images,

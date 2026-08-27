@@ -64,6 +64,14 @@ export type QueueDockProps = PropsRuntime<'conversation.input.dock'> & QueueDock
 export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: QueueDockProps) {
   const inbox = useSession(s => s.queue)
   const queue = useMemo(() => inbox.filter(row => row.placement === 'queued'), [inbox])
+  const pendingSubmissions = useSession(s => s.pendingSubmissions)
+  const pendingQueue = useMemo(() => {
+    const admitted = new Set(queue.flatMap(row => row.rpcId === undefined ? [] : [row.rpcId]))
+    return pendingSubmissions.filter(submission => (
+      submission.placement === 'queued' && !admitted.has(submission.requestId)
+    ))
+  }, [pendingSubmissions, queue])
+  const rowCount = queue.length + pendingQueue.length
   const running = useSession(s => s.running)
   const queueMutable = useSession(s => s.subagent === null)
   const [editing, setEditing] = useState<{ id: QueueItemId; text: string } | null>(null)
@@ -72,15 +80,15 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
   const listId = useId()
 
   useEffect(() => {
-    if (queue.length === 0 && !collapsed) setCollapsed(true)
+    if (rowCount === 0 && !collapsed) setCollapsed(true)
     if (editing !== null && (!queueMutable || !queue.some(row => row.id === editing.id))) setEditing(null)
-  }, [collapsed, editing, queue, queueMutable])
+  }, [collapsed, editing, queue, queueMutable, rowCount])
 
-  if (queue.length === 0) return null
+  if (rowCount === 0) return null
 
   const interactionActive = queueMutable && (editing !== null || busy !== null)
   const expanded = !collapsed || interactionActive
-  const listVisible = queue.length === 1 || expanded
+  const listVisible = rowCount === 1 || expanded
 
   const applyAction = async (
     itemId: QueueItemId,
@@ -111,7 +119,7 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
   return (
     <div className={css.dock} data-queue-dock="">
       <div className={css.panel}>
-        {queue.length > 1 && (
+        {rowCount > 1 && (
           <button
             type="button"
             className={css.header}
@@ -121,7 +129,7 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
             onClick={() => { setCollapsed(value => !value) }}
           >
             <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>
-            <span className={css.count}>{t('queue.count', { n: queue.length })}</span>
+            <span className={css.count}>{t('queue.count', { n: rowCount })}</span>
             <span className={css.chevron} aria-hidden>
               {expanded ? <IconChevronDownOutline14 /> : <IconChevronUpOutline14 />}
             </span>
@@ -133,7 +141,7 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
             return (
               <li key={row.id} className={css.row}>
                 {/* Single-item strip has no count header, so the row itself carries the queue glyph. */}
-                {queue.length === 1 && <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>}
+                {rowCount === 1 && <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>}
                 {editing?.id === row.id
                   ? (
                     <input
@@ -258,6 +266,24 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
               </li>
             )
           })}
+          {listVisible && pendingQueue.map(submission => (
+            <li key={submission.requestId} className={css.row} data-submission-echo="">
+              {rowCount === 1 && <span className={css.lead} aria-hidden><IconQueueOutline14 /></span>}
+              {submission.images.length > 0 && (
+                <span className={css.thumbs}>
+                  {submission.images.map((image, index) => (
+                    <img
+                      key={`${image.previewUrl}:${index}`}
+                      className={css.thumb}
+                      src={image.previewUrl}
+                      alt={t('queue.image')}
+                    />
+                  ))}
+                </span>
+              )}
+              <span className={css.preview}>{projectUserText(submission.text, [])}</span>
+            </li>
+          ))}
         </ul>
       </div>
     </div>

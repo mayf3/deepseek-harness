@@ -69,12 +69,14 @@ describe('beginSubmission', () => {
     const { session } = makeSession()
     expect(session.getSnapshot()).toMatchObject({ pendingSubmissions: [], promptAttempted: false })
     const handle = session.beginSubmission({
+      placement: 'transcript',
       text: '你好',
       images: [{ previewUrl: 'blob:p1', name: 'a.png', width: 4, height: 3 }],
     })
     expect(session.getSnapshot().promptAttempted).toBe(true)
     expect(session.getSnapshot().pendingSubmissions).toMatchObject([{
       requestId: handle.requestId,
+      placement: 'transcript',
       text: '你好',
       images: [{ previewUrl: 'blob:p1', name: 'a.png', width: 4, height: 3 }],
     }])
@@ -84,6 +86,7 @@ describe('beginSubmission', () => {
     const { session } = makeSession()
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
+      placement: 'transcript',
       text: '放弃',
       images: [],
       onRetire: retirement => retirements.push(retirement),
@@ -101,6 +104,7 @@ describe('prompt-coupled retirement', () => {
     api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: '忙', details: { reason: 'busy' } }))
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
+      placement: 'transcript',
       text: '失败的',
       images: [],
       onRetire: retirement => retirements.push(retirement),
@@ -114,7 +118,7 @@ describe('prompt-coupled retirement', () => {
 
   it('sends the echo identity as the prompt requestId', async () => {
     const { api, session } = makeSession()
-    const handle = session.beginSubmission({ text: '带 id', images: [] })
+    const handle = session.beginSubmission({ placement: 'transcript', text: '带 id', images: [] })
     await session.prompt([{ type: 'text', text: '带 id' }], 'queue', undefined, handle.requestId)
     expect(api.callsOf('session.prompt')).toMatchObject([{ requestId: handle.requestId }])
   })
@@ -122,7 +126,7 @@ describe('prompt-coupled retirement', () => {
   it('an unidentified prompt failure leaves registered echoes alone', async () => {
     const { api, session } = makeSession()
     api.onPrompt = () => Promise.resolve(err({ code: 'agent-busy', message: '忙', details: { reason: 'busy' } }))
-    session.beginSubmission({ text: '还在', images: [] })
+    session.beginSubmission({ placement: 'transcript', text: '还在', images: [] })
     await session.prompt([{ type: 'text', text: '另一个' }], 'queue')
     expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)
   })
@@ -135,6 +139,7 @@ describe('observed retirement', () => {
     await session.open()
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
+      placement: 'transcript',
       text: '发送',
       images: [{ previewUrl: 'blob:p1' }],
       onRetire: retirement => retirements.push(retirement),
@@ -153,6 +158,7 @@ describe('observed retirement', () => {
     const { session } = makeSession()
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
+      placement: 'queued',
       text: '排队',
       images: [{ previewUrl: 'blob:p1' }],
       onRetire: retirement => retirements.push(retirement),
@@ -168,7 +174,7 @@ describe('observed retirement', () => {
 
   it('a full-window install (reconnect resync) retires echoes observed in the window', async () => {
     const { api, session } = makeSession()
-    const handle = session.beginSubmission({ text: '重连', images: [] })
+    const handle = session.beginSubmission({ placement: 'transcript', text: '重连', images: [] })
     api.onHistory = () => Promise.resolve(ok(historyValue([promptEvent(12, handle.requestId)])))
     await session.open()
     await settleFrames()
@@ -181,6 +187,7 @@ describe('observed retirement', () => {
     await session.open()
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
+      placement: 'transcript',
       text: '先观察',
       images: [],
       onRetire: retirement => retirements.push(retirement),
@@ -197,6 +204,7 @@ describe('observed retirement', () => {
     await session.open()
     const retirements: PendingSubmissionRetirement[] = []
     const handle = session.beginSubmission({
+      placement: 'transcript',
       text: '同一请求',
       images: [],
       onRetire: retirement => retirements.push(retirement),
@@ -221,7 +229,7 @@ describe('observed retirement', () => {
     const { api, session } = makeSession()
     api.onHistory = () => Promise.resolve(ok(historyValue([])))
     await session.open()
-    const handle = session.beginSubmission({ text: '帧', images: [] })
+    const handle = session.beginSubmission({ placement: 'transcript', text: '帧', images: [] })
     await api.pushFollow(SID, { type: 'event', event: promptEvent(0, handle.requestId) as never })
     expect(session.getSnapshot().pendingSubmissions).toHaveLength(1)
     expect(frames).toHaveLength(1)
@@ -237,11 +245,13 @@ describe('disposal', () => {
     await session.open()
     const retirements: { text: string; retirement: PendingSubmissionRetirement }[] = []
     const observed = session.beginSubmission({
+      placement: 'transcript',
       text: '已观察',
       images: [],
       onRetire: retirement => retirements.push({ text: '已观察', retirement }),
     })
     session.beginSubmission({
+      placement: 'transcript',
       text: '未settle',
       images: [],
       onRetire: retirement => retirements.push({ text: '未settle', retirement }),
