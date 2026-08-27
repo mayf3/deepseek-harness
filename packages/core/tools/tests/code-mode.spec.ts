@@ -133,6 +133,7 @@ describe('mode-aware wire contribution', () => {
     expect(sdk?.text).toContain('declare const tools: {')
     expect(sdk?.text).toContain('echo: {')
     expect(sdk?.text).not.toContain('run_code:')
+    expect(sdk?.text).not.toContain('tools.bash(')
   })
 
   it("mode 'code' states the run_code-only rule BEFORE the per-tool guidance that names each tool", async () => {

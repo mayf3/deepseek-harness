@@ -168,9 +168,9 @@ Prefix-stable while visible definitions and their order are unchanged. Registrat
 
 #### What the model sees
 
-Code Mode exposes the generated [`run_code` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tools), the SDK instructions below, and the generated exact SDK block for the loaded runtime's language. The instructions identify generated declarations as program-only bindings and show a complete `run_code` call around `tools.bash(...)`. The `tools:sdk` section uses first-party order 5000. `both` exposes normal schemas and this Code Mode API; under `code` the prompt also carries the `tools:code-only` rule earlier in the first-party order, so the model reads which tools it may call before it reads what each one is for.
+Code Mode exposes the generated [`run_code` schema](../../../docs/tool-catalog.md#deepseek-aidsh-tools), the SDK instructions below, and the generated exact SDK block for the loaded runtime's language. The TypeScript instructions identify generated declarations as program-only bindings. When the current `bash` parameter schema accepts the example arguments, they also show a complete `run_code` call around `tools.bash(...)`. The `tools:sdk` section uses first-party order 5000. `both` exposes normal schemas and this Code Mode API; under `code` the prompt also carries the `tools:code-only` rule earlier in the first-party order, so the model reads which tools it may call before it reads what each one is for.
 
-##### Code Mode SDK instructions
+##### TypeScript Code Mode SDK instructions with bash
 
 ```markdown
 ## Writing code for run_code

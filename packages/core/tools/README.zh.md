@@ -168,9 +168,9 @@ ctx.tools.register(defineTool({
 
 #### 模型看到什么
 
-Code Mode 会公开生成的 [`run_code` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)、下方 SDK 说明，以及按所加载运行时语言生成的精确 SDK 块。说明会把生成声明明确标为只能在程序内使用的绑定，并给出以 `run_code` 包住 `tools.bash(...)` 的完整调用。`tools:sdk` 段使用 first-party 顺序 5000。`both` 会同时公开普通 schema 与此 Code Mode API；在 `code` 下，提示词还会带上处于更早 first-party 顺序的 `tools:code-only` 规则，让模型先读到「可以调用哪些工具」再读「每个工具做什么」。
+Code Mode 会公开生成的 [`run_code` schema](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tools)、下方 SDK 说明，以及按所加载运行时语言生成的精确 SDK 块。TypeScript 说明会把生成声明明确标为只能在程序内使用的绑定。当当前 `bash` 参数 schema 接受示例参数时，说明还会给出以 `run_code` 包住 `tools.bash(...)` 的完整调用。`tools:sdk` 段使用 first-party 顺序 5000。`both` 会同时公开普通 schema 与此 Code Mode API；在 `code` 下，提示词还会带上处于更早 first-party 顺序的 `tools:code-only` 规则，让模型先读到「可以调用哪些工具」再读「每个工具做什么」。
 
-##### Code Mode SDK 说明
+##### 带 bash 的 TypeScript Code Mode SDK 说明
 
 ```markdown
 ## Writing code for run_code
