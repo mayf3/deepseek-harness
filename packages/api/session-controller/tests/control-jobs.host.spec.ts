@@ -226,4 +226,32 @@ describe('Session control jobs updates', () => {
     expect(task.reads.count).toBe(0)
   })
 
+  it('ends active streams on context disposal after flushing buffered job frames', async () => {
+    const { ctx, agent, control } = await harness(true)
+    const iterator = control.control(new AbortController().signal)[Symbol.asyncIterator]()
+    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'baseline' } })
+    const first = producer('first')
+    const second = producer('second')
+    ctx.jobs.start({ ...first.spec, owner: agent })
+    ctx.jobs.start({ ...second.spec, owner: agent })
+    first.settle({ status: 'completed' })
+    second.settle({ status: 'completed' })
+    await expect.poll(() => ctx.jobs.list(agent).map(job => job.status))
+      .toEqual(['completed', 'completed'])
+
+    await ctx.fiber.dispose()
+
+    const frames: JobFrame[] = []
+    for (;;) {
+      const next = await iterator.next()
+      if (next.done) break
+      if (next.value.type === 'jobs') frames.push(next.value)
+    }
+    expect(frames.map(frame => frame.jobs.map(job => job.status))).toEqual([
+      ['running'],
+      ['running', 'running'],
+      ['completed', 'running'],
+      ['completed', 'completed'],
+    ])
+  })
 })
