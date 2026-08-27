@@ -2,14 +2,12 @@
  * Pure types of the permission domain: the ONE home of the `permissions`
  * projection-key declaration plus its payload types, free of this package's
  * host-side value imports (cordis, schemastery). Two namespace projections
- * serve it — the package root re-export for host consumers and `./client` for
- * client aggregates — with zero content duplication.
+ * serve it — the package root re-export for host consumers, `./client` (the
+ * browser half-entry's re-export) for client aggregates — with zero content
+ * duplication.
  *
  * @module @deepseek-ai/dsh-permission-presets/types
  */
-
-import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 
 /** The select-option shape a presentation layer advertises for one preset (or for the derived `custom` state). */
 export interface PresetOption {
@@ -31,16 +29,6 @@ export interface PermissionSelect {
   options: PresetOption[]
   /** The effective current value: a preset table key, or `custom`. */
   currentValue: string
-}
-
-/** Latest logged permission overrides. */
-export interface KnobState {
-  /** Last `permission/preset` payload, or null. */
-  preset: string | null
-  /** Last `sandbox/mode` payload, or null. */
-  sandbox: SandboxMode | null
-  /** Last `approval/policy` payload, or null. */
-  approval: ApprovalPolicy | null
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

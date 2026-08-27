@@ -39,7 +39,7 @@ const timeContextStateSchema = zod.object({
 })
 
 /** Folded time-context readings. */
-export type TimeContextProjection = zod.infer<typeof timeContextStateSchema>
+type TimeContextProjection = zod.infer<typeof timeContextStateSchema>
 
 /** The agent registry that owns pre-step processing. */
 export const inject = ['agents', 'sessionProjections']
@@ -182,15 +182,13 @@ export function apply(ctx: Context, config: Config): void {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted) return decision
     const now = Date.now()
-    const state = ctx.sessionProjections.stateOf(agent.session, 'timeContext')
-    if (state !== undefined && refreshIntervalMs !== undefined && refreshIntervalMs > 0) {
+    const state = ctx.sessionProjections.stateOf(agent.session, 'timeContext') as TimeContextProjection
+    if (refreshIntervalMs !== undefined && refreshIntervalMs > 0) {
       const lastInjection = state.lastInjectionTime
       if (lastInjection != null
         && now >= lastInjection
         && now - lastInjection < refreshIntervalMs) return decision
     }
-    /* v8 ignore next 2 -- time-context registers its own unit in apply, so the key is always present */
-    if (state === undefined) return decision
     /* v8 ignore next 6 -- every later step follows a recorded injection in the same turn */
     const previous = step === 1
       ? state.lastMessageTime ?? undefined

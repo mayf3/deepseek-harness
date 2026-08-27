@@ -186,7 +186,7 @@ type TeamSessionEvent = SessionEvent<TeamEventType>
  * @param event - candidate Session event.
  * @returns whether the event has a Team-owned type.
  */
-function isTeamEvent(event: SessionEvent): event is TeamSessionEvent {
+export function isTeamEvent(event: SessionEvent): event is TeamSessionEvent {
   return event.type === 'team/member'
     || event.type === 'team/task'
     || event.type === 'team/message/queued'
@@ -220,8 +220,8 @@ function parseCurrentTeamEvent(event: TeamSessionEvent): TeamSessionEvent {
 }
 
 function applyProjectionEvent(state: TeamProjectionState, event: SessionEvent): void {
-  if (!isTeamEvent(event)) return
   if (state.failure !== undefined) return
+  if (!isTeamEvent(event)) return
   try {
     const selector = parsePersisted(event.type, teamEventSelectorSchema, event.data)
     if (selector.teamId !== state.id) return

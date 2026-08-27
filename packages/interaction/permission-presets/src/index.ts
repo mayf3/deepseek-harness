@@ -25,7 +25,7 @@ import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-sett
 // Type-only: resolves the optional projection and command children.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-commands'
-import type { KnobState, PermissionSelect, PresetOption } from './types.ts'
+import type { PermissionSelect, PresetOption } from './types.ts'
 
 export type * from './types.ts'
 
@@ -33,12 +33,6 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     permissionPresets: PermissionPresetService
   }
-}
-
-/** Projection state for permission overrides and constructor-seed provenance. */
-interface PermissionProjectionState extends KnobState {
-  /** Whether the log contains a constructor-seed boundary. */
-  seeded: boolean
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
@@ -81,8 +75,26 @@ export const CUSTOM_PRESET = 'custom'
 /** Settings namespace carrying the default for future sessions. */
 export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
 
-const permissionStateSchema: zod.ZodType<PermissionProjectionState> = zod.object({
+/**
+ * The projection unit's knob state: the last seen value of each knob event,
+ * null before an override (composition defaults apply at view time).
+ */
+export interface KnobState {
   /** Last `permission/preset` payload, or null. */
+  preset: string | null
+  /** Last `sandbox/mode` payload, or null. */
+  sandbox: SandboxMode | null
+  /** Last `approval/policy` payload, or null. */
+  approval: ApprovalPolicy | null
+}
+
+/** Projection state for permission overrides and constructor-seed provenance. */
+interface PermissionProjectionState extends KnobState {
+  /** Whether the log contains a constructor-seed boundary. */
+  seeded: boolean
+}
+
+const permissionStateSchema: zod.ZodType<PermissionProjectionState> = zod.object({
   preset: zod.string().nullable(),
   sandbox: zod.union([
     zod.literal('read-only'),
@@ -95,9 +107,6 @@ const permissionStateSchema: zod.ZodType<PermissionProjectionState> = zod.object
 
 /** State for the empty log: every knob at its composition default. */
 const EMPTY_KNOBS: KnobState = { preset: null, sandbox: null, approval: null }
-
-/** Projection state for a genuinely fresh session. */
-const EMPTY_PERMISSION_STATE: PermissionProjectionState = { ...EMPTY_KNOBS, seeded: false }
 
 /**
  * One-event permission-state transition (the projection unit's `apply`). Unrelated
@@ -118,7 +127,7 @@ function applyPermissionEvent(
     case 'approval/policy':
       return { ...state, approval: event.data.policy }
     case 'session/end-seed':
-      return state.seeded ? state : { ...state, seeded: true }
+      return { ...state, seeded: true }
     default:
       return state
   }
@@ -230,7 +239,7 @@ export class PermissionPresetService extends Service {
         key: 'permissions',
         stateVersion: 2,
         stateSchema: permissionStateSchema,
-        init: () => EMPTY_PERMISSION_STATE,
+        init: () => ({ ...EMPTY_KNOBS, seeded: false }),
         apply: applyPermissionEvent,
         wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
       })

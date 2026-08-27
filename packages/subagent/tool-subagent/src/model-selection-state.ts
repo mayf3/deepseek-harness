@@ -46,7 +46,7 @@ export const subagentModelSelectionProjectionDefinition = {
     if (allowedModels.length === 0) {
       throw new Error('subagent/model-selection-policy requires at least one route')
     }
-    return allowedModels.map(route => ({ ...route }))
+    return allowedModels
   },
 } satisfies ProjectionDefinition<'subagentModelSelectionPolicy', AllowedModelRoute[] | null>
 

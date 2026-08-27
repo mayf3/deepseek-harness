@@ -85,12 +85,6 @@ export interface SandboxPolicyRequest {
   mode?: SandboxMode
 }
 
-/**
- * The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment
- * default mode, fallback workspace root, and current request-time policy
- * section. Tool layers call {@link resolve} for each execution so a session's
- * mode log and immutable cwd travel together to every enforcing capability.
- */
 /** The sandbox-mode projection's state schema (state equals the public shape). */
 const sandboxModeStateSchema = zod.union([
   zod.literal('read-only'),
@@ -106,7 +100,12 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   }
 }
 
-/** The sandbox policy seam: the deployment default mode and workspace-write root, with per-session overrides folded from the log. */
+/**
+ * The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment
+ * default mode, fallback workspace root, and current request-time policy
+ * section. Tool layers call {@link resolve} for each execution so a session's
+ * mode log and immutable cwd travel together to every enforcing capability.
+ */
 export class SandboxPolicyService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({

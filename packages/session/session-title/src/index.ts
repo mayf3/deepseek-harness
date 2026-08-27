@@ -7,6 +7,7 @@ import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
+import type { Branded } from '@deepseek-ai/dsh-brand'
 import { assertNever, deepFreeze, isAgentLoopRequest } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import type {
@@ -35,8 +36,8 @@ import type {
   TitleProjection,
 } from './types.ts'
 
-/** Branded session-title provider identity. */
-export type SessionTitleProviderId = import('./types.ts').SessionTitleProviderId
+/** Identifies one session-title provider registration. */
+export type SessionTitleProviderId = Branded<'SessionTitleProviderId'>
 
 /**
  * Brand a raw provider id.
@@ -192,15 +193,12 @@ function assertPositiveInteger(name: keyof Config, value: number): void {
   }
 }
 
-/** The title unit's folded state — the projection's full public face. */
-export type TitleUnitState = TitleProjection
-
 /**
  * Convert title projection state into an immutable snapshot.
  * @param state - the title unit's folded state.
  * @returns the immutable snapshot.
  */
-export function titleSnapshotFromState(state: TitleUnitState): SessionTitleSnapshot {
+function titleSnapshotFromState(state: TitleProjection): SessionTitleSnapshot {
   return deepFreeze({
     title: state.title,
     messageSeqs: [...state.messageSeqs],
@@ -272,7 +270,7 @@ const titleProjectionSchema = zod.object({
   ]),
   eventSeq: zod.number().int().nonnegative(),
   updatedAt: zod.number(),
-}).nullable() as unknown as ZodType<TitleUnitState | null>
+}).nullable() as unknown as ZodType<TitleProjection | null>
 
 const titleViewSchema: ZodType<string | null> = zod.string().min(1).nullable()
 
@@ -295,7 +293,7 @@ export const titleProjectionDefinition = {
     viewSchema: titleViewSchema,
     view: state => state?.title ?? null,
   },
-} satisfies ProjectionDefinition<'title', TitleUnitState | null>
+} satisfies ProjectionDefinition<'title', TitleProjection | null>
 
 /**
  * Fold the latest title from a session log.
@@ -303,7 +301,7 @@ export const titleProjectionDefinition = {
  * @returns the immutable latest title snapshot, or `undefined`.
  */
 export function foldSessionTitle(events: readonly SessionEvent[]): SessionTitleSnapshot | undefined {
-  let state: TitleUnitState | null = titleProjectionDefinition.init()
+  let state: TitleProjection | null = titleProjectionDefinition.init()
   for (const event of events) state = titleProjectionDefinition.apply(state, event)
   return state === null ? undefined : titleSnapshotFromState(state)
 }
@@ -400,8 +398,8 @@ export class SessionTitleService extends Service {
    * @returns latest title snapshot, or `undefined` before eligible input.
    */
   get(session: Session): SessionTitleSnapshot | undefined {
-    const state = this.ctx.sessionProjections.stateOf(session, 'title')
-    return state === null || state === undefined ? undefined : titleSnapshotFromState(state)
+    const state = this.ctx.sessionProjections.stateOf(session, 'title') as TitleProjection | null
+    return state === null ? undefined : titleSnapshotFromState(state)
   }
 
   /**
@@ -734,8 +732,7 @@ export class SessionTitleService extends Service {
   }
 
   private titleInputOf(session: Session): TitleInputState {
-    /* v8 ignore next -- session-title registers its own titleInput unit, so the key is always present */
-    return this.ctx.sessionProjections.stateOf(session, 'titleInput') ?? EMPTY_TITLE_INPUT
+    return this.ctx.sessionProjections.stateOf(session, 'titleInput') as TitleInputState
   }
 
   /** Queue detached service work and retain it through service disposal. */

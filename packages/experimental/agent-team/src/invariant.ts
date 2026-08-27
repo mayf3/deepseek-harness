@@ -1,7 +1,13 @@
 /** Agent Teams runtime invariant companion. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
+import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import {
+  isTeamEvent,
+  teamProjectionDefinition,
+  type TeamProjectionState,
+} from './projection.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-experimental-agent-team'
 
@@ -10,8 +16,20 @@ export const name = 'team-invariant'
 /** Invariant registry required by the companion. */
 export const inject = ['invariants']
 
-/** No runtime invariant: the Team projection owns event decoding and relational state transitions. */
-const install: InvariantInstaller = () => {}
+/** Validate candidate Team events against the projected committed prefix. */
+const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
+  ctx.on('internal/dispatch', (_mode, eventName, args) => {
+    if (eventName !== 'session/event') return
+    const [session, event] = args as [Session, SessionEvent]
+    /* v8 ignore next -- non-Team Session events have no Agent Teams invariant. */
+    if (!isTeamEvent(event)) return
+    const state = ctx.sessionProjections.stateOf(session, 'agentTeam') as TeamProjectionState
+    const candidate = teamProjectionDefinition.apply(structuredClone(state), event)
+    if (candidate.failure !== undefined) {
+      fail(`session event ${event.seq} violates the Agent Teams stream: ${candidate.failure}`)
+    }
+  }, { global: true })
+}, { inject: ['sessionProjections'] })
 
 /** Register the package invariant companion. */
 export const apply = (ctx: Context): Promise<() => void> =>

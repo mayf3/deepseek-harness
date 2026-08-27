@@ -1290,8 +1290,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'sandboxPolicy',
-    summary: 'The sandbox policy seam: the deployment default mode and workspace-write root, with per-session overrides folded from the log.',
-    description: 'The sandbox policy seam: the deployment default mode and workspace-write root, with per-session overrides folded from the log.',
+    summary: 'The sandbox-policy service (`ctx.sandboxPolicy`).',
+    description: 'The sandbox-policy service (`ctx.sandboxPolicy`). Owns the deployment default mode, fallback workspace root, and current request-time policy section. Tool layers call resolve for each execution so a session\'s mode log and immutable cwd travel together to every enforcing capability.',
     methods: [
       {
         signature: 'readonly defaultMode: SandboxMode',

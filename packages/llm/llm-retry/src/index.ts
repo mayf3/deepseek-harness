@@ -217,8 +217,8 @@ export function apply(ctx: Context, config: Config = {}, internals: RetryInterna
     }
 
     const policyKey = retryPolicyKey(policy)
-    const retryState = ctx.sessionProjections.stateOf(agent.session, 'llmRetry')
-    const previous = retryState?.[retryStateKey(provider, policyKey)]
+    const retryState = ctx.sessionProjections.stateOf(agent.session, 'llmRetry') as LlmRetryState
+    const previous = retryState[retryStateKey(provider, policyKey)]
     const previousRetry = previous?.retry ?? 0
     if (policy.mode === 'normal' && previousRetry >= policy.maxRetries) return next()
     const retry = previousRetry + 1

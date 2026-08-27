@@ -241,7 +241,7 @@ export function apply(ctx: Context, config: Config): void {
     if (decision.kind === 'reject' || signal.aborted || step !== 1) return decision
     const bash = ctx.get('shell')
     if (bash === undefined) return decision
-    const previous = ctx.sessionProjections.stateOf(agent.session, 'tmuxContext') ?? null
+    const previous = ctx.sessionProjections.stateOf(agent.session, 'tmuxContext') as TmuxContextState
     if (refreshIntervalMs !== undefined && refreshIntervalMs > 0 && previous !== null) {
       const now = Date.now()
       if (now >= previous.time && now - previous.time < refreshIntervalMs) return decision
