@@ -27,9 +27,13 @@ class FakeInspector implements ProcessInspector {
 
   foregroundPgid() { return this.pgid }
   isStdinWaiting() { return this.waiting }
-  processTree() { return this.members }
-  processSession() { return [] }
-  isAlive(identity: ProcessIdentity) { return this.alive.has(identity.pid) }
+  snapshot() {
+    return {
+      tree: () => this.members,
+      session: () => [],
+      alive: (identity: ProcessIdentity) => this.alive.has(identity.pid),
+    }
+  }
   signalGroup(pgid: number, signal: TerminalSignal) {
     if (this.throwGroup) throw new Error('group failed')
     this.groups.push([pgid, signal])

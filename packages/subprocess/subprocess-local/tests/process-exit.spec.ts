@@ -42,7 +42,7 @@ async function readTree(path: string): Promise<TreeState> {
 async function captureIdentities(inspector: ProcessInspector, state: TreeState): Promise<ProcessIdentity[]> {
   return vi.waitFor(() => {
     const expected = new Set([state.root, state.descendant])
-    const identities = inspector.processTree(state.root).filter(identity => expected.has(identity.pid))
+    const identities = inspector.snapshot().tree(state.root).filter(identity => expected.has(identity.pid))
     if (identities.length !== expected.size) throw new Error('managed tree is not fully observable yet')
     return identities
   }, { interval: 10, timeout: scenarioTimeoutMs })
@@ -68,9 +68,10 @@ function cleanupTree(state: TreeState | undefined, identities: ProcessIdentity[]
     return
   }
   const inspector = createProcessInspector()
+  const observed = inspector.snapshot()
   for (const identity of identities) {
     try {
-      inspector.signalProcess(identity, 'SIGKILL')
+      inspector.signalProcess(identity, 'SIGKILL', observed)
     } catch (_alreadyGone) {
       // Exact start identity prevents PID-reuse cleanup from reaching another process.
     }

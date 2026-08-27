@@ -121,28 +121,31 @@ describe('Linux process inspector', () => {
     expect(inspector.foregroundPgid(10)).toBe(40)
     expect(inspector.foregroundPgid(11)).toBeUndefined()
     expect(inspector.foregroundPgid(99)).toBeUndefined()
-    expect(inspector.processTree(10)).toEqual([
+    const observed = inspector.snapshot()
+    expect(observed.tree(10)).toEqual([
       { pid: 13, started: '503' },
       { pid: 12, started: '502' },
       { pid: 10, started: '500' },
     ])
-    expect(inspector.processTree(99)).toEqual([])
-    expect(inspector.processSession(30)).toEqual([
+    expect(observed.tree(99)).toEqual([])
+    expect(observed.session(30)).toEqual([
       { pid: 10, started: '500' },
       { pid: 11, started: '501' },
       { pid: 12, started: '502' },
       { pid: 13, started: '503' },
     ])
-    expect(inspector.processSession(99)).toEqual([])
-    expect(inspector.isAlive({ pid: 10, started: '500' })).toBe(true)
-    expect(inspector.isAlive({ pid: 10, started: 'old' })).toBe(false)
+    expect(observed.session(99)).toEqual([])
+    expect(observed.alive({ pid: 10, started: '500' })).toBe(true)
+    expect(observed.alive({ pid: 10, started: 'old' })).toBe(false)
     inspector.signalGroup(40, 'SIGINT')
-    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGTERM')
-    inspector.signalProcess({ pid: 10, started: 'old' }, 'SIGKILL')
+    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGTERM', observed)
+    inspector.signalProcess({ pid: 10, started: 'old' }, 'SIGKILL', observed)
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
     fake.files.set('/proc/10/stat', stat(10, 20, 30, 40, '500', 1, 'Z'))
-    expect(inspector.isAlive({ pid: 10, started: '500' })).toBe(false)
-    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGKILL')
+    // A zombie is present in the table but never signallable; a fresh capture sees the new state.
+    const afterExit = inspector.snapshot()
+    expect(afterExit.alive({ pid: 10, started: '500' })).toBe(false)
+    inspector.signalProcess({ pid: 10, started: '500' }, 'SIGKILL', afterExit)
     expect(fake.kills).toEqual([[-40, 'SIGINT'], [10, 'SIGTERM']])
   })
 
@@ -285,21 +288,22 @@ describe('macOS process inspector', () => {
     const inspector = createProcessInspector('darwin', 'arm64', fake.internals)
     expect(inspector.foregroundPgid(10)).toBe(55)
     expect(inspector.isStdinWaiting(55, 10)).toBe(false)
-    expect(inspector.processTree(10)).toEqual([
+    const observed = inspector.snapshot()
+    expect(observed.tree(10)).toEqual([
       { pid: 12, started: 'Mon Jul 21 10:00:02 2026' },
       { pid: 11, started: 'Mon Jul 21 10:00:01 2026' },
       { pid: 10, started: 'Mon Jul 21 10:00:00 2026' },
     ])
-    expect(inspector.processTree(99)).toEqual([])
-    expect(inspector.processSession(10)).toEqual([])
-    expect(inspector.isAlive({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' })).toBe(true)
+    expect(observed.tree(99)).toEqual([])
+    expect(observed.session(10)).toEqual([])
+    expect(observed.alive({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' })).toBe(true)
     inspector.signalGroup(55, 'SIGTSTP')
-    inspector.signalProcess({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' }, 'SIGKILL')
-    inspector.signalProcess({ pid: 12, started: 'missing' }, 'SIGTERM')
+    inspector.signalProcess({ pid: 11, started: 'Mon Jul 21 10:00:01 2026' }, 'SIGKILL', observed)
+    inspector.signalProcess({ pid: 12, started: 'missing' }, 'SIGTERM', observed)
     expect(fake.kills).toEqual([[-55, 'SIGTSTP'], [11, 'SIGKILL']])
 
     fake.setPs(' 10 11 Mon Jul 21 10:00:00 2026\n 11 10 Mon Jul 21 10:00:01 2026\n')
-    expect(inspector.processTree(10)).toEqual([
+    expect(inspector.snapshot().tree(10)).toEqual([
       { pid: 11, started: 'Mon Jul 21 10:00:01 2026' },
       { pid: 10, started: 'Mon Jul 21 10:00:00 2026' },
     ])

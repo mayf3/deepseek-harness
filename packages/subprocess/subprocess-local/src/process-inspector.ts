@@ -16,6 +16,41 @@ interface FileStatus {
   isCharacterDevice(): boolean
 }
 
+/**
+ * One observation of the platform process table, shared by every question a
+ * single readiness poll or teardown pass asks.
+ *
+ * The table is read once, at capture — a `/bin/ps` fork on macOS, a `/proc`
+ * walk on Linux, a Toolhelp32 enumeration on Windows. Answering {@link tree},
+ * {@link session}, or {@link alive} never re-reads it, which is what keeps a
+ * poll's cost independent of how many descendants the running command spawned.
+ * Windows liveness additionally consults the live process handle, because wait
+ * state is not a table column there.
+ *
+ * A snapshot is a point-in-time view. Take a fresh one per poll or teardown
+ * pass; a stale one must never decide that a process is still worth signalling.
+ */
+export interface ProcessSnapshot {
+  /**
+   * Return the root and its transitive descendants as observed, children first.
+   * @param rootPid - tree root to descend from.
+   * @returns Observed root and descendants, children before parents.
+   */
+  tree(rootPid: number): ProcessIdentity[]
+  /**
+   * Return observed members of one POSIX process session.
+   * @param sessionId - POSIX session identifier.
+   * @returns Observed session members, empty where the platform's table omits session ids.
+   */
+  session(sessionId: number): ProcessIdentity[]
+  /**
+   * Return whether the exact identity was a non-quiescent process.
+   * @param identity - PID plus start identity to match.
+   * @returns Whether that exact identity — not merely that PID — was running.
+   */
+  alive(identity: ProcessIdentity): boolean
+}
+
 /** Injectable OS process operations used by one local PTY session. */
 export interface ProcessInspector {
   foregroundPgid(shellPid: number): number | undefined
@@ -27,14 +62,19 @@ export interface ProcessInspector {
    * @returns Whether a group member is blocked reading the shell's terminal input.
    */
   isStdinWaiting(pgid: number, shellPid: number): boolean
-  /** Return the root and its current transitive descendants, children first. */
-  processTree(rootPid: number): ProcessIdentity[]
-  /** Return current members of one POSIX process session when the platform exposes them. */
-  processSession(sessionId: number): ProcessIdentity[]
-  /** Return whether the exact identity remains a non-quiescent process. */
-  isAlive(identity: ProcessIdentity): boolean
+  /**
+   * Read the process table once and answer tree, session, and liveness from it.
+   * @returns A point-in-time process-table observation.
+   */
+  snapshot(): ProcessSnapshot
   signalGroup(pgid: number, signal: SubprocessTerminalSignal): void
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL'): void
+  /**
+   * Signal one exact process identity, fenced against PID reuse.
+   * @param identity - PID plus start identity to signal.
+   * @param signal - termination signal to deliver.
+   * @param observed - observation the identity fence reads; pass one taken for this teardown pass.
+   */
+  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL', observed: ProcessSnapshot): void
 }
 
 /** Testable boundary around filesystem, process-table, and signal syscalls. */
@@ -292,21 +332,55 @@ abstract class PosixProcessInspector implements ProcessInspector {
 
   abstract foregroundPgid(shellPid: number): number | undefined
   abstract isStdinWaiting(pgid: number, shellPid: number): boolean
-  abstract processTree(rootPid: number): ProcessIdentity[]
-  abstract processSession(sessionId: number): ProcessIdentity[]
-  abstract isAlive(identity: ProcessIdentity): boolean
+  abstract snapshot(): ProcessSnapshot
 
   signalGroup(pgid: number, signal: SubprocessTerminalSignal): void {
     this.internals.kill(-pgid, signal)
   }
 
-  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL'): void {
-    if (this.isAlive(identity)) this.internals.kill(identity.pid, signal)
+  signalProcess(identity: ProcessIdentity, signal: 'SIGTERM' | 'SIGKILL', observed: ProcessSnapshot): void {
+    if (observed.alive(identity)) this.internals.kill(identity.pid, signal)
   }
 }
 
 interface ProcessTreeEntry extends ProcessIdentity {
   parentPid: number
+}
+
+/** One process-table row, carrying the fields a platform's table exposes. */
+interface ProcessRow extends ProcessTreeEntry {
+  /** POSIX session identifier, or undefined where the table omits it. */
+  session: number | undefined
+  /** Single-letter process state, or undefined where the table omits it. */
+  state: string | undefined
+}
+
+// Zombie and dead states answer "present in the table" but never "still
+// running"; a table without a state column can only report presence.
+function quiescent(state: string | undefined): boolean {
+  return state !== undefined && /^[ZXx]$/.test(state)
+}
+
+class PosixProcessSnapshot implements ProcessSnapshot {
+  private readonly byPid: Map<number, ProcessRow>
+
+  constructor(private readonly rows: ProcessRow[]) {
+    this.byPid = new Map(rows.map(row => [row.pid, row]))
+  }
+
+  tree(rootPid: number): ProcessIdentity[] {
+    return processTree(this.rows, rootPid)
+  }
+
+  session(sessionId: number): ProcessIdentity[] {
+    return this.rows.flatMap(row =>
+      row.session === sessionId ? [{ pid: row.pid, started: row.started }] : [])
+  }
+
+  alive(identity: ProcessIdentity): boolean {
+    const row = this.byPid.get(identity.pid)
+    return row?.started === identity.started && !quiescent(row.state)
+  }
 }
 
 function processTree(entries: ProcessTreeEntry[], rootPid: number): ProcessIdentity[] {
@@ -364,35 +438,34 @@ class LinuxProcessInspector extends PosixProcessInspector {
     return false
   }
 
-  processTree(rootPid: number): ProcessIdentity[] {
-    const entries = numericEntries(this.internals, '/proc').flatMap((pid) => {
+  snapshot(): ProcessSnapshot {
+    return new PosixProcessSnapshot(numericEntries(this.internals, '/proc').flatMap((pid) => {
       const stat = readLinuxStat(this.internals, pid)
-      return stat === undefined ? [] : [{ pid, parentPid: stat.parentPid, started: stat.started }]
-    })
-    return processTree(entries, rootPid)
-  }
-
-  processSession(sessionId: number): ProcessIdentity[] {
-    return numericEntries(this.internals, '/proc').flatMap((pid) => {
-      const stat = readLinuxStat(this.internals, pid)
-      return stat?.session === sessionId ? [{ pid, started: stat.started }] : []
-    })
-  }
-
-  isAlive(identity: ProcessIdentity): boolean {
-    const stat = readLinuxStat(this.internals, identity.pid)
-    return stat?.started === identity.started && !/^[ZXx]$/.test(stat.state)
+      return stat === undefined ? [] : [{
+        pid,
+        parentPid: stat.parentPid,
+        started: stat.started,
+        session: stat.session,
+        state: stat.state,
+      }]
+    }))
   }
 
 }
 
-interface PsEntry extends ProcessTreeEntry {}
-
-function macProcessTable(internals: ProcessInspectorInternals): PsEntry[] {
+// `ps` exposes neither the session id nor a state column in this format, so a
+// macOS row can answer presence and parentage but never session membership.
+function macProcessTable(internals: ProcessInspectorInternals): ProcessRow[] {
   return internals.exec('/bin/ps', ['-axo', 'pid=,ppid=,lstart=']).split('\n').flatMap((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line)
     if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) return []
-    return [{ pid: Number(match[1]), parentPid: Number(match[2]), started: match[3] }]
+    return [{
+      pid: Number(match[1]),
+      parentPid: Number(match[2]),
+      started: match[3],
+      session: undefined,
+      state: undefined,
+    }]
   })
 }
 
@@ -410,16 +483,8 @@ class MacProcessInspector extends PosixProcessInspector {
     return false
   }
 
-  processTree(rootPid: number): ProcessIdentity[] {
-    return processTree(macProcessTable(this.internals), rootPid)
-  }
-
-  processSession(_sessionId: number): ProcessIdentity[] {
-    return []
-  }
-
-  isAlive(identity: ProcessIdentity): boolean {
-    return macProcessTable(this.internals).some(entry => entry.pid === identity.pid && entry.started === identity.started)
+  snapshot(): ProcessSnapshot {
+    return new PosixProcessSnapshot(macProcessTable(this.internals))
   }
 
 }

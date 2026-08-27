@@ -302,9 +302,7 @@ describe('LocalSubprocessRuntime', () => {
     const inspector = {
       foregroundPgid: () => undefined,
       isStdinWaiting: () => false,
-      processTree: () => [],
-      processSession: () => [],
-      isAlive: () => false,
+      snapshot: () => ({ tree: () => [], session: () => [], alive: () => false }),
       signalGroup: () => {},
       signalProcess: () => {},
     }
@@ -369,9 +367,11 @@ describe('LocalSubprocessRuntime', () => {
       ;(ctx.subprocess as InstanceType<typeof IsolatedLocalSubprocessRuntime>).terminalInspector = {
         foregroundPgid: () => 123,
         isStdinWaiting: () => false,
-        processTree: () => [{ pid: 123, started: 'shell' }, { pid: 124, started: 'child' }],
-        processSession: () => [],
-        isAlive: identity => alive.has(identity.pid),
+        snapshot: () => ({
+          tree: () => [{ pid: 123, started: 'shell' }, { pid: 124, started: 'child' }],
+          session: () => [],
+          alive: identity => alive.has(identity.pid),
+        }),
         signalGroup: () => {},
         signalProcess: () => {},
       }
