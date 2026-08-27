@@ -37,15 +37,15 @@ export type * from './types.ts'
 
 const settingsNamespaceRequestSchema = z.object({ ns: z.string().min(1) })
 
-/** Read abort state afresh after an awaited provider or opener call. */
-function isAborted(signal: AbortSignal): boolean {
-  return signal.aborted
-}
-
 /** Native document-opening policy. */
 export interface Config {
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
+}
+
+/** Read abort state afresh after an awaited provider or opener call. */
+function isAborted(signal: AbortSignal): boolean {
+  return signal.aborted
 }
 
 /** Host integrations replaceable by direct unit tests. */
