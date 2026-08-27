@@ -412,6 +412,34 @@ describe('Chat node rendering', () => {
 })
 
 describe('ChatView', () => {
+  it('leaves the turn rail unrendered when an unrelated Chat update commits', () => {
+    const snapshot = chatSnapshotFixture({
+      nodes: [
+        userInTurn(1, 'first prompt', 1),
+        assistant(2, 'first response', 1),
+        userInTurn(4, 'second prompt', 2),
+        assistant(5, 'second response', 2),
+      ],
+      turnEnds: new Map([[1, 3], [2, 6]]),
+    })
+    const h = makeHarness({}, {}, snapshot)
+    // The rail asks for its own accessible name once per render, so counting
+    // that key counts renders without reaching into the component.
+    let railRenders = 0
+    const translate = h.props.t
+    const counting = ((key: string, vars?: Record<string, unknown>) => {
+      if (key === 'chat.turnNavigation.label') railRenders += 1
+      return (translate as (k: string, v?: Record<string, unknown>) => string)(key, vars)
+    }) as ChatViewSlotProps['t']
+    render(<h.ChatView {...h.props} t={counting} />)
+    const afterMount = railRenders
+    expect(afterMount).toBeGreaterThan(0)
+
+    act(() => { h.setSelection({ turnSeq: 3, callId: 'a', toolName: 'bash' }) })
+
+    expect(railRenders).toBe(afterMount)
+  })
+
   it('projects loaded turns into prompt and response navigation previews', () => {
     const snapshot = chatSnapshotFixture({
       nodes: [

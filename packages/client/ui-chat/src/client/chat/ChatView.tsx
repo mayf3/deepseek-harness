@@ -498,7 +498,8 @@ export function ChatView({
     loadOlder()
   }
 
-  const navigateToTurn = (item: TurnNavigationItem): void => {
+  // Identity feeds the memoized rail; a fresh closure per render would defeat it.
+  const navigateToTurn = useCallback((item: TurnNavigationItem): void => {
     const local = listRef.current
     if (local === null) return
     const row = anchorElement(local, item.anchorKey)
@@ -519,7 +520,7 @@ export function ChatView({
     const position = isAtBottom ? null : scrollPosition(local, el)
     if (isAtBottom) chatScroll.save(null)
     else if (position !== null) chatScroll.save(position)
-  }
+  }, [loadingOlder, chatScroll])
 
   return (
     <div className={css.root}>

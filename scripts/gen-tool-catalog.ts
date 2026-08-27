@@ -63,6 +63,7 @@ import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
+import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
 import * as ToolWeb from '@deepseek-ai/dsh-tool-web'
 import VmWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as ToolRalph from '@deepseek-ai/dsh-tool-ralph'
@@ -467,10 +468,11 @@ const TOOL_PACKAGES: ToolPackage[] = [
       await ctx.plugin(SubagentRuntime)
       await ctx.plugin(LlmRuntime)
       registerCatalogSubagentProvider(ctx, 'mock')
-      await ctx.plugin(ToolSubagent, { provider: 'mock', enableModelSelection: true })
+      await ctx.plugin(ToolSubagent, { provider: 'mock' })
+      registerListSubagentModels(ctx, { routes: [{ provider: 'mock', model: 'mock' }] })
     },
     note:
-      'The registered delegation name is the load-time `toolName` config (default `subagent`); the schema above shows static model selection enabled for reference. Model selection defaults off. Web presets sample the default-off Models preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Explicit compositions may instead use static `enableModelSelection`. Each instance independently controls model selection, discovery ownership, and background behavior through `enableModelSelection`, `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
+      'The registered delegation name is the load-time `toolName` config (default `subagent`); the default schema above has model selection off, while the discovery schema is shown as the fixed companion available in an enabled Session. Web presets sample the Plugins preference for each new top-level Session and preserve that decision for its child Sessions; `subagent_fork` remains fixed-route. Each instance independently controls whether it reads model-selection settings and its background behavior through `modelSelectionSettings`, `backgroundMode`, and `enableRunInBackground`.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-subagent-control',
