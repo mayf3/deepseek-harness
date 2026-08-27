@@ -95,11 +95,6 @@
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
 
-    # The API gateway: the transport-agnostic dispatch face every client shape
-    # shares. The base layer's agent-default-model service owns the default model.
-    - id: api-gateway
-      name: '@deepseek-ai/dsh-host-apiproxy'
-
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
 

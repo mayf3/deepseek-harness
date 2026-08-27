@@ -12,9 +12,9 @@ Agent-bound calls require particular care. Shared lookup policy reuses live Agen
 
 ## Decision
 
-Simple unary operations live on their natural business Remote owner. The business package owns the Remote signature and Host adaptation; `@deepseek-ai/dsh-api-remotes/client` selects its generated contribution; the Client package owns presentation joins. The API Proxy retains only `host.describe` and streamed `GET`/`HEAD /api/session.export`.
+Simple unary operations live on their natural business Remote owner. The business package owns the Remote signature and Host adaptation; `@deepseek-ai/dsh-api-remotes/client` selects its generated contribution; the Client package owns presentation joins. Connection owns the transport envelope and exact Fetch route registry, and no API Proxy service remains.
 
-| Legacy RPC | Remote destination | Owner and preserved behavior |
+| Former API Proxy operation | Destination | Owner and preserved behavior |
 |---|---|---|
 | `session.rename` | `sessionTitle/rename` | `SessionTitleService` resolves the Session through the shared lookup policy and returns the title event sequence. |
 | `command.list`, `command.execute` | `commands/list`, `commands/execute` | `CommandRuntime` preserves Agent lookup, unmatched commands, and caller cancellation. |
@@ -31,6 +31,8 @@ Simple unary operations live on their natural business Remote owner. The busines
 | `skill.list` | `skills/list` | `SessionSkillCatalog` observes the Session and its recorded preset, uses a live Agent only when one already exists, and never activates an Agent for listing. |
 | `fileReferences/list` | `fileReferences/list` | `SessionFileReferences` supplies the Session Controller's established Agent lookup to the provider; cold lookup behavior remains unchanged. |
 | `host.openPath` | `session/openWorkspacePath` | The Session-aware Client resolves relative paths against the known workspace before `SessionController` hands them to the native opener. |
+| `host.describe` | `$events` ready frame plus capability queries | API Remotes sends the Host home with generation readiness; Settings and Session controllers report their native-open capabilities when the corresponding page appears. Unused process metadata is not sent. |
+| `session.export` | `GET`/`HEAD /api/session.export` | `session-log-export` registers an exact Connection Fetch route and streams the ZIP without a JSON Remote envelope. |
 
 The shared Agent and Session resolver remains the authority for endpoints that accept those objects. It provides the same live reuse, cold restoration, concurrent deduplication, preset setup, persistence failures, and subagent ownership fence that legacy API Proxy calls used. `TypertLookupFailure` preserves resolver-owned RPC errors instead of collapsing them into `internal`.
 
@@ -38,7 +40,7 @@ The native path implementation lives in `@deepseek-ai/dsh-native-command`. Setti
 
 ## Browser authentication
 
-Connection authenticates the complete `/api` request before choosing the Typert interceptor or API Proxy fallback. Remote-owned endpoints and retained API Proxy endpoints therefore require the same browser session and Host/Origin checks.
+Connection authenticates the complete `/api` request before choosing a Typert endpoint or exact Fetch route. Remote calls and Session-log downloads therefore require the same browser session and Host/Origin checks.
 
 ## Verification
 
@@ -48,12 +50,16 @@ Focused Host and Client tests cover Remote calls, lookup and no-activation polic
 
 **Keep simple calls in the API Proxy.** Rejected because it preserves duplicate interfaces, schemas, route rows, stubs, and result projections after a business owner exists.
 
-**Move every unary operation.** Rejected because `host.describe` combines deployment facts and Connection readiness, while Session export is a streamed download rather than a unary business method.
+**Keep `host.describe`.** Rejected because one bootstrap call coupled Connection readiness to unrelated process and business facts. The generation-ready frame carries the only lifecycle fact needed immediately, and capability-owning pages query their domains when shown.
 
-**Put native opening in one controller.** Rejected because Session, Settings, and the retained Host description consume the same platform operation. A Host utility avoids controller-to-controller imports and duplicated platform logic.
+**Publish every business capability in the generation-ready frame.** Rejected because those values have no common update lifecycle. Only the stable Host home belongs to Connection; each business owner answers its own current capability.
+
+**Represent Session export as a Remote.** Rejected because the browser download manager consumes a streamed HTTP response rather than a JSON result. An exact registered Fetch route keeps ownership in the feature package without adding a second gateway.
+
+**Put native opening in one controller.** Rejected because Session and Settings select different authorized targets. A Host utility avoids controller-to-controller imports without making the browser authoritative for filesystem targets.
 
 ## Consequences
 
-Business owners and Client consumers each define one side of a unary operation, while Connection retains authentication, transport, and response envelopes. Removing the legacy client timeout is the accepted observable transport change; business results, cancellation, lifecycle policy, filtering, and native-path authority remain owned by their existing domains.
+Business owners and Client consumers each define one side of a unary operation, while Connection owns authentication, transport, response envelopes, exact Fetch routes, and generation state. Removing the legacy client timeout is the accepted observable transport change; business results, cancellation, lifecycle policy, filtering, and native-path authority remain owned by their existing domains.
 
 Generated Remote artifacts and the explicit API Remotes assembly become required whenever a Remote signature or selected package changes.

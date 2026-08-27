@@ -129,6 +129,15 @@ export class SettingsController extends TypertRemoteService {
   }
 
   /**
+   * Report whether this deployment can open an authored Agent preset directory natively.
+   * @returns true when the matching open operation is available.
+   */
+  @Remote
+  canOpenAgentPresetDirectory(): boolean {
+    return this.canOpenPath()
+  }
+
+  /**
    * Merge a patch into one namespace's stored user section.
    * @param ns - namespace key to write.
    * @param patch - fields to merge into the user section.

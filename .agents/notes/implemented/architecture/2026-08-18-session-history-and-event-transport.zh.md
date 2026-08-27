@@ -70,11 +70,11 @@ Host 按配置的 `websocketHeartbeatIntervalMs` 间隔（默认 30 秒）向每
 
 Gateway 内部 `$events` logical stream 是 `ConnectionHandle` 唯一的 generation source。它不依赖是否已有业务 `$on` 订阅，因此连接健康状态不会随 UI listener 数量变化。
 
-Host event source 在返回首帧前同步安装增量 listener。Gateway 随后发送带 `clientId` 的 `{ type: 'ready' }`，该帧证明当前 generation 已经能够接收增量。
+Host event source 在返回首帧前同步安装增量 listener。Gateway 随后发送 `{ type: 'ready', clientId, host: { home } }`；该 frame 证明当前 generation 已经能够接收增量，并携带稳定的 Host 路径显示信息。
 
-`ConnectionController` 并行等待 `$events` ready 与 `host.describe`。两者都完成后才发布 `connected`，所以 Session 或 Workspace baseline 不会在 Host 增量 listener 就绪前开始读取。
+`ConnectionController` 只有在 `$events` ready 后才发布 `connected`，所以 Session 或 Workspace baseline 不会在 Host 增量 listener 就绪前开始读取。
 
-`$events` 正常意外结束、Host 错误、畸形首帧或 carrier 失败都会结束当前 Connection generation。Connection 撤回 `hostDescription`，退避后重新建立 `$events` 与 `host.describe`。
+`$events` 正常意外结束、Host 错误、畸形首帧或 carrier 失败都会结束当前 Connection generation。Connection 撤回该 generation，退避后重新建立 `$events`。
 
 Gateway stream、Connection generation 与 Session 业务 open epoch 是三个独立计数：前者表示某条 logical stream 的物理替换，第二个表示 Host 可用性握手，最后一个防止已淘汰的 Session open 写回当前状态。
 
@@ -332,7 +332,7 @@ API Proxy 只承接自身拥有的独立业务 API，不是 Session、Workspace�
 
 Gateway mux 测试固定无 logical stream 时建连、空闲常驻、可配置且不产生应用消息的 Ping/Pong、初始失败与断线重连、活动 stream carrier failure、取消和 dispose 后不再重连。
 
-Connection 测试固定 generation source 缺失、重复注册、撤回、`$events` ready 与 `host.describe` 的竞争，以及 generation 失败后的 description 撤回和重建。
+Connection 测试固定 generation source 缺失、重复注册、撤回、ready 超时，以及 generation 失败后的撤回和重建。
 
 `RemoteStream` 测试固定单 consumer、opening acceptance 后清零 retry、`restart()` 只替换 generation、terminal error 不重试和 dispose quiescence。
 

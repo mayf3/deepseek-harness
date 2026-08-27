@@ -29,7 +29,7 @@ import type { SessionPersistence, SessionRawArtifact } from '@deepseek-ai/dsh-se
 /** Valid fflate DEFLATE levels accepted by session-log export. */
 export type SessionLogCompressionLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
 
-/** Balanced default used when a direct createApiProxy caller omits deployment config. */
+/** Balanced default used when Session export configuration omits a compression level. */
 export const DEFAULT_SESSION_LOG_COMPRESSION_LEVEL: SessionLogCompressionLevel = 6
 
 /** The services a session-log export needs (the live-session store is optional). */

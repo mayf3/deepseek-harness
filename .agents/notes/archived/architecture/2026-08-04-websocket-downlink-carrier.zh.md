@@ -1,6 +1,7 @@
 # Agent Note: 浏览器下行 WebSocket 载体
 
 Status: implemented
+Archived: 2026-08-27
 
 [English](2026-08-04-websocket-downlink-carrier.md) | 中文
 

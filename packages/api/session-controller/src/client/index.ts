@@ -112,7 +112,7 @@ export function apply(ctx: Context): void {
   })
   control.start()
   ctx.on('connection/reset', () => { sessions.handleConnected() })
-  if (connection.hostDescription.getSnapshot() !== undefined) sessions.handleConnected()
+  if (connection.generation.getSnapshot() !== undefined) sessions.handleConnected()
   ctx.typert.contexts.registerClient('agent', {
     identity: candidate => sessions.scopeOf(candidate),
     resolve: sessionId => sessions.resolveAgentScope(sessionId),

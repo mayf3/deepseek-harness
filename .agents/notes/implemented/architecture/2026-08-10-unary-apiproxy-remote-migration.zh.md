@@ -12,9 +12,9 @@ Host API Proxy 曾在业务 Service、API Proxy interface、Zod schema、路由�
 
 ## 决策
 
-简单一元操作归属其自然的业务 Remote owner。业务包持有 Remote 签名与 Host 适配；`@deepseek-ai/dsh-api-remotes/client` 选择其生成贡献；Client 包持有呈现联接。API Proxy 只保留 `host.describe` 与流式 `GET`/`HEAD /api/session.export`。
+简单一元操作归属其自然的业务 Remote owner。业务包持有 Remote 签名与 Host 适配；`@deepseek-ai/dsh-api-remotes/client` 选择其生成贡献；Client 包持有呈现联接。Connection 持有传输 envelope 与精确 Fetch 路由注册表，不再存在 API Proxy 服务。
 
-| 旧 RPC | Remote 目标 | Owner 与保留行为 |
+| 原 API Proxy 操作 | 目标 | Owner 与保留行为 |
 |---|---|---|
 | `session.rename` | `sessionTitle/rename` | `SessionTitleService` 通过共享 lookup 策略解析 Session，并返回标题事件序号。 |
 | `command.list`、`command.execute` | `commands/list`、`commands/execute` | `CommandRuntime` 保留 Agent lookup、未匹配命令与调用方取消。 |
@@ -31,6 +31,8 @@ Host API Proxy 曾在业务 Service、API Proxy interface、Zod schema、路由�
 | `skill.list` | `skills/list` | `SessionSkillCatalog` 观察 Session 及其记录的 preset，仅在 live Agent 已存在时使用它，列表查询绝不激活 Agent。 |
 | `fileReferences/list` | `fileReferences/list` | `SessionFileReferences` 向 provider 提供 Session Controller 的既有 Agent lookup；冷 lookup 行为保持不变。 |
 | `host.openPath` | `session/openWorkspacePath` | Session-aware Client 先基于已知 workspace 解析相对路径，再由 `SessionController` 交给原生打开器。 |
+| `host.describe` | `$events` ready frame 与 capability 查询 | API Remotes 随 generation readiness 发送 Host home；Settings 与 Session controller 在对应页面显示时报告各自的原生打开能力。不发送无人使用的进程元数据。 |
+| `session.export` | `GET`/`HEAD /api/session.export` | `session-log-export` 注册精确的 Connection Fetch 路由，并在没有 JSON Remote envelope 的情况下流式传输 ZIP。 |
 
 共享 Agent 与 Session resolver 仍是接收这些对象的 endpoint 的权威。它提供与旧 API Proxy 调用相同的 live 复用、冷恢复、并发去重、preset setup、持久化失败与 subagent ownership fence。`TypertLookupFailure` 保留 resolver 持有的 RPC error，而不把它们归并为 `internal`。
 
@@ -38,7 +40,7 @@ Host API Proxy 曾在业务 Service、API Proxy interface、Zod schema、路由�
 
 ## 浏览器认证
 
-Connection 在选择 Typert interceptor 或 API Proxy fallback 前认证完整的 `/api` 请求。因此 Remote 持有的 endpoint 与保留的 API Proxy endpoint 要求相同的浏览器会话和 Host/Origin 校验。
+Connection 在选择 Typert endpoint 或精确 Fetch 路由前认证完整的 `/api` 请求。因此 Remote 调用与 Session 日志下载要求相同的浏览器会话和 Host/Origin 校验。
 
 ## 验证
 
@@ -48,12 +50,16 @@ Connection 在选择 Typert interceptor 或 API Proxy fallback 前认证完整�
 
 **将简单调用留在 API Proxy。** 否决，因为业务 owner 已存在后，这仍会保留重复的 interface、schema、路由行、stub 与结果投影。
 
-**迁移每一个一元操作。** 否决，因为 `host.describe` 组合部署事实与 Connection readiness，而 Session export 是流式下载，不是一元业务方法。
+**保留 `host.describe`。** 否决，因为一次 bootstrap 调用会把 Connection readiness 与互不相关的进程和业务事实耦合起来。generation-ready frame 只携带立即需要的生命周期事实，各 capability owner 页面在显示时查询自己的当前能力。
 
-**把原生打开操作放入某个 controller。** 否决，因为 Session、Settings 与保留的 Host 描述都会消费同一平台操作。Host 工具可以避免 controller 间导入与重复的平台逻辑。
+**在 generation-ready frame 中发布所有业务 capability。** 否决，因为这些值没有共同的更新生命周期。只有稳定的 Host home 属于 Connection；各业务 owner 回答自己的当前 capability。
+
+**把 Session export 表示为 Remote。** 否决，因为浏览器下载管理器消费流式 HTTP 响应，而不是 JSON 结果。精确注册的 Fetch 路由让功能包持有该行为，同时不引入第二个 gateway。
+
+**把原生打开操作放入某个 controller。** 否决，因为 Session 与 Settings 选择不同的授权目标。Host 工具可以避免 controller 间导入，同时不让浏览器成为文件系统目标的权威。
 
 ## 后果
 
-业务 owner 与 Client consumer 各自定义一元操作的一侧，而 Connection 继续持有认证、传输与响应 envelope。删除 legacy Client timeout 是已接受的可观察传输变化；业务结果、取消、生命周期策略、过滤与原生路径权限仍由既有领域持有。
+业务 owner 与 Client consumer 各自定义一元操作的一侧，而 Connection 持有认证、传输、响应 envelope、精确 Fetch 路由与 generation 状态。删除 legacy Client timeout 是已接受的可观察传输变化；业务结果、取消、生命周期策略、过滤与原生路径权限仍由既有领域持有。
 
 每当 Remote 签名或所选包发生变化，都必须更新生成的 Remote 产物和显式 API Remotes assembly。

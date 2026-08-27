@@ -15,6 +15,39 @@ async function context(): Promise<Context> {
 }
 
 describe('session/openWorkspacePath', () => {
+  it('reports the deployment opener capability independently of a Session', async () => {
+    const ctx = await context()
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/default',
+      canOpenPath: () => false,
+    })
+
+    await expect(remote.canOpenWorkspacePath()).resolves.toEqual({ ok: true, value: false })
+  })
+
+  it('derives opener availability from config, an injected opener, or the platform probe', async () => {
+    const configured = createSessionTestRemote(await context(), {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/default',
+      nativeOpen: false,
+    })
+    await expect(configured.canOpenWorkspacePath()).resolves.toEqual({ ok: true, value: false })
+
+    const injected = createSessionTestRemote(await context(), {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/default',
+      openPath: () => Promise.resolve(),
+    })
+    await expect(injected.canOpenWorkspacePath()).resolves.toEqual({ ok: true, value: true })
+
+    const detected = createSessionTestRemote(await context(), {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/default',
+    })
+    await expect(detected.canOpenWorkspacePath()).resolves.toMatchObject({ ok: true })
+  })
+
   it('hands a Client-resolved workspace path to the Host opener unchanged', async () => {
     const ctx = await context()
     const openPath = vi.fn((_path: string, _signal: AbortSignal) => Promise.resolve())
