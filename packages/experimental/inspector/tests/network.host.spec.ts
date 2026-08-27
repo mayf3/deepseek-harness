@@ -205,6 +205,31 @@ describe('Inspector Network domain', () => {
       })
   })
 
+  it('marks a failure after response headers truncated with the transport error', () => {
+    const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
+    const observed: unknown[] = []
+    const unsubscribe = store.subscribe((event) => { observed.push(event) })
+    store.append(source, [
+      ...requestRecords('midstream', 'partial').slice(0, 3),
+      {
+        sequence: 4,
+        monotonicMs: 4,
+        topic: 'fetch/error',
+        payload: { requestId: 'midstream', message: 'socket reset', canceled: false },
+      },
+    ])
+
+    expect(store.responseBody(requestId('midstream'))).toMatchObject({
+      bytes: Buffer.from('partial'),
+      truncated: true,
+      captureError: 'socket reset',
+      complete: true,
+    })
+    expect(observed.at(-1)).toMatchObject({ type: 'request-failed', errorText: 'socket reset', canceled: false })
+    unsubscribe()
+    store.dispose()
+  })
+
   it('retains request capture metadata and isolates malformed observations', () => {
     const store = new NetworkStore({ maxRetainedRequests: 10, maxJournalBytes: 1_024 })
     const observed: unknown[] = []
