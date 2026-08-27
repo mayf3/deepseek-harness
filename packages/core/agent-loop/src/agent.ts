@@ -71,16 +71,8 @@ export class ReactLoopAgent implements Agent {
   private phase: Phase
   private activityDone: Promise<void> = Promise.resolve()
   /**
-   * Identities of waking sends still awaiting a claim. Claim and discard
-   * notifications prune the set per message, while {@link cancel} and a
-   * pre-step rejection clear the set. Parking consumes every outstanding
-   * wake, including follow-ups unrelated to the rejected claim,
-   * because the next waking send resumes the complete parked queue anyway.
-   * A non-empty set at driver exit therefore means a steer or follow-up lost
-   * the race with a normally or erroneously closing turn, and the exit must
-   * start a fresh driver to deliver it. Injected context never enters the
-   * set, so it keeps waiting for a waking message instead of opening a turn
-   * by itself.
+   * Waking message ids awaiting claim; cancel, rejection, and driver failure
+   * clear only this bookkeeping so retained inbox input parks.
    */
   private readonly pendingWakes = new Set<UserMessage['id']>()
 
@@ -141,8 +133,7 @@ export class ReactLoopAgent implements Agent {
     // Captured before the insertion so a reentrant cancel from a splice observer cannot reclassify it.
     const wakingAfterAbort = wakeup && this.phase.kind !== 'idle' && this.phase.abort.signal.aborted
     const resolvedTarget = wakingAfterAbort ? 'next-turn' : target
-    // Registered before the splice so a reentrant discard inside the splice
-    // dispatch still prunes it; a refused splice never leaves an entry behind.
+    // Track before splice so a reentrant discard prunes the wake; roll back a refused insertion.
     if (wakeup) this.pendingWakes.add(message.id)
     try {
       this.inbox.splice(resolvedTarget, Infinity, 0, [message])
@@ -170,9 +161,7 @@ export class ReactLoopAgent implements Agent {
       this.inbox.clear()
       if (this.phase.kind !== 'idle') this.phase.wakeRequested = false
     }
-    // Cancellation consumes outstanding wakes: kept inbox work parks until
-    // the next waking send resumes the queue, and a cleared inbox has nothing
-    // left to deliver.
+    // Kept inbox work parks until the next waking send.
     this.pendingWakes.clear()
     if (this.phase.kind !== 'idle') this.phase.abort.abort(cause)
   }
@@ -246,22 +235,17 @@ export class ReactLoopAgent implements Agent {
   }
 
   private async kick(): Promise<void> {
-    // Set only when the turn loop returns without throwing: an abort or driver
-    // failure parks unclaimed waking input for the next waking send, while a
-    // clean exit must deliver a steer or follow-up that lost the race with the
-    // closing turn (its send saw a live driver, so no wake was latched).
-    let cleanExit = false
     try {
       while (await this.turn()) {}
-      cleanExit = true
     } catch (_error) {
       // Reported failures and cancellation are contained at the driver boundary.
+      this.pendingWakes.clear()
     } finally {
       /* v8 ignore next -- kick owns a running phase until this driver boundary */
       if (this.phase.kind === 'running') {
         const { turn, wakeRequested } = this.phase
         this.setPhase({ kind: 'idle', lastTurn: turn })
-        if ((wakeRequested || (cleanExit && this.pendingWakes.size > 0)) && this.inbox.hasPending) {
+        if ((wakeRequested || this.pendingWakes.size > 0) && this.inbox.hasPending) {
           this.wakeDriver()
         }
       }
@@ -311,9 +295,7 @@ export class ReactLoopAgent implements Agent {
         const step = phase.step + 1
         const decision = await this.preStep(target, { turn, step })
         if (decision.kind === 'reject') {
-          // The rejecting listener owns resumption: input staged behind the
-          // rejected claim parks until the next waking send, exactly like a
-          // cancellation, instead of being re-offered to the same policy.
+          // The rejecting listener owns resumption; later input stays parked.
           this.pendingWakes.clear()
           turnEnds = { kind: 'blocked' }
           return false
