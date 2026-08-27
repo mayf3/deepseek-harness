@@ -280,7 +280,11 @@ export class SubagentModelSelectionCardController {
     this.publish()
     await this.scope.mutate([
       { op: 'set', path: ['enabled'], value: desiredEnabled },
-      { op: 'set', path: ['allowedModels'], value: desired },
+      {
+        op: 'set',
+        path: ['allowedModels'],
+        value: desired.map(route => ({ provider: route.provider, model: route.model })),
+      },
     ], this.draftRevision)
     if (generation !== this.saveGeneration) return
     const landed = this.currentEnabled() === desiredEnabled && sameRoutes(this.currentRoutes(), desired)

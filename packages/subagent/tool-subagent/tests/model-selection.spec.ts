@@ -10,7 +10,11 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { MockAdapter } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as mock from './scripted-provider.ts'
 import * as tool from '../src/index.ts'
-import { assertAllowedModelRoutes, assertAllowedModelSelection } from '../src/model-selection.ts'
+import {
+  assertAllowedModelRoutes,
+  assertAllowedModelSelection,
+  preflightChildLlmRoute,
+} from '../src/model-selection.ts'
 import { callSubagent, modelSelectionSetupAgent, setup, text } from './harness.ts'
 
 const REASONING = {
@@ -282,6 +286,12 @@ describe('dsh-tool-subagent model selection', () => {
     })
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('without an effective provider and model')
+  })
+
+  it('rejects preflight without an effective provider and model', async () => {
+    const ctx = await setup({ provider: 'mock' })
+    await expect(preflightChildLlmRoute(ctx.llm, {}, undefined, AbortSignal.abort()))
+      .rejects.toThrow('without an effective provider and model')
   })
 
   it.each([

@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { ToolCallId } from '@deepseek-ai/dsh-llm'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { Agent, AgentOptions } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
@@ -22,14 +22,18 @@ export function fakeAgent(id = 'parent-1'): Agent {
 
 /** Mount the real tool and service stack around one scripted subagent provider. */
 const setupAgents = new WeakMap<Context, Agent>()
+const setupProviders = new WeakMap<Context, Awaited<ReturnType<typeof mock.mountScriptedProvider>>>()
 let setupAgentCounter = 0
 
 /** Test-only opt-in translated to the real Host setting and Session path. */
-type SetupConfig = tool.Config & { withModelSelection?: boolean }
+type SetupConfig = tool.Config & {
+  withModelSelection?: boolean
+  parentAgentOptions?: AgentOptions
+}
 
 const TEST_ALLOWED_MODELS = [
-  'allowed-model', 'configured-model', 'current-model', 'fast-model', 'other-model',
-  'parent-model', 'unlisted-model',
+  'allowed-model', 'child-model', 'configured-model', 'current-model', 'fast-model',
+  'other-model', 'parent-model', 'selected-model', 'unlisted-model',
 ].flatMap(model => [
   { provider: 'alpha', model },
   { provider: 'current-provider', model },
@@ -38,7 +42,7 @@ const TEST_ALLOWED_MODELS = [
 
 export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Config> = {}): Promise<Context> {
   const ctx = new Context()
-  const { withModelSelection, ...config } = toolConfig
+  const { withModelSelection, parentAgentOptions, ...config } = toolConfig
   if (withModelSelection === true) {
     await ctx.plugin(SubagentModelSelectionConfig, {
       enabled: true,
@@ -47,9 +51,11 @@ export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Co
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(SubagentRuntime)
-    await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
+    const provider = await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
+    setupProviders.set(ctx, provider)
     const handle = await ctx.agents.create({
       sessionId: SessionId(`model-selection-setup-${++setupAgentCounter}`),
+      ...parentAgentOptions !== undefined ? { agentOptions: parentAgentOptions } : {},
       setup: async (agentCtx) => {
         await agentCtx.plugin(tool, { ...config, modelSelectionSettings: true })
       },
@@ -61,9 +67,18 @@ export async function setup(toolConfig: SetupConfig, mockConfig: Partial<mock.Co
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(SubagentRuntime)
-  await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
+  const provider = await mock.mountScriptedProvider(ctx, { name: 'mock', ...mockConfig })
+  setupProviders.set(ctx, provider)
   await ctx.plugin(tool, config)
   return ctx
+}
+
+/** Dispose the scripted provider mounted by {@link setup}. */
+export async function disposeSetupProvider(ctx: Context): Promise<void> {
+  const provider = setupProviders.get(ctx)
+  if (provider === undefined) throw new Error('context has no setup provider')
+  setupProviders.delete(ctx)
+  await provider.dispose()
 }
 
 /** Return the real Agent created for a settings-controlled setup. */

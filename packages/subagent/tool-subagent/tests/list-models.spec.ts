@@ -238,4 +238,11 @@ describe('list_subagent_models', () => {
     expect(text(result)).toContain('available providers: alpha')
     expect(text(result)).not.toContain('secret')
   })
+
+  it('reports no available provider when the authorized registry intersection is empty', async () => {
+    const ctx = await setupListTool([{ provider: 'missing', model: 'fast' }])
+    const result = await call(ctx, { provider: 'missing' })
+    expect(result.isError).toBe(true)
+    expect(text(result)).toContain('available providers: (none)')
+  })
 })

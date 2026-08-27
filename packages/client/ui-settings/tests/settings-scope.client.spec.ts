@@ -188,7 +188,7 @@ describe('SettingsScopeController', () => {
 
     const write = scope.mutate(ops)
     ops[0] = { op: 'unset', path: ['enabled'] }
-    ;(ops[1] as { value: Array<{ model: string }> }).value[0]!.model = 'changed'
+    ;(ops[1] as unknown as { value: Array<{ model: string }> }).value[0]!.model = 'changed'
     await write
 
     expect(mutate).toHaveBeenCalledWith(
@@ -202,7 +202,7 @@ describe('SettingsScopeController', () => {
   })
 
   it('preserves an editor-owned revision fence behind earlier queued writes', async () => {
-    const first = deferred<RpcResponse<SettingsNamespaceView>>()
+    const first = deferred<Answer<SettingsNamespaceView>>()
     const describeCall = vi.fn()
       .mockResolvedValueOnce(described({ preference: 'system' }, 7))
       .mockResolvedValueOnce(described({ preference: 'dark' }, 8))
@@ -217,11 +217,12 @@ describe('SettingsScopeController', () => {
     first.resolve(ok(view({ preference: 'dark' }, 8)))
     await Promise.all([earlier, fenced])
 
-    expect(mutate).toHaveBeenNthCalledWith(2, {
-      ns: 'ui-test',
-      ops: [{ op: 'set', path: ['preference'], value: 'light' }],
-      expectedRevision: 7,
-    })
+    expect(mutate).toHaveBeenNthCalledWith(
+      2,
+      'ui-test',
+      [{ op: 'set', path: ['preference'], value: 'light' }],
+      7,
+    )
     expect(scope.getSnapshot()).toMatchObject({ value: { preference: 'dark' }, revision: 8 })
   })
 
