@@ -92,7 +92,7 @@ Status: implemented
 
 ### 无换行滴灌会封存其分片；CPU 软限制保持在硬限制之下；done 帧回退到固定字面量；回复队列清空已消费槽位
 
-在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_LogStream` 现在会在待处理分片列表越过一个上限时封存它：无换行、每次 `write` 一个字符的滴灌会每次调用累积一个 list 槽位（以及一个 str 对象），在一个大的 `maxLogBytes` 下，25 M 次单字符洪泛会在字节预算达到之前，于其自身记账上 OOM（加上 `_push_bounded_prefix` 随后构造的同规模列表）。越过 `_PENDING_MAX_CHUNKS` 后，当前分片被 join 成一个块并移入 `_pending_blocks` 列表（字符数不变），把存活的碎片数量限制在宿主侧 `captureStray` 封存所做的同等水平；该 join 只针对 ≤cap 的当前分片，从不针对整个累积缓冲，因此大的滴灌保持 O(B)，而不是以 O(B²/cap) 次反复复制不断增长的块。
+在 [`py/bootstrap.py`](../../../../packages/code-runtime/code-runtime-python/py/bootstrap.py) 中，`_LogStream` 现在会在待处理分片列表越过一个上限时封存它：无换行、每次 `write` 一个字符的滴灌会每次调用累积一个 list 槽位（以及一个 str 对象），在一个大的 `maxLogBytes` 下，25 M 次单字符洪泛会在字节预算达到之前，于其自身记账上 OOM（加上 `_push_bounded_prefix` 随后构造的同规模列表）。越过 `_PENDING_MAX_CHUNKS` 后，当前分片被 join 成一个块并移入 `_pending_blocks` 列表（字符数不变），把存活的碎片数量限制在宿主侧 `captureStray` 封存所做的同等水平；该 join 只针对 ≤cap 的当前分片，从不针对整个累积缓冲，因此大的滴灌保持 O(B)，而不是以 O(B²/cap) 次反复复制不断增长的块。宿主侧 open hold 镜像同样的封存：预算内的单字符 open 洪泛（`print('x', end='', flush=True)` 循环是诚实子进程可达路径）否则会为每帧累积一个片段数组槽位加字符串对象头——约 30× 字节计数看不到的开销，在 `maxLogBytes` 装载上限附近最高约 2 GB 宿主辅助堆。越过 `MAX_PENDING_CHUNKS` 后持有的片段并入 `openSealed`；闭合帧合并、`truncateLogs` 与 `finish` 残段都读取 sealed 加当前片段并清空封存。
 
 `_clamped` 还会把钳制出的、与硬限制相等的 RLIMIT_CPU 软限制降低一个单位（当硬限制至少为 2 时）。`ulimit -t N` 会同时设置两者，而当 soft == hard 时，内核会在同一 tick 检查硬限制并直接 SIGKILL 一个忙循环，因此 SIGXCPU 永远不会送达——而宿主只在 `signal === 'SIGXCPU'` 时把 CPU 超限分类为超时，所以一次确定的预算耗尽会被误报为 `worker-exit`。把软限制降低一个单位给 SIGXCPU 一个触发窗口，因此超限会被报告为超时。这仅限定于 RLIMIT_CPU（在 RLIMIT_AS 上的一字节软差异只会让子进程实际应用的限制与宿主预算门失步，没有需要保留的信号）。`hard >= 2` 守卫留下了 `hard == 1` 盲区——一个 1 秒的双限制无法把软限制降到 0，因此那里的确定超限仍被报告为 `worker-exit`。
 

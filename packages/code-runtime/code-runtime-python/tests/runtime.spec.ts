@@ -1968,6 +1968,31 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['a'.repeat(60), logTruncationMarker(64)])
   }, 15_000)
 
+  it('commits a sealed open hold before the truncation marker', async () => {
+    // The sealed variant of the prefix-commit case: an open flood past
+    // MAX_PENDING_CHUNKS lands in openSealed, then an over-budget line
+    // truncates — truncateLogs must commit the SEALED prefix (not only the
+    // current fragments) before the marker.
+    const { runtime } = await setup({ maxLogBytes: 65536 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"x\",\"open\":true}\\n')",
+        // 3000 single-character open continuations seal the hold, then a
+        // forged over-budget open frame trips the ledger: truncateLogs must
+        // commit the SEALED prefix before the marker.
+        'for _ in range(3000):',
+        "    os.write(3, b'{\"type\":\"log\",\"text\":\"a\",\"open\":true}\\n')",
+        "os.write(3, ('{\"type\":\"log\",\"text\":\"' + 'z' * 70000 + '\",\"open\":true}\\n').encode())",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs[0]).toBe('x' + 'a'.repeat(3000))
+    expect(result.logs[result.logs.length - 1]).toBe(logTruncationMarker(65536))
+  }, 15_000)
+
   it('commits a flushed open prefix before the truncation marker', async () => {
     // A flushed unterminated line is billed and committed; when a later
     // over-budget write truncates, the committed prefix must appear BEFORE the

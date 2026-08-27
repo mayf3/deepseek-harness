@@ -1567,6 +1567,13 @@ export class PythonCodeRuntime extends CodeRuntime {
               // billed cost cost - 2 fits exactly when the walk's cost is at
               // most logBudget + 2).
               if (!logsTruncated) {
+                // An EMPTY first open frame (openParts empty AND text '') bills
+                // cost + 1 = 3 but establishes no hold (the push is skipped),
+                // so the next frame is billed as a new first fragment. Not
+                // reachable from an honest child (_LogStream.write('') returns
+                // early; flush_line pushes only non-empty pending); for a
+                // forged frame it is a bounded over-charge in the safe
+                // direction (a flood exhausts the ledger into truncation).
                 const cap = openParts.length === 0 ? logBudget - 1 : logBudget + 2
                 const cost = jsonStringCostUpTo(message.text, cap)
                 if (cost === undefined) {
