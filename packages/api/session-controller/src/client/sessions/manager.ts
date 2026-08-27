@@ -10,7 +10,6 @@ import type {
   SessionControlFrame,
   SessionQueuedItem,
   SessionError,
-  SessionProjectionHints,
   SessionSummary,
   SessionJob as JobView,
 } from '../../types.ts'
@@ -489,7 +488,10 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          this.reconcileListProjectionHints(result.value.items, mutations)
+          for (const summary of this.summaries) {
+            const projections = summary.projections
+            if (projections !== undefined) this.projectionStore(summary.sessionId).prewarm(projections)
+          }
         } else {
           this.listState = 'error'
           this.listError = result.error
@@ -703,31 +705,6 @@ export class SessionManager {
       session.replaceControl(this.queues.get(sessionId) ?? [])
     }
     this.notifier.markDirty()
-  }
-
-  /**
-   * Apply pull-time hints before later list mutations without letting a stale
-   * in-flight response overwrite a newer session-added hint or recreate a
-   * Session removed while the request was pending.
-   */
-  private reconcileListProjectionHints(
-    items: readonly SessionSummary[],
-    mutations: readonly SessionListMutation[],
-  ): void {
-    const hints = new Map<SessionId, SessionProjectionHints>()
-    for (const summary of items) {
-      if (summary.projections !== undefined) hints.set(summary.sessionId, summary.projections)
-    }
-    for (const mutation of mutations) {
-      if (mutation.kind === 'remove') {
-        hints.delete(mutation.sessionId)
-      } else if (mutation.kind === 'upsert' && mutation.summary.projections !== undefined) {
-        hints.set(mutation.summary.sessionId, mutation.summary.projections)
-      }
-    }
-    for (const [sessionId, hint] of hints) {
-      this.projectionStore(sessionId).prewarm(hint)
-    }
   }
 
   /**

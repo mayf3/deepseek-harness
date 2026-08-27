@@ -209,7 +209,7 @@ export class ProjectionValueStore {
       && row.revision > token.revision
       && row.seq > baseline.asOfSeq)
     this.completeBaselineInstalled = true
-    this.installCompleteBaseline(baseline, ++this.revision)
+    this.replaceRows(baseline, ++this.revision, 'authoritative')
     for (const [key, row] of retained) this.installRow(key, row)
   }
 
@@ -231,7 +231,7 @@ export class ProjectionValueStore {
     const revision = ++this.revision
     this.completeBaselineInstalled = true
     this.latestControlBaseline = { revision, asOfSeq: baseline.asOfSeq }
-    this.installCompleteBaseline(baseline, revision)
+    this.replaceRows(baseline, revision, 'authoritative')
   }
 
   /**
@@ -251,21 +251,7 @@ export class ProjectionValueStore {
       }
       return
     }
-    const values = hint.values as Record<string, unknown>
-    const keys = new Set([...this.rows.keys(), ...Object.keys(values)])
-    for (const key of keys) {
-      if (!Object.hasOwn(values, key)) {
-        this.rows.delete(key)
-        this.changed(key)
-        continue
-      }
-      this.installRow(key, {
-        value: values[key],
-        seq: hint.asOfSeq,
-        provenance: 'tentative',
-        revision,
-      })
-    }
+    this.replaceRows(hint, revision, 'tentative')
   }
 
   private changed(key: string): void {
@@ -274,8 +260,12 @@ export class ProjectionValueStore {
     this.anyNotifier.markDirty()
   }
 
-  /** Replace every row with one complete authoritative baseline. */
-  private installCompleteBaseline(baseline: ProjectionsBaseline, revision: number): void {
+  /** Replace every row with one baseline at the supplied authority. */
+  private replaceRows(
+    baseline: ProjectionsBaseline,
+    revision: number,
+    provenance: Row['provenance'],
+  ): void {
     const values = baseline.values as Record<string, unknown>
     const keys = new Set([...this.rows.keys(), ...Object.keys(values)])
     for (const key of keys) {
@@ -287,7 +277,7 @@ export class ProjectionValueStore {
       this.installRow(key, {
         value: values[key],
         seq: baseline.asOfSeq,
-        provenance: 'authoritative',
+        provenance,
         revision,
       })
     }
