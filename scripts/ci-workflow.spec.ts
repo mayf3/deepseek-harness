@@ -4,7 +4,7 @@ import * as yaml from 'js-yaml'
 import { describe, expect, it } from 'vitest'
 
 const root = resolve(import.meta.dirname, '..')
-const runnerPrivatePnpmDestination = '${{ runner.temp }}/setup-pnpm'
+const runnerPrivatePnpmDestination = /^\$\{\{ runner\.temp \}\}\/setup-pnpm-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}$/
 const nativeWindowsPnpmDestination = '${{ runner.temp }}/setup-pnpm-js-${{ github.run_id }}-${{ github.run_attempt }}-${{ github.job }}'
 
 describe('CI workflow', () => {
@@ -25,14 +25,14 @@ describe('CI workflow', () => {
 
     expect(setups.length).toBeGreaterThan(0)
     for (const { jobName, step } of setups) {
-      expect(step, `${jobName} must not share pnpm/action-setup's default destination`).toMatchObject({
-        with: {
-          dest: jobName.startsWith('windows-')
-            ? nativeWindowsPnpmDestination
-            : runnerPrivatePnpmDestination,
-        },
-      })
-      if (jobName.startsWith('windows-')) expect(step).not.toMatchObject({ with: { standalone: true } })
+      const stepDest = (step as { with?: { dest?: unknown } }).with?.dest
+      if (jobName.startsWith('windows-')) {
+        expect(stepDest, `${jobName} must use the native Windows pnpm destination`).toBe(nativeWindowsPnpmDestination)
+        expect(step).not.toMatchObject({ with: { standalone: true } })
+      } else {
+        expect(typeof stepDest, `${jobName} must use a runner-and-run-private pnpm destination`).toBe('string')
+        expect(stepDest as string).toMatch(runnerPrivatePnpmDestination)
+      }
     }
   })
 
