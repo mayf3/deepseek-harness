@@ -777,7 +777,7 @@ export class ClientModuleRegistry extends Service {
    * module location is authoritative: the specifier resolves through the same
    * Loader resolution that imported the row's host half — including any
    * active ESM hooks — and the nearest ancestor manifest declaring the name
-   * owns the module. Config-anchor `require` resolution remains only for
+   * owns the module. Tree-anchored `require` resolution remains only for
    * runtimes without Node internals.
    * @param loaderName - module specifier of the loader row.
    * @param baseUrl - resolution base of the tree that owns the row.

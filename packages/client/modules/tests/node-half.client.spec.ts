@@ -286,6 +286,57 @@ describe('client bundle activation', () => {
     expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
   })
 
+  it.each(['relative', 'absolute'] as const)(
+    'finds the owning manifest through the %s-path fallback without Node loader internals',
+    (kind) => {
+      const packageName = `@fixture/${kind}-fallback-entry`
+      const clientPath = writePackage(packageName)
+      const packageRoot = dirname(dirname(clientPath))
+      const hostPath = join(packageRoot, 'index.js')
+      mkdirSync(dirname(clientPath), { recursive: true })
+      writeFileSync(hostPath, 'export default {}\n')
+      writeFileSync(clientPath, 'module.exports = {}\n')
+      const loaderName = kind === 'relative' ? './index.js' : hostPath
+
+      const { service } = constructWithRoute([loaderName], {
+        entryBaseUrl: pathToFileURL(packageRoot).href + '/',
+      })
+
+      expect(service.clientPath(packageName)).toBe(clientPath)
+      expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    },
+  )
+
+  it.each(['v1', 'v2', 'worker'] as const)(
+    'derives a file entry package id through the %s Loader resolver',
+    (version) => {
+      const packageName = `@fixture/file-entry-${version}`
+      const clientPath = writePackage(packageName)
+      const hostPath = join(dirname(clientPath), 'index.js')
+      mkdirSync(dirname(hostPath), { recursive: true })
+      writeFileSync(hostPath, 'export default {}\n')
+      writeFileSync(clientPath, 'module.exports = {}\n')
+      const loaderName = pathToFileURL(hostPath).href
+      const entryBaseUrl = pathToFileURL(join(root!, 'overlay')).href + '/'
+      const calls: unknown[][] = []
+      const resolveSync = (...args: unknown[]) => {
+        calls.push(args)
+        return { format: 'module' as const, url: loaderName }
+      }
+      const internal = { version, resolveSync }
+
+      const { service } = constructWithRoute([loaderName], {
+        entryBaseUrl,
+        internal: internal as NonNullable<Context['loader']['internal']>,
+      })
+
+      expect(calls).toEqual(version === 'v2'
+        ? [[entryBaseUrl, { specifier: loaderName, attributes: {} }]]
+        : [[loaderName, entryBaseUrl, {}]])
+      expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    },
+  )
+
   it('rejects distinct active Loader sources for one browser package', () => {
     const packageName = '@fixture/duplicate-source'
     const clientPath = writePackage(packageName)

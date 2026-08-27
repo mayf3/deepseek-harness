@@ -48,6 +48,7 @@ export type Resolution =
 /** Node-loader-compatible resolution returned through the Cordis internal seam. */
 export interface WorkerInternalResolution {
   readonly format: 'builtin' | 'commonjs' | 'json'
+  /** File URL for VFS modules; the original bare specifier for builtins. */
   readonly url: string
 }
 
