@@ -54,7 +54,7 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- text: {{clock}} Ran for {{duration}} {{throughput}} tok/s TTFT {{duration}}
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img

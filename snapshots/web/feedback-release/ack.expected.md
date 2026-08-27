@@ -28,7 +28,7 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- text: {{clock}} Ran for {{duration}} {{throughput}} tok/s TTFT {{duration}}
 - 'button "feedback Feedback recorded for session session-{{uuid}} Anonymous user: {{uuid}}. Session sharing is feedback-gated; recording feedback uploads the session records not yet shared."':
   - img
   - img

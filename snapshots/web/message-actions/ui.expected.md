@@ -31,7 +31,7 @@
   - img
 - button "Branch into a new conversation" [disabled]:
   - img
-- text: Available only on the last message of a completed turn 7/25 {{clock}} Ran for {{duration}}
+- text: Available only on the last message of a completed turn 7/25 {{clock}} Ran for {{duration}} {{throughput}} tok/s TTFT {{duration}}
 - button "Read a.txt":
   - img
   - img

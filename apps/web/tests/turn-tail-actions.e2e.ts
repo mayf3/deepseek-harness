@@ -170,10 +170,13 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     const { settled } = await sendPrompt(120_000)
     await settled
 
-    const trigger = page.getByRole('button', { name: /Cache hit 49\.7%/ })
+    const trigger = page.getByRole('button', { name: /Usage 15\.8K tok/ })
     await expect.poll(() => trigger.count(), { timeout: 10_000 }).toBe(1)
     expect(await trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(await trigger.textContent()).toMatch(/^.+ · Ran for .+ · Turn usage 15\.8K tok · Cache hit 49\.7% · \d+ tok\/s · TTFT \S+$/)
+    // The pill carries the icon, the turn total, and the cache-hit rate;
+    // timing facts stay in the plain meta line beside it.
+    expect(await trigger.textContent()).toBe('Usage 15.8K tok · Cache hit 49.7%')
+    expect(await page.getByText(/^.+ · Ran for .+ · \d+ tok\/s · TTFT \S+$/).count()).toBe(1)
     expect(await page.getByRole('dialog').count()).toBe(0)
 
     await trigger.click()
@@ -181,10 +184,10 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     const dialog = page.getByRole('dialog', { name: 'Turn usage' })
     expect(await dialog.count()).toBe(1)
     expect(await dialog.getByText('deepseek-official/deepseek-v4-flash', { exact: true }).count()).toBe(1)
+    expect(await dialog.getByText('49.7%', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('7,891 tok', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('7,808 tok', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('112 tok (42 tok reasoning)', { exact: true }).count()).toBe(1)
-    expect(await dialog.getByText('49.7%', { exact: true }).count()).toBe(1)
     expect(await dialog.getByText('15,811 tok', { exact: true }).count()).toBe(1)
 
     const expanded = await captureStableAria(page, '[class*="centerCol"]', scaffold!.workspaceCwd)

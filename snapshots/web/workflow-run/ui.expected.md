@@ -36,4 +36,4 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}}
+- text: {{clock}} Ran for {{duration}} {{throughput}} tok/s TTFT {{duration}}

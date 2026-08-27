@@ -43,22 +43,17 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
       {tail}
       <MessageIconActions
         text={assistantText(closing.blocks)}
-        time={data.tokenUsage === undefined ? closing.time : undefined}
-        runMs={data.tokenUsage === undefined ? runMs : undefined}
+        time={closing.time}
+        runMs={runMs}
+        tokensPerSecond={data.tokensPerSecond}
+        ttftMs={data.ttftMs}
         clock="end"
         onBranch={() => { forkAt(closing.finalNode.seq) }}
         branchUnavailable={data.branchUnavailable || hasLaterChatNode}
         className={css.actions}
         extraActions={assistantActions}
-        usageDetails={data.tokenUsage === undefined ? null : (
-          <TurnUsagePanel
-            usage={data.tokenUsage}
-            time={closing.time}
-            runMs={runMs}
-            ttftMs={data.ttftMs}
-            tokensPerSecond={data.tokensPerSecond}
-            t={t}
-          />
+        usageAction={data.tokenUsage === undefined ? null : (
+          <TurnUsagePanel usage={data.tokenUsage} t={t} />
         )}
         t={t}
       />

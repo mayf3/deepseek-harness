@@ -1,12 +1,14 @@
 // Shared IconActions chrome for user and assistant messages: copy
 // live, optional branch wiring, and an optional date-aware clock.
 
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import {
   IconBranchOutline16, IconCheckOutline16, IconCopyOutline16, Tooltip, writeClipboard,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import { formatMessageClock, formatRunDuration } from './message-chrome.ts'
+import {
+  formatLatencySeconds, formatMessageClock, formatRunDuration, formatTokensPerSecond,
+} from './message-chrome.ts'
 import { useCalendarDay } from './use-calendar-day.ts'
 import css from './MessageIconActions.module.css'
 
@@ -17,6 +19,10 @@ export interface MessageIconActionsProps {
   time?: number | undefined
   /** Turn wall time in ms, appended to the clock as `· Ran for 15s`; omitted when the turn's start is unknown. */
   runMs?: number | undefined
+  /** Turn decode throughput, appended as `· 34 tok/s`; omitted when unrecorded. */
+  tokensPerSecond?: number | undefined
+  /** Turn first-step TTFT in ms, appended as `· TTFT 1.2s`; omitted when unrecorded. */
+  ttftMs?: number | undefined
   /** Clock before icons (user) or after (assistant). */
   clock: 'start' | 'end'
   /** Fork the session at this message; omission hides the branch action. */
@@ -31,11 +37,10 @@ export interface MessageIconActionsProps {
    */
   extraActions?: ReactNode
   /**
-   * Whole-line meta chrome (the TurnUsagePanel trigger) rendered in the `end`
-   * clock's seat; when present the caller omits `time`/`runMs` so the trigger
-   * owns the entire line.
+   * Icon-row Turn-usage trigger (the TurnUsagePanel pill), seated after the
+   * branch control at the end of the icon cluster.
    */
-  usageDetails?: ReactNode
+  usageAction?: ReactNode
   /** The owning view's locale seat, passed down as a plain prop. */
   t: ChatViewSlotProps['t']
 }
@@ -46,8 +51,8 @@ export interface MessageIconActionsProps {
  * @returns The actions row element.
  */
 export function MessageIconActions({
-  text, time, runMs, clock, onBranch, branchUnavailable = false, className,
-  extraActions, usageDetails, t,
+  text, time, runMs, tokensPerSecond, ttftMs, clock, onBranch, branchUnavailable = false, className,
+  extraActions, usageAction, t,
 }: MessageIconActionsProps) {
   const day = useCalendarDay()
   const reasonId = useId()
@@ -77,20 +82,30 @@ export function MessageIconActions({
       }, 1000)
     })
   }, [copied, text])
-  // The dot is decorative and stays hidden, but its margins separate the
+  // The dots are decorative and stay hidden, but their margins separate the
   // readings only on screen: without the flanking spaces a reader hears one
-  // run-on string ("8/26 22:08Ran for 13s") instead of two facts.
-  const clockEl = time === undefined ? null : (
+  // run-on string ("8/26 22:08Ran for 13s") instead of separate facts.
+  const meta: string[] = []
+  if (time !== undefined) meta.push(formatMessageClock(time, t, day))
+  if (runMs !== undefined) meta.push(t('message.ranFor', { duration: formatRunDuration(runMs, t) }))
+  if (tokensPerSecond !== undefined) {
+    meta.push(t('message.turnUsage.speed', { tps: formatTokensPerSecond(tokensPerSecond) }))
+  }
+  if (ttftMs !== undefined) meta.push(t('message.ttft', { seconds: formatLatencySeconds(ttftMs) }))
+  const clockEl = meta.length === 0 ? null : (
     <span className={clock === 'start' ? css.timeStart : css.timeEnd}>
-      {formatMessageClock(time, t, day)}
-      {runMs !== undefined && (
-        <>
-          {' '}
-          <span className={css.runTimeDot} aria-hidden>·</span>
-          {' '}
-          {t('message.ranFor', { duration: formatRunDuration(runMs, t) })}
-        </>
-      )}
+      {meta.map((segment, index) => (
+        <Fragment key={segment}>
+          {index > 0 && (
+            <>
+              {' '}
+              <span className={css.runTimeDot} aria-hidden>·</span>
+              {' '}
+            </>
+          )}
+          {segment}
+        </Fragment>
+      ))}
     </span>
   )
   return (
@@ -121,8 +136,11 @@ export function MessageIconActions({
       {onBranch !== undefined && branchUnavailable && (
         <span id={reasonId} className={css.visuallyHidden}>{t('message.branchUnavailable')}</span>
       )}
+      {usageAction}
+      {usageAction != null && clock === 'end' && clockEl !== null && (
+        <span className={css.actionsDot} aria-hidden>·</span>
+      )}
       {clock === 'end' ? clockEl : null}
-      {clock === 'end' ? usageDetails : null}
     </div>
   )
 }

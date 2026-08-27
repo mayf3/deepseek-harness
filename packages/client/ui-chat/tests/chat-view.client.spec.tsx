@@ -1562,18 +1562,18 @@ describe('ChatView', () => {
       }]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // First-step ttft (1.2s) plus 100 tokens over 5s of decode: the whole
-    // meta line (clock, run time, usage metrics) is one clickable trigger.
-    const trigger = view.getByRole('button', { name: /本轮用量 10\.1K tok/ })
-    expect(trigger.textContent).toMatch(
-      /^.+ · 用时 19秒 · 本轮用量 10\.1K tok · 缓存命中率 49\.4% · 速度 20 tok\/s · 首 token 1\.2秒$/,
-    )
+    // First-step ttft (1.2s) plus 100 tokens over 5s of decode stay plain
+    // text; the usage pill in the icon row is the only clickable trigger.
+    const trigger = view.getByRole('button', { name: /用量 10\.1K tok/ })
+    expect(trigger.textContent).toBe('用量 10.1K tok · 缓存命中 49.4%')
+    expect(view.getByText(/用时 19秒/).textContent)
+      .toMatch(/^.+ · 用时 19秒 · 速度 20 tok\/s · 首 token 1\.2秒$/)
     expect(view.queryByRole('dialog')).toBeNull()
     fireEvent.click(trigger)
     const dialog = view.getByRole('dialog')
     expect(dialog.getAttribute('aria-label')).toBe('本轮用量')
+    expect(dialog.textContent).toContain('缓存命中49.4%')
     expect(dialog.textContent).toContain('未缓存输入5,060 tok')
-    expect(dialog.textContent).toContain('缓存命中率49.4%')
     expect(dialog.textContent).toContain('总计10,100 tok')
   })
 
@@ -1589,7 +1589,10 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 20]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.queryByText(/首 token|tok\/s/)).toBeNull()
+    // Timing facts stay visible as plain text, but with no usage in the
+    // window there is no pill to click.
+    expect(view.getByText(/首 token/)).toBeTruthy()
+    expect(view.queryByRole('button', { name: /用量/ })).toBeNull()
   })
 
   it('withholds ttft and throughput while the turn is still running', () => {
@@ -1607,7 +1610,7 @@ describe('ChatView', () => {
     expect(view.queryByText(/首 token|tok\/s/)).toBeNull()
   })
 
-  it('user rows scope the hover clock; turn tails gate the whole row by recency', () => {
+  it('user rows and turn tails both gate the whole actions row by recency', () => {
     const h = makeHarness({
       nodes: [
         user(1, 'hi'),
@@ -1622,13 +1625,15 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 3], [2, 6]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // Only the user rows keep the time-hover scope; assistant tails moved to
-    // the recency-gated whole-row reveal.
-    expect(view.container.querySelectorAll('[data-time-hover-root]')).toHaveLength(2)
-    const tails = view.container.querySelectorAll('[data-actions-reveal]')
+    // The last user-authored row and the latest turn's tail stay shown;
+    // every earlier row of either kind reveals on hover.
+    const tails = view.container.querySelectorAll('[data-turn-tail]')
     expect(new Map([...tails].map(tail => [
       tail.getAttribute('data-turn-tail'), tail.getAttribute('data-actions-reveal'),
     ]))).toEqual(new Map([['1', 'hover'], ['2', 'always']]))
+    const userRows = [...view.container.querySelectorAll('[data-actions-reveal]')]
+      .filter(row => row.getAttribute('data-turn-tail') === null)
+    expect(userRows.map(row => row.getAttribute('data-actions-reveal'))).toEqual(['hover', 'always'])
   })
 
   it('the run-time label is withheld when the turn start is outside the window', () => {

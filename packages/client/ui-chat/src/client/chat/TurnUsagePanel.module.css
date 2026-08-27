@@ -1,56 +1,68 @@
-/* Whole-line meta trigger on the finalized footer row, plus its click-open
+/* Icon-row Turn-usage pill (data icon + turn total) plus its click-open
    Turn-details dialog (menu surface: r12, inverted hairline, shadow-lv3 —
    ContextMeter's panel skin). */
 
 .root {
-  position: relative;
   display: inline-flex;
   min-width: 0;
-  /* Same 12px inset the plain clock label (.timeEnd) keeps from the icons. */
-  margin-left: 12px;
 }
 
-/* Same text treatment as the row's clock label (secondary tier, one step
-   under the body size); hover brightens one step to signal the cluster is
-   clickable. min-width 0 + hidden overflow let the one-line cluster shrink
-   with the chat column and ellipsize instead of widening it. */
+/* Same pill rules as the sibling `.action` icon buttons (28px hit height,
+   15px glyph, tertiary → secondary on hover with the interactive hover
+   background), widened to carry the turn-total label. */
 .trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   min-width: 0;
-  padding: 0;
+  height: calc(28px + var(--dsh-content-font-delta, 0px));
+  padding: 6px 8px;
   border: none;
+  border-radius: 28px;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
   font-size: var(--dsh-content-font-size-secondary, 13px);
   font-variant-numeric: tabular-nums;
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   white-space: nowrap;
+  cursor: pointer;
+}
+
+/* A narrow column trims the label to an ellipsis instead of overflowing the
+   pill; the data glyph never shrinks. */
+.label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  cursor: pointer;
+}
+
+.trigger svg {
+  width: calc(15px + var(--dsh-content-font-delta, 0px));
+  height: calc(15px + var(--dsh-content-font-delta, 0px));
+  flex: none;
 }
 
 .trigger:hover,
 .trigger[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Same segment separators as the plain clock row's runTimeDot, so the
-   clickable and plain forms of the meta line space identically. */
-.dot {
-  margin: 0 5px;
-}
-
+/* Portal surface: fixed in the viewport, left/top supplied inline from the
+   anchored-position clamp so the panel keeps its 12px viewport margin instead
+   of hanging off the trigger and clipping at the window edge. Portaled panels
+   layer above modal overlays (z 1000). */
 .panel {
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 0;
-  z-index: 100;
+  position: fixed;
+  z-index: 1100;
   box-sizing: border-box;
-  /* Size to the widest row so provider/model stays on one line, within a cap. */
+  /* Size to the widest row so provider/model stays on one line, within a cap.
+     Both bounds yield to a viewport narrower than themselves (12px margins),
+     so a fixed floor cannot push the panel past the placement clamp. */
   width: max-content;
-  min-width: 300px;
+  min-width: min(300px, calc(100vw - 24px));
   max-width: min(440px, calc(100vw - 24px));
-  padding: 12px;
+  padding: 16px;
   border: 1px solid var(--dsw-alias-border-inverted);
   border-radius: 12px;
   background: var(--dsw-specific-menu);
@@ -59,6 +71,13 @@
   line-height: 18px;
   color: var(--dsw-alias-label-secondary);
   cursor: default;
+}
+
+/* Dialog heading, same size and weight as the total row it concludes with. */
+.title {
+  margin-bottom: 12px;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
 }
 
 .details {
@@ -90,10 +109,16 @@
   white-space: nowrap;
 }
 
+/* Full-bleed rule above the total row: the grid's column gap would break a
+   per-cell border-top, so the line is its own row spanning both columns. */
+.separator {
+  grid-column: 1 / -1;
+  margin: 4px 0;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
 .totalLabel,
 .details .totalValue {
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
 }

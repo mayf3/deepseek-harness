@@ -13,7 +13,7 @@ const read = (name: string): string =>
 
 function declarationsFrom(source: string, selector: string): string[] {
   const declarationText = source.replace(/\/\*[\s\S]*?\*\//g, ' ')
-  const rule = new RegExp(`(?:^|\\})\\s*${selector.replace(/[.[\]():*+^$\\]/g, '\\$&')}\\s*\\{([^{}]*)\\}`).exec(declarationText)
+  const rule = new RegExp(`(?:^|[{}])\\s*${selector.replace(/[.[\]():*+^$\\]/g, '\\$&')}\\s*\\{([^{}]*)\\}`).exec(declarationText)
   if (rule === null) throw new Error(`no \`${selector}\` rule`)
   return (rule[1] ?? '').split(';').map(part => part.trim()).filter(Boolean)
 }
@@ -45,11 +45,12 @@ describe('chat flow font-size axis', () => {
 
   it('the message clock and action glyphs scale with the text they serve', () => {
     const actions = read('MessageIconActions.module.css')
+    // Both clocks read the secondary tier: the assistant tail's meta line
+    // (the whole-line usage trigger) and the user row's clock stay one step
+    // under the body size so the two rows match.
     expect(declarationsFrom(actions, '.timeStart')).toEqual(expect.arrayContaining([
-      'font-size: var(--dsh-content-font-size, 14px)',
+      'font-size: var(--dsh-content-font-size-secondary, 13px)',
     ]))
-    // The assistant tail's meta line (the whole-line usage trigger) sits one
-    // step under the body size; the user row's clock keeps the body size.
     expect(declarationsFrom(actions, '.timeEnd')).toEqual(expect.arrayContaining([
       'font-size: var(--dsh-content-font-size-secondary, 13px)',
     ]))
@@ -93,26 +94,27 @@ describe('chat flow font-size axis', () => {
     ]))
   })
 
-  it('the whole-line trigger ellipsizes instead of widening the chat column', () => {
-    // The one-line meta cluster stays nowrap; min-width 0 lets the flex item
-    // shrink with the column and the hidden overflow trims to an ellipsis.
+  it('the usage pill sizes its glyph and hit height like the sibling action buttons', () => {
+    // The pill sits in the icon row right of the branch action; its data glyph
+    // and 28px hit height follow the same delta rule as `.action` so the row
+    // stays one height at every font size.
     const css = read('TurnUsagePanel.module.css')
     expect(declarationsFrom(css, '.trigger')).toEqual(expect.arrayContaining([
-      'min-width: 0',
+      'height: calc(28px + var(--dsh-content-font-delta, 0px))',
       'white-space: nowrap',
+      'min-width: 0',
+    ]))
+    expect(declarationsFrom(css, '.trigger svg')).toEqual(expect.arrayContaining([
+      'width: calc(15px + var(--dsh-content-font-delta, 0px))',
+      'height: calc(15px + var(--dsh-content-font-delta, 0px))',
+    ]))
+    // A narrow column trims the pill label to an ellipsis instead of letting
+    // it overflow or widen the chat column.
+    expect(declarationsFrom(css, '.label')).toEqual(expect.arrayContaining([
+      'min-width: 0',
       'overflow: hidden',
       'text-overflow: ellipsis',
     ]))
-    expect(declarationsFrom(css, '.root')).toEqual(expect.arrayContaining(['min-width: 0']))
-  })
-
-  it('the clickable and plain meta lines keep identical inset and separator spacing', () => {
-    const panel = read('TurnUsagePanel.module.css')
-    const actions = read('MessageIconActions.module.css')
-    expect(declarationsFrom(panel, '.dot')).toEqual(['margin: 0 5px'])
-    expect(declarationsFrom(actions, '.runTimeDot')).toEqual(['margin: 0 5px'])
-    expect(declarationsFrom(panel, '.root')).toEqual(expect.arrayContaining(['margin-left: 12px']))
-    expect(declarationsFrom(actions, '.timeEnd')).toEqual(expect.arrayContaining(['padding-left: 12px']))
   })
 
   it('non-latest turn tails hide the whole actions row until hover or focus', () => {
