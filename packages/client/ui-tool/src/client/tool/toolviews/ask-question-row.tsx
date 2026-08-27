@@ -2,10 +2,10 @@ import { IconQuestionOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
+import type { AskQuestionCardModel } from '../models/ask-question-card-model.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 import { ToolRow } from '../components/ToolRow.tsx'
 import { CONVERSATION_NS as NS } from '../../locale.ts'
-import css from './ask-question-row.module.css'
 
 /** One result entry after validating the fields used by the transcript card. */
 interface AnswerEntry {
@@ -31,10 +31,6 @@ interface AnswerPresentation {
   summary: string
   questions: AnsweredQuestion[] | null
 }
-
-type QuestionTranscript =
-  | { kind: 'answered'; questions: AnsweredQuestion[] }
-  | { kind: 'unanswered'; questions: QuestionEntry[]; verdict: string }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -125,42 +121,7 @@ function answeredPresentation(
   }
 }
 
-function QuestionTranscriptCard({ transcript, t }: {
-  transcript: QuestionTranscript
-  t: AskQuestionRowProps['t']
-}) {
-  if (transcript.kind === 'unanswered') {
-    return (
-      <div className={css.card}>
-        <p className={css.verdict}>{transcript.verdict}</p>
-        <ul className={css.questionList}>
-          {transcript.questions.map(question => (
-            <li className={css.unansweredQuestion} key={question.id}>{question.question}</li>
-          ))}
-        </ul>
-      </div>
-    )
-  }
-  return (
-    <dl className={css.card}>
-      {transcript.questions.map(question => (
-        <div className={css.item} key={question.id}>
-          <dt className={css.question}>{question.question}</dt>
-          <dd className={css.answer}>
-            {question.answers.length === 0
-              ? <span className={css.skipped}>{t('ask.skipped')}</span>
-              : question.answers.map((answer, index) => (
-                <span className={css.answerLine} key={`${question.id}-${String(index)}`}>{answer}</span>
-              ))}
-          </dd>
-        </div>
-      ))}
-    </dl>
-  )
-}
-
-/** Answered-count summary from the result JSON (a skipped question has
- *  empty `selected` and no `custom`); null when answer fields are invalid. */
+/** Best-effort answered-count summary when strict transcript pairing fails. */
 function answeredSummary(text: string, t: AskQuestionRowProps['t']): string | null {
   const parsed = parseJson(text)
   if (!isRecord(parsed)) return null
@@ -187,7 +148,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
   const argsRaw = ('kind' in block ? block.call?.argsRaw : block.argsRaw) ?? ''
   let summary = model.summary
   let state = model.state
-  let transcript: QuestionTranscript | null = null
+  let transcript: AskQuestionCardModel | null = null
   if (code === 'ASK_CANCELLED') {
     summary = t('ask.cancelled')
     state = 'ok'
@@ -207,9 +168,11 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
   } else if ('kind' in block && model.state === 'ok') {
     const text = block.content.filter(b => b.type === 'text').map(b => b.text).join('')
     const presentation = answeredPresentation(argsRaw, text, t)
+    // Full transcripts require stable ids and valid visible fields; retain the
+    // legacy best-effort count when only strict pairing is unsafe.
     summary = presentation?.summary ?? answeredSummary(text, t) ?? model.summary
     if (presentation?.questions !== null && presentation?.questions !== undefined) {
-      transcript = { kind: 'answered', questions: presentation.questions }
+      transcript = { kind: 'answered', questions: presentation.questions, skippedLabel: t('ask.skipped') }
     }
   }
   return (
@@ -222,7 +185,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
       summary={summary}
       body={transcript === null ? model.body : null}
       output={transcript === null ? model.output : null}
-      structuredBody={transcript === null ? null : <QuestionTranscriptCard transcript={transcript} t={t} />}
+      askQuestion={transcript}
       state={state}
       inspect={inspect}
     />

@@ -75,6 +75,8 @@ function cancelledFixture(fixture: string): string {
     const event: unknown = JSON.parse(line)
     if (!isRecord(event)) throw new Error('question fixture event is invalid')
     if (event.type === 'session') {
+      // Keep the derived session's relative-time header stable as the source
+      // fixture ages.
       event.createdAt = Date.now()
       lines.push(JSON.stringify(event))
       continue
@@ -100,7 +102,11 @@ function cancelledFixture(fixture: string): string {
       text: 'Error: the user cancelled ask_user_question',
     }]
     message.content[0].isError = true
-    data.error = { name: 'UserQuestionError', code: 'ASK_CANCELLED' }
+    data.error = {
+      name: 'UserQuestionError',
+      message: 'the user cancelled ask_user_question',
+      code: 'ASK_CANCELLED',
+    }
     replaced = true
     lines.push(JSON.stringify(event))
   }

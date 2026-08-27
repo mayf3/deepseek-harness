@@ -42,7 +42,7 @@ Web GUI 已经可以通过 `QuestionComposer` 的输入区接管收集回答，�
 
 `ask_user_question` 与 `todo_write` 现在共同示范预期的 toolview 模式：复用 `ToolRow`、从调用参数或结果 JSON 做带形状校验回退的摘要、通过带 key 的 slot 注册。专用的 `todo-row.module.css` 已删除。
 
-展开问答记录为共享 `ToolRow` 增加一条结构化内容路径；其他工具视图保留原有的通用或专用卡片。问题行只读取已持久化的调用与结果字段，不增加 Host 呈现字段。审批输入区接管已交付（[Web 权限与审批](2026-07-23-web-permission-and-approval.zh.md)，并按[审批面板 Agent Note](../bug-fix/2026-07-30-approval-panel-command-cap.zh.md)施加高度上限），`PendingCard` 已不复存在。
+展开问答记录为共享 `ToolRow` 增加类型化的纯数据问题卡片模型；其他工具视图保留原有的通用或专用卡片。问题行只读取已持久化的调用与结果字段，不增加 Host 呈现字段。审批输入区接管已交付（[Web 权限与审批](2026-07-23-web-permission-and-approval.zh.md)，并按[审批面板 Agent Note](../bug-fix/2026-07-30-approval-panel-command-cap.zh.md)施加高度上限），`PendingCard` 已不复存在。
 
 `ui-user-questions` 新增 `dsh-client-locale` 依赖和此前没有的 inject face；其约定（`QuestionComposerInjected`）与消费方一起放在 `contract/slots.ts`。
 

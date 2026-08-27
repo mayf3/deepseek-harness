@@ -42,7 +42,7 @@ Two adjacent fixes ride along. All generic toolview leading icons (and the hover
 
 `ask_user_question` and `todo_write` now demonstrate the intended toolview pattern: compose `ToolRow`, summarize from call args or result JSON with shape-checked fallbacks, and register through the keyed slot. The bespoke `todo-row.module.css` is gone.
 
-The expanded transcript adds a structured-body path to the shared `ToolRow`; other tool views retain their existing generic or specialized cards. The question row reads only persisted call and result fields and does not add a Host presentation field. The approval composer takeover shipped ([web permission and approval](2026-07-23-web-permission-and-approval.md), height-capped per the [approval-panel note](../bug-fix/2026-07-30-approval-panel-command-cap.md)), and `PendingCard` no longer exists.
+The expanded transcript adds a typed, plain-data question-card model to the shared `ToolRow`; other tool views retain their existing generic or specialized cards. The question row reads only persisted call and result fields and does not add a Host presentation field. The approval composer takeover shipped ([web permission and approval](2026-07-23-web-permission-and-approval.md), height-capped per the [approval-panel note](../bug-fix/2026-07-30-approval-panel-command-cap.md)), and `PendingCard` no longer exists.
 
 `ui-user-questions` gains a `dsh-client-locale` dependency and an inject face where it previously had none; its contract (`QuestionComposerInjected`) lives with the consumer in `contract/slots.ts`.
 

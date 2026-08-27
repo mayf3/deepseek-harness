@@ -13,8 +13,10 @@ import {
 import {
   diffBlockLabels, readBlockLabels, searchBlockLabels, webBlockLabels,
 } from '../models/primitive-labels.ts'
+import type { AskQuestionCardModel } from '../models/ask-question-card-model.ts'
 import type { ToolRowState, ToolRowVariant } from '../models/tool-call-model.ts'
 import type { WebCardModelProps } from '../models/web-card-model.ts'
+import { AskQuestionCard } from './AskQuestionCard.tsx'
 import css from './ToolRow.module.css'
 
 export interface ToolRowProps {
@@ -37,8 +39,8 @@ export interface ToolRowProps {
   body: string | null
   /** Flattened result text for the expanded Output section; null/absent = no output section. */
   output?: string | null | undefined
-  /** Tool-owned structured body that replaces the generic input/output sections. */
-  structuredBody?: ReactNode | null | undefined
+  /** Ask-user transcript card; card fields are mutually exclusive and replace text sections. */
+  askQuestion?: AskQuestionCardModel | null | undefined
   /** Error first line shown as the collapsed summary on an error row; null/absent = keep `summary`. */
   errorSummary?: string | null | undefined
   /** Terminal card; card fields are mutually exclusive and replace text sections. */
@@ -93,7 +95,7 @@ export function ToolRow({
   summarySuffix,
   body,
   output,
-  structuredBody,
+  askQuestion,
   errorSummary,
   terminal,
   diff,
@@ -118,9 +120,9 @@ export function ToolRow({
   const readBody = read ?? null
   const searchBody = search ?? null
   const webBody = web ?? null
-  const ownedBody = structuredBody ?? null
+  const askQuestionBody = askQuestion ?? null
   const outputText = output ?? null
-  const card = ownedBody ?? terminalBody ?? diffBody ?? readBody ?? searchBody ?? webBody
+  const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? searchBody ?? webBody
   const expandable = body !== null || outputText !== null || card !== null
   const open = expanded && expandable
   const status = stateStatus(state, t)
@@ -187,8 +189,8 @@ export function ToolRow({
         )}
       >
         <div className={css.bodyWrap}>
-          {ownedBody !== null
-            ? ownedBody
+          {askQuestionBody !== null
+            ? <AskQuestionCard card={askQuestionBody} />
             : terminalBody !== null
               ? (
                 <TerminalBlock
