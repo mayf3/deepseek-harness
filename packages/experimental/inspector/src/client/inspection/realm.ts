@@ -5,10 +5,12 @@ import { inspectorId } from '../../shared/identity.ts'
 import type { InspectorSourceDescriptor } from '../../shared/bridge/messages/observation.ts'
 import { bridgeCapabilities } from '../cdp/index.ts'
 
+const CLIENT_SOURCE_STORAGE_KEY = 'dsh.experimental-inspector.client-source-id.v0'
+
 /** Owns one browser realm's stable source id across transport reconnects. */
 export class ClientRealmSource {
   /** Logical source id retained across reconnecting transport generations. */
-  readonly sourceId = inspectorId<'InspectorSourceId'>(`client-${randomUUID()}`, 'sourceId')
+  readonly sourceId = sessionClientSourceId()
 
   constructor(private readonly label: string) {}
 
@@ -27,6 +29,24 @@ export class ClientRealmSource {
       capabilities: bridgeCapabilities(clientOrigin(), hasSources),
     }
   }
+}
+
+function sessionClientSourceId(): InspectorSourceDescriptor['sourceId'] {
+  const generated = inspectorId<'InspectorSourceId'>(`client-${randomUUID()}`, 'sourceId')
+  try {
+    const stored = sessionStorage.getItem(CLIENT_SOURCE_STORAGE_KEY)
+    if (stored !== null) {
+      try {
+        return inspectorId<'InspectorSourceId'>(stored, 'sourceId')
+      } catch {
+        // Invalid page-owned storage is replaced with a fresh protocol identity below.
+      }
+    }
+    sessionStorage.setItem(CLIENT_SOURCE_STORAGE_KEY, generated)
+  } catch {
+    // Disabled or unavailable session storage limits identity to this page lifetime.
+  }
+  return generated
 }
 
 function clientOrigin(): string {

@@ -58,13 +58,26 @@ function writeBuiltPackage(packageName: string, client: Record<string, unknown>)
 }
 
 /** Construct the node-half service and capture its plugin-bundle route. */
-function constructWithRoute(packageNames: string[]): { service: ClientModuleRegistry; route: WebRoute } {
+function constructWithRoute(
+  packageNames: string[],
+  options: {
+    contextBaseUrl?: string
+    entryBaseUrl?: string
+    internal?: NonNullable<Context['loader']['internal']>
+  } = {},
+): { service: ClientModuleRegistry; route: WebRoute } {
   const ctx = new Context()
-  ctx.baseUrl = pathToFileURL(root!).href + '/'
+  ctx.baseUrl = options.contextBaseUrl ?? pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
+    internal: options.internal,
     *entries() {
       for (const packageName of packageNames) {
-        yield { options: { name: packageName }, fiber: {}, disabled: false }
+        yield {
+          options: { name: packageName },
+          fiber: {},
+          disabled: false,
+          parent: { tree: { ctx: { baseUrl: options.entryBaseUrl ?? ctx.baseUrl } } },
+        }
       }
     },
   })
@@ -227,6 +240,65 @@ describe('HTML bootstrap facade', () => {
 })
 
 describe('client bundle activation', () => {
+  it.each(['v1', 'v2'] as const)(
+    'resolves %s package metadata from the owning entry tree',
+    (version) => {
+      const packageName = `@fixture/entry-base-${version}`
+      const clientPath = writePackage(packageName)
+      const hostPath = join(dirname(clientPath), 'index.js')
+      mkdirSync(dirname(hostPath), { recursive: true })
+      writeFileSync(hostPath, 'export default {}\n')
+      writeFileSync(clientPath, 'module.exports = {}\n')
+      const contextBaseUrl = pathToFileURL(join(root!, 'profile')).href + '/'
+      const entryBaseUrl = pathToFileURL(join(root!, 'overlay')).href + '/'
+      const calls: unknown[][] = []
+      const resolveSync = (...args: unknown[]) => {
+        calls.push(args)
+        return { format: 'module' as const, url: pathToFileURL(hostPath).href }
+      }
+      const internal = { version, resolveSync }
+
+      const { service } = constructWithRoute([packageName], {
+        contextBaseUrl,
+        entryBaseUrl,
+        internal: internal as NonNullable<Context['loader']['internal']>,
+      })
+
+      expect(calls).toEqual(version === 'v2'
+        ? [[entryBaseUrl, { specifier: packageName, attributes: {} }]]
+        : [[packageName, entryBaseUrl, {}]])
+      expect(service.clientPath(packageName)).toBe(clientPath)
+      expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    },
+  )
+
+  it('derives the browser module id from a file entry owning manifest', () => {
+    const packageName = '@fixture/file-entry'
+    const clientPath = writePackage(packageName)
+    const hostPath = join(dirname(clientPath), 'index.js')
+    mkdirSync(dirname(hostPath), { recursive: true })
+    writeFileSync(hostPath, 'export default {}\n')
+    writeFileSync(clientPath, 'module.exports = {}\n')
+
+    const service = construct([pathToFileURL(hostPath).href])
+
+    expect(service.clientPath(packageName)).toBe(clientPath)
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
+  it('uses owning-tree package resolution for an import-only Worker module loader', () => {
+    const packageName = '@fixture/worker-loader'
+    writeBuiltPackage(packageName, {})
+    const internal = {
+      version: 'worker',
+      import: async () => ({}),
+    } as unknown as NonNullable<Context['loader']['internal']>
+
+    const { service } = constructWithRoute([packageName], { internal })
+
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
   it('allows sibling dsh roles', () => {
     const currentName = '@fixture/current-client-field'
     const clientPath = writePackage(currentName, {

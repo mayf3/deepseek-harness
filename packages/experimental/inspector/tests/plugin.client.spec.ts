@@ -66,9 +66,11 @@ describe('experimental Inspector Client plugin', () => {
   const nativeFetch = globalThis.fetch
 
   afterEach(() => {
+    vi.restoreAllMocks()
     FakeWebSocket.sockets.length = 0
     globalThis.WebSocket = nativeWebSocket
     globalThis.fetch = nativeFetch
+    sessionStorage.clear()
     delete globalThis.__DSH_INSPECTOR__
     Reflect.deleteProperty(globalThis, '__DSH_BOOT__')
   })
@@ -176,6 +178,50 @@ describe('experimental Inspector Client plugin', () => {
     expect(secondOpen.source.sourceId).toBe(firstOpen.source.sourceId)
     expect(secondOpen.source.generation).not.toBe(firstOpen.source.generation)
 
+    await fiber.dispose()
+  })
+
+  it('keeps the logical source id when the Client plugin is recreated after a page refresh', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    globalThis.__DSH_INSPECTOR__ = bootstrap
+    const firstContext = new Context()
+    const firstFiber = firstContext.plugin({ apply })
+    await firstFiber.await()
+    const firstSocket = FakeWebSocket.sockets[0]!
+    firstSocket.open()
+    const firstOpen = JSON.parse(firstSocket.sent[0]!) as {
+      source: { sourceId: string; generation: string }
+    }
+    await firstFiber.dispose()
+
+    const secondContext = new Context()
+    const secondFiber = secondContext.plugin({ apply })
+    await secondFiber.await()
+    const secondSocket = FakeWebSocket.sockets[1]!
+    secondSocket.open()
+    const secondOpen = JSON.parse(secondSocket.sent[0]!) as {
+      source: { sourceId: string; generation: string }
+    }
+
+    expect(secondOpen.source.sourceId).toBe(firstOpen.source.sourceId)
+    expect(secondOpen.source.generation).not.toBe(firstOpen.source.generation)
+    await secondFiber.dispose()
+  })
+
+  it('falls back to a page-lifetime source id when session storage is unavailable', async () => {
+    globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket
+    globalThis.__DSH_INSPECTOR__ = bootstrap
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('storage disabled', 'SecurityError')
+    })
+    const ctx = new Context()
+    const fiber = ctx.plugin({ apply })
+    await fiber.await()
+    const socket = FakeWebSocket.sockets[0]!
+    socket.open()
+    const open = JSON.parse(socket.sent[0]!) as { source: { sourceId: string } }
+
+    expect(open.source.sourceId).toMatch(/^client-/u)
     await fiber.dispose()
   })
 

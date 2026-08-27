@@ -23,13 +23,14 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, isAbsolute, join } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
-import type {} from '@deepseek-ai/cordis-plugin-loader'
+import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type { IndexInjection } from '@deepseek-ai/dsh-host-webserver'
 import { optionalStringArray, stripClientSuffix } from './client/manifest.ts'
 import type { WebBootBatch, WebBootBatchPhase, WebBootEntry, WebBootGraph } from './client/manifest.ts'
@@ -85,6 +86,11 @@ interface PkgMeta extends WebBootRowFields {
   clientPath: string
 }
 
+interface ResolvedPkgMeta {
+  packageName: string
+  meta: PkgMeta
+}
+
 /** Recovery instruction shared by grouped startup and steady-state bundle diagnostics. */
 const CLIENT_BUNDLE_BUILD_INSTRUCTION = 'run `pnpm run build` before launch'
 
@@ -129,6 +135,10 @@ class ClientPackageCompositionError extends AggregateError {
 /** One composed table row: the wire entry plus the resolved package metadata behind it. */
 interface WebPluginRecord {
   entry: WebBootEntry
+  /** Loader specifier whose active row contributes this browser module. */
+  loaderName: string
+  /** Loader resolution input that selected this package instance. */
+  sourceKey: string
   meta: PkgMeta
   /** Exact build artifact included in the startup batches. */
   bundle: Buffer
@@ -166,6 +176,15 @@ const COMBO_REVISION_PLACEHOLDER = '0'.repeat(HASH_REVISION_LENGTH)
 const SOURCE_MAP_TRAILER = /(?:\r?\n)?\/\/# sourceMappingURL=[^\r\n]*(?:\r?\n)?$/
 /** Debugger source name appended to page bundles in the WebWorker image. */
 const SOURCE_URL_TRAILER = /(?:\r?\n)?\/\/# sourceURL=([^\r\n]+)(?:\r?\n)?$/
+
+/** Return a bare package-root specifier, excluding package subpaths and path-like entries. */
+function exactPackageSpecifier(specifier: string): string | undefined {
+  if (specifier.startsWith('@')) {
+    const parts = specifier.split('/')
+    return parts.length === 2 && parts.every(Boolean) ? specifier : undefined
+  }
+  return specifier.length > 0 && !specifier.includes('/') ? specifier : undefined
+}
 
 /** Narrow an unknown parsed JSON value to the `dsh.client` declaration, throwing on malformed fields. */
 function parseDshClient(pkgName: string, value: unknown): DshClientDeclaration | undefined {
@@ -504,14 +523,12 @@ export class ClientModuleRegistry extends Service {
   static inject = ['webServer', 'loader']
 
   private readonly table = new Map<string, WebPluginRecord>()
-  // Negative verdicts (unresolvable specifier — builtins like cordis:include,
-  // subpath rows — or a package without a web `dsh.client` declaration) are
-  // cached as null and never expire: plugin-set changes take effect on restart.
-  private readonly pkgMeta = new Map<string, PkgMeta | null>()
+  // Resolution is entry-local: the same specifier can resolve differently in
+  // separate config trees. Negative verdicts remain stable until restart.
+  private readonly pkgMeta = new Map<string, ResolvedPkgMeta | null>()
   private readonly rebuildListeners = new Set<(id: string, rev: string) => void>()
   private readonly graphListeners = new Set<() => void>()
   private readonly dirty = new Set<string>()
-  private readonly resolvePkgJson: (spec: string) => string
   private readonly initialRevisionNonce = randomBytes(8).toString('hex')
   private nextInitialRevision = 0
   private responses = new Map<string, { body: Buffer; contentType: string }>()
@@ -527,16 +544,6 @@ export class ClientModuleRegistry extends Service {
    */
   constructor(ctx: Context) {
     super(ctx, 'clientModules')
-    // Resolution anchor: the config tree's baseUrl (the cordis.yml directory,
-    // whose package declares every composed plugin as a dependency). The
-    // modules package's own URL would miss sibling packages under pnpm's
-    // isolated node_modules.
-    if (ctx.baseUrl === undefined) {
-      throw new Error('client-modules: ctx.baseUrl is unset — the node half needs the config-tree anchor to resolve plugin packages')
-    }
-    const require = createRequire(ctx.baseUrl)
-    this.resolvePkgJson = spec => require.resolve(`${spec}/package.json`)
-
     // Subscribe before seeding so a fiber arriving mid-activation lands in the
     // same dirty set (Set idempotence makes the overlap harmless). An entry-less
     // fiber is a child plugin or a manual mount — never a loader row; O(1) drop.
@@ -716,31 +723,31 @@ export class ClientModuleRegistry extends Service {
     }
   }
 
-  private resolveMeta(pkgName: string): PkgMeta | null {
-    const cached = this.pkgMeta.get(pkgName)
+  private resolveMeta(loaderName: string, baseUrl: string): ResolvedPkgMeta | null {
+    const sourceKey = this.sourceKey(loaderName, baseUrl)
+    const cached = this.pkgMeta.get(sourceKey)
     if (cached !== undefined) return cached
-    let pkgPath: string
-    try {
-      pkgPath = this.resolvePkgJson(pkgName)
-    } catch {
+    const located = this.locatePkgJson(loaderName, baseUrl)
+    if (located === undefined) {
       // Not a resolvable package root: loader builtins (cordis:include) and
       // subpath entries (…/gateway) land here — permanently not a client row.
-      this.pkgMeta.set(pkgName, null)
+      this.pkgMeta.set(sourceKey, null)
       return null
     }
+    const { packageName, path: pkgPath } = located
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf8')) as Record<string, unknown>
     const dsh = pkg.dsh
     const decl = parseDshClient(
-      pkgName,
+      packageName,
       dsh !== null && typeof dsh === 'object' ? (dsh as Record<string, unknown>).client : undefined,
     )
     if (decl === undefined || decl.platform !== 'web') {
-      this.pkgMeta.set(pkgName, null)
+      this.pkgMeta.set(sourceKey, null)
       return null
     }
-    const clientRel = clientExportOf(pkgName, pkg.exports)
+    const clientRel = clientExportOf(packageName, pkg.exports)
     if (clientRel === undefined) {
-      throw new Error(`client-modules: ${pkgName} declares dsh.client but exports no "./client" bundle`)
+      throw new Error(`client-modules: ${packageName} declares dsh.client but exports no "./client" bundle`)
     }
     const meta: PkgMeta = {
       clientPath: join(dirname(pkgPath), clientRel),
@@ -748,8 +755,87 @@ export class ClientModuleRegistry extends Service {
       external: decl.external ?? [],
       immediately: decl.immediately === true,
     }
-    this.pkgMeta.set(pkgName, meta)
-    return meta
+    const resolved = { packageName, meta }
+    this.pkgMeta.set(sourceKey, resolved)
+    return resolved
+  }
+
+  /**
+   * Locate the manifest of the package the Loader mounts for a row. The row's
+   * module location is authoritative: the specifier resolves through the same
+   * Loader resolution that imported the row's host half — including any
+   * active ESM hooks — and the nearest ancestor manifest declaring the name
+   * owns the module. Config-anchor `require` resolution remains only for
+   * runtimes without Node internals.
+   * @param loaderName - module specifier of the loader row.
+   * @param baseUrl - resolution base of the tree that owns the row.
+   * @returns the manifest path, or `undefined` when the name resolves to no package root.
+   */
+  private locatePkgJson(loaderName: string, baseUrl: string): { path: string; packageName: string } | undefined {
+    if (loaderName.startsWith('cordis:')) return undefined
+    const pathLike = loaderName.startsWith('.') || loaderName.startsWith('file:') || isAbsolute(loaderName)
+    const expectedPackageName = pathLike ? undefined : exactPackageSpecifier(loaderName)
+    if (!pathLike && expectedPackageName === undefined) return undefined
+    const internal = this.ctx.loader.internal
+    if (internal === undefined || typeof Reflect.get(internal, 'resolveSync') !== 'function') {
+      if (expectedPackageName === undefined) {
+        const moduleUrl = loaderName.startsWith('file:')
+          ? loaderName
+          : isAbsolute(loaderName) ? pathToFileURL(loaderName).href : new URL(loaderName, baseUrl).href
+        return this.nearestPackage(moduleUrl)
+      }
+      try {
+        return {
+          path: createRequire(baseUrl).resolve(`${expectedPackageName}/package.json`),
+          packageName: expectedPackageName,
+        }
+      } catch {
+        // Without Node internals the owning tree is the only resolver; an
+        // unresolvable name is classified exactly as below.
+        return undefined
+      }
+    }
+    let moduleUrl: string
+    try {
+      moduleUrl = internal.version === 'v2'
+        ? internal.resolveSync(baseUrl, { specifier: loaderName, attributes: {} }).url
+        : internal.resolveSync(loaderName, baseUrl, {}).url
+    } catch {
+      // The Loader cannot resolve the name: its row cannot have imported, so
+      // the name is permanently not a client row.
+      return undefined
+    }
+    return this.nearestPackage(moduleUrl, expectedPackageName)
+  }
+
+  private nearestPackage(
+    moduleUrl: string,
+    expectedPackageName?: string,
+  ): { path: string; packageName: string } | undefined {
+    if (!moduleUrl.startsWith('file:')) return undefined
+    let dir = dirname(fileURLToPath(moduleUrl))
+    while (true) {
+      const candidate = join(dir, 'package.json')
+      if (existsSync(candidate)) {
+        try {
+          const name = (JSON.parse(readFileSync(candidate, 'utf8')) as { name?: unknown }).name
+          if (typeof name === 'string' && (expectedPackageName === undefined || name === expectedPackageName)) {
+            return { path: candidate, packageName: name }
+          }
+        } catch {
+          // An unreadable or malformed intermediate manifest cannot own the
+          // module; keep walking toward the declaring package root.
+        }
+      }
+      const parent = dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+    return undefined
+  }
+
+  private sourceKey(loaderName: string, baseUrl: string): string {
+    return `${baseUrl}\0${loaderName}`
   }
 
   /** Capture the bundle stats before reading its bytes. */
@@ -802,29 +888,48 @@ export class ClientModuleRegistry extends Service {
 
   /** Reconcile one entry name against the live loader entries. @returns whether the table changed. */
   private processOne(entryName: string): boolean {
-    let qualifies = false
+    let activeEntry: Entry | undefined
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.name === entryName && entry.fiber !== undefined && !entry.disabled) {
-        qualifies = true
+        activeEntry = entry
         break
       }
     }
-    if (!qualifies) return this.table.delete(entryName)
-    if (this.table.has(entryName)) return false
-    const meta = this.resolveMeta(entryName)
-    if (meta === null) return false
+    if (activeEntry === undefined) return this.deleteLoaderEntry(entryName)
+    const baseUrl = activeEntry.parent.tree.ctx.baseUrl
+    if (baseUrl === undefined) {
+      throw new Error(`client-modules: loader entry ${entryName} has no resolution base URL`)
+    }
+    const sourceKey = this.sourceKey(entryName, baseUrl)
+    const resolved = this.resolveMeta(entryName, baseUrl)
+    if (resolved === null) return this.deleteLoaderEntry(entryName)
+    const { packageName, meta } = resolved
+    if (this.table.get(packageName)?.sourceKey === sourceKey) return false
+    this.deleteLoaderEntry(entryName)
     // The opaque initial rev rides the row until HMR observes a file change;
     // a fiber restart reuses the existing row without inspecting bytes.
-    const snapshot = this.initialBundleSnapshot(entryName, meta.clientPath)
+    const snapshot = this.initialBundleSnapshot(packageName, meta.clientPath)
     const rev = this.allocateInitialRevision()
-    this.table.set(entryName, {
-      entry: graphRow(entryName, rev, meta),
+    this.table.set(packageName, {
+      entry: graphRow(packageName, rev, meta),
+      loaderName: entryName,
+      sourceKey,
       meta,
       bundle: snapshot.bundle,
       baseline: snapshot.baseline,
       ...(snapshot.sourceMap === undefined ? {} : { sourceMap: snapshot.sourceMap }),
     })
     return true
+  }
+
+  private deleteLoaderEntry(loaderName: string): boolean {
+    let changed = false
+    for (const [packageName, record] of this.table) {
+      if (record.loaderName !== loaderName) continue
+      this.table.delete(packageName)
+      changed = true
+    }
+    return changed
   }
 
   private flush(onError: (err: Error) => void): void {

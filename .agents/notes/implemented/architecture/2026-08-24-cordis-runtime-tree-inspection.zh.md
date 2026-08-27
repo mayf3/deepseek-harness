@@ -42,7 +42,7 @@ collector 从 root、注册表中的每个 live Fiber，以及每个 event hook 
 - `NodeId` 在节点进入某个 frontend document 时按 DevTools 连接分配；对应 backend node 被保留期间保持稳定，并在节点离开树、少见的整 document fallback 或连接关闭时丢弃。
 - `RemoteObjectId` 在 `DOM.resolveNode` 暴露实时对象时由选定的 Runtime session 分配；它只属于该 DevTools 连接和 object group。
 
-`sourceId` 标识一个 Client runtime instance，并在自动重连 transport 时保持稳定；`generation` 标识一次 WebSocket 接纳。断联通过 `Runtime.executionContextDestroyed` 从 Console 移除 synthetic context。重连会发布新的 CDP execution-context id，因为已销毁的 id 及其 RemoteObject 不能复用；这并不表示浏览器底层 JavaScript realm 被重新创建。
+`sourceId` 标识一个浏览器 tab 的 Client runtime，并保存在该 tab 的 `sessionStorage` 中，因此自动重连 transport 与页面刷新都会复用它；`generation` 标识一次 WebSocket 接纳且每次都会轮换。断联通过 `Runtime.executionContextDestroyed` 从 Console 移除 synthetic context。重连会发布新的 CDP execution-context id，因为已销毁的 id 及其 RemoteObject 不能复用；这并不表示浏览器底层 JavaScript realm 被重新创建。
 
 标准 CDP 不会在 `DOM.Node` 上放置 `RemoteObjectId` 字段。`DOM.Node` 携带 `nodeId` 与 `backendNodeId`；`DOM.resolveNode` 返回对应的 `Runtime.RemoteObject`，`DOM.requestNode` 执行反向映射。实现会关联这三类 CDP 身份，而不添加非标准 DOM 字段。
 
