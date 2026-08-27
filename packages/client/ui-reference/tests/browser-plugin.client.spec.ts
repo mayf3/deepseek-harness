@@ -22,6 +22,8 @@ const HOME = '/Users/dev'
 const CREATED_AT = 1_700_000_000_000
 /** Three days after every fixture's createdAt, so age copy is one fixed bucket. */
 const NOW = CREATED_AT + 3 * 86_400_000
+/** The Host session list dates a row; only a session missing from it falls back to createdAt. */
+const UPDATED_AT = NOW - 3_600_000
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -71,6 +73,7 @@ async function bench(
       mention: '@[Research](dsh-session:InNvdXJjZSI)',
     }],
   })),
+  listed: Record<string, { updatedAt: number }> = {},
 ): Promise<{ ctx: Context; fiber: ReturnType<Context['plugin']>; source: InputTriggerSource }> {
   const ctx = new Context()
   let source: InputTriggerSource | undefined
@@ -90,6 +93,7 @@ async function bench(
   ctx.provide('remote.sessionReferenceResolver', { candidates: sessions })
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('connection', { hostDescription: { getSnapshot: () => ({ home: HOME }) } })
+  ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: listed }) } })
   const fiber = ctx.plugin({ inject: [...inject], apply })
   await fiber.await()
   if (source === undefined) throw new Error('reference source was not registered')
@@ -99,7 +103,7 @@ async function bench(
 describe('apply', () => {
   it('declares its services and releases the @ reference registration on disposal', async () => {
     expect(inject).toEqual([
-      'inputTriggers', 'locale', 'connection', 'remote', 'remote.fileReferences',
+      'inputTriggers', 'locale', 'connection', 'sessions', 'remote', 'remote.fileReferences',
       'remote.sessionReferenceResolver',
     ])
     const { fiber } = await bench()
@@ -121,6 +125,7 @@ describe('apply', () => {
     ctx.provide('remote.sessionReferenceResolver', { candidates: () => Promise.resolve({ ok: true, value: [] }) })
     ctx.provide('locale', new LocaleRuntime(ctx))
     ctx.provide('connection', { hostDescription: { getSnapshot: () => undefined } })
+    ctx.provide('sessions', { list: { getSnapshot: () => ({ byId: {} }) } })
     const ownFiber = ctx.plugin({ inject: [...inject], apply })
     await ownFiber.await()
     expect(registered).toMatchObject({ trigger: '@', name: 'reference', showGroupTitle: false })
@@ -177,7 +182,7 @@ describe('candidates', () => {
         })
       }
     }))
-    const { source } = await bench(files, sessions)
+    const { source } = await bench(files, sessions, { source: { updatedAt: UPDATED_AT } })
     const pending = source.candidates(session, request('re'))
     expect(files).toHaveBeenCalledTimes(1)
     expect(sessions).toHaveBeenCalledTimes(1)
@@ -199,7 +204,7 @@ describe('candidates', () => {
       }),
       expect.objectContaining({
         name: 'Research',
-        description: '~/project · 3d',
+        description: '~/project · 1h',
         icon: 'session',
         section: 'Sessions',
       }),
@@ -299,6 +304,26 @@ describe('candidates', () => {
     ])
   })
 
+  it('falls back to the candidate createdAt for a session the Host list does not carry', async () => {
+    const files = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
+    const sessions = vi.fn(() => Promise.resolve({
+      ok: true as const,
+      value: [{
+        sessionId: sid('unlisted'),
+        label: 'Unlisted run',
+        cwd: `${HOME}/project`,
+        sameWorkspace: true,
+        createdAt: CREATED_AT,
+        mention: '@[Unlisted run](dsh-session:InVubGlzdGVkIg)',
+      }],
+    }))
+    // A row absent from the list has no durable activity time to read.
+    const { source } = await bench(files, sessions, { other: { updatedAt: UPDATED_AT } })
+    await expect(source.candidates(session, request('unlisted'))).resolves.toEqual([
+      expect.objectContaining({ name: 'Unlisted run', description: '3d' }),
+    ])
+  })
+
   it('reads a session opened moments ago as the present, not a zero distance', async () => {
     const files = vi.fn(() => Promise.resolve({ ok: true as const, value: [] }))
     const sessions = vi.fn(() => Promise.resolve({
@@ -312,7 +337,7 @@ describe('candidates', () => {
         mention: '@[Just now](dsh-session:Imp1c3Qtbm93Ig)',
       }],
     }))
-    const { source } = await bench(files, sessions)
+    const { source } = await bench(files, sessions, { 'just-now': { updatedAt: NOW - 1_000 } })
     await expect(source.candidates(session, request('just'))).resolves.toEqual([
       expect.objectContaining({ name: 'Just now', description: 'now' }),
     ])

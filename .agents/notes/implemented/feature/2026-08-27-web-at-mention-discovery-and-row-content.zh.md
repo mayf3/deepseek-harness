@@ -24,7 +24,7 @@ Web e2e 看不到这一切：它的 scaffold 固定使用只含两个会话的�
 
 **失效的文件索引在替代品构建期间继续作答。** `invalidate()` 递增一个计数器而不是丢弃遍历。裸查询由已完成的条目作答，并启动一次后台重建、完成后原子替换；只有一个工作区的首次裸查询会等待。失败的刷新保留陈旧条目与计数器，下一次查询因此重试。`DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES` 从两个名字增至十六个——版本控制与依赖目录，加上本 harness 运行的各生态的构建产物基名——`DEFAULT_FILE_SEARCH_MAX_ENTRIES` 提高到 50 000。两者仍是部署方可覆盖的 `excludedDirectories` 与 `maxEntries` 配置字段。
 
-**每一行只承载能区分它的信息。** 文件显示其父目录，位于工作区根目录时不显示。下钻后的目录列表不显示父目录，因为面包屑已经在显示。会话仅在 `SessionReferenceCandidate.sameWorkspace` 为 false 时显示其工作区——由宿主计算，因为排序时它本就同时握有两个工作目录——并使用会话列表所用的相对时间分档标注时间，因此同一个会话在两处读到的时长一致。`relativeTime` 从 `ui-workspace` 的 `tree.ts` 移到 `ui-primitives`；按 locale-owned 文案的规则，词句仍留在各插件自己的字典里。session id 离开行内：它本就是无标题会话回落到的标签。
+**每一行只承载能区分它的信息。** 文件显示其父目录，位于工作区根目录时不显示。下钻后的目录列表不显示父目录，因为面包屑已经在显示。会话仅在 `SessionReferenceCandidate.sameWorkspace` 为 false 时显示其工作区——由宿主计算，因为排序时它本就同时握有两个工作目录——并用宿主会话列表的 `updatedAt` 经该列表所用的相对时间分档标注时间，因此同一个会话在两处读到的时长一致。列表中没有的会话回落到候选自带的 `createdAt`。`relativeTime` 从 `ui-workspace` 的 `tree.ts` 移到 `ui-primitives`；按 locale-owned 文案的规则，词句仍留在各插件自己的字典里。session id 离开行内：它本就是无标题会话回落到的标签。
 
 **下钻会发布面包屑，键入路径不会。** `InputTriggerSource` 增加可选的同步 `header(session, req)` 钩子返回面包屑，在每次命中时以实时查询与管线持有的 `drilled` 标记重新询问，后者说明该查询由下钻还是键入产生。`CandidateRequest` 携带同一个标记。面包屑走菜单 store 之外的独立快照 store，冻结的菜单归约器因此对它一无所知；点击面包屑经 `onPick` 以 `action: 'drill'` 路由——「回到某一步」与「进入某一层」是同一个结果。`MenuView` 把头部渲染在其滚动视口之上，并把 `role="listbox"` 移到该视口上，因为面包屑不是选项，listbox 也不得承载它。
 
@@ -39,6 +39,8 @@ Web e2e 看不到这一切：它的 scaffold 固定使用只含两个会话的�
 **给候选拉取加防抖。** 否决。归约器在每次命中时已经把所有分组重置为 pending，因此尾部防抖会延长骨架状态，输入时读起来更慢。折叠成本移除后，往返时间不再值得一个定时器；在新 generation 下保留上一批行是另一个决定，带有误选后果，此处不做。
 
 **读 `.gitignore` 来约束索引。** 暂时否决：这会给一条必须保持同步且廉价的路径引入 ignore 文件解析器与 git 依赖。基名列表覆盖了实测的 41%，且本就是配置字段。把源码放在其中某个基名下的工作区需覆盖 `excludedDirectories`。
+
+**在宿主侧从 `sessionListMetadata` 投影读取会话最近活动时间。** 否决：该投影键由 `api-session-controller` 声明，读取它会让 `packages/context` 的能力依赖 BFF 装配层——本仓库没有这个方向的先例。客户端的 `ctx.sessions.list` 里本就有同一个数字，而这也正是让两处界面「由构造而非由巧合」保持一致的原因。
 
 **让 `MenuView` 识别 `@` 触发符并自行绘制面包屑。** 否决：`MenuView` 与 `/` 共用，把文件引用语义硬编码进去，越过了 source 注册表本就用来守住的包边界。
 
