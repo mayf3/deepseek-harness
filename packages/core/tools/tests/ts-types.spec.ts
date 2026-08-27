@@ -110,7 +110,10 @@ describe('renderToolsSdk', () => {
   const bash: ToolSdkSchema = {
     name: 'bash',
     description: 'Run a shell command.',
-    parameters: parameterSchemaSpecToJsonSchema({ command: { type: 'string', required: true } }) as unknown as Record<string, unknown>,
+    parameters: parameterSchemaSpecToJsonSchema({
+      command: { type: 'string', required: true },
+      description: { type: 'string', required: true },
+    }) as unknown as Record<string, unknown>,
     output: {
       type: 'object',
       additionalProperties: false,
@@ -155,6 +158,15 @@ describe('renderToolsSdk', () => {
     expect(text).toContain('`code`')
     expect(text).toContain('`description`')
     expect(text).toContain('two required arguments')
+  })
+
+  it('keeps generated bindings inside a run_code program', () => {
+    const text = renderToolsSdk([bash])
+    expect(text).toContain('A declaration does not make its name a directly callable tool')
+    expect(text).toContain('only names supplied as separate tool schemas may be called directly')
+    expect(text).toContain('`run_code({ code: "return await tools.bash(')
+    expect(text).toContain('Program-only SDK bindings:')
+    expect(text).not.toContain('The available tools:')
   })
 
   it('is deterministic: same tool set, byte-identical text regardless of input order', () => {

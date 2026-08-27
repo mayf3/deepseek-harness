@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/bug-fix/2026-08-07-code-mode-executor-collapse.md
-2026-08-07-code-mode-executor-collapse.md: b19d0842d8b58b170a0f6839dcb32b9390211ca0
-2026-08-07-code-mode-executor-collapse.zh.md: 38bb319c8ce8fd01ab42ad29a6b3748c5d0f7925
+2026-08-07-code-mode-executor-collapse.md: 0644342de1583d6c2a6d036027195edb6e33de73
+2026-08-07-code-mode-executor-collapse.zh.md: 013b2c19399da8ceed33e3455e30862c8c7f0363
