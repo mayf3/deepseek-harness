@@ -10,21 +10,17 @@ English | [中文](2026-08-27-inspector-development-mount.zh.md)
 
 ## Decision
 
-The inspector package owns a development overlay, `packages/experimental/inspector/cordis.patch.yml`, holding a single `insert` of the `experimental-inspector` row. A launch selects it through the generic overlay flag; `pnpm run demo:inspector` is the shorthand for `pnpm dsh web --patch ./packages/experimental/inspector/cordis.patch.yml`.
+The inspector package owns two development overlays. `packages/experimental/inspector/cordis.source.patch.yml` inserts `./src/index.ts` for the tsx source launch behind `pnpm run demo:inspector`. `packages/experimental/inspector/cordis.patch.yml` inserts `./lib/index.js` for `node apps/cli/lib/bin.js web --patch ./packages/experimental/inspector/cordis.patch.yml` after `pnpm run build`.
 
-The overlay contributes only the row; the row's module resolves from the profile plane at entry import:
-
-- A source launch (`pnpm dsh`, tsx) resolves the workspace package through the tsconfig `paths` facade and needs no installation.
-- A built launch (`node apps/cli/lib/bin.js`) needs the package importable from the profile first: `dsh plugin --profile web add link:<absolute package path>`, once per profile. `link:` keeps dependency resolution inside the real package directory; `file:` re-installs the package's `workspace:^` dependencies in the profile and fails with `ERR_PNPM_WORKSPACE_PKG_NOT_FOUND`.
-
-A launch whose profile cannot import the package fails loud at entry import (`Cannot find package '@deepseek-ai/dsh-experimental-inspector' imported from <profile dir>`); nothing is skipped silently.
+Each relative entry resolves from its overlay file's directory through the Loader's normal owning-tree `baseUrl`. The source launch therefore reaches TypeScript directly, while the built launch reaches the package artifact; neither path reads or modifies profile-installed plugin state. A missing source or built entry fails loud during Loader import rather than skipping the Inspector.
 
 ## Consequences
 
-Published packages carry no trace of the inspector: no manifest entry, no composition row, no launcher flag. Mounting stays a per-launch choice — the same service without the overlay never loads the package — and every layer the launch composes is declared in a config file. The cost is launch-mode asymmetry: a built launch needs the one-time profile `link:` install, and the overlay must be named on every invocation, which `pnpm run demo:inspector` absorbs for the common case.
+Published packages carry no trace of the inspector: no manifest entry, no composition row, no launcher flag. Mounting stays a per-launch choice — the same service without an overlay never loads the package — and every layer the launch composes is declared in a config file. The source shorthand names its overlay automatically; a built launch names the built overlay explicitly and requires current `lib/` artifacts.
 
 ## Alternatives considered
 
 - A `disabled: !!js` row in the shipped web-app patch: the dependency gate and npm publication both force the private package into the published manifest.
 - A `--inspector` launcher flag mounting the package as an extra bundle layer: the launcher owns neither app flags nor plugin package names.
 - An optional `peerDependencies` entry on `dsh-web-app` plus a dynamic `ctx.loader.create` from its glue plugin: it writes a never-published name into a published manifest and mounts a row no config layer declares.
+- One bare-package overlay for both launch modes: source resolution can use the workspace facade, but built resolution would require persistent profile installation state unrelated to the launch command.

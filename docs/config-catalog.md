@@ -290,7 +290,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/gateway/src/index.ts:114`](../packages/api/gateway/src/index.ts)
+Source: [`packages/api/gateway/src/index.ts:117`](../packages/api/gateway/src/index.ts)
 
 <a id="deepseek-aidsh-api-session-controller"></a>
 
@@ -303,10 +303,26 @@ Requires: `agentDefaultModel` · `agents` · `attachments` · `llm` · `sessions
 export interface Config {
   /** Maximum cold Session artifact size eligible for one full projection observation. */
   readonly coldBlankProbeMaxBytes?: number
+  /** Override platform desktop-opener detection. */
+  readonly nativeOpen?: boolean
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:58`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:67`](../packages/api/session-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-settings-controller"></a>
+
+## `@deepseek-ai/dsh-api-settings-controller`
+
+```ts config-catalog
+/** Native document-opening policy. */
+export interface Config {
+  /** Override platform desktop-opener detection. */
+  readonly nativeOpen?: boolean
+}
+```
+
+Source: [`packages/api/settings-controller/src/index.ts:41`](../packages/api/settings-controller/src/index.ts)
 
 <a id="deepseek-aidsh-attachment-local"></a>
 
@@ -415,7 +431,7 @@ export interface ConnectionConfig {
 }
 ```
 
-Source: [`packages/client/connection/src/index.ts:55`](../packages/client/connection/src/index.ts)
+Source: [`packages/client/connection/src/index.ts:70`](../packages/client/connection/src/index.ts)
 
 <a id="deepseek-aidsh-client-hmr"></a>
 
@@ -855,34 +871,6 @@ export interface Config {
 ```
 
 Source: [`packages/hooks/hooks-codex/src/index.ts:45`](../packages/hooks/hooks-codex/src/index.ts)
-
-<a id="deepseek-aidsh-host-apiproxy"></a>
-
-## `@deepseek-ai/dsh-host-apiproxy`
-
-Requires: `agentDefaultModel` · `agents` · `attachments` · `directoryPicker` · `llm` · `sessions` · `sessionQuery` · `sessionController`
-
-```ts config-catalog
-/** Gateway plugin configuration. */
-export interface Config {
-  /**
-   * Whether this deployment can hand paths to a native desktop opener —
-   * the `hasDocument` capability the agent-preset roster reports. Absent,
-   * the platform is asked (macOS/Windows/WSL yes; Linux only with a display
-   * server); set it explicitly where detection misleads, e.g. `false` in a
-   * container whose DISPLAY points nowhere a user can see.
-   */
-  nativeOpen?: boolean
-  /**
-   * DEFLATE level for every session-log ZIP entry: `0` stores without
-   * compression, `1` favors CPU/latency, and `9` favors archive size.
-   * @default 6
-   */
-  sessionExportCompressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-}
-```
-
-Source: [`packages/host/apiproxy/src/index.ts:42`](../packages/host/apiproxy/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -1839,6 +1827,25 @@ export interface Config {
 ```
 
 Source: [`packages/session/session-log-deepseek/src/index.ts:22`](../packages/session/session-log-deepseek/src/index.ts)
+
+<a id="deepseek-aidsh-session-log-export"></a>
+
+## `@deepseek-ai/dsh-session-log-export`
+
+Requires: `commands` · `connection`
+
+```ts config-catalog
+/** Session-log archive policy. */
+export interface Config {
+  /** DEFLATE level for each ZIP entry. @default 6 */
+  readonly compressionLevel?: SessionLogCompressionLevel
+}
+
+/** Valid fflate DEFLATE levels accepted by session-log export. */
+export type SessionLogCompressionLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+```
+
+Source: [`packages/session-query/session-log-export/src/index.ts:41`](../packages/session-query/session-log-export/src/index.ts)
 
 <a id="deepseek-aidsh-session-persistence-jsonl"></a>
 
@@ -3405,7 +3412,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-acp-app` — requires `cmdlineArgs` ([`packages/bundle/acp-app/src/index.ts`](../packages/bundle/acp-app/src/index.ts))
 - `@deepseek-ai/dsh-agent` ([`packages/core/agent/src/index.ts`](../packages/core/agent/src/index.ts))
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
-- `@deepseek-ai/dsh-api-settings-controller` ([`packages/api/settings-controller/src/index.ts`](../packages/api/settings-controller/src/index.ts))
 - `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
@@ -3464,7 +3470,6 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-schedule` — requires `agents` · `sessions` · `tools` · `sessionPersistence` ([`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts))
 - `@deepseek-ai/dsh-session` ([`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts))
 - `@deepseek-ai/dsh-session-checkpoint-policy` — requires `llm` · `sessionPersistence` · `sessions` · `tools` ([`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts))
-- `@deepseek-ai/dsh-session-log-export` — requires `commands` ([`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts))
 - `@deepseek-ai/dsh-session-projection` ([`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts))
 - `@deepseek-ai/dsh-session-stats` — requires `sessionProjections` ([`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts))
 - `@deepseek-ai/dsh-skill-badge` — requires `skills` ([`packages/skill/skill-badge/src/index.ts`](../packages/skill/skill-badge/src/index.ts))

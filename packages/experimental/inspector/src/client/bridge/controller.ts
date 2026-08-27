@@ -2,12 +2,20 @@
 
 import type { InspectorClientBootstrap } from '../../shared/bridge/messages/control.ts'
 import { ClientInspectorSource } from './transport.ts'
+import { ClientRealmSource } from '../inspection/realm.ts'
 
 /**
  * Start the browser source transport for one validated Host bootstrap.
  * @param bootstrap - Host-injected endpoint and resource limits.
- * @returns The active reconnecting Client source.
+ * @returns The active reconnecting Client source after its tab identity is claimed.
  */
-export function startInspectorClient(bootstrap: InspectorClientBootstrap): ClientInspectorSource {
-  return new ClientInspectorSource(bootstrap)
+export async function startInspectorClient(bootstrap: InspectorClientBootstrap): Promise<ClientInspectorSource> {
+  const label = document.title || 'Client'
+  const realmSource = await ClientRealmSource.claim(label)
+  try {
+    return new ClientInspectorSource(bootstrap, label, undefined, realmSource)
+  } catch (error) {
+    realmSource.close()
+    throw error
+  }
 }

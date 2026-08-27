@@ -10,7 +10,7 @@ Status: implemented
 
 这不只是输入区功能缺失。核心层需要持久图片内容块，提供方需要明确处理模态，会话日志则必须重建模型可见的全部内容。[此前移除图片块的决策](../../archived/simplification/2026-07-04-drop-image-content-block.md)否决了可能静默丢失图片或将其展平的不完整设计。浏览器对象 URL、本地路径、提供方 URL 或 base64 数据都不能成为规范会话内容。
 
-[Web 客户端架构](../../implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md)要求组件保持纯粹，并将每个会话的输入区状态放在 `ctx.conversation` 中；[GUI 分层与 RPC 协议](../../implemented/architecture/2026-07-19-gui-layering-and-rpc-protocol.zh.md)则要求持久事件成为实时渲染与历史回放的共同真源。因此，图片接收、持久化、提供方转换和渲染需要遵循同一个明确的生命周期。
+[Web 客户端架构](../../implemented/architecture/2026-07-19-gui-web-client-architecture.zh.md)要求组件保持纯粹，并将每个会话的输入区状态放在 `ctx.conversation` 中；[已归档的 GUI 分层与 RPC 协议决策](../../archived/architecture/2026-07-19-gui-layering-and-rpc-protocol.md)则要求持久事件成为实时渲染与历史回放的共同真源。因此，图片接收、持久化、提供方转换和渲染需要遵循同一个明确的生命周期。
 
 同类产品普遍在编辑器上方设置附件栏，但存储方案各不相同。诸如 `/var/folders/.../codex-clipboard-*.png` 的 Codex 式路径适合作为接收输入时的暂存位置，却不能作为持久消息身份：操作系统可能删除文件，另一台宿主无法读取文件，恢复后的会话也不能依赖文件仍然存在。
 
