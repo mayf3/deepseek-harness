@@ -2,8 +2,8 @@
  * The `permissions` projection unit and the `/permission` command: mounting
  * the permission service beside the projection registry serves the whole
  * select (table options + effective current value, `custom` appended exactly
- * while derived) folded from the three knob events over the composition
- * defaults; the command child registers `/permission` whose handler switches
+ * while derived) folded from permission events over the composition defaults;
+ * the command child registers `/permission` whose handler switches
  * through `permission.set` (bare invocation reports, unknown names error);
  * compositions without either registry are unaffected; unmounting the
  * service removes the key (HMR safety).

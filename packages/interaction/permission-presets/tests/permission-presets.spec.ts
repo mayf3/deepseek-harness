@@ -80,6 +80,9 @@ describe('permission preset fold', () => {
     // The knob fold steps over non-preset events to the latest selection.
     session.append('sandbox/mode', { mode: 'read-only' })
     expect(presetOf()).toBe('workspace-write')
+
+    const seeded = Session.create(SessionId('sess-fold-seeded'), [])
+    expect(ctx.sessionProjections.stateOf(seeded, 'permissions')?.seeded).toBe(true)
   })
 })
 

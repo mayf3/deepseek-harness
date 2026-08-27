@@ -35,6 +35,19 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Projection state for permission overrides and constructor-seed provenance. */
+interface PermissionProjectionState extends KnobState {
+  /** Whether the log contains a constructor-seed boundary. */
+  seeded: boolean
+}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    /** Latest logged permission overrides and constructor-seed provenance. */
+    permissions: PermissionProjectionState
+  }
+}
+
 declare module '@deepseek-ai/dsh-session/types' {
   interface SessionEventMap {
     /**
@@ -68,7 +81,7 @@ export const CUSTOM_PRESET = 'custom'
 /** Settings namespace carrying the default for future sessions. */
 export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
 
-const knobStateSchema: zod.ZodType<KnobState> = zod.object({
+const permissionStateSchema: zod.ZodType<PermissionProjectionState> = zod.object({
   /** Last `permission/preset` payload, or null. */
   preset: zod.string().nullable(),
   sandbox: zod.union([
@@ -77,19 +90,26 @@ const knobStateSchema: zod.ZodType<KnobState> = zod.object({
     zod.literal('danger-full-access'),
   ]).nullable(),
   approval: zod.union([zod.literal('ask'), zod.literal('never')]).nullable(),
+  seeded: zod.boolean(),
 }).strict()
 
 /** State for the empty log: every knob at its composition default. */
 const EMPTY_KNOBS: KnobState = { preset: null, sandbox: null, approval: null }
 
+/** Projection state for a genuinely fresh session. */
+const EMPTY_PERMISSION_STATE: PermissionProjectionState = { ...EMPTY_KNOBS, seeded: false }
+
 /**
- * One-event knob transition (the projection unit's `apply`). Uninterested
+ * One-event permission-state transition (the projection unit's `apply`). Unrelated
  * events return the same reference — the registry's change gate.
  * @param state - the folded knob state before `event`.
  * @param event - one committed session event.
- * @returns the next state; the same reference when the event is not a knob.
+ * @returns the next state; the same reference when the event is unrelated.
  */
-export function applyKnobEvent(state: KnobState, event: SessionEvent): KnobState {
+function applyPermissionEvent(
+  state: PermissionProjectionState,
+  event: SessionEvent,
+): PermissionProjectionState {
   switch (event.type) {
     case 'permission/preset':
       return { ...state, preset: event.data.preset }
@@ -97,6 +117,8 @@ export function applyKnobEvent(state: KnobState, event: SessionEvent): KnobState
       return { ...state, sandbox: event.data.mode }
     case 'approval/policy':
       return { ...state, approval: event.data.policy }
+    case 'session/end-seed':
+      return state.seeded ? state : { ...state, seeded: true }
     default:
       return state
   }
@@ -206,10 +228,10 @@ export class PermissionPresetService extends Service {
     ctx.inject(['sessionProjections'], (projectionCtx) => {
       projectionCtx.sessionProjections.register({
         key: 'permissions',
-        stateVersion: 1,
-        stateSchema: knobStateSchema,
-        init: () => EMPTY_KNOBS,
-        apply: applyKnobEvent,
+        stateVersion: 2,
+        stateSchema: permissionStateSchema,
+        init: () => EMPTY_PERMISSION_STATE,
+        apply: applyPermissionEvent,
         wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
       })
       projectionCtx.on('session/created', (session) => {
@@ -263,7 +285,7 @@ export class PermissionPresetService extends Service {
     return this.defaultSettings().defaultPreset
   }
 
-  private knobs(session: Session): KnobState {
+  private permissionState(session: Session): PermissionProjectionState {
     const projections = this.ctx.get('sessionProjections')
     if (projections === undefined) throw new Error('permission: session projection registry is unavailable')
     const state = projections.stateOf(session, 'permissions')
@@ -279,7 +301,7 @@ export class PermissionPresetService extends Service {
    * @returns the effective preset name, or `custom` when nothing matches.
    */
   current(session: Session): string {
-    return this.derive(this.knobs(session))
+    return this.derive(this.permissionState(session))
   }
 
   /** Resolve the preset for one folded knob state (the shared mathematics of `current` and the projection unit). */
@@ -359,7 +381,7 @@ export class PermissionPresetService extends Service {
     if (this.current(session) !== name) {
       session.append('permission/preset', { preset: name })
     }
-    const knobs = this.knobs(session)
+    const knobs = this.permissionState(session)
     if (spec.sandbox !== (knobs.sandbox ?? this.ctx.shell.sandboxMode)) {
       setSandboxMode(session, spec.sandbox)
     }
@@ -375,11 +397,11 @@ export class PermissionPresetService extends Service {
    * the missing durable facts.
    */
   private pinInitialPermission(session: Session): void {
-    const state = this.knobs(session)
+    const state = this.permissionState(session)
     const selected = state.preset
     const sandbox = state.sandbox
     const approval = state.approval
-    const seeded = session.events.some(event => event.type === 'session/end-seed')
+    const seeded = state.seeded
     if (selected === null && sandbox === null && approval === null && !seeded) {
       const name = this.defaultPreset
       const spec = this.resolve(name)

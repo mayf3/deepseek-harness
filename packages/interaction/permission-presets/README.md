@@ -87,11 +87,11 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 ### Read side and `custom`
 
-`current(session)` reads the `permissions` projection, whose unit folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). A still-matching last selection wins shared-bundle ties; otherwise the first table match wins; otherwise the derived `CUSTOM_PRESET` is returned. A missing registry or projection key fails explicitly.
+`current(session)` reads the `permissions` projection, whose unit folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). The host state also retains whether `session/end-seed` has occurred, so session pinning distinguishes an explicitly empty restored seed from a genuinely fresh session without rescanning the log. A still-matching last selection wins shared-bundle ties; otherwise the first table match wins; otherwise the derived `CUSTOM_PRESET` is returned. A missing registry or projection key fails explicitly.
 
 ### Session pinning and blank reuse
 
-Mounting pins every live and future session: a genuinely fresh session gains the default preset and both knob facts, while seeded or partially initialized sessions keep their effective knob values and gain only missing durable facts.
+Mounting pins every live and future session: a genuinely fresh session gains the default preset and both knob facts, while seeded or partially initialized sessions keep their effective knob values and gain only missing durable facts. The projection-owned seed marker makes this decision from the same incremental state as the knob values.
 
 ### Optional children
 

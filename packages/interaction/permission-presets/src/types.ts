@@ -44,10 +44,6 @@ export interface KnobState {
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    /** Latest logged permission overrides. */
-    permissions: KnobState
-  }
   interface SessionProjectionMap {
     /**
      * The session's permission select, folded from the three whole-value
