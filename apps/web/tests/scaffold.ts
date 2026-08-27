@@ -289,7 +289,7 @@ export interface LaunchOptions {
    * yml default. The code runtime row is always in the tree, so no extra
    * insertion is needed.
    */
-  toolsMode?: 'native' | 'code' | 'both'
+  toolsMode?: 'native' | 'ptc' | 'both'
   /**
    * Insert the opt-in model-facing Cordis tool provider into the shipped tree.
    * Record and replay use the same tool surface, so captured request headers
