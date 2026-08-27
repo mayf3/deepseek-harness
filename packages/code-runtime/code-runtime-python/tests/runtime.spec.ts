@@ -3505,6 +3505,29 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(seenLegitCall).toBe(true)
   }, 15_000)
 
+  it('caps the unknown-binding preview for a huge forged name', async () => {
+    // The unknown-binding reply's JSON.stringify ran on the WHOLE capped
+    // target, allocating the escaped form — up to ~6x under control-heavy
+    // input. The preview is now built from a 1 KiB prefix, so a forged call
+    // with a huge global/name cannot spike host memory near the value ceiling;
+    // the reply still identifies the binding.
+    const { runtime } = await setup({ maxWallMs: 8_000, maxValueBytes: 1024 * 1024 })
+    const result = await runtime.run({
+      program: [
+        'import os, json',
+        'x = await tools.echo({"ping": True})',
+        'name = "n" * 100000',
+        'os.write(3, json.dumps({"type":"call","id":1,"global":"tools","name":name,"args":{}}).encode() + b"\\n")',
+        'return x',
+      ].join('\n'),
+      bindings: tools({
+        echo: async args => args as CodeJsonValue,
+      }),
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ ping: true })
+  }, 15_000)
+
   it('drops forged call frames whose ids are not the next in sequence, retaining no per-id state', async () => {
     // The host used to remember every answered id in a Set, so a program could
     // write an unbounded run of unique forged ids — each frame far below the

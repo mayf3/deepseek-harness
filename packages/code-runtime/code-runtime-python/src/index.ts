@@ -1676,7 +1676,14 @@ export class PythonCodeRuntime extends CodeRuntime {
               // error.
               const cap = this.config.maxValueBytes
               const target = `${message.global.slice(0, cap)}.${message.name.slice(0, cap)}`
-              sendReply({ type: 'reply', id: message.id, ok: false, message: capMessage(`unknown binding ${JSON.stringify(target)}`, cap) })
+              // JSON.stringify on the WHOLE capped target would still allocate
+              // the escaped form — up to ~6x under control-heavy input, a
+              // multi-hundred-MB spike near the maxValueBytes ceiling that no
+              // hostile-peer bound would have admitted. The message only needs
+              // to identify the binding, so the escaped form is built from a
+              // 1 KiB prefix; capMessage then enforces the reply budget.
+              const preview = JSON.stringify(target.slice(0, 1024))
+              sendReply({ type: 'reply', id: message.id, ok: false, message: capMessage(`unknown binding ${preview}`, cap) })
               return
             }
             void (async () => {
