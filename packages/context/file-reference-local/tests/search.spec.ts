@@ -199,7 +199,7 @@ describe('WorkspaceFileSearch', () => {
     })
   })
 
-  it('lets an unreadable subtree cost only its own candidates', async () => {
+  it.skipIf(process.platform === 'win32')('lets an unreadable subtree cost only its own candidates', async () => {
     const root = await workspace()
     const locked = join(root, 'locked')
     await mkdir(locked, { recursive: true })
