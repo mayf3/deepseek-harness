@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { collectPackageAliases, renderAliases, writeRegion } from './gen-tsconfig-paths.ts'
+import {
+  collectPackageAliases,
+  collectPackageNames,
+  mappedSpecifiers,
+  renderAliases,
+  uncoveredPackages,
+  writeRegion,
+} from './gen-tsconfig-paths.ts'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -56,6 +63,28 @@ describe('generated tsconfig package aliases', () => {
 
   it('refuses a config without the region markers', () => {
     expect(() => writeRegion('{}', '')).toThrow('missing the generated-region markers')
+  })
+
+  it('names a package that no alias covers', () => {
+    // Deleting the group wildcards removed the fallback that used to resolve a
+    // package nobody had aliased. A package whose name does not match its
+    // directory is skipped by the generator, so without this check it would
+    // resolve through the workspace symlink to built lib/types instead.
+    expect(uncoveredPackages(
+      ['@deepseek-ai/dsh-a', '@deepseek-ai/dsh-b'],
+      new Set(['@deepseek-ai/dsh-a', '@deepseek-ai/dsh-a/invariant']),
+    )).toEqual(['@deepseek-ai/dsh-b'])
+
+    expect(uncoveredPackages(['@deepseek-ai/dsh-a'], new Set(['@deepseek-ai/dsh-a']))).toEqual([])
+  })
+
+  it('covers every workspace package in the committed config', () => {
+    const config = readFileSync(resolve(root, 'tsconfig.base.json'), 'utf8')
+    // Includes the packages the generator skips because their name does not
+    // match their directory: those carry hand-written aliases.
+    const names = collectPackageNames()
+    expect(names).toContain('@deepseek-ai/dsh-typert-protocol')
+    expect(uncoveredPackages(names, mappedSpecifiers(config))).toEqual([])
   })
 
   it('leaves no wildcard that probes every package group', () => {

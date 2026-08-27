@@ -20,7 +20,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
@@ -102,6 +102,65 @@ export function collectPackageAliases(): PackageAlias[] {
 }
 
 /**
+ * Collect every workspace package the aliases must cover.
+ *
+ * Unlike {@link collectPackageAliases} this keeps packages whose name does not
+ * match their directory. The generator cannot map those — only a hand-written
+ * alias can — but they still have to be mapped by something, because deleting
+ * the group wildcards removed the fallback that used to catch them.
+ *
+ * @returns Declared names of every `@deepseek-ai/dsh-` package carrying a `src` directory.
+ */
+export function collectPackageNames(): string[] {
+  const packages = join(ROOT, 'packages')
+  const names: string[] = []
+  for (const group of readdirSync(packages).sort()) {
+    const groupDir = join(packages, group)
+    if (!statSync(groupDir).isDirectory()) continue
+    for (const directory of readdirSync(groupDir).sort()) {
+      const packageDir = join(groupDir, directory)
+      const name = packageName(join(packageDir, 'package.json'))
+      if (name === undefined || !name.startsWith(PREFIX)) continue
+      if (existsSync(join(packageDir, 'src'))) names.push(name)
+    }
+  }
+  return names.sort((left, right) => left.localeCompare(right))
+}
+
+/**
+ * Read the bare package specifiers a config maps, generated region included.
+ * @param text - `tsconfig.base.json` contents.
+ * @returns Specifiers mapped without a subpath.
+ */
+export function mappedSpecifiers(text: string): Set<string> {
+  const keys = new Set<string>()
+  for (const match of text.matchAll(/^\s*"(@deepseek-ai\/dsh-[^"/]+)":/gm)) {
+    const key = match[1]
+    if (key !== undefined) keys.add(key)
+  }
+  return keys
+}
+
+/**
+ * Report packages that no alias maps.
+ *
+ * A package missing from `paths` still resolves — through the workspace symlink
+ * and the package's own `exports` — but to built `lib/` output rather than to
+ * source, which is the artifact-plane leak the explicit aliases exist to avoid.
+ * Naming it here turns that into a gate failure instead of a silent difference.
+ *
+ * @param packages - every workspace package that needs an alias.
+ * @param mapped - bare specifiers the config maps.
+ * @returns Unmapped package names, in the order given.
+ */
+export function uncoveredPackages(
+  packages: readonly string[],
+  mapped: ReadonlySet<string>,
+): string[] {
+  return packages.filter(name => !mapped.has(name))
+}
+
+/**
  * Render the generated region's alias lines.
  * @param aliases - packages to map, in emission order.
  * @param handWritten - specifiers already mapped outside the region; a duplicate key would shadow one silently.
@@ -155,11 +214,19 @@ function handWrittenSpecifiers(text: string): Set<string> {
   return keys
 }
 
-if (import.meta.url === `file://${process.argv[1] ?? ''}`) {
+if (process.argv[1] && import.meta.filename === resolve(process.argv[1])) {
   const check = process.argv.includes('--check')
   const current = readFileSync(CONFIG, 'utf8')
   const next = writeRegion(current, renderAliases(collectPackageAliases(), handWrittenSpecifiers(current)))
-  if (current === next) {
+  const uncovered = uncoveredPackages(collectPackageNames(), mappedSpecifiers(next))
+  if (uncovered.length > 0) {
+    console.error(
+      'gen-tsconfig-paths: no alias maps '
+      + `${uncovered.join(', ')}; add a hand-written entry, because a package named after `
+      + 'something other than its directory cannot be generated.',
+    )
+    process.exitCode = 1
+  } else if (current === next) {
     console.log('gen-tsconfig-paths: tsconfig.base.json package aliases are current.')
   } else if (check) {
     console.error('gen-tsconfig-paths: tsconfig.base.json is stale; run `pnpm run gen-tsconfig-paths`.')

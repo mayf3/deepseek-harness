@@ -18,23 +18,31 @@ The cost fell hardest on the most-imported packages. `packages/util/*` sat at po
 
 The generator emits an alias only for a package whose declared name is exactly `@deepseek-ai/dsh-<directory>`, because that is the only shape a wildcard could ever have resolved: it substituted the specifier's suffix into `packages/<group>/<suffix>/src`. Packages named after something other than their directory — `@deepseek-ai/dsh-typert-protocol` at `packages/typert/protocol`, the `dsh-client-*` and `dsh-host-*` families — already carry hand-written aliases and are left alone. A specifier claimed by two package directories throws rather than picking one, because an explicit map cannot express the group-order tiebreak the wildcard used; no such collision exists today.
 
+Deleting the wildcards removed the fallback that used to resolve a package nobody had aliased, so the generator also asserts coverage: every workspace package carrying a `src` directory must be mapped by a generated or hand-written alias, and `--check` names any that is not. Without it a package whose name does not match its directory could be added, skipped by the generator, and left resolving through the workspace symlink to built `lib/` output — the same artifact-plane leak the explicit aliases exist to close.
+
 The region is written by text surgery between marker comments rather than by re-serializing the file. `tsconfig.base.json` is JSONC and its hand-written aliases carry comments that explain non-obvious mappings; re-serializing would drop them.
+
+This partly supersedes the [package-inventory discovery proposal](../../proposed/process/2026-06-20-discover-package-inventory.md), which records the collapse into one wildcard as current: the wildcard is gone, while that proposal's remaining subject — the aggregate configs' explicit `references` arrays — is untouched here.
 
 Four wildcards remain, each with a single candidate: `dsh-host-*/invariant`, `dsh-client-*/invariant`, `dsh-client-*/client`, and the five `dsh-host-<name>/*` subpath maps. One candidate costs one probe, so expanding them would trade file size for nothing.
 
 ## Resolution differences this change makes
 
-Every `@deepseek-ai/dsh-*` specifier appearing in repository sources — 1,022 distinct — resolves to the same target as before, with seven exceptions that now resolve where they previously did not:
+Every `@deepseek-ai/dsh-*` specifier appearing in repository sources — 1,023 distinct — resolves to the same target as before, with eleven exceptions that now resolve where they previously did not. All eleven previously reached built `lib/` output through the workspace symlink rather than source.
 
-`dsh-invariants/invariant`, `dsh-lsp/invariant`, `dsh-lsp-stdio/invariant`, `dsh-tool-lsp/invariant`, `dsh-terminal/invariant`, `dsh-terminal-bash/invariant`, and `dsh-tool-terminal/invariant`.
+Seven are `/invariant` subpaths: `dsh-invariants/invariant`, `dsh-lsp/invariant`, `dsh-lsp-stdio/invariant`, `dsh-tool-lsp/invariant`, `dsh-terminal/invariant`, `dsh-terminal-bash/invariant`, and `dsh-tool-terminal/invariant`.
 
 The deleted `dsh-*/invariant` wildcard omitted the `lsp`, `terminal`, `client`, and `host` groups. The `client` and `host` omissions are deliberate and documented — those families have dedicated wildcards because their package names prefix the group directory. The `lsp` and `terminal` omissions have no such reason, and `packages/runtime-diagnostics/invariants` appeared in neither list. Those seven specifiers therefore resolved through the workspace symlink and the package's `./invariant` export to built `lib/types/*.d.ts` instead of to source, which contradicts the rule that static gates resolve workspace imports through `paths` to `src` and pass on a clean tree. Making the aliases uniform resolves them to source like every sibling.
 
+The other four are whole packages the coverage assertion surfaced: `dsh-client-ui-directory-picker-browse`, `dsh-client-ui-directory-picker-native`, `dsh-experimental-agent-team-profile`, and `dsh-experimental-agent-team-web-profile`. Each is named `dsh-<group>-<directory>`, which no wildcard could ever substitute, and each sits beside siblings that do carry hand-written aliases — they were simply missing. They now carry one too.
+
 ## Testing
 
-`scripts/gen-tsconfig-paths.spec.ts` pins that the collector maps a package to its own directory, skips packages carrying hand-written aliases, and returns a sorted list; that the renderer yields to a hand-written specifier and closes the region without a trailing comma; that the region writer replaces only the marked span and refuses a config without markers; and that neither group wildcard survives in the committed config.
+`scripts/gen-tsconfig-paths.spec.ts` pins that the collector maps a package to its own directory, skips packages carrying hand-written aliases, and returns a sorted list; that the renderer yields to a hand-written specifier and closes the region without a trailing comma; that the region writer replaces only the marked span and refuses a config without markers; and that neither group wildcard survives in the committed config. Two further cases pin the coverage assertion: it names an unmapped package, and it reports none against the committed config.
 
 The gate's rejection path is exercised directly: deleting one generated alias makes `verify-tsconfig-paths` exit non-zero, and restoring it makes the check pass.
+
+The CLI entry guard uses the repository's established comparison, `import.meta.filename === resolve(process.argv[1])`, rather than concatenating a `file://` URL. The concatenated form fails whenever `import.meta.url` percent-encodes something `process.argv[1]` does not — a repository path containing a space, or any Windows drive path — and the failure is silent: the script exits 0 having done nothing, which would make the gate a no-op exactly where it is needed. Running a copy from a directory whose name contains a space reproduces that: the concatenated guard evaluates false, the established one true.
 
 ## Alternatives considered
 
@@ -50,4 +58,4 @@ A source-launch boot of the `headless` profile drops from a 2,157/2,182/2,153 ms
 
 The win is confined to the tsx source launch. Vitest resolves through `vite-tsconfig-paths`, which matches in-process and checks file existence without ever constructing a Node module error, so it never paid the decoration cost: an A/B over one package's suite measured 5,934/5,829/5,908 ms against 5,878/5,851/5,905 ms, which is noise. Repository gate scripts import few `@deepseek-ai/dsh-*` packages and likewise show no separable difference. Shipped users run built `lib/` under plain Node and were never affected.
 
-`paths` grows from 188 keys to 519, and adding a package now requires running the generator. The `--check` gate makes that a named failure rather than a silent one, and the generated region keeps the diff of such a change to a single line.
+`paths` grows from 188 keys to 523, and adding a package now requires running the generator. The `--check` gate makes that a named failure rather than a silent one, and the generated region keeps the diff of such a change to a single line.
