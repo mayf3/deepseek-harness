@@ -147,6 +147,7 @@
     "release:publish": "tsx scripts/release/publish.ts",
     "dsh": "node --import tsx/esm apps/cli/src/bin.ts",
     "demo:code-mode": "node scripts/demo-code-mode.mjs",
+    "demo:inspector": "pnpm dsh web --patch ./packages/experimental/inspector/cordis.patch.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs"
