@@ -2,8 +2,7 @@
 
 import type { ContentBlock } from './types.ts'
 import type { Message } from './message.ts'
-import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, PromptContentPart, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { admitEncodedImages } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { assertNever } from './never.ts'
 
 /** Execution-world path that model tools can use to read one normalized attachment. */
@@ -38,31 +37,6 @@ export function resolveImageAttachmentAccess(
   if (hostPath === undefined) return undefined
   const readonlyPath = mapHostPath(hostPath)
   return readonlyPath === undefined ? undefined : { readonlyPath }
-}
-
-/**
- * Promote one browser-submitted prompt into durable model content: every image
- * part is admitted through the attachment store before any block exists, so a
- * caller-supplied part can never cite an attachment it did not upload here.
- * The shared conversion for every Host prompt endpoint accepting uploads.
- * @param attachments - the deployment attachment store owning admission policy.
- * @param content - ordered browser prompt parts.
- * @returns content blocks in part order, image parts replaced by durable references.
- * @throws AttachmentError when the image batch is refused.
- */
-export async function durablePromptContent(
-  attachments: AttachmentStore,
-  content: readonly PromptContentPart[],
-): Promise<ContentBlock[]> {
-  if (content.every(part => part.type === 'text')) {
-    return content.map(part => ({ type: 'text', text: part.text }))
-  }
-  const refs = await admitEncodedImages(attachments, content.filter(part => part.type === 'image'))
-  let next = 0
-  return content.map(part => part.type === 'text'
-    ? { type: 'text', text: part.text }
-    // admitEncodedImages returns one reference per image part in order.
-    : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
 }
 
 function quoted(value: string): string {

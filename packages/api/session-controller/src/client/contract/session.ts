@@ -15,7 +15,7 @@ import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { QueueAction, SessionRequestId } from '../../types.ts'
 import type { ClientResult } from './result.ts'
 import type {
-  PendingSubmissionImage, PendingSubmissionPlacement, SessionSnapshot,
+  PendingSubmissionImage, SessionSnapshot,
 } from './snapshot.ts'
 
 /** Browser-submitted prompt content; the Host promotes image bytes to durable references. */
@@ -40,8 +40,8 @@ export type PendingSubmissionRetirement =
 
 /** Input registering one local submission echo ahead of its prompt call. */
 export interface BeginSubmissionInput {
-  /** Expected surface selected from the submission mode and running state. */
-  readonly placement: PendingSubmissionPlacement
+  /** Delivery mode used with the upcoming prompt. */
+  readonly mode: 'queue' | 'steer'
   /** Prompt text exactly as the upcoming prompt will send it. */
   readonly text: string
   /** Ordered image previews matching the upcoming prompt's image parts. */

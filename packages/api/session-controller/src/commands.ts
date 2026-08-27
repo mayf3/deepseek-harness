@@ -4,10 +4,10 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { PresetMountError, UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'
-import { AttachmentError } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, admitPromptContent } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
-  ReasoningEffortId, createUserMessage, durablePromptContent, freezeMessage,
+  ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -319,7 +319,7 @@ export class SessionCommandController {
             )
           }
         }
-        const content = await durablePromptContent(this.ctx.attachments, request.content)
+        const content = await admitPromptContent(this.ctx.attachments, request.content)
         const message: UserMessage = createUserMessage({ content, source })
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)

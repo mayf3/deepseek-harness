@@ -55,7 +55,7 @@ export interface EncodedImageAttachment {
 /**
  * Browser-submitted prompt content accepted by Host prompt endpoints; the
  * accepting Host promotes image parts to durable references through
- * `admitEncodedImages` before any message is created, so a wire caller can
+ * `admitPromptContent` before any message is created, so a wire caller can
  * never cite an attachment it did not upload.
  */
 export type PromptContentPart =
@@ -66,6 +66,11 @@ export type PromptContentPart =
     readonly data: string
     readonly name?: string
   }
+
+/** Host-admitted prompt content with each uploaded image replaced by its durable reference. */
+export type AdmittedPromptContentPart =
+  | { readonly type: 'text'; readonly text: string }
+  | { readonly type: 'image'; readonly attachment: ImageAttachmentRef }
 
 /** Request to validate and durably commit one image. */
 export interface SaveImageAttachment {

@@ -219,7 +219,7 @@ export class ConversationController extends Service implements IConversation {
       ? undefined
       : new Promise<PendingSubmissionRetirement>((resolve) => { finishRetirement = resolve })
     const submission = session.beginSubmission({
-      placement: snapshot.running ? mode === 'steer' ? 'steering' : 'queued' : 'transcript',
+      mode,
       text,
       images: attachments.map(attachment => ({
         previewUrl: attachment.previewUrl,

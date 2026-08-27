@@ -185,7 +185,7 @@ describe('sendSession submission echo', () => {
       const sending = b.root.sendSession(session, '带图', [attachment!.id], 'queue')
       // Synchronous: the echo is registered before any encoding starts.
       expect(b.beginSubmission).toHaveBeenCalledWith(expect.objectContaining({
-        placement: 'transcript',
+        mode: 'queue',
         text: '带图',
         images: [expect.objectContaining({ previewUrl: 'blob:echo-1', name: 'a.png' })],
       }))
@@ -212,7 +212,7 @@ describe('sendSession submission echo', () => {
     await b.runtime.dispose()
   })
 
-  it('captures the busy submission surface before image serialization', async () => {
+  it('passes each delivery mode before image serialization', async () => {
     const b = await echoBench()
     try {
       await b.runtime.sessions.updateSessionSnapshot('s1', (draft) => { draft.running = true })
@@ -220,13 +220,13 @@ describe('sendSession submission echo', () => {
       await expect(b.root.sendSession(session, '立即纠偏', [], 'steer'))
         .resolves.toEqual({ kind: 'success' })
       expect(b.beginSubmission).toHaveBeenLastCalledWith(expect.objectContaining({
-        placement: 'steering',
+        mode: 'steer',
         text: '立即纠偏',
       }))
       await expect(b.root.sendSession(session, '稍后处理', [], 'queue'))
         .resolves.toEqual({ kind: 'success' })
       expect(b.beginSubmission).toHaveBeenLastCalledWith(expect.objectContaining({
-        placement: 'queued',
+        mode: 'queue',
         text: '稍后处理',
       }))
     } finally {

@@ -20,11 +20,11 @@ agent 运行期间提交的图片没有可靠进入模型上下文，也没有�
 
 **轮次收尾期的唤醒投递。** `ReactLoopAgent` 用 `pendingWakes` 记录尚未被认领的唤醒发送的身份；认领与丢弃通知会移除对应条目。当 driver 的轮次循环无异常返回并退出时，集合非空就重新拉起 driver，输掉与正常收尾轮次竞态的 steer 或 follow-up 由新轮次认领。取消与 `agent/pre-step` 拒绝则清空该集合：已接受但未认领的输入停放到下一次唤醒发送，既保留了有测试保护的 `cancel({ keepInbox: true })` 语义，也避免把被拒绝的认领重新塞给同一个拒绝策略。注入的上下文从不进入该集合。投递与停放规则记录在 [docs/architecture.md](../../../../docs/architecture.zh.md) 的 turn-flow 一节。
 
-**Host 侧子代理图片准入。** `SubagentPromptRequest.content` 改为上传形态的 `PromptContentPart[]`（同步更新 [Web 子代理会话](../feature/2026-07-27-web-subagent-conversations.zh.md) 的 wire 契约）。`dsh-attachment` 负责子代理路由使用的共享上传词汇；`dsh-api-session-controller` 保留结构相同的 Client face 声明，使生成的 Client Cordis 目录包含完整的 prompt part 字段，并用编译期等价测试防止两处定义偏离。共享的 `durablePromptContent()` 转换位于 `dsh-llm/content`，Session prompt 端点与 `SubagentRuntime.prompt` 共用。子代理路由在 `followup()` 之前经 `ctx.attachments` 完成整批图片的准入与持久化；continuation 管理器在逐子级锁内，当子级 `agent.options` 路由解析到不接受图片输入的模型时拒绝投递（`MODEL_DOES_NOT_SUPPORT_IMAGES`，以与 Session 路由一致的 `attachment-error` 词汇表上抛）。子级没有固定 options 路由，或部署未挂载 LLM 注册表时照常投递，交给 LLM 层的纯文本投影。客户端原样转发图片部分，`SUBAGENT_IMAGE_UNSUPPORTED` 文案删除。
+**Host 侧子代理图片准入。** `SubagentPromptRequest.content` 改为上传形态的 `PromptContentPart[]`（同步更新 [Web 子代理会话](../feature/2026-07-27-web-subagent-conversations.zh.md) 的 wire 契约）。`dsh-attachment` 负责共享上传词汇，以及 Session prompt 端点与 `SubagentRuntime.prompt` 共用的 `admitPromptContent()` 转换；`dsh-api-session-controller` 保留结构相同的 Client face 声明，使生成的 Client Cordis 目录包含完整的 prompt part 字段，并用编译期等价测试防止两处定义偏离。子代理路由在 `followup()` 之前经 `ctx.attachments` 完成整批图片的准入与持久化；continuation 管理器在逐子级锁内，当子级 `agent.options` 路由解析到不接受图片输入的模型时拒绝投递（`MODEL_DOES_NOT_SUPPORT_IMAGES`，以与 Session 路由一致的 `attachment-error` 词汇表上抛）。子级没有固定 options 路由，或部署未挂载 LLM 注册表时照常投递，交给 LLM 层的纯文本投影。客户端原样转发图片部分，`SUBAGENT_IMAGE_UNSUPPORTED` 文案删除。
 
 **队列展示。** 队列镜像的文本预览不再包含图片块，queue dock 把每个持久化图片部分渲染为缩略图，经 `ctx.uiConversation.imageUrl` 解析，与会话记录使用同一个会话授权读取。已排队图片消息的编辑仍然拒绝（#3072）。
 
-**稳定的乐观显示位置。** `PendingSubmission` 记录提交开始时选定的区域：空闲发送是 `transcript`，繁忙时 Queue 发送是 `queued`，繁忙时 Steer 发送是 `steering`。Chat 分别在 transcript 与 steering 区域渲染对应回显，QueueDock 用浏览器持有的图片预览渲染 queued 回显。现有 `rpcId` 关联会在 Host queue occurrence 或持久化 user node 出现的同一次渲染中隐藏本地回显。如果图片序列化期间轮次关闭，Host 把请求的 steer 放入 next-turn queue，消息随后从 steering 移到 QueueDock，反映实际投递决定。
+**稳定的乐观显示位置。** Session 根据运行状态和请求的投递模式同步推导 `PendingSubmission` 位置：空闲发送是 `transcript`，繁忙时 Queue 发送是 `queued`，繁忙时 Steer 发送是 `steering`。该位置在序列化期间保持不变。Chat 分别在 transcript 与 steering 区域渲染对应回显，QueueDock 用浏览器持有的图片预览渲染 queued 回显。现有 `rpcId` 关联会在 Host queue occurrence 或持久化 user node 出现的同一次渲染中隐藏本地回显。如果图片序列化期间轮次关闭，Host 把请求的 steer 放入 next-turn queue，消息随后从 steering 移到 QueueDock，反映实际投递决定。
 
 ## Alternatives considered
 
@@ -38,7 +38,7 @@ agent 运行期间提交的图片没有可靠进入模型上下文，也没有�
 
 ## Testing
 
-agent-loop 测试确定性地钉住收尾窗口（`turn/end` 监听器把发送排为微任务，先于 driver 的退出续体执行），覆盖 steer、follow-up 与注入不投递。Host 测试覆盖 `mode: 'steer'` 的图片准入；subagent control 测试覆盖有序准入、整批拒绝、非规范 base64 与能力拒绝映射；continuation 测试覆盖拒绝时不留半条消息、能力通过时投递、无路由时的顺延。客户端测试覆盖不剥离的转发、目录可见的上传声明、队列缩略图（加载、失败占位、卸载）、不含图片的预览、序列化前的位置捕获、steering 本地显示、queued 回显显示，以及两个区域的 `rpcId` 交接。
+agent-loop 测试确定性地钉住收尾窗口（`turn/end` 监听器把发送排为微任务，先于 driver 的退出续体执行），覆盖 steer、follow-up 与注入不投递。Host 测试覆盖 `mode: 'steer'` 的图片准入；subagent control 测试覆盖有序准入、整批拒绝、非规范 base64 与能力拒绝映射；continuation 测试覆盖拒绝时不留半条消息、能力通过时投递、无路由时的顺延。客户端测试覆盖不剥离的转发、目录可见的上传声明、队列缩略图（加载、失败占位、卸载）、Session 负责的位置推导与捕获、steering 本地显示、queued 回显显示，以及两个区域的 `rpcId` 交接。
 
 ## Consequences
 
