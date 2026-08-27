@@ -49,8 +49,5 @@
     "@deepseek-ai/dsh-agent": "workspace:^",
     "@deepseek-ai/dsh-invariants": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^"
-  },
-  "dependencies": {
-    "zod": "^4.4.3"
   }
 }
