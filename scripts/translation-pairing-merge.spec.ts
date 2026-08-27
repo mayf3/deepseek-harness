@@ -30,6 +30,7 @@ const driverLauncher = fileURLToPath(new URL('./merge-translation-pairing-driver
 const workspaceRoot = fileURLToPath(new URL('../', import.meta.url))
 const tsxLoader = import.meta.resolve('tsx/esm')
 const fixtures: string[] = []
+const compositionTimeoutMs = process.platform === 'win32' ? 60_000 : 15_000
 
 interface Fixture {
   env: NodeJS.ProcessEnv
@@ -261,7 +262,7 @@ function expectMergedPair(fixture: Fixture): void {
   )
 }
 
-describe('translation pairing merge composition', { timeout: 15_000 }, () => {
+describe('translation pairing merge composition', { timeout: compositionTimeoutMs }, () => {
   it('rejects a pairing-record path outside the repository', () => {
     const fixture = createFixture(false)
 
