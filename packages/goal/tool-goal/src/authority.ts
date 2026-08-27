@@ -8,10 +8,11 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type { ToolRunContext } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session-projection'
 
-/** The calling agent plus the events accepted after its open turn's start boundary. */
+/** The calling agent plus the immutable event cut and open-turn start seq used for authority checks. */
 export interface GoalToolExecution {
   readonly agent: Agent
   readonly events: readonly SessionEvent[]
+  readonly openTurnStartSeq: number
 }
 
 /** Hard authority granted to one state-changing call. */
@@ -24,26 +25,24 @@ function reject(message: string, code = 'GOAL_TOOL_AUTHORITY_REQUIRED'): never {
   throw new HarnessError(message, code)
 }
 
-/**
- * The event window of the open turn enclosing a model tool call. The
- * open-turn boundary comes from the `turnBoundary` projection (one O(1)
- * snapshot read); the suffix is the raw event window after the open
- * `turn/start` seq.
- */
-function openTurnEvents(ctx: Context, agent: Agent): readonly SessionEvent[] {
+/** Resolve the immutable event cut and open-turn boundary without copying the turn suffix. */
+function openTurnEvents(
+  ctx: Context,
+  agent: Agent,
+): Pick<GoalToolExecution, 'events' | 'openTurnStartSeq'> {
   const events = agent.session.events
   const boundary = ctx.sessionProjections.stateOf(agent.session, 'turnBoundary')
   if (boundary === undefined || boundary.openTurnStartSeq === null) {
     reject('goal tools require an open model turn', 'GOAL_TOOL_DRIVER_REQUIRED')
   }
-  return events.slice(boundary.openTurnStartSeq + 1)
+  return { events, openTurnStartSeq: boundary.openTurnStartSeq }
 }
 
 /**
  * Resolve and authenticate the calling agent and its driver boundary.
  * @param ctx - Context carrying the live agent registry.
  * @param exec - Tool execution metadata supplied by the registry.
- * @returns The authenticated agent and its current turn window.
+ * @returns The authenticated agent, immutable event cut, and open-turn boundary.
  */
 export function goalToolExecution(ctx: Context, exec: ToolRunContext): GoalToolExecution {
   const agent = exec.agent
@@ -57,7 +56,19 @@ export function goalToolExecution(ctx: Context, exec: ToolRunContext): GoalToolE
       'GOAL_TOOL_DRIVER_REQUIRED',
     )
   }
-  return { agent, events: openTurnEvents(ctx, agent) }
+  return { agent, ...openTurnEvents(ctx, agent) }
+}
+
+/** Whether the captured open turn contains an event accepted by `predicate`. */
+function someOpenTurnEvent(
+  execution: GoalToolExecution,
+  predicate: (event: SessionEvent) => boolean,
+): boolean {
+  for (let seq = execution.openTurnStartSeq + 1; seq < execution.events.length; seq += 1) {
+    const event = execution.events[seq]
+    if (event !== undefined && predicate(event)) return true
+  }
+  return false
 }
 
 /**
@@ -67,13 +78,13 @@ export function goalToolExecution(ctx: Context, exec: ToolRunContext): GoalToolE
  */
 function hasDirectHumanInput(ctx: Context, execution: GoalToolExecution): boolean {
   if (!ctx.agents.roots().includes(execution.agent)) return false
-  return execution.events.some(event =>
+  return someOpenTurnEvent(execution, event =>
     event.type === 'user/message' && event.data.source.kind === 'user')
 }
 
 /** Whether this turn is the current goal's exact admitted round. */
 function isMatchingGoalRound(execution: GoalToolExecution, goal: GoalView): boolean {
-  return execution.events.some(event => event.type === 'user/message'
+  return someOpenTurnEvent(execution, event => event.type === 'user/message'
     && event.data.source.kind === 'goal'
     && event.data.source.goalId === goal.id
     && event.data.source.revision === goal.revision
