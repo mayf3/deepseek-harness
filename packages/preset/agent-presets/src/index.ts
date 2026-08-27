@@ -715,10 +715,8 @@ export class AgentPresets extends TypertRemoteService {
     // model-loop execution; standalone plugin events never open one, so a
     // session that has only run commands is still blank.
     const boundary = this.selfCtx.sessionProjections.stateOf(agent.session, 'turnBoundary')
-    if (boundary === undefined) {
-      throw new Error('agent-presets: select requires the turnBoundary session projection')
-    }
-    if (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0) {
+    if (boundary !== undefined
+      && (boundary.openTurnStartSeq !== null || boundary.lastTurn > 0)) {
       throw new PresetLockedError(agent.id, agentPreset)
     }
     const preset = await this.recompose(agent.ctx, agentPreset)
