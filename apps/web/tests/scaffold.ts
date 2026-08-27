@@ -1096,11 +1096,23 @@ async function persistSeedSession(
  * on one machine (measured 69 → 70 tok/s) and swings wildly on a fast replay
  * (26333 tok/s for a 3 ms stream).
  */
-function normalizeAria(snapshot: string, workspaceCwd: string): string {
+/**
+ * Relative-time buckets rendered by a dated row, in both dictionaries.
+ *
+ * Opt-in per capture: a session-tree golden asserts its own literal age (a
+ * fresh row reads `now`, an older one does not), so collapsing the vocabulary
+ * everywhere would delete that assertion. A region whose rows are dated from
+ * live wall-clock state asks for it instead. Anchored on an aria label's
+ * closing quote, where the bucket is always last.
+ */
+const ARIA_AGE =
+  /(?:now|\d+min|\d+h|\d+d|\d+mo|\d+y|刚刚|\d+分钟|\d+小时|\d+天|\d+个月|\d+年)(?=")/g
+
+function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): string {
   // The session heading renders the workspace's basename, not the full
   // path, so both spellings must collapse to the token.
   const base = workspaceCwd.split('/').pop()!
-  return snapshot
+  return (age ? snapshot.replace(ARIA_AGE, '{{age}}') : snapshot)
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
@@ -1135,13 +1147,21 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
  * @param page - the page under test.
  * @param selector - the region locator selector.
  * @param workspaceCwd - normalization input.
+ * @param options - `normalizeAge` collapses relative-time buckets to `{{age}}`
+ *   for a region whose rows are dated from live wall-clock state.
  * @returns the stable normalized snapshot.
  */
-export async function captureStableAria(page: Page, selector: string, workspaceCwd: string): Promise<string> {
+export async function captureStableAria(
+  page: Page,
+  selector: string,
+  workspaceCwd: string,
+  options: { normalizeAge?: boolean } = {},
+): Promise<string> {
   const region = page.locator(selector).first()
-  let previous = normalizeAria(await region.ariaSnapshot(), workspaceCwd)
+  const age = options.normalizeAge === true
+  let previous = normalizeAria(await region.ariaSnapshot(), workspaceCwd, age)
   await expect.poll(async () => {
-    const current = normalizeAria(await region.ariaSnapshot(), workspaceCwd)
+    const current = normalizeAria(await region.ariaSnapshot(), workspaceCwd, age)
     const stable = current === previous
     previous = current
     return stable
