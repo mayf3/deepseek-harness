@@ -4,7 +4,9 @@ import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import { CompactionId, compactCheckpointSource } from '@deepseek-ai/dsh-compaction'
 import { createUserMessage, ToolCallId , createMessage, createToolResultMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
+import SessionTitleService from '@deepseek-ai/dsh-session-title'
 import SessionReferenceResolver, {
   decodeSessionReferenceUri,
   encodeSessionReferenceUri,
@@ -35,6 +37,11 @@ class TestSessionQueryEngine extends SessionQueryEngine {
 async function harness(config: Config = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
+  // The live registry and the title unit it hosts: discovery labels an
+  // attached session from its projection cut, never from its log.
+  await ctx.plugin(SessionProjectionRegistry)
+  // Shipped base values: this suite only needs the unit the service registers.
+  await ctx.plugin(SessionTitleService, { fallbackMaxWords: 5, fallbackMaxBytes: 40, maxTitleBytes: 80 })
   await ctx.plugin(TestSessionQueryEngine)
   await ctx.plugin(SessionReferenceResolver, config)
   return ctx
@@ -296,141 +303,75 @@ describe('session reference discovery and preparation', () => {
     listSessions.mockRestore()
   })
 
-  it('labels and filters the whole corpus from checkpoints, reading no log', async () => {
+  it('reads an attached session\'s current title, ahead of any checkpoint', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
-    for (const id of ['alpha', 'beta']) {
-      const created = ctx.sessions.create(SessionId(id), { meta: { cwd: '/same' } })
-      created.append('session/title', { title: `${id} title`, messageSeqs: [], source: { kind: 'fallback' } })
-    }
-    withProjectionCache(ctx, { alpha: 'Alpha checkpoint', beta: 'Beta checkpoint' })
+    const live = ctx.sessions.create(SessionId('live'), { meta: { cwd: '/same' } })
+    live.append('session/title', { title: 'Old title', messageSeqs: [], source: { kind: 'fallback' } })
+    // The durable checkpoint is write-behind, so it still holds the old value.
+    withProjectionCache(ctx, { live: 'Old title' })
+    live.append('session/title', { title: 'Renamed mid turn', messageSeqs: [], source: { kind: 'user' } })
     const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
 
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'alpha check'))
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'renamed'))
       .resolves.toEqual([
-        { sessionId: SessionId('alpha'), label: 'Alpha checkpoint', cwd: '/same', sameWorkspace: true, createdAt: expect.any(Number) as number },
+        { sessionId: live.id, label: 'Renamed mid turn', cwd: '/same', sameWorkspace: true, createdAt: live.header.createdAt },
       ])
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'old title')).resolves.toEqual([])
     expect(readTitles).not.toHaveBeenCalled()
     readTitles.mockRestore()
   })
 
-  it('folds a title the cache never checkpointed, for the shown page alone', async () => {
-    const ctx = await harness()
-    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
-    const seeded = ctx.sessions.create(SessionId('seeded'), { meta: { cwd: '/same' } })
-    seeded.append('session/title', { title: 'Seeded title', messageSeqs: [], source: { kind: 'fallback' } })
-    const untitled = ctx.sessions.create(SessionId('untitled'), { meta: { cwd: '/same' } })
-    // `untitled` is checkpointed with no title yet: nothing a log fold could add.
-    withProjectionCache(ctx, { untitled: null })
-    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
-
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
-      { sessionId: seeded.id, label: 'Seeded title', cwd: '/same', sameWorkspace: true, createdAt: seeded.header.createdAt },
-      { sessionId: untitled.id, label: untitled.id, cwd: '/same', sameWorkspace: true, createdAt: untitled.header.createdAt },
-    ])
-    // Only the uncheckpointed session reached a log.
-    expect(readTitles).toHaveBeenCalledTimes(1)
-    expect(readTitles.mock.calls[0]?.[0]).toEqual([seeded.id])
-    readTitles.mockRestore()
-  })
-
-  it('folds the uncheckpointed tail so a query still filters on its titles', async () => {
-    const ctx = await harness()
-    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
-    const seeded = ctx.sessions.create(SessionId('seeded'), { meta: { cwd: '/same' } })
-    seeded.append('session/title', { title: 'Research notes', messageSeqs: [], source: { kind: 'fallback' } })
-    withProjectionCache(ctx, {})
-
-    // The title lives only in the log, and the filter reads labels — so a
-    // deferred fold would make this session unfindable by its own title.
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'research'))
-      .resolves.toEqual([
-        { sessionId: seeded.id, label: 'Research notes', cwd: '/same', sameWorkspace: true, createdAt: seeded.header.createdAt },
-      ])
-  })
-
-  it('folds a cold log once and answers every later query from that fold', async () => {
+  it('labels a cold session from its checkpoint and reads no log', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
     const cold = { id: SessionId('cold'), createdAt: 10, cwd: '/same' }
-    withProjectionCache(ctx, {})
+    withProjectionCache(ctx, { cold: 'Cold checkpoint' })
     vi.spyOn(ctx.sessionQuery, 'listSessions').mockResolvedValue([
-      { header: { ...target.header }, live: true, persisted: false },
       { header: cold, live: false, persisted: true },
     ] as never)
-    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots').mockResolvedValue([{
-      sessionId: cold.id,
-      status: 'fulfilled',
-      value: { session: cold, title: { title: 'Cold title' } },
-    }] as never)
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
 
-    const expected = [{ sessionId: cold.id, label: 'Cold title', cwd: '/same', sameWorkspace: true, createdAt: 10 }]
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'cold')).resolves.toEqual(expected)
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'cold t')).resolves.toEqual(expected)
-    // A cold log never grows, so the second keystroke reads nothing.
-    expect(readTitles).toHaveBeenCalledTimes(1)
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'checkpoint'))
+      .resolves.toEqual([
+        { sessionId: cold.id, label: 'Cold checkpoint', cwd: '/same', sameWorkspace: true, createdAt: 10 },
+      ])
+    expect(readTitles).not.toHaveBeenCalled()
     vi.restoreAllMocks()
   })
 
-  it('remembers that a cold log has no title, and stops reading it', async () => {
+  it('labels a session no projection answers for by its id, still without a log read', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const seeded = { id: SessionId('seeded'), createdAt: 10, cwd: '/same' }
+    // Persisted before the cache was composed: the title lives only in its log.
     withProjectionCache(ctx, {})
     vi.spyOn(ctx.sessionQuery, 'listSessions').mockResolvedValue([
-      { header: { id: SessionId('bare'), createdAt: 10 }, live: false, persisted: true },
+      { header: seeded, live: false, persisted: true },
     ] as never)
-    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots').mockResolvedValue([{
-      sessionId: SessionId('bare'),
-      status: 'fulfilled',
-      value: { session: {} },
-    }] as never)
-
-    const expected = [{ sessionId: SessionId('bare'), label: 'bare', sameWorkspace: false, createdAt: 10 }]
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'bare')).resolves.toEqual(expected)
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'bar')).resolves.toEqual(expected)
-    expect(readTitles).toHaveBeenCalledTimes(1)
-    vi.restoreAllMocks()
-  })
-
-  it('refolds a cold id whose log was replaced under it', async () => {
-    const ctx = await harness()
-    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
-    withProjectionCache(ctx, {})
-    let createdAt = 10
-    vi.spyOn(ctx.sessionQuery, 'listSessions').mockImplementation(() => Promise.resolve([
-      { header: { id: SessionId('cold'), createdAt, cwd: '/same' }, live: false, persisted: true },
-    ] as never))
     const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
-      .mockImplementation(() => Promise.resolve([{
-        sessionId: SessionId('cold'),
-        status: 'fulfilled',
-        value: { session: {}, title: { title: `Title at ${String(createdAt)}` } },
-      }] as never))
-
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'title'))
-      .resolves.toMatchObject([{ label: 'Title at 10' }])
-    createdAt = 20
-    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'title'))
-      .resolves.toMatchObject([{ label: 'Title at 20' }])
-    expect(readTitles).toHaveBeenCalledTimes(2)
-    vi.restoreAllMocks()
-  })
-
-  it('leaves the id placeholder when the page fold cannot read the log', async () => {
-    const ctx = await harness()
-    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
-    const broken = ctx.sessions.create(SessionId('broken'), { meta: { cwd: '/same' } })
-    withProjectionCache(ctx, {})
-    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots').mockResolvedValueOnce([{
-      sessionId: broken.id,
-      status: 'rejected',
-      reason: new Error('broken title log'),
-    }])
 
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
-      { sessionId: broken.id, label: broken.id, cwd: '/same', sameWorkspace: true, createdAt: broken.header.createdAt },
+      { sessionId: seeded.id, label: seeded.id, cwd: '/same', sameWorkspace: true, createdAt: 10 },
     ])
-    readTitles.mockRestore()
+    // Its own title cannot find it, and discovery still never opens the log.
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'anything')).resolves.toEqual([])
+    expect(readTitles).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+
+  it('labels every session by id when no projection face is composed', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(TestSessionQueryEngine)
+    await ctx.plugin(SessionReferenceResolver)
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const other = ctx.sessions.create(SessionId('other'), { meta: { cwd: '/same' } })
+    other.append('session/title', { title: 'Unreadable', messageSeqs: [], source: { kind: 'fallback' } })
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
+      { sessionId: other.id, label: other.id, cwd: '/same', sameWorkspace: true, createdAt: other.header.createdAt },
+    ])
   })
 
   it('serves the Remote face with the configured limit and canonical mentions', async () => {
@@ -528,38 +469,15 @@ describe('session reference discovery and preparation', () => {
     )).rejects.toThrow(/invalid session reference URI/)
   })
 
-  it('keeps metadata matches when one title observation fails and cancels a stalled title batch', async () => {
+  it('still matches an unlabeled session on its own metadata', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'))
+    // No cwd, no title event: nothing but the id identifies it.
     const source = ctx.sessions.create(SessionId('source'))
-    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
-    readTitles.mockResolvedValueOnce([{
-      sessionId: source.id,
-      status: 'rejected',
-      reason: new Error('broken title log'),
-    }])
 
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'source')).resolves.toEqual([
       { sessionId: source.id, label: source.id, sameWorkspace: false, createdAt: source.header.createdAt },
     ])
-
-    let releaseTitles: (() => void) | undefined
-    let titleSignal: AbortSignal | undefined
-    readTitles.mockImplementationOnce(async (_ids, signal) => {
-      titleSignal = signal
-      await new Promise<void>((resolve) => { releaseTitles = resolve })
-      return []
-    })
-    const controller = new AbortController()
-    const pending = ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'source', undefined, controller.signal)
-    await vi.waitFor(() => { expect(releaseTitles).toBeTypeOf('function') })
-    expect(titleSignal).toBe(controller.signal)
-    const cancelledTitles = expect(pending).rejects.toThrow(expectCode('SESSION_REFERENCE_CANCELLED'))
-    controller.abort('autocomplete superseded')
-    await cancelledTitles
-    releaseTitles?.()
-    await Promise.resolve()
-    readTitles.mockRestore()
   })
 
   it('projects only the current user/assistant surface and records snapshot metadata', async () => {

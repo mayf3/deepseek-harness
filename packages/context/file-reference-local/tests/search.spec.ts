@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,8 @@ import {
 
 const searches: WorkspaceFileSearch[] = []
 const roots: string[] = []
+/** Permission-stripped directories; restored before cleanup can remove them. */
+const locks: string[] = []
 
 async function workspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-file-autocomplete-'))
@@ -45,6 +47,7 @@ function search(root: string, overrides: Partial<ConstructorParameters<typeof Wo
 }
 
 afterEach(async () => {
+  for (const locked of locks.splice(0)) await chmod(locked, 0o700).catch(() => undefined)
   for (const instance of searches.splice(0)) instance.dispose()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
@@ -172,36 +175,45 @@ describe('WorkspaceFileSearch', () => {
     files.dispose()
   })
 
-  it('keeps the stale entries when a refresh fails and retries on the next query', async () => {
+  it('keeps the stale entries when the workspace root is unreadable, and retries once it returns', async () => {
     const root = await workspace()
     const files = search(root)
     const signal = new AbortController().signal
     expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
+
+    // A root that vanishes under a live index: an unreadable branch costs its
+    // own candidates, but an unreadable root must not be published as an
+    // empty workspace over entries that are still good.
+    await rm(root, { recursive: true, force: true })
     files.invalidate()
-    const scan = vi
-      .spyOn(files as unknown as { scanWorkspace: () => Promise<unknown> }, 'scanWorkspace')
-      .mockRejectedValueOnce(new Error('scan failed'))
     expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
-    await vi.waitFor(() => { expect(scan).toHaveBeenCalledTimes(1) })
-    scan.mockRestore()
-    // The failed attempt left the index stale, so the next query starts a new one.
-    await writeFile(join(root, 'retried.ts'), 'retried')
-    expect(await files.list('retried', signal)).toEqual([])
+    await new Promise((resolve) => { setTimeout(resolve, 50) })
+    expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
+
+    // The failed attempt left the index stale, so its return is picked up
+    // without waiting for another invalidation.
+    await mkdir(root, { recursive: true })
+    await writeFile(join(root, 'restored.ts'), 'restored')
     await vi.waitFor(async () => {
-      expect(await files.list('retried', signal)).toEqual([{ path: 'retried.ts', kind: 'file' }])
+      expect(await files.list('restored', signal)).toEqual([{ path: 'restored.ts', kind: 'file' }])
     })
   })
 
-  it('keeps nothing from a traversal that settles after disposal', async () => {
+  it('lets an unreadable subtree cost only its own candidates', async () => {
     const root = await workspace()
+    const locked = join(root, 'locked')
+    await mkdir(locked, { recursive: true })
+    await writeFile(join(locked, 'sealed.ts'), 'sealed')
+    await chmod(locked, 0o000)
+    locks.push(locked)
     const files = search(root)
-    const pending = files.list('README', new AbortController().signal)
-    files.dispose()
-    await expect(pending).rejects.toThrow('file search index disposed')
-    // The in-flight traversal still settles; its entries must reach no caller.
-    await vi.waitFor(async () => {
-      expect(await files.list('README', new AbortController().signal)).toEqual([])
-    })
+    const signal = new AbortController().signal
+
+    // The branch itself yields nothing, and the rest of the tree still does.
+    expect(await files.list('sealed', signal)).toEqual([])
+    expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
+    // The directory is still offered: only reading through it fails.
+    expect(await files.list('locked', signal)).toEqual([{ path: 'locked', kind: 'directory' }])
   })
 
   it('enforces the entry cap', async () => {
@@ -214,13 +226,23 @@ describe('WorkspaceFileSearch', () => {
 
   it('never traverses an excluded build output, so generated twins cannot outrank sources', async () => {
     const root = await workspace()
-    await mkdir(join(root, 'lib'), { recursive: true })
-    await writeFile(join(root, 'lib', 'terminal-view.js'), 'built')
+    await mkdir(join(root, 'dist'), { recursive: true })
+    await writeFile(join(root, 'dist', 'terminal-view.js'), 'built')
     const files = search(root, { excludedDirectories: [...DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES] })
     expect(await files.list('terminal-view', new AbortController().signal)).toEqual([
       { path: 'src/terminal-view.ts', kind: 'file' },
     ])
-    expect(await files.list('lib/', new AbortController().signal)).toEqual([])
+    expect(await files.list('dist/', new AbortController().signal)).toEqual([])
+  })
+
+  it('still offers a `lib` tree, where several ecosystems keep their sources', async () => {
+    const root = await workspace()
+    await mkdir(join(root, 'lib'), { recursive: true })
+    await writeFile(join(root, 'lib', 'gem-entry.rb'), 'source')
+    const files = search(root, { excludedDirectories: [...DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES] })
+    expect(await files.list('gem-entry', new AbortController().signal)).toEqual([
+      { path: 'lib/gem-entry.rb', kind: 'file' },
+    ])
   })
 
   it('cancels individual callers, skips missing directories, and validates limits', async () => {

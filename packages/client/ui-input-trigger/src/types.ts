@@ -81,9 +81,10 @@ export interface HeaderRequest {
   /** Whether the active @file token is an open quoted path. */
   readonly quoted?: boolean
   /**
-   * True while the open menu was reached by a drill pick rather than typed.
-   * The pipeline owns this fact; what it means for a header is the source's
-   * to decide.
+   * True while this menu was opened or last re-scoped by a drill pick. It
+   * survives further typing and clears when the menu closes, so a query typed
+   * after a drill still reads as drilled. The pipeline owns the fact; what it
+   * means for a header is the source's to decide.
    */
   readonly drilled: boolean
 }
@@ -104,7 +105,7 @@ export interface CandidateRequest {
   /** Whether the active @file token is an open quoted path. */
   readonly quoted?: boolean
   readonly position: TriggerPosition
-  /** Whether the open menu was reached by a drill pick rather than typed. */
+  /** Whether this menu was opened or last re-scoped by a drill pick; see {@link HeaderRequest.drilled}. */
   readonly drilled: boolean
   readonly signal: AbortSignal
 }

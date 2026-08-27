@@ -18,15 +18,19 @@ export const DEFAULT_FILE_SEARCH_MAX_RESULTS = 20
 export const DEFAULT_FILE_SEARCH_MAX_ENTRIES = 50_000
 /**
  * Directory basenames omitted from traversal unless the deployment overrides
- * them: version-control and dependency stores plus the build outputs of the
- * ecosystems this harness runs in. Generated files carry the basenames of the
+ * them: version-control and dependency stores plus build-output names that no
+ * ecosystem also uses for sources. Generated files carry the basenames of the
  * sources that produced them, so an unfiltered tree both spends the entry
- * budget twice and ranks `lib/x.js` beside `src/x.ts` for every query.
+ * budget twice and ranks `dist/x.js` beside `src/x.ts` for every query.
+ *
+ * `lib` is deliberately absent: Ruby gems and many npm packages keep their
+ * sources there, and excluding it would make `@` miss those sources entirely
+ * and silently. A workspace that builds into `lib` adds it through
+ * `excludedDirectories`.
  */
 export const DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES = [
   '.git',
   'node_modules',
-  'lib',
   'dist',
   'build',
   'out',
@@ -204,7 +208,13 @@ export class WorkspaceFileSearch {
       if (directory === undefined) {
         throw new Error('file search selected a missing directory')
       }
-      const entries = await readDirectory(directory.absolute, signal)
+      // The root is not a subtree: an unreadable branch costs its own
+      // candidates, but an unreadable root means the traversal learned
+      // nothing. Letting that settle would publish an empty index over
+      // entries that are still good and leave no invalidation to retry from.
+      const entries = cursor === 0
+        ? await readWorkspaceRoot(directory.absolute, signal)
+        : await readDirectory(directory.absolute, signal)
       for (const entry of entries) {
         signal.throwIfAborted()
         const path = directory.relative === '' ? entry.name : `${directory.relative}/${entry.name}`
@@ -269,6 +279,13 @@ async function resolveDisplayDirectory(
     }
   }
   return absolute
+}
+
+async function readWorkspaceRoot(absolute: string, signal: AbortSignal) {
+  signal.throwIfAborted()
+  const entries = await readdir(absolute, { withFileTypes: true })
+  signal.throwIfAborted()
+  return entries.sort((left, right) => compareText(left.name, right.name))
 }
 
 async function readDirectory(absolute: string, signal: AbortSignal) {

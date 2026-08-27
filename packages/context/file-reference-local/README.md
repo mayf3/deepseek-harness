@@ -47,7 +47,7 @@ Typing `@` in a host UI returns up to `maxResults` ranked path candidates for th
 |---|---|---|
 | `maxResults` | `20` | Maximum ranked candidates returned for one query |
 | `maxEntries` | `50000` | Maximum files and directories indexed per agent workspace |
-| `excludedDirectories` | `['.git', 'node_modules', 'lib', 'dist', 'build', 'out', 'coverage', 'target', '.next', '.nuxt', '.turbo', '.venv', '__pycache__', '.pytest_cache', '.mypy_cache', '.gradle']` | Directory basenames omitted from traversal and candidates |
+| `excludedDirectories` | `['.git', 'node_modules', 'dist', 'build', 'out', 'coverage', 'target', '.next', '.nuxt', '.turbo', '.venv', '__pycache__', '.pytest_cache', '.mypy_cache', '.gradle']` | Directory basenames omitted from traversal and candidates |
 
 Every numeric value must be a positive safe integer, and every excluded name must be a non-empty basename without `/` or `\`.
 
@@ -75,7 +75,7 @@ The provider maintains one reusable `WorkspaceFileSearch` per agent, rooted at t
 
 ### Main flow
 
-A `list(agent, query, signal)` call either lists one directory's entries or reads the shared bounded index, ranks the candidates (exact, prefix, substring, then subsequence scores with directory bonuses), and returns at most `maxResults` in deterministic order. `tool/result` events mark the addressed agent's index stale so a later bare query observes a fresh tree; unreadable or excluded subtrees contribute no candidates.
+A `list(agent, query, signal)` call either lists one directory's entries or reads the shared bounded index, ranks the candidates (exact, prefix, substring, then subsequence scores with directory bonuses), and returns at most `maxResults` in deterministic order. `tool/result` events mark the addressed agent's index stale so a later bare query observes a fresh tree. An unreadable or excluded subtree contributes no candidates, while an unreadable root fails its traversal instead: a transient failure must not replace still-good entries with an empty index.
 
 </details>
 
@@ -124,7 +124,7 @@ The stable sentence joins the system-prompt prefix. Mounting or removing this pr
 These limits define when the provider is a poor fit. They are current package constraints.
 
 - **Host-local namespace** — the provider scans the Harness host filesystem, so remote or virtual `read` implementations require a provider whose namespace matches the tool.
-- **Bounded advisory index** — very large workspaces may omit paths after `maxEntries`, and excluded or unreadable directories do not appear. The default exclusions name build outputs by convention, so a workspace that keeps sources under one of those basenames must override `excludedDirectories`.
+- **Bounded advisory index** — very large workspaces may omit paths after `maxEntries`, and excluded or unreadable directories do not appear. The default exclusions name only build outputs no ecosystem also uses for sources; `lib` is deliberately absent, so a workspace that builds into it adds that name through `excludedDirectories`.
 - **One invalidation of staleness** — a bare query answered right after a tool result reflects the tree as of the previous traversal; the following query sees the rebuild.
 - **No ignore-file semantics** — `.gitignore` and other project ignore files do not influence discovery; only configured directory basenames are excluded.
 

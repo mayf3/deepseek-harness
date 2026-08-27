@@ -626,7 +626,8 @@ describe('header / drilled descent', () => {
 
   it('routes a crumb through the source drill path and refuses the current step', async () => {
     const { source, picks } = crumbSource()
-    const { controller } = controllerBench([source])
+    const { controller, actx } = controllerBench([source])
+    actx.on('slash/input-insert-text', () => true)
     controller.track('@sr', 3, { tier: 'plain' }, 1)
     await tick()
     controller.pick('reference', 0, 'drill')
@@ -638,6 +639,18 @@ describe('header / drilled descent', () => {
     controller.pickCrumb('reference', 0)
     expect(picks).toHaveLength(1)
     expect(picks[0]).toMatchObject({ candidate: { name: 'src', value: 'src' }, action: 'drill', via: 'menu' })
+  })
+
+  it('publishes no crumbs when the input refused the drill edit', async () => {
+    const { source } = crumbSource()
+    const { controller } = controllerBench([source])
+    // No listener accepts the insert, so the descent text never landed.
+    controller.track('@sr', 3, { tier: 'plain' }, 1)
+    await tick()
+    controller.pick('reference', 0, 'drill')
+    controller.track('@src/', 5, { tier: 'plain' }, 2)
+    await tick()
+    expect(controller.headers.getSnapshot().size).toBe(0)
   })
 
   it('drops a source whose header throws and keeps the rest of the menu', async () => {

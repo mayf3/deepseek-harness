@@ -145,11 +145,9 @@ Exact-read consumer that prepares immutable cross-session message context.
 /**
  * List reference candidates, ranked by working-directory affinity.
  *
- * A title comes from the projection cache when that cache holds a
- * checkpoint for the session; otherwise it is folded from the session's log
- * once and remembered for as long as the log stays cold. Without the cache
- * composed, only the cwd-ranked head of an unfiltered listing is folded, so
- * its tail cannot match a title substring.
+ * Discovery runs at keystroke rate, so a title only ever comes from a
+ * projection read: see {@link SessionReferenceResolver.projectedTitle} for
+ * which sessions can answer one and which fall back to their id.
  * @param agent - target agent; self is excluded and its cwd drives ranking.
  * @param query - optional case-insensitive session-id/cwd/title substring.
  * @param limit - optional positive result cap.

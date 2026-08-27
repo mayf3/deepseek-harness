@@ -6,5 +6,5 @@
       - img
   - option "reference.txt"
   - text: Sessions
-  - option "Reference order target {{cwd}} · {{age}}"
-  - option "Research notes {{cwd}} · {{age}}"
+  - option "reference-order-target-session {{cwd}} · {{age}}"
+  - option "reference-source-session {{cwd}} · {{age}}"

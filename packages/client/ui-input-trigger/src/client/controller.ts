@@ -485,10 +485,13 @@ export class InputTriggerController {
     })
     this.stopFetch()
     this.reduce({ type: 'close' })
-    // After the close above, so the reducer's own teardown cannot clear it:
-    // the drilled query arrives on the next track() call.
-    this.drilled = action === 'drill'
-    this.execute(outcome, hit.span)
+    const applied = this.execute(outcome, hit.span)
+    // Set after the close above, so the reducer's own teardown cannot clear
+    // it, and only when the descent text actually landed: a refused edit
+    // (stale draft revision, or no listener) leaves the draft where it was,
+    // and a header over that draft would name a directory nobody descended
+    // into while hiding the locations its rows still need.
+    this.drilled = action === 'drill' && applied
   }
 
   /** Re-poll every header-bearing source in the hit roster and publish their crumbs. */
