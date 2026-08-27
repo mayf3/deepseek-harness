@@ -1,10 +1,10 @@
 /** Register the Chat Conversation target, renderers, stats, and details surface. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { BoundActions, ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 // Type-only service and declaration merges used by the apply world.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -46,7 +46,8 @@ const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
 
 /** Services required by the Chat target and its presentation registrations. */
 export const inject = [
-  'slots', 'sessions', 'uiSession', 'uiConversation', 'uiWorkspace', 'layout', 'locale', 'settingsScope',
+  'slots', 'sessions', 'uiSession', 'uiConversation', 'layout', 'locale',
+  'settingsScope', 'remote', 'remote.session',
 ]
 
 /**
@@ -115,9 +116,9 @@ export function apply(ctx: Context): void {
             ctx.layout.openDetails()
           },
           fileMentions: (owner: TurnTailOwnerProps) => ctx.get('chatFileMentions')?.forClosing(owner),
-          openFile: (path) => {
-            const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-            return ctx.uiWorkspace.openPath(resolveWorkspacePath(cwd, path))
+          openFile: async (path) => {
+            const result = await ctx.remote.session.openWorkspacePath({ sessionId, path })
+            if (!result.ok) throw new Error(`path open failed: ${result.error.message}`)
           },
           loadOlder: () => { void session.loadOlder() },
           loadImage: Object.assign(
