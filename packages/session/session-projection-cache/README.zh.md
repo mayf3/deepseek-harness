@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-projection-cache` 将每个已注册投影单元的状态存为 `session_projcache` 存储域 `per-record` 布局下的一份逐会话版本化文档。存储行是可丢弃的折叠捷径，绝不是权威：零 I/O 列表可以把它用作暂定 hint，但该行可能落后于日志，也可能越过后来崩溃修复形成的截断点。精确 prepared-session 读取会用调用方提供的完整日志校验缓存状态，并在行不再适用时重新折叠；缓存自身绝不读取会话持久化层。三个必写点——会话创建、`turn/end` 与会话释放——加上可配置的条数与间隔节流，使记录足够新，可用于列表预热与加速冷折叠。
+`dsh-session-projection-cache` 将每个已注册投影单元的状态检查点（`ctx.sessionProjectionCache`）存为 `session_projcache` 存储域 `per-record` 布局下的逐会话版本化文档。随附 JSON 后端将每条记录存于 `<root>/session_projcache/sessions/<id>.json`，缓存绝不读取会话持久化层。存储行是折叠捷径，绝不是权威：它可能陈旧——`seq` 精确说明陈旧到哪——但绝不会错。三个必写点（会话创建、`turn/end` 与会话释放）加上可配置的条数与间隔节流让缓存保持新鲜。当列表视图需要同步缓存值，或冷投影折叠应跳过已检查点化的前缀时，选择本包。
 
 ## 目录
 
@@ -58,13 +58,11 @@ kind: "package-reference"
 
 ### 读取缓存值
 
-`cachedSnapshot(meta)` 以零 I/O 从存储域一致的内存表同步提供客户端值。它只接受身份匹配的记录及版本和 schema 均匹配的客户端 key，再按所服务行的最低水位返回尽力而为的 `{ asOfSeq, values }` 切面；host-only 行会被省略。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。列表载体把该值作为暂定 hint 交给逐 Session 的 Client projection store。对于每个携带的 key，后到的列表 block 按到达顺序替换先前的暂定 row，即使崩溃修复使其持久水位降低；首个权威 frame 无论 sequence 如何都会替换暂定 row，后续 frame 则必须具有更高 sequence。成功的 follow opening 为 store 提供一份完整 cut：它替换 opening 前的 row，只保留 opening 开始后到达且新于该 cut 的权威 frame。control generation baseline 也会精确替换该 Session 的完整值，包括等 sequence row 与缺失 key；若它在 opening 期间以等于或新于 opening cut 的 cut 到达，它保持权威。
-
-`coldSnapshot(meta, events)` 接受完整有序日志，只以该精确范围校验一次每条 seed row，从 `init(header)` 折叠所需事件，并在不访问持久化层的情况下刷新记录。`hydratePrepared(session, meta, events)` 为尚未发布的 prepared Session 执行生产精确读取校验；若缓存状态畸形或越界，只有该路径会在所提供的完整日志上从 `init(header)` 重试。持久事件流本身若已损坏，重试仍然失败，绝不会产出部分快照。
+`cachedSnapshot(meta)` 以零 I/O 从存储域的内存表同步提供客户端值。它只接受身份匹配的记录以及版本和 schema 均匹配的 key，再按所服务行的最低水位返回 `{ asOfSeq, values }` 切面。对于未知 id、无关生命周期、缺失或外来的记录文档，或没有可用行的情况，它返回 `undefined`。`coldSnapshot(meta, events)` 接受完整有序日志，在折叠时跳过已检查点化的前缀，并在自身不读取持久化层的情况下刷新记录。
 
 ### 缓存保证什么
 
-在检查点提交时，日志领先、缓存跟随：实时写入先把缓冲的 Session 事件持久化，再保存缓存行，因此该次写入不会提交到当时完整日志之外。后续崩溃修复仍可能把日志截断到现有行之前，所以纯缓存值始终只是暂定值，精确读取必须校验所提供的完整日志。读取和写入共享存储域一致的内存状态，而且只在持久化成功后才改变该状态。每条记录绑定 Session header 身份（`createdAt`、`cwd`），每一行都要经过版本与 schema 校验；无关或不可用的缓存数据会被丢弃，而不会迁移。JSON 后端把每条记录存于仅所有者可访问的 `<root>/session_projcache/sessions/<id>.json` 目录树中。
+日志领先，缓存跟随：实时检查点先把会话的缓冲事件持久化，然后才保存缓存记录。因此崩溃可能让缓存落后于日志，但绝不会让缓存领先。读取和写入共享存储域内一致的内存状态；逐单元写入链只在持久化成功后修改内存。每个带版本戳的记录必须匹配实时单元 schema 与会话 header 身份（`createdAt`、`cwd`），因此畸形、陈旧或无关的记录都会读作不存在。JSON 后端把每条记录存于仅所有者可访问的 `<root>/session_projcache/sessions/<id>.json` 目录树中。
 
 -----
 
@@ -78,11 +76,11 @@ kind: "package-reference"
 
 ### 设计理念
 
-缓存是投影注册表检查点接口上的折叠捷径，存于 `per-record` 领域数据表中。读取绝不绕过领域的一致内存；每次后台写入都 fail-soft；`ver` 不匹配时丢弃而不迁移记录；状态必须通过实时单元的 `stateSchema`；写入通过无损 JSON 边界替换一份完整 Session 记录；精确读取以调用方提供的完整日志为权威。
+缓存是投影注册表检查点接口上的折叠捷径，存于 `per-record` 领域数据表中。它带来六项后果：读取绝不绕过领域写入链；每次后台写入都 fail-soft；`ver` 不匹配时丢弃而不迁移记录；记录必须通过实时单元的 `stateSchema`；写入通过无损 JSON 边界替换一份完整会话记录；日志领先，缓存跟随。
 
 ### 读写所有权
 
-缓存在 `session_projcache` 领域中为每个 Session 保存一份带版本戳的文档。它不依赖会话持久化后端，不调用 `locate`，也不检查持久化目录。调用方负责精确读取日志，并把同一次读取得到的不可变 header 与完整事件交给缓存；缓存负责校验、重新折叠与 fail-soft 回写。
+缓存在 `session_projcache` 领域中为每个会话保存一份带版本戳的文档。它不依赖会话持久化后端，不调用 `locate`，也不检查逐会话目录。畸形或陈旧的记录读作不存在；需要冷值的消费方负责提供日志以重新折叠。
 
 ### 源码地图
 
@@ -127,8 +125,7 @@ kind: "package-reference"
 
 - **无淘汰或保留接口**——记录按会话持续累积；清理已存储检查点属于带外维护，与会话持久化采用相同策略。
 - **间隔节流采用按会话的粗粒度控制**——一次无脏数据的写入完成后，计时器在首个脏事件到达时启动；持续但低于条数阈值的事件流每间隔写入一次，而非滑动窗口。
-- **零 I/O 值是尽力而为的**——缓存行可能落后于当前事件，也可能越过崩溃修复后的截断点；Host 精确读取会用完整日志校验，Client 则把每个 list 值视为暂定值，直到首个权威 frame 或完整 follow/control baseline 按 projection store 的 precedence 规则替换它。
-- **冷日志由调用方提供**——缓存能校验并重新折叠一份完整日志，但绝不自行读取会话持久化层；需要精确冷快照的消费方负责该日志读取。
+- **缓存侧不做冷重折叠**——缓存只服务并刷新自己的记录，从不读取会话日志，因为它不依赖持久化层；需要保证冷快照的消费方自行从日志重新折叠。
 
 <a id="dev-note"></a>
 ### 开发备注

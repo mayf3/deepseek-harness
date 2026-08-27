@@ -5,10 +5,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
-import type {
-  SessionControlFrame,
-  SessionProjectionHints,
-} from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionControlFrame } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {} from '@deepseek-ai/dsh-session-title/client'
 import { SessionManager } from '../src/client/sessions/manager.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok, remoteErr, remoteOk } from './fake-api.client.ts'
@@ -24,7 +21,6 @@ type SummaryOver = Partial<{
   cwd: string
   parentSessionId: SessionId
   origin: 'subagent'
-  projections: SessionProjectionHints
 }>
 
 function summary(sessionId: SessionId, over: SummaryOver = {}) {
@@ -47,49 +43,6 @@ describe('SessionManager instances', () => {
     expect(session.getSnapshot().running).toBe(true) // list preceded instantiation
   })
 
-  it('drops absent and resident instances and drains both fulfilled and rejected disposals', async () => {
-    const manager = makeManager()
-    await expect(manager.drop(S2)).resolves.toBeUndefined()
-
-    const dropped = manager.get(S1)
-    const droppedDispose = vi.spyOn(dropped, 'dispose').mockResolvedValue(undefined)
-    await expect(manager.drop(S1)).resolves.toBeUndefined()
-    expect(droppedDispose).toHaveBeenCalledOnce()
-    expect(manager.get(S1)).not.toBe(dropped)
-
-    const fulfilled = deferred<undefined>()
-    const rejected = deferred<undefined>()
-    const first = manager.get(S1)
-    const second = manager.get(S2)
-    const firstDispose = vi.spyOn(first, 'dispose').mockReturnValue(fulfilled.promise)
-    const secondDispose = vi.spyOn(second, 'dispose').mockReturnValue(rejected.promise)
-    const disposal = manager.dispose()
-    expect(firstDispose).toHaveBeenCalledOnce()
-    expect(secondDispose).toHaveBeenCalledOnce()
-    fulfilled.resolve(undefined)
-    rejected.reject(new Error('dispose failed'))
-    await expect(disposal).resolves.toBeUndefined()
-  })
-
-  it('cancels a pending catalog debounce when the manager is disposed', async () => {
-    vi.useFakeTimers()
-    try {
-      const api = new FakeApiClient()
-      const manager = new SessionManager(fakeRemote(api))
-      await manager.refreshSubagents(S1)
-      manager.setSubagentCatalogOpen(S1, true)
-      await manager.refreshSubagents(S1)
-      const calls = api.callsOf('subagents.list').length
-
-      manager.handleSessionAdded(summary(S2, { parentSessionId: S1 }))
-      await manager.dispose()
-      await vi.advanceTimersByTimeAsync(50)
-
-      expect(api.callsOf('subagents.list')).toHaveLength(calls)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
 })
 
 describe('list lifecycle', () => {
@@ -198,41 +151,34 @@ describe('list lifecycle', () => {
     expect(manager.getListSnapshot().items.find(item => item.sessionId === S1)?.title).toBeUndefined()
   })
 
-  it('prewarms cold titles without letting later hints override an authoritative frame', async () => {
+  it('seeds cold titles from the list rows\' projections block under higher-seq-wins', async () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(fakeRemote(api))
-    // A push frame landed before the list. Its authoritative value wins even
-    // when a later cache hint claims a higher sequence.
+    // A push frame landed before the list (S2's title is newer than the block's cut).
     manager.handleControlFrame({
       type: 'projection', sessionId: S2, key: 'title', value: 'Pushed', seq: 9,
     })
     api.onList = () => Promise.resolve(ok({
       items: [
         { ...summary(S1), projections: { asOfSeq: 4, values: { title: 'Cold cached' } } },
-        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 12, values: { title: 'List stale' } } },
+        { ...summary(S2, { updatedAt: 200 }), projections: { asOfSeq: 5, values: { title: 'List stale' } } },
       ] as never[],
     }))
     await manager.refreshList()
     const items = manager.getListSnapshot().items
     // Cold row: title surfaces straight from the list block — no open, no history.
     expect(items.find(item => item.sessionId === S1)?.title).toBe('Cold cached')
+    // The stale list block (seq 5) cannot overwrite the newer push frame (seq 9).
     expect(items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
-    manager.handleSessionAdded({
-      ...summary(S2, { updatedAt: 300 }),
-      projections: { asOfSeq: 15, values: { title: 'Added stale' } },
-    })
-    expect(manager.getListSnapshot().items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
   })
 
-  it('routes resident and list projections through one store across exact control replacements', async () => {
+  it('drops a projection row beyond the subscription baseline before accepting its durable replay', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [summary(S1)] as never[] }))
     const manager = new SessionManager(fakeRemote(api))
     await manager.refreshList()
-    const session = manager.get(S1)
     const frame = (payload: SessionControlFrame) => { manager.handleControlFrame(payload) }
     frame({ type: 'projection', sessionId: S1, key: 'title', value: 'Unflushed', seq: 4 })
-    expect(session.projections.get('title')).toBe('Unflushed')
 
     // The durable baseline says the host only knows up to seq 2: the phantom
     // row rode lost state and must drop, or last-wins pins it forever.
@@ -244,112 +190,19 @@ describe('list lifecycle', () => {
       },
     })
     expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
-    expect(session.projections.get('title')).toBeUndefined()
 
     frame({ type: 'projection', sessionId: S1, key: 'title', value: 'Durable', seq: 2 })
     expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
 
-    // The next complete generation replaces even a different equal-sequence row.
+    // A baseline at or past the row's seq keeps it (nothing phantom to drop).
     frame({
       type: 'baseline',
       value: {
         queues: {}, jobs: {},
-        projections: { [S1]: { asOfSeq: 2, values: { title: 'Recovered' } } },
+        projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
       },
     })
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Recovered')
-    expect(session.projections.get('title')).toBe('Recovered')
-  })
-
-  it('uses the latest list hint when a later control generation omits the cold Session', async () => {
-    const api = new FakeApiClient()
-    api.onList = () => Promise.resolve(ok({
-      items: [summary(S1, {
-        projections: { asOfSeq: 4, values: { title: 'Repaired cache' } },
-      })] as never[],
-    }))
-    const manager = new SessionManager(fakeRemote(api))
-    manager.handleControlFrame({
-      type: 'projection', sessionId: S1, key: 'title', value: 'Stale live', seq: 9,
-    })
-
-    await manager.refreshList()
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Stale live')
-    manager.handleControlFrame({
-      type: 'baseline', value: { queues: {}, jobs: {}, projections: {} },
-    })
-
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Repaired cache')
-  })
-
-  it('accepts a repaired lower-sequence list hint after an omitted control baseline', async () => {
-    const api = new FakeApiClient()
-    api.onList = () => Promise.resolve(ok({
-      items: [summary(S1, {
-        projections: { asOfSeq: 12, values: { title: 'Older cache' } },
-      })] as never[],
-    }))
-    const manager = new SessionManager(fakeRemote(api))
-    await manager.refreshList()
-    manager.handleControlFrame({
-      type: 'projection', sessionId: S1, key: 'title', value: 'Stale live', seq: 20,
-    })
-
-    const response = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
-    api.onList = () => response.promise
-    const refresh = manager.refreshList()
-    manager.handleControlFrame({
-      type: 'baseline', value: { queues: {}, jobs: {}, projections: {} },
-    })
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Older cache')
-
-    response.resolve(ok({
-      items: [summary(S1, {
-        projections: { asOfSeq: 3, values: { title: 'Repaired lower cache' } },
-      })] as never[],
-    }))
-    await refresh
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Repaired lower cache')
-  })
-
-  it('replays a newer session-added hint over an in-flight list response', async () => {
-    const api = new FakeApiClient()
-    const response = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
-    api.onList = () => response.promise
-    const manager = new SessionManager(fakeRemote(api))
-    const refresh = manager.refreshList()
-
-    manager.handleSessionAdded(summary(S1, {
-      projections: { asOfSeq: 8, values: { title: 'Later added hint' } },
-    }))
-    response.resolve(ok({
-      items: [summary(S1, {
-        projections: { asOfSeq: 9, values: { title: 'Earlier pull hint' } },
-      })] as never[],
-    }))
-    await refresh
-
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Later added hint')
-  })
-
-  it('does not recreate a projection store for a Session removed during a list response', async () => {
-    const api = new FakeApiClient()
-    const response = deferred<Awaited<ReturnType<FakeApiClient['onList']>>>()
-    api.onList = () => response.promise
-    const manager = new SessionManager(fakeRemote(api))
-    const refresh = manager.refreshList()
-
-    manager.handleSessionRemoved(S1)
-    response.resolve(ok({
-      items: [summary(S1, {
-        projections: { asOfSeq: 9, values: { title: 'Removed pull hint' } },
-      })] as never[],
-    }))
-    await refresh
-
-    expect(manager.getListSnapshot().items).toEqual([])
-    manager.handleSessionAdded(summary(S1, { blank: true }))
-    expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
   })
 })
 
@@ -420,37 +273,6 @@ describe('Host Remote event routing', () => {
 })
 
 describe('subagent catalogs', () => {
-  it('rejects missing, diagnostic, and mode-mismatched catalog selections', async () => {
-    const api = new FakeApiClient()
-    api.onSubagentList = () => Promise.resolve(remoteOk({
-      entries: [
-        { kind: 'diagnostic', id: S1, reason: 'corrupt' },
-        {
-          kind: 'child', id: S2, mode: 'one-shot', activity: 'inactive', hasChildren: false,
-        },
-      ] as never[],
-      parentAvailable: true,
-    }))
-    const manager = new SessionManager(fakeRemote(api))
-    await manager.refreshSubagents(S1)
-
-    expect(() => {
-      manager.selectSubagent({
-        parentSessionId: S1, childSessionId: 'fk-missing' as SessionId, mode: 'continuable',
-      })
-    }).toThrow('is not a healthy catalog child')
-    expect(() => {
-      manager.selectSubagent({
-        parentSessionId: S1, childSessionId: S1, mode: 'continuable',
-      })
-    }).toThrow('is not a healthy catalog child')
-    expect(() => {
-      manager.selectSubagent({
-        parentSessionId: S1, childSessionId: S2, mode: 'continuable',
-      })
-    }).toThrow('is not a healthy catalog child')
-  })
-
   it('keeps a catalog-discovered child address across ordinary selection and status frames', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [
@@ -550,60 +372,6 @@ describe('subagent catalogs', () => {
     }
   })
 
-  it('cancels a pending membership refresh when the catalog closes', async () => {
-    vi.useFakeTimers()
-    try {
-      const api = new FakeApiClient()
-      const manager = new SessionManager(fakeRemote(api))
-      await manager.refreshSubagents(S1)
-      manager.setSubagentCatalogOpen(S1, true)
-      await manager.refreshSubagents(S1)
-      const calls = api.callsOf('subagents.list').length
-
-      manager.handleSessionAdded(summary(S2, { parentSessionId: S1 }))
-      manager.setSubagentCatalogOpen(S1, false)
-      await vi.advanceTimersByTimeAsync(50)
-
-      expect(api.callsOf('subagents.list')).toHaveLength(calls)
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  it('publishes business and transport catalog failures with and without a prior catalog', async () => {
-    const api = new FakeApiClient()
-    const manager = new SessionManager(fakeRemote(api))
-
-    api.onSubagentList = () => Promise.resolve(remoteErr({
-      code: 'internal', message: 'business failure', details: {},
-    }))
-    await manager.refreshSubagents(S1)
-    expect(manager.getListSnapshot().subagentsByParent[S1]).toMatchObject({
-      entries: [], state: 'error', error: { message: 'business failure' },
-    })
-
-    api.onSubagentList = () => Promise.reject(new Error('first transport failure'))
-    await manager.refreshSubagents(S2)
-    expect(manager.getListSnapshot().subagentsByParent[S2]).toMatchObject({
-      entries: [], state: 'error', error: { message: 'first transport failure' },
-    })
-
-    const root = 'fk-root' as SessionId
-    api.onSubagentList = () => Promise.resolve(remoteOk({
-      entries: [{ kind: 'diagnostic', id: S1, reason: 'unavailable' }] as never[],
-      parentAvailable: true,
-    }))
-    await manager.refreshSubagents(root)
-    api.onSubagentList = () => Promise.reject(new Error('later transport failure'))
-    await manager.refreshSubagents(root)
-    expect(manager.getListSnapshot().subagentsByParent[root]).toMatchObject({
-      entries: [{ kind: 'diagnostic', id: S1 }],
-      parentAvailable: true,
-      state: 'error',
-      error: { message: 'later transport failure' },
-    })
-  })
-
   it('marks a loaded parent row expandable only for a direct subagent publication', async () => {
     const api = new FakeApiClient()
     const root = 'fk-root' as SessionId
@@ -691,7 +459,6 @@ describe('subagent catalogs', () => {
           kind: 'child', id: S2, mode: 'continuable', label: 'started',
           activity: 'inactive', hasChildren: false,
         },
-        { kind: 'diagnostic', id: 'fk-diagnostic' as SessionId, reason: 'corrupt' },
       ] as never[],
       parentAvailable: true,
     }))
@@ -700,14 +467,6 @@ describe('subagent catalogs', () => {
     expect(manager.getListSnapshot().subagentsByParent[root]?.entries).toMatchObject([
       { kind: 'child', id: S1, activity: 'inactive' },
       { kind: 'child', id: S2, activity: 'running' },
-      { kind: 'diagnostic', id: 'fk-diagnostic' },
-    ])
-
-    manager.handleSessionStatus(S1, true)
-    expect(manager.getListSnapshot().subagentsByParent[root]?.entries).toMatchObject([
-      { kind: 'child', id: S1, activity: 'running' },
-      { kind: 'child', id: S2, activity: 'running' },
-      { kind: 'diagnostic', id: 'fk-diagnostic' },
     ])
   })
 
@@ -930,22 +689,6 @@ describe('remaining branches', () => {
     })])
   })
 
-  it('leaves the list unchanged for ordinary fork failures and folds transport throws', async () => {
-    const api = new FakeApiClient()
-    const manager = new SessionManager(fakeRemote(api))
-    api.onFork = () => Promise.resolve(err({ code: 'internal', message: 'fork denied', details: {} }))
-    await expect(manager.fork({ sessionId: S1, atSeq: 4 })).resolves.toMatchObject({
-      ok: false, error: { message: 'fork denied' },
-    })
-    expect(manager.getListSnapshot().items).toEqual([])
-
-    api.onFork = () => Promise.reject(new Error('fork wire down'))
-    await expect(manager.fork({ sessionId: S1 })).resolves.toMatchObject({
-      ok: false, error: { code: 'internal', message: 'fork wire down' },
-    })
-    expect(manager.getListSnapshot().items).toEqual([])
-  })
-
   it('reconciles a preallocated id after an ordinary transport failure', async () => {
     const api = new FakeApiClient()
     api.onCreate = () => Promise.reject(new Error('response lost'))
@@ -984,30 +727,6 @@ describe('remaining branches', () => {
     manager.handleSessionError(S2, '无实例')
   })
 
-  it('ignores duplicate running and stale activity frames', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1, { running: true, updatedAt: 500 }))
-    const before = manager.getListSnapshot().items[0]
-
-    manager.handleSessionStatus(S1, true)
-    manager.handleSessionActivity(S1, 499)
-
-    expect(manager.getListSnapshot().items[0]).toBe(before)
-  })
-
-  it('keeps unrelated blank rows unchanged when a first prompt engages one session', async () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1, { blank: true }))
-    manager.handleSessionAdded(summary(S2, { blank: true }))
-
-    await expect(manager.get(S1).prompt([{ type: 'text', text: 'hello' }], 'queue'))
-      .resolves.toMatchObject({ ok: true })
-
-    const items = manager.getListSnapshot().items
-    expect(items.find(item => item.sessionId === S1)?.blank).toBe(false)
-    expect(items.find(item => item.sessionId === S2)?.blank).toBe(true)
-  })
-
   it('keeps list-entry identity for unchanged rows across an unrelated list change', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [summary(S1), summary(S2, { updatedAt: 200 })] as never[] }))
@@ -1025,17 +744,16 @@ describe('remaining branches', () => {
     expect(manager.getListSnapshot().items).toBe(after.items)
   })
 
-  it('enriches an existing summary with cwd, parentSessionId, and origin', () => {
+  it('carries parentSessionId from the added event into the lineage row', () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(fakeRemote(api))
     manager.handleSessionAdded(summary(S1, { blank: true }))
-    manager.handleSessionAdded(summary(S2, { blank: true }))
     manager.handleSessionAdded(summary(S2, {
-      blank: true, cwd: '/work/child', parentSessionId: S1, origin: 'subagent',
+      blank: true, parentSessionId: S1, origin: 'subagent',
     }))
     const items = manager.getListSnapshot().items
     expect(items.find(e => e.sessionId === S2)).toMatchObject({
-      cwd: '/work/child', parentSessionId: S1, origin: 'subagent', depth: 1,
+      parentSessionId: S1, origin: 'subagent', depth: 1,
     })
   })
 })
@@ -1086,21 +804,6 @@ describe('connected generation', () => {
       parentAvailable: true,
     })
     expect(manager.getListSnapshot().currentAddress).toEqual(address)
-  })
-
-  it('refreshes an open catalog across reconnect even when it is not selected', async () => {
-    const api = new FakeApiClient()
-    const manager = new SessionManager(fakeRemote(api))
-    manager.setSubagentCatalogOpen(S1, true)
-    await manager.refreshSubagents(S1)
-    const catalogCalls = api.callsOf('subagents.list').length
-
-    manager.handleConnected()
-
-    await vi.waitFor(() => {
-      expect(api.callsOf('session.list')).toHaveLength(1)
-      expect(api.callsOf('subagents.list')).toHaveLength(catalogCalls + 1)
-    })
   })
 })
 
@@ -1267,22 +970,6 @@ describe('background-job mirror', () => {
       value: { queues: {}, jobs: {}, projections: {} },
     })
     expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('keeps only non-empty job sets from a complete control baseline', () => {
-    const manager = makeManager()
-    manager.handleControlFrame({
-      type: 'baseline',
-      value: {
-        queues: {}, projections: {},
-        jobs: { [S1]: [], [S2]: [view({ id: 'pwsh-1', label: 'kept' })] as never[] },
-      },
-    })
-
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-    expect(manager.getListSnapshot().jobsBySession[S2]).toEqual([
-      view({ id: 'pwsh-1', label: 'kept' }),
-    ])
   })
 
   it('drops the rows when the session is removed, whichever stream lands first', () => {

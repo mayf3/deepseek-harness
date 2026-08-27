@@ -57,6 +57,36 @@ function created(record: ScheduleRecord, seq: number): SessionEvent {
 }
 
 describe('Schedule Session projection', () => {
+  it('matches an empty replay, preserves creation order, and applies every terminal transition', () => {
+    let projected: ScheduleProjectionState = scheduleProjectionDefinition.init(RESTORE_HEADER)
+    expect(projected).toEqual({ seedLength: 0, active: [], seenIds: [] })
+    expect(scheduleProjectionDefinition.wire.view(projected)).toEqual(foldScheduleEvents([]).active)
+
+    const events: SessionEvent[] = [
+      created(afterRecord('after'), 0),
+      created(atRecord('at'), 1),
+      created(everyRecord('every'), 2),
+      change({ version: 1, operation: 'delete', id: 'at' }, 3),
+      change({ version: 1, operation: 'dispatch', id: 'after' }, 4),
+      change({
+        version: 1,
+        operation: 'dispatch',
+        id: 'every',
+        acceptedAt: '2026-08-25T14:02:00.000Z',
+      }, 5),
+    ]
+    for (const event of events.slice(0, 3)) {
+      projected = scheduleProjectionDefinition.apply(projected, event)
+    }
+    expect(projected.active.map(record => record.id)).toEqual(['after', 'at', 'every'])
+    for (const event of events.slice(3)) {
+      projected = scheduleProjectionDefinition.apply(projected, event)
+    }
+
+    expect(projected).toEqual({ seedLength: 0, ...foldScheduleEvents(events) })
+    expect(projected.active).toEqual([{ ...everyRecord('every'), scheduledAt: '2026-08-25T14:05:00.000Z' }])
+  })
+
   it('shares strict transitions with full replay and excludes the inherited fork prefix', () => {
     const events: SessionEvent[] = [
       created(afterRecord('parent'), 0),
@@ -68,15 +98,18 @@ describe('Schedule Session projection', () => {
         id: 'child-every',
         acceptedAt: '2026-08-25T14:02:00.000Z',
       }, 3),
-      { type: 'turn/start', seq: 4, time: 4, data: { turn: 1 } },
     ]
     let projected: ScheduleProjectionState = scheduleProjectionDefinition.init({
       ...RESTORE_HEADER,
       seedLength: 1,
     })
     for (const event of events) projected = scheduleProjectionDefinition.apply(projected, event)
+    const beforeUnrelated = projected
+    const unrelated = { type: 'turn/start', seq: 4, time: 4, data: { turn: 1 } } as SessionEvent
+    projected = scheduleProjectionDefinition.apply(projected, unrelated)
 
-    expect(projected).toEqual({ seedLength: 1, ...foldScheduleEvents(events, 1) })
+    expect(projected).toBe(beforeUnrelated)
+    expect(projected).toEqual({ seedLength: 1, ...foldScheduleEvents([...events, unrelated], 1) })
     expect(scheduleProjectionDefinition.wire.view(projected)).toEqual(projected.active)
     expect(projected.active.map(record => record.id)).toEqual(['child-at', 'child-every'])
   })

@@ -18,9 +18,9 @@ Status: proposed
 
 先立四件基础设施，之后各领域都退化为纯贡献方。
 
-### 确定性折叠与完整协议值
+### 全量值事件规则
 
-投影单元必须同步且确定性地校验并折叠其领域拥有的 Session 事件。这些持久事件可以携带完整值，也可以携带增量式领域转换；框架不规定其中任何一种编码。单元存在客户端视图时，`wire.view` 必须发布完整当前值，绝不能发布增量。host 因而仍是唯一计算地点，客户端可以把每个投影帧视为其 seq 对应的最终结果：seq 较高者胜，后续帧也会修复漏帧。
+携带状态的日志事件必须携带变更后的完整状态，绝不携带裸增量。三个领域现状已然合规：`todo/write` 是整表快照，`plan/mode` 是一个完整布尔值，`goal/change` 元数据是完整的 `GoalSnapshot`（或一个全量值清除墓碑）。该规则让每个领域的状态转移始终足够廉价（框架逐事件驱动它），让值在协议层自描述，并让任何消费方都可以把最近推送的值当作最终值——靠 seq 比较获得乱序免疫，且自愈：漏掉的更新会被下一次更新纠正。
 
 ### host 侧投影注册表（`dsh-session-projection`，新包）
 
@@ -36,8 +36,8 @@ export interface ProjectionDefinition<K extends keyof SessionProjectionStateMap,
   key: K
   stateSchema: ZodType<S>
   persist?: boolean // host-only units opt in; client-visible units always persist
-  /** State before any event is folded, derived from immutable Session metadata. */
-  init(header: SessionHeader): S
+  /** State for the empty log. */
+  init(): S
   /** Pure transition: previous state + one event → next state. The framework drives it; domains hold no subscriptions. */
   apply(state: S, event: SessionEvent): S
   /** Client view; omitted for host-only units. */
@@ -56,15 +56,14 @@ declare module 'cordis' {
 
 - `SessionProjectionStateMap` 描述 host 折叠状态；`SessionProjectionMap` 继续作为协议块和 React 钩子经 `import type` 共享的唯一客户端 DTO 表。单元省略 `wire` 即保持 host-only。客户端值如何*渲染*是 slot 体系的事，永远不归投影层管。状态/视图拆分见[已实现的状态与客户端视图记录](../../implemented/architecture/2026-08-19-session-projection-state-and-client-views.zh.md)。
 - **host 是投影唯一的计算地点。** 框架主动驱动（eager drive）每个已注册的单元：每个已提交的会话事件都经过 `apply`；对某事件不感兴趣的单元返回同一个状态引用，而引用未变（`Object.is`）就不产生任何下游工作。客户端从不折叠领域事件——它们收到的是成品值（基线块 + 下文的推送帧）。这消除了双重实现陷阱（plan 的双事件折叠只在 host 写一遍），也消除了一切客户端侧领域代码。
-- **初始化输入不可变，并与事件来源一致。** `ProjectionDefinition.init(header)` 接收与已观察事件配套的不可变 `SessionHeader`。live cell 使用 `session.header`，cache、history 与 detached restore 则使用提供对应事件的同一次持久读取所得 header。注册表集中校验规范化的 `header.seedLength ?? 0` 不得超过已观察日志长度；每个单元只解释自己拥有的创建事实。
-- **状态永远靠计算得出，绝不入日志。** 日志只存事件；单元的状态住在框架的按会话水位线缓存里（每单元一份 `{state, observedSeq}`），并在后续阶段进入 domain-KV 存储 seam 上的**持久投影缓存（persisted projection cache）**：形如 `(sessionId, key, ver, seq, val)` 的行（`ver` = 单元的 `stateVersion`，`seq` = 水位线，`val` = 状态 JSON）。有效行可能陈旧，其 `seq` 精确说明陈旧到哪；畸形或不匹配的行会被丢弃并从权威日志重建。冷读与活读共用同一套读取配方：取可用的缓存状态（或 `init(header)`），只对超出其水位线的事件做正向 `apply`，再对结果做 `view`。冷列表（跨全部 workspace 列出每个会话的标题）变成一次索引读，至多外加一小段尾部回放；session-persistence seam 在同一后续阶段为这段尾部补一个按 seq 起读的原语。写入策略：节流（次数/间隔，可配置）外加两个强制点——`turn/end` 与 detach（由活转冷的时刻）。两次写入之间崩溃的代价是尾部回放更长一些，绝不会是值出错。
+- **状态永远靠计算得出，绝不入日志。** 日志只存事件；单元的状态住在框架的按会话水位线缓存里（每单元一份 `{state, observedSeq}`），并在后续阶段进入 domain-KV 存储 seam 上的**持久投影缓存（persisted projection cache）**：形如 `(sessionId, key, ver, seq, val)` 的行（`ver` = 单元的 `stateVersion`，`seq` = 水位线，`val` = 状态 JSON）。一行永远不会是错的，至多是陈旧的——其 `seq` 精确说明陈旧到哪。冷读与活读共用同一套读取配方：取缓存状态（或 `init()`），只对超出其水位线的事件做正向 `apply`，再对结果做 `view`。冷列表（跨全部 workspace 列出每个会话的标题）变成一次索引读，至多外加一小段尾部回放；session-persistence seam 在同一后续阶段为这段尾部补一个按 seq 起读的原语。写入策略：节流（次数/间隔，可配置）外加两个强制点——`turn/end` 与 detach（由活转冷的时刻）。两次写入之间崩溃的代价是尾部回放更长一些，绝不会是值出错。
 - 领域的输入事件集由领域自己选择：todos 只折叠 `todo/write`；plan 折叠 `plan/mode` 外加它自己的 `/plan` `command/run` 记录（见 plan 一节）；goal 折叠 `goal/change` 元数据；会话标题折叠其标题事件（顺带下线专设的 `session/title` 帧与客户端的标题快照表——这是该 seam 收编的第四个手工投影）。
 - 注册是 effect（disposer 随 fiber 走）：插件卸载后其 key 从后续响应中消失，客户端将其读作能力缺失——HMR（热模块替换）语义随之自动成立。key 重复直接 throw。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 - 该包拥有 `./invariant`（每个被服务的 key 都有一条存活的注册）。
 
 ### 已交付的消费方：subagent 身份单元
 
-注册表的两处既有读法已经服务于本 RFC 协议计划之外的一个已交付消费方：[subagent 列表经投影单元读取身份](../../implemented/architecture/2026-08-06-subagent-list-identity-projection.zh.md)注册了 `subagent` 单元——从 `subagent/descriptor` 按 last-wins 折叠出的持久化 mode/label 身份——`SubagentRuntime.listChildren` 对 live child 经 `snapshot()` 读取（水位缓存，零日志读），对 cold child 则用一次持久化整读的结果调用 `restore({}, events, 0, header)` 读取。注册表约定不变：没有失败通道、没有新读法——单元永不抛错，值缺席本身就是信号，缺席如何呈现是该消费方自己的决定。
+注册表的两处既有读法已经服务于本 RFC 协议计划之外的一个已交付消费方：[subagent 列表经投影单元读取身份](../../implemented/architecture/2026-08-06-subagent-list-identity-projection.zh.md)注册了 `subagent` 单元——从 `subagent/descriptor` 按 last-wins 折叠出的持久化 mode/label 身份——`SubagentRuntime.listChildren` 对 live child 经 `snapshot()` 读取（水位缓存，零日志读），对 cold child 则用一次持久化整读的结果调用 `restore({}, events, 0)` 读取。注册表约定不变：没有失败通道、没有新读法——单元永不抛错，值缺席本身就是信号，缺席如何呈现是该消费方自己的决定。
 
 ### 协议层：历史尾页上的 projections 块
 
@@ -91,7 +90,7 @@ api-proxy 的历史处理器切出尾页后同步遍历注册表——全程没�
 
 只要某单元的状态引用发生变化（上文的 `Object.is` 闸门），框架就发出该帧；`seq` 是发出时该单元的水位线。这是实时推送状态，绝不入日志——与 tool-view 的 `view` slot 同一姿态：回放时在 host 重新计算。
 
-客户端对象层为每个会话维护一个**通用值仓（value store）**。部分 list hint、精确 opening baseline 与完整值 frame 统一遵循[已实现的客户端合并规则](../../implemented/architecture/2026-08-25-session-observations-and-projection-owned-client-state.zh.md)；暂存或陈旧输入不能覆盖权威完整切面。领域仍以**零客户端代码**交付投影支持：没有 `fromEvent`、按领域的 cell 注册或客户端侧领域折叠，`SessionProjectionMap` merge 经 `/types` 出口共享值。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。
+客户端对象层为每个会话维护一个**通用值仓（value store）**：`key → { value, seq }`，由尾页的 projections 块播种、由该帧更新，唯一规则是 **seq 高者胜**。重放的基线无法把更新的帧往回滚；丢失一个帧的代价只是陈旧——到下一个帧或基线为止——绝不会出错。没有 `fromEvent`，没有按领域的 cell 注册，没有客户端侧领域折叠——领域交付投影支持只需**零客户端代码**（`SessionProjectionMap` merge 经 `/types` 出口同时服务两侧）。专设的 `session/title` 帧与 manager 的标题快照表都收编进这对通用机制。所有按领域自造的栅栏（#587 的三层、#527 的写 revision）都消融进这一条 seq 规则。
 
 ### plan 走标准命令通道（完整示例）
 
@@ -149,7 +148,7 @@ host 侧命令执行器（`packages/interaction/commands`）在调用处理器�
 
 **专设一个 `session.projections` RPC**——不予采纳：基线刷新时刻与尾页拉取精确重合，单独的一元 RPC 只会换来第二次往返、第二个待调和的 seq，以及一个客户端「何时重取」决策——而搭载设计把这个决策整个删掉了。
 
-**不透明的 `get(agent)` 提供方约定**——否决：计算模型藏在领域内部时，框架永远无法为状态做检查点、无法服务冷会话（没有 agent、没有已加载的日志——`get` 无处可跑）、也无法从日志中段续算。注册 `(init(header), apply, view)` 单元把驱动权交给框架，领域只留纯数学；有 host 侧行为需求的领域，其服务订阅照旧自持，与投影单元互不牵连。
+**不透明的 `get(agent)` 提供方约定**——否决：计算模型藏在领域内部时，框架永远无法为状态做检查点、无法服务冷会话（没有 agent、没有已加载的日志——`get` 无处可跑）、也无法从日志中段续算。注册 `(init, apply, view)` 单元把驱动权交给框架，领域只留纯数学；有 host 侧行为需求的领域，其服务订阅照旧自持，与投影单元互不牵连。
 
 **为 plan 待定意图专设的仅实时叠加钩子（`live?(agent, base)`）**——不予采纳：它存在的唯一理由是用户的 plan *选择*不在日志里。让选择走标准命令通道后，`command/run` 上了账，待定态成为纯回放量，投影继续由纯折叠与可选客户端视图构成。
 
@@ -157,9 +156,9 @@ host 侧命令执行器（`packages/interaction/commands`）在调用处理器�
 
 **客户端侧折叠（带 `fromEvent` 的按领域投影 cell）**——否决：一旦 plan 的单元要折叠两种事件，客户端 cell 就必须在浏览器里复刻 host 的状态转移逻辑——同一个折叠写两遍、各自演化。推送成品值（标题帧先例的泛化）保住唯一计算地点，并把客户端简化为一个由 seq 把守的通用值仓；领域零客户端代码。
 
-**对日志尾部的有界反向扫描（absorber 声明）。**不予采纳：现有实现均不支持它，而且有界后缀通常无法重建仍受更早转换影响的确定性折叠。持久投影缓存能统一覆盖完整值领域与增量领域的冷读需求（缓存行加正向尾部回放——与客户端的基线和追赶、与分页加载是同一套配方）。只有当出现检查点机制服务不了的真实冷读路径时才重议。
+**对日志尾部的有界反向扫描（absorber 声明）。**不予采纳：现有实现均不支持它，它只服务于「每个事件都携带完整折叠状态」的领域，而持久投影缓存以统一方式覆盖同一冷读需求（缓存行加正向尾部回放——与客户端的基线和追赶、与分页加载是同一套配方）。只有当出现检查点机制服务不了的真实冷读路径时才重议。
 
-**`invalidate` 式 cell（标脏，遇领域事件就重取）**——不予采纳：host 折叠已经把完整值事件或增量事件转换为完整投影帧。重取会重复 seq 协调，并重新引入客户端侧的基线决策；goal 的重取循环、合并逻辑、陈旧读栅栏随之全部消失。
+**`invalidate` 式 cell（标脏，遇领域事件就重取）**——不予采纳：它的存在只为伺候增量事件。全量值规则让每个领域都是 last-wins；goal 的重取循环、合并逻辑、陈旧读栅栏随之全部消失。
 
 **把注册表挂到 `ctx.apiProxy` 名下**——不予采纳：会话投影并非 web 专属（TUI、ACP（Agent Client Protocol）、headless 都是未来消费方），且领域包不得依赖 apiproxy 包。独立 seam 还顺带删掉了 #587 从 api-proxy 指向 plan 包的 type-only 导入边。
 
@@ -171,23 +170,23 @@ host 侧命令执行器（`packages/interaction/commands`）在调用处理器�
 
 **保留 `setPlanMode` 专用 RPC**——不予采纳：plan 选择就是一条普通的用户命令；命令通道给它持久记录、flow 渲染、多标签页可见性与准入语义，不需要专设协议方法。Web UI 的交互组件（一个开关）在内部拼出命令行即可。
 
-**让变更 RPC 的响应喂 cell 状态**——不予采纳：由已提交事件导出的投影帧会立即到达，并携带带 seq 的完整当前值；「响应喂状态」正是当初逼出 #527 写 revision 栅栏的根源。
+**让变更 RPC 的响应喂 cell 状态**——不予采纳：已提交的 mux 事件即刻到达，携带同一个全量值外加 seq；「响应喂状态」正是当初逼出 #527 写 revision 栅栏的根源。
 
 ## 验收标准
 
-- 领域插件把按会话的日志派生状态送达 React，只需写：自己的持久事件声明、一个具有 `init(header)`、`apply` 和完整 `wire.view` 的确定性 host 单元、自己那份 `SessionProjectionMap` merge，以及 inject 回调——零客户端侧折叠代码，不改客户端 `Session` 类、`ConversationSnapshot`、api-proxy 或任何协议 schema 文件。live 与 detached 折叠接收提供对应事件的同一个不可变 header，规范化 seed 边界由注册表集中校验。
+- 领域插件把按会话的日志派生状态送达 React，只需写：全量值事件声明、一次 host 侧单元 `register`、自己那份 `SessionProjectionMap` merge、以及 inject 回调——零客户端侧代码，不改客户端 `Session` 类、`ConversationSnapshot`、api-proxy 或任何协议 schema 文件。
 - 历史尾页携带 `projections`，其 `asOfSeq` 等于窗口尾部 seq；loadOlder 页永不携带；未装注册表的部署照常返回不带该块的历史，客户端把所有 key 视为缺席。
-- 客户端合并把 list hint 视为暂存输入，把成功的 opening baseline 视为权威完整切面，并按[已实现的客户端合并规则](../../implemented/architecture/2026-08-25-session-observations-and-projection-owned-client-state.zh.md)处理 live frame 的完整 key 更新。陈旧输入不能让驻留状态倒退。
+- 陈旧的基线不能覆盖更新的 `session/projection` 帧，重放的帧也不能让值仓倒退（两条路径都做 seq 高者胜测试）。
 - 在一个标签页执行的斜杠命令，刷新后、在第二个标签页上、恢复之后都在 flow 中渲染出持久节点；未注册的命令渲染通用卡片；命令结果的 composer 通知路径彻底移除。
 - `useProjection` 经标准 props 套件抵达组件；没有任何钩子穿过 inject 约定（包括 `useSelection`）。
 - 会话标题搭乘这对通用机制（基线块 + 投影帧）；专设的 `session/title` 帧与客户端标题快照表彻底移除。
 
 ## 风险
 
-- **确定性折叠与完整协议值是承重结构**：读取环境可变状态的单元无法得到一致重建，而客户端增量会迫使浏览器重新承担领域折叠。缓解：集中校验规范化的 seed 边界、通过唯一一次 `init(header)` 调用传入不可变的 `SessionHeader`、纯单元约定、schema 与完整 `wire.view` 输出把重建留在 host，并让客户端值仓保持通用。
+- **全量值规则是承重结构**：未来某个领域若只记裸增量，就无法凭其最新事件服务消费方，还会让自己的单元复杂化。缓解：该规则写明在本 Note 与投影包的 README 里；单元约定让完整状态在每次转移处都是显式的。
 - **单元的同步纪律**：`init`/`apply`/`view` 一旦 await 就会撕裂一致性切面。注册表在文档中申明这条纪律，invariant 配套在可行范围内断言同步性；其余由评审把关。
 - **注册表的实时增删不做推送**：会话中途加载或卸载领域插件会改变键集，但不会触发任何会话事件、也不会推任何帧；开着的客户端持有陈旧的 key 直到下次尾页拉取（重连、缺口修补、打开）。接受为仅开发期（HMR）的陈旧时窗——日后可以在变更流上加一个注册表变更推送，约定不受影响。
-- **忙碌会话上的主动驱动开销**：每个已提交事件都要过每个已注册单元的 `apply`。不匹配的事件返回同一引用，且已注册领域的数量很小；若某项增量转换形成热点路径，可以加按单元的事件类型预过滤，约定不变。
+- **忙碌会话上的主动驱动开销**：每个已提交事件都要过每个已注册单元的 `apply`。按构造，单元的逐事件开销很低（全量值规则），不匹配的事件返回同一引用，且已注册领域的数量很小；若真出现热点路径，可以加按单元的事件类型预过滤，约定不变。
 - **投影载荷膨胀**：每个尾页携带每个已注册的 key。载荷是 UI 量级状态的全量值（一张 todo 清单、一份 goal 快照）；将来若某领域的值很大，可以在请求上加逐 key 的 opt-out 或惰性 key，模型本身不用改。
 - **命令日志体量**：每条斜杠命令两个仅日志事件；上限由人敲命令的频率决定，相对分片体量可忽略不计。
 - **重新对接的返工**：三个未合入的 PR 要变基到挪动后的地基上。这是基础设施先行的既定代价。

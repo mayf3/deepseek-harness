@@ -63,7 +63,7 @@ interface ProjectionDefinition<
 }
 ```
 
-承重规则是确定性同步 fold 与完整 wire 值。领域可以拥有全量值事件，也可以拥有增量 transition，但它会在 Host 上校验并折叠这些事件；客户端既不回放这些事件，也不会收到 delta。`init(header)` 接收与已观察事件配套的不可变 `SessionHeader`，注册表会拒绝超过该日志长度的规范化 `header.seedLength ?? 0`。definition 可以解释相关的不可变字段，但不能读取环境中的可变状态。
+全量值事件规则是承重结构：携带状态的日志事件携带的是变更后的完整状态，绝不是裸增量——这让每次状态转移始终足够廉价，也让每个被供给的值自描述（对消费方即 last-wins）。
 
 ## 快照与变更流
 
@@ -99,7 +99,7 @@ type ProjectionChangeListener = (
 
 ## 注册表：`ctx.sessionProjections`
 
-`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：对于在事件流过之后才注册的单元，或比注册表更早的会话，注册表会先校验规范化的 seed 边界，再通过唯一一次 `init(header)` 调用把不可变的 `SessionHeader` 传给单元，随后在首次触达（事件或读取）时折叠内存日志。detached cache、history 与 Subagent restore 路径把与持久事件同一次读取返回的不可变 header 传给同一个初始化器。注册是一个 effect，其 disposer 随调用方 fiber 走：同一 key 以不同 `stateVersion` 重复注册时抛错，同版本注册方则共享一个单元并计数；最后一个注册方卸载后，该 key 与其 cell 才会消失。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
+`SessionProjectionRegistry`（[签名](#ctxsessionprojections--sessionprojectionregistry)）拥有驱动权：一份 `session/event` 订阅、对每个已注册单元即时调用 `apply`，以及每会话每单元的水位线（watermark）cell。cell 惰性构建：在事件流过之后才注册的单元，或比注册表更早的会话，都在首次触达（事件或读取）时从 `init` 出发在内存日志上折叠。注册是一个 effect，其 disposer 随调用方 fiber 走：领域插件卸载后，其 key（连同缓存的 cell）从后续驱动与快照中消失，客户端将其读作能力缺失；key 以不同 `stateVersion` 重复时直接 throw，同版本注册方则共享一个单元并被计数。领域插件在 `ctx.inject(['sessionProjections'], …)` 下注册，因此不带注册表的 headless 组装完全不受影响。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -118,11 +118,12 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
 ```ts cordis-catalog
 /**
  * The zero-I/O listing read: whole values viewed straight from the stored
- * rows (version-matching keys only), with the lowest served watermark carried
- * for later authoritative reconciliation. The caller's header keeps unrelated
- * lifecycles out; repeated list blocks are arrival-ordered tentative hints
- * because crash repair may lower the durable sequence; authoritative frames
- * replace matching rows, and complete baselines replace the full set.
+ * rows (version-matching keys only), each cut carried with its watermark so
+ * a client value store can seed under its higher-seq-wins rule — as stale
+ * as the last durable checkpoint but never wrong, and never from an
+ * unrelated log (the caller's header is the identity witness). Fresher
+ * paths (the history tail baseline) supersede these values whenever a
+ * session is actually opened.
  * @param meta - the listed session's header (identity witness; no log read).
  * @param keys - optional projection keys required by the caller's audience.
  * @returns the cut (`asOfSeq` = lowest served-row watermark), or
@@ -273,11 +274,10 @@ restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined
 /**
  * View a checkpoint's rows without any log read: for every registered
  * client-visible unit whose row's `ver` matches, serve the schema-validated
- * `view` of the schema-validated stored state; mismatched, malformed, or
- * absent rows leave their key absent. The current log extent is unknown, so
- * returned values are tentative hints: a row may trail the log or overreach
- * a crash-repaired truncation. Exact restore validates the cut before using
- * a row as authoritative state.
+ * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
+ * absent (a cold or listing consumer treats it as not-yet-available and a
+ * fuller read path refolds it). The zero-I/O rung of the read ladder —
+ * values are as stale as their rows, never wrong.
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param keys - optional wire keys to view.
  * @returns whole values per key with a usable row; empty when none.

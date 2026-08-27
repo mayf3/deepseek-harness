@@ -6,7 +6,7 @@ English | [中文](2026-08-19-session-projection-state-and-client-views.zh.md)
 
 ## Problem
 
-The projection registry persisted each unit's internal fold state without a runtime schema, while `SessionProjectionMap` described the client value returned by `view`. This left restored state unvalidated and made the same type table appear to describe two values that may differ. Host consumers also needed the current folded state without serializing every registered client view or exposing internal-only state through the client protocol. Fork-sensitive units additionally needed the existing immutable Session header to be validated consistently against each observed log.
+The projection registry persisted each unit's internal fold state without a runtime schema, while `SessionProjectionMap` described the client value returned by `view`. This left restored state unvalidated and made the same type table appear to describe two values that may differ. Host consumers also needed the current folded state without serializing every registered client view or exposing internal-only state through the client protocol.
 
 ## Decision
 
@@ -14,11 +14,9 @@ The projection registry persisted each unit's internal fold state without a runt
 
 A unit whose key also appears in `SessionProjectionMap` supplies `wire.viewSchema` and `wire.view`. Every unit's state is checkpointed — client-visible and host-only alike; the `persist` opt-in is gone, so no unit can silently skip the durable cache. Snapshot APIs return only `SessionProjectionMap`, so internal states cannot enter API payloads. Host code reads one current state through `stateOf(session, key)`; the returned reference is borrowed and must not be mutated.
 
-`ProjectionDefinition.init(header)` retains the existing immutable-header contract. Before every live, cache, history, and detached initialization, the registry normalizes `header.seedLength ?? 0` and rejects a boundary beyond the observed log. Each definition interprets only the immutable creation facts it owns, such as Schedule's fork boundary or the initial `agentPreset`, without consulting ambient mutable state or adding a second initialization protocol.
-
 ## Consequences
 
-Projection state and client values are independently typed and validated without introducing a second client DTO vocabulary. A unit may expose a compact or compatibility-preserving client value while retaining richer host state. Malformed cached state cannot seed `viewCheckpoint`; exact prepared-session reads can discard it and rebuild from the log. Host consumers can replace private log scans with the same incremental fold used by carriers. Fork-sensitive and creation-value units derive their state directly from the same immutable header that accompanies the observed events.
+Projection state and client values are independently typed and validated without introducing a second client DTO vocabulary. A unit may expose a compact or compatibility-preserving client value while retaining richer host state. Malformed cached state cannot seed `viewCheckpoint`; restore rejects malformed state and the cache's existing full-read fallback rebuilds it from the log. Host consumers can replace private log scans with the same incremental fold used by carriers.
 
 The original [session-projection proposal](../../proposed/architecture/2026-07-27-session-projection-and-command-log.md) now records this split. The earlier [subagent identity projection](2026-08-06-subagent-list-identity-projection.md) and [projected token usage](2026-07-29-projected-token-usage-and-request-context.md) decisions remain current; their domain folds move to the state table without changing their user-facing values.
 

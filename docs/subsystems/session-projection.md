@@ -63,7 +63,7 @@ interface ProjectionDefinition<
 }
 ```
 
-The load-bearing rule is a deterministic synchronous fold with a complete wire value. A domain may own whole-value events or incremental transitions, but it validates and folds them on the Host; clients never replay those events or receive a delta. `init(header)` receives the immutable `SessionHeader` that accompanies the observed events, and the registry rejects a normalized `header.seedLength ?? 0` beyond that log. Definitions may interpret relevant immutable fields but never consult ambient mutable state.
+The whole-value event rule is load-bearing: a state-carrying log event carries the complete post-change state, never a bare delta — it keeps every transition trivially cheap and every served value self-describing (last-wins for consumers).
 
 ## The snapshot and the change feed
 
@@ -99,7 +99,7 @@ type ProjectionChangeListener = (
 
 ## The registry: `ctx.sessionProjections`
 
-`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — for a unit registered after events flowed, or a session older than the registry, the registry validates the normalized seed boundary and then passes the immutable `SessionHeader` to the unit's sole `init(header)` call before the in-memory log folds on first touch (event or read). Detached cache, history, and Subagent restore paths pass the immutable header returned with the same persisted event read to that same initializer. Registration is an effect whose disposer rides the calling fiber: a duplicate key with a different `stateVersion` throws, while same-version registrants share one unit and are counted; the key and its cells disappear after the last registrant unloads. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
+`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence; a duplicate key with a different `stateVersion` throws, while same-version registrants share one unit and are counted. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -118,11 +118,12 @@ The persisted projection cache service. Opens the `session_projcache` domain at 
 ```ts cordis-catalog
 /**
  * The zero-I/O listing read: whole values viewed straight from the stored
- * rows (version-matching keys only), with the lowest served watermark carried
- * for later authoritative reconciliation. The caller's header keeps unrelated
- * lifecycles out; repeated list blocks are arrival-ordered tentative hints
- * because crash repair may lower the durable sequence; authoritative frames
- * replace matching rows, and complete baselines replace the full set.
+ * rows (version-matching keys only), each cut carried with its watermark so
+ * a client value store can seed under its higher-seq-wins rule — as stale
+ * as the last durable checkpoint but never wrong, and never from an
+ * unrelated log (the caller's header is the identity witness). Fresher
+ * paths (the history tail baseline) supersede these values whenever a
+ * session is actually opened.
  * @param meta - the listed session's header (identity witness; no log read).
  * @param keys - optional projection keys required by the caller's audience.
  * @returns the cut (`asOfSeq` = lowest served-row watermark), or
@@ -273,11 +274,10 @@ restoreFloor(checkpoint: ProjectionCheckpoint): number | undefined
 /**
  * View a checkpoint's rows without any log read: for every registered
  * client-visible unit whose row's `ver` matches, serve the schema-validated
- * `view` of the schema-validated stored state; mismatched, malformed, or
- * absent rows leave their key absent. The current log extent is unknown, so
- * returned values are tentative hints: a row may trail the log or overreach
- * a crash-repaired truncation. Exact restore validates the cut before using
- * a row as authoritative state.
+ * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
+ * absent (a cold or listing consumer treats it as not-yet-available and a
+ * fuller read path refolds it). The zero-I/O rung of the read ladder —
+ * values are as stale as their rows, never wrong.
  * @param checkpoint - persisted rows for one session (possibly stale or empty).
  * @param keys - optional wire keys to view.
  * @returns whole values per key with a usable row; empty when none.

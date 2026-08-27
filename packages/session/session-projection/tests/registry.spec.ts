@@ -19,7 +19,6 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     'test/marks': MarksState
     'test/count': number
-    'test/seed': number
   }
 
   interface SessionProjectionMap {
@@ -62,15 +61,6 @@ const countUnit = (): ProjectionDefinition<'test/count', number> => ({
   stateVersion: 1,
 })
 
-/** Host-only sentinel proving which Session seed boundary initialized a cell. */
-const seedUnit = (): ProjectionDefinition<'test/seed', number> => ({
-  key: 'test/seed',
-  stateSchema: z.number().int().nonnegative(),
-  init: header => header.seedLength ?? 0,
-  apply: state => state,
-  stateVersion: 1,
-})
-
 async function harness(): Promise<{ ctx: Context; session: Session }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -108,54 +98,6 @@ describe('SessionProjectionRegistry drive', () => {
     const snapshot = ctx.sessionProjections.snapshot(session)
     expect(snapshot.asOfSeq).toBe(-1)
     expect(snapshot.values['test/marks']).toEqual({ marks: [] })
-  })
-
-  it('passes normalized seedLength to lazy, event-driven, and restore initialization', async () => {
-    const { ctx } = await harness()
-    const parentMark: SessionEvent = {
-      type: 'test/mark', seq: 0, time: 0, data: { marks: ['parent'] },
-    }
-
-    const lazy = ctx.sessions.create(undefined, {
-      seed: [parentMark],
-      meta: { seedLength: 1 },
-    })
-    ctx.sessionProjections.register(seedUnit())
-    expect(ctx.sessionProjections.stateOf(lazy, 'test/seed')).toBe(1)
-
-    const driven = ctx.sessions.create(undefined, {
-      seed: [parentMark],
-      meta: { seedLength: 1 },
-    })
-    mark(driven, ['child'])
-    expect(ctx.sessionProjections.stateOf(driven, 'test/seed')).toBe(1)
-
-    const restored = ctx.sessionProjections.restore(
-      {},
-      [parentMark],
-      0,
-      { ...RESTORE_HEADER, seedLength: 1 },
-    )
-    expect(restored.checkpoint['test/seed']).toEqual({ ver: 1, seq: 0, val: 1 })
-  })
-
-  it('rejects a Session seed boundary beyond the observed log', async () => {
-    const { ctx } = await harness()
-    ctx.sessionProjections.register(seedUnit())
-
-    expect(() => ctx.sessionProjections.restore(
-      {},
-      [],
-      0,
-      { ...RESTORE_HEADER, seedLength: 1 },
-    )).toThrow(/seedLength 1 exceeds observed log length 0/)
-    expect(() => ctx.sessions.create(undefined, {
-      meta: { seedLength: 1 },
-    })).toThrow(/seedLength 1 exceeds observed log length 0/)
-    expect(() => ctx.sessions.create(undefined, {
-      seed: [{ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }],
-      meta: { seedLength: 3 },
-    })).toThrow(/seedLength 3 exceeds observed log length 2/)
   })
 
   it('notifies onChanged with the validated view and the causing seq, and skips same-reference applies', async () => {

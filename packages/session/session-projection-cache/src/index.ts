@@ -1,14 +1,17 @@
 /**
  * Persisted projection cache (`ctx.sessionProjectionCache`): durable
  * checkpoints of every projection unit's state, one record per session on
- * the `session_projcache` domain (`per-record` layout — the shipped JSON
+ * the `session_projcache` domain (`per-record` layout — the shipped json
  * backend stores one document per session under its root). Reads and writes
- * share the domain's coherent in-memory state, and each write changes memory
- * only after durability. The cache is a fold shortcut, never an authority:
- * a row may lag the log or overreach a crash-repaired truncation, so exact
- * reads validate it against the supplied full log. Every write path is
- * fail-soft, and a `ver` mismatch discards the row instead of migrating it.
- * Design authority: the session-projection RFC
+ * share ONE coherent state: the domain's in-memory tables serve every read
+ * synchronously, and each write lands on the domain's write chain (durability
+ * first, then memory), so a read can never observe a disk write the memory
+ * has not applied, or a memory value the disk does not hold. The cache is a
+ * fold shortcut, never an authority: a row
+ * is possibly stale (its `seq` says how stale) but never wrong, so every
+ * write path is fail-soft (a lost write costs a longer tail replay on the
+ * next cold read) and a `ver` mismatch discards the row instead of migrating
+ * it. Design authority: the session-projection RFC
  * (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
  * @module @deepseek-ai/dsh-session-projection-cache
  */
@@ -111,11 +114,12 @@ export class SessionProjectionCache extends Service {
 
   /**
    * The zero-I/O listing read: whole values viewed straight from the stored
-   * rows (version-matching keys only), with the lowest served watermark carried
-   * for later authoritative reconciliation. The caller's header keeps unrelated
-   * lifecycles out; repeated list blocks are arrival-ordered tentative hints
-   * because crash repair may lower the durable sequence; authoritative frames
-   * replace matching rows, and complete baselines replace the full set.
+   * rows (version-matching keys only), each cut carried with its watermark so
+   * a client value store can seed under its higher-seq-wins rule — as stale
+   * as the last durable checkpoint but never wrong, and never from an
+   * unrelated log (the caller's header is the identity witness). Fresher
+   * paths (the history tail baseline) supersede these values whenever a
+   * session is actually opened.
    * @param meta - the listed session's header (identity witness; no log read).
    * @param keys - optional projection keys required by the caller's audience.
    * @returns the cut (`asOfSeq` = lowest served-row watermark), or
@@ -130,10 +134,9 @@ export class SessionProjectionCache extends Service {
     const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, keys)
     const servedKeys = Object.keys(values)
     if (servedKeys.length === 0) return undefined
-    // The block carries ONE cut: the lowest served watermark is the sequence
-    // through which every value is known current. The Client orders tentative
-    // list blocks by arrival so a crash-repaired lower watermark can replace an
-    // older hint; authoritative frames and baselines own later reconciliation.
+    // The block carries ONE cut: the lowest served watermark is the seq every
+    // value is at least current as of (under-claiming is safe under
+    // higher-seq-wins; over-claiming would let a stale value outrank pushes).
     const asOfSeq = Math.min(...servedKeys.map(key => (record.rows[key] as { seq: number }).seq))
     return { asOfSeq, values }
   }
@@ -178,10 +181,13 @@ export class SessionProjectionCache extends Service {
   async write(session: Session): Promise<void> {
     const rows = this.ctx.sessionProjections.checkpoint(session)
     this.markClean(session)
-    // Durability barrier: while the stored log is intact, flushing after the
-    // checkpoint prevents the row from advancing beyond it. Later crash repair
-    // can still truncate the log, so exact cold reads validate every row
-    // against the complete surviving events before serving it.
+    // Durability barrier: the checkpoint cut was taken above, so flushing
+    // AFTER it guarantees every event inside the cut is durably logged
+    // before the cache row lands — a crash can leave the cache behind the
+    // log (longer tail replay) but never ahead of it (phantom values folded
+    // from events no stored log contains). At detach the store entry is
+    // already gone; persistence's own retirement drain covers that path and
+    // any residual overreach is caught by the cold read's anchored floor.
     if (this.ctx.sessions.get(session.id) === session) await this.ctx.sessions.flush(session)
     await this.put(session.id, identityOf(session.header), rows)
   }
@@ -199,8 +205,7 @@ export class SessionProjectionCache extends Service {
    * @returns the projection cut at the log end.
    */
   coldSnapshot(meta: SessionHeader, events: readonly SessionEvent[]): ProjectionSnapshot {
-    const rows = this.recordFor(meta.id, identityOf(meta))?.rows ?? {}
-    const restored = this.ctx.sessionProjections.restore(rows, events, 0, meta)
+    const restored = this.ctx.sessionProjections.restore(this.recordFor(meta.id, identityOf(meta))?.rows ?? {}, events, 0, meta)
     // Refresh the row so the next cold read seeds from it; fail-soft and
     // fire-and-forget — a failed write-back only costs a longer tail replay.
     void this.put(meta.id, identityOf(meta), restored.checkpoint).catch((error: unknown) => {

@@ -18,12 +18,9 @@ import { defineDomain, domainTable } from '@deepseek-ai/dsh-storage-domain'
  * One persisted checkpoint row (the RFC's `(sessionId, key, ver, seq, val)`
  * minus the two record keys). `val` is the unit's internal state — plain
  * JSON by the unit contract; `z.json()` enforces that at the durable
- * boundary. Without reading the current log extent, `seq` identifies only the
- * row's original fold cut. A zero-I/O consumer treats the row as a tentative
- * hint because it may trail the log or overreach a crash-repaired truncation;
- * exact restore validates the cut before using it as authoritative state. A
- * `ver` mismatch against the live unit's `stateVersion` discards the row at
- * read time (never a migration).
+ * boundary. A row is never wrong, only possibly stale: `seq` says exactly
+ * how stale, and a `ver` mismatch against the live unit's `stateVersion`
+ * discards it at read time (never a migration).
  */
 export const checkpointRow = z.object({
   ver: z.number().int().nonnegative(),
@@ -64,10 +61,10 @@ export type CheckpointRecord = z.infer<typeof checkpointRecord>
 
 /**
  * The session-projcache domain spec. The `per-record` layout scopes version
- * bumps per session: a stale document is discarded when that session opens,
- * while the rest of the domain stays usable. Zero-I/O callers treat matching
- * rows as tentative hints; exact reads validate the current log extent and
- * refold from the supplied full log when necessary.
+ * bumps per session: after a bump, a stale session document is discarded on
+ * open (cache semantics — a stale or unreadable cache costs a longer tail
+ * replay, never a wrong value) while the rest of the domain stays usable,
+ * instead of rejecting the whole medium.
  */
 export const projectionCacheDomainSpec = defineDomain({
   name: 'session_projcache',

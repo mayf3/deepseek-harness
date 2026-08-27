@@ -10,9 +10,9 @@
  * (capability-seam three-way split). Design authority: the session-projection
  * RFC (.agents/notes/proposed/architecture/2026-07-27-session-projection-and-command-log.md).
  *
- * Fold rule (load-bearing): a unit synchronously and deterministically
- * validates and folds the Session events its domain owns. The client-facing
- * wire value, when present, is always the complete current value.
+ * Whole-value event rule (load-bearing): a state-carrying log event MUST
+ * carry the complete post-change state, never a bare delta — it keeps every
+ * unit's transition trivially cheap and every served value self-describing.
  *
  * @module @deepseek-ai/dsh-session-projection
  */
@@ -30,16 +30,6 @@ declare module '@deepseek-ai/cordis' {
 import type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts'
 
 export type { SessionProjectionMap, SessionProjectionStateMap } from './types.ts'
-
-/** Validate the normalized fork boundary for one observed Session log. */
-function validateSeedLength(header: SessionHeader, observedLength: number): void {
-  const seedLength = header.seedLength ?? 0
-  if (seedLength > observedLength) {
-    throw new Error(
-      `session projection header seedLength ${String(seedLength)} exceeds observed log length ${String(observedLength)}`,
-    )
-  }
-}
 
 /**
  * One domain's state-driven computation unit: a pure synchronous fold plus
@@ -199,7 +189,6 @@ export class SessionProjectionRegistry extends Service {
   constructor(ctx: Context) {
     super(ctx, 'sessionProjections')
     ctx.on('session/created', (session: Session) => {
-      validateSeedLength(session.header, session.seq)
       if (session.seq !== 0) return
       for (const registration of this.registrations.values()) {
         if (registration.cells.has(session)) continue
@@ -429,11 +418,10 @@ export class SessionProjectionRegistry extends Service {
   /**
    * View a checkpoint's rows without any log read: for every registered
    * client-visible unit whose row's `ver` matches, serve the schema-validated
-   * `view` of the schema-validated stored state; mismatched, malformed, or
-   * absent rows leave their key absent. The current log extent is unknown, so
-   * returned values are tentative hints: a row may trail the log or overreach
-   * a crash-repaired truncation. Exact restore validates the cut before using
-   * a row as authoritative state.
+   * `view` of the schema-validated stored state; mismatched, malformed, or absent rows leave their key
+   * absent (a cold or listing consumer treats it as not-yet-available and a
+   * fuller read path refolds it). The zero-I/O rung of the read ladder —
+   * values are as stale as their rows, never wrong.
    * @param checkpoint - persisted rows for one session (possibly stale or empty).
    * @param keys - optional wire keys to view.
    * @returns whole values per key with a usable row; empty when none.
@@ -492,7 +480,6 @@ export class SessionProjectionRegistry extends Service {
   ):
   { snapshot: ProjectionSnapshot; checkpoint: ProjectionCheckpoint } {
     const endSeq = events.at(-1)?.seq ?? baseSeq - 1
-    validateSeedLength(header, endSeq + 1)
     const values: Record<string, unknown> = {}
     const refreshed: ProjectionCheckpoint = {}
     for (const registration of this.registrations.values()) {
@@ -587,7 +574,6 @@ export class SessionProjectionRegistry extends Service {
     header: SessionHeader,
     events: readonly SessionEvent[],
   ): UnitCell {
-    validateSeedLength(header, events.length)
     let state = def.init(header)
     for (const event of events) state = def.apply(state, event)
     return { state, observedSeq: (events.at(-1)?.seq ?? -1) }

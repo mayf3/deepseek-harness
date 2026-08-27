@@ -18,7 +18,7 @@ Exact Session reads use a retained `SessionObservation`, and replayable Session-
 
 ### Data flow
 
-The two ownership rules meet at the observation's projection snapshot. Lightweight listing may stop at cached hints; every exact opening reaches the same observation path and gives the Client a complete baseline at that observation's cursor.
+The two ownership rules meet at the observation's projection snapshot. Lightweight listing may stop at cached hints; every exact opening reaches the same observation path and gives the Client a complete replacement baseline.
 
 ```mermaid
 flowchart LR
@@ -94,7 +94,7 @@ A Client-visible fact belongs to `SessionProjectionMap` when its value is determ
 
 The three projection delivery states have different meanings:
 
-- A Session-list hint is optional, partial, and unvalidated against the current log extent. It may be stale or claim a cut removed by crash repair. A missing key means unknown, so a list consumer must not invent an empty value or deployment default.
+- A Session-list hint is optional, partial, and possibly stale. A missing key means unknown, so a list consumer must not invent an empty value or deployment default.
 - A follow opening baseline is the complete set of client-visible projection capabilities registered at its cursor. A missing key there means the capability is absent for that Host composition.
 - An explicit `null` is a domain-computed no-value result. It is distinct from a missing list hint and survives JSON transport.
 
@@ -108,13 +108,13 @@ These distinctions prevent one overloaded `undefined` from representing cache mi
 | Follow opening baseline | Complete for the Host composition | Exact opening cursor | Capability absent |
 | Projection frame | One whole key | Event sequence carried by the frame | Not applicable |
 
-The Client projection store records source provenance and arrival revision beside each `{ value, seq }` row. The latest arriving list hint replaces a tentative row even when crash repair lowered its watermark. A complete authoritative cut blocks later hints. The first authoritative frame replaces a tentative row regardless of sequence, while later frames require a strictly higher sequence. Follow baselines replace the complete store; control baselines exactly replace included Sessions and remove omitted keys.
+The Client stores one row per key with its sequence number. A newer hint, baseline, or frame replaces a row; an equal or older input is ignored. Reconnect can therefore replace the event window without rolling back a projection frame that was already accepted at a later sequence.
 
-Each Session retains one opaque token for initial open, explicit resync, or carrier reconnection and cancels it if that opening fails or is superseded. When a follow baseline completes the token, the store discards pre-token state and retains only authoritative frames that arrived after the token and are newer than the opening cut. A control baseline received after the token at an equal or newer cut remains authoritative. Session does not capture, buffer, or replay projection operations.
+The list view reads the same per-Session store as the opened Session. Hints can populate title, preset, and other list presentation before follow completes; the opening baseline then converges that state without creating a second summary-only authority.
 
-The list view and opened Session read the same per-Session store. Hints can populate title, preset, and other list presentation before the first complete authoritative cut. When a later control generation omits that Session, `SessionManager` invalidates the prior authoritative rows and reinstalls the latest retained list block as tentative. A list pull folds later add and remove mutations over its pull-time hints so a delayed response cannot reverse arrival order. The store never folds Session events: it owns hint/frame provenance, frame ordering, exact baseline replacement, and opening reconciliation; `Session` owns only token lifetime, and `SessionManager` routes list hints, control frames, and control baselines to that resident store.
+The per-Session Client projection store accepts list hints, the follow baseline, and later whole-value frames under one higher-sequence-wins rule. It never folds Session events. A baseline or frame may advance a hinted value, while an older cut cannot overwrite a newer row.
 
-Data that is not derived from one Session remains outside projections. `llm.models` owns the Host-generation model catalog, and `agentPreset.list` owns the configurable preset roster. A selector combines the relevant catalog with the Session's `modelSelection` or `agentPreset` projection only when both inputs are ready. During refresh it may retain the last complete catalog; before the first complete pair it reports loading instead of rendering a guessed name or availability verdict.
+Data that is not derived from one Session remains outside projections. `session/modelCatalog` owns the Host-generation model catalog, and `agentPresets/list` owns the configurable preset roster. A selector combines the relevant catalog with the Session's `modelSelection` or `agentPreset` projection only when both inputs are ready. During refresh it may retain the last complete catalog; before the first complete pair it reports loading instead of rendering a guessed name or availability verdict.
 
 Client-local interaction state also remains local: loading and error status, an open menu, an in-flight selection, and a staged choice for a not-yet-created Session are not replayable Session facts. Once a choice applies to a Session, its durable event and projection become authoritative.
 
@@ -146,8 +146,8 @@ Cancellation stops queued or in-flight cold resolution at documented checkpoints
 | Exact live-preferred read cut | SessionQuery observation | Individual endpoint helpers |
 | Fold state and client-value computation | Projection registry and domain unit | SessionQuery and Client |
 | Partial list acceleration | Projection cache and list policy | Follow protocol |
-| Opening and reconnect token lifetime | Client Session | Session page and domain UI components |
-| Hint, frame, and complete-baseline precedence | Client projection store | Client Session and domain UI components |
+| Opening and reconnect replacement | Session follow and journal stream | Session page |
+| Per-key value ordering | Client projection store | Domain UI components |
 | Provider or preset catalog lifecycle | Its catalog directory | Session projection |
 | Rendering and transient interaction state | Domain UI package | Host projection units |
 
@@ -174,7 +174,7 @@ These rules apply to new Session-derived Client state even when a direct event s
 
 Persistence and SessionQuery tests pin shared cold loading, cancellation, live-source races, retained observations, disposal, and all-or-none projection calculation. Session Controller and Gateway tests pin snapshot-first opening, replacement reconnect, older-page reads, gap repair, list-cache hints, bounded small-log fallback, and promotion after snapshot delivery.
 
-Client tests pin arrival-ordered tentative hints, first-authoritative-frame takeover, exact opening and equal-cut control replacement, cold-Session omission across both list/control arrival orders, in-flight list-mutation replay, post-token frame retention, stale or canceled opening tokens, manager/Session shared-store routing, title updates, model catalog and selection readiness, preset roster refresh and Session-specific selection, and subagent loading without transient offline presentation. Subagent tests pin corpus enumeration, cache and observation fallback, lifecycle witnesses, bounded cold reads, and no Agent activation during listing.
+Client tests pin higher-sequence-wins projection storage, title updates, model catalog and selection readiness, preset roster refresh and Session-specific selection, and subagent loading without transient offline presentation. Subagent tests pin corpus enumeration, cache and observation fallback, lifecycle witnesses, bounded cold reads, and no Agent activation during listing.
 
 ## Alternatives considered
 

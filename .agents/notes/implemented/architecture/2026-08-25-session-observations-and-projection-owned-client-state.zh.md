@@ -18,7 +18,7 @@ Session 精确读取使用可保留的 `SessionObservation`，向 Client 暴露�
 
 ### 数据动线
 
-两条 ownership 规则在 observation 的 projection snapshot 处汇合。轻量 list 可以止于 cache hints；每次精确 opening 都进入同一 observation 路径，并向 Client 提供该 observation cursor 上的完整 baseline。
+两条 ownership 规则在 observation 的 projection snapshot 处汇合。轻量 list 可以止于 cache hints；每次精确 opening 都进入同一 observation 路径，并向 Client 提供完整 replacement baseline。
 
 ```mermaid
 flowchart LR
@@ -94,7 +94,7 @@ Registry 拥有 fold state；各领域拥有自己的 `init`、`apply`、`view`�
 
 Projection 的三种交付状态含义不同：
 
-- Session-list hint 是可选、部分且未经当前日志范围校验的数据。它可能陈旧，也可能声称一个已被崩溃修复移除的 cut。key 缺失表示未知，因此 list 消费方不得自行补成空值或部署默认值。
+- Session-list hint 是可选、部分且可能陈旧的数据。key 缺失表示未知，因此 list 消费方不得自行补成空值或部署默认值。
 - Follow opening baseline 是其 cursor 上所有已注册 Client 可见 projection capability 的完整集合。此处缺少 key 表示当前 Host composition 不具备该 capability。
 - 显式 `null` 是领域计算出的无值结果。它不同于 list hint 缺失，并且能够完整通过 JSON transport。
 
@@ -108,13 +108,13 @@ Projection 的三种交付状态含义不同：
 | Follow opening baseline | 对当前 Host composition 完整 | 精确 opening cursor | Capability 不存在 |
 | Projection frame | 单个完整 key | Frame 携带的 event sequence | 不适用 |
 
-Client projection store 在每条 `{ value, seq }` row 旁记录来源类别与到达 revision。最新到达的 list hint 会替换暂定 row，即使崩溃修复降低了其 watermark；完整权威 cut 会阻止之后的 hint。首个权威 frame 无论 sequence 如何都会替换暂定 row，后续 frame 则必须具有严格更高的 sequence。follow baseline 会替换整个 store；control baseline 会精确替换已包含的 Session，并移除其中缺失的 key。
+Client 为每个 key 保存带 sequence number 的一行。更新的 hint、baseline 或 frame 会替换 row；相同或更旧的输入被忽略。因此 reconnect 可以替换 event window，而不会回退已经在更晚 sequence 接受的 projection frame。
 
-每个 Session 为初次打开、显式 resync 或 carrier 重连保留一个不透明 token，并在该 opening 失败或被取代时取消它。当 follow baseline 完成该 token 时，store 丢弃 token 之前的状态，只保留 token 之后到达且 seq 新于 opening cut 的权威 frame。若 control baseline 在 token 之后到达且 cut 等于或新于 opening cut，它保持权威。Session 不捕获、缓冲或重放 projection operation。
+List view 与已打开 Session 读取同一个 per-Session store。Hints 可以在 follow 完成前填充 title、preset 和其他 list presentation；opening baseline 随后收敛这份状态，而不会建立第二套 summary-only authority。
 
-List view 与已打开 Session 读取同一个 per-Session store。首次完整权威 cut 之前，hint 可以填充 title、preset 和其他 list presentation。若后续 control generation 缺失该 Session，`SessionManager` 会使上一代权威 row 失效，并把最近保留的 list block 重新安装为暂定值。list pull 会把稍后到达的 add 与 remove mutation 折叠到请求时的 hint 上，因此延迟响应无法逆转到达顺序。store 从不折叠 Session event：它拥有 hint/frame 来源、frame 排序、完整 baseline 的精确替换和 opening reconciliation；`Session` 只拥有 token 生命周期，`SessionManager` 则把 list hint、control frame 与 control baseline 路由到这份 resident store。
+每个 Session 的 Client projection store 按一条 higher-sequence-wins 规则接收 list hints、follow baseline 和后续 whole-value frame。它从不折叠 Session event。Baseline 或 frame 可以推进 hinted value，较旧切面不能覆盖较新的 row。
 
-不由单个 Session 派生的数据不进入 projection。`llm.models` 拥有当前 Host generation 的 model catalog，`agentPreset.list` 拥有可配置 preset roster。Selector 只在相应 catalog 与 Session 的 `modelSelection` 或 `agentPreset` projection 均就绪后组合两者。刷新时可以保留上一份完整 catalog；第一次获得完整输入前显示 loading，而不是展示猜测的名称或可用性结论。
+不由单个 Session 派生的数据不进入 projection。`session/modelCatalog` 持有当前 Host generation 的 model catalog，`agentPresets/list` 持有可配置 preset roster。Selector 只在相应 catalog 与 Session 的 `modelSelection` 或 `agentPreset` projection 均就绪后组合两者。刷新时可以保留上一份完整 catalog；第一次获得完整输入前显示 loading，而不是展示猜测的名称或可用性结论。
 
 Client 本地交互状态也继续留在本地：loading 和 error 状态、打开的菜单、进行中的选择，以及为尚未创建 Session 暂存的选择都不是可回放 Session 事实。选择一旦应用到 Session，其持久事件与 projection 就成为权威。
 
@@ -146,8 +146,8 @@ Client 本地交互状态也继续留在本地：loading 和 error 状态、打�
 | 精确 live-preferred read cut | SessionQuery observation | 各 endpoint helper |
 | Fold state 与 Client-value 计算 | Projection registry 与 domain unit | SessionQuery 与 Client |
 | 部分 list acceleration | Projection cache 与 list policy | Follow protocol |
-| Opening 与 reconnect token 生命周期 | Client Session | Session page 与 domain UI component |
-| Hint、frame 与完整 baseline 的 precedence | Client projection store | Client Session 与 domain UI component |
+| Opening 与 reconnect replacement | Session follow 与 journal stream | Session page |
+| Per-key value ordering | Client projection store | Domain UI component |
 | Provider 或 preset catalog lifecycle | 对应 catalog directory | Session projection |
 | Rendering 与瞬时 interaction state | Domain UI package | Host projection unit |
 
@@ -174,7 +174,7 @@ Client 本地交互状态也继续留在本地：loading 和 error 状态、打�
 
 Persistence 与 SessionQuery 测试固定共享冷加载、取消、live-source race、retained observation、dispose 和 all-or-none projection 计算。Session Controller 与 Gateway 测试固定 snapshot-first opening、replacement reconnect、旧分页读取、gap repair、list-cache hints、小日志有界 fallback，以及 snapshot 交付后的 promotion。
 
-Client 测试固定按到达顺序处理暂定 hint、首个权威 frame 接管、opening 与等 cut control 精确替换、list/control 两种到达顺序下的 cold Session 缺失、进行中 list mutation 重放、token 后 frame 保留、陈旧或已取消的 opening token、manager/Session 共用 store、title 更新、model catalog 与 selection readiness、preset roster refresh 与 Session 专属选择，以及不会短暂展示离线状态的 subagent loading。Subagent 测试固定 corpus 枚举、cache 与 observation fallback、lifecycle witness、有界冷读，以及 listing 期间不激活 Agent。
+Client 测试固定 higher-sequence-wins projection store、title 更新、model catalog 与 selection readiness、preset roster refresh 与 Session 专属选择，以及不会短暂展示离线状态的 subagent loading。Subagent 测试固定 corpus 枚举、cache 与 observation fallback、lifecycle witness、有界冷读，以及 listing 期间不激活 Agent。
 
 ## 考虑过的替代方案
 

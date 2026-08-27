@@ -1,15 +1,22 @@
 /**
- * Projection value-store precedence plus the minimal Session opening lifecycle
- * that creates and settles store-owned reconciliation tokens.
+ * Projection value store (push model; session-projection subsystem page:
+ * docs/subsystems/session-projection.md): the single
+ * higher-seq-wins rule on both paths (a stale baseline cannot overwrite a
+ * newer push frame; a replayed frame cannot regress), capability absence as
+ * undefined, generation truncation, and the Session/manager wiring (tail-page
+ * seeding, control-stream projection routing pre- and post-instantiation, the
+ * list rows' title projection).
  */
-import { describe, expect, it, vi } from 'vitest'
-import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
+import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { ProjectionValueStore } from '../src/client/sessions/projection-store.ts'
 import { Session } from '../src/client/sessions/session.ts'
-import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
+import { SessionManager } from '../src/client/sessions/manager.ts'
+import { FakeApiClient, fakeRemote, ok } from './fake-api.client.ts'
 import { entries, plainTurn } from './event-script.client.ts'
 
+// Test-domain keys merged into the projection map (the Service Definition package's
+// pure-type outlet), the same way domain host plugins merge theirs.
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionMap {
     'test/marks': { marks: string[] }
@@ -19,187 +26,69 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 const SID = 'fk-s1' as SessionId
 
 describe('Session projection value semantics', () => {
-  it('reads undefined until a value lands and keeps stable observable faces', () => {
+  it('reads undefined until a value lands (capability absence)', () => {
     const store = new ProjectionValueStore()
     expect(store.get('test/marks')).toBeUndefined()
     expect(store.faceOf('test/marks').getSnapshot()).toBeUndefined()
-    expect(store.faceOf('test/marks')).toBe(store.faceOf('test/marks'))
   })
 
-  it('orders tentative hints by arrival, then lets authoritative frames win by sequence', () => {
+  it('applies frames last-wins by seq: replayed and stale frames drop', () => {
     const store = new ProjectionValueStore()
-    store.prewarm({
-      asOfSeq: 9,
-      values: { 'test/marks': { marks: ['hint-9'] }, 'hint-only': 'hint' },
-    })
-    store.prewarm({
-      asOfSeq: 8,
-      values: { 'test/marks': { marks: ['older-hint'] } },
-    })
-    expect(store.get('test/marks')).toEqual({ marks: ['older-hint'] })
-
-    store.apply('test/marks', { marks: ['frame-3'] }, 3)
-    store.prewarm({
-      asOfSeq: 12,
-      values: { 'test/marks': { marks: ['late-hint'] }, 'other-hint': 'other' },
-    })
-    store.apply('test/marks', { marks: ['equal-frame'] }, 3)
-    store.apply('test/marks', { marks: ['newer-frame'] }, 4)
-
-    expect(store.values()).toEqual({
-      'test/marks': { marks: ['newer-frame'] },
-      'hint-only': 'hint',
-      'other-hint': 'other',
-    })
+    store.apply('test/marks', { marks: ['a'] }, 5)
+    store.apply('test/marks', { marks: ['a', 'b'] }, 9)
+    expect(store.get('test/marks')).toEqual({ marks: ['a', 'b'] })
+    store.apply('test/marks', { marks: ['stale'] }, 5)
+    store.apply('test/marks', { marks: ['equal'] }, 9)
+    expect(store.get('test/marks')).toEqual({ marks: ['a', 'b'] })
   })
 
-  it('resets a Session omitted from a control generation to its retained list hint', () => {
+  it('a stale baseline can neither overwrite nor clear a newer frame; a fresh one reseeds and clears', () => {
     const store = new ProjectionValueStore()
-    store.replaceControlBaseline({
-      asOfSeq: 9,
-      values: { 'test/marks': { marks: ['old-control'] }, 'control-only': true },
-    })
-
-    store.replaceControlOmission({
-      asOfSeq: 4,
-      values: { 'test/marks': { marks: ['repaired-cache'] } },
-    })
-    expect(store.values()).toEqual({ 'test/marks': { marks: ['repaired-cache'] } })
-
-    store.apply('test/marks', { marks: ['authoritative'] }, 3)
-    store.prewarm({ asOfSeq: 99, values: { 'test/marks': { marks: ['late-cache'] } } })
-    expect(store.get('test/marks')).toEqual({ marks: ['authoritative'] })
-
-    store.replaceControlOmission()
-    expect(store.values()).toEqual({})
+    store.apply('test/marks', { marks: ['frame-20'] }, 20)
+    // Stale cut: carried key loses to the newer frame; omitted key survives.
+    store.seed({ asOfSeq: 10, values: { 'test/marks': { marks: ['baseline-10'] } } })
+    expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
+    store.seed({ asOfSeq: 15, values: {} })
+    expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
+    // Fresh cut: carried key reseeds…
+    store.seed({ asOfSeq: 30, values: { 'test/marks': { marks: ['baseline-30'] } } })
+    expect(store.get('test/marks')).toEqual({ marks: ['baseline-30'] })
+    // …and an omitting fresh cut clears (capability absent as of the cut).
+    store.seed({ asOfSeq: 40, values: {} })
+    expect(store.get('test/marks')).toBeUndefined()
   })
 
-  it('opening replaces pre-opening state and retains only newer post-token frames', () => {
+  it('truncate drops rows past the durable baseline and keeps the rest', () => {
     const store = new ProjectionValueStore()
-    store.prewarm({ asOfSeq: 20, values: { 'test/marks': { marks: ['hint'] } } })
-    store.apply('pre-opening', 'old-frame', 30)
-    const opening = store.beginOpening()
-    store.apply('test/marks', { marks: ['post-token'] }, 3)
-    store.apply('discarded', 'at-cut', 10)
-    store.apply('retained', 'new-frame', 11)
-
-    store.completeOpening(opening, {
-      asOfSeq: 10,
-      values: {
-        'test/marks': { marks: ['opening'] },
-        'opening-only': 'present',
-      },
-    })
-
-    expect(store.values()).toEqual({
-      'test/marks': { marks: ['opening'] },
-      'opening-only': 'present',
-      retained: 'new-frame',
-    })
+    store.apply('test/marks', { marks: ['durable'] }, 5)
+    store.apply('other', 'phantom', 50)
+    store.truncate(10)
+    expect(store.get('test/marks')).toEqual({ marks: ['durable'] })
+    expect(store.get('other')).toBeUndefined()
   })
 
-  it('a control baseline exactly replaces equal-sequence and omitted rows', () => {
-    const store = new ProjectionValueStore()
-    store.apply('title', 'transient', 1)
-    store.apply('omitted', 'transient', 1)
-
-    store.replaceControlBaseline({ asOfSeq: 1, values: { title: null } })
-
-    expect(store.values()).toEqual({ title: null })
-    store.apply('title', 'equal-frame', 1)
-    expect(store.get('title')).toBeNull()
-    store.apply('title', 'durable-frame', 2)
-    expect(store.get('title')).toBe('durable-frame')
-  })
-
-  it('an equal or newer control baseline received during opening wins', () => {
-    const store = new ProjectionValueStore()
-    const opening = store.beginOpening()
-    store.replaceControlBaseline({
-      asOfSeq: 5,
-      values: { 'test/marks': { marks: ['control'] }, 'control-only': 'present' },
-    })
-    store.apply('test/marks', { marks: ['after-control'] }, 6)
-
-    store.completeOpening(opening, {
-      asOfSeq: 5,
-      values: { 'test/marks': { marks: ['opening'] }, 'opening-only': 'discarded' },
-    })
-
-    expect(store.values()).toEqual({
-      'test/marks': { marks: ['after-control'] },
-      'control-only': 'present',
-    })
-  })
-
-  it('a newer opening replaces an older control baseline but keeps later frames', () => {
-    const store = new ProjectionValueStore()
-    const opening = store.beginOpening()
-    store.replaceControlBaseline({
-      asOfSeq: 5,
-      values: { 'test/marks': { marks: ['control'] }, 'control-only': 'discarded' },
-    })
-    store.apply('stale-frame', 'discarded', 6)
-    store.apply('retained-frame', 'present', 11)
-
-    store.completeOpening(opening, {
-      asOfSeq: 10,
-      values: { 'test/marks': { marks: ['opening'] }, 'opening-only': 'present' },
-    })
-
-    expect(store.values()).toEqual({
-      'test/marks': { marks: ['opening'] },
-      'opening-only': 'present',
-      'retained-frame': 'present',
-    })
-  })
-
-  it('ignores hints after a complete baseline and rejects stale opening tokens', () => {
-    const store = new ProjectionValueStore()
-    const stale = store.beginOpening()
-    const current = store.beginOpening()
-    store.completeOpening(stale, { asOfSeq: 1, values: { stale: true } })
-    expect(store.values()).toEqual({})
-    store.cancelOpening(stale)
-    store.completeOpening(current, { asOfSeq: 1, values: { exact: true } })
-    store.prewarm({ asOfSeq: 99, values: { exact: false, late: true } })
-    expect(store.values()).toEqual({ exact: true })
-  })
-
-  it('a canceled opening makes its frames pre-opening for the next exact cut', () => {
-    const store = new ProjectionValueStore()
-    const failed = store.beginOpening()
-    store.apply('test/marks', { marks: ['failed-frame'] }, 3)
-    store.cancelOpening(failed)
-    const retry = store.beginOpening()
-    store.completeOpening(retry, {
-      asOfSeq: 2,
-      values: { 'test/marks': { marks: ['retry'] } },
-    })
-    expect(store.get('test/marks')).toEqual({ marks: ['retry'] })
-  })
-
-  it('notifies accepted changes but not dropped authoritative frames', async () => {
+  it('notifies the key face on change (batched) and not on dropped applications', async () => {
     const store = new ProjectionValueStore()
     let keyTicks = 0
     let anyTicks = 0
     store.faceOf('test/marks').subscribe(() => { keyTicks += 1 })
     store.subscribeAny(() => { anyTicks += 1 })
-    const value = { marks: ['a'] }
-    store.apply('test/marks', value, 1)
+    store.apply('test/marks', { marks: ['a'] }, 5)
     await Promise.resolve()
     expect(keyTicks).toBe(1)
     expect(anyTicks).toBe(1)
-    store.apply('test/marks', { marks: ['replay'] }, 0)
-    store.replaceControlBaseline({ asOfSeq: 5, values: { 'test/marks': value } })
-    store.apply('test/marks', { marks: ['stale-after-baseline'] }, 4)
+    store.apply('test/marks', { marks: ['replay'] }, 3)
     await Promise.resolve()
     expect(keyTicks).toBe(1)
     expect(anyTicks).toBe(1)
-    expect(store.get('test/marks')).toBe(value)
   })
 
-  it('publishes one stable whole-value snapshot until an observable row changes', () => {
+  it('faces are identity-stable per key (the React binding cache premise)', () => {
+    const store = new ProjectionValueStore()
+    expect(store.faceOf('test/marks')).toBe(store.faceOf('test/marks'))
+  })
+
+  it('publishes one reference-stable whole-value snapshot until a row changes', () => {
     const store = new ProjectionValueStore()
     const empty = store.values()
     expect(store.values()).toBe(empty)
@@ -211,68 +100,123 @@ describe('Session projection value semantics', () => {
   })
 })
 
-describe('Session opening integration', () => {
-  it('retains a tentative hint when opening fails, then replaces it on retry', async () => {
+describe('Session tail-page seeding', () => {
+  it('seeds the store from a history response carrying a projections block', async () => {
     const api = new FakeApiClient()
-    const projections = new ProjectionValueStore()
-    projections.prewarm({ asOfSeq: 5, values: { 'test/marks': { marks: ['cached'] } } })
-    const session = new Session(SID, fakeRemote(api), { projections })
-    api.onHistory = () => Promise.resolve(err({
-      code: 'session-not-found',
-      message: 'gone',
-      details: { sessionId: SID },
-    }))
-
-    await session.open()
-    expect(session.getSnapshot().openState).toBe('error')
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['cached'] })
-
-    api.onHistory = () => Promise.resolve(ok({
-      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
-      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['exact'] } } },
-    } as never))
-    await session.open()
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['exact'] })
-  })
-
-  it('preserves an authoritative frame received while the opening is in flight', async () => {
-    const api = new FakeApiClient()
-    const history = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
-    api.onHistory = () => history.promise
     const session = new Session(SID, fakeRemote(api))
-
-    const opening = session.open()
-    session.projections.apply('test/marks', { marks: ['live'] }, 3)
-    history.resolve(ok({
-      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
-      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['opening'] } } },
+    api.onHistory = () => Promise.resolve(ok({
+      records: entries(plainTurn(0, 0, '问', '答')) as never[], hasMore: false,
+      projections: { asOfSeq: 5, values: { 'test/marks': { marks: ['from-baseline'] } } },
     } as never))
-    await opening
-
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['live'] })
+    await session.open()
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['from-baseline'] })
   })
 
-  it('starts a fresh opening token while a carrier reconnect awaits its snapshot', async () => {
+  it('a resync serving a stale block keeps the newer pushed value (seq rule end to end)', async () => {
     const api = new FakeApiClient()
     const session = new Session(SID, fakeRemote(api))
     api.onHistory = () => Promise.resolve(ok({
       records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
-      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['first'] } } },
+      projections: { asOfSeq: 5, values: { 'test/marks': { marks: ['baseline'] } } },
     } as never))
     await session.open()
+    session.projections.apply('test/marks', { marks: ['pushed-9'] }, 9)
+    await session.resync()
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['pushed-9'] })
+  })
 
-    const replacement = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
-    api.onHistory = () => replacement.promise
-    api.failStreams(new RemoteStreamCarrierError('carrier lost'))
-    await vi.waitFor(() => { expect(api.callsOf('session.follow')).toHaveLength(2) })
-    session.projections.apply('test/marks', { marks: ['during-retry'] }, 3)
-    replacement.resolve(ok({
-      records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false,
-      projections: { asOfSeq: 2, values: { 'test/marks': { marks: ['replacement'] } } },
-    } as never))
+  it('treats a blockless response as no reset: pushed values survive', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api))
+    api.onHistory = () => Promise.resolve(ok({ records: entries(plainTurn(0, 0, 'a', 'b')) as never[], hasMore: false }))
+    await session.open()
+    session.projections.apply('test/marks', { marks: ['pushed'] }, 9)
+    await session.resync()
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['pushed'] })
+  })
+})
 
-    await vi.waitFor(() => {
-      expect(session.projections.get('test/marks')).toEqual({ marks: ['during-retry'] })
+describe('manager frame routing', () => {
+  const sid = (s: string): SessionId => s as SessionId
+
+  it('lands projection frames before instantiation and the Session adopts the same store', async () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api))
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['early'] }, seq: 7,
     })
+    const session = manager.get(sid('s1'))
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['early'] })
+    // Frames after instantiation land in the same store.
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['later'] }, seq: 9,
+    })
+    expect(session.projections.get('test/marks')).toEqual({ marks: ['later'] })
+  })
+
+  it('projects the title key into list rows and truncates phantom rows on the control baseline', async () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api))
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
+    }) as never)
+    await manager.refreshList()
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Projected title', seq: 4,
+    })
+    await Promise.resolve()
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Projected title')
+    // The durable baseline says the host only knows up to seq 2: the row rode
+    // lost state and must drop (the un-flushed title precedent).
+    manager.handleControlFrame({
+      type: 'baseline',
+      value: {
+        queues: {}, jobs: {},
+        projections: { [sid('s1')]: { asOfSeq: 2, values: {} } },
+      },
+    })
+    await Promise.resolve()
+    expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
+  })
+
+  it('projects every retained value into list rows with stable snapshot identity', async () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api))
+    api.onList = () => Promise.resolve(ok({
+      items: [{
+        sessionId: sid('s1'), updatedAt: 1, running: false, blank: false,
+        projections: {
+          asOfSeq: 2,
+          values: { 'test/marks': { marks: ['baseline'] } },
+        },
+      }],
+    }) as never)
+    await manager.refreshList()
+    const baseline = manager.getListSnapshot().items[0]?.projectionValues
+    expect(baseline).toEqual({ 'test/marks': { marks: ['baseline'] } })
+    expect(manager.getListSnapshot().items[0]?.projectionValues).toBe(baseline)
+
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'test/marks',
+      value: { marks: ['live'] }, seq: 3,
+    })
+    await Promise.resolve()
+    expect(manager.getListSnapshot().items[0]?.projectionValues)
+      .toEqual({ 'test/marks': { marks: ['live'] } })
+    expect(manager.getListSnapshot().items[0]?.projectionValues).not.toBe(baseline)
+  })
+
+  it('drops the projection store with the removed session', async () => {
+    const api = new FakeApiClient()
+    const manager = new SessionManager(fakeRemote(api))
+    api.onList = () => Promise.resolve(ok({
+      items: [{ sessionId: sid('s1'), updatedAt: 1, running: false, blank: false }],
+    }) as never)
+    await manager.refreshList()
+    manager.handleControlFrame({
+      type: 'projection', sessionId: sid('s1'), key: 'title', value: 'Doomed', seq: 4,
+    })
+    manager.handleSessionRemoved(sid('s1'))
+    expect(manager.get(sid('s1')).projections.get('title')).toBeUndefined()
   })
 })

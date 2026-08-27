@@ -2,9 +2,9 @@
  * Generic per-session projection value store (push model; see the
  * session-projection subsystem page, docs/subsystems/session-projection.md):
  * the host is the only computation site; the client holds finished
- * whole values per key. The store distinguishes tentative list hints from
- * authoritative frames and complete baselines, and owns their precedence
- * across opening and reconnect lifecycles. No client-side domain folding
+ * whole values per key — `key → { value, seq }` — seeded by a follow opening
+ * baseline and updated by Session Controller `projection` frames,
+ * under the single rule **higher seq wins**. No client-side domain folding
  * exists: a domain ships projection support with zero client code. Per-key
  * bare observable faces feed `useProjection` (ui-renderer binds them).
  */
@@ -51,18 +51,10 @@ export interface ProjectionsBaseline {
   values: Readonly<Record<string, unknown>>
 }
 
-/** Opaque marker for one exact Session opening lifecycle. */
-export interface ProjectionOpeningToken {
-  /** Store revision when the opening began. */
-  readonly revision: number
-}
-
-/** One key's row with its authority and arrival revision. */
+/** One key's row: the latest finished value and the seq it is consistent with. */
 interface Row {
   value: unknown
   seq: number
-  provenance: 'tentative' | 'authoritative'
-  revision: number
 }
 
 /** Per-key notification channel: the bare face plus its batching notifier. */
@@ -72,22 +64,19 @@ interface Channel {
 }
 
 /**
- * One session's projection values. Framework semantics are uniform across
- * source: list hints are tentative, frames are authoritative per-key updates,
- * and opening/control baselines are complete authoritative cuts. A key the
- * store has never seen reads `undefined` (capability absent). Faces are
- * identity-stable per key (create-on-demand, cached) so the React side binds
- * each exactly once; the store-level channel (`subscribeAny`) serves coarse
- * consumers.
+ * One session's projection values. Framework semantics, uniform across every
+ * key: a baseline seeds rows at its cut, a push frame updates one row, and in
+ * both paths a lower-or-equal seq loses — a replayed frame cannot regress a
+ * value, a stale baseline cannot overwrite a newer frame. A key the store has
+ * never seen reads `undefined` (capability absent). Faces are identity-stable
+ * per key (create-on-demand, cached) so the React side binds each exactly
+ * once; the store-level channel (`subscribeAny`) serves coarse consumers (the
+ * manager's list projection reads the `title` key).
  */
 export class ProjectionValueStore {
   private readonly rows = new Map<string, Row>()
   private readonly channels = new Map<string, Channel>()
   private valuesCache: Readonly<Partial<SessionProjectionMap>> | undefined
-  private revision = 0
-  private activeOpening: ProjectionOpeningToken | undefined
-  private latestControlBaseline: { readonly revision: number; readonly asOfSeq: number } | undefined
-  private completeBaselineInstalled = false
   /** Coarse any-key channel (no snapshot cache to rebuild: reads hit rows directly). */
   private readonly anyNotifier = new Notifier(() => {})
 
@@ -136,158 +125,58 @@ export class ProjectionValueStore {
   }
 
   /**
-   * Apply the latest partial cache-backed hint while no complete authoritative
-   * cut exists. Arrival order, not the cached watermark, orders tentative rows:
-   * crash repair may legitimately lower the durable sequence.
-   * @param hint - partial projection values from the Session list cache.
-   */
-  prewarm(hint: ProjectionsBaseline): void {
-    if (this.completeBaselineInstalled) return
-    const values = hint.values as Record<string, unknown>
-    for (const key of Object.keys(values)) {
-      const previous = this.rows.get(key)
-      if (previous?.provenance === 'authoritative') continue
-      this.installRow(key, {
-        value: values[key],
-        seq: hint.asOfSeq,
-        provenance: 'tentative',
-        revision: ++this.revision,
-      })
-    }
-  }
-
-  /**
-   * Apply one authoritative finished value from the Session control stream.
-   * The first frame replaces a tentative row regardless of sequence; later
-   * authoritative frames use strict higher-sequence ordering.
+   * Apply one finished value from the Session control stream.
    * @param key - projection key.
    * @param value - whole value computed by the host unit.
    * @param seq - the unit's watermark at emission.
    */
   apply(key: string, value: unknown, seq: number): void {
     const row = this.rows.get(key)
-    if (row?.provenance === 'authoritative' && seq <= row.seq) return
-    this.rows.set(key, {
-      value,
-      seq,
-      provenance: 'authoritative',
-      revision: ++this.revision,
-    })
+    if (row !== undefined && seq <= row.seq) return // higher seq wins; replays and stale frames drop
+    this.rows.set(key, { value, seq })
     this.changed(key)
   }
 
   /**
-   * Start one exact opening. The token lets completion distinguish state that
-   * existed before the request from authoritative frames arriving afterward.
-   * @returns an opaque token owned by the caller's opening lifecycle.
+   * Seed from a history tail page's projections block: every carried key
+   * lands under the same seq rule as frames; a key the block omits is
+   * capability-absent as of the cut — its row clears unless a newer frame
+   * already superseded the cut (a stale baseline can neither overwrite nor
+   * clear newer values).
+   * @param baseline - the response's projections block.
    */
-  beginOpening(): ProjectionOpeningToken {
-    const token = Object.freeze({ revision: this.revision })
-    this.activeOpening = token
-    return token
-  }
-
-  /**
-   * Complete an exact opening. A control baseline received after the token
-   * wins at an equal or newer cut. Otherwise the opening replaces all prior
-   * state and retains only authoritative post-token frames newer than its cut.
-   * @param token - token returned by {@link beginOpening}.
-   * @param baseline - complete projection values at the opening cut.
-   */
-  completeOpening(token: ProjectionOpeningToken, baseline: ProjectionsBaseline): void {
-    if (this.activeOpening !== token) return
-    this.activeOpening = undefined
-    const control = this.latestControlBaseline
-    if (control !== undefined
-      && control.revision > token.revision
-      && control.asOfSeq >= baseline.asOfSeq) {
-      return
+  seed(baseline: ProjectionsBaseline): void {
+    // Erased walk: the framework crosses the open key space; per-key typing
+    // is re-established at the consumer (useProjection's map lookup).
+    const values = baseline.values as Record<string, unknown>
+    for (const key of Object.keys(values)) this.apply(key, values[key], baseline.asOfSeq)
+    for (const [key, row] of this.rows) {
+      if (Object.hasOwn(values, key)) continue
+      if (row.seq > baseline.asOfSeq) continue
+      this.rows.delete(key)
+      this.changed(key)
     }
-
-    const retained = [...this.rows].filter(([, row]) =>
-      row.provenance === 'authoritative'
-      && row.revision > token.revision
-      && row.seq > baseline.asOfSeq)
-    this.completeBaselineInstalled = true
-    this.replaceRows(baseline, ++this.revision, 'authoritative')
-    for (const [key, row] of retained) this.installRow(key, row)
   }
 
   /**
-   * End one failed or superseded opening without changing the already visible
-   * values. Later openings receive a fresh revision boundary.
-   * @param token - token returned by {@link beginOpening}.
+   * Drop rows beyond a replacement control baseline. Such rows describe
+   * process state the Host lost before persisting it and would otherwise
+   * outrank recomputed lower-seq values forever. The caller seeds the new
+   * baseline immediately afterward.
+   * @param lastSeq - highest durable sequence reflected by the baseline.
    */
-  cancelOpening(token: ProjectionOpeningToken): void {
-    if (this.activeOpening === token) this.activeOpening = undefined
-  }
-
-  /**
-   * Replace the previous control-stream generation exactly, including rows at
-   * the same sequence. Frames arriving afterward again use higher-seq-wins.
-   * @param baseline - complete projections for the new control generation.
-   */
-  replaceControlBaseline(baseline: ProjectionsBaseline): void {
-    const revision = ++this.revision
-    this.completeBaselineInstalled = true
-    this.latestControlBaseline = { revision, asOfSeq: baseline.asOfSeq }
-    this.replaceRows(baseline, revision, 'authoritative')
-  }
-
-  /**
-   * Replace state for a Session omitted from a new control generation. The
-   * Host cut invalidates prior authoritative rows, while the latest retained
-   * list block may immediately repopulate tentative sidebar values.
-   * @param hint - latest partial list-cache block retained for the Session.
-   */
-  replaceControlOmission(hint?: ProjectionsBaseline): void {
-    const revision = ++this.revision
-    this.completeBaselineInstalled = false
-    this.latestControlBaseline = undefined
-    if (hint === undefined) {
-      for (const key of this.rows.keys()) {
-        this.rows.delete(key)
-        this.changed(key)
-      }
-      return
+  truncate(lastSeq: number): void {
+    for (const [key, row] of this.rows) {
+      if (row.seq <= lastSeq) continue
+      this.rows.delete(key)
+      this.changed(key)
     }
-    this.replaceRows(hint, revision, 'tentative')
   }
 
   private changed(key: string): void {
     this.valuesCache = undefined
     this.channels.get(key)?.notifier.markDirty()
     this.anyNotifier.markDirty()
-  }
-
-  /** Replace every row with one baseline at the supplied authority. */
-  private replaceRows(
-    baseline: ProjectionsBaseline,
-    revision: number,
-    provenance: Row['provenance'],
-  ): void {
-    const values = baseline.values as Record<string, unknown>
-    const keys = new Set([...this.rows.keys(), ...Object.keys(values)])
-    for (const key of keys) {
-      if (!Object.hasOwn(values, key)) {
-        this.rows.delete(key)
-        this.changed(key)
-        continue
-      }
-      this.installRow(key, {
-        value: values[key],
-        seq: baseline.asOfSeq,
-        provenance,
-        revision,
-      })
-    }
-  }
-
-  /** Install one row while notifying only when its observable value changes. */
-  private installRow(key: string, row: Row): void {
-    const previous = this.rows.get(key)
-    this.rows.set(key, row)
-    if (previous === undefined || !Object.is(previous.value, row.value)) this.changed(key)
   }
 
   private channel(key: string): Channel {

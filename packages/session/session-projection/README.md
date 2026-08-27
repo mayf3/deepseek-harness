@@ -40,7 +40,7 @@ const definition = {
   key: 'todo',
   stateSchema: todoStateSchema,
   stateVersion: 1,
-  init: _header => ({ items: [] }),
+  init: () => ({ items: [] }),
   apply: (state, event) => event.type === 'todo/upsert'
     ? { items: event.data.items }
     : state,
@@ -51,11 +51,11 @@ const definition = {
 }
 ```
 
-`init`, `apply`, and `wire.view` must be synchronous. `init(header)` receives the immutable `SessionHeader` from the same source as the events being folded, so a unit can derive creation-time facts such as the fork boundary or initial preset without consulting ambient mutable state. The registry centrally validates `header.seedLength ?? 0` against the observed log before initialization. `apply` must return the same state reference for events that do not concern the unit; owned events may contain complete values or domain deltas, but `wire.view` always returns the complete current client value.
+`apply` must be synchronous and must return the same state reference for events that do not concern the unit — an unchanged reference means zero downstream work. A state-carrying log event must carry the complete post-change state, never a bare delta.
 
 ### Register and read
 
-`register(definition)` installs the unit; the registration is an effect on the calling fiber, so the key disappears after the last matching registrant unloads. Registrants with the same key and `stateVersion` share one unit and are reference-counted; a different version for an existing key throws. Carriers read a consistent synchronous cut over every client-visible unit with `snapshot(session)` — `{ asOfSeq, values }`, where `asOfSeq` is the seq of the last event every value reflects — and subscribe to per-change notifications with `onChanged(listener)`. `stateOf(session, key)` reads one unit's host state without computing unrelated views.
+`register(definition)` installs the unit; the registration is an effect on the calling fiber, so unloading the domain removes its key. Carriers read a consistent synchronous cut over every client-visible unit with `snapshot(session)` — `{ asOfSeq, values }`, where `asOfSeq` is the seq of the last event every value reflects — and subscribe to per-change notifications with `onChanged(listener)`. `stateOf(session, key)` reads one unit's host state without computing unrelated views.
 
 ```text
 const dispose = ctx.sessionProjections.register(definition)
@@ -78,7 +78,7 @@ This section explains the drive machinery and the unit contract; the observable 
 
 ### Design concept
 
-The package is the Service Definition and drive role of a capability seam: the framework drives, the domain computes. The registry subscribes to `session/event` once; every committed event passes every registered unit's `apply` eagerly. Cells build lazily on first touch by validating the header's fork boundary, passing that immutable header to `init`, and folding the in-memory log. Detached restore paths use the header returned with the same stored events; the registry rejects a `seedLength` beyond the observed log. The change feed is gated on `Object.is` — a unit that returns the same state reference costs one call and nothing downstream. Carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut; an accidentally async view returns a Promise and fails `wire.viewSchema.parse`.
+The package is the Service Definition and drive role of a capability seam: the framework drives, the domain computes. The registry subscribes to `session/event` once; every committed event passes every registered unit's `apply` eagerly (cells build lazily on first touch). The change feed is gated on `Object.is` — a unit that returns the same state reference costs one call and nothing downstream. Carriers read `snapshot()` in the same tick as their page slice, which is what makes `asOfSeq` one consistent cut; an accidentally async view returns a Promise and fails `wire.viewSchema.parse`.
 
 ### Source map
 
@@ -125,9 +125,9 @@ None; projections never assemble or send provider requests.
 
 These limits define where the projection registry needs care at scale. They are current package constraints, not a task backlog.
 
-- **Every tail page carries every client-visible key** — there is no per-key opt-out or lazy-key request form yet; this is acceptable while values are UI-scale whole states, but should be revisited if a domain's value grows large.
-- **The unit table is process-wide, so key presence is not a per-session capability signal** — a key registered by any agent preset appears in every session's snapshot, including sessions whose own composition does not produce that value. A client must interpret the value, such as `plan.active` or an empty todo list, rather than treating key presence as feature availability; a unit whose empty value is ambiguous belongs on the host plane.
-- **Eager drive touches every unit per event** — deterministic synchronous folds and the same-reference gate keep this cheap, but a hot path may justify per-unit event-type prefilters.
+- **Every tail page carries every client-visible key** — there is no per-key opt-out or lazy-key request shape yet; acceptable while values are UI-scale whole states, revisit if a domain's value grows large.
+- **The unit table is process-wide, so key presence is not a per-session capability signal** — a key registered by any agent preset appears in every session's snapshot; a client must read the value rather than treat an absent key as absence of the feature.
+- **Eager drive touches every unit per event** — cheap by construction (whole-value rule, same-reference gate), but a hot path would justify per-unit event-type prefilters.
 - **Registry cells live in memory only** — a restart rebuilds by folding the log on first touch; compositions that mount `dsh-session-projection-cache` seed that fold from persisted rows instead.
 - **Synchronous unit discipline is only partially mechanical** — `wire.viewSchema.parse` rejects a Promise-returning view, but an `apply` that blocks or reads torn non-session state is a review concern.
 

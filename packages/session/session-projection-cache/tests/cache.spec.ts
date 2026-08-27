@@ -17,7 +17,7 @@ import { dirname, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
+import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -36,11 +36,9 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     'cache-test/marks': MarksState
     'cache-test/marks2': Map<string, string>
     'cache-test/count': number
-    'cache-test/seed': number
   }
   interface SessionProjectionMap {
     'cache-test/marks': { marks: string[] }
-    'cache-test/seed': number
   }
 }
 
@@ -67,28 +65,13 @@ const marksUnit = (stateVersion = 1) => ({
   stateVersion,
 }) satisfies ProjectionDefinition<'cache-test/marks', MarksState>
 
-const seedUnit = {
-  key: 'cache-test/seed',
-  stateSchema: z.number().int().nonnegative(),
-  init: (header: SessionHeader) => header.seedLength ?? 0,
-  apply: (state: number) => state,
-  wire: { viewSchema: z.number().int().nonnegative(), view: (state: number) => state },
-  stateVersion: 1,
-} satisfies ProjectionDefinition<'cache-test/seed', number>
-
 /** One session's record document on the per-record medium. */
 const recordPath = (root: string, id: Session['id']): string =>
   join(root, projectionCacheDomainSpec.name, 'sessions', `${String(id)}.json`)
 
 /** Header shape for cachedSnapshot calls. */
-const headerOf = (id: SessionId, createdAt = 0, cwd?: string, seedLength?: number): SessionHeader =>
-  ({
-    version: 0,
-    id,
-    createdAt,
-    ...cwd === undefined ? {} : { cwd },
-    ...seedLength === undefined ? {} : { seedLength },
-  })
+const headerOf = (id: SessionId, createdAt = 0, cwd?: string) =>
+  ({ version: 0, id, createdAt, ...cwd === undefined ? {} : { cwd } })
 
 interface HarnessOptions {
   root?: string
@@ -364,20 +347,6 @@ describe('SessionProjectionCache cold-read seeding', () => {
     return events
   }
 
-  it('preserves the normalized fork seed through prepared hydration and cold restore', async () => {
-    const { ctx, cache } = await harness()
-    ctx.sessionProjections.register(seedUnit)
-    const events = storedLog([])
-
-    const preparedHeader = headerOf(SessionId('prepared-seed'), 0, undefined, 2)
-    const prepared = Session.create(preparedHeader.id, events, preparedHeader)
-    expect(cache.hydratePrepared(prepared, preparedHeader, events)
-      .values['cache-test/seed']).toBe(2)
-
-    const coldHeader = headerOf(SessionId('cold-seed'), 0, undefined, 2)
-    expect(cache.coldSnapshot(coldHeader, events).values['cache-test/seed']).toBe(2)
-  })
-
   it('hydratePrepared seeds from a matching row and retries from the exact log on a malformed one', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
     roots.push(root)
@@ -455,17 +424,6 @@ describe('SessionProjectionCache cold-read seeding', () => {
     expect(apply).toHaveBeenCalledTimes(7) // 2 tail + 5 full
     await settle()
     expect((await storedRows(root, fresh.id))?.['cache-test/count']?.seq).toBe(4)
-  })
-
-  it('discards a version-mismatched row and refolds the full log', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-'))
-    roots.push(root)
-    await seedRecord(root, 'bumped', {
-      'cache-test/marks': { ver: 1, seq: 2, val: { marks: ['stale'] } },
-    })
-    const { cache } = await harness({ root, stateVersion: 2 })
-    const snapshot = cache.coldSnapshot(headerOf(SessionId('bumped')), storedLog([['a']]))
-    expect(snapshot.values['cache-test/marks']).toEqual({ marks: ['a'] })
   })
 
   it('coldSnapshot write-back is fail-soft: a failed durable write logs and never throws', async () => {

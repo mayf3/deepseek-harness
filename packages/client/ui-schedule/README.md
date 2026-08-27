@@ -59,7 +59,7 @@ The browser plugin contributes `schedule-catalog` to `conversation.session.heade
 | [`src/index.ts`](src/index.ts) | Empty Host apply that keeps the optional browser feature addressable by Loader |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion; the package owns no mutable cross-plugin state |
 
-The [read-only Web Schedule catalog Agent Note](../../../.agents/notes/implemented/feature/2026-08-25-read-only-web-schedule-catalog.md) owns the projection, composition, accessibility, and delivery-boundary decisions.
+The [durable Web Schedule Agent Note](../../../.agents/notes/implemented/feature/2026-08-05-durable-web-schedule.md) owns the active projection and opt-in presentation boundary; this package owns the catalog's timing and accessibility behavior.
 
 </details>
 

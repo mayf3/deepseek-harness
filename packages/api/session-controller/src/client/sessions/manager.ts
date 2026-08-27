@@ -395,7 +395,7 @@ export class SessionManager {
           })
         }
       } catch (error: unknown) {
-        const folded = transportResult<never>(error) as Extract<ClientResult<never>, { ok: false }>
+        const folded = transportResult<never>(error)
         this.catalogs.set(parentSessionId, {
           entries: this.withCatalogMutations(
             previous?.entries ?? [], expandableRows, activityRows,
@@ -405,7 +405,7 @@ export class SessionManager {
               ?? previous?.parentAvailable,
           ),
           state: 'error',
-          error: folded.error,
+          error: folded.ok ? null : folded.error,
         })
       } finally {
         this.catalogInflight.delete(parentSessionId)
@@ -488,9 +488,18 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          for (const summary of this.summaries) {
-            const projections = summary.projections
-            if (projections !== undefined) this.projectionStore(summary.sessionId).prewarm(projections)
+          // Seed each row's projection baseline into the per-session value
+          // store (cold titles surface without opening the session). Per-key
+          // apply, not seed(): the list block is a partial baseline — the
+          // cold cache serves only version-matching keys — so an absent key
+          // must not clear; higher-seq-wins still keeps a stale list block
+          // from overwriting a newer push frame or tail baseline.
+          for (const s of result.value.items) {
+            const block = s.projections
+            if (block === undefined) continue
+            const store = this.projectionStore(s.sessionId)
+            const values = block.values as Record<string, unknown>
+            for (const key of Object.keys(values)) store.apply(key, values[key], block.asOfSeq)
           }
         } else {
           this.listState = 'error'
@@ -691,15 +700,10 @@ export class SessionManager {
       if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
     }
 
-    const projected = new Set(Object.keys(baseline.projections))
-    const summaries = new Map(this.summaries.map(summary => [summary.sessionId, summary]))
-    for (const [sessionId, store] of this.projectionStores) {
-      if (!projected.has(sessionId)) {
-        store.replaceControlOmission(summaries.get(sessionId)?.projections)
-      }
-    }
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
-      this.projectionStore(sessionId as SessionId).replaceControlBaseline(block)
+      const store = this.projectionStore(sessionId as SessionId)
+      store.truncate(block.asOfSeq)
+      store.seed(block)
     }
     for (const [sessionId, session] of this.sessions) {
       session.replaceControl(this.queues.get(sessionId) ?? [])
@@ -715,7 +719,12 @@ export class SessionManager {
     this.mergeSummary(summary)
     this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
     const projections = summary.projections
-    if (projections !== undefined) this.projectionStore(summary.sessionId).prewarm(projections)
+    if (projections !== undefined) {
+      const store = this.projectionStore(summary.sessionId)
+      for (const [key, value] of Object.entries(projections.values)) {
+        store.apply(key, value, projections.asOfSeq)
+      }
+    }
     if (summary.origin === 'subagent' && summary.parentSessionId !== undefined) {
       this.markCatalogParentExpandable(summary.parentSessionId)
     }
@@ -973,12 +982,9 @@ function applyMutation(summaries: readonly SessionSummary[], mutation: SessionLi
           ? { parentSessionId: mutation.summary.parentSessionId } : {}),
         ...(existing.origin === undefined && mutation.summary.origin !== undefined
           ? { origin: mutation.summary.origin } : {}),
-        ...(mutation.summary.projections === undefined
-          ? {} : { projections: mutation.summary.projections }),
       }
       if (filled.cwd === existing.cwd && filled.parentSessionId === existing.parentSessionId
         && filled.origin === existing.origin && filled.blank === existing.blank
-        && filled.projections === existing.projections
       ) return [...summaries]
       return summaries.map(summary => summary.sessionId === mutation.summary.sessionId ? filled : summary)
     }

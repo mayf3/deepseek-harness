@@ -60,7 +60,7 @@ Dispatch records queue admission, not model completion or user receipt. Framing 
 
 ### Read-only Web catalog
 
-The Schedule overlay enables the otherwise-disabled [`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.md) client together with the Host service. The complete active projection also feeds [`dsh-client-ui-workspace`](../../../../packages/client/ui-workspace/README.md); the [read-only catalog decision](2026-08-25-read-only-web-schedule-catalog.md) owns both presentation surfaces. This projection is current active state, not a dispatch or delivery receipt, so ordinary Assistant turns remain the delivery presentation.
+The Schedule overlay enables the otherwise-disabled [`dsh-client-ui-schedule`](../../../../packages/client/ui-schedule/README.md) client together with the Host service. The complete active projection also feeds [`dsh-client-ui-workspace`](../../../../packages/client/ui-workspace/README.md). This note owns that opt-in read-only presentation boundary: the projection is current active state, not a dispatch or delivery receipt, so ordinary Assistant turns remain the delivery presentation.
 
 ## Alternatives considered
 

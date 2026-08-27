@@ -163,16 +163,11 @@ describe('SessionHistoryController', () => {
       [Symbol.asyncIterator]()
     const opening = iterator.next()
 
-    const unrelatedId = SessionId('unrelated')
     ctx.emit('session/event', {
-      id: unrelatedId,
-      header: { version: 0, id: unrelatedId, createdAt: 1 },
-      events: [event('fixture/other', 0)],
+      id: SessionId('unrelated'), events: [event('fixture/other', 0)],
     } as unknown as Session, event('fixture/other', 0))
     ctx.emit('session/event', {
-      id: sessionId,
-      header,
-      events: [event('fixture/start', 0)],
+      id: sessionId, events: [event('fixture/start', 0)],
     } as unknown as Session, event('fixture/start', 0))
     inspected.resolve({ meta: header, events: [event('fixture/start', 0)] })
     await expect(opening).resolves.toMatchObject({ done: false, value: { type: 'snapshot', cursor: 0 } })
@@ -299,7 +294,6 @@ describe('SessionHistoryController', () => {
     const gap = event('fixture/gap', 2)
     live.ctx.emit('session/event', {
       id: session.id,
-      header: session.header,
       events: [event('fixture/start', 0), skipped, gap],
     } as unknown as Session, gap)
     await expect(followed.next()).rejects.toMatchObject({ failure: { code: 'internal' } })

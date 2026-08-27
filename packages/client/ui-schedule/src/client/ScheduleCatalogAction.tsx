@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
-import { IconChevronDownOutline14, useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
+import {
+  IconAlarmClockOutline16,
+  IconChevronDownOutline14,
+  useDismissOnOutsidePointer,
+} from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { NS } from './locales.ts'
@@ -21,16 +25,6 @@ const UNIT_SECONDS: readonly { unit: TimeUnit; seconds: number }[] = [
   { unit: 'minute', seconds: 60 },
   SECOND_UNIT,
 ]
-
-/** Minimal clock glyph kept private to this one feature. */
-function ScheduleClockIcon() {
-  return (
-    <svg aria-hidden="true" width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <circle cx="7" cy="7" r="5.75" stroke="currentColor" strokeWidth="1.25" />
-      <path d="M7 3.75V7.2L9.25 8.5" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  )
-}
 
 /** Localized unit word for one integral magnitude. */
 function unitLabel(unit: TimeUnit, value: number, t: TranslateNS<typeof NS>): string {
@@ -157,7 +151,7 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
       aria-label={countLabel}
       onClick={toggleCatalog}
     >
-      <ScheduleClockIcon />
+      <IconAlarmClockOutline16 size={14} />
       <span className={css.count}>{countLabel}</span>
       <IconChevronDownOutline14 className={open ? css.triggerOpen : undefined} />
     </button>

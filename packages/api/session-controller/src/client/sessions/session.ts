@@ -22,9 +22,11 @@ import type {
 } from '../../types.ts'
 import type { ClientFailure, ClientResult } from '../contract/result.ts'
 import { transportResult } from '../contract/result.ts'
-import type { SessionFace } from '../contract/session.ts'
 import type {
-  OpenState, PromptError, SessionSnapshot,
+  BeginSubmissionInput, PendingSubmissionRetirement, SessionFace, SubmissionHandle,
+} from '../contract/session.ts'
+import type {
+  OpenState, PendingSubmission, PromptError, SessionSnapshot,
 } from '../contract/snapshot.ts'
 import { MutableSessionEventSource } from '../contract/events.ts'
 import type {
@@ -34,7 +36,7 @@ import { Notifier } from './notifier.ts'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
-import type { ProjectionOpeningToken, ProjectionsBaseline } from './projection-store.ts'
+import type { ProjectionsBaseline } from './projection-store.ts'
 import { resolvedClientTimeZone } from '../time-zone.ts'
 import { SessionQueueMirror } from './queue-mirror.ts'
 
@@ -80,8 +82,6 @@ export class Session implements SessionFace {
   /** Bumped by stream replacement to invalidate an in-flight doOpen. Stale
    *  passes drop all writes once the generation moves on. */
   private openGeneration = 0
-  /** Store-owned reconciliation token for the current exact opening. */
-  private projectionOpening: ProjectionOpeningToken | undefined
   private loadingOlder = false
   /** Authoritative stream-only inbox snapshot; pending work never hits history. */
   private readonly queueMirror = new SessionQueueMirror()
@@ -101,15 +101,23 @@ export class Session implements SessionFace {
   private removed = false
   private promptError: PromptError | null = null
   private lastAgentError: string | null = null
+  /** Local submission echoes, insertion-ordered (see SessionSnapshot.pendingSubmissions). */
+  private pendingSubmissions: readonly PendingSubmission[] = []
+  /** Per-echo settlement state; `retiring` latches the first observation so a
+   *  queue frame and its durable event cannot both retire one echo. */
+  private readonly submissionSettlements = new Map<SessionRequestId, {
+    readonly onRetire?: ((retirement: PendingSubmissionRetirement) => void) | undefined
+    retiring: boolean
+  }>()
   /** Owns the addressed page/follow lifecycle while this Session is open. */
   private events: SessionEventStream | undefined
 
   /**
    * Per-session projection value store (push model; see the session-projection
    * subsystem page, docs/subsystems/session-projection.md): finished whole
-   * values computed on the Host. The store owns precedence among tentative
-   * list hints, authoritative frames, complete control baselines, and exact
-   * opening baselines. Keys are read via `projections.faceOf(key)`
+   * values computed on the Host, seeded by the tail page's
+   * projections block and updated by Session Controller control frames under the
+   * one higher-seq-wins rule. Keys are read via `projections.faceOf(key)`
    * (the useProjection resolution face); the conversation snapshot never
    * carries projection values, and no client-side domain folding exists.
    * Manager-owned when constructed through SessionManager (frames route and
@@ -171,15 +179,41 @@ export class Session implements SessionFace {
   // ---- Operations ----
 
   /**
+   * Register one local submission echo (see the ISession declaration).
+   * Synchronous through markDirty: the echo is in the very next snapshot, so
+   * the conversation can paint it before the caller starts serializing.
+   * @param input - echo content and the optional settlement callback.
+   * @returns the minted identity for {@link prompt} plus the pre-prompt abandon path.
+   */
+  beginSubmission(input: BeginSubmissionInput): SubmissionHandle {
+    const requestId = randomUUID() as SessionRequestId
+    this.pendingSubmissions = [...this.pendingSubmissions, {
+      requestId,
+      time: Date.now(),
+      text: input.text,
+      images: input.images,
+    }]
+    this.submissionSettlements.set(requestId, { onRetire: input.onRetire, retiring: false })
+    // The blank → engaging edge flips here, ahead of prompt(): the composer
+    // docks and the echo renders on the click's own frame.
+    this.promptAttempted = true
+    this.notifier.markDirty()
+    return { requestId, abandon: () => { this.retireFailedSubmission(requestId) } }
+  }
+
+  /**
    * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
    * @param content - text plus browser-owned temporary image uploads.
    * @param mode - queue appends after the current turn; steer interrupts it.
+   * @param signal - optional caller cancellation for the complete admission round-trip.
+   * @param requestId - identity from {@link beginSubmission}; a failed identified prompt retires its echo.
    * @returns the prompt result (also mirrored into promptError on failure).
    */
   async prompt(
     content: PromptContentPart[],
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
+    requestId?: SessionRequestId,
   ): Promise<ClientResult<{ accepted: true }>> {
     this.promptError = null
     this.lastAgentError = null
@@ -194,7 +228,7 @@ export class Session implements SessionFace {
       if (this.address === undefined) {
         const clientTimeZone = resolvedClientTimeZone()
         result = toSessionResult(await this.remote.session.prompt({
-          requestId: randomUUID() as SessionRequestId,
+          requestId: requestId ?? randomUUID() as SessionRequestId,
           sessionId: this.sessionId,
           mode,
           content,
@@ -237,6 +271,7 @@ export class Session implements SessionFace {
       result = transportResult(error)
     }
     if (!result.ok) {
+      if (requestId !== undefined) this.retireFailedSubmission(requestId)
       this.promptError = { op: 'send', error: result.error }
       this.notifier.markDirty()
       return result
@@ -343,9 +378,7 @@ export class Session implements SessionFace {
   async rename(title: string): Promise<ClientResult<{ title: string; seq: number }>> {
     try {
       const result = toSessionResult(await this.remote.session.rename({ sessionId: this.sessionId, title }))
-      if (result.ok) {
-        this.projections.apply('title', result.value.title, result.value.seq)
-      }
+      if (result.ok) this.projections.apply('title', result.value.title, result.value.seq)
       return result
     } catch (error) {
       return transportResult(error)
@@ -369,7 +402,6 @@ export class Session implements SessionFace {
   open(): Promise<void> {
     if (this.openState === 'open') return Promise.resolve()
     if (this.openPromise !== null) return this.openPromise
-    this.beginProjectionOpening()
     const promise = this.doOpen(this.openGeneration).finally(() => {
       // Identity-guarded: a superseded open must not null out the promise resync just started.
       if (this.openPromise === promise) this.openPromise = null
@@ -403,8 +435,6 @@ export class Session implements SessionFace {
   async resync(): Promise<void> {
     if (this.openState === 'cold') return // never opened: no window to rebuild (doOpen flips to 'loading' synchronously, so cold implies no in-flight open)
     this.openGeneration++
-    this.cancelProjectionOpening()
-    this.beginProjectionOpening()
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -444,6 +474,7 @@ export class Session implements SessionFace {
    */
   replaceControl(queue: readonly SessionQueuedItem[]): void {
     this.queueMirror.replace(queue)
+    this.observeSubmissionQueue(queue)
     this.notifier.markDirty()
   }
 
@@ -453,6 +484,7 @@ export class Session implements SessionFace {
    */
   handleControlFrame(frame: Extract<SessionControlFrame, { type: 'queue' }>): void {
     this.queueMirror.replace(frame.items)
+    this.observeSubmissionQueue(frame.items)
     this.notifier.markDirty()
   }
 
@@ -533,8 +565,13 @@ export class Session implements SessionFace {
    * @returns when the Remote iterator has completed teardown.
    */
   async dispose(): Promise<void> {
+    // Unsettled echoes retire as failed so their owners can restore or
+    // release browser resources; echoes already scheduled as observed keep
+    // that settlement.
+    for (const requestId of [...this.submissionSettlements.keys()]) {
+      this.retireFailedSubmission(requestId)
+    }
     this.openGeneration++
-    this.cancelProjectionOpening()
     const events = this.events
     this.events = undefined
     await events?.dispose()
@@ -552,10 +589,6 @@ export class Session implements SessionFace {
         if (generation !== this.openGeneration || this.events !== events) return
         this.acceptEventChange(change)
       },
-      carrierFailed: () => {
-        if (generation !== this.openGeneration || this.events !== events) return
-        this.beginProjectionOpening()
-      },
       failed: (error) => {
         this.failEventStream(events, generation, error)
       },
@@ -568,7 +601,6 @@ export class Session implements SessionFace {
     } catch (error) {
       if (generation !== this.openGeneration || this.events !== events) return
       this.events = undefined
-      this.cancelProjectionOpening()
       this.openState = 'error'
       this.openError = openFailure(error)
     } finally {
@@ -591,24 +623,13 @@ export class Session implements SessionFace {
   }
 
   /** Replace the complete contiguous window and apply page-owned projection metadata. */
-  private installWindow(
-    entries: readonly SessionEventLikeEntry[],
-    hasMore: boolean,
-    projections?: ProjectionsBaseline,
-  ): void {
+  private installWindow(entries: readonly SessionEventLikeEntry[], hasMore: boolean, projections?: ProjectionsBaseline): void {
     this.baseSeq = entries[0]?.event.seq ?? 0
     this.hasMore = hasMore
     if (entries.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
-    if (projections !== undefined) {
-      const opening = this.projectionOpening
-      /* v8 ignore next -- only follow snapshots carry projections, and every follow generation starts a token. */
-      if (opening === undefined) throw new Error('projection baseline arrived outside an opening')
-      this.projections.completeOpening(opening, projections)
-      this.projectionOpening = undefined
-    } else {
-      this.cancelProjectionOpening()
-    }
+    if (projections !== undefined) this.projections.seed(projections)
     this.eventSource.replace(entries, hasMore)
+    for (const entry of entries) this.observeSubmissionEvent(entry.event)
     this.notifier.markDirty()
   }
 
@@ -626,13 +647,73 @@ export class Session implements SessionFace {
     if (event.type === 'turn/start') this.firstPromptPendingTurn = false
     const queueChanged = this.queueMirror.acceptDurable(event)
     this.eventSource.append(entry)
+    // After the feed append: the conversation assembly's animation frame is
+    // registered by the feed subscribers above, so the echo-retirement frame
+    // scheduled here always runs after the durable node became renderable.
+    this.observeSubmissionEvent(event)
     return queueChanged || awaitingFirstTurn !== this.firstPromptPendingTurn
+  }
+
+  /** Retire the matching echo when a durable browser-prompt `user/message` becomes visible. */
+  private observeSubmissionEvent(event: { readonly type: string; readonly data?: unknown }): void {
+    if (this.submissionSettlements.size === 0 || event.type !== 'user/message') return
+    // Structural read: window entries may be compact history records, so the
+    // fields are narrowed rather than trusted (same posture as Conversation
+    // assembly matchers).
+    const data = event.data as { readonly source?: unknown; readonly content?: unknown } | undefined
+    const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
+    if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
+    this.scheduleObservedRetirement(source.rpcId as SessionRequestId, imageRefsIn(data?.content))
+  }
+
+  /** Retire echoes whose prompts landed in the host inbox instead of the log (running-turn submissions). */
+  private observeSubmissionQueue(items: readonly SessionQueuedItem[]): void {
+    if (this.submissionSettlements.size === 0) return
+    for (const item of items) {
+      if (item.rpcId !== undefined) {
+        this.scheduleObservedRetirement(item.rpcId, imageRefsIn(item.message.content))
+      }
+    }
+  }
+
+  /**
+   * Latch one observed settlement and remove the echo an animation frame
+   * later. The delay keeps the echo in the snapshot until the frame in which
+   * the durable node (whose assembly frame was registered first) is
+   * renderable; the render-time rpcId dedupe hides the one-frame overlap.
+   */
+  private scheduleObservedRetirement(
+    requestId: SessionRequestId,
+    attachments: readonly ImageAttachmentRef[],
+  ): void {
+    const settlement = this.submissionSettlements.get(requestId)
+    if (settlement === undefined || settlement.retiring) return
+    settlement.retiring = true
+    scheduleFrame(() => { this.finishSubmission(requestId, { reason: 'observed', attachments }) })
+  }
+
+  /** Remove one unsettled echo immediately (prompt rejection, abort, or disposal). */
+  private retireFailedSubmission(requestId: SessionRequestId): void {
+    const settlement = this.submissionSettlements.get(requestId)
+    if (settlement === undefined || settlement.retiring) return
+    settlement.retiring = true
+    this.finishSubmission(requestId, { reason: 'failed' })
+  }
+
+  /** Single removal point: drop the echo, publish, then notify the owner. */
+  private finishSubmission(requestId: SessionRequestId, retirement: PendingSubmissionRetirement): void {
+    const settlement = this.submissionSettlements.get(requestId)
+    /* v8 ignore next -- retiring latches before every schedule, so one settlement never finishes twice. */
+    if (settlement === undefined) return
+    this.submissionSettlements.delete(requestId)
+    this.pendingSubmissions = this.pendingSubmissions.filter(echo => echo.requestId !== requestId)
+    this.notifier.markDirty()
+    settlement.onRetire?.(retirement)
   }
 
   /** Publish a terminal background failure only while this stream still owns the Session. */
   private failEventStream(events: SessionEventStream, generation: number, error: unknown): void {
     if (generation !== this.openGeneration || this.events !== events) return
-    this.cancelProjectionOpening()
     this.openGeneration++
     this.events = undefined
     this.openPromise = null
@@ -642,22 +723,11 @@ export class Session implements SessionFace {
     this.notifier.markDirty()
   }
 
-  /** Start one store-owned reconciliation interval, retaining it across repeated carrier failures. */
-  private beginProjectionOpening(): void {
-    this.projectionOpening ??= this.projections.beginOpening()
-  }
-
-  /** End the current reconciliation interval without altering visible values. */
-  private cancelProjectionOpening(): void {
-    const opening = this.projectionOpening
-    this.projectionOpening = undefined
-    if (opening !== undefined) this.projections.cancelOpening(opening)
-  }
-
   private buildSnapshot(): SessionSnapshot {
     return {
       sessionId: this.sessionId,
       queue: this.queueMirror.snapshot(),
+      pendingSubmissions: this.pendingSubmissions,
       running: this.running,
       subagent: this.address === undefined
         ? null
@@ -683,6 +753,26 @@ export class Session implements SessionFace {
       ? { kind: 'session', sessionId: this.sessionId }
       : { kind: 'subagent', ...this.address }
   }
+}
+
+/** Run one callback on the next animation frame, or a macrotask where no frame clock exists. */
+function scheduleFrame(fn: () => void): void {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { fn() })
+  else setTimeout(fn, 0)
+}
+
+/** Image attachment references in one structurally-read content block list, in block order. */
+function imageRefsIn(content: unknown): readonly ImageAttachmentRef[] {
+  if (!Array.isArray(content)) return []
+  const refs: ImageAttachmentRef[] = []
+  for (const block of content) {
+    if (typeof block !== 'object' || block === null) continue
+    const candidate = block as { readonly type?: unknown; readonly attachment?: unknown }
+    if (candidate.type === 'image' && typeof candidate.attachment === 'object' && candidate.attachment !== null) {
+      refs.push(candidate.attachment as ImageAttachmentRef)
+    }
+  }
+  return refs
 }
 
 /** Convert a terminal Session stream failure to the Client error vocabulary. */

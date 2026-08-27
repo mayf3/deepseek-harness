@@ -40,7 +40,7 @@ const definition = {
   key: 'todo',
   stateSchema: todoStateSchema,
   stateVersion: 1,
-  init: _header => ({ items: [] }),
+  init: () => ({ items: [] }),
   apply: (state, event) => event.type === 'todo/upsert'
     ? { items: event.data.items }
     : state,
@@ -51,11 +51,11 @@ const definition = {
 }
 ```
 
-`init`、`apply` 与 `wire.view` 必须同步。`init(header)` 接收与待折叠事件来自同一来源的不可变 `SessionHeader`，因此单元可以从中派生 fork 边界或初始 preset 等创建时事实，而无需读取环境中的可变状态。注册表会在初始化前集中对照已观察日志校验 `header.seedLength ?? 0`。对与单元无关的事件，`apply` 必须返回同一个状态引用；自有事件可以携带完整值或领域 delta，但 `wire.view` 始终返回完整的当前客户端值。
+`apply` 必须同步，且对与单元无关的事件必须返回同一个状态引用——引用不变意味着零下游工作。携带状态的日志事件必须携带变更后的完整状态，绝不携带裸增量。
 
 ### 注册与读取
 
-`register(definition)` 安装单元；注册是挂在调用方 fiber 上的 effect，因此最后一个匹配的注册方卸载后，该 key 才会消失。相同 key 与 `stateVersion` 的注册方共享一个单元并按引用计数；现有 key 使用不同版本会抛错。载体用 `snapshot(session)` 对每个客户端可见单元读取一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` 是所有值共同反映到的最后一个事件的 seq——并用 `onChanged(listener)` 订阅逐变更通知。`stateOf(session, key)` 读取一个单元的主机状态，不计算无关视图。
+`register(definition)` 安装单元；注册是挂在调用方 fiber 上的 effect，因此卸载领域即移除其 key。载体用 `snapshot(session)` 对每个客户端可见单元读取一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` 是所有值共同反映到的最后一个事件的 seq——并用 `onChanged(listener)` 订阅逐变更通知。`stateOf(session, key)` 读取一个单元的主机状态，不计算无关视图。
 
 ```text
 const dispose = ctx.sessionProjections.register(definition)
@@ -78,7 +78,7 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 ### 设计理念
 
-本包是能力 seam 的 Service Definition 与驱动角色：框架负责驱动，领域负责计算。注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个已注册单元的 `apply`。cell 在首次触达时先校验 header 中的 fork 边界，再把该不可变 header 传给 `init`，并折叠内存日志来惰性构建。detached restore 路径使用与同一次持久事件读取返回的 header；注册表会拒绝超过已观察日志长度的 `seedLength`。变更流以 `Object.is` 把关——返回同一状态引用的单元只花一次调用，不产生任何下游工作。载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此；误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
+本包是能力 seam 的 Service Definition 与驱动角色：框架负责驱动，领域负责计算。注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个已注册单元的 `apply`（cell 在首次触达时惰性构建）。变更流以 `Object.is` 把关——返回同一状态引用的单元只花一次调用，不产生任何下游工作。载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此；误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 
 ### 源码地图
 
@@ -125,9 +125,9 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 这些限制说明投影注册表在大规模下何时需要特别处理。它们是当前包约束，不是任务积压。
 
-- **每个尾页携带每个 client-visible key**——尚无逐 key 的 opt-out 或惰性 key 请求形式；当值仍是 UI 量级的完整状态时可以接受，若某个领域的值增长则应重新评估。
-- **单元表是进程级的，因此 key 是否存在不能当作逐会话的能力信号**——任何 agent preset 注册的 key 都会出现在每个会话的快照里，包括自身组合并不产出该值的会话。客户端必须解释值本身，例如 `plan.active` 或空 todo 列表，不能把 key 是否存在当作功能是否可用；空值无法表达真实语义的单元应留在 host 平面。
-- **主动驱动逐事件触达每个单元**——确定性同步 fold 与同引用闸门让该路径保持低成本，但热点路径可能需要逐单元事件类型预过滤。
+- **每个尾页携带每个 client-visible key**——尚无逐 key 的 opt-out 或惰性 key 请求形状；在值都是 UI 量级的全量状态时可以接受，若某领域的值变大再重议。
+- **单元表是进程级的，因此 key 是否存在不能当作逐会话的能力信号**——任何 agent preset 注册的 key 都会出现在每个会话的快照里；客户端必须读值，不能把 key 缺席当作功能缺席。
+- **主动驱动逐事件触达每个单元**——按构造开销很低（全量值规则、同引用闸门），但若出现热点路径，可加按单元的事件类型预过滤。
 - **注册表 cell 只活在内存里**——重启后首次触达时靠折叠日志重建；挂载了 `dsh-session-projection-cache` 的组合改由持久行播种该折叠。
 - **单元同步纪律只有部分可机械把关**——`wire.viewSchema.parse` 能拒绝返回 Promise 的 view，但阻塞的 `apply`、或读取撕裂的非会话状态的 `apply`，只能靠评审把关。
 

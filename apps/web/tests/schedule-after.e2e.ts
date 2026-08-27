@@ -631,7 +631,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     tripwire = watchConsole(page)
     await page.goto(scaffold.authenticatedUrl, { waitUntil: 'load' })
     await page.waitForSelector('[class*="frame"]', { timeout: 30_000 })
-    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    await page.evaluate(() => { document.body.removeAttribute('data-ds-dark-theme') })
     const openSidebar = page.getByRole('button', { name: 'Open sidebar' })
     if (await openSidebar.isVisible()) {
       await openSidebar.click()
@@ -691,6 +691,17 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     await page.getByRole('button', { name: 'Clear search' }).click()
     await catalogRow.waitFor({ timeout: 15_000 })
 
+    await page.getByRole('button', { name: 'View options' }).click()
+    await page.getByRole('menuitem', { name: 'In one list' }).click()
+    const flatRow = page.getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
+    await flatRow.waitFor({ timeout: 15_000 })
+    expect(await flatRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
+
+    await page.getByRole('button', { name: 'View options' }).click()
+    await page.getByRole('menuitem', { name: 'WorkSpace' }).click()
+    await catalogRow.waitFor({ timeout: 15_000 })
+    expect(await catalogRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
+
     await openSession(page, CATALOG_TITLE)
     const parentAgent = await liveAgent(scaffold, CATALOG_SESSION_ID)
 
@@ -700,7 +711,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     const catalog = page.getByRole('list', { name: 'Active reminders' })
     await catalog.waitFor({ timeout: 10_000 })
     expect(await catalog.getByRole('listitem').count()).toBe(3)
-    const layout = await catalog.evaluate((element) => {
+    const lightLayout = await catalog.evaluate((element) => {
       const box = element.getBoundingClientRect()
       return {
         width: box.width,
@@ -710,10 +721,24 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
         background: getComputedStyle(element).backgroundColor,
       }
     })
-    expect(layout.width).toBe(336)
-    expect(layout.right).toBeLessThanOrEqual(layout.viewport)
-    expect(layout.scrollWidth).toBeLessThanOrEqual(layout.viewport)
-    expect(layout.background).not.toBe('rgba(0, 0, 0, 0)')
+    expect(lightLayout.width).toBe(336)
+    expect(lightLayout.right).toBeLessThanOrEqual(lightLayout.viewport)
+    expect(lightLayout.scrollWidth).toBeLessThanOrEqual(lightLayout.viewport)
+    expect(lightLayout.background).not.toBe('rgba(0, 0, 0, 0)')
+    const longPrompt = catalog.getByRole('listitem').filter({ hasText: 'Join release review' })
+      .locator(':scope > span').nth(1)
+    const promptLayout = await longPrompt.evaluate(element => ({
+      height: element.getBoundingClientRect().height,
+      clientWidth: element.clientWidth,
+      scrollWidth: element.scrollWidth,
+    }))
+    expect(promptLayout.height).toBeGreaterThan(18)
+    expect(promptLayout.scrollWidth).toBeLessThanOrEqual(promptLayout.clientWidth)
+
+    await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
+    const darkBackground = await catalog.evaluate(element => getComputedStyle(element).backgroundColor)
+    expect(darkBackground).not.toBe('rgba(0, 0, 0, 0)')
+    expect(darkBackground).not.toBe(lightLayout.background)
     await compareOrRefreshGolden(
       CATALOG_EXPECTED,
       await captureStableAria(page, '[aria-label="Active reminders"]', scaffold.workspaceCwd),
@@ -758,6 +783,11 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       expect(field.left).toBeGreaterThanOrEqual(metadataLayout.left)
       expect(field.right).toBeLessThanOrEqual(metadataLayout.right)
     }
+    const scrollLayout = await catalog.evaluate(element => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }))
+    expect(scrollLayout.scrollHeight).toBeGreaterThan(scrollLayout.clientHeight)
 
     const sessionRow = page.getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
     expect(await sessionRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)

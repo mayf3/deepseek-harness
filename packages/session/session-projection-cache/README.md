@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-projection-cache` persists every registered projection unit's state as one versioned document per session in the `session_projcache` storage domain's `per-record` layout. A stored row is a disposable fold shortcut, never an authority: a zero-I/O listing may use it as a tentative hint, but the row may lag the log or overreach a later crash-repaired truncation. Exact prepared-session reads validate cached state against the supplied complete log and refold when a row no longer fits; the cache never reads session persistence itself. Three mandatory checkpoints — session creation, `turn/end`, and session disposal — plus configurable count and interval throttles keep records fresh enough for list prewarming and accelerated cold folds.
+`dsh-session-projection-cache` persists the state checkpoints of every registered projection unit (`ctx.sessionProjectionCache`) as one versioned document per session in the `session_projcache` storage domain's `per-record` layout. The shipped JSON backend stores each record at `<root>/session_projcache/sessions/<id>.json`, and the cache never reads the session-persistence layer. A stored row is a fold shortcut, never an authority: it may be stale — its `seq` says exactly how stale — but never wrong. Three mandatory checkpoints (session creation, `turn/end`, and session disposal) plus configurable count and interval throttles keep the cache fresh. Choose it when list views need synchronous cached values or cold projection folds should skip an already-checkpointed prefix.
 
 ## Table of Contents
 
@@ -58,13 +58,11 @@ Three mandatory points always write: session creation persists the seed-derived 
 
 ### Reading cached values
 
-`cachedSnapshot(meta)` synchronously serves client values from the storage domain's coherent in-memory table with zero I/O. It accepts only an identity-matching record and version- and schema-matching client keys, then returns a best-effort `{ asOfSeq, values }` cut at the lowest served-row watermark; host-only rows are omitted. It returns `undefined` for an unknown id, unrelated lifecycle, absent or foreign record document, or no usable rows. The list carrier submits this value as a tentative hint to the per-Session Client projection store. For each carried key, a later list block replaces an earlier tentative row by arrival order, even when crash repair lowers its durable watermark; the first authoritative frame replaces a tentative row regardless of sequence, and later frames require a higher sequence. A successful follow opening gives the store a complete cut: it replaces pre-opening rows and retains only authoritative frames that arrived after the opening began and are newer than that cut. A control-generation baseline also replaces its complete per-Session value, including equal-sequence and omitted keys; when it arrives during an opening at an equal or newer cut, it remains authoritative.
-
-`coldSnapshot(meta, events)` accepts the complete ordered log, validates every seeded row against that exact extent once, folds any required events from `init(header)`, and refreshes the record without consulting persistence. `hydratePrepared(session, meta, events)` performs the production exact-read validation for an unpublished prepared Session; if cached state is malformed or out of range, that path retries over the full supplied log from `init(header)`. Corruption in the durable event stream still fails the retry instead of producing a partial snapshot.
+`cachedSnapshot(meta)` synchronously serves client values from the storage domain's in-memory tables with zero I/O. It accepts only an identity-matching record and version- and schema-matching keys, then returns a `{ asOfSeq, values }` cut at the lowest served-row watermark. It returns `undefined` for an unknown id, unrelated lifecycle, absent or foreign record document, or no usable rows. `coldSnapshot(meta, events)` accepts a complete ordered log, skips the checkpointed prefix while folding, and refreshes the record without reading the persistence layer itself.
 
 ### What the cache guarantees
 
-At checkpoint commit time, the log leads and the cache follows: a live write flushes buffered Session events before storing the row, so that write cannot commit beyond the then-intact log. A later crash repair may truncate the log below an existing row, which is why cache-only values remain tentative and exact reads validate the supplied full log. Reads and writes share the storage domain's coherent in-memory state, which changes only after durability. Each record is bound to the Session header identity (`createdAt`, `cwd`), and each row is version- and schema-checked; unrelated or unusable cached data is discarded rather than migrated. The JSON backend stores each record at `<root>/session_projcache/sessions/<id>.json` in an owner-only directory tree.
+The log leads and the cache follows: a live checkpoint flushes the session's buffered events durably before the cache row lands, so a crash can leave the cache behind the log but never ahead of it. Reads and writes share the storage domain's coherent in-memory state; the per-unit write chain mutates memory only after durability. Each version-stamped record must match the live unit schema and session header identity (`createdAt`, `cwd`), so malformed, stale, or unrelated records read as absent. The JSON backend stores each record at `<root>/session_projcache/sessions/<id>.json` in an owner-only directory tree.
 
 -----
 
@@ -78,11 +76,11 @@ This section explains the cache's durability and storage ownership; the observab
 
 ### Design concept
 
-The cache is a fold shortcut over the projection registry's checkpoint face, stored in a `per-record` domain data table. Reads never bypass the domain's coherent memory; every background write is fail-soft; a `ver` mismatch discards rather than migrates a row; state must pass the live unit's `stateSchema`; writes replace one complete Session record through the lossless-JSON boundary; and exact reads treat the complete supplied log as authoritative.
+The cache is a fold shortcut over the projection registry's checkpoint face, stored in a `per-record` domain data table. It commits to six consequences: reads never bypass the domain write chain; every background write is fail-soft; a `ver` mismatch discards rather than migrates a row; a record must pass the live unit's `stateSchema`; writes replace one complete session record through the lossless-JSON boundary; and the log leads, the cache follows.
 
 ### Read and write ownership
 
-The cache stores one version-stamped document per Session in the `session_projcache` domain. It does not depend on a session-persistence backend, call `locate`, or inspect persistence directories. Callers own the exact log read and pass its immutable header and complete events into the cache; the cache owns validation, refolding, and fail-soft write-back.
+The cache stores one version-stamped document per session in the `session_projcache` domain. It does not depend on a session-persistence backend, call `locate`, or inspect per-session directories. A malformed or stale record reads as absent, and consumers that require a cold value own any log refold.
 
 ### Source map
 
@@ -127,8 +125,7 @@ These limits define where the cache needs operational care. They are current pac
 
 - **No eviction or retention surface** — records accumulate per session; pruning stored checkpoints is out-of-band maintenance, same stance as session persistence itself.
 - **Interval throttle is per-session coarse** — the timer arms at the first dirty event after a clean write; a steady sub-threshold trickle writes once per interval, not a sliding window.
-- **Zero-I/O values are best effort** — a cached row may trail current events or overreach a crash-repaired truncation; exact Host reads validate against the complete log, while the Client treats each list value as tentative until the first authoritative frame or complete follow/control baseline replaces it under the projection store's precedence rules.
-- **Callers supply cold logs** — the cache can validate and refold a complete log but never reads session persistence itself; a consumer that needs an exact cold snapshot owns that log read.
+- **No cache-side cold refold** — the cache serves and refreshes its rows but never reads the session log (it does not depend on the persistence layer); a consumer that needs a guaranteed cold snapshot refolds from the log itself.
 
 <a id="dev-note"></a>
 ### Dev Note

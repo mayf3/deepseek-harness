@@ -342,18 +342,12 @@ describe('session.list projections column', () => {
 
   it('lists the latest preset selected by a blank Session instead of its creation preset', async () => {
     const { ctx } = await harness(true)
-    ctx.sessionProjections.register(agentPresetProjectionDefinition)
     const session = ctx.sessions.create(SessionId('preset-list'), {
       meta: { cwd: '/workspace', agentPreset: 'standard' },
     })
+    ctx.sessionProjections.register(agentPresetProjectionDefinition)
     const gateway = remote(ctx)
     await new Promise(resolve => setTimeout(resolve, 0))
-
-    const initial = await gateway.list(request({}))
-    if (!initial.ok) throw new Error('unreachable')
-    expect(initial.value.items.find(item => item.sessionId === session.id)
-      ?.projections?.values.agentPreset).toBe('standard')
-
     session.append('agent-preset/selected', { agentPreset: 'minimal' })
 
     const response = await gateway.list(request({}))
