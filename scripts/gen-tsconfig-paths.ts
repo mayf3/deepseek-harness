@@ -58,6 +58,34 @@ function packageName(manifest: string): string | undefined {
   return typeof name === 'string' ? name : undefined
 }
 
+/** One workspace package directory and the name its manifest declares. */
+interface WorkspacePackage {
+  readonly group: string
+  readonly directory: string
+  readonly packageDir: string
+  readonly name: string
+}
+
+/**
+ * Walk `packages/<group>/<directory>` once, in a stable order.
+ * @returns Every directory whose manifest names a `@deepseek-ai/dsh-` package and that carries `src`.
+ */
+function workspacePackages(): WorkspacePackage[] {
+  const packages = join(ROOT, 'packages')
+  const found: WorkspacePackage[] = []
+  for (const group of readdirSync(packages).sort()) {
+    const groupDir = join(packages, group)
+    if (!statSync(groupDir).isDirectory()) continue
+    for (const directory of readdirSync(groupDir).sort()) {
+      const packageDir = join(groupDir, directory)
+      const name = packageName(join(packageDir, 'package.json'))
+      if (name === undefined || !name.startsWith(PREFIX)) continue
+      if (existsSync(join(packageDir, 'src'))) found.push({ group, directory, packageDir, name })
+    }
+  }
+  return found
+}
+
 /**
  * Collect every package the removed wildcards could resolve.
  *
@@ -71,30 +99,22 @@ function packageName(manifest: string): string | undefined {
  * wildcards resolved by group order and an explicit map cannot express.
  */
 export function collectPackageAliases(): PackageAlias[] {
-  const packages = join(ROOT, 'packages')
   const bySpecifier = new Map<string, PackageAlias & { directory: string }>()
-  for (const group of readdirSync(packages).sort()) {
-    const groupDir = join(packages, group)
-    if (!statSync(groupDir).isDirectory()) continue
-    for (const directory of readdirSync(groupDir).sort()) {
-      const packageDir = join(groupDir, directory)
-      const name = packageName(join(packageDir, 'package.json'))
-      if (name === undefined || name !== `${PREFIX}${directory}`) continue
-      if (!existsSync(join(packageDir, 'src'))) continue
-      const previous = bySpecifier.get(name)
-      if (previous !== undefined) {
-        throw new Error(
-          `gen-tsconfig-paths: ${name} is claimed by packages/${previous.directory} and packages/${group}/${directory}; `
-          + 'an explicit alias cannot express the group-order tiebreak the wildcard used.',
-        )
-      }
-      bySpecifier.set(name, {
-        specifier: name,
-        source: `./packages/${group}/${directory}/src`,
-        hasInvariant: existsSync(join(packageDir, 'src', 'invariant.ts')),
-        directory: `${group}/${directory}`,
-      })
+  for (const { group, directory, packageDir, name } of workspacePackages()) {
+    if (name !== `${PREFIX}${directory}`) continue
+    const previous = bySpecifier.get(name)
+    if (previous !== undefined) {
+      throw new Error(
+        `gen-tsconfig-paths: ${name} is claimed by packages/${previous.directory} and packages/${group}/${directory}; `
+        + 'an explicit alias cannot express the group-order tiebreak the wildcard used.',
+      )
     }
+    bySpecifier.set(name, {
+      specifier: name,
+      source: `./packages/${group}/${directory}/src`,
+      hasInvariant: existsSync(join(packageDir, 'src', 'invariant.ts')),
+      directory: `${group}/${directory}`,
+    })
   }
   return [...bySpecifier.values()]
     .map(({ specifier, source, hasInvariant }) => ({ specifier, source, hasInvariant }))
@@ -112,19 +132,9 @@ export function collectPackageAliases(): PackageAlias[] {
  * @returns Declared names of every `@deepseek-ai/dsh-` package carrying a `src` directory.
  */
 export function collectPackageNames(): string[] {
-  const packages = join(ROOT, 'packages')
-  const names: string[] = []
-  for (const group of readdirSync(packages).sort()) {
-    const groupDir = join(packages, group)
-    if (!statSync(groupDir).isDirectory()) continue
-    for (const directory of readdirSync(groupDir).sort()) {
-      const packageDir = join(groupDir, directory)
-      const name = packageName(join(packageDir, 'package.json'))
-      if (name === undefined || !name.startsWith(PREFIX)) continue
-      if (existsSync(join(packageDir, 'src'))) names.push(name)
-    }
-  }
-  return names.sort((left, right) => left.localeCompare(right))
+  return workspacePackages()
+    .map(({ name }) => name)
+    .sort((left, right) => left.localeCompare(right))
 }
 
 /**
