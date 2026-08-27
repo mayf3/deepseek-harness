@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import {
+  InvalidPresetIdError,
+  PresetExistsError,
+  UnknownPresetError,
+} from '@deepseek-ai/dsh-agent-presets'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type { SettingsDescriptor, SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { TypertRemoteFailure, remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
@@ -306,6 +311,32 @@ describe('the settings Remote namespace a configuration page calls', () => {
       })
   })
 
+  it('classifies cancellation while preparing or opening the settings document', async () => {
+    const preparing = new Context()
+    await preparing.plugin(DocumentSettings)
+    const prepareAbort = new AbortController()
+    vi.spyOn(preparing.settings, 'prepareDocument').mockImplementation(async () => {
+      prepareAbort.abort(new Error('cancelled'))
+      throw new Error('preparation stopped')
+    })
+    const preparingController = new SettingsController(preparing)
+    await expect(preparingController.openSettingsDocument(prepareAbort.signal))
+      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+
+    const opening = new Context()
+    await opening.plugin(DocumentSettings)
+    vi.spyOn(opening.settings, 'prepareDocument').mockResolvedValue('/tmp/settings.yaml')
+    const openAbort = new AbortController()
+    const openingController = new SettingsController(opening, {}, {
+      openTextFile: async () => {
+        openAbort.abort(new Error('cancelled'))
+        throw new Error('opening stopped')
+      },
+    })
+    await expect(openingController.openSettingsDocument(openAbort.signal))
+      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+  })
+
   it('opens a user Agent preset directory or returns its path without a native opener', async () => {
     const ctx = new Context()
     ctx.provide('agentPresets', {
@@ -331,6 +362,21 @@ describe('the settings Remote namespace a configuration page calls', () => {
       .resolves.toEqual({ opened: false, path: '/presets/mine' })
   })
 
+  it('covers native-open detection defaults and explicit overrides', () => {
+    const fromInjectedOpener = new SettingsController(new Context(), {}, {
+      openPath: () => Promise.resolve(),
+    })
+    expect((fromInjectedOpener as unknown as { canOpenPath: () => boolean }).canOpenPath()).toBe(true)
+
+    const detected = new SettingsController(new Context())
+    expect(typeof (detected as unknown as { canOpenPath: () => boolean }).canOpenPath()).toBe('boolean')
+
+    const override = vi.fn(() => false)
+    const overridden = new SettingsController(new Context(), {}, { canOpenPath: override })
+    expect((overridden as unknown as { canOpenPath: () => boolean }).canOpenPath()).toBe(false)
+    expect(override).toHaveBeenCalledOnce()
+  })
+
   it('refuses a shipped Agent preset and a missing preset provider', async () => {
     const ctx = new Context()
     ctx.provide('agentPresets', {
@@ -345,5 +391,55 @@ describe('the settings Remote namespace a configuration page calls', () => {
     const missing = new SettingsController(new Context())
     await expect(missing.openAgentPresetDirectory('mine', new AbortController().signal))
       .rejects.toMatchObject({ failure: { code: 'agent-preset-not-found' } })
+  })
+
+  it('rejects an empty Agent preset id before resolving a provider', async () => {
+    const resolve = vi.fn()
+    const ctx = new Context()
+    ctx.provide('agentPresets', { resolve } as never)
+    const controller = new SettingsController(ctx)
+
+    await expect(controller.openAgentPresetDirectory('', new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code: 'bad-request' } })
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [new UnknownPresetError('missing', ['standard']), 'agent-preset-not-found'],
+    [new InvalidPresetIdError('../bad'), 'agent-preset-invalid'],
+    [new PresetExistsError('taken'), 'agent-preset-invalid'],
+    [new TypertRemoteFailure({ code: 'cancelled', message: 'cancelled', details: {} }), 'cancelled'],
+    ['unexpected preset failure', 'internal'],
+  ] as const)('maps Agent preset resolution failure %#', async (error, code) => {
+    const ctx = new Context()
+    ctx.provide('agentPresets', { resolve: () => Promise.reject(error) } as never)
+    const controller = new SettingsController(ctx)
+
+    await expect(controller.openAgentPresetDirectory('mine', new AbortController().signal))
+      .rejects.toMatchObject({ failure: { code } })
+  })
+
+  it('classifies cancellation and non-Error failures from the preset opener', async () => {
+    const ctx = new Context()
+    ctx.provide('agentPresets', {
+      resolve: (id: string) => Promise.resolve({
+        id, trust: 'user', path: `/presets/${id}/agent.cordis.yml`,
+      }),
+    } as never)
+    const abort = new AbortController()
+    const openPath = vi.fn()
+      .mockImplementationOnce(async () => {
+        abort.abort(new Error('cancelled'))
+        throw new Error('opening stopped')
+      })
+      .mockRejectedValueOnce('desktop unavailable')
+    const controller = new SettingsController(ctx, { nativeOpen: true }, { openPath })
+
+    await expect(controller.openAgentPresetDirectory('first', abort.signal))
+      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+    await expect(controller.openAgentPresetDirectory('second', new AbortController().signal))
+      .rejects.toMatchObject({
+        failure: { code: 'internal', message: 'path open failed: desktop unavailable' },
+      })
   })
 })

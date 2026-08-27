@@ -188,4 +188,41 @@ describe('SessionSkillCatalog', () => {
         failure: { code: 'internal', message: expect.stringContaining('skill registry is absent') },
       })
   })
+
+  it('rejects observations without projections or a project cwd', async () => {
+    const ctx = await context()
+    const sessionId = SessionId('incomplete-skills')
+    const withoutProjections = { ...observation(sessionId, { cwd: '/project' }), projections: undefined }
+    const observeSession = vi.fn()
+      .mockResolvedValueOnce(withoutProjections)
+      .mockResolvedValueOnce(observation(sessionId))
+    ctx.provide('sessionQuery', { observeSession } as never)
+    const catalog = new SessionSkillCatalog(ctx)
+
+    await expect(catalog.list({ sessionId }, new AbortController().signal))
+      .rejects.toMatchObject({
+        failure: { code: 'internal', message: expect.stringContaining('projected Session observation') },
+      })
+    await expect(catalog.list({ sessionId }, new AbortController().signal))
+      .rejects.toMatchObject({
+        failure: { code: 'internal', message: expect.stringContaining('has no project cwd') },
+      })
+  })
+
+  it('classifies a provider listing failure', async () => {
+    const ctx = await context()
+    const sessionId = SessionId('failed-skills')
+    ctx.provide('sessionQuery', {
+      observeSession: () => Promise.resolve(observation(sessionId, { cwd: '/project' })),
+    } as never)
+    ctx.provide('skills', {
+      list: () => Promise.reject(new Error('catalog offline')),
+    } as never)
+    const catalog = new SessionSkillCatalog(ctx)
+
+    await expect(catalog.list({ sessionId }, new AbortController().signal))
+      .rejects.toMatchObject({
+        failure: { code: 'internal', message: 'skill listing failed: Error: catalog offline' },
+      })
+  })
 })

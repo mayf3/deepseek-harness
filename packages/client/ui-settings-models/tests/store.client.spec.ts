@@ -181,6 +181,21 @@ describe('ModelsSettingsStore', () => {
     expect(store.store.getSnapshot().status).toBe('ready')
   })
 
+  it('surfaces a configurable-provider directory failure', async () => {
+    const { face, mirror } = api()
+    const llm = (face as unknown as {
+      llm: { listConfigurableProviders: () => Promise<RemoteAnswer<never>> }
+    }).llm
+    llm.listConfigurableProviders = () => Promise.resolve(remoteFail<never>('configuration directory down'))
+    const store = new ModelsSettingsStore(face, settingsSchema, mirror)
+
+    await store.load()
+
+    expect(store.store.getSnapshot()).toMatchObject({
+      status: 'error', error: 'configuration directory down',
+    })
+  })
+
   it('lets the newest load win over a stale slow response', async () => {
     let release: (() => void) | undefined
     const gate = new Promise<void>((resolve) => { release = resolve })

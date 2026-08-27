@@ -2,7 +2,11 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
-import { createSessionTestRemote, testSessionPersistence } from './test-remote.ts'
+import {
+  createSessionTestController,
+  createSessionTestRemote,
+  testSessionPersistence,
+} from './test-remote.ts'
 
 async function context(): Promise<Context> {
   const ctx = new Context()
@@ -91,5 +95,55 @@ describe('session/openWorkspacePath', () => {
     aborted.abort(new Error('cancelled'))
     await expect(remote.openWorkspacePath({ sessionId, path: 'result.html' }, aborted.signal))
       .resolves.toMatchObject({ ok: false, error: { code: 'cancelled' } })
+  })
+
+  it('classifies inspection cancellation and non-session failures', async () => {
+    const ctx = await context()
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/default',
+    })
+    const inspect = vi.spyOn(controller, 'inspect')
+    const aborted = new AbortController()
+    inspect.mockImplementationOnce(async () => {
+      aborted.abort(new Error('cancelled'))
+      throw new Error('inspection stopped')
+    })
+    await expect(controller.openWorkspacePath({
+      sessionId: SessionId('inspection-cancelled'), path: 'result.html',
+    }, aborted.signal)).rejects.toMatchObject({ failure: { code: 'cancelled' } })
+
+    inspect.mockRejectedValueOnce('storage offline')
+    await expect(controller.openWorkspacePath({
+      sessionId: SessionId('inspection-failed'), path: 'result.html',
+    }, new AbortController().signal)).rejects.toMatchObject({
+      failure: { code: 'internal', message: expect.stringContaining('storage offline') },
+    })
+  })
+
+  it('classifies opener cancellation and non-Error failures', async () => {
+    const ctx = await context()
+    const sessionId = SessionId('open-error-kinds')
+    ctx.sessions.create(sessionId, { meta: { cwd: '/workspace/project' } })
+    const aborted = new AbortController()
+    const openPath = vi.fn()
+      .mockImplementationOnce(async () => {
+        aborted.abort(new Error('cancelled'))
+        throw new Error('opening stopped')
+      })
+      .mockRejectedValueOnce('desktop unavailable')
+    const controller = createSessionTestController(ctx, {
+      defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
+      cwd: '/default',
+      openPath,
+    })
+
+    await expect(controller.openWorkspacePath({ sessionId, path: 'first.html' }, aborted.signal))
+      .rejects.toMatchObject({ failure: { code: 'cancelled' } })
+    await expect(controller.openWorkspacePath({
+      sessionId, path: 'second.html',
+    }, new AbortController().signal)).rejects.toMatchObject({
+      failure: { code: 'internal', message: 'path open failed: desktop unavailable' },
+    })
   })
 })

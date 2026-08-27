@@ -65,12 +65,11 @@ function modelsApi(options: {
   error?: string
 } = {}) {
   const models = vi.fn(() => Promise.resolve({
-    rpcId: 'm-1' as never,
-    result: options.error === undefined
+    ...(options.error === undefined
       ? { ok: true as const, value: { groups: options.groups ?? [], failures: options.failures ?? [] } }
-      : { ok: false as const, error: { code: 'internal_error' as never, message: options.error } },
+      : { ok: false as const, error: { code: 'internal' as const, message: options.error, details: {} } }),
   }))
-  return { api: { llm: { models } } as never, models }
+  return { api: { modelCatalog: models } as never, models }
 }
 
 function deferred<T>() {
@@ -662,15 +661,14 @@ describe('SubagentModelSelectionCardController', () => {
     const refreshed = deferred<never>()
     const models = vi.fn()
       .mockResolvedValueOnce({
-        rpcId: 'catalog-1',
-        result: { ok: true, value: {
+        ok: true, value: {
           groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
           failures: [],
-        } },
+        },
       })
       .mockImplementationOnce(() => refreshed.promise)
     const controller = new SubagentModelSelectionCardController(
-      host.scope, { llm: { models } } as never,
+      host.scope, { modelCatalog: models } as never,
     )
     const face = controller.inject()
     const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
@@ -684,8 +682,7 @@ describe('SubagentModelSelectionCardController', () => {
       candidates: [expect.objectContaining({ key: 'alpha\0fast', selected: true })],
     })
     refreshed.resolve({
-      rpcId: 'catalog-2',
-      result: { ok: true, value: { groups: [], failures: [] } },
+      ok: true, value: { groups: [], failures: [] },
     } as never)
     await vi.waitFor(() => { expect(state().catalogStatus).toBe('ready') })
     expect(state().candidates).toEqual([
@@ -738,21 +735,19 @@ describe('SubagentModelSelectionCardController', () => {
     })
     const models = vi.fn()
       .mockResolvedValueOnce({
-        rpcId: 'catalog-1',
-        result: { ok: true, value: {
+        ok: true, value: {
           groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
           failures: [],
-        } },
+        },
       })
       .mockResolvedValueOnce({
-        rpcId: 'catalog-2',
-        result: { ok: true, value: {
+        ok: true, value: {
           groups: [{ id: 'beta', name: 'Beta', models: [{ id: 'new', name: 'New' }] }],
           failures: [],
-        } },
+        },
       })
     const controller = new SubagentModelSelectionCardController(
-      host.scope, { llm: { models } } as never,
+      host.scope, { modelCatalog: models } as never,
     )
     const state = () => controller.inject().hooks.subagentModelSelectionCard.getSnapshot()
     await vi.waitFor(() => { expect(state().candidates[0]?.provider).toBe('alpha') })
@@ -807,7 +802,7 @@ describe('SubagentModelSelectionCardController', () => {
 
     const pending = deferred<never>()
     const models = vi.fn(() => pending.promise)
-    const controller = new SubagentModelSelectionCardController(host.scope, { llm: { models } } as never)
+    const controller = new SubagentModelSelectionCardController(host.scope, { modelCatalog: models } as never)
     const face = controller.inject()
     face.toggleEnabled()
     face.retryCatalog()
@@ -819,14 +814,13 @@ describe('SubagentModelSelectionCardController', () => {
     const pendingResolve = deferred<never>()
     const resolving = new SubagentModelSelectionCardController(
       host.scope,
-      { llm: { models: () => pendingResolve.promise } } as never,
+      { modelCatalog: () => pendingResolve.promise } as never,
     )
     const resolvingFace = resolving.inject()
     resolvingFace.toggleEnabled()
     resolving.dispose()
     pendingResolve.resolve({
-      rpcId: 'late' as never,
-      result: { ok: true, value: { groups: [], failures: [] } },
+      ok: true, value: { groups: [], failures: [] },
     } as never)
     await pendingResolve.promise
   })
