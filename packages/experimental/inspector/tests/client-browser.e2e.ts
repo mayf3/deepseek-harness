@@ -150,8 +150,10 @@ describe.skipIf(!built)('Inspector built Client in Chromium', () => {
     const context = contextEvent.params?.context as Record<string, unknown>
     const contextId = context.id
     const uniqueContextId = context.uniqueId
+    const sourceId = asRecord(context.auxData).sourceId
     expect(contextId).toBeTypeOf('number')
     expect(uniqueContextId).toBeTypeOf('string')
+    expect(sourceId).toBeTypeOf('string')
 
     const evaluated = await cdp.call('Runtime.evaluate', {
       expression: 'globalThis.__inspectorConsoleEvaluation = { answer: 6 * 7 }',
@@ -211,6 +213,26 @@ describe.skipIf(!built)('Inspector built Client in Chromium', () => {
       url: script.params?.url,
       lineNumber: 0,
     })).error?.message).toContain('Client native debugging is unavailable')
+
+    const duplicateContext = cdp.waitForEvent('Runtime.executionContextCreated', (event) => {
+      const candidate = event.params?.context as Record<string, unknown> | undefined
+      return String(candidate?.name).startsWith('Client —') && candidate?.id !== contextId
+    })
+    const popup = await Promise.all([
+      page.waitForEvent('popup'),
+      page.evaluate(() => {
+        if (window.open(location.href, '_blank') === null) throw new Error('duplicate tab was blocked')
+      }),
+    ]).then(([opened]) => opened)
+    await popup.waitForFunction(() => Reflect.get(globalThis, '__INSPECTOR_BROWSER_TEST__') !== undefined)
+    const duplicate = (await duplicateContext).params?.context as Record<string, unknown>
+    expect(asRecord(duplicate.auxData).sourceId).not.toBe(sourceId)
+    await cdp.call('Debugger.disable')
+    await popup.evaluate(async () => {
+      const state = Reflect.get(globalThis, '__INSPECTOR_BROWSER_TEST__') as { dispose?: () => Promise<void> } | undefined
+      await state?.dispose?.()
+    })
+    await popup.close()
   }, 20_000)
 })
 
@@ -231,14 +253,14 @@ globalThis.__DSH_BOOT__ = ${JSON.stringify(boot)};
 globalThis.__ModuleLoader__ = { load(registration) { globalThis.__INSPECTOR_REGISTRATION__ = registration; } };
 </script>
 <script src="/client.js?rev=browser-test"></script>
-<script>
+<script type="module">
 const registration = globalThis.__INSPECTOR_REGISTRATION__;
 const disposers = [];
 const root = {
   __inspectorContext: true,
   registry: new Map(),
   events: { _hooks: {} },
-  effect(callback) { const dispose = callback(); disposers.push(dispose); return dispose; },
+  async effect(callback) { const dispose = await callback(); disposers.push(dispose); return dispose; },
   on() { return () => {}; },
   provide(name, value) { this[name] = value; return () => { delete this[name]; }; },
 };
@@ -248,9 +270,9 @@ const plugin = registration.factory(specifier => {
   if (specifier === '@deepseek-ai/cordis') return cordis;
   throw new Error('Unexpected Client bundle dependency ' + specifier);
 });
-plugin.apply(root);
+await plugin.apply(root);
 globalThis.__INSPECTOR_BROWSER_TEST__ = {
-  dispose() { for (const dispose of disposers.reverse()) dispose(); },
+  async dispose() { for (const dispose of disposers.reverse()) await dispose(); },
 };
 </script>`
 }

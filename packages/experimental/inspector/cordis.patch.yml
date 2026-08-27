@@ -1,13 +1,8 @@
-# Development overlay for the experimental inspector: mount it per launch with
-#   pnpm run demo:inspector        (pnpm dsh web --patch ./packages/experimental/inspector/cordis.patch.yml)
-# A source launch resolves this workspace package through the tsconfig paths
-# facade and needs no installation. A built launch additionally needs the
-# package importable from the profile:
-#   dsh plugin --profile web add link:<absolute path to this package directory>
-# (`link:`, not `file:` — `file:` re-installs the workspace:^ dependencies
-# inside the profile and fails). The package is private and ships with no
-# published dsh installation; a missing package fails loud at entry import.
+# Built-artifact overlay for the experimental inspector:
+#   node apps/cli/lib/bin.js web --patch ./packages/experimental/inspector/cordis.patch.yml
+# The relative entry is anchored to this file, so the private package does not
+# need to be installed into the selected profile. Run `pnpm run build` first.
 
 - insert:
     - id: experimental-inspector
-      name: '@deepseek-ai/dsh-experimental-inspector'
+      name: './lib/index.js'

@@ -106,7 +106,7 @@ Host 与 Client 发布同一种嵌套 `CordisTreeSnapshot` 类型。Context 与 
 
 source 仍发布完整 snapshot，Worker 在通知 DevTools 前按稳定的 backend node identity 比较差异。无变化的 snapshot 不发送 DOM event；新增、移除和 attribute 变化使用节点级 CDP event，插入节点的载荷扣留其子树，兄弟节点重排只替换对应 parent 的 children。现有 `NodeId` 与未受影响的 Elements 展开状态保持稳定。
 
-Client 断联时，其 Console execution context 与 live object id 会立即销毁。启用断联树保留后，Elements 会原样保留最后一棵树；连接状态留在 inspection model 中，不会未经设计就成为 DOM attribute。重连会沿用逻辑 source id，为新的 transport generation 创建新的 synthetic CDP context id，并在完整 snapshot 到达后替换旧树。Worker 最多保留 `maxDisconnectedCordisTrees` 棵此类 snapshot；设为零会立即移除。
+Client 断联时，其 Console execution context 与 live object id 会立即销毁。启用断联树保留后，Elements 会原样保留最后一棵树；连接状态留在 inspection model 中，不会未经设计就成为 DOM attribute。重连会沿用逻辑 source id，为新的 transport generation 创建新的 synthetic CDP context id，并在完整 snapshot 到达后替换旧树。Client 把逻辑 id 保存在 `sessionStorage` 中，并通过 Web Locks 在页面存活期间独占该 id，因此刷新会复用 id，而复制出的另一个 live tab 会取得新 id。Worker 最多保留 `maxDisconnectedCordisTrees` 棵此类 snapshot；设为零会立即移除。
 
 <a id="host-fetch-capture"></a>
 ## Host fetch 采集
@@ -138,6 +138,7 @@ CDP target 通过 `Runtime.evaluate` 提供 Host 和已连接 Client realm 中�
 - **Client active debugging 不受支持**——Console event、Runtime 求值、RemoteObject 访问和只读 `lib/client.js` Sources 可用。Client script debugger request 返回明确的 unsupported error；target-wide pause 与 resume 只控制 Host。
 - **Client Sources 只暴露 Inspector bundle**——本包不收录页面中的其他 script。
 - **Client 求值使用页面 JavaScript**——页面 Content Security Policy 可能阻止动态求值；synthetic context 不提供 DevTools command-line helper 或原生 REPL 声明语义。
+- **Client 身份仲裁依赖 Web Locks**——缺少该 API 的浏览器仍会通过 `sessionStorage` 保持重连与刷新身份，但无法区分从同一存储状态复制出的两个同时存活 tab。
 - **fetch 拦截范围是 `globalThis.fetch`**——直接调用 Undici API，以及激活前保存的 fetch 引用不会被观察。
 - **body clone 有运行成本**——完整采集会 tee 请求与响应 stream，直至达到配置上限，可能增加内存与 I/O 压力。保留 body 的上限不包含 stream tee 内部的缓冲，包括来源提供的超大 chunk，或为读取较慢的应用分支排队的数据。
 - **不自动重启 Worker**——Worker 意外退出会使当前 Inspector 实例失败；生命周期恢复留待后续改动。
