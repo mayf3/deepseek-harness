@@ -16,40 +16,13 @@ function ok<T>(request: RpcRequest<unknown>, value: T): Promise<RpcResponse<T>> 
 /** Scripted impl: every method resolves an empty-ish OK unless a case overrides it. */
 function scriptedApi(overrides: {
   host?: Partial<ApiProxy['host']>
-  skills?: Partial<ApiProxy['skills']>
-  agentPresets?: Partial<ApiProxy['agentPresets']>
-  settings?: Partial<ApiProxy['settings']>
-  llm?: Partial<ApiProxy['llm']>
 } = {}): ApiProxy {
-  const err = <T>(r: RpcRequest<unknown>): Promise<RpcResponse<T>> =>
-    Promise.resolve({ rpcId: r.rpcId, result: { ok: false, error: { code: 'internal' as const, message: 'stub', details: {} } } })
   return {
     host: {
       describe: r => ok(r, {
         version: '0-test', cwd: '/t', attachedSessions: 0, home: '/h', canOpenPath: true,
       }),
-      openPath: r => ok(r, { opened: true as const }),
       ...overrides.host,
-    },
-    skills: { list: r => ok(r, { skills: [] }), ...overrides.skills },
-    agentPresets: {
-      openDocument: r => ok(r, { opened: true as const }),
-      ...overrides.agentPresets,
-    },
-    settings: {
-      openDocument: r => ok(r, { opened: true as const }),
-      ...overrides.settings,
-    },
-    llm: {
-      providers: r => ok(r, { providers: [] }),
-      models: r => ok(r, {
-        default: { provider: 'test', model: 'test' },
-        routableProviders: [],
-        groups: [],
-        failures: [],
-      }),
-      discoverModels: err,
-      ...overrides.llm,
     },
     downloads: { sessionLog: async () => new Response('stub', { status: 404 }) },
   }
@@ -57,15 +30,6 @@ function scriptedApi(overrides: {
 
 function client(api: ApiProxy, timeoutMs?: number): InProcessApiClient {
   return new InProcessApiClient(toFetchHandler(api), timeoutMs)
-}
-
-/** Wrap one scripted method to record its invocation into `seen` before responding. */
-function recorderInto(seen: { method: string; payload: unknown }[]) {
-  return <P, V>(method: string, respond: (r: RpcRequest<P>) => Promise<RpcResponse<V>>) =>
-    (r: RpcRequest<P>): Promise<RpcResponse<V>> => {
-      seen.push({ method, payload: r.payload })
-      return respond(r)
-    }
 }
 
 describe('unary round trip', () => {
@@ -84,11 +48,6 @@ describe('unary round trip', () => {
     expect(seen?.rpcId).toBeTruthy()
     expect(response.rpcId).toBe(seen?.rpcId)
     expect(response.result).toMatchObject({ ok: true, value: { version: '0-test' } })
-  })
-
-  it('routes the agent-preset document opener through the wire', async () => {
-    const opened = await client(scriptedApi()).agentPresets.openDocument({ agentPreset: 'mine' })
-    expect(opened.result).toEqual({ ok: true, value: { opened: true } })
   })
 
   it('passes business errors through as 200 + err result, not a throw', async () => {
@@ -114,17 +73,6 @@ describe('unary round trip', () => {
       },
     })
     await expect(client(api).host.describe({})).rejects.toThrow(/rpcId mismatch/)
-  })
-
-  it('rejects a method/path mismatch as bad-request', async () => {
-    const handler = toFetchHandler(scriptedApi())
-    const body = { type: 'client-request', rpcId: 'r1', method: 'host.describe', payload: {} }
-    const response = await handler.fetch('http://dsh.internal/api/skill.list', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
-    expect(response.status).toBe(200)
-    const parsed = await response.json() as { result: { ok: boolean; error?: { code: string; message: string } } }
-    expect(parsed.result.ok).toBe(false)
-    expect(parsed.result.error?.code).toBe('bad-request')
-    expect(parsed.result.error?.message).toMatch(/does not match path/)
   })
 
   it('rejects a malformed envelope as bad-request, salvaging the rpcId or falling back to the sentinel', async () => {
@@ -276,70 +224,5 @@ describe('envelope tap', () => {
     await tapped.host.describe({})
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(batches).toEqual([])
-  })
-})
-
-describe('config unary surface', () => {
-  it('round-trips every settings/llm method with its own payload and value shape', async () => {
-    const seen: { method: string; payload: unknown }[] = []
-    const record = recorderInto(seen)
-    const providerRow = {
-      provider: 'openai',
-      displayName: 'openai',
-      settingsNs: 'llm-pi-ai',
-      settingsPath: ['providers', 'openai'],
-      active: false,
-    }
-    const group = { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-v4-flash', name: 'Flash' }] }
-    const api = scriptedApi({
-      settings: {
-        openDocument: record('settings.openDocument', r => ok(r, { opened: true as const })),
-      },
-      llm: {
-        providers: record('llm.providers', r => ok(r, { providers: [providerRow] })),
-        models: record('llm.models', r => ok(r, {
-          default: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-          routableProviders: ['deepseek-official'],
-          groups: [group],
-          failures: [],
-        })),
-        discoverModels: record('llm.discoverModels', r => ok(r, { models: [{ id: 'acme-large', contextWindow: 65536 }] })),
-      },
-    })
-    const c = client(api)
-
-    expect((await c.settings.openDocument({})).result).toEqual({ ok: true, value: { opened: true } })
-    const providers = await c.llm.providers({})
-    expect(providers.result).toEqual({ ok: true, value: { providers: [providerRow] } })
-    const models = await c.llm.models({})
-    expect(models.result).toEqual({
-      ok: true,
-      value: {
-        default: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-        routableProviders: ['deepseek-official'],
-        groups: [group],
-        failures: [],
-      },
-    })
-    const discovered = await c.llm.discoverModels({
-      settingsNs: 'llm-pi-ai',
-      baseURL: 'https://gateway.acme.example/v1',
-      api: 'openai-completions',
-      apiKey: 'probe-key',
-    })
-    expect(discovered.result).toEqual({ ok: true, value: { models: [{ id: 'acme-large', contextWindow: 65536 }] } })
-
-    expect(seen.map(call => call.method)).toEqual([
-      'settings.openDocument',
-      'llm.providers', 'llm.models', 'llm.discoverModels',
-    ])
-    // The draft crosses whole, credential included: the host needs it for this
-    // one interrogation and stores none of it.
-    expect(seen[3]?.payload).toEqual({
-      settingsNs: 'llm-pi-ai',
-      baseURL: 'https://gateway.acme.example/v1',
-      api: 'openai-completions',
-      apiKey: 'probe-key',
-    })
   })
 })

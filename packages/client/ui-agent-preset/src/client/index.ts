@@ -65,7 +65,7 @@ export function apply(ctx: ClientContext): void {
   // One roster, four surfaces. The chip is registered in a later scope, so it
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
-  const section = new AgentPresetSectionController({ ...api, ...settingsWire }, ctx.remote, () => {
+  const section = new AgentPresetSectionController(api, ctx.remote, () => {
     void controller.load()
     for (const read of rosterReaders) read()
   })

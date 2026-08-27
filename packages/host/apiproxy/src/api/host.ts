@@ -27,14 +27,4 @@ export interface HostApi {
     canOpenPath: boolean
   }>>
 
-  /**
-   * Open a filesystem path with the operating system's default application
-   * (Finder / Explorer / xdg-open hand-off). The browser carrier's
-   * prefix-wide trust and authentication checks cover this method like every
-   * other `/api` request.
-   */
-  openPath(
-    request: RpcRequest<{ path: string }>,
-    signal: AbortSignal,
-  ): Promise<RpcResponse<{ opened: true }>>
 }

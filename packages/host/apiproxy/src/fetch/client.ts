@@ -12,17 +12,7 @@ import type { ClientRequest, RpcMessage, RpcResponse } from '../api/rpc.ts'
 import { RpcId } from '../api/rpc.ts'
 import type { Wire } from '../api/rpc.schema.ts'
 import { serverResponseSchema } from '../api/rpc.schema.ts'
-import {
-  hostDescribeValueSchema, hostOpenPathValueSchema,
-} from '../api/host.schema.ts'
-import { skillListValueSchema } from '../api/skills.schema.ts'
-import {
-  agentPresetOpenDocumentValueSchema,
-} from '../api/agent-presets.schema.ts'
-import {
-  settingsOpenDocumentValueSchema,
-} from '../api/settings.schema.ts'
-import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSchema } from '../api/llm.schema.ts'
+import { hostDescribeValueSchema } from '../api/host.schema.ts'
 
 /**
  * Client consumption face of the contract (shape a): same domain tree as ApiProxy, but unary
@@ -39,21 +29,6 @@ import { llmDiscoverModelsValueSchema, llmModelsValueSchema, llmProvidersValueSc
 export interface IApiClient {
   host: {
     describe(payload: RequestPayload<'host.describe'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.describe'>>>
-    openPath(payload: RequestPayload<'host.openPath'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'host.openPath'>>>
-  }
-  skills: {
-    list(payload: RequestPayload<'skill.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'skill.list'>>>
-  }
-  agentPresets: {
-    openDocument(payload: RequestPayload<'agentPreset.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.openDocument'>>>
-  }
-  settings: {
-    openDocument(payload: RequestPayload<'settings.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'settings.openDocument'>>>
-  }
-  llm: {
-    providers(payload: RequestPayload<'llm.providers'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.providers'>>>
-    models(payload: RequestPayload<'llm.models'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.models'>>>
-    discoverModels(payload: RequestPayload<'llm.discoverModels'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'llm.discoverModels'>>>
   }
 }
 
@@ -63,13 +38,6 @@ export interface IApiClient {
  */
 const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseValue<K>>> } = {
   'host.describe': hostDescribeValueSchema,
-  'host.openPath': hostOpenPathValueSchema,
-  'skill.list': skillListValueSchema,
-  'agentPreset.openDocument': agentPresetOpenDocumentValueSchema,
-  'settings.openDocument': settingsOpenDocumentValueSchema,
-  'llm.providers': llmProvidersValueSchema,
-  'llm.models': llmModelsValueSchema,
-  'llm.discoverModels': llmDiscoverModelsValueSchema,
 }
 
 /** Default timeout for bounded unary calls (rpc-compare 2026-07-19: a hung host must not leave callers pending forever). */
@@ -195,30 +163,6 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly host: IApiClient['host'] = {
     describe: (payload, signal) => this.callUnary('host.describe', payload, signal),
-    openPath: (payload, signal) => this.callUnary('host.openPath', payload, signal),
-  }
-
-  readonly skills: IApiClient['skills'] = {
-    list: (payload, signal) => this.callUnary('skill.list', payload, signal),
-  }
-
-  // Annotated like every sibling, and load-bearing rather than cosmetic:
-  // inferring this member inlines `AgentPresetEntry` into the emitted
-  // declaration by the specifier TS picks — the host `index.ts` — which drags
-  // the whole gateway, and with it the host `Context` merges, into every
-  // Client program that imports this carrier.
-  readonly agentPresets: IApiClient['agentPresets'] = {
-    openDocument: (payload, signal) => this.callUnary('agentPreset.openDocument', payload, signal),
-  }
-
-  readonly settings: IApiClient['settings'] = {
-    openDocument: (payload, signal) => this.callUnary('settings.openDocument', payload, signal),
-  }
-
-  readonly llm: IApiClient['llm'] = {
-    providers: (payload, signal) => this.callUnary('llm.providers', payload, signal),
-    models: (payload, signal) => this.callUnary('llm.models', payload, signal),
-    discoverModels: (payload, signal) => this.callUnary('llm.discoverModels', payload, signal),
   }
 
 }

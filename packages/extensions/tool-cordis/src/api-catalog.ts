@@ -854,12 +854,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'agent', description: 'target agent whose session cwd bounds discovery.' }, { name: 'query', description: 'path text following `@` or `@"`.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'deterministic path-only candidates.',
       },
-      {
-        signature: '@Remote(\'list\') remoteExportList( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>',
-        description: 'Remote face of list; the decorator cannot mark the abstract member, so this concrete adapter carries the identical contract.',
-        parameters: [{ name: 'agent', description: 'target agent whose session cwd bounds discovery.' }, { name: 'query', description: 'path text following `@` or `@"`.' }, { name: 'signal', description: 'caller cancellation.' }],
-        returns: 'deterministic path-only candidates.',
-      },
     ],
   },
   {
@@ -1118,7 +1112,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the disposer, carrying {@link AdapterRegistrationHandle.replace}.',
       },
       {
-        signature: 'listProviders(): LlmProviderInfo[]',
+        signature: '@Remote listProviders(): LlmProviderInfo[]',
         description: 'Describe provider routes with a registered adapter.',
         parameters: [],
         returns: 'detached provider metadata in registration order.',
@@ -1130,22 +1124,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'a handle that withdraws all of them, and can atomically replace them.',
       },
       {
-        signature: 'listConfigurableProviders(): LlmConfigurableProvider[]',
+        signature: '@Remote listConfigurableProviders(): LlmConfigurableProvider[]',
         description: 'List every declared configurable provider, registered or dormant.',
         parameters: [],
         returns: 'detached directory entries in declaration order.',
       },
       {
-        signature: 'registerModelDiscovery( settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>, ): () => void',
+        signature: 'registerModelDiscovery( settingsNs: string, discover: ( request: LlmModelDiscoveryRequest, signal?: AbortSignal, ) => Promise<readonly LlmDiscoveredModel[]>, ): () => void',
         description: 'Offer to interrogate provider endpoints on behalf of the settings namespace this plugin owns. The namespace is the key because that is what a configuration surface already holds from the configurable-provider directory, and because a provider being *added* has no route to name yet. Disposed with the fiber.',
-        parameters: [{ name: 'settingsNs', description: 'the namespace whose profiles this discovery serves.' }, { name: 'discover', description: 'interrogates one endpoint; must honor `request.signal`.' }],
+        parameters: [{ name: 'settingsNs', description: 'the namespace whose profiles this discovery serves.' }, { name: 'discover', description: 'interrogates one endpoint and must honor the supplied signal.' }],
         returns: 'the disposer that withdraws the offer.',
       },
       {
-        signature: 'async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, ): Promise<LlmDiscoveredModel[]>',
+        signature: 'async discoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal, ): Promise<LlmDiscoveredModel[]>',
         description: 'Interrogate one provider endpoint for the models it advertises. The request describes a draft, not a stored route, so nothing here reads or writes settings or credentials — the caller owns both, and the reply is candidate metadata a surface may offer for adoption.',
-        parameters: [{ name: 'settingsNs', description: 'namespace whose registered discovery serves this draft.' }, { name: 'request', description: 'the endpoint, protocol, and one-shot credential to use.' }],
+        parameters: [{ name: 'settingsNs', description: 'namespace whose registered discovery serves this draft.' }, { name: 'request', description: 'the endpoint, protocol, and one-shot credential to use.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the advertised models, deduplicated in endpoint order.',
+      },
+      {
+        signature: '@Remote(\'discoverModels\') async remoteDiscoverModels( settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal, ): Promise<LlmDiscoveredModel[]>',
+        description: 'Remote adapter for one draft provider interrogation.',
+        parameters: [{ name: 'settingsNs', description: 'namespace whose registered discovery serves this draft.' }, { name: 'request', description: 'endpoint, protocol, and one-shot credential to use.' }, { name: 'signal', description: 'caller cancellation supplied by the Remote carrier.' }],
+        returns: 'advertised models in endpoint order.',
+        throws: ['TypertRemoteFailure with `model-discovery-failed` when discovery refuses or fails.'],
       },
       {
         signature: 'providerRetryPolicy(provider: string): ResolvedRetryPolicy',
@@ -1376,6 +1377,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the normalized selection installed for the Session.',
       },
       {
+        signature: '@Remote(\'modelCatalog\') modelCatalog(): Promise<ModelCatalog>',
+        description: 'Describe every currently routable model for Host-generation selectors.',
+        parameters: [],
+        returns: 'provider-grouped models, the deployment default, and isolated provider failures.',
+      },
+      {
+        signature: '@Remote(\'openWorkspacePath\') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>',
+        description: 'Open one path prepared by a Session-aware caller on the Host desktop.',
+        parameters: [{ name: 'request', description: 'path after best-effort Session workspace resolution.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'confirmation after the native opener accepts the path.',
+        throws: ['TypertRemoteFailure when the request is invalid, cancelled, or the opener fails.'],
+      },
+      {
         signature: '@Remote(\'rename\') rename(request: SessionRenameRequest): Promise<SessionRenameValue>',
         description: 'Rename one Session after explicitly resuming it.',
         parameters: [{ name: 'request', description: 'Session identity and proposed title.' }],
@@ -1428,6 +1442,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Stream a complete live-control baseline followed by replacement frames.',
         parameters: [{ name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'one complete baseline followed by live replacement frames.',
+      },
+    ],
+  },
+  {
+    key: 'sessionFileReferences',
+    summary: 'Host Remote adapter over the composed file-reference provider.',
+    description: 'Host Remote adapter over the composed file-reference provider.',
+    methods: [
+      {
+        signature: '@Remote list( agent: Agent, query: string, signal: AbortSignal, ): Promise<FileReferenceCandidate[]>',
+        description: 'List file and directory candidates for one Agent\'s working directory.',
+        parameters: [{ name: 'agent', description: 'target Agent resolved from the Session identity on the wire.' }, { name: 'query', description: 'path text following `@` or `@"`.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'deterministic path-only candidates from the composed provider.',
       },
     ],
   },
@@ -1803,6 +1830,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sessionSkillCatalog',
+    summary: 'Host service backing `ctx.remote.skills` without activating a cold Agent.',
+    description: 'Host service backing `ctx.remote.skills` without activating a cold Agent.',
+    methods: [
+      {
+        signature: '@Remote async list(request: SkillListRequest, signal: AbortSignal): Promise<SkillListValue>',
+        description: 'List the user-invocable skills visible to one Session composition.',
+        parameters: [{ name: 'request', description: 'Session identity whose cwd and preset select the catalog view.' }, { name: 'signal', description: 'caller lifetime carried by the Remote transport; admitted catalog reads retain their existing completion semantics.' }],
+        returns: 'user-invocable skill metadata without loading skill bodies.',
+        throws: ['TypertRemoteFailure when the Session cannot be inspected or no registry can serve it.'],
+      },
+    ],
+  },
+  {
     key: 'sessionTelemetry',
     summary: 'Loadable form of the backend contract: one implementation per context — the cordis `Service` registration under the `telemetry` key throws on a duplicate, cordis\' standard behavior.',
     description: 'Loadable form of the backend contract: one implementation per context — the cordis `Service` registration under the `telemetry` key throws on a duplicate, cordis\' standard behavior. A backend composes a SessionTelemetryCoordinator in its constructor to install the capture side.',
@@ -1945,6 +1986,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'ns', description: 'namespace key to write.' }, { name: 'ops', description: 'the edits to apply, in order.' }, { name: 'expectedRevision', description: 'revision the caller read; `undefined` writes unconditionally.' }],
         returns: 'the namespace\'s redacted view after the write.',
         throws: ['TypertRemoteFailure when the request is invalid, no provider is mounted, or the provider refuses the write.'],
+      },
+      {
+        signature: '@Remote async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>',
+        description: 'Materialize the provider-owned settings document and open it in a native text editor.',
+        parameters: [{ name: 'signal', description: 'caller lifetime; abort terminates preparation or the native command.' }],
+        returns: 'confirmation after the native opener accepts the document.',
+        throws: ['TypertRemoteFailure when no document exists, preparation fails, or opening fails.'],
+      },
+      {
+        signature: '@Remote async openAgentPresetDirectory( agentPreset: string, signal: AbortSignal, ): Promise<AgentPresetDirectoryOpenValue>',
+        description: 'Open one user-authored Agent preset directory or return its path when no native opener exists.',
+        parameters: [{ name: 'agentPreset', description: 'preset id resolved against Host-owned roots.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
+        returns: 'an opened confirmation or the resolved directory for text display.',
+        throws: ['TypertRemoteFailure when the preset is missing, read-only, invalid, or cannot be opened.'],
       },
     ],
   },
@@ -3356,6 +3411,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentPresetDirectoryOpenValue',
+    declaration: 'export type AgentPresetDirectoryOpenValue = {\n    readonly opened: true;\n} | {\n    readonly opened: false;\n    readonly path: string;\n};',
+  },
+  {
     name: 'AgentPresetDocument',
     declaration: 'export interface AgentPresetDocument {\n    readonly agentPreset: string;\n    readonly trust: PresetTrust;\n    readonly content: string;\n    readonly name?: string;\n    readonly description?: string;\n}',
   },
@@ -4221,7 +4280,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmModelDiscoveryRequest',
-    declaration: 'export interface LlmModelDiscoveryRequest {\n    provider?: string;\n    baseURL?: string;\n    api?: string;\n    apiKey?: string;\n    signal?: AbortSignal;\n}',
+    declaration: 'export interface LlmModelDiscoveryRequest {\n    provider?: string;\n    baseURL?: string;\n    api?: string;\n    apiKey?: string;\n}',
   },
   {
     name: 'LlmModelInfo',
@@ -4245,7 +4304,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends Service {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'LspHover',
@@ -4384,6 +4443,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
   },
   {
+    name: 'ModelCatalog',
+    declaration: 'export interface ModelCatalog {\n    readonly default: ModelSelection;\n    readonly routableProviders: readonly string[];\n    readonly groups: readonly ModelProviderGroup[];\n    readonly failures: readonly ModelCatalogFailure[];\n}',
+  },
+  {
+    name: 'ModelCatalogFailure',
+    declaration: 'export interface ModelCatalogFailure {\n    readonly id: string;\n    readonly name: string;\n    readonly message: string;\n}',
+  },
+  {
+    name: 'ModelCatalogModel',
+    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProvenance {\n    kind: \'model\';\n}',
   },
@@ -4394,6 +4465,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ModelModalityMap',
     declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
+  },
+  {
+    name: 'ModelProviderGroup',
+    declaration: 'export interface ModelProviderGroup {\n    readonly id: string;\n    readonly name: string;\n    readonly models: readonly ModelCatalogModel[];\n}',
+  },
+  {
+    name: 'ModelReasoning',
+    declaration: 'export interface ModelReasoning {\n    readonly efforts: readonly ModelReasoningEffort[];\n    readonly defaultEffort?: string;\n}',
+  },
+  {
+    name: 'ModelReasoningEffort',
+    declaration: 'export interface ModelReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
   },
   {
     name: 'ObjectJsonSchema',
@@ -4589,7 +4672,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n        available: readonly string[];\n    };\n    \'agent-preset-invalid\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-busy\': {\n        reason: string;\n    };\n    \'model-discovery-failed\': {\n        settingsNs: string;\n        baseURL?: string;\n    };\n    \'internal\': {};\n}',
+    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n        available: readonly string[];\n    };\n    \'agent-preset-invalid\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-busy\': {\n        reason: string;\n    };\n    \'internal\': {};\n}',
   },
   {
     name: 'RpcId',
@@ -4876,6 +4959,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionObservationOptions {\n    readonly signal?: AbortSignal;\n    readonly projectionMode?: \'all\' | \'none\';\n}',
   },
   {
+    name: 'SessionOpenWorkspacePathRequest',
+    declaration: 'export interface SessionOpenWorkspacePathRequest {\n    readonly path: string;\n}',
+  },
+  {
+    name: 'SessionOpenWorkspacePathValue',
+    declaration: 'export interface SessionOpenWorkspacePathValue {\n    readonly opened: true;\n}',
+  },
+  {
     name: 'SessionPage',
     declaration: 'export interface SessionPage {\n    readonly records: readonly SessionHistoryRecord[];\n    readonly hasMore: boolean;\n}',
   },
@@ -5116,6 +5207,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SettingsDescriptor {\n    ns: SettingsNamespace;\n    schema: unknown;\n    value: unknown;\n    revision: number;\n    base?: unknown;\n    user?: unknown;\n    applies: SettingsApplies;\n    secrets?: RedactedSecret[];\n}',
   },
   {
+    name: 'SettingsDocumentOpenValue',
+    declaration: 'export interface SettingsDocumentOpenValue {\n    readonly opened: true;\n}',
+  },
+  {
     name: 'SettingsNamespace',
     declaration: 'export type SettingsNamespace = Branded<\'SettingsNamespace\'>;',
   },
@@ -5184,8 +5279,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SkillDefinition extends SkillSummary {\n    readonly content: string;\n    readonly path?: string;\n    readonly metadata?: Readonly<Record<string, unknown>>;\n}',
   },
   {
+    name: 'SkillEntry',
+    declaration: 'export interface SkillEntry {\n    readonly name: string;\n    readonly description: string;\n    readonly whenToUse?: string;\n    readonly modelInvocable: boolean;\n}',
+  },
+  {
     name: 'SkillInvocationPolicy',
     declaration: 'export interface SkillInvocationPolicy {\n    readonly modelInvocable: boolean;\n    readonly userInvocable: boolean;\n}',
+  },
+  {
+    name: 'SkillListRequest',
+    declaration: 'export interface SkillListRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
+    name: 'SkillListValue',
+    declaration: 'export interface SkillListValue {\n    readonly skills: readonly SkillEntry[];\n}',
   },
   {
     name: 'SkillLookupOptions',

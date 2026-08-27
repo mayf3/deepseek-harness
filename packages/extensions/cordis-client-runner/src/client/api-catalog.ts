@@ -348,11 +348,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'path', description: 'existing parent directory.' }, { name: 'name', description: 'child directory name.' }],
         returns: 'created absolute path.',
       },
-      {
-        signature: 'openPath(path: string): Promise<void>',
-        description: 'Open a path with the Host operating system.',
-        parameters: [{ name: 'path', description: 'absolute or Host-resolvable path.' }],
-      },
     ],
   },
   {

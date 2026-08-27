@@ -1,7 +1,7 @@
 // Test-local programmable IApiClient fake (NOT the fixture: fixture is a demo
 // data source on a real clock; behavior tests need per-case responses and
 // deferred-controlled timing). The generation source is a hand pump.
-import type { IApiClient, RpcResponse, SkillEntry } from '../src/client/api.ts'
+import type { IApiClient, RpcResponse } from '../src/client/api.ts'
 import type { ConnectionGenerationSource } from '../src/client/connection.ts'
 import { RpcId } from '../src/client/api.ts'
 
@@ -50,44 +50,11 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({
       version: '0-fake', cwd: '/f', attachedSessions: 0, home: '/h', canOpenPath: true,
     }))
-  onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
-    () => Promise.resolve(ok({ opened: true as const }))
 
   private readonly generationConns: StreamConn[] = []
 
   readonly host: IApiClient['host'] = {
     describe: payload => this.record('host.describe', payload, this.onDescribe(payload)),
-    openPath: payload => this.record('host.openPath', payload, this.onOpenPath(payload)),
-  }
-
-  // Payloads stay `unknown` (lint-lane note above); response rows are the real
-  // wire shapes so cases can program catalogs and skill lists without casts.
-  onSkillList: (payload: unknown) => Promise<RpcResponse<{ skills: SkillEntry[] }>>
-    = () => Promise.resolve(ok({ skills: [] }))
-
-
-  readonly agentPresets: IApiClient['agentPresets'] = {
-    openDocument: (payload: { agentPreset: string }) =>
-      this.record('agentPreset.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
-  }
-
-  readonly skills: IApiClient['skills'] = {
-    list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
-  }
-
-  readonly settings: IApiClient['settings'] = {
-    openDocument: payload => this.record('settings.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
-  }
-
-  readonly llm: IApiClient['llm'] = {
-    providers: payload => this.record('llm.providers', payload, Promise.resolve(ok({ providers: [] }))),
-    models: payload => this.record('llm.models', payload, Promise.resolve(ok({
-      default: { provider: 'fixture', model: 'fixture' },
-      routableProviders: [],
-      groups: [],
-      failures: [],
-    }))),
-    discoverModels: payload => this.record('llm.discoverModels', payload, Promise.resolve(ok({ models: [] }))),
   }
 
   /** When true, the source never reports ready. */

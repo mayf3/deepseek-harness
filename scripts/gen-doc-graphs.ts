@@ -154,8 +154,21 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'api-session-controller',
     title: 'Host Session Remote controller',
     mode: 'core',
-    consumers: ['host-apiproxy'],
-    note: 'Owns Session commands, cold reads, durable-event following, live control state, and Agent activation policy; apiProxy reuses its inspection and Agent-resolution operations for Session-aware domains.',
+    note: 'Owns Session commands, cold reads, durable-event following, live control state, model catalogs, workspace opening, and Agent activation policy.',
+  },
+  {
+    key: 'sessionFileReferences',
+    pkg: 'api-session-controller',
+    title: 'Session-addressed file-reference Remote adapter',
+    mode: 'core',
+    note: 'Delegates file-reference discovery through the Session Controller\'s established Agent lookup policy.',
+  },
+  {
+    key: 'sessionSkillCatalog',
+    pkg: 'api-session-controller',
+    title: 'Session-addressed skill Remote adapter',
+    mode: 'core',
+    note: 'Lists the Session composition\'s user-invocable skills without activating a cold Agent.',
   },
   {
     key: 'credentialsController',
@@ -308,7 +321,8 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'File reference discovery',
     mode: 'seam',
     implementations: ['file-reference-local'],
-    note: 'The interface returns path-only completion candidates within the addressed Agent cwd through its unary Remote contract; providers own namespace access and ranking without reading file contents.',
+    consumers: ['api-session-controller'],
+    note: 'The interface returns path-only completion candidates within an Agent cwd; providers own namespace access and ranking without reading file contents.',
   },
   {
     key: 'sessionReferenceResolver',

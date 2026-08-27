@@ -4,3 +4,6 @@
 - id: api-gateway
   config:
     nativeOpen: true
+- id: settings-controller
+  config:
+    nativeOpen: true

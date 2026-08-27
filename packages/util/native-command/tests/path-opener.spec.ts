@@ -1,3 +1,4 @@
+/** Cross-platform native path opener behavior. */
 type ExecFileCallback = (
   error: (Error & { code?: string | number }) | null,
   stdout: string,
@@ -16,7 +17,7 @@ vi.mock('node:child_process', () => ({ execFile: execFileMock }))
 
 import { release as osRelease } from 'node:os'
 import { describe, expect, it, vi } from 'vitest'
-import { canOpenNativePath, openNativePath, openNativeTextFile, type PathOpenerRunner } from '../src/native-path-opener.ts'
+import { canOpenNativePath, openNativePath, openNativeTextFile, type PathOpenerRunner } from '../src/index.ts'
 
 const signal = () => new AbortController().signal
 

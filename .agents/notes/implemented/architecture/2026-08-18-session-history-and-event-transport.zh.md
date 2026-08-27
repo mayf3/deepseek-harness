@@ -136,7 +136,7 @@ repair 期间旧 window 保持可读；page 与期间积累的 live entries 拼�
 
 `packages/api/session-controller` 提供 Host `ctx.sessionController` 与生成的 `ctx.remote.session` namespace。
 
-它拥有 Session list、search、create、selectModel、rename、fork、prompt、attachment、updateQueue、cancel、page、follow 与 control。Host generation 的 model catalog 通过独立的 `llm.models` 公开，因为它不属于特定 Session。
+它拥有 Session list、search、create、selectModel、rename、fork、prompt、attachment、updateQueue、cancel、page、follow 与 control。Host generation 的 model catalog 通过独立的 `session/modelCatalog` 公开，因为它不属于特定 Session。
 
 包内的 agent、commands、control、history 与 list controller 分开实现，但 Session 身份解析、激活策略、subagent ownership 和 Remote 错误投影只有一个公开 owner。
 
@@ -378,4 +378,4 @@ Remote waterfall 保留多 Client 首个 claim、全体 `next` 后继续 Host ch
 
 本决定扩展[Remote 事件投递](2026-08-10-remote-event-delivery.zh.md)的 allowlist 与单一 Cordis 签名设计：普通通知继续使用 `emit`，Agent-scoped async waterfall 使用同一 `ctx.remote.$on` 面和显式 `waterfall` mode；不建立第二套 invocation map。
 
-本决定接管[简单一元 API Proxy 迁移](../../proposed/architecture/2026-08-10-unary-apiproxy-remote-migration.zh.md)中保留的 Session、Workspace 与 Host event carrier，并保留[后台任务展示](../feature/2026-08-08-web-background-job-display.zh.md)所要求的完整 jobs snapshot、进程内生命周期和“观察不恢复 Agent”语义。
+本决定接管[简单一元 API Proxy 迁移](2026-08-10-unary-apiproxy-remote-migration.zh.md)中保留的 Session、Workspace 与 Host event carrier，并保留[后台任务展示](../feature/2026-08-08-web-background-job-display.zh.md)所要求的完整 jobs snapshot、进程内生命周期和“观察不恢复 Agent”语义。

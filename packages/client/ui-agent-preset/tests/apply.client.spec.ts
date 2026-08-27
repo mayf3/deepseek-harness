@@ -82,6 +82,10 @@ async function bench() {
       calls.push(`settings:${JSON.stringify(patch)}`)
       return Promise.resolve({ ok: true as const, value: {} })
     },
+    openAgentPresetDirectory: (agentPreset: string) => {
+      calls.push(`openAgentPresetDirectory:${agentPreset}`)
+      return Promise.resolve({ ok: true as const, value: { opened: true as const } })
+    },
   }
   const remote = new TestRemote(ctx, { settings })
   // The roster and the switch are the AgentPresets Remote namespace; the
@@ -117,12 +121,6 @@ async function bench() {
           rpcId: 'r',
           result: { ok: true as const, value: { canOpenPath: true } },
         }),
-      },
-      agentPresets: {
-        openDocument: (payload: { agentPreset: string }) => {
-          calls.push(`openDocument:${payload.agentPreset}`)
-          return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { opened: true as const } } })
-        },
       },
     },
   } as never)
@@ -257,7 +255,7 @@ describe('ui-agent-preset apply', () => {
     // one the roster re-read reflects, and the delete the section confirmed
     // is the one its remove() sees.
     expect(calls).toContain('copy:mine')
-    expect(calls.filter(call => call === 'openDocument:mine').length).toBeGreaterThan(0)
+    expect(calls.filter(call => call === 'openAgentPresetDirectory:mine').length).toBeGreaterThan(0)
     expect(section.hooks.agentPresetSection.getSnapshot().rows).toHaveLength(2)
   })
 

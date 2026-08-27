@@ -4,10 +4,6 @@
  */
 
 import type { HostApi } from './host.ts'
-import type { AgentPresetsApi } from './agent-presets.ts'
-import type { SkillsApi } from './skills.ts'
-import type { SettingsApi } from './settings.ts'
-import type { LlmApi } from './llm.ts'
 import type { RpcResponse } from './rpc.ts'
 
 /**
@@ -17,13 +13,6 @@ import type { RpcResponse } from './rpc.ts'
  */
 export interface RpcMethodMap {
   'host.describe': HostApi['describe']
-  'host.openPath': HostApi['openPath']
-  'skill.list': SkillsApi['list']
-  'agentPreset.openDocument': AgentPresetsApi['openDocument']
-  'settings.openDocument': SettingsApi['openDocument']
-  'llm.providers': LlmApi['providers']
-  'llm.models': LlmApi['models']
-  'llm.discoverModels': LlmApi['discoverModels']
 }
 
 /** Business request payload of method K (reaches through the RpcRequest narrow form to payload). */

@@ -5,19 +5,11 @@
  */
 
 import type { HostApi } from './host.ts'
-import type { AgentPresetsApi } from './agent-presets.ts'
-import type { SkillsApi } from './skills.ts'
-import type { SettingsApi } from './settings.ts'
-import type { LlmApi } from './llm.ts'
 import type { DownloadsApi } from './downloads.ts'
 
 /** Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row. */
 export interface ApiProxy {
   host: HostApi
-  skills: SkillsApi
-  agentPresets: AgentPresetsApi
-  settings: SettingsApi
-  llm: LlmApi
   /** Host-only download surfaces (GET, no wire envelope); absent from IApiClient. */
   downloads: DownloadsApi
 }
@@ -28,10 +20,6 @@ export type {
   ModelReasoningEffort, ModelSelection,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 export type { HostApi } from './host.ts'
-export type { SkillsApi, SkillEntry } from './skills.ts'
-export type { AgentPresetsApi } from './agent-presets.ts'
-export type { SettingsApi } from './settings.ts'
-export type { ConfigurableProviderView, DiscoveredModelView, LlmApi } from './llm.ts'
 export type { DownloadsApi } from './downloads.ts'
 
 // ---- Message layer: narrow forms (domain-signature view) ----
