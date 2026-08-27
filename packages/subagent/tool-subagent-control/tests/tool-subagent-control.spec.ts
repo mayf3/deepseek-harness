@@ -111,11 +111,10 @@ describe('dsh-tool-subagent-control', () => {
     // The continuable path has no Task, so the schema must not promise one.
     expect(schemas[0]!.description).not.toContain('job_output')
     expect(schemas[0]!.description).not.toContain('job id')
-    // Follow-up ordering is model-visible: it cannot redirect the open turn.
-    expect(schemas[0]!.description).toContain('next turn')
+    expect(schemas[0]!.description).toContain('nearest step')
   })
 
-  it('cold-resumes a settled child and reports the queued next turn', async () => {
+  it('cold-resumes a settled child and reports delivery', async () => {
     const { ctx, parent } = await setup([textResponse('first answer'), textResponse('second answer')])
     const started = await ctx.subagents.startContinuable({
       provider: 'spawn',
@@ -131,20 +130,24 @@ describe('dsh-tool-subagent-control', () => {
     }, parent)
 
     expect(result.isError).toBe(false)
-    expect(text(result)).toBe(`message queued as the next turn for subagent ${started.childId}`)
+    expect(text(result)).toBe(`message delivered to subagent ${started.childId}`)
     await waitNoActivation(ctx, started.childId)
 
     const loaded = await ctx.sessionPersistence.load(started.childId)
     const followUp = loaded.events.findLast(event => event.type === 'user/message')
     // The durable message source records the calling agent without granting authority.
     expect(followUp?.type === 'user/message' && followUp.data.source).toEqual({
-      kind: 'coordinator',
+      kind: 'agent-message',
       form: 'relay',
       senderSessionId: parent.id,
     })
+    expect(followUp?.type === 'user/message' && followUp.data.content).toEqual([
+      { type: 'text', text: `Agent ${parent.id} sent a message:` },
+      { type: 'text', text: 'and then?' },
+    ])
   })
 
-  it('queues behind an open turn instead of joining it', async () => {
+  it('steers the nearest step of an open turn', async () => {
     const { ctx, parent, adapter } = await setup([textResponse('first'), textResponse('second')])
     const started = await ctx.subagents.startContinuable({
       provider: 'spawn',
@@ -165,8 +168,11 @@ describe('dsh-tool-subagent-control', () => {
     const prompts = loaded.events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
       : [])
-    // A follow-up is its own later turn, never steering inside the first one.
-    expect(prompts).toEqual(['long work', 'also consider Y'])
+    expect(prompts).toEqual([
+      'long work',
+      `Agent ${parent.id} sent a message:`,
+      'also consider Y',
+    ])
   })
 
   it('reports a delivery failure as an errored, not-delivered result', async () => {
@@ -267,9 +273,9 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     expect(cancelSpy).toHaveBeenCalledExactlyOnceWith({ kind: 'parent' }, { keepInbox: true })
     releaseFirst.resolve(undefined)
     await child.whenIdle()
-    // Parked, not resumed: the queued follow-up waits for a waking send.
+    // Parked, not resumed: the steering waits for another waking send.
     expect(adapter.requests).toHaveLength(1)
-    expect(child.inbox.nextTurn).toHaveLength(1)
+    expect(child.inbox.nextStep).toHaveLength(1)
 
     const waking = await callTool(ctx, 'send_message', {
       subagent_id: started.childId,
@@ -281,7 +287,13 @@ describe('dsh-tool-subagent-control interrupt_agent', () => {
     const prompts = loaded.events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
       ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
       : [])
-    expect(prompts).toEqual(['long work', 'parked follow-up', 'wake up'])
+    expect(prompts).toEqual([
+      'long work',
+      `Agent ${parent.id} sent a message:`,
+      'parked follow-up',
+      `Agent ${parent.id} sent a message:`,
+      'wake up',
+    ])
   })
 
   it('lets a deep live ancestor interrupt a descendant it did not directly create', async () => {

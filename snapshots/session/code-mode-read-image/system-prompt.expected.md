@@ -161,7 +161,7 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
-  /** Send a message to a background subagent by its subagent id, continuing the same conversation. It becomes the subagent's next turn: if it is still working, the message waits until its current turn finishes, so it cannot redirect work already underway. This call returns no answer from the subagent — only confirmation that the message was delivered — so use it to give it more work. A failure means the message was NOT delivered. */
+  /** Send a message to a background subagent by its subagent id, continuing the same conversation. If it is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the subagent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
   send_message: {
     /** The subagent id returned when the background subagent was started. */
     subagent_id: string;

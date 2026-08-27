@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-subagent-report` gives every continuable in-process child a return channel to the agent that started it: it installs a child-scoped `report` tool plus the prompt guidance that tells the child to use it. The tool and its guidance exist only inside those children — roots, one-shot subagents, remote providers, and sibling scopes never see them. Accepted reports reach the parent as ordinary parent messages, framed as `Background subagent <child-id> reported:`. Continuable mode depends on neither this package nor the control package; this one owns only the child-to-parent direction.
+`dsh-tool-subagent-report` gives every continuable in-process child a temporary child-scoped adapter over the adjacent-Agent messaging service: it installs a `report` tool plus prompt guidance telling the child to use it. Roots, one-shot subagents, remote providers, and sibling scopes never see either registration. Accepted reports reach the direct parent through fixed Steer scheduling and the same framing and provenance as parent-to-child messages. Continuable mode depends on neither this package nor the control package.
 
 ## Table of Contents
 
@@ -41,11 +41,7 @@ Load the subagent service, a backend, the delegation tool in `continuable` mode,
 - name: '@deepseek-ai/dsh-tool-subagent-report'
 ```
 
-| Field | Default | Meaning |
-|---|---|---|
-| `reportDelivery` | `next-step` | Parent scheduling for accepted reports: `next-step` wakes the parent at its nearest step boundary; `quiet` adds the same context without waking it |
-
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-subagent-report) is the exhaustive source for every accepted field and its JSDoc.
+The package takes no configuration.
 
 ### What the child gets
 
@@ -53,7 +49,7 @@ Each continuable child gets a `report` tool whose only parameter is `output` —
 
 ### What the parent sees
 
-An accepted report becomes one user-role parent message framed as `Background subagent <child-id> reported:` followed by the child's exact output, with a durable source naming the child. `next-step` delivery wakes an idle parent or joins a running parent's nearest step boundary; `quiet` delivery adds the same context without waking the parent. The tool takes no recipient: the service derives the sole recipient from the child's durable `parentSession`.
+An accepted report becomes one user-role parent message framed as `Agent <child-id> sent a message:` followed by the child's exact output, with a durable `agent-message` source naming the child. Fixed Steer scheduling starts a turn for an idle parent or joins a running parent's nearest step boundary. The tool takes no recipient: it derives the sole recipient from the child's durable `parentSession` and delegates authorization and delivery to `ctx.subagents.sendMessage()`.
 
 ### Scope and direction
 
@@ -75,17 +71,17 @@ The package registers a continuable-child setup contribution rather than a globa
 
 ### Delivery scheduling
 
-`next-step` uses `parent.steer()`: a running parent receives the report at its nearest safe step boundary, an idle parent starts a turn, and reports accepted in sequence share the next-step FIFO. `quiet` uses `parent.inject()`, adding the same next-step context without waking a parked parent. Both are deployment policy: the model-facing schema cannot select or override delivery per call.
+The service always uses `parent.steer()`: a running parent receives the report at its nearest step boundary, an idle parent starts a turn, and reports accepted in sequence share the next-step FIFO. The model-facing schema cannot select or override scheduling.
 
 ### Exported contribution
 
-`installReportTool(childCtx, ctx, delivery)` installs the tool and guidance into a minted child scope and returns one disposer revoking both. The generated tool catalog uses this path because the global registry cannot expose a scope-local schema; production composition still enters through `apply()`.
+`installReportTool(childCtx, ctx)` installs the tool and guidance into a minted child scope and returns one disposer revoking both. The generated tool catalog uses this path because the global registry cannot expose a scope-local schema; production composition still enters through `apply()`.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Continuable-child setup: `installReportTool`, `Config`, delivery resolution |
+| [`src/index.ts`](src/index.ts) | Continuable-child setup and `installReportTool` adapter |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion |
 
 </details>
@@ -97,11 +93,10 @@ The package registers a continuable-child setup contribution rather than a globa
 
 Read these pages when the package-level contract is not enough; they move from the report channel to the continuation service behind it and the parent-facing tools.
 
-- [Subagent subsystem](../../../docs/subsystems/subagent.md) — continuable children, activations, and the `reportFrom`/`reportDelivery` contract.
+- [Subagent subsystem](../../../docs/subsystems/subagent.md) — continuable children, activations, and the `sendMessage` contract.
 - [dsh-tool-subagent-control](../tool-subagent-control/README.md) — the parent-to-child control tools.
 - [dsh-tool-subagent](../tool-subagent/README.md) — the delegation tool that starts continuable children.
 - [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent-report) — the `report` schema.
-- [Generated configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-tool-subagent-report) — every accepted config field.
 
 -----
 
@@ -126,11 +121,11 @@ Prefix-stable within a child; neither the schema nor the section changes at runt
 
 #### What the model sees
 
-`report accepted by the agent that started you as message <messageId>` on acceptance; the canonical output carries the stable `messageId`. A failure from an unauthorized sender, an unavailable parent, or a closing lifecycle is an errored result. The description says a failed call may still have arrived, because a later `tools/post-execute` failure can replace the result after `reportFrom()` accepted the message.
+`report accepted by the agent that started you as message <messageId>` on acceptance; the canonical output carries the stable `messageId`. A failure from an unauthorized sender, an unavailable parent, or a closing lifecycle is an errored result. Delivery acceptance still precedes later tool-result hooks, which are outside this package.
 
 #### Token effect
 
-One short acknowledgement per call in the reporting child. The reported content is additionally billed to the parent: next-step delivery joins the next request in an open parent turn or starts a turn for an idle parent, while quiet delivery waits for another input to wake the parent.
+One short acknowledgement per call in the reporting child. The reported content is additionally billed to the parent: delivery joins the next request in an open parent turn or starts a turn for an idle parent.
 
 #### KV Cache effect
 
@@ -140,7 +135,7 @@ Append-only in the child. In the parent, the framed report follows existing hist
 
 #### What the model sees
 
-One user-role parent message framed as `Background subagent <child-id> reported:` followed by the child's exact `output`, with a durable source `{ kind: 'subagent-report', senderSessionId: <child-id> }` that names the child.
+One user-role parent message framed as `Agent <child-id> sent a message:` followed by the child's exact `output`, with a durable source `{ kind: 'agent-message', form: 'relay', senderSessionId: <child-id> }` that names the child.
 
 #### Token effect
 
@@ -148,7 +143,7 @@ The child's complete `output` plus the one-line frame, uncapped by this package.
 
 #### KV Cache effect
 
-Append-only; the report follows the parent's reusable request prefix. Next-step delivery wakes the parent and may extend its open turn, while quiet delivery does not wake it.
+Append-only; the report follows the parent's reusable request prefix. Steer wakes an idle parent and may extend an open turn.
 
 ## Known Limitations and Deferred Work
 
@@ -159,10 +154,9 @@ These limits define what an accepted report does and does not guarantee; they ar
 
 - **A parent whose host-owned disposal already started can still accept** — `AgentHandle.dispose()` cancels, awaits quiescence, and only then unwinds the scope and leaves the registry; it exposes no signal for "disposal started." A report accepted in that window is appended to the parent's transcript, but that parent will not act on it in this process. A continuation-manager-owned parent rejects forest teardown through the manager's admission boundary.
 - **Acceptance is weaker than durable delivery** — there is no durable mailbox, idempotency key, delivery receipt, retry protocol, or exactly-once claim. A process failure after one side recorded acceptance leaves the outcome ambiguous, and an external retry may duplicate the report.
-- **A staged quiet report is not immediately reconstructable** — acceptance returns its stable `MessageId`, but the parent Session reconstructs the framed content only after pending context reaches its ordinary log boundary.
 - **Granting waits for the next Activation; revocation is immediate** — installing this package after a child becomes resident grants `report` and its guidance only on that child's next Activation, while removing the package revokes both from resident children immediately.
 - **Nested reporting reaches exactly one edge upward** — a grandchild reports to its direct child parent, never to the top-level coordinator, which must explicitly report a derived update later.
-- **No rate limiting** — the default `next-step` mode can amplify model work when nested children report frequently, although reports waiting together share one step; a deployment that accepts unread reports over that amplification selects `quiet`.
+- **No rate limiting** — frequent nested reports can amplify model work, although reports waiting together share one step.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-07-27-intent-named-subagent-continuation-operations.zh.md)
 
-The current activation-based realization is owned by [Continuable subagents](../feature/2026-07-28-continuable-subagent-conversations.md). It retains the `followup` operation this record names, returns the accepted `MessageId`, uses the bare `Agent` parameter as exact live-direct-parent authority, and limits provider participation in continuable children to `prepareContinuable`.
+The provider-request and session-flush decisions remain current. [Adjacent Agents share one Steer messaging operation](../architecture/2026-08-27-adjacent-agent-steer-messaging.md) supersedes this record's `followup` naming and options: the public operation is now `sendMessage(sender, targetId, content, { signal })` for either adjacent direction.
 
 ## Problem
 

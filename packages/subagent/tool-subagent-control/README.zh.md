@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-tool-subagent-control` 为可继续子级添加全局控制工具：`send_message` 投递一条成为子级下一轮次的后续消息，`interrupt_agent` 停止子级当前轮次但保留其队列与后代，`list_agents`（来自可单独加载的 `list-agents` 插件）按持久化 id 与标签列出可继续子级。这些工具是全局的，因此任意数量的委派工具都不会产生重复。这些工具只覆盖父到子方向；子到父方向属于独立安装的 `dsh-tool-subagent-report`。是否加载这些工具不会决定委派工具是否启动可继续工作。
+`dsh-tool-subagent-control` 为可继续子级添加全局控制工具：`send_message` 在直接 child 最近的 step 进行 steer，`interrupt_agent` 停止 child 当前轮次但保留其 inbox 与后代，`list_agents`（来自可单独加载的 `list-agents` 插件）按持久化 id 与标签列出可继续 child。这些工具是全局的，因此任意数量的委派工具都不会产生重复。临时的 child 作用域 `report` 工具反向使用同一个服务操作。是否加载这些工具不会决定委派工具是否启动可继续工作。
 
 ## 目录
 
@@ -68,11 +68,11 @@ kind: "package-reference"
 
 ### 设计理念
 
-`ctx.subagents.followup()`、`interrupt()` 与列表投影之上的轻量适配器；工具不执行任何生命周期路由。驻留、冷恢复与中断授权归服务所有，工具把确切在线的调用 agent（`exec.agent`）作为服务对照目标已记录 lineage 校验的权限凭据传入。
+`ctx.subagents.sendMessage()`、`interrupt()` 与列表投影之上的轻量适配器；工具不执行任何生命周期路由。驻留、冷恢复与授权归服务所有，工具把确切在线的调用 Agent（`exec.agent`）同时作为 sender 与权限凭据传入。
 
 ### 投递与信号所有权
 
-工具转发其执行信号，该信号只在 inbox 接受之前掌管准入。子级一旦接受消息，已接受的轮次便无法再通过本工具取消。每条消息都记录协调者来源 `{ kind: 'coordinator', senderSessionId: parent.id }`；服务会保留该来源，但绝不将其视为权限。
+工具转发其执行信号，该信号只在 inbox 接受之前掌管准入。child 一旦接受消息，该消息便无法再通过本工具取消。每条消息都以 `Agent <sender-id> sent a message:` 作为前缀，并记录 `{ kind: 'agent-message', form: 'relay', senderSessionId: parent.id }`；该来源信息由服务推导，且绝不被视为权限。
 
 ### 列表投影
 
@@ -97,7 +97,7 @@ kind: "package-reference"
 
 - [Subagent 子系统](../../../docs/subsystems/subagent.zh.md)——可继续子级、Activation、inbox、中断与后续消息权限。
 - [dsh-tool-subagent](../tool-subagent/README.zh.md)——启动可继续子级的委派工具。
-- [dsh-tool-subagent-report](../tool-subagent-report/README.zh.md)——子到父的上报通道。
+- [dsh-tool-subagent-report](../tool-subagent-report/README.zh.md)——同一服务操作之上的临时 child 到 parent 适配器。
 - [生成工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-subagent-control)——三个工具的 schema。
 
 -----

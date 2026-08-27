@@ -20,6 +20,7 @@ import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { SubagentPromptRequestId } from '@deepseek-ai/dsh-subagent'
 import {
   acknowledgeReloadConnectionLoss, assertFixtureInventory, captureStableAria, compareOrRefreshGolden,
   launchWebScaffold, watchConsole, webSnapshotMode, type WebScaffold,
@@ -220,12 +221,13 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
       // Keep the continuable Activation resident after this first abort. The
       // direct setup queue does not change the parent-offline UI contract: its
       // input and Send remain disabled throughout the exercised browser path.
-      await scaffold.ctx.subagents.followup(
-        parent,
-        childId,
-        [{ type: 'text', text: REARM }],
-        { source: { kind: 'user' }, signal: new AbortController().signal },
-      )
+      await scaffold.ctx.subagents.prompt({
+        requestId: 'interrupt-ui-rearm' as SubagentPromptRequestId,
+        parentSessionId: parent.id,
+        childSessionId: childId,
+        mode: 'continuable',
+        content: [{ type: 'text', text: REARM }],
+      }, new AbortController().signal)
       const aborted = waitForAbortedTurn(scaffold, childId)
       const interruptResponse = page.waitForResponse(response =>
         new URL(response.url()).pathname === '/api/subagents/interruptByParent')
@@ -239,12 +241,13 @@ describe.skipIf(MODE === 'record')('web e2e: composer interrupt for a running co
 
       // Wake the parked setup message only after cancellation converges. A
       // second hang keeps the parent-available case independent from this stop.
-      await scaffold.ctx.subagents.followup(
-        parent,
-        childId,
-        [{ type: 'text', text: REARM_WAKE }],
-        { source: { kind: 'user' }, signal: new AbortController().signal },
-      )
+      await scaffold.ctx.subagents.prompt({
+        requestId: 'interrupt-ui-rearm-wake' as SubagentPromptRequestId,
+        parentSessionId: parent.id,
+        childSessionId: childId,
+        mode: 'continuable',
+        content: [{ type: 'text', text: REARM_WAKE }],
+      }, new AbortController().signal)
       await waitFor(() => existsSync(rearmedReadyFile), 'the re-armed child turn to open')
       expect(scaffold.ctx.agents.get(childId)?.status).toBe('running')
     } finally {

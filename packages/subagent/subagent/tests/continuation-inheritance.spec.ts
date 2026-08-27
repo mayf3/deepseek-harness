@@ -15,6 +15,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SandboxPolicyService, { effectiveSandboxMode, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -191,10 +192,24 @@ describe('continuable policy inheritance', () => {
     // The parent widens AFTER the child was created; the resumed child keeps
     // the delegation-time snapshot from its own log.
     setSandboxMode(parent.session, 'danger-full-access')
-    await ctx.subagents.followup(parent, started.childId, [{ type: 'text', text: 'continue please' }], {
-      source: { kind: 'user' },
-      signal: new AbortController().signal,
-    })
+    const manager = (ctx.subagents as unknown as {
+      continuations: {
+        queuePrompt(
+          parent: Agent,
+          childId: SessionId,
+          content: ContentBlock[],
+          source: { kind: 'user' },
+          signal: AbortSignal,
+        ): Promise<string>
+      }
+    }).continuations
+    await manager.queuePrompt(
+      parent,
+      started.childId,
+      [{ type: 'text', text: 'continue please' }],
+      { kind: 'user' },
+      new AbortController().signal,
+    )
     await waitNoActivation(ctx, started.childId)
 
     const loaded = await ctx.sessionPersistence.load(started.childId)

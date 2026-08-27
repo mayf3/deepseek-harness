@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-07-27-intent-named-subagent-continuation-operations.md) | 中文
 
-当前基于 Activation 的实现由[可继续的 subagent](../feature/2026-07-28-continuable-subagent-conversations.zh.md)负责。它保留本记录命名的 `followup` 操作，返回已接受的 `MessageId`，使用裸 `Agent` 参数作为确切的在线直属父级权限，并将提供方对可继续 child 的参与限制为 `prepareContinuable`。
+提供方请求与会话 flush 决策仍然有效。[相邻 Agent 共享一个 Steer 消息操作](../architecture/2026-08-27-adjacent-agent-steer-messaging.zh.md)取代了本记录的 `followup` 命名与 options：公开操作现在是可用于任一相邻方向的 `sendMessage(sender, targetId, content, { signal })`。
 
 ## 问题
 

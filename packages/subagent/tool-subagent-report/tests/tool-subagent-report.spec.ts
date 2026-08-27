@@ -62,7 +62,7 @@ afterEach(async () => {
 })
 
 /** Boot the real continuation graph with optional report installation. */
-async function setup(options: { load?: boolean; config?: tool.Config } = {}) {
+async function setup(options: { load?: boolean } = {}) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   const root = mkdtempSync(join(tmpdir(), 'dsh-tool-subagent-report-'))
@@ -72,7 +72,7 @@ async function setup(options: { load?: boolean; config?: tool.Config } = {}) {
   await ctx.plugin(SubagentSpawn, { providerName: 'spawn' })
   const fiber = options.load === false
     ? undefined
-    : await ctx.plugin(tool, options.config ?? { reportDelivery: 'quiet' })
+    : await ctx.plugin(tool)
   const adapter = new HeldAdapter()
   ctx.llm.registerAdapter(['mock'], adapter)
   const parent = ctx.agentLoop.create(SessionId('parent'), { provider: 'mock', model: 'mock' })
@@ -140,7 +140,7 @@ function registerReportConflict(child: Agent): () => void {
 function reports(agent: Agent): { id: string; text: string; sender: string }[] {
   const visible = agent.session.events.flatMap(event => event.type === 'user/message' ? [event.data] : [])
   return [...visible, ...agent.inbox.nextStep].flatMap((message) => {
-    if (message.source.kind !== 'subagent-report') return []
+    if (message.source.kind !== 'agent-message') return []
     return [{
       id: message.id,
       text: message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n'),
@@ -205,10 +205,9 @@ describe('dsh-tool-subagent-report', () => {
     expect(names).not.toContain('send_message')
   })
 
-  it('delivers quiet reports with stable message and sender identities without waking', async () => {
+  it('delivers reports with stable message and sender identities through Steer', async () => {
     const { ctx, parent, adapter } = await setup()
     const { started, child } = await startChild(ctx, parent)
-    const parentRequests = adapter.requests.filter(request => request.sessionId === parent.id).length
     const enqueues: string[] = []
     ctx.on('agent/inbox/inserted', ({ agent, message }) => {
       if (agent === parent) {
@@ -224,34 +223,17 @@ describe('dsh-tool-subagent-report', () => {
     expect(renderedText(result)).toContain(messageId)
     expect(reports(parent)).toEqual([{
       id: messageId,
-      text: `Background subagent ${started.childId} reported:\nCHILD_FINDING`,
+      text: `Agent ${started.childId} sent a message:\nCHILD_FINDING`,
       sender: started.childId,
     }])
-    expect(enqueues).toEqual(['steering'])
-    expect(parent.status).toBe('idle')
-    expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(parentRequests)
-  })
-
-  it('delivers next-step reports through waking steering', async () => {
-    const { ctx, parent, adapter } = await setup({ config: { reportDelivery: 'next-step' } })
-    const { child } = await startChild(ctx, parent)
-    const enqueues: string[] = []
-    ctx.on('agent/inbox/inserted', ({ agent, message }) => {
-      if (agent === parent) {
-        enqueues.push(agent.inbox.nextTurn.some(queued => queued.id === message.id) ? 'queued' : 'steering')
-      }
-    })
-
-    const result = await callReport(ctx, child, 'WAKE_UP')
-    expect(result.isError).toBe(false)
     expect(enqueues).toEqual(['steering'])
     await vi.waitFor(() => {
       expect(adapter.requests.some(request => request.sessionId === parent.id)).toBe(true)
     })
   })
 
-  it('batches repeated next-step reports in accepted order', async () => {
-    const { ctx, parent, adapter } = await setup({ config: { reportDelivery: 'next-step' } })
+  it('batches repeated reports in accepted order at a running parent step', async () => {
+    const { ctx, parent, adapter } = await setup()
     await startHeldParentTurn(parent, adapter)
     const { child } = await startChild(ctx, parent)
 
@@ -262,7 +244,7 @@ describe('dsh-tool-subagent-report', () => {
   })
 
   it('keeps a report before the child settlement in one busy-parent batch', async () => {
-    const { ctx, parent, adapter } = await setup({ config: { reportDelivery: 'next-step' } })
+    const { ctx, parent, adapter } = await setup()
     await startHeldParentTurn(parent, adapter)
     const { started, child } = await startChild(ctx, parent)
 
@@ -271,7 +253,7 @@ describe('dsh-tool-subagent-report', () => {
     await vi.waitFor(() => { expect(ctx.agents.get(started.childId)).toBeUndefined() })
 
     expect(parent.inbox.nextStep.map(message => message.source.kind)).toEqual([
-      'subagent-report',
+      'agent-message',
       'subagent-settled',
     ])
     expect(parent.inbox.nextTurn).toHaveLength(0)
@@ -287,7 +269,7 @@ describe('dsh-tool-subagent-report', () => {
       expect(ctx.agents.get(started.childId) === undefined).toBe(true)
     }, { timeout: 5_000 })
     expect(reports(parent).map(report => report.text)).toEqual([
-      `Background subagent ${started.childId} reported:\nDURABLE_SELECTION`,
+      `Agent ${started.childId} sent a message:\nDURABLE_SELECTION`,
     ])
   })
 
@@ -298,8 +280,8 @@ describe('dsh-tool-subagent-report', () => {
 
     expect((await callReport(ctx, grandchild, 'FROM_GRANDCHILD')).isError).toBe(false)
     expect(reports(parent)).toEqual([])
-    // The intermediate parent's turn is open, so quiet context is pending in
-    // its inbox until that turn reaches its next safe log boundary.
+    // The intermediate parent's turn is open, so steering is pending in its
+    // inbox until that turn reaches its next step boundary.
     expect(reports(child)).toHaveLength(1)
     adapter.release()
     await vi.waitFor(() => { expect(reports(child)).toHaveLength(1) })
@@ -307,8 +289,8 @@ describe('dsh-tool-subagent-report', () => {
     expect(reports(child)[0]?.text).toContain('FROM_GRANDCHILD')
   })
 
-  it('accounts next-step reports delivered to a resident continuable parent', async () => {
-    const { ctx, parent, adapter } = await setup({ config: { reportDelivery: 'next-step' } })
+  it('accounts reports delivered to a resident continuable parent', async () => {
+    const { ctx, parent, adapter } = await setup()
     const { child } = await startChild(ctx, parent, 'outer task')
     const { started: grandchildStart, child: grandchild } = await startChild(ctx, child, 'inner task')
 
@@ -324,12 +306,11 @@ describe('dsh-tool-subagent-report', () => {
   it('normalizes a direct parent send rejection', async () => {
     const { ctx, parent } = await setup()
     const { child } = await startChild(ctx, parent)
-    vi.spyOn(parent, 'inject').mockImplementationOnce(() => {
+    vi.spyOn(parent, 'steer').mockImplementationOnce(() => {
       throw new Error('parent closed during delivery')
     })
 
-    await expect(ctx.subagents.reportFrom(child, [{ type: 'text', text: 'rejected' }], {
-      delivery: 'quiet',
+    await expect(ctx.subagents.sendMessage(child, parent.id, [{ type: 'text', text: 'rejected' }], {
       signal: testSignal,
     })).rejects.toMatchObject({ code: 'PARENT_UNAVAILABLE' })
     expect(reports(parent)).toEqual([])
@@ -337,10 +318,9 @@ describe('dsh-tool-subagent-report', () => {
 
   it('rejects roots, forged same-id senders, absent parents, cancellation, and drain', async () => {
     const { ctx, parent, adapter } = await setup()
-    await expect(ctx.subagents.reportFrom(parent, [{ type: 'text', text: 'root' }], {
-      delivery: 'quiet',
+    await expect(ctx.subagents.sendMessage(parent, SessionId('not-a-child'), [{ type: 'text', text: 'root' }], {
       signal: testSignal,
-    })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+    })).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
 
     const disposable = await ctx.agents.create({
       sessionId: SessionId('disposable-parent'),
@@ -348,8 +328,7 @@ describe('dsh-tool-subagent-report', () => {
     })
     const { child } = await startChild(ctx, disposable.agent)
     const forged = { ...child } as Agent
-    await expect(ctx.subagents.reportFrom(forged, [{ type: 'text', text: 'forged' }], {
-      delivery: 'quiet',
+    await expect(ctx.subagents.sendMessage(forged, disposable.agent.id, [{ type: 'text', text: 'forged' }], {
       signal: testSignal,
     })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
 
@@ -362,8 +341,7 @@ describe('dsh-tool-subagent-report', () => {
 
     adapter.release()
     const draining = ctx.subagents.drainContinuableDescendants([child])
-    await expect(ctx.subagents.reportFrom(child, [{ type: 'text', text: 'draining' }], {
-      delivery: 'quiet',
+    await expect(ctx.subagents.sendMessage(child, disposable.agent.id, [{ type: 'text', text: 'draining' }], {
       signal: testSignal,
     })).rejects.toMatchObject({ code: 'DRAINING' })
     await draining
@@ -380,7 +358,7 @@ describe('dsh-tool-subagent-report', () => {
     expect(await sectionNames(ctx, child)).not.toContain('tool:report')
     expect((await callReport(ctx, child, 'revoked')).isError).toBe(true)
 
-    const late = await ctx.plugin(tool, { reportDelivery: 'quiet' })
+    const late = await ctx.plugin(tool)
     expect(ctx.tools.schemas(child).map(schema => schema.name)).not.toContain('report')
     expect(await sectionNames(ctx, child)).not.toContain('tool:report')
     await late.dispose()
@@ -391,7 +369,7 @@ describe('dsh-tool-subagent-report', () => {
     const { child } = await startChild(ctx, parent)
     const disposeConflict = registerReportConflict(child)
 
-    expect(() => tool.installReportTool(child.ctx, ctx, 'quiet')).toThrow(/already registered in this scope/)
+    expect(() => tool.installReportTool(child.ctx, ctx)).toThrow(/already registered in this scope/)
     expect(await sectionNames(ctx, child)).not.toContain('tool:report')
     disposeConflict()
   })
@@ -409,7 +387,7 @@ describe('dsh-tool-subagent-report', () => {
 
     let failure: unknown
     try {
-      tool.installReportTool(child.ctx, ctx, 'quiet')
+      tool.installReportTool(child.ctx, ctx)
     } catch (error: unknown) {
       failure = error
     }
@@ -427,7 +405,7 @@ describe('dsh-tool-subagent-report', () => {
   it('attempts both revocations and aggregates change-listener failures', async () => {
     const { ctx, parent } = await setup({ load: false })
     const { child } = await startChild(ctx, parent)
-    const dispose = tool.installReportTool(child.ctx, ctx, 'quiet')
+    const dispose = tool.installReportTool(child.ctx, ctx)
     const toolFailure = new Error('tool removal listener failed')
     const promptFailure = new Error('prompt removal listener failed')
     const offTool = ctx.on('tools/change', () => { throw toolFailure })
@@ -551,19 +529,14 @@ describe('dsh-tool-subagent-report', () => {
     expect((await callReport(ctx, child, 'after-close')).isError).toBe(true)
   })
 
-  it('keeps the namespace plugin shape and validates its default', () => {
+  it('keeps the namespace plugin shape', () => {
     expect('default' in tool).toBe(false)
     expect(tool.name).toBe('tool-subagent-report')
     expect(tool.inject).toEqual(['subagents', 'tools', 'systemPrompt'])
-    // Next-step delivery wakes a parked parent and lets a running parent act at
-    // its nearest safe boundary.
-    expect(tool.Config({}).reportDelivery).toBe('next-step')
-    expect(() => tool.Config({ reportDelivery: 'wakeup' } as never)).toThrow()
-    expect(() => tool.Config({ reportDelivery: 'shout' } as never)).toThrow()
   })
 
-  it('wakes the parent under the default configuration', async () => {
-    const { ctx, parent, adapter } = await setup({ config: {} })
+  it('wakes an idle parent', async () => {
+    const { ctx, parent, adapter } = await setup()
     const { child } = await startChild(ctx, parent)
     const enqueues: string[] = []
     ctx.on('agent/inbox/inserted', ({ agent, message }) => {

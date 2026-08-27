@@ -1,6 +1,6 @@
 /**
  * The globally named `send_message` and `interrupt_agent` tools: thin
- * model-facing adapters over `ctx.subagents.followup()` and
+ * model-facing adapters over `ctx.subagents.sendMessage()` and
  * `ctx.subagents.interrupt()`. They perform no lifecycle routing of their own —
  * residency, cold resume, and interrupt authorization belong to the subagent
  * service — and they live apart from the provider-bound
@@ -26,11 +26,10 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'send_message',
     description:
-      'Send a message to a background subagent by its subagent id, continuing the same conversation. It '
-      + 'becomes the subagent\'s next turn: if it is still working, the message waits until its current turn '
-      + 'finishes, so it cannot redirect work already underway. This call returns no answer from the '
-      + 'subagent — only confirmation that the message was delivered — so use it to give it more work. A '
-      + 'failure means the message was NOT delivered.',
+      'Send a message to a background subagent by its subagent id, continuing the same conversation. If it '
+      + 'is still working, the message steers its nearest step; if it is idle, the message starts a turn. '
+      + 'This call returns no answer from the subagent — only confirmation that the message was delivered. '
+      + 'A failure means the message was NOT delivered.',
     parameters: {
       subagent_id: {
         type: 'string',
@@ -53,24 +52,20 @@ export function apply(ctx: Context): void {
       },
       render: (args, _value) => [{
         type: 'text',
-        text: `message queued as the next turn for subagent ${args.subagent_id}`,
+        text: `message delivered to subagent ${args.subagent_id}`,
       }],
     },
     async execute(args, exec) {
-      const parent = exec.agent
-      if (!parent) {
-        // Parent authority requires an exact live calling agent.
+      const sender = exec.agent
+      if (!sender) {
         throw new Error('send_message requires a calling agent (exec.agent was undefined)')
       }
       const message: ContentBlock[] = [{ type: 'text', text: args.message }]
-      const messageId = await ctx.subagents.followup(
-        parent,
+      const messageId = await ctx.subagents.sendMessage(
+        sender,
         SessionId(args.subagent_id),
         message,
-        {
-          source: { kind: 'coordinator', form: 'relay', senderSessionId: parent.id },
-          signal: exec.signal,
-        },
+        { signal: exec.signal },
       )
       return { messageId }
     },

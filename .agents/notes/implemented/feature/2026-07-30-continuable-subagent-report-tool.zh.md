@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-07-30-continuable-subagent-report-tool.md) | 中文
 
+只要该适配器仍然存在，child 作用域设置与提示词指导决策就仍然有效。[相邻 Agent 共享一个 Steer 消息操作](../architecture/2026-08-27-adjacent-agent-steer-messaging.zh.md)取代了本记录的公开 `reportFrom`、按方向划分来源与可配置投递决策。
+
 ## 问题
 
 可继续的进程内 subagent 能够接收 parent 后续发来的消息、保留后代、结算并冷恢复，但基础生命周期无法让它们将选中内容发送给直接 parent。child 的完整输出已可从持久化会话中重建，因此缺失的能力是显式投递，而非结果存储。

@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-17-subagent-report-settlement-ordering.md) | 中文
 
+[相邻 Agent 共享一个 Steer 消息操作](../architecture/2026-08-27-adjacent-agent-steer-messaging.zh.md)要求所有模型编写的相邻 Agent 消息使用 Steer，并移除静默投递。本记录仍负责解释：先于结算通知被接受的 Agent 消息必须在共享 next-step FIFO 中先于该通知。
+
 ## 问题
 
 可继续 child 可以显式上报选中内容，之后还会产生一条由管理器撰写且无条件投递的结算通知。报告投递曾使用 `Agent.followup()` 并进入 parent 的 `next-turn` 队列，而面向运行中 parent 的结算投递使用 `Agent.steer()` 并进入 `next-step`。一个轮次的第一个 step 会先领取完整 `next-step` 批次，再领取一条 `next-turn` 消息，因此较晚的结算通知可能先于较早的报告到达模型。整体组装的报告场景必须使用 `reportDelivery: quiet`，才能避开这种不确定交错。[Issue #2600](https://github.com/deepseek-harness/deepseek-harness/issues/2600)记录了该缺陷。

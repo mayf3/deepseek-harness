@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-tool-subagent-control` adds the global control tools for continuable children: `send_message` delivers a follow-up message that becomes the child's next turn, `interrupt_agent` stops a child's current turn while keeping its queue and descendants intact, and `list_agents` (from the separately loadable `list-agents` plugin) lists continuable children by durable id and label. The tools are global, so any number of delegation tools never duplicates them. These tools cover only the parent-to-child direction; the child-to-parent direction belongs to the independently installed `dsh-tool-subagent-report`. No tool's presence decides whether a delegation tool starts continuable work.
+`dsh-tool-subagent-control` adds the global control tools for continuable children: `send_message` steers a direct child at its nearest step, `interrupt_agent` stops a child's current turn while keeping its inbox and descendants intact, and `list_agents` (from the separately loadable `list-agents` plugin) lists continuable children by durable id and label. The tools are global, so any number of delegation tools never duplicates them. The temporary child-scoped `report` tool uses the same service operation in the reverse direction. No tool's presence decides whether a delegation tool starts continuable work.
 
 ## Table of Contents
 
@@ -68,11 +68,11 @@ This section explains what the tools delegate to the subagent service; the obser
 
 ### Design concept
 
-Thin adapters over `ctx.subagents.followup()`, `interrupt()`, and the list projections; the tools perform no lifecycle routing. Residency, cold resume, and interrupt authorization belong to the service, and the tools pass the exact live calling agent (`exec.agent`) as the authority the service verifies against the target's recorded lineage.
+Thin adapters over `ctx.subagents.sendMessage()`, `interrupt()`, and the list projections; the tools perform no lifecycle routing. Residency, cold resume, and authorization belong to the service, and the tools pass the exact live calling agent (`exec.agent`) as both sender and authority.
 
 ### Delivery and signal ownership
 
-The tool forwards its execution signal, which owns admission only until inbox acceptance. Once the child accepts a message, the accepted turn cannot be cancelled through this tool. Every message is recorded with the coordinator source `{ kind: 'coordinator', senderSessionId: parent.id }`, which the service retains but never treats as authority.
+The tool forwards its execution signal, which owns admission only until inbox acceptance. Once the child accepts a message, it cannot be cancelled through this tool. Every message is framed as `Agent <sender-id> sent a message:` and recorded with `{ kind: 'agent-message', form: 'relay', senderSessionId: parent.id }`; the service derives that attribution and never treats it as authority.
 
 ### Listing projection
 
@@ -97,7 +97,7 @@ Read these pages when the package-level contract is not enough; they move from t
 
 - [Subagent subsystem](../../../docs/subsystems/subagent.md) — continuable children, activations, inbox, interrupt, and follow-up authority.
 - [dsh-tool-subagent](../tool-subagent/README.md) — the delegation tool that starts continuable children.
-- [dsh-tool-subagent-report](../tool-subagent-report/README.md) — the child-to-parent report channel.
+- [dsh-tool-subagent-report](../tool-subagent-report/README.md) — the temporary child-to-parent adapter over the same service operation.
 - [Generated tool catalog](../../../docs/tool-catalog.md#deepseek-aidsh-tool-subagent-control) — the three tool schemas.
 
 -----

@@ -127,17 +127,26 @@ function userTexts(events: readonly SessionEvent[]): string[] {
     : [])
 }
 
-function followup(
+function queuePrompt(
   ctx: Context,
   parent: Agent,
   childId: SessionId,
   content: ReturnType<typeof message>,
   signal: AbortSignal = testSignal,
 ) {
-  return ctx.subagents.followup(parent, childId, content, {
-    source: { kind: 'user' },
-    signal,
-  })
+  const manager = (ctx.subagents as unknown as {
+    continuations?: {
+      queuePrompt(
+        parent: Agent,
+        childId: SessionId,
+        content: ReturnType<typeof message>,
+        source: { kind: 'user' },
+        signal: AbortSignal,
+      ): Promise<string>
+    }
+  }).continuations
+  if (manager === undefined) throw new Error('expected a bound continuation manager')
+  return manager.queuePrompt(parent, childId, content, { kind: 'user' }, signal)
 }
 
 /**
@@ -317,7 +326,7 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(loaded.events.find(event => event.type === 'subagent/descriptor')?.data)
       .toMatchObject({ agentReasoningEffort: 'max' })
 
-    await followup(ctx, parent, started.childId, message('resume selected reasoning'))
+    await queuePrompt(ctx, parent, started.childId, message('resume selected reasoning'))
     await waitNoActivation(ctx, started.childId)
     expect(childEfforts).toEqual(['max', 'max'])
   })
@@ -464,7 +473,7 @@ describe('SubagentRuntime.startContinuable', () => {
     await fresh.plugin(SubagentRuntime)
     await fresh.plugin(SubagentSpawn, { providerName: 'spawn' })
     const freshParent = fresh.agentLoop.create(SessionId('routeless-resume'), {})
-    await followup(fresh, freshParent, started.childId, message('resume routeless'))
+    await queuePrompt(fresh, freshParent, started.childId, message('resume routeless'))
 
     const resumed = await vi.waitFor(() => {
       const found = fresh.agents.get(started.childId)
@@ -516,21 +525,21 @@ describe('SubagentRuntime.startContinuable', () => {
     expect(descriptor?.data).toMatchObject({ persona: 'You are scoped.' })
 
     // Cold resume reconstructs the declared composition from that descriptor.
-    await followup(ctx, parent, started.childId, message('resume it'))
+    await queuePrompt(ctx, parent, started.childId, message('resume it'))
     await waitNoActivation(ctx, started.childId)
     const resumed = await ctx.sessionPersistence.load(started.childId)
     expect(hasUserText(resumed.events, 'resume it')).toBe(true)
   })
 })
 
-describe('SubagentRuntime.followup residency routing', () => {
+describe('direct-child Queue residency routing', () => {
   it('fails a cold follow-up when Session query is unavailable', async () => {
     const { ctx, parent } = await setupWith(new MockAdapter([]), {
       persistence: false,
       sessionQuery: false,
     })
 
-    await expect(followup(ctx, parent, SessionId('cold-without-query'), message('continue')))
+    await expect(queuePrompt(ctx, parent, SessionId('cold-without-query'), message('continue')))
       .rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
   })
 
@@ -548,8 +557,8 @@ describe('SubagentRuntime.followup residency routing', () => {
     expect(child?.status).toBe('running')
 
     // Both messages queue behind the open turn, in call order.
-    const firstMessage = await followup(ctx, parent, started.childId, message('first follow-up'))
-    const secondMessage = await followup(ctx, parent, started.childId, message('second follow-up'))
+    const firstMessage = await queuePrompt(ctx, parent, started.childId, message('first follow-up'))
+    const secondMessage = await queuePrompt(ctx, parent, started.childId, message('second follow-up'))
     expect(firstMessage).not.toBe(secondMessage)
     // Still the same Activation: no second child Agent was created.
     expect(ctx.agents.get(started.childId)).toBe(child)
@@ -565,7 +574,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await waitNoActivation(ctx, started.childId)
 
-    const messageId = await followup(ctx, parent, started.childId, message('continue please'))
+    const messageId = await queuePrompt(ctx, parent, started.childId, message('continue please'))
     expect(messageId).toBeTypeOf('string')
     await waitNoActivation(ctx, started.childId)
 
@@ -596,7 +605,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     disposeProvider()
     expect(ctx.subagents.getProvider('retired')).toBeUndefined()
 
-    await expect(followup(ctx, parent, started.childId, message('continue without provider')))
+    await expect(queuePrompt(ctx, parent, started.childId, message('continue without provider')))
       .resolves.toBeTypeOf('string')
     await waitNoActivation(ctx, started.childId)
     await vi.waitFor(() => { expect(ends).toHaveLength(2) })
@@ -632,7 +641,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     // Waiting retains the handle: the same Agent is still live.
     expect(ctx.agents.get(started.childId)).toBe(child)
 
-    await followup(ctx, parent, started.childId, message('while waiting'))
+    await queuePrompt(ctx, parent, started.childId, message('while waiting'))
     // Woken back to running on the SAME Activation.
     expect(ctx.agents.get(started.childId)).toBe(child)
 
@@ -652,7 +661,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     await waitNoActivation(ctx, started.childId)
     const stranger = ctx.agentLoop.create(SessionId('stranger'), { provider: 'mock', model: 'mock' })
 
-    await expect(followup(ctx, stranger, started.childId, message('mine now')))
+    await expect(queuePrompt(ctx, stranger, started.childId, message('mine now')))
       .rejects.toThrow(/belongs to another parent session/)
   })
 
@@ -670,13 +679,13 @@ describe('SubagentRuntime.followup residency routing', () => {
     const oneShotId = run.id
     await run.dispose()
 
-    await expect(followup(ctx, parent, oneShotId, message('continue')))
+    await expect(queuePrompt(ctx, parent, oneShotId, message('continue')))
       .rejects.toThrow(/no supported continuation state/)
   })
 
   it('reports an unknown child id as unavailable', async () => {
     const { ctx, parent } = await setup([])
-    await expect(followup(ctx, parent, SessionId('missing'), message('hello')))
+    await expect(queuePrompt(ctx, parent, SessionId('missing'), message('hello')))
       .rejects.toMatchObject({ code: 'NOT_RESUMABLE' })
   })
 
@@ -701,7 +710,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const reason = new Error('cold inspection cancelled')
 
     try {
-      const delivery = followup(ctx, parent, started.childId, message('cancel me'), controller.signal)
+      const delivery = queuePrompt(ctx, parent, started.childId, message('cancel me'), controller.signal)
       await inspectStarted.promise
       controller.abort(reason)
       await expect(delivery).rejects.toBe(reason)
@@ -717,7 +726,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     const failure = new SubagentError('materialization denied', 'UNAUTHORIZED')
     ctx.agents.resume = () => Promise.reject(failure)
 
-    await expect(followup(ctx, parent, started.childId, message('continue')))
+    await expect(queuePrompt(ctx, parent, started.childId, message('continue')))
       .rejects.toBe(failure)
   })
 
@@ -733,7 +742,7 @@ describe('SubagentRuntime.followup residency routing', () => {
     // exactly one side wins the cutoff. A delivery that loses awaits release and
     // cold-resumes rather than reaching a handle being torn down.
     const delivery = child.whenIdle().then(() =>
-      followup(ctx, parent, started.childId, message('raced')))
+      queuePrompt(ctx, parent, started.childId, message('raced')))
 
     await expect(delivery).resolves.toBeTypeOf('string')
     await waitNoActivation(ctx, started.childId)
@@ -916,11 +925,11 @@ describe('continuable durability and teardown', () => {
     expect(ctx.agents.get(target.childId)).toBe(targetChild)
     expect(ctx.agents.get(grandchild.childId)).toBeDefined()
     expect(ctx.agents.get(sibling.childId)).toBe(siblingChild)
-    await expect(followup(ctx, siblingParent, sibling.childId, message('still live')))
+    await expect(queuePrompt(ctx, siblingParent, sibling.childId, message('still live')))
       .resolves.toBeTypeOf('string')
     await expect(ctx.subagents.startContinuable(startSpec(parent)))
       .rejects.toMatchObject({ code: 'DRAINING' })
-    await expect(followup(ctx, parent, target.childId, message('too late')))
+    await expect(queuePrompt(ctx, parent, target.childId, message('too late')))
       .rejects.toMatchObject({ code: 'DRAINING' })
 
     releaseTarget.resolve(undefined)
@@ -1167,7 +1176,7 @@ describe('continuable durability and teardown', () => {
 
     await expect(ctx.subagents.startContinuable(startSpec(parent)))
       .rejects.toMatchObject({ code: 'DRAINING' })
-    await expect(followup(ctx, parent, started.childId, message('too late')))
+    await expect(queuePrompt(ctx, parent, started.childId, message('too late')))
       .rejects.toMatchObject({ code: 'DRAINING' })
   })
 
@@ -1224,7 +1233,7 @@ describe('continuable durability and teardown', () => {
     })
     observeCancel(child, () => { order.push('cancel') })
 
-    const delivery = followup(ctx, parent, started.childId, message('before drain'))
+    const delivery = queuePrompt(ctx, parent, started.childId, message('before drain'))
     // Let the child-lock operation reach the live admission cutoff. Admission
     // and inbox submission must then complete in one synchronous span.
     await Promise.resolve()
@@ -1243,7 +1252,7 @@ describe('continuable durability and teardown', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
     // Accepted into the inbox, but this queued turn never opens.
-    await followup(ctx, parent, started.childId, message('never logged'))
+    await queuePrompt(ctx, parent, started.childId, message('never logged'))
 
     const drained = drainManager(ctx)
     hold.resolve(undefined)
@@ -1281,7 +1290,7 @@ describe('continuable review regressions', () => {
       return handle
     })
 
-    const delivery = followup(
+    const delivery = queuePrompt(
       ctx,
       originalParent.agent,
       started.childId,
@@ -1321,7 +1330,7 @@ describe('continuable review regressions', () => {
       throw new Error('synthetic inbox failure')
     }
 
-    await expect(followup(ctx, parent, started.childId, message('throws')))
+    await expect(queuePrompt(ctx, parent, started.childId, message('throws')))
       .rejects.toThrow(/synthetic inbox failure/)
     expect(activation.accepted.size).toBe(0)
 
@@ -1361,7 +1370,7 @@ describe('continuable review regressions', () => {
 
     const controller = new AbortController()
     controller.abort('caller gave up')
-    await expect(followup(ctx, parent, started.childId, message('cancelled'), controller.signal))
+    await expect(queuePrompt(ctx, parent, started.childId, message('cancelled'), controller.signal))
       .rejects.toThrow()
 
     // Nothing was enqueued, so no later turn can carry it.
@@ -1387,7 +1396,7 @@ describe('continuable review regressions', () => {
 
     // A cold resume is a new epoch: it must report its OWN answer, never the
     // previous epoch's, which the replayed transcript still contains.
-    await followup(ctx, parent, started.childId, message('again'))
+    await queuePrompt(ctx, parent, started.childId, message('again'))
     await waitNoActivation(ctx, started.childId)
     await vi.waitFor(() => { expect(ends).toHaveLength(2) })
     expect(ends[1]!.lastAssistantMessage).toEqual([{ type: 'text', text: 'second answer' }])
@@ -1443,7 +1452,7 @@ describe('continuable review regressions', () => {
       if (subject === parent) return next()
       return { kind: 'reject' }
     })
-    await followup(ctx, parent, started.childId, message('again'))
+    await queuePrompt(ctx, parent, started.childId, message('again'))
     await waitNoActivation(ctx, started.childId)
 
     await vi.waitFor(() => { expect(ends).toHaveLength(1) })
@@ -1567,7 +1576,7 @@ describe('continuable review regressions', () => {
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
     // Queue a turn, then cancel so it is discarded rather than dequeued. The
     // Activation must still reach settlement instead of waiting on that id.
-    await followup(ctx, parent, started.childId, message('discarded'))
+    await queuePrompt(ctx, parent, started.childId, message('discarded'))
 
     const drained = drainManager(ctx)
     hold.resolve(undefined)
@@ -1587,13 +1596,13 @@ describe('continuable review regressions', () => {
     const child = ctx.agents.get(started.childId)!
 
     // Cancel from the synchronous enqueue observer: the discard fires after the
-    // id is recorded but before `followup()` returns.
+    // id is recorded but before `queuePrompt()` returns.
     const off = child.ctx.on('agent/inbox/inserted', ({ message }) => {
       if (message.content.some(block => block.type === 'text' && block.text === 'doomed')) {
         child.cancel({ kind: 'user' })
       }
     })
-    await followup(ctx, parent, started.childId, message('doomed'))
+    await queuePrompt(ctx, parent, started.childId, message('doomed'))
     off()
 
     releaseFirst.resolve(undefined)
@@ -1618,14 +1627,14 @@ describe('continuable review regressions', () => {
     }).continuations
     const activation = manager.activations.get(started.childId)!
 
-    await followup(ctx, parent, started.childId, message('queued'))
+    await queuePrompt(ctx, parent, started.childId, message('queued'))
     expect(activation.accepted.size).toBe(1)
     const off = child.ctx.on('agent/inbox/inserted', ({ message }) => {
       if (message.content.some(block => block.type === 'text' && block.text === 'doomed')) {
         child.cancel({ kind: 'user' })
       }
     })
-    await followup(ctx, parent, started.childId, message('doomed'))
+    await queuePrompt(ctx, parent, started.childId, message('doomed'))
     off()
 
     expect(activation.accepted.size).toBe(0)
@@ -1673,7 +1682,7 @@ describe('continuable review regressions', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
     const child = ctx.agents.get(started.childId)
-    await followup(ctx, parent, started.childId, message('queued'))
+    await queuePrompt(ctx, parent, started.childId, message('queued'))
 
     expect(registeredAtEnqueue.length).toBeGreaterThan(0)
     expect(registeredAtEnqueue).not.toContain(false)
@@ -1701,8 +1710,8 @@ function settlementNotices(agent: Agent): { sender: string; text: string; summar
   })
 }
 
-describe('continuable report delivery', () => {
-  it('wakes an idle parent for a next-step report', async () => {
+describe('continuable adjacent-Agent delivery', () => {
+  it('steers an idle direct parent and preserves sender attribution', async () => {
     const releaseChild = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([
       { chunks: textResponse('child answer'), gate: releaseChild.promise },
@@ -1717,17 +1726,25 @@ describe('continuable report delivery', () => {
     const child = ctx.agents.get(started.childId)
     expect(child).toBeDefined()
 
-    const messageId = await ctx.subagents.reportFrom(child!, message('an explicit report'), {
-      delivery: 'next-step',
+    const messageId = await ctx.subagents.sendMessage(child!, parent.id, message('an explicit message'), {
       signal: testSignal,
     })
 
     await vi.waitFor(() => {
       expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(1)
     })
-    const report = parent.session.events.flatMap(event => event.type === 'user/message'
-      && event.data.source.kind === 'subagent-report' ? [event.data] : [])[0]
-    expect(report?.id).toBe(messageId)
+    const delivered = parent.session.events.flatMap(event => event.type === 'user/message'
+      && event.data.source.kind === 'agent-message' ? [event.data] : [])[0]
+    expect(delivered?.id).toBe(messageId)
+    expect(delivered?.source).toMatchObject({
+      kind: 'agent-message',
+      form: 'relay',
+      senderSessionId: started.childId,
+    })
+    expect(delivered?.content).toEqual([
+      { type: 'text', text: `Agent ${started.childId} sent a message:` },
+      { type: 'text', text: 'an explicit message' },
+    ])
 
     releaseChild.resolve(undefined)
     await waitNoActivation(ctx, started.childId)
@@ -1756,7 +1773,7 @@ describe('continuable settlement delivery', () => {
     )
   })
 
-  it('delivers even when the child already reported for itself', async () => {
+  it('delivers settlement even when the child already sent a message', async () => {
     const { ctx, parent } = await setup([textResponse('the answer'), textResponse('parent ack')])
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     const child = await vi.waitFor(() => {
@@ -1764,8 +1781,7 @@ describe('continuable settlement delivery', () => {
       expect(live).toBeDefined()
       return live!
     })
-    await ctx.subagents.reportFrom(child, message('an explicit report'), {
-      delivery: 'quiet',
+    await ctx.subagents.sendMessage(child, parent.id, message('an explicit message'), {
       signal: testSignal,
     })
     await waitNoActivation(ctx, started.childId)
@@ -1823,7 +1839,7 @@ describe('continuable settlement delivery', () => {
     })
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
-    await followup(ctx, parent, started.childId, message('second task'))
+    await queuePrompt(ctx, parent, started.childId, message('second task'))
     releaseFirst.resolve(undefined)
     await waitNoActivation(ctx, started.childId)
 
@@ -1857,7 +1873,7 @@ describe('continuable settlement delivery', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     // Queued while turn 1 still runs, so turn 2 opens and claims it without a
     // second model call: the Activation is mid-turn when the drain cancels it.
-    await followup(ctx, parent, started.childId, message('second task'))
+    await queuePrompt(ctx, parent, started.childId, message('second task'))
     releaseFirst.resolve(undefined)
     await atCheckpoint.promise
     const drained = drainManager(ctx)
@@ -1953,7 +1969,7 @@ describe('continuable settlement delivery', () => {
     // Context maintenance folds into `idle` and defers waking work, so this
     // delivery is accepted with no turn to claim it.
     const maintaining = child.runMaintenance(async () => { await releaseMaintenance.promise })
-    await followup(ctx, parent, started.childId, message('never runs'))
+    await queuePrompt(ctx, parent, started.childId, message('never runs'))
     const drained = drainManager(ctx)
     releaseMaintenance.resolve(undefined)
     releaseGrandchild.resolve(undefined)
@@ -2258,7 +2274,7 @@ describe('continuable lifecycle observation', () => {
     await vi.waitFor(() => { expect(ends).toHaveLength(1) })
 
     // A cold resume is a NEW epoch with its own pair.
-    await followup(ctx, parent, started.childId, message('again'))
+    await queuePrompt(ctx, parent, started.childId, message('again'))
     await waitNoActivation(ctx, started.childId)
     await vi.waitFor(() => { expect(ends).toHaveLength(2) })
 
@@ -2314,7 +2330,7 @@ describe('continuable public API', () => {
 
     const controller = new AbortController()
     controller.abort('caller gave up')
-    await expect(followup(ctx, parent, started.childId, message('aborted'), controller.signal))
+    await expect(queuePrompt(ctx, parent, started.childId, message('aborted'), controller.signal))
       .rejects.toThrow()
 
     const loaded = await ctx.sessionPersistence.load(started.childId)
@@ -2332,7 +2348,7 @@ describe('continuable public API', () => {
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
 
     const controller = new AbortController()
-    await followup(ctx, parent, started.childId, message('survives'), controller.signal)
+    await queuePrompt(ctx, parent, started.childId, message('survives'), controller.signal)
     // After acceptance the manager owns the Activation independently.
     controller.abort('caller gave up')
 
@@ -2361,7 +2377,7 @@ describe('continuable errors', () => {
     }).continuations
     manager.activations.delete(started.childId)
 
-    await expect(followup(ctx, parent, started.childId, message('hello')))
+    await expect(queuePrompt(ctx, parent, started.childId, message('hello')))
       .rejects.toThrow(SubagentError)
     expect(ctx.agents.get(started.childId)).toBe(child)
     hold.resolve(undefined)
@@ -2378,7 +2394,7 @@ describe('continuable errors', () => {
     // A stale parent reference: same id, not the exact live entry.
     const stale = { ...parent, id: parent.id } as unknown as Agent
 
-    await expect(followup(ctx, stale, started.childId, message('stale')))
+    await expect(queuePrompt(ctx, stale, started.childId, message('stale')))
       .rejects.toMatchObject({ code: 'UNAUTHORIZED' })
     void child
   })
@@ -2493,7 +2509,7 @@ describe('continuable errors', () => {
       })
 
     // The resumed Activation runs on the declared route, not the parent's.
-    await followup(ctx, parent, started.childId, message('again'))
+    await queuePrompt(ctx, parent, started.childId, message('again'))
     await vi.waitFor(() => {
       expect(ctx.agents.get(started.childId)?.options).toMatchObject({
         model: 'child-model',
@@ -2547,8 +2563,8 @@ describe('SubagentRuntime.interrupt', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
     const child = ctx.agents.get(started.childId)!
-    await followup(ctx, parent, started.childId, message('parked B'))
-    await followup(ctx, parent, started.childId, message('parked C'))
+    await queuePrompt(ctx, parent, started.childId, message('parked B'))
+    await queuePrompt(ctx, parent, started.childId, message('parked C'))
     const cancelSpy = vi.spyOn(child, 'cancel')
 
     ctx.subagents.interrupt(started.childId, { kind: 'user', parentSessionId: parent.id })
@@ -2567,7 +2583,7 @@ describe('SubagentRuntime.interrupt', () => {
 
     // Only an explicit waking send restores the driver; the parked items then
     // run before it in the existing FIFO order.
-    await followup(ctx, parent, started.childId, message('waking D'))
+    await queuePrompt(ctx, parent, started.childId, message('waking D'))
     await waitNoActivation(ctx, started.childId)
     const loaded = await ctx.sessionPersistence.load(started.childId)
     expect(userTexts(loaded.events)).toEqual(['child task', 'parked B', 'parked C', 'waking D'])

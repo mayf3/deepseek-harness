@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-17-subagent-report-settlement-ordering.zh.md)
 
+[Adjacent Agents share one Steer messaging operation](../architecture/2026-08-27-adjacent-agent-steer-messaging.md) makes Steer mandatory for every model-authored adjacent-Agent message and removes quiet delivery. This record still owns why an Agent message accepted before a settlement notice must precede that notice in the shared next-step FIFO.
+
 ## Problem
 
 A continuable child can explicitly report selected content and later produce an unconditional manager-authored settlement notice. Report delivery used `Agent.followup()` and entered the parent's `next-turn` queue, while settlement delivery to a running parent used `Agent.steer()` and entered `next-step`. The first step of a turn claims the complete `next-step` batch before one `next-turn` message, so the later settlement notice could reach the model before the earlier report. The assembled report scenario required `reportDelivery: quiet` to avoid that nondeterministic interleaving. [Issue #2600](https://github.com/deepseek-harness/deepseek-harness/issues/2600) records the defect.

@@ -7,10 +7,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { SubagentReportDelivery } from '@deepseek-ai/dsh-subagent'
+import type {} from '@deepseek-ai/dsh-subagent'
 import { FIRST_PARTY_SECTION_ORDER } from '@deepseek-ai/dsh-system-prompt'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 
@@ -23,33 +22,17 @@ export const inject = ['subagents', 'tools', 'systemPrompt']
 /** Guidance order after every per-tool section a continuable child can carry. */
 const REPORT_SECTION_ORDER = FIRST_PARTY_SECTION_ORDER.TOOL_REPORT
 
-/** Config: how accepted reports are scheduled on the parent. */
-export interface Config {
-  /**
-   * Parent scheduling (default `next-step`). `next-step` wakes the parent and
-   * enters at its nearest step boundary; `quiet` adds the same context without
-   * waking, so a parked parent waits for another waking input.
-   */
-  reportDelivery?: SubagentReportDelivery
-}
-
-export const Config: z<Config> = z.object({
-  reportDelivery: z.union(['quiet', 'next-step'] as const).default('next-step'),
-})
-
 /**
  * Install `report` and its usage guidance into one continuable child's scope.
  * Both registrations are owned by that scope and are therefore invisible to the
  * child's parent and siblings.
  * @param childCtx - child-scoped context receiving the tool and the guidance.
  * @param ctx - service context used for delivery.
- * @param delivery - resolved deployment scheduling policy.
  * @returns disposer that attempts both child registrations before reporting cleanup failures.
  */
 export function installReportTool(
   childCtx: Context,
   ctx: Context,
-  delivery: SubagentReportDelivery,
 ): () => void {
   const disposeSection = childCtx.systemPrompt.section({
     name: 'tool:report',
@@ -69,8 +52,9 @@ export function installReportTool(
         + 'self-contained final result, and earlier for progress or findings that change what that agent does '
         + 'next. That agent shares your workspace but does not automatically receive your transcript, tool '
         + 'output, or reasoning, so finishing your work is not itself a result. Reporting does not end your '
-        + 'turn or finish your work, and only your direct parent receives it. A failed call may still have '
-        + 'arrived, so do not blindly repeat it.',
+        + 'turn or finish your work, and only your direct parent receives it. If that agent is working, the '
+        + 'report steers its nearest step; otherwise it starts a turn. A failed call may still have arrived '
+        + 'if a later tool-result hook failed, so do not blindly repeat it.',
       parameters: {
         output: {
           type: 'string',
@@ -95,10 +79,10 @@ export function installReportTool(
         const content: ContentBlock[] = [{ type: 'text', text: args.output }]
         // Scope-local resolution guarantees an Agent. The service still verifies
         // its exact live Activation identity at the authority boundary.
-        const messageId = await ctx.subagents.reportFrom(exec.agent as Agent, content, {
-          delivery,
-          signal: exec.signal,
-        })
+        const child = exec.agent as Agent
+        const parentId = child.session.header.parentSession
+        if (parentId === undefined) throw new Error('report requires a direct parent Agent')
+        const messageId = await ctx.subagents.sendMessage(child, parentId, content, { signal: exec.signal })
         return { messageId }
       },
     }))
@@ -131,12 +115,7 @@ export function installReportTool(
 /**
  * Register the continuable-child contribution.
  * @param ctx - context carrying tools, the system prompt, and the subagent service.
- * @param config - deployment scheduling policy.
  */
-export function apply(ctx: Context, config: Config = {}): void {
-  // Config() applies the schema default at runtime; the schemastery return
-  // type keeps the input's optional shape, so assert the resolved one.
-  const { reportDelivery } = Config(config) as { reportDelivery: SubagentReportDelivery }
-  ctx.subagents.registerContinuableSetup(childCtx =>
-    installReportTool(childCtx, ctx, reportDelivery))
+export function apply(ctx: Context): void {
+  ctx.subagents.registerContinuableSetup(childCtx => installReportTool(childCtx, ctx))
 }
