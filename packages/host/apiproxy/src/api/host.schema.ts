@@ -19,13 +19,3 @@ export const hostDescribeValueSchema = z.object({
   home: z.string(),
   canOpenPath: z.boolean(),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.describe'>>>
-
-/** host.openPath request payload. */
-export const hostOpenPathRequestSchema = z.object({
-  path: z.string().min(1),
-}) satisfies z.ZodType<Wire<RequestPayload<'host.openPath'>>>
-
-/** host.openPath response value. */
-export const hostOpenPathValueSchema = z.object({
-  opened: z.literal(true),
-}) satisfies z.ZodType<Wire<ResponseValue<'host.openPath'>>>

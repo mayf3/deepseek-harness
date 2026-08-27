@@ -9,9 +9,6 @@
   ],
   "references": [
     {
-      "path": "../../settings/settings"
-    },
-    {
       "path": "../../credentials/credentials"
     },
     {
@@ -30,37 +27,19 @@
       "path": "../../attachment/attachment"
     },
     {
-      "path": "../../llm/llm"
-    },
-    {
       "path": "../../core/agent"
     },
     {
       "path": "../../core/agent-default-model"
     },
     {
-      "path": "../../preset/agent-presets"
-    },
-    {
       "path": "../../core/session"
-    },
-    {
-      "path": "../../core/scope"
     },
     {
       "path": "../../session/session-persistence"
     },
     {
       "path": "../../session-query/session-query"
-    },
-    {
-      "path": "../../skill/skill"
-    },
-    {
-      "path": "../../interaction/commands"
-    },
-    {
-      "path": "../directory-picker"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

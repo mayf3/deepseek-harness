@@ -415,6 +415,11 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/llm/llm": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/llm/llm-deepseek": {
       "entry": [
         "tests/**/*.spec.ts",

@@ -14,17 +14,7 @@ import type { ClientRequest, RpcError, RpcRequest, RpcResponse, ServerResponse }
 import { RpcId } from '../api/rpc.ts'
 import type { Wire } from '../api/rpc.schema.ts'
 import { clientRequestSchema } from '../api/rpc.schema.ts'
-import {
-  hostDescribeRequestSchema, hostOpenPathRequestSchema,
-} from '../api/host.schema.ts'
-import { skillListRequestSchema } from '../api/skills.schema.ts'
-import {
-  agentPresetOpenDocumentRequestSchema,
-} from '../api/agent-presets.schema.ts'
-import {
-  settingsOpenDocumentRequestSchema,
-} from '../api/settings.schema.ts'
-import { llmDiscoverModelsRequestSchema, llmModelsRequestSchema, llmProvidersRequestSchema } from '../api/llm.schema.ts'
+import { hostDescribeRequestSchema } from '../api/host.schema.ts'
 
 /**
  * Unary dispatch table, keyed by (and compiler-locked to) RpcMethodMap: a map row without a
@@ -44,13 +34,6 @@ type UnaryRoutes = {
 
 const UNARY_ROUTES: UnaryRoutes = {
   'host.describe': { schema: hostDescribeRequestSchema, invoke: (api, r) => api.host.describe(r) },
-  'host.openPath': { schema: hostOpenPathRequestSchema, invoke: (api, r, signal) => api.host.openPath(r, signal) },
-  'skill.list': { schema: skillListRequestSchema, invoke: (api, r) => api.skills.list(r) },
-  'agentPreset.openDocument': { schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal) },
-  'settings.openDocument': { schema: settingsOpenDocumentRequestSchema, invoke: (api, r, signal) => api.settings.openDocument(r, signal) },
-  'llm.providers': { schema: llmProvidersRequestSchema, invoke: (api, r) => api.llm.providers(r) },
-  'llm.models': { schema: llmModelsRequestSchema, invoke: (api, r) => api.llm.models(r) },
-  'llm.discoverModels': { schema: llmDiscoverModelsRequestSchema, invoke: (api, r, signal) => api.llm.discoverModels(r, signal) },
 }
 
 /** Route lookup that narrows an arbitrary path segment to a map key (single cast point for the string→key refinement). */
