@@ -30,10 +30,38 @@ async function observe(run: () => Promise<unknown>): Promise<string[]> {
   try { await run().catch(() => undefined) } finally { await dispose() }
   return seen
 }
+import { vi } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
+import * as LlmPiAi from '../src/index.ts'
 import { discoverModels } from '../src/discovery.ts'
+
+/** Drive the shipping adapter's provider stream at an unresolvable endpoint. */
+async function streamOnce(): Promise<void> {
+  vi.stubEnv('PI_TEST_KEY', 'probe-key')
+  try {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmPiAi, {
+      providers: { deepseek: { apiKeyEnv: 'PI_TEST_KEY', baseURL: 'http://pi-stream-probe.invalid' } },
+    })
+    for await (const _chunk of ctx.llm.stream({ provider: 'deepseek', model: 'deepseek-v4-flash', messages: [] })) {
+      // The endpoint never answers; the proxy record is the assertion.
+    }
+  } finally {
+    vi.unstubAllEnvs()
+  }
+}
 describe('pi-ai discovery egress', () => {
   it('goes through the proxy', async () => {
     const observed = await observe(() => discoverModels({ baseURL: 'http://pi-probe.invalid/v1', api: 'openai-completions', apiKey: 'probe' }))
     expect(observed.join('|')).toContain('pi-probe.invalid')
+  })
+})
+
+describe('pi-ai provider stream egress', () => {
+  it('sends the inference request through the proxy', async () => {
+    const observed = await observe(streamOnce)
+    expect(observed.join('|')).toContain('pi-stream-probe.invalid')
   })
 })
