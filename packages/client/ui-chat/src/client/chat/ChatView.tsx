@@ -7,8 +7,8 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import type { TurnNavigationItem } from '../contract/snapshot.ts'
-import { PendingSteeringBubble } from './MessageItem.tsx'
+import type { ChatSnapshot, TurnNavigationItem } from '../contract/snapshot.ts'
+import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
 import { formatRunDuration } from './message-chrome.ts'
@@ -124,6 +124,33 @@ function isFolderOpenPath(path: string): boolean {
   return path === '.'
 }
 
+/**
+ * Prompt-RPC identities already rendered by durable material: user/steering
+ * node sources plus queue occurrences. A submission echo whose identity
+ * appears here is hidden in the same render, so the echo→durable swap is
+ * atomic — no duplicate, no gap — regardless of when the echo leaves the
+ * session snapshot.
+ */
+function observedRpcIds(
+  order: readonly string[],
+  nodes: ChatSnapshot['nodes'],
+  queue: readonly { readonly rpcId?: string }[],
+): ReadonlySet<string> {
+  const observed = new Set<string>()
+  for (const key of order) {
+    const node = nodes.get(key)
+    if (node === undefined || (node.kind !== 'user' && node.kind !== 'steering')) continue
+    const source = (node.data as { readonly source?: unknown }).source as
+      | { readonly kind?: unknown; readonly rpcId?: unknown }
+      | undefined
+    if (source?.kind === 'user' && typeof source.rpcId === 'string') observed.add(source.rpcId)
+  }
+  for (const item of queue) {
+    if (item.rpcId !== undefined) observed.add(item.rpcId)
+  }
+  return observed
+}
+
 function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
   let latest: number | null = null
   for (const turn of timeline.turns.values()) {
@@ -234,6 +261,15 @@ export function ChatView({
     () => inbox.filter(item => item.placement === 'steering'),
     [inbox],
   )
+  const pendingSubmissions = useSession(s => s.pendingSubmissions)
+  // Submission echoes still awaiting their durable counterpart. `order` is the
+  // recompute trigger: durable user material always arrives as an append, and
+  // every append replaces the order array.
+  const visibleSubmissions = useMemo(() => {
+    if (pendingSubmissions.length === 0) return pendingSubmissions
+    const observed = observedRpcIds(order, nodeStore, inbox)
+    return pendingSubmissions.filter(submission => !observed.has(submission.requestId))
+  }, [pendingSubmissions, order, nodeStore, inbox])
   const renderMessageImages = useCallback<RenderMessageImages>(
     owner => renderSlot('conversation.message.images', { ...owner, loadImage }),
     [loadImage, renderSlot],
@@ -256,6 +292,7 @@ export function ChatView({
   const openedRef = useRef(false)
   const lastKeyRef = useRef<string | null>(null)
   const lastSteeringIdRef = useRef<string | null>(null)
+  const lastSubmissionIdRef = useRef<string | null>(null)
   /** Flow tip signature — follow-scroll only when this moves, never on a
    *  scroll-driven at-bottom chrome re-render (which would snap inertial
    *  scrolls the rest of the way to the floor). */
@@ -266,7 +303,8 @@ export function ChatView({
   const lastKey = order.at(-1) ?? null
   const lastNode = lastKey === null ? undefined : nodeStore.get(lastKey)
   const lastSteeringId = pendingSteering[pendingSteering.length - 1]?.id ?? null
-  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}`
+  const lastSubmissionId = visibleSubmissions[visibleSubmissions.length - 1]?.requestId ?? null
+  const followSig = `${openState}:${firstSeq}:${lastKey}:${order.length}:${running ? 1 : 0}:${lastSteeringId ?? ''}:${lastSubmissionId ?? ''}`
 
   const syncActiveTurn = useCallback((): void => {
     const local = listRef.current
@@ -358,6 +396,7 @@ export function ChatView({
       firstSeqRef.current = firstSeq
       lastKeyRef.current = lastKey
       lastSteeringIdRef.current = lastSteeringId
+      lastSubmissionIdRef.current = lastSubmissionId
       followSigRef.current = followSig
       return
     }
@@ -374,6 +413,7 @@ export function ChatView({
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
       lastKeyRef.current = lastKey
       lastSteeringIdRef.current = lastSteeringId
+      lastSubmissionIdRef.current = lastSubmissionId
       followSigRef.current = followSig
       return
     }
@@ -382,13 +422,15 @@ export function ChatView({
     // (send lives in the composer, so arrival is detected here, not armed there).
     const appendedUser = lastKey !== lastKeyRef.current && lastNode?.kind === 'user'
     const appendedSteering = lastSteeringId !== null && lastSteeringId !== lastSteeringIdRef.current
+    const appendedSubmission = lastSubmissionId !== null && lastSubmissionId !== lastSubmissionIdRef.current
     const tipMoved = followSigRef.current !== followSig
     lastKeyRef.current = lastKey
     lastSteeringIdRef.current = lastSteeringId
+    lastSubmissionIdRef.current = lastSubmissionId
     followSigRef.current = followSig
     // Follow new flow content while pinned; do NOT re-pin on every render
     // merely because atBottomRef is true (scroll threshold → setState → snap).
-    if (appendedUser || appendedSteering || (tipMoved && atBottomRef.current)) toBottom(el)
+    if (appendedUser || appendedSteering || appendedSubmission || (tipMoved && atBottomRef.current)) toBottom(el)
   })
 
   const onScrollRef = useRef(() => {})
@@ -571,6 +613,14 @@ export function ChatView({
             <PendingSteeringBubble
               key={item.id}
               content={item.content}
+              renderMessageImages={renderMessageImages}
+              t={t}
+            />
+          ))}
+          {visibleSubmissions.map(submission => (
+            <PendingSubmissionBubble
+              key={submission.requestId}
+              submission={submission}
               renderMessageImages={renderMessageImages}
               t={t}
             />
