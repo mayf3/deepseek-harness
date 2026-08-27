@@ -234,9 +234,6 @@ importers:
       '@deepseek-ai/dsh-session-reference':
         specifier: workspace:^
         version: link:../../packages/context/session-reference
-      '@deepseek-ai/dsh-shell-env':
-        specifier: workspace:^
-        version: link:../../packages/shell/shell-env
       '@deepseek-ai/dsh-skill':
         specifier: workspace:^
         version: link:../../packages/skill/skill
@@ -427,6 +424,9 @@ importers:
       '@deepseek-ai/dsh-settings-file':
         specifier: workspace:^
         version: link:../../packages/settings/settings-file
+      '@deepseek-ai/dsh-shell-env':
+        specifier: workspace:^
+        version: link:../../packages/shell/shell-env
       '@deepseek-ai/dsh-subagent':
         specifier: workspace:^
         version: link:../../packages/subagent/subagent
