@@ -488,21 +488,13 @@ export class SessionManager {
             session.handleBlank(s.blank)
             session.handleRunning(s.running)
           }
-          // Apply each row's projection values (cold values surface without
-          // opening the session). The list block is partial, so an absent key
-          // must not clear. Once a resident Session has installed its exact
-          // opening baseline, it ignores later tentative list hints.
+          // Apply each row's tentative projection values (cold values surface
+          // without opening the session). The store owns hint precedence and
+          // ignores them after a complete authoritative baseline.
           for (const s of result.value.items) {
             const block = s.projections
             if (block === undefined) continue
-            const session = this.sessions.get(s.sessionId)
-            if (session !== undefined) {
-              session.handleProjectionHint(block)
-              continue
-            }
-            const store = this.projectionStore(s.sessionId)
-            const values = block.values as Record<string, unknown>
-            for (const key of Object.keys(values)) store.apply(key, values[key], block.asOfSeq)
+            this.projectionStore(s.sessionId).prewarm(block)
           }
         } else {
           this.listState = 'error'
@@ -678,9 +670,7 @@ export class SessionManager {
       return
     }
     if (frame.type === 'projection') {
-      const session = this.sessions.get(frame.sessionId)
-      if (session === undefined) this.projectionStore(frame.sessionId).apply(frame.key, frame.value, frame.seq)
-      else session.handleProjectionFrame(frame)
+      this.projectionStore(frame.sessionId).apply(frame.key, frame.value, frame.seq)
       this.notifier.markDirty()
       return
     }
@@ -706,15 +696,7 @@ export class SessionManager {
     }
 
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
-      const id = sessionId as SessionId
-      const session = this.sessions.get(id)
-      if (session !== undefined) {
-        session.replaceProjectionBaseline(block)
-        continue
-      }
-      const store = this.projectionStore(id)
-      store.truncate(block.asOfSeq)
-      store.seed(block)
+      this.projectionStore(sessionId as SessionId).replaceControlBaseline(block)
     }
     for (const [sessionId, session] of this.sessions) {
       session.replaceControl(this.queues.get(sessionId) ?? [])
@@ -730,17 +712,7 @@ export class SessionManager {
     this.mergeSummary(summary)
     this.sessions.get(summary.sessionId)?.handleBlank(summary.blank)
     const projections = summary.projections
-    if (projections !== undefined) {
-      const session = this.sessions.get(summary.sessionId)
-      if (session !== undefined) {
-        session.handleProjectionHint(projections)
-      } else {
-        const store = this.projectionStore(summary.sessionId)
-        for (const [key, value] of Object.entries(projections.values)) {
-          store.apply(key, value, projections.asOfSeq)
-        }
-      }
-    }
+    if (projections !== undefined) this.projectionStore(summary.sessionId).prewarm(projections)
     if (summary.origin === 'subagent' && summary.parentSessionId !== undefined) {
       this.markCatalogParentExpandable(summary.parentSessionId)
     }

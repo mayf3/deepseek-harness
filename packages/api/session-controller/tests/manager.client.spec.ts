@@ -151,11 +151,11 @@ describe('list lifecycle', () => {
     expect(manager.getListSnapshot().items.find(item => item.sessionId === S1)?.title).toBeUndefined()
   })
 
-  it('applies cold title values from list and session-added blocks by sequence', async () => {
+  it('prewarms cold titles without letting later hints override an authoritative frame', async () => {
     const api = new FakeApiClient()
     const manager = new SessionManager(fakeRemote(api))
-    // A push frame landed before the list. A later cached cut wins under the
-    // same sequence rule used by every projection source.
+    // A push frame landed before the list. Its authoritative value wins even
+    // when a later cache hint claims a higher sequence.
     manager.handleControlFrame({
       type: 'projection', sessionId: S2, key: 'title', value: 'Pushed', seq: 9,
     })
@@ -169,21 +169,23 @@ describe('list lifecycle', () => {
     const items = manager.getListSnapshot().items
     // Cold row: title surfaces straight from the list block — no open, no history.
     expect(items.find(item => item.sessionId === S1)?.title).toBe('Cold cached')
-    expect(items.find(item => item.sessionId === S2)?.title).toBe('List stale')
+    expect(items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
     manager.handleSessionAdded({
       ...summary(S2, { updatedAt: 300 }),
       projections: { asOfSeq: 15, values: { title: 'Added stale' } },
     })
-    expect(manager.getListSnapshot().items.find(item => item.sessionId === S2)?.title).toBe('Added stale')
+    expect(manager.getListSnapshot().items.find(item => item.sessionId === S2)?.title).toBe('Pushed')
   })
 
-  it('drops a projection row beyond the subscription baseline before accepting its durable replay', async () => {
+  it('routes resident and list projections through one store across exact control replacements', async () => {
     const api = new FakeApiClient()
     api.onList = () => Promise.resolve(ok({ items: [summary(S1)] as never[] }))
     const manager = new SessionManager(fakeRemote(api))
     await manager.refreshList()
+    const session = manager.get(S1)
     const frame = (payload: SessionControlFrame) => { manager.handleControlFrame(payload) }
     frame({ type: 'projection', sessionId: S1, key: 'title', value: 'Unflushed', seq: 4 })
+    expect(session.projections.get('title')).toBe('Unflushed')
 
     // The durable baseline says the host only knows up to seq 2: the phantom
     // row rode lost state and must drop, or last-wins pins it forever.
@@ -195,19 +197,21 @@ describe('list lifecycle', () => {
       },
     })
     expect(manager.getListSnapshot().items[0]?.title).toBeUndefined()
+    expect(session.projections.get('title')).toBeUndefined()
 
     frame({ type: 'projection', sessionId: S1, key: 'title', value: 'Durable', seq: 2 })
     expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
 
-    // A baseline at or past the row's seq keeps it (nothing phantom to drop).
+    // The next complete generation replaces even a different equal-sequence row.
     frame({
       type: 'baseline',
       value: {
         queues: {}, jobs: {},
-        projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
+        projections: { [S1]: { asOfSeq: 2, values: { title: 'Recovered' } } },
       },
     })
-    expect(manager.getListSnapshot().items[0]?.title).toBe('Durable')
+    expect(manager.getListSnapshot().items[0]?.title).toBe('Recovered')
+    expect(session.projections.get('title')).toBe('Recovered')
   })
 })
 

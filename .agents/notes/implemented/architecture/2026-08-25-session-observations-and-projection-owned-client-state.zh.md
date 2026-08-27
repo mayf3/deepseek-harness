@@ -108,11 +108,11 @@ Projection 的三种交付状态含义不同：
 | Follow opening baseline | 对当前 Host composition 完整 | 精确 opening cursor | Capability 不存在 |
 | Projection frame | 单个完整 key | Frame 携带的 event sequence | 不适用 |
 
-Client 为每个 key 保存一条 `{ value, seq }` row。部分 list hint 与普通 projection frame 遵循 seq 高者胜，而成功的 follow opening baseline 是精确替换，即使暂存 cache row 声称更高 cut 也一样。初次打开、显式 resync 或 carrier 重连期间，Session 会把捕获的 control 输入归一为最后一份 replacement baseline 及其后到达的 frame。安装精确 opening 值后，只有该 control baseline 的 durable cut 不早于 opening cut 时才应用它，随后也只应用能够推进所选完整 cut 的 frame。仍具权威性的 replacement control baseline 会先丢弃超出自身 durable cut 的 row，再播种完整值。
+Client projection store 在每条 `{ value, seq }` row 旁记录来源类别与到达 revision。list hint 只会在 store 尚未接收完整权威 cut 时更新暂定 row。首个权威 frame 无论 sequence 如何都会替换暂定 row，后续 frame 则必须具有严格更高的 sequence。follow 与 control baseline 都是完整替换，因此会覆盖等 sequence 值并移除缺失 key。
 
-List view 与已打开 Session 读取同一个 per-Session store。首次精确 opening 前，hint 可以填充 title、preset 和其他 list presentation；该 baseline 安装后，resident Session 会忽略迟到的 list hint，避免暂存 cache 数据重新进入已打开值。
+每个 Session 为初次打开、显式 resync 或 carrier 重连保留一个不透明 token，并在该 opening 失败或被取代时取消它。当 follow baseline 完成该 token 时，store 丢弃 token 之前的状态，只保留 token 之后到达且 seq 新于 opening cut 的权威 frame。若 control baseline 在 token 之后到达且 cut 等于或新于 opening cut，它保持权威。Session 不捕获、缓冲或重放 projection operation。
 
-每个 Session 的 Client projection store 从不折叠 Session event。它对 hint 与 whole-value frame 保持 seq 排序，为权威 follow baseline 提供精确替换，并在 Session 拥有的重连重放边界内应用 replacement-control 截断。
+List view 与已打开 Session 读取同一个 per-Session store。首次完整权威 cut 之前，hint 可以填充 title、preset 和其他 list presentation；之后迟到的 hint 会被忽略，避免暂定 cache 数据重新进入已打开值。store 从不折叠 Session event：它拥有 hint/frame 来源、frame 排序、完整 baseline 的精确替换和 opening reconciliation；`Session` 只拥有 token 生命周期，`SessionManager` 则把 list hint、control frame 与 control baseline 路由到这份 resident store。
 
 不由单个 Session 派生的数据不进入 projection。`llm.models` 拥有当前 Host generation 的 model catalog，`agentPreset.list` 拥有可配置 preset roster。Selector 只在相应 catalog 与 Session 的 `modelSelection` 或 `agentPreset` projection 均就绪后组合两者。刷新时可以保留上一份完整 catalog；第一次获得完整输入前显示 loading，而不是展示猜测的名称或可用性结论。
 
@@ -146,8 +146,8 @@ Client 本地交互状态也继续留在本地：loading 和 error 状态、打�
 | 精确 live-preferred read cut | SessionQuery observation | 各 endpoint helper |
 | Fold state 与 Client-value 计算 | Projection registry 与 domain unit | SessionQuery 与 Client |
 | 部分 list acceleration | Projection cache 与 list policy | Follow protocol |
-| Opening 与 reconnect replacement | Session follow 与 journal stream | Session page |
-| Per-key value ordering | Client projection store | Domain UI component |
+| Opening 与 reconnect token 生命周期 | Client Session | Session page 与 domain UI component |
+| Hint、frame 与完整 baseline 的 precedence | Client projection store | Client Session 与 domain UI component |
 | Provider 或 preset catalog lifecycle | 对应 catalog directory | Session projection |
 | Rendering 与瞬时 interaction state | Domain UI package | Host projection unit |
 
@@ -174,7 +174,7 @@ Client 本地交互状态也继续留在本地：loading 和 error 状态、打�
 
 Persistence 与 SessionQuery 测试固定共享冷加载、取消、live-source race、retained observation、dispose 和 all-or-none projection 计算。Session Controller 与 Gateway 测试固定 snapshot-first opening、replacement reconnect、旧分页读取、gap repair、list-cache hints、小日志有界 fallback，以及 snapshot 交付后的 promotion。
 
-Client 测试固定 higher-sequence-wins projection store、title 更新、model catalog 与 selection readiness、preset roster refresh 与 Session 专属选择，以及不会短暂展示离线状态的 subagent loading。Subagent 测试固定 corpus 枚举、cache 与 observation fallback、lifecycle witness、有界冷读，以及 listing 期间不激活 Agent。
+Client 测试固定暂定 hint 排序、首个权威 frame 接管、opening 与等 cut control 精确替换、token 后 frame 保留、陈旧或已取消的 opening token、manager/Session 共用 store、title 更新、model catalog 与 selection readiness、preset roster refresh 与 Session 专属选择，以及不会短暂展示离线状态的 subagent loading。Subagent 测试固定 corpus 枚举、cache 与 observation fallback、lifecycle witness、有界冷读，以及 listing 期间不激活 Agent。
 
 ## 考虑过的替代方案
 
