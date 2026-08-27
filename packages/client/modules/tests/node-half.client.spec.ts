@@ -351,7 +351,7 @@ describe('client bundle activation', () => {
     }
 
     expect(() => constructWithRoute([packageName, alias], {
-      internal: internal as NonNullable<Context['loader']['internal']>,
+      internal: internal as unknown as NonNullable<Context['loader']['internal']>,
     })).toThrow(
       `client-modules: package ${packageName} resolves from multiple active Loader sources:`,
     )
@@ -371,7 +371,7 @@ describe('client bundle activation', () => {
       resolveSync: () => ({ format: 'module' as const, url: pathToFileURL(hostPath).href }),
     }
     const { context, service } = constructWithRoute(entries, {
-      internal: internal as NonNullable<Context['loader']['internal']>,
+      internal: internal as unknown as NonNullable<Context['loader']['internal']>,
     })
     const firstRevision = service.graph().entries[0]!.rev
     const warning = vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined)
