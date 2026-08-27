@@ -16,6 +16,7 @@ import { notAvailableError, notImplementedFail } from '../../src/node/notImpleme
 import * as childProcess from '../../src/node/builtin_modules/implemented/child_process.ts'
 import * as dnsPromises from '../../src/node/builtin_modules/mock/dns/promises.ts'
 import * as net from '../../src/node/builtin_modules/mock/net.ts'
+import * as https from '../../src/node/builtin_modules/mock/https.ts'
 import * as sqlite from '../../src/node/builtin_modules/mock/sqlite.ts'
 import * as stream from '../../src/node/builtin_modules/implemented/stream.ts'
 import * as vm from '../../src/node/builtin_modules/mock/vm.ts'
@@ -125,6 +126,21 @@ describe('replaced external packages', () => {
   it('answers the values callers read without invoking anything', () => {
     // The ripgrep binary path is read as data by its consumer.
     expect(typeof ripgrep.rgPath).toBe('string')
+  })
+})
+
+describe('node:https placeholder', () => {
+  it('constructs an Agent but refuses every transport member', () => {
+    const agent = new https.Agent()
+    // Disposal paths run against agents that never pooled a socket.
+    expect(() => { agent.destroy() }).not.toThrow()
+    expect(() => https.request()).toThrow(/https.request is not available/)
+    expect(() => https.get()).toThrow(/https.get is not available/)
+    expect(() => https.createServer()).toThrow(/https.createServer is not available/)
+  })
+
+  it('exposes the same members through its CommonJS default', () => {
+    expect(Object.keys(https.default).sort()).toEqual(['Agent', 'createServer', 'get', 'request'])
   })
 })
 

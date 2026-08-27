@@ -41,6 +41,7 @@ export const MODULE_PROXIES: Record<string, string> = {
   // `process` are absent on purpose — the worker host installs that global
   // (`./globals/process.ts`).
   'node:http': './node/builtin_modules/implemented/http.ts',
+  'node:https': './node/builtin_modules/mock/https.ts',
   // Sync-stack AsyncLocalStorage semantics.
   'node:async_hooks': './node/builtin_modules/implemented/async_hooks.ts',
   // Real implementations over browser primitives.
