@@ -9,6 +9,24 @@ import {
   WorkspaceFileSearch,
 } from '../src/search.ts'
 
+const fsControl = vi.hoisted(() => ({
+  /** Absolute path whose `readdir` rejects; the injectable stand-in for chmod 0. */
+  denyReaddir: undefined as string | undefined,
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    readdir: (async (path: unknown, ...rest: never[]) => {
+      if (fsControl.denyReaddir !== undefined && String(path) === fsControl.denyReaddir) {
+        throw Object.assign(new Error('EACCES: injected unreadable directory'), { code: 'EACCES' })
+      }
+      return (actual.readdir as (path: unknown, ...args: never[]) => Promise<unknown>)(path, ...rest)
+    }) as typeof actual.readdir,
+  }
+})
+
 const searches: WorkspaceFileSearch[] = []
 const roots: string[] = []
 /** Permission-stripped directories; restored before cleanup can remove them. */
@@ -199,7 +217,13 @@ describe('WorkspaceFileSearch', () => {
     })
   })
 
-  it('lets an unreadable subtree cost only its own candidates', async () => {
+  // chmod 0 can only deny directory reads on POSIX to a non-root owner:
+  // Windows exposes no directory permission bits for readdir, and root
+  // bypasses them. Where the fixture stays readable the sealed candidate is
+  // indexed, so the unreadable-branch behavior is pinned on POSIX non-root.
+  it.runIf(
+    process.getuid !== undefined && process.getuid() !== 0,
+  )('lets an unreadable subtree cost only its own candidates', async () => {
     const root = await workspace()
     const locked = join(root, 'locked')
     await mkdir(locked, { recursive: true })
@@ -214,6 +238,29 @@ describe('WorkspaceFileSearch', () => {
     expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
     // The directory is still offered: only reading through it fails.
     expect(await files.list('locked', signal)).toEqual([{ path: 'locked', kind: 'directory' }])
+  })
+
+  // The chmod-0 fixture above cannot be built on Windows (no directory
+  // permission bits) or as root (bits are bypassed). An injected readdir
+  // failure keeps the unreadable-branch behavior covered on every platform.
+  it('lets an injected readdir failure cost only its own candidates', async () => {
+    const root = await workspace()
+    const locked = join(root, 'locked')
+    await mkdir(locked, { recursive: true })
+    await writeFile(join(locked, 'sealed.ts'), 'sealed')
+    fsControl.denyReaddir = locked
+    try {
+      const files = search(root)
+      const signal = new AbortController().signal
+
+      // The branch itself yields nothing, and the rest of the tree still does.
+      expect(await files.list('sealed', signal)).toEqual([])
+      expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
+      // The directory is still offered: only reading through it fails.
+      expect(await files.list('locked', signal)).toEqual([{ path: 'locked', kind: 'directory' }])
+    } finally {
+      fsControl.denyReaddir = undefined
+    }
   })
 
   it('enforces the entry cap', async () => {
