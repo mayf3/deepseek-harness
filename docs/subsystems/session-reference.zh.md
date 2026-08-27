@@ -34,7 +34,7 @@ interface SessionReferenceInput {
 }
 ```
 
-`SessionReferenceCandidate` 是面向宿主的发现输出。存在最新会话标题时，它的 label 使用该标题；筛选仍只搜索 session id 和 cwd，绝不搜索 transcript（文本记录）。
+`SessionReferenceCandidate` 是面向宿主的发现输出。存在最新会话标题时，它的 label 使用该标题；筛选搜索该 label 以及 session id 和 cwd，绝不搜索 transcript（文本记录）。
 
 ```ts type-equiv
 /** One host-facing candidate from exact session metadata. */
@@ -45,6 +45,12 @@ interface SessionReferenceCandidate {
   label: string
   /** Source session working directory, when recorded. */
   cwd?: string
+  /**
+   * True when {@link SessionReferenceCandidate.cwd} is recorded and equals the
+   * requesting agent's. Hosts that only surface a distinguishing location
+   * read this instead of comparing paths they never received.
+   */
+  sameWorkspace: boolean
   /** Source session creation time in Unix epoch milliseconds. */
   createdAt: number
 }
@@ -138,6 +144,12 @@ Exact-read consumer that prepares immutable cross-session message context.
 ```ts cordis-catalog
 /**
  * List reference candidates, ranked by working-directory affinity.
+ *
+ * A title comes from the projection cache when that cache holds a
+ * checkpoint for the session; otherwise it is folded from the session's log
+ * once and remembered for as long as the log stays cold. Without the cache
+ * composed, only the cwd-ranked head of an unfiltered listing is folded, so
+ * its tail cannot match a title substring.
  * @param agent - target agent; self is excluded and its cwd drives ranking.
  * @param query - optional case-insensitive session-id/cwd/title substring.
  * @param limit - optional positive result cap.

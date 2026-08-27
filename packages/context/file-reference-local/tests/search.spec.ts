@@ -1,9 +1,10 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   activeAtToken,
+  DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES,
   formatFileMention,
   WorkspaceFileSearch,
 } from '../src/search.ts'
@@ -150,25 +151,76 @@ describe('WorkspaceFileSearch', () => {
     ])
   })
 
-  it('invalidates cached traversal, enforces the entry cap, and settles disposal', async () => {
+  it('serves an invalidated index while its replacement builds, then swaps it in', async () => {
     const root = await workspace()
-    const capped = search(root, { maxEntries: 2 })
-    const signal = new AbortController().signal
-    expect(await capped.list('README', signal)).toEqual([
-      { path: 'README.md', kind: 'file' },
-    ])
-
     const files = search(root)
+    const signal = new AbortController().signal
     expect(await files.list('fresh-file', signal)).toEqual([])
     await writeFile(join(root, 'fresh-file.ts'), 'fresh')
+    // No invalidation: the settled traversal is still the answer.
     expect(await files.list('fresh-file', signal)).toEqual([])
     files.invalidate()
-    expect(await files.list('fresh-file', signal)).toEqual([
-      { path: 'fresh-file.ts', kind: 'file' },
-    ])
+    // The stale entries answer this query; the rebuild runs behind the caret.
+    expect(await files.list('fresh-file', signal)).toEqual([])
+    await vi.waitFor(async () => {
+      expect(await files.list('fresh-file', signal)).toEqual([
+        { path: 'fresh-file.ts', kind: 'file' },
+      ])
+    })
     files.dispose()
     expect(await files.list('fresh-file', signal)).toEqual([])
     files.dispose()
+  })
+
+  it('keeps the stale entries when a refresh fails and retries on the next query', async () => {
+    const root = await workspace()
+    const files = search(root)
+    const signal = new AbortController().signal
+    expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
+    files.invalidate()
+    const scan = vi
+      .spyOn(files as unknown as { scanWorkspace: () => Promise<unknown> }, 'scanWorkspace')
+      .mockRejectedValueOnce(new Error('scan failed'))
+    expect(await files.list('README', signal)).toEqual([{ path: 'README.md', kind: 'file' }])
+    await vi.waitFor(() => { expect(scan).toHaveBeenCalledTimes(1) })
+    scan.mockRestore()
+    // The failed attempt left the index stale, so the next query starts a new one.
+    await writeFile(join(root, 'retried.ts'), 'retried')
+    expect(await files.list('retried', signal)).toEqual([])
+    await vi.waitFor(async () => {
+      expect(await files.list('retried', signal)).toEqual([{ path: 'retried.ts', kind: 'file' }])
+    })
+  })
+
+  it('keeps nothing from a traversal that settles after disposal', async () => {
+    const root = await workspace()
+    const files = search(root)
+    const pending = files.list('README', new AbortController().signal)
+    files.dispose()
+    await expect(pending).rejects.toThrow('file search index disposed')
+    // The in-flight traversal still settles; its entries must reach no caller.
+    await vi.waitFor(async () => {
+      expect(await files.list('README', new AbortController().signal)).toEqual([])
+    })
+  })
+
+  it('enforces the entry cap', async () => {
+    const root = await workspace()
+    const capped = search(root, { maxEntries: 2 })
+    expect(await capped.list('README', new AbortController().signal)).toEqual([
+      { path: 'README.md', kind: 'file' },
+    ])
+  })
+
+  it('never traverses an excluded build output, so generated twins cannot outrank sources', async () => {
+    const root = await workspace()
+    await mkdir(join(root, 'lib'), { recursive: true })
+    await writeFile(join(root, 'lib', 'terminal-view.js'), 'built')
+    const files = search(root, { excludedDirectories: [...DEFAULT_FILE_SEARCH_EXCLUDED_DIRECTORIES] })
+    expect(await files.list('terminal-view', new AbortController().signal)).toEqual([
+      { path: 'src/terminal-view.ts', kind: 'file' },
+    ])
+    expect(await files.list('lib/', new AbortController().signal)).toEqual([])
   })
 
   it('cancels individual callers, skips missing directories, and validates limits', async () => {

@@ -278,6 +278,42 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     expect(tripwire.warnings).toEqual([])
   })
 
+  it('a drilled listing carries a breadcrumb back to the workspace root', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-breadcrumb'))
+    const input = page.locator('[data-composer-input]').first()
+    const menu = page.getByRole('listbox', { name: 'Trigger suggestions' })
+    const crumbs = page.getByRole('navigation', { name: 'Folder navigation' })
+
+    // A path the user typed carries its own context: no header.
+    await writeComposerDraft(page, input, '@folderx/')
+    await menu.getByRole('option', { name: /child\.txt/ }).waitFor({ timeout: 60_000 })
+    await expect.poll(() => crumbs.count()).toBe(0)
+
+    // The same listing reached by drilling owes the user the way back.
+    await writeComposerDraft(page, input, '@folderx')
+    await menu.getByRole('option', { name: /^folderx\// }).waitFor()
+    await page.keyboard.press('Tab')
+    await menu.getByRole('option', { name: /child\.txt/ }).waitFor()
+    await crumbs.waitFor()
+    await expect.poll(() => crumbs.getByRole('button').allTextContents())
+      .toEqual(['Workspace', 'folderx'])
+    // The listed folder is where the menu already is: its crumb is inert, and
+    // the rows drop the location the header now carries.
+    await expect.poll(() => crumbs.getByRole('button', { name: 'folderx' }).isDisabled()).toBe(true)
+    await expect.poll(() => menu.getByRole('option', { name: /child\.txt/ }).textContent())
+      .toBe('child.txt')
+
+    // Clicking the root crumb rewrites the token back to a bare trigger.
+    await crumbs.getByRole('button', { name: 'Workspace' }).click()
+    await expect.poll(() => input.textContent()).toBe('@')
+    await expect.poll(() => crumbs.count()).toBe(0)
+    await menu.getByRole('option', { name: /^folderx\// }).waitFor()
+    await page.keyboard.press('Escape')
+
+    expect(tripwire.pageErrors).toEqual([])
+    expect(tripwire.warnings).toEqual([])
+  })
+
   it('renders the durable direct-message then recall order', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-reference-order'))
     const group = page.getByRole('treeitem', { name: /Ungrouped/ })

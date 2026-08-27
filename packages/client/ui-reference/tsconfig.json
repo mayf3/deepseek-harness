@@ -27,10 +27,19 @@
       "path": "../../typert/protocol"
     },
     {
+      "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../connection/tsconfig.client.json"
+    },
+    {
       "path": "../locale"
     },
     {
       "path": "../ui-input-trigger"
+    },
+    {
+      "path": "../ui-primitives"
     },
     {
       "path": "../ui-slots"

@@ -427,9 +427,9 @@ describe('Enter semantics', () => {
   })
 
   it('keeps the owning placeholder or ordinary guidance when whole-queue steering is unavailable', () => {
-    expect(bench({ running: true }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
-    expect(bench({ queue: [row('q-1')] }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
-    expect(bench({ running: true, queue: [row('q-1')], draft: '消息' }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
+    expect(bench({ running: true }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
+    expect(bench({ queue: [row('q-1')] }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
+    expect(bench({ running: true, queue: [row('q-1')], draft: '消息' }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
     expect(bench({
       running: true,
       queue: [row('q-1')],
@@ -437,7 +437,7 @@ describe('Enter semantics', () => {
         address: { parentSessionId: 'parent' as SessionId, childSessionId: SID, mode: 'continuable' },
         parentAvailable: true,
       },
-    }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
+    }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
     expect(bench({
       running: true,
       queue: [row('q-1')],
@@ -449,7 +449,7 @@ describe('Enter semantics', () => {
       running: true,
       queue: [row('q-1')],
       commandMenuOpen: true,
-    }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
+    }).placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
     // The steer hint intentionally outranks the plan placeholder: while it
     // shows, the whole-queue gesture is genuinely available in plan mode.
     expect(bench({
@@ -945,7 +945,7 @@ describe('running and lock semantics', () => {
   it('disabled state shows the unavailable placeholder; custom placeholder wins', () => {
     expect(bench({ disabled: true }).placeholder).toBe('会话不可用')
     const live = bench()
-    expect(live.placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
+    expect(live.placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
     const custom = bench({ placeholder: 'Custom placeholder' })
     expect(custom.placeholder).toBe('Custom placeholder')
   })
@@ -992,7 +992,7 @@ describe('running and lock semantics', () => {
     expect(entering.placeholder).toBe('描述你的任务以生成计划')
     // Pending exit: target is default again.
     const leaving = bench({ plan: { active: true, pending: true } })
-    expect(leaving.placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或会话')
+    expect(leaving.placeholder).toBe('发消息或做任务… / 调用指令 @ 文件或对话')
     // Owner placeholder outranks the plan swap.
     const custom = bench({ plan: { active: true, pending: false }, placeholder: 'Custom placeholder' })
     expect(custom.placeholder).toBe('Custom placeholder')

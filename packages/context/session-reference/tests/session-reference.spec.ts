@@ -40,6 +40,19 @@ async function harness(config: Config = {}): Promise<Context> {
   return ctx
 }
 
+/**
+ * Stand in for the projection cache with a fixed checkpoint table: the
+ * resolver reads `cachedSnapshot` alone, and the point under test is which
+ * sessions still reach a log fold.
+ */
+function withProjectionCache(ctx: Context, rows: Record<string, string | null>): void {
+  ctx.provide('sessionProjectionCache', {
+    cachedSnapshot: (meta: { id: SessionId }) => (
+      meta.id in rows ? { asOfSeq: 0, values: { title: rows[meta.id] } } : undefined
+    ),
+  })
+}
+
 function fakeAgent(session: Session): Agent {
   return { id: session.id, session } as Agent
 }
@@ -253,16 +266,16 @@ describe('session reference discovery and preparation', () => {
     })
 
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
-      { sessionId: SessionId('same-later'), label: 'Latest title', cwd: '/same', createdAt: 25 },
-      { sessionId: SessionId('same'), label: 'same', cwd: '/same', createdAt: 20 },
-      { sessionId: SessionId('none'), label: 'none', createdAt: 30 },
-      { sessionId: SessionId('other'), label: 'other', cwd: '/else', createdAt: 40 },
+      { sessionId: SessionId('same-later'), label: 'Latest title', cwd: '/same', sameWorkspace: true, createdAt: 25 },
+      { sessionId: SessionId('same'), label: 'same', cwd: '/same', sameWorkspace: true, createdAt: 20 },
+      { sessionId: SessionId('none'), label: 'none', sameWorkspace: false, createdAt: 30 },
+      { sessionId: SessionId('other'), label: 'other', cwd: '/else', sameWorkspace: false, createdAt: 40 },
     ])
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'els', 1)).resolves.toEqual([
-      { sessionId: SessionId('other'), label: 'other', cwd: '/else', createdAt: 40 },
+      { sessionId: SessionId('other'), label: 'other', cwd: '/else', sameWorkspace: false, createdAt: 40 },
     ])
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'LATEST', 1)).resolves.toEqual([
-      { sessionId: SessionId('same-later'), label: 'Latest title', cwd: '/same', createdAt: 25 },
+      { sessionId: SessionId('same-later'), label: 'Latest title', cwd: '/same', sameWorkspace: true, createdAt: 25 },
     ])
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), '', 0))
       .rejects.toThrow(expectCode('SESSION_REFERENCE_INVALID_REFERENCE'))
@@ -283,6 +296,143 @@ describe('session reference discovery and preparation', () => {
     listSessions.mockRestore()
   })
 
+  it('labels and filters the whole corpus from checkpoints, reading no log', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    for (const id of ['alpha', 'beta']) {
+      const created = ctx.sessions.create(SessionId(id), { meta: { cwd: '/same' } })
+      created.append('session/title', { title: `${id} title`, messageSeqs: [], source: { kind: 'fallback' } })
+    }
+    withProjectionCache(ctx, { alpha: 'Alpha checkpoint', beta: 'Beta checkpoint' })
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'alpha check'))
+      .resolves.toEqual([
+        { sessionId: SessionId('alpha'), label: 'Alpha checkpoint', cwd: '/same', sameWorkspace: true, createdAt: expect.any(Number) as number },
+      ])
+    expect(readTitles).not.toHaveBeenCalled()
+    readTitles.mockRestore()
+  })
+
+  it('folds a title the cache never checkpointed, for the shown page alone', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const seeded = ctx.sessions.create(SessionId('seeded'), { meta: { cwd: '/same' } })
+    seeded.append('session/title', { title: 'Seeded title', messageSeqs: [], source: { kind: 'fallback' } })
+    const untitled = ctx.sessions.create(SessionId('untitled'), { meta: { cwd: '/same' } })
+    // `untitled` is checkpointed with no title yet: nothing a log fold could add.
+    withProjectionCache(ctx, { untitled: null })
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
+      { sessionId: seeded.id, label: 'Seeded title', cwd: '/same', sameWorkspace: true, createdAt: seeded.header.createdAt },
+      { sessionId: untitled.id, label: untitled.id, cwd: '/same', sameWorkspace: true, createdAt: untitled.header.createdAt },
+    ])
+    // Only the uncheckpointed session reached a log.
+    expect(readTitles).toHaveBeenCalledTimes(1)
+    expect(readTitles.mock.calls[0]?.[0]).toEqual([seeded.id])
+    readTitles.mockRestore()
+  })
+
+  it('folds the uncheckpointed tail so a query still filters on its titles', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const seeded = ctx.sessions.create(SessionId('seeded'), { meta: { cwd: '/same' } })
+    seeded.append('session/title', { title: 'Research notes', messageSeqs: [], source: { kind: 'fallback' } })
+    withProjectionCache(ctx, {})
+
+    // The title lives only in the log, and the filter reads labels — so a
+    // deferred fold would make this session unfindable by its own title.
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'research'))
+      .resolves.toEqual([
+        { sessionId: seeded.id, label: 'Research notes', cwd: '/same', sameWorkspace: true, createdAt: seeded.header.createdAt },
+      ])
+  })
+
+  it('folds a cold log once and answers every later query from that fold', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const cold = { id: SessionId('cold'), createdAt: 10, cwd: '/same' }
+    withProjectionCache(ctx, {})
+    vi.spyOn(ctx.sessionQuery, 'listSessions').mockResolvedValue([
+      { header: { ...target.header }, live: true, persisted: false },
+      { header: cold, live: false, persisted: true },
+    ] as never)
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots').mockResolvedValue([{
+      sessionId: cold.id,
+      status: 'fulfilled',
+      value: { session: cold, title: { title: 'Cold title' } },
+    }] as never)
+
+    const expected = [{ sessionId: cold.id, label: 'Cold title', cwd: '/same', sameWorkspace: true, createdAt: 10 }]
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'cold')).resolves.toEqual(expected)
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'cold t')).resolves.toEqual(expected)
+    // A cold log never grows, so the second keystroke reads nothing.
+    expect(readTitles).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('remembers that a cold log has no title, and stops reading it', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    withProjectionCache(ctx, {})
+    vi.spyOn(ctx.sessionQuery, 'listSessions').mockResolvedValue([
+      { header: { id: SessionId('bare'), createdAt: 10 }, live: false, persisted: true },
+    ] as never)
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots').mockResolvedValue([{
+      sessionId: SessionId('bare'),
+      status: 'fulfilled',
+      value: { session: {} },
+    }] as never)
+
+    const expected = [{ sessionId: SessionId('bare'), label: 'bare', sameWorkspace: false, createdAt: 10 }]
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'bare')).resolves.toEqual(expected)
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'bar')).resolves.toEqual(expected)
+    expect(readTitles).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('refolds a cold id whose log was replaced under it', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    withProjectionCache(ctx, {})
+    let createdAt = 10
+    vi.spyOn(ctx.sessionQuery, 'listSessions').mockImplementation(() => Promise.resolve([
+      { header: { id: SessionId('cold'), createdAt, cwd: '/same' }, live: false, persisted: true },
+    ] as never))
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots')
+      .mockImplementation(() => Promise.resolve([{
+        sessionId: SessionId('cold'),
+        status: 'fulfilled',
+        value: { session: {}, title: { title: `Title at ${String(createdAt)}` } },
+      }] as never))
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'title'))
+      .resolves.toMatchObject([{ label: 'Title at 10' }])
+    createdAt = 20
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'title'))
+      .resolves.toMatchObject([{ label: 'Title at 20' }])
+    expect(readTitles).toHaveBeenCalledTimes(2)
+    vi.restoreAllMocks()
+  })
+
+  it('leaves the id placeholder when the page fold cannot read the log', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same' } })
+    const broken = ctx.sessions.create(SessionId('broken'), { meta: { cwd: '/same' } })
+    withProjectionCache(ctx, {})
+    const readTitles = vi.spyOn(ctx.sessionQuery, 'readTitleSnapshots').mockResolvedValueOnce([{
+      sessionId: broken.id,
+      status: 'rejected',
+      reason: new Error('broken title log'),
+    }])
+
+    await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target))).resolves.toEqual([
+      { sessionId: broken.id, label: broken.id, cwd: '/same', sameWorkspace: true, createdAt: broken.header.createdAt },
+    ])
+    readTitles.mockRestore()
+  })
+
   it('serves the Remote face with the configured limit and canonical mentions', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'), { meta: { cwd: '/same', createdAt: 10 } })
@@ -296,6 +446,7 @@ describe('session reference discovery and preparation', () => {
       sessionId: SessionId('source]'),
       label: 'source]',
       cwd: '/same',
+      sameWorkspace: true,
       createdAt: 20,
       mention: formatSessionReferenceMention({ sessionId: SessionId('source]'), label: 'source]' }),
     }])
@@ -389,7 +540,7 @@ describe('session reference discovery and preparation', () => {
     }])
 
     await expect(ctx.sessionReferenceResolver.listCandidates(fakeAgent(target), 'source')).resolves.toEqual([
-      { sessionId: source.id, label: source.id, createdAt: source.header.createdAt },
+      { sessionId: source.id, label: source.id, sameWorkspace: false, createdAt: source.header.createdAt },
     ])
 
     let releaseTitles: (() => void) | undefined

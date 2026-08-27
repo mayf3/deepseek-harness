@@ -11,8 +11,15 @@ import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createUserMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionSurfaceSnapshot, SessionTitleObservationResult } from '@deepseek-ai/dsh-session-query'
+import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+// Type-only: the `title` projection key and the cache's Context merge, so
+// discovery can label a cold session without reading its log.
+import type { ProjectionSnapshot } from '@deepseek-ai/dsh-session-projection'
+import type {} from '@deepseek-ai/dsh-session-projection-cache'
+import type {} from '@deepseek-ai/dsh-session-title'
+import type {
+  SessionRecord, SessionSurfaceSnapshot, SessionTitleObservationResult,
+} from '@deepseek-ai/dsh-session-query'
 import {
   DEFAULT_CANDIDATE_LIMIT,
   DEFAULT_MAX_REFERENCE_BYTES,
@@ -71,6 +78,25 @@ interface RenderedSource {
   stats: ReferenceRetentionStats
 }
 
+/** One listed session, its listing position (the stable rank tiebreak), and its resolved title. */
+interface LabelledSession {
+  record: SessionRecord
+  index: number
+  label: string
+  /**
+   * No checkpoint answered for this session, so `label` is the id placeholder
+   * and only a log fold can improve it.
+   */
+  unresolved?: boolean
+}
+
+/** One folded cold title, pinned to the log identity that produced it. */
+interface FoldedTitle {
+  /** Creation facts of the folded header: a reused id with different ones is a different log. */
+  identity: string
+  title: string | undefined
+}
+
 /** Exact-read consumer that prepares immutable cross-session message context. */
 export class SessionReferenceResolver extends TypertRemoteService {
   static inject = ['sessionQuery']
@@ -81,6 +107,12 @@ export class SessionReferenceResolver extends TypertRemoteService {
   })
 
   private readonly config: Required<Config>
+  /**
+   * Cold-log title folds, kept for the process lifetime. A log that no
+   * session is attached to never grows, so one fold answers every later
+   * keystroke instead of re-reading the log per query.
+   */
+  private readonly foldedTitles = new Map<SessionId, FoldedTitle>()
 
   constructor(ctx: Context, config: Config = {}) {
     super(ctx, 'sessionReferenceResolver')
@@ -149,6 +181,12 @@ export class SessionReferenceResolver extends TypertRemoteService {
 
   /**
    * List reference candidates, ranked by working-directory affinity.
+   *
+   * A title comes from the projection cache when that cache holds a
+   * checkpoint for the session; otherwise it is folded from the session's log
+   * once and remembered for as long as the log stays cold. Without the cache
+   * composed, only the cwd-ranked head of an unfiltered listing is folded, so
+   * its tail cannot match a title substring.
    * @param agent - target agent; self is excluded and its cwd drives ranking.
    * @param query - optional case-insensitive session-id/cwd/title substring.
    * @param limit - optional positive result cap.
@@ -170,8 +208,67 @@ export class SessionReferenceResolver extends TypertRemoteService {
     const records = (await settleWithCancellation(this.ctx.sessionQuery.listSessions(signal), signal))
       .filter(record => record.header.id !== agent.id)
       .map((record, index) => ({ record, index }))
+    const labelled = await this.labelCandidates(records, needle, limit, targetCwd, signal)
+    const page = labelled.filter(({ record, label }) => {
+      if (needle === '') return true
+      return record.header.id.toLocaleLowerCase().includes(needle)
+        || record.header.cwd?.toLocaleLowerCase().includes(needle) === true
+        || label.toLocaleLowerCase().includes(needle)
+    }).sort((a, b) => candidateRank(a.record.header.cwd, targetCwd) - candidateRank(b.record.header.cwd, targetCwd)
+      || a.index - b.index)
+      .slice(0, limit)
+    return (await this.foldUnresolved(page, signal))
+      .map(({ record, label }) => ({
+        sessionId: record.header.id,
+        label,
+        ...record.header.cwd === undefined ? {} : { cwd: record.header.cwd },
+        sameWorkspace: record.header.cwd !== undefined && record.header.cwd === targetCwd,
+        createdAt: record.header.createdAt,
+      }))
+  }
+
+  /**
+   * Resolve the title of every candidate the caller may filter.
+   *
+   * With the projection cache composed it is the discovery index: titles come
+   * from its synchronous checkpoint rows, so a query filters the whole corpus
+   * without reading one log. Sessions the cache never checkpointed stay
+   * `unresolved` for {@link SessionReferenceResolver.resolvePageLabels} to
+   * fold. Without the cache, folding a title costs a full log read per
+   * session, so only the cwd-ranked head is inspected and an unlabeled tail
+   * cannot match a title substring.
+   * @param records - non-self session records in listing order.
+   * @param needle - lowercased query; empty means no title can change the result set.
+   * @param limit - caller result cap, applied here to the fold path's head.
+   * @param targetCwd - requesting agent's working directory (the ranking key).
+   * @param signal - caller cancellation.
+   * @returns labeled records for the caller to filter, rank, and cap.
+   */
+  private async labelCandidates(
+    records: readonly { record: SessionRecord; index: number }[],
+    needle: string,
+    limit: number,
+    targetCwd: string | undefined,
+    signal: AbortSignal | undefined,
+  ): Promise<readonly LabelledSession[]> {
+    const cache = this.ctx.get('sessionProjectionCache')
+    if (cache !== undefined) {
+      const labelled = records.map(({ record, index }) => {
+        const checkpoint = cachedTitle(cache.cachedSnapshot(record.header, ['title']))
+        return {
+          record,
+          index,
+          label: checkpoint.title ?? record.header.id,
+          ...checkpoint.checkpointed ? {} : { unresolved: true },
+        }
+      })
+      // A filter reads every label, so a query cannot defer the sessions the
+      // cache never checkpointed to the page: fold them now. An empty query
+      // filters nothing, so its unresolved tail waits for the capped page.
+      return needle === '' ? labelled : this.foldUnresolved(labelled, signal)
+    }
     const inspected = needle === ''
-      ? records
+      ? [...records]
         .sort((a, b) => candidateRank(a.record.header.cwd, targetCwd) - candidateRank(b.record.header.cwd, targetCwd)
           || a.index - b.index)
         .slice(0, limit)
@@ -189,20 +286,57 @@ export class SessionReferenceResolver extends TypertRemoteService {
           ? observation.value.title?.title ?? record.header.id
           : record.header.id,
       }
-    }).filter(({ record, label }) => {
-      if (needle === '') return true
-      return record.header.id.toLocaleLowerCase().includes(needle)
-        || record.header.cwd?.toLocaleLowerCase().includes(needle) === true
-        || label.toLocaleLowerCase().includes(needle)
-    }).sort((a, b) => candidateRank(a.record.header.cwd, targetCwd) - candidateRank(b.record.header.cwd, targetCwd)
-      || a.index - b.index)
-      .slice(0, limit)
-      .map(({ record, label }) => ({
-        sessionId: record.header.id,
-        label,
-        ...record.header.cwd === undefined ? {} : { cwd: record.header.cwd },
-        createdAt: record.header.createdAt,
-      }))
+    })
+  }
+
+  /**
+   * Apply every title the projection cache could not answer.
+   *
+   * A session persisted before the cache existed, seeded straight to disk, or
+   * whose record was cleared carries a title only in its log, and reading one
+   * costs a whole log. Memoized folds carry the cost once per cold log rather
+   * than once per keystroke; a session that is attached again is never
+   * memoized, because its log is still being appended to.
+   * @param entries - labeled rows, some still carrying the id placeholder.
+   * @param signal - caller cancellation.
+   * @returns the same rows with every foldable title applied.
+   */
+  private async foldUnresolved(
+    entries: readonly LabelledSession[],
+    signal: AbortSignal | undefined,
+  ): Promise<readonly LabelledSession[]> {
+    const live = this.ctx.get('sessions')
+    const pending: SessionHeader[] = []
+    const resolved = new Map<SessionId, string>()
+    for (const { record, unresolved } of entries) {
+      if (unresolved !== true) continue
+      const memo = record.live ? undefined : this.foldedTitles.get(record.header.id)
+      if (memo !== undefined && memo.identity === foldIdentity(record.header)) {
+        if (memo.title !== undefined) resolved.set(record.header.id, memo.title)
+        continue
+      }
+      pending.push(record.header)
+    }
+    if (pending.length > 0) {
+      const observations = await settleWithCancellation(
+        this.ctx.sessionQuery.readTitleSnapshots(pending.map(header => header.id), signal),
+        signal,
+      )
+      pending.forEach((header, at) => {
+        const observation = observations[at] as SessionTitleObservationResult
+        if (observation.status !== 'fulfilled') return
+        const title = observation.value.title?.title
+        if (title !== undefined) resolved.set(header.id, title)
+        // An attached session's log is still growing, so its fold is a cut,
+        // not a fact to keep.
+        if (live?.get(header.id) === undefined) {
+          this.foldedTitles.set(header.id, { identity: foldIdentity(header), title })
+        }
+      })
+    }
+    return entries.map(entry => (entry.unresolved === true
+      ? { ...entry, label: resolved.get(entry.record.header.id) ?? entry.label }
+      : entry))
   }
 
   /**
@@ -334,6 +468,20 @@ function normalizeReferences(
 
 function renderPrompt(data: readonly ReferencedSessionData[]): string {
   return `${PROMPT_PREFIX}${stringifyTagSafeJson(data)}${PROMPT_SUFFIX}`
+}
+
+/** The creation facts that make a header's log the same log the memo folded. */
+function foldIdentity(header: SessionHeader): string {
+  return `${String(header.createdAt)}:${header.cwd ?? ''}`
+}
+
+/** Read one cached title row, separating "no checkpoint" from "checkpointed, still untitled". */
+function cachedTitle(
+  snapshot: ProjectionSnapshot | undefined,
+): { checkpointed: boolean; title?: string } {
+  const title = snapshot?.values.title
+  if (title === undefined) return { checkpointed: false }
+  return title === null ? { checkpointed: true } : { checkpointed: true, title }
 }
 
 function candidateRank(candidateCwd: string | undefined, targetCwd: string | undefined): number {

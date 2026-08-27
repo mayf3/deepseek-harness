@@ -37,7 +37,7 @@ A message that cites other sessions is followed immediately by a `## Referenced 
 
 ### Finding sessions to reference
 
-`listCandidates(agent, query?, limit?)` lists sessions other than the agent's own, filters case-insensitively by id, working directory, or the latest log-backed title, and ranks same-directory sessions first. Each candidate carries its latest title as the mention label, falling back to the session id when the title is absent or unreadable. Browser consumers call the same discovery as `ctx.remote.sessionReferenceResolver.candidates`, which attaches each candidate's canonical mention.
+`listCandidates(agent, query?, limit?)` lists sessions other than the agent's own, filters case-insensitively by id, working directory, or the latest log-backed title, and ranks same-directory sessions first. Each candidate carries its latest title as the mention label, falling back to the session id when the title is absent or unreadable, and reports whether its working directory is the requesting agent's so a host can surface a location only when it distinguishes the row. Browser consumers call the same discovery as `ctx.remote.sessionReferenceResolver.candidates`, which attaches each candidate's canonical mention.
 
 ### Configuration
 
@@ -120,7 +120,8 @@ The request and snapshot are consecutive append-only target messages and preserv
 
 These limits define when cross-session references are a poor fit. They are current package constraints.
 
-- **No body discovery** — candidate queries inspect folded titles but do not search message bodies. A non-empty query may inspect every visible persisted session log through the session-query service's bounded, cancellable batch; a dedicated title index may replace that discovery path without changing URI, snapshot, or persistence contracts.
+- **No body discovery** — candidate queries inspect titles but do not search message bodies.
+- **Discovery cost tracks projection-cache coverage** — a session the projection cache has checkpointed costs no log read at all. Every other session is folded from its log once and remembered while that log stays cold, so a first query over a corpus the cache has not covered still reads those logs; a dedicated title index may replace that path without changing URI, snapshot, or persistence contracts. Without the cache composed, an unfiltered listing folds only its cwd-ranked head, so its tail cannot match a title substring.
 - **Trusted caller boundary** — the service assumes its host is authorized to read every session exposed by `ctx.sessionQuery`; it is not a model-facing search tool.
 - **Text projection only** — non-text user and assistant blocks are not propagated across sessions.
 - **No live link** — references are snapshots, not forks, resumes, subscriptions, or source-session mutations.

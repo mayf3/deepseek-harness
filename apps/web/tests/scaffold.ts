@@ -1102,6 +1102,14 @@ function normalizeAria(snapshot: string, workspaceCwd: string): string {
     .split(workspaceCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
+    // Rows dating a session render the shared relative-time bucket, which
+    // advances while the suite runs. Anchored on an aria label's closing
+    // quote, where the bucket is always last, and applied before the duration
+    // rules so the whole vocabulary collapses to one token.
+    .replace(
+      /(?:now|\d+min|\d+h|\d+d|\d+mo|\d+y|刚刚|\d+分钟|\d+小时|\d+天|\d+个月|\d+年)(?=")/g,
+      '{{age}}',
+    )
     // The optional space in `\d+m ?\d+s` covers both minute spellings: the
     // stats line's compact `2m42s` and the message-chrome template's `2m 42s`.
     .replace(
