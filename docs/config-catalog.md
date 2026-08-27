@@ -2863,12 +2863,9 @@ export interface Config {
    * a distinct name.
    */
   toolName?: string
-  /** Let the model discover and select the child LLM route (default false). */
-  enableModelSelection?: boolean
   /**
    * Sample the Host `subagent-model-selection` user setting for each new
-   * top-level session and inherit that decision in its child sessions. Mutually
-   * exclusive with `enableModelSelection`.
+   * top-level session and inherit that decision in its child sessions.
    */
   modelSelectionSettings?: boolean
   /**
@@ -2918,7 +2915,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:48`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:49`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 

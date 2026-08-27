@@ -357,7 +357,6 @@
       config:
         provider: spawn
         toolName: subagent
-        enableModelSelection: true
         backgroundMode: continuable
 
     # Fork omits model selection so provider/model stay equal to the parent and

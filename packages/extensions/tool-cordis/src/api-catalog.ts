@@ -2086,10 +2086,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Singleton settings owner read by delegation tools when an Agent is published.',
     methods: [
       {
-        signature: 'currentEnabled(): boolean',
-        description: 'Read the preference for the next eligible Agent publication.',
+        signature: 'current(): SubagentModelSelectionSettings',
+        description: 'Read a detached selection preference for the next eligible Agent publication.',
         parameters: [],
-        returns: 'whether that Agent should receive model-selectable delegation.',
+        returns: 'the enabled state and exact allowed routes.',
       },
     ],
   },
