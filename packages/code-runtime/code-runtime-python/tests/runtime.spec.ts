@@ -1890,6 +1890,25 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.logs).toEqual(['ab'])
   }, 15_000)
 
+  it('keeps a SEALED open hold when the run ends with it still open', async () => {
+    // The finish-residual's sealed side: an open hold past MAX_PENDING_CHUNKS
+    // lands in openSealed, and the run ends without a closing frame — finish()
+    // must commit the SEALED prefix, not only the current fragments.
+    const { runtime } = await setup({ maxLogBytes: 65536 })
+    const result = await runtime.run({
+      program: [
+        'import os',
+        "os.write(3, b'{\"type\":\"log\",\"text\":\"x\",\"open\":true}\\n')",
+        'for _ in range(3000):',
+        "    os.write(3, b'{\"type\":\"log\",\"text\":\"a\",\"open\":true}\\n')",
+        'return "done"',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs).toEqual(['x' + 'a'.repeat(3000)])
+  }, 15_000)
+
   it('keeps a flushed unterminated line when the run ends with it still open', async () => {
     // The settlement flush pushes the residual with `open: true`; finish()
     // admits it so a program that commits a partial line and returns does not

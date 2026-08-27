@@ -1052,14 +1052,16 @@ export class PythonCodeRuntime extends CodeRuntime {
       // ARRAY, so k tiny open frames cost O(k) — re-joining and re-walking the
       // whole held text per frame would be O(k * budget).
       let openParts: string[] = []
-      // Past MAX_PENDING_CHUNKS, the held fragments are coalesced into ONE
-      // sealed block (mirroring the fd-3 reader's `blocks` and the stray
-      // capture's seal): each fragment is a distinct array slot plus string
-      // object header — ~30x overhead the byte cap cannot see — so a
-      // budget-sized single-character open flood would otherwise accumulate
-      // thousands of slots. Sealing bounds the live fragment count exactly
-      // like the sibling paths; the merge reads sealed + current fragments.
-      let openSealed: string | undefined
+      // Past MAX_PENDING_CHUNKS, the held fragments are coalesced into sealed
+      // blocks (mirroring the fd-3 reader's `blocks` and the stray capture's
+      // seal): each fragment is a distinct array slot plus string object
+      // header — ~30x overhead the byte cap cannot see — so a budget-sized
+      // single-character open flood would otherwise accumulate thousands of
+      // slots. Sealing bounds the live fragment count exactly like the
+      // sibling paths; the merge reads sealed + current fragments. A block
+      // ARRAY (not one repeated string concat) matches the sibling shape and
+      // avoids depending on V8 ConsString amortization.
+      let openSealed: string[] = []
       // Every truncation arm funnels here: the committed open prefix was
       // ALREADY billed, so it is pushed BEFORE the marker — a flushed line is
       // never lost (only the marker stays last), and no ledger re-charge
@@ -1067,9 +1069,9 @@ export class PythonCodeRuntime extends CodeRuntime {
       // it.
       const truncateLogs = (): void => {
         logsTruncated = true
-        if (openSealed !== undefined || openParts.length > 0) {
-          logs.push((openSealed ?? '') + openParts.join(''))
-          openSealed = undefined
+        if (openSealed.length > 0 || openParts.length > 0) {
+          logs.push(openSealed.join('') + openParts.join(''))
+          openSealed = []
           openParts = []
         }
         logs.push(logTruncationMarker(this.config.maxLogBytes))
@@ -1587,7 +1589,7 @@ export class PythonCodeRuntime extends CodeRuntime {
                   // the push, the merge result is unchanged.
                   if (message.text !== '') {
                     if (openParts.length >= MAX_PENDING_CHUNKS) {
-                      openSealed = (openSealed ?? '') + openParts.join('')
+                      openSealed.push(openParts.join(''))
                       openParts = []
                     }
                     openParts.push(message.text)
@@ -1610,10 +1612,10 @@ export class PythonCodeRuntime extends CodeRuntime {
                   truncateLogs()
                 } else {
                   logBudget -= Math.max(cost - 2, 0)
-                  logs.push((openSealed ?? '') + openParts.join('') + message.text)
+                  logs.push(openSealed.join('') + openParts.join('') + message.text)
                 }
               }
-              openSealed = undefined
+              openSealed = []
               openParts = []
               return
             }
@@ -2002,10 +2004,10 @@ export class PythonCodeRuntime extends CodeRuntime {
         // logsTruncated implies the hold is already empty (truncateLogs
         // committed and cleared it), so this is reachable only when the run
         // ends with the hold still open and untruncated.
-        if (openSealed !== undefined || openParts.length > 0) {
-          logs.push((openSealed ?? '') + openParts.join(''))
+        if (openSealed.length > 0 || openParts.length > 0) {
+          logs.push(openSealed.join('') + openParts.join(''))
         }
-        openSealed = undefined
+        openSealed = []
         openParts = []
         if (child.pid === undefined) {
           settle(result)
