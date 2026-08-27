@@ -9,6 +9,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { childProxyEnv } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_ENV_PREFIX } from './types.ts'
 import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
@@ -55,6 +56,9 @@ export const SENSITIVE_ENV_PATTERN = /KEY|PASSWORD|SECRET|TOKEN/i
  * deliberate lowercase `dsh_*` names on POSIX are implausible. Exported as a plain function so spawners
  * that cannot route through the service (node-pty backends, SDK-managed
  * transports) share the one scrub definition.
+ *
+ * When a proxy is active the result also carries the resolved proxy names and the flag a child Node
+ * needs to honor them, so a child inherits the same routing as its parent.
  * @returns a fresh environment object safe to hand to a child spawn.
  */
 export function scrubbedParentEnv(): Record<string, string> {
@@ -62,7 +66,9 @@ export function scrubbedParentEnv(): Record<string, string> {
   for (const [key, value] of Object.entries(process.env)) {
     if (value !== undefined && !SENSITIVE_ENV_PATTERN.test(key) && !key.toUpperCase().startsWith(DSH_ENV_PREFIX)) env[key] = value
   }
-  return env
+  // A child Node ignores the inherited proxy variables unless the flag this adds is set, so an MCP
+  // stdio server or subagent CLI would connect directly while its parent proxies.
+  return { ...env, ...childProxyEnv() }
 }
 
 declare module '@deepseek-ai/cordis' {

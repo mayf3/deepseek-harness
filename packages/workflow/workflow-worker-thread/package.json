@@ -65,6 +65,7 @@
     "@deepseek-ai/dsh-workflow": "workspace:^",
     "@deepseek-ai/cordis": "workspace:^",
     "tsx": "^4.19.2",
-    "@deepseek-ai/dsh-session-projection": "workspace:^"
+    "@deepseek-ai/dsh-session-projection": "workspace:^",
+    "@deepseek-ai/dsh-http-proxy": "workspace:^"
   }
 }

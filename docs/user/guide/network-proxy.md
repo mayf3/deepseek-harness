@@ -1,0 +1,74 @@
+# Run DSH behind a network proxy
+
+English | [中文](network-proxy.zh.md)
+
+DSH routes every outbound request — model calls, web search, page fetches, MCP servers over HTTP, and telemetry — through the proxy named by the standard proxy environment variables. It reads them at launch; nothing else needs configuring.
+
+## Export the variables
+
+```sh
+export HTTPS_PROXY=http://127.0.0.1:7890
+export HTTP_PROXY=http://127.0.0.1:7890
+```
+
+Put both lines in your shell profile so every `dsh` invocation inherits them. DSH also reads a `.env` file in the launch directory and in `$DSH_HOME`, so a proxy that should apply to one project can live there instead; a real environment variable always wins over a file.
+
+A proxy that needs credentials takes them in the URL: `http://user:password@proxy.example:8080`. DSH never prints the password back — a proxy it reports in a diagnostic shows the username and masks the rest.
+
+## Why your browser is proxied but your terminal is not
+
+This is the most common surprise, and it is not specific to DSH. There is no single "system proxy" that all software obeys — there are three unrelated mechanisms:
+
+| Mechanism | Who follows it |
+|---|---|
+| The operating system's proxy settings | Safari, most native macOS apps, Chrome and Edge |
+| The `HTTP_PROXY` / `HTTPS_PROXY` environment variables | `curl`, `git`, `npm`, `pip`, and DSH |
+| TUN mode (a virtual network interface) | Everything, transparently |
+
+The "system proxy" switch in a proxy application such as Clash writes only the first one. Browsers pick it up; command-line tools never see it. That is why exporting the variables is a separate step, and why turning on TUN mode makes both work without any variables at all.
+
+DSH does not read the operating system's proxy settings. Export the variables, or use TUN mode.
+
+## Choose what stays direct
+
+`NO_PROXY` lists hosts to reach directly:
+
+```sh
+export NO_PROXY=internal.example.com,.corp.example.com,registry.local
+```
+
+An entry matches an exact host, a `.suffix` or `*.suffix` domain, an optional `:port`, or `*` for everything.
+
+**CIDR ranges do not work.** An operating system bypass list often contains entries like `10.0.0.0/8` or `192.168.0.0/16`; copying those into `NO_PROXY` has no effect. Use host names or domain suffixes instead.
+
+You do not need to list `localhost` or `127.0.0.1`. DSH always bypasses loopback, because its own Web UI and local servers would otherwise route through the proxy and loop.
+
+## Limits worth knowing
+
+**SOCKS proxies are not supported.** A `socks5://` value is reported at startup and skipped, and DSH connects directly. Point the variables at your proxy application's HTTP port instead — most expose both, and the HTTP one is usually a neighbouring port number.
+
+**`ALL_PROXY` alone is enough.** DSH falls back to it for both schemes, even though Node and curl differ on this. Setting `HTTPS_PROXY` explicitly is still clearer.
+
+**A TLS-intercepting corporate proxy needs its certificate.** If requests fail with a certificate error once the proxy is reachable, point Node at your organisation's CA bundle before launching:
+
+```sh
+export NODE_EXTRA_CA_CERTS=/path/to/corporate-ca.pem
+```
+
+Node reads that variable only at process start, so export it before running `dsh`.
+
+**Tools DSH runs for you follow the same proxy.** Commands in the bash tool, `git`, `gh`, and MCP servers started as child processes all inherit these variables. A child that is itself a Node program honors them only on Node 22.21 or later; an older Node connects directly.
+
+## Check that it worked
+
+Ask the agent to fetch a page and watch your proxy application's connection log:
+
+```sh
+dsh --profile headless "fetch https://example.com and tell me the page title"
+```
+
+If the request does not appear there, confirm the variables survive into DSH's own environment:
+
+```sh
+env | grep -i proxy
+```

@@ -32,6 +32,7 @@ import {
   type BatchLogRecordProcessorOptions,
 } from '@opentelemetry/sdk-logs'
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
+import { createNodeHttpAgent } from '@deepseek-ai/dsh-http-proxy'
 import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
 import { SeverityNumber, type AnyValue, type Logger } from '@opentelemetry/api-logs'
 import { resourceFromAttributes } from '@opentelemetry/resources'
@@ -212,7 +213,15 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
           // ignore the rest. App identity travels in the Resource
           // (service.name/version); the transport-level user-agent is the
           // SDK's own, per the axiom.
-          exporter: new OTLPLogExporter(config.exporter),
+          //
+          // The one added default is the agent. On Node this exporter posts through `node:http`,
+          // which undici's global dispatcher does not reach, so telemetry would be the one egress
+          // that ignores a configured proxy. A composition supplying its own `httpAgentOptions`
+          // keeps it.
+          exporter: new OTLPLogExporter({
+            httpAgentOptions: (protocol: string) => createNodeHttpAgent(protocol, { keepAlive: true }),
+            ...config.exporter,
+          }),
         }),
       ],
     })

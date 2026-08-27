@@ -8,6 +8,7 @@
 
 import { tmpdir } from 'node:os'
 import { Worker } from 'node:worker_threads'
+import { childProxyEnv } from '@deepseek-ai/dsh-http-proxy'
 import type { WorkerOptions } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
@@ -30,7 +31,9 @@ interface ChildRecord {
 }
 
 /**
- * The scrubbed worker environment: no ambient credentials, no loader flags.
+ * The scrubbed worker environment: no ambient credentials, no loader flags, plus the active proxy
+ * policy — a worker thread does not inherit the host's global dispatcher, so this is the only way
+ * its requests reach the same proxy the host uses.
  * Windows derives `os.tmpdir()` from `TMP`/`TEMP` and falls back to the
  * literal relative path `undefined\temp` when the environment is empty, so
  * tsx's transform cache would land in a cwd-relative `undefined/temp`
@@ -46,7 +49,11 @@ export function workerSpawnEnv(
   platform: NodeJS.Platform = process.platform,
   tsconfigPath?: string,
 ): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {}
+  // A worker thread gets its own globalThis and therefore does NOT inherit the host's undici global
+  // dispatcher, so a workflow that fetches would connect directly while its host proxies. This
+  // near-empty environment is the only channel it has: the proxy names plus Node's own opt-in flag
+  // reach the worker's pre-execution setup, which runs per thread.
+  const env: NodeJS.ProcessEnv = { ...childProxyEnv() }
   if (platform === 'win32') {
     const tmp = tmpdir()
     env.TMP = tmp

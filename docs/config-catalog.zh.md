@@ -606,7 +606,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/e2b/e2b/src/index.ts:43`](../packages/e2b/e2b/src/index.ts)
+来源：[`packages/e2b/e2b/src/index.ts:44`](../packages/e2b/e2b/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-agent-team"></a>
 
@@ -925,6 +925,39 @@ export interface Config {
 ```
 
 来源：[`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
+
+<a id="deepseek-aidsh-http-proxy"></a>
+
+## `@deepseek-ai/dsh-http-proxy`
+
+```ts config-catalog
+/** Composition-declared proxy settings; every field is optional and the environment outranks them. */
+export interface Config extends ProxyConfig {}
+
+/**
+ * Proxy settings a composition may declare in `cordis.yml`. Real environment variables win over every
+ * field here except `mode`, which governs whether the environment is consulted at all.
+ */
+export interface ProxyConfig {
+  /**
+   * `env` (default) resolves from the environment and lets the fields below fill the gaps; `custom`
+   * does the same but is the honest label for a composition that supplies its own proxy; `off`
+   * ignores every source and keeps the harness's own requests direct.
+   *
+   * `off` governs requests this process issues. It does not strip proxy variables from the
+   * environment child tools inherit, because those belong to the user, not to the harness.
+   */
+  mode?: 'env' | 'custom' | 'off'
+  /** Proxy for `http:` origins when the environment supplies none. */
+  httpProxy?: string
+  /** Proxy for `https:` origins when the environment supplies none. */
+  httpsProxy?: string
+  /** Bypass list when the environment supplies none. {@link LOOPBACK_NO_PROXY} is merged in regardless. */
+  noProxy?: string
+}
+```
+
+来源：[`packages/net/http-proxy/src/index.ts:47`](../packages/net/http-proxy/src/index.ts)
 
 <a id="deepseek-aidsh-invariants"></a>
 

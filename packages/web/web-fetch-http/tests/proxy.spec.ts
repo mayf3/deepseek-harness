@@ -1,0 +1,119 @@
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import { HttpFetchProvider } from '@deepseek-ai/dsh-web-fetch-http'
+import type { HttpFetchLimits } from '@deepseek-ai/dsh-web-fetch-http'
+import { publicHttpNetwork } from '../src/network.ts'
+
+const limits: HttpFetchLimits = {
+  maxResponseBytes: 5_000_000,
+  maxBodyChars: 100_000,
+  timeoutMs: 5_000,
+  maxRedirects: 5,
+  userAgent: 'test-agent/1.0',
+}
+
+/** Absolute-form targets the fake proxy saw; a populated entry proves the hop was tunnelled. */
+let proxied: string[]
+let proxy: Server
+let origin: Server
+let proxyUrl: string
+let originUrl: string
+let disposeProxy: (() => Promise<void>) | undefined
+
+function listen(server: Server): Promise<AddressInfo> {
+  return new Promise((resolve) => {
+    server.listen(0, '127.0.0.1', () => { resolve(server.address() as AddressInfo) })
+  })
+}
+
+function respond(_request: IncomingMessage, response: ServerResponse, body: string): void {
+  response.writeHead(200, { 'content-type': 'text/plain' })
+  response.end(body)
+}
+
+beforeEach(async () => {
+  proxied = []
+  proxy = createServer((request, response) => {
+    proxied.push(request.url ?? '')
+    respond(request, response, 'via-proxy')
+  })
+  origin = createServer((request, response) => { respond(request, response, 'direct') })
+  const [proxyAddress, originAddress] = await Promise.all([listen(proxy), listen(origin)])
+  proxyUrl = `http://127.0.0.1:${String(proxyAddress.port)}`
+  originUrl = `http://127.0.0.1:${String(originAddress.port)}/page`
+})
+
+afterEach(async () => {
+  await disposeProxy?.()
+  disposeProxy = undefined
+  vi.restoreAllMocks()
+  await Promise.all([
+    new Promise<void>((resolve) => { proxy.close(() => { resolve() }) }),
+    new Promise<void>((resolve) => { origin.close(() => { resolve() }) }),
+  ])
+})
+
+/** A policy proxying everything, since a resolved policy always bypasses the loopback used here. */
+function policy(noProxy = ''): ProxyPolicy {
+  return { httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy, source: 'env' }
+}
+
+describe('fetching through a proxy', () => {
+  it('tunnels the request and never resolves a public address for it', async () => {
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
+    disposeProxy = await installGlobalProxy(policy())
+
+    const result = await new HttpFetchProvider(limits).fetch({ url: originUrl })
+
+    expect(result.body.content).toBe('via-proxy')
+    expect(proxied).toEqual([originUrl])
+    // Through a proxy the origin's DNS happens proxy-side, so the resolver that rejects non-public
+    // destinations is not consulted at all.
+    expect(resolve).not.toHaveBeenCalled()
+  })
+
+  it('keeps resolving and pinning a hop the bypass list covers', async () => {
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
+      .mockResolvedValue([{ address: '127.0.0.1', family: 4 }])
+    disposeProxy = await installGlobalProxy(policy('127.0.0.1'))
+
+    const result = await new HttpFetchProvider(limits).fetch({ url: originUrl })
+
+    expect(result.body.content).toBe('direct')
+    expect(proxied).toEqual([])
+    expect(resolve).toHaveBeenCalledOnce()
+  })
+
+  it('resolves and pins when no proxy is installed', async () => {
+    const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
+      .mockResolvedValue([{ address: '127.0.0.1', family: 4 }])
+
+    const result = await new HttpFetchProvider(limits).fetch({ url: originUrl })
+
+    expect(result.body.content).toBe('direct')
+    expect(resolve).toHaveBeenCalledOnce()
+  })
+
+  it('still refuses a cross-origin redirect on the proxied path', async () => {
+    proxy.removeAllListeners('request')
+    proxy.on('request', (request, response) => {
+      proxied.push(request.url ?? '')
+      response.writeHead(302, { location: 'http://elsewhere.example/next' })
+      response.end()
+    })
+    disposeProxy = await installGlobalProxy(policy())
+
+    await expect(new HttpFetchProvider(limits).fetch({ url: originUrl }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_REDIRECT_BLOCKED' }))
+  })
+
+  it('still refuses a URL the transport policy rejects before any hop', async () => {
+    disposeProxy = await installGlobalProxy(policy())
+
+    await expect(new HttpFetchProvider(limits).fetch({ url: 'ftp://example.com/x' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
+    expect(proxied).toEqual([])
+  })
+})
