@@ -1,64 +1,31 @@
-import { createServer, type Server } from 'node:http'
-import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
-
-let seen: string[] = []
-let proxy: Server
-let proxyUrl: string
-
-beforeAll(async () => {
-  proxy = createServer((request, response) => {
-    seen.push(`REQ ${request.url ?? ''}`)
-    response.writeHead(502); response.end('fake-proxy')
-  })
-  proxy.on('connect', (request, socket) => {
-    seen.push(`CONNECT ${request.url ?? ''}`)
-    socket.write('HTTP/1.1 502 Bad Gateway\r\n\r\n'); socket.end()
-  })
-  const a = await new Promise<AddressInfo>((r) => { proxy.listen(0, '127.0.0.1', () => { r(proxy.address() as AddressInfo) }) })
-  proxyUrl = `http://127.0.0.1:${String(a.port)}`
-})
-afterAll(async () => { await new Promise<void>((r) => { proxy.close(() => { r() }) }) })
-
-function policy(): ProxyPolicy {
-  return { httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy: '', source: 'env' }
-}
-async function observe(run: () => Promise<unknown>): Promise<string[]> {
-  seen = []
-  const dispose = await installGlobalProxy(policy())
-  try { await run().catch(() => undefined) } finally { await dispose() }
-  return seen
-}
-import { Worker } from 'node:worker_threads'
-import { once } from 'node:events'
+import { describe, expect, it } from 'vitest'
+import { PROXY_ENV_NAMES, installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
 import { workerSpawnEnv } from '../src/host.ts'
 
-
-/**
- * Whether this runtime honors `NODE_USE_ENV_PROXY`, which is how a separate Node execution context
- * receives the policy. Added in Node 24.0 and backported to 22.21; the engines range admits 22.19
- * and 22.20, where such a context stays direct.
- */
-function supportsEnvProxy(): boolean {
-  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number)
-  return major >= 24 || (major === 22 && minor >= 21)
+/** A policy carrying credentials, the shape that must never reach model-authored code. */
+const CREDENTIALED: ProxyPolicy = {
+  httpProxy: 'http://alice:s3cret@proxy.example:8080',
+  httpsProxy: 'http://alice:s3cret@proxy.example:8080',
+  noProxy: '',
+  source: 'env',
 }
 
-describe('worker thread egress', () => {
-  it('a worker honors the host policy through workerSpawnEnv', async () => {
-    const observed = await observe(async () => {
-      const worker = new Worker(
-        `import { parentPort, workerData } from 'node:worker_threads'
-         let out; try { out = await (await fetch(workerData.u)).text() } catch (e) { out = 'ERR' + String(e.cause?.code) }
-         parentPort.postMessage(out)`,
-        { eval: true, workerData: { u: 'http://worker-probe.invalid/x' }, env: workerSpawnEnv(), execArgv: [] },
-      )
-      await once(worker, 'message')
-      await worker.terminate()
-    })
-    // Same seam as a spawned child: the worker acts on the flag its environment carries.
-    if (supportsEnvProxy()) expect(observed.join('|')).toContain('worker-probe.invalid')
-    else expect(observed).toEqual([])
+describe('workflow worker egress', () => {
+  it('hands the worker no proxy configuration, credentialed or not', async () => {
+    const dispose = await installGlobalProxy(CREDENTIALED)
+    try {
+      const env = workerSpawnEnv()
+      // The worker executes the model-authored script body, so a proxy URL that may carry
+      // `user:password` must not be readable from its environment.
+      for (const name of PROXY_ENV_NAMES) expect(env).not.toHaveProperty(name)
+      expect(env).not.toHaveProperty('NODE_USE_ENV_PROXY')
+      expect(JSON.stringify(env)).not.toContain('s3cret')
+    } finally {
+      await dispose()
+    }
+  })
+
+  it('still carries the platform temp path the worker needs on Windows', () => {
+    expect(workerSpawnEnv('win32')).toHaveProperty('TMP')
   })
 })

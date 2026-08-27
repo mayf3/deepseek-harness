@@ -16,6 +16,14 @@ import { DIRECT_POLICY, POLICY_ENV_NAMES, proxyForUrl, type ProxyPolicy } from '
 let active: ProxyPolicy | undefined
 
 /**
+ * The proxy environment as it stood before the active policy was published, or `undefined` when none
+ * is installed. A spawned child receives these, not the published ones: normalizing what this process
+ * resolved into a child's environment would replace a value the user set for another tool — a SOCKS
+ * proxy this package refuses but `curl` uses, or an `HTTPS_PROXY` the user never wrote at all.
+ */
+let inheritedProxyEnv: Readonly<Record<string, string | undefined>> | undefined
+
+/**
  * The policy governing this process's outbound requests.
  *
  * @returns the installed policy, or `undefined` when {@link installGlobalProxy} has not run. A caller
@@ -34,11 +42,17 @@ export function currentProxyPolicy(): ProxyPolicy | undefined {
  * @returns a function restoring every name this call changed.
  */
 function applyPolicyEnv(policy: ProxyPolicy): () => void {
+  // Snapshot EVERY name before writing any of them. Windows folds environment names case-insensitively,
+  // so reading the uppercase spelling after writing the lowercase one would read back the value just
+  // written and restore the policy instead of the user's environment.
   const previous = new Map<string, string | undefined>()
+  for (const names of Object.values(POLICY_ENV_NAMES)) {
+    for (const name of names) previous.set(name, process.env[name])
+  }
+  inheritedProxyEnv = Object.fromEntries(previous)
   for (const [field, names] of Object.entries(POLICY_ENV_NAMES)) {
     const value = policy[field as keyof typeof POLICY_ENV_NAMES]
     for (const name of names) {
-      previous.set(name, process.env[name])
       if (value === undefined || value === '') Reflect.deleteProperty(process.env, name)
       else process.env[name] = value
     }
@@ -48,6 +62,7 @@ function applyPolicyEnv(policy: ProxyPolicy): () => void {
       if (value === undefined) Reflect.deleteProperty(process.env, name)
       else process.env[name] = value
     }
+    inheritedProxyEnv = undefined
   }
 }
 
@@ -67,10 +82,26 @@ function applyPolicyEnv(policy: ProxyPolicy): () => void {
 export async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<void>> {
   const previousPolicy = active
   if (policy.source === 'none') {
+    // A direct policy mounted over an installed one must actually stop proxying. Recording the policy
+    // alone would leave the previous agent as the global dispatcher, so a plain `fetch()` would keep
+    // tunnelling while `proxyForUrl()` reported a direct connection — and `mode: 'off'` would be a
+    // silent no-op. With nothing installed there is nothing to displace.
+    if (previousPolicy === undefined) {
+      active = policy
+      return () => {
+        active = previousPolicy
+        return Promise.resolve()
+      }
+    }
+    const undici = await import('undici')
+    const previous = undici.getGlobalDispatcher()
+    const direct = new undici.Agent()
+    undici.setGlobalDispatcher(direct)
     active = policy
-    return () => {
+    return async () => {
+      undici.setGlobalDispatcher(previous)
       active = previousPolicy
-      return Promise.resolve()
+      await direct.close()
     }
   }
   const restoreEnv = applyPolicyEnv(policy)
@@ -98,7 +129,9 @@ export async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Pro
  * `verify-no-bare-dispatcher` enforces that outside this package.
  *
  * @param url - the request URL, which decides whether the policy proxies or bypasses it.
- * @param options - agent options; applied to whichever agent the policy selects.
+ * @param options - agent options; applied to whichever agent the policy selects. On the proxied path
+ *   `connect` governs the connection to the PROXY, not to the origin, so a lookup meant to pin an
+ *   origin address belongs only on a URL the policy bypasses.
  * @returns a dispatcher the caller owns and must close once the response body is consumed.
  */
 export async function createDispatcher(url: URL, options: Agent.Options = {}): Promise<Dispatcher> {
@@ -147,29 +180,27 @@ export function proxyUrlFor(url: URL): string | undefined {
 }
 
 /**
- * The proxy environment a separate Node execution context needs: the resolved policy plus the flag
- * that makes Node's built-in HTTP clients honor it.
+ * The proxy environment a spawned child needs.
  *
- * This covers both shapes DSH spawns. A child process inherits the parent environment, so the proxy
- * names merely restate what {@link installGlobalProxy} already published and the flag is what it
- * gains. A worker thread is given an explicit, near-empty environment instead, so it needs the names
- * as well — and worker threads do not inherit the global dispatcher, which is why they are handled
- * here rather than left to the parent's installation.
+ * A child inherits the parent environment, which this process rewrote to its own resolved policy so
+ * undici reads back exactly what was resolved. That normalization must not reach the child: it would
+ * hand `curl` an `HTTPS_PROXY` this package invented from the HTTP one, or replace a SOCKS proxy the
+ * user set for `curl` with an HTTP proxy they never named for that scheme. The result therefore
+ * restores each name to the value the user exported — `undefined` for a name they never set — and
+ * adds only the flag that makes a child Node honor them.
  *
- * The flag reaches only Node 22.21+ and 24+; an older runtime keeps that context direct. Such a
- * context also matches bypass entries with Node's own `NO_PROXY` rules, which differ from this
- * package's in their separators and IPv4-range support. Non-Node children (curl, git, pnpm) ignore
- * the flag and read the variables themselves.
+ * The flag reaches only Node 22.21+ and 24+; an older runtime keeps that child direct. Such a child
+ * also matches bypass entries with Node's own `NO_PROXY` rules, which differ from this package's in
+ * their separators and IPv4-range support. Non-Node children (curl, git, pnpm) ignore the flag and
+ * read the variables themselves.
  *
- * @returns names to merge into the child or worker environment, or an empty object when no proxy is active.
+ * A worker thread is deliberately NOT served here — see the workflow engine, which runs
+ * model-authored scripts and must not receive a proxy URL that may carry credentials.
+ *
+ * @returns names to apply to the child environment, where `undefined` means remove, or an empty
+ *   object when no proxy is active.
  */
-export function childProxyEnv(): Record<string, string> {
-  if (active === undefined || active.source === 'none') return {}
-  const env: Record<string, string> = { NODE_USE_ENV_PROXY: '1' }
-  for (const [field, names] of Object.entries(POLICY_ENV_NAMES)) {
-    const value = active[field as keyof typeof POLICY_ENV_NAMES]
-    if (value === undefined || value === '') continue
-    for (const name of names) env[name] = value
-  }
-  return env
+export function childProxyEnv(): Readonly<Record<string, string | undefined>> {
+  if (active === undefined || active.source === 'none' || inheritedProxyEnv === undefined) return {}
+  return { ...inheritedProxyEnv, NODE_USE_ENV_PROXY: '1' }
 }

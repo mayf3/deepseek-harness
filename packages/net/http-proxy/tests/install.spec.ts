@@ -184,31 +184,62 @@ describe('childProxyEnv', () => {
     }
   })
 
-  it('carries the resolved policy and the flag that makes a child Node honor it', async () => {
+  it('hands a child the values the user exported, not this process\'s normalization', async () => {
+    // A user who set only HTTP_PROXY, plus a SOCKS proxy this package refuses but `curl` uses.
+    process.env.HTTP_PROXY = proxyUrl
+    process.env.https_proxy = 'socks5://127.0.0.1:1080'
     const dispose = await installGlobalProxy(proxyAll('example.com'))
     try {
-      expect(childProxyEnv()).toEqual({
-        NODE_USE_ENV_PROXY: '1',
-        http_proxy: proxyUrl,
-        HTTP_PROXY: proxyUrl,
-        https_proxy: proxyUrl,
-        HTTPS_PROXY: proxyUrl,
-        no_proxy: 'example.com',
-        NO_PROXY: 'example.com',
-      })
+      const child = childProxyEnv()
+      // The published policy invented an HTTPS proxy for this process; the child must not see it.
+      expect(child.https_proxy).toBe('socks5://127.0.0.1:1080')
+      expect(child.HTTPS_PROXY).toBeUndefined()
+      expect(child.HTTP_PROXY).toBe(proxyUrl)
+      expect(child.no_proxy).toBeUndefined()
+      expect(child.NODE_USE_ENV_PROXY).toBe('1')
     } finally {
       await dispose()
+      delete process.env.HTTP_PROXY
+      delete process.env.https_proxy
     }
   })
+})
 
-  it('omits a scheme the policy leaves direct, so a worker inherits no stale name', async () => {
-    const dispose = await installGlobalProxy({ httpProxy: proxyUrl, noProxy: '', source: 'env' })
+describe('installGlobalProxy over an existing installation', () => {
+  it('stops proxying when a direct policy is installed over a proxied one', async () => {
+    const outer = await installGlobalProxy(proxyAll())
     try {
-      expect(childProxyEnv()).not.toHaveProperty('HTTPS_PROXY')
-      expect(childProxyEnv()).not.toHaveProperty('NO_PROXY')
+      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
+      const off = await installGlobalProxy(DIRECT_POLICY)
+      try {
+        // `mode: 'off'` must actually stop proxying, not merely report a direct policy while the
+        // launcher's agent keeps tunnelling.
+        await expect((await fetch(originUrl)).text()).resolves.toBe('DIRECT')
+        expect(currentProxyPolicy()).toBe(DIRECT_POLICY)
+      } finally {
+        await off()
+      }
+      // Disposing the direct policy restores the proxy the launcher installed.
+      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
     } finally {
-      await dispose()
+      await outer()
     }
+  })
+})
+
+describe('applyPolicyEnv restoration', () => {
+  it('restores every name from one snapshot taken before any write', async () => {
+    process.env.http_proxy = 'http://before.example'
+    process.env.HTTP_PROXY = 'http://before.example'
+    const dispose = await installGlobalProxy(proxyAll())
+    expect(process.env.HTTP_PROXY).toBe(proxyUrl)
+    await dispose()
+    // Reading the uppercase spelling after writing the lowercase one must not restore the value
+    // just written — the failure Windows's case-folded environment would produce.
+    expect(process.env.http_proxy).toBe('http://before.example')
+    expect(process.env.HTTP_PROXY).toBe('http://before.example')
+    delete process.env.http_proxy
+    delete process.env.HTTP_PROXY
   })
 })
 

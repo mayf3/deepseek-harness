@@ -36,7 +36,7 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代�
 | 需要自定义 agent 选项的调用（连接池、超时、DNS 查询） | `createDispatcher(url, options)` |
 | 接受 `node:http` agent 的 SDK | `createNodeHttpAgent(protocol, options)` |
 | 接受自有代理 URL 的 SDK | `proxyUrlFor(url)` |
-| worker 线程，或由你自己构造环境的派生进程 | 把 `childProxyEnv()` 并入其环境 |
+| 由你自己构造环境的派生进程 | 把 `childProxyEnv()` 应用到它上面（`undefined` 表示删除） |
 
 构造 `new Agent(...)` 再作为 `dispatcher` 传入会覆盖全局 dispatcher，从而静默绕开代理。`verify-no-bare-dispatcher` 会在本包之外拒绝该写法；确实必须忽略代理的行用 `proxy-exempt:` 注释说明理由。
 
@@ -61,7 +61,7 @@ loopback 始终被绕过。否则 Harness 自己的 Web UI、Connection 传输�
 
 **一次解析，两个读者。** `proxyForUrl()` 与已安装的 dispatcher 绝不能对同一个 URL 给出不同答案，否则 `dsh-web-fetch-http` 会把 dispatcher 本打算隧道转发的连接固定到某个地址上。因此安装时会把解析出的策略发布到代理环境变量中，并以无选项方式构造 `EnvHttpProxyAgent`，让该 agent 读回的正是解析结果，而不是按略有差异的规则重新解析原始环境。
 
-**发布策略同时也是子进程继承的途径。** 同一次写入还规范化了每个派生进程看到的内容：`ALL_PROXY` 兜底落为具体的 `HTTP_PROXY`，绕过列表也已并入 loopback。
+**子进程继承的是用户导出的值，而非本进程解析出的值。** 写回环境只服务 undici；派生子进程前，`childProxyEnv()` 会把每个变量名还原为原值。把规范化结果塞给子进程，会让 `curl` 拿到一个由 HTTP 代理凭空推出的 `HTTPS_PROXY`，或让用户为 `curl` 设置的 SOCKS 代理被替换成他们从未为该协议指定过的 HTTP 代理。
 
 ### 源码地图
 
@@ -101,10 +101,11 @@ loopback 始终被绕过。否则 Harness 自己的 Web UI、Connection 传输�
 
 这些限制界定了本包不适用的场景，属于当前的包级约束。
 
-- **不支持 SOCKS、PAC 或操作系统代理探测**——只接受来自环境或配置的 `http(s)://` 代理 URL。不会读取 macOS 或 Windows 的系统代理设置，因此仅在代理软件里拨了开关的用户仍须导出环境变量；SOCKS URL 会被报告并跳过，而不是静默忽略。
+- **不支持 SOCKS、PAC 或操作系统代理探测**——只接受来自环境或配置的 `http(s)://` 代理 URL。不会读取 macOS 或 Windows 的系统代理设置，因此仅在代理软件里拨了开关的用户仍须导出环境变量；SOCKS URL 会被报告，且该协议保持直连，不会借用另一协议的代理。
 - **不支持自定义证书颁发机构**——做 TLS 拦截的企业代理需要在启动前为进程设置 `NODE_EXTRA_CA_CERTS`，本包既不设置也不校验它。
-- **独立的 Node 上下文按 Node 自己的规则匹配绕过条目，而非本包的规则**——子进程或 worker 线程通过 Node 自带的 `NODE_USE_ENV_PROXY` 支持来遵循策略，而它的 `NO_PROXY` 解析在分隔符与 IPv4 区间处理上与此处不同，且仅存在于 Node 22.21+ 与 24+。更旧的运行时会让该上下文保持直连。
-- **`code-runtime` worker 被刻意排除在外**——模型编写的程序运行时完全没有环境变量，而代理 URL 可能携带凭据。
+- **独立的 Node 上下文只在足够新的运行时上遵循策略**——派生的子进程通过 Node 的 `NODE_USE_ENV_PROXY` 读取（22.21+、24+），OTLP 导出器的 agent 则通过 Node 的 `proxyEnv` 选项（22.21+、**24.5+**）。engines 范围允许 22.19、22.20 与 24.0–24.4，在这些版本上这两条路径保持直连。此类上下文还会按 Node 自己的 `NO_PROXY` 规则匹配绕过条目，其分隔符与 IPv4 区间处理与本包不同。
+- **执行模型编写代码的 worker 完全不获得代理**——`code-runtime` worker 与 `workflow` worker 都不接收代理配置，它们自身的请求直连。代理 URL 可能携带 `user:password`，而两者运行的都是模型写的脚本。
+- **防回归门禁只看源码，看不到依赖内部**——`verify-no-bare-dispatcher` 解析 `packages/*/*/src` 与 `apps/*/src`；测试、脚本以及第三方 SDK 的内部都在其之外。这正是每个出网点还各配一份 `egress.spec.ts` 的原因。
 
 <a id="dev-note"></a>
 ### 开发备注

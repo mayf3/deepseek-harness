@@ -26,13 +26,13 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运�
 
 **解析补上 Node 与 undici 都不提供的部分。** `ALL_PROXY` 为两种协议兜底；空值视为未设置，因为 undici 的 `??` 链会让空的小写名遮住有值的大写名；loopback 始终绕过，否则 Web UI、Connection 传输以及每一个本地测试服务器都会经由代理并形成回环。绕过列表同时携带 `::1` **与** `[::1]`：undici 自带的匹配器会把裸写的 `::1` 读成主机 `:` 端口 `1`，从而永不豁免它。
 
-**拒绝是响还是静，取决于值从哪来。** 来自**环境**的 SOCKS URL、无法解析的字符串或不受支持的协议，会在 stderr 上报告并跳过——该变量可能是为其他工具导出的，它的笔误不应阻止 agent 启动。同样的值若经由插件的 `Config` 传入，则在加载期抛出，因为那是 Harness 自己的配置面，`AGENTS.md` 要求配置错误必须响。
+**拒绝是响还是静取决于值从哪来，且绝不为被拒协议改道。** 用户填写而被本包拒绝的槽位，会让该协议保持直连，而不是继续回退到 `ALL_PROXY` 或 HTTP 代理，从而让诊断与实际路由一致。来自**环境**的 SOCKS URL、无法解析的字符串或不受支持的协议，会在 stderr 上报告并跳过——该变量可能是为其他工具导出的，它的笔误不应阻止 agent 启动。同样的值若经由插件的 `Config` 传入，则在加载期抛出，因为那是 Harness 自己的配置面，`AGENTS.md` 要求配置错误必须响。
 
 **经由代理时，`web_fetch` 不再解析与固定地址。** 该提供方会校验一组公网地址并把连接固定到其上。经由代理时没有可固定的对象——origin 的 DNS 由代理执行——而固定后的直连会彻底绕开代理。因此代理转发的一跳跳过解析，配置代理即表示信任该代理进行目的地选择。被策略绕过的一跳，包括每一个 loopback 与每一条 `NO_PROXY` 条目，仍走原有的解析并固定路径。Kimi Code 与 Claude Code 各自独立得出了同一结论。
 
 URL 层策略未受影响：仅 `http(s)`、禁止内嵌凭据、长度上限与跨域重定向拒绝在每一跳上依然生效。
 
-**独立的 Node 执行上下文通过环境获得策略。** `childProxyEnv()` 返回解析出的变量名加上 `NODE_USE_ENV_PROXY=1`，并入 `scrubbedParentEnv()`（每个 spawner 本就共享的一个函数）与 `workerSpawnEnv()`。worker 线程拥有独立的 `globalThis`，不继承全局 dispatcher，而且它的环境是显式构造而非继承的，因此除标志外还需要那些变量名。已实测：对给定显式 `env` 的 `Worker`，该标志确实生效。
+**派生的子进程通过环境获得策略；执行模型代码的 worker 什么也不获得。** `childProxyEnv()` 并入 `scrubbedParentEnv()`——每个 spawner 本就共享的那一个函数。workflow worker **不**接收它：它执行的是模型编写的脚本体，而代理 URL 可能携带 `user:password`。这与 code runtime 保持的containment 相同，也是 `docs/defensive-patterns.md` 的要求，因此 workflow 自身的请求直连。
 
 这接受了一处已记录的接缝。此类上下文按 Node 自己的规则匹配绕过条目，其分隔符与 IPv4 区间支持与本包不同，且该标志仅存在于 Node 22.21+ 与 24+。
 
@@ -40,7 +40,7 @@ URL 层策略未受影响：仅 `http(s)`、禁止内嵌凭据、长度上限与
 
 **每个出网点都配一份出网测试，因为读代码不够。** 各所属包中的 `egress.spec.ts` 驱动该点的真实代码路径，目标是无法解析的 `.invalid` 主机，穿过一个假代理，并断言代理确实收到了请求。九份测试覆盖搜索后端、pi-ai 发现、走 HTTP 的 MCP、遥测、E2B、派生的子 Node 与 worker 线程。下面那条门禁看不进依赖内部；这些能，它们把「某个 SDK 换了传输」从静默回归变成失败的测试。
 
-**用门禁防止该缺陷复现。** `verify-no-bare-dispatcher` 在所属包之外拒绝 `new Agent(...)` 与显式 `dispatcher:`。`createDispatcher(url, options)` 是受支持的替代；确实必须忽略代理的行用 `proxy-exempt:` 注释说明。这条规则之所以存在，是因为 `web-fetch-http` 里原本那行 `new Agent` 在写下时完全合理——那时根本还没有代理这回事，也没有任何机制会拦下它。
+**用门禁防止该缺陷复现。** `verify-no-bare-dispatcher` 解析 TypeScript AST——`scripts/AGENTS.md` 要求 source-ownership 门禁使用语法感知发现，而逐行正则漏掉了本仓库已在使用的 `{ dispatcher }` 简写，以及重命名导入后的 `new Alias(...)`。它在所属包之外拒绝 undici agent 构造与显式 `dispatcher` 选项。`createDispatcher(url, options)` 是受支持的替代；确实必须忽略代理的行用 `proxy-exempt:` 注释说明。这条规则之所以存在，是因为 `web-fetch-http` 里原本那行 `new Agent` 在写下时完全合理——那时根本还没有代理这回事，也没有任何机制会拦下它。
 
 ## Alternatives considered
 
@@ -78,6 +78,6 @@ userland undici 能触及 Node 内置的 `fetch`，依赖于两者都会写入 l
 
 `verify-no-bare-dispatcher.spec.ts` 证明该门禁能拒掉本包所要修复的那种写法、接受 `createDispatcher`、接受带注释的豁免，并在当前代码树上通过。
 
-出网测试还为遥测保留了负向用例：不带本次提供的 agent 时，导出器完全触及不到代理。该断言可以防止某次 SDK 升级恢复默认 agent 后把修复悄悄回退掉。
+出网测试为遥测保留了负向用例——恢复 SDK 自带的默认 agent 就触及不到代理——因此升级无法悄悄把它变回直连。其正向用例按运行时分支，因为导出器的 agent 需要 Node 22.21+ 或 24.5+。另有一组一致性测试，用文档所述的 `NO_PROXY` 词汇把两套绕过匹配器（`proxyForUrl` 与已安装的 `EnvHttpProxyAgent`）相互固定。
 
 无录制会话快照变更：本次改动不影响任何模型可见输入或产品用户可见的 transcript 输出。

@@ -70,6 +70,25 @@ declare module '@deepseek-ai/cordis' {
 /** The SDK's own default control-plane domain; `E2B_DOMAIN` overrides it there and here alike. */
 const E2B_DEFAULT_DOMAIN = 'e2b.app'
 
+/** The debug control plane the SDK substitutes, on loopback and plain HTTP. */
+const E2B_DEBUG_API_URL = 'http://localhost:3000'
+
+/**
+ * The control-plane URL the SDK will actually call, derived the way the SDK derives it: an explicit
+ * `E2B_API_URL` first, then the debug substitute, then the domain default. Choosing a proxy for
+ * anything else would pick the wrong scheme's proxy, ignore a bypass entry naming the real host, and
+ * — for the loopback debug plane — hand a proxy the control-plane traffic and its API key.
+ *
+ * @param env - the process environment to read; overridable so tests need no ambient state.
+ * @returns the absolute control-plane URL.
+ */
+export function e2bApiUrl(env: NodeJS.ProcessEnv = process.env): string {
+  const explicit = env.E2B_API_URL
+  if (explicit !== undefined && explicit !== '') return explicit
+  if ((env.E2B_DEBUG ?? 'false').toLowerCase() === 'true') return E2B_DEBUG_API_URL
+  return `https://api.${env.E2B_DOMAIN ?? E2B_DEFAULT_DOMAIN}`
+}
+
 /**
  * Creates one lazily consumable E2B SDK handle and deletes the sandbox at
  * timeout or disposal. Creation begins at plugin construction; adapters await
@@ -154,9 +173,10 @@ export class E2BRuntime extends Service {
 
   private async open(): Promise<Sandbox> {
     // The SDK builds its own undici dispatcher, so the global one never reaches it; it takes a proxy
-    // URL instead and reads no environment of its own. Its control-plane origin follows `E2B_DOMAIN`
-    // exactly as the SDK derives it, so a bypass entry naming that host is honored.
-    const proxy = proxyUrlFor(new URL(`https://api.${process.env.E2B_DOMAIN ?? E2B_DEFAULT_DOMAIN}`))
+    // URL instead and reads no environment of its own. The decision is made against the URL the SDK
+    // will really call, so a bypass entry naming that host is honored and a loopback debug plane
+    // stays direct.
+    const proxy = proxyUrlFor(new URL(e2bApiUrl()))
     const sandbox = await Sandbox.create({
       apiKey: this.config.apiKey,
       timeoutMs: this.config.timeoutMs,

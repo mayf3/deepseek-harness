@@ -19,6 +19,9 @@
     },
     {
       "path": "../../net/http-proxy"
+    },
+    {
+      "path": "../../util/launch-environment"
     }
   ]
 }

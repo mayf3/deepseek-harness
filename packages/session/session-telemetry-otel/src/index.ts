@@ -217,9 +217,11 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
           // The one added default is the agent. On Node this exporter posts through `node:http`,
           // which undici's global dispatcher does not reach, so telemetry would be the one egress
           // that ignores a configured proxy. A composition supplying its own `httpAgentOptions`
-          // keeps it.
+          // keeps it; one supplying only `keepAlive` still decides it, because the SDK stops
+          // interpreting that field the moment an agent factory is present.
           exporter: new OTLPLogExporter({
-            httpAgentOptions: (protocol: string) => createNodeHttpAgent(protocol, { keepAlive: true }),
+            httpAgentOptions: (protocol: string) =>
+              createNodeHttpAgent(protocol, { keepAlive: config.exporter?.keepAlive ?? true }),
             ...config.exporter,
           }),
         }),

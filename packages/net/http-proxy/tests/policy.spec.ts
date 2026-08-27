@@ -67,6 +67,22 @@ describe('resolveProxyPolicy', () => {
     expect(policy.noProxy).toBe('localhost,127.0.0.1,::1,[::1]')
   })
 
+  it('keeps a scheme direct when its own value was refused, rather than falling back', () => {
+    const { policy, diagnostics } = resolveProxyPolicy(env({ HTTPS_PROXY: 'socks5://127.0.0.1:1080', HTTP_PROXY: PROXY }))
+    expect(policy.httpProxy).toBe(PROXY)
+    // The diagnostic says HTTPS connects directly; the route must agree rather than borrowing the
+    // HTTP proxy the user never named for HTTPS.
+    expect(policy.httpsProxy).toBeUndefined()
+    expect(proxyForUrl(policy, new URL('https://example.com/'))).toBeUndefined()
+    expect(diagnostics[0]?.message).toMatch(/connecting directly for that scheme/)
+  })
+
+  it('keeps a scheme direct when its own value was malformed, past ALL_PROXY too', () => {
+    const { policy } = resolveProxyPolicy(env({ HTTPS_PROXY: 'not a url', ALL_PROXY: PROXY }))
+    expect(policy.httpProxy).toBe(PROXY)
+    expect(policy.httpsProxy).toBeUndefined()
+  })
+
   it('reports a SOCKS proxy instead of silently ignoring it', () => {
     const { policy, diagnostics } = resolveProxyPolicy(env({ HTTP_PROXY: 'socks5://127.0.0.1:7890' }))
     expect(policy).toEqual(DIRECT_POLICY)
@@ -92,6 +108,13 @@ describe('resolveProxyPolicy', () => {
     expect(policy.httpProxy).toBe(PROXY)
     expect(policy.httpsProxy).toBe(PROXY)
     expect(policy.noProxy).toBe('internal.example,localhost,127.0.0.1,::1,[::1]')
+    expect(policy.source).toBe('config')
+  })
+
+  it('takes each scheme from its own configured field', () => {
+    const { policy } = resolveProxyPolicy(env({}), { httpProxy: PROXY, httpsProxy: OTHER })
+    expect(policy.httpProxy).toBe(PROXY)
+    expect(policy.httpsProxy).toBe(OTHER)
     expect(policy.source).toBe('config')
   })
 

@@ -8,67 +8,154 @@
  * agent silently bypassed every proxy.
  *
  * `createDispatcher()` from that package is the sanctioned way to get agent options AND the policy.
+ *
+ * Discovery is syntax-aware, as `scripts/AGENTS.md` requires: a line-wise regex misses the
+ * `{ dispatcher }` shorthand and a `new Alias(...)` whose import renamed `Agent`, and both bypass the
+ * proxy exactly as the spelled-out forms do.
  */
 
 import { globSync, readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
+import ts from 'typescript'
 
 const root = resolve(import.meta.dirname, '..')
 
 /** The package that owns dispatcher construction; its own agents are the implementation. */
 export const DISPATCHER_OWNER = 'packages/net/http-proxy/'
 
-/** A line carrying this marker states why it is exempt and is left alone. */
+/**
+ * A comment carrying this marker states why the construction or option is exempt. It counts on the
+ * offending line or the line directly above it, because a syntax-aware match anchors on the property
+ * or `new` expression rather than the statement, and the explanation belongs above a long line.
+ */
 export const ALLOW_MARKER = 'proxy-exempt:'
 
-/** Constructing an undici agent, or naming a `dispatcher` option, outside the owning package. */
-const PATTERNS: readonly { readonly probe: RegExp; readonly what: string }[] = [
-  { probe: /\bnew\s+(?:undici\.)?(?:Agent|ProxyAgent|EnvHttpProxyAgent)\s*\(/, what: 'constructs an undici agent' },
-  { probe: /\bdispatcher\s*:/, what: 'passes an explicit `dispatcher`' },
-]
+/** Undici agent classes whose construction selects a transport, under any local name. */
+const AGENT_EXPORTS = new Set(['Agent', 'ProxyAgent', 'EnvHttpProxyAgent'])
 
-/** One source line that would bypass the configured proxy. */
+/** The module those classes must come from; a same-named class from elsewhere selects no transport. */
+const AGENT_MODULE = 'undici'
+
+/** The request option that overrides the global dispatcher, however it is written. */
+const DISPATCHER_PROPERTY = 'dispatcher'
+
+/** One source position that would bypass the configured proxy. */
 export interface DispatcherViolation {
   /** Repository-relative path, in POSIX separators. */
   readonly file: string
   /** One-based line number. */
   readonly line: number
-  /** Which rule the line broke. */
+  /** Which rule the position broke. */
   readonly what: string
-  /** The offending line, trimmed. */
+  /** The offending source text, trimmed. */
   readonly text: string
 }
 
 /**
- * Find every bare-dispatcher line in one source file.
+ * Local names bound to an undici agent class, including `import { Agent as X }` renames and a
+ * namespace import's own name so `undici.Agent` is recognised too.
+ *
+ * @param source - the parsed file.
+ * @returns agent identifiers and namespace identifiers bound in this file.
+ */
+function agentBindings(source: ts.SourceFile): { agents: Set<string>; namespaces: Set<string> } {
+  const agents = new Set<string>()
+  const namespaces = new Set<string>()
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) continue
+    if (!ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== AGENT_MODULE) continue
+    const bindings = statement.importClause?.namedBindings
+    if (bindings === undefined) continue
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text)
+      continue
+    }
+    for (const element of bindings.elements) {
+      const imported = (element.propertyName ?? element.name).text
+      if (AGENT_EXPORTS.has(imported)) agents.add(element.name.text)
+    }
+  }
+  return { agents, namespaces }
+}
+
+/**
+ * Whether an expression names an undici agent class: a bound identifier, or a `<namespace>.Agent`
+ * property access.
+ *
+ * @param expression - the `new` expression's callee.
+ * @param bound - identifiers this file bound to an agent class or a namespace.
+ * @returns true when constructing it selects a transport.
+ */
+function namesAgent(expression: ts.Expression, bound: ReturnType<typeof agentBindings>): boolean {
+  if (ts.isIdentifier(expression)) return bound.agents.has(expression.text)
+  if (ts.isPropertyAccessExpression(expression) && ts.isIdentifier(expression.expression)) {
+    return bound.namespaces.has(expression.expression.text) && AGENT_EXPORTS.has(expression.name.text)
+  }
+  return false
+}
+
+/**
+ * Whether an object literal member supplies `dispatcher`, covering `dispatcher: x`, the `{ dispatcher }`
+ * shorthand, and `{ 'dispatcher': x }`.
+ *
+ * @param member - one object-literal element.
+ * @returns true when the member names the dispatcher option.
+ */
+function suppliesDispatcher(member: ts.ObjectLiteralElementLike): boolean {
+  if (ts.isShorthandPropertyAssignment(member)) return member.name.text === DISPATCHER_PROPERTY
+  if (!ts.isPropertyAssignment(member)) return false
+  const name = member.name
+  if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text === DISPATCHER_PROPERTY
+  return false
+}
+
+/**
+ * Find every bare-dispatcher position in one source file.
  *
  * @param file - repository-relative path, used to exempt the owning package and to report location.
  * @param sourceText - the file's contents.
- * @returns one violation per offending line, in file order.
+ * @returns one violation per offending position, in source order.
  */
 export function findDispatcherViolations(file: string, sourceText: string): DispatcherViolation[] {
   const posix = file.replaceAll('\\', '/')
   if (posix.startsWith(DISPATCHER_OWNER)) return []
+  const source = ts.createSourceFile(posix, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const bound = agentBindings(source)
+  const lines = sourceText.split('\n')
   const violations: DispatcherViolation[] = []
-  sourceText.split('\n').forEach((text, index) => {
-    if (text.includes(ALLOW_MARKER)) return
-    for (const { probe, what } of PATTERNS) {
-      if (probe.test(text)) violations.push({ file: posix, line: index + 1, what, text: text.trim() })
+
+  const record = (node: ts.Node, what: string): void => {
+    const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line
+    const exempt = [lines[line], lines[line - 1]].some(text => text?.includes(ALLOW_MARKER) === true)
+    if (exempt) return
+    violations.push({ file: posix, line: line + 1, what, text: (lines[line] ?? '').trim() })
+  }
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isNewExpression(node) && namesAgent(node.expression, bound)) {
+      record(node, 'constructs an undici agent')
     }
-  })
+    if (ts.isObjectLiteralExpression(node) && node.properties.some(suppliesDispatcher)) {
+      record(node.properties.find(suppliesDispatcher) as ts.Node, 'passes an explicit `dispatcher`')
+    }
+    ts.forEachChild(node, visit)
+  }
+  ts.forEachChild(source, visit)
   return violations
 }
 
 /**
  * Scan every package and app source file in the repository.
  *
- * @returns every violation found, grouped by the order the files were scanned.
+ * @returns every violation found, in scan order.
+ * @throws when the corpus is empty, which would make the gate pass by scanning nothing.
  */
 export function scanRepository(): DispatcherViolation[] {
   const files = [
     ...globSync('packages/*/*/src/**/*.ts', { cwd: root }),
     ...globSync('apps/*/src/**/*.ts', { cwd: root }),
   ]
+  if (files.length === 0) throw new Error('verify-no-bare-dispatcher: scanned an empty corpus; the globs no longer match.')
   return files.flatMap(file => findDispatcherViolations(file, readFileSync(resolve(root, file), 'utf8')))
 }
 
@@ -80,7 +167,7 @@ function main(): void {
   }
   console.error('verify-no-bare-dispatcher: a dispatcher built outside @deepseek-ai/dsh-http-proxy bypasses the configured proxy.\n')
   for (const violation of violations) {
-    console.error(`  ${violation.file}:${String(violation.line)} ${violation.what}`)
+    console.error(`  ${relative('.', violation.file)}:${String(violation.line)} ${violation.what}`)
     console.error(`    ${violation.text}`)
   }
   console.error('\nUse `createDispatcher(url, options)` from @deepseek-ai/dsh-http-proxy, or annotate the line')

@@ -127,17 +127,30 @@ function readEnv(
 }
 
 /**
+ * What one environment or configuration slot supplied. A rejected slot is distinct from an absent
+ * one: the user named a proxy for that scheme, so falling back to another scheme's proxy would route
+ * the request somewhere they never asked for while the diagnostic said it stayed direct.
+ */
+type ProxyCandidate =
+  | { readonly kind: 'accepted'; readonly value: string }
+  | { readonly kind: 'rejected' }
+  | { readonly kind: 'absent' }
+
+/** A slot nobody filled. */
+const ABSENT: ProxyCandidate = { kind: 'absent' }
+
+/**
  * Validate one candidate proxy URL.
  *
  * @param candidate - the raw value and the origin to name in a diagnostic.
  * @param diagnostics - collector the rejection is appended to.
- * @returns the candidate when it is a usable `http(s):` proxy URL, otherwise `undefined`.
+ * @returns the candidate's usability, distinguishing a rejected slot from an empty one.
  */
 function acceptProxyUrl(
   candidate: { value: string; name: string } | undefined,
   diagnostics: ProxyDiagnostic[],
-): string | undefined {
-  if (candidate === undefined) return undefined
+): ProxyCandidate {
+  if (candidate === undefined) return ABSENT
   const parsed = URL.parse(candidate.value)
   if (parsed === null) {
     diagnostics.push({
@@ -145,25 +158,39 @@ function acceptProxyUrl(
       origin: candidate.name,
       message: `${candidate.name} is not a valid URL; connecting directly`,
     })
-    return undefined
+    return { kind: 'rejected' }
   }
   if (SOCKS_PROTOCOLS.has(parsed.protocol)) {
     diagnostics.push({
       kind: 'socks',
       origin: candidate.name,
-      message: `${candidate.name} names a SOCKS proxy, which is not supported; set an http:// or https:// proxy URL instead`,
+      message: `${candidate.name} names a SOCKS proxy, which is not supported; connecting directly for that scheme — set an http:// or https:// proxy URL instead`,
     })
-    return undefined
+    return { kind: 'rejected' }
   }
   if (!SUPPORTED_PROTOCOLS.has(parsed.protocol)) {
     diagnostics.push({
       kind: 'invalid',
       origin: candidate.name,
-      message: `${candidate.name} uses the unsupported ${parsed.protocol}// scheme; set an http:// or https:// proxy URL instead`,
+      message: `${candidate.name} uses the unsupported ${parsed.protocol}// scheme; connecting directly for that scheme — set an http:// or https:// proxy URL instead`,
     })
-    return undefined
+    return { kind: 'rejected' }
   }
-  return candidate.value
+  return { kind: 'accepted', value: candidate.value }
+}
+
+/**
+ * Resolve one scheme's proxy from its own slot, then the fallbacks — but only when the scheme's own
+ * slot was empty. A rejected slot keeps that scheme direct, so the diagnostic and the route agree.
+ *
+ * @param own - what the scheme's own name supplied.
+ * @param fallbacks - values to try in order when `own` is absent.
+ * @returns the proxy URL for that scheme, or `undefined` for a direct connection.
+ */
+function resolveScheme(own: ProxyCandidate, ...fallbacks: (string | undefined)[]): string | undefined {
+  if (own.kind === 'accepted') return own.value
+  if (own.kind === 'rejected') return undefined
+  return fallbacks.find(value => value !== undefined)
 }
 
 /**
@@ -252,32 +279,34 @@ export function resolveProxyPolicy(
   if (config.mode === 'off') return { policy: DIRECT_POLICY, diagnostics }
 
   const all = acceptProxyUrl(readEnv(env, 'all_proxy'), diagnostics)
-  const httpFromEnv = acceptProxyUrl(readEnv(env, 'http_proxy'), diagnostics) ?? all
-  const httpsFromEnv = acceptProxyUrl(readEnv(env, 'https_proxy'), diagnostics) ?? all
-
-  const httpFromConfig = acceptProxyUrl(
+  const allValue = all.kind === 'accepted' ? all.value : undefined
+  const configHttp = acceptProxyUrl(
     config.httpProxy === undefined ? undefined : { value: config.httpProxy, name: 'config.httpProxy' },
     diagnostics,
   )
-  const httpsFromConfig = acceptProxyUrl(
+  const configHttps = acceptProxyUrl(
     config.httpsProxy === undefined ? undefined : { value: config.httpsProxy, name: 'config.httpsProxy' },
     diagnostics,
   )
+  const configHttpValue = configHttp.kind === 'accepted' ? configHttp.value : undefined
+  const configHttpsValue = configHttps.kind === 'accepted' ? configHttps.value : undefined
 
-  const httpProxy = httpFromEnv ?? httpFromConfig
-  // HTTPS falls back to the HTTP proxy, so an undefined result here means no layer supplied any
-  // proxy at all — one check covers both schemes.
-  const httpsProxy = httpsFromEnv ?? httpsFromConfig ?? httpProxy
-  if (httpsProxy === undefined) return { policy: DIRECT_POLICY, diagnostics }
+  const envHttp = acceptProxyUrl(readEnv(env, 'http_proxy'), diagnostics)
+  const envHttps = acceptProxyUrl(readEnv(env, 'https_proxy'), diagnostics)
+  const httpProxy = resolveScheme(envHttp, allValue, configHttpValue)
+  // HTTPS falls back to the HTTP proxy last, matching undici — but never past a value the user named
+  // for HTTPS and this package refused.
+  const httpsProxy = resolveScheme(envHttps, allValue, configHttpsValue, httpProxy)
+  if (httpProxy === undefined && httpsProxy === undefined) return { policy: DIRECT_POLICY, diagnostics }
 
   const noProxy = withLoopback(readEnv(env, 'no_proxy')?.value ?? config.noProxy)
-  const source = httpFromEnv !== undefined || httpsFromEnv !== undefined ? 'env' : 'config'
+  const fromEnv = envHttp.kind === 'accepted' || envHttps.kind === 'accepted' || all.kind === 'accepted'
   return {
     policy: {
       ...httpProxy === undefined ? {} : { httpProxy },
-      httpsProxy,
+      ...httpsProxy === undefined ? {} : { httpsProxy },
       noProxy,
-      source,
+      source: fromEnv ? 'env' : 'config',
     },
     diagnostics,
   }

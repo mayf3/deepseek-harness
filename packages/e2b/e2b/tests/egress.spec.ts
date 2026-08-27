@@ -44,3 +44,26 @@ describe('e2b egress', () => {
     expect(observed.join('|')).toContain('api.e2b.app:443')
   })
 })
+
+describe('e2b control-plane URL', () => {
+  it('follows the SDK precedence so the proxy decision matches the real target', async () => {
+    const { e2bApiUrl } = await import('../src/index.ts')
+    expect(e2bApiUrl({})).toBe('https://api.e2b.app')
+    expect(e2bApiUrl({ E2B_DOMAIN: 'e2b.dev' })).toBe('https://api.e2b.dev')
+    expect(e2bApiUrl({ E2B_DEBUG: 'TRUE' })).toBe('http://localhost:3000')
+    expect(e2bApiUrl({ E2B_API_URL: 'https://api.internal.example', E2B_DEBUG: 'true' }))
+      .toBe('https://api.internal.example')
+  })
+
+  it('keeps the loopback debug plane direct instead of sending its API key to a proxy', async () => {
+    const { e2bApiUrl } = await import('../src/index.ts')
+    const { proxyForUrl, resolveProxyPolicy } = await import('@deepseek-ai/dsh-http-proxy')
+    const { createLaunchEnvironmentSnapshot } = await import('@deepseek-ai/dsh-launch-environment')
+    // A resolved policy — the shape a real launch installs — always bypasses loopback.
+    const { policy: resolved } = resolveProxyPolicy(
+      createLaunchEnvironmentSnapshot([{ source: 'process', values: { HTTP_PROXY: proxyUrl } }]),
+    )
+    expect(proxyForUrl(resolved, new URL(e2bApiUrl({ E2B_DEBUG: 'true' })))).toBeUndefined()
+    expect(proxyForUrl(resolved, new URL(e2bApiUrl({})))).toBe(proxyUrl)
+  })
+})

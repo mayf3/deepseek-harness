@@ -225,6 +225,7 @@ async function requestWith(
   const { fetch } = await import('undici')
   const dispatcher = await createDispatcher(url, options)
   try {
+    // proxy-exempt: the dispatcher is createDispatcher's, which already applied the active policy.
     const response = await fetch(url, { method: 'GET', redirect: 'manual', headers, signal, dispatcher })
     return { response, close: async () => { await dispatcher.close() } }
   } catch (error: unknown) {

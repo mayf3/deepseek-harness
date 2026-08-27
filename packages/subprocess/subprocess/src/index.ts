@@ -67,8 +67,14 @@ export function scrubbedParentEnv(): Record<string, string> {
     if (value !== undefined && !SENSITIVE_ENV_PATTERN.test(key) && !key.toUpperCase().startsWith(DSH_ENV_PREFIX)) env[key] = value
   }
   // A child Node ignores the inherited proxy variables unless the flag this adds is set, so an MCP
-  // stdio server or subagent CLI would connect directly while its parent proxies.
-  return { ...env, ...childProxyEnv() }
+  // stdio server or subagent CLI would connect directly while its parent proxies. The same overlay
+  // restores each proxy name to what the user exported, undoing this process's own normalization —
+  // `undefined` removes a name the user never set.
+  for (const [name, value] of Object.entries(childProxyEnv())) {
+    if (value === undefined) Reflect.deleteProperty(env, name)
+    else env[name] = value
+  }
+  return env
 }
 
 declare module '@deepseek-ai/cordis' {

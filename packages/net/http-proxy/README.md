@@ -36,7 +36,7 @@ Plain `fetch()` is proxied, and so is any SDK that reaches `globalThis.fetch` �
 | A call needing its own agent options (pool size, timeouts, a DNS lookup) | `createDispatcher(url, options)` |
 | An SDK that takes a `node:http` agent | `createNodeHttpAgent(protocol, options)` |
 | An SDK that takes a proxy URL of its own | `proxyUrlFor(url)` |
-| A worker thread, or a spawn whose environment you build yourself | merge `childProxyEnv()` into its environment |
+| A spawn whose environment you build yourself | apply `childProxyEnv()` to it (`undefined` means remove) |
 
 Constructing `new Agent(...)` and passing it as `dispatcher` overrides the global one and silently bypasses the proxy. `verify-no-bare-dispatcher` rejects that outside this package; a line that must genuinely ignore the proxy says so with a `proxy-exempt:` comment.
 
@@ -61,7 +61,7 @@ A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable stri
 
 **One resolution, two readers.** `proxyForUrl()` and the installed dispatcher must never disagree about a URL, or `dsh-web-fetch-http` would pin a connection the dispatcher meant to tunnel. Installation therefore publishes the resolved policy into the proxy environment variables and constructs `EnvHttpProxyAgent` with no options, so the agent reads back exactly what was resolved rather than re-parsing the raw environment under slightly different rules.
 
-**Publishing the policy is also how children inherit it.** The same write normalizes what every spawned process sees: the `ALL_PROXY` fallback becomes a concrete `HTTP_PROXY`, and the bypass list arrives with loopback already merged.
+**A child inherits what the user exported, not what this process resolved.** The published values exist for undici; `childProxyEnv()` restores each name to its original before a child is spawned. Normalizing them into a child would hand `curl` an `HTTPS_PROXY` invented from the HTTP one, or replace a SOCKS proxy the user set for `curl` with an HTTP proxy they never named for that scheme.
 
 ### Source map
 
@@ -101,10 +101,11 @@ No direct invalidation: the package contributes no request tokens and never muta
 
 These limits define when the package is a poor fit. They are current package constraints.
 
-- **No SOCKS, PAC, or operating-system proxy detection** — only `http(s)://` proxy URLs from the environment or configuration. A macOS or Windows system-proxy setting is not read, so a user who only toggled it in a proxy application must still export the variables; a SOCKS URL is reported and skipped rather than silently ignored.
+- **No SOCKS, PAC, or operating-system proxy detection** — only `http(s)://` proxy URLs from the environment or configuration. A macOS or Windows system-proxy setting is not read, so a user who only toggled it in a proxy application must still export the variables; a SOCKS URL is reported and that scheme stays direct rather than borrowing another scheme's proxy.
 - **No custom certificate authority** — a TLS-intercepting corporate proxy needs `NODE_EXTRA_CA_CERTS` set on the process before launch, which this package neither sets nor validates.
-- **A separate Node context matches bypass entries by Node's rules, not these** — a child process or worker thread honors the policy through Node's own `NODE_USE_ENV_PROXY` support, whose `NO_PROXY` parsing differs in separators and IPv4-range handling, and which exists only on Node 22.21+ and 24+. An older runtime keeps that context direct.
-- **The `code-runtime` worker is deliberately excluded** — model-authored programs run with no ambient environment at all, and a proxy URL may carry credentials.
+- **A separate Node context honors the policy only on a new enough runtime** — a spawned child reads it through Node's `NODE_USE_ENV_PROXY` (22.21+, 24+), and the OTLP exporter's agent through Node's `proxyEnv` option (22.21+, **24.5+**). The engines range admits 22.19, 22.20, and 24.0–24.4, where those two paths stay direct. Such a context also matches bypass entries with Node's own `NO_PROXY` rules, which differ from this package's in their separators and IPv4-range support.
+- **A worker that executes model-authored code gets no proxy at all** — neither the `code-runtime` worker nor the `workflow` worker receives proxy configuration, so their own requests go direct. A proxy URL may carry `user:password`, and both run scripts the model wrote.
+- **The regression gate sees source, not dependencies** — `verify-no-bare-dispatcher` parses `packages/*/*/src` and `apps/*/src`; tests, scripts, and the internals of a third-party SDK are outside it. That is why every outbound call site also carries an `egress.spec.ts`.
 
 <a id="dev-note"></a>
 ### Dev Note
