@@ -34,6 +34,17 @@ import { Worker } from 'node:worker_threads'
 import { once } from 'node:events'
 import { workerSpawnEnv } from '../src/host.ts'
 
+
+/**
+ * Whether this runtime honors `NODE_USE_ENV_PROXY`, which is how a separate Node execution context
+ * receives the policy. Added in Node 24.0 and backported to 22.21; the engines range admits 22.19
+ * and 22.20, where such a context stays direct.
+ */
+function supportsEnvProxy(): boolean {
+  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number)
+  return major >= 24 || (major === 22 && minor >= 21)
+}
+
 describe('worker thread egress', () => {
   it('a worker honors the host policy through workerSpawnEnv', async () => {
     const observed = await observe(async () => {
@@ -46,6 +57,8 @@ describe('worker thread egress', () => {
       await once(worker, 'message')
       await worker.terminate()
     })
-    expect(observed.join('|')).toContain('worker-probe.invalid')
+    // Same seam as a spawned child: the worker acts on the flag its environment carries.
+    if (supportsEnvProxy()) expect(observed.join('|')).toContain('worker-probe.invalid')
+    else expect(observed).toEqual([])
   })
 })
