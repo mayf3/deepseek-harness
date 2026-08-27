@@ -83,7 +83,7 @@ export async function connectFreshWorkspace(page: Page, root: string, name = 'wo
   await dialog.getByRole('button', { name: 'Open', exact: true }).click()
   // The pick connected the workspace: the blank session's live composer
   // replaces the locked placeholder and enables.
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="Describe what you want to build... / commands, @ files or sessions"]')
     .waitFor({ timeout: 15_000 })
 }
 
@@ -106,7 +106,7 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
   await pathInput.fill(join(root, name))
   await pathInput.press('Enter')
   await dialog.getByRole('button', { name: '打开', exact: true }).click()
-  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容"]')
+  await page.locator('[data-composer-input][contenteditable="true"][data-placeholder="描述你想要构建的内容… / 调用指令 @ 文件或会话"]')
     .waitFor({ timeout: 15_000 })
 }
 
@@ -117,6 +117,15 @@ export async function connectFreshWorkspaceZh(page: Page, root: string, name = '
  * selection, and the batched edit lands on a null selection and is silently
  * dropped, leaving the previous draft in place. Real keystrokes leave room for
  * `selectionchange` between keys, which is also what a user's typing does.
+ *
+ * Waits for the surface to be editable first. While the input machine is
+ * adjudicating or submitting a send — and in every locked state (removed
+ * session, no workspace, an owner block) — the composer renders read-only
+ * with `contenteditable="false"` on the same element. `fill()` throws
+ * immediately on that element, and `isEnabled()` reports `true` for a
+ * `<div>` regardless of the attribute — so a gesture directly after a
+ * submit must gate on the attribute, not on enablement. A running turn by
+ * itself keeps the composer editable (that is what queueing types into).
  * @param page - the page under test.
  * @param input - the `[data-composer-input]` surface locator.
  * @param text - the replacement draft; `''` clears the draft. Must not
@@ -127,6 +136,7 @@ export async function writeComposerDraft(
   input: ReturnType<Page['locator']>,
   text: string,
 ): Promise<void> {
+  await input.and(page.locator('[contenteditable="true"]')).waitFor({ timeout: 15_000 })
   await input.click()
   await page.keyboard.press('ControlOrMeta+A')
   if (text === '') await page.keyboard.press('Backspace')

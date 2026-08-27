@@ -21,9 +21,7 @@ it('paints the submission echo on the send keystroke and swaps it for the durabl
   fireEvent.click(start)
 
   const composer = await waitFor(() => {
-    const surface = document.querySelector<HTMLElement>(
-      '[data-composer-input][data-placeholder="Describe what you want to build"]',
-    )
+    const surface = document.querySelector<HTMLElement>('[data-composer-input]')
     if (surface === null) throw new Error('composer surface missing')
     return surface
   }, { timeout: 10_000 })
