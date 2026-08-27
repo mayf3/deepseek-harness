@@ -2,7 +2,7 @@
   // Client-side typecheck aggregate: packages/client tests (.ts and .tsx).
   // Split from the host aggregate because both sides merge cordis Context
   // under the same keys (sessions, loader) with different services; shared
-  // leaves (session/llm/tools/apiproxy/...) build once and are referenced by
+  // leaves (session/llm/tools/...) build once and are referenced by
   // both programs through each client package's own references.
   "extends": "./tsconfig.base.client.json",
   "compilerOptions": {

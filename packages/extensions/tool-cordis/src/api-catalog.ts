@@ -430,18 +430,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'apiProxy',
-    summary: 'Root interface of the unified API.',
-    description: 'Root interface of the unified API. New client-request domain = one new file pair + one field here + one map row.',
-    methods: [
-      {
-        signature: 'downloads: DownloadsApi',
-        description: 'Host-only download surfaces (GET, no wire envelope); absent from IApiClient.',
-        parameters: [],
-      },
-    ],
-  },
-  {
     key: 'approval',
     summary: 'Approval service that applies session policy before answerers and logs every ask/outcome pair to the requesting session.',
     description: 'Approval service that applies session policy before answerers and logs every ask/outcome pair to the requesting session. It exposes deterministic policy changes to the model through the runtime-context snapshot and switch notices.',
@@ -1383,6 +1371,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'provider-grouped models, the deployment default, and isolated provider failures.',
       },
       {
+        signature: '@Remote canOpenWorkspacePath(): boolean',
+        description: 'Report whether this deployment can hand a Session workspace path to a native desktop.',
+        parameters: [],
+        returns: 'true when the matching open operation is available.',
+      },
+      {
         signature: '@Remote(\'openWorkspacePath\') async openWorkspacePath( request: SessionOpenWorkspacePathRequest, signal: AbortSignal, ): Promise<SessionOpenWorkspacePathValue>',
         description: 'Open one path prepared by a Session-aware caller on the Host desktop.',
         parameters: [{ name: 'request', description: 'path after best-effort Session workspace resolution.' }, { name: 'signal', description: 'caller lifetime; abort terminates the native command.' }],
@@ -1965,6 +1959,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
         returns: 'provider writability, local-document presence, and one view per namespace.',
         throws: ['TypertRemoteFailure when no settings provider is mounted.'],
+      },
+      {
+        signature: '@Remote canOpenAgentPresetDirectory(): boolean',
+        description: 'Report whether this deployment can open an authored Agent preset directory natively.',
+        parameters: [],
+        returns: 'true when the matching open operation is available.',
       },
       {
         signature: '@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>',
@@ -2610,9 +2610,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void>',
+        signature: 'registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>',
         description: 'Register the sole application-selected forwarded-event source.',
-        parameters: [{ name: 'source', description: 'stream factory installed by the Remote assembly.' }],
+        parameters: [{ name: 'source', description: 'stream factory installed by the Remote assembly.' }, { name: 'host', description: 'stable Host facts included in each Client generation\'s opening frame.' }],
         returns: 'disposer removing this source and cancelling its active streams.',
       },
       {
@@ -3935,10 +3935,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface DomainTableSpec<K extends string = string, V = unknown> {\n    readonly valueSchema: ZodType<V>;\n    readonly __key?: K;\n}',
   },
   {
-    name: 'DownloadsApi',
-    declaration: 'export interface DownloadsApi {\n    sessionLog(request: {\n        sessionId: SessionId;\n        includeDescendants?: boolean;\n    }, signal: AbortSignal): Promise<Response>;\n}',
-  },
-  {
     name: 'DshEnvironment',
     declaration: 'export type DshEnvironment = Readonly<Record<DshEnvironmentKey, string>>;',
   },
@@ -4607,6 +4603,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
   {
+    name: 'RemoteEventHostInfo',
+    declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
+  },
+  {
     name: 'ReplayEnvelope',
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
@@ -4661,26 +4661,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResumeAgentOptions',
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
-  },
-  {
-    name: 'RpcError',
-    declaration: 'export type RpcError = {\n    [C in RpcErrorCode]: {\n        code: C;\n        message: string;\n        details: RpcErrorDetailsMap[C];\n    };\n}[RpcErrorCode];',
-  },
-  {
-    name: 'RpcErrorCode',
-    declaration: 'export type RpcErrorCode = keyof RpcErrorDetailsMap;',
-  },
-  {
-    name: 'RpcErrorDetailsMap',
-    declaration: 'export interface RpcErrorDetailsMap {\n    \'bad-request\': {\n        issues: ZodIssue[];\n    };\n    \'cancelled\': {};\n    \'session-not-found\': {\n        sessionId: SessionId;\n    };\n    \'invalid-time-zone\': {\n        value: string;\n    };\n    \'agent-preset-read-only\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-preset-locked\': {\n        sessionId: SessionId;\n        agentPreset: string;\n    };\n    \'agent-preset-not-found\': {\n        agentPreset: string;\n        available: readonly string[];\n    };\n    \'agent-preset-invalid\': {\n        agentPreset: string;\n        reason: string;\n    };\n    \'agent-busy\': {\n        reason: string;\n    };\n    \'internal\': {};\n}',
-  },
-  {
-    name: 'RpcId',
-    declaration: 'export type RpcId = Branded<\'rpc-id\'>;',
-  },
-  {
-    name: 'RpcResult',
-    declaration: 'export type RpcResult<T> = {\n    ok: true;\n    value: T;\n} | {\n    ok: false;\n    error: RpcError;\n};',
   },
   {
     name: 'RunnerFailureRule',
@@ -4757,10 +4737,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SendTeamMessageResult',
     declaration: 'export interface SendTeamMessageResult {\n    readonly messageId: TeamMessageId;\n    readonly status: \'accepted\' | \'queued\';\n}',
-  },
-  {
-    name: 'ServerResponse',
-    declaration: 'export interface ServerResponse {\n    type: \'server-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
   {
     name: 'Session',
