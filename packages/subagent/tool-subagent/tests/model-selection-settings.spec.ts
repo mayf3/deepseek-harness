@@ -189,6 +189,8 @@ describe('SubagentModelSelectionConfig', () => {
 
   it('installs per-Agent definitions for a shared preset scope', async () => {
     const ctx = await boot()
+    await ctx.plugin(InvariantRegistry, { enabled: true })
+    await ctx.plugin(ToolInvariant)
     const preset = createScope(ctx, { preset: 'standard' })
     const other = createScope(ctx, { preset: 'minimal' })
     await preset.ctx.plugin(tool, {
@@ -219,9 +221,22 @@ describe('SubagentModelSelectionConfig', () => {
     enabledBinding!.rebind(scopeOf(other.ctx)!)
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
     await vi.waitFor(() => { expect(selectable(ctx, enabled.agent)).toBe(false) })
+    const next = () => Promise.resolve({ kind: 'enter' as const, messages: [] })
+    const payload = {
+      agent: enabled.agent,
+      messages: [],
+      turn: 1,
+      step: 1,
+      signal: new AbortController().signal,
+    }
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
+      .resolves.toEqual({ kind: 'enter', messages: [] })
+
     enabledBinding!.rebind(scopeOf(preset.ctx)!)
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
     await vi.waitFor(() => { expect(selectable(ctx, enabled.agent)).toBe(true) })
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
+      .resolves.toEqual({ kind: 'enter', messages: [] })
 
     await enabled.dispose()
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
@@ -322,7 +337,7 @@ describe('SubagentModelSelectionConfig', () => {
     await withoutAgent.fiber.dispose()
   })
 
-  it('checks the durable decision against the published tool definitions', async () => {
+  it('checks model-selectable definitions without rejecting a policy-only preset', async () => {
     const ctx = await boot()
     await ctx.plugin(InvariantRegistry, { enabled: true })
     await ctx.plugin(ToolInvariant)
@@ -341,7 +356,7 @@ describe('SubagentModelSelectionConfig', () => {
 
     disabled.session.append('subagent/model-selection-policy', { allowedModels: ALLOWED_MODELS })
     await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
-      .rejects.toThrow('must expose route fields and list_subagent_models')
+      .resolves.toEqual({ kind: 'enter', messages: [] })
 
     await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, {
       enabled: true,
@@ -350,6 +365,18 @@ describe('SubagentModelSelectionConfig', () => {
     const enabled = await createAgent(ctx, 'invariant-enabled')
     await expect(ctx.waterfall(ctx as never, 'agent/pre-step', { ...payload, agent: enabled }, next))
       .resolves.toEqual({ kind: 'enter', messages: [] })
+
+    const enabledSchemas = ctx.tools.schemas(enabled)
+    const schemas = vi.spyOn(ctx.tools, 'schemas')
+    schemas.mockReturnValue(enabledSchemas.filter(schema => schema.name !== 'list_subagent_models'))
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', { ...payload, agent: enabled }, next))
+      .rejects.toThrow('require a durable policy, route fields, and list_subagent_models')
+
+    schemas.mockReturnValue(enabledSchemas)
+    await ctx.settings.update(SUBAGENT_MODEL_SELECTION_SETTINGS_NAMESPACE, { enabled: false })
+    const withoutPolicy = await createAgent(ctx, 'invariant-without-policy')
+    await expect(ctx.waterfall(ctx as never, 'agent/pre-step', { ...payload, agent: withoutPolicy }, next))
+      .rejects.toThrow('require a durable policy, route fields, and list_subagent_models')
     await ctx.fiber.dispose()
   })
 })
