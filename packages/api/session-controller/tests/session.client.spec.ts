@@ -283,7 +283,7 @@ describe('prompt and cancel errors', () => {
 
   it('passes a killJob through to the session Remote and returns the admission', async () => {
     const api = new FakeApiClient()
-    const session = new Session(SID, api, fakeRemote(api), {})
+    const session = new Session(SID, fakeRemote(api), {})
     await session.open()
     const killed = await session.killJob('bash-3')
     expect(killed).toEqual({ ok: true, value: { outcome: 'requested' } })
@@ -297,7 +297,7 @@ describe('prompt and cancel errors', () => {
     api.onKillJob = () => Promise.resolve(err({
       code: 'job-not-found', message: 'unknown job bash-9', details: { sessionId: SID, jobId: 'bash-9' },
     }) as never)
-    const session = new Session(SID, api, fakeRemote(api), {})
+    const session = new Session(SID, fakeRemote(api), {})
     await session.open()
     const killed = await session.killJob('bash-9')
     expect(killed).toMatchObject({ ok: false, error: { code: 'job-not-found' } })
