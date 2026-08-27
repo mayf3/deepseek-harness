@@ -3,6 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallViewProps } from '../../contract/slots.ts'
 import type { AskQuestionCardModel } from '../models/ask-question-card-model.ts'
+import { singleResultText } from '../models/raw-tool-call.ts'
 import { toolRowModel } from '../models/tool-call-model.ts'
 import { ToolRow } from '../components/ToolRow.tsx'
 import { CONVERSATION_NS as NS } from '../../locale.ts'
@@ -166,13 +167,15 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
   } else if (model.state === 'running') {
     summary = t('ask.waiting')
   } else if ('kind' in block && model.state === 'ok') {
-    const text = block.content.filter(b => b.type === 'text').map(b => b.text).join('')
-    const presentation = answeredPresentation(argsRaw, text, t)
-    // Full transcripts require stable ids and valid visible fields; retain the
-    // legacy best-effort count when only strict pairing is unsafe.
-    summary = presentation?.summary ?? answeredSummary(text, t) ?? model.summary
-    if (presentation?.questions !== null && presentation?.questions !== undefined) {
-      transcript = { kind: 'answered', questions: presentation.questions, skippedLabel: t('ask.skipped') }
+    const text = singleResultText(block)
+    if (text !== undefined) {
+      const presentation = answeredPresentation(argsRaw, text, t)
+      // Full transcripts require stable ids and valid visible fields; retain the
+      // legacy best-effort count when only strict pairing is unsafe.
+      summary = presentation?.summary ?? answeredSummary(text, t) ?? model.summary
+      if (presentation?.questions !== null && presentation?.questions !== undefined) {
+        transcript = { kind: 'answered', questions: presentation.questions, skippedLabel: t('ask.skipped') }
+      }
     }
   }
   return (

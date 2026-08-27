@@ -84,6 +84,26 @@ describe('AskQuestionRow', () => {
     expect(screen.queryByText(/"answers"/)).toBeNull()
   })
 
+  it('keeps generic diagnostics when a valid answer result includes a non-text block', () => {
+    const resultText = answers([
+      { id: 'goal', selected: ['Develop a feature'] },
+      { id: 'scope', selected: ['deepseek-harness'] },
+      { id: 'notes', selected: [] },
+    ])
+    const view = render(<AskQuestionRow {...rowProps(resultNode(READABLE_ARGS, resultText, {
+      content: [
+        { type: 'text', text: resultText },
+        { type: 'reasoning', text: 'unexpected diagnostic' },
+      ],
+    }))} />)
+
+    expect(screen.getByText(`ask_user_question · ${READABLE_ARGS}`)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { expanded: false }))
+    expect(view.container.querySelector('[class*="ioCard"]')).not.toBeNull()
+    expect(view.container.textContent).toContain('"type": "reasoning"')
+    expect(view.container.textContent).toContain('"text": "unexpected diagnostic"')
+  })
+
   it('skipped questions (no selection, no custom) stay out of the answered count', () => {
     const view = render(<AskQuestionRow {...rowProps(resultNode(ARGS, answers([
       { id: 'a', selected: ['x'] },
