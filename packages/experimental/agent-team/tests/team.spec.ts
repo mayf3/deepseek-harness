@@ -131,7 +131,7 @@ describe('Team identity and provisioning', () => {
     const journal = teamInternals(first.ctx).journal
     const stateOf = first.ctx.sessionProjections.stateOf.bind(first.ctx.sessionProjections)
     const stateOfSpy = vi.spyOn(first.ctx.sessionProjections, 'stateOf').mockImplementation((session, key) => (
-      key === 'team' ? undefined : stateOf(session, key)
+      key === 'agentTeam' ? undefined : stateOf(session, key)
     ))
     expect(() => journal.state(first.lead)).toThrow('Agent Teams projection is not registered')
     stateOfSpy.mockRestore()
