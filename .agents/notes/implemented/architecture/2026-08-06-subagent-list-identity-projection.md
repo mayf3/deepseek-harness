@@ -32,7 +32,7 @@ Relationship to existing notes:
 
 ### `subagent` projection unit
 
-It hangs beside the existing `subagentTiming` ([projection.ts](../../../../packages/subagent/subagent/src/projection.ts), [projection-types.ts](../../../../packages/subagent/subagent/src/projection-types.ts)), under key `subagent`. Both units provide client wire views; the identity view is the validated state itself:
+It hangs beside the existing `subagentTiming` ([projection.ts](../../../../packages/subagent/subagent/src/projection.ts), [projection-types.ts](../../../../packages/subagent/subagent/src/projection-types.ts)), under key `subagent`. Both units provide client wire views; the identity unit keeps an optional wrapped host value and maps its absence to the client sentinel:
 
 ```ts ignore-check
 export type SubagentIdentityProjection =
@@ -41,17 +41,18 @@ export type SubagentIdentityProjection =
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    subagent: SubagentIdentityProjection | null
+    subagent: { identity?: SubagentIdentityProjection }
   }
   interface SessionProjectionMap {
     subagentTiming: SubagentTimingProjection
+    subagent: SubagentIdentityProjection | null
   }
 }
 ```
 
-- The projection is pure identity, and **the projection system has no failure channel**: a unit never throws; a corrupt payload or an unrecognized version folds exactly like a log with no descriptor at all — the result is a **serializable null sentinel**: the map entry is `SubagentIdentityProjection | null`, non-optional, never undefined or an absent key. The reason: the unit's state is persisted as plain JSON, where an undefined field is dropped by stringify and a dropped key is indistinguishable from an absent value on the read side — a stale identity would survive in place; `null` passes JSON losslessly, and consumers replace the old identity with the sentinel. The judging discipline: consuming surfaces treat null and undefined (which only a JSON boundary dropping the key can produce) alike as no value. How "computed to nothing" is presented is the consumer's own business (see the `listChildren` four-state mapping below).
+- The projection is pure identity, and **the projection system has no failure channel**: a unit never throws; a corrupt payload or an unrecognized version folds exactly like a log with no descriptor at all. The host checkpoint state is the serializable wrapper `{ identity?: SubagentIdentityProjection }`; absence is `{}`. Its client view is the non-optional `SubagentIdentityProjection | null` entry. `null` passes JSON losslessly, so a pushed reset replaces a stale identity instead of being dropped by stringify. The judging discipline: consuming surfaces treat null and an absent client key alike as no value. How "computed to nothing" is presented is the consumer's own business (see the `listChildren` four-state mapping below).
 - Label strength is decided by the descriptor schema: a continuable's label is mandatory at parse, a one-shot's was always optional; the mode/label discriminant matches the child row's strong contract below exactly (the row carries no `seq` — it is the projection's internal own-suffix proof).
-- The identity carries `seq`: the seq of the `subagent/descriptor` event it was folded from, mandatory on both arms and absent on the null sentinel — `seq >= header.seedLength ?? 0` proves the identity was folded from the child's own suffix rather than a fork seed's replayed ancestor descriptor. The unit exposes that validated state directly as its client wire view and is checkpointed like every unit (the `persist` opt-in is gone); its `stateVersion` is 3: adding `seq` bumped it to 2, and the state/client-views split changing the fold state to the direct `SubagentIdentityProjection | null` sentinel bumped it to 3. Existing checkpoint rows are invalidated by version mismatch per the registry contract, falling to the authoritative refold.
+- The identity carries `seq`: the seq of the `subagent/descriptor` event it was folded from, mandatory on both arms and absent on the null sentinel — `seq >= header.seedLength ?? 0` proves the identity was folded from the child's own suffix rather than a fork seed's replayed ancestor descriptor. The unit maps the wrapper's validated identity to its client wire view and is checkpointed like every unit (the `persist` opt-in is gone); its `stateVersion` is 2, bumped when `seq` was added. Existing older checkpoint rows are invalidated by version mismatch per the registry contract, falling to the authoritative refold.
 - Fold rule: `subagent/descriptor` is last-wins, under the same descriptor-reset discipline as `subagentTiming` — ancestor descriptors in the fork prefix are overridden by the session's own descriptor. A corrupt or unrecognized-version payload is last-wins all the same: it resets to the null sentinel rather than keeping the prior identity, so a fork of a healthy ancestor does not inherit an identity its own descriptor cannot stand up.
 
 ### Enumeration: subagent-owned live-preferred merge

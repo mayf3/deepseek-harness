@@ -47,7 +47,9 @@ export type SubagentIdentityProjection =
   }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
+  interface SessionProjectionMap {
+    /** Active-turn duration for a descriptor-backed subagent session. */
+    subagentTiming: SubagentTimingProjection
     /**
      * Identity of a descriptor-backed subagent session. `null` ⟺ no valid
      * descriptor (missing, malformed, or unrecognized-version — deliberately
@@ -58,11 +60,5 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
      * non-optional.
      */
     subagent: SubagentIdentityProjection | null
-  }
-  interface SessionProjectionMap {
-    /** Durable mode and label for a descriptor-backed subagent session. */
-    subagent: SubagentIdentityProjection | null
-    /** Active-turn duration for a descriptor-backed subagent session. */
-    subagentTiming: SubagentTimingProjection
   }
 }

@@ -32,7 +32,7 @@ mode 与 label 由新的 `subagent` projection unit（纯身份两臂）折叠�
 
 ### `subagent` projection unit
 
-挂在现有 `subagentTiming` 旁（[projection.ts](../../../../packages/subagent/subagent/src/projection.ts)、[projection-types.ts](../../../../packages/subagent/subagent/src/projection-types.ts)），key 为 `subagent`。两个 unit 都提供客户端 wire view；身份 view 就是校验后的状态本身：
+挂在现有 `subagentTiming` 旁（[projection.ts](../../../../packages/subagent/subagent/src/projection.ts)、[projection-types.ts](../../../../packages/subagent/subagent/src/projection-types.ts)），key 为 `subagent`。两个 unit 都提供客户端 wire view；身份 unit 在 host 状态中保留可选的包装值，并把缺席映射为客户端哨兵：
 
 ```ts ignore-check
 export type SubagentIdentityProjection =
@@ -41,17 +41,18 @@ export type SubagentIdentityProjection =
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    subagent: SubagentIdentityProjection | null
+    subagent: { identity?: SubagentIdentityProjection }
   }
   interface SessionProjectionMap {
     subagentTiming: SubagentTimingProjection
+    subagent: SubagentIdentityProjection | null
   }
 }
 ```
 
-- 投影是纯身份，**projection 体系不做失败通道**：unit 永不抛错；载荷损坏、版本不认识与整日志没有描述符一样，折叠结果是**可序列化的 null 哨兵**——map 条目为 `SubagentIdentityProjection | null`，非可选、非 undefined/缺 key。理由：unit 的状态以纯 JSON checkpoint 持久化，undefined 字段被 stringify 丢弃，读侧无从区分被丢弃的 key 与缺值——旧身份将原样存活；null 完好过 JSON，消费方以哨兵替换旧身份。判定纪律：消费面把 null 与 undefined（仅 JSON 边界丢 key 可产生）一律视为无值。「算出来没有」如何呈现是消费方自己的事（见下文 `listChildren` 四态映射）。
+- 投影是纯身份，**projection 体系不做失败通道**：unit 永不抛错；载荷损坏、版本不认识与整日志没有描述符一样。host checkpoint 状态使用可序列化的包装 `{ identity?: SubagentIdentityProjection }`，缺席为 `{}`；客户端 view 则是非可选的 `SubagentIdentityProjection | null` 条目。`null` 完好通过 JSON，因此推送 reset 会替换旧身份，而不会被 stringify 丢掉。判定纪律：消费面把 null 与客户端 key 缺席一律视为无值。「算出来没有」如何呈现是消费方自己的事（见下文 `listChildren` 四态映射）。
 - label 强度由描述符 schema 决定：continuable 的 label 解析强制必有，one-shot 的本就可选；mode/label 判别与下文 child 行的强约定完全一致（行不携带 `seq`——它是投影内部的 own-suffix 证明）。
-- 身份携带 `seq`：折出该身份的 `subagent/descriptor` 事件 seq，两臂必有、null 哨兵无——`seq >= header.seedLength ?? 0` 证明身份折叠自 child 自身后缀，而非 fork 种子回放的祖先描述符。unit 将这份校验后的状态直接暴露为客户端 wire view，并与其他 unit 一律检查点化（`persist` 选项已删除）；`stateVersion` 现为 3：增 `seq` 升至 2，state/client 视图拆分把折叠状态改为直接的 `SubagentIdentityProjection | null` 哨兵后再升至 3。既存 checkpoint 行按 registry 约定版本失配失效、落权威重折。
+- 身份携带 `seq`：折出该身份的 `subagent/descriptor` 事件 seq，两臂必有、null 哨兵无——`seq >= header.seedLength ?? 0` 证明身份折叠自 child 自身后缀，而非 fork 种子回放的祖先描述符。unit 把包装状态中校验后的身份映射为客户端 wire view，并与其他 unit 一律检查点化（`persist` 选项已删除）；`stateVersion` 为 2，在增加 `seq` 时升版。更早的 checkpoint 行按 registry 约定版本失配失效、落权威重折。
 - 折叠规则：`subagent/descriptor` last-wins，与 `subagentTiming` 同一条 descriptor-reset 纪律——fork 前缀里的祖先描述符被自身描述符覆盖。损坏或版本不认识的载荷同样 last-wins：重置为 null 哨兵而非保留先前身份，健康祖先的 fork 不会继承自身描述符立不住的身份。
 
 ### 枚举：subagent 自管 live-preferred 合并
