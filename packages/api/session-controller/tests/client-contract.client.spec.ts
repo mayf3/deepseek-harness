@@ -3,8 +3,8 @@ import type { PromptContentPart as AttachmentPromptContentPart } from '@deepseek
 import {
   MutableSessionEventSource, type SessionLiveEventEntry,
 } from '../src/client/contract/events.ts'
+import type { PromptContentPart as SessionPromptContentPart } from '../src/client/contract/session.ts'
 import { transportResult } from '../src/client/contract/result.ts'
-import type { PromptContentPart as SessionPromptContentPart } from '../src/types.ts'
 
 function entry(seq: number): SessionLiveEventEntry {
   return {

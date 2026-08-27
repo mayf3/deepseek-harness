@@ -1,7 +1,7 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 
 import type {
-  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, PromptContentPart,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -67,15 +67,7 @@ export interface SessionProjectionBaseline {
 export type SessionProjectionValues = Partial<SessionProjectionMap>
   & Readonly<Record<string, SessionProjectionValue>>
 
-/** Browser-submitted prompt content; the Host promotes image bytes to durable references. */
-export type PromptContentPart =
-  | { readonly type: 'text'; readonly text: string }
-  | {
-    readonly type: 'image'
-    readonly mediaType: ImageMediaType
-    readonly data: string
-    readonly name?: string
-  }
+export type { PromptContentPart } from '@deepseek-ai/dsh-attachment'
 
 /** Complete model selection for one Session. */
 export interface ModelSelection {
