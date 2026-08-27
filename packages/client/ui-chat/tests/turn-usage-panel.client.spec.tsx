@@ -95,55 +95,6 @@ describe('TurnUsagePanel', () => {
     fireEvent.pointerDown(document.body)
     expect(view.queryByRole('dialog')).toBeNull()
   })
-
-  it('TEMPORARY flat variant: the whole meta line triggers a dialog with usage and time sections', () => {
-    const usage: TurnTokenUsage = {
-      uncachedInputTokens: 5_060,
-      cacheReadTokens: 4_940,
-      outputTokens: 5_800,
-      totalTokens: 15_800,
-    }
-    const view = render(
-      <TurnUsagePanel
-        usage={usage}
-        variant="flat"
-        time={Date.now()}
-        runMs={19_000}
-        tokensPerSecond={20}
-        ttftMs={1_200}
-        t={t}
-      />,
-    )
-    const trigger = view.getByRole('button')
-    // Separator dots live in spaced spans, so textContent carries bare `·`.
-    expect(trigger.textContent)
-      .toMatch(/^.+·Ran for 19s·Usage 15\.8K tok·Cache hit 49\.4%·20 tok\/s·TTFT 1\.2s$/)
-    expect(trigger.querySelector('svg')).toBeNull()
-
-    fireEvent.click(trigger)
-    const dialog = view.getByRole('dialog')
-    expect(dialog.firstChild?.textContent).toBe('Turn usage15,800 tok')
-    expect(dialog.textContent).toContain('Turn time and speed')
-    const timeDetails = dialog.querySelector('[data-turn-time-details]') as HTMLElement
-    expect(timeDetails.textContent).toContain('Total run time19s')
-    expect(timeDetails.textContent).toContain('Tokens per second (TPS)20 tok/s')
-    expect(timeDetails.textContent).toContain('Average time to first token (TTFT)1.2s')
-  })
-
-  it('TEMPORARY flat variant: absent time facts leave no Turn-time section', () => {
-    const usage: TurnTokenUsage = {
-      uncachedInputTokens: 120,
-      outputTokens: 30,
-      totalTokens: 150,
-    }
-    const view = render(<TurnUsagePanel usage={usage} variant="flat" t={t} />)
-    const trigger = view.getByRole('button')
-    expect(trigger.textContent).toBe('Usage 150 tok')
-    fireEvent.click(trigger)
-    const dialog = view.getByRole('dialog')
-    expect(dialog.textContent).not.toContain('Turn time')
-    expect(dialog.querySelector('[data-turn-time-details]')).toBeNull()
-  })
 })
 
 describe('TurnTimePanel', () => {

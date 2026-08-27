@@ -1586,49 +1586,6 @@ describe('ChatView', () => {
     expect(timeDialog.textContent).toContain('首 token 平均用时（TTFT）1.2秒')
   })
 
-  it('TEMPORARY: ?usage-variant=flat renders the whole meta line as the dialog trigger', () => {
-    window.history.replaceState(null, '', '?usage-variant=flat')
-    try {
-      const first: AssistantMessageNode = {
-        kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'draft' }],
-        timing: { stepStartTime: 1_000, firstTokenTime: 2_200, completedTime: 5_200 },
-        usage: { outputTokens: 40 },
-      }
-      const second: AssistantMessageNode = {
-        kind: 'assistant', seq: 16, time: 16_000, turn: 1, step: 2, blocks: [{ kind: 'text', text: 'final' }],
-        timing: { stepStartTime: 10_000, firstTokenTime: 10_200, completedTime: 12_200 },
-        usage: { outputTokens: 60 },
-      }
-      const h = makeHarness({
-        nodes: [user(1, 'hi'), first, second],
-        turnTimings: new Map([[1, { startTime: 1_000, endTime: 20_000 }]]),
-        turnEnds: new Map([[1, 20]]),
-        turnUsages: new Map([[1, {
-          uncachedInputTokens: 5_060,
-          cacheReadTokens: 4_940,
-          outputTokens: 100,
-          totalTokens: 10_100,
-        }]]),
-      })
-      const view = render(<h.ChatView {...h.props} />)
-      const trigger = view.getByRole('button', { name: /用量 10\.1K tok/ })
-      // Separator dots live in spaced spans, so textContent carries bare `·`.
-      expect(trigger.textContent)
-        .toMatch(/^.+·用时 19秒·用量 10\.1K tok·缓存命中 49\.4%·速度 20 tok\/s·首 token 1\.2秒$/)
-      // The flat trigger absorbs the meta line, so no plain copy remains.
-      expect(view.getByText(/用时 19秒/)).toBe(trigger)
-      fireEvent.click(trigger)
-      const dialog = view.getByRole('dialog')
-      expect(dialog.firstChild?.textContent).toBe('本轮用量10,100 tok')
-      expect(dialog.textContent).toContain('本轮用时和速度')
-      expect(dialog.textContent).toContain('本轮总用时19秒')
-      expect(dialog.textContent).toContain('输出速度（TPS）20 tok/s')
-      expect(dialog.textContent).toContain('首 token 平均用时（TTFT）1.2秒')
-    } finally {
-      window.history.replaceState(null, '', window.location.pathname)
-    }
-  })
-
   it('withholds the usage-details trigger when turn usage is outside the window', () => {
     const settled: AssistantMessageNode = {
       kind: 'assistant', seq: 2, time: 2_000, turn: 1, step: 1, blocks: [{ kind: 'text', text: 'answer' }],

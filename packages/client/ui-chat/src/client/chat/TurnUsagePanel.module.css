@@ -43,36 +43,6 @@
   text-overflow: ellipsis;
 }
 
-/* TEMPORARY (usage-variant debug): the flat whole-line trigger reads like the
-   plain meta text, brightening on hover to hint clickability. The margin
-   widens the row's 8px flex gap off the branch icon beside it. */
-.flatTrigger {
-  min-width: 0;
-  margin-left: 6px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  font-variant-numeric: tabular-nums;
-  line-height: calc(24px + var(--dsh-content-font-delta, 0px));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  cursor: pointer;
-}
-
-.flatTrigger:hover,
-.flatTrigger[aria-expanded='true'] {
-  color: var(--dsw-alias-label-secondary);
-}
-
-/* TEMPORARY (usage-variant debug): flat-line separators breathe wider than the
-   plain meta line's 5px runTimeDot rhythm. */
-.flatDot {
-  margin: 0 8px;
-}
-
 .trigger svg {
   width: calc(15px + var(--dsh-content-font-delta, 0px));
   height: calc(15px + var(--dsh-content-font-delta, 0px));
@@ -85,10 +55,23 @@
   color: var(--dsw-alias-label-secondary);
 }
 
-/* Narrow viewport: the pills collapse to bare icons; the dialogs keep the words. */
+/* Narrow viewport: the pills collapse to bare icons with the sibling
+   `.action` geometry (28px circle, 6px padding, centered glyph); the
+   label-padding rebate no longer applies, so the pair keeps the row's plain
+   8px rhythm. The dialogs keep the words. */
 @media (max-width: 480px) {
+  .trigger {
+    justify-content: center;
+    width: calc(28px + var(--dsh-content-font-delta, 0px));
+    padding: 6px;
+  }
+
   .trigger .label {
     display: none;
+  }
+
+  .root + .root {
+    margin-left: 0;
   }
 }
 
@@ -126,11 +109,6 @@
   margin-bottom: 8px;
   color: var(--dsw-alias-label-primary);
   font-weight: 500;
-}
-
-/* Second-section heading (Turn time), spaced well off the usage rows above. */
-.timeTitle {
-  margin-top: 20px;
 }
 
 /* Rule under each section heading, above its rows. */

@@ -28,14 +28,6 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
   const runMs = turn.start === undefined || turn.end === undefined
     ? undefined
     : Math.max(0, turn.end.time - turn.start.time)
-  // TEMPORARY usage-variant debug switch for user testing: `?usage-variant=flat`
-  // or `#usage-variant=flat` (the hash form survives the login token's 303
-  // redirect to a clean `/`) hands the whole meta line to TurnUsagePanel as the
-  // dialog trigger; the default keeps the icon pill beside plain meta text.
-  // Delete after the test.
-  const flatVariant = data.tokenUsage !== undefined
-    && [window.location.search, window.location.hash.replace(/^#/, '')]
-      .some(query => new URLSearchParams(query).get('usage-variant') === 'flat')
   // Interruption-frozen partials carry no messageId, so they address no
   // durable message and contribute no per-message actions.
   const messageId = closing.finalNode.messageId
@@ -51,37 +43,25 @@ export const TurnTailNodeView = memo(function TurnTailNodeView({
       {tail}
       <MessageIconActions
         text={assistantText(closing.blocks)}
-        {...flatVariant ? {} : { time: closing.time }}
+        time={closing.time}
         clock="end"
         onBranch={() => { forkAt(closing.finalNode.seq) }}
         branchUnavailable={data.branchUnavailable || hasLaterChatNode}
         className={css.actions}
         extraActions={assistantActions}
-        usageAction={flatVariant
-          ? data.tokenUsage !== undefined && (
-            <TurnUsagePanel
-              usage={data.tokenUsage}
-              variant="flat"
-              time={closing.time}
-              runMs={runMs}
-              tokensPerSecond={data.tokensPerSecond}
-              ttftMs={data.ttftMs}
-              t={t}
-            />
-          )
-          : (
-            <>
-              {data.tokenUsage !== undefined && <TurnUsagePanel usage={data.tokenUsage} t={t} />}
-              {runMs !== undefined && (
-                <TurnTimePanel
-                  runMs={runMs}
-                  tokensPerSecond={data.tokensPerSecond}
-                  ttftMs={data.ttftMs}
-                  t={t}
-                />
-              )}
-            </>
-          )}
+        usageAction={(
+          <>
+            {data.tokenUsage !== undefined && <TurnUsagePanel usage={data.tokenUsage} t={t} />}
+            {runMs !== undefined && (
+              <TurnTimePanel
+                runMs={runMs}
+                tokensPerSecond={data.tokensPerSecond}
+                ttftMs={data.ttftMs}
+                t={t}
+              />
+            )}
+          </>
+        )}
         t={t}
       />
     </div>
