@@ -7,8 +7,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
-import { Context } from '@deepseek-ai/cordis'
-import { afterEach, describe, expect, it } from 'vitest'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderIndexInjections, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
 import { ClientModuleRegistry, bootInjections, orderByModuleGraph } from '../src/index.ts'
@@ -65,7 +65,7 @@ function constructWithRoute(
     entryBaseUrl?: string
     internal?: NonNullable<Context['loader']['internal']>
   } = {},
-): { service: ClientModuleRegistry; route: WebRoute } {
+): { context: Context; service: ClientModuleRegistry; route: WebRoute } {
   const ctx = new Context()
   ctx.baseUrl = options.contextBaseUrl ?? pathToFileURL(root!).href + '/'
   ctx.provide('loader', {
@@ -93,7 +93,7 @@ function constructWithRoute(
   ctx.provide('webServer', webServer as WebServer)
   const service = new ClientModuleRegistry(ctx)
   if (route === undefined) throw new Error('client bundle route was not registered')
-  return { service, route }
+  return { context: ctx, service, route }
 }
 
 /** Construct the node-half service over the enabled fixture entries. */
@@ -284,6 +284,61 @@ describe('client bundle activation', () => {
 
     expect(service.clientPath(packageName)).toBe(clientPath)
     expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+  })
+
+  it('rejects distinct active Loader sources for one browser package', () => {
+    const packageName = '@fixture/duplicate-source'
+    const clientPath = writePackage(packageName)
+    const hostPath = join(dirname(clientPath), 'index.js')
+    mkdirSync(dirname(hostPath), { recursive: true })
+    writeFileSync(hostPath, 'export default {}\n')
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const alias = './duplicate-source.js'
+    const internal = {
+      version: 'v2' as const,
+      resolveSync: () => ({ format: 'module' as const, url: pathToFileURL(hostPath).href }),
+    }
+
+    expect(() => constructWithRoute([packageName, alias], {
+      internal: internal as NonNullable<Context['loader']['internal']>,
+    })).toThrow(
+      `client-modules: package ${packageName} resolves from multiple active Loader sources:`,
+    )
+  })
+
+  it('promotes the remaining Loader source after the selected alias unloads', async () => {
+    const packageName = '@fixture/duplicate-source-recovery'
+    const clientPath = writePackage(packageName)
+    const hostPath = join(dirname(clientPath), 'index.js')
+    mkdirSync(dirname(hostPath), { recursive: true })
+    writeFileSync(hostPath, 'export default {}\n')
+    writeFileSync(clientPath, 'module.exports = {}\n')
+    const alias = './duplicate-source-recovery.js'
+    const entries = [packageName]
+    const internal = {
+      version: 'v2' as const,
+      resolveSync: () => ({ format: 'module' as const, url: pathToFileURL(hostPath).href }),
+    }
+    const { context, service } = constructWithRoute(entries, {
+      internal: internal as NonNullable<Context['loader']['internal']>,
+    })
+    const firstRevision = service.graph().entries[0]!.rev
+    const warning = vi.spyOn(context.logger, 'warn').mockImplementation(() => undefined)
+
+    entries.push(alias)
+    emitLoaderEntryChange(context, alias)
+    await Promise.resolve()
+    expect(warning).toHaveBeenCalledWith(expect.objectContaining({
+      message: expect.stringContaining(`package ${packageName} resolves from multiple active Loader sources`) as string,
+    }))
+    expect(service.graph().entries[0]!.rev).toBe(firstRevision)
+
+    entries.splice(entries.indexOf(packageName), 1)
+    emitLoaderEntryChange(context, packageName)
+    await Promise.resolve()
+    expect(service.graph().entries.map(entry => entry.id)).toEqual([packageName])
+    expect(service.graph().entries[0]!.rev).not.toBe(firstRevision)
+    expect(service.clientPath(packageName)).toBe(clientPath)
   })
 
   it('uses owning-tree package resolution for an import-only Worker module loader', () => {
@@ -635,6 +690,12 @@ describe('client bundle activation', () => {
     expect(consumer.findEntry(2, 0)).toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
   })
 })
+
+function emitLoaderEntryChange(context: Context, name: string): void {
+  context.emit('internal/plugin', {
+    entry: { options: { name } },
+  } as unknown as Fiber)
+}
 
 describe('shared module declarations', () => {
   it('accepts external requests and carries them onto the graph row', () => {

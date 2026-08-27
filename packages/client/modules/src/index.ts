@@ -15,9 +15,10 @@
  * against the live loader entries. The activation pass seeds the same dirty
  * set with all current entries and flushes synchronously, so first scan and
  * steady state share one implementation. Package metadata (including the
- * negative "not a client package" verdict) is cached per name and never
- * expires — plugin-set changes take effect on restart; bundle content
- * changes reach the graph only through
+ * negative "not a client package" verdict) is cached per Loader specifier and
+ * owning-tree base URL until restart. The manifest package name identifies
+ * the browser module; distinct active Loader sources for that package are a
+ * composition error. Bundle content changes reach the graph only through
  * {@link ClientModuleRegistry.rebuilt}.
  * @module @deepseek-ai/dsh-client-modules
  */
@@ -81,7 +82,7 @@ export interface ClientArtifactBaseline {
   readonly size: number
 }
 
-/** Resolved package metadata for one `dsh.client` package (cached per name, never expires). */
+/** Resolved metadata cached for one Loader specifier and owning-tree base URL until restart. */
 interface PkgMeta extends WebBootRowFields {
   clientPath: string
 }
@@ -89,6 +90,16 @@ interface PkgMeta extends WebBootRowFields {
 interface ResolvedPkgMeta {
   packageName: string
   meta: PkgMeta
+}
+
+/** One active Loader source and the browser package manifest it resolves to. */
+interface ClientPackageSource extends ResolvedPkgMeta {
+  /** Loader specifier from the active row. */
+  loaderName: string
+  /** Resolution base of the config tree that owns the row. */
+  baseUrl: string
+  /** Stable cache and contribution key for this source. */
+  sourceKey: string
 }
 
 /** Recovery instruction shared by grouped startup and steady-state bundle diagnostics. */
@@ -523,6 +534,7 @@ export class ClientModuleRegistry extends Service {
   static inject = ['webServer', 'loader']
 
   private readonly table = new Map<string, WebPluginRecord>()
+  private readonly sources = new Map<string, ClientPackageSource>()
   // Resolution is entry-local: the same specifier can resolve differently in
   // separate config trees. Negative verdicts remain stable until restart.
   private readonly pkgMeta = new Map<string, ResolvedPkgMeta | null>()
@@ -886,35 +898,72 @@ export class ClientModuleRegistry extends Service {
     }
   }
 
-  /** Reconcile one entry name against the live loader entries. @returns whether the table changed. */
-  private processOne(entryName: string): boolean {
-    let activeEntry: Entry | undefined
+  /** Reconcile one entry name against the live Loader sources. @returns whether the table changed. */
+  private processOne(entryName: string, onError: (err: Error) => void): boolean {
+    const nextSources = new Map<string, ClientPackageSource>()
     for (const entry of this.ctx.loader.entries()) {
-      if (entry.options.name === entryName && entry.fiber !== undefined && !entry.disabled) {
-        activeEntry = entry
-        break
+      if (entry.options.name !== entryName || entry.fiber === undefined || entry.disabled) continue
+      const source = this.resolveSource(entry)
+      if (source !== undefined) nextSources.set(source.sourceKey, source)
+    }
+
+    const affectedPackages = new Set<string>()
+    for (const [sourceKey, source] of this.sources) {
+      if (source.loaderName !== entryName) continue
+      affectedPackages.add(source.packageName)
+      if (!nextSources.has(sourceKey)) this.sources.delete(sourceKey)
+    }
+    for (const [sourceKey, source] of nextSources) {
+      affectedPackages.add(source.packageName)
+      this.sources.set(sourceKey, source)
+    }
+    let changed = false
+    for (const packageName of affectedPackages) {
+      try {
+        if (this.reconcilePackage(packageName)) changed = true
+      } catch (error) {
+        onError(error instanceof Error ? error : new Error(String(error)))
       }
     }
-    if (activeEntry === undefined) return this.deleteLoaderEntry(entryName)
-    const baseUrl = activeEntry.parent.tree.ctx.baseUrl
+    return changed
+  }
+
+  private resolveSource(entry: Entry): ClientPackageSource | undefined {
+    const loaderName = entry.options.name
+    const baseUrl = entry.parent.tree.ctx.baseUrl
     if (baseUrl === undefined) {
-      throw new Error(`client-modules: loader entry ${entryName} has no resolution base URL`)
+      throw new Error(`client-modules: loader entry ${loaderName} has no resolution base URL`)
     }
-    const sourceKey = this.sourceKey(entryName, baseUrl)
-    const resolved = this.resolveMeta(entryName, baseUrl)
-    if (resolved === null) return this.deleteLoaderEntry(entryName)
-    const { packageName, meta } = resolved
-    if (this.table.get(packageName)?.sourceKey === sourceKey) return false
-    this.deleteLoaderEntry(entryName)
+    const resolved = this.resolveMeta(loaderName, baseUrl)
+    if (resolved === null) return undefined
+    return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl) }
+  }
+
+  private reconcilePackage(packageName: string): boolean {
+    const sources: ClientPackageSource[] = []
+    for (const source of this.sources.values()) {
+      if (source.packageName === packageName) sources.push(source)
+    }
+    if (sources.length > 1) {
+      const locations = sources
+        .map(source => `${JSON.stringify(source.loaderName)} from ${source.baseUrl}`)
+        .join(', ')
+      throw new Error(
+        `client-modules: package ${packageName} resolves from multiple active Loader sources: ${locations}; remove one entry`,
+      )
+    }
+    const source = sources[0]
+    if (source === undefined) return this.table.delete(packageName)
+    if (this.table.get(packageName)?.sourceKey === source.sourceKey) return false
     // The opaque initial rev rides the row until HMR observes a file change;
-    // a fiber restart reuses the existing row without inspecting bytes.
-    const snapshot = this.initialBundleSnapshot(packageName, meta.clientPath)
+    // a fiber restart from the same source reuses the existing row.
+    const snapshot = this.initialBundleSnapshot(packageName, source.meta.clientPath)
     const rev = this.allocateInitialRevision()
     this.table.set(packageName, {
-      entry: graphRow(packageName, rev, meta),
-      loaderName: entryName,
-      sourceKey,
-      meta,
+      entry: graphRow(packageName, rev, source.meta),
+      loaderName: source.loaderName,
+      sourceKey: source.sourceKey,
+      meta: source.meta,
       bundle: snapshot.bundle,
       baseline: snapshot.baseline,
       ...(snapshot.sourceMap === undefined ? {} : { sourceMap: snapshot.sourceMap }),
@@ -922,22 +971,12 @@ export class ClientModuleRegistry extends Service {
     return true
   }
 
-  private deleteLoaderEntry(loaderName: string): boolean {
-    let changed = false
-    for (const [packageName, record] of this.table) {
-      if (record.loaderName !== loaderName) continue
-      this.table.delete(packageName)
-      changed = true
-    }
-    return changed
-  }
-
   private flush(onError: (err: Error) => void): void {
     let changed = false
     for (const entryName of [...this.dirty]) {
       this.dirty.delete(entryName)
       try {
-        if (this.processOne(entryName)) changed = true
+        if (this.processOne(entryName, onError)) changed = true
       } catch (error) {
         // Steady state: one broken package must not poison the others; the
         // activation pass aggregates these into a loud throw instead.

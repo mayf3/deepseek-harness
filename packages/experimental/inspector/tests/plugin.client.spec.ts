@@ -3,6 +3,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.ts'
+import { ClientRealmSource } from '../src/client/inspection/realm.ts'
 import type { InspectorClientBootstrap } from '../src/shared/bridge/messages/control.ts'
 
 class FakeWebSocket extends EventTarget {
@@ -206,6 +207,48 @@ describe('experimental Inspector Client plugin', () => {
     expect(secondOpen.source.sourceId).toBe(firstOpen.source.sourceId)
     expect(secondOpen.source.generation).not.toBe(firstOpen.source.generation)
     await secondFiber.dispose()
+  })
+
+  it('rotates a copied session identity while its original page remains live', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(navigator, 'locks')
+    const held = new Set<string>()
+    const request = async (
+      name: string,
+      _options: LockOptions,
+      callback: (lock: Lock | null) => unknown,
+    ): Promise<unknown> => {
+      const acquired = !held.has(name)
+      if (acquired) held.add(name)
+      try {
+        return await callback(acquired ? { name, mode: 'exclusive' } : null)
+      } finally {
+        if (acquired) held.delete(name)
+      }
+    }
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: { request },
+    })
+    let first: ClientRealmSource | undefined
+    let duplicate: ClientRealmSource | undefined
+    let refreshed: ClientRealmSource | undefined
+    try {
+      first = await ClientRealmSource.claim('first')
+      duplicate = await ClientRealmSource.claim('duplicate')
+      expect(duplicate.sourceId).not.toBe(first.sourceId)
+
+      first.close()
+      await vi.waitFor(() => { expect(held.size).toBe(1) })
+      sessionStorage.setItem('dsh.experimental-inspector.client-source-id.v0', first.sourceId)
+      refreshed = await ClientRealmSource.claim('refreshed')
+      expect(refreshed.sourceId).toBe(first.sourceId)
+    } finally {
+      first?.close()
+      duplicate?.close()
+      refreshed?.close()
+      if (descriptor === undefined) Reflect.deleteProperty(navigator, 'locks')
+      else Object.defineProperty(navigator, 'locks', descriptor)
+    }
   })
 
   it('falls back to a page-lifetime source id when session storage is unavailable', async () => {
