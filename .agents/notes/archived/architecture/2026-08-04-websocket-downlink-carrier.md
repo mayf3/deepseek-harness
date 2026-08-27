@@ -1,6 +1,7 @@
 # Agent Note: WebSocket carrier for browser downlinks
 
 Status: implemented
+Archived: 2026-08-27
 
 English | [中文](2026-08-04-websocket-downlink-carrier.zh.md)
 
