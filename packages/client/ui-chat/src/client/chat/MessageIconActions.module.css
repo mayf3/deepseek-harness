@@ -5,7 +5,7 @@
 .actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   height: calc(28px + var(--dsh-content-font-delta, 0px));
 }
 
@@ -18,9 +18,11 @@
   white-space: nowrap;
 }
 
+/* The assistant tail's clock reads the secondary tier: its row carries the
+   detailed-usage cluster, so the whole meta line sits one step under body. */
 .timeEnd {
   padding-left: 12px;
-  font-size: var(--dsh-content-font-size, 14px);
+  font-size: var(--dsh-content-font-size-secondary, 13px);
   line-height: calc(24px + var(--dsh-content-font-delta, 0px));
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
@@ -28,7 +30,7 @@
 
 /* Separator between the clock and the run-time label (time · Ran for 15s). */
 .runTimeDot {
-  margin: 0 10px;
+  margin: 0 5px;
 }
 
 /* Message containers opt in with data-time-hover-root: the time label fades
@@ -42,6 +44,20 @@
 
   [data-time-hover-root]:hover :is(.timeStart, .timeEnd),
   [data-time-hover-root]:focus-within :is(.timeStart, .timeEnd) {
+    opacity: 1;
+  }
+
+  /* Turn tails opt in with data-actions-reveal='hover' instead: earlier turns
+     reveal the entire row (icons and text) on hover or focus, while the latest
+     turn ('always') keeps its row visible. Same opacity gate as the time
+     labels, so layout never moves and no-hover devices keep the row visible. */
+  [data-actions-reveal='hover'] .actions {
+    opacity: 0;
+    transition: opacity 80ms ease;
+  }
+
+  [data-actions-reveal='hover']:hover .actions,
+  [data-actions-reveal='hover']:focus-within .actions {
     opacity: 1;
   }
 }
@@ -60,11 +76,11 @@
   cursor: pointer;
 }
 
-/* The 16px action glyphs follow the same px delta as the text they serve;
+/* The 15px action glyphs follow the same px delta as the text they serve;
    the CSS edge overrides each svg's own width/height attributes. */
 .action svg {
-  width: calc(16px + var(--dsh-content-font-delta, 0px));
-  height: calc(16px + var(--dsh-content-font-delta, 0px));
+  width: calc(15px + var(--dsh-content-font-delta, 0px));
+  height: calc(15px + var(--dsh-content-font-delta, 0px));
 }
 
 .action:hover {

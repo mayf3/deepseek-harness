@@ -29,7 +29,7 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}}
+- text: {{clock}} Ran for {{duration}}
 - button "2 queued messages" [expanded]
 - list:
   - listitem:

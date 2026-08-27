@@ -45,14 +45,17 @@ describe('chat flow font-size axis', () => {
 
   it('the message clock and action glyphs scale with the text they serve', () => {
     const actions = read('MessageIconActions.module.css')
-    for (const selector of ['.timeStart', '.timeEnd']) {
-      expect(declarationsFrom(actions, selector)).toEqual(expect.arrayContaining([
-        'font-size: var(--dsh-content-font-size, 14px)',
-      ]))
-    }
+    expect(declarationsFrom(actions, '.timeStart')).toEqual(expect.arrayContaining([
+      'font-size: var(--dsh-content-font-size, 14px)',
+    ]))
+    // The assistant tail's meta line (the whole-line usage trigger) sits one
+    // step under the body size; the user row's clock keeps the body size.
+    expect(declarationsFrom(actions, '.timeEnd')).toEqual(expect.arrayContaining([
+      'font-size: var(--dsh-content-font-size-secondary, 13px)',
+    ]))
     expect(declarationsFrom(actions, '.action svg')).toEqual(expect.arrayContaining([
-      'width: calc(16px + var(--dsh-content-font-delta, 0px))',
-      'height: calc(16px + var(--dsh-content-font-delta, 0px))',
+      'width: calc(15px + var(--dsh-content-font-delta, 0px))',
+      'height: calc(15px + var(--dsh-content-font-delta, 0px))',
     ]))
   })
 
@@ -80,8 +83,50 @@ describe('chat flow font-size axis', () => {
       .toEqual(expect.arrayContaining([`padding: 4px 0 4px ${indent}`]))
     expect(declarationsFrom(read('ContextInjectionRow.module.css'), '.body'))
       .toEqual(expect.arrayContaining([`margin: 4px 0 0 ${indent}`]))
-    expect(declarationsFrom(read('TurnUsageDisclosure.module.css'), '.details'))
-      .toEqual(expect.arrayContaining([`margin: 4px 0 0 ${indent}`]))
+  })
+
+  it('the usage-details trigger reads the secondary tier like its clock label', () => {
+    const css = read('TurnUsagePanel.module.css')
+    expect(declarationsFrom(css, '.trigger')).toEqual(expect.arrayContaining([
+      'font-size: var(--dsh-content-font-size-secondary, 13px)',
+      'line-height: calc(24px + var(--dsh-content-font-delta, 0px))',
+    ]))
+  })
+
+  it('the whole-line trigger ellipsizes instead of widening the chat column', () => {
+    // The one-line meta cluster stays nowrap; min-width 0 lets the flex item
+    // shrink with the column and the hidden overflow trims to an ellipsis.
+    const css = read('TurnUsagePanel.module.css')
+    expect(declarationsFrom(css, '.trigger')).toEqual(expect.arrayContaining([
+      'min-width: 0',
+      'white-space: nowrap',
+      'overflow: hidden',
+      'text-overflow: ellipsis',
+    ]))
+    expect(declarationsFrom(css, '.root')).toEqual(expect.arrayContaining(['min-width: 0']))
+  })
+
+  it('the clickable and plain meta lines keep identical inset and separator spacing', () => {
+    const panel = read('TurnUsagePanel.module.css')
+    const actions = read('MessageIconActions.module.css')
+    expect(declarationsFrom(panel, '.dot')).toEqual(['margin: 0 5px'])
+    expect(declarationsFrom(actions, '.runTimeDot')).toEqual(['margin: 0 5px'])
+    expect(declarationsFrom(panel, '.root')).toEqual(expect.arrayContaining(['margin-left: 12px']))
+    expect(declarationsFrom(actions, '.timeEnd')).toEqual(expect.arrayContaining(['padding-left: 12px']))
+  })
+
+  it('non-latest turn tails hide the whole actions row until hover or focus', () => {
+    // TurnTailNodeView tags its root data-actions-reveal='hover' for every
+    // turn but the latest; the gate lives under @media (hover: hover) so
+    // no-hover devices keep the row visible. 'always' has no rule at all —
+    // absence, not an override, keeps the latest turn's row shown.
+    const css = read('MessageIconActions.module.css')
+    expect(declarationsFrom(css, "[data-actions-reveal='hover'] .actions"))
+      .toEqual(expect.arrayContaining(['opacity: 0']))
+    expect(css).toMatch(
+      /\[data-actions-reveal='hover'\]:hover \.actions,\s*\[data-actions-reveal='hover'\]:focus-within \.actions \{\s*opacity: 1/,
+    )
+    expect(css).not.toContain("[data-actions-reveal='always']")
   })
 
   it('the interrupted-turn tag stays fixed like the dense token variants', () => {
