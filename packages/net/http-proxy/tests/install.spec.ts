@@ -12,7 +12,7 @@ import {
   installGlobalProxy,
   proxyUrlFor,
 } from '../src/install.ts'
-import { DIRECT_POLICY, type ProxyPolicy } from '../src/policy.ts'
+import { DIRECT_POLICY, PROXY_ENV_NAMES, type ProxyPolicy } from '../src/policy.ts'
 
 /** Absolute-form request targets the fake proxy received; a populated entry proves a request was tunnelled. */
 let proxied: string[] = []
@@ -185,6 +185,10 @@ describe('childProxyEnv', () => {
   })
 
   it('hands a child the values the user exported, not this process\'s normalization', async () => {
+    // Start from a known environment: a CI runner or developer machine may export its own proxy,
+    // which would otherwise appear as the "user's" value and decide this assertion.
+    const saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
+    for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
     // A user who set only HTTP_PROXY, plus a SOCKS proxy this package refuses but `curl` uses.
     process.env.HTTP_PROXY = proxyUrl
     process.env.https_proxy = 'socks5://127.0.0.1:1080'
@@ -199,8 +203,10 @@ describe('childProxyEnv', () => {
       expect(child.NODE_USE_ENV_PROXY).toBe('1')
     } finally {
       await dispose()
-      delete process.env.HTTP_PROXY
-      delete process.env.https_proxy
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name)
+        else process.env[name] = value
+      }
     }
   })
 })
