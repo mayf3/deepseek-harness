@@ -140,10 +140,10 @@ The one-shot Headless coding agent needs `DEEPSEEK_API_KEY` in the environment o
 pnpm dsh --profile headless "summarize this workspace"
 ```
 
-The Code Mode demo runs the same headless profile with code presentation enabled:
+The PTC mode demo runs the same headless profile with code presentation enabled:
 
 ```sh
-pnpm run demo:code-mode -- "summarize this workspace"
+pnpm run demo:ptc -- "summarize this workspace"
 ```
 
 ### TODO markers

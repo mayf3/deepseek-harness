@@ -517,7 +517,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TeamWaitResult: 'agent-team.md',
   UpdateTeamTaskRequest: 'agent-team.md',
   TokenMeasurement: 'token-meter.md',
-  CodeDispatchLog: 'tools.md',
+  PtcDispatchLog: 'tools.md',
   PostToolDecision: 'tools.md',
   PreToolDecision: 'tools.md',
   ToolDefinition: 'tools.md',

@@ -158,7 +158,7 @@ function registerNamedTools(ctx: Context, names: string[]): void {
   }
 }
 
-/** Assert the mapped Code Mode SDK includes the stable plan exit binding and test tools. */
+/** Assert the mapped PTC mode SDK includes the stable plan exit binding and test tools. */
 function expectPlanCodeSdkBindings(sdk: string): void {
   expect(sdk).toContain('interface ToolArgsMap {')
   expect(sdk).toContain('read: Record<string, JsonValue>;')
@@ -499,9 +499,9 @@ describe('the soft layer', () => {
       .toEqual(['exit_plan_mode', 'read', 'added-later'])
   })
 
-  it('keeps run_code the only wire tool in plan mode under the registry Code Mode; the SDK gains the exit binding', async () => {
+  it('keeps run_code the only wire tool in plan mode under the registry PTC mode; the SDK gains the exit binding', async () => {
     // Minimal scriptable runtime: the SDK section resolves ctx.codeRuntime at
-    // assembly time (the code-mode.spec fake's shape).
+    // assembly time (the ptc.spec fake's shape).
     class FakeRuntime extends CodeRuntime {
       readonly language = 'typescript'
       readonly isolation = 'fake'
@@ -509,7 +509,7 @@ describe('the soft layer', () => {
     }
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime, { mode: 'code' })
+    await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(FakeRuntime)
     await mountProjectionSeam(ctx)
     await ctx.plugin(PlanModeController, PLAN_CONFIG)
@@ -545,7 +545,7 @@ describe('the soft layer', () => {
     expectPlanCodeSdkBindings(sdk)
   })
 
-  it('keeps the Code Mode SDK byte-identical across mode switches', async () => {
+  it('keeps the PTC mode SDK byte-identical across mode switches', async () => {
     class FakeRuntime extends CodeRuntime {
       readonly language = 'typescript'
       readonly isolation = 'fake'
@@ -553,7 +553,7 @@ describe('the soft layer', () => {
     }
     const withPlanMode = new Context()
     await withPlanMode.plugin(SystemPrompt)
-    await withPlanMode.plugin(ToolRuntime, { mode: 'code' })
+    await withPlanMode.plugin(ToolRuntime, { mode: 'ptc' })
     await withPlanMode.plugin(FakeRuntime)
     await mountProjectionSeam(withPlanMode)
     await withPlanMode.plugin(PlanModeController, PLAN_CONFIG)
@@ -569,7 +569,7 @@ describe('the soft layer', () => {
     // with a deployment that does not compose plan mode at all.
     const bare = new Context()
     await bare.plugin(SystemPrompt)
-    await bare.plugin(ToolRuntime, { mode: 'code' })
+    await bare.plugin(ToolRuntime, { mode: 'ptc' })
     await bare.plugin(FakeRuntime)
     registerNamedTools(bare, ['read', 'write'])
     const bareSdk = (await bare.systemPrompt.assemble({ agent })).sections.find(section => section.name === 'tools:sdk')?.text ?? ''
@@ -901,8 +901,8 @@ describe('exit_plan_mode', () => {
     expect(asked[0]?.questions[0]?.options?.map(option => option.label)).toEqual(['Approve', 'Keep planning'])
   })
 
-  it('carries the exact plan through a Code Mode review and logs the nested dispatch', async () => {
-    const plan = '# Code Mode plan\n\nUse the existing seam.'
+  it('carries the exact plan through a PTC mode review and logs the nested dispatch', async () => {
+    const plan = '# PTC mode plan\n\nUse the existing seam.'
     class ExitRuntime extends CodeRuntime {
       readonly language = 'typescript'
       readonly isolation = 'fake'
@@ -914,7 +914,7 @@ describe('exit_plan_mode', () => {
     }
     const ctx = new Context()
     await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime, { mode: 'code' })
+    await ctx.plugin(ToolRuntime, { mode: 'ptc' })
     await ctx.plugin(ExitRuntime)
     await mountProjectionSeam(ctx)
     await ctx.plugin(PlanModeController, PLAN_CONFIG)
@@ -927,7 +927,7 @@ describe('exit_plan_mode', () => {
         return Promise.resolve({ answers: [{ id: 'plan-review', selected: ['Approve'] }] })
       },
     })
-    const agent = await agentWithSession(ctx, 'code-mode-exit', { active: true })
+    const agent = await agentWithSession(ctx, 'ptc-exit', { active: true })
 
     const result = await ctx.tools.execute({
       callId: ToolCallId(`call-exit-${++callCounter}`),
