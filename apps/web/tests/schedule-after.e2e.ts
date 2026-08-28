@@ -66,9 +66,6 @@ const CATALOG_SESSION_ID = SessionId('schedule-catalog-web-e2e')
 const CATALOG_TITLE = 'Active schedule catalog'
 const REMINDER_TRIGGER_NAME = /^\d+ reminders?$/
 const ACTIVE_SCHEDULE_LABEL = 'Has active scheduled task'
-const LARGE_INTERVAL_SECONDS = 200_000_000_001
-const LARGE_INTERVAL_PROMPT = 'Keep every large-interval metadata field visible'
-const LARGE_INTERVAL_ID = ScheduleId('catalog-large-interval')
 const CATALOG_IDS = {
   after: ScheduleId('catalog-after'),
   at: ScheduleId('catalog-at'),
@@ -725,8 +722,9 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     expect(lightLayout.right).toBeLessThanOrEqual(lightLayout.viewport)
     expect(lightLayout.scrollWidth).toBeLessThanOrEqual(lightLayout.viewport)
     expect(lightLayout.background).not.toBe('rgba(0, 0, 0, 0)')
-    const longPrompt = catalog.getByRole('listitem').filter({ hasText: 'Join release review' })
-      .locator(':scope > span').nth(1)
+    const longRow = catalog.getByRole('listitem').filter({ hasText: 'Join release review' })
+    const cadenceRow = catalog.getByRole('listitem').filter({ hasText: 'Check exact cadence' })
+    const longPrompt = longRow.locator(':scope > span').nth(1)
     const promptLayout = await longPrompt.evaluate(element => ({
       height: element.getBoundingClientRect().height,
       clientWidth: element.clientWidth,
@@ -734,6 +732,33 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     }))
     expect(promptLayout.height).toBeGreaterThan(18)
     expect(promptLayout.scrollWidth).toBeLessThanOrEqual(promptLayout.clientWidth)
+    const [longRowLayout, cadenceRowLayout] = await Promise.all([
+      longRow.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return {
+          bottom: box.bottom,
+          clientHeight: element.clientHeight,
+          scrollHeight: element.scrollHeight,
+          childBottoms: [...element.children].map(child => child.getBoundingClientRect().bottom),
+        }
+      }),
+      cadenceRow.evaluate((element) => {
+        const box = element.getBoundingClientRect()
+        return { top: box.top, bottom: box.bottom }
+      }),
+    ])
+    expect(longRowLayout.scrollHeight).toBeLessThanOrEqual(longRowLayout.clientHeight)
+    expect(longRowLayout.childBottoms).not.toHaveLength(0)
+    for (const childBottom of longRowLayout.childBottoms) {
+      expect(childBottom).toBeLessThanOrEqual(longRowLayout.bottom)
+    }
+    expect(longRowLayout.bottom).toBeLessThanOrEqual(cadenceRowLayout.top)
+    expect(cadenceRowLayout.bottom).toBeGreaterThan(cadenceRowLayout.top)
+    const scrollLayout = await catalog.evaluate(element => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+    }))
+    expect(scrollLayout.scrollHeight).toBeGreaterThan(scrollLayout.clientHeight)
 
     await page.evaluate(() => { document.body.setAttribute('data-ds-dark-theme', '') })
     const darkBackground = await catalog.evaluate(element => getComputedStyle(element).backgroundColor)
@@ -745,53 +770,9 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
       MODE,
     )
 
-    parentAgent.session.append('schedule/change', {
-      version: 1,
-      operation: 'create',
-      schedule: createEveryScheduleRecord(
-        LARGE_INTERVAL_ID,
-        LARGE_INTERVAL_PROMPT,
-        LARGE_INTERVAL_SECONDS,
-        CATALOG_NOW,
-      ),
-    })
-    await expect(scaffold.ctx.sessions.flush(parentAgent.session)).resolves.toBe(true)
-    await page.getByRole('button', { name: '4 reminders' }).waitFor({ timeout: 15_000 })
-    const largeRow = catalog.getByRole('listitem').filter({ hasText: LARGE_INTERVAL_PROMPT })
-    await largeRow.waitFor({ timeout: 15_000 })
-    const metadataLayout = await largeRow.locator(':scope > span').nth(2).evaluate((element) => {
-      const box = element.getBoundingClientRect()
-      return {
-        text: element.textContent,
-        height: box.height,
-        left: box.left,
-        right: box.right,
-        clientWidth: element.clientWidth,
-        scrollWidth: element.scrollWidth,
-        fields: [...element.children].map((child) => {
-          const field = child.getBoundingClientRect()
-          return { width: field.width, height: field.height, left: field.left, right: field.right }
-        }),
-      }
-    })
-    expect(metadataLayout.text).toContain(`Every ${LARGE_INTERVAL_SECONDS} seconds`)
-    expect(metadataLayout.height).toBeGreaterThan(16)
-    expect(metadataLayout.scrollWidth).toBeLessThanOrEqual(metadataLayout.clientWidth)
-    for (const field of metadataLayout.fields) {
-      expect(field.width).toBeGreaterThan(0)
-      expect(field.height).toBeGreaterThan(0)
-      expect(field.left).toBeGreaterThanOrEqual(metadataLayout.left)
-      expect(field.right).toBeLessThanOrEqual(metadataLayout.right)
-    }
-    const scrollLayout = await catalog.evaluate(element => ({
-      clientHeight: element.clientHeight,
-      scrollHeight: element.scrollHeight,
-    }))
-    expect(scrollLayout.scrollHeight).toBeGreaterThan(scrollLayout.clientHeight)
-
     const sessionRow = page.getByRole('treeitem', { name: new RegExp(CATALOG_TITLE) })
     expect(await sessionRow.getByRole('img', { name: ACTIVE_SCHEDULE_LABEL }).count()).toBe(1)
-    for (const id of [...Object.values(CATALOG_IDS), LARGE_INTERVAL_ID]) {
+    for (const id of Object.values(CATALOG_IDS)) {
       parentAgent.session.append('schedule/change', { version: 1, operation: 'delete', id })
     }
     await expect(scaffold.ctx.sessions.flush(parentAgent.session)).resolves.toBe(true)

@@ -65,6 +65,7 @@
 .row {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 3px;
   box-sizing: border-box;
   width: 100%;

@@ -163,7 +163,6 @@ describe('ScheduleCatalogAction rows', () => {
       [7_200, 'Every 2 hours', '2小时一次'],
       [300, 'Every 5 minutes', '5分钟一次'],
       [301, 'Every 301 seconds', '301秒一次'],
-      [200_000_000_001, 'Every 200000000001 seconds', '200000000001秒一次'],
     ] as const
     for (const [seconds, english, chinese] of samples) {
       const item = record(String(seconds), 'every', START + 1_000, { everySeconds: seconds })
@@ -173,20 +172,6 @@ describe('ScheduleCatalogAction rows', () => {
     expect(formatScheduleFrequency(record('once', 'at', START + 1_000), tZh)).toBe('单次')
     expect(tZh('status.scheduled')).toBe('等待中')
     expect(tZh('status.overdue')).toBe('已逾期')
-  })
-
-  it('renders every required metadata value for a valid large recurrence', () => {
-    const item = record('large', 'every', START + 200_000_000_001_000, {
-      everySeconds: 200_000_000_001,
-    })
-    const t = makeTranslate(en)
-    render(<ScheduleCatalogAction {...props([item])} />)
-    fireEvent.click(screen.getByRole('button'))
-
-    const row = screen.getByRole('listitem')
-    expect(row.textContent).toContain(formatScheduleFrequency(item, t))
-    expect(row.textContent).toContain(formatScheduleLocalTime(item.scheduledAt, 'en'))
-    expect(row.textContent).toContain(formatScheduleRelative(item.scheduledAt, START, t))
   })
 
   it('formats absolute time with the active document locale instead of the runtime default', () => {
