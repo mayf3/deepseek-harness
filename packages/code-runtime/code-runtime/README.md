@@ -29,7 +29,7 @@ Choose this package when you compose a deployment that executes model-written pr
 
 ### Run a program
 
-Give the runtime a program source and one or more binding namespaces. Each namespace becomes one global object of async functions inside the program — PTC mode passes one under `tools`. The program runs as the body of an async function, so top-level `await` and `return` work; a lossless-JSON completion becomes `result.value`, emitted text arrives in order as `result.logs`, and any failure is reported in `result.error` with a kind you can branch on. The runtime never rejects for a program failure — rejection means you misused the seam, for example by submitting a run after disposal.
+Give the runtime a program source and one or more binding namespaces. Each namespace becomes one global object of async functions inside the program — PTC mode passes one under `tools`. The program runs as the body of an async function, so top-level `await` and `return` work; a lossless-JSON completion becomes `result.value`, each output channel preserves its own order in `result.logs` while cross-channel interleaving is backend-dependent, and any failure is reported in `result.error` with a kind you can branch on. The runtime never rejects for a program failure — rejection means you misused the seam, for example by submitting a run after disposal.
 
 ```text
 const result = await ctx.codeRuntime.run({
@@ -73,7 +73,7 @@ The exhaustive semantics live in the [code runtime subsystem reference](../../..
 
 ### Vocabulary
 
-`CodeRunRequest` (`program`, `bindings`, `signal?`) carries everything the runtime acts on; defaulting (time budgets, output caps) is each provider's validated config, never a hidden `??` inside `run()`. `bindings` is a list of `CodeBindingNamespace`s (`global` + `functions` + optional `errorClass`), each exposed to the program as one global object of async callables returning `CodeJsonValue` — the seam's structural lossless-JSON type. An `errorClass` descriptor names a real program-global constructor and the own property that receives the rejected member name, so backends never learn consumer terms such as `ToolCallError`. `CodeRunResult` reports the lossless-JSON completion `value?`, ordered `logs: string[]`, and `error?` (`CodeRunFailure`: orthogonal `kind` + model-feedable `message`). See `src/types.ts` for the full contracts.
+`CodeRunRequest` (`program`, `bindings`, `signal?`) carries everything the runtime acts on; defaulting (time budgets, output caps) is each provider's validated config, never a hidden `??` inside `run()`. `bindings` is a list of `CodeBindingNamespace`s (`global` + `functions` + optional `errorClass`), each exposed to the program as one global object of async callables returning `CodeJsonValue` — the seam's structural lossless-JSON type. An `errorClass` descriptor names a real program-global constructor and the own property that receives the rejected member name, so backends never learn consumer terms such as `ToolCallError`. `CodeRunResult` reports the lossless-JSON completion `value?`, per-channel-ordered `logs: string[]` with backend-dependent cross-channel interleaving, and `error?` (`CodeRunFailure`: orthogonal `kind` + model-feedable `message`). See `src/types.ts` for the full contracts.
 
 ### Portable identifiers
 

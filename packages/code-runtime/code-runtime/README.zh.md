@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 运行一个程序
 
-向运行时提供程序源码与一个或多个绑定命名空间。每个命名空间会成为程序内的一个全局异步函数对象——PTC mode 在 `tools` 下传入一个。程序作为异步函数的函数体运行，因此顶层 `await`／`return` 可用；无损 JSON 完成值成为 `result.value`，输出的文本按顺序进入 `result.logs`，任何失败都以 `result.error` 报告并带有可分支的 kind。运行时绝不会因程序失败而 reject——reject 意味着你误用了 seam，例如在 dispose（资源释放）后提交运行。
+向运行时提供程序源码与一个或多个绑定命名空间。每个命名空间会成为程序内的一个全局异步函数对象——PTC mode 在 `tools` 下传入一个。程序作为异步函数的函数体运行，因此顶层 `await`／`return` 可用；无损 JSON 完成值成为 `result.value`，每个输出通道在 `result.logs` 中保留自身顺序而跨通道交错由后端决定，任何失败都以 `result.error` 报告并带有可分支的 kind。运行时绝不会因程序失败而 reject——reject 意味着你误用了 seam，例如在 dispose（资源释放）后提交运行。
 
 ```text
 const result = await ctx.codeRuntime.run({
@@ -73,7 +73,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配 `[A-Za
 
 ### 词汇
 
-`CodeRunRequest`（`program`、`bindings`、`signal?`）携带运行时操作所需的全部内容；默认值（时间预算、输出上限）来自各提供方的已验证配置，绝不是 `run()` 内部隐藏的 `??`。`bindings` 是 `CodeBindingNamespace` 列表（`global` + `functions` + 可选 `errorClass`），每个命名空间作为程序内的一个全局异步可调用函数对象公开，返回 `CodeJsonValue`——seam 的结构性无损 JSON 类型。`errorClass` 描述符点名真实的程序全局构造器，以及用于接收被拒绝成员名称的自有属性，因此后端永远不会得知 `ToolCallError` 之类的 Consumer 术语。`CodeRunResult` 报告无损 JSON 完成值 `value?`、有序的 `logs: string[]` 和 `error?`（`CodeRunFailure`：正交 `kind` + 可反馈给模型的 `message`）。完整约定见 `src/types.ts`。
+`CodeRunRequest`（`program`、`bindings`、`signal?`）携带运行时操作所需的全部内容；默认值（时间预算、输出上限）来自各提供方的已验证配置，绝不是 `run()` 内部隐藏的 `??`。`bindings` 是 `CodeBindingNamespace` 列表（`global` + `functions` + 可选 `errorClass`），每个命名空间作为程序内的一个全局异步可调用函数对象公开，返回 `CodeJsonValue`——seam 的结构性无损 JSON 类型。`errorClass` 描述符点名真实的程序全局构造器，以及用于接收被拒绝成员名称的自有属性，因此后端永远不会得知 `ToolCallError` 之类的 Consumer 术语。`CodeRunResult` 报告无损 JSON 完成值 `value?`、通道内有序且跨通道交错由后端决定的 `logs: string[]`，以及 `error?`（`CodeRunFailure`：正交 `kind` + 可反馈给模型的 `message`）。完整约定见 `src/types.ts`。
 
 ### 可移植标识符
 

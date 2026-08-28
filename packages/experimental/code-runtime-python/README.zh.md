@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-experimental-code-runtime-python` 交付 `PythonCodeRuntime`——[`dsh-code-runtime`](../../code-runtime/code-runtime/README.zh.md) seam 的 CPython 子进程实现：它以 `language: 'python'`、`isolation: 'process'` 注册为 `codeRuntime`，每次 `run()` 启动一个全新的 `python3 -I` 子进程，把程序作为 async 函数体执行，通过子进程 fd 3 上的无版本 JSON-lines 协议通信（stdout/stderr 留给程序自己的输出）。宿主侧（`src/protocol.ts`）把每条入站帧都视为敌意并逐字段重建后才读取；Python 侧（`py/protocol.py`）镜像消息词汇。隔离（不是安全边界——模型代码与 bash 同等的信任）来自空环境、`RLIMIT_CPU`/`RLIMIT_AS`、墙钟上限与 `SIGTERM`→宽限→`SIGKILL` 进程组拆卸，所有上限都在插件加载期校验。
+`dsh-experimental-code-runtime-python` 提供私有的源码 checkout `PythonCodeRuntime`，即 [`dsh-code-runtime`](../../code-runtime/code-runtime/README.zh.md) seam 的 CPython 子进程实现。它以 `language: 'python'`、`isolation: 'process'` 注册为 `codeRuntime`，每次 `run()` 启动一个全新的 CPython 3.10+ 子进程，把程序作为 async 函数体执行，通过子进程 fd 3 上的无版本 JSON-lines 协议通信（stdout/stderr 留给程序自己的输出）。宿主侧（`src/protocol.ts`）把每条入站帧都视为敌意并逐字段重建后才读取；Python 侧（`py/protocol.py`）镜像消息词汇。隔离（不是安全边界——模型代码与 bash 同等的信任）来自仅含临时目录的环境、`RLIMIT_CPU`/`RLIMIT_AS`、墙钟上限与 `SIGTERM`→宽限→`SIGKILL` 进程组拆卸，所有上限都在插件加载期校验。
 
 ## 目录
 
@@ -25,11 +25,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在需要通过 code-runtime seam 运行 Python 模型代码时选择本包：向 `dsh-tools` 注册 `PythonCodeRuntime`，`run()` 就在全新的 `python3 -I` 子进程中执行每个程序，成功时以 `result.value` resolve、失败时以 `result.error` resolve（正交的 `CodeRunFailure.kind` 分类涵盖解析失败、抛出异常、无效完成值、输出溢出、预算到期、中止与执行基底终止）；只有 seam 误用才 reject——绑定命名空间畸形，或已释放后仍调用。配置在加载期被拒绝：非 Unix 平台、非正或非整数的预算、低于截断标记下限（64）的 `maxLogBytes`、`setTimeout` 会收敛的定时器值、超过单个 fd-3 帧可承载的预算、最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`/输出预算组合，以及不是可执行普通文件的 `pythonBin`——显式路径（绝对或含 `/`）直接判定，裸名对照 `PATH` 判定。
+仅在显式源码检出组合中选择这个私有实验包。将 `PythonCodeRuntime` 与 `dsh-tools` 一起注册后，`run()` 会在全新的 CPython 3.10+ 子进程中执行每个程序；成功时以 `result.value` resolve，失败时以 `result.error` resolve（正交的 `CodeRunFailure.kind` 分类涵盖解析失败、抛出异常、无效完成值、输出溢出、预算到期、中止与执行基底终止）。仅有 seam 误用会 reject——binding 命名空间不合法，或在 dispose 后调用。配置在加载期拒绝：非 Unix 平台；不是可执行普通文件的显式 `pythonBin`，或无法在 `PATH` 上解析的裸名；非 CPython、低于 3.10 或探测失败的解释器；非正或非整数预算；低于截断标记下限（64）的 `maxLogBytes`；会被 `setTimeout` 截断的定时器值；超过单个 fd-3 帧承载能力的预算；或最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`／输出预算组合。
 
 ### 你得到什么
 
-包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）、`logTruncationMarker`（共享截断标记文本），以及 `resolvePythonBin`（对照当前 `PATH` 的解释器查找）、`readProcessStart`（供测试用的进程启动统计）和 `detachResidual`（已结算运行的资源清理测试 seam）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前解析：显式路径必须是可执行普通文件，裸名必须在 `PATH` 上可解析；任一失败都在加载期被拒绝，区分『is not an executable regular file』与『does not resolve on PATH』，而不是静默回退到平台默认 `PATH`）。
+包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）、`logTruncationMarker`（共享截断标记文本），以及 `resolvePythonBin`（对照当前 `PATH` 的解释器查找）、`readProcessStart`（供测试用的进程启动统计）和 `detachResidual`（已结算运行的资源清理测试 seam）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在加载期解析、检查可执行性、探测版本并固定）。每个子进程只接收 `TMPDIR`；环境中的凭证、`PATH`、`HOME` 与其他宿主状态均不可见。
 
 ### wire
 
@@ -97,7 +97,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-间接地，通过 `dsh-tools` 中的 Code Mode，它把程序的完成值或失败渲染成保留的 `run_code` 结果。
+间接地，通过 `dsh-tools` 中的 PTC mode；当显式的源码 checkout 组合挂载本提供方时，它会把程序的完成值或失败渲染成保留的 `run_code` 结果，且已发布 profile 均不挂载这个私有包。
 
 #### KV Cache 效应
 
@@ -114,6 +114,9 @@ kind: "package-reference"
 - **以 `setsid()` 逃出子进程组后代不被组拆卸回收**——`kill(-pid)` 够不到它；运行仍按 done 帧决定的值结算，若该孤儿持有管道，close 截止兜底会强制结算，但孤儿本身在自行退出前一直存活到 fiber 之外。
 - **结算后到达的 `log` 帧被丢弃**——运行一旦结算，宿主侧捕获即关闭；迟到的 fd-3 `log` 帧（来自比 done 帧存活更久的线程）会被丢弃，而不是追加到 `logs`。
 - **binding 回复值没有 seam 级字节或深度上限**——`maxValueBytes` 只计量 done 帧的完成值；宽 binding 回复在宿主侧重建（`snapshotJsonValue` 遍历）并整帧编码，两侧都只受进程内存约束（与没有子进程侧预算的 binding 实参一样）。
+- **已发布 profile 均不挂载本提供方**——keyless `ptc-python-turn` 快照通过真实 Loader 替换 headless PTC 运行时；已发布 profile 继续使用 Worker 线程后端。
+- **跨通道日志交错由后端决定**——Python stdout、stderr 与 fd-3 日志帧彼此独立传输；每个通道保留自身顺序，但它们在 `result.logs` 中的总顺序可能不同。
+- **需要 CPython 3.10 或更高版本**——配置的可执行文件会在加载期完成解析与版本探测；不受支持的解释器会在 `ctx.codeRuntime` 注册前失败。
 - **`run()` 是一次性的**——`logs` 只有在 `CodeRunResult` resolve 后才能获得；没有为运行中程序产生的输出提供流式日志或进度接口。
 - **运行之间不保留状态**——每次请求都在全新子进程中执行；持久 REPL 风格内核在某个后端带来自己的日志方案之前保持延期。
 - **原始长度超过 64 MiB 的 fd-3 帧会让本次运行以 worker-exit 结算**——`maxLogBytes`/`maxValueBytes` 在加载期被限制到同一解析器上限，因此诚实子进程的帧总能放得下；模型构造的超过 64 MiB 的 binding 实参（一个在 seam 层没有预算的值）会触发同一上限——这是该 OOM 防护的已接受残余。
@@ -122,7 +125,6 @@ kind: "package-reference"
 - **组合日志与值的峰值不被加载门建模**——持续写入的模型 daemon 线程与完成值计量、分帧相加的峰值没有任何门会放行或拒绝；运行以 `worker-exit` 告终，隔离成立，只有失败分类降级。
 - **1 秒双限 `ulimit -t 1` CPU 超限被报告为 `worker-exit` 而非 timeout**——当宿主在一个与软限相等的硬 CPU 限下启动且该限为 1 时，`_clamped` 无法下调软限，内核在同一 tick SIGKILL 忙循环，SIGXCPU 永远不会送达；隔离成立，只有分类降级。
 - **中间 binding 值没有字节上限**——实现仍受无损 JSON 序列化成本与进程内存约束，提供方或执行器可能应用自己的获取上限。
-- **真实 Loader 装配态快照推迟到 issue #1182 layer 5**——本包通过 `ctx.plugin(...)` 与真实子进程测试得到验证；完整的 dsh 应用组合（codeRuntime 经真实 Loader 注册）由该层一个受跟踪的装配测试覆盖，不由本包的测试套件承担。
 - **截断标记文本与临时目录前缀保留改名前的短名**——标记 `[dsh-code-runtime-python] log capture truncated at <N> bytes` 与 `dsh-code-runtime-python-` 临时目录前缀被测试逐字节锚定，且独立于 npm 包名；promotion（去掉 `experimental-` 前缀）不会重命名它们。
 
 <a id="dev-note"></a>

@@ -587,14 +587,14 @@ export interface Config {
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
   graceMs?: number
   /**
-   * Absolute path or basename of the CPython interpreter to spawn. Resolved
-   * through `PATH` when a basename is given.
+   * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
+   * Resolved and validated once at plugin load; a basename searches `PATH`.
    */
   pythonBin?: string
 }
 ```
 
-Source: [`packages/experimental/code-runtime-python/src/index.ts:43`](../packages/experimental/code-runtime-python/src/index.ts)
+Source: [`packages/experimental/code-runtime-python/src/index.ts:44`](../packages/experimental/code-runtime-python/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-inspector"></a>
 

@@ -1,19 +1,16 @@
 import { existsSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PythonCodeRuntime, readProcessStart, resolvePythonBin } from '../src/index.ts'
 import { logTruncationMarker } from '../src/protocol.ts'
 import type { Config } from '../src/index.ts'
 
-// Absolute interpreter path for the shell wrappers: the runtime spawns the
-// child with env:{} (an empty environment by design), so a bare 'python3' in a
-// wrapper resolves against /bin/sh's compiled-in default PATH, which misses
-// interpreters only reachable through the caller's PATH (Nix, pyenv). Baking
-// the resolved absolute path mirrors what resolvePythonBin does for the product
-// spawn.
+// Absolute supported interpreter path for shell wrappers. The runtime gives a
+// child only TMPDIR, so a bare `python3` inside a wrapper would resolve against
+// /bin/sh's default PATH rather than the caller's selected interpreter.
 const PYABS = resolvePythonBin('python3') ?? 'python3'
 import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 
@@ -201,6 +198,44 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     }
   })
 
+  it('rejects a non-CPython, outdated, or probe-failing interpreter at load', async () => {
+    const nonPython = new Context()
+    await expect(nonPython.plugin(PythonCodeRuntime, { pythonBin: '/bin/echo' }))
+      .rejects.toThrow(/did not report a CPython version/)
+
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-python-probe-'))
+    const oldMajor = join(dir, 'python-old-major')
+    const old = join(dir, 'python-old')
+    const future = join(dir, 'python-future')
+    const pypy = join(dir, 'pypy')
+    const failed = join(dir, 'python-failed')
+    await writeFile(oldMajor, '#!/bin/sh\nprintf \'cpython 2 99 0\\n\'\n', { mode: 0o755 })
+    await writeFile(old, '#!/bin/sh\nprintf \'cpython 3 9 6\\n\'\n', { mode: 0o755 })
+    await writeFile(future, '#!/bin/sh\nprintf \'cpython 4 0 0\\n\'\n', { mode: 0o755 })
+    await writeFile(pypy, '#!/bin/sh\nprintf \'pypy 3 10 0\\n\'\n', { mode: 0o755 })
+    await writeFile(failed, '#!/bin/sh\nexit 7\n', { mode: 0o755 })
+    try {
+      expect(resolvePythonBin(relative(process.cwd(), old))).toBe(old)
+      const obsolete = new Context()
+      await expect(obsolete.plugin(PythonCodeRuntime, { pythonBin: oldMajor }))
+        .rejects.toThrow(/must be CPython 3\.10 or newer, got cpython 2\.99\.0/)
+      const outdated = new Context()
+      await expect(outdated.plugin(PythonCodeRuntime, { pythonBin: old }))
+        .rejects.toThrow(/must be CPython 3\.10 or newer, got cpython 3\.9\.6/)
+      const forwardCompatible = new Context()
+      const fiber = await forwardCompatible.plugin(PythonCodeRuntime, { pythonBin: future })
+      await fiber.dispose()
+      const alternative = new Context()
+      await expect(alternative.plugin(PythonCodeRuntime, { pythonBin: pypy }))
+        .rejects.toThrow(/must be CPython, got pypy/)
+      const probeFailure = new Context()
+      await expect(probeFailure.plugin(PythonCodeRuntime, { pythonBin: failed }))
+        .rejects.toThrow(/failed the CPython version probe/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('keeps an explicit executable pythonBin working through load and run', async () => {
     // The same validation that rejects bad explicit paths must admit a good
     // one: an absolute path to the real interpreter (or a wrapper around it)
@@ -272,6 +307,32 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('proto-callable')
     await fiber.dispose()
+  })
+
+  it('resolves pythonBin once so a later PATH change cannot switch interpreters', async () => {
+    const firstDir = await mkdtemp(join(tmpdir(), 'dsh-python-first-'))
+    const secondDir = await mkdtemp(join(tmpdir(), 'dsh-python-second-'))
+    const wrapper = (marker: string): string => `#!/bin/sh\nDSH_TEST_PYTHON=${marker}\nexport DSH_TEST_PYTHON\nexec "${PYABS}" "$@"\n`
+    await writeFile(join(firstDir, 'python3'), wrapper('first'), { mode: 0o755 })
+    await writeFile(join(secondDir, 'python3'), wrapper('second'), { mode: 0o755 })
+    vi.stubEnv('PATH', firstDir)
+    let fiber: Awaited<ReturnType<typeof setup>>['fiber'] | undefined
+    try {
+      const mounted = await setup({ pythonBin: 'python3' })
+      fiber = mounted.fiber
+      vi.stubEnv('PATH', secondDir)
+      const result = await mounted.runtime.run({
+        program: 'import os\nreturn os.environ.get("DSH_TEST_PYTHON")',
+        bindings: [],
+      })
+      expect(result.error).toBeUndefined()
+      expect(result.value).toBe('first')
+    } finally {
+      await fiber?.dispose()
+      vi.unstubAllEnvs()
+      rmSync(firstDir, { recursive: true, force: true })
+      rmSync(secondDir, { recursive: true, force: true })
+    }
   })
 
   it('skips relative PATH entries when resolving a basename pythonBin', async () => {
@@ -451,7 +512,8 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     const entry = await entryOf()
     expect(entry.endsWith('/bootstrap.py')).toBe(true)
     const dir = dirname(entry)
-    expect(dir.startsWith(realpathSync(tmpdir()))).toBe(true)
+    expect(realpathSync(dirname(dir))).toBe(realpathSync(tmpdir()))
+    expect(basename(dir)).toMatch(/^dsh-code-runtime-python-/)
     expect(dir).not.toContain('/packages/')
     // Staging is per RUN and removed at settlement, so by the time `run()`
     // resolved the directory is already gone — nothing survives to be rewritten
@@ -621,7 +683,7 @@ describe('PythonCodeRuntime — process identity', () => {
 })
 
 describe('PythonCodeRuntime — inherited resource limits', () => {
-  it('runs under an inherited hard limit tighter than addressSpaceMb', async () => {
+  it.skipIf(process.platform === 'darwin')('runs under an inherited hard limit tighter than addressSpaceMb', async () => {
     // An unprivileged process may lower a hard rlimit but never raise it. Under
     // a harness started with `ulimit -v` below `addressSpaceBytes`, requesting
     // the configured cap made `setrlimit` raise `ValueError` and every run
@@ -684,13 +746,21 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     const result = await runtime.run({
       // `getrlimit` returns a tuple, which the lossless-JSON completion check
       // rejects; the pair is listed explicitly rather than converted.
-      program: 'import resource\ncpu = resource.getrlimit(resource.RLIMIT_CPU)\nreturn [cpu[0], cpu[1], resource.getrlimit(resource.RLIMIT_AS)[1]]',
+      program: [
+        'import resource, sys',
+        'cpu = resource.getrlimit(resource.RLIMIT_CPU)',
+        'address_space = None if sys.platform == "darwin" else resource.getrlimit(resource.RLIMIT_AS)[1]',
+        'return {"cpu": [cpu[0], cpu[1]], "addressSpace": address_space}',
+      ].join('\n'),
       bindings: [],
     })
     expect(result.error).toBeUndefined()
-    // Soft at cpuSeconds, hard at +1 (the SIGKILL backstop), address space at
-    // the configured megabytes — exactly what the unclamped path applied.
-    expect(result.value).toEqual([42, 43, 400 * 1024 * 1024])
+    // Darwin deliberately skips RLIMIT_AS; every other Unix host applies the
+    // configured bytes alongside the CPU soft/hard pair.
+    expect(result.value).toEqual({
+      cpu: [42, 43],
+      addressSpace: process.platform === 'darwin' ? null : 400 * 1024 * 1024,
+    })
   }, 15_000)
 
   it('preserves an inherited soft limit stricter than the configured cap', async () => {
@@ -874,6 +944,25 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // start (interpreter + asyncio import) on a loaded CI runner can exceed
     // the 5s default alone; later tests reuse the warm page cache.
   }, 15_000)
+
+  it('exposes only the platform temp directory from the host environment', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'return {',
+        '    "tmpdir": os.environ.get("TMPDIR"),',
+        '    "path": os.environ.get("PATH"),',
+        '    "home": os.environ.get("HOME"),',
+        '    "token": os.environ.get("DEEPSEEK_API_KEY"),',
+        '}',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toEqual({ tmpdir: tmpdir(), path: null, home: null, token: null })
+    expect(result.logs).toEqual([])
+  })
 
   it('bridges binding calls both ways and rejects the program-side call on a host rejection', async () => {
     const { runtime } = await setup()
@@ -1139,7 +1228,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
 
   it('coalesces print arguments into one log line, not per-write fragments', async () => {
     // print("a","b") calls write() per arg/sep/newline; the stream must emit
-    // one logical line "a b" so Code Mode's join(newline) does not insert
+    // one logical line "a b" so PTC mode's join(newline) does not insert
     // spurious blank lines. Two prints → exactly two entries, no empties.
     const { runtime } = await setup()
     const result = await runtime.run({
@@ -1187,6 +1276,24 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     })
     expect(result.error).toBeUndefined()
     expect(result.logs).toEqual(['one', 'two', 'three'])
+  })
+
+  it('preserves each native stream order while allowing backend-dependent interleaving', async () => {
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'import os',
+        'os.write(1, b"stdout-one\\n")',
+        'os.write(2, b"stderr-one\\n")',
+        'os.write(1, b"stdout-two\\n")',
+        'os.write(2, b"stderr-two\\n")',
+        'return None',
+      ].join('\n'),
+      bindings: [],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.logs.indexOf('stdout-one')).toBeLessThan(result.logs.indexOf('stdout-two'))
+    expect(result.logs.indexOf('stderr-one')).toBeLessThan(result.logs.indexOf('stderr-two'))
   })
 
   it('bounds a newline-free native flood by the ledger instead of buffering it whole', async () => {
@@ -2439,7 +2546,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
   })
 
   it('raises the declared errorClass with the member name on rejection', async () => {
-    // Code Mode declares { name: ToolCallError, memberNameProperty: toolName };
+    // PTC mode declares { name: ToolCallError, memberNameProperty: toolName };
     // a host rejection must surface as that class, carrying the failed tool.
     const { runtime } = await setup()
     const result = await runtime.run({
@@ -2618,7 +2725,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // asked for.
     const ctx = new Context()
     await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: 'definitely-no-such-python-xyz' }))
-      .rejects.toThrow(/does not resolve on PATH/)
+      .rejects.toThrow(/does not resolve to an executable file/)
   })
 
   it('rejects a memberNameProperty naming a constrained BaseException attribute', async () => {
@@ -2969,28 +3076,19 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     expect(['abort', 'worker-exit']).toContain(result.error?.kind)
   }, 5000)
 
-  it('reports a spawn failure via a bogus python binary as worker-exit', async () => {
-    // An explicit path that does not exist at LOAD is a configuration error and
-    // is rejected by the constructor (see the seam-misuse block). A path that
-    // is valid at load but gone by run time is a SUBSTRATE failure and must
-    // resolve as worker-exit: stage a real executable wrapper, load the runtime
-    // against it, then delete it before run() — the spawn then fails exactly
-    // like a child that cannot start.
-    const nodePath = await import('node:path')
-    const { mkdtempSync, rmSync, writeFileSync, chmodSync } = await import('node:fs')
-    const dir = mkdtempSync(nodePath.join(tmpdir(), 'dsh-spawn-fail-'))
-    const wrapper = nodePath.join(dir, 'python-wrapper')
-    const pyAbs = resolvePythonBin('python3') ?? 'python3'
-    writeFileSync(wrapper, `#!/bin/sh\nexec ${pyAbs} "$@"\n`, { mode: 0o755 })
-    chmodSync(wrapper, 0o755)
-    const { runtime } = await setup({ pythonBin: wrapper, maxWallMs: 3000 })
-    rmSync(wrapper)
-    rmSync(dir, { recursive: true, force: true })
-    const result = await runtime.run({
-      program: 'return 1',
-      bindings: [],
-    })
-    expect(result.error?.kind).toBe('worker-exit')
+  it('reports an interpreter removed after load as worker-exit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-python-removed-'))
+    const pythonBin = join(dir, 'python3')
+    await writeFile(pythonBin, `#!/bin/sh\nexec "${PYABS}" "$@"\n`, { mode: 0o755 })
+    const { runtime, fiber } = await setup({ pythonBin, maxWallMs: 3000 })
+    rmSync(pythonBin)
+    try {
+      const result = await runtime.run({ program: 'return 1', bindings: [] })
+      expect(result.error?.kind).toBe('worker-exit')
+    } finally {
+      await fiber.dispose()
+      rmSync(dir, { recursive: true, force: true })
+    }
   }, 8000)
 
   it('applies the strictest of the configured and inherited resource limits', async () => {
