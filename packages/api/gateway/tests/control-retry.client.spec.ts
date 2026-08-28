@@ -118,6 +118,24 @@ describe('RemoteStream', () => {
     expect(carrierFailed).toHaveBeenNthCalledWith(2, repeated)
   })
 
+  it('folds a non-Error terminal escape into a marked gateway/internal failure', async () => {
+    const stream = new RemoteStream(hostSource(true).connection, {
+      name: 'fixture stream',
+      open: () => ({
+        [Symbol.asyncIterator]: (): AsyncIterator<string> => ({
+          next: vi.fn<() => Promise<IteratorResult<string>>>().mockRejectedValue('generation exploded'),
+        }),
+      }),
+      ended: () => new Error('fixture stream ended'),
+    })
+
+    await expect(stream[Symbol.asyncIterator]().next()).rejects.toMatchObject({
+      isDSHRemoteGatewayError: true,
+      code: 'gateway/internal',
+      message: 'generation exploded',
+    })
+  })
+
   it('passes a marked Remote failure through the terminal boundary verbatim', async () => {
     const failure = new RemoteError('gateway/internal', 'host stream failed', {})
     const stream = supervisor(hostSource(true).connection, [{ terminal: failure }])
