@@ -126,13 +126,12 @@ const HERO_SWIM_DOWN_PATH =
  * itself morphs — SMIL interpolates `d` through the tail-up and tail-down
  * targets on the same 1.6s period, so the tail wags and the fin flutters in
  * real curve deformation. Decorative — hidden from the accessibility tree;
- * reduced motion keeps the static filled logo on hover.
+ * reduced motion keeps the static filled logo on hover (sampled at
+ * mouseenter; a mid-hover preference change takes effect on the next enter).
+ * @param props.hovering - driven by the hitbox parent's pointer state.
  * @returns the fish svg element.
  */
-function HeroFish() {
-  // Hover echo for the SMIL body morph: SMIL cannot ride CSS media queries,
-  // so the reduced-motion check gates the state instead of the style.
-  const [hovering, setHovering] = useState(false)
+function HeroFish({ hovering }: { hovering: boolean }) {
   return (
     <svg
       className={css.fish}
@@ -141,12 +140,6 @@ function HeroFish() {
       viewBox={`0 0 ${FISH_LOGO_VIEWBOX.width} ${FISH_LOGO_VIEWBOX.height}`}
       fill="none"
       aria-hidden="true"
-      onMouseEnter={() => {
-        if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) setHovering(true)
-      }}
-      onMouseLeave={() => {
-        setHovering(false)
-      }}
     >
       <path d={FISH_LOGO_PATH} fill="currentColor">
         {hovering && (
@@ -172,17 +165,26 @@ function HeroFish() {
  * @returns the centered hero element tree.
  */
 export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
+  const [hovering, setHovering] = useState(false)
   return (
     <div className={css.root}>
       <div className={css.stack}>
         <div className={css.headline}>
           {/* figma 34:10412: fish 34×25 leading the headline, gap 10. */}
-          <span className={css.fishHitbox}>
+          <span
+            className={css.fishHitbox}
+            onMouseEnter={() => {
+              if (window.matchMedia('(hover: hover) and (prefers-reduced-motion: no-preference)').matches) {
+                setHovering(true)
+              }
+            }}
+            onMouseLeave={() => { setHovering(false) }}
+          >
             {renderSlot('conversation.hero.brand.mark', { size: 34, className: css.fish }, {
-              fallback: <HeroFish />,
+              fallback: <HeroFish hovering={hovering} />,
             })}
           </span>
-          <span className={css.headlineText} data-testid="hero-headline">
+          <span className={css.headlineText}>
             {t('hero.headline')}
           </span>
           <span className={css.previewBadge}>{t('hero.preview')}</span>

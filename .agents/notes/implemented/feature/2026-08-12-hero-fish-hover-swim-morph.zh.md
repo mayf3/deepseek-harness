@@ -18,10 +18,10 @@ hover New Session 主页的鲸鱼（`dsh-client-ui-conversation` 的 `EmptyHero.
 
 **用矢量工具编辑路径做变形。** 流程中没有可交互的工具；选择程序化加权变形，因为它保证 SMIL `d` 插值所要求的完全一致的命令结构，且振幅是可评审的数字。
 
-**hover 气孔喷水。** 最初以三颗上升水珠的形式上线（更复杂的鲸鱼喷泉、泡泡簇、弹道水花造型都做出来后在评审中被否），随后按用户要求整体移除：hover 只保留形状变形与摇摆。
+**hover 气孔喷水。** 按用户要求移除；hover 只保留形状变形与摇摆。
 
 **让官方标志占据主页 slot。** 即先前的安排；否决，因为静态 occupant 会遮住动画 fallback，而给 occupant 加动画又需要被禁止的跨包 value import。
 
 ## 影响
 
-hover 游动是纯装饰（`aria-hidden`）且对 reduced-motion 安全（hover 保持静态 logo）。摇摆 CSS 作用于外层静止的 `.fishHitbox`，因此换成 slot occupant 也会摇摆；身体变形只存在于 fallback 的 `HeroFish` 中。覆盖由组件测试（`skeleton.client.spec.tsx`）断言渲染状态；keyless 快照体系记录的是对话转录而非浏览器动画，视觉验证仍需人工。重新生成变形目标需要对 `FISH_LOGO_PATH` 重跑（未入库的）变形脚本；若 logo 几何将来变化，烘焙常量必须随之重新生成。
+hover 游动是纯装饰（`aria-hidden`）且对 reduced-motion 安全（hover 保持静态 logo）。摇摆 CSS 作用于外层静止的 `.fishHitbox`，因此换成 slot occupant 也会摇摆；身体变形只存在于 fallback 的 `HeroFish` 中。覆盖由 `skeleton.client.spec.tsx` 断言 slot 合约（名称、owner props、fallback 存在性）；keyless 快照体系记录对话转录而非浏览器动画，变形的视觉验证仍需人工。重新生成变形目标需要对 `FISH_LOGO_PATH` 重跑（未入库的）变形脚本；若 logo 几何将来变化，烘焙常量必须随之重新生成。

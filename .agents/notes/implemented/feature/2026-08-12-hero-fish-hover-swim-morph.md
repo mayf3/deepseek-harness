@@ -18,10 +18,10 @@ The morphing fish reaches the hero as the fallback of the `conversation.hero.bra
 
 **Vector-tool path editing for the morphs.** No interactive tool in the loop; programmatic weighted deformation was chosen because it guarantees the identical command structure SMIL `d` interpolation requires and makes amplitudes reviewable numbers.
 
-**Blowhole spout on hover.** Shipped first as three rising beads (richer whale-blow fountain, bubble-cluster, and ballistic-arc shapes were built and rejected in review), then removed entirely at the user's request: hover keeps only the shape morph and sway.
+**Blowhole spout on hover.** Removed at the user's request; hover keeps only shape morph and sway.
 
 **Occupying the hero slot with the official mark.** The previous arrangement; rejected because the static occupant shadowed the animated fallback, and animating the occupant instead would need the forbidden cross-package value import.
 
 ## Consequences
 
-The hover swim is decorative (`aria-hidden`) and reduced-motion-safe (static logo on hover). The sway CSS targets the stationary `.fishHitbox` wrapper, so a slot occupant would sway too; the body morph lives only in the fallback `HeroFish`. Coverage is the component suite (`skeleton.client.spec.tsx`) asserting render states; the keyless snapshot harness records transcripts, not browser animation, so visual verification stays manual. Regenerating the morph targets requires re-running the (uncommitted) deformation script against `FISH_LOGO_PATH`; if the logo geometry ever changes, the baked constants must be regenerated with it.
+The hover swim is decorative (`aria-hidden`) and reduced-motion-safe (static logo on hover). The sway CSS targets the stationary `.fishHitbox` wrapper, so a slot occupant would sway too; the body morph lives only in the fallback `HeroFish`. Coverage is the `skeleton.client.spec.tsx` suite asserting slot contract (name, owner props, fallback existence); the keyless snapshot harness records transcripts, not browser animation, so visual verification of the morph stays manual. Regenerating the morph targets requires re-running the (uncommitted) deformation script against `FISH_LOGO_PATH`; if the logo geometry ever changes, the baked constants must be regenerated with it.

@@ -41,7 +41,6 @@
 .headlineText {
   grid-row: 1;
   grid-column: 2;
-  white-space: pre;
 }
 
 .previewBadge {
