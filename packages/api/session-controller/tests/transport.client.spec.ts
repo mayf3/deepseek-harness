@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  isRemoteFailure,
   RemoteStream,
   RemoteStreamCarrierError,
   type RemoteStreamOptions,
@@ -181,7 +182,10 @@ describe('Session Client stream adapters', () => {
 
     await stream.open({})
     await vi.waitFor(() => { expect(failed).toHaveBeenCalledOnce() })
-    expect(failed.mock.calls[0]?.[0]).toMatchObject({
+    const violation: unknown = failed.mock.calls[0]?.[0]
+    expect(isRemoteFailure(violation)).toBe(true)
+    expect(violation).toMatchObject({
+      code: 'gateway/internal',
       message: 'session live stream emitted a packed history record',
     })
     await stream.dispose()

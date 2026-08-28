@@ -1,6 +1,6 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-time`.
- * @module @deepseek-ai/dsh-time/invariant
+ * Package-owned invariant companion for `@deepseek-ai/dsh-util-time`.
+ * @module @deepseek-ai/dsh-util-time/invariant
  */
 
 /* jscpd:ignore-start */

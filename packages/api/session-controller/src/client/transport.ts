@@ -1,6 +1,7 @@
 /** Session-specific adapters for Gateway-owned Remote stream lifecycles. */
 
 import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RemoteJournalStream,
   RemoteSnapshotStream,
@@ -60,7 +61,11 @@ function toSessionJournalChange(
       return { ...change, entries: historyEntries(change.entries) }
     case 'append': {
       if (change.entry.type !== 'event') {
-        throw new Error('session live stream emitted a packed history record')
+        throw new RemoteError(
+          'gateway/internal',
+          'session live stream emitted a packed history record',
+          {},
+        )
       }
       return {
         type: 'append',
