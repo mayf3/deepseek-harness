@@ -50,7 +50,7 @@ function freshSession(id: string): Session {
   return Session.create(SessionId(id))
 }
 
-async function mountAuto(ctx: Context, admit: (session: Session) => void = () => {}) {
+async function mountAuto(ctx: Context, admit: () => void = () => {}) {
   return ctx.plugin(Object.assign((pluginCtx: Context) => {
     pluginCtx.permissionPresets.registerAuto(admit)
   }, { inject: ['permissionPresets'] }))
@@ -153,12 +153,12 @@ describe('PermissionPresetService', () => {
 
   it('runs Auto admission before any write, including a no-op selection', async () => {
     const ctx = await mounted()
-    const admitted: Session[] = []
-    await mountAuto(ctx, (session) => { admitted.push(session) })
+    let admissions = 0
+    await mountAuto(ctx, () => { admissions += 1 })
     const session = freshSession('sess-auto-admit')
 
     ctx.permissionPresets.set(session, AUTO_PRESET)
-    expect(admitted).toEqual([session])
+    expect(admissions).toBe(1)
     expect(session.events.map(event => [event.type, event.data])).toEqual([
       ['permission/preset', { preset: AUTO_PRESET }],
       ['sandbox/mode', { mode: 'danger-full-access' }],
@@ -167,7 +167,7 @@ describe('PermissionPresetService', () => {
     expect(ctx.permissionPresets.current(session)).toBe(AUTO_PRESET)
 
     ctx.permissionPresets.set(session, AUTO_PRESET)
-    expect(admitted).toEqual([session, session])
+    expect(admissions).toBe(2)
     expect(session.events).toHaveLength(3)
   })
 
@@ -311,15 +311,15 @@ describe('new-session default', () => {
 
   it('admits persisted Auto through the live integration without rewriting it', async () => {
     const ctx = await mounted()
-    const admitted: Session[] = []
-    await mountAuto(ctx, (session) => { admitted.push(session) })
+    let admissions = 0
+    await mountAuto(ctx, () => { admissions += 1 })
     const source = freshSession('auto-source-present')
     source.append('permission/preset', { preset: AUTO_PRESET })
     source.append('sandbox/mode', { mode: 'danger-full-access' })
     source.append('approval/policy', { policy: 'never' })
 
     const resumed = ctx.sessions.create(SessionId('auto-with-integration'), { seed: source.events })
-    expect(admitted).toEqual([resumed])
+    expect(admissions).toBe(1)
     expect(ctx.permissionPresets.current(resumed)).toBe(AUTO_PRESET)
     expect(resumed.events.filter(event => event.type === 'permission/preset')).toHaveLength(1)
   })

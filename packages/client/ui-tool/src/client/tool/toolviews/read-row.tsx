@@ -26,7 +26,6 @@ export function ReadRow({ toolName, block, cwd, home, openFile, inspect, t }: Re
       body={null}
       output={model.output}
       errorSummary={model.errorSummary}
-      autoReviewDenial={model.autoReviewDenial}
       read={read}
       state={model.state}
       filePath={model.filePath}

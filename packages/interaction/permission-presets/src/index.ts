@@ -198,7 +198,7 @@ export class PermissionPresetService extends Service {
   static inject = ['shell', 'approval', 'sessions', 'sessionProjections']
 
   private readonly presets: Record<string, PresetSpec>
-  private autoAdmit: ((session: Session) => void) | undefined
+  private autoAdmit: (() => void) | undefined
   private readonly permissionsRegistration: (() => void) & { republish(session: Session): void }
   private defaultSettings: () => PermissionSettings
 
@@ -308,7 +308,7 @@ export class PermissionPresetService extends Service {
    * @param admit - synchronous gate run before live Auto selection or restore.
    * @returns the async effect disposer that removes Auto.
    */
-  registerAuto(admit: (session: Session) => void): () => Promise<void> {
+  registerAuto(admit: () => void): () => Promise<void> {
     return this.ctx.effect(() => {
       if (this.autoAdmit !== undefined) throw new Error('permission: preset "auto" is already registered')
       this.autoAdmit = admit
@@ -423,7 +423,7 @@ export class PermissionPresetService extends Service {
   /** Apply one preset with the caller-selected live or initialization policy writer. */
   private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
     const spec = this.resolve(name)
-    if (name === AUTO_PRESET) this.autoAdmit?.(session)
+    if (name === AUTO_PRESET) this.autoAdmit?.()
     if (this.current(session) !== name) {
       session.append('permission/preset', { preset: name })
     }
@@ -451,7 +451,7 @@ export class PermissionPresetService extends Service {
       if (this.autoAdmit === undefined) {
         throw new Error('permission: cannot restore preset "auto" without its active integration')
       }
-      this.autoAdmit(session)
+      this.autoAdmit()
     }
     if (preset === null && sandbox === null && approval === null && !seeded) {
       const name = this.defaultPreset

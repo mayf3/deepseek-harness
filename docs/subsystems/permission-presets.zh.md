@@ -95,7 +95,7 @@ Owns the deployment's configured permission presets, the fixed Auto integration 
  * @param admit - synchronous gate run before live Auto selection or restore.
  * @returns the async effect disposer that removes Auto.
  */
-registerAuto(admit: (session: Session) => void): () => Promise<void>
+registerAuto(admit: () => void): () => Promise<void>
 
 /**
  * Resolve the preset matching the effective knob values. A still-matching
