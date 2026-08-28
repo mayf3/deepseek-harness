@@ -137,14 +137,9 @@ export class SessionTelemetryCoordinator {
    */
   captureSession(session: Session, throughSeq?: number): void {
     const cursor = handoffCursor.get(session) ?? session.firstLiveSeq - 1
-    const length = session.seq
     // Containment is PER EVENT: one rejected record is withheld fail-closed
     // while the rest of the historical replay proceeds.
-    for (let seq = 0; seq < length; seq++) {
-      const event = session.eventAt(seq)
-      if (event === undefined) {
-        throw new Error(`session telemetry capture cannot read seq ${String(seq)} below captured length ${String(length)}`)
-      }
+    for (const event of session.snapshotEvents()) {
       if (throughSeq !== undefined && event.seq > throughSeq) break
       this.contain(() => {
         if (event.seq <= cursor) this.track(session, event)
