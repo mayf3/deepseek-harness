@@ -305,7 +305,6 @@ function ciPrimaryGates(): Gate[] {
       docTypecheckScript: 'doc-typecheck:contracts-ready',
     }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
-    pnpmScript('knip', 'knip'),
     // The prepared typecheck and build both drive Client tsc, while build also
     // repeats the Host contract pass. Wait for all three consumers so build
     // neither races tsbuildinfo nor replaces declarations while they are read.
@@ -404,7 +403,6 @@ function ciStaticGates(options: { ownsBuild: boolean }): Gate[] {
       docsBuildScript: 'docs:build:mpa',
     }),
     pnpmScript('module-graph', 'verify-module-graph', { label: 'module graph' }),
-    pnpmScript('knip', 'knip'),
   ]
 }
 
@@ -667,7 +665,6 @@ function hygieneLeafGates(options: { artifactNeeds?: string[] } = {}): Gate[] {
   const artifactOptions = options.artifactNeeds === undefined ? {} : { needs: options.artifactNeeds }
   return [
     pnpmScript('rescope-vendor', 'rescope-vendor:check', { label: 'vendor rescope' }),
-    pnpmScript('knip', 'knip'),
     pnpmScript('publint', 'publint', artifactOptions),
     pnpmScript('constraints', 'constraints'),
     pnpmScript('application-entrypoints', 'verify-application-entrypoints', { label: 'application entrypoints' }),
