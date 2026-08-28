@@ -53,6 +53,8 @@ Source: [`packages/core/agent-default-model/src/index.ts:41`](../packages/core/a
 
 ## `@deepseek-ai/dsh-agent-instructions`
 
+Requires: `sessionProjections`
+
 ```ts config-catalog
 /** User-facing workspace instruction loader configuration. */
 export interface Config {
@@ -83,7 +85,7 @@ Source: [`packages/context/agent-instructions/src/config.ts:18`](../packages/con
 
 ## `@deepseek-ai/dsh-agent-loop`
 
-Requires: `agents` · `sessions` · `llm` · `tools` · `systemPrompt`
+Requires: `agents` · `sessions` · `llm` · `tools` · `systemPrompt` · `sessionProjections`
 
 ```ts config-catalog
 /** Agent-loop plugin configuration. */
@@ -109,13 +111,13 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/core.md)
 
-Source: [`packages/core/agent-loop/src/index.ts:255`](../packages/core/agent-loop/src/index.ts)
+Source: [`packages/core/agent-loop/src/index.ts:310`](../packages/core/agent-loop/src/index.ts)
 
 <a id="deepseek-aidsh-agent-presets"></a>
 
 ## `@deepseek-ai/dsh-agent-presets`
 
-Requires: `loader`
+Requires: `loader` · `sessionProjections`
 
 ```ts config-catalog
 /** Plugin config: which preset is the default, and where presets live. */
@@ -248,7 +250,7 @@ export interface GoalConfig {
 
 Depends on: [`AgentLoopConfig`](#deepseek-aidsh-agent-loop) · [`GoalDomainConfig`](#deepseek-aidsh-goal) · [`InvariantConfig`](#deepseek-aidsh-invariants) · [`JobsConfig`](#deepseek-aidsh-jobs-local) · [`SessionTitleConfig`](#deepseek-aidsh-session-title) · [`SkillFileSystem`](../packages/skill/skill-filesystem/src/index.ts) · [`SkillRegistryConfig`](#deepseek-aidsh-skill) · [`SystemPromptConfig`](#deepseek-aidsh-system-prompt) · [`toolBash`](../packages/shell/tool-bash/src/index.ts) · [`toolGoal`](../packages/goal/tool-goal/src/index.ts) · [`toolJobs`](../packages/jobs/tool-jobs/src/index.ts) · [`ToolsConfig`](#deepseek-aidsh-tools) · [`toolSkill`](../packages/skill/tool-skill/src/index.ts) · [`workspaceContext`](../packages/context/agent-instructions/src/index.ts)
 
-Source: [`packages/examples/agent-spine-demo/src/index.ts:93`](../packages/examples/agent-spine-demo/src/index.ts)
+Source: [`packages/examples/agent-spine-demo/src/index.ts:94`](../packages/examples/agent-spine-demo/src/index.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -608,7 +610,7 @@ Source: [`packages/e2b/e2b/src/index.ts:43`](../packages/e2b/e2b/src/index.ts)
 
 ## `@deepseek-ai/dsh-experimental-agent-team`
 
-Requires: `agents` · `sessions` · `sessionPersistence` · `subagents`
+Requires: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `subagents`
 
 ```ts config-catalog
 /** Team-service deployment limits. */
@@ -787,7 +789,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/goal/goal/src/index.ts:116`](../packages/goal/goal/src/index.ts)
+Source: [`packages/goal/goal/src/index.ts:171`](../packages/goal/goal/src/index.ts)
 
 <a id="deepseek-aidsh-headless"></a>
 
@@ -809,7 +811,7 @@ Source: [`packages/bundle/headless/src/index.ts:32`](../packages/bundle/headless
 
 ## `@deepseek-ai/dsh-hooks-claude-code`
 
-Requires: `shell`
+Requires: `shell` · `sessionProjections`
 
 ```ts config-catalog
 /** Plugin config: where the CC hook config lives + substitution roots. */
@@ -841,13 +843,13 @@ export interface Config {
 }
 ```
 
-Source: [`packages/hooks/hooks-claude-code/src/index.ts:45`](../packages/hooks/hooks-claude-code/src/index.ts)
+Source: [`packages/hooks/hooks-claude-code/src/index.ts:46`](../packages/hooks/hooks-claude-code/src/index.ts)
 
 <a id="deepseek-aidsh-hooks-codex"></a>
 
 ## `@deepseek-ai/dsh-hooks-codex`
 
-Requires: `shell`
+Requires: `shell` · `sessionProjections`
 
 ```ts config-catalog
 /** Plugin config: where the Codex hooks.json lives + the model name for payloads. */
@@ -868,7 +870,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/hooks/hooks-codex/src/index.ts:44`](../packages/hooks/hooks-codex/src/index.ts)
+Source: [`packages/hooks/hooks-codex/src/index.ts:45`](../packages/hooks/hooks-codex/src/index.ts)
 
 <a id="deepseek-aidsh-host-directory-picker-browse"></a>
 
@@ -1385,14 +1387,14 @@ Source: [`packages/test-support/llm-replay/src/index.ts:918`](../packages/test-s
 
 ## `@deepseek-ai/dsh-llm-retry`
 
-Requires: `agents`
+Requires: `agents` · `sessionProjections`
 
 ```ts config-catalog
 /** This policy executor has no config; providers own `retryPolicy`. */
 export type Config = Readonly<Record<string, never>>
 ```
 
-Source: [`packages/llm/llm-retry/src/index.ts:24`](../packages/llm/llm-retry/src/index.ts)
+Source: [`packages/llm/llm-retry/src/index.ts:25`](../packages/llm/llm-retry/src/index.ts)
 
 <a id="deepseek-aidsh-lsp-stdio"></a>
 
@@ -1562,7 +1564,7 @@ export interface PresetSpec {
 
 Depends on: [`ApprovalPolicy`](subsystems/approval.md) · [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/interaction/permission-presets/src/index.ts:156`](../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:143`](../packages/interaction/permission-presets/src/index.ts)
 
 <a id="deepseek-aidsh-persona"></a>
 
@@ -1602,7 +1604,7 @@ export interface PlanModeConfig {
 }
 ```
 
-Source: [`packages/plan/plan-mode/src/index.ts:70`](../packages/plan/plan-mode/src/index.ts)
+Source: [`packages/plan/plan-mode/src/index.ts:64`](../packages/plan/plan-mode/src/index.ts)
 
 <a id="deepseek-aidsh-plugin-package-inventory-deepseek"></a>
 
@@ -1745,6 +1747,8 @@ Source: [`packages/sandbox/sandbox-local/src/index.ts:44`](../packages/sandbox/s
 
 ## `@deepseek-ai/dsh-sandbox-policy`
 
+Requires: `sessionProjections`
+
 ```ts config-catalog
 /**
  * Plugin config: the deployment's sandbox default. All optional — `Config`
@@ -1766,7 +1770,7 @@ export interface Config {
 
 Depends on: [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/sandbox/sandbox-policy/src/index.ts:67`](../packages/sandbox/sandbox-policy/src/index.ts)
+Source: [`packages/sandbox/sandbox-policy/src/index.ts:70`](../packages/sandbox/sandbox-policy/src/index.ts)
 
 <a id="deepseek-aidsh-sdk-app"></a>
 
@@ -2049,7 +2053,7 @@ Source: [`packages/session/session-telemetry-otel/src/index.ts:91`](../packages/
 
 ## `@deepseek-ai/dsh-session-title`
 
-Requires: `sessions`
+Requires: `sessions` · `sessionProjections`
 
 ```ts config-catalog
 /** Required deterministic fallback and accepted-title limits. */
@@ -2063,7 +2067,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-title/src/index.ts:79`](../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:54`](../packages/session/session-title/src/index.ts)
 
 <a id="deepseek-aidsh-session-title-all-prompts-llm"></a>
 
@@ -2570,7 +2574,7 @@ Source: [`packages/core/system-prompt/src/index.ts:237`](../packages/core/system
 
 ## `@deepseek-ai/dsh-terminal-bash`
 
-Requires: `terminals` · `sandboxPolicy` · `subprocess`
+Requires: `terminals` · `sandboxPolicy` · `sessionProjections` · `subprocess`
 
 ```ts config-catalog
 /** Public plugin configuration. */
@@ -2620,7 +2624,7 @@ Source: [`packages/terminal/terminal-bash/src/config.ts:10`](../packages/termina
 
 ## `@deepseek-ai/dsh-time-context`
 
-Requires: `agents`
+Requires: `agents` · `sessionProjections`
 
 ```ts config-catalog
 /** Request-preparation clock formatting and append scheduling. Invalid values fail plugin load. */
@@ -2632,13 +2636,13 @@ export interface Config {
 }
 ```
 
-Source: [`packages/context/time-context/src/index.ts:27`](../packages/context/time-context/src/index.ts)
+Source: [`packages/context/time-context/src/index.ts:48`](../packages/context/time-context/src/index.ts)
 
 <a id="deepseek-aidsh-tmux-context"></a>
 
 ## `@deepseek-ai/dsh-tmux-context`
 
-Requires: `agents`
+Requires: `agents` · `sessionProjections`
 
 ```ts config-catalog
 /** Per-turn tmux-location scheduling. Invalid values fail plugin load. */
@@ -2648,11 +2652,13 @@ export interface Config {
 }
 ```
 
-Source: [`packages/context/tmux-context/src/index.ts:34`](../packages/context/tmux-context/src/index.ts)
+Source: [`packages/context/tmux-context/src/index.ts:36`](../packages/context/tmux-context/src/index.ts)
 
 <a id="deepseek-aidsh-token-meter"></a>
 
 ## `@deepseek-ai/dsh-token-meter`
+
+Requires: `sessionProjections`
 
 ```ts config-catalog
 /** Token-meter plugin configuration; the fixed estimator has no settings. */
@@ -2760,7 +2766,7 @@ Source: [`packages/fs/tool-fs-search/src/index.ts:73`](../packages/fs/tool-fs-se
 
 ## `@deepseek-ai/dsh-tool-goal`
 
-Requires: `agents` · `goals` · `tools` · `systemPrompt`
+Requires: `agents` · `goals` · `tools` · `systemPrompt` · `sessionProjections`
 
 ```ts config-catalog
 /** Model policy and hard lower bounds for goal-state updates. */
@@ -2890,7 +2896,7 @@ Source: [`packages/workflow/tool-ralph/src/index.ts:22`](../packages/workflow/to
 
 ## `@deepseek-ai/dsh-tool-session-query`
 
-Requires: `tools` · `systemPrompt` · `sessionQuery`
+Requires: `tools` · `systemPrompt` · `sessionQuery` · `sessionProjections`
 
 ```ts config-catalog
 /** Deployment-owned search count and timeout bounds. */
@@ -2942,7 +2948,7 @@ Source: [`packages/fs/tool-str-replace-editor/src/index.ts:505`](../packages/fs/
 
 ## `@deepseek-ai/dsh-tool-subagent`
 
-Requires: `tools` · `subagents` · `systemPrompt`
+Requires: `tools` · `subagents` · `systemPrompt` · `sessionProjections`
 
 ```ts config-catalog
 /** Config: which registered provider this tool delegates to, plus child defaults. */
@@ -3006,7 +3012,7 @@ export interface Config {
 
 Depends on: [`AgentOptions`](subsystems/core.md)
 
-Source: [`packages/subagent/tool-subagent/src/index.ts:49`](../packages/subagent/tool-subagent/src/index.ts)
+Source: [`packages/subagent/tool-subagent/src/index.ts:50`](../packages/subagent/tool-subagent/src/index.ts)
 
 <a id="deepseek-aidsh-tool-subagent-report"></a>
 
@@ -3052,7 +3058,7 @@ Source: [`packages/terminal/tool-terminal/src/index.ts:36`](../packages/terminal
 
 ## `@deepseek-ai/dsh-tool-todo`
 
-Requires: `tools`
+Requires: `tools` · `sessionProjections`
 
 ```ts config-catalog
 /** Model-facing todo tool configuration. */
