@@ -118,11 +118,11 @@ The registry holds typed `ToolDefinition`s in scoped layers and projects them on
 
 ### Execution and cancellation
 
-Each typed invocation materializes and freezes parsed arguments, assigns an opaque correlation token, and runs policy and dispatch. Cancellation is cooperative and quiescent: every tool body receives the caller-owned `exec.signal` and must observe it; cancellation before body invocation is `ABORTED_BEFORE_DISPATCH`, after invocation it replaces only a successful outcome with `ABORTED`. Denials, wrapper failures, tool failures, post-policy failures, and timeout-owned `TOOL_TIMEOUT` remain more specific. Unknown and throwing tools become structured errors (`UNKNOWN_TOOL`), so a call fails without ending the turn.
+Each typed invocation materializes and freezes parsed arguments, assigns an opaque correlation token, and runs policy and dispatch. A pre-execute denial may attach `ToolErrorInfo` beside its model-facing reason; the native and PTC durable projections preserve the structured name, code, and optional user-facing reason without adding that detail to model content. Cancellation is cooperative and quiescent: every tool body receives the caller-owned `exec.signal` and must observe it; cancellation before body invocation is `ABORTED_BEFORE_DISPATCH`, after invocation it replaces only a successful outcome with `ABORTED`. Denials, wrapper failures, tool failures, post-policy failures, and timeout-owned `TOOL_TIMEOUT` remain more specific. Unknown and throwing tools become structured errors (`UNKNOWN_TOOL`), so a call fails without ending the turn.
 
 ### PTC mode
 
-Under `ptc` or `both`, the registry exposes the reserved `run_code` transport plus a deterministic SDK generated in the loaded runtime's language. Each SDK binding call re-enters the complete tool pipeline with logged correlation to the outer call, scheduled through a per-run pool that reuses the native concurrency contract. Under `ptc` alone, a model-direct call naming any other visible tool resolves to `UNKNOWN_TOOL` before policy — the announced surface and the callable surface stay the same. Intermediate binding values are execution-local; only the outer `run_code` result has a hard size cap. The [executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.md) owns the collapse contract.
+Under `ptc` or `both`, the registry exposes the reserved `run_code` transport plus a deterministic SDK generated in the loaded runtime's language. Each SDK binding call records its dispatched name, description, parameters schema, and normalized arguments before re-entering the complete tool pipeline; its settle event preserves the rendered result and optional structured error. Calls are scheduled through a per-run pool that reuses the native concurrency contract. Under `ptc` alone, a model-direct call naming any other visible tool resolves to `UNKNOWN_TOOL` before policy — the announced surface and the callable surface stay the same. Intermediate binding values are execution-local; only the outer `run_code` result has a hard size cap. The [executor-collapse note](../../../.agents/notes/implemented/bug-fix/2026-08-07-ptc-executor-collapse.md) owns the collapse contract.
 
 <a id="extension-points"></a>
 ### Extension points
@@ -201,7 +201,7 @@ Prefix-stable while the PTC mode selection, generated SDK, transport schema, and
 
 #### What the model sees
 
-The loop retains model-emitted arguments and the registry's final content. Any thrown or denied call becomes exactly `Error: <message>`. PTC mode renders the outer program's printed lines and return value, `(run_code completed with no output)` when both are empty, or `Error: code run failed (<kind>): <message>` followed conditionally by `Captured output:` and the captured lines. Inner dispatch events stay log-only, while a successful image-bearing sub-result is appended after the outer result as source-attributed context.
+The loop retains model-emitted arguments and the registry's final content. Any thrown or denied call becomes exactly `Error: <message>`; structured user-facing failure detail is not added to that message. PTC mode renders the outer program's printed lines and return value, `(run_code completed with no output)` when both are empty, or `Error: code run failed (<kind>): <message>` followed conditionally by `Captured output:` and the captured lines. Inner dispatch events stay log-only, while a successful image-bearing sub-result is appended after the outer result as source-attributed context.
 
 #### Token effect
 

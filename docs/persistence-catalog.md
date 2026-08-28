@@ -79,7 +79,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-Sources: [`packages/core/session/src/types.ts:328`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:335`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:364`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:396`](../packages/core/session/src/types.ts)
+Sources: [`packages/core/session/src/types.ts:330`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts)
 
 ## Events
 
@@ -519,7 +519,7 @@ Source: [`packages/api/session-controller/src/types.ts:40`](../packages/api/sess
 'permission/preset': { preset: string }
 ```
 
-Source: [`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:52`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -552,7 +552,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 'request/context': RequestContext
 ```
 
-Source: [`packages/core/session/src/types.ts:301`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -571,7 +571,7 @@ Source: [`packages/core/session/src/types.ts:301`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:291`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:293`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -646,7 +646,7 @@ Source: [`packages/schedule/schedule/src/types.ts:219`](../packages/schedule/sch
 'session/end-seed': Record<string, never>
 ```
 
-Source: [`packages/core/session/src/types.ts:324`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:326`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -859,9 +859,9 @@ Source: [`packages/core/session/src/types.ts:268`](../packages/core/session/src/
  * One bridged sub-dispatch SETTLING: the pairing ids (matching the
  * `tool/code-dispatch-start` with the same `subCallId`), the tool `name`
  * with the same JSON-normalized `arguments`, and the sub-call's complete
- * model-facing outcome in `tool/result`'s own vocabulary
- * (`content` + `isError`), so UIs render a sub-call through the exact
- * code path that renders a native call. Every started sub-call settles
+ * durable outcome in `tool/result`'s own vocabulary (`content` + `isError`
+ * + optional structured `error`), so UIs and SDKs render a sub-call through
+ * the exact path used for a native call. Every started sub-call settles
  * with exactly one of these (abort included: the aborted pipeline result
  * is an `isError` outcome).
  * Log-only: `deriveMessages()` ignores it, so sub-calls never re-enter
@@ -873,7 +873,7 @@ Source: [`packages/core/session/src/types.ts:268`](../packages/core/session/src/
 'tool/code-dispatch': PtcDispatchEventData
 ```
 
-Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
+Source: [`packages/core/tools/src/types.ts:63`](../packages/core/tools/src/types.ts)
 
 <a id="toolcode-dispatch-start--log-only"></a>
 
@@ -896,7 +896,7 @@ Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types
 'tool/code-dispatch-start': PtcDispatchStartEventData
 ```
 
-Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
+Source: [`packages/core/tools/src/types.ts:47`](../packages/core/tools/src/types.ts)
 
 <a id="toolresult--surface"></a>
 
@@ -905,7 +905,9 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
 ```ts persistence-catalog
 /**
  * A completed tool call's model-facing result, optional internal failure
- * identity, and optional tool-private `meta` presentation payload. `meta` is
+ * identity and user-facing reason, and optional tool-private `meta`
+ * presentation payload. The reason remains outside the model-facing message.
+ * `meta` is
  * opaque to the core (the producing tool owns its shape and reads it back in
  * `presentResult`) but MUST be JSON-serializable: `Session.append`
  * runtime-validates all event data with `isJsonValue`, so a non-serializable
@@ -918,12 +920,12 @@ Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types
   turn: number
   step: number
   message: ToolResultMessage
-  error?: { name: string; code: string }
+  error?: { name: string; code: string; reason?: string }
   meta?: JsonValue
 }
 ```
 
-Source: [`packages/core/session/src/types.ts:280`](../packages/core/session/src/types.ts)
+Source: [`packages/core/session/src/types.ts:282`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 

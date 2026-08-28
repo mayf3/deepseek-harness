@@ -32,6 +32,7 @@ export function WebRow({ toolName, block, inspect, t }: WebRowProps) {
       body={null}
       output={model.output}
       errorSummary={model.errorSummary}
+      autoReviewDenial={model.autoReviewDenial}
       web={web}
       state={model.state}
       inspect={inspect}

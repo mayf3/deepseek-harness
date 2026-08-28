@@ -13,6 +13,7 @@ import {
   terminalCardModel,
   terminalFailed,
 } from '../models/terminal-card-model.ts'
+import { localizeAutoReviewDenial } from '../models/auto-review-denial.ts'
 import { toolRowModel, type ToolRowState } from '../models/tool-call-model.ts'
 import { CONVERSATION_NS as NS } from '../../locale.ts'
 import css from './bash-sample.module.css'
@@ -41,11 +42,12 @@ function stateStatus(state: ToolRowState, t: BashRowProps['t']): string | null {
 /** Renders expandable Bash output with an accessible lifecycle label. */
 export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }: BashRowProps) {
   const model = toolRowModel(toolName, block)
+  const autoReview = model.autoReviewDenial === null ? null : localizeAutoReviewDenial(model.autoReviewDenial, t)
   // An omitted shell workdir is the session workspace; relative values resolve
   // against it before reaching the terminal primitive.
   const cwd = useSessions(list => list.byId[sessionId]?.cwd)
   const terminalModel = terminalCardModel(block, cwd)
-  const terminal = terminalModel === null ? null : localizeTerminalCardModel(terminalModel, t)
+  const terminal = autoReview !== null || terminalModel === null ? null : localizeTerminalCardModel(terminalModel, t)
   // A failing exit status is the terminal card's own error signal (the call
   // itself settles isError:false), surfaced as the row's red state dot.
   const state = model.state === 'ok' && terminalModel !== null && terminalFailed(terminalModel)
@@ -56,12 +58,14 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   // Execution failures and persistent-shell results have no terminal card.
   // Keep their recorded args and complete output reachable through the generic
   // body; background acknowledgements and malformed calls remain collapsed.
+  const body = autoReview === null ? model.body : null
+  const output = autoReview?.output ?? model.output
   const genericBody = terminal === null
-    && (model.state === 'error' || isSettledPersistentShellCall(block))
-    && (model.body !== null || model.output !== null)
+    && (autoReview !== null || model.state === 'error' || isSettledPersistentShellCall(block))
+    && (body !== null || output !== null)
   const expandable = terminal !== null || genericBody
   const open = expanded && expandable
-  const failureLine = model.state === 'error' ? model.errorSummary : null
+  const failureLine = autoReview?.summary ?? (model.state === 'error' ? model.errorSummary : null)
   const toggleExpand = () => {
     setExpanded(v => !v)
   }
@@ -115,20 +119,20 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
             )
             : (
               <div className={css.ioCard}>
-                {model.body !== null && (
+                {body !== null && (
                   <div className={css.ioSection}>
                     <span className={css.ioLabel}>{t('row.input')}</span>
-                    <span className={css.ioText}>{model.body}</span>
+                    <span className={css.ioText}>{body}</span>
                   </div>
                 )}
-                {model.body !== null && model.output !== null && (
+                {body !== null && output !== null && (
                   <span className={css.ioDivider} aria-hidden />
                 )}
-                {model.output !== null && (
+                {output !== null && (
                   <div className={css.ioSection}>
                     <span className={css.ioLabel}>{t('row.output')}</span>
                     <span className={css.ioText} data-error={state === 'error' || undefined}>
-                      {model.output}
+                      {output}
                     </span>
                   </div>
                 )}

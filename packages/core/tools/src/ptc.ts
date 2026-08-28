@@ -7,7 +7,7 @@
  */
 
 import { ToolCallId, createUserMessage, HarnessError } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ToolSchema } from '@deepseek-ai/dsh-llm'
 import type { CodeBindingFunction, CodeRunResult, CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -464,7 +464,8 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // would be narrowed away by control flow analysis.
       const runOver = (): boolean => runController.signal.aborted
 
-      const binding = (name: string): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+      const binding = (schema: ToolSchema): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+        const { name, description, parameters } = schema
         if (runOver()) {
           throw new Error(`run_code run is over (${String(runController.signal.reason)}); ${name} not dispatched`)
         }
@@ -505,6 +506,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
               // untouched.
               const logged = await shapeDispatchLog({
                 exec, agent, subCallId, name, isError: result.isError,
+                ...result.error?.info === undefined ? {} : { error: result.error.info },
                 // The registry deep-froze this projection at result
                 // finalization; append snapshots the final copy again, so
                 // the log stays detached.
@@ -520,6 +522,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
                 // this record from what it actually received.
                 arguments: normalized.logged,
                 isError: result.isError,
+                ...result.error?.info === undefined ? {} : { error: result.error.info },
                 content: logged,
               })
             })().finally(() => { logWork.delete(task) })
@@ -540,6 +543,8 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
                 parentCallId: exec.callId,
                 subCallId,
                 name,
+                description,
+                parameters,
                 arguments: normalized.logged,
               })
               // Ordered prepare runs INSIDE the driver lane: the next entry's
@@ -614,7 +619,7 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       // re-resolves per call through the same view (exec.agent threads down).
       for (const schema of registry.schemas(exec.agent)) {
         if (schema.name === RUN_CODE_NAME) continue
-        Object.defineProperty(functions, schema.name, { enumerable: true, value: binding(schema.name) })
+        Object.defineProperty(functions, schema.name, { enumerable: true, value: binding(schema) })
       }
 
       try {

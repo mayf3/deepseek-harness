@@ -2,13 +2,13 @@
 
 English | [中文](permission-presets.zh.md)
 
-The permission-preset layer of [dsh-permission-presets](../../packages/interaction/permission-presets) (`ctx.permissionPresets`, `PermissionPresetService`) bundles the two independent enforcement knobs — [sandbox mode](sandbox.md) (`sandbox/mode`) and [approval policy](approval.md) (`approval/policy`) — into named presets a client offers as one Permissions selector. It is one optional capability, not part of the agent-loop spine, and it owns no enforcement: execution, prompt narration, and replay keep reading their knob folds, and a preset switch only records intent and writes through each knob's canonical setter. The [package README](../../packages/interaction/permission-presets/README.md) owns composition status and limitations; the [sandbox switching design](../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) owns the rationale.
+The permission-preset layer of [dsh-permission-presets](../../packages/interaction/permission-presets) (`ctx.permissionPresets`, `PermissionPresetService`) bundles the two independent enforcement knobs — [sandbox mode](sandbox.md) (`sandbox/mode`) and [approval policy](approval.md) (`approval/policy`) — into named presets a client offers as one Permissions selector. The configured table owns future-session defaults, while an effect-scoped integration may contribute a current-session-only preset with a synchronous admission check. The layer is optional and owns no execution policy: prompt narration and replay keep reading their knob folds, while a contribution such as [Auto review](../../packages/interaction/auto-review/README.md) owns any extra enforcement. The [package README](../../packages/interaction/permission-presets/README.md) owns composition status and limitations; the [sandbox switching design](../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) owns the original knob rationale.
 
 Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
 
 ## The preset table
 
-A preset is a table key mapping to one sandbox/approval bundle plus optional client presentation; the default table ships `workspace-write` (`workspace-write` + `ask`) and `danger-full-access` (`danger-full-access` + `never`).
+A preset maps one stable key to a sandbox/approval bundle plus optional client presentation. The default configured table ships `workspace-write` (`workspace-write` + `ask`) and `danger-full-access` (`danger-full-access` + `never`); `custom` and `auto` are reserved and cannot be configured.
 
 ```ts type-equiv
 /** One preset's sandbox/approval bundle and optional client presentation. */
@@ -30,7 +30,8 @@ interface Config {
   /**
    * The preset table: name → knob bundle. Defaults to `workspace-write`
    * (workspace-write + ask) and `danger-full-access` (danger-full-access +
-   * never). The name `custom` is reserved for the derived not-a-preset state.
+   * never). The names `custom` and `auto` are reserved for derived state and
+   * the Auto review integration respectively.
    */
   presets?: Record<string, PresetSpec>
   /**
@@ -41,13 +42,34 @@ interface Config {
 }
 ```
 
-The service requires a confining `ctx.shell` executor and `ctx.approval`, and misconfiguration fails at plugin load: a table entry named `custom` throws (the name is reserved for the derived not-a-preset state), and composing over a bash executor that does not confine (no `sandboxMode` capability fact) throws, because presets bundle a sandbox mode.
+The service requires a confining `ctx.shell` executor and `ctx.approval`, and misconfiguration fails at plugin load: configured entries named `custom` or `auto` throw, and composing over a bash executor that does not confine (no `sandboxMode` capability fact) throws because presets bundle a sandbox mode.
+
+## Current-session contributions
+
+An integration registers one contribution for its effect lifetime. Contributions appear after configured presets in registration order, never enter the `permission.defaultPreset` settings schema, and disappear when the effect is disposed. The synchronous `admit` callback runs before a selection mutates the Session. The reserved Auto identity additionally requires its live contribution and admission before a stored Auto Session can publish, so a missing or closing integration does not rewrite the durable identity.
+
+```ts type-equiv
+/** One effect-scoped current-session preset supplied by an integration. */
+interface PermissionPresetContribution {
+  /** Canonical preset name recorded in `permission/preset`. */
+  readonly name: string
+  /** Sandbox and approval values written by the normal preset path. */
+  readonly spec: PresetSpec
+  /**
+   * Synchronously admit one live selection. The reserved Auto contribution is
+   * also called before a stored Auto session publishes. Throwing leaves the
+   * session unchanged or vetoes Auto publication.
+   * @param session - session selecting this contribution or restoring Auto.
+   */
+  readonly admit: (session: Session) => void
+}
+```
 
 ## Current preset and the derived `custom`
 
-`current(events)` derives the effective preset from the knobs, not from its own event alone: it folds the session's effective sandbox mode (falling back to the executor's configured mode) and effective approval policy (falling back to the approval service config, then `ask`), prefers a still-matching recorded selection, then the first matching table entry in declaration order, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
+`current(events)` derives the effective preset from the knobs, not from its own event alone: it folds the session's effective sandbox mode (falling back to the executor's configured mode) and effective approval policy (falling back to the approval service config, then `ask`), prefers a still-matching recorded selection, then the first matching configured entry, then the first matching live contribution, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
 
-`names` lists the switchable presets in table declaration order; `optionOf(name)` builds the option a client renders for a table key (label falls back to the key) or for `custom`, and throws for any other name.
+`names` lists configured presets in declaration order followed by live contributions in registration order. `optionOf(name)` builds the option a client renders for an available key (label falls back to the key) or for `custom`, and throws for any other name.
 
 ```ts type-equiv
 /** The select-option shape a presentation layer advertises for one preset (or for the derived `custom` state). */
@@ -63,9 +85,9 @@ interface PresetOption {
 
 ## Switching and the `permission/preset` event
 
-`set(session, name)` resolves the preset (unknown names throw), appends a log-only `permission/preset` event unless `name` is already the effective preset, then writes each knob through its own setter — `setSandboxMode` from [dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) and `setApprovalPolicy` from [dsh-user-approval](../../packages/interaction/user-approval) — only when that knob's effective value changes. The selection event precedes the knob events in the same turn, and re-selecting the effective preset appends nothing.
+`set(session, name)` resolves the preset (unknown names throw), runs a contribution's admission callback when applicable, appends a log-only `permission/preset` event unless `name` is already the effective preset, then writes each knob through its own setter — `setSandboxMode` from [dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) and `setApprovalPolicy` from [dsh-user-approval](../../packages/interaction/user-approval) — only when that knob's effective value changes. The selection event precedes the knob events in the same turn, and re-selecting the effective preset appends nothing.
 
-`permission/preset` is durable, log-only user intent: it stays out of the model transcript (the knob events own the model-visible consequences through their consumers), and it exists so `current()` can preserve WHICH preset the user chose when two presets share a bundle; `effectivePermissionPreset(events)` folds the last one, and replay needs no catch-up state. The complete event declaration is in the [persistence log event catalog](../persistence-catalog.md); the method signatures are in the generated [service catalog](#ctxpermissionpresets--permissionpresetservice).
+`permission/preset` is durable, log-only user intent: it stays out of the model transcript, and it exists so `current()` can preserve WHICH preset the user chose when two presets share a bundle. `effectivePermissionPreset(events)` folds the last one, replay needs no catch-up state, and a restored `auto` selection requires the Auto contribution before Agent publication. The complete event declaration is in the [persistence log event catalog](../persistence-catalog.md); the method signatures are in the generated [service catalog](#ctxpermissionpresets--permissionpresetservice).
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -79,38 +101,48 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.permissionPresets` — `PermissionPresetService`
 
-Owns the deployment's permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.
+Owns the deployment's configured and contributed permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.
 
 ```ts cordis-catalog
 /**
+ * Register one current-session-only preset for the calling integration's
+ * effect lifetime.
+ * @param contribution - preset identity, knob bundle, and synchronous admission gate.
+ * @returns the async effect disposer that removes exactly this contribution.
+ */
+register(contribution: PermissionPresetContribution): () => Promise<void>
+
+/**
  * Resolve the preset matching the effective knob values. A still-matching
- * last selection wins shared-bundle ties; otherwise the first table match
- * wins, or {@link CUSTOM_PRESET} when no entry matches.
+ * last selection wins shared-bundle ties; otherwise the first configured
+ * match, then the first contributed match, wins. Returns
+ * {@link CUSTOM_PRESET} when no available preset matches.
  * @param events - the session's events in log order.
  * @returns the effective preset name, or `custom` when nothing matches.
  */
 current(events: readonly SessionEvent[]): string
 
 /**
- * Build the whole select value for one folded knob state: every table
- * option in declaration order, `custom` appended exactly while derived.
+ * Build the whole select value for one folded knob state: configured options
+ * in declaration order, live contributions in registration order, and
+ * `custom` appended exactly while derived.
  * @param state - the folded knob overrides.
  * @returns the `permissions` projection payload.
  */
 selectFor(state: KnobState): PermissionSelect
 
 /**
- * Resolve a preset's knob bundle.
+ * Resolve an available preset's knob bundle.
  * @param name - the preset name to resolve.
  * @returns the configured bundle.
- * @throws when `name` is not in the table.
+ * @throws when `name` is neither configured nor currently contributed.
  */
 resolve(name: string): PresetSpec
 
 /**
- * Build the client option for a table entry or {@link CUSTOM_PRESET}. A
- * missing label falls back to the table key.
- * @param name - a table key, or `custom`.
+ * Build the client option for an available preset or {@link CUSTOM_PRESET}.
+ * A missing label falls back to the preset key.
+ * @param name - a configured or contributed preset key, or `custom`.
  * @returns the option a client renders.
  * @throws when `name` is neither a table key nor `custom`.
  */

@@ -1015,9 +1015,16 @@ describe('the run_code dispatch bridge', () => {
     const { ctx, runtime } = await setup({ mode: 'ptc' })
     registerEcho(ctx)
     ctx.on('tools/pre-execute', (exec, next) => {
-      if (exec.name === 'echo') return Promise.resolve({ kind: 'deny' as const, reason: 'not on my watch' })
+      if (exec.name === 'echo') {
+        return Promise.resolve({
+          kind: 'deny' as const,
+          reason: 'not on my watch',
+          info: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: ' raw\nreason ' },
+        })
+      }
       return next()
     })
+    const { agent, events } = fakeAgent()
     runtime.behavior = async (request) => {
       try {
         await request.bindings[0]!.functions.echo!({ value: 'x' })
@@ -1026,9 +1033,26 @@ describe('the run_code dispatch bridge', () => {
         return { logs: [], value: `denied: ${error instanceof Error ? error.message : String(error)}` }
       }
     }
-    const result = await runCode(ctx, 'program')
+    const result = await runCode(ctx, 'program', { agent })
     expect(result.content[0]?.type).toBe('text')
     expect((result.content[0] as { text: string }).text).toContain('not on my watch')
+    const start = events.find(event => event.type === 'tool/code-dispatch-start')
+    expect(start?.data).toMatchObject({
+      name: 'echo',
+      description: 'Echo tool echo.',
+      parameters: {
+        type: 'object',
+        properties: { value: { type: 'string' } },
+        required: ['value'],
+      },
+      arguments: { value: 'x' },
+    })
+    const settle = events.find(event => event.type === 'tool/code-dispatch')
+    expect(settle?.data).toMatchObject({
+      name: 'echo',
+      isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: ' raw\nreason ' },
+    })
   })
 
   it('rejects a binding argument that is not lossless JSON, dispatching nothing', async () => {

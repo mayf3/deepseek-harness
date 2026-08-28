@@ -1,7 +1,7 @@
 /**
  * Continuable-child delegation policy: a fresh continuable start seeds the
- * parent's explicit sandbox override and the pinned `approval/policy: never`
- * onto the child's own log as `source: 'delegation'` events, and a cold
+ * parent's Auto identity, explicit sandbox override, and the pinned
+ * `approval/policy: never` onto the child's own log, and a cold
  * resume replays that persisted snapshot instead of re-capturing the parent
  * (the one-shot `subagent-inprocess/tests/inheritance.spec.ts` counterpart).
  */
@@ -76,6 +76,27 @@ function policyEvents(events: readonly SessionEvent[]) {
 }
 
 describe('continuable policy inheritance', () => {
+  it('persists Auto identity for a DSH in-process child', { timeout: 20_000 }, async () => {
+    const { ctx, parent } = await setup([textResponse('child done')])
+    parent.session.append('permission/preset', { preset: 'auto' })
+    setSandboxMode(parent.session, 'danger-full-access')
+    ctx.provide('permissionPresets', {
+      current: (events: readonly SessionEvent[]) => events === parent.session.events ? 'auto' : 'custom',
+    } as never)
+
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(loaded.events.filter(event => event.type === 'permission/preset')).toMatchObject([
+      { data: { preset: 'auto' } },
+    ])
+    expect(policyEvents(loaded.events)).toMatchObject([
+      { type: 'sandbox/mode', data: { mode: 'danger-full-access', source: 'delegation' } },
+      { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
+    ])
+  })
+
   it('seeds the parent sandbox override and pins approval to never', { timeout: 20_000 }, async () => {
     const { ctx, parent } = await setup([textResponse('child done')])
     setSandboxMode(parent.session, 'danger-full-access')

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides permission preset surfaces for two lifetimes in the Web GUI: a General-settings row chooses the default for later sessions without switching the current session. A picker on the host `/permission` command switches the current session through one flat preset list with the active value marked. Kebab-case names render as title-case labels, and `danger-full-access` is presented as `Full access`. Choosing full access requires an explicit risk acknowledgement before either surface writes it. Both surfaces read one host-computed projection and write through one path, so the pushed projection frame is the single confirmation both follow.
+This package provides permission preset surfaces for two lifetimes in the Web GUI: a General-settings row chooses a configured default for later sessions without switching the current session. A picker on the host `/permission` command switches the current session through the live preset list with the active value marked. Kebab-case names render as title-case labels, `danger-full-access` is presented as `Full access`, and the current-session-only `auto` contribution is presented as `Auto review` with an `EXP` badge. Choosing Full access or Auto review through a visible picker requires its own explicit risk acknowledgement; an already argued `/permission <preset>` command executes directly. Both surfaces write through the host command or settings owner, while the current-session projection remains authoritative for the picker and composer chip.
 
 ## Table of Contents
 
@@ -29,11 +29,11 @@ Mount this plugin alongside the settings and commands packages; the permission r
 
 ### The picker
 
-A pick submits the `/permission <preset>` command line. The argued path (`/permission <preset>` typed directly) still switches directly; the decoration replaces only the bare invocation. Unknown kebab-case preset names render in title case, and `custom` is display state, never a target.
+A pick submits the `/permission <preset>` command line. The argued path (`/permission <preset>` typed directly) still switches directly; the decoration replaces only the bare invocation. `auto` uses the localized `Auto review` label and `EXP` badge, and its visible selection requires the experimental-risk confirmation. Unknown kebab-case preset names render in title case, and `custom` is display state, never a target.
 
 ### The Settings row
 
-The row derives its options from the host's dynamic `defaultPreset` enum and writes one settings mutation. The value applies only when a later session is created; changing it never switches or rewrites the current session.
+The row derives its options from the host's configured `defaultPreset` enum and writes one settings mutation. Current-session-only contributions such as `auto` are absent. The value applies only when a later session is created; changing it never switches or rewrites the current session.
 
 -----
 
@@ -43,7 +43,7 @@ The row derives its options from the host's dynamic `defaultPreset` enum and wri
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The General row reads the explicitly exposed `permission` Settings descriptor through `ctx.settingsScope` and writes one `settings.mutate` path operation with the descriptor revision; its observable rides the slot system's `hooks` compartment, so the renderer owns React hook binding, and a push invalidation refetches the descriptor. The value is read only when a later session is created. The current-session surface is a popupSelect decoration hung on the host `/permission` command (`ctx.commandUi.decorate`): the host command keeps its slash-menu row, argued path, and durable lifecycle logging, while the decoration replaces only the bare invocation with the picker. Options and the active mark read the session's `permissions` projection — the same host-computed select the composer chip renders. The full-access option carries a `confirmation` payload the shared popup shell renders as the in-page risk gate.
+The General row reads the explicitly exposed `permission` Settings descriptor through `ctx.settingsScope` and writes one `settings.mutate` path operation with the descriptor revision; its observable rides the slot system's `hooks` compartment, so the renderer owns React hook binding, and a push invalidation refetches the descriptor. The value is read only when a later session is created. The current-session surface is a popupSelect decoration hung on the host `/permission` command (`ctx.commandUi.decorate`): the host command keeps its slash-menu row, argued path, and durable lifecycle logging, while the decoration replaces only the bare invocation with the picker. Options and the active mark read the session's `permissions` projection — the same host-computed select the composer chip renders. Full access and Auto review each carry a localized `confirmation` payload; Auto also carries the badge rendered by the shared popup shell.
 
 </details>
 
@@ -64,7 +64,7 @@ Read these pages when the permission surface is not enough. They move from the b
 <a id="model-experience"></a>
 ## Model Experience
 
-Indirectly, through the permission facts its two surfaces write: the Settings row causes a future session to start with whole-value knob events, while the `/permission` picker appends the same facts when it switches the current session; those events select the sandbox mode and approval policy later tool calls resolve.
+Indirectly, through the permission facts its two surfaces write: the Settings row causes a future session to start with whole-value knob events, while the `/permission` picker appends the selected current-session preset. Sandbox and approval consumers resolve their own knob events; selecting `auto` additionally activates the host Auto integration's independent per-call reviewer.
 
 #### KV Cache effect
 
@@ -78,6 +78,7 @@ No direct invalidation; the knob consumers own any request-prefix changes.
 These limits define the current permission surfaces. They are current package constraints, not a general policy comparison or a task backlog.
 
 - **The Settings row is Web-only** — non-Web clients may still switch the current session through `/permission`, but do not receive this browser contribution.
+- **Auto review is current-session-only** — the General-settings row intentionally omits it, and only visible picker selection receives the experimental confirmation; an explicitly typed `/permission auto` is already explicit consent.
 - **Preset descriptions come from the host** — localized built-in labels may therefore appear beside a description written in another language.
 
 <a id="dev-note"></a>

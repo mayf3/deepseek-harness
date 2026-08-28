@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-permission-presets` 为部署提供一个面向用户的 Permissions 选择器，把两个独立的执行旋钮——沙箱模式与审批策略——捆绑为具名预设。选择预设会同时应用沙箱模式与审批策略，而每个旋钮各自保留自己的值，因此沙箱执行、审批、提示词叙述与回放都读取各自的设置。默认表提供 `workspace-write`（workspace-write ＋ ask）与 `danger-full-access`（danger-full-access ＋ never）；不匹配任何预设的旋钮组合会读回推导出的 `custom`，客户端可以显示它，但不能选择它。该服务还拥有 `permission` 设置命名空间，其默认值只在之后创建会话时生效；两个可选子功能——`permissions` 会话投影单元与 `/permission` 命令——向 Web 客户端暴露同一表面。挂载它需要具有约束能力的 bash 执行器与审批服务；它自身不拥有任何执行权。
+`dsh-permission-presets` 为部署提供一个面向用户的 Permissions 选择器，把两个独立的执行旋钮——沙箱模式与审批策略——捆绑为具名预设。选择预设会同时应用沙箱模式与审批策略，而每个旋钮各自保留自己的值，因此沙箱执行、审批、提示词叙述与回放都读取各自的设置。配置表提供未来会话默认值；live integration 可以追加一个带同步准入检查、生命周期受 effect 限定的当前会话预设，shipped Web 的 `auto` 即采用此方式。不匹配任何可用预设的旋钮组合会读回推导出的 `custom`，客户端可以显示它，但不能选择它。该服务还拥有 `permission` 设置命名空间与两个可选子功能——`permissions` Session 投影单元和 `/permission` 命令；强制执行仍由沙箱、审批或贡献该预设的 integration 拥有。
 
 ## 目录
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 配置预设
 
-插件配置定义预设表与新会话的默认值。每个预设名称把一个沙箱模式与一个审批策略捆绑为一组；`name` 与 `description` 是可选的客户端呈现。
+插件配置定义预设表与新会话的默认值。每个预设名称把一个沙箱模式与一个审批策略捆绑为一组；`name` 与 `description` 是可选的客户端呈现。保留名称 `custom` 与 `auto` 不能出现在该表中。
 
 ```yaml
 - name: '@deepseek-ai/dsh-permission-presets'
@@ -49,19 +49,19 @@ kind: "package-reference"
 | `presets` | `workspace-write`、`danger-full-access` | 预设名称 → 沙箱／审批捆绑的表 |
 | `defaultPreset` | 推断 | 固定到新会话的预设；组合默认值不匹配任何预设时必填 |
 
-生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-permission-presets)是每个受支持字段及其 JSDoc 的穷尽式真源。`custom` 这个名称保留给推导出的非预设状态，不能作为表条目。挂载需要具有约束能力的 bash 执行器（会报告 `sandboxMode` 的执行器）与审批服务。
+生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-permission-presets)是每个受支持字段及其 JSDoc 的穷尽式真源。`custom` 保留给推导出的非预设状态，`auto` 则保留给 Auto review integration。挂载需要具有约束能力的 bash 执行器（会报告 `sandboxMode` 的执行器）与审批服务。
 
 ### 切换预设
 
-切换到某个预设只改变实际值不同的旋钮；再次选择当前已生效的预设不会产生任何变化。当前值解析顺序为：仍匹配的最近一次记录选择，其次表中第一个匹配项，否则为 `custom`。用户通过 `/permission` 命令切换：不带参数调用时报告当前预设与可用表，带预设参数时切换过去。
+切换到某个预设时，服务先同步执行 contribution 的准入检查（如适用），再只改变实际值不同的旋钮；再次选择当前已生效的预设不会产生任何变化。当前值解析顺序为：仍匹配的最近一次记录选择，其次是配置表中的第一个匹配项，再是 live contribution 中的第一个匹配项，否则为 `custom`。用户通过 `/permission` 命令切换：不带参数调用时报告当前预设与所有可用条目，带预设参数时切换过去。
 
 ### 用户看到什么
 
-客户端渲染选择器：按表顺序列出每个可切换预设，并在当前值为 `custom` 时将其附加在末尾。`custom` 仅供显示——调用方可以从不匹配的旋钮组合切换出去，但不能通过此服务选中或持久化一个具名 custom 预设。
+客户端渲染选择器：先按表顺序列出配置预设，再按注册顺序列出 live contribution，并在当前值为 `custom` 时将其附加在末尾。`custom` 仅供显示——调用方可以从不匹配的旋钮组合切换出去，但不能通过此服务选中或持久化一个具名 custom 预设。
 
 ### 会话默认值
 
-`permission` 设置命名空间为未来会话持有 `defaultPreset`：创建会话时读取它，将其应用于沙箱模式与审批策略，并把应用的预设记录为一次 `permission/preset` 选择。之后的设置变更绝不会改变现有会话。恢复的 seed（包括由 `session/end-seed` 明确标记的空 seed）会保留其有效权限，并只接收缺失的持久事实，而不会接收最新用户默认值。
+`permission` 设置命名空间为未来会话持有 `defaultPreset`，且只接受配置预设。创建会话时读取它，将其应用于沙箱模式与审批策略，并把应用的预设记录为一次 `permission/preset` 选择。之后的设置变更绝不会改变现有会话。恢复的 seed（包括由 `session/end-seed` 明确标记的空 seed）会保留其有效权限，并只接收缺失的持久事实，而不会接收最新用户默认值；持久化的 `auto` 身份在发布前必须存在 live Auto contribution 并通过准入。
 
 -----
 
@@ -77,21 +77,21 @@ kind: "package-reference"
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `PermissionPresetService`：预设表、写入路径、设置命名空间、会话固定、子功能 |
+| [`src/index.ts`](src/index.ts) | `PermissionPresetService`：配置表、contribution 目录、写入路径、设置命名空间、会话固定、子功能 |
 | [`src/types.ts`](src/types.ts) | `permissions` 投影键声明与选择器载荷类型 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验 `permission/preset` 指向可解析的预设 |
+| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验配置预设与普通 contribution 名称；Auto 恢复在发布前另行检查 |
 
 ### 写入路径
 
-`apply()` 解析预设，仅当有效预设变化时追加 `permission/preset`，然后通过各自的权威 setter——`dsh-sandbox-policy` 的 `setSandboxMode` 与 `dsh-user-approval` 的 `setApprovalPolicy`——写入每个变化的旋钮。选择事件先于旋钮事件，因此在两个预设共享同一组取值时保留用户意图；净变化为零的选择不追加任何内容。
+`set()` 解析预设，在适用时同步执行 contribution 的准入检查，仅当有效预设变化时追加 `permission/preset`，然后通过各自的权威 setter——`dsh-sandbox-policy` 的 `setSandboxMode` 与 `dsh-user-approval` 的 `setApprovalPolicy`——写入每个变化的旋钮。选择事件先于旋钮事件，因此在两个预设共享同一组取值时保留用户意图；净变化为零的选择不追加任何内容。
 
 ### 读取侧与 `custom`
 
-`current(events)` 在组合默认值（`ctx.shell.sandboxMode` 与审批配置）之上折叠三个全量值旋钮事件。仍匹配的最近选择在共享捆绑时胜出；否则表中第一个匹配项胜出；否则返回推导出的 `CUSTOM_PRESET`。`permissions` 投影单元逐事件应用同一折叠，并向客户端提供选择器。
+`current(events)` 在组合默认值（`ctx.shell.sandboxMode` 与审批配置）之上折叠三个全量值旋钮事件。仍匹配的最近选择在共享捆绑时胜出；否则配置表中的第一个匹配项胜出，再是 live contribution 中的第一个匹配项；否则返回推导出的 `CUSTOM_PRESET`。`permissions` 投影单元逐事件应用同一折叠，并向客户端提供选择器。
 
 ### 会话固定与空白复用
 
-挂载时会固定所有存活与未来的会话：真正全新的会话获得默认预设与两个旋钮事实，而 seed 会话或部分初始化的会话保留其有效旋钮值，只补充缺失的持久事实。
+挂载时会固定所有存活与未来的会话：真正全新的会话获得配置默认预设与两个旋钮事实，而 seed 会话或部分初始化的会话保留其有效旋钮值，只补充缺失的持久事实。存储的 `auto` 身份在 Auto integration 缺失或拒绝准入时无法发布；服务既不会改写它，也不会静默推导为 Full access。
 
 ### 可选子功能
 
@@ -129,9 +129,10 @@ kind: "package-reference"
 
 这些限制说明预设服务不提供什么。它们是当前包约束，不是权限系统对比。
 
-- **只组合两个机制级旋钮**：预设选择沙箱模式和审批策略；agent（智能体）／profile 选择尚未纳入 `PresetSpec`。
+- **只组合两个机制级旋钮**：预设选择沙箱模式和审批策略；贡献式 integration 可以增加准入行为，但 agent（智能体）／profile 选择不属于 `PresetSpec`。
 - **`custom` 只能推导得出**：调用方可以从不匹配的旋钮组合切换出去，但无法通过此服务选中或持久化一个名为 custom 的预设。
 - **预设表是进程级配置**：配置在插件生命周期内固定；更改可用预设必须重新加载插件。
+- **贡献式预设不能成为默认值**：它们只在所属 integration effect 存活期间存在，并且有意不进入 `permission` 设置 schema。
 - **已存储的默认值必须保留在 preset 表中**：移除被引用的 preset 会导致权限设置注册失败，直到更新或重置 `settings.yaml` 中的 `permission` 分节。
 
 <a id="dev-note"></a>

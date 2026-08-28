@@ -74,7 +74,9 @@ interface SessionEventMap {
   'tool/call': { turn: number; step: number; callId: ToolCallId; name: string; arguments: string }
   /**
    * A completed tool call's model-facing result, optional internal failure
-   * identity, and optional tool-private `meta` presentation payload. `meta` is
+   * identity and user-facing reason, and optional tool-private `meta`
+   * presentation payload. The reason remains outside the model-facing message.
+   * `meta` is
    * opaque to the core (the producing tool owns its shape and reads it back in
    * `presentResult`) but MUST be JSON-serializable: `Session.append`
    * runtime-validates all event data with `isJsonValue`, so a non-serializable
@@ -87,7 +89,7 @@ interface SessionEventMap {
     turn: number
     step: number
     message: ToolResultMessage
-    error?: { name: string; code: string }
+    error?: { name: string; code: string; reason?: string }
     meta?: JsonValue
   }
   /**

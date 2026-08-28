@@ -5,12 +5,14 @@
 // scenarios in this lane cover the surface itself.
 import { readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 // Empty type imports carry the tools/sandboxPolicy/approval Context merges.
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
@@ -20,10 +22,13 @@ import type {} from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import { launchWebScaffold, type WebScaffold } from './scaffold.ts'
+import { REPO_ROOT } from './support.ts'
 
 const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
   './expected/web-runtime-context/file-reference-prompt.expected.md', import.meta.url,
 ))
+const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
+const HEADLESS_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/headless/cordis.patch.yml')
 
 /**
  * The catalog the shipped Web composition puts in front of the model, minus the
@@ -175,6 +180,17 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   expect(scaffold.ctx.sandboxPolicy.defaultMode).toBe('workspace-write')
   expect(scaffold.ctx.approval.config.policy).toBe('ask')
   expect(scaffold.ctx.permissionPresets.defaultPreset).toBe('workspace-write')
+  expect(scaffold.ctx.permissionPresets.names).toEqual([
+    'read-only',
+    'workspace-write',
+    'danger-full-access',
+    'auto',
+  ])
+  const headlessRows = composeEntries([
+    loadOverlayPatches('shipped headless composition', BASE_PATCH_PATH),
+    loadOverlayPatches('shipped headless composition', HEADLESS_PATCH_PATH),
+  ])
+  expect(headlessRows.some(row => row.id === 'auto-review')).toBe(false)
 
   const commandHandle = await scaffold.ctx.agents.create({
     sessionId: SessionId('shipped-command-catalog'),

@@ -1,6 +1,7 @@
 /**
  * Delegation policy through child session events appended before publication:
- * the parent's sandbox override plus the pinned `approval/policy: never`.
+ * the parent's Auto identity and sandbox override plus the pinned
+ * `approval/policy: never`.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -79,6 +80,28 @@ function toolResultTexts(agent: Agent): string[] {
 }
 
 describe('in-process policy inheritance', () => {
+  it('records Auto identity before publishing a DSH in-process child', async () => {
+    const { ctx, parent } = await setupWalled([textResponse('child done')])
+    parent.session.append('permission/preset', { preset: 'auto' })
+    setSandboxMode(parent.session, 'danger-full-access')
+    ctx.provide('permissionPresets', {
+      current: (events: readonly SessionEvent[]) => events === parent.session.events ? 'auto' : 'custom',
+    } as never)
+
+    const run = await startInProcessRun(spawnRequest(parent), {})
+    try {
+      await run.result
+      const child = run.localAgent as Agent
+      expect(child.session.events.slice(0, 3)).toMatchObject([
+        { type: 'permission/preset', seq: 0, data: { preset: 'auto' } },
+        { type: 'sandbox/mode', seq: 1, data: { mode: 'danger-full-access', source: 'delegation' } },
+        { type: 'approval/policy', seq: 2, data: { policy: 'never', source: 'delegation' } },
+      ])
+    } finally {
+      await run.dispose()
+    }
+  })
+
   it('records the parent sandbox override and the approval pin before publishing a spawn child', async () => {
     const script: Script = []
     const { ctx, parent } = await setupWalled(script)

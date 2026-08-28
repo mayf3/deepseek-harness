@@ -8,6 +8,10 @@ import * as ToolsInvariant from '@deepseek-ai/dsh-tools/invariant'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 
 const testToolSignal = new AbortController().signal
+const dispatchSchema = {
+  description: 'Echo the supplied text.',
+  parameters: { type: 'object' },
+}
 
 async function setup(): Promise<Context> {
   const ctx = new Context()
@@ -97,6 +101,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('parent'),
       subCallId: ToolCallId('child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     }
     expect(() => session.append('tool/code-dispatch-start', data)).toThrow(/outside any open turn/)
@@ -113,6 +118,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('rejected-root'),
       subCallId: ToolCallId('reused-child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })).toThrow(/outside any open turn/)
 
@@ -122,6 +128,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('accepted-root'),
       subCallId: ToolCallId('reused-child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })).not.toThrow()
   })
@@ -135,6 +142,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('root'),
       subCallId: ToolCallId('child'),
       name: 'run_code',
+      ...dispatchSchema,
       arguments: {},
     })
     session.append('tool/code-dispatch-start', {
@@ -142,6 +150,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('child'),
       subCallId: ToolCallId('grandchild'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })
 
@@ -150,6 +159,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('child'),
       subCallId: ToolCallId('invalid-grandchild'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })).toThrow(/parentCallId child does not belong to rootCallId another-root/)
     expect(session.events.some(event => event.type === 'tool/code-dispatch-start'
@@ -165,6 +175,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('root'),
       subCallId: ToolCallId('child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })).toThrow(/must carry non-empty rootCallId/)
 
@@ -173,6 +184,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('root'),
       subCallId: ToolCallId('child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })
     expect(() => session.append('tool/code-dispatch-start', {
@@ -180,6 +192,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('other-root'),
       subCallId: ToolCallId('child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })).toThrow(/changed rootCallId for subCallId child/)
   })
@@ -198,6 +211,7 @@ describe('tool-pipeline invariants', () => {
           parentCallId: ToolCallId('root'),
           subCallId: ToolCallId('child'),
           name: 'echo',
+          ...dispatchSchema,
           arguments: {},
         },
       } as never)
@@ -214,6 +228,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('parent'),
       subCallId: ToolCallId('child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
       isError: false,
       content: [{ type: 'text', text: 'ok' }],
@@ -231,6 +246,7 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('parent'),
       subCallId: ToolCallId('child'),
       name: 'echo',
+      ...dispatchSchema,
       arguments: {},
     })
     await ctx.plugin(InvariantRegistry)

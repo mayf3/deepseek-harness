@@ -8,6 +8,7 @@ import type { ComposerBarProps } from '../contract/slots.ts'
 import css from './PermissionSelect.module.css'
 
 const FULL_ACCESS = 'danger-full-access'
+const AUTO_REVIEW = 'auto'
 
 /* Shield glyphs (design set 1556): check = read-only, pencil = workspace
    write, exclamation = full access. currentColor so the trigger and menu
@@ -61,7 +62,13 @@ function optionLabel(
   option: PermissionSelectValue['options'][number],
   t: ComposerBarProps['t'],
 ): string {
-  return option.value === FULL_ACCESS ? t('access.fullLabel') : displayName(option.name)
+  if (option.value === FULL_ACCESS) return t('access.fullLabel')
+  if (option.value === AUTO_REVIEW) return t('access.autoLabel')
+  return displayName(option.name)
+}
+
+function optionBadge(value: string, t: ComposerBarProps['t']): string | undefined {
+  return value === AUTO_REVIEW ? t('access.experimentalBadge') : undefined
 }
 
 export interface PermissionSelectProps {
@@ -95,7 +102,20 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
     .filter(o => o.value !== 'custom')
     .map((option) => {
       const icon = permissionGlyph(option.value)
-      return { id: option.value, label: optionLabel(option, t), ...icon === undefined ? {} : { icon } }
+      const label = optionLabel(option, t)
+      const badge = optionBadge(option.value, t)
+      return {
+        id: option.value,
+        label: badge === undefined
+          ? label
+          : (
+            <span className={css.optionLabel} aria-label={`${label} ${badge}`}>
+              <span className={css.optionLabelText}>{label}</span>
+              <sup className={css.badge}>{badge}</sup>
+            </span>
+          ),
+        ...icon === undefined ? {} : { icon },
+      }
     })
 
   const submit = (id: string): void => {
@@ -108,7 +128,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
   const choose = (id: string): void => {
     setOpen(false)
     if (id === value.currentValue) return
-    if (id === FULL_ACCESS) {
+    if (id === FULL_ACCESS || id === AUTO_REVIEW) {
       setAcknowledged(false)
       setConfirmation(id)
       return
@@ -121,16 +141,33 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
     setConfirmation(null)
   }
 
-  const confirmFullAccess = (): void => {
+  const confirmSelection = (): void => {
     if (locked || !acknowledged || confirmation === null) return
     const id = confirmation
     closeConfirmation()
     submit(id)
   }
 
+  const confirmationTitle = confirmation === AUTO_REVIEW
+    ? t('access.autoConfirm.title')
+    : t('access.confirm.title')
+  const confirmationDescription = confirmation === AUTO_REVIEW
+    ? t('access.autoConfirm.description')
+    : t('access.confirm.description')
+  const confirmationAcknowledge = confirmation === AUTO_REVIEW
+    ? t('access.autoConfirm.acknowledge')
+    : t('access.confirm.acknowledge')
+  const confirmationEnable = confirmation === AUTO_REVIEW
+    ? t('access.autoConfirm.enable')
+    : t('access.confirm.enable')
+  const currentLabel = current === undefined ? displayName(currentValue) : optionLabel(current, t)
+  const currentBadge = optionBadge(currentValue, t)
+  const currentAccessibleLabel = currentBadge === undefined ? currentLabel : `${currentLabel} ${currentBadge}`
+
   return (
     <>
       <Menu
+        className={css.menu ?? ''}
         open={open}
         items={items}
         selectedId={currentValue}
@@ -141,7 +178,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
           <button
             type="button"
             className={css.trigger}
-            aria-label={t('input.accessMode', { name: current === undefined ? displayName(currentValue) : optionLabel(current, t) })}
+            aria-label={t('input.accessMode', { name: currentAccessibleLabel })}
             title={current?.description}
             disabled={locked || busy}
             onClick={() => { setOpen(!open) }}
@@ -149,7 +186,10 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
             {permissionGlyph(currentValue) !== undefined && (
               <span className={css.triggerIcon} aria-hidden>{permissionGlyph(currentValue)}</span>
             )}
-            <span className={css.triggerLabel}>{current === undefined ? displayName(currentValue) : optionLabel(current, t)}</span>
+            <span className={css.triggerLabel}>{currentLabel}</span>
+            {currentBadge !== undefined && (
+              <sup className={css.badge}>{currentBadge}</sup>
+            )}
             <span className={clsx(css.chevron, open && css.chevronOpen)} aria-hidden>
               <IconChevronDownOutline14 />
             </span>
@@ -158,17 +198,17 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
       />
       <RiskConfirmation
         open={confirmation !== null}
-        title={t('access.confirm.title')}
-        description={t('access.confirm.description')}
-        acknowledgeLabel={t('access.confirm.acknowledge')}
+        title={confirmationTitle}
+        description={confirmationDescription}
+        acknowledgeLabel={confirmationAcknowledge}
         cancelLabel={t('access.confirm.cancel')}
         closeLabel={t('close')}
-        confirmLabel={t('access.confirm.enable')}
+        confirmLabel={confirmationEnable}
         acknowledged={acknowledged}
         disabled={locked}
         onAcknowledgedChange={setAcknowledged}
         onCancel={closeConfirmation}
-        onConfirm={confirmFullAccess}
+        onConfirm={confirmSelection}
       />
     </>
   )

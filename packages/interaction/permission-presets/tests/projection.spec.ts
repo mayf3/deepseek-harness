@@ -18,6 +18,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import PermissionPresetService from '@deepseek-ai/dsh-permission-presets'
+import { AUTO_PRESET } from '@deepseek-ai/dsh-permission-presets'
 import type { Config } from '@deepseek-ai/dsh-permission-presets'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 
@@ -43,6 +44,16 @@ async function agentFor(ctx: Context, session: Session) {
   const agent = { id: session.id, session, inject } as unknown as Agent
   await ctx.plugin(Object.assign((inner: Context) => { createScope(inner, agent) }, { inject: ['commands'] }))
   return { agent, inject }
+}
+
+async function mountAuto(ctx: Context) {
+  return ctx.plugin(Object.assign((pluginCtx: Context) => {
+    pluginCtx.permissionPresets.register({
+      name: AUTO_PRESET,
+      spec: { sandbox: 'danger-full-access', approval: 'never', name: 'Auto review' },
+      admit: () => {},
+    })
+  }, { inject: ['permissionPresets'] }))
 }
 
 describe('permissions projection unit', () => {
@@ -76,6 +87,16 @@ describe('permissions projection unit', () => {
     expect(value?.options.at(-1)).toMatchObject({ value: 'custom', name: 'Custom' })
   })
 
+  it('projects a contributed preset only for its effect lifetime', async () => {
+    const { ctx, session } = await harness()
+    const fiber = await mountAuto(ctx)
+    expect(ctx.sessionProjections.snapshot(session).values.permissions?.options.map(option => option.value))
+      .toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
+    await fiber.dispose()
+    expect(ctx.sessionProjections.snapshot(session).values.permissions?.options.map(option => option.value))
+      .toEqual(['workspace-write', 'danger-full-access'])
+  })
+
   it('has no permissions key without the service, and drops it on unload (HMR safety)', async () => {
     const { ctx, session } = await harness({ withPermission: false })
     expect('permissions' in ctx.sessionProjections.snapshot(session).values).toBe(false)
@@ -87,6 +108,20 @@ describe('permissions projection unit', () => {
 })
 
 describe('/permission command', () => {
+  it('lists and switches a contributed current-session preset', async () => {
+    const { ctx, session } = await harness()
+    await mountAuto(ctx)
+    const { agent } = await agentFor(ctx, session)
+    const listed = await ctx.commands.execute(agent, '/permission', [], new AbortController().signal)
+    expect(listed?.result).toEqual({
+      kind: 'success',
+      text: 'current preset workspace-write (available: workspace-write, danger-full-access, auto)',
+    })
+    const switched = await ctx.commands.execute(agent, '/permission auto', [], new AbortController().signal)
+    expect(switched?.result).toEqual({ kind: 'success', text: 'preset auto' })
+    expect(ctx.permissionPresets.current(session.events)).toBe(AUTO_PRESET)
+  })
+
   it('switches through permission.set and logs the lifecycle pair', async () => {
     const { ctx, session } = await harness()
     const { agent, inject } = await agentFor(ctx, session)

@@ -1,3 +1,15 @@
+.menu {
+  min-width: 0;
+}
+
+.menu > :global([role='menu']) {
+  top: auto;
+  bottom: 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+}
+
 .trigger {
   display: inline-flex;
   align-items: center;
@@ -48,6 +60,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.optionLabel {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.optionLabelText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  flex: none;
+  align-self: flex-start;
+  margin-top: -1px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 8px;
+  line-height: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
 
 .chevron {

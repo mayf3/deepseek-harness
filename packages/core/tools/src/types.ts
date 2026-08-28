@@ -7,8 +7,8 @@
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 
-/** Payload recorded when one nested PTC mode Tool dispatch starts. */
-export interface PtcDispatchStartEventData {
+/** Identity shared by the start and settle records of one PTC sub-dispatch. */
+interface PtcDispatchIdentity {
   rootCallId: ToolCallId
   parentCallId: ToolCallId
   subCallId: ToolCallId
@@ -16,10 +16,17 @@ export interface PtcDispatchStartEventData {
   arguments: unknown
 }
 
+/** Payload recorded when one nested PTC mode Tool dispatch starts, including the dispatched schema snapshot. */
+export interface PtcDispatchStartEventData extends PtcDispatchIdentity {
+  description: string
+  parameters: Record<string, unknown>
+}
+
 /** Payload recorded when one nested PTC mode Tool dispatch settles. */
-export interface PtcDispatchEventData extends PtcDispatchStartEventData {
+export interface PtcDispatchEventData extends PtcDispatchIdentity {
   isError: boolean
   content: ContentBlock[]
+  error?: { name: string; code: string; reason?: string }
 }
 
 declare module '@deepseek-ai/dsh-session/types' {
@@ -42,9 +49,9 @@ declare module '@deepseek-ai/dsh-session/types' {
      * One bridged sub-dispatch SETTLING: the pairing ids (matching the
      * `tool/code-dispatch-start` with the same `subCallId`), the tool `name`
      * with the same JSON-normalized `arguments`, and the sub-call's complete
-     * model-facing outcome in `tool/result`'s own vocabulary
-     * (`content` + `isError`), so UIs render a sub-call through the exact
-     * code path that renders a native call. Every started sub-call settles
+     * durable outcome in `tool/result`'s own vocabulary (`content` + `isError`
+     * + optional structured `error`), so UIs and SDKs render a sub-call through
+     * the exact path used for a native call. Every started sub-call settles
      * with exactly one of these (abort included: the aborted pipeline result
      * is an `isError` outcome).
      * Log-only: `deriveMessages()` ignores it, so sub-calls never re-enter

@@ -1,0 +1,66 @@
+# Agent Note: Per-call Auto review in the shipped Web application
+
+Status: implemented
+
+English | [中文](2026-08-28-auto-review.zh.md)
+
+## Problem
+
+The permission preset layer names sandbox and approval-policy combinations, but neither mechanism can decide whether one concrete tool call stays inside the user's semantic authorization. Full access avoids approval interruptions but executes every admitted tool with ambient host authority. A useful automatic mode therefore needs a call-time decision without pretending that an LLM judgment is filesystem confinement, without leaking reviewer analysis back to the main agent, and without letting a persisted mode degrade to unreviewed Full access when its integration is absent.
+
+## Decision
+
+The shipped Web application offers `Auto review` as the fourth complete current-session permission mode. Its durable identity is `permission/preset:auto`, and its execution knobs are exactly `danger-full-access` plus approval policy `never`. [`@deepseek-ai/dsh-auto-review`](../../../../packages/interaction/auto-review/README.md) owns the additional authorization behavior; [`dsh-permission-presets`](../../../../packages/interaction/permission-presets/README.md) owns only the effect-scoped contribution directory, the canonical preset write path, and fail-closed admission on selection or restore.
+
+Auto is experimental because an LLM decision is probabilistic. An allowed call starts immediately with full host access and no later human confirmation. A reviewer can therefore allow an action that should have been denied or deny a valid action, and each review adds provider latency and token use.
+
+## Supported product surface
+
+The composer current-session picker and the `/permission` slash picker show `Auto review` with an `EXP` badge. Selecting Auto through either visible picker requires a one-time confirmation for that selection; an explicitly submitted `/permission auto` command already expresses consent and does not add another protocol step. General Settings never offers Auto as a future-session default.
+
+The shipped Web composition is the only supported host. Headless keeps its existing Workspace Write default and approval behavior. DSH in-process children snapshot and append an Auto parent's preset identity before their first await, so the same integration reviews their calls. ACP, DSH SDK, Codex, and Claude Code children keep their own permission systems after the parent delegation tool call passes review.
+
+## Review request and decision
+
+The Auto plugin prepends one `tools/pre-execute` listener and attempts at most one direct reviewer request for each native call and each started PTC inner call. It denies before contacting the provider when required logged facts cannot form a complete request. It delegates the outer `run_code` transport because the program text is not a substitute for the effects of its inner calls. Repeated calls are independent reviews; there is no cache, grant, batch decision, or retry layer.
+
+The reviewer uses the provider and model from the latest logged `request/header`. Its immutable request has five sections: fixed `REVIEW_POLICY`; `ENVIRONMENT` containing only the Session `cwd`; current `PROJECT_INSTRUCTIONS`; `FILTERED_HISTORY`; and the exact `PENDING_ACTION`. Native actions use the matching logged `tool/call` plus the latest logged tool schema. PTC actions use the matching `tool/code-dispatch-start`, which snapshots the inner tool name, description, parameters schema, and normalized arguments before policy. Missing, ambiguous, or inconsistent facts deny the call instead of consulting the live registry.
+
+Direct-user messages, compaction checkpoints, and current `agent-instructions` are authorization-capable. Other user-role content and historical native or PTC calls are evidence only. The request excludes assistant text, reasoning, tool results, Git state, environment variables, platform metadata, and shell dialect. If this filtered request still exceeds the model context, the provider fails, or the output is not exactly one supported `allow` or `deny` JSON object, the call is denied.
+
+## Result and lifecycle
+
+An Auto denial uses the same model-facing error text as a human rejection. The Tool result separately carries `AutoReviewDeniedError`, `AUTO_REVIEW_DENIED`, and the reviewer's optional raw string reason. Native `tool/result` and PTC `tool/code-dispatch` events preserve the same structured `error` fields for replay and both SDKs. The Web tool row recognizes that identity across generic, specialized, and shell presentations; its collapsed state names Auto review, while its expanded OUT line trims the reason, collapses line breaks, and uses localized fallback text when no displayable reason exists. The main agent and a PTC program never receive the reviewer reason or Auto identity.
+
+Caller cancellation keeps the ordinary Tool cancellation result. A denied PTC inner call keeps the existing `ToolCallError` and program `catch` behavior, so a handled denial does not become an outer `run_code` failure. Allow produces no event, reason, or durable grant.
+
+Publication and teardown are fail-closed. A stored Auto session cannot publish unless the contribution is live and admits that exact Session; the service does not rewrite it to Full access. During disposal, the integration first closes new Auto selection and review admission, switches every live Auto Session to Read Only through the normal preset writer, aborts and awaits in-flight reviews, and only then removes the listener and contribution. If any Session cannot migrate, the integration still aborts and drains reviews but retains the closed listener and contribution, so new Auto selections fail and remaining Auto calls are denied instead of entering an unreviewed execution window.
+
+## Verification
+
+Unit and integration tests pin the five request sections, authorization-source labels, native and PTC action reconstruction, one-review cardinality, body-before-review exclusion, strict output parsing, technical-failure denial, caller cancellation, restore failure, and teardown ordering. Tool and client suites pin structured error propagation and the same Auto denial presentation across built-in card families. TypeScript and Python SDK fixtures pin `name`, `code`, and `reason` on native and PTC projected events. A real DeepSeek e2e runner executes eight paired scenarios as exactly sixteen independent reviewer calls, covering read and write scope, deletion, force push, production mutation, external credential-bearing messages, security controls, compaction authorization, project-instruction authorization, and historical-call spoofing; tool bodies are non-effect sentinels.
+
+## Alternatives considered
+
+**Add `auto` to `ApprovalPolicy`.** Rejected because Auto is a complete product mode with Full access execution plus an independent semantic reviewer, not a third response strategy for the human approval service. Extending that enum would create unsupported sandbox × approval combinations and change model-visible Full access behavior.
+
+**Use deterministic tool classes or path rules.** Rejected because authorization depends on the user's task, the exact arguments, and effects such as deletion, external sending, production mutation, or security-control changes. A static allowlist cannot represent that semantic scope, and Auto deliberately has no read-only fast path.
+
+**Review the full transcript or live process state.** Rejected because assistant reasoning, tool results, Git state, environment values, and the mutable registry can supply irrelevant or spoofable authority and make replay disagree with execution. The logged five-section request gives each accepted fact one provenance and fails closed when reconstruction is impossible.
+
+**Review only the outer `run_code` call.** Rejected because program text does not identify the exact inner tools, schemas, arguments, or which scheduled calls actually start. Reviewing each inner dispatch preserves ordinary PTC catch and settlement semantics while authorizing the real effect.
+
+**Add cached grants, retries, policy configuration, audit events, or a human fallback.** Rejected for the first version because each mechanism creates durable authority, recovery, or precedence rules beyond one binary call-time decision. A repeated action is reviewed again, and provider or protocol failure denies it.
+
+**Expose Auto in every host and default selector.** Rejected because only shipped Web composes the complete integration and user-facing denial reader. A broader surface would let another host persist the identity without the lifecycle and presentation required to operate it safely.
+
+## Consequences
+
+Users gain a current-session option that can approve ordinary work without a sandbox or repeated human prompts while still checking each actual call against logged authorization. The main agent's prompt, tool schemas, Full access narration, and rejection text remain unchanged, and native and PTC paths share one structured denial identity. The cost is one additional model request per actual call, probabilistic false allows and false denies, no protection after an incorrect allow, and a deliberately narrow shipped-Web-only support boundary. The strict logged-input rule also denies calls when required history or schema facts are unavailable, even if live process state could have guessed the action.
+
+## Related
+
+- [Interception extension points](2026-06-30-interception-extension-points.md) — the ordered Tool policy pipeline Auto uses.
+- [Approval seam](2026-07-06-approval-seam.md) — the separate one-shot human decision path Auto does not extend.
+- [Sandbox](2026-07-06-sandbox.md) — the confinement modes whose Full access knobs Auto reuses.
+- [PTC mode](2026-06-15-ptc.md) — the program transport and inner-dispatch semantics Auto preserves.

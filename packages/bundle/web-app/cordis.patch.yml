@@ -49,6 +49,10 @@
     - id: code-runtime
       name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 
+    # Web is the sole v1 host for the current-session Auto review preset.
+    - id: auto-review
+      name: '@deepseek-ai/dsh-auto-review'
+
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:

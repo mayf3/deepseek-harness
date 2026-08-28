@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup } from '@testing-library/react'
+import { cleanup, fireEvent } from '@testing-library/react'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
@@ -34,11 +34,17 @@ beforeEach(() => {
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
 })
 
-const toolResult = (seq: number, callId: string, name: string, args = '{"command":"make build","description":"Build"}'): ToolResultNode => ({
+const toolResult = (
+  seq: number,
+  callId: string,
+  name: string,
+  args = '{"command":"make build","description":"Build"}',
+  over: Partial<ToolResultNode> = {},
+): ToolResultNode => ({
   kind: 'tool-result', seq, time: seq * 1_000, callId,
   call: { name, argsRaw: args },
   callTime: seq * 1_000 - 500,
-  content: [], isError: false, subCalls: [],
+  content: [], isError: false, subCalls: [], ...over,
 })
 
 /** Test-owned AppFrame role: declares and renders the resident conversation area. */
@@ -104,6 +110,47 @@ describe('keyed toolview hole through the real machinery', () => {
     expect(view.getByText('Build')).toBeTruthy()
     // mystery: no registration under that key → render-site fallback.
     expect(view.getByText('Tool call')).toBeTruthy()
+    await b.runtime.dispose()
+  })
+
+  it('renders Auto denial copy through every shipped specialized row and the generic fallback', async () => {
+    const denied = (seq: number, callId: string, name: string, args: string) => toolResult(
+      seq,
+      callId,
+      name,
+      args,
+      {
+        content: [{ type: 'text', text: 'Tool execution rejected by user' }],
+        isError: true,
+        error: {
+          name: 'AutoReviewDeniedError',
+          code: 'AUTO_REVIEW_DENIED',
+          reason: '  precise scope\r\nwas not authorized  ',
+        },
+      },
+    )
+    const b = await bench([
+      denied(3, 'bash-1', 'bash', '{"command":"rm -rf build","description":"Clean"}'),
+      denied(4, 'read-1', 'read', '{"file_path":"src/a.ts"}'),
+      denied(5, 'edit-1', 'edit', '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}'),
+      denied(6, 'grep-1', 'grep', '{"pattern":"needle","path":"src"}'),
+      denied(7, 'web-1', 'web_search', '{"query":"release"}'),
+      denied(8, 'todo-1', 'todo_write', '{"todos":[]}'),
+      denied(9, 'ask-1', 'ask_user_question', '{"questions":[{"id":"q1","question":"Continue?"}]}'),
+      denied(10, 'other-1', 'mystery', '{"value":1}'),
+    ])
+    const view = b.runtime.renderRoot()
+
+    expect(view.getAllByText('Rejected by Auto review')).toHaveLength(8)
+    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
+    const rows = [...view.container.querySelectorAll<HTMLElement>('[data-expandable]')]
+    expect(rows).toHaveLength(8)
+    for (const row of rows) fireEvent.click(row)
+
+    expect(view.queryByText('IN')).toBeNull()
+    expect(view.getAllByText('OUT')).toHaveLength(8)
+    expect(view.getAllByText('Tool was not executed. Reason: precise scope was not authorized')).toHaveLength(8)
+    expect(view.queryByText('Tool execution rejected by user')).toBeNull()
     await b.runtime.dispose()
   })
 

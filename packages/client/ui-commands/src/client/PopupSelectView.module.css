@@ -6,9 +6,10 @@
   /* The overlay anchor is a zero-height strip on the composer card's top
      edge; entries float themselves above it (same rule as MenuView). */
   position: absolute;
-  bottom: calc(100% + 4px);
+  bottom: 100%;
   left: 0;
   z-index: 100;
+  box-sizing: border-box;
   padding: 4px;
   display: flex;
   flex-direction: column;
@@ -54,11 +55,29 @@
 }
 
 .label {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+.labelText {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.badge {
+  flex: none;
+  align-self: flex-start;
+  margin-top: -1px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 8px;
+  line-height: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
 }
 
 .detail {

@@ -1537,7 +1537,8 @@ export interface Config {
   /**
    * The preset table: name → knob bundle. Defaults to `workspace-write`
    * (workspace-write + ask) and `danger-full-access` (danger-full-access +
-   * never). The name `custom` is reserved for the derived not-a-preset state.
+   * never). The names `custom` and `auto` are reserved for derived state and
+   * the Auto review integration respectively.
    */
   presets?: Record<string, PresetSpec>
   /**
@@ -1562,7 +1563,7 @@ export interface PresetSpec {
 
 Depends on: [`ApprovalPolicy`](subsystems/approval.md) · [`SandboxMode`](subsystems/sandbox.md)
 
-Source: [`packages/interaction/permission-presets/src/index.ts:156`](../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:176`](../packages/interaction/permission-presets/src/index.ts)
 
 <a id="deepseek-aidsh-persona"></a>
 
@@ -3150,7 +3151,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'ptc' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:655`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:659`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 
@@ -3408,6 +3409,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
 - `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
+- `@deepseek-ai/dsh-auto-review` — requires `llm` · `permissionPresets` · `sessions` · `tools` ([`packages/interaction/auto-review/src/index.ts`](../packages/interaction/auto-review/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))

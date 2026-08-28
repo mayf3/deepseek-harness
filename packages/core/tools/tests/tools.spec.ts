@@ -679,7 +679,13 @@ describe('ToolRuntime', () => {
     let postSawFrozen = false
 
     ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
-      if (exec.name === 'echo') return { kind: 'deny', reason: 'denied by policy' }
+      if (exec.name === 'echo') {
+        return {
+          kind: 'deny',
+          reason: 'denied by policy',
+          info: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: ' raw\nreason ' },
+        }
+      }
       return next()
     })
     ctx.on('tools/post-execute', async (_exec, result, next) => {
@@ -691,6 +697,10 @@ describe('ToolRuntime', () => {
     const result = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('c1'), name: 'echo', arguments: { text: 'hi' } })
     expect(result.isError).toBe(true)
     expect(result.content[0]).toMatchObject({ text: 'Error: denied by policy' })
+    expect(result.error).toEqual({
+      message: 'denied by policy',
+      info: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: ' raw\nreason ' },
+    })
     expect(postSawFrozen).toBe(true)
   })
 

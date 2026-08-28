@@ -14,7 +14,8 @@ import {
   diffBlockLabels, readBlockLabels, searchBlockLabels, webBlockLabels,
 } from '../models/primitive-labels.ts'
 import type { AskQuestionCardModel } from '../models/ask-question-card-model.ts'
-import type { ToolRowState, ToolRowVariant } from '../models/tool-call-model.ts'
+import { localizeAutoReviewDenial } from '../models/auto-review-denial.ts'
+import type { AutoReviewDenial, ToolRowState, ToolRowVariant } from '../models/tool-call-model.ts'
 import type { WebCardModelProps } from '../models/web-card-model.ts'
 import { AskQuestionCard } from './AskQuestionCard.tsx'
 import css from './ToolRow.module.css'
@@ -43,6 +44,8 @@ export interface ToolRowProps {
   askQuestion?: AskQuestionCardModel | null | undefined
   /** Error first line shown as the collapsed summary on an error row; null/absent = keep `summary`. */
   errorSummary?: string | null | undefined
+  /** Structured Auto-review denial; replaces all ordinary input/card/output presentation. */
+  autoReviewDenial?: AutoReviewDenial | null | undefined
   /** Terminal card; card fields are mutually exclusive and replace text sections. */
   terminal?: TerminalCardModel | null | undefined
   diff?: DiffCardModel | null | undefined
@@ -97,6 +100,7 @@ export function ToolRow({
   output,
   askQuestion,
   errorSummary,
+  autoReviewDenial,
   terminal,
   diff,
   read,
@@ -108,26 +112,30 @@ export function ToolRow({
   inspect,
 }: ToolRowProps) {
   const [expanded, setExpanded] = useState(false)
+  const autoReview = autoReviewDenial === undefined || autoReviewDenial === null
+    ? null
+    : localizeAutoReviewDenial(autoReviewDenial, t)
   const terminalLabels = useMemo(() => terminalBlockLabels(t), [t])
   const diffLabels = useMemo(() => diffBlockLabels(t), [t])
   const readLabels = useMemo(() => readBlockLabels(t), [t])
   const searchLabels = useMemo(() => searchBlockLabels(t), [t])
   const webLabels = useMemo(() => webBlockLabels(t), [t])
-  const terminalBody = terminal === undefined || terminal === null
+  const terminalBody = autoReview !== null || terminal === undefined || terminal === null
     ? null
     : localizeTerminalCardModel(terminal, t)
-  const diffBody = diff ?? null
-  const readBody = read ?? null
-  const searchBody = search ?? null
-  const webBody = web ?? null
-  const askQuestionBody = askQuestion ?? null
-  const outputText = output ?? null
+  const diffBody = autoReview === null ? diff ?? null : null
+  const readBody = autoReview === null ? read ?? null : null
+  const searchBody = autoReview === null ? search ?? null : null
+  const webBody = autoReview === null ? web ?? null : null
+  const askQuestionBody = autoReview === null ? askQuestion ?? null : null
+  const inputText = autoReview === null ? body : null
+  const outputText = autoReview?.output ?? output ?? null
   const card = askQuestionBody ?? terminalBody ?? diffBody ?? readBody ?? searchBody ?? webBody
-  const expandable = body !== null || outputText !== null || card !== null
+  const expandable = inputText !== null || outputText !== null || card !== null
   const open = expanded && expandable
   const status = stateStatus(state, t)
   // A failure must replace, not supplement, the normal summary.
-  const failureLine = state === 'error' ? errorSummary ?? null : null
+  const failureLine = autoReview?.summary ?? (state === 'error' ? errorSummary ?? null : null)
   const summaryText = failureLine ?? terminalBody?.description ?? summary
   const suffix = failureLine === null ? summarySuffix ?? null : null
   const fileLink = filePath !== undefined && onOpenFile !== undefined && failureLine === null
@@ -147,7 +155,7 @@ export function ToolRow({
   }
   // The code variant's program renders through CodeBlock (shiki), so only its
   // output joins the IN/OUT card; every other variant's input does too.
-  const cardBody = variant === 'code' ? null : body
+  const cardBody = variant === 'code' ? null : inputText
   return (
     <div className={css.root} data-variant={variant} data-tool={toolName} data-state={state}>
       {status !== null && <span className={css.visuallyHidden}>{status}</span>}
@@ -224,9 +232,9 @@ export function ToolRow({
                       ? <WebBlock {...webBody} labels={webLabels} className={css.webBody} />
                       : (
                         <>
-                          {variant === 'code' && body !== null && (
+                          {variant === 'code' && inputText !== null && (
                             <div className={css.bodyScroll}>
-                              <CodeBlock code={body} lang="typescript" copyLabel={t('copy')} copiedLabel={t('copied')} className={css.codeBody} />
+                              <CodeBlock code={inputText} lang="typescript" copyLabel={t('copy')} copiedLabel={t('copied')} className={css.codeBody} />
                             </div>
                           )}
                           {(cardBody !== null || outputText !== null) && (

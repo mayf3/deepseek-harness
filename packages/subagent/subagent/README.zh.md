@@ -86,7 +86,7 @@ kind: "package-reference"
 
 ### 一次性流程
 
-请求先对照提供方声明的能力进行校验，随后对持久化描述符做快照，再由提供方构建子 agent。两个进程内提供方都声明 `agentOptions`：创建子级时把请求字段叠加到父级最新已记录请求的提供方、模型与推理等级之上；父级还没有请求时回退到创建选项，并保留配置的 token 上限。更改路由而不显式指定推理等级时，会清除继承的路由自有等级，使所选模型解析自己的默认值。DSH SDK 也声明该能力并公开不可变的 `agentRouteDefaults`，使其实例持有的提供方／模型默认值在确切路由预检前成为基线；`start()` 仍负责直接调用方与输出上限。ACP、Codex 与 Claude Code 会拒绝 agent 路由覆盖，而不是静默忽略。成功时运行被发布、所有权转移给调用方；失败时提供方回滚每个尚未发布的资源。结果携带子 agent 的最终输出、可选的结构化值、停止原因与可选的安全诊断。
+请求先对照提供方声明的能力进行校验，随后对持久化描述符做快照，再由提供方构建子 agent。两个进程内提供方都声明 `agentOptions`：创建子级时把请求字段叠加到父级最新已记录请求的提供方、模型与推理等级之上；父级还没有请求时回退到创建选项，并保留配置的 token 上限。它们还会在第一次 await 前快照委派权限状态：Auto 父级让子级获得相同的 `permission/preset:auto` 身份，而既有沙箱覆盖与审批策略固定仍然生效。更改路由而不显式指定推理等级时，会清除继承的路由自有等级，使所选模型解析自己的默认值。DSH SDK 也声明 `agentOptions`，但会运行独立子运行时，因此不继承 Auto；ACP、Codex 与 Claude Code 同样在父级委派调用通过审查后保留各自的权限系统。成功时运行被发布、所有权转移给调用方；失败时提供方回滚每个尚未发布的资源。结果携带子 agent 的最终输出、可选的结构化值、停止原因与可选的安全诊断。
 
 ### 可继续流程
 
@@ -112,6 +112,7 @@ kind: "package-reference"
 - [Subagent 能力 seam](../../../.agents/notes/implemented/feature/2026-06-21-subagent-capability-seam.zh.md)——委派能力家族的设计记录。
 - [可续跑后台 subagent](../../../.agents/notes/implemented/feature/2026-07-21-continuable-background-subagents.zh.md)——接受后续轮次的持久子级。
 - [进程内 spawn 后端](../subagent-spawn-in-process/README.zh.md)——最容易组合的提供方。
+- [Auto review](../../interaction/auto-review/README.zh.md)——只有进程内 DSH 子级继承的当前会话授权模式。
 - [进程外 ACP 后端](../subagent-acp/README.zh.md)——经 Agent Client Protocol 拥有自有运行时的子级。
 - [合并后的 subagent 控制服务](../../../.agents/notes/implemented/simplification/2026-07-26-merge-subagent-control-service.zh.md)——后续消息、中断与列举面。
 

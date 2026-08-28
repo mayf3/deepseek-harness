@@ -36,6 +36,12 @@ export const accessZh = {
   'confirm.acknowledge': '我已了解风险，并愿意继续',
   'confirm.cancel': '取消',
   'confirm.enable': '启用 Full access',
+  'auto.label': 'Auto review',
+  'auto.badge': 'EXP',
+  'auto.confirm.title': '确认启用 Auto review（实验）？',
+  'auto.confirm.description': 'Auto review 不使用沙箱。每次工具调用前，都会由与当前 agent 相同的模型进行审查。此功能仍属实验性，可能误放行或误拒绝，并会消耗额外 token。',
+  'auto.confirm.acknowledge': '我已了解这些风险，并愿意继续',
+  'auto.confirm.enable': '启用 Auto review',
 } satisfies Record<string, string>
 
 /** Current-session popup-gate key union. */
@@ -48,4 +54,10 @@ export const accessEn = {
   'confirm.acknowledge': 'I understand the risks and want to continue',
   'confirm.cancel': 'Cancel',
   'confirm.enable': 'Enable Full access',
+  'auto.label': 'Auto review',
+  'auto.badge': 'EXP',
+  'auto.confirm.title': 'Enable Auto review (experimental)?',
+  'auto.confirm.description': 'Auto review runs without a sandbox. Before every tool call, the same model as the current agent reviews whether to allow it. This feature is experimental, can falsely allow or deny actions, and uses additional tokens.',
+  'auto.confirm.acknowledge': 'I understand these risks and want to continue',
+  'auto.confirm.enable': 'Enable Auto review',
 } satisfies Record<PermissionAccessKey, string>

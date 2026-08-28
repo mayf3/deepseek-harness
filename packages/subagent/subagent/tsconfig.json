@@ -33,6 +33,9 @@
       "path": "../../interaction/user-approval"
     },
     {
+      "path": "../../interaction/permission-presets"
+    },
+    {
       "path": "../../preset/agent-presets"
     },
     {

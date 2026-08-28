@@ -252,7 +252,7 @@ type ToolExecutionMode =
   | { kind: 'exclusive' }
 ```
 
-PTC mode's bridge additionally exposes each settled sub-dispatch to the `tools/ptc-dispatch-log` waterfall, which may change the durable event's copy of the content (the program's value and model-visible result remain untouched):
+PTC mode records each actually started sub-dispatch before policy with its immutable name, description, parameters schema, and normalized arguments. The bridge later exposes the settled sub-dispatch to the `tools/ptc-dispatch-log` waterfall, which may change the durable event's copy of the content while preserving the program's value, the model-visible outer result, and the structured failure identity:
 
 ```ts type-equiv
 /**
@@ -275,6 +275,8 @@ interface PtcDispatchLog {
   readonly name: string
   /** Whether the sub-call settled as an error. */
   readonly isError: boolean
+  /** Structured failure identity and optional user-facing detail. */
+  readonly error?: ToolErrorInfo
   /** The sub-call's complete model-facing content (the settle event's default payload). */
   readonly content: ContentBlock[]
 }
@@ -325,6 +327,16 @@ type ToolGuard = (execution: Readonly<ToolExecution>) => string | undefined
 ```
 
 ```ts type-equiv
+/** Structured error metadata for a failed tool call (alongside the model-facing text). */
+interface ToolErrorInfo {
+  name: string
+  code: string
+  /** Optional raw user-facing detail; durable projections preserve it but model-facing content does not include it. */
+  reason?: string
+}
+```
+
+```ts type-equiv
 /** Canonical failure detail; internal routing information remains optional. */
 interface ToolFailure {
   /** Human-readable failure message without the Native `Error: ` envelope. */
@@ -367,7 +379,7 @@ interface ToolExecutionFailure {
 type ToolExecutionResult = ToolExecutionSuccess | ToolExecutionFailure
 ```
 
-The result carries only the outcome. Call identity remains on the immutable `ToolExecution` that accompanies it through every hook and on the durable `tool/call` / `tool/result` session events, so wrappers cannot create a second, disagreeing identity. The canonical `value` is execution-local: the loop persists only `content`, `error`, and `meta`, while `tool/code-dispatch` stores the sub-call's rendered `content` and `isError` verbatim. Replay reproduces presentation but cannot reconstruct canonical intermediate values.
+The result carries only the outcome. Call identity remains on the immutable `ToolExecution` that accompanies it through every hook and on the durable `tool/call` / `tool/result` session events, so wrappers cannot create a second, disagreeing identity. The canonical `value` is execution-local: the loop persists only `content`, structured `error`, and `meta`, while `tool/code-dispatch` stores the sub-call's rendered `content`, `isError`, and optional structured `error`. Replay reproduces presentation but cannot reconstruct canonical intermediate values. An optional `ToolErrorInfo.reason` is raw user-facing detail; it never enters the model-facing content.
 
 On success the registry snapshots and validates the body value, freezes it, and invokes the pure renderer plus the optional top-level-call metadata projector. It separately materializes the durable presentation fields immediately before `tools/result`; an invalid value, renderer/projector failure, or non-JSON presentation becomes a JSON-safe `isError`. The final live observer therefore sees the exact execution-local value beside fields safe for the later durable append.
 
@@ -377,14 +389,14 @@ Each interception waterfall returns a typed **Decision** (the idiom shared with 
 
 ```ts type-equiv
 /**
- * Pre-dispatch decision. `allow` runs the call; `deny` materializes an error;
- * `ask` runs only after an approval service returns `allowed-once` and otherwise
- * denies. Input rewriting is excluded because arguments are already logged and
- * presented.
+ * Pre-dispatch decision. `allow` runs the call; `deny` materializes its
+ * model-facing reason and optional structured error identity; `ask` runs only
+ * after an approval service returns `allowed-once` and otherwise denies. Input
+ * rewriting is excluded because arguments are already logged and presented.
  */
 type PreToolDecision =
   | { kind: 'allow' }
-  | { kind: 'deny'; reason: string }
+  | { kind: 'deny'; reason: string; info?: ToolErrorInfo }
   | { kind: 'ask'; reason?: string }
 ```
 
@@ -399,7 +411,7 @@ type PostToolDecision =
   | { kind: 'block'; feedback: ContentBlock[]; additionalContexts?: UserMessage[] }
 ```
 
-Call `next()` for the default or return a decision to short-circuit. Pre-policy may deny or ask; only `allowed-once` proceeds, while a non-grant, missing approval channel or service, or agent-less request becomes a denial. Guards may still impose a final denial. Arguments cannot be rewritten because history, audit, UI, and execution must agree.
+Call `next()` for the default or return a decision to short-circuit. Pre-policy may deny or ask; only `allowed-once` proceeds, while a non-grant, missing approval channel or service, or agent-less request becomes a denial. A deny may attach structured identity and user-facing detail without changing its model-facing reason. Guards may still impose a final denial. Arguments cannot be rewritten because history, audit, UI, and execution must agree.
 
 Post-policy may replace either content or value, never both. Content replacement preserves the canonical value and existing metadata; value replacement is revalidated and recomputes content/metadata; a block removes the value and becomes an `isError` containing corrective feedback. Content replacement is presentation policy, not confidentiality policy: a listener that must hide the programmatic value blocks or replaces it. `tools/result` receives the frozen execution and result after normalization; observers cannot transform them, and observer failures are contained. Unknown and throwing tools both become structured errors (`ToolNotFoundError` maps to `UNKNOWN_TOOL`), so the call fails without ending the turn.
 

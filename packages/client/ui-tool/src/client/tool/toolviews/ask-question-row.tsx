@@ -189,6 +189,7 @@ export function AskQuestionRow({ toolName, block, inspect, t }: AskQuestionRowPr
       body={transcript === null ? model.body : null}
       output={transcript === null ? model.output : null}
       askQuestion={transcript}
+      autoReviewDenial={model.autoReviewDenial}
       state={state}
       inspect={inspect}
     />

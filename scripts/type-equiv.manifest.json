@@ -808,6 +808,11 @@
     },
     {
       "doc": "docs/subsystems/tools.md",
+      "symbol": "ToolErrorInfo",
+      "source": "packages/core/tools/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/tools.md",
       "symbol": "ToolRestriction",
       "source": "packages/core/tools/src/index.ts"
     },
@@ -1684,6 +1689,11 @@
     {
       "doc": "docs/subsystems/permission-presets.md",
       "symbol": "Config",
+      "source": "packages/interaction/permission-presets/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/permission-presets.md",
+      "symbol": "PermissionPresetContribution",
       "source": "packages/interaction/permission-presets/src/index.ts"
     },
     {

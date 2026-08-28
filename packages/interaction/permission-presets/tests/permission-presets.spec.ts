@@ -4,9 +4,9 @@ import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import PermissionPresetService, {
-  CUSTOM_PRESET, effectivePermissionPreset, PERMISSION_SETTINGS_NAMESPACE,
+  AUTO_PRESET, CUSTOM_PRESET, effectivePermissionPreset, PERMISSION_SETTINGS_NAMESPACE,
 } from '@deepseek-ai/dsh-permission-presets'
-import type { Config } from '@deepseek-ai/dsh-permission-presets'
+import type { Config, PermissionPresetContribution } from '@deepseek-ai/dsh-permission-presets'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 
@@ -47,6 +47,20 @@ function freshSession(id: string): Session {
   return Session.create(SessionId(id))
 }
 
+function autoContribution(admit: PermissionPresetContribution['admit'] = () => {}): PermissionPresetContribution {
+  return {
+    name: AUTO_PRESET,
+    spec: { sandbox: 'danger-full-access', approval: 'never', name: 'Auto review' },
+    admit,
+  }
+}
+
+async function mountAuto(ctx: Context, admit?: PermissionPresetContribution['admit']) {
+  return ctx.plugin(Object.assign((pluginCtx: Context) => {
+    pluginCtx.permissionPresets.register(autoContribution(admit))
+  }, { inject: ['permissionPresets'] }))
+}
+
 async function mountedStore(options: { approvalDefault?: ApprovalPolicy | undefined } = {}): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -83,6 +97,76 @@ describe('PermissionPresetService', () => {
     expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access'])
     expect(ctx.permissionPresets.resolve('danger-full-access')).toMatchObject({ sandbox: 'danger-full-access', approval: 'never' })
     expect(() => ctx.permissionPresets.resolve('plan')).toThrow(/unknown preset "plan"/)
+  })
+
+  it('publishes an effect-scoped current-session preset and removes it on unload', async () => {
+    const ctx = await mounted()
+    const fiber = await mountAuto(ctx)
+    expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
+    expect(ctx.permissionPresets.resolve(AUTO_PRESET)).toEqual({
+      sandbox: 'danger-full-access', approval: 'never', name: 'Auto review',
+    })
+    expect(ctx.permissionPresets.optionOf(AUTO_PRESET)).toEqual({ value: AUTO_PRESET, name: 'Auto review' })
+
+    await fiber.dispose()
+    expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access'])
+    expect(() => ctx.permissionPresets.resolve(AUTO_PRESET)).toThrow(/unknown preset "auto"/)
+  })
+
+  it('rejects reserved, configured, and duplicate contribution names', async () => {
+    const ctx = await mounted()
+    expect(() => ctx.permissionPresets.register({ ...autoContribution(), name: CUSTOM_PRESET }))
+      .toThrow(/"custom" is reserved/)
+    expect(() => ctx.permissionPresets.register({ ...autoContribution(), name: 'workspace-write' }))
+      .toThrow(/already registered/)
+    ctx.permissionPresets.register(autoContribution())
+    expect(() => ctx.permissionPresets.register(autoContribution()))
+      .toThrow(/already registered/)
+  })
+
+  it('derives a contributed bundle when no configured preset matches it', async () => {
+    const ctx = await mounted({ config: { presets: {
+      'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
+    } } })
+    await mountAuto(ctx)
+    const session = freshSession('sess-auto-derived')
+    session.append('sandbox/mode', { mode: 'danger-full-access' })
+    session.append('approval/policy', { policy: 'never' })
+    expect(ctx.permissionPresets.current(session.events)).toBe(AUTO_PRESET)
+    session.append('sandbox/mode', { mode: 'read-only' })
+    expect(ctx.permissionPresets.current(session.events)).toBe(CUSTOM_PRESET)
+  })
+
+  it('runs a contributed preset admission before any write, including a no-op selection', async () => {
+    const ctx = await mounted()
+    const admitted: Session[] = []
+    await mountAuto(ctx, (session) => { admitted.push(session) })
+    const session = freshSession('sess-auto-admit')
+
+    ctx.permissionPresets.set(session, AUTO_PRESET)
+    expect(admitted).toEqual([session])
+    expect(session.events.map(event => [event.type, event.data])).toEqual([
+      ['permission/preset', { preset: AUTO_PRESET }],
+      ['sandbox/mode', { mode: 'danger-full-access' }],
+      ['approval/policy', { policy: 'never' }],
+    ])
+    expect(ctx.permissionPresets.current(session.events)).toBe(AUTO_PRESET)
+
+    ctx.permissionPresets.set(session, AUTO_PRESET)
+    expect(admitted).toEqual([session, session])
+    expect(session.events).toHaveLength(3)
+  })
+
+  it('leaves the session untouched when dynamic admission rejects a selection', async () => {
+    const ctx = await mounted()
+    await mountAuto(ctx, () => {
+      throw new Error('auto review is closing')
+    })
+    const session = freshSession('sess-auto-closed')
+    expect(() => {
+      ctx.permissionPresets.set(session, AUTO_PRESET)
+    }).toThrow(/closing/)
+    expect(session.events).toEqual([])
   })
 
   it('current() derives from the effective knobs: composition defaults hit workspace-write, a switch hits its preset', async () => {
@@ -178,6 +262,11 @@ describe('PermissionPresetService', () => {
       .rejects.toThrow(/reserved for the derived not-a-preset state/)
   })
 
+  it('reserves auto for an integration contribution instead of configured defaults', async () => {
+    await expect(mounted({ config: { presets: { auto: { sandbox: 'danger-full-access', approval: 'never' } } } }))
+      .rejects.toThrow(/"auto" is reserved/)
+  })
+
   it('requires an explicit default when composition defaults match no preset', async () => {
     await expect(mounted({ approvalDefault: 'never' }))
       .rejects.toThrow(/configure defaultPreset explicitly/)
@@ -193,6 +282,34 @@ describe('PermissionPresetService', () => {
 })
 
 describe('new-session default', () => {
+  it('rejects persisted Auto before publication when its integration is absent', async () => {
+    const ctx = await mounted()
+    const source = freshSession('auto-source')
+    source.append('permission/preset', { preset: AUTO_PRESET })
+    source.append('sandbox/mode', { mode: 'danger-full-access' })
+    source.append('approval/policy', { policy: 'never' })
+
+    const id = SessionId('auto-without-integration')
+    expect(() => ctx.sessions.create(id, { seed: source.events })).toThrow(/cannot restore preset "auto"/)
+    expect(ctx.sessions.get(id)).toBeUndefined()
+    expect(source.events.at(-1)).toMatchObject({ type: 'approval/policy' })
+  })
+
+  it('admits persisted Auto through the live integration without rewriting it', async () => {
+    const ctx = await mounted()
+    const admitted: Session[] = []
+    await mountAuto(ctx, (session) => { admitted.push(session) })
+    const source = freshSession('auto-source-present')
+    source.append('permission/preset', { preset: AUTO_PRESET })
+    source.append('sandbox/mode', { mode: 'danger-full-access' })
+    source.append('approval/policy', { policy: 'never' })
+
+    const resumed = ctx.sessions.create(SessionId('auto-with-integration'), { seed: source.events })
+    expect(admitted).toEqual([resumed])
+    expect(ctx.permissionPresets.current(resumed.events)).toBe(AUTO_PRESET)
+    expect(resumed.events.filter(event => event.type === 'permission/preset')).toHaveLength(1)
+  })
+
   it('pins the current setting into each new session without changing earlier sessions', async () => {
     const ctx = await mountedStore()
     const first = ctx.sessions.create(SessionId('first'))
@@ -293,8 +410,9 @@ describe('new-session default', () => {
 
   it('rejects a stored default outside the configured preset table', async () => {
     const ctx = await mountedStore()
+    await mountAuto(ctx)
     await expect(ctx.settings.update(PERMISSION_SETTINGS_NAMESPACE, {
-      defaultPreset: 'missing',
+      defaultPreset: AUTO_PRESET,
     })).rejects.toThrow()
     expect(ctx.permissionPresets.defaultPreset).toBe('workspace-write')
   })

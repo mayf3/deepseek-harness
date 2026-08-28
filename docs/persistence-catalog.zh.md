@@ -81,7 +81,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:321`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:328`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:357`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:389`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:330`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:337`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:398`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -206,7 +206,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[StreamChunk](subsystems/llm-streaming.zh.md)
 
-来源：[`packages/core/session/src/types.ts:249`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:251`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -228,7 +228,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TokenUsage](subsystems/llm-streaming.zh.md)
 
-来源：[`packages/core/session/src/types.ts:260`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:262`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -521,7 +521,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'permission/preset': { preset: string }
 ```
 
-来源：[`packages/interaction/permission-presets/src/index.ts:50`](../packages/interaction/permission-presets/src/index.ts)
+来源：[`packages/interaction/permission-presets/src/index.ts:52`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -554,7 +554,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'request/context': RequestContext
 ```
 
-来源：[`packages/core/session/src/types.ts:294`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:303`](../packages/core/session/src/types.ts)
 
 <a id="requestheader--log-only"></a>
 
@@ -573,7 +573,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:289`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:293`](../packages/core/session/src/types.ts)
 
 ### `sandbox/*`
 
@@ -648,7 +648,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'session/end-seed': Record<string, never>
 ```
 
-来源：[`packages/core/session/src/types.ts:317`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:326`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 
@@ -708,7 +708,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'step/end': { turn: number; step: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:239`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:241`](../packages/core/session/src/types.ts)
 
 <a id="stepstart--log-only"></a>
 
@@ -719,7 +719,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'step/start': { turn: number; step: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:237`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:239`](../packages/core/session/src/types.ts)
 
 ### `subagent/*`
 
@@ -850,7 +850,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[ToolCallId](subsystems/core.zh.md)
 
-来源：[`packages/core/session/src/types.ts:266`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:268`](../packages/core/session/src/types.ts)
 
 <a id="toolcode-dispatch--log-only"></a>
 
@@ -861,9 +861,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * One bridged sub-dispatch SETTLING: the pairing ids (matching the
  * `tool/code-dispatch-start` with the same `subCallId`), the tool `name`
  * with the same JSON-normalized `arguments`, and the sub-call's complete
- * model-facing outcome in `tool/result`'s own vocabulary
- * (`content` + `isError`), so UIs render a sub-call through the exact
- * code path that renders a native call. Every started sub-call settles
+ * durable outcome in `tool/result`'s own vocabulary (`content` + `isError`
+ * + optional structured `error`), so UIs and SDKs render a sub-call through
+ * the exact path used for a native call. Every started sub-call settles
  * with exactly one of these (abort included: the aborted pipeline result
  * is an `isError` outcome).
  * Log-only: `deriveMessages()` ignores it, so sub-calls never re-enter
@@ -875,7 +875,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'tool/code-dispatch': PtcDispatchEventData
 ```
 
-来源：[`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/tools/src/types.ts:63`](../packages/core/tools/src/types.ts)
 
 <a id="toolcode-dispatch-start--log-only"></a>
 
@@ -898,7 +898,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'tool/code-dispatch-start': PtcDispatchStartEventData
 ```
 
-来源：[`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/tools/src/types.ts:47`](../packages/core/tools/src/types.ts)
 
 <a id="toolresult--surface"></a>
 
@@ -907,7 +907,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```ts persistence-catalog
 /**
  * A completed tool call's model-facing result, optional internal failure
- * identity, and optional tool-private `meta` presentation payload. `meta` is
+ * identity and user-facing reason, and optional tool-private `meta`
+ * presentation payload. The reason remains outside the model-facing message.
+ * `meta` is
  * opaque to the core (the producing tool owns its shape and reads it back in
  * `presentResult`) but MUST be JSON-serializable: `Session.append`
  * runtime-validates all event data with `isJsonValue`, so a non-serializable
@@ -920,12 +922,12 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
   turn: number
   step: number
   message: ToolResultMessage
-  error?: { name: string; code: string }
+  error?: { name: string; code: string; reason?: string }
   meta?: JsonValue
 }
 ```
 
-来源：[`packages/core/session/src/types.ts:278`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:282`](../packages/core/session/src/types.ts)
 
 ### `tool-workflow/*`
 
@@ -1005,7 +1007,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 类型：[TurnEndReason](subsystems/session.zh.md)
 
-来源：[`packages/core/session/src/types.ts:235`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:237`](../packages/core/session/src/types.ts)
 
 <a id="turnstart--log-only"></a>
 
@@ -1021,7 +1023,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'turn/start': { turn: number }
 ```
 
-来源：[`packages/core/session/src/types.ts:226`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:228`](../packages/core/session/src/types.ts)
 
 ### `user/*`
 
@@ -1040,7 +1042,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'user/message': UserMessage
 ```
 
-来源：[`packages/core/session/src/types.ts:247`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:249`](../packages/core/session/src/types.ts)
 
 ### `web/*`
 

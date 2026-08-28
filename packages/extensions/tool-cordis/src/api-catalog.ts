@@ -1226,32 +1226,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   },
   {
     key: 'permissionPresets',
-    summary: 'Owns the deployment\'s permission presets and their write path.',
-    description: 'Owns the deployment\'s permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
+    summary: 'Owns the deployment\'s configured and contributed permission presets and their write path.',
+    description: 'Owns the deployment\'s configured and contributed permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
     methods: [
       {
+        signature: 'register(contribution: PermissionPresetContribution): () => Promise<void>',
+        description: 'Register one current-session-only preset for the calling integration\'s effect lifetime.',
+        parameters: [{ name: 'contribution', description: 'preset identity, knob bundle, and synchronous admission gate.' }],
+        returns: 'the async effect disposer that removes exactly this contribution.',
+      },
+      {
         signature: 'current(events: readonly SessionEvent[]): string',
-        description: 'Resolve the preset matching the effective knob values. A still-matching last selection wins shared-bundle ties; otherwise the first table match wins, or CUSTOM_PRESET when no entry matches.',
+        description: 'Resolve the preset matching the effective knob values. A still-matching last selection wins shared-bundle ties; otherwise the first configured match, then the first contributed match, wins. Returns CUSTOM_PRESET when no available preset matches.',
         parameters: [{ name: 'events', description: 'the session\'s events in log order.' }],
         returns: 'the effective preset name, or `custom` when nothing matches.',
       },
       {
         signature: 'selectFor(state: KnobState): PermissionSelect',
-        description: 'Build the whole select value for one folded knob state: every table option in declaration order, `custom` appended exactly while derived.',
+        description: 'Build the whole select value for one folded knob state: configured options in declaration order, live contributions in registration order, and `custom` appended exactly while derived.',
         parameters: [{ name: 'state', description: 'the folded knob overrides.' }],
         returns: 'the `permissions` projection payload.',
       },
       {
         signature: 'resolve(name: string): PresetSpec',
-        description: 'Resolve a preset\'s knob bundle.',
+        description: 'Resolve an available preset\'s knob bundle.',
         parameters: [{ name: 'name', description: 'the preset name to resolve.' }],
         returns: 'the configured bundle.',
-        throws: ['when `name` is not in the table.'],
+        throws: ['when `name` is neither configured nor currently contributed.'],
       },
       {
         signature: 'optionOf(name: string): PresetOption',
-        description: 'Build the client option for a table entry or CUSTOM_PRESET. A missing label falls back to the table key.',
-        parameters: [{ name: 'name', description: 'a table key, or `custom`.' }],
+        description: 'Build the client option for an available preset or CUSTOM_PRESET. A missing label falls back to the preset key.',
+        parameters: [{ name: 'name', description: 'a configured or contributed preset key, or `custom`.' }],
         returns: 'the option a client renders.',
         throws: ['when `name` is neither a table key nor `custom`.'],
       },
@@ -4479,6 +4485,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'PermissionPresetContribution',
+    declaration: 'export interface PermissionPresetContribution {\n    readonly name: string;\n    readonly spec: PresetSpec;\n    readonly admit: (session: Session) => void;\n}',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
@@ -4528,7 +4538,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PreToolDecision',
-    declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+    declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n    info?: ToolErrorInfo;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
   },
   {
     name: 'ProjectionChangeListener',
@@ -4580,7 +4590,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PtcDispatchLog',
-    declaration: 'export interface PtcDispatchLog {\n    readonly exec: ToolExecution;\n    readonly agent?: Agent;\n    readonly subCallId: ToolCallId;\n    readonly name: string;\n    readonly isError: boolean;\n    readonly content: ContentBlock[];\n}',
+    declaration: 'export interface PtcDispatchLog {\n    readonly exec: ToolExecution;\n    readonly agent?: Agent;\n    readonly subCallId: ToolCallId;\n    readonly name: string;\n    readonly isError: boolean;\n    readonly error?: ToolErrorInfo;\n    readonly content: ContentBlock[];\n}',
   },
   {
     name: 'ReadFileLine',
@@ -4804,7 +4814,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionEventMap',
-    declaration: 'export interface SessionEventMap {\n    \'turn/start\': {\n        turn: number;\n    };\n    \'turn/end\': {\n        turn: number;\n        reason: TurnEndReason;\n    };\n    \'step/start\': {\n        turn: number;\n        step: number;\n    };\n    \'step/end\': {\n        turn: number;\n        step: number;\n    };\n    \'user/message\': UserMessage;\n    \'assistant/chunk\': {\n        turn: number;\n        step: number;\n        chunk: StreamChunk;\n    };\n    \'assistant/message\': {\n        turn: number;\n        step: number;\n        message: AssistantMessage;\n        usage?: TokenUsage;\n        interrupted?: true;\n    };\n    \'tool/call\': {\n        turn: number;\n        step: number;\n        callId: ToolCallId;\n        name: string;\n        arguments: string;\n    };\n    \'tool/result\': {\n        turn: number;\n        step: number;\n        message: ToolResultMessage;\n        error?: {\n            name: string;\n            code: string;\n        };\n        meta?: JsonValue;\n    };\n    \'request/header\': {\n        header: EpochHeader;\n        reason: RequestHeaderReason;\n        startsSeries?: true;\n    };\n    \'request/context\': RequestContext;\n    \'session/end-seed\': Record<string, never>;\n}',
+    declaration: 'export interface SessionEventMap {\n    \'turn/start\': {\n        turn: number;\n    };\n    \'turn/end\': {\n        turn: number;\n        reason: TurnEndReason;\n    };\n    \'step/start\': {\n        turn: number;\n        step: number;\n    };\n    \'step/end\': {\n        turn: number;\n        step: number;\n    };\n    \'user/message\': UserMessage;\n    \'assistant/chunk\': {\n        turn: number;\n        step: number;\n        chunk: StreamChunk;\n    };\n    \'assistant/message\': {\n        turn: number;\n        step: number;\n        message: AssistantMessage;\n        usage?: TokenUsage;\n        interrupted?: true;\n    };\n    \'tool/call\': {\n        turn: number;\n        step: number;\n        callId: ToolCallId;\n        name: string;\n        arguments: string;\n    };\n    \'tool/result\': {\n        turn: number;\n        step: number;\n        message: ToolResultMessage;\n        error?: {\n            name: string;\n            code: string;\n            reason?: string;\n        };\n        meta?: JsonValue;\n    };\n    \'request/header\': {\n        header: EpochHeader;\n        reason: RequestHeaderReason;\n        startsSeries?: true;\n    };\n    \'request/context\': RequestContext;\n    \'session/end-seed\': Record<string, never>;\n}',
   },
   {
     name: 'SessionEventMetadataFilter',
@@ -5680,7 +5690,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ToolErrorInfo',
-    declaration: 'export interface ToolErrorInfo {\n    name: string;\n    code: string;\n}',
+    declaration: 'export interface ToolErrorInfo {\n    name: string;\n    code: string;\n    reason?: string;\n}',
   },
   {
     name: 'ToolExecution',

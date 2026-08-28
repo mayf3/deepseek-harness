@@ -366,6 +366,8 @@ export interface PtcDispatchLog {
   readonly name: string
   /** Whether the sub-call settled as an error. */
   readonly isError: boolean
+  /** Structured failure identity and optional user-facing detail. */
+  readonly error?: ToolErrorInfo
   /** The sub-call's complete model-facing content (the settle event's default payload). */
   readonly content: ContentBlock[]
 }
@@ -476,6 +478,8 @@ export const TOOL_ABORTED_BEFORE_DISPATCH = 'ABORTED_BEFORE_DISPATCH'
 export interface ToolErrorInfo {
   name: string
   code: string
+  /** Optional raw user-facing detail; durable projections preserve it but model-facing content does not include it. */
+  reason?: string
 }
 
 /** Canonical failure detail; internal routing information remains optional. */
@@ -581,14 +585,14 @@ export interface ToolExecutionFailure {
 export type ToolExecutionResult = ToolExecutionSuccess | ToolExecutionFailure
 
 /**
- * Pre-dispatch decision. `allow` runs the call; `deny` materializes an error;
- * `ask` runs only after an approval service returns `allowed-once` and otherwise
- * denies. Input rewriting is excluded because arguments are already logged and
- * presented.
+ * Pre-dispatch decision. `allow` runs the call; `deny` materializes its
+ * model-facing reason and optional structured error identity; `ask` runs only
+ * after an approval service returns `allowed-once` and otherwise denies. Input
+ * rewriting is excluded because arguments are already logged and presented.
  */
 export type PreToolDecision =
   | { kind: 'allow' }
-  | { kind: 'deny'; reason: string }
+  | { kind: 'deny'; reason: string; info?: ToolErrorInfo }
   | { kind: 'ask'; reason?: string }
 
 /**
@@ -1482,9 +1486,8 @@ export class ToolRuntime extends Service {
       if (this.callerCancelled(exec) && askResolution.approvalCancelled) {
         return await next({ kind: 'post-result', exec, result: toolAbortedBeforeDispatchResult() })
       }
-      const denialReason = decision.kind === 'allow'
-        ? this.guardReason(exec)
-        : decision.reason
+      const denialReason = decision.kind === 'allow' ? this.guardReason(exec) : decision.reason
+      const denialInfo = decision.kind === 'deny' ? decision.info : undefined
       if (denialReason !== undefined) {
         return await next({
           kind: 'post-result',
@@ -1492,7 +1495,7 @@ export class ToolRuntime extends Service {
           result: this.materializeFinalResult({
             content: [{ type: 'text', text: `Error: ${denialReason}` }],
             isError: true,
-            error: { message: denialReason },
+            error: { message: denialReason, ...denialInfo === undefined ? {} : { info: denialInfo } },
           }),
         })
       }

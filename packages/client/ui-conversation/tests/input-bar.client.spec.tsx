@@ -1309,6 +1309,7 @@ describe('command launcher chrome and control seats', () => {
         { value: 'read-only', name: 'read-only' },
         { value: 'workspace-write', name: 'workspace-write' },
         { value: 'danger-full-access', name: 'danger-full-access' },
+        { value: 'auto', name: 'Auto review' },
       ],
       currentValue: 'read-only',
     }
@@ -1320,7 +1321,8 @@ describe('command launcher chrome and control seats', () => {
       .every(icon => icon.closest('[aria-hidden="true"]') !== null)).toBe(true)
     fireEvent.click(trigger)
     const items = view.getAllByRole('menuitem')
-    expect(items.map(o => o.textContent)).toEqual(['Read Only', 'Workspace Write', 'Full access'])
+    expect(items.map(o => o.textContent)).toEqual(['Read Only', 'Workspace Write', 'Full access', 'Auto reviewEXP'])
+    expect(view.getByRole('menuitem', { name: 'Auto review EXP' }).querySelector('sup')?.textContent).toBe('EXP')
     fireEvent.click(items[1]!)
     // Optimistic pick + disable until admission resolves (command stub resolves true).
     const busy = view.getByLabelText(/^访问模式/) as HTMLButtonElement
@@ -1357,6 +1359,39 @@ describe('command launcher chrome and control seats', () => {
     expect(command).toHaveBeenCalledWith('/permission danger-full-access')
     expect(view.queryByRole('dialog')).toBeNull()
     expect((view.getByLabelText(/^访问模式/) as HTMLButtonElement).textContent).toBe('Full access')
+    await act(async () => {})
+  })
+
+  it('marks Auto review experimental and requires its current-session risk acknowledgement', async () => {
+    const command = vi.fn(() => Promise.resolve(true))
+    const permissions = {
+      options: [
+        { value: 'workspace-write', name: 'workspace-write' },
+        { value: 'auto', name: 'Auto review' },
+      ],
+      currentValue: 'workspace-write',
+    }
+    const { view } = bench({ permissions, command })
+    fireEvent.click(view.getByLabelText(/^访问模式/))
+    fireEvent.click(view.getByRole('menuitem', { name: 'Auto review EXP' }))
+
+    expect(command).not.toHaveBeenCalled()
+    const dialog = view.getByRole('dialog', { name: '确认启用 Auto review（实验）？' })
+    expect(dialog.textContent).toContain('不使用沙箱')
+    expect(dialog.textContent).toContain('每次工具调用前')
+    expect(dialog.textContent).toContain('实验性')
+    expect(dialog.textContent).toContain('误放行或误拒绝')
+    expect(dialog.textContent).toContain('额外 token')
+    const enable = view.getByRole('button', { name: '启用 Auto review' }) as HTMLButtonElement
+    expect(enable.disabled).toBe(true)
+
+    fireEvent.click(view.getByRole('checkbox', { name: '我已了解这些风险，并愿意继续' }))
+    fireEvent.click(enable)
+
+    expect(command).toHaveBeenCalledExactlyOnceWith('/permission auto')
+    expect(view.queryByRole('dialog')).toBeNull()
+    const trigger = view.getByLabelText('访问模式，当前：Auto review EXP')
+    expect(trigger.querySelector('sup')?.textContent).toBe('EXP')
     await act(async () => {})
   })
 

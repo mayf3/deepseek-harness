@@ -1,6 +1,9 @@
 /** Machine value of the preset that requires an explicit GUI risk gate. */
 export const FULL_ACCESS_PRESET = 'danger-full-access'
 
+/** Machine value of the experimental current-session review preset. */
+export const AUTO_REVIEW_PRESET = 'auto'
+
 /**
  * Convert conventional kebab-case preset names into user-facing title case.
  * @param name - host-supplied preset label or key.

@@ -3,9 +3,11 @@
  * approval-policy knobs. A switch records the selected preset, then writes
  * changed knobs through their canonical setters. Execution, prompt narration,
  * and replay keep reading their knob folds. The preset event preserves user
- * intent when two presets share a bundle. The read side ships as the
- * `permissions` session projection; the write side ships as the
- * `/permission` command — both optional children over the same service.
+ * intent when two presets share a bundle. Effect-scoped integrations may add
+ * current-session-only presets with a synchronous admission check; settings
+ * defaults remain limited to the configured table. The read side ships as the
+ * `permissions` session projection; the write side ships as the `/permission`
+ * command — both optional children over the same service.
  *
  * @module dsh-permission-presets
  */
@@ -63,11 +65,29 @@ export interface PresetSpec {
   description?: string
 }
 
+/** One effect-scoped current-session preset supplied by an integration. */
+export interface PermissionPresetContribution {
+  /** Canonical preset name recorded in `permission/preset`. */
+  readonly name: string
+  /** Sandbox and approval values written by the normal preset path. */
+  readonly spec: PresetSpec
+  /**
+   * Synchronously admit one live selection. The reserved Auto contribution is
+   * also called before a stored Auto session publishes. Throwing leaves the
+   * session unchanged or vetoes Auto publication.
+   * @param session - session selecting this contribution or restoring Auto.
+   */
+  readonly admit: (session: Session) => void
+}
+
 /**
- * Returned when effective knob values match no table entry. Clients may show
- * it as the current value, but it is never a switch target or event payload.
+ * Returned when effective knob values match no available preset. Clients may
+ * show it as the current value, but it is never a switch target or event payload.
  */
 export const CUSTOM_PRESET = 'custom'
+
+/** Canonical identity of the experimental per-call review preset. */
+export const AUTO_PRESET = 'auto'
 
 /** Settings namespace carrying the default for future sessions. */
 export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
@@ -157,7 +177,8 @@ export interface Config {
   /**
    * The preset table: name → knob bundle. Defaults to `workspace-write`
    * (workspace-write + ask) and `danger-full-access` (danger-full-access +
-   * never). The name `custom` is reserved for the derived not-a-preset state.
+   * never). The names `custom` and `auto` are reserved for derived state and
+   * the Auto review integration respectively.
    */
   presets?: Record<string, PresetSpec>
   /**
@@ -168,9 +189,10 @@ export interface Config {
 }
 
 /**
- * Owns the deployment's permission presets and their write path. Requires a
- * confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are
- * reported as {@link CUSTOM_PRESET}, not an error.
+ * Owns the deployment's configured and contributed permission presets and
+ * their write path. Requires a confining `ctx.shell` executor and
+ * `ctx.approval`; unmatched knob values are reported as
+ * {@link CUSTOM_PRESET}, not an error.
  */
 export class PermissionPresetService extends Service {
   // Inline schema call: the config catalog walks `static Config` statically.
@@ -196,6 +218,7 @@ export class PermissionPresetService extends Service {
   static inject = ['shell', 'approval', 'sessions']
 
   private readonly presets: Record<string, PresetSpec>
+  private readonly contributions = new Map<string, PermissionPresetContribution>()
   private defaultSettings: () => PermissionSettings
 
   constructor(ctx: Context, config: Config) {
@@ -204,6 +227,9 @@ export class PermissionPresetService extends Service {
     this.presets = config.presets as Record<string, PresetSpec>
     if (CUSTOM_PRESET in this.presets) {
       throw new Error(`permission: "${CUSTOM_PRESET}" is reserved for the derived not-a-preset state and cannot name a table entry`)
+    }
+    if (AUTO_PRESET in this.presets) {
+      throw new Error(`permission: "${AUTO_PRESET}" is reserved and cannot name a configured preset`)
     }
     if (ctx.shell.sandboxMode === undefined) {
       throw new Error('permission: the mounted bash executor does not confine (no sandboxMode) — presets bundle a sandbox mode, so composing this plugin over an unconfined executor is a misconfiguration')
@@ -216,7 +242,7 @@ export class PermissionPresetService extends Service {
     this.resolve(defaultPreset)
     const baseSettings: PermissionSettings = { defaultPreset }
     this.defaultSettings = () => baseSettings
-    const presetChoices = this.names.map((name) => {
+    const presetChoices = Object.keys(this.presets).map((name) => {
       const choice = z.const(name)
       const label = this.presets[name]?.name
       return label === undefined ? choice : choice.description(label)
@@ -294,11 +320,34 @@ export class PermissionPresetService extends Service {
   }
 
   /**
-   * The advertised preset names, in the preset table's declaration order.
+   * The advertised preset names: configured entries in declaration order,
+   * followed by live contributions in registration order.
    * @returns every switchable preset name.
    */
   get names(): readonly string[] {
-    return Object.keys(this.presets)
+    return [...Object.keys(this.presets), ...this.contributions.keys()]
+  }
+
+  /**
+   * Register one current-session-only preset for the calling integration's
+   * effect lifetime.
+   * @param contribution - preset identity, knob bundle, and synchronous admission gate.
+   * @returns the async effect disposer that removes exactly this contribution.
+   */
+  register(contribution: PermissionPresetContribution): () => Promise<void> {
+    const { name } = contribution
+    return this.ctx.effect(() => {
+      if (name === CUSTOM_PRESET) {
+        throw new Error(`permission: "${CUSTOM_PRESET}" is reserved for the derived not-a-preset state`)
+      }
+      if (Object.hasOwn(this.presets, name) || this.contributions.has(name)) {
+        throw new Error(`permission: preset "${name}" is already registered`)
+      }
+      this.contributions.set(name, contribution)
+      return () => {
+        this.contributions.delete(name)
+      }
+    }, `permissionPresets.register(${JSON.stringify(name)})`)
   }
 
   /**
@@ -312,8 +361,9 @@ export class PermissionPresetService extends Service {
 
   /**
    * Resolve the preset matching the effective knob values. A still-matching
-   * last selection wins shared-bundle ties; otherwise the first table match
-   * wins, or {@link CUSTOM_PRESET} when no entry matches.
+   * last selection wins shared-bundle ties; otherwise the first configured
+   * match, then the first contributed match, wins. Returns
+   * {@link CUSTOM_PRESET} when no available preset matches.
    * @param events - the session's events in log order.
    * @returns the effective preset name, or `custom` when nothing matches.
    */
@@ -327,18 +377,23 @@ export class PermissionPresetService extends Service {
     const approval = state.approval ?? this.ctx.approval.config.policy ?? 'ask'
     const matches = (spec: PresetSpec): boolean => spec.sandbox === sandbox && spec.approval === approval
     if (state.preset !== null) {
-      const spec = this.presets[state.preset]
+      const spec = this.specOf(state.preset)
       if (spec !== undefined && matches(spec)) return state.preset
     }
     for (const [name, spec] of Object.entries(this.presets)) {
+      if (matches(spec)) return name
+    }
+    for (const [name, contribution] of this.contributions) {
+      const { spec } = contribution
       if (matches(spec)) return name
     }
     return CUSTOM_PRESET
   }
 
   /**
-   * Build the whole select value for one folded knob state: every table
-   * option in declaration order, `custom` appended exactly while derived.
+   * Build the whole select value for one folded knob state: configured options
+   * in declaration order, live contributions in registration order, and
+   * `custom` appended exactly while derived.
    * @param state - the folded knob overrides.
    * @returns the `permissions` projection payload.
    */
@@ -354,23 +409,23 @@ export class PermissionPresetService extends Service {
   }
 
   /**
-   * Resolve a preset's knob bundle.
+   * Resolve an available preset's knob bundle.
    * @param name - the preset name to resolve.
    * @returns the configured bundle.
-   * @throws when `name` is not in the table.
+   * @throws when `name` is neither configured nor currently contributed.
    */
   resolve(name: string): PresetSpec {
-    const spec = this.presets[name]
+    const spec = this.specOf(name)
     if (spec === undefined) {
-      throw new Error(`permission: unknown preset "${name}" (known: ${Object.keys(this.presets).join(', ')})`)
+      throw new Error(`permission: unknown preset "${name}" (known: ${this.names.join(', ')})`)
     }
     return spec
   }
 
   /**
-   * Build the client option for a table entry or {@link CUSTOM_PRESET}. A
-   * missing label falls back to the table key.
-   * @param name - a table key, or `custom`.
+   * Build the client option for an available preset or {@link CUSTOM_PRESET}.
+   * A missing label falls back to the preset key.
+   * @param name - a configured or contributed preset key, or `custom`.
    * @returns the option a client renders.
    * @throws when `name` is neither a table key nor `custom`.
    */
@@ -395,6 +450,7 @@ export class PermissionPresetService extends Service {
   /** Apply one preset with the caller-selected live or initialization policy writer. */
   private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
     const spec = this.resolve(name)
+    this.contributions.get(name)?.admit(session)
     if (this.current(session.events) !== name) {
       session.append('permission/preset', { preset: name })
     }
@@ -411,7 +467,9 @@ export class PermissionPresetService extends Service {
    * Fill every missing permission fact before a session is published. A
    * genuinely fresh session uses the current user default; seeded or partially
    * initialized sessions preserve their effective knob values and only gain
-   * the missing durable facts.
+   * the missing durable facts. A stored Auto identity requires its live
+   * contribution and passes that contribution's admission check before
+   * publication.
    */
   private pinInitialPermission(session: Session): void {
     const events = session.events
@@ -419,6 +477,13 @@ export class PermissionPresetService extends Service {
     const sandbox = effectiveSandboxMode(events)
     const approval = effectiveApprovalPolicy(events)
     const seeded = events.some(event => event.type === 'session/end-seed')
+    if (selected === AUTO_PRESET) {
+      const contribution = this.contributions.get(AUTO_PRESET)
+      if (contribution === undefined) {
+        throw new Error('permission: cannot restore preset "auto" without its active integration')
+      }
+      contribution.admit(session)
+    }
     if (selected === undefined && sandbox === undefined && approval === undefined && !seeded) {
       const name = this.defaultPreset
       const spec = this.resolve(name)
@@ -443,6 +508,11 @@ export class PermissionPresetService extends Service {
     if (approval === undefined) {
       setApprovalPolicy(session, this.ctx.approval.config.policy ?? 'ask')
     }
+  }
+
+  /** Resolve one configured or currently contributed preset without throwing. */
+  private specOf(name: string): PresetSpec | undefined {
+    return this.presets[name] ?? this.contributions.get(name)?.spec
   }
 }
 

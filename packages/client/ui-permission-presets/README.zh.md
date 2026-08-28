@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包为 Web GUI 中两种生命周期提供权限预设表面：通用设置中的一行选择之后创建会话所用的默认值，但不会切换当前会话。挂在宿主 `/permission` 命令上的选择器通过一张扁平预设列表切换当前会话，并标记 active 值。Kebab-case 名称渲染为 Title Case 标签，`danger-full-access` 显示为 `Full access`。选择完全权限时，该行或选择器写入前必须先显式确认风险。两个表面读取同一份宿主计算的投影、经同一条路径写入，因此推送的投影帧是两者共同跟随的唯一确认。
+本包为 Web GUI 中两种生命周期提供权限预设表面：General Settings 中的一行选择之后创建会话所用的配置默认值，但不会切换当前会话。挂在宿主 `/permission` 命令上的选择器通过 live 预设列表切换当前会话，并标记 active 值。Kebab-case 名称渲染为 Title Case 标签，`danger-full-access` 显示为 `Full access`，仅限当前会话的 `auto` contribution 显示为带 `EXP` badge 的 `Auto review`。通过可见选择器选择 Full access 或 Auto review 时，必须分别显式确认对应风险；已经带参数的 `/permission <preset>` 命令直接执行。两个表面通过宿主命令或设置 owner 写入，而当前会话投影仍是选择器与 composer chip 的权威值。
 
 ## 目录
 
@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 选择器
 
-选中即提交 `/permission <preset>` 命令行。带参路径（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。未知 kebab-case 预设名渲染为 Title Case 标签，`custom` 只是显示状态，绝非目标。
+选中即提交 `/permission <preset>` 命令行。带参路径（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。`auto` 使用本地化的 `Auto review` 标签与 `EXP` badge，其可见选择需要实验风险确认。未知 kebab-case 预设名渲染为 Title Case 标签，`custom` 只是显示状态，绝非目标。
 
 ### 设置行
 
-该行从宿主动态的 `defaultPreset` enum 推导选项，写入一条设置变更操作。该值只在之后创建会话时生效；改变它绝不会切换或改写当前会话。
+该行从宿主配置的 `defaultPreset` enum 推导选项，写入一条设置变更操作。`auto` 等仅限当前会话的 contribution 不会出现。该值只在之后创建会话时生效；改变它绝不会切换或改写当前会话。
 
 -----
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-通用行经 `ctx.settingsScope` 读取显式暴露的 `permission` Settings 描述符，并携带描述符 revision 写入一条 `settings.mutate` 路径操作；其 observable 经槽位系统的 `hooks` 格传递，因此 React 钩子绑定归渲染器，推送失效通知会重新获取描述符。该值只在之后创建会话时读取。当前会话表面是挂在宿主 `/permission` 命令上的 popupSelect 装饰（`ctx.commandUi.decorate`）：宿主命令保留斜杠菜单行、带参路径与持久生命周期记账，装饰只把裸调用替换为选择器。选项与 active 标记读取会话的 `permissions` 投影——与 composer chip 渲染的同一份宿主计算 select。完全权限选项携带 `confirmation` 载荷，由共享弹窗外壳渲染为页内风险门。
+General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` Settings 描述符，并携带描述符 revision 写入一条 `settings.mutate` 路径操作；其 observable 经 slot 系统的 `hooks` compartment 传递，因此 React 钩子绑定归渲染器，推送失效通知会重新获取描述符。该值只在之后创建会话时读取。当前会话表面是挂在宿主 `/permission` 命令上的 popupSelect 装饰（`ctx.commandUi.decorate`）：宿主命令保留斜杠菜单行、带参路径与持久生命周期记账，装饰只把裸调用替换为选择器。选项与 active 标记读取会话的 `permissions` 投影——与 composer chip 渲染的同一份宿主计算 select。Full access 与 Auto review 各自携带本地化的 `confirmation` 载荷；Auto 还携带由共享 popup 外壳渲染的 badge。
 
 </details>
 
@@ -64,7 +64,7 @@ kind: "package-reference"
 <a id="model-experience"></a>
 ## 模型体验
 
-间接影响。它的两个表面写入权限事实：设置行使未来会话带着全量值旋钮事件启动，而 `/permission` 选择器切换当前会话时追加相同的事实；这些事件决定后续工具调用解析到的沙箱模式与审批策略。
+间接影响。它的两个表面写入权限事实：设置行使未来会话带着全量值旋钮事件启动，而 `/permission` 选择器追加选中的当前会话预设。沙箱与审批消费方各自解析自己的旋钮事件；选择 `auto` 还会启用宿主 Auto integration 的独立逐调用 reviewer。
 
 #### KV Cache 影响
 
@@ -78,6 +78,7 @@ kind: "package-reference"
 这些限制界定了当前权限表面。它们是当前包约束，不是通用策略对比或任务积压。
 
 - **设置行仅限 Web**——非 Web 客户端仍可经 `/permission` 切换当前会话，但不会获得这项浏览器贡献。
+- **Auto review 仅限当前会话**——General Settings 行有意省略它，且只有通过可见选择器选择时才显示实验确认；显式键入 `/permission auto` 已经构成明确同意。
 - **预设描述来自宿主**——本地化的内置标签旁边可能显示另一种语言编写的描述。
 
 <a id="dev-note"></a>

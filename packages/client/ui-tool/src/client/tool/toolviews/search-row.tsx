@@ -33,6 +33,7 @@ export function SearchRow({ toolName, block, inspect, t }: SearchRowProps) {
       // preserves the generic fallback for errors and legacy results.
       output={model.output}
       errorSummary={model.errorSummary}
+      autoReviewDenial={model.autoReviewDenial}
       search={search}
       state={model.state}
       inspect={inspect}

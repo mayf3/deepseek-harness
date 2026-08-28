@@ -746,6 +746,18 @@
         "parentCallId": "advanced-code",
         "subCallId": "advanced-code:code:1",
         "name": "snapshot_double",
+        "description": "Double a number for executable snapshot verification.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "value"
+          ]
+        },
         "arguments": {
           "value": 21
         }
@@ -2619,6 +2631,18 @@
             "parentCallId": "advanced-code",
             "subCallId": "advanced-code:code:1",
             "name": "snapshot_double",
+            "description": "Double a number for executable snapshot verification.",
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "value": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "value"
+              ]
+            },
             "arguments": {
               "value": 21
             }
