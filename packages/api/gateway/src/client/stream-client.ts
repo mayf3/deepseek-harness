@@ -6,6 +6,7 @@ import {
   type RemoteStreamClientMessage,
   type RemoteStreamServerMessage,
 } from '../stream-protocol.ts'
+import { Deque } from '@deepseek-ai/dsh-deque'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 
 const INTERNAL_BASE = 'http://dsh.internal'
@@ -311,13 +312,13 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 class StreamInbox {
-  private readonly frames: RemoteStreamServerMessage[] = []
+  private readonly frames = new Deque<RemoteStreamServerMessage>()
   private wake: (() => void) | undefined
   private failure: Error | undefined
 
   push(frame: RemoteStreamServerMessage): void {
     if (this.failure !== undefined) return
-    this.frames.push(frame)
+    this.frames.pushBack(frame)
     this.wake?.()
     this.wake = undefined
   }
@@ -325,17 +326,17 @@ class StreamInbox {
   fail(error: unknown): void {
     if (this.failure !== undefined) return
     this.failure = error instanceof Error ? error : new Error(String(error), { cause: error })
-    this.frames.length = 0
+    this.frames.clear()
     this.wake?.()
     this.wake = undefined
   }
 
   async next(): Promise<RemoteStreamServerMessage> {
-    while (this.frames.length === 0) {
+    while (this.frames.size === 0) {
       if (this.failure !== undefined) throw this.failure
       await new Promise<void>((resolve) => { this.wake = resolve })
     }
-    return this.frames.shift() as RemoteStreamServerMessage
+    return this.frames.popFront() as RemoteStreamServerMessage
   }
 }
 
