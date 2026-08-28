@@ -25,6 +25,7 @@ describe('title projection unit', () => {
     const { ctx, session } = await harness(true)
     const snapshot = ctx.sessionProjections.snapshot(session)
     expect(snapshot.values.title).toBeNull()
+    expect(ctx.sessionProjections.checkpoint(session).title).toEqual({ ver: 1, seq: -1, val: null })
   })
 
   it('serves the latest title last-wins and notifies the change feed with the causing seq', async () => {
@@ -43,6 +44,14 @@ describe('title projection unit', () => {
     const snapshot = ctx.sessionProjections.snapshot(session)
     expect(snapshot.values.title).toBe('Second title')
     expect(snapshot.asOfSeq).toBe(session.seq - 1)
+  })
+
+  it('reads the version-1 string checkpoint format used by existing title caches', async () => {
+    const { ctx } = await harness(true)
+
+    expect(ctx.sessionProjections.viewCheckpoint({
+      title: { ver: 1, seq: 8, val: 'Cached title' },
+    })).toEqual({ title: 'Cached title' })
   })
 
   it('folds titles already in the log when the service mounts late (lazy cell build)', async () => {

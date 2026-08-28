@@ -255,55 +255,38 @@ function collectSessionTitleMessages(
   return messages
 }
 
-// Zod cannot express the branded provider id without a runtime transform.
-const titleProjectionSchema = zod.object({
-  title: zod.string().min(1),
-  messageSeqs: zod.array(zod.number().int().nonnegative()),
-  source: zod.discriminatedUnion('kind', [
-    zod.object({ kind: zod.literal('fallback') }),
-    zod.object({
-      kind: zod.literal('provider'),
-      provider: zod.string(),
-      model: zod.object({ provider: zod.string(), model: zod.string() }).optional(),
-    }),
-    zod.object({ kind: zod.literal('user') }),
-  ]),
-  eventSeq: zod.number().int().nonnegative(),
-  updatedAt: zod.number(),
-}).nullable() as unknown as ZodType<TitleProjection | null>
-
 const titleViewSchema: ZodType<string | null> = zod.string().min(1).nullable()
 
-/** Latest logged title and its client view. */
+/** Latest logged title text and its client view. */
 export const titleProjectionDefinition = {
   key: 'title',
-  stateVersion: 2,
-  stateSchema: titleProjectionSchema,
+  stateVersion: 1,
+  stateSchema: titleViewSchema,
   init: () => null,
   apply: (state, event) => (event.type === 'session/title'
-    ? {
-      title: event.data.title,
-      messageSeqs: event.data.messageSeqs,
-      source: event.data.source,
-      eventSeq: event.seq,
-      updatedAt: event.time,
-    }
+    ? event.data.title
     : state),
   wire: {
     viewSchema: titleViewSchema,
-    view: state => state?.title ?? null,
+    view: state => state,
   },
-} satisfies ProjectionDefinition<'title', TitleProjection | null>
+} satisfies ProjectionDefinition<'title', string | null>
 
 /**
- * Fold the latest title from a session log.
+ * Fold the latest logged title without consulting mutable metadata.
  * @param events - live or persisted session log.
- * @returns the immutable latest title snapshot, or `undefined`.
+ * @returns the latest immutable title snapshot, or `undefined`.
  */
 export function foldSessionTitle(events: readonly SessionEvent[]): SessionTitleSnapshot | undefined {
-  let state: TitleProjection | null = titleProjectionDefinition.init()
-  for (const event of events) state = titleProjectionDefinition.apply(state, event)
-  return state === null ? undefined : titleSnapshotFromState(state)
+  const event = events.findLast(item => item.type === 'session/title')
+  if (event === undefined) return undefined
+  return titleSnapshotFromState({
+    title: event.data.title,
+    messageSeqs: event.data.messageSeqs,
+    source: event.data.source,
+    eventSeq: event.seq,
+    updatedAt: event.time,
+  })
 }
 
 /** Log-backed title fold plus asynchronous fallback generation. */
@@ -398,8 +381,7 @@ export class SessionTitleService extends Service {
    * @returns latest title snapshot, or `undefined` before eligible input.
    */
   get(session: Session): SessionTitleSnapshot | undefined {
-    const state = this.ctx.sessionProjections.stateOf(session, 'title') as TitleProjection | null
-    return state === null ? undefined : titleSnapshotFromState(state)
+    return foldSessionTitle(session.events)
   }
 
   /**

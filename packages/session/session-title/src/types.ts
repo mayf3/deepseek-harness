@@ -77,8 +77,8 @@ export interface TitleInputState {
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
-    /** Latest logged title, or null. */
-    title: TitleProjection | null
+    /** Latest logged title text, or null. */
+    title: string | null
     /** Eligible human title input. */
     titleInput: TitleInputState
   }
