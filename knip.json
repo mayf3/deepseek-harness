@@ -45,6 +45,15 @@
         "@deepseek-ai/dsh-client-ui-directory-picker-native"
       ]
     },
+    "packages/experimental/inspector": {
+      "entry": [
+        "tests/**/*.e2e.ts"
+      ],
+      "project": [
+        "src/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "packages/extensions/cordis-host-runner": {
       "entry": [
         "tests/**/*.spec.ts"
@@ -74,11 +83,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ]
-    },
-    "packages/api/workspace-controller": {
-      "ignoreDependencies": [
-        "zod"
       ]
     },
     "packages/client/ui-approval": {
@@ -411,6 +415,11 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/llm/llm": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/llm/llm-deepseek": {
       "entry": [
         "tests/**/*.spec.ts",
@@ -449,11 +458,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ]
-    },
-    "packages/context/file-reference": {
-      "ignoreDependencies": [
-        "zod"
       ]
     },
     "packages/context/session-reference": {
@@ -701,8 +705,7 @@
         "@deepseek-ai/dsh-llm-deepseek",
         "@deepseek-ai/dsh-session-checkpoint-policy",
         "@deepseek-ai/dsh-session-persistence-jsonl",
-        "@deepseek-ai/dsh-skill-filesystem",
-        "@deepseek-ai/dsh-tool-subagent"
+        "@deepseek-ai/dsh-skill-filesystem"
       ]
     },
     "packages/shell/tool-pwsh": {

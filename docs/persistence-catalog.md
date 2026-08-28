@@ -738,9 +738,9 @@ Source: [`packages/core/session/src/types.ts:239`](../packages/core/session/src/
 
 Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent/subagent/src/descriptor.ts)
 
-<a id="subagentmodel-selection-enabled--log-only"></a>
+<a id="subagentmodel-selection-policy--log-only"></a>
 
-#### `subagent/model-selection-enabled` — log-only
+#### `subagent/model-selection-policy` — log-only
 
 ```ts persistence-catalog
 /**
@@ -749,10 +749,13 @@ Source: [`packages/subagent/subagent/src/descriptor.ts:38`](../packages/subagent
  * request; absence means the fixed-route definition. Log-only: it carries
  * no `surfaceOp` and never enters model history.
  */
-'subagent/model-selection-enabled': Record<string, never>
+'subagent/model-selection-policy': {
+  /** Exact routes this Session may select explicitly for a child. */
+  allowedModels: AllowedModelRoute[]
+}
 ```
 
-Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:13`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
+Source: [`packages/subagent/tool-subagent/src/model-selection-state.ts:14`](../packages/subagent/tool-subagent/src/model-selection-state.ts)
 
 ### `team/*`
 
@@ -867,7 +870,7 @@ Source: [`packages/core/session/src/types.ts:268`](../packages/core/session/src/
  * before returning), so its execution-enclosure relation holds by
  * construction.
  */
-'tool/code-dispatch': CodeDispatchEventData
+'tool/code-dispatch': PtcDispatchEventData
 ```
 
 Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types.ts)
@@ -890,7 +893,7 @@ Source: [`packages/core/tools/src/types.ts:56`](../packages/core/tools/src/types
  * with `tool/code-dispatch` by `subCallId` (timing = the two events'
  * `time` fields).
  */
-'tool/code-dispatch-start': CodeDispatchStartEventData
+'tool/code-dispatch-start': PtcDispatchStartEventData
 ```
 
 Source: [`packages/core/tools/src/types.ts:40`](../packages/core/tools/src/types.ts)
