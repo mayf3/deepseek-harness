@@ -396,17 +396,7 @@ export function buildVfsExampleFiles(): ReadonlyMap<string, string> {
         [VFS_EXAMPLE_SESSION_IDS.main]: {
           identity: { createdAt: CREATED_AT, cwd: WORKSPACE },
           rows: {
-            title: {
-              ver: 2,
-              seq: main.events.at(-1)?.seq ?? -1,
-              val: {
-                title: VFS_EXAMPLE_TITLE,
-                messageSeqs: [],
-                source: { kind: 'user' },
-                eventSeq: 2,
-                updatedAt: CREATED_AT + 2,
-              },
-            },
+            title: { ver: 1, seq: main.events.at(-1)?.seq ?? -1, val: VFS_EXAMPLE_TITLE },
           },
         },
       },

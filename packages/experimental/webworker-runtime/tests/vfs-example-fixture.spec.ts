@@ -64,14 +64,8 @@ describe('WebWorker preview VFS example', () => {
       identity: { createdAt: 1_787_472_000_000, cwd: '/dsh/workspace' },
       rows: {
         title: {
-          ver: 2,
-          val: {
-            title: VFS_EXAMPLE_TITLE,
-            messageSeqs: [],
-            source: { kind: 'user' },
-            eventSeq: 2,
-            updatedAt: 1_787_472_000_002,
-          },
+          ver: 1,
+          val: VFS_EXAMPLE_TITLE,
         },
       },
     })
