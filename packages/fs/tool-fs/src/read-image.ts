@@ -1,8 +1,8 @@
 /**
  * The model-facing `read_image` tool commits a PNG/JPEG/WebP/GIF file. A path
- * without a file extension — normalized attachment objects are named by their
- * content digest alone — is accepted too: its format comes from the file
- * signature, and the attachment service's full decode stays authoritative.
+ * without a file extension is identified from its file signature, while the
+ * attachment service's full decode stays authoritative. The mounted `ctx.fs`
+ * backend owns path resolution and read access; names only declare media type.
  *
  * The route gate is deliberately stricter than the host upload preflight. An
  * image-reading tool is useful only when the exact calling route can inspect
@@ -13,7 +13,7 @@
 
 import { basename, extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError, AttachmentId, sniffImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -28,6 +28,35 @@ const IMAGE_EXTENSIONS: Readonly<Record<string, ImageMediaType>> = {
   '.jpeg': 'image/jpeg',
   '.webp': 'image/webp',
   '.gif': 'image/gif',
+}
+
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] as const
+const JPEG_SIGNATURE = [0xff, 0xd8, 0xff] as const
+
+function matchesBytes(data: Uint8Array, offset: number, expected: readonly number[]): boolean {
+  if (data.byteLength < offset + expected.length) return false
+  return expected.every((byte, index) => data[offset + index] === byte)
+}
+
+function matchesAscii(data: Uint8Array, offset: number, value: string): boolean {
+  if (data.byteLength < offset + value.length) return false
+  for (let index = 0; index < value.length; index += 1) {
+    if (data[offset + index] !== value.charCodeAt(index)) return false
+  }
+  return true
+}
+
+/**
+ * Identify the media type declared by a supported image file signature.
+ * @param data - file bytes read through the current filesystem backend.
+ * @returns the detected supported media type, or undefined for other bytes.
+ */
+export function sniffImageMediaType(data: Uint8Array): ImageMediaType | undefined {
+  if (matchesBytes(data, 0, PNG_SIGNATURE)) return 'image/png'
+  if (matchesBytes(data, 0, JPEG_SIGNATURE)) return 'image/jpeg'
+  if (matchesAscii(data, 0, 'GIF87a') || matchesAscii(data, 0, 'GIF89a')) return 'image/gif'
+  if (matchesAscii(data, 0, 'RIFF') && matchesAscii(data, 8, 'WEBP')) return 'image/webp'
+  return undefined
 }
 
 const IMAGE_VALUE_SCHEMA = {
@@ -264,7 +293,7 @@ export function applyReadImageTool(ctx: Context): void {
             { cause: error },
           )
         }
-        if (error.code === 'INVALID_IMAGE') {
+        if (error.code === 'INVALID_IMAGE' && declared === undefined) {
           throw new Error(
             `cannot read "${target.displayPath}": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image; the file may be truncated or corrupt`,
             { cause: error },

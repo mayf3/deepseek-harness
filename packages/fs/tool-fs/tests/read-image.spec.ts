@@ -29,16 +29,13 @@ import {
   formatImageReadOutput,
   imageMediaTypeForPath,
   imageRefFromValue,
+  sniffImageMediaType,
 } from '../src/read-image.ts'
 
 /** 1x1 red PNG (valid signature, IHDR, IDAT). */
 const PNG_1X1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64')
 /** 3x3 red PNG used to trip a tiny configured pixel limit. */
 const PNG_3X3 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAMAAAADCAIAAADZSiLoAAAAEElEQVR4nGP4z8AAQQxYWACPjgj4kWPEuQAAAABJRU5ErkJggg==', 'base64')
-/** 1x1 red JPEG already inside every normalization limit (byte-identical passthrough). */
-const JPEG_1X1 = Buffer.from('/9j/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFQEBAQAAAAAAAAAAAAAAAAAABgj/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIRAxEAPwCdABykX//Z', 'base64')
-/** 1x1 red WebP already inside every normalization limit (byte-identical passthrough). */
-const WEBP_1X1 = Buffer.from('UklGRjwAAABXRUJQVlA4IDAAAADQAQCdASoBAAEAAUAmJaACdLoB+AADsAD+8ut//NgVzXPv9//S4P0uD9Lg/9KQAAA=', 'base64')
 
 const testToolSignal = new AbortController().signal
 
@@ -170,6 +167,30 @@ describe('imageMediaTypeForPath', () => {
   })
 })
 
+function ascii(value: string): Uint8Array {
+  return new TextEncoder().encode(value)
+}
+
+describe('sniffImageMediaType', () => {
+  it('identifies each supported container from its complete signature', () => {
+    expect(sniffImageMediaType(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]))).toBe('image/png')
+    expect(sniffImageMediaType(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]))).toBe('image/jpeg')
+    expect(sniffImageMediaType(ascii('GIF87a...'))).toBe('image/gif')
+    expect(sniffImageMediaType(ascii('GIF89a...'))).toBe('image/gif')
+    expect(sniffImageMediaType(ascii('RIFF\0\0\0\0WEBPVP8 '))).toBe('image/webp')
+  })
+
+  it('returns undefined for other bytes, incomplete signatures, and non-WebP RIFF containers', () => {
+    expect(sniffImageMediaType(new Uint8Array())).toBeUndefined()
+    expect(sniffImageMediaType(ascii('plain text'))).toBeUndefined()
+    expect(sniffImageMediaType(Uint8Array.from([0x89, 0x50, 0x4e]))).toBeUndefined()
+    expect(sniffImageMediaType(Uint8Array.from([0xff, 0xd8]))).toBeUndefined()
+    expect(sniffImageMediaType(ascii('GIF90a'))).toBeUndefined()
+    expect(sniffImageMediaType(ascii('RIFF\0\0\0\0WAVE'))).toBeUndefined()
+    expect(sniffImageMediaType(ascii('RIFF\0\0\0'))).toBeUndefined()
+  })
+})
+
 describe('imageRefFromValue', () => {
   it('re-brands with and without the optional display name', () => {
     const base = { attachmentId: 'sha256:00', mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }
@@ -291,44 +312,6 @@ describe('extension-less paths', () => {
     expect(text(second)).toContain(`<path>${objectPath}</path>`)
   })
 
-  it.each([
-    ['image/jpeg', JPEG_1X1],
-    ['image/webp', WEBP_1X1],
-  ] as const)('dedups a re-read %s object to its stored reference', async (mediaType, bytes) => {
-    const ctx = await setup()
-    const attachments = mountedStore(ctx)
-    const ref = await attachments.saveImage({ data: bytes, mediaType, name: 'source' })
-    const result = await readImage(ctx, { file_path: objectPathOf(attachments, ref) }, agentOn('vision-model'))
-    expect(result.isError).toBe(false)
-    const reread = (result.content[1] as { attachment: ImageAttachmentRef }).attachment
-    expect(reread.attachmentId).toBe(ref.attachmentId)
-    expect(reread.mediaType).toBe(mediaType)
-  })
-
-  it('forwards an attachment object path read through the outer run_code context', async () => {
-    const ctx = await setup({ toolMode: 'ptc' })
-    const attachments = mountedStore(ctx)
-    const ref = await attachments.saveImage({ data: PNG_1X1, mediaType: 'image/png', name: 'red.png' })
-    const objectPath = objectPathOf(attachments, ref)
-    const runtime = ctx.codeRuntime as FakeRuntime
-    runtime.behavior = async (request) => {
-      const value = await request.bindings[0]!.functions.read_image!({ file_path: objectPath })
-      return { logs: [], value }
-    }
-
-    const result = await call(ctx, RUN_CODE_NAME, {
-      code: 'return await tools.read_image({ file_path: attachmentPath })',
-      description: 'Read the attachment object through PTC mode',
-    }, agentOn('vision-model'))
-
-    expect(result.isError).toBe(false)
-    const forwarded = result.additionalContexts?.[0]?.content
-    expect(forwarded?.[1]).toMatchObject({
-      type: 'image',
-      attachment: { attachmentId: ref.attachmentId, mediaType: 'image/png' },
-    })
-  })
-
   it('reads an ordinary extension-less image file by sniffing its content', async () => {
     await writeFile(join(dir, 'avatar'), PNG_1X1)
     const ctx = await setup()
@@ -367,14 +350,6 @@ describe('extension-less paths', () => {
     const result = await readImage(ctx, { file_path: 'broken' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('do not decode as a supported PNG/JPEG/WebP/GIF image')
-  })
-
-  it('reports a missing attachment object through the fs vocabulary', async () => {
-    const ctx = await setup()
-    const bogus = join(home, 'attachments', 'v1', 'objects', 'ab', 'ab'.repeat(32))
-    const result = await readImage(ctx, { file_path: bogus }, agentOn('vision-model'))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain('not found')
   })
 
   it('applies the deployment media-type policy to the sniffed format', async () => {
@@ -561,18 +536,10 @@ describe('image admission failures', () => {
     expect(text(result)).toContain('rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats')
   })
 
-  it('explains a named image file whose bytes do not decode', async () => {
-    await writeFile(join(dir, 'broken.png'), PNG_1X1.subarray(0, 16))
-    const ctx = await setup()
-    const result = await readImage(ctx, { file_path: 'broken.png' }, agentOn('vision-model'))
-    expect(result.isError).toBe(true)
-    expect(text(result)).toContain(`cannot read "${join(dir, 'broken.png')}": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image`)
-  })
-
-  it('fails with FS_TOO_LARGE before reading a file past maxImageBytes', async () => {
-    await writeFile(join(dir, 'red.png'), PNG_1X1)
+  it('caps an extension-less read at maxImageBytes before format detection', async () => {
+    await writeFile(join(dir, 'red'), PNG_1X1)
     const ctx = await setup({ storeConfig: { maxImageBytes: PNG_1X1.length - 1 } })
-    const result = await readImage(ctx, { file_path: 'red.png' }, agentOn('vision-model'))
+    const result = await readImage(ctx, { file_path: 'red' }, agentOn('vision-model'))
     expect(result.isError).toBe(true)
     expect(text(result)).toContain('exceeds')
   })

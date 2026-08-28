@@ -16,7 +16,6 @@ export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
 export { admitEncodedImages } from './admission.ts'
 export { requestImageDimensions } from './request-projection.ts'
-export { sniffImageMediaType } from './sniff.ts'
 export type {
   AttachmentId as AttachmentIdType,
   EncodedImageAttachment,
