@@ -64,7 +64,7 @@ export function apply(ctx: ClientContext): void {
       // when there is no header to carry it.
       const withLocation = crumbsFor(query, quoted === true, drilled, t) === undefined
       const now = Date.now()
-      const home = connection.hostDescription.getSnapshot()?.home
+      const home = connection.generation.getSnapshot()?.host.home
       const listed = sessions.list.getSnapshot().byId
       return [
         ...fileItems.flatMap(candidate => fileCandidate(candidate, quoted === true, withLocation, t)),

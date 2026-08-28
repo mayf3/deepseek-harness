@@ -405,11 +405,8 @@ describe('web e2e: navigation & panes over a rich seeded session', () => {
     // Read summaries are host-open file links; they also must not open details.
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
-    const openPath = vi.spyOn(scaffold.ctx.apiProxy.host, 'openPath')
-      .mockImplementation(async (request, _signal) => ({
-        rpcId: request.rpcId,
-        result: { ok: true, value: { opened: true as const } },
-      }))
+    const openPath = vi.spyOn(scaffold.ctx.sessionController, 'openWorkspacePath')
+      .mockResolvedValue({ opened: true })
     try {
       await fileLink.click()
       await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')

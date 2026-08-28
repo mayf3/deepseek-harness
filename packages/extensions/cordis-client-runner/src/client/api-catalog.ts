@@ -348,11 +348,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'path', description: 'existing parent directory.' }, { name: 'name', description: 'child directory name.' }],
         returns: 'created absolute path.',
       },
-      {
-        signature: 'openPath(path: string): Promise<void>',
-        description: 'Open a path with the Host operating system.',
-        parameters: [{ name: 'path', description: 'absolute or Host-resolvable path.' }],
-      },
     ],
   },
   {
@@ -491,12 +486,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ConnectionConfig {\n    backoffBaseMs?: number;\n    backoffFactor?: number;\n    backoffMaxMs?: number;\n    generationReadyTimeoutMs?: number;\n}',
   },
   {
+    name: 'ConnectionGeneration',
+    declaration: 'export interface ConnectionGeneration {\n    readonly id: number;\n    readonly host: ConnectionHostInfo;\n}',
+  },
+  {
     name: 'ConnectionGenerationSource',
-    declaration: 'export type ConnectionGenerationSource = (signal: AbortSignal, ready: () => void) => Promise<void>;',
+    declaration: 'export type ConnectionGenerationSource = (signal: AbortSignal, ready: (host: ConnectionHostInfo) => void) => Promise<void>;',
+  },
+  {
+    name: 'ConnectionGenerationState',
+    declaration: 'export interface ConnectionGenerationState {\n    getSnapshot(): ConnectionGeneration | undefined;\n    subscribe(listener: () => void): () => void;\n}',
   },
   {
     name: 'ConnectionHandle',
-    declaration: 'export interface ConnectionHandle {\n    readonly api: IApiClient;\n    readonly isLoopback: boolean;\n    readonly hostDescription: HostDescriptionSource;\n    readonly rpc: ClientConnectionRpc;\n    registerGenerationSource(source: ConnectionGenerationSource): () => void;\n    start(sinks: ConnectionSinks, config?: ConnectionConfig): {\n        stop(): void;\n    };\n}',
+    declaration: 'export interface ConnectionHandle {\n    readonly isLoopback: boolean;\n    readonly generation: ConnectionGenerationState;\n    readonly rpc: ClientConnectionRpc;\n    registerGenerationSource(source: ConnectionGenerationSource): () => void;\n    start(sinks: ConnectionSinks, config?: ConnectionConfig): {\n        stop(): void;\n    };\n}',
+  },
+  {
+    name: 'ConnectionHostInfo',
+    declaration: 'export interface ConnectionHostInfo {\n    readonly home: string;\n}',
   },
   {
     name: 'ConnectionRpcFailure',
@@ -508,7 +515,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionSinks',
-    declaration: 'export interface ConnectionSinks {\n    onConnected?: (description: HostDescription) => void;\n    onStateChange?: (state: ConnectionState) => void;\n}',
+    declaration: 'export interface ConnectionSinks {\n    onConnected?: (host: ConnectionHostInfo) => void;\n    onStateChange?: (state: ConnectionState) => void;\n}',
   },
   {
     name: 'ConnectionState',
@@ -529,14 +536,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'HooksSources',
     declaration: 'export type HooksSources = Record<string, HostObservable<unknown>>;',
-  },
-  {
-    name: 'HostDescription',
-    declaration: 'export type HostDescription = import(\'@deepseek-ai/dsh-host-apiproxy/api\').ResponseValue<\'host.describe\'>;',
-  },
-  {
-    name: 'HostDescriptionSource',
-    declaration: 'export interface HostDescriptionSource {\n    getSnapshot(): HostDescription | undefined;\n    subscribe(listener: () => void): () => void;\n}',
   },
   {
     name: 'HostObservable',
@@ -656,7 +655,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RemoteStream',
-    declaration: 'export class RemoteStream<Item> implements AsyncIterable<RemoteStreamItem<Item>> {\n    constructor(private readonly connection: Pick<ConnectionHandle, \'hostDescription\'>, private readonly options: RemoteStreamOptions<Item>);\n    get signal(): AbortSignal;\n    restart(): void;\n    dispose(): Promise<void>;\n    [Symbol.asyncIterator](): AsyncIterator<RemoteStreamItem<Item>>;\n}',
+    declaration: 'export class RemoteStream<Item> implements AsyncIterable<RemoteStreamItem<Item>> {\n    constructor(private readonly connection: Pick<ConnectionHandle, \'generation\'>, private readonly options: RemoteStreamOptions<Item>);\n    get signal(): AbortSignal;\n    restart(): void;\n    dispose(): Promise<void>;\n    [Symbol.asyncIterator](): AsyncIterator<RemoteStreamItem<Item>>;\n}',
   },
   {
     name: 'RemoteStreamCarrierError',

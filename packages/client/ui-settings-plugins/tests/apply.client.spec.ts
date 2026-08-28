@@ -29,7 +29,7 @@ async function bench(served?: string[]) {
   ctx.provide('locale', locale)
   const describeCredentials = vi.fn(() => Promise.resolve({ ok: false, error: { code: 'internal', message: 'no provider', details: {} } }))
   const models = vi.fn(() => Promise.resolve({
-    rpcId: 'm', result: { ok: true, value: { groups: [], failures: [] } },
+    ok: true as const, value: { groups: [], failures: [] },
   }))
   const describeSettings = vi.fn(() => Promise.resolve(served === undefined
     ? { ok: false, error: { code: 'internal', message: 'no provider', details: {} } }
@@ -45,11 +45,11 @@ async function bench(served?: string[]) {
     }))
   const remote = new TestRemote(ctx, {
     credentials: { describe: describeCredentials, set: vi.fn() },
+    session: { modelCatalog: models },
     settings: { describe: describeSettings },
   })
   ctx.provide('connection', {
     isLoopback: true,
-    api: { llm: { models } },
   } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return {
@@ -66,7 +66,9 @@ function declareRoot(slots: SlotRegistry): () => void {
 
 describe('ui-settings-plugins apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.credentials', 'settingsScope'])
+    expect(inject).toEqual([
+      'slots', 'locale', 'connection', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+    ])
   })
 
   it('registers one Plugins section and declares the tab and card slots', async () => {
