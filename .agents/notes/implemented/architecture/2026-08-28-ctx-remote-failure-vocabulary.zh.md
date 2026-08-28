@@ -16,11 +16,11 @@ Host 固定事实同样绕过了 `ctx.remote`：Host home 取自 `(ctx.get('conn
 
 ## Decision
 
-`@deepseek-ai/dsh-typert-protocol` 导出唯一的失败类 `RemoteError<Code>`：一个真 `Error`，带只读 `code` 与 `details`、结构标记 `isDSHRemoteGatewayError`，以及标准 `ErrorOptions`（`cause` 只在进程内有效）。码与 details 的对应关系收进一张 merge-extensible 的 `RemoteErrorDetailsMap`；`RemoteFailure` 是按码分布的实例 union，`RemoteResult<T>` 形状不变。
+`@deepseek-ai/dsh-typert-protocol` 导出唯一的失败类 `RemoteError<Code>`：一个真 `Error`，带只读 `code` 与 `details`、结构标记 `isDSHRemoteError`，以及标准 `ErrorOptions`（`cause` 只在进程内有效）。码与 details 的对应关系收进一张 merge-extensible 的 `RemoteErrorDetailsMap`；`RemoteFailure` 是按码分布的实例 union，`RemoteResult<T>` 形状不变。
 
 ```text
 export class RemoteError<Code extends RemoteErrorCode = RemoteErrorCode> extends Error {
-  readonly isDSHRemoteGatewayError = true as const
+  readonly isDSHRemoteError: true = true
   constructor(readonly code: Code, message: string,
     readonly details: RemoteErrorDetailsMap[Code], options?: ErrorOptions)
 }
@@ -41,11 +41,11 @@ export type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: Remot
 - **跨包共产**：两个及以上不同包抛同一个码时，声明落到双方都已依赖的最低层。`session/not-found` 落 `@deepseek-ai/dsh-session`（session-controller 与 workspace-controller 都依赖它），`workspace/not-found` 落 `@deepseek-ai/dsh-workspace`（session-controller 与 workspace-controller 之间没有依赖边，能力包是唯一共同下层）。
 - **单一生产者**：只有一个包抛的码落生产者包。`subagent/not-found` 与 `agent-preset/conflict` 因此落 session-controller——全仓只有它抛这两个码，subagent 与 agent-presets 的码表里都没有它们。
 
-共享的是校验逻辑，不是码。`session/invalid-time-zone` 与 `subagent/invalid-time-zone` 是两个域各自声明、各自抛出的两个码，两个端点共用 `@deepseek-ai/dsh-time` 的 `canonicalClientTimeZone()` 做规范化；client 对这个码没有分支语义，拆码的成本是零，而合成一个码就会重新制造可达性问题。
+共享的是校验逻辑，不是码。`session/invalid-time-zone` 与 `subagent/invalid-time-zone` 是两个域各自声明、各自抛出的两个码，两个端点共用 `@deepseek-ai/dsh-util-time` 的 `canonicalClientTimeZone()` 做规范化；client 对这个码没有分支语义，拆码的成本是零，而合成一个码就会重新制造可达性问题。
 
 ## Discrimination by code
 
-判别一律读 `code`，从不用 `instanceof`。Client 与 Host 是两个独立打包的 program，worker 传输还会把页面侧再分一次包，因此同一个类会存在多份副本，跨副本的原型链身份不成立。机制层用 protocol 的 `remoteErrorOf(value)` 读结构标记，Gateway client face 另外导出 `isRemoteFailure(error)` 供消费方在 catch 里判别；两者都只看标记，不看类。
+判别一律读 `code`，从不用 `instanceof`。Client 与 Host 是两个独立打包的 program，worker 传输还会把页面侧再分一次包，因此同一个类会存在多份副本，跨副本的原型链身份不成立。机制层用 protocol 的 `remoteErrorOf(value)` 读结构标记加一个字符串 `code`，Gateway client face 另外导出 `isRemoteFailure(error)` 供消费方在 catch 里判别；两者都只看这两个字段、不看类——连 `instanceof Error` 都不要求，因为另一个 realm 抛出的 Error 同样通不过它。
 
 业务代码通常连这两个函数都不需要：`RemoteResult` 的 `ok: false` 分支已经是类型化的 `RemoteFailure`，`if (result.error.code === 'session/not-found')` 就把 `details` 窄化到该码的形状，无需 cast。需要向上抛的站点直接 `throw result.error`——它是真 `Error`，栈与 `message` 都成立。
 

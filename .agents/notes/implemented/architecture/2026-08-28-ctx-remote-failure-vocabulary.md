@@ -16,11 +16,11 @@ Fixed Host facts bypassed `ctx.remote` too: the Host home came from `(ctx.get('c
 
 ## Decision
 
-`@deepseek-ai/dsh-typert-protocol` exports one failure class, `RemoteError<Code>`: a real `Error` carrying readonly `code` and `details`, the structural marker `isDSHRemoteGatewayError`, and standard `ErrorOptions` (`cause` holds in-process only). The correspondence between codes and details lives in one merge-extensible `RemoteErrorDetailsMap`; `RemoteFailure` is the code-distributed union of instances, and `RemoteResult<T>` keeps its shape.
+`@deepseek-ai/dsh-typert-protocol` exports one failure class, `RemoteError<Code>`: a real `Error` carrying readonly `code` and `details`, the structural marker `isDSHRemoteError`, and standard `ErrorOptions` (`cause` holds in-process only). The correspondence between codes and details lives in one merge-extensible `RemoteErrorDetailsMap`; `RemoteFailure` is the code-distributed union of instances, and `RemoteResult<T>` keeps its shape.
 
 ```text
 export class RemoteError<Code extends RemoteErrorCode = RemoteErrorCode> extends Error {
-  readonly isDSHRemoteGatewayError = true as const
+  readonly isDSHRemoteError: true = true
   constructor(readonly code: Code, message: string,
     readonly details: RemoteErrorDetailsMap[Code], options?: ErrorOptions)
 }
@@ -41,11 +41,11 @@ A code has exactly one declaration site, and the site follows from both who prod
 - **Produced by several packages**: when two or more packages throw the same code, the declaration lands in the lowest layer both already depend on. `session/not-found` lands in `@deepseek-ai/dsh-session` (session-controller and workspace-controller both depend on it), and `workspace/not-found` lands in `@deepseek-ai/dsh-workspace` (no dependency edge exists between the two API packages, so the capability package is their only shared layer).
 - **Single producer**: a code only one package throws lands in that producer. `subagent/not-found` and `agent-preset/conflict` therefore live in session-controller — it is their only thrower in the repository, and neither the subagent nor the agent-presets table declares them.
 
-What two domains share is validation logic, not a code. `session/invalid-time-zone` and `subagent/invalid-time-zone` are two codes each declared and thrown by its own domain, and both endpoints canonicalize through `canonicalClientTimeZone()` from `@deepseek-ai/dsh-time`; no client branches on this code, so splitting it costs nothing while merging it would recreate the reachability problem.
+What two domains share is validation logic, not a code. `session/invalid-time-zone` and `subagent/invalid-time-zone` are two codes each declared and thrown by its own domain, and both endpoints canonicalize through `canonicalClientTimeZone()` from `@deepseek-ai/dsh-util-time`; no client branches on this code, so splitting it costs nothing while merging it would recreate the reachability problem.
 
 ## Discrimination by code
 
-Discrimination always reads `code` and never uses `instanceof`. Client and Host are separately bundled programs, and a worker transport bundles the page half once more, so several copies of the same class exist and prototype identity across copies does not hold. The mechanism layer reads the structural marker through the protocol's `remoteErrorOf(value)`, and the Gateway client face additionally exports `isRemoteFailure(error)` for a consumer's catch site; both read the marker, never the class.
+Discrimination always reads `code` and never uses `instanceof`. Client and Host are separately bundled programs, and a worker transport bundles the page half once more, so several copies of the same class exist and prototype identity across copies does not hold. The mechanism layer reads the structural marker plus a string `code` through the protocol's `remoteErrorOf(value)`, and the Gateway client face additionally exports `isRemoteFailure(error)` for a consumer's catch site; both read those fields, never the class — the test does not even require `instanceof Error`, because an Error thrown in another realm fails that too.
 
 Business code usually needs neither function: the `ok: false` branch of `RemoteResult` is already a typed `RemoteFailure`, so `if (result.error.code === 'session/not-found')` narrows `details` to that code's shape with no cast. A site that must propagate the failure writes `throw result.error` — it is a real `Error`, with a working stack and `message`.
 
