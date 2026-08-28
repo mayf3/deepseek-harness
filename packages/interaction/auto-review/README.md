@@ -36,11 +36,11 @@ The shipped Web bundle mounts the integration as one ordinary Cordis row after t
   name: '@deepseek-ai/dsh-auto-review'
 ```
 
-The plugin contributes the reserved `auto` preset only for its effect lifetime. Users can select it for the current session through the Web picker or `/permission auto`; it never enters `permission.defaultPreset` choices.
+The plugin calls the permission service's fixed `registerAuto(admit)` hook for its effect lifetime. The permission service owns the reserved identity, Full access knob bundle, and presentation; users can select Auto for the current session through the Web picker or `/permission auto`, and it never enters `permission.defaultPreset` choices.
 
 ### Review and failure behavior
 
-The reviewer uses the latest logged provider/model route and receives five sections: the fixed `REVIEW_POLICY`, the Session working directory, current project instructions, filtered history, and the pending action. Direct-user messages, compaction checkpoints, and current project instructions may authorize an action. Other user-role messages and historical calls are evidence only; assistant text, reasoning, and tool results are absent.
+The reviewer uses the latest logged provider/model route and receives five sections: the fixed `REVIEW_POLICY`, the Session working directory, current project instructions, filtered history, and the pending action. The request does not set the main Session's `sessionId`, and its project-instruction and history entries omit event `seq` coordinates. Direct-user messages, compaction checkpoints, and current project instructions may authorize an action. Other user-role messages and historical calls are evidence only; assistant text, reasoning, and tool results are absent.
 
 The decision protocol accepts only `{"decision":"allow"}`, `{"decision":"deny"}`, or `{"decision":"deny","reason":"..."}`. Missing or inconsistent logged facts, provider failure, context overflow, malformed output, and any other review failure deny the call before its body. Caller cancellation keeps the ordinary Tool cancellation result instead of becoming an Auto denial.
 
@@ -54,15 +54,15 @@ The decision protocol accepts only `{"decision":"allow"}`, `{"decision":"deny"}`
 
 The plugin prepends one `tools/pre-execute` listener. It rebuilds each native action from the visible `tool/call` plus the latest request-header schema, and each PTC inner action from its `tool/code-dispatch-start` snapshot. The current action appears only in `PENDING_ACTION`; only already-started historical calls remain in filtered history.
 
-An Auto denial uses the same model-facing text as a human rejection. Its `AutoReviewDeniedError` / `AUTO_REVIEW_DENIED` identity and optional raw reason travel through the ordinary native or PTC structured-error fields. The Web presentation normalizes the reason only when it renders the card.
+An Auto denial uses the same model-facing text as a human rejection. Its `AutoReviewDeniedError` / `AUTO_REVIEW_DENIED` identity and optional raw reason travel through the ordinary native or PTC structured-error fields. The Web tree recognizes that identity before keyed Tool-view dispatch and renders the generic denial card, so a specialized or external Tool view cannot hide the verdict. The presentation normalizes the reason only when it renders the card.
 
-Publication and teardown are fail-closed. A persisted Auto session cannot publish without the live contribution. During disposal, the plugin closes new admission, switches every live Auto session to Read Only through the normal preset writer, and then aborts and awaits in-flight reviews. If every migration succeeds, teardown removes the listener and contribution; if any migration fails, Cordis reports the cleanup error while retaining both registrations in their closed state, so later Auto calls stay denied and new Auto selections fail.
+Publication and teardown are fail-closed. A persisted Auto session cannot publish without the live Auto registration. Before changing any preset during disposal, the plugin captures the exact Session object identities that are retiring from Auto. The listener checks that set before derived permission state, so a partial migration that has already appended `permission/preset` or `sandbox/mode` still cannot reopen Tool execution. The plugin closes new admission, switches the captured sessions to Read Only through the normal preset writer, and then aborts and awaits in-flight reviews. If every migration succeeds, teardown removes the listener and Auto registration; if any migration fails, Cordis reports the cleanup error while retaining both in their closed state, so later calls from retiring sessions stay denied and new Auto selections fail.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Auto preset contribution, five-section request, strict decision parser, pre-execute listener, and teardown |
+| [`src/index.ts`](src/index.ts) | Fixed Auto registration, five-section request, strict decision parser, pre-execute listener, and teardown |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion for this stateless integration |
 | [`tests/auto-review.spec.ts`](tests/auto-review.spec.ts) | Logged-input, decision, cancellation, native/PTC, restore, and disposal behavior |
 | [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | Eight real-model deny/allow pairs using sixteen independent reviewer calls |
@@ -74,7 +74,7 @@ Publication and teardown are fail-closed. A persisted Auto session cannot publis
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Permission presets](../permission-presets/README.md) — the contributed preset directory and current-session write path.
+- [Permission presets](../permission-presets/README.md) — the fixed Auto registration and current-session write path.
 - [Tools subsystem](../../../docs/subsystems/tools.md) — the pre-execute decision and structured native/PTC failure fields.
 - [Subagent subsystem](../../../docs/subsystems/subagent.md) — the in-process inheritance boundary.
 - [Auto review decision](../../../.agents/notes/implemented/feature/2026-08-28-auto-review.md) — rationale, alternatives, and verification evidence.

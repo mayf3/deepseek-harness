@@ -3,11 +3,11 @@
  * approval-policy knobs. A switch records the selected preset, then writes
  * changed knobs through their canonical setters. Execution, prompt narration,
  * and replay keep reading their knob folds. The preset event preserves user
- * intent when two presets share a bundle. Effect-scoped integrations may add
- * current-session-only presets with a synchronous admission check; settings
- * defaults remain limited to the configured table. The read side ships as the
- * `permissions` session projection; the write side ships as the `/permission`
- * command.
+ * intent when two presets share a bundle. The Auto review integration may
+ * publish one fixed, current-session-only preset with a synchronous admission
+ * check; settings defaults remain limited to the configured table. The read
+ * side ships as the `permissions` session projection; the write side ships as
+ * the `/permission` command.
  *
  * @module dsh-permission-presets
  */
@@ -68,21 +68,6 @@ export interface PresetSpec {
   description?: string
 }
 
-/** One effect-scoped current-session preset supplied by an integration. */
-export interface PermissionPresetContribution {
-  /** Canonical preset name recorded in `permission/preset`. */
-  readonly name: string
-  /** Sandbox and approval values written by the normal preset path. */
-  readonly spec: PresetSpec
-  /**
-   * Synchronously admit one live selection. The reserved Auto contribution is
-   * also called before a stored Auto session publishes. Throwing leaves the
-   * session unchanged or vetoes Auto publication.
-   * @param session - session selecting this contribution or restoring Auto.
-   */
-  readonly admit: (session: Session) => void
-}
-
 /**
  * Returned when effective knob values match no available preset. Clients may
  * show it as the current value, but it is never a switch target or event payload.
@@ -91,6 +76,14 @@ export const CUSTOM_PRESET = 'custom'
 
 /** Canonical identity of the experimental per-call review preset. */
 export const AUTO_PRESET = 'auto'
+
+/** Fixed execution bundle and current-session presentation owned by this service. */
+const AUTO_PRESET_SPEC: PresetSpec = {
+  sandbox: 'danger-full-access',
+  approval: 'never',
+  name: 'Auto review',
+  description: 'Run without a sandbox after an experimental same-model review of every tool call.',
+}
 
 /** Settings namespace carrying the default for future sessions. */
 export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
@@ -176,8 +169,8 @@ export interface Config {
 }
 
 /**
- * Owns the deployment's configured and contributed permission presets and
- * their write path. Requires a confining `ctx.shell` executor and
+ * Owns the deployment's configured permission presets, the fixed Auto
+ * integration hook, and their write path. Requires a confining `ctx.shell` executor and
  * `ctx.approval`; unmatched knob values are reported as
  * {@link CUSTOM_PRESET}, not an error.
  */
@@ -205,7 +198,8 @@ export class PermissionPresetService extends Service {
   static inject = ['shell', 'approval', 'sessions', 'sessionProjections']
 
   private readonly presets: Record<string, PresetSpec>
-  private readonly contributions = new Map<string, PermissionPresetContribution>()
+  private autoAdmit: ((session: Session) => void) | undefined
+  private readonly permissionsRegistration: (() => void) & { republish(session: Session): void }
   private defaultSettings: () => PermissionSettings
 
   constructor(ctx: Context, config: Config) {
@@ -258,7 +252,7 @@ export class PermissionPresetService extends Service {
       })),
       currentValue: zod.string().min(1),
     }) as unknown as zod.ZodType<PermissionSelect>
-    ctx.sessionProjections.register({
+    this.permissionsRegistration = ctx.sessionProjections.register({
       key: 'permissions',
       stateVersion: 2,
       stateSchema: permissionStateSchema,
@@ -301,33 +295,29 @@ export class PermissionPresetService extends Service {
 
   /**
    * The advertised preset names: configured entries in declaration order,
-   * followed by live contributions in registration order.
+   * followed by Auto while its integration is live.
    * @returns every switchable preset name.
    */
   get names(): readonly string[] {
-    return [...Object.keys(this.presets), ...this.contributions.keys()]
+    return [...Object.keys(this.presets), ...(this.autoAdmit === undefined ? [] : [AUTO_PRESET])]
   }
 
   /**
-   * Register one current-session-only preset for the calling integration's
-   * effect lifetime.
-   * @param contribution - preset identity, knob bundle, and synchronous admission gate.
-   * @returns the async effect disposer that removes exactly this contribution.
+   * Publish the fixed current-session Auto preset for the calling
+   * integration's effect lifetime.
+   * @param admit - synchronous gate run before live Auto selection or restore.
+   * @returns the async effect disposer that removes Auto.
    */
-  register(contribution: PermissionPresetContribution): () => Promise<void> {
-    const { name } = contribution
+  registerAuto(admit: (session: Session) => void): () => Promise<void> {
     return this.ctx.effect(() => {
-      if (name === CUSTOM_PRESET) {
-        throw new Error(`permission: "${CUSTOM_PRESET}" is reserved for the derived not-a-preset state`)
-      }
-      if (Object.hasOwn(this.presets, name) || this.contributions.has(name)) {
-        throw new Error(`permission: preset "${name}" is already registered`)
-      }
-      this.contributions.set(name, contribution)
+      if (this.autoAdmit !== undefined) throw new Error('permission: preset "auto" is already registered')
+      this.autoAdmit = admit
+      this.republishPermissions()
       return () => {
-        this.contributions.delete(name)
+        this.autoAdmit = undefined
+        this.republishPermissions()
       }
-    }, `permissionPresets.register(${JSON.stringify(name)})`)
+    }, 'permissionPresets.registerAuto()')
   }
 
   /**
@@ -348,7 +338,7 @@ export class PermissionPresetService extends Service {
   /**
    * Resolve the preset matching the effective knob values. A still-matching
    * last selection wins shared-bundle ties; otherwise the first configured
-   * match, then the first contributed match, wins. Returns
+   * match, then Auto when live, wins. Returns
    * {@link CUSTOM_PRESET} when no available preset matches.
    * @param session - the session whose knob state is read.
    * @returns the effective preset name, or `custom` when nothing matches.
@@ -369,16 +359,13 @@ export class PermissionPresetService extends Service {
     for (const [name, spec] of Object.entries(this.presets)) {
       if (matches(spec)) return name
     }
-    for (const [name, contribution] of this.contributions) {
-      const { spec } = contribution
-      if (matches(spec)) return name
-    }
+    if (this.autoAdmit !== undefined && matches(AUTO_PRESET_SPEC)) return AUTO_PRESET
     return CUSTOM_PRESET
   }
 
   /**
    * Build the whole select value for one folded knob state: configured options
-   * in declaration order, live contributions in registration order, and
+   * in declaration order, Auto while live, and
    * `custom` appended exactly while derived.
    * @param state - the folded knob overrides.
    * @returns the `permissions` projection payload.
@@ -398,7 +385,7 @@ export class PermissionPresetService extends Service {
    * Resolve an available preset's knob bundle.
    * @param name - the preset name to resolve.
    * @returns the configured bundle.
-   * @throws when `name` is neither configured nor currently contributed.
+   * @throws when `name` is neither configured nor the currently live Auto preset.
    */
   resolve(name: string): PresetSpec {
     const spec = this.specOf(name)
@@ -411,7 +398,7 @@ export class PermissionPresetService extends Service {
   /**
    * Build the client option for an available preset or {@link CUSTOM_PRESET}.
    * A missing label falls back to the preset key.
-   * @param name - a configured or contributed preset key, or `custom`.
+   * @param name - a configured preset key, live `auto`, or `custom`.
    * @returns the option a client renders.
    * @throws when `name` is neither a table key nor `custom`.
    */
@@ -436,7 +423,7 @@ export class PermissionPresetService extends Service {
   /** Apply one preset with the caller-selected live or initialization policy writer. */
   private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
     const spec = this.resolve(name)
-    this.contributions.get(name)?.admit(session)
+    if (name === AUTO_PRESET) this.autoAdmit?.(session)
     if (this.current(session) !== name) {
       session.append('permission/preset', { preset: name })
     }
@@ -454,18 +441,17 @@ export class PermissionPresetService extends Service {
    * genuinely fresh session uses the current user default; seeded or partially
    * initialized sessions preserve their effective knob values and only gain
    * the missing durable facts. A stored Auto identity requires its live
-   * contribution and passes that contribution's admission check before
+   * integration and passes its admission check before
    * publication.
    */
   private pinInitialPermission(session: Session): void {
     const state = this.permissionState(session)
     const { preset, sandbox, approval, seeded } = state
     if (preset === AUTO_PRESET) {
-      const contribution = this.contributions.get(AUTO_PRESET)
-      if (contribution === undefined) {
+      if (this.autoAdmit === undefined) {
         throw new Error('permission: cannot restore preset "auto" without its active integration')
       }
-      contribution.admit(session)
+      this.autoAdmit(session)
     }
     if (preset === null && sandbox === null && approval === null && !seeded) {
       const name = this.defaultPreset
@@ -488,9 +474,15 @@ export class PermissionPresetService extends Service {
     }
   }
 
-  /** Resolve one configured or currently contributed preset without throwing. */
+  /** Republish the dynamic permissions wire view for every live Session. */
+  private republishPermissions(): void {
+    for (const session of this.ctx.sessions.list()) this.permissionsRegistration.republish(session)
+  }
+
+  /** Resolve one configured or currently live fixed preset without throwing. */
   private specOf(name: string): PresetSpec | undefined {
-    return this.presets[name] ?? this.contributions.get(name)?.spec
+    return this.presets[name]
+      ?? (name === AUTO_PRESET && this.autoAdmit !== undefined ? AUTO_PRESET_SPEC : undefined)
   }
 }
 

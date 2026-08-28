@@ -577,7 +577,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   WorkflowRun: 'workflow.md',
   VerifiedWebhookDelivery: 'webhook.md',
   WebhookRule: 'webhook.md',
-  PermissionPresetContribution: 'permission-presets.md',
   PresetOption: 'permission-presets.md',
   PresetSpec: 'permission-presets.md',
   InvariantInstaller: 'invariants.md',

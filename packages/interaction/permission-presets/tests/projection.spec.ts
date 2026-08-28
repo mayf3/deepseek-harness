@@ -48,11 +48,7 @@ async function agentFor(ctx: Context, session: Session) {
 
 async function mountAuto(ctx: Context) {
   return ctx.plugin(Object.assign((pluginCtx: Context) => {
-    pluginCtx.permissionPresets.register({
-      name: AUTO_PRESET,
-      spec: { sandbox: 'danger-full-access', approval: 'never', name: 'Auto review' },
-      admit: () => {},
-    })
+    pluginCtx.permissionPresets.registerAuto(() => {})
   }, { inject: ['permissionPresets'] }))
 }
 
@@ -86,7 +82,7 @@ describe('permissions projection unit', () => {
     expect(value?.options.at(-1)).toMatchObject({ value: 'custom', name: 'Custom' })
   })
 
-  it('projects a contributed preset only for its effect lifetime', async () => {
+  it('projects Auto only for its integration effect lifetime', async () => {
     const { ctx, session } = await harness()
     const fiber = await mountAuto(ctx)
     expect(ctx.sessionProjections.snapshot(session).values.permissions?.options.map(option => option.value))
@@ -94,6 +90,34 @@ describe('permissions projection unit', () => {
     await fiber.dispose()
     expect(ctx.sessionProjections.snapshot(session).values.permissions?.options.map(option => option.value))
       .toEqual(['workspace-write', 'danger-full-access'])
+  })
+
+  it('republishes the fixed Auto option on registration and removal without Session events', async () => {
+    const { ctx, session } = await harness()
+    const before = session.events.length
+    const changes: Array<{ options: string[]; seq: number; publication: string }> = []
+    ctx.sessionProjections.onChanged((_session, key, value, seq, publication) => {
+      if (key !== 'permissions') return
+      const select = value as { options: Array<{ value: string }> }
+      changes.push({ options: select.options.map(option => option.value), seq, publication })
+    })
+
+    const fiber = await mountAuto(ctx)
+    await fiber.dispose()
+
+    expect(session.events).toHaveLength(before)
+    expect(changes).toEqual([
+      {
+        options: ['workspace-write', 'danger-full-access', AUTO_PRESET],
+        seq: session.seq - 1,
+        publication: 'republish',
+      },
+      {
+        options: ['workspace-write', 'danger-full-access'],
+        seq: session.seq - 1,
+        publication: 'republish',
+      },
+    ])
   })
 
   it('has no permissions key without the service, and drops it on unload (HMR safety)', async () => {

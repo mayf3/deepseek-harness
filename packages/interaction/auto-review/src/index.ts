@@ -23,7 +23,6 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import {
   AUTO_PRESET,
-  type PermissionPresetContribution,
 } from '@deepseek-ai/dsh-permission-presets'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import {
@@ -33,12 +32,12 @@ import {
 } from '@deepseek-ai/dsh-tools'
 
 /** Structured error name persisted for every reviewer denial or failure. */
-export const AUTO_REVIEW_DENIED_ERROR_NAME = 'AutoReviewDeniedError'
+const AUTO_REVIEW_DENIED_ERROR_NAME = 'AutoReviewDeniedError'
 /** Structured error code persisted for every reviewer denial or failure. */
-export const AUTO_REVIEW_DENIED_CODE = 'AUTO_REVIEW_DENIED'
+const AUTO_REVIEW_DENIED_CODE = 'AUTO_REVIEW_DENIED'
 
 /** Fixed policy sent as the first of the review request's five sections. */
-export const REVIEW_POLICY = `REVIEW_POLICY
+const REVIEW_POLICY = `REVIEW_POLICY
 You are the final authorization reviewer for exactly one pending tool call. Your decision replaces human approval for this call. If you allow it, the call executes immediately with full host access and no later confirmation.
 
 Return exactly one JSON object and no other text: {"decision":"allow"}, {"decision":"deny"}, or {"decision":"deny","reason":"..."}. Never include a reason with allow.
@@ -50,13 +49,12 @@ Allow ordinary steps that are reasonably necessary to complete an authorized tas
 Judge the pending action by what its tool and arguments will actually do, not by the main agent's likely intention. Use the narrowest reasonable interpretation. Deny if authority or any required fact is missing, conflicting, ambiguous, or broader than the authorization.`
 
 /** A parsed reviewer decision. */
-export type AutoReviewDecision =
+type AutoReviewDecision =
   | { readonly decision: 'allow' }
   | { readonly decision: 'deny'; readonly reason?: string }
 
 interface HistoricalUserMessage {
   readonly kind: 'user-message'
-  readonly seq: number
   readonly authority: 'may-authorize' | 'evidence-only'
   readonly source: MessageSource
   readonly content: readonly ContentBlock[]
@@ -64,7 +62,6 @@ interface HistoricalUserMessage {
 
 interface HistoricalToolCall {
   readonly kind: 'tool-call'
-  readonly seq: number
   readonly authority: 'evidence-only'
   readonly mode: 'native' | 'ptc-inner'
   readonly name: string
@@ -211,7 +208,7 @@ function ptcAction(
  * @param exec - immutable pending execution.
  * @returns the exact route and four data sections paired with {@link REVIEW_POLICY}.
  */
-export function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
+function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
   const { session } = agent
   const events = session.events
   const nodes = [...session.surface.nodes]
@@ -258,7 +255,6 @@ export function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSna
       if (event.data.source.kind === 'tool') continue
       const entry: HistoricalUserMessage = {
         kind: 'user-message',
-        seq,
         authority: canAuthorize(event.data.source) ? 'may-authorize' : 'evidence-only',
         source: event.data.source,
         content: filteredUserContent(event.data.content),
@@ -287,7 +283,6 @@ export function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSna
       else {
         history.push({
           kind: 'tool-call',
-          seq: call.seq,
           authority: 'evidence-only',
           mode: 'native',
           name: call.data.name,
@@ -298,7 +293,6 @@ export function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSna
         if (start.data.subCallId === exec.callId) continue
         history.push({
           kind: 'tool-call',
-          seq: start.seq,
           authority: 'evidence-only',
           mode: 'ptc-inner',
           name: start.data.name,
@@ -389,7 +383,6 @@ async function review(ctx: Context, agent: Agent, exec: ToolExecution, signal: A
       content: [{ type: 'text', text: reviewUserText(snapshot) }],
       source: { kind: 'plugin', plugin: 'dsh-auto-review' },
     })],
-    sessionId: agent.session.id,
     signal,
   })
   return readDecision(ctx.llm.stream(options), signal)
@@ -408,18 +401,6 @@ function denied(exec: ToolExecution, reason?: string): PreToolDecision {
   }
 }
 
-/** Auto's Full access execution bundle and current-session presentation. */
-const contribution = (admit: PermissionPresetContribution['admit']): PermissionPresetContribution => ({
-  name: AUTO_PRESET,
-  spec: {
-    sandbox: 'danger-full-access',
-    approval: 'never',
-    name: 'Auto review',
-    description: 'Run without a sandbox after an experimental same-model review of every tool call.',
-  },
-  admit,
-})
-
 /** Install the Auto preset and its prepended per-call review gate. */
 export function apply(ctx: Context): void {
   // Failed disposal keeps the closed listener installed after this plugin
@@ -428,23 +409,20 @@ export function apply(ctx: Context): void {
   permissionPresets.resolve('read-only')
   let accepting = true
   const active = new Set<ActiveReview>()
+  const retiring = new Set<Agent['session']>()
 
   ctx.effect(function* () {
-    const stopContribution = permissionPresets.register(contribution((session) => {
+    const stopContribution = permissionPresets.registerAuto(() => {
       if (!accepting) throw new Error('auto-review: integration is closing')
-      if (ctx.sessions.get(session.id) !== session) {
-        throw new Error(`auto-review: session "${session.id}" is not live in this process`)
-      }
-    }))
+    })
     yield stopContribution
     const stopListener = ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
       const agent = exec.agent
-      if (agent === undefined
-        || permissionPresets.current(agent.session) !== AUTO_PRESET
-        || (exec.parent === undefined && exec.name === RUN_CODE_NAME)) {
+      if (agent === undefined || (exec.parent === undefined && exec.name === RUN_CODE_NAME)) {
         return next()
       }
-      if (!accepting) return denied(exec)
+      if (retiring.has(agent.session)) return denied(exec)
+      if (permissionPresets.current(agent.session) !== AUTO_PRESET) return next()
 
       const controller = new AbortController()
       const signal = AbortSignal.any([exec.signal, controller.signal])
@@ -466,6 +444,9 @@ export function apply(ctx: Context): void {
       const errors: unknown[] = []
       for (const session of ctx.sessions.list()) {
         if (permissionPresets.current(session) !== AUTO_PRESET) continue
+        retiring.add(session)
+      }
+      for (const session of retiring) {
         try {
           permissionPresets.set(session, 'read-only')
         } catch (error: unknown) {

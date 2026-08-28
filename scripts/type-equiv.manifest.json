@@ -1693,11 +1693,6 @@
     },
     {
       "doc": "docs/subsystems/permission-presets.md",
-      "symbol": "PermissionPresetContribution",
-      "source": "packages/interaction/permission-presets/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/permission-presets.md",
       "symbol": "PresetOption",
       "source": "packages/interaction/permission-presets/src/types.ts"
     },

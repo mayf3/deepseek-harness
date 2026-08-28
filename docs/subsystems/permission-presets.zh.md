@@ -2,7 +2,7 @@
 
 [English](permission-presets.md) | 中文
 
-[dsh-permission-presets](../../packages/interaction/permission-presets) 的权限预设层（`ctx.permissionPresets`，`PermissionPresetService`）把两个相互独立的强制执行 knob，即[沙箱模式](sandbox.zh.md)（`sandbox/mode`）与[审批策略](approval.zh.md)（`approval/policy`），捆绑成具名预设，供客户端作为单个 Permissions 选择器提供。配置表拥有未来会话默认值，而受 effect 作用域约束的 integration 可以贡献一个带同步准入检查、仅限当前会话的预设。该层是可选能力，且不拥有执行策略：提示词叙述与回放仍读取各自 knob 的折叠结果，任何额外强制执行则由 [Auto review](../../packages/interaction/auto-review/README.zh.md) 这类 contribution 拥有。[包 README](../../packages/interaction/permission-presets/README.zh.md)负责组合状态与限制；[沙箱切换设计](../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)负责原始旋钮依据。
+[dsh-permission-presets](../../packages/interaction/permission-presets) 的权限预设层（`ctx.permissionPresets`，`PermissionPresetService`）把两个相互独立的强制执行 knob，即[沙箱模式](sandbox.zh.md)（`sandbox/mode`）与[审批策略](approval.zh.md)（`approval/policy`），捆绑成具名预设，供客户端作为单个 Permissions 选择器提供。配置表拥有未来会话默认值，而固定的 `registerAuto(admit)` 钩子让 [Auto review](../../packages/interaction/auto-review/README.zh.md) integration 在一个 effect 生命周期内发布仅限当前会话的选项。该层是可选能力，且不拥有执行策略：提示词叙述与回放仍读取各自 knob 的折叠结果，额外强制执行由 Auto review 拥有。[包 README](../../packages/interaction/permission-presets/README.zh.md)负责组合状态与限制；[沙箱切换设计](../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)负责原始旋钮依据。
 
 源码：[`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
 
@@ -44,32 +44,17 @@ interface Config {
 
 该服务要求一个施加隔离的 `ctx.shell` 执行器和 `ctx.approval`，配置错误在插件加载时即失败：名为 `custom` 或 `auto` 的配置条目会抛出异常；在不施加隔离的 bash 执行器（没有 `sandboxMode` 能力事实）之上组合同样抛出异常，因为预设捆绑了一个沙箱模式。
 
-## 当前会话 contribution
+## 固定的当前会话 Auto 注册
 
-integration 会在自身 effect 生命周期内注册一个 contribution。contribution 按注册顺序排列在配置预设之后，绝不会进入 `permission.defaultPreset` 设置 schema，并在 effect dispose 时消失。同步 `admit` 回调会在选择动作修改 Session 之前运行。保留的 Auto 身份还要求其 live contribution 存在，并在存储的 Auto Session 发布前通过准入，因此 integration 缺失或正在关闭时不会改写持久身份。
+Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`。本服务固定 `auto` 身份、`danger-full-access` 加 `never` 的组合，以及客户端 label 与 description；调用方不能通过通用 contribution API 发布其他预设。Auto 排列在配置预设之后，绝不会进入 `permission.defaultPreset` 设置 schema，并在 effect dispose 时消失。同步 `admit` 回调会在 Auto 选择修改 Session 前，以及存储的 Auto Session 发布前运行，因此 integration 缺失或正在关闭时不会改写持久身份。
 
-```ts type-equiv
-/** One effect-scoped current-session preset supplied by an integration. */
-interface PermissionPresetContribution {
-  /** Canonical preset name recorded in `permission/preset`. */
-  readonly name: string
-  /** Sandbox and approval values written by the normal preset path. */
-  readonly spec: PresetSpec
-  /**
-   * Synchronously admit one live selection. The reserved Auto contribution is
-   * also called before a stored Auto session publishes. Throwing leaves the
-   * session unchanged or vetoes Auto publication.
-   * @param session - session selecting this contribution or restoring Auto.
-   */
-  readonly admit: (session: Session) => void
-}
-```
+注册或移除 Auto 会在每个 live Session 的当前投影水位显式重新发布完整 `permissions` wire 视图，而且不会追加 Session 事件。Session Controller 会把该帧标记为重新发布，因此客户端的同序列行会被替换，而普通帧与历史 baseline 仍严格采用更高序列胜出规则。
 
 ## 当前预设与派生的 `custom`
 
-`current(session)` 从必需的 `permissions` 投影派生实际生效的预设。该单元折叠会话的沙箱模式、审批策略和已记录选择；状态内部的缺失值回退到执行器配置的模式与审批服务配置，最后回退到 `ask`。投影 key 缺失时会显式失败。服务优先取仍然匹配的选择，其次取第一个匹配的配置条目，再取第一个匹配的 live contribution，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
+`current(session)` 从必需的 `permissions` 投影派生实际生效的预设。该单元折叠会话的沙箱模式、审批策略和已记录选择；状态内部的缺失值回退到执行器配置的模式与审批服务配置，最后回退到 `ask`。投影 key 缺失时会显式失败。服务优先取仍然匹配的选择，其次取第一个匹配的配置条目，再取固定组合匹配时的 live Auto，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
 
-`names` 先按声明顺序列出配置预设，再按注册顺序列出 live contribution。`optionOf(name)` 为可用 key（label 回退为该 key）或 `custom` 构建客户端渲染的选项，传入其他任何名称都会抛出异常。
+`names` 先按声明顺序列出配置预设，再在 Auto integration 存活时列出 Auto。`optionOf(name)` 为可用 key（label 回退为该 key）或 `custom` 构建客户端渲染的选项，传入其他任何名称都会抛出异常。
 
 ```ts type-equiv
 /** The select-option shape a presentation layer advertises for one preset (or for the derived `custom` state). */
@@ -85,9 +70,9 @@ interface PresetOption {
 
 ## 切换与 `permission/preset` 事件
 
-`set(session, name)` 解析预设（未知名称抛出异常），在适用时运行 contribution 的准入回调，在 `name` 尚不是生效预设时追加一条仅记日志的 `permission/preset` 事件，然后通过各旋钮自己的 setter（[dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) 的 `setSandboxMode` 与 [dsh-user-approval](../../packages/interaction/user-approval) 的 `setApprovalPolicy`）写入，且仅当该 knob 的生效值发生变化时才写。同一轮次内，选择事件先于旋钮事件出现；重新选择当前生效的预设则什么都不追加。
+`set(session, name)` 解析预设（未知名称抛出异常），在适用时运行 Auto 准入，在 `name` 尚不是生效预设时追加一条仅记日志的 `permission/preset` 事件，然后通过各旋钮自己的 setter（[dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) 的 `setSandboxMode` 与 [dsh-user-approval](../../packages/interaction/user-approval) 的 `setApprovalPolicy`）写入，且仅当该 knob 的生效值发生变化时才写。同一轮次内，选择事件先于旋钮事件出现；重新选择当前生效的预设则什么都不追加。
 
-`permission/preset` 是持久、仅记日志的用户意图：它不进入模型 transcript（文本记录），模型可见的后果由 knob 事件经各自消费方承担；它存在是为了在两个预设共享同一个旋钮组合时，让 `current()` 仍能保住用户选择的究竟是哪一个预设。`permissions` 投影把该选择与两个 knob 事件一同折叠，并保留用于区分空恢复 seed 与新会话的 `session/end-seed` 边界；回放不需要任何追赶状态或原始日志重扫。恢复的 `auto` 选择在 agent 发布前必须存在 Auto contribution。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)；方法签名见生成的[服务目录](#ctxpermissionpresets--permissionpresetservice)。
+`permission/preset` 是持久、仅记日志的用户意图：它不进入模型 transcript（文本记录），模型可见的后果由 knob 事件经各自消费方承担；它存在是为了在两个预设共享同一个旋钮组合时，让 `current()` 仍能保住用户选择的究竟是哪一个预设。`permissions` 投影把该选择与两个 knob 事件一同折叠，并保留用于区分空恢复 seed 与新会话的 `session/end-seed` 边界；回放不需要任何追赶状态或原始日志重扫。恢复的 `auto` 选择在 agent 发布前必须存在 live Auto 注册。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)；方法签名见生成的[服务目录](#ctxpermissionpresets--permissionpresetservice)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -101,21 +86,21 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 
 ### `ctx.permissionPresets` — `PermissionPresetService`
 
-Owns the deployment's configured and contributed permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.
+Owns the deployment's configured permission presets, the fixed Auto integration hook, and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.
 
 ```ts cordis-catalog
 /**
- * Register one current-session-only preset for the calling integration's
- * effect lifetime.
- * @param contribution - preset identity, knob bundle, and synchronous admission gate.
- * @returns the async effect disposer that removes exactly this contribution.
+ * Publish the fixed current-session Auto preset for the calling
+ * integration's effect lifetime.
+ * @param admit - synchronous gate run before live Auto selection or restore.
+ * @returns the async effect disposer that removes Auto.
  */
-register(contribution: PermissionPresetContribution): () => Promise<void>
+registerAuto(admit: (session: Session) => void): () => Promise<void>
 
 /**
  * Resolve the preset matching the effective knob values. A still-matching
  * last selection wins shared-bundle ties; otherwise the first configured
- * match, then the first contributed match, wins. Returns
+ * match, then Auto when live, wins. Returns
  * {@link CUSTOM_PRESET} when no available preset matches.
  * @param session - the session whose knob state is read.
  * @returns the effective preset name, or `custom` when nothing matches.
@@ -124,7 +109,7 @@ current(session: Session): string
 
 /**
  * Build the whole select value for one folded knob state: configured options
- * in declaration order, live contributions in registration order, and
+ * in declaration order, Auto while live, and
  * `custom` appended exactly while derived.
  * @param state - the folded knob overrides.
  * @returns the `permissions` projection payload.
@@ -135,14 +120,14 @@ selectFor(state: KnobState): PermissionSelect
  * Resolve an available preset's knob bundle.
  * @param name - the preset name to resolve.
  * @returns the configured bundle.
- * @throws when `name` is neither configured nor currently contributed.
+ * @throws when `name` is neither configured nor the currently live Auto preset.
  */
 resolve(name: string): PresetSpec
 
 /**
  * Build the client option for an available preset or {@link CUSTOM_PRESET}.
  * A missing label falls back to the preset key.
- * @param name - a configured or contributed preset key, or `custom`.
+ * @param name - a configured preset key, live `auto`, or `custom`.
  * @returns the option a client renders.
  * @throws when `name` is neither a table key nor `custom`.
  */

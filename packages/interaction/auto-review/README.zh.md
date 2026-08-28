@@ -36,11 +36,11 @@ shipped Web 组合包会在基础权限、Session、LLM 与 Tool 服务可用后
   name: '@deepseek-ai/dsh-auto-review'
 ```
 
-插件只在其 effect 生命周期内贡献保留的 `auto` 预设。用户可以通过 Web 选择器或 `/permission auto` 为当前会话选择它；它绝不会进入 `permission.defaultPreset` 的候选项。
+插件会在自身 effect 生命周期内调用权限服务固定的 `registerAuto(admit)` 钩子。权限服务拥有保留身份、Full access 旋钮组合与展示信息；用户可以通过 Web 选择器或 `/permission auto` 为当前会话选择 Auto，而它绝不会进入 `permission.defaultPreset` 的候选项。
 
 ### 审查与故障行为
 
-reviewer 使用最新记录的提供方／模型路由，并接收五个分区：固定的 `REVIEW_POLICY`、Session 工作目录、当前项目指令、过滤后的历史以及待审动作。direct-user 消息、压缩检查点与当前项目指令可以授权动作。其他 user-role 消息和历史调用仅作为证据；assistant 文本、推理与工具结果不会进入请求。
+reviewer 使用最新记录的提供方／模型路由，并接收五个分区：固定的 `REVIEW_POLICY`、Session 工作目录、当前项目指令、过滤后的历史以及待审动作。请求不会设置主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。direct-user 消息、压缩检查点与当前项目指令可以授权动作。其他 user-role 消息和历史调用仅作为证据；assistant 文本、推理与工具结果不会进入请求。
 
 决定协议只接受 `{"decision":"allow"}`、`{"decision":"deny"}` 或 `{"decision":"deny","reason":"..."}`。日志事实缺失或不一致、提供方故障、上下文超限、非法输出以及其他任何审查故障都会在工具主体前拒绝调用。调用方取消沿用普通 Tool 取消结果，不会转换为 Auto 拒绝。
 
@@ -54,15 +54,15 @@ reviewer 使用最新记录的提供方／模型路由，并接收五个分区�
 
 插件以前置方式注册一个 `tools/pre-execute` 监听器。它从可见的 `tool/call` 与最新 request-header schema 重建每个原生动作，并从对应的 `tool/code-dispatch-start` 快照重建每个 PTC inner action。当前动作只出现在 `PENDING_ACTION` 中；过滤历史只保留已经开始的历史调用。
 
-Auto 拒绝使用与人工拒绝相同的模型可见文本。其 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 身份与可选 raw reason 通过普通原生或 PTC 结构化错误字段传播。Web 展示层只在渲染工具卡时归一化原因。
+Auto 拒绝使用与人工拒绝相同的模型可见文本。其 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 身份与可选 raw reason 通过普通原生或 PTC 结构化错误字段传播。Web 树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此专用或外部 Tool 视图都不能遮住拒绝结论。展示层只在渲染工具卡时归一化原因。
 
-发布与资源释放都以拒绝方式关闭。持久 Auto 会话在 live contribution 缺失时不能发布。资源释放期间，插件先关闭新准入，通过普通预设写入器把所有 live Auto 会话切换到 Read Only，然后中止并等待在途审查。如果全部迁移成功，资源释放会移除监听器与 contribution；如果任一迁移失败，Cordis 会报告清理错误并让两项注册保留在已关闭状态，使后续 Auto 调用继续被拒绝、新的 Auto 选择继续失败。
+发布与资源释放都以拒绝方式关闭。持久 Auto 会话在 live Auto 注册缺失时不能发布。资源释放在修改任何预设前，会先捕获所有正在退出 Auto 的精确 Session 对象身份。监听器会先检查该集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放 Tool 执行。插件随后关闭新准入，通过普通预设写入器把这些已捕获会话切换到 Read Only，再中止并等待在途审查。如果全部迁移成功，资源释放会移除监听器与 Auto 注册；如果任一迁移失败，Cordis 会报告清理错误并让两者保留在已关闭状态，使退役会话的后续调用继续被拒绝、新的 Auto 选择继续失败。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Auto 预设 contribution、五分区请求、严格决定解析器、pre-execute 监听器与资源释放 |
+| [`src/index.ts`](src/index.ts) | 固定 Auto 注册、五分区请求、严格决定解析器、pre-execute 监听器与资源释放 |
 | [`src/invariant.ts`](src/invariant.ts) | 这一无状态集成的不变式伴生插件 |
 | [`tests/auto-review.spec.ts`](tests/auto-review.spec.ts) | 日志输入、决定、取消、原生／PTC、恢复与资源释放行为 |
 | [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | 八组真实模型拒绝／允许配对，共十六次独立 reviewer 调用 |
@@ -74,7 +74,7 @@ Auto 拒绝使用与人工拒绝相同的模型可见文本。其 `AutoReviewDen
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [权限预设](../permission-presets/README.zh.md)——贡献式预设目录与当前会话写入路径。
+- [权限预设](../permission-presets/README.zh.md)——固定 Auto 注册与当前会话写入路径。
 - [工具子系统](../../../docs/subsystems/tools.zh.md)——pre-execute 决定以及原生／PTC 结构化失败字段。
 - [Subagent 子系统](../../../docs/subsystems/subagent.zh.md)——in-process 继承边界。
 - [Auto review 决策](../../../.agents/notes/implemented/feature/2026-08-28-auto-review.zh.md)——依据、替代方案与验证证据。

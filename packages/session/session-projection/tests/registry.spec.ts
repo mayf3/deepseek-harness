@@ -2,6 +2,7 @@
  * SessionProjectionRegistry unit drive: eager apply on committed events with
  * lazy cell build (registration after events, session after registration),
  * the Object.is no-change gate (same reference ⇒ zero change-feed work),
+ * explicit same-watermark wire republishing,
  * snapshot consistency (asOfSeq = last event seq; values from the watermark
  * cache), duplicate-key rejection, stateVersion validation, and effect-tied
  * removal of registrations and change listeners (HMR safety).
@@ -103,14 +104,41 @@ describe('SessionProjectionRegistry drive', () => {
   it('notifies onChanged with the validated view and the causing seq, and skips same-reference applies', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())
-    const seen: { key: string; value: unknown; seq: number; sessionId: string }[] = []
-    ctx.sessionProjections.onChanged((changedSession, key, value, seq) => {
-      seen.push({ key, value, seq, sessionId: String(changedSession.id) })
+    const seen: { key: string; value: unknown; seq: number; sessionId: string; publication: string }[] = []
+    ctx.sessionProjections.onChanged((changedSession, key, value, seq, publication) => {
+      seen.push({ key, value, seq, sessionId: String(changedSession.id), publication })
     })
     const event = mark(session, ['a'])
     // Non-matching event: apply returns the same reference — no notification.
     session.append('turn/start', { turn: 1 })
-    expect(seen).toEqual([{ key: 'test/marks', value: { marks: ['a'] }, seq: event.seq, sessionId: String(session.id) }])
+    expect(seen).toEqual([{
+      key: 'test/marks', value: { marks: ['a'] }, seq: event.seq,
+      sessionId: String(session.id), publication: 'change',
+    }])
+  })
+
+  it('republishes one registration wire view at its current watermark without a Session event', async () => {
+    const { ctx, session } = await harness()
+    let suffix = 'before'
+    const definition = marksUnit()
+    definition.wire.view = state => ({ marks: [...(state?.marks ?? []), suffix] })
+    const registration = ctx.sessionProjections.register(definition)
+    mark(session, ['logged'])
+    const eventCount = session.events.length
+    const seen: { value: unknown; seq: number; publication: string }[] = []
+    ctx.sessionProjections.onChanged((_changedSession, _key, value, seq, publication) => {
+      seen.push({ value, seq, publication })
+    })
+
+    suffix = 'after'
+    registration.republish(session)
+
+    expect(session.events).toHaveLength(eventCount)
+    expect(seen).toEqual([{
+      value: { marks: ['logged', 'after'] },
+      seq: session.seq - 1,
+      publication: 'republish',
+    }])
   })
 
   it('drives independently per session (cells are per-session watermarks)', async () => {

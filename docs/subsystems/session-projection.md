@@ -83,23 +83,27 @@ interface ProjectionSnapshot {
 
 ```ts type-equiv
 /**
- * Change-feed listener: one unit's value changed for one session. `value` is
- * the schema-validated `view` output; `seq` is the unit's watermark at
- * emission (the seq of the event that caused the change).
+ * Change-feed listener: one unit publishes one value for one session. `value`
+ * is the schema-validated `view` output; `seq` is the unit's watermark at
+ * emission. `publication` distinguishes an event-driven state change from an
+ * explicit same-watermark republish after an external view dependency changes.
  */
 type ProjectionChangeListener = (
   session: Session,
   key: Extract<keyof SessionProjectionMap, string>,
   value: unknown,
   seq: number,
+  publication: 'change' | 'republish',
 ) => void
 ```
 
-`snapshot(session)` is fully synchronous: a carrier reads it in the same tick as its page slice, so `asOfSeq` covers both reads at one sequence number. It returns only client views, and every value passes its unit's `viewSchema` before return. `stateOf(session, key)` reads one live host state without computing unrelated views; callers must not mutate the borrowed reference. The change feed fires once per client-visible unit whose state *reference* changed for each committed event; `apply` must return the same reference when its state did not change.
+`snapshot(session)` is fully synchronous: a carrier reads it in the same tick as its page slice, so `asOfSeq` covers both reads at one sequence number. It returns only client views, and every value passes its unit's `viewSchema` before return. `stateOf(session, key)` reads one live host state without computing unrelated views; callers must not mutate the borrowed reference. Event-driven publications fire once per client-visible unit whose state *reference* changed for each committed event; `apply` must return the same reference when its state did not change. A registration's `republish(session)` recomputes only its current wire view and publishes it at the existing watermark without appending an event.
+
+Session Controller clients keep ordinary projection frames and history baselines under a strict higher-sequence-wins rule, so an equal-cut history page cannot overwrite or clear an existing row. A frame marked `republish: true` may replace an equal-sequence row. The complete baseline that opens a replacement control-stream generation is authoritative at an equal sequence and clears keys it omits.
 
 ## The registry: `ctx.sessionProjections`
 
-`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect whose disposer rides the calling fiber: an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence; a duplicate key with a different `stateVersion` throws, while same-version registrants share one unit and are counted. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
+`SessionProjectionRegistry` ([signatures](#ctxsessionprojections--sessionprojectionregistry)) owns the drive: one `session/event` subscription, eager `apply` over every registered unit, and per-session per-unit watermark cells. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect whose callable disposer rides the calling fiber and exposes `republish(session)`; an unloaded domain plugin's key (with its cached cells) disappears from subsequent drives and snapshots, and clients read that as capability absence. A duplicate key with a different `stateVersion` throws, while same-version registrants share one unit and are counted. Domain plugins register under `ctx.inject(['sessionProjections'], …)` so headless assemblies without the registry stay unaffected.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -177,7 +181,7 @@ Source: [`packages/session/session-projection-cache/src/index.ts`](../../package
 
 ### `ctx.sessionProjections` — `SessionProjectionRegistry`
 
-`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit's `apply` (eager drive), and a changed state reference in a client-visible unit notifies the change feed with the schema-validated view. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin's key disappears from snapshots and clients read it as capability absence. A host reader either declares `sessionProjections` in its plugin `inject` or fails explicitly when the registry or required key is absent. Contributors may preserve optional registration through `ctx.inject(['sessionProjections'], ...)`. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.
+`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit's `apply` (eager drive), and a changed state reference in a client-visible unit notifies the change feed with the schema-validated view. A registration handle can explicitly republish its current wire view at the same watermark when an external dependency changes. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin's key disappears from snapshots and clients read it as capability absence. A host reader either declares `sessionProjections` in its plugin `inject` or fails explicitly when the registry or required key is absent. Contributors may preserve optional registration through `ctx.inject(['sessionProjections'], ...)`. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.
 
 ```ts cordis-catalog
 /**
@@ -186,22 +190,24 @@ Source: [`packages/session/session-projection-cache/src/index.ts`](../../package
  * removes the key — and the unit's cached cells — from subsequent drives
  * and snapshots.
  * @param definition - key, state schema, pure unit functions, and stateVersion.
- * @returns the exact disposer that unregisters this unit.
+ * @returns a callable disposer whose `republish(session)` method emits this
+ *   unit's current wire view at its existing watermark without a Session event.
  */
-register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): () => void
+register< K extends keyof SessionProjectionMap, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'> & { wire: NonNullable<ProjectionDefinition<K, S>['wire']> }, ): (() => void) & { republish(session: Session): void }
 
 /**
  * Register one host-only unit. Its state is omitted from client snapshots
  * and always checkpointed like every other unit.
  * @param definition - key, state schema, pure unit functions, and stateVersion.
- * @returns the exact disposer that unregisters this unit.
+ * @returns a callable disposer; `republish(session)` is a no-op for this
+ *   host-only unit.
  */
-register< K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjectionMap>, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'>, ): () => void
+register< K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjectionMap>, S extends SessionProjectionStateMap[K], >( definition: Omit<ProjectionDefinition<K, S>, 'wire'>, ): (() => void) & { republish(session: Session): void }
 
 /**
  * Subscribe to the change feed. The registration is an effect on the
  * calling context's fiber.
- * @param listener - called once per client-visible unit whose state reference changed, per committed event.
+ * @param listener - called for event-driven client-visible changes and explicit republishes.
  * @returns the exact disposer that unsubscribes.
  */
 onChanged(listener: ProjectionChangeListener): () => void

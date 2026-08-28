@@ -154,6 +154,42 @@ describe('keyed toolview hole through the real machinery', () => {
     await b.runtime.dispose()
   })
 
+  it('does not let external skill or Cordis keyed rows hide an Auto denial', async () => {
+    const denied = (seq: number, callId: string, name: string) => toolResult(
+      seq,
+      callId,
+      name,
+      '{}',
+      {
+        content: [{ type: 'text', text: 'Tool execution rejected by user' }],
+        isError: true,
+        error: {
+          name: 'AutoReviewDeniedError',
+          code: 'AUTO_REVIEW_DENIED',
+          reason: 'outside the authorized scope',
+        },
+      },
+    )
+    const b = await bench([
+      denied(3, 'skill-1', 'skill'),
+      denied(4, 'cordis-1', 'cordis_define'),
+    ])
+    b.slots.register(
+      { name: 'tool.call.toolview', key: 'skill' },
+      () => <div data-testid="external-skill-row" />,
+    )
+    b.slots.register(
+      { name: 'tool.call.toolview', key: 'cordis_define' },
+      () => <div data-testid="external-cordis-row" />,
+    )
+
+    const view = b.runtime.renderRoot()
+    expect(view.queryByTestId('external-skill-row')).toBeNull()
+    expect(view.queryByTestId('external-cordis-row')).toBeNull()
+    expect(view.getAllByText('Rejected by Auto review')).toHaveLength(2)
+    await b.runtime.dispose()
+  })
+
   it('renders top-level Cordis calls with lifecycle titles over the generic variants', async () => {
     const b = await bench([
       toolResult(3, 'cordis-1', 'cordis_runtime_inspect', '{"what":"api","name":"tools"}'),

@@ -2,6 +2,7 @@
 import { memo, useMemo, type ReactNode } from 'react'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type { ToolCallOwnerProps, ToolTreeProps } from '../contract/slots.ts'
+import { toolRowModel } from './models/tool-call-model.ts'
 import { GenericToolCard } from './toolviews/GenericToolCard.tsx'
 import css from './ToolCallTree.module.css'
 
@@ -30,6 +31,10 @@ const ToolCall = memo(function ToolCall({
     home,
     inspect: () => { inspectCall(callId) },
   }), [callId, toolName, block, openFile, cwd, home, inspectCall])
+  const autoReviewDenied = useMemo(
+    () => toolRowModel(toolName, block).autoReviewDenial !== null,
+    [toolName, block],
+  )
   return (
     <div
       className={css.callRow}
@@ -37,10 +42,12 @@ const ToolCall = memo(function ToolCall({
       data-chat-call-id={callId}
       data-selected={selected || undefined}
     >
-      {renderSlot('tool.call.toolview', owner, {
-        entryKey: toolName,
-        fallback: <GenericToolCard {...owner} t={t} />,
-      })}
+      {autoReviewDenied
+        ? <GenericToolCard {...owner} t={t} />
+        : renderSlot('tool.call.toolview', owner, {
+          entryKey: toolName,
+          fallback: <GenericToolCard {...owner} t={t} />,
+        })}
       {children}
     </div>
   )

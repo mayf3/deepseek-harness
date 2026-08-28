@@ -7,7 +7,7 @@ import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import PermissionPresetService, {
   AUTO_PRESET, CUSTOM_PRESET, PERMISSION_SETTINGS_NAMESPACE,
 } from '@deepseek-ai/dsh-permission-presets'
-import type { Config, PermissionPresetContribution } from '@deepseek-ai/dsh-permission-presets'
+import type { Config } from '@deepseek-ai/dsh-permission-presets'
 import { SettingsProvider } from '@deepseek-ai/dsh-settings'
 import type { SettingsNamespace } from '@deepseek-ai/dsh-settings'
 
@@ -50,17 +50,9 @@ function freshSession(id: string): Session {
   return Session.create(SessionId(id))
 }
 
-function autoContribution(admit: PermissionPresetContribution['admit'] = () => {}): PermissionPresetContribution {
-  return {
-    name: AUTO_PRESET,
-    spec: { sandbox: 'danger-full-access', approval: 'never', name: 'Auto review' },
-    admit,
-  }
-}
-
-async function mountAuto(ctx: Context, admit?: PermissionPresetContribution['admit']) {
+async function mountAuto(ctx: Context, admit: (session: Session) => void = () => {}) {
   return ctx.plugin(Object.assign((pluginCtx: Context) => {
-    pluginCtx.permissionPresets.register(autoContribution(admit))
+    pluginCtx.permissionPresets.registerAuto(admit)
   }, { inject: ['permissionPresets'] }))
 }
 
@@ -126,26 +118,27 @@ describe('PermissionPresetService', () => {
     expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
     expect(ctx.permissionPresets.resolve(AUTO_PRESET)).toEqual({
       sandbox: 'danger-full-access', approval: 'never', name: 'Auto review',
+      description: 'Run without a sandbox after an experimental same-model review of every tool call.',
     })
-    expect(ctx.permissionPresets.optionOf(AUTO_PRESET)).toEqual({ value: AUTO_PRESET, name: 'Auto review' })
+    expect(ctx.permissionPresets.optionOf(AUTO_PRESET)).toEqual({
+      value: AUTO_PRESET,
+      name: 'Auto review',
+      description: 'Run without a sandbox after an experimental same-model review of every tool call.',
+    })
 
     await fiber.dispose()
     expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access'])
     expect(() => ctx.permissionPresets.resolve(AUTO_PRESET)).toThrow(/unknown preset "auto"/)
   })
 
-  it('rejects reserved, configured, and duplicate contribution names', async () => {
+  it('rejects a duplicate Auto integration', async () => {
     const ctx = await mounted()
-    expect(() => ctx.permissionPresets.register({ ...autoContribution(), name: CUSTOM_PRESET }))
-      .toThrow(/"custom" is reserved/)
-    expect(() => ctx.permissionPresets.register({ ...autoContribution(), name: 'workspace-write' }))
-      .toThrow(/already registered/)
-    ctx.permissionPresets.register(autoContribution())
-    expect(() => ctx.permissionPresets.register(autoContribution()))
+    ctx.permissionPresets.registerAuto(() => {})
+    expect(() => ctx.permissionPresets.registerAuto(() => {}))
       .toThrow(/already registered/)
   })
 
-  it('derives a contributed bundle when no configured preset matches it', async () => {
+  it('derives the fixed Auto bundle when no configured preset matches it', async () => {
     const ctx = await mounted({ config: { presets: {
       'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
     } } })
@@ -158,7 +151,7 @@ describe('PermissionPresetService', () => {
     expect(ctx.permissionPresets.current(session)).toBe(CUSTOM_PRESET)
   })
 
-  it('runs a contributed preset admission before any write, including a no-op selection', async () => {
+  it('runs Auto admission before any write, including a no-op selection', async () => {
     const ctx = await mounted()
     const admitted: Session[] = []
     await mountAuto(ctx, (session) => { admitted.push(session) })

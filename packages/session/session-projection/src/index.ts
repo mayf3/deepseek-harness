@@ -83,15 +83,17 @@ export interface ProjectionDefinition<
 }
 
 /**
- * Change-feed listener: one unit's value changed for one session. `value` is
- * the schema-validated `view` output; `seq` is the unit's watermark at
- * emission (the seq of the event that caused the change).
+ * Change-feed listener: one unit publishes one value for one session. `value`
+ * is the schema-validated `view` output; `seq` is the unit's watermark at
+ * emission. `publication` distinguishes an event-driven state change from an
+ * explicit same-watermark republish after an external view dependency changes.
  */
 export type ProjectionChangeListener = (
   session: Session,
   key: Extract<keyof SessionProjectionMap, string>,
   value: unknown,
   seq: number,
+  publication: 'change' | 'republish',
 ) => void
 
 /**
@@ -166,7 +168,8 @@ interface Registration {
  * service subscribes to `session/event` once; every committed event passes
  * every registered unit's `apply` (eager drive), and a changed state
  * reference in a client-visible unit notifies the change feed with the
- * schema-validated view.
+ * schema-validated view. A registration handle can explicitly republish its
+ * current wire view at the same watermark when an external dependency changes.
  * Cells build lazily — a unit registered after events flowed, or a session
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
@@ -210,7 +213,8 @@ export class SessionProjectionRegistry extends Service {
    * removes the key — and the unit's cached cells — from subsequent drives
    * and snapshots.
    * @param definition - key, state schema, pure unit functions, and stateVersion.
-   * @returns the exact disposer that unregisters this unit.
+   * @returns a callable disposer whose `republish(session)` method emits this
+   *   unit's current wire view at its existing watermark without a Session event.
    */
   register<
     K extends keyof SessionProjectionMap,
@@ -219,22 +223,23 @@ export class SessionProjectionRegistry extends Service {
     definition: Omit<ProjectionDefinition<K, S>, 'wire'> & {
       wire: NonNullable<ProjectionDefinition<K, S>['wire']>
     },
-  ): () => void
+  ): (() => void) & { republish(session: Session): void }
   /**
    * Register one host-only unit. Its state is omitted from client snapshots
    * and always checkpointed like every other unit.
    * @param definition - key, state schema, pure unit functions, and stateVersion.
-   * @returns the exact disposer that unregisters this unit.
+   * @returns a callable disposer; `republish(session)` is a no-op for this
+   *   host-only unit.
    */
   register<
     K extends Exclude<keyof SessionProjectionStateMap, keyof SessionProjectionMap>,
     S extends SessionProjectionStateMap[K],
   >(
     definition: Omit<ProjectionDefinition<K, S>, 'wire'>,
-  ): () => void
+  ): (() => void) & { republish(session: Session): void }
   register<K extends keyof SessionProjectionStateMap, S extends SessionProjectionStateMap[K]>(
     definition: ProjectionDefinition<K, S>,
-  ): () => void {
+  ): (() => void) & { republish(session: Session): void } {
     const wire = definition.wire as {
       viewSchema: ZodType
       view(state: S): unknown
@@ -252,6 +257,7 @@ export class SessionProjectionRegistry extends Service {
     if (!Number.isSafeInteger(definition.stateVersion) || definition.stateVersion < 0) {
       throw new Error(`session projection ${JSON.stringify(definition.key)} stateVersion must be a non-negative integer, got ${String(definition.stateVersion)}`)
     }
+    let active = false
     const dispose = this.ctx.effect(function* (this: SessionProjectionRegistry) {
       const key = erased.key
       const existing = this.registrations.get(key)
@@ -263,7 +269,9 @@ export class SessionProjectionRegistry extends Service {
         }
         existing.refs += 1
       }
+      active = true
       yield () => {
+        active = false
         const live = this.registrations.get(key)
         /* v8 ignore next -- the disposer runs once per successful registration, so the entry it counted is still here */
         if (live === undefined) return
@@ -271,13 +279,36 @@ export class SessionProjectionRegistry extends Service {
         if (live.refs === 0) this.registrations.delete(key)
       }
     }.bind(this), 'sessionProjections.register()')
-    return () => void dispose()
+    return Object.assign(
+      () => {
+        active = false
+        void dispose()
+      },
+      {
+        republish: (session: Session): void => {
+          if (!active || this.listeners.size === 0) return
+          const registration = this.registrations.get(erased.key)
+          if (registration?.def.wire === undefined) return
+          const cell = this.cellFor(registration, session)
+          const value = this.viewCell(registration, cell)
+          for (const listener of this.listeners) {
+            listener(
+              session,
+              registration.def.key as Extract<keyof SessionProjectionMap, string>,
+              value,
+              cell.observedSeq,
+              'republish',
+            )
+          }
+        },
+      },
+    )
   }
 
   /**
    * Subscribe to the change feed. The registration is an effect on the
    * calling context's fiber.
-   * @param listener - called once per client-visible unit whose state reference changed, per committed event.
+   * @param listener - called for event-driven client-visible changes and explicit republishes.
    * @returns the exact disposer that unsubscribes.
    */
   onChanged(listener: ProjectionChangeListener): () => void {
@@ -631,7 +662,7 @@ export class SessionProjectionRegistry extends Service {
       if (changed && registration.def.wire !== undefined && this.listeners.size > 0) {
         const value = this.viewCell(registration, cell)
         for (const listener of this.listeners) {
-          listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)
+          listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq, 'change')
         }
       }
     }
