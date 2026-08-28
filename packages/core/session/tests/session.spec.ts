@@ -142,11 +142,9 @@ describe('Session', () => {
 
   it('marks an explicitly empty seed without marking a fresh session', () => {
     const fresh = Session.create(SessionId('fresh-empty'))
-    expect(fresh.seeded).toBe(false)
     expect(fresh.snapshotEvents()).toEqual([])
 
     const resumed = Session.create(SessionId('resumed-empty'), [])
-    expect(resumed.seeded).toBe(true)
     expect(resumed.firstLiveSeq).toBe(0)
     expect(resumed.snapshotEvents()).toMatchObject([
       { type: 'session/end-seed', seq: 0, data: {} },

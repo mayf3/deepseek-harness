@@ -380,13 +380,6 @@ declare class Session {
   */
   readonly firstLiveSeq: number;
   /**
-   * Whether construction received a replay, fork, or restored seed.
-   * Every seeded lifecycle has a `session/end-seed` marker after construction;
-   * this field distinguishes an explicitly empty seed from a fresh session
-   * without scanning the log.
-   */
-  readonly seeded: boolean;
-  /**
    * Create a detached session by validating and snapshotting borrowed seed
    * events and storage metadata.
    * @param id - session identity.

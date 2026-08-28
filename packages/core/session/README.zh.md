@@ -53,8 +53,6 @@ session.deriveMessages()         // the derived model history
 
 `session.seq` 无需物化数组即可读取当前日志长度，`session.eventAt(seq)` 按序列号读取单个已接受且深度冻结的事件。`session.snapshotEvents(fromSeq?, toSeqExclusive?)` 会物化半开区间的冻结稳定快照；当前完整快照会缓存到下一次追加。只需要长度或单个事件的调用方使用 `seq` 或 `eventAt()`。
 
-`session.seeded` 可区分以 replay、fork 或恢复 seed（包括显式空 seed）构造的会话与全新会话，无需扫描 `session/end-seed`。
-
 ### 派生会话的 fork
 
 `ctx.sessions.fork(source, boundary?, childSessionId?)` 选取截至 `boundary` 事件序号（含该事件）的源事件（默认：当前最后一个事件），要求所选前缀结束时没有开放轮次，再创建带谱系元数据的实时子会话。必须在轮次中途分支的工具时委派会裁剪到已完成前缀。

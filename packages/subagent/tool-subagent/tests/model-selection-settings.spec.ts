@@ -314,6 +314,10 @@ describe('SubagentModelSelectionConfig', () => {
       enabled: true,
       allowedModels: ALLOWED_MODELS,
     })
+    const resumedEmpty = await createAgent(ctx, 'resumed-empty', { seed: [] })
+    expect(selectable(ctx, resumedEmpty)).toBe(false)
+    expect(subagentModelSelectionPolicy(ctx.sessionProjections, resumedEmpty.session)).toBeUndefined()
+
     const resumedDisabled = await createAgent(ctx, 'resumed-disabled', { seed: oldSeed.snapshotEvents() })
     expect(selectable(ctx, resumedDisabled)).toBe(false)
     expect(subagentModelSelectionPolicy(ctx.sessionProjections, resumedDisabled.session)).toBeUndefined()
