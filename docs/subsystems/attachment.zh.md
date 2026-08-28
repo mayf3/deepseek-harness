@@ -10,7 +10,7 @@
 
 ## 标识与经过校验的元数据
 
-`AttachmentId` 是带类型标记的不透明字符串。本地后端目前生成 `sha256:<digest>`，但消费方既不能解析这种表示，也不能据此派生文件系统路径。消费方可以通过 `imageHostPath()` 询问附件提供方所持对象的位置，然后必须由当前执行文件系统判断模型工具能否读取该宿主路径。
+`AttachmentId` 是带类型标记的不透明字符串。本地后端目前生成 `sha256:<digest>`，但消费方既不能解析这种表示，也不能据此派生文件系统路径。消费方可以通过 `imageHostPath()` 询问附件提供方所持对象的位置，然后必须由当前执行文件系统判断模型工具能否读取该宿主路径。模型可以把这样的路径直接传回 `read_image`：无扩展名文件按文件签名识别格式，重新保存规范化对象会去重到同一个内容寻址引用。
 
 ```ts type-equiv
 /** Raster image formats accepted by the version-one attachment path. */

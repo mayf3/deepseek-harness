@@ -172,6 +172,28 @@ describe('local attachment store', () => {
     expect(String(saved.attachmentId)).toBe(`sha256:${createHash('sha256').update(read.data).digest('hex')}`)
   })
 
+  it('re-saves a re-encoded normalized object byte-identically to the same reference', async () => {
+    const storageRoot = await root()
+    const oversized = new Uint8Array(await sharp({
+      create: { width: 4, height: 4, channels: 3, background: { r: 9, g: 9, b: 9 } },
+    }).png().toBuffer())
+    const policy = { maxPixels: POLICY.maxPixels, maxDimension: 2, maxBytes: 1024 * 1024 }
+    const saved = await saveImageFile(storageRoot, {
+      data: oversized, mediaType: 'image/png', name: 'big.png',
+    }, { ...LIMITS, maxImagePixels: 64 }, policy)
+
+    // Normalization passes an already-normalized object through unchanged, so
+    // reading the object file and saving those bytes again deduplicates: the
+    // read_image tool can accept object paths without minting new attachments.
+    const objectBytes = (await readImageFile(storageRoot, saved)).data
+    const resaved = await saveImageFile(storageRoot, {
+      data: objectBytes, mediaType: saved.mediaType, name: 'big',
+    }, { ...LIMITS, maxImagePixels: 64 }, policy)
+    expect(resaved.attachmentId).toBe(saved.attachmentId)
+    expect(resaved.bytes).toBe(saved.bytes)
+    expect(resaved.originalDimensions).toBeUndefined()
+  })
+
   it('keeps admitted history readable after deployment limits become stricter', async () => {
     const storageRoot = await root()
     const ref = await saveImageFile(storageRoot, { data: PNG, mediaType: 'image/png' }, LIMITS, POLICY)

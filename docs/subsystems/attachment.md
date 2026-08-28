@@ -10,7 +10,7 @@ Source: [`packages/attachment/attachment/src/types.ts`](../../packages/attachmen
 
 ## Identity and verified metadata
 
-`AttachmentId` is a branded opaque string. The local backend currently emits `sha256:<digest>`, but consumers must neither parse that representation nor derive a filesystem path from it. A consumer may ask the attachment provider for its object location through `imageHostPath()`, then must use the current execution filesystem to decide whether model tools can read that host path.
+`AttachmentId` is a branded opaque string. The local backend currently emits `sha256:<digest>`, but consumers must neither parse that representation nor derive a filesystem path from it. A consumer may ask the attachment provider for its object location through `imageHostPath()`, then must use the current execution filesystem to decide whether model tools can read that host path. The model may pass such a path back to `read_image` directly: extension-less files are identified from their file signature, and re-saving a normalized object deduplicates to the same content-addressed reference.
 
 ```ts type-equiv
 /** Raster image formats accepted by the version-one attachment path. */

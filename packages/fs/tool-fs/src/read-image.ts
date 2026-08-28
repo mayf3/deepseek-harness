@@ -1,5 +1,8 @@
 /**
- * The model-facing `read_image` tool commits a PNG/JPEG/WebP/GIF file.
+ * The model-facing `read_image` tool commits a PNG/JPEG/WebP/GIF file. A path
+ * without a file extension — normalized attachment objects are named by their
+ * content digest alone — is accepted too: its format comes from the file
+ * signature, and the attachment service's full decode stays authoritative.
  *
  * The route gate is deliberately stricter than the host upload preflight. An
  * image-reading tool is useful only when the exact calling route can inspect
@@ -10,8 +13,8 @@
 
 import { basename, extname } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
-import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, AttachmentId, sniffImageMediaType } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentStore, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolExecution } from '@deepseek-ai/dsh-tools'
@@ -98,6 +101,13 @@ export async function assertImageCapableRoute(ctx: Context, exec: ToolExecution,
   }
 }
 
+/** Refuse a media type outside the deployment's accepted set, naming the offending path. */
+function assertDeploymentAccepts(attachments: AttachmentStore, mediaType: ImageMediaType, displayPath: string): void {
+  if (!attachments.imageLimits.mediaTypes.includes(mediaType)) {
+    throw new Error(`cannot read "${displayPath}": ${mediaType} images are not accepted by this deployment`)
+  }
+}
+
 /**
  * Re-brand a structured image outcome into the durable attachment reference an
  * `ImageBlock` carries.
@@ -170,6 +180,7 @@ export function applyReadImageTool(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'read_image',
     description: 'Read a PNG/JPEG/WebP/GIF file and return the image itself. '
+      + 'A path without a file extension is accepted; the format is detected from the file content, so normalized attachment paths can be passed directly without copying or renaming. '
       + 'Harness validates and downscales large supported images before the next model request, so use this tool directly instead of installing image libraries or creating thumbnails merely to inspect an image. '
       + 'Independent files may be read concurrently in small batches. Requires the current model to accept image input.',
     parameters: {
@@ -192,19 +203,20 @@ export function applyReadImageTool(ctx: Context): void {
     async execute(args, exec) {
       if (args.file_path.trim().length === 0) throw new Error('file_path must be a non-empty string')
 
-      // Every gate runs before any filesystem I/O so a refusal never leaks
-      // partial reads or attachment writes.
-      const mediaType = imageMediaTypeForPath(args.file_path)
-      if (mediaType === undefined) {
-        throw new Error(`cannot read "${args.file_path}": read_image only accepts PNG/JPEG/WebP/GIF paths`)
+      // Every pre-read gate runs before any filesystem I/O so a refusal never
+      // leaks partial reads or attachment writes. An extension-less path
+      // declares no format, so only its format and deployment media-type
+      // checks wait for the bytes.
+      const extension = extname(args.file_path).toLowerCase()
+      const declared = imageMediaTypeForPath(args.file_path)
+      if (declared === undefined && extension !== '') {
+        throw new Error(`cannot read "${args.file_path}": the ${extension} extension does not declare a supported image format; read_image accepts PNG/JPEG/WebP/GIF files, including extension-less files in those formats`)
       }
       const attachments = ctx.get('attachments')
       if (attachments === undefined) {
         throw new Error(`cannot read "${args.file_path}" as an image: no attachment service is mounted`)
       }
-      if (!attachments.imageLimits.mediaTypes.includes(mediaType)) {
-        throw new Error(`cannot read "${args.file_path}": ${mediaType} images are not accepted by this deployment`)
-      }
+      if (declared !== undefined) assertDeploymentAccepts(attachments, declared, args.file_path)
       await assertImageCapableRoute(ctx, exec, args.file_path)
 
       const { target, info } = await resolveRegularReadTarget(ctx, exec, args.file_path)
@@ -213,6 +225,11 @@ export function applyReadImageTool(ctx: Context): void {
       // aggregate bound applies beside the per-image bound.
       const byteCap = Math.min(attachments.imageLimits.maxImageBytes, attachments.imageLimits.maxMessageImageBytes)
       const data = await ctx.fs.readBytes(target, exec.signal, byteCap)
+      const mediaType = declared ?? sniffImageMediaType(data)
+      if (mediaType === undefined) {
+        throw new Error(`cannot read "${target.displayPath}": the file content is not a supported image format; read_image accepts PNG/JPEG/WebP/GIF`)
+      }
+      if (declared === undefined) assertDeploymentAccepts(attachments, mediaType, target.displayPath)
       // Persist before returning: the image block must reference a durably
       // committed object by the time the tool/result event is appended.
       let ref: ImageAttachmentRef
@@ -247,8 +264,19 @@ export function applyReadImageTool(ctx: Context): void {
             { cause: error },
           )
         }
+        if (error.code === 'INVALID_IMAGE') {
+          throw new Error(
+            `cannot read "${target.displayPath}": the bytes do not decode as a supported PNG/JPEG/WebP/GIF image; the file may be truncated or corrupt`,
+            { cause: error },
+          )
+        }
         if (error.code !== 'IMAGE_TYPE_MISMATCH') throw error
-        const extension = extname(target.displayPath).toLowerCase()
+        if (declared === undefined) {
+          throw new Error(
+            `cannot read "${target.displayPath}": the file signature claims ${mediaType}, but the bytes decode as a different image format; the file may be corrupt`,
+            { cause: error },
+          )
+        }
         throw new Error(
           `cannot read "${target.displayPath}": the ${extension} extension declares ${mediaType}, but the bytes use a different image format; rename the file to match its actual format if it is PNG/JPEG/WebP/GIF, or convert it to one of those formats`,
           { cause: error },
