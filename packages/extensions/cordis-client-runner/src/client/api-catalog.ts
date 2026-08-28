@@ -499,11 +499,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionHandle',
-    declaration: 'export interface ConnectionHandle {\n    readonly isLoopback: boolean;\n    readonly generation: ConnectionGenerationState;\n    readonly rpc: ClientConnectionRpc;\n    registerGenerationSource(source: ConnectionGenerationSource): () => void;\n    start(sinks: ConnectionSinks, config?: ConnectionConfig): {\n        stop(): void;\n    };\n}',
+    declaration: 'export interface ConnectionHandle {\n    readonly isLoopback: boolean;\n    readonly generation: ConnectionGenerationState;\n    readonly state: ConnectionStateSource;\n    readonly rpc: ClientConnectionRpc;\n    reconnect(): void;\n    registerGenerationSource(source: ConnectionGenerationSource): () => void;\n    start(sinks: ConnectionSinks, config?: ConnectionConfig): ConnectionLoop;\n}',
   },
   {
     name: 'ConnectionHostInfo',
     declaration: 'export interface ConnectionHostInfo {\n    readonly home: string;\n}',
+  },
+  {
+    name: 'ConnectionLoop',
+    declaration: 'export interface ConnectionLoop {\n    stop(): void;\n}',
   },
   {
     name: 'ConnectionRpcFailure',
@@ -515,11 +519,15 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ConnectionSinks',
-    declaration: 'export interface ConnectionSinks {\n    onConnected?: (host: ConnectionHostInfo) => void;\n    onStateChange?: (state: ConnectionState) => void;\n}',
+    declaration: 'export interface ConnectionSinks {\n    onConnected?: (host: ConnectionHostInfo) => void;\n    onStateChange?: (state: ConnectionState) => void;\n    onReconnectRequested?: () => void;\n}',
   },
   {
     name: 'ConnectionState',
-    declaration: 'export type ConnectionState = \'connected\' | \'reconnecting\';',
+    declaration: 'export type ConnectionState = \'connected\' | \'disconnected\' | \'connecting\';',
+  },
+  {
+    name: 'ConnectionStateSource',
+    declaration: 'export interface ConnectionStateSource {\n    getSnapshot(): ConnectionState | undefined;\n    subscribe(listener: () => void): () => void;\n}',
   },
   {
     name: 'EntryKeyOf',
