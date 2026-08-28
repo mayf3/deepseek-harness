@@ -144,10 +144,10 @@ pnpm run build
 pnpm dsh --profile headless "summarize this workspace"
 ```
 
-Code Mode 演示启用代码式工具展示，并运行同一个 headless profile：
+PTC mode 演示启用代码式工具展示，并运行同一个 headless profile：
 
 ```sh
-pnpm run demo:code-mode -- "summarize this workspace"
+pnpm run demo:ptc -- "summarize this workspace"
 ```
 
 ### TODO 标记
