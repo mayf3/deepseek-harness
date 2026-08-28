@@ -36,11 +36,12 @@ import { registerListSubagentModels } from './list-models.ts'
 import type {} from './model-selection-settings.ts'
 import {
   recordSubagentModelSelection,
+  subagentModelSelectionProjectionDefinition,
   subagentModelSelectionPolicy,
 } from './model-selection-state.ts'
 
 export const name = 'tool-subagent'
-export const inject = ['tools', 'subagents', 'systemPrompt']
+export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
 
 /** Prompt order after bounded delegation policy and before child reporting. */
 const SUBAGENT_SECTION_ORDER = FIRST_PARTY_SECTION_ORDER.TOOL_SUBAGENT
@@ -318,6 +319,7 @@ export function apply(ctx: Context, config: Config): void {
   const toolName = config.toolName ?? 'subagent'
 
   const modelSelectionCapable = config.modelSelectionSettings === true
+  ctx.sessionProjections.register(subagentModelSelectionProjectionDefinition)
 
   const assertSubagentProviderConfiguration = (subagentProvider: SubagentProvider): void => {
     if (typeof config.maxDepth === 'number' && !subagentProvider.capabilities.depthLimit) {
@@ -617,20 +619,24 @@ export function apply(ctx: Context, config: Config): void {
   }
 
   const selectForAgent = (agent: NonNullable<Context['agent']>): ModelSelectionPolicy | undefined => {
-    let allowedModels = subagentModelSelectionPolicy(agent.session)
+    let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, agent.session)
     if (allowedModels === undefined) {
       const parentId = agent.session.header.origin === 'subagent'
         ? agent.session.header.parentSession
         : undefined
       if (parentId !== undefined) {
         const parent = ctx.get('agents')?.get(parentId)
-        allowedModels = parent === undefined ? undefined : subagentModelSelectionPolicy(parent.session)
+        allowedModels = parent === undefined
+          ? undefined
+          : subagentModelSelectionPolicy(ctx.sessionProjections, parent.session)
       } else if (agent.session.firstLiveSeq === 0) {
         const current = settings.current()
         allowedModels = current.enabled ? current.allowedModels : undefined
       }
     }
-    if (allowedModels !== undefined) recordSubagentModelSelection(agent.session, allowedModels)
+    if (allowedModels !== undefined) {
+      recordSubagentModelSelection(ctx.sessionProjections, agent.session, allowedModels)
+    }
     return allowedModels === undefined ? undefined : { routes: allowedModels }
   }
 
