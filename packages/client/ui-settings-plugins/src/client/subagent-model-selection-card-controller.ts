@@ -1,7 +1,7 @@
 /** Staged editor for the Host-owned subagent model allowlist. */
 
 import type {
-  IApiClient,
+  ClientRemote,
   ModelProviderGroup,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -145,11 +145,11 @@ export class SubagentModelSelectionCardController {
 
   /**
    * @param scope - bound `subagent-model-selection` settings scope.
-   * @param api - Host LLM directory face.
+   * @param session - Host Session model-catalog face.
    */
   constructor(
     private readonly scope: SettingsScope<SubagentModelSelectionSettings>,
-    private readonly api: Pick<IApiClient, 'llm'>,
+    private readonly session: Pick<ClientRemote['session'], 'modelCatalog'>,
   ) {
     this.store = createSnapshotStore(this.projection())
     this.unsubscribe = scope.subscribe(() => {
@@ -321,11 +321,11 @@ export class SubagentModelSelectionCardController {
     this.catalogPartial = false
     this.publish()
     try {
-      const response = await this.api.llm.models({})
+      const response = await this.session.modelCatalog()
       if (generation !== this.catalogGeneration) return
-      if (!response.result.ok) throw new Error(response.result.error.message)
-      this.catalogGroups = response.result.value.groups
-      this.catalogPartial = response.result.value.failures.length > 0
+      if (!response.ok) throw new Error(response.error.message)
+      this.catalogGroups = response.value.groups
+      this.catalogPartial = response.value.failures.length > 0
       this.catalogStatus = 'ready'
     } catch {
       if (generation !== this.catalogGeneration) return

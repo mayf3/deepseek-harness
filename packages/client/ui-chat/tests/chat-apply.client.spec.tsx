@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import {
-  chatSnapshot, SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  chatSnapshot, SlotTestRuntime, TestRemote, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
@@ -40,8 +40,10 @@ async function bench() {
   runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() } as never)
   runtime.ctx.provide('uiWorkspace', {
     connectWorkspace: vi.fn(async () => SID),
-    openPath: vi.fn(async () => {}),
   } as never)
+  new TestRemote(runtime.ctx, {
+    session: { openWorkspacePath: vi.fn(async () => ({ ok: true, value: { opened: true } })) },
+  })
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
   runtime.slots.installLocale(locale)
