@@ -67,7 +67,7 @@ function toStopReason(reason: TurnEndReason | undefined): SubagentStopReason {
 /** Extra inputs the spawn and fork providers supply to the shared driver. */
 export interface InProcessRunOptions {
   /** Completed-turn seed for fork, or undefined for a fresh spawn. */
-  readonly seed?: SessionEvent[]
+  readonly seed?: readonly SessionEvent[]
 }
 
 /** Error used when cancellation wins before the child publication boundary. */

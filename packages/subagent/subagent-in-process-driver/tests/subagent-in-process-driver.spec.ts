@@ -201,7 +201,7 @@ describe('startInProcessRun', () => {
     const { ctx, parent } = await setup([textResponse('parent answer'), textResponse('child answer')])
     parent.followup(createUserMessage({ content: [{ type: 'text', text: 'parent question' }], source: { kind: 'user' } }))
     await parent.whenIdle()
-    const seed = parent.session.snapshotEvents().slice()
+    const seed = parent.session.snapshotEvents()
     const run = await startInProcessRun(request(parent), { seed })
     const result = await run.result
     expect(text(result.output)).toBe('child answer')

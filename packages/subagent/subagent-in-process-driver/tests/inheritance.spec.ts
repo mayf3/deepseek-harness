@@ -141,7 +141,7 @@ describe('in-process policy inheritance', () => {
     const { ctx, parent } = await setupWalled(script)
     const blocked = join(workspace, 'fork-blocked.txt')
     setSandboxMode(parent.session, 'workspace-write')
-    const seed = [...parent.session.snapshotEvents()]
+    const seed = parent.session.snapshotEvents()
     setSandboxMode(parent.session, 'read-only')
     script.push(
       toolCallResponse('write', 'write', { file_path: blocked, content: 'escaped' }),

@@ -304,7 +304,7 @@ describe('durable step context', () => {
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(JSON.stringify(original.deriveMessages())).not.toContain('Time sampled while preparing')
 
-    const resumed = Session.create(SessionId('resumed'), [...original.snapshotEvents()])
+    const resumed = Session.create(SessionId('resumed'), original.snapshotEvents())
     const resumedAgent = sessionAgent(resumed)
     vi.setSystemTime(BASE + 999)
     openMessageTurn(resumed, 2)

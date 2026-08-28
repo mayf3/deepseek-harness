@@ -288,7 +288,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
       inject: ['sessions'],
       apply: (inner: Context) => void new SessionTelemetryCoordinator(inner, backend),
     })
-    const child = ctx.sessions.prepare(SessionId('seeded'), { seed: [...parent.snapshotEvents()], meta: {} })
+    const child = ctx.sessions.prepare(SessionId('seeded'), { seed: parent.snapshotEvents(), meta: {} })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.sessions.enter(child)
     ctx.sessions.announce(child)
@@ -307,7 +307,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
     const donor = ctx.sessions.create(SessionId('donor'), { meta: {} })
     donor.append('turn/start', { turn: 1 })
     donor.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'first' } })
-    const resumed = ctx.sessions.create(SessionId('resumed'), { seed: [...donor.snapshotEvents()], meta: {} })
+    const resumed = ctx.sessions.create(SessionId('resumed'), { seed: donor.snapshotEvents(), meta: {} })
     await ctx.plugin({
       name: 'fake-telemetry',
       inject: ['sessions'],
@@ -335,7 +335,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
     const parent = liveSession(ctx, 'stitch-parent')
     appendTurn(parent)
     const child = ctx.sessions.create(SessionId('stitch-child'), {
-      seed: [...parent.snapshotEvents()],
+      seed: parent.snapshotEvents(),
       meta: { parentSession: SessionId('stitch-parent'), seedLength: 2 },
     })
     await ctx.plugin({

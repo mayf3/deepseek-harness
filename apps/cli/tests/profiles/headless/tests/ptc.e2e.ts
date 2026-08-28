@@ -366,7 +366,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
         + 'and return only the joined string.',
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, agent)
-    const events: SessionEvent[] = [...agent.session.snapshotEvents()]
+    const events: readonly SessionEvent[] = agent.session.snapshotEvents()
 
     // The wire contract: every request this session made offered EXACTLY ONE
     // tool — run_code (the logged header snapshots the assembled list).
@@ -418,7 +418,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('PTC mode: real model writes a pr
       }], source: { kind: 'user' } }))
     await waitForIdle(ctx, handle.agent)
 
-    const events: SessionEvent[] = [...handle.agent.session.snapshotEvents()]
+    const events: readonly SessionEvent[] = handle.agent.session.snapshotEvents()
     const dispatch = events.find(event => event.type === 'tool/code-dispatch' && event.data.name === 'read')
     const outerResult = events.find(event => event.type === 'tool/result')
     const workspaceContext = await vi.waitFor(() => {

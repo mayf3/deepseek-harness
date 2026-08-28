@@ -139,11 +139,11 @@ function visibleInstructionChanges(
 ): Map<string, AgentInstructionChange> {
   const visibleSeqs = new Set(agent.session.surface.nodes)
   const visible = new Map<string, AgentInstructionChange>()
-  for (const [seq, event] of agent.session.snapshotEvents().entries()) {
+  for (const event of agent.session.snapshotEvents()) {
     if (event.type !== 'user/message' || !isWorkspaceContextSource(event.data.source)) continue
     const changes = workspaceInstructionChanges(event.data.source)
     for (const change of changes) {
-      if (visibleSeqs.has(seq)) visible.set(change.scope, change)
+      if (visibleSeqs.has(event.seq)) visible.set(change.scope, change)
     }
   }
   for (const message of authorityMessages) {

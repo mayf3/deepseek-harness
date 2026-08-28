@@ -187,7 +187,7 @@ async function mountFileToolsAndWorkspaceContext(ctx: Context, config: workspace
   return mountWorkspaceContextPlugin(ctx, config)
 }
 
-function stubAgent(cwd?: string, seed: SessionEvent[] = []): Agent {
+function stubAgent(cwd?: string, seed: readonly SessionEvent[] = []): Agent {
   const id = SessionId('s1')
   const session = Session.create(id, seed, cwd === undefined ? undefined : { version: SESSION_FORMAT_VERSION, id, createdAt: 0, cwd })
   return {
@@ -1115,9 +1115,9 @@ describe('workspace context request injection', () => {
       const original = stubAgent(root)
       await composeBaselinePrefix(ctx, original)
 
-      const firstResume = stubAgent(root, [...original.session.snapshotEvents()])
+      const firstResume = stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, firstResume)
-      const secondResume = stubAgent(root, [...firstResume.session.snapshotEvents()])
+      const secondResume = stubAgent(root, firstResume.session.snapshotEvents())
       await composeBaselinePrefix(ctx, secondResume)
 
       expect(baselineEvents(firstResume)).toHaveLength(1)
@@ -1144,7 +1144,7 @@ describe('workspace context request injection', () => {
       await composeBaselinePrefix(ctx, original)
 
       fs.throwOnStat.add(join(root, 'AGENTS.md'))
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, resumed)
 
       expect(baselineEvents(resumed)).toHaveLength(1)
@@ -1170,9 +1170,9 @@ describe('workspace context request injection', () => {
       const original = stubAgent(cwd)
       await composeBaselinePrefix(ctx, original)
 
-      const firstResume = stubAgent(cwd, [...original.session.snapshotEvents()])
+      const firstResume = stubAgent(cwd, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, firstResume)
-      const secondResume = stubAgent(cwd, [...firstResume.session.snapshotEvents()])
+      const secondResume = stubAgent(cwd, firstResume.session.snapshotEvents())
       await composeBaselinePrefix(ctx, secondResume)
 
       expect(baselineEvents(secondResume)).toHaveLength(1)
@@ -1200,7 +1200,7 @@ describe('workspace context request injection', () => {
       await composeBaselinePrefix(ctx, original)
 
       await write(join(cwd, 'AGENTS.md'), 'package rule')
-      const resumed = stubAgent(cwd, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(cwd, original.session.snapshotEvents())
       await composeBaselinePrefix(ctx, resumed)
 
       expect(baselineEvents(resumed)).toHaveLength(1)
@@ -1237,7 +1237,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['CLAUDE.md', 'AGENTS.md'],
       })
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, resumed)
 
       const baselines = baselineEvents(resumed)
@@ -1256,7 +1256,7 @@ describe('workspace context request injection', () => {
         : [])
       expect(new Set(baselineIdentities).size).toBe(2)
 
-      const repeated = stubAgent(root, [...resumed.session.snapshotEvents()])
+      const repeated = stubAgent(root, resumed.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, repeated)
       expect(baselineEvents(repeated)).toHaveLength(2)
     } finally {
@@ -1290,7 +1290,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['CLAUDE.md'],
       })
-      const claudeResume = stubAgent(root, [...original.session.snapshotEvents()])
+      const claudeResume = stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(claudeCtx, claudeResume)
       const claudeBaseline = baselineEvents(claudeResume).at(-1)
       expect(claudeBaseline?.type === 'user/message' && claudeBaseline.data.source.kind === 'agent-instructions'
@@ -1305,7 +1305,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['AGENTS.md'],
       })
-      const restored = stubAgent(root, [...claudeResume.session.snapshotEvents()])
+      const restored = stubAgent(root, claudeResume.session.snapshotEvents())
       await composeBaselinePrefix(restoredCtx, restored)
       const restoredBaseline = baselineEvents(restored).at(-1)
       expect(restoredBaseline?.type === 'user/message' && restoredBaseline.data.source.kind === 'agent-instructions'
@@ -1340,7 +1340,7 @@ describe('workspace context request injection', () => {
         maxBytes: 65536,
         instructionFileCandidates: ['POLICY.md'],
       })
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, resumed)
 
       const baselines = baselineEvents(resumed)
@@ -1354,7 +1354,7 @@ describe('workspace context request injection', () => {
         { action: 'remove', scope: sk('.', 'AGENTS.md'), path: 'AGENTS.md' },
       ])
 
-      const repeated = stubAgent(root, [...resumed.session.snapshotEvents()])
+      const repeated = stubAgent(root, resumed.session.snapshotEvents())
       await composeBaselinePrefix(resumedCtx, repeated)
       expect(baselineEvents(repeated)).toHaveLength(2)
     } finally {
@@ -1384,7 +1384,7 @@ describe('workspace context request injection', () => {
 
       await fiber.dispose()
       await mountWorkspaceContextPlugin(ctx, { dshHome: home, maxBytes: 65536 })
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
       agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
       const claimed = resumed.inbox.claim('next-step', 1)
       const decision = await agentEvents(ctx, resumed).waterfall(
@@ -1430,7 +1430,7 @@ describe('workspace context request injection', () => {
       await write(join(root, 'AGENTS.md'), 'new repo rule')
       await fiber.dispose()
       await mountWorkspaceContextPlugin(ctx, { dshHome: home, maxBytes: 65536 })
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
       agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
       const staleClaim = resumed.inbox.claim('next-step', 1)
       const staleDecision = await agentEvents(ctx, resumed).waterfall(
@@ -1483,7 +1483,7 @@ describe('workspace context request injection', () => {
       await originalCtx.fiber.dispose()
       if (provideFs) await resumedCtx.plugin(LocalFileSystem, { cwd: '/' })
       await mountWorkspaceContextPlugin(resumedCtx, { dshHome: home, maxBytes })
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
       agentEvents(resumedCtx, resumed).emit('agent/session-start', { source: 'resume' })
       const claimed = resumed.inbox.claim('next-step', 1)
       const decision = await agentEvents(resumedCtx, resumed).waterfall(
@@ -1790,7 +1790,7 @@ describe('workspace context request injection', () => {
       // The first resumed pre-step retains the compatible visible baseline and
       // appends only the offline file transition needed to reach current state.
       await write(join(root, 'AGENTS.md'), 'new root rule after offline edit')
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
 
       // Resume announces its lifecycle start before the first step.
       agentEvents(ctx, resumed).emit('agent/session-start', { source: 'resume' })
@@ -3540,7 +3540,7 @@ describe('dynamic nested workspace context injection', () => {
         agent,
       })
       await appendAdditionalContexts(ctx, agent)
-      const resumed = stubAgent(root, [...agent.session.snapshotEvents()])
+      const resumed = stubAgent(root, agent.session.snapshotEvents())
 
       const afterResume = await ctx.tools.execute({
         signal: testToolSignal,
@@ -3574,7 +3574,7 @@ describe('dynamic nested workspace context injection', () => {
       })
       await appendAdditionalContexts(ctx, original)
       await write(join(root, 'pkg/AGENTS.md'), 'new nested rule after resume')
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
 
       await composeBaselinePrefix(ctx, resumed)
 
@@ -4608,7 +4608,7 @@ describe('workspace context inbox synchronization', () => {
         callId: ToolCallId('recover-pending-a'), name: 'read', arguments: { file_path: join('a', 'file.txt') }, agent: original,
       })
       await syncWorkspaceContext(ctx, original)
-      const resumed = stubAgent(root, [...original.session.snapshotEvents()])
+      const resumed = stubAgent(root, original.session.snapshotEvents())
 
       await ctx.tools.execute({
         signal: testToolSignal,

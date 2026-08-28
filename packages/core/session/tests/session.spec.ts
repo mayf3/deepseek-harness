@@ -132,7 +132,7 @@ describe('Session', () => {
     }, { surfaceOp: 'append' })
     original.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
-    const replayed = Session.create(SessionId('s3-replay'), [...original.snapshotEvents()])
+    const replayed = Session.create(SessionId('s3-replay'), original.snapshotEvents())
     expect(replayed.deriveMessages()).toEqual(original.deriveMessages())
     // The seed verbatim, plus the end-seed event the constructor appends.
     expect(replayed.snapshotEvents().slice(0, original.seq)).toEqual(original.snapshotEvents())
@@ -1141,7 +1141,7 @@ describe('SessionStore', () => {
     a.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'q' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const forked = ctx.sessions.create(SessionId('fork'), { seed: [...a.snapshotEvents()] })
+    const forked = ctx.sessions.create(SessionId('fork'), { seed: a.snapshotEvents() })
     expect(forked.deriveMessages()).toEqual(a.deriveMessages())
   })
 

@@ -650,7 +650,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const a1 = (await ctx1.agents.create({ sessionId: SessionId('sess-resume'), meta: { cwd: '/w' } })).agent
     a1.followup(createUserMessage({ content: [{ type: 'text', text: 'first question' }], source: { kind: 'user' } }))
     await waitForIdle(ctx1, a1)
-    const events1 = [...a1.session.snapshotEvents()]
+    const events1 = a1.session.snapshotEvents()
     const seqs1 = events1.map(e => e.seq)
     expect(seqs1).toEqual([...seqs1].sort((x, y) => x - y)) // contiguous
     await ctx1.fiber.dispose()

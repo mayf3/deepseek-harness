@@ -254,7 +254,7 @@ describe('ToolResultPruner session transaction', () => {
       turn: 2,
     })
     service().pruneSession(session)
-    const replay = Session.create(session.id, [...session.snapshotEvents()])
+    const replay = Session.create(session.id, session.snapshotEvents())
     expect(replay.deriveMessages()).toEqual(session.deriveMessages())
     expect(replay.surface.replaceGeneration).toBe(session.surface.replaceGeneration)
   })

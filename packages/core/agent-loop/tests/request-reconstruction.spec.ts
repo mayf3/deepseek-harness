@@ -650,7 +650,7 @@ describe('request stability across the loop', () => {
     const ctx2 = await harness(adapter2)
     const handle = await ctx2.agents.create({
       sessionId: SessionId('gen2-session'),
-      seed: [...agent.session.snapshotEvents()],
+      seed: agent.session.snapshotEvents(),
       agentOptions: { provider: 'mock', model: 'mock' },
     })
     const agent2 = handle.agent

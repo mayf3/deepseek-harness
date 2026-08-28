@@ -442,7 +442,7 @@ describe('compactNow transaction and failure classification', () => {
       compactionId: CompactionId('stale-manual-compaction'),
       turn: null,
     })
-    const reloaded = Session.create(SessionId('stale-orphan'), [...original.snapshotEvents()])
+    const reloaded = Session.create(SessionId('stale-orphan'), original.snapshotEvents())
     const boundary = reloaded.snapshotEvents().findLast(event => event.type === 'session/end-seed')
     const orphan = reloaded.snapshotEvents().find(event => event.type === 'compaction/start')
     const agent = fakeAgent(reloaded, () => () => undefined)
@@ -461,7 +461,7 @@ describe('compactNow transaction and failure classification', () => {
     })
     original.append('turn/start', { turn: 3 })
     original.append('turn/end', { turn: 3, reason: { kind: 'interrupted' } })
-    const reloaded = Session.create(SessionId('reloaded-orphan'), [...original.snapshotEvents()])
+    const reloaded = Session.create(SessionId('reloaded-orphan'), original.snapshotEvents())
     const agent = fakeAgent(reloaded, () => () => undefined)
 
     await expect(compact.compactNow(agent, SIGNAL)).resolves.not.toBeNull()
@@ -716,7 +716,7 @@ describe('compactNow transaction and failure classification', () => {
       const reserve = vi.fn(() => testCase.release)
       const measure = vi.spyOn(ctx.tokenMeter, 'measure')
       const agent = fakeAgent(testCase.session, reserve)
-      const before = [...testCase.session.snapshotEvents()]
+      const before = testCase.session.snapshotEvents()
       const reason = Object.freeze({ kind: 'cancelled', case: testCase.name })
       const controller = new AbortController()
       controller.abort(reason)

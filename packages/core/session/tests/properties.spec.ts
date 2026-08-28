@@ -110,7 +110,7 @@ describe('Session properties', () => {
   it('replay-from-seed reproduces the derivation identically', () => {
     fc.assert(fc.property(logArb, (events) => {
       const original = build(events)
-      const replayed = Session.create(SessionId(`replay-${counter++}`), [...original.snapshotEvents()])
+      const replayed = Session.create(SessionId(`replay-${counter++}`), original.snapshotEvents())
       expect(replayed.deriveMessages()).toEqual(original.deriveMessages())
       // Every explicit replay grows by exactly one log-only boundary.
       expect(replayed.snapshotEvents().slice(0, original.seq)).toEqual(original.snapshotEvents())
@@ -121,8 +121,8 @@ describe('Session properties', () => {
   it('replaying a log that already ends in end-seed adds no further marker', () => {
     fc.assert(fc.property(logArb, (events) => {
       const original = build(events)
-      const once = Session.create(SessionId(`idem-a-${counter++}`), [...original.snapshotEvents()])
-      const twice = Session.create(SessionId(`idem-b-${counter++}`), [...once.snapshotEvents()])
+      const once = Session.create(SessionId(`idem-a-${counter++}`), original.snapshotEvents())
+      const twice = Session.create(SessionId(`idem-b-${counter++}`), once.snapshotEvents())
       // Lazy resume makes browsing a pickup, so this must not grow per open.
       expect(twice.snapshotEvents()).toEqual(once.snapshotEvents())
     }))

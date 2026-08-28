@@ -479,7 +479,7 @@ describe('SurfaceManager', () => {
         isError: false,
       }),
     }, { surfaceOp: 'append' })
-    const replayed = Session.create(SessionId('replay'), [...original.snapshotEvents()])
+    const replayed = Session.create(SessionId('replay'), original.snapshotEvents())
     expect(replayed.surface.nodes).toEqual([1, 2, 4])
     expect(replayed.deriveMessages()).toEqual(original.deriveMessages())
   })
