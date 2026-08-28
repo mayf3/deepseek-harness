@@ -4,9 +4,11 @@ import { promisify } from 'node:util'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
+import { runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
+const PRODUCTION_PROFILE_PROCESS_TIMEOUT_MS = 60_000
+const PRODUCTION_PROFILE_TEST_TIMEOUT_MS = PRODUCTION_PROFILE_PROCESS_TIMEOUT_MS + 15_000
 const binScript = fileURLToPath(new URL('../../../../../../packages/test-support/loader-smoke/tests/fixtures/headless-driver.ts', import.meta.url))
 const configPath = fileURLToPath(new URL('./fixtures/cli.patch.yml', import.meta.url))
 const tsconfigPath = fileURLToPath(new URL('../../../../../../tsconfig.json', import.meta.url))
@@ -23,6 +25,7 @@ describe('headless-agent keyless smoke', () => {
       configPath,
       binArgs: [configPath, 'prove the tool path'],
       tsconfigPath,
+      processTimeoutMs: PRODUCTION_PROFILE_PROCESS_TIMEOUT_MS,
       inspect: async (cwd) => {
         const sessionsDir = join(cwd, '.sessions')
         const files = await readdir(sessionsDir, { recursive: true })
@@ -47,5 +50,5 @@ describe('headless-agent keyless smoke', () => {
     })
     expect(String(result?.['output'])).toContain('CLI_TOOL_ROUND_TRIP')
     expect(persistedHeader).toMatchObject({ type: 'session' })
-  }, LOADER_SMOKE_TEST_TIMEOUT_MS)
+  }, PRODUCTION_PROFILE_TEST_TIMEOUT_MS)
 })
