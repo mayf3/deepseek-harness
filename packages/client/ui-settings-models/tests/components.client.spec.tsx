@@ -18,6 +18,8 @@ import {
 import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
+import { createModelsOperations } from '../src/client/operations.ts'
+import type { ModelsOperations } from '../src/client/operations.ts'
 import type { ProviderRow } from '../src/client/store.ts'
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
@@ -220,6 +222,20 @@ function ctxWith(face: object): PageContext {
   return ctx
 }
 
+/**
+ * The cards' injected Host operations over the same script, bound once per face
+ * as the plugin body binds them: an editor effect keyed by this face would
+ * otherwise re-probe on every render.
+ */
+const operations = new WeakMap<object, ModelsOperations>()
+function operationsWith(face: object): ModelsOperations {
+  const existing = operations.get(face)
+  if (existing !== undefined) return existing
+  const bound = createModelsOperations(ctxWith(face))
+  operations.set(face, bound)
+  return bound
+}
+
 /** One recorded child-slot dispatch: seat name, owner share, kind options. */
 type RenderSlotCall = [name: string, owner: Record<string, unknown>, opts?: { entryKey?: string }]
 
@@ -252,7 +268,7 @@ async function mountFace(scripted: ReturnType<typeof scriptedFace>) {
   const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
-    ctx,
+    operations: operationsWith(face),
     schema: settingsSchema,
     t,
     renderSlot: renderSlot as unknown as ModelsSectionProps['renderSlot'],
@@ -387,7 +403,7 @@ describe('ModelsSection', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -412,7 +428,7 @@ describe('ModelsSection', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -494,7 +510,7 @@ describe('ModelsSection', () => {
       namespace={wireNamespaces()[0]!}
       schema={settingsSchema}
       settingsPath={[]}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       t={t}
       readOnly={false}
       credentialOnly
@@ -747,7 +763,7 @@ describe('ModelsSection', () => {
       namespace={overridden}
       schema={settingsSchema}
       settingsPath={[]}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       t={t}
       readOnly={false}
       onClose={() => {}}
@@ -977,7 +993,7 @@ describe('ModelsSection', () => {
       namespace={bare}
       schema={settingsSchema}
       settingsPath={[]}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       t={t}
       readOnly={false}
       onClose={() => {}}
@@ -1138,7 +1154,7 @@ describe('ModelsSection', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1272,7 +1288,7 @@ describe('ModelsSection', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(face.face)}
+      operations={operationsWith(face.face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1295,7 +1311,7 @@ describe('ModelsSection', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1357,7 +1373,7 @@ describe('ModelsSection', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(face)}
+      operations={operationsWith(face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -1370,7 +1386,7 @@ describe('ModelsSection', () => {
     // would widen the write for no benefit.
     const { face, mutate, controller } = await mountSection()
     await removeProviderProfile(
-      ctxWith(face),
+      operationsWith(face),
       controller,
       { settingsNs: 'llm-plain', settingsPath: ['ghost-profile'] },
     )
@@ -1387,7 +1403,7 @@ describe('ModelsSection', () => {
     })
     const before = controller.store.getSnapshot().rows
     const failure = await removeProviderProfile(
-      ctxWith(face),
+      operationsWith(face),
       controller,
       { settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
     )
@@ -1438,7 +1454,7 @@ describe('ModelsSection', () => {
       unset: vi.fn(() => Promise.resolve(remoteFail('credential is read-only'))),
     })
     const failure = await removeProviderProfile(
-      ctxWith(face),
+      operationsWith(face),
       controller,
       {
         settingsNs: 'llm-pi-ai',

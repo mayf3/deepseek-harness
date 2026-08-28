@@ -157,7 +157,7 @@ export function renderToolDetails(
     return <ToolDetails
       block={details.block}
       cwd={details.cwd}
-      home={home}
+      useHostHome={selector => selector(home)}
       t={t}
     />
   }

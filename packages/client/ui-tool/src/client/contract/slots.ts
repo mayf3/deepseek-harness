@@ -1,5 +1,7 @@
 /** Tool UI slot declarations and their composed component props. */
-import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type {
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -47,8 +49,15 @@ export type ToolCallViewProps = PropsRuntime<'tool.call.toolview'>
 
 /** Injected Host description for POSIX home-path display. */
 export type ToolHostHomeInjected = {
-  /** Host account home, absent until the Connection is ready. */
-  home: string | undefined
+  hooks: {
+    /**
+     * Host account home, absent until the Connection is ready. A hook rather
+     * than a value: the renderer memoizes an entry's inject result for the
+     * registration's lifetime, so a home read there would freeze at whatever
+     * the first render saw.
+     */
+    hostHome: HostObservable<string | undefined>
+  }
 }
 
 /** Full props of the Tool call-tree renderer registered as a `tool-call` Chat Node. */

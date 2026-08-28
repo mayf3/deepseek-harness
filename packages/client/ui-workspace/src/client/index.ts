@@ -89,6 +89,13 @@ export function apply(ctx: Context): void {
     subscribe: listener => ctx.slots.subscribe(hole, listener),
   })
   const browserFlowSource = flowSource('sidebar.workspaces.directoryFlow')
+  // Host facts are plain reads; a reset is what announces the generation that
+  // published them, so the rows re-read on it instead of freezing the value
+  // the entry's first render saw (inject results are memoized per registration).
+  const hostHome: HostObservable<string | undefined> = {
+    getSnapshot: () => ctx.remote.$host.home,
+    subscribe: listener => ctx.on('connection/reset', listener),
+  }
   const pickerFlowSource = flowSource('conversation.hero.workspace.directoryFlow')
   const browserInjected = (): WorkspaceBrowserInjected => ({
     // Explicit group actions keep their target; unscoped New Session inherits
@@ -122,8 +129,7 @@ export function apply(ctx: Context): void {
       await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },
     createWorkspace: input => workspaces.create(input),
-    home: ctx.remote.$host.home,
-    hooks: { directoryFlow: browserFlowSource },
+    hooks: { directoryFlow: browserFlowSource, hostHome },
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),

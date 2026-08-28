@@ -11,6 +11,8 @@ import { CustomProviderCard } from '../src/client/CustomProviderCard.tsx'
 import { formatCapacity, parseCapacity } from '../src/client/DeepSeekModelsEditor.tsx'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ModelsSettingsStore, deriveKeyRef, protocolChoices } from '../src/client/store.ts'
+import { createModelsOperations } from '../src/client/operations.ts'
+import type { ModelsOperations } from '../src/client/operations.ts'
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
@@ -155,6 +157,20 @@ function ctxWith(face: object): PageContext {
   return ctx
 }
 
+/**
+ * The cards' injected Host operations over the same script, bound once per face
+ * as the plugin body binds them: an editor effect keyed by this face would
+ * otherwise re-probe on every render.
+ */
+const operations = new WeakMap<object, ModelsOperations>()
+function operationsWith(face: object): ModelsOperations {
+  const existing = operations.get(face)
+  if (existing !== undefined) return existing
+  const bound = createModelsOperations(ctxWith(face))
+  operations.set(face, bound)
+  return bound
+}
+
 /** The settings write one card produced, as the scripted face recorded it. */
 interface MutateCall {
   ns: string
@@ -189,7 +205,7 @@ async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
   const injected: ModelsSectionProps = {
     controller,
     useSnapshot: bindSnapshotSelector(controller.store),
-    ctx: ctxWith(scripted.face),
+    operations: operationsWith(scripted.face),
     schema: settingsSchema,
     t,
     renderSlot: () => null,
@@ -576,7 +592,7 @@ describe('endpoint interrogation', () => {
     const scripted = scriptedFace()
     render(
       <CustomProviderCard
-        taken={[]} protocols={PROTOCOLS} revision={7} ctx={ctxWith(scripted.face)}
+        taken={[]} protocols={PROTOCOLS} revision={7} operations={operationsWith(scripted.face)}
         t={t} readOnly={false} onClose={vi.fn()}
       />,
     )
@@ -701,7 +717,7 @@ describe('provider rows', () => {
     render(<ModelsSection
       controller={controller}
       useSnapshot={bindSnapshotSelector(controller.store)}
-      ctx={ctxWith(scripted.face)}
+      operations={operationsWith(scripted.face)}
       schema={settingsSchema}
       t={t}
       renderSlot={() => null}
@@ -725,7 +741,7 @@ describe('hand-declared providers', () => {
         taken={['openai']}
         protocols={PROTOCOLS}
         revision={7}
-        ctx={ctxWith(scripted.face)}
+        operations={operationsWith(scripted.face)}
         t={t}
         readOnly={false}
         onClose={onClose}
@@ -1152,7 +1168,7 @@ describe('hand-declared providers', () => {
 
   it('surfaces a refused write without closing', async () => {
     const refused = vi.fn(() => Promise.resolve(remoteFail('read-only settings', 'settings/rejected')))
-    const { onClose } = mountCard({ ctx: ctxWith(scriptedFace({ mutate: refused }).face) })
+    const { onClose } = mountCard({ operations: operationsWith(scriptedFace({ mutate: refused }).face) })
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
@@ -1166,7 +1182,7 @@ describe('hand-declared providers', () => {
 
   it('translates a create refused by a newer namespace revision', async () => {
     const conflicting = vi.fn(() => Promise.resolve(remoteFail('changed since it was read', 'settings/conflict')))
-    const { onClose } = mountCard({ ctx: ctxWith(scriptedFace({ mutate: conflicting }).face) })
+    const { onClose } = mountCard({ operations: operationsWith(scriptedFace({ mutate: conflicting }).face) })
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
@@ -1180,7 +1196,7 @@ describe('hand-declared providers', () => {
 
   it('reports a stored profile whose key write was refused', async () => {
     const set = vi.fn(() => Promise.resolve(remoteFail('credential is read-only')))
-    const { onClose } = mountCard({ ctx: ctxWith(scriptedFace({ set }).face) })
+    const { onClose } = mountCard({ operations: operationsWith(scriptedFace({ set }).face) })
 
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })

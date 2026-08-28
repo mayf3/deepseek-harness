@@ -87,9 +87,15 @@ export type DirectoryPickingHooks = PropsHooks<DirectoryPickingInjected['hooks']
  * browsing region drives.
  */
 export type WorkspaceBrowserInjected = {
-  hooks: DirectoryPickingInjected['hooks']
-  /** Host account home, absent until the Connection is ready. */
-  home: string | undefined
+  hooks: DirectoryPickingInjected['hooks'] & {
+    /**
+     * Host account home, absent until the Connection is ready. A hook rather
+     * than a value: the renderer memoizes an entry's inject result for the
+     * registration's lifetime, so a home read there would freeze at whatever
+     * the first render saw.
+     */
+    hostHome: HostObservable<string | undefined>
+  }
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session

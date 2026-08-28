@@ -9,6 +9,7 @@ import { DeepSeekOnboardingDialog } from '../src/client/DeepSeekOnboardingDialog
 import type { DeepSeekOnboardingDialogProps } from '../src/client/DeepSeekOnboardingDialog.tsx'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { ModelsSettingsStore } from '../src/client/store.ts'
+import { createModelsOperations } from '../src/client/operations.ts'
 import { en } from '../src/client/locales.ts'
 import { settingsSchema } from './settings-schema.client.ts'
 
@@ -130,6 +131,7 @@ function harness(options: {
   }
   // The page plugin's context, scripted down to the namespaces it reaches.
   const ctx = { remote: face } as never
+  const operations = createModelsOperations(ctx)
   const controller = new ModelsSettingsStore(ctx, settingsSchema, new SettingsDescribeMirror(ctx))
   const openSection = vi.fn()
   const complete = vi.fn()
@@ -143,7 +145,7 @@ function harness(options: {
     useWorkspaces: unusedHook,
     controller,
     useModels: bindSnapshotSelector(controller.store),
-    ctx,
+    operations,
     schema: settingsSchema,
     t: key => en[key],
   }

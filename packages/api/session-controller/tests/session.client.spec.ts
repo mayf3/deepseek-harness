@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { Session, type SessionOptions } from '../src/client/sessions/session.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
@@ -85,10 +86,25 @@ describe('Session open', () => {
     expect(snapshot.openError?.code).toBe('session/not-found')
   })
 
-  it('propagates a non-Remote throw raised while opening', async () => {
+  it('lands exhausted carrier retries in openState=error as gateway/internal', async () => {
+    const { api, session } = makeSession()
+    // Two consecutive carrier losses before any opening is accepted exhaust the
+    // Gateway's retry budget; the escaping failure crosses the stream boundary marked.
+    api.onHistory = () => Promise.reject(new RemoteStreamCarrierError('history carrier down'))
+    await session.open()
+    expect(session.getSnapshot().openState).toBe('error')
+    expect(session.getSnapshot().openError).toMatchObject({
+      code: 'gateway/internal', message: 'history carrier down',
+    })
+    expect(api.followStarts).toHaveLength(2)
+  })
+
+  it('lands a Gateway-marked stream failure in openState=error', async () => {
     const { api, session } = makeSession()
     api.onHistory = () => Promise.reject(new Error('socket died'))
-    await expect(session.open()).rejects.toThrow('socket died')
+    await session.open()
+    expect(session.getSnapshot().openState).toBe('error')
+    expect(session.getSnapshot().openError).toMatchObject({ code: 'gateway/internal', message: 'socket died' })
   })
 
   it('stitches live frames arriving while history is pending, dropping the page overlap', async () => {
