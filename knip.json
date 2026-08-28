@@ -420,6 +420,11 @@
         "tests/**/*.ts"
       ]
     },
+    "packages/llm/llm": {
+      "ignoreDependencies": [
+        "zod"
+      ]
+    },
     "packages/llm/llm-deepseek": {
       "entry": [
         "tests/**/*.spec.ts",
@@ -458,11 +463,6 @@
       "project": [
         "src/**/*.ts",
         "tests/**/*.ts"
-      ]
-    },
-    "packages/context/file-reference": {
-      "ignoreDependencies": [
-        "zod"
       ]
     },
     "packages/context/session-reference": {

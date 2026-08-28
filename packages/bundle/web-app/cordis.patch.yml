@@ -30,8 +30,8 @@
 
 - id: tools
   config:
-    # TEMPORARY workaround: DSH_TOOLS_MODE (native|code|both) opts a whole dsh
-    # process into Code Mode while per-session tool-presentation selection is being
+    # TEMPORARY workaround: DSH_TOOLS_MODE (native|ptc|both) opts a whole dsh
+    # process into PTC mode while per-session tool-presentation selection is being
     # designed; unset keeps the schema default (native). Remove the env seam
     # once the web UI owns the choice per session.
     mode: !!js process.env.DSH_TOOLS_MODE
@@ -98,11 +98,6 @@
     # Live-activity roster and per-activity output observation over Typert Remote.
     - id: activity-controller
       name: '@deepseek-ai/dsh-api-activity-controller'
-
-    # The API gateway: the transport-agnostic dispatch face every client shape
-    # shares. The base layer's agent-default-model service owns the default model.
-    - id: api-gateway
-      name: '@deepseek-ai/dsh-host-apiproxy'
 
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'

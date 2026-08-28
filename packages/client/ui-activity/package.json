@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-activity",
   "description": "Session-header task list: background jobs joined with their live-output activities, with on-demand streaming output panels",
-  "version": "0.1.1-rc.2",
+  "version": "0.1.2-alpha.1",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",

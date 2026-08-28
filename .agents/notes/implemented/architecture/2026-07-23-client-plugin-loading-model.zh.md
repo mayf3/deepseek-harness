@@ -98,7 +98,7 @@ Wire 两侧运行同一份治理实现；浏览器特有层只包含一套模块
 
 接受的代价：vendored Loader 在浏览器里背着闲置机件（EntryTree 持久化是 no-op，分组／隔离未用）；开发期每次修改插件都要付一次 bundle 重建加 fiber 重挂；graph `inject` row 指导 factory 到达，但服务可用性仍是激活权威，因此不匹配会在 settled 扫描时浮出；静态 UI 库保留直接实体导出；每个 bundle 多出一份 sourcemap 产物，外部 script 失败也只能给出粗粒度 URL 诊断，不能像显式 fetch 那样报告 HTTP 状态。Host 会保留逐插件 bundle/map 快照、生成的单资源响应、当前启动 combo 响应及上一代启动响应，因此内存会随组合出的客户端产物增长为数份副本。这组保留状态使 URL 保持不可变，并让进行中的请求跨越一次 HMR 重组后仍能完成。
 
-名册位于 web 组合包的配置树（`packages/bundle/web-app/cordis.patch.yml`）；`mountWebPlugins` 与 `CLIENT_PACKAGES` 常量已消失，重组一次部署等于替换 yml/overlay。Graph 组合器位于 `dsh-client-modules` node 半，由 parser 预载的 client face 则自举浏览器模块表。Webserver 继续作为朴素路由注册插件；`/api/*` 绑定属于 connection node 半，并经 `api-gateway`（由 `dsh-host-apiproxy` 提供 `ctx.apiProxy`）；开发期 bundle 监视与 SSE 通道属于 hmr node 半。
+名册位于 web 组合包的配置树（`packages/bundle/web-app/cordis.patch.yml`）；`mountWebPlugins` 与 `CLIENT_PACKAGES` 常量已消失，重组一次部署等于替换 yml/overlay。Graph 组合器位于 `dsh-client-modules` node 半，由 parser 预载的 Client face 则自举浏览器模块表。Webserver 继续作为朴素路由注册插件；`/api/*` 绑定、浏览器认证、RPC envelope 与精确 Fetch 路由属于 Connection node 半，Remote 分发属于 API Gateway，开发期 bundle 监视与 SSE 通道属于 HMR node 半。
 
 ## Alternatives considered
 
