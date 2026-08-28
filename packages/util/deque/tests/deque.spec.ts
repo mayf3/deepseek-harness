@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { Deque } from '@deepseek-ai/dsh-deque'
 
+function backingStorage<T>(deque: Deque<T>): readonly (T | undefined)[] {
+  // Storage retention is the behavior under test and has no public query API.
+  return (deque as unknown as { readonly buffer: readonly (T | undefined)[] }).buffer
+}
+
 describe('Deque', () => {
   it('removes tail-appended entries in FIFO order', () => {
     const deque = new Deque<number>()
@@ -40,19 +45,38 @@ describe('Deque', () => {
     const deque = new Deque<number>()
     for (let value = 0; value < 32; value += 1) deque.pushBack(value)
     for (let value = 0; value < 24; value += 1) expect(deque.popFront()).toBe(value)
+    expect(backingStorage(deque)).toHaveLength(16)
     for (let value = 32; value < 128; value += 1) deque.pushBack(value)
 
     for (let value = 24; value < 128; value += 1) expect(deque.popFront()).toBe(value)
     expect(deque.size).toBe(0)
+    expect(backingStorage(deque)).toHaveLength(16)
+  })
+
+  it('releases a removed reference before sparse compaction', () => {
+    const deque = new Deque<object>()
+    const removed = {}
+    deque.pushBack(removed)
+    deque.pushBack({})
+
+    expect(deque.popFront()).toBe(removed)
+    expect(backingStorage(deque)).not.toContain(removed)
+    expect(backingStorage(deque)).toHaveLength(16)
   })
 
   it('drops retained storage and remains reusable after clear', () => {
     const deque = new Deque<object>()
-    for (let index = 0; index < 64; index += 1) deque.pushBack({ index })
+    const retained = {}
+    deque.pushBack(retained)
+    for (let index = 1; index < 64; index += 1) deque.pushBack({ index })
+    const grownStorage = backingStorage(deque)
 
     deque.clear()
     expect(deque.size).toBe(0)
     expect(deque.popFront()).toBeUndefined()
+    expect(backingStorage(deque)).not.toBe(grownStorage)
+    expect(backingStorage(deque)).not.toContain(retained)
+    expect(backingStorage(deque)).toHaveLength(16)
 
     const value = {}
     deque.pushBack(value)
