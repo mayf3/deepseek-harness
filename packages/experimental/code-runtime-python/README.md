@@ -3,13 +3,13 @@ description: "CPython-subprocess code runtime: the dsh-code-runtime seam impleme
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-code-runtime-python
+# @deepseek-ai/dsh-experimental-code-runtime-python
 
 English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-code-runtime-python` ships `PythonCodeRuntime`, the CPython-subprocess implementation of the [`dsh-code-runtime`](../code-runtime/README.md) seam: it registers as `codeRuntime` with `language: 'python'` and `isolation: 'process'`, spawning a fresh `python3 -I` child per `run()` and executing the program as an async function body over a versionless JSON-lines protocol on the child's fd 3 (stdout/stderr stay free for the program's own output). The host side (`src/protocol.ts`) treats every inbound frame as hostile and rebuilds it before reading; the Python side (`py/protocol.py`) mirrors the message vocabulary. Containment — not a security boundary, model code has bash-equivalent trust — comes from an empty environment, `RLIMIT_CPU`/`RLIMIT_AS`, a wall-clock ceiling, and `SIGTERM`→grace→`SIGKILL` process-group teardown, with all caps validated at plugin load.
+`dsh-experimental-code-runtime-python` ships `PythonCodeRuntime`, the CPython-subprocess implementation of the [`dsh-code-runtime`](../../code-runtime/code-runtime/README.md) seam: it registers as `codeRuntime` with `language: 'python'` and `isolation: 'process'`, spawning a fresh `python3 -I` child per `run()` and executing the program as an async function body over a versionless JSON-lines protocol on the child's fd 3 (stdout/stderr stay free for the program's own output). The host side (`src/protocol.ts`) treats every inbound frame as hostile and rebuilds it before reading; the Python side (`py/protocol.py`) mirrors the message vocabulary. Containment — not a security boundary, model code has bash-equivalent trust — comes from an empty environment, `RLIMIT_CPU`/`RLIMIT_AS`, a wall-clock ceiling, and `SIGTERM`→grace→`SIGKILL` process-group teardown, with all caps validated at plugin load.
 
 ## Table of Contents
 
@@ -86,10 +86,10 @@ Completion values and binding arguments cross as exact JSON: values serialize wi
 
 Read these when the runtime contract is not enough. They move from the seam definition to the design record and the companion backend.
 
-- [Code runtime seam](../code-runtime/README.md) — the abstract contract this backend implements.
+- [Code runtime seam](../../code-runtime/code-runtime/README.md) — the abstract contract this backend implements.
 - [fd-3 protocol Agent Note](../../../.agents/notes/implemented/architecture/2026-07-31-code-runtime-python-fd3-protocol.md) — design rationale and wire contract.
 - [Settlement-fixes Agent Note](../../../.agents/notes/implemented/bug-fix/2026-07-31-code-runtime-python-settlement-fixes.md) — settlement, metering, and containment fixes and their regression cases.
-- [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript sibling.
+- [Worker-thread backend](../../code-runtime/code-runtime-worker-thread/README.md) — the shipped TypeScript sibling.
 - [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and failure taxonomy.
 
 -----

@@ -41,7 +41,7 @@ const result = await ctx.codeRuntime.run({
 
 ### Choose a backend
 
-Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values and both backed by published providers — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md) executes TypeScript in a fresh Node worker thread; [`dsh-code-runtime-python`](../code-runtime-python/README.md) executes Python in a fresh CPython subprocess.
+Backends declare two descriptors you can rely on: `language` — what the program must be written in, with `'typescript'` and `'python'` as the well-known values — and `isolation` — the execution substrate (`'worker-thread'`, `'process'`, `'container'`), a label for deployments and diagnostics, not a security claim. [`dsh-code-runtime-worker-thread`](../code-runtime-worker-thread/README.md) executes TypeScript in a fresh Node worker thread; the private [`dsh-experimental-code-runtime-python`](../../experimental/code-runtime-python/README.md) package executes Python in a fresh CPython subprocess for opt-in compositions.
 
 ### Name your bindings portably
 
@@ -98,7 +98,7 @@ Read these when the package-level contract is not enough. They move from the PTC
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how the tool registry consumes `ctx.codeRuntime` and presents `run_code` to the model.
 - [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript execution backend.
-- [Python backend](../code-runtime-python/README.md) — the CPython subprocess execution provider and its fd-3 protocol.
+- [Experimental Python backend](../../experimental/code-runtime-python/README.md) — the private CPython subprocess provider and its fd-3 protocol.
 - [Code runtime subsystem reference](../../../docs/subsystems/code-runtime.md) — request/result vocabulary, bindings, and the `ctx.codeRuntime` cordis surface.
 - [Capability seams](../../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md) — the Service Definition / Service Provider / Consumer split.
 
@@ -122,7 +122,7 @@ These limits define what the seam cannot do; they are current package constraint
 
 - **`run()` is one-shot** — `logs` arrive only on the resolved `CodeRunResult`; the seam exposes no streaming-log or progress API for a live program's output.
 - **No state survives between runs** — every request runs against a fresh world; a persistent REPL-style kernel is deferred until a backend brings its own logging story.
-- **The worker-thread and Python (process) backends ship; `'container'` does not** — `'container'` is a declared well-known `isolation` value with no implementation; a hard security boundary awaits a container backend.
+- **The worker-thread backend ships; the Python process backend is private experimental; `'container'` has no implementation** — a hard security boundary awaits a container backend.
 - **Intermediate binding values have no byte cap** — implementations remain subject to structured-clone cost and process memory, while a provider or executor may already have imposed its own acquisition bound.
 
 <a id="dev-note"></a>

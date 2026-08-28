@@ -358,9 +358,9 @@ export interface Config {
 
 来源：[`packages/client/hmr/src/index.ts:31`](../packages/client/hmr/src/index.ts)
 
-<a id="deepseek-aidsh-code-runtime-python"></a>
+<a id="deepseek-aidsh-experimental-code-runtime-python"></a>
 
-## `@deepseek-ai/dsh-code-runtime-python`
+## `@deepseek-ai/dsh-experimental-code-runtime-python`
 
 ```ts config-catalog
 /** Plugin config: every cap, changeable from `cordis.yml` (no hardcoded tunables). */
@@ -415,7 +415,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/code-runtime/code-runtime-python/src/index.ts:44`](../packages/code-runtime/code-runtime-python/src/index.ts)
+来源：[`packages/experimental/code-runtime-python/src/index.ts:44`](../packages/experimental/code-runtime-python/src/index.ts)
 
 <a id="deepseek-aidsh-code-runtime-worker-thread"></a>
 
