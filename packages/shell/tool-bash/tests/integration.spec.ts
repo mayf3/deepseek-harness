@@ -61,7 +61,7 @@ function waitForIdle(ctx: Context, agent: Agent): Promise<void> {
 }
 
 function events(agent: Agent): SessionEvent[] {
-  return [...agent.session.events]
+  return [...agent.session.snapshotEvents()]
 }
 
 /** Find a session event by type, narrowed; throws when absent. */

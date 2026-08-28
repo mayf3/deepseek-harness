@@ -71,7 +71,7 @@ describe('ACP machine permission policy', () => {
     const foreign = {
       session: {
         id: request.agent.session.id,
-        events: [{ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }],
+        snapshotEvents: () => [{ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }],
         append: () => ({}),
       },
     } as unknown as Agent

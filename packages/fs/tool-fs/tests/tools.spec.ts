@@ -810,7 +810,7 @@ describe('sandbox escalation API (write/edit)', () => {
       id: 'agent-fs-esc',
       session: {
         header: { version: 0, id: 'sess-fs-esc', createdAt: 0, cwd: '/session-project' },
-        events: [{ type: 'turn/start', data: { turn: 1 } }, ...events],
+        snapshotEvents: () => [{ type: 'turn/start', data: { turn: 1 } }, ...events],
         append: (type: string, data: Record<string, unknown>) => { events.push({ type, data }) },
       },
     }

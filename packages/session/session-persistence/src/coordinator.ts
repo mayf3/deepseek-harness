@@ -762,7 +762,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
           this.preparations.release(
             reservation,
             reservation.state.owner === undefined
-              && reservation.source.session.events.length === reservation.source.sessionLength,
+              && reservation.source.session.seq === reservation.source.sessionLength,
           )
         },
       })
@@ -996,7 +996,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
         inspection,
         session,
         revision,
-        sessionLength: session.events.length,
+        sessionLength: session.seq,
         tornMarker,
         closers,
       }
@@ -1053,7 +1053,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
 
   /** Return one durable immutable view of an already-live Session. */
   private async loadLiveSnapshot(session: Session): Promise<SessionInspection> {
-    const events = session.events
+    const events = session.snapshotEvents()
     await this.flush(session)
     const state = this.states.get(session.id)
     /* v8 ignore next -- successful flush always publishes this live session's durable state */
@@ -1067,7 +1067,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
 
   /** Borrow one immutable view from an already-live Session. */
   private inspectLive(session: Session): SessionInspection {
-    return Object.freeze({ meta: session.header, events: session.events })
+    return Object.freeze({ meta: session.header, events: session.snapshotEvents() })
   }
 
   /** Await one retiring lifecycle with caller cancellation. */
@@ -1248,7 +1248,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       return restored
     }
     // Session owns this stable deep-frozen snapshot; backends only serialize it.
-    const seed = session.events
+    const seed = session.snapshotEvents()
     const live: LiveSessionState = {
       init: Promise.resolve(),
       writes: this.createWriteBehind(session, () => live.init),
@@ -1270,7 +1270,7 @@ export class PersistenceCoordinator<TornMarker = unknown> {
       || session.firstLiveSeq !== state.cursor) {
       throw new Error(`session "${session.id}" preparation no longer matches its persistence state`)
     }
-    const suffix = session.events.slice(state.cursor).map(event => structuredClone(event))
+    const suffix = session.snapshotEvents(state.cursor).map(event => structuredClone(event))
     this.preparations.attach(reservation)
     state.owner = session
     const live: LiveSessionState = {

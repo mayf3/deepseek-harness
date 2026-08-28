@@ -66,7 +66,7 @@ function callerOf(exec: ToolRunContext, ctx: Context): Caller {
   return {
     id: agent.session.id,
     header: agent.session.header,
-    events: agent.session.events,
+    events: agent.session.snapshotEvents(),
     boundary: ctx.sessionProjections.stateOf(agent.session, 'turnBoundary'),
   }
 }

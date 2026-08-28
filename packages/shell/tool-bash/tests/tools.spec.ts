@@ -214,7 +214,7 @@ function sandboxAgent(
     session: {
       id,
       header: { version: 0, id, createdAt: 0 },
-      events,
+      snapshotEvents: () => events,
       append: (type: string, data: Record<string, unknown>) => {
         const event = { type, data }
         events.push(event)
@@ -625,7 +625,7 @@ describe('sandbox escalation through the generic task producer', () => {
     expect(prompted).not.toHaveBeenCalled()
 
     const malformed = sandboxAgent()
-    ;(malformed.session.events as unknown as Array<{ type: string; data: { mode: string } }>).push({
+    ;(malformed.session.snapshotEvents() as unknown as Array<{ type: string; data: { mode: string } }>).push({
       type: 'sandbox/mode',
       data: { mode: 'unknown-mode' },
     })

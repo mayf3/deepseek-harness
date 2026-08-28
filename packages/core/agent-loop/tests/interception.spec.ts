@@ -57,7 +57,7 @@ function send(agent: Agent, text: string) {
 }
 
 function events(agent: Agent): SessionEvent[] {
-  return [...agent.session.events]
+  return [...agent.session.snapshotEvents()]
 }
 
 describe('agent/pre-step', () => {

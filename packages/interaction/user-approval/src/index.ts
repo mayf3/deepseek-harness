@@ -221,7 +221,7 @@ export class ApprovalService extends Service {
    */
   async request(req: ApprovalRequest): Promise<ApprovalOutcome> {
     const session = req.agent.session
-    if (!hasOpenTurn(session.events)) {
+    if (!hasOpenTurn(session.snapshotEvents())) {
       throw new Error(
         'approval.request() outside an open turn: the approval/asked + approval/decided audit pair '
         + 'must be turn-enclosed (a bare event between turns is crash-tail garbage on reload). '
@@ -257,7 +257,7 @@ export class ApprovalService extends Service {
    * @returns the last logged policy, or `undefined` without one.
    */
   overrideOf(session: Session): ApprovalPolicy | undefined {
-    return effectiveApprovalPolicy(session.events)
+    return effectiveApprovalPolicy(session.snapshotEvents())
   }
 
   /**

@@ -77,12 +77,13 @@ function formatDuration(elapsedMs: number): string {
 
 /** Collect already-entered and proposed user messages belonging to one open turn. */
 function requestMessages(agent: Agent, turn: number, proposed: readonly UserMessage[]): UserMessage[] {
-  const start = agent.session.events.findLastIndex(
+  const events = agent.session.snapshotEvents()
+  const start = events.findLastIndex(
     event => event.type === 'turn/start' && event.data.turn === turn,
   )
   const entered = start < 0
     ? []
-    : agent.session.events.slice(start + 1)
+    : events.slice(start + 1)
       .flatMap(event => event.type === 'user/message' ? [event.data] : [])
   return [...entered, ...proposed]
 }

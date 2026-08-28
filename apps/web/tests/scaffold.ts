@@ -804,7 +804,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
 function rawSessionLog(session: Session): string {
   return [
     JSON.stringify({ type: 'session', ...session.header }),
-    ...packChunkRuns(session.events).map(record => JSON.stringify(record)),
+    ...packChunkRuns(session.snapshotEvents()).map(record => JSON.stringify(record)),
     '',
   ].join('\n')
 }
@@ -849,7 +849,7 @@ async function assertReplaySession(
   const userPrompts = fixtureUserPrompts(expected)
   const candidates = sessions.filter((session) => {
     if (session.header.parentSession !== undefined) return false
-    const actual = session.events.flatMap((event) => {
+    const actual = session.snapshotEvents().flatMap((event) => {
       if (event.type !== 'user/message' || event.data.source.kind !== 'user') return []
       const text = event.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
       return text.length === 0 ? [] : [text]
