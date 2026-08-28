@@ -17,7 +17,11 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
-import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
+import type {
+  SubprocessHandle,
+  SubprocessOutcome,
+  SubprocessSpawnSpec,
+} from '@deepseek-ai/dsh-subprocess'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as codex from '../src/index.ts'
 import type { CodexPermissionMode } from '../src/run.ts'
@@ -175,6 +179,23 @@ async function expectQuiescent(handles: readonly SubprocessHandle[]): Promise<vo
   }
 }
 
+function expectedProcessExitDiagnostic(outcome: SubprocessOutcome): string {
+  const fields = [
+    'product: Codex',
+    'stage: process',
+    'category: process',
+  ]
+  if (outcome.exitCode !== null) fields.push(`exit code: ${outcome.exitCode}`)
+  if (outcome.signal !== null) fields.push(`signal: ${outcome.signal}`)
+  return `Product subagent failure (${fields.join('; ')})`
+}
+
+interface JsonSchemaNode {
+  readonly properties?: Record<string, JsonSchemaNode>
+  readonly required?: string[]
+  readonly type?: string | string[]
+}
+
 function responseInputTexts(body: Record<string, unknown>): string[] {
   if (!Array.isArray(body.input)) return []
   return body.input.flatMap((item): string[] => {
@@ -191,18 +212,39 @@ function responseInputTexts(body: Record<string, unknown>): string[] {
   })
 }
 
-describe('real @openai/codex 0.147.0 product', () => {
+describe('real @openai/codex 0.149.1 product', () => {
   it('starts approve-for-me through the real app-server and returns exact text', async () => {
-    const sentinel = 'REAL_CODEX_SENTINEL_0_147_0'
+    const sentinel = 'REAL_CODEX_SENTINEL_0_149_1'
     const task = 'Return the fixture sentinel exactly.'
     const { harness, fixture } = await realHarness([
       { kind: 'complete', text: sentinel },
     ], 'approve-for-me')
-    expect(codexPackage.version).toBe('0.147.0')
+    expect(codexPackage.version).toBe('0.149.1')
     const version = await execFileAsync(process.execPath, [codexEntry, '--version'], {
       env: { ...process.env, ...harness.env },
     })
-    expect(version.stdout.trim()).toBe('codex-cli 0.147.0')
+    expect(version.stdout.trim()).toBe('codex-cli 0.149.1')
+    const schemaRoot = mkdtempSync(join(tmpdir(), 'dsh-codex-schema-'))
+    roots.push(schemaRoot)
+    await execFileAsync(process.execPath, [
+      codexEntry,
+      'app-server',
+      'generate-json-schema',
+      '--out',
+      schemaRoot,
+    ], { env: { ...process.env, ...harness.env } })
+    const schema = JSON.parse(readFileSync(
+      join(schemaRoot, 'ClientRequest.json'),
+      'utf8',
+    )) as {
+      definitions: {
+        ThreadStartParams: JsonSchemaNode
+      }
+    }
+    expect(schema.definitions.ThreadStartParams.properties?.model).toEqual({
+      type: ['string', 'null'],
+    })
+    expect(schema.definitions.ThreadStartParams.required).toBeUndefined()
 
     const run = await harness.ctx.subagents.start('codex', {
       prompt: [{ type: 'text', text: task }],
@@ -227,6 +269,7 @@ describe('real @openai/codex 0.147.0 product', () => {
     expect(recorded.method).toBe('POST')
     expect(recorded.path).toBe('/v1/responses')
     expect(recorded.headers.authorization).toBe('Bearer dsh-fake-openai-key')
+    expect(recorded.body.model).toBe('fixture-model')
     expect(responseInputTexts(recorded.body)).toContain(task)
     await expectQuiescent(harness.handles)
   }, 60_000)
@@ -258,12 +301,14 @@ describe('real @openai/codex 0.147.0 product', () => {
     const { ctx, handles, spawnSpecs } = await realRuntime()
     const safeFiber = await ctx.plugin(codex, {
       providerName: 'codex-safe',
+      model: 'codex-safe-model',
       env: safeInstance.env,
       permissionMode: 'never',
       disposeGraceMs: 2_000,
     })
     const bypassFiber = await ctx.plugin(codex, {
       providerName: 'codex-bypass',
+      model: 'codex-bypass-model',
       env: bypassInstance.env,
       permissionMode: 'dangerously-bypass-approvals-and-sandbox',
       disposeGraceMs: 2_000,
@@ -311,6 +356,8 @@ describe('real @openai/codex 0.147.0 product', () => {
     await Promise.all([safeRun.dispose(), bypassRun.dispose()])
     expect(safeInstance.fixture.requests).toHaveLength(1)
     expect(bypassInstance.fixture.requests).toHaveLength(1)
+    expect(safeInstance.fixture.requests[0]?.body.model).toBe('codex-safe-model')
+    expect(bypassInstance.fixture.requests[0]?.body.model).toBe('codex-bypass-model')
     expect(safeInstance.fixture.requests[0]?.body.input)
       .not.toEqual(bypassInstance.fixture.requests[0]?.body.input)
     expect(spawnSpecs.map(spec => spec.env?.CODEX_HOME).sort()).toEqual([
@@ -364,11 +411,11 @@ describe('real @openai/codex 0.147.0 product', () => {
     const result = await run.result
     expect(result.output).toEqual([])
     expect(result.stopReason).toBe('error')
-    expect([
-      'Codex unattended decision (mode: never; request: command approval; decision: cancelled): the provider does not grant interactive approval',
-      'Codex unattended decision (mode: never; request: sandbox execution; decision: failed): Codex reported a sandbox failure',
-      'Codex unattended decision (mode: never; request: command execution; decision: denied): Codex rejected an escalation because the selected policy never asks for approval',
-    ]).toContain(result.diagnostic)
+    const diagnosticLines = result.diagnostic?.split('\n') ?? []
+    expect(diagnosticLines[0]).toBe(
+      'Product subagent failure (product: Codex; stage: turn; category: product-error)',
+    )
+    expect(diagnosticLines).toHaveLength(1)
     expect(result.diagnostic).not.toContain(command)
     expect(result.diagnostic).not.toContain(harness.workspace)
     await run.dispose()
@@ -383,6 +430,49 @@ describe('real @openai/codex 0.147.0 product', () => {
       requestEntry.headers.authorization === 'Bearer dsh-fake-openai-key',
     )).toBe(true)
     await expectQuiescent(harness.handles)
+  }, 60_000)
+
+  it('reports a real service failure and an early app-server exit safely', async () => {
+    {
+      const { harness } = await realHarness([{
+        kind: 'error',
+        status: 503,
+        message: 'SECRET_TOKEN in /private/secret.txt',
+      }])
+      const run = await harness.ctx.subagents.start('codex', {
+        prompt: [{ type: 'text', text: 'Exercise the service failure path.' }],
+        parent: harness.parent,
+        signal: new AbortController().signal,
+      })
+      const result = await run.result
+      expect(result).toMatchObject({ output: [], stopReason: 'error' })
+      expect(result.diagnostic).toBe(
+        'Product subagent failure (product: Codex; stage: turn; category: service)',
+      )
+      expect(result.diagnostic).not.toContain('SECRET_TOKEN')
+      expect(result.diagnostic).not.toContain('/private/secret.txt')
+      await run.dispose()
+      await expectQuiescent(harness.handles)
+    }
+    {
+      const { harness, fixture } = await realHarness([{ kind: 'hold' }])
+      const run = await harness.ctx.subagents.start('codex', {
+        prompt: [{ type: 'text', text: 'Exercise the process failure path.' }],
+        parent: harness.parent,
+        signal: new AbortController().signal,
+      })
+      await fixture.requestStarted
+      expect(harness.handles).toHaveLength(1)
+      harness.handles[0]!.terminate()
+      const outcome = await harness.handles[0]!.done
+      await expect(run.result).resolves.toEqual({
+        output: [],
+        diagnostic: expectedProcessExitDiagnostic(outcome),
+        stopReason: 'error',
+      })
+      await run.dispose()
+      await expectQuiescent(harness.handles)
+    }
   }, 60_000)
 
   it('executes an explicitly selected dangerous bypass write in the isolated workspace', async () => {
