@@ -16,7 +16,6 @@ These package-specific rules supplement the repo-wide [conventions](../AGENTS.md
 - **Apply bounds to the complete result.** Enforce byte, token, item, and time limits where the complete emitted or retained value, including wrappers and metadata, is known; test tiny and exact limits, oversized single chunks, and multibyte byte limits.
 - **Registry contributions prove disposal** through the HMR-safety test required by [testing policy](../docs/testing.md): dispose the fiber and observe removal.
 - **Every package owns `./invariant`.** Register the manifest name; check an event/data relation or give empty installers package-specific `No runtime invariant:` reasons. Generated companions, unexplained empties, and ignored reporters fail [`verify-package-invariants`](../.agents/notes/implemented/architecture/2026-07-19-package-invariant-runtime-contracts.md).
-- **Remote failures are one `RemoteError` plus a merged code table** (`RemoteErrorDetailsMap`, `<domain>/<reason>`): no domain error classes or mapping functions; discriminate by `code`, never `instanceof`; call `ctx.remote` directly without narrowing or wrappers; client `src` never constructs `RemoteError` ([how-to](../docs/cookbook/adding-a-remote-api.md), [rationale](../.agents/notes/implemented/architecture/2026-08-28-ctx-remote-failure-vocabulary.md)).
 
 [Naming rules](../docs/cookbook/adding-a-package.md#name-the-role-that-exists):
 
