@@ -507,6 +507,19 @@ describe('headless recorded-session snapshots', () => {
     }
   })
 
+  it('binds scenario HTTP fixtures only to OS-assigned ports', async () => {
+    for (const scenario of scenarios) {
+      const fixtureNames = (await readdir(scenario.dir)).filter(name => name.endsWith('.mjs'))
+      for (const fixtureName of fixtureNames) {
+        const source = await readFile(join(scenario.dir, fixtureName), 'utf8')
+        const boundPorts = [...source.matchAll(/\.listen\(\s*([^,\s)]+)/gu)].map(match => match[1])
+        for (const port of boundPorts) {
+          expect(port, `${scenario.name}/${fixtureName}: listener port`).toBe('0')
+        }
+      }
+    }
+  })
+
   it('stores session-owned inputs with typed redaction and no ACP transcript', async () => {
     for (const scenario of scenarios) {
       const fixtures = await fixtureSessions(scenario)
