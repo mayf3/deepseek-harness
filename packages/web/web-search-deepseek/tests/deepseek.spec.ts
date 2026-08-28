@@ -338,8 +338,8 @@ describe('DeepSeekSearchProvider error handling', () => {
         message: 'DeepSeek API error (HTTP 429): rate limited\n\n'
           + 'The web search request used endpoint "https://api.deepseek.test/anthropic/v1/messages". '
           + 'Search endpoint configuration is separate from chat. If that endpoint is not intended, '
-          + 'tell the user to set DEEPSEEK_SEARCH_BASE_URL or web-search-deepseek.baseURL to a trusted '
-          + 'Anthropic-compatible Messages API base. Do not choose or change the endpoint for them.',
+          + 'the user can set DEEPSEEK_SEARCH_BASE_URL or web-search-deepseek.baseURL to a trusted '
+          + 'Anthropic-compatible Messages API base. Only the user should choose or change the endpoint.',
       }))
   })
 
