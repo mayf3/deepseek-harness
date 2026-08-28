@@ -19,6 +19,7 @@ import PermissionPresetService, {
   type Config as PermissionConfig,
 } from '@deepseek-ai/dsh-permission-presets'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-shell'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, {
@@ -85,6 +86,7 @@ async function harness(
   contexts.push(ctx)
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SystemPrompt, { persona: '' })
   await ctx.plugin(ToolRuntime)
   ctx.provide('shell', {
@@ -633,7 +635,7 @@ describe('cancellation and integration teardown', () => {
         info: { name: AutoReview.AUTO_REVIEW_DENIED_ERROR_NAME, code: AutoReview.AUTO_REVIEW_DENIED_CODE },
       },
     })
-    expect(ctx.permissionPresets.current(session.events)).toBe('read-only')
+    expect(ctx.permissionPresets.current(session)).toBe('read-only')
     expect(ctx.permissionPresets.names).not.toContain(AUTO_PRESET)
   })
 
@@ -711,6 +713,7 @@ describe('cancellation and integration teardown', () => {
     contexts.push(invalid)
     await invalid.plugin(LlmRuntime)
     await invalid.plugin(SessionStore)
+    await invalid.plugin(SessionProjectionRegistry)
     await invalid.plugin(SystemPrompt, { persona: '' })
     await invalid.plugin(ToolRuntime)
     invalid.provide('shell', {

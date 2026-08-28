@@ -67,7 +67,7 @@ interface PermissionPresetContribution {
 
 ## Current preset and the derived `custom`
 
-`current(events)` derives the effective preset from the knobs, not from its own event alone: it folds the session's effective sandbox mode (falling back to the executor's configured mode) and effective approval policy (falling back to the approval service config, then `ask`), prefers a still-matching recorded selection, then the first matching configured entry, then the first matching live contribution, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
+`current(session)` derives the effective preset from the required `permissions` projection. The unit folds the session's sandbox mode, approval policy, and recorded selection; values absent within that state fall back to the executor's configured mode and the approval service config, then `ask`. A missing projection key fails explicitly. The service prefers a still-matching selection, then the first matching configured entry, then the first matching live contribution, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
 
 `names` lists configured presets in declaration order followed by live contributions in registration order. `optionOf(name)` builds the option a client renders for an available key (label falls back to the key) or for `custom`, and throws for any other name.
 
@@ -87,7 +87,7 @@ interface PresetOption {
 
 `set(session, name)` resolves the preset (unknown names throw), runs a contribution's admission callback when applicable, appends a log-only `permission/preset` event unless `name` is already the effective preset, then writes each knob through its own setter — `setSandboxMode` from [dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) and `setApprovalPolicy` from [dsh-user-approval](../../packages/interaction/user-approval) — only when that knob's effective value changes. The selection event precedes the knob events in the same turn, and re-selecting the effective preset appends nothing.
 
-`permission/preset` is durable, log-only user intent: it stays out of the model transcript, and it exists so `current()` can preserve WHICH preset the user chose when two presets share a bundle. `effectivePermissionPreset(events)` folds the last one, replay needs no catch-up state, and a restored `auto` selection requires the Auto contribution before Agent publication. The complete event declaration is in the [persistence log event catalog](../persistence-catalog.md); the method signatures are in the generated [service catalog](#ctxpermissionpresets--permissionpresetservice).
+`permission/preset` is durable, log-only user intent: it stays out of the model transcript (the knob events own the model-visible consequences through their consumers), and it exists so `current()` can preserve which preset the user chose when two presets share a bundle. The `permissions` projection folds that selection with both knob events and retains the `session/end-seed` boundary used to distinguish a restored empty seed from a fresh session; replay needs no catch-up state or raw-log rescan. A restored `auto` selection requires the Auto contribution before Agent publication. The complete event declaration is in the [persistence log event catalog](../persistence-catalog.md); the method signatures are in the generated [service catalog](#ctxpermissionpresets--permissionpresetservice).
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -117,10 +117,10 @@ register(contribution: PermissionPresetContribution): () => Promise<void>
  * last selection wins shared-bundle ties; otherwise the first configured
  * match, then the first contributed match, wins. Returns
  * {@link CUSTOM_PRESET} when no available preset matches.
- * @param events - the session's events in log order.
+ * @param session - the session whose knob state is read.
  * @returns the effective preset name, or `custom` when nothing matches.
  */
-current(events: readonly SessionEvent[]): string
+current(session: Session): string
 
 /**
  * Build the whole select value for one folded knob state: configured options
@@ -157,7 +157,7 @@ optionOf(name: string): PresetOption
 set(session: Session, name: string): void
 ```
 
-Types: [Session](session.md) · [SessionEvent](session.md)
+Types: [Session](session.md)
 
 Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
 <!-- END GENERATED cordis-surface -->

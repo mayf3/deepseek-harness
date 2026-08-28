@@ -23,7 +23,6 @@ import {
 } from '@deepseek-ai/dsh-llm'
 import {
   AUTO_PRESET,
-  effectivePermissionPreset,
   type PermissionPresetContribution,
 } from '@deepseek-ai/dsh-permission-presets'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
@@ -423,12 +422,15 @@ const contribution = (admit: PermissionPresetContribution['admit']): PermissionP
 
 /** Install the Auto preset and its prepended per-call review gate. */
 export function apply(ctx: Context): void {
-  ctx.permissionPresets.resolve('read-only')
+  // Failed disposal keeps the closed listener installed after this plugin
+  // context deactivates, so retain the dependency instance for that deny path.
+  const permissionPresets = ctx.permissionPresets
+  permissionPresets.resolve('read-only')
   let accepting = true
   const active = new Set<ActiveReview>()
 
   ctx.effect(function* () {
-    const stopContribution = ctx.permissionPresets.register(contribution((session) => {
+    const stopContribution = permissionPresets.register(contribution((session) => {
       if (!accepting) throw new Error('auto-review: integration is closing')
       if (ctx.sessions.get(session.id) !== session) {
         throw new Error(`auto-review: session "${session.id}" is not live in this process`)
@@ -438,7 +440,7 @@ export function apply(ctx: Context): void {
     const stopListener = ctx.on('tools/pre-execute', async (exec, next): Promise<PreToolDecision> => {
       const agent = exec.agent
       if (agent === undefined
-        || effectivePermissionPreset(agent.session.events) !== AUTO_PRESET
+        || permissionPresets.current(agent.session) !== AUTO_PRESET
         || (exec.parent === undefined && exec.name === RUN_CODE_NAME)) {
         return next()
       }
@@ -463,9 +465,9 @@ export function apply(ctx: Context): void {
       accepting = false
       const errors: unknown[] = []
       for (const session of ctx.sessions.list()) {
-        if (effectivePermissionPreset(session.events) !== AUTO_PRESET) continue
+        if (permissionPresets.current(session) !== AUTO_PRESET) continue
         try {
-          ctx.permissionPresets.set(session, 'read-only')
+          permissionPresets.set(session, 'read-only')
         } catch (error: unknown) {
           errors.push(error)
         }

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-permission-presets` gives a deployment one user-facing Permissions selector that bundles two independent enforcement knobs — the sandbox mode and the approval policy — into named presets. Selecting a preset applies the sandbox mode and approval policy together, while each knob keeps its own value, so sandbox execution, approval, prompt narration, and replay each read their own setting. The configured table supplies future-session defaults; a live integration may append an effect-scoped current-session preset with a synchronous admission check, as shipped Web does for `auto`. A knob combination matching no available preset reads back as the derived `custom`, which clients may display but never select. The service also owns the `permission` settings namespace and two optional children — a `permissions` Session projection and the `/permission` command — while enforcement remains with the sandbox, approval, or contributed integration.
+`dsh-permission-presets` gives a deployment one user-facing Permissions selector that bundles two independent enforcement knobs — the sandbox mode and the approval policy — into named presets. Selecting a preset applies the sandbox mode and approval policy together, while each knob keeps its own value, so sandbox execution, approval, prompt narration, and replay each read their own setting. The configured table supplies future-session defaults; a live integration may append an effect-scoped current-session preset with a synchronous admission check, as shipped Web does for `auto`. A knob combination matching no available preset reads back as the derived `custom`, which clients may display but never select. The service also owns the `permission` settings namespace, requires the `permissions` Session projection, and optionally contributes the `/permission` command, while enforcement remains with the sandbox, approval, or contributed integration.
 
 ## Table of Contents
 
@@ -71,7 +71,7 @@ The `permission` settings namespace holds `defaultPreset` for future sessions an
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The observable behavior is covered in [Use this package](#use-this-package); this section explains the write path, the read side, and the optional children.
+The observable behavior is covered in [Use this package](#use-this-package); this section explains the write path, the projection-backed read side, and the optional command.
 
 ### Source map
 
@@ -87,15 +87,15 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 ### Read side and `custom`
 
-`current(events)` folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). A still-matching last selection wins shared-bundle ties; otherwise the first configured match wins, followed by the first live contribution; otherwise the derived `CUSTOM_PRESET` is returned. The `permissions` projection unit applies the same fold one event at a time and serves the select to clients.
+`current(session)` reads the required `permissions` projection, whose unit folds the three whole-value knob events over the composition defaults (`ctx.shell.sandboxMode` and the approval config). The host state also retains whether `session/end-seed` has occurred, so session pinning distinguishes an explicitly empty restored seed from a genuinely fresh session without rescanning the log. A still-matching last selection wins shared-bundle ties; otherwise the first configured match wins, followed by the first live contribution; otherwise the derived `CUSTOM_PRESET` is returned. A missing projection key fails explicitly.
 
 ### Session pinning and blank reuse
 
-Mounting pins every live and future session: a genuinely fresh session gains the configured default preset and both knob facts, while seeded or partially initialized sessions keep their effective knob values and gain only missing durable facts. A stored `auto` identity fails publication when the Auto integration is absent or rejects admission; the service neither rewrites it nor silently derives Full access.
+Mounting pins every live and future session: a genuinely fresh session gains the configured default preset and both knob facts, while seeded or partially initialized sessions keep their effective knob values and gain only missing durable facts. The projection-owned seed marker makes this decision from the same incremental state as the knob values. A stored `auto` identity fails publication when the Auto integration is absent or rejects admission; the service neither rewrites it nor silently derives Full access.
 
-### Optional children
+### Projection and optional command
 
-The `permissions` projection unit registers only when a `ctx.sessionProjections` registry is composed; the `/permission` command registers only when a `ctx.commands` registry is composed. Headless assemblies without either registry stay unaffected.
+The service requires `ctx.sessionProjections` and registers the `permissions` projection during activation. The `/permission` command registers only when a `ctx.commands` registry is composed. Calls that derive the current preset or pin an initial selection fail explicitly when the projection key is absent.
 
 </details>
 

@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-permission-presets` 为部署提供一个面向用户的 Permissions 选择器，把两个独立的执行旋钮——沙箱模式与审批策略——捆绑为具名预设。选择预设会同时应用沙箱模式与审批策略，而每个旋钮各自保留自己的值，因此沙箱执行、审批、提示词叙述与回放都读取各自的设置。配置表提供未来会话默认值；live integration 可以追加一个带同步准入检查、生命周期受 effect 限定的当前会话预设，shipped Web 的 `auto` 即采用此方式。不匹配任何可用预设的旋钮组合会读回推导出的 `custom`，客户端可以显示它，但不能选择它。该服务还拥有 `permission` 设置命名空间与两个可选子功能——`permissions` Session 投影单元和 `/permission` 命令；强制执行仍由沙箱、审批或贡献该预设的 integration 拥有。
+`dsh-permission-presets` 为部署提供一个面向用户的 Permissions 选择器，把两个独立的执行旋钮——沙箱模式与审批策略——捆绑为具名预设。选择预设会同时应用沙箱模式与审批策略，而每个旋钮各自保留自己的值，因此沙箱执行、审批、提示词叙述与回放都读取各自的设置。配置表提供未来会话默认值；live integration 可以追加一个带同步准入检查、生命周期受 effect 限定的当前会话预设，shipped Web 的 `auto` 即采用此方式。不匹配任何可用预设的旋钮组合会读回推导出的 `custom`，客户端可以显示它，但不能选择它。该服务还拥有 `permission` 设置命名空间，要求存在 `permissions` Session 投影，并可选贡献 `/permission` 命令；强制执行仍由沙箱、审批或贡献该预设的 integration 拥有。
 
 ## 目录
 
@@ -71,7 +71,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-可观察行为已在[使用本包](#use-this-package)中说明；本节解释写入路径、读取侧与可选子功能。
+可观察行为已在[使用本包](#use-this-package)中说明；本节解释写入路径、由投影支持的读取侧与可选命令。
 
 ### 源码地图
 
@@ -87,15 +87,15 @@ kind: "package-reference"
 
 ### 读取侧与 `custom`
 
-`current(events)` 在组合默认值（`ctx.shell.sandboxMode` 与审批配置）之上折叠三个全量值旋钮事件。仍匹配的最近选择在共享捆绑时胜出；否则配置表中的第一个匹配项胜出，再是 live contribution 中的第一个匹配项；否则返回推导出的 `CUSTOM_PRESET`。`permissions` 投影单元逐事件应用同一折叠，并向客户端提供选择器。
+`current(session)` 读取必需的 `permissions` 投影；该单元在组合默认值（`ctx.shell.sandboxMode` 与审批配置）之上折叠三个全量值旋钮事件。host 状态还会保留 `session/end-seed` 是否已经出现，使会话固定无需重扫日志即可区分显式为空的恢复 seed 与真正的新会话。仍匹配的最近选择在共享捆绑时胜出；否则配置表中的第一个匹配项胜出，再是 live contribution 中的第一个匹配项；否则返回推导出的 `CUSTOM_PRESET`。投影 key 缺失时会显式失败。
 
 ### 会话固定与空白复用
 
-挂载时会固定所有存活与未来的会话：真正全新的会话获得配置默认预设与两个旋钮事实，而 seed 会话或部分初始化的会话保留其有效旋钮值，只补充缺失的持久事实。存储的 `auto` 身份在 Auto integration 缺失或拒绝准入时无法发布；服务既不会改写它，也不会静默推导为 Full access。
+挂载时会固定所有存活与未来的会话：真正全新的会话获得配置默认预设与两个旋钮事实，而 seed 会话或部分初始化的会话保留其有效旋钮值，只补充缺失的持久事实。投影自有的 seed 标记让该判断与旋钮值共用同一份增量状态。存储的 `auto` 身份在 Auto integration 缺失或拒绝准入时无法发布；服务既不会改写它，也不会静默推导为 Full access。
 
-### 可选子功能
+### 投影与可选命令
 
-`permissions` 投影单元仅在组合了 `ctx.sessionProjections` 注册表时注册；`/permission` 命令仅在组合了 `ctx.commands` 注册表时注册。两者都未组合的无头装配不受影响。
+该服务要求 `ctx.sessionProjections`，并在激活时注册 `permissions` 投影。`/permission` 命令仅在组合了 `ctx.commands` 注册表时注册。派生当前预设或固定初始选择的调用会在投影 key 缺失时显式失败。
 
 </details>
 

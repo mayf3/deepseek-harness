@@ -67,7 +67,7 @@ interface PermissionPresetContribution {
 
 ## 当前预设与派生的 `custom`
 
-`current(events)` 从 knob 派生实际生效的预设，而不是只看自身事件：它折叠会话的生效沙箱模式（回退到执行器配置的模式）与生效审批策略（先回退到审批服务配置，再回退到 `ask`），优先取仍然匹配的已记录选择，其次取第一个匹配的配置条目，再取第一个匹配的 live contribution，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
+`current(session)` 从必需的 `permissions` 投影派生实际生效的预设。该单元折叠会话的沙箱模式、审批策略和已记录选择；状态内部的缺失值回退到执行器配置的模式与审批服务配置，最后回退到 `ask`。投影 key 缺失时会显式失败。服务优先取仍然匹配的选择，其次取第一个匹配的配置条目，再取第一个匹配的 live contribution，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
 
 `names` 先按声明顺序列出配置预设，再按注册顺序列出 live contribution。`optionOf(name)` 为可用 key（label 回退为该 key）或 `custom` 构建客户端渲染的选项，传入其他任何名称都会抛出异常。
 
@@ -87,7 +87,7 @@ interface PresetOption {
 
 `set(session, name)` 解析预设（未知名称抛出异常），在适用时运行 contribution 的准入回调，在 `name` 尚不是生效预设时追加一条仅记日志的 `permission/preset` 事件，然后通过各旋钮自己的 setter（[dsh-sandbox-policy](../../packages/sandbox/sandbox-policy) 的 `setSandboxMode` 与 [dsh-user-approval](../../packages/interaction/user-approval) 的 `setApprovalPolicy`）写入，且仅当该 knob 的生效值发生变化时才写。同一轮次内，选择事件先于旋钮事件出现；重新选择当前生效的预设则什么都不追加。
 
-`permission/preset` 是持久、仅记日志的用户意图：它不进入模型 transcript（文本记录），并让 `current()` 在两个预设共享同一旋钮组合时仍能保留用户究竟选择了哪一个。`effectivePermissionPreset(events)` 折叠最后一条，回放不需要任何追赶状态，而恢复的 `auto` 选择在 agent 发布前必须存在 Auto contribution。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)；方法签名见生成的[服务目录](#ctxpermissionpresets--permissionpresetservice)。
+`permission/preset` 是持久、仅记日志的用户意图：它不进入模型 transcript（文本记录），模型可见的后果由 knob 事件经各自消费方承担；它存在是为了在两个预设共享同一个旋钮组合时，让 `current()` 仍能保住用户选择的究竟是哪一个预设。`permissions` 投影把该选择与两个 knob 事件一同折叠，并保留用于区分空恢复 seed 与新会话的 `session/end-seed` 边界；回放不需要任何追赶状态或原始日志重扫。恢复的 `auto` 选择在 agent 发布前必须存在 Auto contribution。完整事件声明见[持久化日志事件目录](../persistence-catalog.zh.md)；方法签名见生成的[服务目录](#ctxpermissionpresets--permissionpresetservice)。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -117,10 +117,10 @@ register(contribution: PermissionPresetContribution): () => Promise<void>
  * last selection wins shared-bundle ties; otherwise the first configured
  * match, then the first contributed match, wins. Returns
  * {@link CUSTOM_PRESET} when no available preset matches.
- * @param events - the session's events in log order.
+ * @param session - the session whose knob state is read.
  * @returns the effective preset name, or `custom` when nothing matches.
  */
-current(events: readonly SessionEvent[]): string
+current(session: Session): string
 
 /**
  * Build the whole select value for one folded knob state: configured options
@@ -157,7 +157,7 @@ optionOf(name: string): PresetOption
 set(session: Session, name: string): void
 ```
 
-Types: [Session](session.zh.md) · [SessionEvent](session.zh.md)
+Types: [Session](session.zh.md)
 
 Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
 <!-- END GENERATED cordis-surface -->

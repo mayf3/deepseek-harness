@@ -15,10 +15,11 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import SandboxedFileSystem from '@deepseek-ai/dsh-fs-sandbox'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import SandboxPolicyService, { setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
-import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import { startInProcessRun } from '../src/index.ts'
 
@@ -41,6 +42,7 @@ async function setupWalled(script: Script): Promise<{ ctx: Context; parent: Agen
   const ctx = new Context()
   contexts.push(ctx)
   await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(SessionProjectionRegistry)
   await ctx.plugin(SandboxPolicyService, { mode: 'workspace-write', workspaceRoot: workspace })
   await ctx.plugin(SandboxedFileSystem, { cwd: workspace })
   await ctx.plugin(ToolFs)
@@ -85,7 +87,7 @@ describe('in-process policy inheritance', () => {
     parent.session.append('permission/preset', { preset: 'auto' })
     setSandboxMode(parent.session, 'danger-full-access')
     ctx.provide('permissionPresets', {
-      current: (events: readonly SessionEvent[]) => events === parent.session.events ? 'auto' : 'custom',
+      current: (session: Session) => session === parent.session ? 'auto' : 'custom',
     } as never)
 
     const run = await startInProcessRun(spawnRequest(parent), {})

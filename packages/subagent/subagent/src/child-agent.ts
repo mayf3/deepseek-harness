@@ -236,7 +236,7 @@ export interface DelegatedPolicyOverrides {
  * @returns the sandbox override (or `undefined` without one) and the approval pin.
  */
 export function captureDelegatedPolicyOverrides(parent: Agent): DelegatedPolicyOverrides {
-  const preset = parent.ctx.get('permissionPresets')?.current(parent.session.events)
+  const preset = parent.ctx.get('permissionPresets')?.current(parent.session)
   return {
     autoPreset: preset === 'auto' ? 'auto' : undefined,
     sandboxMode: parent.ctx.get('sandboxPolicy')?.overrideOf(parent.session),

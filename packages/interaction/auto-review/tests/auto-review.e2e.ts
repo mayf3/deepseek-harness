@@ -14,6 +14,7 @@ import PermissionPresetService, {
   type Config as PermissionConfig,
 } from '@deepseek-ai/dsh-permission-presets'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-shell'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { type ToolDefinition } from '@deepseek-ai/dsh-tools'
@@ -227,6 +228,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)('Auto review real-model authoriza
       await ctx.plugin(LlmRuntime)
       await ctx.plugin(LlmDeepSeek, { thinking: 'disabled' })
       await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
       await ctx.plugin(SystemPrompt, { persona: '' })
       await ctx.plugin(ToolRuntime)
       ctx.provide('shell', {
