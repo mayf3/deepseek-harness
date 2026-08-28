@@ -9,7 +9,7 @@
  * the CPython subprocess. The protocol's host-side codec and hostile-frame
  * validators are re-exported so every consumer of the wire shares one
  * vocabulary.
- * @module @deepseek-ai/dsh-code-runtime-python
+ * @module @deepseek-ai/dsh-experimental-code-runtime-python
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
@@ -680,7 +680,7 @@ interface LiveRun {
 }
 
 /**
- * The shipped {@link CodeRuntime} backend registering as `codeRuntime`. Every
+ * The experimental {@link CodeRuntime} backend (private, not released) registering as `codeRuntime`. Every
  * cap is validated config; every long-running operation honors the request's
  * `AbortSignal`; every disposer awaits child-process exit.
  */
