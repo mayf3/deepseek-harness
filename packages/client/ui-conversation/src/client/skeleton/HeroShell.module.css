@@ -106,9 +106,7 @@
   }
 }
 
-/* Workspace row sits 12px above the input card (figma y80 → y112). The blue
-   glow lives with the owner (ConversationRoot .heroGlow) so it can center on
-   the input card. */
+/* Workspace row sits 12px above the input card (figma y80 → y112). */
 .body {
   position: relative;
   display: flex;

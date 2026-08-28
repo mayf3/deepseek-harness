@@ -1,7 +1,7 @@
 // The composer remains in ConversationRoot so switching out of the blank-draft
 // phase does not remount its textarea.
 
-import { useId, useState } from 'react'
+import { useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
   FISH_LOGO_PATH, FISH_LOGO_VIEWBOX, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
@@ -58,40 +58,6 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }
       <span className={css.workspaceLabel}>{label ?? t('hero.chooseWorkspace')}</span>
       <IconChevronDownOutline14 className={css.chevron} size={12} />
     </button>
-  )
-}
-
-/**
- * The soft blue backdrop ellipse (figma 313:14109). Rendered by the hero
- * owner (ConversationRoot), not HeroShell, so it can center on the input
- * card; the owner's className supplies all positioning.
- * @param props.className - positioning class from the owner.
- * @returns the blurred-ellipse svg element.
- */
-export function HeroGlow({ className }: { className?: string | undefined }) {
-  // Stable filter id so multiple hero mounts do not collide in the DOM.
-  const glowFilterId = `empty-glow-${useId().replace(/:/g, '')}`
-  return (
-    <svg className={className} viewBox="0 0 1051 468" fill="none" aria-hidden="true">
-      <defs>
-        <filter
-          id={glowFilterId}
-          x="0"
-          y="0"
-          width="1051"
-          height="468"
-          filterUnits="userSpaceOnUse"
-          colorInterpolationFilters="sRGB"
-        >
-          <feFlood floodOpacity="0" result="BackgroundImageFix" />
-          <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape" />
-          <feGaussianBlur stdDeviation="50" result="effect1_foregroundBlur" />
-        </filter>
-      </defs>
-      <g filter={`url(#${glowFilterId})`}>
-        <ellipse cx="525.5" cy="234" rx="425.5" ry="134" fill="#6187D8" fillOpacity="0.08" />
-      </g>
-    </svg>
   )
 }
 
@@ -159,8 +125,7 @@ function HeroFish({ hovering }: { hovering: boolean }) {
 }
 
 /**
- * Render the hero chrome (headline only; no glow, no composer, no workspace
- * row — the glow is the owner's {@link HeroGlow}).
+ * Render the hero chrome (headline only; no composer, no workspace row).
  * @param props - see {@link HeroShellProps}.
  * @returns the centered hero element tree.
  */
