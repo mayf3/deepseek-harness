@@ -126,6 +126,17 @@ describe('bare dispatcher check', () => {
     expect(reasons("import { Agent } from 'undici'\nconst agent = new Agent({})", DISPATCHER_OWNER.replaceAll('/', '\\') + 'src\\install.ts')).toEqual([])
   })
 
+  it('parses only a file naming undici or the dispatcher option', () => {
+    // The pre-filter that keeps this gate from parsing 1576 of 1597 repository files excludes a
+    // file mentioning neither word. Both violations require one of them in source, so nothing
+    // detectable is excluded — the second case proves a violating shape survives the filter.
+    expect(reasons('      const agent = new Agent({ keepAlive: true })')).toEqual([])
+    expect(reasons(`
+      import { Agent } from 'undici'
+      const agent = new Agent({})
+    `)).toEqual(['constructs an undici agent'])
+  })
+
   it('passes on the current tree', () => {
     expect(scanRepository()).toEqual([])
   })

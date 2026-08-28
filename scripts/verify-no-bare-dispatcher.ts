@@ -160,6 +160,10 @@ function suppliesDispatcher(member: ts.ObjectLiteralElementLike): boolean {
 export function findDispatcherViolations(file: string, sourceText: string): DispatcherViolation[] {
   const posix = file.replaceAll('\\', '/')
   if (posix.startsWith(DISPATCHER_OWNER)) return []
+  // Both violations name one of these two words in source: an agent construction needs a binding
+  // from the undici module, and the option is a property called `dispatcher`. Parsing the rest of
+  // the repository anyway made this the slowest gate — 21 of 1597 files survive the filter.
+  if (!sourceText.includes(AGENT_MODULE) && !sourceText.includes(DISPATCHER_PROPERTY)) return []
   const source = ts.createSourceFile(posix, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
   const bound = agentBindings(source)
   const lines = sourceText.split('\n')
