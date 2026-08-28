@@ -110,7 +110,7 @@ await ctx.sessionPersistence.append(id, events)
 | [`src/codec.ts`](src/codec.ts) | 打包：哪些 `assistant/chunk` 连续段成为打包行、大小上限 |
 | [`src/compression.ts`](src/compression.ts) | 物理编码：字典压缩、序列列表、行扫描与解码 |
 | [`src/sql.ts`](src/sql.ts) + [`resources/sql/`](resources/sql/) | 所有 SQL 语句均为打包的闭名资源 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件（无运行时不变式；打包只能通过数据库往返观察） |
+| — | 不发布运行时不变式伴生入口；打包只能通过数据库往返观察。 |
 
 ### 数据库 schema
 

@@ -131,14 +131,13 @@ A YAML include can deduplicate config but cannot own a bin or provide entry-poin
 
 ### Invariant companions
 
-The bundle mounts the invariant registry and its four package companions (`session`, `agent`, `scope`, `agent-loop`). `invariants.enabled: false` or package filters suppress the checks but do not remove the service or companion registrations; Session's always-on validation and freezing are separate. The package's own companion ([`src/invariant.ts`](src/invariant.ts)) installs no runtime invariant because this composition package owns no independent event stream or mutable data.
+**Runtime invariant:** No companion is published. This composition package owns no independent event stream or mutable data; Loader and built-entry tests cover its wiring.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `pickSpineConfig()`, `apply()` mounting every child |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; composition wiring is covered by tests) |
 
 </details>
 

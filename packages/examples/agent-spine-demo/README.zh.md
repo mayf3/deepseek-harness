@@ -131,14 +131,13 @@ YAML include 可以去重配置，却无法拥有 bin 或提供入口默认值�
 
 ### 不变式配套插件
 
-组合包挂载不变式注册表及其四个包配套插件（`session`、`agent`、`scope`、`agent-loop`）。`invariants.enabled: false` 或包筛选器会抑制检查，但不会移除服务或配套插件注册；Session 始终启用的校验与冻结是另一套机制。本包自己的配套插件（[`src/invariant.ts`](src/invariant.ts)）不安装任何运行时不变式，因为这个组合包不拥有独立事件流或可变数据。
+**运行时不变式：** 不发布伴生入口。本组合包不持有独立事件流或可变数据；所挂载的生产包分别负责自己的运行时不变式。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`pickSpineConfig()`、挂载所有子插件的 `apply()` |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式配套插件（无运行时不变式；组合接线由测试覆盖） |
 
 </details>
 

@@ -61,7 +61,7 @@ export function SessionId(id: string): SessionId {
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `Branded<B>` 类型与私有 `BRAND` 符号——即整个包 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件（无运行时不变式；擦除由编译器保证） |
+| — | 不发布运行时不变式伴生入口；擦除由编译器保证。 |
 
 ### 擦除如何工作
 

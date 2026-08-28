@@ -77,7 +77,7 @@ The harness is built on one separation: the smoke runs in a child process under 
 |---|---|
 | [`src/index.ts`](src/index.ts) | Mode resolver, `runLoaderSmoke` subprocess harness, options and result types |
 | [`src/agent-turn.ts`](src/agent-turn.ts) | `runFixtureTurn` direct-agent driver and result envelope |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; consuming test suites exercise the harness) |
+| — | No runtime invariant companion is published; this test-support package owns no production event stream or mutable data; consuming test suites exercise its behavior. |
 
 </details>
 

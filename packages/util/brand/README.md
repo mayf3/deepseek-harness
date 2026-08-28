@@ -61,7 +61,7 @@ The primitive is one intersection type: `string & { readonly [BRAND]: B }`, wher
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | The `Branded<B>` type and the private `BRAND` symbol — the whole package |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; erasure is enforced by the compiler) |
+| — | No runtime invariant companion is published; this pure utility owns no event stream or mutable runtime data; its value algebra is enforced by unit tests. |
 
 ### How erasure works
 

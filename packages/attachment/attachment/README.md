@@ -78,7 +78,7 @@ The service family runs one admission-and-storage flow: every entry point enforc
 | [`src/admission.ts`](src/admission.ts) | `admitEncodedImages`: canonical-base64 enforcement, then `saveImages` delegation |
 | [`src/error.ts`](src/error.ts) | `AttachmentError` class and the `isImageAdmissionError` runtime subset |
 | [`src/brand.ts`](src/brand.ts) | `AttachmentId` branded opaque identifier |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; implementations enforce immutable-store checks) |
+| — | No runtime invariant companion is published; this stateless seam owns types while implementations enforce immutable-store checks. |
 
 </details>
 

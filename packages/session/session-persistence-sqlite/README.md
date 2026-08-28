@@ -110,7 +110,7 @@ The packed-row foundation lives in the [SQLite physical chunk-row decision](../.
 | [`src/codec.ts`](src/codec.ts) | Packing: which `assistant/chunk` runs become packed rows, size bounds |
 | [`src/compression.ts`](src/compression.ts) | Physical encoding: dictionary compression, sequence lists, row scan and decode |
 | [`src/sql.ts`](src/sql.ts) + [`resources/sql/`](resources/sql/) | Every SQL statement as a packaged, closed-name resource |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; packing is observable only by database round-trip) |
+| — | No runtime invariant companion is published; physical packing is observable only by database round-trip and row-count checks, not a continuous in-process relation. |
 
 ### Database schema
 

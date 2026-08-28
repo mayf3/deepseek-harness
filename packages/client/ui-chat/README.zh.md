@@ -67,3 +67,5 @@ Chat 会为每个非空的初始或恢复请求、显式消息序列起点或真
 无。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。Conversation 与 Slot 注册已经强制 Chat target 一致。

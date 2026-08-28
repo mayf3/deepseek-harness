@@ -1,6 +1,7 @@
 /**
  * Vitest-wide invariant host. Ordinary Cordis roots receive the invariant
- * service with global enablement plus the current test package's companion.
+ * service with global enablement plus the current test package's companion,
+ * when it publishes one.
  * One topology test mounts every companion; focused invariant tests own their
  * service topology explicitly.
  */
@@ -36,10 +37,10 @@ export interface TestInvariantCompanion {
 export const TEST_INVARIANT_READY_SERVICE = 'testInvariantReady'
 
 /**
- * Every package companion as a lazy loader keyed by glob path. Ordinary tests
+ * Every published package companion as a lazy loader keyed by glob path. Ordinary tests
  * load only their owner's module; the exhaustive topology test loads and
  * executes all of them, so aggregated coverage still observes every
- * registration while per-file setup stops importing 168 companions and their
+ * registration while per-file setup avoids importing unrelated companions and their
  * transitive package sources.
  */
 export const testInvariantCompanions: Readonly<Record<string, () => Promise<TestInvariantCompanion>>> =
@@ -137,7 +138,7 @@ class TestAttachmentStore extends AttachmentStore {
 /**
  * Select the package companions that an ordinary test root must register.
  * Package tests receive their owner's checks; the dedicated topology test
- * receives every owner so coverage and exhaustive runtime registration remain
+ * receives every companion owner so coverage and runtime registration remain
  * independently enforced.
  * @param testPath - absolute or repo-relative normalized Vitest file path.
  * @returns sorted `import.meta.glob` keys for companions to mount.
@@ -150,10 +151,7 @@ export function testInvariantCompanionPaths(testPath: string): string[] {
   const owner = normalized.match(/\/packages\/([^/]+)\/([^/]+)\/tests\//)
   if (owner === null) return []
   const companionPath = `../packages/${owner[1]}/${owner[2]}/src/invariant.ts`
-  if (testInvariantCompanions[companionPath] === undefined) {
-    throw new Error(`test invariants: package test has no companion at ${companionPath}`)
-  }
-  return [companionPath]
+  return testInvariantCompanions[companionPath] === undefined ? [] : [companionPath]
 }
 
 function startInvariantHost(root: Context): InvariantHost {

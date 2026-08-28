@@ -117,3 +117,5 @@ None; Conversation assembly and browser input state do not alter provider-side p
 None.
 
 </details>
+
+**Runtime invariant:** No companion is published. Conversation Definitions, target builders, and Views are already validated by their owning registries and the Slot ledger.
