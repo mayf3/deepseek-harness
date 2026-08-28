@@ -339,6 +339,20 @@ describe('extension-less paths', () => {
     expect(image.attachment.name).toBe('avatar')
   })
 
+  it('pins the trailing-dot refusal and reads a dotfile through sniffing', async () => {
+    await writeFile(join(dir, '.hidden'), PNG_1X1)
+    const ctx = await setup()
+    const trailingDot = await readImage(ctx, { file_path: 'foo.' }, agentOn('vision-model'))
+    expect(trailingDot.isError).toBe(true)
+    expect(text(trailingDot)).toContain('cannot read "foo.": the . extension does not declare a supported image format')
+
+    const dotfile = await readImage(ctx, { file_path: '.hidden' }, agentOn('vision-model'))
+    expect(dotfile.isError).toBe(false)
+    const image = dotfile.content[1] as { attachment: ImageAttachmentRef }
+    expect(image.attachment.mediaType).toBe('image/png')
+    expect(image.attachment.name).toBe('.hidden')
+  })
+
   it('refuses extension-less bytes that are not a supported image', async () => {
     await writeFile(join(dir, 'notes'), 'plain text, not an image')
     const ctx = await setup()
