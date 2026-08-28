@@ -27,6 +27,7 @@ describe('workspace view v6→v7 migration', () => {
     expect(state.groupBy).toBe('group')
     expect(state.orderBy).toBe('manual')
     expect(state.unreadOnly).toBe(true)
+    expect(state.runningOnly).toBe(false)
     expect(state.sessionMeta.a).toEqual({ group: '前端', parent: 'root', unread: true })
     expect(state.sessionMeta.b).toEqual({ group: '后端' })
     expect(state.knownGroups).toEqual(['前端', '后端'])
@@ -45,6 +46,7 @@ describe('workspace view v6→v7 migration', () => {
     }))
     const state = createWorkspaceViewStore().create().getSnapshot()
     expect(state.groupBy).toBe('flat')
+    expect(state.runningOnly).toBe(false)
     expect(state.sessionMeta.a?.group).toBe('新')
   })
 
@@ -52,7 +54,42 @@ describe('workspace view v6→v7 migration', () => {
     localStorage.setItem(V6, '{bad json')
     const state = createWorkspaceViewStore().create().getSnapshot()
     expect(state.groupBy).toBe('workspace')
+    expect(state.runningOnly).toBe(false)
     expect(state.sessionMeta).toEqual({})
     expect(state.knownGroups).toEqual([])
+  })
+})
+
+describe('workspace view filter persistence', () => {
+  it('normalizes missing and conflicting v7 filter fields', () => {
+    localStorage.setItem(V7, JSON.stringify({
+      groupBy: 'flat', orderBy: 'updated', unreadOnly: true,
+      groupExpansion: {}, sessionOrderByAccount: {}, sessionUpdatedAtByAccount: {},
+      sessionMeta: {}, knownGroups: [],
+    }))
+    expect(createWorkspaceViewStore().create().getSnapshot()).toMatchObject({
+      unreadOnly: true, runningOnly: false,
+    })
+
+    localStorage.setItem(V7, JSON.stringify({
+      groupBy: 'flat', orderBy: 'updated', unreadOnly: true, runningOnly: true,
+      groupExpansion: {}, sessionOrderByAccount: {}, sessionUpdatedAtByAccount: {},
+      sessionMeta: {}, knownGroups: [],
+    }))
+    expect(createWorkspaceViewStore().create().getSnapshot()).toMatchObject({
+      unreadOnly: true, runningOnly: false,
+    })
+  })
+
+  it('keeps unread-only and running-only mutually exclusive', () => {
+    const store = createWorkspaceViewStore().create()
+    store.actions.setRunningOnly(true)
+    expect(store.getSnapshot()).toMatchObject({ unreadOnly: false, runningOnly: true })
+    expect(JSON.parse(localStorage.getItem(V7) ?? 'null')).toMatchObject({ runningOnly: true })
+    expect(createWorkspaceViewStore().create().getSnapshot().runningOnly).toBe(true)
+    store.actions.setUnreadOnly(true)
+    expect(store.getSnapshot()).toMatchObject({ unreadOnly: true, runningOnly: false })
+    store.actions.setUnreadOnly(false)
+    expect(store.getSnapshot()).toMatchObject({ unreadOnly: false, runningOnly: false })
   })
 })

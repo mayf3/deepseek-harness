@@ -12,8 +12,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import clsx from 'clsx'
 import {
-  Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16, IconPlusOutline16,
-  IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
+  Button, IconArchiveOutline20, IconCloseFill14, IconPersonalizationOutline16, IconPlayOutline16,
+  IconPlusOutline16, IconProjectAddOutline16, IconSearchOutline16, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   SessionId, SessionListState, SessionSearchResultItem, WorkspaceId, WorkspaceView,
@@ -294,6 +294,8 @@ type SessionTreeProps = Pick<
   removeGroup: (group: string) => void
   /** Unread-only filter (hide rows without the unread flag). */
   unreadOnly: boolean
+  /** Running-only filter (hide rows without their own or descendant activity). */
+  runningOnly: boolean
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
   /** Grouping mode: workspace sections or user groups (flat has its own body). */
@@ -317,7 +319,7 @@ function startSessionInGroup(
 function SessionTree({
   useSessions, startSession, open, forkSession, workspaces, archivedSessionIds,
   onRenameRequest, onDeleteRequest, onSessionRename, onSessionArchive, onEditGroup,
-  sessionMeta, knownGroups, setSessionParent, setSessionGroup, setSessionUnread, removeGroup, unreadOnly,
+  sessionMeta, knownGroups, setSessionParent, setSessionGroup, setSessionUnread, removeGroup, unreadOnly, runningOnly,
   insertWorkspaceBefore, insertSessionBefore, orderBy, groupBy,
   groupExpansion, setGroupExpanded,
   sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder, home, batchSelection, t,
@@ -426,17 +428,21 @@ function SessionTree({
   const groups = useMemo(
     () => groupMode
       ? deriveUserGroups(list, orderedWorkspaces, archivedSessionIds, {
-        expandedGroups, sessionMeta, knownGroups, sessionOrderByAccount, unreadOnly,
+        expandedGroups, sessionMeta, knownGroups, sessionOrderByAccount, unreadOnly, runningOnly,
       })
       : deriveGroups(list, orderedWorkspaces, archivedSessionIds, {
         expandedGroups,
         sessionMeta,
         unreadOnly,
+        runningOnly,
         ...(sessionOrderByAccount[UNGROUPED_KEY] === undefined
           ? {}
           : { ungroupedOrder: sessionOrderByAccount[UNGROUPED_KEY] }),
       }),
-    [list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownGroups, sessionOrderByAccount, unreadOnly, groupMode],
+    [
+      list, orderedWorkspaces, archivedSessionIds, expandedGroups, sessionMeta, knownGroups,
+      sessionOrderByAccount, unreadOnly, runningOnly, groupMode,
+    ],
   )
   const visibleSessionIds = useMemo(
     () => groups.flatMap(group => (expandedSessionGroups.includes(group.key)
@@ -731,8 +737,8 @@ function SessionTree({
 function FlatList({
   useSessions, startSession, open, forkSession, onSessionRename, onSessionArchive, onEditGroup,
   setSessionParent, setSessionUnread, setSessionGroup, sessionMeta, workspaces, archivedSessionIds,
-  orderBy, unreadOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount, setSessionOrder,
-  batchSelection, t,
+  orderBy, unreadOnly, runningOnly, sessionOrderByAccount, sessionUpdatedAtByAccount, syncSessionOrderAccount,
+  setSessionOrder, batchSelection, t,
 }: Pick<
   SessionTreeProps,
   | 'useSessions'
@@ -750,6 +756,7 @@ function FlatList({
   | 'archivedSessionIds'
   | 'orderBy'
   | 'unreadOnly'
+  | 'runningOnly'
   | 'sessionOrderByAccount'
   | 'sessionUpdatedAtByAccount'
   | 'syncSessionOrderAccount'
@@ -767,8 +774,8 @@ function FlatList({
     setSessionUnread(id, !(sessionMeta[id]?.unread === true))
   }
   const baseRows = useMemo(
-    () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta, unreadOnly),
-    [list, workspaces, archivedSessionIds, sessionMeta, unreadOnly],
+    () => deriveFlat(list, workspaces, archivedSessionIds, sessionMeta, unreadOnly, runningOnly),
+    [list, workspaces, archivedSessionIds, sessionMeta, unreadOnly, runningOnly],
   )
   // Deep-link jumps: scroll the opened session's row into view (flat rows are
   // always rendered, so this resolves on the first tick).
@@ -1022,6 +1029,7 @@ export function WorkspaceBrowser({
   const groupBy = useStore(s => s.groupBy)
   const orderBy = useStore(s => s.orderBy)
   const unreadOnly = useStore(s => s.unreadOnly)
+  const runningOnly = useStore(s => s.runningOnly)
   const groupExpansion = useStore(s => s.groupExpansion)
   const sessionOrderByAccount = useStore(s => s.sessionOrderByAccount)
   const sessionUpdatedAtByAccount = useStore(s => s.sessionUpdatedAtByAccount)
@@ -1146,7 +1154,7 @@ export function WorkspaceBrowser({
   }
   useEffect(() => {
     clearBatchSelection()
-  }, [groupBy, unreadOnly])
+  }, [groupBy, unreadOnly, runningOnly])
   useEffect(() => {
     if (normalizedQuery !== '') exitBatchMode()
   }, [normalizedQuery])
@@ -1463,6 +1471,19 @@ export function WorkspaceBrowser({
               </button>
             </Tooltip>
           )}
+          {wide && (
+            <Tooltip label={runningOnly ? t('filter.all') : t('filter.runningOnly')} side="bottom" delayMs={500}>
+              <button
+                type="button"
+                className={clsx(css.iconButton, runningOnly && css.runningFilterOn)}
+                aria-label={runningOnly ? t('filter.all') : t('filter.runningOnly')}
+                aria-pressed={runningOnly}
+                onClick={() => { actions.setRunningOnly(!runningOnly) }}
+              >
+                <IconPlayOutline16 size={14} />
+              </button>
+            </Tooltip>
+          )}
           {wide && !batchMode && (
             <Tooltip label={t('board.open')} side="bottom" delayMs={500}>
               <button
@@ -1577,6 +1598,7 @@ export function WorkspaceBrowser({
                 sessionMeta={sessionMeta}
                 workspaces={workspaces}
                 unreadOnly={unreadOnly}
+                runningOnly={runningOnly}
                 archivedSessionIds={archivedSessionIds}
                 orderBy={orderBy}
                 sessionOrderByAccount={sessionOrderByAccount}
@@ -1605,6 +1627,7 @@ export function WorkspaceBrowser({
                 setSessionUnread={actions.setSessionUnread}
                 removeGroup={actions.removeGroup}
                 unreadOnly={unreadOnly}
+                runningOnly={runningOnly}
                 onSessionRename={onSessionRename}
                 onSessionArchive={onSessionArchive}
                 onEditGroup={onEditGroup}

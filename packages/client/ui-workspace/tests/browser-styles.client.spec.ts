@@ -116,6 +116,12 @@ describe('WorkspaceBrowser.module.css list', () => {
       .toBe('var(--dsw-alias-interactive-bg-hover)')
   })
 
+  it('fits every wide header action and gives both filters the active treatment', () => {
+    expect(declarations('.headerActions')?.get('max-width')).toBe('188px')
+    expect(declarations('.unreadFilterOn')?.get('color')).toBe('var(--dsw-alias-state-business-primary)')
+    expect(declarations('.runningFilterOn')?.get('color')).toBe('var(--dsw-alias-state-business-primary)')
+  })
+
   it('pins both rail controls to the shared left anchor during the column slide', () => {
     expect(declarations('.rail .sectionHeader')?.get('justify-content')).toBe('flex-start')
     expect(declarations('.rail .iconButton')?.get('width')).toBe('36px')

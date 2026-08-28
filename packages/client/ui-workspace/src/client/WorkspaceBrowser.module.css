@@ -38,15 +38,16 @@
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Unread-only filter toggle: the dot fills with the brand color when on. */
+/* Active view filters and batch selection use the brand-color state. */
 .unreadFilterOn,
+.runningFilterOn,
 .bulkModeOn {
   color: var(--dsw-alias-state-business-primary);
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* Section header: title, an inline search control, and the two trailing
-   actions. Expanding search collapses the action cluster and takes its room. */
+/* Section header: title, an inline search control, and trailing actions.
+   Expanding search collapses the action cluster and takes its room. */
 .sectionHeader {
   flex: none;
   display: flex;
@@ -117,7 +118,7 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  max-width: 92px;
+  max-width: 188px;
   opacity: 1;
   overflow: hidden;
   visibility: visible;
