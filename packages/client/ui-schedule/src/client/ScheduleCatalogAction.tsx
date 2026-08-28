@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import type { ScheduleRecord } from '@deepseek-ai/dsh-schedule/client'
 import {
   IconAlarmClockOutline16,
@@ -116,18 +116,6 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
   }, [open])
 
   useEffect(() => {
-    if (!open) return
-    const dismissOnEscape = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      setOpen(false)
-      triggerRef.current?.focus()
-    }
-    document.addEventListener('keydown', dismissOnEscape)
-    return () => { document.removeEventListener('keydown', dismissOnEscape) }
-  }, [open])
-
-  useEffect(() => {
     if (visible || !open) return
     setOpen(false)
   }, [visible, open])
@@ -141,6 +129,12 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
   const toggleCatalog = (): void => {
     setNow(Date.now())
     setOpen(current => !current)
+  }
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !open) return
+    event.preventDefault()
+    setOpen(false)
+    triggerRef.current?.focus()
   }
   const trigger = (
     <button
@@ -188,7 +182,7 @@ export function ScheduleCatalogAction({ useSession, useProjection, t }: Schedule
     : null
 
   return (
-    <div ref={rootRef} className={css.root}>
+    <div ref={rootRef} className={css.root} onKeyDown={onKeyDown}>
       {trigger}
       {catalog}
     </div>

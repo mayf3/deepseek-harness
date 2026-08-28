@@ -232,18 +232,25 @@ describe('ScheduleCatalogAction rows', () => {
 describe('ScheduleCatalogAction dismissal', () => {
   const active = [record('active', 'after', START + 60_000)]
 
-  it('closes on Escape after focus leaves the catalog and restores trigger focus', () => {
+  it('closes on Escape inside the catalog and restores trigger focus', () => {
+    render(<ScheduleCatalogAction {...props(active)} />)
+    const trigger = screen.getByRole('button', { name: '1 reminder' })
+    fireEvent.click(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.keyDown(screen.getByRole('list', { name: en['list.aria'] }), { key: 'Escape' })
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+    expect(document.activeElement).toBe(trigger)
+  })
+
+  it('leaves the catalog open when Escape belongs to a sibling control', () => {
     render(<><ScheduleCatalogAction {...props(active)} /><button type="button">Sibling</button></>)
     const trigger = screen.getByRole('button', { name: '1 reminder' })
     const sibling = screen.getByRole('button', { name: 'Sibling' })
-    fireEvent.keyDown(trigger, { key: 'Escape' })
     fireEvent.click(trigger)
-    fireEvent.keyDown(trigger, { key: 'ArrowDown' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('true')
     sibling.focus()
     fireEvent.keyDown(sibling, { key: 'Escape' })
-    expect(trigger.getAttribute('aria-expanded')).toBe('false')
-    expect(document.activeElement).toBe(trigger)
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(document.activeElement).toBe(sibling)
   })
 
   it('toggles from the trigger and dismisses only on an outside pointer press', () => {
