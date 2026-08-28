@@ -314,7 +314,9 @@ function searchEndpointError(endpoint: string, message: string, cause?: unknown)
   return new WebError(
     `${message}\n\nThe web search request used endpoint ${JSON.stringify(endpoint)}. `
     + 'Search endpoint configuration is separate from chat. If that endpoint is not intended, '
-    + 'the user can set DEEPSEEK_SEARCH_BASE_URL or web-search-deepseek.baseURL to a trusted '
+    + 'guide the user to Settings > Plugins > Plugin configuration > Web search, where they can '
+    + 'change and save Endpoint. If that settings page is unavailable, the user can set '
+    + 'DEEPSEEK_SEARCH_BASE_URL or configure web-search-deepseek.baseURL to a trusted '
     + 'Anthropic-compatible Messages API base. Only the user should choose or change the endpoint.',
     'WEB_PROVIDER_ERROR',
     cause === undefined ? undefined : { cause },
