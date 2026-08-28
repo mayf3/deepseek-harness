@@ -30,6 +30,8 @@ type WorkspaceViewState = {
   orderBy: SessionOrderBy
   /** Unread-only filter: rows without the unread flag are hidden. */
   unreadOnly: boolean
+  /** Running-only filter: rows without their own or descendant activity are hidden. */
+  runningOnly: boolean
   /** Explicit expansion state keyed by Workspace/group identity. */
   groupExpansion: Record<string, boolean>
   /** Shared editable order per Workspace/group plus the flat-list account. */
@@ -46,6 +48,7 @@ type WorkspaceViewActions = {
   setGroupBy: (draft: WorkspaceViewState, mode: SessionGroupBy) => void
   setOrderBy: (draft: WorkspaceViewState, mode: SessionOrderBy) => void
   setUnreadOnly: (draft: WorkspaceViewState, unreadOnly: boolean) => void
+  setRunningOnly: (draft: WorkspaceViewState, runningOnly: boolean) => void
   setGroupExpanded: (draft: WorkspaceViewState, key: string, expanded: boolean) => void
   retainAccountKeys: (draft: WorkspaceViewState, workspaceKeys: readonly string[]) => void
   syncSessionOrderAccount: (
@@ -78,6 +81,7 @@ function defaultState(): WorkspaceViewState {
     groupBy: 'workspace',
     orderBy: 'updated',
     unreadOnly: false,
+    runningOnly: false,
     groupExpansion: {},
     sessionOrderByAccount: {},
     sessionUpdatedAtByAccount: {},
@@ -158,6 +162,7 @@ function migrateLegacyState(): void {
           : 'workspace',
       orderBy: legacy.orderBy === 'manual' ? 'manual' : 'updated',
       unreadOnly: legacy.unreadOnly === true,
+      runningOnly: false,
       groupExpansion: migrateExpansion(legacy.groupExpansion),
       sessionOrderByAccount: stringOrders(legacy.sessionOrderByAccount),
       sessionUpdatedAtByAccount: timestampOrders(legacy.sessionUpdatedAtByAccount),
@@ -167,6 +172,22 @@ function migrateLegacyState(): void {
     localStorage.setItem(PERSIST_KEY, JSON.stringify(migrated))
   } catch {
     // Invalid or unavailable legacy storage leaves the v7 defaults intact.
+  }
+}
+
+/** Normalize filter fields added within v7 without discarding the remaining persisted view. */
+function normalizeCurrentState(): void {
+  if (typeof localStorage === 'undefined') return
+  try {
+    const raw = localStorage.getItem(PERSIST_KEY)
+    if (raw === null) return
+    const current = record(JSON.parse(raw))
+    if (current === undefined) return
+    const unreadOnly = current.unreadOnly === true
+    const runningOnly = current.runningOnly === true && !unreadOnly
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ ...current, unreadOnly, runningOnly }))
+  } catch {
+    // Invalid or unavailable current storage leaves persistence rehydration to the store runtime.
   }
 }
 
@@ -180,13 +201,21 @@ function isGroupAccount(key: string): boolean {
  */
 export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState, WorkspaceViewActions> {
   migrateLegacyState()
+  normalizeCurrentState()
   return defineStore({
     init: defaultState,
     persist: PERSIST_KEY,
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
-      setUnreadOnly: (d, unreadOnly: boolean) => { d.unreadOnly = unreadOnly },
+      setUnreadOnly: (d, unreadOnly: boolean) => {
+        d.unreadOnly = unreadOnly
+        if (unreadOnly) d.runningOnly = false
+      },
+      setRunningOnly: (d, runningOnly: boolean) => {
+        d.runningOnly = runningOnly
+        if (runningOnly) d.unreadOnly = false
+      },
       setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)

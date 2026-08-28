@@ -102,6 +102,8 @@ export interface TreeView {
   sessionOrderByAccount?: Readonly<Record<string, readonly string[]>>
   /** Unread-only filter: rows without the unread flag are hidden. */
   unreadOnly?: boolean
+  /** Running-only filter: rows without their own or descendant activity are hidden. */
+  runningOnly?: boolean
 }
 
 interface Group {
@@ -141,6 +143,18 @@ function sessionVisible(session: SessionSummary, current: SessionId | undefined,
   return session.origin !== 'subagent'
     && !archived.has(session.id)
     && (!session.blank || session.id === current)
+}
+
+/** Apply the mutually exclusive unread/running view filters to a visible top-level session. */
+function sessionMatchesFilter(
+  session: SessionSummary,
+  unreadOnly: boolean,
+  runningOnly: boolean,
+  meta: Readonly<Record<string, SessionMeta>> | undefined,
+  descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
+): boolean {
+  return (!unreadOnly || meta?.[session.id]?.unread === true)
+    && (!runningOnly || session.running || (descendants.get(session.id)?.runningCount ?? 0) > 0)
 }
 
 /**
@@ -199,13 +213,15 @@ function groupByWorkspace(
   archived: ReadonlySet<SessionId>,
   ungroupedOrder: readonly string[] | undefined,
   unreadOnly: boolean,
+  runningOnly: boolean,
   meta: Readonly<Record<string, SessionMeta>> | undefined,
+  descendants: ReadonlyMap<SessionId, SubagentDescendantSummary>,
 ): Group[] {
   const groups: Group[] = []
   const accounted = new Set<SessionId>()
   const keep = (summary: SessionSummary) =>
     sessionVisible(summary, list.current, archived)
-    && (!unreadOnly || meta?.[summary.id]?.unread === true)
+    && sessionMatchesFilter(summary, unreadOnly, runningOnly, meta, descendants)
   for (const workspace of workspaces) {
     const members: SessionSummary[] = []
     for (const id of workspace.sessionIds) {
@@ -323,14 +339,17 @@ export function deriveGroups(
   const expandedGroups = new Set(view.expandedGroups)
   const descendants = indexSubagentDescendants(list.byId)
   const unreadOnly = view.unreadOnly === true
+  const runningOnly = view.runningOnly === true
+  const filterActive = unreadOnly || runningOnly
   const currentGroup = list.current === undefined
     ? undefined
     : (workspaces.find(w => w.sessionIds.includes(list.current as SessionId))?.workspaceId as string | undefined)
         ?? UNGROUPED_KEY
   const groups: GroupNode[] = []
-  for (const g of groupByWorkspace(list, workspaces, archived, view.ungroupedOrder, unreadOnly, view.sessionMeta)) {
-    // Unread-only mode hides groups with nothing unread in them.
-    if (unreadOnly && g.sessions.length === 0) continue
+  for (const g of groupByWorkspace(
+    list, workspaces, archived, view.ungroupedOrder, unreadOnly, runningOnly, view.sessionMeta, descendants,
+  )) {
+    if (filterActive && g.sessions.length === 0) continue
     const expanded = expandedGroups.has(g.key)
     groups.push({
       key: g.key,
@@ -371,6 +390,8 @@ export function deriveUserGroups(
   const descendants = indexSubagentDescendants(list.byId)
   const meta = view.sessionMeta
   const unreadOnly = view.unreadOnly === true
+  const runningOnly = view.runningOnly === true
+  const filterActive = unreadOnly || runningOnly
   const workspaceBySession = new Map<SessionId, WorkspaceId>()
   for (const workspace of workspaces) {
     for (const sessionId of workspace.sessionIds) {
@@ -382,7 +403,7 @@ export function deriveUserGroups(
   for (const id of list.ids) {
     const session = list.byId[id]
     if (session === undefined || !sessionVisible(session, list.current, archived)) continue
-    if (unreadOnly && meta?.[id]?.unread !== true) continue
+    if (!sessionMatchesFilter(session, unreadOnly, runningOnly, meta, descendants)) continue
     const group = meta?.[id]?.group
     if (group === undefined) {
       unassigned.push(session)
@@ -397,7 +418,7 @@ export function deriveUserGroups(
   for (const name of [...names].sort((a, b) => a.localeCompare(b))) {
     const key = GROUP_SECTION_PREFIX + name
     const members = orderedUngrouped(byGroup.get(name) ?? [], view.sessionOrderByAccount?.[key] ?? [])
-    if (unreadOnly && members.length === 0) continue
+    if (filterActive && members.length === 0) continue
     const expanded = expandedGroups.has(key)
     const displayed = waitingOrder(members, meta)
     const firstSessionWorkspaceId = displayed[0] === undefined
@@ -457,6 +478,7 @@ export function deriveUserGroups(
  * @param archivedSessionIds - registry-global archive set.
  * @param meta - browser-local organization metadata (tags, unread).
  * @param unreadOnly - hide rows without the unread flag.
+ * @param runningOnly - hide rows without their own or descendant activity.
  * @returns flat rows in render order.
  */
 export function deriveFlat(
@@ -465,6 +487,7 @@ export function deriveFlat(
   archivedSessionIds: readonly SessionId[],
   meta?: Readonly<Record<string, SessionMeta>>,
   unreadOnly = false,
+  runningOnly = false,
 ): SessionNode[] {
   const archived = new Set(archivedSessionIds)
   const descendants = indexSubagentDescendants(list.byId)
@@ -478,7 +501,7 @@ export function deriveFlat(
   for (const id of list.ids) {
     const s = list.byId[id]
     if (s === undefined || !sessionVisible(s, list.current, archived)) continue
-    if (unreadOnly && meta?.[s.id]?.unread !== true) continue
+    if (!sessionMatchesFilter(s, unreadOnly, runningOnly, meta, descendants)) continue
     rows.push(s)
   }
   rows.sort(byRecency)

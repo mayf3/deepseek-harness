@@ -410,6 +410,50 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().unreadOnly).toBe(false)
   })
 
+  it('shows own and descendant activity and switches directly between view filters', () => {
+    const parent = summary('parent', 4)
+    const child = summary('child', 3, {
+      parentId: parent.id, origin: 'subagent', running: true,
+    })
+    const own = summary('own', 2, { running: true })
+    const unread = summary('unread', 1)
+    const b = mount({
+      useSessions: hook(sessionState([parent, child, own, unread])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['parent', 'child', 'own', 'unread'])])),
+    })
+    act(() => { b.store.actions.setSessionUnread('unread', true) })
+    fireEvent.click(screen.getByText('alpha'))
+
+    const runningButton = screen.getByRole('button', { name: '只看进行中' })
+    fireEvent.click(runningButton)
+    expect(screen.getByText('parent')).toBeTruthy()
+    expect(screen.getByText('own')).toBeTruthy()
+    expect(screen.queryByText('child')).toBeNull()
+    expect(screen.queryByText('unread')).toBeNull()
+    expect(b.store.getSnapshot()).toMatchObject({ unreadOnly: false, runningOnly: true })
+    expect(screen.getByRole('button', { name: '全部' }).getAttribute('aria-pressed')).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: '搜索会话' }))
+    fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'unread' } })
+    expect(screen.getByText('unread')).toBeTruthy()
+    expect(screen.queryByText('own')).toBeNull()
+    expect(b.store.getSnapshot().runningOnly).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+    expect(screen.getByText('own')).toBeTruthy()
+    expect(screen.queryByText('unread')).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: '只看未读' }))
+    expect(screen.getByText('unread')).toBeTruthy()
+    expect(screen.queryByText('parent')).toBeNull()
+    expect(screen.queryByText('own')).toBeNull()
+    expect(b.store.getSnapshot()).toMatchObject({ unreadOnly: true, runningOnly: false })
+
+    fireEvent.click(screen.getByRole('button', { name: '全部' }))
+    expect(screen.getByText('parent')).toBeTruthy()
+    expect(screen.getByText('unread')).toBeTruthy()
+    expect(b.store.getSnapshot()).toMatchObject({ unreadOnly: false, runningOnly: false })
+  })
+
   it('detaches a nested session when it is dropped between rows', async () => {    const sessions = sessionState([summary('one', 3), summary('two', 2)])
     const b = mount({
       useSessions: hook(sessions),

@@ -31,9 +31,11 @@ const view = (
   sessionMeta?: Readonly<Record<string, { group?: string; parent?: string; unread?: boolean }>>,
   knownGroups?: readonly string[],
   unreadOnly = false,
+  runningOnly = false,
 ) => ({
   expandedGroups,
   ...(unreadOnly ? { unreadOnly } : {}),
+  ...(runningOnly ? { runningOnly } : {}),
   ...(ungroupedOrder === undefined ? {} : { ungroupedOrder }),
   ...(sessionMeta === undefined ? {} : { sessionMeta }),
   ...(knownGroups === undefined ? {} : { knownGroups }),
@@ -294,6 +296,33 @@ describe('deriveFlat', () => {
     expect(userGroups.map(g => (g.kind === 'group' ? g.label : g.kind))).toEqual(['unassigned'])
     // Flat view: only unread rows survive.
     expect(deriveFlat(sessions, [], noArchive, meta, true).map(r => r.id)).toEqual([sid('unread')])
+  })
+
+  it('filters every derivation to own or uninterrupted descendant activity', () => {
+    const own = { ...summary('own', 5), running: true }
+    const parent = summary('parent', 4)
+    const child = {
+      ...summary('child', 3), parentId: parent.id, origin: 'subagent' as const, running: true,
+    }
+    const idle = summary('idle', 2)
+    const sessions = list(own, parent, child, idle)
+    const workspaces = [workspace('active', ['own', 'parent', 'child']), workspace('idle', ['idle'])]
+    const meta = { own: { group: 'work' }, parent: { group: 'work' }, idle: { group: 'later' } }
+    const runningView = view(
+      ['active', GROUP_SECTION_PREFIX + 'work'], undefined, meta, ['empty'], false, true,
+    )
+
+    const workspaceGroups = deriveGroups(sessions, workspaces, noArchive, runningView)
+    expect(workspaceGroups.map(group => group.key)).toEqual(['active'])
+    expect(workspaceGroups[0]!.sessions.map(row => row.id)).toEqual([own.id, parent.id])
+    expect(workspaceGroups[0]!.sessions[1]).toMatchObject({ running: false, runningSubagentCount: 1 })
+
+    const userGroups = deriveUserGroups(sessions, workspaces, noArchive, runningView)
+    expect(userGroups.map(group => group.label)).toEqual(['work'])
+    expect(userGroups[0]!.sessions.map(row => row.id)).toEqual([own.id, parent.id])
+
+    expect(deriveFlat(sessions, workspaces, noArchive, meta, false, true).map(row => row.id))
+      .toEqual([own.id, parent.id])
   })
 })
 
