@@ -5,6 +5,8 @@
  */
 
 import { Service } from '@deepseek-ai/cordis'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+export type { TypertGatewayFaultDetails } from '../remote-error-codes.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConnectionHandle,
@@ -13,6 +15,7 @@ import type {
   InvocationDescriptor,
   TypertClientEventListener,
   TypertClientRemote,
+  RemoteFailure,
   RemoteResult,
   TypertCodec,
   TypertDisposer,
@@ -21,7 +24,6 @@ import type {
 } from '@deepseek-ai/dsh-typert-protocol'
 import {
   RemoteStreamCarrierError,
-  RemoteStreamError,
   RemoteStreamMuxClient,
 } from './stream-client.ts'
 import { ClientRemoteEvents } from './remote-events.ts'
@@ -30,7 +32,7 @@ import {
   type RemoteStreamOptions,
 } from './remote-stream.ts'
 
-export { RemoteStreamCarrierError, RemoteStreamError } from './stream-client.ts'
+export { RemoteStreamCarrierError } from './stream-client.ts'
 export { RemoteJournalStream } from './journal-stream.ts'
 export type {
   RemoteJournalChange,
@@ -104,6 +106,20 @@ export interface ClientRemote extends TypertClientRemote {
    * @returns a single-consumer stream annotated with physical generation ids.
    */
   $stream<Item>(options: RemoteStreamOptions<Item>): RemoteStream<Item>
+  /**
+   * Fixed Host facts as plain reads: no store, no subscription, no generation
+   * counter. `home` stays undefined until the first ready frame and reflects
+   * the latest one afterwards.
+   */
+  readonly $host: RemoteHostFacts
+}
+
+/** The fixed Host facts exposed on `ctx.remote.$host`. */
+export interface RemoteHostFacts {
+  /** Host home directory from the ready frame, undefined before it. */
+  readonly home: string | undefined
+  /** Whether the carrier connects to the local Host. */
+  readonly isLoopback: boolean
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -164,6 +180,14 @@ class ClientRemoteService extends Service implements ClientRemote {
 
   $stream<Item>(options: RemoteStreamOptions<Item>): RemoteStream<Item> {
     return new RemoteStream(this.connection, options)
+  }
+
+  get $host(): RemoteHostFacts {
+    const connection = this.ownerCtx.get('connection') as ConnectionHandle | undefined ?? this.connection
+    return {
+      home: connection.generation.getSnapshot()?.host.home,
+      isLoopback: connection.isLoopback,
+    }
   }
 
   async $mount(contribution: TypertRemoteContribution): ReturnType<TypertClientRemote['$mount']> {
@@ -410,7 +434,7 @@ class ClientRemoteService extends Service implements ClientRemote {
     try {
       const result = await connection.rpc.call('/api', endpoint, { args: prepared.args }, prepared.signal)
       if (!mountActive(token)) return withdrawn(endpoint)
-      if (!result.ok) return { ok: false, error: result.error }
+      if (!result.ok) return { ok: false, error: rebuiltFailure(result.error) }
       return { ok: true, value: result.value }
     } catch (error) {
       // Carrier throws (offline or abort) are outcomes of the call, not assembly
@@ -698,7 +722,27 @@ function carrierFailure(endpoint: string, error: unknown): Extract<RemoteResult<
 }
 
 function internalFailure(message: string): Extract<RemoteResult<never>, { readonly ok: false }> {
-  return { ok: false, error: { code: 'internal', message, details: {} } }
+  return { ok: false, error: new RemoteError('gateway/internal', message, {}) }
+}
+
+/**
+ * Whether a caught value is a Remote failure this face delivered or threw.
+ * The one consumer-facing discrimination point: marked instances carry their
+ * Host code; anything else is a local fault the caller should let crash.
+ * @param error - a caught value.
+ * @returns true when the value narrows to RemoteFailure.
+ */
+export function isRemoteFailure(error: unknown): error is RemoteFailure {
+  return remoteErrorOf(error) !== undefined
+}
+
+/**
+ * Rebuild the wire failure as a local RemoteError instance so the error branch
+ * carries a real Error and `throw result.error` keeps throw semantics. The wire
+ * is a validation boundary: codes outside the merged map surface as-is.
+ */
+function rebuiltFailure(error: { code: string; message: string; details: object }): RemoteFailure {
+  return new RemoteError(error.code as never, error.message, error.details as never)
 }
 
 type MarkedConnectionStreamFailure = Error & {
@@ -715,7 +759,7 @@ async function *normalizeConnectionStream(source: AsyncIterable<unknown>): Async
     if (!(error instanceof Error)) throw error
     const marker = (error as MarkedConnectionStreamFailure).dshRemoteStreamFailure
     if (marker?.kind === 'remote') {
-      throw new RemoteStreamError(marker.code, error.message, marker.details)
+      throw new RemoteError(marker.code as never, error.message, marker.details as never)
     }
     if (marker?.kind === 'carrier') {
       throw new RemoteStreamCarrierError(error.message, { cause: error })

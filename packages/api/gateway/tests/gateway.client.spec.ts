@@ -1,3 +1,4 @@
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Fiber } from '@deepseek-ai/cordis'
 import { describe, expect, expectTypeOf, it, vi } from 'vitest'
@@ -22,7 +23,6 @@ import type { ClientRemote } from '../src/client/index.ts'
 import { apply, inject, RemoteStream } from '../src/client/index.ts'
 import {
   RemoteStreamCarrierError,
-  RemoteStreamError,
   RemoteStreamMuxClient,
 } from '../src/client/stream-client.ts'
 
@@ -634,10 +634,10 @@ describe('Client Typert API', () => {
     expect(ctx.get('remote.probe')).toBeUndefined()
     expect(ctx.get('probe')).toBe(businessProbe)
     expect(ctx.typert.remotes.list()).toEqual([])
-    await expect(retained?.('agent-1', { objective: 'ship' })).resolves.toEqual({
+    await expect(retained?.('agent-1', { objective: 'ship' })).resolves.toMatchObject({
       ok: false,
       error: {
-        code: 'internal',
+        code: 'gateway/internal',
         message: 'client api: Remote method probe/create is no longer mounted',
         details: {},
       },
@@ -1079,10 +1079,10 @@ describe('Client Typert API', () => {
     await dispose()
     resolveCall({ ok: true, value: { ref: 'goal-1' } })
 
-    await expect(invocation).resolves.toEqual({
+    await expect(invocation).resolves.toMatchObject({
       ok: false,
       error: {
-        code: 'internal',
+        code: 'gateway/internal',
         message: 'client api: Remote method probe/create is no longer mounted',
         details: {},
       },
@@ -1235,14 +1235,14 @@ describe('Client Typert API', () => {
   })
 
   it('delivers an RPC failure in the error branch with the Host error verbatim', async () => {
-    const rpcError = { code: 'internal' as const, message: 'host failed', details: {} }
+    const rpcError = { code: 'gateway/internal' as const, message: 'host failed', details: {} }
     const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>().mockResolvedValue({ ok: false, error: rpcError }))
     await ctx.remote.$mount({ package: '@fixture/probe', descriptors: [directDescriptor()] })
 
     const outcome = await ctx.remote.probe.create('agent-1', { objective: 'ship' })
     expect(outcome.ok).toBe(false)
     if (outcome.ok) throw new Error('expected the Client API invocation to report a failure')
-    expect(outcome.error).toBe(rpcError)
+    expect(outcome.error).toMatchObject(rpcError)
   })
 
   it('folds a transport throw into the error branch', async () => {
@@ -1250,10 +1250,10 @@ describe('Client Typert API', () => {
       .mockRejectedValue(new Error('carrier offline')))
     await ctx.remote.$mount({ package: '@fixture/probe', descriptors: [directDescriptor()] })
 
-    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).resolves.toEqual({
+    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).resolves.toMatchObject({
       ok: false,
       error: {
-        code: 'internal',
+        code: 'gateway/internal',
         message: 'client api: probe/create failed: carrier offline',
         details: {},
       },
@@ -1265,10 +1265,10 @@ describe('Client Typert API', () => {
       .mockRejectedValue('carrier exploded'))
     await ctx.remote.$mount({ package: '@fixture/probe', descriptors: [directDescriptor()] })
 
-    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).resolves.toEqual({
+    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' })).resolves.toMatchObject({
       ok: false,
       error: {
-        code: 'internal',
+        code: 'gateway/internal',
         message: 'client api: probe/create failed: carrier exploded',
         details: {},
       },
@@ -1472,7 +1472,7 @@ describe('Client Typert API', () => {
   it('fails the Connection generation when a result RPC is rejected', async () => {
     const call = vi.fn<ConnectionHandle['rpc']['call']>().mockResolvedValue({
       ok: false,
-      error: { code: 'internal', message: 'fixture result rejected', details: {} },
+      error: { code: 'gateway/internal', message: 'fixture result rejected', details: {} },
     })
     const { client, carrier, run } = await eventBench(call)
 
@@ -1554,7 +1554,7 @@ describe('Client Typert API', () => {
     })
     target.remote.$on('fixture/approval', () => Promise.reject(rejection))
 
-    carrier.emit(approvalFrame('event-rejected', 'agent-rejected', 'cancelled'))
+    carrier.emit(approvalFrame('event-rejected', 'agent-rejected', 'gateway/cancelled'))
 
     await vi.waitFor(() => { expect(call).toHaveBeenCalledTimes(1) })
     expect(call).toHaveBeenCalledWith(
@@ -1884,7 +1884,7 @@ describe('Client Typert API', () => {
     {
       name: 'Host failure',
       stop: (carrier: RemoteEventCarrier) => {
-        carrier.fail(new RemoteStreamError('internal', 'fixture Host failed', {}))
+        carrier.fail(new RemoteError('gateway/internal', 'fixture Host failed', {}))
       },
       message: 'fixture Host failed',
     },
@@ -2037,14 +2037,14 @@ describe('Client Typert API', () => {
       failure: Object.assign(new Error('fixture Host rejected the stream'), {
         dshRemoteStreamFailure: {
           kind: 'remote' as const,
-          code: 'fixture-rejected',
+          code: 'fixture/rejected',
           details: { retry: false },
         },
       }),
       assert: (error: unknown) => {
-        expect(error).toBeInstanceOf(RemoteStreamError)
+        expect(error).toBeInstanceOf(RemoteError)
         expect(error).toMatchObject({
-          code: 'fixture-rejected',
+          code: 'fixture/rejected',
           message: 'fixture Host rejected the stream',
           details: { retry: false },
         })
@@ -2122,14 +2122,14 @@ describe('Client Typert API', () => {
         type: 'error',
         streamId: failedOpen.streamId,
         error: {
-          code: 'lookup-unavailable',
+          code: 'gateway/lookup-unavailable',
           message: 'fixture stream failed',
           details: { lookup: 'missing' },
         },
       })
       await expect(failedItem).rejects.toMatchObject({
-        name: 'RemoteStreamError',
-        code: 'lookup-unavailable',
+        name: 'RemoteError',
+        code: 'gateway/lookup-unavailable',
         message: 'fixture stream failed',
         details: { lookup: 'missing' },
       })

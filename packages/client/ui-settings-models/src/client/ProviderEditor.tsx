@@ -23,6 +23,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
   CredentialInfo, JsonValue, SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
@@ -32,8 +33,7 @@ import {
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
-import type { ModelsWire } from './store.ts'
+import { deriveKeyRef, protocolChoices } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -66,8 +66,8 @@ export interface ProviderEditorProps {
   schema: SettingsSchemaOperations
   /** Path from the section root to this provider's profile. */
   settingsPath: readonly string[]
-  /** Wire faces for writes and for interrogating a provider endpoint. */
-  api: ModelsWire
+  /** The page plugin's context, whose Remote namespaces carry the writes and the endpoint interrogation. */
+  ctx: ClientContext
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -155,7 +155,7 @@ function refFor(
  * @returns the editor card.
  */
 export function ProviderEditor(props: ProviderEditorProps): ReactNode {
-  const { namespace, schema, settingsPath, api, t } = props
+  const { namespace, schema, settingsPath, ctx, t } = props
   const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
   const [keyDraft, setKeyDraft] = useState('')
   const [keyState, setKeyState] = useState<CredentialInfo | undefined>(undefined)
@@ -186,19 +186,14 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   useEffect(() => {
     let stale = false
     setKeyState(undefined)
-    // The key state is a placeholder hint, not a precondition for editing:
-    // neither a business rejection nor a transport failure may reach the
-    // browser as an unhandled rejection, so the card simply renders without
-    // the "already configured" hint.
-    void api.credentials.describe([keyRef]).then(
-      (response) => {
-        if (stale || !response.ok) return
-        setKeyState(response.value[keyRef])
-      },
-      () => undefined,
-    )
+    // The key state is a placeholder hint, not a precondition for editing: a
+    // refused describe leaves the card without the "already configured" hint.
+    void ctx.remote.credentials.describe([keyRef]).then((response) => {
+      if (stale || !response.ok) return
+      setKeyState(response.value[keyRef])
+    })
     return () => { stale = true }
-  }, [api.credentials, keyRef])
+  }, [ctx, keyRef])
 
   const stringAt = (source: unknown, key: string): string | undefined => {
     const value = schema.getPath(source, [key])
@@ -282,9 +277,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         ? [{ op: 'set', path: [...settingsPath], value: {} }]
         : pathOps(settingsPath, committedOriginal, next)
     if (ops.length > 0) {
-      const response = await api.settings.mutate(ns, ops, expectedRevision)
+      const response = await ctx.remote.settings.mutate(ns, ops, expectedRevision)
       if (!response.ok) {
-        return response.error.code === 'settings-conflict'
+        return response.error.code === 'settings/conflict'
           ? t('conflict')
           : response.error.message
       }
@@ -293,7 +288,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       setDraft(next)
     }
     if (keyValue.length > 0) {
-      const stored = await api.credentials.set(keyRef, keyValue)
+      const stored = await ctx.remote.credentials.set(keyRef, keyValue)
       if (!stored.ok) return stored.error.message
     }
     setKeyDraft('')
@@ -310,11 +305,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         return
       }
       props.onClose(true)
-    } catch (error) {
-      // A transport failure (disconnect, a request the host refuses) rejects
-      // rather than answering; without this the card would stay busy forever
-      // with no error shown.
-      setFailure(messageOf(error))
     } finally {
       setBusy(false)
     }
@@ -474,7 +464,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
                 />
               )
-              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api} />}
+              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} ctx={ctx} />}
           </div>
         </details>}
       </>

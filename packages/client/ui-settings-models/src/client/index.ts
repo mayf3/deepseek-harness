@@ -23,7 +23,6 @@ import { WelcomeNotice } from './WelcomeNotice.tsx'
 import type { WelcomeNoticeInjected } from './WelcomeNotice.tsx'
 import { decodeWelcomeSection, WelcomeNoticeStore } from './welcome-store.ts'
 import { ModelsSettingsStore } from './store.ts'
-import type { ModelsWire } from './store.ts'
 import { createSettingsSchemaOperations } from './schema-operations.ts'
 import { en, zh, type ModelsKey } from './locales.ts'
 import { WELCOME_NOTICE_SETTINGS_NAMESPACE } from '../onboarding-copy.ts'
@@ -42,7 +41,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.models'
 export type {
-  ModelsCredentials, ModelsLlm, ModelsSettingsState, ModelsWire, ProviderDirectoryEntry, ProviderRow,
+  ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
 
 /**
@@ -75,27 +74,21 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-models: copy dictionaries')
 
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
-  // Every configuration operation rides its owning Remote namespace.
-  const wire: ModelsWire = {
-    credentials: ctx.remote.credentials,
-    llm: ctx.remote.llm,
-    settings: ctx.remote.settings,
-  }
-  const controller = new ModelsSettingsStore(wire, schema, ctx.settingsScope.describe())
+  const controller = new ModelsSettingsStore(ctx, schema, ctx.settingsScope.describe())
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
   const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
   const injected = (): ModelsSectionInjected => ({
     controller,
     hooks: { snapshot: controller.store },
-    api: wire,
+    ctx,
     schema,
     t,
   })
   const deepSeekOnboardingInjected = (): DeepSeekOnboardingInjected => ({
     controller,
     hooks: { models: controller.store },
-    api: wire,
+    ctx,
     schema,
     t,
   })

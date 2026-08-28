@@ -2,17 +2,17 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   RemoteStream,
   RemoteStreamCarrierError,
-  RemoteStreamError,
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   createSessionControlStream,
   SessionEventStream,
-  sessionStreamFailure,
   type SessionJournalChange,
   type SessionRemote,
 } from '../src/client/index.ts'
+import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 import type {
   SessionAddress,
   SessionControlFrame,
@@ -73,12 +73,18 @@ function snapshot(
   }
 }
 
-function sessionClient(remote: SessionTransportRemote) {
+function sessionClient(remote: SessionTransportRemote): SessionRemotes {
   return {
     session: remote as SessionRemote,
     $stream: <Item>(options: RemoteStreamOptions<Item>) => (
       new RemoteStream(AVAILABLE_CONNECTION, options)
     ),
+    commands: { execute: () => Promise.reject(new Error('stream tests never run commands')) },
+    subagents: {
+      list: () => Promise.reject(new Error('stream tests never read the subagent catalog')),
+      prompt: () => Promise.reject(new Error('stream tests never prompt a subagent')),
+      interruptByParent: () => Promise.reject(new Error('stream tests never interrupt a subagent')),
+    },
   }
 }
 
@@ -295,7 +301,7 @@ describe('Session Client stream adapters', () => {
   })
 
   it('turns a pagination failure into a typed stream failure', async () => {
-    const failure = { code: 'session-not-found', message: 'missing', details: { sessionId: 'session-1' } } as const
+    const failure = new RemoteError('session/not-found', 'missing', { sessionId: 'session-1' as never })
     const remote = new ScriptedSessionRemote(
       [{ frames: [snapshot(-1, [])], hold: true }],
       [{ ok: false, error: failure }],
@@ -306,11 +312,8 @@ describe('Session Client stream adapters', () => {
     })
 
     await stream.open({})
-    await expect(stream.prepend({})).rejects.toBeInstanceOf(RemoteStreamError)
+    await expect(stream.prepend({})).rejects.toMatchObject({ code: 'session/not-found' })
     await expect(stream.open({})).rejects.toThrow('already opened')
-    expect(sessionStreamFailure(new RemoteStreamError(failure.code, failure.message, failure.details)))
-      .toEqual(failure)
-    expect(sessionStreamFailure(new Error('local'))).toBeUndefined()
     expect(remote.signals[0]?.aborted).toBe(false)
     expect(remote.pageRequests).toEqual([{ address: ADDRESS, throughSeq: -1 }])
     await stream.dispose()

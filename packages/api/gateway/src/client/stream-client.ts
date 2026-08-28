@@ -1,3 +1,4 @@
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 /** Browser owner for the Gateway multiplexed Remote stream socket. */
 
 import {
@@ -14,25 +15,6 @@ const RECONNECT_FACTOR = 2
 const RECONNECT_MAX_MS = 10_000
 
 /** One Host-reported Remote stream failure. */
-export class RemoteStreamError extends Error {
-  /** Stable carrier or Gateway error category. */
-  readonly code: string
-  /** Host-provided structured failure context. */
-  readonly details: object
-
-  /**
-   * @param code - stable Gateway or business error category.
-   * @param message - Host-provided failure description.
-   * @param details - Host-provided structured failure context.
-   */
-  constructor(code: string, message: string, details: object) {
-    super(message)
-    this.name = 'RemoteStreamError'
-    this.code = code
-    this.details = details
-  }
-}
-
 /** Physical Remote stream socket failure that may be retried by a domain transport. */
 export class RemoteStreamCarrierError extends Error {
   /**
@@ -105,7 +87,7 @@ export class RemoteStreamMuxClient {
         }
         terminal = true
         if (frame.type === 'error') {
-          throw new RemoteStreamError(frame.error.code, frame.error.message, frame.error.details)
+          throw new RemoteError(frame.error.code as never, frame.error.message, frame.error.details as never)
         }
         return
       }

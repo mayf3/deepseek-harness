@@ -1,5 +1,4 @@
 /** Tool UI slot declarations and their composed component props. */
-import type { ConnectionGenerationState } from '@deepseek-ai/dsh-client-connection/client'
 import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -47,20 +46,18 @@ export interface ToolCallOwnerProps {
 export type ToolCallViewProps = PropsRuntime<'tool.call.toolview'>
 
 /** Injected Host description for POSIX home-path display. */
-export type ToolConnectionGenerationInjected = {
-  hooks: {
-    /** Current Connection generation, bound by the slot renderer. */
-    connectionGeneration: ConnectionGenerationState
-  }
+export type ToolHostHomeInjected = {
+  /** Host account home, absent until the Connection is ready. */
+  home: string | undefined
 }
 
 /** Full props of the Tool call-tree renderer registered as a `tool-call` Chat Node. */
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
   & PropsRenderSlots<'tool.call.toolview'>
   & PropsLocale<'conversation'>
-  & InjectFace<ToolConnectionGenerationInjected>
+  & InjectFace<ToolHostHomeInjected>
 
 /** Full props of the selected Tool output renderer in the details panel. */
 export type ToolDetailsProps = PropsRuntime<'conversation.details.tool'>
   & PropsLocale<'conversation'>
-  & InjectFace<ToolConnectionGenerationInjected>
+  & InjectFace<ToolHostHomeInjected>
