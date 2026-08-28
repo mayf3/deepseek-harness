@@ -1305,6 +1305,42 @@ describe('Client Typert API', () => {
     })
   })
 
+  it('classifies a carrier throw under a caller-aborted signal as gateway/cancelled', async () => {
+    const controller = new AbortController()
+    const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>().mockImplementation(async () => {
+      controller.abort()
+      throw new Error('carrier aborted mid-flight')
+    }))
+    await ctx.remote.$mount({ package: '@fixture/probe', descriptors: [directDescriptor()] })
+
+    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' }, controller.signal))
+      .resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'gateway/cancelled',
+          message: 'client api: Remote invocation "probe/create" was aborted',
+          details: {},
+        },
+      })
+  })
+
+  it('keeps a carrier throw under an unaborted caller signal in the internal branch', async () => {
+    const controller = new AbortController()
+    const ctx = await bench(vi.fn<ConnectionHandle['rpc']['call']>()
+      .mockRejectedValue(new Error('carrier offline')))
+    await ctx.remote.$mount({ package: '@fixture/probe', descriptors: [directDescriptor()] })
+
+    await expect(ctx.remote.probe.create('agent-1', { objective: 'ship' }, controller.signal))
+      .resolves.toMatchObject({
+        ok: false,
+        error: {
+          code: 'gateway/internal',
+          message: 'client api: probe/create failed: carrier offline',
+          details: {},
+        },
+      })
+  })
+
   it('owns each $on subscription in the calling fiber', async () => {
     const { ctx, client, carrier } = await eventBench()
     const seen: string[] = []

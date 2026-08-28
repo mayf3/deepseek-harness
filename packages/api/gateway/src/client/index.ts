@@ -183,10 +183,9 @@ class ClientRemoteService extends Service implements ClientRemote {
   }
 
   get $host(): RemoteHostFacts {
-    const connection = this.ownerCtx.get('connection') as ConnectionHandle | undefined ?? this.connection
     return {
-      home: connection.generation.getSnapshot()?.host.home,
-      isLoopback: connection.isLoopback,
+      home: this.connection.generation.getSnapshot()?.host.home,
+      isLoopback: this.connection.isLoopback,
     }
   }
 
@@ -438,7 +437,10 @@ class ClientRemoteService extends Service implements ClientRemote {
       return { ok: true, value: result.value }
     } catch (error) {
       // Carrier throws (offline or abort) are outcomes of the call, not assembly
-      // faults, so they join the same error branch.
+      // faults, so they join the same error branch. A caller-aborted call is a
+      // cancellation even when the local throw wins the race against the wire
+      // round-trip, so it gets the same code the Host would have produced.
+      if (prepared.signal.aborted) return cancelledFailure(endpoint, error)
       return carrierFailure(endpoint, error)
     }
   }
@@ -721,6 +723,13 @@ function carrierFailure(endpoint: string, error: unknown): Extract<RemoteResult<
   return internalFailure(`client api: ${endpoint} failed: ${error instanceof Error ? error.message : String(error)}`)
 }
 
+function cancelledFailure(endpoint: string, cause: unknown): Extract<RemoteResult<never>, { readonly ok: false }> {
+  return {
+    ok: false,
+    error: new RemoteError('gateway/cancelled', `client api: Remote invocation "${endpoint}" was aborted`, {}, { cause }),
+  }
+}
+
 function internalFailure(message: string): Extract<RemoteResult<never>, { readonly ok: false }> {
   return { ok: false, error: new RemoteError('gateway/internal', message, {}) }
 }
@@ -738,8 +747,9 @@ export function isRemoteFailure(error: unknown): error is RemoteFailure {
 
 /**
  * Rebuild the wire failure as a local RemoteError instance so the error branch
- * carries a real Error and `throw result.error` keeps throw semantics. The wire
- * is a validation boundary: codes outside the merged map surface as-is.
+ * carries a real Error and `throw result.error` keeps throw semantics. The code
+ * is passed through verbatim without runtime validation: a code outside this
+ * Client's merged map still surfaces as-is, so a newer Host stays readable.
  */
 function rebuiltFailure(error: { code: string; message: string; details: object }): RemoteFailure {
   return new RemoteError(error.code as never, error.message, error.details as never)
