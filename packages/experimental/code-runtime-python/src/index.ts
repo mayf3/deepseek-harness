@@ -85,7 +85,8 @@ export interface Config {
   graceMs?: number
   /**
    * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
-   * Resolved and validated once at plugin load; a basename searches `PATH`.
+   * Resolved and validated once at plugin load under a five-second force-kill
+   * deadline; a basename searches `PATH`.
    */
   pythonBin?: string
 }
@@ -413,6 +414,8 @@ export function resolvePythonBin(bin: string): string | undefined {
       accessSync(candidate, fsConstants.X_OK)
       return statSync(candidate).isFile() ? candidate : undefined
     } catch {
+      // Missing, inaccessible, and non-stat-able candidates are ordinary
+      // lookup misses; the constructor reports the final load error.
       return undefined
     }
   }
@@ -457,6 +460,9 @@ function validatePythonBin(bin: string): void {
       encoding: 'utf8',
       env: pythonEnvironment(),
       timeout: PYTHON_PROBE_TIMEOUT_MS,
+      // The configured executable is outside our control. Force-kill it at the
+      // deadline so a wrapper that ignores SIGTERM cannot block plugin load.
+      killSignal: 'SIGKILL',
       maxBuffer: 1_024,
     }).trim()
   } catch (error: unknown) {

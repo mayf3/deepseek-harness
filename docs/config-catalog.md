@@ -588,13 +588,14 @@ export interface Config {
   graceMs?: number
   /**
    * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
-   * Resolved and validated once at plugin load; a basename searches `PATH`.
+   * Resolved and validated once at plugin load under a five-second force-kill
+   * deadline; a basename searches `PATH`.
    */
   pythonBin?: string
 }
 ```
 
-Source: [`packages/experimental/code-runtime-python/src/index.ts:44`](../packages/experimental/code-runtime-python/src/index.ts)
+Source: [`packages/experimental/code-runtime-python/src/index.ts:43`](../packages/experimental/code-runtime-python/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-inspector"></a>
 

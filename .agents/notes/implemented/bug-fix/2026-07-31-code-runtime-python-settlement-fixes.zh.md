@@ -70,7 +70,7 @@ unknown-binding 回复用 `JSON.stringify` 对完整的限幅 target（`global` 
 
 ### 解释器选择与子进程环境在加载期固定
 
-`pythonBin` 在插件加载期解析为一个可执行绝对路径，并在与运行时相同的受限环境中完成版本探测。提供方要求 CPython 3.10 或更高版本并保留该确切路径，因此后续 `PATH` 或工作目录变化不能切换解释器；不是可执行普通文件的显式路径、无法解析的裸名或不受支持的解释器都会在 `ctx.codeRuntime` 注册前失败。每次探测与运行只接收 `TMPDIR`：macOS 系统 Python 需要它来避免向被捕获的 stderr 发出启动警告，而凭证、`PATH`、`HOME` 与其他宿主环境值均不会进入模型代码。若已校验的可执行文件在激活后消失，普通 spawn 结算仍 resolve 为 `worker-exit`。
+`pythonBin` 在插件加载期解析为一个可执行绝对路径，并在与运行时相同的受限环境中完成版本探测。提供方要求 CPython 3.10 或更高版本并保留该确切路径，因此后续 `PATH` 或工作目录变化不能切换解释器；不是可执行普通文件的显式路径、无法解析的裸名或不受支持的解释器都会在 `ctx.codeRuntime` 注册前失败。同步探测有固定的五秒期限，并在期限到达时发送 `SIGKILL`，因此忽略 `SIGTERM` 的包装脚本不能阻塞插件加载。每次探测与运行只接收 `TMPDIR`：macOS 系统 Python 需要它来避免向被捕获的 stderr 发出启动警告，而凭证、`PATH`、`HOME` 与其他宿主环境值均不会进入模型代码。若已校验的可执行文件在激活后消失，普通 spawn 结算仍 resolve 为 `worker-exit`。
 
 ### Stray pipe output is aggregated by line, not by transport chunk
 
