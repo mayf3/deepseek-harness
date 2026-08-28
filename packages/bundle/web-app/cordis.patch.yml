@@ -263,6 +263,13 @@
     - id: ui-activity
       name: '@deepseek-ai/dsh-client-ui-activity'
 
+    # Read-only active Schedule catalog. The shipped Web graph resolves the
+    # client package but leaves it disabled; the explicit Schedule overlay
+    # enables this same row together with the host Schedule services.
+    - id: ui-schedule
+      name: '@deepseek-ai/dsh-client-ui-schedule'
+      disabled: true
+
     # Goal surface: GoalBar in the input dock over the goal session projection.
     - id: ui-goal
       name: '@deepseek-ai/dsh-client-ui-goal'
