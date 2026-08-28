@@ -31,10 +31,10 @@ export interface RemoteStreamOptions<Item> {
 /**
  * Reopens one logical Remote stream across carrier generations.
  *
- * The Gateway owns physical retry timing, cancellation, and replacement. The
- * domain consumer owns its opening item and every later item, and calls
- * {@link RemoteStreamItem.accept} only after validating the opening
- * baseline or cursor.
+ * Connection owns physical retry timing; Gateway performs each requested
+ * replacement. The domain consumer owns its opening item and every later
+ * item, and calls {@link RemoteStreamItem.accept} only after validating the
+ * opening baseline or cursor.
  */
 export class RemoteStream<Item> implements AsyncIterable<RemoteStreamItem<Item>> {
   private readonly lifetime = new AbortController()
