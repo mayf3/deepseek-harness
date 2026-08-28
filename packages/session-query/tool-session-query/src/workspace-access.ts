@@ -8,7 +8,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import {
   SessionId,
-  type SessionEvent,
   type SessionHeader,
   type SessionId as SessionIdValue,
 } from '@deepseek-ai/dsh-session'
@@ -24,7 +23,6 @@ import { serviceBoundary } from './service-boundary.ts'
 interface Caller {
   readonly id: SessionIdValue
   readonly header: SessionHeader
-  readonly events: readonly SessionEvent[]
   /** The caller's own-session boundary fold (the `turnBoundary` projection). */
   readonly boundary: TurnBoundaryProjection | undefined
 }
@@ -66,7 +64,6 @@ function callerOf(exec: ToolRunContext, ctx: Context): Caller {
   return {
     id: agent.session.id,
     header: agent.session.header,
-    events: agent.session.snapshotEvents(),
     boundary: ctx.sessionProjections.stateOf(agent.session, 'turnBoundary'),
   }
 }

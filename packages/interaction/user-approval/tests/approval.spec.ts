@@ -7,22 +7,26 @@ import type { Scope } from '@deepseek-ai/dsh-scope'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ApprovalService, { ApprovalOutcome, ApprovalRequest, effectiveApprovalPolicy, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
+import ApprovalService, { ApprovalOutcome, ApprovalRequest, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 
 /**
  * A minimal Agent stand-in — the service only reaches `agent.session.append`
- * and folds `snapshotEvents()`. Seeded inside an open turn by default (request()'s
+ * and indexed log reads. Seeded inside an open turn by default (request()'s
  * turn-enclosure precondition); pass `seed` to stage idle/closed logs.
  * Returns the recorded audit appends alongside the fake.
  */
 function fakeAgent(seed: Array<{ type: string }> = [{ type: 'turn/start' }, { type: 'user/message' }]): { agent: Agent; appended: Array<{ type: string; data: Record<string, unknown> }> } {
   const appended: Array<{ type: string; data: Record<string, unknown> }> = []
+  const events: Array<{ type: string; data?: Record<string, unknown> }> = [...seed]
   const agent = {
     session: {
-      snapshotEvents: () => seed,
+      get seq() { return events.length },
+      eventAt: (seq: number) => events[seq],
       append: (type: string, data: Record<string, unknown>) => {
-        appended.push({ type, data })
-        return { type, data } as unknown as SessionEvent
+        const event = { type, data }
+        events.push(event)
+        appended.push(event)
+        return event as unknown as SessionEvent
       },
     },
   } as unknown as Agent
@@ -164,7 +168,8 @@ describe('ApprovalService.request', () => {
     const failure = new Error('append failed before log growth')
     const agent = {
       session: {
-        snapshotEvents: () => [{ type: 'turn/start' }],
+        seq: 1,
+        eventAt: () => ({ type: 'turn/start' }),
         append: () => { throw failure },
       },
     } as unknown as Agent
@@ -365,11 +370,12 @@ describe('approval policy (the approval/policy fold)', () => {
   }
 
   it('folds to the last event, or undefined without one', () => {
+    const service = new ApprovalService(new Context(), {})
     const { session } = sessionAgent('sess-fold')
-    expect(effectiveApprovalPolicy(session.snapshotEvents())).toBeUndefined()
+    expect(service.overrideOf(session)).toBeUndefined()
     setApprovalPolicy(session, 'never')
     setApprovalPolicy(session, 'ask')
-    expect(effectiveApprovalPolicy(session.snapshotEvents())).toBe('ask')
+    expect(service.overrideOf(session)).toBe('ask')
     expect(session.snapshotEvents().at(-1)).toMatchObject({ type: 'approval/policy', data: { policy: 'ask' } })
   })
 
@@ -458,7 +464,7 @@ describe('approval policy (the approval/policy fold)', () => {
     ctx.approval.setPolicy(liveAgent, 'never')
     ctx.approval.setPolicy(liveAgent, 'never')
 
-    expect(effectiveApprovalPolicy(session.snapshotEvents())).toBe('never')
+    expect(ctx.approval.overrideOf(session)).toBe('never')
     expect(inject).toHaveBeenCalledOnce()
     expect(inject.mock.calls[0]?.[0]).toMatchObject({
       content: [{
