@@ -21,9 +21,9 @@ import css from './ToolDetails.module.css'
  * @returns the details output body.
  */
 export function ToolDetails({
-  block, cwd, useHostHome, t,
-}: Pick<ToolDetailsProps, 'block' | 'cwd' | 'useHostHome' | 't'>) {
-  const home = useHostHome(value => value)
+  block, cwd, useHostInfo, t,
+}: Pick<ToolDetailsProps, 'block' | 'cwd' | 'useHostInfo' | 't'>) {
+  const home = useHostInfo(info => info.home)
   const terminalModel = terminalCardModel(block, cwd)
   if (terminalModel !== null) {
     const terminal = localizeTerminalCardModel(terminalModel, t)

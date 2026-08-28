@@ -1,5 +1,6 @@
 /** Register the Tool call tree, details renderer, and built-in atomic views. */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -24,14 +25,11 @@ export const inject = ['slots', 'remote']
  * @param ctx - Client root context.
  */
 export function apply(ctx: ClientContext): void {
-  // Host facts are plain reads; a reset is what announces the generation that
-  // published them, so the views re-read on it instead of freezing the value
-  // the entry's first render saw (inject results are memoized per registration).
-  const hostHome: HostObservable<string | undefined> = {
-    getSnapshot: () => ctx.remote.$host.home,
+  const hostInfo: HostObservable<RemoteHostFacts> = {
+    getSnapshot: () => ctx.remote.$host,
     subscribe: listener => ctx.on('connection/reset', listener),
   }
-  const toolInject = () => ({ hooks: { hostHome } })
+  const toolInject = () => ({ hooks: { hostInfo } })
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
     key: 'tool-call',

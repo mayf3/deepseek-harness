@@ -157,7 +157,7 @@ export function renderToolDetails(
     return <ToolDetails
       block={details.block}
       cwd={details.cwd}
-      useHostHome={selector => selector(home)}
+      useHostInfo={selector => selector({ home, isLoopback: true })}
       t={t}
     />
   }

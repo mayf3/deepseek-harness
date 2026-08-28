@@ -569,13 +569,19 @@ describe('Client Remote transport readiness', () => {
     await client
     const remote = ctx.remote
 
-    expect(remote.$host).toEqual({ home: undefined, isLoopback: true })
+    const beforeReady = remote.$host
+    expect(beforeReady).toEqual({ home: undefined, isLoopback: true })
+    expect(remote.$host).toBe(beforeReady)
+
     live.snapshot = { id: 1, host: { home: '/hosts/primary' } }
-    expect(remote.$host).toEqual({ home: '/hosts/primary', isLoopback: true })
+    const afterReady = remote.$host
+    expect(afterReady).toEqual({ home: '/hosts/primary', isLoopback: true })
+    expect(afterReady).not.toBe(beforeReady)
+    expect(remote.$host).toBe(afterReady)
 
     withdraw()
     expect(ctx.get('connection')).toBeUndefined()
-    expect(remote.$host).toEqual({ home: '/hosts/primary', isLoopback: true })
+    expect(remote.$host).toBe(afterReady)
   })
 
   it('starts after Loader settlement and stops the owned loop on disposal', async () => {

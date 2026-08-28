@@ -2,6 +2,7 @@
 import type {
   HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime,
 } from '@deepseek-ai/dsh-client-ui-slots'
+import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ToolCallBlock } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -48,15 +49,15 @@ export interface ToolCallOwnerProps {
 export type ToolCallViewProps = PropsRuntime<'tool.call.toolview'>
 
 /** Injected Host description for POSIX home-path display. */
-export type ToolHostHomeInjected = {
+export type ToolHostInfoInjected = {
   hooks: {
     /**
-     * Host account home, absent until the Connection is ready. A hook rather
-     * than a value: the renderer memoizes an entry's inject result for the
-     * registration's lifetime, so a home read there would freeze at whatever
-     * the first render saw.
+     * Fixed Host facts, reached through a hook rather than injected as values:
+     * the renderer memoizes an entry's inject result for the registration's
+     * lifetime, so facts read there would freeze at whatever the first render
+     * saw. Select the field the view needs (`info => info.home`).
      */
-    hostHome: HostObservable<string | undefined>
+    hostInfo: HostObservable<RemoteHostFacts>
   }
 }
 
@@ -64,9 +65,9 @@ export type ToolHostHomeInjected = {
 export type ToolTreeProps = PropsRuntime<'conversation.chat.node', 'tool-call'>
   & PropsRenderSlots<'tool.call.toolview'>
   & PropsLocale<'conversation'>
-  & InjectFace<ToolHostHomeInjected>
+  & InjectFace<ToolHostInfoInjected>
 
 /** Full props of the selected Tool output renderer in the details panel. */
 export type ToolDetailsProps = PropsRuntime<'conversation.details.tool'>
   & PropsLocale<'conversation'>
-  & InjectFace<ToolHostHomeInjected>
+  & InjectFace<ToolHostInfoInjected>

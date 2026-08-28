@@ -144,6 +144,7 @@ class ClientRemoteService extends Service implements ClientRemote {
   private readonly ownerCtx: Context
   private readonly connection: ConnectionHandle
   private readonly namespaces = new Map<string, RemoteNamespaceHandle>()
+  private hostFacts: RemoteHostFacts | undefined
   private readonly streams = new RemoteStreamMuxClient()
   private readonly events: ClientRemoteEvents
   private mutations = Promise.resolve()
@@ -183,10 +184,14 @@ class ClientRemoteService extends Service implements ClientRemote {
   }
 
   get $host(): RemoteHostFacts {
-    return {
-      home: this.connection.generation.getSnapshot()?.host.home,
-      isLoopback: this.connection.isLoopback,
+    // Identity-stable: readers (useSyncExternalStore snapshots, memo inputs)
+    // compare by reference, so a fresh object is minted only when the fact
+    // itself changed. isLoopback is fixed for the page lifetime.
+    const home = this.connection.generation.getSnapshot()?.host.home
+    if (this.hostFacts === undefined || this.hostFacts.home !== home) {
+      this.hostFacts = { home, isLoopback: this.connection.isLoopback }
     }
+    return this.hostFacts
   }
 
   async $mount(contribution: TypertRemoteContribution): ReturnType<TypertClientRemote['$mount']> {

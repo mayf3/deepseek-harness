@@ -49,7 +49,7 @@ function props(
     inspectCall: vi.fn(),
     forkAt: vi.fn(),
     fileMentions: vi.fn(),
-    useHostHome: ((selector: (value: string | undefined) => unknown) => selector(home)) as ToolTreeProps['useHostHome'],
+    useHostInfo: ((selector: (info: { home: string | undefined }) => unknown) => selector({ home })) as ToolTreeProps['useHostInfo'],
     t,
   } as unknown as ToolTreeProps
 }
