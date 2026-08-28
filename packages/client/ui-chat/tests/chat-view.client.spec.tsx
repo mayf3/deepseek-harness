@@ -1583,7 +1583,7 @@ describe('ChatView', () => {
     expect(timeDialog.getAttribute('aria-label')).toBe('本轮用时和速度')
     expect(timeDialog.textContent).toContain('本轮总用时19秒')
     expect(timeDialog.textContent).toContain('输出速度（TPS）20 tok/s')
-    expect(timeDialog.textContent).toContain('首 token 平均用时（TTFT）1.2秒')
+    expect(timeDialog.textContent).toContain('首 token 用时（TTFT）1.2秒')
   })
 
   it('withholds the usage-details trigger when turn usage is outside the window', () => {

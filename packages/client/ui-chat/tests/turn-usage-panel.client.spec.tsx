@@ -116,7 +116,7 @@ describe('TurnTimePanel', () => {
     const details = dialog.querySelector('[data-turn-time-details]') as HTMLElement
     expect(details.textContent).toContain('Total run time19s')
     expect(details.textContent).toContain('Tokens per second (TPS)20 tok/s')
-    expect(details.textContent).toContain('Average time to first token (TTFT)1.2s')
+    expect(details.textContent).toContain('Time to first token (TTFT)1.2s')
 
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(view.queryByRole('dialog')).toBeNull()

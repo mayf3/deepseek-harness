@@ -10,7 +10,7 @@
 
 ## 决定
 
-尾部只保留一行 `MessageIconActions`。分叉操作右侧放两个统计 pill：数据库图标 pill 标注紧凑的本轮总量（`用量 15.8K tok`），时钟图标 pill 标注墙钟用时（`用时 19秒`）；消息时钟保持纯文字置于行尾。每个 pill 是 `aria-haspopup="dialog"` 触发器，把固定定位的弹层 portal 到 `document.body`，由 `useAnchoredPosition` 锚定在触发器上方并保持 12px 视口边距，外部 pointerdown 或 Escape 关闭（沿用 ContextMeter 模式）。用量弹层承载精确总量、提供方/模型路由、缓存命中率、token 分桶及输出内联的推理子集；用时弹层承载本轮总用时、解码 TPS、首 token 平均用时。fold 未产出的事实不渲染行，窗口内无可发布的 Turn 用量则不渲染用量 pill；token-meter fold 与 `turn/start` 门控沿用[精确 per-Turn 用量](2026-08-24-web-per-turn-token-usage.zh.md)，未做改动。
+尾部只保留一行 `MessageIconActions`。分叉操作右侧放两个统计 pill：数据库图标 pill 标注紧凑的本轮总量（`用量 15.8K tok`），时钟图标 pill 标注墙钟用时（`用时 19秒`）；消息时钟保持纯文字置于行尾。每个 pill 是 `aria-haspopup="dialog"` 触发器，把固定定位的弹层 portal 到 `document.body`，由 `useAnchoredPosition` 锚定在触发器上方并保持 12px 视口边距，外部 pointerdown 或 Escape 关闭（沿用 ContextMeter 模式）。用量弹层承载精确总量、提供方/模型路由、缓存命中率、token 分桶及输出内联的推理子集；用时弹层承载本轮总用时、解码 TPS、本轮首 token 用时（取首个 step 的 TTFT）。fold 未产出的事实不渲染行，窗口内无可发布的 Turn 用量则不渲染用量 pill；token-meter fold 与 `turn/start` 门控沿用[精确 per-Turn 用量](2026-08-24-web-per-turn-token-usage.zh.md)，未做改动。
 
 行可见性按新近度门控：turn 尾行与用户行标记 `data-actions-reveal`，各自最新一行保持 `always` 常显，更早的行在 `@media (hover: hover)` 下 hover 或 focus-within 才显示，无 hover 设备恒显示。480px 以下 pill 隐藏文字并取同排操作按钮的几何——28px 宽、6px 内边距、图标居中、取消相邻 pill 的边距补偿——让裸图标保持行的 8px 节奏。
 
