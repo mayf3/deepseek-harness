@@ -94,7 +94,7 @@ Binding-global and error-class names are language-portable: they must match the 
 <a id="further-exploration"></a>
 ## Further Exploration
 
-Read these when the package-level contract is not enough. They move from the PTC mode consumer to the shipped backends and the capability-seam model.
+Read these when the package-level contract is not enough. They move from the PTC mode consumer to the backends and the capability-seam model.
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.md) — how the tool registry consumes `ctx.codeRuntime` and presents `run_code` to the model.
 - [Worker-thread backend](../code-runtime-worker-thread/README.md) — the shipped TypeScript execution backend.

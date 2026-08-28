@@ -94,7 +94,7 @@ binding-global 与 error-class 名称是语言可移植的：必须匹配标识�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-当包级约定不够用时阅读以下内容。它们从 PTC mode 消费方进入已发布的后端与能力 seam 模型。
+当包级约定不够用时阅读以下内容。它们从 PTC mode 消费方进入后端与能力 seam 模型。
 
 - [PTC mode Agent Note](../../../.agents/notes/implemented/feature/2026-06-15-ptc.zh.md)——工具注册表如何消费 `ctx.codeRuntime` 并把 `run_code` 呈现给模型。
 - [Worker 线程后端](../code-runtime-worker-thread/README.zh.md)——已发布的 TypeScript 执行后端。
