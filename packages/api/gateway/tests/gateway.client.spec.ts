@@ -5,6 +5,7 @@ import { describe, expect, expectTypeOf, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
   apply as applyConnection,
+  type ConnectionGeneration,
   type ConnectionGenerationSource,
   type ConnectionHandle,
 } from '@deepseek-ai/dsh-client-connection/client'
@@ -546,6 +547,35 @@ describe('Client Remote transport readiness', () => {
     expect(stream).toBeInstanceOf(RemoteStream)
     await stream.dispose()
     await client.dispose()
+  })
+
+  it('reports Host facts as plain reads and keeps them through Connection withdrawal', async () => {
+    const ctx = new Context()
+    await ctx.plugin(TypertRegistry)
+    const generation = new GenerationHarness()
+    const live: { snapshot: ConnectionGeneration | undefined } = { snapshot: undefined }
+    const handle = {
+      isLoopback: true,
+      generation: { getSnapshot: () => live.snapshot, subscribe: () => () => {} },
+      rpc: {
+        call: vi.fn<ConnectionHandle['rpc']['call']>(),
+        open: () => unexpectedInProcessStream(),
+      },
+      registerGenerationSource: generation.register,
+      start: () => ({ stop: () => {} }),
+    } as unknown as ConnectionHandle
+    const withdraw = ctx.provide('connection', handle)
+    const client = ctx.plugin({ inject, apply })
+    await client
+    const remote = ctx.remote
+
+    expect(remote.$host).toEqual({ home: undefined, isLoopback: true })
+    live.snapshot = { id: 1, host: { home: '/hosts/primary' } }
+    expect(remote.$host).toEqual({ home: '/hosts/primary', isLoopback: true })
+
+    withdraw()
+    expect(ctx.get('connection')).toBeUndefined()
+    expect(remote.$host).toEqual({ home: '/hosts/primary', isLoopback: true })
   })
 
   it('starts after Loader settlement and stops the owned loop on disposal', async () => {

@@ -35,9 +35,6 @@
   },
   "dsh": {
     "client": {
-      "external": [
-        "@deepseek-ai/dsh-typert-protocol"
-      ],
       "inject": [
         "@deepseek-ai/dsh-typert-registry",
         "@deepseek-ai/dsh-client-connection"
