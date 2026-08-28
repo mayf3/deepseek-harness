@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type MutableRefObject } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  IconClockOutline16, IconDatabaseOutline16, useAnchoredPosition,
+  IconClockOutline16, IconDatabaseOutline16, useAnchoredPosition, useDismissOnOutsidePointer,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { TurnTokenUsage } from '../contract/chat-nodes.ts'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
@@ -76,24 +76,16 @@ function useStatDialog(): StatDialogSeat {
     margin: PANEL_MARGIN,
   })
 
-  // Outside click / Escape close, one document listener while open (ContextMeter's pattern).
+  // Outside pointerdown closes through the shared primitive; the portaled
+  // panel counts as inside. Escape close stays local, one listener while open.
+  useDismissOnOutsidePointer(rootRef, open, setOpen, panelRef)
   useEffect(() => {
     if (!open) return
-    const onPointerDown = (e: PointerEvent): void => {
-      if (!(e.target instanceof Node)) return
-      if (rootRef.current?.contains(e.target) === true) return
-      if (panelRef.current?.contains(e.target) === true) return
-      setOpen(false)
-    }
     const onKeyDown = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') setOpen(false)
     }
-    document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown)
-      document.removeEventListener('keydown', onKeyDown)
-    }
+    return () => { document.removeEventListener('keydown', onKeyDown) }
   }, [open])
 
   return { open, setOpen, rootRef, panelRef, pos }
