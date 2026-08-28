@@ -107,8 +107,10 @@ async function createPolicyDispatcher(policy: ProxyPolicy): Promise<Dispatcher> 
  * every caller that issues a plain `fetch()` is covered without knowing this package exists. A policy
  * that proxies nothing installs a direct dispatcher and leaves the environment untouched.
  *
- * Worker threads do not inherit the global dispatcher; each one calls this with the policy its host
- * passed through `workerData`.
+ * A worker thread has its own `globalThis` and so its own dispatcher; installing here does not
+ * reach it. No worker installs one today: both this repository ships — the workflow engine and the
+ * code runtime — evaluate model-authored scripts, which must not receive a proxy URL that may carry
+ * credentials. A worker that needs the policy has to be handed one explicitly and install it itself.
  *
  * @param policy - the resolved policy to install.
  * @returns a disposer restoring the previous dispatcher, policy, and environment, then closing the agent.
