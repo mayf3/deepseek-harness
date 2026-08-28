@@ -27,16 +27,6 @@ export type { AgentEventDispatch, AgentSubjectEvent } from './dispatch.ts'
 declare module '@deepseek-ai/cordis' {
   interface Context {
     agents: AgentRegistry
-    /**
-     * The agent association installed as an own property on `Agent.ctx`, or
-     * `undefined` on a plain context. Contexts derived from `Agent.ctx` inherit
-     * the association; a deliberately nested scope may carry a nearer
-     * `dsh-scope` tag while retaining it, so this field is DX context rather
-     * than the scope resolver. {@link AgentRegistry} registers a root accessor
-     * defaulting to `undefined`, and core packages below the agent layer use
-     * `scopeOf()` for layer selection instead of reading this field.
-     */
-    agent?: Agent
   }
 }
 
@@ -55,10 +45,12 @@ export interface AgentSetupCommit {
 /**
  * Compose an unpublished Agent scope and optionally return its publication commit.
  * @param agentCtx - unpublished Agent scope.
+ * @param agent - unpublished Agent being composed.
  * @returns an optional synchronous commit invoked after setup awaits settle and immediately before publication.
  */
 export type AgentSetup = (
   agentCtx: Context,
+  agent: Agent,
 ) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void
 
 /**
@@ -188,9 +180,10 @@ export interface AgentFactory {
    * ownership from the factory object's registration context.
    * @param ownerCtx - caller-bound context that owns the transaction and live handle.
    * @param options - agent/session identity, configuration, and optional setup.
+   * @param owner - explicitly supplied live runtime owner, or undefined for a root owner.
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
-  createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>
+  createAgent(ownerCtx: Context, options: CreateAgentOptions, owner: Agent | undefined): Promise<AgentHandle>
   /**
    * Prepare a persisted session and resume an agent on it. Async because it awaits
    * both `ctx.sessionPersistence.prepare` and the optional unpublished setup
@@ -199,9 +192,10 @@ export interface AgentFactory {
    * ordered boundary as {@link createAgent}.
    * @param ownerCtx - caller-bound context that owns load, setup, and the live handle.
    * @param options - persisted identity, configuration, and optional setup.
+   * @param owner - explicitly supplied live runtime owner, or undefined for a root owner.
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
-  resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
+  resume(ownerCtx: Context, options: ResumeAgentOptions, owner: Agent | undefined): Promise<AgentHandle>
 }
 
 /** Thrown when create/resume is called before an agent factory is registered. */
@@ -267,17 +261,9 @@ export class AgentRegistry extends Service {
       typeCtx.typert.contexts.registerHost('agent', {
         wire: 'agentId',
         wireTypeSymbol: '@deepseek-ai/dsh-session/types#SessionId',
-        identity: candidate => candidate.agent?.id,
         resolve: sessionId => this.get(sessionId)?.ctx,
       })
     })
-    // The `ctx.agent` DX accessor: default `undefined` on every context, so a
-    // plain plugin context reads cleanly instead of hitting the Cordis
-    // unknown-property throw. Each Agent.ctx shadows it with an own property
-    // (own properties resolve before the context proxy is consulted), so the
-    // accessor body never needs to resolve a scope itself. Effect-scoped:
-    // unwinds with this service's fiber.
-    ctx.accessor('agent', { get: () => undefined })
     ctx.on('internal/status', (fiber) => {
       if (fiber.state === FiberState.UNLOADING && this.hasLifecycleAncestor(fiber)) {
         this.closeInitiators()
@@ -293,7 +279,8 @@ export class AgentRegistry extends Service {
    * Read the Agent that initiated the inherited asynchronous driver chain.
    * Use this optional form for logging, tracing, metrics, or host attribution
    * that also supports agentless calls. When a parent creates a child, setup
-   * reports the causal parent while `agentCtx.agent` identifies the child.
+   * reports the causal parent while the setup callback's Agent parameter
+   * identifies the child.
    * @returns the inherited Agent, or `undefined` outside an initiator boundary
    *   and inside an explicit clearing boundary.
    * @throws when this service instance has been disposed.
@@ -392,9 +379,10 @@ export class AgentRegistry extends Service {
    * registered or creation/setup fails. The resolved {@link AgentHandle} lets
    * the owner tear down exactly this agent.
    * @param options - shared identity, session seed/metadata, and agent options.
+   * @param owner - explicit live runtime owner, or undefined for a root Agent.
    * @returns the handle after setup, rollback-covered publication, and loop start complete.
    */
-  async create(options: CreateAgentOptions): Promise<AgentHandle> {
+  async create(options: CreateAgentOptions, owner?: Agent): Promise<AgentHandle> {
     const ownerCtx = this.ctx
     // Re-trace a Service-backed factory through the accessing context
     // explicitly. This preserves AgentLoop's dependency origin while binding
@@ -403,7 +391,7 @@ export class AgentRegistry extends Service {
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
+    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options, owner])
   }
 
   /**
@@ -411,14 +399,15 @@ export class AgentRegistry extends Service {
    * factory. Rejects if no factory is registered; the factory rejects if
    * session persistence is not configured or persistence/setup fails.
    * @param options - persisted identity, configuration, and optional setup.
+   * @param owner - explicit live runtime owner, or undefined for a root Agent.
    * @returns the handle after setup, rollback-covered publication, and loop start complete.
    */
-  async resume(options: ResumeAgentOptions): Promise<AgentHandle> {
+  async resume(options: ResumeAgentOptions, owner?: Agent): Promise<AgentHandle> {
     const ownerCtx = this.ctx
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.resume, receiver, [ownerCtx, options])
+    return Reflect.apply(target.resume, receiver, [ownerCtx, options, owner])
   }
 
   /**
@@ -430,6 +419,7 @@ export class AgentRegistry extends Service {
    * (calling through `agent.ctx` scopes EFFECTS; dispatch scoping always
    * requires passing the carrier). Returns the disposer.
    * @param agent - the already-constructed agent to record in the store.
+   * @param owner - explicit live runtime owner, or undefined for a root Agent.
    * @returns the EXACT Cordis effect disposer (single-shot; a repeat call
    *   returns undefined without awaiting an in-flight teardown). Exact
    *   identity is load-bearing: a composite (generator) effect that owns a
@@ -439,9 +429,9 @@ export class AgentRegistry extends Service {
    *   owner unload, unregistering the agent (and emitting `agent/disposed`)
    *   while its final turn is still draining.
    */
-  register(agent: Agent): () => void {
+  register(agent: Agent, owner?: Agent): () => void {
     const dispose = this.ctx.effect(function* (this: AgentRegistry) {
-      yield this.enter(agent, this.ctx.agent)
+      yield this.enter(agent, owner)
       this.announce(agent)
     }.bind(this), 'agents.register()')
     // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity
@@ -455,7 +445,7 @@ export class AgentRegistry extends Service {
    * returned detach closure into its pre-installed composite teardown before
    * calling {@link announce}. Ordinary callers use {@link register}.
    * @param agent - the prepared, unpublished agent.
-   * @param owner - live agent whose scoped context created this agent, or
+   * @param owner - explicitly supplied live runtime owner, or
    *   undefined for a top-level runtime root. This is runtime ownership, not
    *   the resumed session's durable parent lineage.
    * @returns an idempotent closure that removes this exact entry and emits

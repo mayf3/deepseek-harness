@@ -16,6 +16,8 @@ Status: implemented
 
 每个存活的 agent 拥有一个扁平的注册层，通过 `agent.ctx` 暴露。代码通过拥有某项贡献的上下文进行注册；具备作用域感知的服务将部署全局注册与恰好一个匹配的 agent 层合并；操作从其真实 agent 选择该层；该层在 agent 的完整发布生命周期内存在。
 
+`agent.ctx` 携带注册所有权和作用域键，不暴露反向的 `agent` 属性。需要领域主体的代码会显式接收它：`AgentSetup` 接收 `(agentCtx, agent)`，作用域事件则在 payload 中携带主体。
+
 Cordis 是 SDK 底层的插件框架。Cordis **上下文**是插件用来访问服务和注册效果的对象，效果的清理跟随该上下文。[Cordis 入门](../../../../docs/cordis-primer.zh.md)对该框架有更详细的说明。
 
 对大多数贡献者而言，完整约定是四条规则：
@@ -88,7 +90,7 @@ await handle.dispose()
 ctx.tools.get('review_summary', handle.agent)  // undefined: scope is gone
 ```
 
-setup 接收一个完整的受信 Cordis 上下文，因此可以组合普通插件和服务。其约定仅限组合：不支持通过 cast 或内部注册表调用来驱动或发布正在构建中的 agent。
+setup 接收完整的受信 Cordis 上下文和未发布的 Agent，因此既可以组合普通插件和服务，也能在需要时读取确切的子 Session。其约定仅限组合：不支持通过 cast 或内部注册表调用来驱动或发布正在构建中的 agent。
 
 ### 操作选择视图
 

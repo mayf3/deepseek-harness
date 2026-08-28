@@ -46,9 +46,9 @@ interface AgentHandle {
 }
 ```
 
-`CreateAgentOptions` carries the shared identity and everything a fresh agent needs before publication: session metadata (`meta` — validated `cwd`, fork lineage, seed boundary, origin classification, delegation depth), an optional `seed` replay prefix for forks, per-agent `AgentOptions`, a creation-only cancellation `signal`, and `setup`. `ResumeAgentOptions` is the persisted-identity counterpart: `resumeSessionId`, `agentOptions`, `signal`, and `setup`. The `setup` callback (`AgentSetup`) composes the agent's scoped world while both ids are still unpublished — everything registered through `agentCtx` exists before `agent/created` and the first prompt assembly — and may return a synchronous commit invoked immediately before publication; a setup rejection, commit throw, or owner disposal rolls the transaction back without publishing either id.
+`CreateAgentOptions` carries the shared identity and everything a fresh agent needs before publication: session metadata (`meta` — validated `cwd`, fork lineage, seed boundary, origin classification, delegation depth), an optional `seed` replay prefix for forks, per-agent `AgentOptions`, a creation-only cancellation `signal`, and `setup`. `ResumeAgentOptions` is the persisted-identity counterpart: `resumeSessionId`, `agentOptions`, `signal`, and `setup`. The `setup` callback (`AgentSetup`) receives `(agentCtx, agent)` while both ids are still unpublished: the context owns scoped registrations, while the explicit Agent supplies the exact child Session without a reverse property on the Context. Everything registered through `agentCtx` exists before `agent/created` and the first prompt assembly. Setup may return a synchronous commit invoked immediately before publication; a setup rejection, commit throw, or owner disposal rolls the transaction back without publishing either id.
 
-`AgentFactory` is the creation interface behind the registry: the loop registers its factory via `ctx.agents.setFactory()`, so consumers use `ctx.agents` without depending on the concrete loop package. The exact `create`/`resume` signatures and rollback contracts are in the [generated section](#ctxagents--agentregistry) below.
+`AgentFactory` is the creation interface behind the registry: the loop registers its factory via `ctx.agents.setFactory()`, so consumers use `ctx.agents` without depending on the concrete loop package. A runtime child creator passes its parent Agent explicitly; the registry passes that value separately from the caller Context to the factory. The exact `create`/`resume` signatures and rollback contracts are in the [generated section](#ctxagents--agentregistry) below.
 
 ## The agent handle
 
@@ -368,17 +368,19 @@ create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, 'cwd
  * Create an owned agent on a caller-supplied session id.
  * @param ownerCtx - caller context that structurally owns the lifecycle.
  * @param options - identities, session seed/metadata, loop options, setup, and cancellation.
+ * @param owner - live Agent that owns the new Agent at runtime, or undefined for a root owner.
  * @returns the published handle.
  */
-async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>
+async createAgent(ownerCtx: Context, options: CreateAgentOptions, owner: Agent | undefined): Promise<AgentHandle>
 
 /**
  * Resume an owned agent from the configured persistence service.
  * @param ownerCtx - caller context that owns load, setup, and the live lifecycle.
  * @param options - persisted identity, loop options, setup, and cancellation.
+ * @param owner - live Agent that owns the resumed Agent at runtime, or undefined for a root owner.
  * @returns the published handle.
  */
-async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
+async resume(ownerCtx: Context, options: ResumeAgentOptions, owner: Agent | undefined): Promise<AgentHandle>
 ```
 
 Types: [SessionHeader](persistence.md)
@@ -621,7 +623,8 @@ Initiator methods provide same-process causal attribution only. Ambient presence
  * Read the Agent that initiated the inherited asynchronous driver chain.
  * Use this optional form for logging, tracing, metrics, or host attribution
  * that also supports agentless calls. When a parent creates a child, setup
- * reports the causal parent while `agentCtx.agent` identifies the child.
+ * reports the causal parent while the setup callback's Agent parameter
+ * identifies the child.
  * @returns the inherited Agent, or `undefined` outside an initiator boundary
  *   and inside an explicit clearing boundary.
  * @throws when this service instance has been disposed.
@@ -687,18 +690,20 @@ setFactory(factory: AgentFactory): () => void
  * registered or creation/setup fails. The resolved {@link AgentHandle} lets
  * the owner tear down exactly this agent.
  * @param options - shared identity, session seed/metadata, and agent options.
+ * @param owner - explicit live runtime owner, or undefined for a root Agent.
  * @returns the handle after setup, rollback-covered publication, and loop start complete.
  */
-async create(options: CreateAgentOptions): Promise<AgentHandle>
+async create(options: CreateAgentOptions, owner?: Agent): Promise<AgentHandle>
 
 /**
  * Load a persisted session and resume an agent on it through the registered
  * factory. Rejects if no factory is registered; the factory rejects if
  * session persistence is not configured or persistence/setup fails.
  * @param options - persisted identity, configuration, and optional setup.
+ * @param owner - explicit live runtime owner, or undefined for a root Agent.
  * @returns the handle after setup, rollback-covered publication, and loop start complete.
  */
-async resume(options: ResumeAgentOptions): Promise<AgentHandle>
+async resume(options: ResumeAgentOptions, owner?: Agent): Promise<AgentHandle>
 
 /**
  * Register a live agent. Throws if an agent with the same id is already
@@ -709,6 +714,7 @@ async resume(options: ResumeAgentOptions): Promise<AgentHandle>
  * (calling through `agent.ctx` scopes EFFECTS; dispatch scoping always
  * requires passing the carrier). Returns the disposer.
  * @param agent - the already-constructed agent to record in the store.
+ * @param owner - explicit live runtime owner, or undefined for a root Agent.
  * @returns the EXACT Cordis effect disposer (single-shot; a repeat call
  *   returns undefined without awaiting an in-flight teardown). Exact
  *   identity is load-bearing: a composite (generator) effect that owns a
@@ -718,7 +724,7 @@ async resume(options: ResumeAgentOptions): Promise<AgentHandle>
  *   owner unload, unregistering the agent (and emitting `agent/disposed`)
  *   while its final turn is still draining.
  */
-register(agent: Agent): () => void
+register(agent: Agent, owner?: Agent): () => void
 
 /**
  * Insert an already-constructed agent without announcing it. This is the
@@ -727,7 +733,7 @@ register(agent: Agent): () => void
  * returned detach closure into its pre-installed composite teardown before
  * calling {@link announce}. Ordinary callers use {@link register}.
  * @param agent - the prepared, unpublished agent.
- * @param owner - live agent whose scoped context created this agent, or
+ * @param owner - explicitly supplied live runtime owner, or
  *   undefined for a top-level runtime root. This is runtime ownership, not
  *   the resumed session's durable parent lineage.
  * @returns an idempotent closure that removes this exact entry and emits

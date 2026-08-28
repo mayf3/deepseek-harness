@@ -618,7 +618,7 @@ export function apply(ctx: Context, config: Config): void {
     throw new Error('tool-subagent: `modelSelectionSettings` requires an Agent or preset scope')
   }
 
-  const selectForAgent = (agent: NonNullable<Context['agent']>): ModelSelectionPolicy | undefined => {
+  const selectForAgent = (agent: Agent): ModelSelectionPolicy | undefined => {
     let allowedModels = subagentModelSelectionPolicy(ctx.sessionProjections, agent.session)
     if (allowedModels === undefined) {
       const parentId = agent.session.header.origin === 'subagent'
@@ -640,11 +640,6 @@ export function apply(ctx: Context, config: Config): void {
     return allowedModels === undefined ? undefined : { routes: allowedModels }
   }
 
-  const agent = ctx.agent
-  if (agent !== undefined) {
-    install(ctx, selectForAgent(agent))
-    return
-  }
   const agents = ctx.get('agents')
   /* v8 ignore next -- Agent and preset scopes are minted only by the Agent registry. */
   if (agents === undefined) throw new Error('tool-subagent: scoped model-selection settings require the Agent registry')
@@ -685,9 +680,9 @@ export function apply(ctx: Context, config: Config): void {
       else removeScoped(candidate)
     }
   }
-  // A shipped preset is mounted once in a standing scope. Its listener admits
-  // only descendant Agents and installs the sampled tool definition in each
-  // Agent's own scope, so a later settings change cannot mutate a live session.
+  // The scoped listener admits this Agent or preset's descendant Agents and
+  // installs the sampled tool definition in each Agent's own scope, so a later
+  // settings change cannot mutate a live session.
   ctx.on('agent/created', ({ agent: created }) => {
     installScoped(created)
   })
@@ -696,4 +691,5 @@ export function apply(ctx: Context, config: Config): void {
   // set and emits `tools/change`; reconcile the Agent-owned override with the
   // new ancestry. Other registry changes are idempotent no-ops here.
   ctx.on('tools/change', reconcileComposedAgents)
+  reconcileComposedAgents()
 }

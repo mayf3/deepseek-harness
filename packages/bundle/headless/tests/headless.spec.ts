@@ -67,7 +67,7 @@ async function bench(script: Script): Promise<{
       })
       let idle = Promise.resolve()
       const agent = {} as Agent
-      const agentCtx = ownerCtx.extend({ agent })
+      const agentCtx = ownerCtx
       Object.assign(agent, {
         id: session.id,
         options: options.agentOptions ?? {},
@@ -86,7 +86,7 @@ async function bench(script: Script): Promise<{
         inject: () => {},
         whenIdle: () => idle,
       } satisfies Partial<Agent>)
-      await options.setup?.(agentCtx)
+      await options.setup?.(agentCtx, agent)
       script.before?.(session)
       ctx.agents.register(agent)
       return { agent, dispose: () => Promise.resolve() }

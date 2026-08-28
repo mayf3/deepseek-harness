@@ -101,7 +101,7 @@ export class ReactLoopAgent implements Agent {
     const lastTurn = this.loopCtx.sessionProjections.stateOf(session, 'turnBoundary')?.lastTurn ?? 0
     this.phase = { kind: 'idle', lastTurn }
     this.scope = createScope(loopCtx, this)
-    this.ctx = this.scope.ctx.extend({ agent: this })
+    this.ctx = this.scope.ctx
     this.runtimeContext = new RuntimeContextProjection(this.ctx, session)
   }
 

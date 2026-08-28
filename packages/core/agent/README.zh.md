@@ -40,7 +40,7 @@ const handle = await ctx.agents.create({
 await handle.dispose()   // stops the loop, unregisters, removes the session, unwinds the scope
 ```
 
-`AgentOptions` 提供初始 provider/model 路由、可选的适配器所有 `reasoningEffort`，以及可选的正数 `maxTokens` 输出上限。循环会校验确切模型的推理支持、解析适配器默认值、把有效值记录在请求头中，并将它们应用到每个对话请求。可选的 `setup(agentCtx)` 回调会在 agent 发布之前组合其作用域世界——作用域工具、提示词段与监听器在任何创建公告之前就已存在。Setup 只做组合：创建完成后才能驱动 agent。
+`AgentOptions` 提供初始 provider/model 路由、可选的适配器所有 `reasoningEffort`，以及可选的正数 `maxTokens` 输出上限。循环会校验确切模型的推理支持、解析适配器默认值、把有效值记录在请求头中，并将它们应用到每个对话请求。可选的 `setup(agentCtx, agent)` 回调会在 agent 发布之前组合其作用域世界：`agentCtx` 拥有注册，显式的未发布 Agent 则提供其 Session；Context 不含反向 Agent 属性。作用域工具、提示词段与监听器在任何创建公告之前就已存在。Setup 只做组合：创建完成后才能驱动 agent。
 
 ### 驱动 agent 的对话
 
@@ -166,7 +166,7 @@ await handle.agent.whenIdle()
 
 - **发起方作用域只存在于进程内**：worker、子进程、HTTP、持久队列和重启必须显式传递所需身份。
 - **环境身份可能比存活状态更久**：消费方在生命周期敏感工作前，仍要检查 `agent.status`、取消状态和所属能力约定。
-- **`agent/session-start` 不能为启动设置门禁**：它仍是同步且不可 veto 的通知；必须在发布前完成的异步组合属于工厂的 `setup(agentCtx)` 事务。
+- **`agent/session-start` 不能为启动设置门禁**：它仍是同步且不可 veto 的通知；必须在发布前完成的异步组合属于工厂的 `setup(agentCtx, agent)` 事务。
 - **`cancel()` 默认清空收件箱**：它会中止正在处理的轮次以及排队和 steering 工作；`cancel(cause, { keepInbox: true })` 只中止轮次并保留待处理项，且不存在让轮次继续运行、只中止步骤的操作。
 - **每条附加 `UserMessage` 恰好携带一个 `MessageSource`**：多个插件合并到一条消息上的贡献会归入同一来源，因此该消息无法列出多个生产者。
 

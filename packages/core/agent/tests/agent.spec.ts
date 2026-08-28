@@ -149,7 +149,6 @@ describe('AgentRegistry', () => {
     await agentFiber
     await ctx.plugin(TypertRegistry)
     const agent = stubAgent('remote-agent')
-    Object.defineProperty(agent, 'ctx', { value: agent.ctx.extend({ agent }) })
     const disposeAgent = ctx.agents.register(agent)
 
     const lookup = ctx.typert.lookups.get('agent')
@@ -161,8 +160,6 @@ describe('AgentRegistry', () => {
     })
     expect(lookup?.resolve(agent.id)).toBe(agent)
     const context = ctx.typert.contexts.getHost('agent')
-    expect(context?.identity(agent.ctx)).toBe(agent.id)
-    expect(context?.identity(ctx)).toBeUndefined()
     expect(context?.resolve(agent.id)).toBe(agent.ctx)
 
     disposeAgent()
@@ -362,16 +359,16 @@ describe('explicit cancellation contract', () => {
 describe('AgentRegistry factory seam', () => {
   function stubFactory() {
     const calls: {
-      create: Array<{ ownerCtx: Context; options: CreateAgentOptions }>
-      resume: Array<{ ownerCtx: Context; options: ResumeAgentOptions }>
+      create: Array<{ ownerCtx: Context; options: CreateAgentOptions; owner: Agent | undefined }>
+      resume: Array<{ ownerCtx: Context; options: ResumeAgentOptions; owner: Agent | undefined }>
     } = { create: [], resume: [] }
     const factory: AgentFactory = {
-      async createAgent(ownerCtx, options) {
-        calls.create.push({ ownerCtx, options })
+      async createAgent(ownerCtx, options, owner) {
+        calls.create.push({ ownerCtx, options, owner })
         return { agent: stubAgent(options.sessionId), dispose: () => Promise.resolve() }
       },
-      async resume(ownerCtx, options) {
-        calls.resume.push({ ownerCtx, options })
+      async resume(ownerCtx, options, owner) {
+        calls.resume.push({ ownerCtx, options, owner })
         return { agent: stubAgent(options.resumeSessionId), dispose: () => Promise.resolve() }
       },
     }
@@ -393,6 +390,22 @@ describe('AgentRegistry factory seam', () => {
     }, { inject: ['agents'] }))
     expect(calls.create[0]?.ownerCtx.fiber).toBe(callerFiber)
     expect(calls.resume[0]?.ownerCtx.fiber).toBe(callerFiber)
+    expect(calls.create[0]?.owner).toBeUndefined()
+    expect(calls.resume[0]?.owner).toBeUndefined()
+  })
+
+  it('passes the explicit runtime owner separately from the caller context', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    const { factory, calls } = stubFactory()
+    ctx.agents.setFactory(factory)
+    const parent = stubAgent('parent')
+    const unregister = ctx.agents.register(parent)
+
+    await ctx.agents.create({ sessionId: SessionId('child') }, parent)
+
+    expect(calls.create[0]?.owner).toBe(parent)
+    unregister()
   })
 
   it('rejects a second factory and clears the slot with its owner (HMR)', async () => {

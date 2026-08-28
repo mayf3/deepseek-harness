@@ -432,7 +432,7 @@ export class AgentLoop extends Service implements AgentFactory {
           void this.resumeWith(ctx, childCtx.sessionPersistence, {
             resumeSessionId,
             agentOptions: options,
-          }).catch((error: unknown) => {
+          }, undefined).catch((error: unknown) => {
             this.reportConfiguredStartupFailure(id, 'resume', resumeSessionId, error)
           })
         })
@@ -474,7 +474,7 @@ export class AgentLoop extends Service implements AgentFactory {
     await this.waitForDrainingConfiguredIdentity(ownerCtx, sessionId)
     if (!this.ownership.isActive()) return
     try {
-      await this.resumeWith(ownerCtx, persistence, { resumeSessionId: sessionId, agentOptions })
+      await this.resumeWith(ownerCtx, persistence, { resumeSessionId: sessionId, agentOptions }, undefined)
       return
     } catch (error: unknown) {
       if (!this.ownership.isActive()) return
@@ -516,7 +516,14 @@ export class AgentLoop extends Service implements AgentFactory {
    * BEFORE publication, so a mid-setup unload rolls everything back; `signal`
    * fuses caller cancellation with lifecycle teardown for setup awaits.
    */
-  private prepare(ownerCtx: Context, id: SessionId, options: AgentOptions, session: Session, callerSignal?: AbortSignal): PreparedAgent {
+  private prepare(
+    ownerCtx: Context,
+    owner: Agent | undefined,
+    id: SessionId,
+    options: AgentOptions,
+    session: Session,
+    callerSignal?: AbortSignal,
+  ): PreparedAgent {
     assertAgentOptions(options)
     ownerCtx.fiber.assertActive()
     // Every caller reaches prepare() synchronously from a service method
@@ -616,7 +623,7 @@ export class AgentLoop extends Service implements AgentFactory {
         publish: (source) => {
           assertLive()
           detachSession = agent.ctx.sessions.enter(session)
-          detachAgent = loopCtx.agents.enter(agent, ownerCtx.agent)
+          detachAgent = loopCtx.agents.enter(agent, owner)
           agent.ctx.sessions.announce(session)
           assertLive()
           loopCtx.agents.announce(agent)
@@ -648,7 +655,7 @@ export class AgentLoop extends Service implements AgentFactory {
    */
   create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, 'cwd'> = {}): Agent {
     using preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(id, { meta }))
-    const prepared = this.prepare(this.ctx, id, options, preparation.session)
+    const prepared = this.prepare(this.ctx, undefined, id, options, preparation.session)
     try {
       return prepared.publish('startup').agent
     } catch (error: unknown) {
@@ -661,15 +668,17 @@ export class AgentLoop extends Service implements AgentFactory {
    * Create an owned agent on a caller-supplied session id.
    * @param ownerCtx - caller context that structurally owns the lifecycle.
    * @param options - identities, session seed/metadata, loop options, setup, and cancellation.
+   * @param owner - live Agent that owns the new Agent at runtime, or undefined for a root owner.
    * @returns the published handle.
    */
-  async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> {
+  async createAgent(ownerCtx: Context, options: CreateAgentOptions, owner: Agent | undefined): Promise<AgentHandle> {
     const preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(options.sessionId, {
       ...options.seed === undefined ? {} : { seed: options.seed },
       ...options.meta === undefined ? {} : { meta: options.meta },
     }))
     const published = this.setupAndPublish(
       ownerCtx,
+      owner,
       options.sessionId,
       preparation,
       options.agentOptions ?? {},
@@ -684,6 +693,7 @@ export class AgentLoop extends Service implements AgentFactory {
   /** Prepare one Agent around an acquired Session, run setup, and publish it. */
   private async setupAndPublish(
     ownerCtx: Context,
+    owner: Agent | undefined,
     id: SessionId,
     preparation: SessionPreparation,
     agentOptions: AgentOptions,
@@ -693,9 +703,9 @@ export class AgentLoop extends Service implements AgentFactory {
   ): Promise<AgentHandle> {
     using ownedPreparation = preparation
     const session = ownedPreparation.session
-    const prepared = this.prepare(ownerCtx, id, agentOptions, session, signal)
+    const prepared = this.prepare(ownerCtx, owner, id, agentOptions, session, signal)
     try {
-      const setupCommit = await raceAbort(setup?.(prepared.agent.ctx), prepared.signal, id)
+      const setupCommit = await raceAbort(setup?.(prepared.agent.ctx, prepared.agent), prepared.signal, id)
       setupCommit?.commit()
       return prepared.publish(source)
     } catch (error: unknown) {
@@ -708,14 +718,15 @@ export class AgentLoop extends Service implements AgentFactory {
    * Resume an owned agent from the configured persistence service.
    * @param ownerCtx - caller context that owns load, setup, and the live lifecycle.
    * @param options - persisted identity, loop options, setup, and cancellation.
+   * @param owner - live Agent that owns the resumed Agent at runtime, or undefined for a root owner.
    * @returns the published handle.
    */
-  async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle> {
+  async resume(ownerCtx: Context, options: ResumeAgentOptions, owner: Agent | undefined): Promise<AgentHandle> {
     const persistence = this.runtime.ctx.get('sessionPersistence')
     if (persistence === undefined) {
       throw new Error('cannot resume: session persistence is not configured (load a dsh-session-persistence backend)')
     }
-    return this.resumeWith(ownerCtx, persistence, options)
+    return this.resumeWith(ownerCtx, persistence, options, owner)
   }
 
   /** Resume through an explicit persistence handle used by the deferred config path. */
@@ -723,6 +734,7 @@ export class AgentLoop extends Service implements AgentFactory {
     ownerCtx: Context,
     persistence: SessionPersistence,
     options: ResumeAgentOptions,
+    owner: Agent | undefined,
   ): Promise<AgentHandle> {
     const id = options.resumeSessionId
     const published = (async () => {
@@ -754,6 +766,7 @@ export class AgentLoop extends Service implements AgentFactory {
         if (!this.ownership.isActive()) throw new Error('agent loop is not active')
         return await this.setupAndPublish(
           ownerCtx,
+          owner,
           id,
           preparation,
           options.agentOptions ?? {},
