@@ -45,7 +45,7 @@ export NO_PROXY=internal.example.com,.corp.example.com,registry.local
 
 ## 值得知道的限制
 
-**不支持 SOCKS 代理。** `socks5://` 形式的值会在启动时被报告并跳过，DSH 转为直连。请把变量指向代理软件的 HTTP 端口——多数软件两者都提供，且 HTTP 端口通常就在相邻的端口号上。
+**不支持 SOCKS 代理。** `socks5://` 形式的值会在启动时被报告并跳过，指定它的那个 scheme 转为直连——把 `HTTPS_PROXY=socks5://…` 与一个可用的 `HTTP_PROXY` 一起设置时，`https:` 会保持直连，而不会去借用 HTTP 代理。请把变量指向代理软件的 HTTP 端口——多数软件两者都提供，且 HTTP 端口通常就在相邻的端口号上。
 
 **只设 `ALL_PROXY` 也够用。** DSH 会用它为两种协议兜底，尽管 Node 与 curl 在这一点上并不一致。显式设置 `HTTPS_PROXY` 仍然更清楚。
 

@@ -37,6 +37,10 @@ beforeAll(async () => {
     response.writeHead(200, { 'content-type': 'text/plain' })
     response.end('VIA-PROXY')
   })
+  proxy.on('connect', (request, socket) => {
+    proxied.push(`CONNECT ${request.url ?? ''}`)
+    socket.end()
+  })
   origin = createServer((_request, response) => { response.end('DIRECT') })
   const [proxyAddress, originAddress] = await Promise.all([listen(proxy), listen(origin)])
   proxyUrl = `http://127.0.0.1:${String(proxyAddress.port)}`
@@ -50,6 +54,9 @@ afterAll(async () => {
 afterEach(() => {
   proxied = []
 })
+
+/** A second proxy URL, never dialed: it only has to differ from {@link proxyUrl} in an assertion. */
+const nestedUrl = 'http://127.0.0.1:9'
 
 /** A policy proxying everything, since the resolved default always bypasses the loopback these tests use. */
 function proxyAll(noProxy = ''): ProxyPolicy {
@@ -129,6 +136,21 @@ describe('installGlobalProxy', () => {
     }
     expect(currentProxyPolicy()).toBeUndefined()
   })
+  it('keeps a scheme direct when the policy refused the proxy the user named for it', async () => {
+    // What `HTTPS_PROXY=socks5://…` plus `HTTP_PROXY=http://p` resolves to: http proxied, https
+    // direct. undici's own EnvHttpProxyAgent cannot express this — with no HTTPS proxy present it
+    // reuses the HTTP one, tunnelling the scheme the diagnostic told the user stayed direct.
+    const dispose = await installGlobalProxy({ httpProxy: proxyUrl, noProxy: '', source: 'env' })
+    try {
+      await expect(fetch('https://refused-scheme.invalid/')).rejects.toThrow()
+      expect(proxied).toEqual([])
+      // The same policy still tunnels http, so the empty expectation above is not vacuous.
+      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
+      expect(proxied).toEqual([`GET ${originUrl}`])
+    } finally {
+      await dispose()
+    }
+  })
 })
 
 describe('createDispatcher', () => {
@@ -168,6 +190,23 @@ describe('createDispatcher', () => {
       await dispatcher.close()
     }
   })
+
+  it('routes by the policy it was handed, not one replaced after the caller branched', async () => {
+    const dispose = await installGlobalProxy(proxyAll())
+    const branched = currentProxyPolicy()
+    expect(branched).toBeDefined()
+    // The caller has already decided this hop is proxied and skipped its address checks. Unmounting
+    // the plugin here is what a hot reload does mid-request; reading the active policy again would
+    // hand back a direct agent and connect to an origin nothing validated.
+    await dispose()
+    const dispatcher = await createDispatcher(new URL(originUrl), {}, branched)
+    try {
+      const undici = await import('undici')
+      await expect((await undici.fetch(originUrl, { dispatcher })).text()).resolves.toBe('VIA-PROXY')
+    } finally {
+      await dispatcher.close()
+    }
+  })
 })
 
 describe('childProxyEnv', () => {
@@ -199,10 +238,90 @@ describe('childProxyEnv', () => {
       expect(child.https_proxy).toBe('socks5://127.0.0.1:1080')
       expect(child.HTTPS_PROXY).toBeUndefined()
       expect(child.HTTP_PROXY).toBe(proxyUrl)
-      expect(child.no_proxy).toBeUndefined()
+      // The bypass list is the resolved one even though the user set none: it only adds entries,
+      // and without it the child sends its own loopback traffic to a proxy that cannot route it.
+      expect(child.no_proxy).toBe('example.com')
+      expect(child.NO_PROXY).toBe('example.com')
       expect(child.NODE_USE_ENV_PROXY).toBe('1')
     } finally {
       await dispose()
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name)
+        else process.env[name] = value
+      }
+    }
+  })
+  it('fills a scheme the user named in neither casing, so a child Node is not left direct', async () => {
+    const saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
+    for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
+    // The user exported only ALL_PROXY. `NODE_USE_ENV_PROXY` never reads that name, so a child
+    // Node would connect directly while this process proxies — the seam this fill closes.
+    process.env.ALL_PROXY = proxyUrl
+    const dispose = await installGlobalProxy(proxyAll('example.com'))
+    try {
+      const child = childProxyEnv()
+      expect(child.HTTP_PROXY).toBe(proxyUrl)
+      expect(child.http_proxy).toBe(proxyUrl)
+      expect(child.HTTPS_PROXY).toBe(proxyUrl)
+      expect(child.https_proxy).toBe(proxyUrl)
+    } finally {
+      await dispose()
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name)
+        else process.env[name] = value
+      }
+    }
+  })
+
+  it('propagates a proxy that only a composition declared', async () => {
+    const saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
+    for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
+    const dispose = await installGlobalProxy({ ...proxyAll('example.com'), source: 'config' })
+    try {
+      // Nothing was exported, so every name carries the configured policy rather than being removed.
+      expect(childProxyEnv()).toEqual({
+        NODE_USE_ENV_PROXY: '1',
+        http_proxy: proxyUrl,
+        HTTP_PROXY: proxyUrl,
+        https_proxy: proxyUrl,
+        HTTPS_PROXY: proxyUrl,
+        no_proxy: 'example.com',
+        NO_PROXY: 'example.com',
+      })
+    } finally {
+      await dispose()
+      for (const [name, value] of Object.entries(saved)) {
+        if (value === undefined) Reflect.deleteProperty(process.env, name)
+        else process.env[name] = value
+      }
+    }
+  })
+
+  it('keeps the outermost install\'s record of what the user exported across a nested one', async () => {
+    const saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
+    for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
+    // The user exported one name, in one casing.
+    process.env.HTTP_PROXY = proxyUrl
+    const nested: ProxyPolicy = { httpProxy: nestedUrl, httpsProxy: nestedUrl, noProxy: '', source: 'env' }
+    // The launcher installs first; mounting the plugin installs a second policy over it.
+    const disposeOuter = await installGlobalProxy(proxyAll('example.com'))
+    try {
+      const disposeInner = await installGlobalProxy(nested)
+      try {
+        const child = childProxyEnv()
+        // Recording the outer install's published environment as the user's would show the
+        // lowercase name it wrote and the outer proxy for a scheme the user never named.
+        expect(child.http_proxy).toBeUndefined()
+        expect(child.https_proxy).toBe(nestedUrl)
+      } finally {
+        await disposeInner()
+      }
+      // Unmounting the inner install must leave the outer one still able to describe that
+      // environment; clearing the record instead sends every later child the normalized values.
+      expect(childProxyEnv().HTTP_PROXY).toBe(proxyUrl)
+      expect(childProxyEnv().http_proxy).toBeUndefined()
+    } finally {
+      await disposeOuter()
       for (const [name, value] of Object.entries(saved)) {
         if (value === undefined) Reflect.deleteProperty(process.env, name)
         else process.env[name] = value
@@ -250,6 +369,16 @@ describe('applyPolicyEnv restoration', () => {
 })
 
 describe('createNodeHttpAgent', () => {
+  /**
+   * Whether this runtime's `http.Agent` honors `proxyEnv`, the option this agent routes through.
+   * Added in Node 24.5 and backported to 22.21; the engines range admits 22.19, 22.20, and
+   * 24.0–24.4, where the option is ignored and the request stays direct.
+   */
+  function supportsAgentProxyEnv(): boolean {
+    const [major = 0, minor = 0] = process.versions.node.split('.').map(Number)
+    return (major === 24 && minor >= 5) || major > 24 || (major === 22 && minor >= 21)
+  }
+
   /** Drive a real `node:http` request, which the global dispatcher never reaches. */
   function get(target: string, agent: http.Agent): Promise<string> {
     return new Promise((resolve) => {
@@ -265,7 +394,9 @@ describe('createNodeHttpAgent', () => {
     const dispose = await installGlobalProxy(proxyAll())
     const agent = await createNodeHttpAgent('http:')
     try {
-      await expect(get(originUrl, agent)).resolves.toBe('VIA-PROXY')
+      // An older runtime ignores the unknown `proxyEnv` option and connects directly — the seam
+      // this agent's documentation names, asserted rather than left to fail the suite there.
+      await expect(get(originUrl, agent)).resolves.toBe(supportsAgentProxyEnv() ? 'VIA-PROXY' : 'DIRECT')
     } finally {
       agent.destroy()
       await dispose()

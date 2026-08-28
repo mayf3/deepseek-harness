@@ -4,10 +4,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { installGlobalProxy, proxyForUrl, type ProxyPolicy } from '../src/index.ts'
 
 /**
- * `proxyForUrl` and the installed `EnvHttpProxyAgent` are two matchers over one bypass list. They are
- * fed the same values, but their parsers are independent: a form they judge differently would route a
- * plain `fetch` one way and `web_fetch` the other. These cases pin the forms in the documented
- * vocabulary against the agent's real behavior.
+ * `proxyForUrl` answers where a URL goes; these cases check that answer against where a real `fetch`
+ * actually went, for every form in the documented bypass vocabulary. The installed dispatcher routes
+ * by this same predicate, so the two cannot drift apart by parsing the list twice — what a case can
+ * still catch is `bypassesProxy` reading a form differently from how the vocabulary documents it,
+ * and any future dispatcher that reintroduces a second matcher.
+ *
+ * The remaining second matcher is Node's, on the `node:http` path: `createNodeHttpAgent` hands it
+ * the published `NO_PROXY` and Node applies its own rules, which differ in separators and IPv4-range
+ * support. That seam is documented rather than asserted here, because the difference is real.
  */
 const CASES: readonly { readonly noProxy: string; readonly path: string; readonly bypassed: boolean }[] = [
   { noProxy: '', path: '/plain', bypassed: false },
@@ -51,8 +56,10 @@ describe('bypass matcher parity', () => {
     const url = new URL(`http://probe.invalid${path}`)
     const dispose = await installGlobalProxy(policy(noProxy))
     try {
-      // A bypassed target has no route here, so the fetch fails; a proxied one reaches the recorder.
-      await fetch(url).then(response => response.text()).catch(() => undefined)
+      // A bypassed target has no route here, so the fetch fails; a proxied one reaches the recorder
+      // in milliseconds. The deadline bounds the failing path, whose DNS miss is otherwise as slow
+      // as the machine's resolver decides — and only that path, so it cannot mask a proxied hop.
+      await fetch(url, { signal: AbortSignal.timeout(1500) }).then(response => response.text()).catch(() => undefined)
       const agentProxied = seen.length > 0
       expect({ ours: proxyForUrl(policy(noProxy), url) !== undefined, agent: agentProxied })
         .toEqual({ ours: !bypassed, agent: !bypassed })

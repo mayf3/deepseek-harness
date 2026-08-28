@@ -20,7 +20,7 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运�
 
 **新增 `packages/net/` 分组。** 本包必须依赖 `undici`（Node 不暴露 `node:undici`），因此无法加入零依赖的 `util/` 组；而 `boot`、`web`、`subprocess` 与 `workflow` 都消费它，放进其中任何一组都会让另外三条依赖反向。它刻意不是能力接缝：传输策略每个进程只有一种实现、一个答案，没有可替换的对象。
 
-**已安装的 agent 读回的是解析结果，而非原始环境。** `installGlobalProxy` 把策略发布到代理环境变量中，再以无选项方式构造 `EnvHttpProxyAgent`。若改为显式传字段，undici 会对任何留空的字段回退去读环境——包括本包已经拒绝的 SOCKS 或畸形值，而 `new ProxyAgent` 会因此在启动期抛出。发布同时也规范化了子进程继承到的内容：`ALL_PROXY` 兜底落为具体的 `HTTP_PROXY`，绕过列表也已并入 loopback。
+**已安装的 dispatcher 按策略路由，而不是重新解析一遍环境。** `installGlobalProxy` 构造一个 `Agent`，其按 origin 调用的 `factory` 会询问 `proxyForUrl` 该 origin 的去向，并据此返回 `ProxyAgent` 或 undici 自带的默认客户端。undici 的 `EnvHttpProxyAgent` 曾是首选，但对这套策略是错的：没有 `HTTPS_PROXY` 时它会把 HTTPS agent 设为 HTTP agent，于是本包在拒绝某个 SOCKS 或畸形 URL 后本应保持直连的 scheme 仍会被隧道转发，而诊断却声称直连。让路由走同一个谓词，从构造上而非靠测试消除了这一类分歧。把策略发布到环境中的做法保留下来，但如今只服务那些拿不到策略对象的读者：Node 的 `proxyEnv` 选项，以及每个派生的子进程。
 
 这样 `proxyForUrl()` 与 dispatcher 就从同一组值给出答案。两者必须一致：一旦对某个 URL 产生分歧，`web-fetch-http` 就会把 dispatcher 本打算隧道转发的连接固定到某个地址上。
 
@@ -78,6 +78,6 @@ userland undici 能触及 Node 内置的 `fetch`，依赖于两者都会写入 l
 
 `verify-no-bare-dispatcher.spec.ts` 证明该门禁能拒掉本包所要修复的那种写法、接受 `createDispatcher`、接受带注释的豁免，并在当前代码树上通过。
 
-出网测试为遥测保留了负向用例——恢复 SDK 自带的默认 agent 就触及不到代理——因此升级无法悄悄把它变回直连。其正向用例按运行时分支，因为导出器的 agent 需要 Node 22.21+ 或 24.5+。另有一组一致性测试，用文档所述的 `NO_PROXY` 词汇把两套绕过匹配器（`proxyForUrl` 与已安装的 `EnvHttpProxyAgent`）相互固定。
+出网测试为遥测保留了负向用例——恢复 SDK 自带的默认 agent 就触及不到代理——因此升级无法悄悄把它变回直连。其正向用例按运行时分支，因为导出器的 agent 需要 Node 22.21+ 或 24.5+。另有一组一致性测试，对文档所述 `NO_PROXY` 词汇中的每种形态，把 `proxyForUrl` 的判断与真实 `fetch` 的实际去向相互核对；由于 dispatcher 正是按同一谓词路由，它现在能抓住的是 `bypassesProxy` 对某种形态的读法与词汇文档不一致，以及未来任何重新引入第二个匹配器的 dispatcher。
 
 无录制会话快照变更：本次改动不影响任何模型可见输入或产品用户可见的 transcript 输出。

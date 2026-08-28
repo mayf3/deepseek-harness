@@ -45,7 +45,7 @@ You do not need to list `localhost` or `127.0.0.1`. DSH always bypasses loopback
 
 ## Limits worth knowing
 
-**SOCKS proxies are not supported.** A `socks5://` value is reported at startup and skipped, and DSH connects directly. Point the variables at your proxy application's HTTP port instead — most expose both, and the HTTP one is usually a neighbouring port number.
+**SOCKS proxies are not supported.** A `socks5://` value is reported at startup and skipped, and DSH connects directly for the scheme that named it — setting `HTTPS_PROXY=socks5://…` alongside a usable `HTTP_PROXY` leaves `https:` direct rather than borrowing the HTTP proxy. Point the variables at your proxy application's HTTP port instead — most expose both, and the HTTP one is usually a neighbouring port number.
 
 **`ALL_PROXY` alone is enough.** DSH falls back to it for both schemes, even though Node and curl differ on this. Setting `HTTPS_PROXY` explicitly is still clearer.
 

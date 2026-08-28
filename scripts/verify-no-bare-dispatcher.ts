@@ -11,7 +11,9 @@
  *
  * Discovery is syntax-aware, as `scripts/AGENTS.md` requires: a line-wise regex misses the
  * `{ dispatcher }` shorthand and a `new Alias(...)` whose import renamed `Agent`, and both bypass the
- * proxy exactly as the spelled-out forms do.
+ * proxy exactly as the spelled-out forms do. Bindings from a dynamic `await import('undici')` count
+ * the same as static ones — that is how this repository loads undici wherever the transport must
+ * stay out of a browser-worker's startup graph.
  */
 
 import { globSync, readFileSync } from 'node:fs'
@@ -52,8 +54,42 @@ export interface DispatcherViolation {
 }
 
 /**
- * Local names bound to an undici agent class, including `import { Agent as X }` renames and a
- * namespace import's own name so `undici.Agent` is recognised too.
+ * Whether an expression is `import('undici')`, with or without `await`. The dynamic form is how
+ * this repository loads undici everywhere the transport must stay out of a browser-worker's startup
+ * graph, so a gate blind to it would miss the repository's own idiom.
+ *
+ * @param expression - a variable declaration's initializer, when it has one.
+ * @returns true when evaluating it yields the undici module.
+ */
+function isUndiciImport(expression: ts.Expression | undefined): boolean {
+  if (expression === undefined) return false
+  const call = ts.isAwaitExpression(expression) ? expression.expression : expression
+  if (!ts.isCallExpression(call) || call.expression.kind !== ts.SyntaxKind.ImportKeyword) return false
+  const [specifier] = call.arguments
+  return specifier !== undefined && ts.isStringLiteral(specifier) && specifier.text === AGENT_MODULE
+}
+
+/**
+ * Record the names one destructured dynamic import binds to an agent class.
+ *
+ * @param pattern - the binding pattern of `const { Agent, ProxyAgent: P } = await import('undici')`.
+ * @param agents - collector the local names are added to.
+ */
+function collectDestructuredAgents(pattern: ts.ObjectBindingPattern, agents: Set<string>): void {
+  for (const element of pattern.elements) {
+    if (!ts.isIdentifier(element.name)) continue
+    const property = element.propertyName
+    const imported = property === undefined
+      ? element.name.text
+      : ts.isIdentifier(property) || ts.isStringLiteral(property) ? property.text : undefined
+    if (imported !== undefined && AGENT_EXPORTS.has(imported)) agents.add(element.name.text)
+  }
+}
+
+/**
+ * Local names bound to an undici agent class, including `import { Agent as X }` renames, the
+ * destructured and namespace forms of a dynamic `import('undici')`, and a namespace import's own
+ * name so `undici.Agent` is recognised too.
  *
  * @param source - the parsed file.
  * @returns agent identifiers and namespace identifiers bound in this file.
@@ -61,20 +97,25 @@ export interface DispatcherViolation {
 function agentBindings(source: ts.SourceFile): { agents: Set<string>; namespaces: Set<string> } {
   const agents = new Set<string>()
   const namespaces = new Set<string>()
-  for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement)) continue
-    if (!ts.isStringLiteral(statement.moduleSpecifier) || statement.moduleSpecifier.text !== AGENT_MODULE) continue
-    const bindings = statement.importClause?.namedBindings
-    if (bindings === undefined) continue
-    if (ts.isNamespaceImport(bindings)) {
-      namespaces.add(bindings.name.text)
-      continue
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) {
+      if (ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === AGENT_MODULE) {
+        const bindings = node.importClause?.namedBindings
+        if (bindings !== undefined && ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text)
+        else if (bindings !== undefined) {
+          for (const element of bindings.elements) {
+            const imported = (element.propertyName ?? element.name).text
+            if (AGENT_EXPORTS.has(imported)) agents.add(element.name.text)
+          }
+        }
+      }
+    } else if (ts.isVariableDeclaration(node) && isUndiciImport(node.initializer)) {
+      if (ts.isIdentifier(node.name)) namespaces.add(node.name.text)
+      else if (ts.isObjectBindingPattern(node.name)) collectDestructuredAgents(node.name, agents)
     }
-    for (const element of bindings.elements) {
-      const imported = (element.propertyName ?? element.name).text
-      if (AGENT_EXPORTS.has(imported)) agents.add(element.name.text)
-    }
+    ts.forEachChild(node, visit)
   }
+  ts.forEachChild(source, visit)
   return { agents, namespaces }
 }
 

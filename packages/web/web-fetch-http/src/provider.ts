@@ -124,11 +124,16 @@ export class HttpFetchProvider implements WebFetchProvider {
       // DNS, so there is no local address to validate, and pinning one would connect directly and
       // bypass the proxy. A hop the policy bypasses — every loopback and every `NO_PROXY` entry —
       // still takes the resolved-and-pinned path unchanged.
-      if (proxyForUrl(currentProxyPolicy() ?? DIRECT_POLICY, url) !== undefined) {
-        return await publicHttpNetwork.requestProxied(url, headers, signal)
+      //
+      // One snapshot decides both the branch and the dispatcher. Reading the active policy again
+      // inside the transport would let a mount or disposal land between the two reads and return a
+      // direct, unpinned agent for a URL this branch cleared as proxied.
+      const policy = currentProxyPolicy() ?? DIRECT_POLICY
+      if (proxyForUrl(policy, url) !== undefined) {
+        return await publicHttpNetwork.requestProxied(url, headers, signal, policy)
       }
       const addresses = await this.resolveAddresses(url.hostname, signal)
-      return await publicHttpNetwork.request(url, addresses, headers, signal)
+      return await publicHttpNetwork.request(url, addresses, headers, signal, policy)
     } catch (error: unknown) {
       if (error instanceof WebError) throw error
       throw translateAbortOrNetwork(error, signal)

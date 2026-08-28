@@ -59,9 +59,9 @@ A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable stri
 
 ### Design philosophy
 
-**One resolution, two readers.** `proxyForUrl()` and the installed dispatcher must never disagree about a URL, or `dsh-web-fetch-http` would pin a connection the dispatcher meant to tunnel. Installation therefore publishes the resolved policy into the proxy environment variables and constructs `EnvHttpProxyAgent` with no options, so the agent reads back exactly what was resolved rather than re-parsing the raw environment under slightly different rules.
+**One resolution, one matcher.** `proxyForUrl()` and the installed dispatcher must never disagree about a URL, or `dsh-web-fetch-http` would pin a connection the dispatcher meant to tunnel. The dispatcher is therefore an `Agent` whose per-origin `factory` calls `proxyForUrl()` itself, so there is no second parser to drift from the first. undici's `EnvHttpProxyAgent` cannot serve here: with no `HTTPS_PROXY` present it reuses the HTTP proxy for `https:`, which would tunnel a scheme this package keeps direct after refusing the URL the user named for it.
 
-**A child inherits what the user exported, not what this process resolved.** The published values exist for undici; `childProxyEnv()` restores each name to its original before a child is spawned. Normalizing them into a child would hand `curl` an `HTTPS_PROXY` invented from the HTTP one, or replace a SOCKS proxy the user set for `curl` with an HTTP proxy they never named for that scheme.
+**A child inherits the user's own values, and the resolved policy for what they left unset.** A scheme the user named in either casing reaches a child exactly as they wrote it, so a SOCKS proxy `curl` uses is never replaced by an HTTP one named for another scheme. A scheme they named in neither casing carries the resolved value instead, because otherwise the child's routing diverges from its parent's: Node's `NODE_USE_ENV_PROXY` reads neither `ALL_PROXY` nor a proxy that came from `cordis.yml`. The bypass list is always the resolved one — it only ever adds the loopback entries, so nothing the user wrote is lost. The cost of one routing answer for parent and child alike is that `curl` also sees the `https:` proxy this package derives from the HTTP one.
 
 ### Source map
 

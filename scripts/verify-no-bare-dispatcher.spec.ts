@@ -59,6 +59,43 @@ describe('bare dispatcher check', () => {
     `)).toEqual(['constructs an undici agent'])
   })
 
+  it('rejects a destructured dynamic import, the form this repository loads undici with', () => {
+    expect(reasons(`
+      const { Agent } = await import('undici')
+      const agent = new Agent({})
+    `)).toEqual(['constructs an undici agent'])
+  })
+
+  it('rejects a renamed binding from a dynamic import', () => {
+    expect(reasons(`
+      const { ProxyAgent: Tunnel } = await import('undici')
+      const agent = new Tunnel({ uri })
+    `)).toEqual(['constructs an undici agent'])
+  })
+
+  it('rejects a namespace bound by a dynamic import', () => {
+    expect(reasons(`
+      const undici = await import('undici')
+      const agent = new undici.Agent({})
+    `)).toEqual(['constructs an undici agent'])
+  })
+
+  it('finds a dynamic import nested inside a function, not only at the top level', () => {
+    expect(reasons(`
+      export async function requestWith(url) {
+        const { Agent } = await import('undici')
+        return new Agent({})
+      }
+    `)).toEqual(['constructs an undici agent'])
+  })
+
+  it('accepts a dynamic import of an unrelated module that exports Agent', () => {
+    expect(reasons(`
+      const { Agent } = await import('./our-own-agent.ts')
+      const agent = new Agent({})
+    `)).toEqual([])
+  })
+
   it('accepts an unrelated class that happens to be named Agent', () => {
     expect(reasons(`
       import { Agent } from './our-own-agent.ts'

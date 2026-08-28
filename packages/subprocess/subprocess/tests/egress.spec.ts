@@ -97,17 +97,63 @@ describe('child process egress', () => {
     else expect(seen).toEqual([])
   })
 
-  it('does not invent a proxy name the user never exported', async () => {
+  it('a child Node reaches a proxy the user gave only as ALL_PROXY', async () => {
+    process.env.ALL_PROXY = proxyUrl
+    const { policy } = resolveProxyPolicy(
+      createLaunchEnvironmentSnapshot([{ source: 'process', values: { ALL_PROXY: proxyUrl } }]),
+    )
+    const dispose = await installGlobalProxy(policy)
+    let childEnv: Record<string, string> = {}
+    try {
+      childEnv = scrubbedParentEnv()
+      await childFetch('http://all-proxy-probe.invalid/x', childEnv)
+    } finally {
+      await dispose()
+    }
+    // `NODE_USE_ENV_PROXY` reads neither casing of `ALL_PROXY`, so a child handed only the user's
+    // own names connects directly while this process proxies. The resolved value fills that gap.
+    expect(childEnv.ALL_PROXY).toBe(proxyUrl)
+    expect(childEnv.HTTP_PROXY).toBe(proxyUrl)
+    if (supportsEnvProxy()) expect(seen.join('|')).toContain('all-proxy-probe.invalid')
+    else expect(seen).toEqual([])
+  })
+
+  it('keeps a proxy the user set for another tool, and fills only a scheme they never named', async () => {
+    // A SOCKS proxy this package refuses but `curl` uses, alongside an HTTP proxy it accepts.
+    process.env.HTTP_PROXY = proxyUrl
+    process.env.https_proxy = 'socks5://127.0.0.1:1080'
+    const { policy } = resolveProxyPolicy(
+      createLaunchEnvironmentSnapshot([{
+        source: 'process',
+        values: { HTTP_PROXY: proxyUrl, https_proxy: 'socks5://127.0.0.1:1080' },
+      }]),
+    )
+    const dispose = await installGlobalProxy(policy)
+    try {
+      const child = scrubbedParentEnv()
+      // The user named `https:`, so their value survives in the casing they wrote it, even though
+      // this process refused it and routes that scheme directly.
+      expect(child.https_proxy).toBe('socks5://127.0.0.1:1080')
+      expect(child.HTTPS_PROXY).toBeUndefined()
+      // The bypass list is always the resolved one; it only ever adds the loopback entries.
+      expect(child.NO_PROXY).toBe(policy.noProxy)
+    } finally {
+      await dispose()
+    }
+  })
+
+  it('gives a child the same routing as its parent for a scheme the user never named', async () => {
     process.env.HTTP_PROXY = proxyUrl
     const { policy } = resolveProxyPolicy(
       createLaunchEnvironmentSnapshot([{ source: 'process', values: { HTTP_PROXY: proxyUrl } }]),
     )
     const dispose = await installGlobalProxy(policy)
     try {
-      // This process resolved an HTTPS proxy by falling back to the HTTP one; a child must not see
-      // a name the user never set, because `curl` performs no such fallback of its own.
+      // This process routes `https:` through the HTTP proxy, matching undici. A child that did not
+      // see the name would diverge from its parent; `curl`, which performs no such fallback of its
+      // own, gains it here — the deliberate cost of one routing answer for parent and child alike.
       expect(process.env.HTTPS_PROXY).toBe(proxyUrl)
-      expect(scrubbedParentEnv().HTTPS_PROXY).toBeUndefined()
+      expect(scrubbedParentEnv().HTTPS_PROXY).toBe(proxyUrl)
     } finally {
       await dispose()
     }

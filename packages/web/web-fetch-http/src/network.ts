@@ -10,7 +10,7 @@ import { lookup as systemLookup } from 'node:dns/promises'
 import type { LookupAddress, LookupOptions } from 'node:dns'
 import { isIP } from 'node:net'
 import type { Agent, Response } from 'undici'
-import { createDispatcher } from '@deepseek-ai/dsh-http-proxy'
+import { createDispatcher, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
 import ipaddr from 'ipaddr.js'
 import { WebError } from '@deepseek-ai/dsh-web'
 
@@ -166,6 +166,7 @@ function embeddedIpv4Address(bytes: readonly number[], prefixLength: Nat64Prefix
  * @param addresses - public addresses returned by {@link resolvePublicAddresses}.
  * @param headers - request headers.
  * @param signal - request and body-read cancellation signal.
+ * @param policy - the proxy policy the caller already branched on; omitted, the active one is read.
  * @returns a response plus the dispatcher disposer its consumer must call.
  */
 export async function requestPinned(
@@ -173,11 +174,12 @@ export async function requestPinned(
   addresses: readonly PublicAddress[],
   headers: Record<string, string>,
   signal: AbortSignal,
+  policy?: ProxyPolicy,
 ): Promise<PinnedResponse> {
   return await requestWith(url, headers, signal, {
     autoSelectFamily: true,
     connect: { lookup: createPinnedLookup(addresses) },
-  })
+  }, policy)
 }
 
 /**
@@ -191,14 +193,17 @@ export async function requestPinned(
  * @param url - validated HTTP(S) URL the active policy routes through a proxy.
  * @param headers - request headers.
  * @param signal - request and body-read cancellation signal.
+ * @param policy - the proxy policy the caller branched on; passing it keeps this hop on the route
+ *   that decision assumed even if the policy is replaced while the request is in flight.
  * @returns a response plus the dispatcher disposer its consumer must call.
  */
 export async function requestProxied(
   url: URL,
   headers: Record<string, string>,
   signal: AbortSignal,
+  policy?: ProxyPolicy,
 ): Promise<PinnedResponse> {
-  return await requestWith(url, headers, signal, {})
+  return await requestWith(url, headers, signal, {}, policy)
 }
 
 /**
@@ -211,6 +216,7 @@ export async function requestProxied(
  * @param headers - request headers.
  * @param signal - request and body-read cancellation signal.
  * @param options - agent options applied to whichever agent the policy selects.
+ * @param policy - the policy to route by, defaulting to the active one.
  * @returns a response plus the dispatcher disposer its consumer must call.
  */
 async function requestWith(
@@ -218,12 +224,13 @@ async function requestWith(
   headers: Record<string, string>,
   signal: AbortSignal,
   options: Agent.Options,
+  policy?: ProxyPolicy,
 ): Promise<PinnedResponse> {
   // Keep the Node-only transport out of browser-worker startup. The preview
   // can load the provider and fail loud at its DNS stub without evaluating
   // Undici; a real request on Node resolves this maintained dependency here.
   const { fetch } = await import('undici')
-  const dispatcher = await createDispatcher(url, options)
+  const dispatcher = await createDispatcher(url, options, policy)
   try {
     // proxy-exempt: the dispatcher is createDispatcher's, which already applied the active policy.
     const response = await fetch(url, { method: 'GET', redirect: 'manual', headers, signal, dispatcher })
