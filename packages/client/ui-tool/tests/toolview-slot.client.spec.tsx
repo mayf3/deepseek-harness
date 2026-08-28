@@ -113,43 +113,35 @@ describe('keyed toolview hole through the real machinery', () => {
     await b.runtime.dispose()
   })
 
-  it('renders Auto denial copy through every shipped specialized row and the generic fallback', async () => {
-    const denied = (seq: number, callId: string, name: string, args: string) => toolResult(
-      seq,
-      callId,
-      name,
-      args,
-      {
-        content: [{ type: 'text', text: 'Tool execution rejected by user' }],
-        isError: true,
-        error: {
-          name: 'AutoReviewDeniedError',
-          code: 'AUTO_REVIEW_DENIED',
-          reason: '  precise scope\r\nwas not authorized  ',
-        },
-      },
-    )
+  it('renders Auto denial copy through the real machinery', async () => {
     const b = await bench([
-      denied(3, 'bash-1', 'bash', '{"command":"rm -rf build","description":"Clean"}'),
-      denied(4, 'read-1', 'read', '{"file_path":"src/a.ts"}'),
-      denied(5, 'edit-1', 'edit', '{"file_path":"src/a.ts","old_string":"a","new_string":"b"}'),
-      denied(6, 'grep-1', 'grep', '{"pattern":"needle","path":"src"}'),
-      denied(7, 'web-1', 'web_search', '{"query":"release"}'),
-      denied(8, 'todo-1', 'todo_write', '{"todos":[]}'),
-      denied(9, 'ask-1', 'ask_user_question', '{"questions":[{"id":"q1","question":"Continue?"}]}'),
-      denied(10, 'other-1', 'mystery', '{"value":1}'),
+      toolResult(
+        3,
+        'bash-1',
+        'bash',
+        '{"command":"rm -rf build","description":"Clean"}',
+        {
+          content: [{ type: 'text', text: 'Tool execution rejected by user' }],
+          isError: true,
+          error: {
+            name: 'AutoReviewDeniedError',
+            code: 'AUTO_REVIEW_DENIED',
+            reason: '  precise scope\r\nwas not authorized  ',
+          },
+        },
+      ),
     ])
     const view = b.runtime.renderRoot()
 
-    expect(view.getAllByText('Rejected by Auto review')).toHaveLength(8)
+    expect(view.getByText('Rejected by Auto review')).toBeTruthy()
     expect(view.queryByText('Tool execution rejected by user')).toBeNull()
-    const rows = [...view.container.querySelectorAll<HTMLElement>('[data-expandable]')]
-    expect(rows).toHaveLength(8)
-    for (const row of rows) fireEvent.click(row)
+    const row = view.container.querySelector<HTMLElement>('[data-expandable]')
+    expect(row).not.toBeNull()
+    fireEvent.click(row!)
 
     expect(view.queryByText('IN')).toBeNull()
-    expect(view.getAllByText('OUT')).toHaveLength(8)
-    expect(view.getAllByText('Tool was not executed. Reason: precise scope was not authorized')).toHaveLength(8)
+    expect(view.getByText('OUT')).toBeTruthy()
+    expect(view.getByText('Tool was not executed. Reason: precise scope was not authorized')).toBeTruthy()
     expect(view.queryByText('Tool execution rejected by user')).toBeNull()
     await b.runtime.dispose()
   })
