@@ -66,8 +66,8 @@ export const DUNDER_MEMBER = /^__.+__$/
 /**
  * Reserved words of every portable target language (ECMAScript ∪ Python),
  * refused as {@link CodeBindingNamespace.global} / error-class names by all
- * backends, which ship for both languages: the TypeScript worker thread and
- * the CPython subprocess. The portable-identifier contract
+ * backends, one per language: the released TypeScript worker thread and the
+ * experimental, private CPython subprocess. The portable-identifier contract
  * promises a namespace list valid on one backend is valid on every backend; a
  * per-language check would let `lambda` pass the TypeScript backend and fail
  * the Python one. Extending the seam with a new language means widening this

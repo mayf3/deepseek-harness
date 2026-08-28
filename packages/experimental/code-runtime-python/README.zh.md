@@ -121,6 +121,7 @@ kind: "package-reference"
 - **1 秒双限 `ulimit -t 1` CPU 超限被报告为 `worker-exit` 而非 timeout**——当宿主在一个与软限相等的硬 CPU 限下启动且该限为 1 时，`_clamped` 无法下调软限，内核在同一 tick SIGKILL 忙循环，SIGXCPU 永远不会送达；隔离成立，只有分类降级。
 - **中间 binding 值没有字节上限**——实现仍受无损 JSON 序列化成本与进程内存约束，提供方或执行器可能应用自己的获取上限。
 - **真实 Loader 装配态快照推迟到 issue #1182 layer 5**——本包通过 `ctx.plugin(...)` 与真实子进程测试得到验证；完整的 dsh 应用组合（codeRuntime 经真实 Loader 注册）由该层一个受跟踪的装配测试覆盖，不由本包的测试套件承担。
+- **截断标记文本与临时目录前缀保留改名前的短名**——标记 `[dsh-code-runtime-python] log capture truncated at <N> bytes` 与 `dsh-code-runtime-python-` 临时目录前缀被测试逐字节锚定，且独立于 npm 包名；promotion（去掉 `experimental-` 前缀）不会重命名它们。
 
 <a id="dev-note"></a>
 ### 开发备注
