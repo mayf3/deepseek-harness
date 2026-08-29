@@ -225,21 +225,29 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 12px;
-  padding: 10px 12px 12px;
 }
 
-.groupHeader,
-.groupToggle {
+.groupTitleRow {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
+  min-height: 32px;
+}
+
+.group + .group {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 14px;
+}
+
+.headerEnd {
+  margin-left: auto;
 }
 
 .groupToggle {
-  width: 100%;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
   border: 0;
   padding: 0;
   background: transparent;
@@ -263,22 +271,17 @@
 }
 
 .groupTitle {
-  font-size: 13px;
-  line-height: 20px;
-  font-weight: 600;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
 }
 
-.groupSubtitle {
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.groupCount {
-  margin-left: auto;
+.groupSub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin: -6px 0 0 20px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
@@ -286,10 +289,7 @@
 }
 
 .failedCount {
-  flex: none;
   color: var(--dsw-alias-state-error-primary);
-  font-size: 12px;
-  line-height: 18px;
 }
 
 /* The preset switcher trigger mirrors the General-settings selector pill. */
@@ -331,12 +331,6 @@
   text-overflow: ellipsis;
 }
 
-.iconToggle {
-  flex: none;
-  width: auto;
-  min-height: 0;
-  padding: 4px;
-}
 
 .groupBody {
   display: flex;

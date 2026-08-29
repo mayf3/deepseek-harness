@@ -365,46 +365,51 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
 
           {selected !== undefined ? (
             <section className={css.group} data-plugin-scope="preset" data-preset-id={selected.id}>
-              <div className={css.groupHeader}>
+              <div className={css.groupTitleRow}>
                 <button
                   type="button"
-                  className={`${css.groupToggle} ${css.iconToggle}`}
+                  className={css.groupToggle}
                   aria-expanded={presetEffectiveOpen}
                   aria-controls={`${sectionId}-preset`}
-                  aria-label={t('presetSubtitle')}
                   onClick={() => { setPresetOpen(!presetEffectiveOpen) }}
                 >
                   <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                  <span className={css.groupTitle}>{t('presetTitle')}</span>
                 </button>
-                <Menu
-                  open={switcherOpen}
-                  onClose={() => { setSwitcherOpen(false) }}
-                  items={presets.map(preset => ({ id: preset.id, label: presetLabel(preset, t) }))}
-                  selectedId={selected.id}
-                  onSelect={(id) => {
-                    setSwitcherOpen(false)
-                    setChosenPreset(id)
-                  }}
-                  portal
-                  anchor={(
-                    <button
-                      type="button"
-                      className={css.switcher}
-                      aria-haspopup="menu"
-                      aria-expanded={switcherOpen}
-                      aria-label={t('switcherLabel')}
-                      onClick={() => { setSwitcherOpen(value => !value) }}
-                    >
-                      <span className={css.switcherLabel}>{presetLabel(selected, t)}</span>
-                      <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                    </button>
-                  )}
-                />
-                <span className={css.groupSubtitle}>{t('presetSubtitle')}</span>
-                <span className={css.groupCount} data-preset-plugin-count={selectedRows.length}>
-                  {selectedRows.length}
-                </span>
+                <div className={css.headerEnd}>
+                  <Menu
+                    open={switcherOpen}
+                    onClose={() => { setSwitcherOpen(false) }}
+                    items={presets.map(preset => ({ id: preset.id, label: presetLabel(preset, t) }))}
+                    selectedId={selected.id}
+                    onSelect={(id) => {
+                      setSwitcherOpen(false)
+                      setChosenPreset(id)
+                    }}
+                    align="end"
+                    portal
+                    anchor={(
+                      <button
+                        type="button"
+                        className={css.switcher}
+                        aria-haspopup="menu"
+                        aria-expanded={switcherOpen}
+                        aria-label={t('switcherLabel')}
+                        onClick={() => { setSwitcherOpen(value => !value) }}
+                      >
+                        <span className={css.switcherLabel}>{presetLabel(selected, t)}</span>
+                        <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                      </button>
+                    )}
+                  />
+                </div>
               </div>
+              <p className={css.groupSub}>
+                {t('presetSubtitle')}
+                <span data-preset-plugin-count={selectedRows.length}>
+                  {` · ${String(selectedRows.length)} ${t('countUnit')}`}
+                </span>
+              </p>
               {presetEffectiveOpen ? (
                 <div id={`${sectionId}-preset`} className={css.groupBody}>
                   {selected.broken !== undefined ? (
@@ -437,21 +442,25 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
 
           {entries.length > 0 ? (
             <section className={css.group} data-plugin-scope="global">
-              <button
-                type="button"
-                className={css.groupToggle}
-                aria-expanded={globalEffectiveOpen}
-                aria-controls={`${sectionId}-global`}
-                onClick={() => { setGlobalOpen(!globalEffectiveOpen) }}
-              >
-                <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                <span className={css.groupTitle}>{t('globalTitle')}</span>
-                <span className={css.groupSubtitle}>{t('globalSubtitle')}</span>
-                <span className={css.groupCount} data-plugin-count={globalCount}>{globalCount}</span>
+              <div className={css.groupTitleRow}>
+                <button
+                  type="button"
+                  className={css.groupToggle}
+                  aria-expanded={globalEffectiveOpen}
+                  aria-controls={`${sectionId}-global`}
+                  onClick={() => { setGlobalOpen(!globalEffectiveOpen) }}
+                >
+                  <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                  <span className={css.groupTitle}>{t('globalTitle')}</span>
+                </button>
+              </div>
+              <p className={css.groupSub}>
+                {t('globalSubtitle')}
+                <span data-plugin-count={globalCount}>{` · ${String(globalCount)} ${t('countUnit')}`}</span>
                 {filteredFailed.length > 0 ? (
                   <span className={css.failedCount}>{filteredFailed.length} {t('failedCountLabel')}</span>
                 ) : null}
-              </button>
+              </p>
               {globalEffectiveOpen && globalCount > 0 ? (
                 <ul className={css.cards} id={`${sectionId}-global`}>
                   {filteredFailed.map(entry => globalRowCard(entry))}
