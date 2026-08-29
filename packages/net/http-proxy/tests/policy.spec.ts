@@ -15,6 +15,9 @@ function env(values: Record<string, string>): ReturnType<typeof createLaunchEnvi
   return createLaunchEnvironmentSnapshot([{ source: 'process', values }])
 }
 
+/** Windows folds environment names, so a case distinction cannot be expressed there at all. */
+const FOLDS_ENV_CASE = process.platform === 'win32'
+
 describe('resolveProxyPolicy', () => {
   it('resolves nothing when the environment carries no proxy', () => {
     const { policy, diagnostics } = resolveProxyPolicy(env({}))
@@ -32,7 +35,10 @@ describe('resolveProxyPolicy', () => {
 
   it('prefers the lowercase name, matching undici', () => {
     const { policy } = resolveProxyPolicy(env({ http_proxy: PROXY, HTTP_PROXY: OTHER }))
-    expect(policy.httpProxy).toBe(PROXY)
+    // Windows has no such preference to express: the launch snapshot folds names, so the two
+    // spellings are one variable there and the later entry is simply the value. Asserted rather
+    // than skipped, so a change to that folding fails here instead of passing unnoticed.
+    expect(policy.httpProxy).toBe(FOLDS_ENV_CASE ? OTHER : PROXY)
   })
 
   it('treats a blank lowercase value as unset instead of letting it shadow the uppercase one', () => {
@@ -95,7 +101,9 @@ describe('resolveProxyPolicy', () => {
     const { policy, diagnostics } = resolveProxyPolicy(env({ HTTP_PROXY: 'not a url' }))
     expect(policy).toEqual(DIRECT_POLICY)
     expect(diagnostics[0]?.kind).toBe('invalid')
-    expect(diagnostics[0]?.origin).toBe('HTTP_PROXY')
+    // The origin names the spelling resolution asked for, which on a folded environment is the
+    // lowercase one it tries first — the same variable the user set, reported in the other case.
+    expect(diagnostics[0]?.origin).toBe(FOLDS_ENV_CASE ? 'http_proxy' : 'HTTP_PROXY')
   })
 
   it('reports a proxy URL whose scheme is neither http(s) nor SOCKS', () => {

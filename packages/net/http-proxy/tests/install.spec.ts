@@ -237,9 +237,13 @@ describe('childProxyEnv', () => {
     const dispose = await installGlobalProxy(proxyAll('example.com'))
     try {
       const child = childProxyEnv()
-      // The published policy invented an HTTPS proxy for this process; the child must not see it.
-      expect(child.https_proxy).toBe('socks5://127.0.0.1:1080')
-      expect(child.HTTPS_PROXY).toBeUndefined()
+      // The published policy derived an HTTPS proxy for this process; the child must not see it.
+      // Asserted over both casings rather than one: Windows folds the pair into a single variable,
+      // so which spelling carries the value is the platform's to decide — that it is the user's
+      // value and never the derived one is not.
+      const https = [child.https_proxy, child.HTTPS_PROXY]
+      expect(https).toContain('socks5://127.0.0.1:1080')
+      expect(https).not.toContain(proxyUrl)
       expect(child.HTTP_PROXY).toBe(proxyUrl)
       // The bypass list is the resolved one even though the user set none: it only adds entries,
       // and without it the child sends its own loopback traffic to a proxy that cannot route it.
@@ -312,17 +316,19 @@ describe('childProxyEnv', () => {
       const disposeInner = await installGlobalProxy(nested)
       try {
         const child = childProxyEnv()
-        // Recording the outer install's published environment as the user's would show the
-        // lowercase name it wrote and the outer proxy for a scheme the user never named.
-        expect(child.http_proxy).toBeUndefined()
+        // The user named no HTTPS proxy, so this scheme carries whichever policy is active. Reading
+        // the outer install's published environment as the user's would pin it to the outer proxy
+        // instead — the one discriminator that does not depend on how a platform cases names.
         expect(child.https_proxy).toBe(nestedUrl)
+        expect(child.HTTPS_PROXY).toBe(nestedUrl)
       } finally {
         await disposeInner()
       }
       // Unmounting the inner install must leave the outer one still able to describe that
-      // environment; clearing the record instead sends every later child the normalized values.
+      // environment; clearing the record instead makes this an empty object, so every later child
+      // inherits the normalized values from `process.env` untouched.
       expect(childProxyEnv().HTTP_PROXY).toBe(proxyUrl)
-      expect(childProxyEnv().http_proxy).toBeUndefined()
+      expect(childProxyEnv().https_proxy).toBe(proxyUrl)
     } finally {
       await disposeOuter()
       for (const [name, value] of Object.entries(saved)) {
