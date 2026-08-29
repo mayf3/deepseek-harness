@@ -398,7 +398,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                         onClick={() => { setSwitcherOpen(value => !value) }}
                       >
                         <span className={css.switcherLabel}>{presetLabel(selected, t)}</span>
-                        <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                        <IconChevronDownOutline14 className={css.chevron} aria-hidden="true" />
                       </button>
                     )}
                   />
