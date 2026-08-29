@@ -2,6 +2,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '../src/client/index.ts'
 import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
@@ -18,13 +19,16 @@ async function bench() {
     getSnapshot: () => ({ active: 'zh', locales: [], revision: 0 }),
     subscribe: () => () => {},
   } as never)
-  ctx.provide('connection', { api: {}, isLoopback: false } as never)
   // The shell mounts ui-settings, which injects `remote.settings`; without the
   // namespace provided its fiber parks and no slot is ever declared.
   const settings = {
-    describe: async () => ({ ok: false, error: { code: 'internal', message: 'no settings', details: {} } }),
+    describe: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'no settings', {}) }),
   }
-  ctx.provide('remote', { $on: () => () => {}, settings } as never)
+  ctx.provide('remote', {
+    $on: () => () => {},
+    $host: { home: undefined, isLoopback: false },
+    settings,
+  } as never)
   ctx.provide('remote.settings', settings as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
@@ -55,7 +59,7 @@ const CHILD_SPECS = {
 describe('ui-settings apply', () => {
   it('declares only the slot registry (a pure composition face, no locale)', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.settings', 'settingsScope',
     ])
   })
 

@@ -29,7 +29,7 @@ declare module '@deepseek-ai/cordis' {
 // ---- Browser-safe protocol and shared value re-exports ----
 export type {
   MessageId,
-  RpcRequest, RpcResponse, RpcResult, RpcError, RpcErrorCode,
+  RpcRequest, RpcResponse, RpcResult,
   ClientRequest, ServerResponse, RpcMessage,
   SessionId, SessionEvent, ContentBlock, StreamChunk,
 } from './api.ts'
