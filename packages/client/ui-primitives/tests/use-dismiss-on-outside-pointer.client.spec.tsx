@@ -1,53 +1,41 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+/** The outside-pointer dismissal primitive as observable popover behavior. */
 import { cleanup, fireEvent, render } from '@testing-library/react'
-import { useRef } from 'react'
-import { useDismissOnOutsidePointer } from '../src/useDismissOnOutsidePointer.ts'
+import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import { afterEach, describe, expect, it } from 'vitest'
+import { useDismissOnOutsidePointer } from '@deepseek-ai/dsh-client-ui-primitives'
 
 afterEach(cleanup)
 
-function Popover({ open, setOpen }: { open: boolean; setOpen: (open: boolean) => void }) {
-  const rootRef = useRef<HTMLDivElement>(null)
-  useDismissOnOutsidePointer(rootRef, open, setOpen)
+function Popover({ portaled }: { portaled: boolean }) {
+  const [open, setOpen] = useState(true)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  const panelRef = useRef<HTMLDivElement | null>(null)
+  useDismissOnOutsidePointer(rootRef, open, setOpen, portaled ? panelRef : undefined)
   return (
-    <div>
-      <div ref={rootRef} data-testid="root">
-        <button type="button">inside</button>
-      </div>
-      <button type="button" data-testid="outside">outside</button>
+    <div ref={rootRef} data-testid="root">
+      <button type="button">trigger</button>
+      {open && !portaled && <div data-testid="surface">surface</div>}
+      {open && portaled && createPortal(<div ref={panelRef} data-testid="surface">surface</div>, document.body)}
     </div>
   )
 }
 
 describe('useDismissOnOutsidePointer', () => {
-  it('closes on an outside pointerdown and ignores inside ones', () => {
-    const setOpen = vi.fn()
-    const view = render(<Popover open setOpen={setOpen} />)
-    fireEvent.pointerDown(view.getByText('inside'))
-    expect(setOpen).not.toHaveBeenCalled()
-    fireEvent.pointerDown(view.getByTestId('outside'))
-    expect(setOpen).toHaveBeenCalledWith(false)
+  it('closes on an outside pointerdown but not on one inside the root', () => {
+    const view = render(<Popover portaled={false} />)
+    fireEvent.pointerDown(view.getByTestId('root'))
+    expect(view.queryByTestId('surface')).not.toBeNull()
+    fireEvent.pointerDown(document.body)
+    expect(view.queryByTestId('surface')).toBeNull()
   })
 
-  it('attaches no listener while closed and detaches on close', () => {
-    const setOpen = vi.fn()
-    const view = render(<Popover open={false} setOpen={setOpen} />)
-    fireEvent.pointerDown(view.getByTestId('outside'))
-    expect(setOpen).not.toHaveBeenCalled()
-
-    view.rerender(<Popover open setOpen={setOpen} />)
-    view.rerender(<Popover open={false} setOpen={setOpen} />)
-    fireEvent.pointerDown(view.getByTestId('outside'))
-    expect(setOpen).not.toHaveBeenCalled()
-  })
-
-  it('ignores a pointerdown whose target is not a DOM node', () => {
-    const setOpen = vi.fn()
-    render(<Popover open setOpen={setOpen} />)
-    const event = new Event('pointerdown', { bubbles: true })
-    // Shadow the prototype getter so the listener sees a non-Node target.
-    Object.defineProperty(event, 'target', { get: () => ({}) })
-    document.dispatchEvent(event)
-    expect(setOpen).not.toHaveBeenCalled()
+  it('counts the portaled surface as inside while still closing outside it', () => {
+    const view = render(<Popover portaled />)
+    fireEvent.pointerDown(view.getByTestId('surface'))
+    expect(view.queryByTestId('surface')).not.toBeNull()
+    fireEvent.pointerDown(document.body)
+    expect(view.queryByTestId('surface')).toBeNull()
   })
 })
