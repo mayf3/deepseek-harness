@@ -18,10 +18,10 @@ Classify from recorded evidence, not from the eventual fix:
 - **Incomplete lifecycle:** teardown returns before children, workers, streams, servers, or callbacks reach quiescence; later output or mutations appear in another test.
 - **Process-global contamination:** outcome depends on test order or leaked `process.env`, `cwd`, fake timers, globals, mocks, locale, or module state.
 - **Load-sensitive synchronization:** a sleep, polling interval, or assumed event-loop turn substitutes for observable readiness or completion.
-- **Platform or entry-path mismatch:** the failure consistently follows an operating system, shell, filesystem rule, source/build mode, or executable entry.
+- **Platform or entry-path mismatch:** the failure consistently follows an operating system, shell, filesystem rule, source/build mode, or executable entry. Timestamp precision, environment variable name case, handle-release timing, and permission semantics all differ between Windows and POSIX hosts, so a case passing on macOS says nothing about the Windows lane.
 - **Product concurrency defect:** the test controls its resources, reproduces deterministically with explicit overlap, and exposes a race in shipped behavior.
 - **External-provider transience:** the failure is owned by a live API or network boundary and matches its documented retry policy.
-- **Runner infrastructure:** checkout, dependency download, disk, host process, or runner service fails independently of the test command. Require direct runner evidence before assigning this class.
+- **Runner infrastructure:** checkout, dependency download, disk, host process, or runner service fails independently of the test command. Require direct runner evidence before assigning this class. Where a self-hosted pool exposes no host metrics, say so and classify from what the logs do carry: one signature repeating across unrelated branches on one pool is evidence of shared-host contention even when the host cannot be inspected.
 
 If evidence supports more than one independent fact, report each one. Do not collapse a timeout, signal, exit code, and assertion into a single inferred outcome.
 
@@ -36,6 +36,8 @@ Start with the owning test file or focused test name. Increase concurrency only 
 5. separate jobs or runner processes sharing the implicated host resource.
 
 Match the active Vitest config, environment knobs, source/build mode, and platform. Do not lower a production timeout or add random load merely to manufacture a different failure.
+
+Where the signature belongs to a platform the available host cannot run, the ladder stops at the last reachable rung. Record that limit rather than substituting a passing run on another platform, then use CI as the reproduction, changing one suspected owner per run so the result stays attributable.
 
 For a suspected race, replace probabilistic timing with a barrier at the contested transition. For a suspected host collision, prove simultaneous acquisition of the same identifier or prove that atomic unique allocation removes the conflict.
 

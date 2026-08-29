@@ -53,6 +53,25 @@ Prefer an injected dependency or instance-local adapter. When mutation is requir
 - keep an `afterEach` fallback when failure before the local `finally` is plausible;
 - intercept the narrowest exact request or call that the fixture owns.
 
+## Respect platform-owned semantics
+
+CI runs the same suite on Windows and on POSIX hosts, and a value the operating system owns does not always come back the way a test wrote it.
+
+- Writing a value back is safe only when the assertion tolerates the write-back failing. Restoring a file's `mtime` to prove that a fingerprint invalidates anyway holds everywhere; restoring it to prove that a record stays valid assumes a lossless round trip, which NTFS's 100-nanosecond ticks do not give a fractional millisecond. When the assertion depends on the restoration, take the expected value from a fresh read rather than from the remembered one.
+- Windows matches environment variable names case-insensitively, so a fixture seeding `http_proxy` and `HTTP_PROXY` as separate keys holds one entry there.
+- Windows releases file handles asynchronously, so a rename or removal that completes at once on a POSIX host needs a bounded retry sized to the observed contention.
+- Windows has no POSIX permission or signal semantics. A case that depends on them takes an explicit platform skip naming the reason, rather than an assertion weakened everywhere.
+
+Prefer an observation that holds on every platform. When a case genuinely cannot, exclude it on that platform explicitly.
+
+## Budget timeouts against the lane
+
+A `describe` or case timeout overrides the runner's `--testTimeout` instead of yielding to it, so a value below the lane's budget lowers what CI already granted — and the same literal reads as a widening on a host whose default is smaller. A suite bound by process creation takes the lane budget; a tighter value carries the reason it is tighter.
+
+Raise the hook budget with the test budget. Setup and teardown pay the same contention, so lifting only the case budget moves a contended failure into `afterEach`.
+
+Where a timeout is the subject, keep the outer wait far larger than the timeout under test. A case proving that a 20 ms deadline fires must not race the harness's own wait, or load decides which deadline reports first.
+
 ## Synchronize on state
 
 A fixed sleep is not evidence that setup completed or cleanup settled.
@@ -75,6 +94,7 @@ Calling `abort()`, `close()`, or `kill()` without awaiting the owned completion 
 - For a new static or corpus guard, temporarily introduce the rejected case and observe the intended failure.
 - For a race, use barriers to prove overlap; repeated execution alone is not a race test.
 - For ports, sockets, shared paths, subprocesses, or other host resources, run independent test processes concurrently when cross-process isolation is part of the fix.
+- Where a fixture spawns with its own deadline, assert that no signal or timeout ended the child before asserting its exit status, so a killed child reports as a timeout instead of as a status mismatch.
 - Verify external state, events, files, logs, exits, or disposal instead of trusting the component's self-report.
 
 Stress runs supplement a deterministic regression; they do not replace one.
@@ -92,6 +112,8 @@ Do not present these as root-cause fixes for deterministic local tests:
 - adding a sleep before cleanup or assertion.
 
 Retries remain valid for documented transient external-provider tests under the real-API policy. Keep that exception at the external boundary.
+
+Restoring a budget is not masking. Raising a suite to the lane budget it already had, or sizing a bounded retry to the contention actually measured on the runner, names the awaited work and returns what the lane granted; neither invents headroom around an unexamined wait.
 
 ## Diagnose existing flakes
 
