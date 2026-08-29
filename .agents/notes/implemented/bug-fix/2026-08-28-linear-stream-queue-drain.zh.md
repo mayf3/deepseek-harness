@@ -14,7 +14,7 @@ Status: implemented
 
 `@deepseek-ai/dsh-deque` 为 Host 和浏览器消费方拥有一个零依赖环形数组。`pushBack()`、`pushFront()` 和 `popFront()` 改变索引，而不移动存活区间。移除会立即清空对应槽位。后备数组在满载时翻倍，在非空双端队列达到四分之一容量时减半，因此扩容和压缩的复制工作保持摊销常数时间，且交错队列使用期间的空闲存储保持有界。
 
-该包没有 Client 插件之间共享的 singleton 状态、符号或类身份，因此 Client bundle purity 规则把它视为可内联库。Gateway 浏览器产物携带其双端队列实现，而不引入 module-table 条目或 Cordis 服务。
+该包没有消费方之间共享的 singleton 状态、符号或类身份。每个消费方都会构造并独占自己的双端队列，因此 npm 中存在重复包副本不会改变运行时行为，发布依赖策略也会把 `Deque` 视为安全的 Host 导出。Client bundle purity 规则同样把该包视为可内联库。Gateway 浏览器产物携带其双端队列实现，而不引入 module-table 条目或 Cordis 服务。
 
 Host Remote 事件源、每个已连接 Client 的 Remote 事件队列、浏览器 Remote 流 inbox、每个会话历史 follower、每个会话控制流和每个 Workspace follower 都在此双端队列中存储帧。它们的所属类保留全部唤醒、失败、取消、缓冲排空和 disposal 行为。会话历史使用前插，把构造器种子事件放在打开观察期间收到的 live 事件之前。
 
