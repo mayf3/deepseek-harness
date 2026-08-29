@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-29-plugin-inventory-agent-preset-scopes.md
-2026-08-29-plugin-inventory-agent-preset-scopes.md: ec738ee0ff325e14677407da0ce4af8ffe3fe718
-2026-08-29-plugin-inventory-agent-preset-scopes.zh.md: 7804203350b4173a6dfd058447aee95e918cda74
+2026-08-29-plugin-inventory-agent-preset-scopes.md: 8615e057bec7b269fe58c18678d8cc96479d451f
+2026-08-29-plugin-inventory-agent-preset-scopes.zh.md: d71ddf2dc082193c5c7530ba34680102ce8c3d2e

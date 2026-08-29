@@ -3,6 +3,7 @@ import type { PluginInventorySnapshot } from '@deepseek-ai/dsh-api-remotes/clien
 import {
   IconChevronDownOutline14,
   IconSearchOutline16,
+  Menu,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { PluginInventoryLocaleKey } from './locales.ts'
@@ -141,13 +142,13 @@ function CardFacts({ moduleName, moduleLabel, entryId, facts }: {
   )
 }
 
-/** Status dot naming the root-fiber phase. */
-function PhaseDot({ phase, t }: { readonly phase: PluginFiberPhase; readonly t: Translate }): ReactNode {
+/** Status dot naming a live root-fiber phase; rows with no live fiber show none. */
+function PhaseDot({ phase, t }: { readonly phase: NonNullable<PluginFiberPhase>; readonly t: Translate }): ReactNode {
   const status = phaseLabel(phase, t)
   return (
     <span
       className={css.statusDot}
-      data-phase={phase ?? 'unobserved'}
+      data-phase={phase}
       role="img"
       aria-label={status}
       title={status}
@@ -167,8 +168,9 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
   const [query, setQuery] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
   const [chosenPreset, setChosenPreset] = useState<string | null>(null)
+  const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [presetOpen, setPresetOpen] = useState<boolean | null>(null)
   const [globalOpen, setGlobalOpen] = useState<boolean | null>(null)
-  const [drawerOpen, setDrawerOpen] = useState(false)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
 
   useEffect(() => {
@@ -202,21 +204,17 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
 
   const entries = snapshot?.entries ?? []
   const failedEntries: PluginInventoryEntry[] = []
-  const drawerEntries: { entry: PluginInventoryEntry; providers: readonly [AgentPresetGroup, ...AgentPresetGroup[]] }[] = []
   const regularEntries: PluginInventoryEntry[] = []
   for (const entry of entries) {
-    const providers = enabledIn.get(entry.moduleName)
     if (entry.fiberPhase === 'failed') failedEntries.push(entry)
-    else if (!entry.enabled && providers !== undefined) drawerEntries.push({ entry, providers })
     else regularEntries.push(entry)
   }
 
   const entryMatch = (entry: PluginInventoryEntry): boolean => matches(entry.moduleName, entry.entryId, normalizedQuery)
   const rowMatch = (row: AgentPresetRow): boolean => matches(row.moduleName, row.entryId, normalizedQuery)
   const filteredFailed = failedEntries.filter(entryMatch)
-  const filteredDrawer = drawerEntries.filter(drawerRow => entryMatch(drawerRow.entry))
   const filteredRegular = regularEntries.filter(entryMatch)
-  const globalCount = filteredFailed.length + filteredDrawer.length + filteredRegular.length
+  const globalCount = filteredFailed.length + filteredRegular.length
   const selectedRows = selected === undefined ? [] : selected.rows.filter(rowMatch)
   const otherPresetMatches = searching
     ? presets.filter(preset => preset !== selected && preset.rows.some(rowMatch))
@@ -224,8 +222,8 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
   const otherMatchCount = otherPresetMatches
     .reduce((total, preset) => total + preset.rows.filter(rowMatch).length, 0)
 
+  const presetEffectiveOpen = searching || (presetOpen ?? true)
   const globalEffectiveOpen = searching || (globalOpen ?? presets.length === 0)
-  const drawerEffectiveOpen = searching || drawerOpen
   const nothingMatches = searching && globalCount === 0 && selectedRows.length === 0
     && otherPresetMatches.length === 0
 
@@ -258,7 +256,9 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
         ariaLabel={`${title}, ${stateText}`}
         trailing={(
           <>
-            {row.enabled === true && !failed ? <PhaseDot phase={row.fiberPhase} t={t} /> : null}
+            {row.enabled === true && !failed && row.fiberPhase !== null
+              ? <PhaseDot phase={row.fiberPhase} t={t} />
+              : null}
             <StateTag kind={kind} label={stateText} />
           </>
         )}
@@ -278,12 +278,12 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
     )
   }
 
-  /** One global-plane row; a drawer row carries the presets that enable it. */
+  /** One global-plane row; a preset-provided row carries the presets that enable it. */
   const globalRowCard = (
     entry: PluginInventoryEntry,
     providers?: readonly [AgentPresetGroup, ...AgentPresetGroup[]],
   ): ReactNode => {
-    const key = `${providers === undefined ? 'global' : 'drawer'}:${entry.entryId}`
+    const key = `global:${entry.entryId}`
     const title = moduleShortName(entry.moduleName)
     const failed = entry.fiberPhase === 'failed'
     const stateText = failed
@@ -302,7 +302,9 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
         ariaLabel={`${title}, ${stateText}`}
         trailing={(
           <>
-            {entry.enabled && !failed ? <PhaseDot phase={entry.fiberPhase} t={t} /> : null}
+            {entry.enabled && !failed && entry.fiberPhase !== null
+              ? <PhaseDot phase={entry.fiberPhase} t={t} />
+              : null}
             <StateTag kind={kind} label={stateText} />
           </>
         )}
@@ -313,7 +315,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
           entryId={entry.entryId}
           facts={providers !== undefined
             ? [
-              [t('configuration'), t('drawerDetail')],
+              [t('configuration'), t('presetProvidedDetail')],
               [t('enabledIn'), (
                 <span className={css.enabledIn}>
                   <span>{providers.map(preset => preset.name ?? preset.id).join(' · ')}</span>
@@ -364,43 +366,71 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
           {selected !== undefined ? (
             <section className={css.group} data-plugin-scope="preset" data-preset-id={selected.id}>
               <div className={css.groupHeader}>
-                <select
-                  className={css.switcher}
-                  aria-label={t('switcherLabel')}
-                  value={selected.id}
-                  onChange={(event) => { setChosenPreset(event.currentTarget.value) }}
+                <button
+                  type="button"
+                  className={`${css.groupToggle} ${css.iconToggle}`}
+                  aria-expanded={presetEffectiveOpen}
+                  aria-controls={`${sectionId}-preset`}
+                  aria-label={t('presetSubtitle')}
+                  onClick={() => { setPresetOpen(!presetEffectiveOpen) }}
                 >
-                  {presets.map(preset => (
-                    <option key={preset.id} value={preset.id}>{presetLabel(preset, t)}</option>
-                  ))}
-                </select>
+                  <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                </button>
+                <Menu
+                  open={switcherOpen}
+                  onClose={() => { setSwitcherOpen(false) }}
+                  items={presets.map(preset => ({ id: preset.id, label: presetLabel(preset, t) }))}
+                  selectedId={selected.id}
+                  onSelect={(id) => {
+                    setSwitcherOpen(false)
+                    setChosenPreset(id)
+                  }}
+                  portal
+                  anchor={(
+                    <button
+                      type="button"
+                      className={css.switcher}
+                      aria-haspopup="menu"
+                      aria-expanded={switcherOpen}
+                      aria-label={t('switcherLabel')}
+                      onClick={() => { setSwitcherOpen(value => !value) }}
+                    >
+                      <span className={css.switcherLabel}>{presetLabel(selected, t)}</span>
+                      <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
+                    </button>
+                  )}
+                />
                 <span className={css.groupSubtitle}>{t('presetSubtitle')}</span>
                 <span className={css.groupCount} data-preset-plugin-count={selectedRows.length}>
                   {selectedRows.length}
                 </span>
               </div>
-              {selected.broken !== undefined ? (
-                <p className={css.brokenNote} role="alert">{selected.broken}</p>
-              ) : null}
-              {selectedRows.length > 0 ? (
-                <ul className={css.cards}>
-                  {selectedRows.map((row, index) => presetRowCard(selected, row, index))}
-                </ul>
-              ) : null}
-              {otherMatchCount > 0 ? (
-                <p className={css.hint}>
-                  {t('matchesInOtherPresets', { count: String(otherMatchCount) })}
-                  {otherPresetMatches.map(preset => (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      className={css.jumpLink}
-                      onClick={() => { setChosenPreset(preset.id) }}
-                    >
-                      {preset.name ?? preset.id}
-                    </button>
-                  ))}
-                </p>
+              {presetEffectiveOpen ? (
+                <div id={`${sectionId}-preset`} className={css.groupBody}>
+                  {selected.broken !== undefined ? (
+                    <p className={css.brokenNote} role="alert">{selected.broken}</p>
+                  ) : null}
+                  {selectedRows.length > 0 ? (
+                    <ul className={css.cards}>
+                      {selectedRows.map((row, index) => presetRowCard(selected, row, index))}
+                    </ul>
+                  ) : null}
+                  {otherMatchCount > 0 ? (
+                    <p className={css.hint}>
+                      {t('matchesInOtherPresets', { count: String(otherMatchCount) })}
+                      {otherPresetMatches.map(preset => (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={css.jumpLink}
+                          onClick={() => { setChosenPreset(preset.id) }}
+                        >
+                          {preset.name ?? preset.id}
+                        </button>
+                      ))}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </section>
           ) : null}
@@ -422,36 +452,14 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                   <span className={css.failedCount}>{filteredFailed.length} {t('failedCountLabel')}</span>
                 ) : null}
               </button>
-              {globalEffectiveOpen ? (
-                <div id={`${sectionId}-global`}>
-                  {filteredFailed.length + filteredRegular.length > 0 ? (
-                    <ul className={css.cards}>
-                      {filteredFailed.map(entry => globalRowCard(entry))}
-                      {filteredRegular.map(entry => globalRowCard(entry))}
-                    </ul>
-                  ) : null}
-                  {drawerEntries.length > 0 ? (
-                    <div className={css.drawer} data-plugin-drawer>
-                      <button
-                        type="button"
-                        className={css.groupToggle}
-                        aria-expanded={drawerEffectiveOpen}
-                        aria-controls={`${sectionId}-drawer`}
-                        onClick={() => { setDrawerOpen(!drawerEffectiveOpen) }}
-                      >
-                        <IconChevronDownOutline14 className={css.chevron} size={12} aria-hidden="true" />
-                        <span className={css.groupTitle}>{t('drawerTitle')}</span>
-                        <span className={css.groupSubtitle}>{t('drawerSubtitle')}</span>
-                        <span className={css.groupCount}>{filteredDrawer.length}</span>
-                      </button>
-                      {drawerEffectiveOpen && filteredDrawer.length > 0 ? (
-                        <ul className={css.cards} id={`${sectionId}-drawer`}>
-                          {filteredDrawer.map(drawerRow => globalRowCard(drawerRow.entry, drawerRow.providers))}
-                        </ul>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
+              {globalEffectiveOpen && globalCount > 0 ? (
+                <ul className={css.cards} id={`${sectionId}-global`}>
+                  {filteredFailed.map(entry => globalRowCard(entry))}
+                  {filteredRegular.map(entry => globalRowCard(
+                    entry,
+                    entry.enabled ? undefined : enabledIn.get(entry.moduleName),
+                  ))}
+                </ul>
               ) : null}
             </section>
           ) : null}

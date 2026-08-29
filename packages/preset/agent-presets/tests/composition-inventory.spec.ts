@@ -289,6 +289,38 @@ describe('AgentPresets.compositionInventory', () => {
     expect(damaged?.broken).toContain('is missing')
   })
 
+  it('keeps a standing composition out of the root Loader entries', async () => {
+    const ctx = new Context()
+    contexts.push(ctx)
+    ctx.baseUrl = pathToFileURL(FIXTURES).href + '/'
+    await ctx.plugin(Loader)
+    ctx.loader.builtins.include = Include
+    ctx.loader.builtins['agent-presets'] = AgentPresets
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(SystemPrompt, { persona: '' })
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(AgentLoop, { agents: [] })
+    // The roster itself loads as a Loader entry, the way profiles mount it:
+    // the standing scope then descends from a fiber that OWNS an entry, which
+    // is exactly the shape that made EntryTree file the mount under it.
+    await ctx.loader.create({
+      name: 'cordis:agent-presets',
+      config: { default: 'standard', roots: [SYSTEM_ROOT], includeShippedRoot: false, includeUserRoot: false },
+    })
+    const before = [...ctx.loader.entries()].map(entry => entry.id)
+
+    await ctx.agents.create({
+      sessionId: SessionId('loader-entry-guard'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'standard'),
+    })
+
+    // The agent joined a standing composition without the composition
+    // becoming host Loader entries.
+    expect([...ctx.loader.entries()].map(entry => entry.id)).toEqual(before)
+  })
+
   it('reports a composition that raced discovery as broken instead of dropping it', async () => {
     const ctx = await harness({
       default: 'minimal',

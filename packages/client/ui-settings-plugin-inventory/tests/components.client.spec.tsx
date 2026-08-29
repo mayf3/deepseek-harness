@@ -76,20 +76,21 @@ async function renderReady(snapshot: Snapshot = SNAPSHOT): Promise<ReturnType<ty
 
 const globalToggle = (): HTMLElement =>
   screen.getByRole('button', { name: (name: string) => name.startsWith(en.globalTitle) })
-const drawerToggle = (): HTMLElement =>
-  screen.getByRole('button', { name: (name: string) => name.startsWith(en.drawerTitle) })
 
 describe('PluginInventorySettingsTab', () => {
   it('shows the default preset first and keeps the global plane collapsed', async () => {
     const view = await renderReady()
 
-    const switcher = screen.getByRole('combobox', { name: en.switcherLabel })
-    expect((switcher as HTMLSelectElement).value).toBe('standard')
-    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual([
+    const switcher = screen.getByRole('button', { name: en.switcherLabel })
+    expect(switcher.textContent).toBe('标准模式 (default)')
+    fireEvent.click(switcher)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
       '标准模式 (default)',
       'ptc',
       '坏预设 (failed to load)',
     ])
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryAllByRole('menuitem')).toHaveLength(0)
     expect(screen.getByText(en.presetSubtitle)).toBeTruthy()
     expect(view.container.querySelector('[data-preset-plugin-count]')?.textContent).toBe('6')
 
@@ -100,7 +101,8 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByText(en.disabledTag)).toBeTruthy()
     expect(screen.getByText(en.failedTag)).toBeTruthy()
     expect(screen.getByRole('img', { name: 'Running' })).toBeTruthy()
-    expect(screen.getAllByRole('img', { name: 'Not running' })).toHaveLength(2)
+    // No live fiber, no dot: file-state rows carry only their enablement tag.
+    expect(screen.queryByRole('img', { name: 'Not running' })).toBeNull()
 
     expect(globalToggle().getAttribute('aria-expanded')).toBe('false')
     expect(view.container.querySelector('[data-plugin-count]')?.textContent).toBe('7')
@@ -126,9 +128,10 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.getByText(en.moduleLabel).nextElementSibling?.textContent).toBe('@fixture/anonymous')
   })
 
-  it('expands the global plane with failures first and the session-plugin drawer', async () => {
+  it('expands the global plane with failures first and preset-provided rows inline', async () => {
     const view = await renderReady()
 
+    expect(screen.queryByText(en.presetEnabledTag)).toBeNull()
     fireEvent.click(globalToggle())
     expect(globalToggle().getAttribute('aria-expanded')).toBe('true')
     const failed = view.container.querySelector('[data-plugin-scope="global"] [data-failed="true"]')
@@ -136,14 +139,11 @@ describe('PluginInventorySettingsTab', () => {
     // Failures float above the Loader-ordered remainder.
     expect(view.container.querySelector('[data-plugin-scope="global"] li')).toBe(failed)
 
-    // The drawer stays collapsed until opened, then names its providers.
-    expect(drawerToggle().getAttribute('aria-expanded')).toBe('false')
-    expect(screen.queryByText(en.presetEnabledTag)).toBeNull()
-    fireEvent.click(drawerToggle())
+    // Rows the presets took over sit inline, marked instead of plainly disabled.
     expect(screen.getAllByText(en.presetEnabledTag)).toHaveLength(2)
 
     fireEvent.click(screen.getByRole('button', { name: 'tool-bash, Enabled via presets' }))
-    expect(screen.getByText(en.drawerDetail)).toBeTruthy()
+    expect(screen.getByText(en.presetProvidedDetail)).toBeTruthy()
     expect(screen.getByText(en.enabledIn)).toBeTruthy()
     expect(screen.getByText('标准模式 · ptc')).toBeTruthy()
 
@@ -151,41 +151,68 @@ describe('PluginInventorySettingsTab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'telemetry, Failed' }))
     expect(screen.getByText('Failed to start')).toBeTruthy()
 
+    // An enabled entry with no live fiber says so in its details, dot-free.
+    fireEvent.click(screen.getByRole('button', { name: 'unobserved-name, Enabled' }))
+    expect(screen.getByText('Not running')).toBeTruthy()
+
     // A disabled row outside every preset stays plainly disabled.
     fireEvent.click(screen.getByRole('button', { name: 'dormant, Disabled' }))
-    expect(screen.queryByText(en.drawerDetail)).toBeNull()
+    expect(screen.queryByText(en.presetProvidedDetail)).toBeNull()
 
-    fireEvent.click(drawerToggle())
-    expect(screen.queryByText(en.presetEnabledTag)).toBeNull()
     fireEvent.click(globalToggle())
     expect(globalToggle().getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText(en.presetEnabledTag)).toBeNull()
   })
 
   it('switches the inspected preset in place, including broken ones', async () => {
     const view = await renderReady()
-    const switcher = screen.getByRole('combobox', { name: en.switcherLabel })
+    const pickPreset = (label: string): void => {
+      fireEvent.click(screen.getByRole('button', { name: en.switcherLabel }))
+      fireEvent.click(screen.getByRole('menuitem', { name: label }))
+    }
 
-    fireEvent.change(switcher, { target: { value: 'ptc' } })
+    pickPreset('ptc')
     expect(view.container.querySelector('[data-preset-plugin-count]')?.textContent).toBe('3')
     fireEvent.click(screen.getAllByRole('button', { name: 'tool-bash, Enabled' })[0]!)
     // An unnamed preset labels provenance by its id.
     expect(screen.getByText(en.fromPreset).nextElementSibling?.textContent).toBe('ptc')
 
-    fireEvent.change(switcher, { target: { value: 'shattered' } })
+    pickPreset('坏预设 (failed to load)')
     expect(screen.getByRole('alert').textContent).toBe('the composition file is missing')
     expect(view.container.querySelector('[data-preset-plugin-count]')?.textContent).toBe('0')
   })
 
-  it('jumps from a drawer row to the preset that enables it', async () => {
+  it('collapses the preset group until a search forces it open', async () => {
+    const view = await renderReady()
+    const toggle = screen.getByRole('button', { name: en.presetSubtitle })
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // The header keeps its count while the rows are folded away.
+    expect(view.container.querySelector('[data-preset-plugin-count]')?.textContent).toBe('6')
+    expect(view.container.querySelectorAll('[data-plugin-scope="preset"] li')).toHaveLength(0)
+
+    fireEvent.change(screen.getByRole('searchbox', { name: en.search }), { target: { value: 'pwsh' } })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByText(en.conditionalTag)).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('searchbox', { name: en.search }), { target: { value: '' } })
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(toggle)
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('jumps from a preset-provided row to the preset that enables it', async () => {
     await renderReady()
-    const switcher = screen.getByRole('combobox', { name: en.switcherLabel })
-    fireEvent.change(switcher, { target: { value: 'ptc' } })
+    fireEvent.click(screen.getByRole('button', { name: en.switcherLabel }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'ptc' }))
 
     fireEvent.click(globalToggle())
-    fireEvent.click(drawerToggle())
     fireEvent.click(screen.getByRole('button', { name: 'tool-bash, Enabled via presets' }))
     fireEvent.click(screen.getByRole('button', { name: en.viewInPreset }))
-    expect((switcher as HTMLSelectElement).value).toBe('standard')
+    expect(screen.getByRole('button', { name: en.switcherLabel }).textContent)
+      .toBe('标准模式 (default)')
   })
 
   it('searches across scopes and points at matches in other presets', async () => {
@@ -201,7 +228,7 @@ describe('PluginInventorySettingsTab', () => {
     const hint = screen.getByText((text: string) => text.startsWith('2 more matches'))
     expect(hint).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'ptc' }))
-    expect(screen.getByRole<HTMLSelectElement>('combobox', { name: en.switcherLabel }).value).toBe('ptc')
+    expect(screen.getByRole('button', { name: en.switcherLabel }).textContent).toBe('ptc')
 
     // A match visible only in another preset keeps the pointer without rows.
     fireEvent.change(search, { target: { value: 'crashy' } })
@@ -227,7 +254,7 @@ describe('PluginInventorySettingsTab', () => {
       ],
     } as unknown as Snapshot)
 
-    expect(screen.queryByRole('combobox', { name: en.switcherLabel })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.switcherLabel })).toBeNull()
     expect(globalToggle().getAttribute('aria-expanded')).toBe('true')
     expect(screen.getAllByRole('listitem')).toHaveLength(2)
 

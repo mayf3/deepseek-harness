@@ -103,19 +103,18 @@ describe('web e2e: settings modal and General preferences', () => {
     await dialog.getByRole('heading', { name: '插件', exact: true }).waitFor({ timeout: 10_000 })
     await dialog.getByRole('tab', { name: '插件列表', exact: true }).click()
     // The preset group opens first with its display-only switcher; the global
-    // plane starts collapsed and expands on demand, session plugins deeper still.
-    const presetSwitcher = dialog.getByRole('combobox', { name: '选择要查看的 Agent 预设' })
+    // plane starts collapsed and expands on demand.
+    const presetSwitcher = dialog.getByRole('button', { name: '选择要查看的 Agent 预设' })
     await presetSwitcher.waitFor({ timeout: 10_000 })
     await dialog.getByRole('button', { name: /^全局/ }).click()
     const pluginRow = dialog.locator(PLUGIN_ROW_SELECTOR)
     await pluginRow.waitFor({ timeout: 10_000 })
-    await dialog.getByRole('button', { name: /^会话插件/ }).click()
     const expectedPluginCount = [...scaffold.ctx.loader.entries()]
       .filter(entry => !entry.options.group)
       .length
     expect(await dialog.getByRole('searchbox', { name: '搜索插件' }).count()).toBe(1)
-    // Every Loader entry appears exactly once in the global group — the
-    // session-plugin drawer included, preset compositions excluded.
+    // Every Loader entry appears exactly once in the global group — rows the
+    // presets took over included, preset compositions excluded.
     expect(await dialog.locator('[data-plugin-scope="global"] [data-plugin-entry]').count())
       .toBe(expectedPluginCount)
     expect(await dialog.locator('[data-plugin-count]').getAttribute('data-plugin-count'))
