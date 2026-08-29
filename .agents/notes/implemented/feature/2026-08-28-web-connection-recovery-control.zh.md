@@ -16,7 +16,7 @@ Client Connection 服务暴露 identity 稳定的 `ctx.connection.state` observa
 
 [Web Client 架构](../architecture/2026-07-19-gui-web-client-architecture.zh.md)、[Remote 事件投递](../architecture/2026-08-10-remote-event-delivery.zh.md)和[会话事件传输](../architecture/2026-08-18-session-history-and-event-transport.zh.md)继续持有各自更宽的所有权决策；本笔记只取代其中原有的重试时序。
 
-Settings 外壳是恢复功能专用消费方，因此直接注入 Connection；普通功能代码仍使用 `ctx.remote`。它的私有 hooks compartment 绑定状态 observable 与重连命令。展开的侧边栏在 Settings 右侧渲染 `ConnectionIndicator`：`disconnected` 是浅黄色的**连接异常**操作；`connecting` 保持黄色，其中一至三个点每 500ms 前进一次，与 retry 时序无关；恢复后则以浅绿色显示**连接成功**并驻留 2 秒。鼠标悬浮或键盘聚焦任一黄色状态时只把文字改为**立即重连**；按压反馈采用轻微的警告色过渡，不使用原生 title tooltip。所有可见状态都为最宽的本地化文字预留空间，并使用固定的图标列和文字列，因此状态变化不会移动控件或改变其宽度。首次启动和未曾中断的健康连接都不渲染。
+Settings 外壳是恢复功能专用消费方，因此直接注入 Connection；普通功能代码仍使用 `ctx.remote`。它的私有 hooks compartment 绑定状态 observable 与重连命令。展开的侧边栏在 Settings 右侧渲染 `ConnectionIndicator`：`disconnected` 是浅黄色的**连接异常**操作；`connecting` 保持黄色，其中一至三个点每 500ms 前进一次，与 retry 时序无关；恢复后则以浅绿色显示**连接成功**并驻留 2 秒。鼠标悬浮或键盘聚焦任一黄色状态时只把文字改为**立即重连**；按压反馈采用轻微的警告色过渡，不使用原生 title tooltip。所有可见状态都为最宽的本地化文字预留空间，并使用固定的图标列和左对齐文字列，因此状态变化不会移动控件或改变其宽度。首次启动和未曾中断的健康连接都不渲染。
 
 ## Alternatives considered
 

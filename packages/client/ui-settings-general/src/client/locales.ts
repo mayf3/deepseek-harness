@@ -27,10 +27,10 @@ export const en = {
   'openDocument': 'Open configuration file',
   'openDocument.error': 'Could not open configuration file',
   'general.nav': 'General',
-  'connection.error': 'Connection issue',
+  'connection.error': 'Disconnected',
   'connection.retry': 'Reconnect now',
   'connection.connecting': 'Connecting',
   'connection.connected': 'Connected',
-  'connection.reconnect': 'Connection issue, reconnect now',
+  'connection.reconnect': 'Disconnected, reconnect now',
   'connection.restart': 'Connecting, restart now',
 } satisfies Record<SettingsKey, string>

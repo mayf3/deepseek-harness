@@ -50,6 +50,7 @@
 
 .label {
   display: grid;
+  text-align: left;
 }
 
 .stateLabel,

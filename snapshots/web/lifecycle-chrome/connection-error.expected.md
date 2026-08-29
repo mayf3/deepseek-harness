@@ -1,4 +1,4 @@
-- button "设置":
+- button "Settings":
   - img
-  - text: 设置
-- button "连接异常，点击立即重连": 连接异常
+  - text: Settings
+- button "Disconnected, reconnect now": Disconnected

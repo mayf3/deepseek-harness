@@ -23,7 +23,7 @@ import {
   launchWebScaffold, recordFixture, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
-  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft, ZH_BROWSER_LOCALE,
+  connectFreshWorkspace, newEnglishPage, saveFailureShot, writeComposerDraft,
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/lifecycle-chrome', import.meta.url))
@@ -286,10 +286,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
   }, 60_000)
 
   it.skipIf(MODE === 'record')('shows automatic and user-requested connection recovery beside Settings', async () => {
-    const recoveryPage = await browser.newPage({
-      viewport: { width: 1680, height: 1000 },
-      locale: ZH_BROWSER_LOCALE,
-    })
+    const recoveryPage = await newEnglishPage(browser)
     const recoveryTripwire = watchConsole(recoveryPage)
     const sockets: WebSocketRoute[] = []
     let rejectConnections = false
@@ -310,7 +307,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await recoveryPage.context().setOffline(true)
       await expect.poll(() => recoveryPage.evaluate(() => navigator.onLine)).toBe(false)
       const offline = recoveryPage.getByRole('button', {
-        name: '连接异常，点击立即重连', exact: true,
+        name: 'Disconnected, reconnect now', exact: true,
       })
       await offline.waitFor({ timeout: 2_000 })
       await recoveryPage.waitForTimeout(750)
@@ -319,22 +316,24 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await recoveryPage.context().setOffline(false)
       await expect.poll(() => recoveryPage.evaluate(() => navigator.onLine)).toBe(true)
       const connecting = recoveryPage.getByRole('button', {
-        name: '连接中，点击立即重连', exact: true,
+        name: 'Connecting, restart now', exact: true,
       })
       await connecting.waitFor({ timeout: 10_000 })
-      expect(await connecting.innerText()).toMatch(/^连接中\.{1,3}$/)
+      expect(await connecting.innerText()).toMatch(/^Connecting\.{1,3}$/)
       const connectingGeometry = await connectionIndicatorGeometry(connecting)
+      expect(await connectionIndicatorTextAlignment(connecting)).toBe('left')
       await connecting.hover()
-      expect(await connecting.innerText()).toBe('立即重连')
+      expect(await connecting.innerText()).toBe('Reconnect now')
       expect(await connectionIndicatorGeometry(connecting)).toEqual(connectingGeometry)
       await recoveryPage.mouse.move(0, 0)
 
       await expect.poll(() => sockets.length, { timeout: 40_000 }).toBe(7)
       const indicator = recoveryPage.getByRole('button', {
-        name: '连接异常，点击立即重连', exact: true,
+        name: 'Disconnected, reconnect now', exact: true,
       })
       await indicator.waitFor({ timeout: 10_000 })
       expect(await connectionIndicatorGeometry(indicator)).toEqual(connectingGeometry)
+      expect(await connectionIndicatorTextAlignment(indicator)).toBe('left')
       const snapshot = await captureStableAria(recoveryPage, '[class*="footArea"]', scaffold.workspaceCwd)
       await compareOrRefreshGolden(CONNECTION_ERROR_EXPECTED, snapshot, MODE)
       const style = await indicator.evaluate((element) => {
@@ -359,7 +358,7 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       expect(await indicator.getAttribute('title')).toBeNull()
       const idleBackground = await indicator.evaluate(element => getComputedStyle(element).backgroundColor)
       await indicator.hover()
-      expect(await indicator.innerText()).toBe('立即重连')
+      expect(await indicator.innerText()).toBe('Reconnect now')
       const hoverBackground = await indicator.evaluate(element => getComputedStyle(element).backgroundColor)
       expect(hoverBackground).toBe(idleBackground)
       await recoveryPage.mouse.down()
@@ -371,8 +370,9 @@ describe('web e2e: lifecycle & chrome (workspace flow / reload / dark mode)', ()
       await expect.poll(() => sockets.length).toBe(8)
       const recovered = recoveryPage.getByRole('status')
       await recovered.waitFor({ timeout: 10_000 })
-      expect(await recovered.innerText()).toBe('连接成功')
+      expect(await recovered.innerText()).toBe('Connected')
       expect(await connectionIndicatorGeometry(recovered)).toEqual(connectingGeometry)
+      expect(await connectionIndicatorTextAlignment(recovered)).toBe('left')
       await recovered.waitFor({ state: 'detached', timeout: 5_000 })
       expect(recoveryTripwire.pageErrors).toEqual([])
       expect(recoveryTripwire.warnings.filter(warning => /connection lost, retry #[1-6]/i.test(warning)))
@@ -408,5 +408,15 @@ async function connectionIndicatorGeometry(locator: ReturnType<Page['getByRole']
       icon: rounded([icon.x - outer.x, icon.y - outer.y, icon.width, icon.height]),
       label: rounded([label.x - outer.x, label.y - outer.y, label.width, label.height]),
     }
+  })
+}
+
+async function connectionIndicatorTextAlignment(
+  locator: ReturnType<Page['getByRole']>,
+): Promise<string> {
+  return await locator.evaluate((element) => {
+    const label = element.children.item(1)
+    if (label === null) throw new Error('connection indicator label missing')
+    return getComputedStyle(label).textAlign
   })
 }

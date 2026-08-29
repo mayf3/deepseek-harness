@@ -140,11 +140,11 @@ describe('SettingsRoot trigger', () => {
   it('shows outage, retry progress, and a two-second recovery confirmation', () => {
     vi.useFakeTimers()
     const mounted = mount()
-    expect(screen.queryByRole('button', { name: 'Connection issue, reconnect now' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Disconnected, reconnect now' })).toBeNull()
 
     mounted.setConnectionState('disconnected')
-    const indicator = screen.getByRole('button', { name: 'Connection issue, reconnect now' })
-    expect(indicator.textContent).toContain('Connection issue')
+    const indicator = screen.getByRole('button', { name: 'Disconnected, reconnect now' })
+    expect(indicator.textContent).toContain('Disconnected')
     expect(indicator.hasAttribute('title')).toBe(false)
     expect(indicator.querySelector('svg')).toBeTruthy()
     fireEvent.click(indicator)
@@ -164,7 +164,7 @@ describe('SettingsRoot trigger', () => {
 
   it('keeps the reconnect indicator out of the collapsed rail', () => {
     mount({ wide: false, connectionState: 'disconnected' })
-    expect(screen.queryByRole('button', { name: 'Connection issue, reconnect now' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Disconnected, reconnect now' })).toBeNull()
   })
 })
 
