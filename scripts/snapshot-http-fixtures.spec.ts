@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events'
 import { Context } from '@deepseek-ai/cordis'
-import { WebRuntime } from '@deepseek-ai/dsh-web'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 const httpMock = vi.hoisted(() => ({ createServer: vi.fn() }))
@@ -11,10 +10,9 @@ vi.mock('node:http', () => ({ createServer: httpMock.createServer }))
 // @ts-expect-error The fixture intentionally has no declaration artifact.
 import * as searchFixtureModule from '../snapshots/session/web-search-endpoint-guidance/web-search-error-fixture.mjs'
 // @ts-expect-error The fixture intentionally has no declaration artifact.
-import * as webFetchFixtureModule from '../snapshots/session/web-fetch/web-fetch-fixture-server.mjs'
+import * as loopbackFixtureModule from '../snapshots/session/loopback-fixture-server.mjs'
 
 const RECORDED_ENDPOINT = 'http://127.0.0.1:43118/anthropic/v1/messages'
-const RECORDED_URL = 'http://public.test:43117/menu.html'
 
 interface FixturePlugin {
   readonly name: string
@@ -22,8 +20,18 @@ interface FixturePlugin {
   apply(ctx: Context): Promise<void>
 }
 
+interface LoopbackFixtureOptions {
+  readonly label: string
+  readonly onCleanup: () => void
+  readonly onListening: (address: { port: number }) => void
+  readonly requestListener: () => void
+}
+
 const searchFixture = searchFixtureModule as unknown as FixturePlugin
-const webFetchFixture = webFetchFixtureModule as unknown as FixturePlugin
+const typedLoopbackFixtureModule = loopbackFixtureModule as unknown as {
+  readonly applyLoopbackServerEffect: (ctx: Context, options: LoopbackFixtureOptions) => Promise<void>
+}
+const { applyLoopbackServerEffect } = typedLoopbackFixtureModule
 const nativeFetch = globalThis.fetch
 
 class FixtureServer extends EventEmitter {
@@ -80,6 +88,17 @@ function captureErrors(ctx: Context): unknown[] {
   return errors
 }
 
+async function disposeWhileStarting(fiber: { dispose(): Promise<unknown> }, server: FixtureServer): Promise<void> {
+  await server.started.promise
+  const disposal = fiber.dispose()
+  const settled = vi.fn()
+  void disposal.then(settled)
+  await Promise.resolve()
+  expect(settled).not.toHaveBeenCalled()
+  server.finishListening()
+  await disposal
+}
+
 afterEach(() => {
   globalThis.fetch = nativeFetch
   httpMock.createServer.mockReset()
@@ -91,42 +110,33 @@ describe('snapshot HTTP fixture lifecycle', () => {
     const ctx = new Context()
     const errors = captureErrors(ctx)
     const fiber = ctx.plugin(searchFixture)
-    await server.started.promise
-
-    const disposal = fiber.dispose()
-    const settled = vi.fn()
-    void disposal.then(settled)
-    await Promise.resolve()
-    expect(settled).not.toHaveBeenCalled()
-
-    server.finishListening()
-    await disposal
+    await disposeWhileStarting(fiber, server)
 
     expect(server).toMatchObject({ closed: true, connectionsClosed: true, unreferenced: true })
     expect(globalThis.fetch).toBe(nativeFetch)
     expect(errors).toEqual([])
   })
 
-  it('removes the fetch provider and closes its listener when disposal wins the startup race', async () => {
+  it('runs owner cleanup and closes the listener when disposal wins the startup race', async () => {
     const server = nextServer()
     const ctx = new Context()
-    await ctx.plugin(WebRuntime)
     const errors = captureErrors(ctx)
-    const fiber = ctx.plugin(webFetchFixture)
-    await server.started.promise
-
-    const disposal = fiber.dispose()
-    const settled = vi.fn()
-    void disposal.then(settled)
-    await Promise.resolve()
-    expect(settled).not.toHaveBeenCalled()
-
-    server.finishListening()
-    await disposal
+    const onCleanup = vi.fn()
+    const onListening = vi.fn()
+    const fiber = ctx.plugin({
+      name: 'loopback-fixture-lifecycle-test',
+      apply: testCtx => applyLoopbackServerEffect(testCtx, {
+        label: 'loopback-fixture-lifecycle-test',
+        onCleanup,
+        onListening,
+        requestListener: () => {},
+      }),
+    })
+    await disposeWhileStarting(fiber, server)
 
     expect(server).toMatchObject({ closed: true, connectionsClosed: true, unreferenced: true })
-    await expect(ctx.web.fetch({ url: RECORDED_URL }))
-      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_UNAVAILABLE' }))
+    expect(onListening).toHaveBeenCalledWith(expect.objectContaining({ port: 54321 }))
+    expect(onCleanup).toHaveBeenCalledOnce()
     expect(errors).toEqual([])
   })
 
