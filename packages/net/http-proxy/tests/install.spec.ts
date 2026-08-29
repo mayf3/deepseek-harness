@@ -142,7 +142,10 @@ describe('installGlobalProxy', () => {
     // reuses the HTTP one, tunnelling the scheme the diagnostic told the user stayed direct.
     const dispose = await installGlobalProxy({ httpProxy: proxyUrl, noProxy: '', source: 'env' })
     try {
-      await expect(fetch('https://refused-scheme.invalid/')).rejects.toThrow()
+      // The direct path here fails on a DNS miss whose latency is the machine's resolver to decide;
+      // the deadline bounds it. Either rejection proves the same thing — no CONNECT reached the
+      // proxy — and a proxied hop would have answered in milliseconds instead.
+      await expect(fetch('https://refused-scheme.invalid/', { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
       expect(proxied).toEqual([])
       // The same policy still tunnels http, so the empty expectation above is not vacuous.
       await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')

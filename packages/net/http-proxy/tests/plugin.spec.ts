@@ -1,33 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { getGlobalDispatcher } from 'undici'
+import { PROXY_ENV_NAMES } from '../src/policy.ts'
 import * as HttpProxy from '../src/index.ts'
 import * as HttpProxyInvariant from '../src/invariant.ts'
 
 const PROXY = 'http://127.0.0.1:7897'
 
-/**
- * Every proxy name in both casings. The suite clears all of them so a developer's own exported proxy
- * cannot decide the outcome — the lowercase names matter most, since resolution reads those first.
- */
-const PROXY_ENV_NAMES = [
-  'http_proxy', 'HTTP_PROXY', 'https_proxy', 'HTTPS_PROXY',
-  'no_proxy', 'NO_PROXY', 'all_proxy', 'ALL_PROXY',
-] as const
-
-let saved: Record<string, string | undefined> = {}
-
-beforeEach(() => {
-  saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
-  for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
-})
-
+// `scripts/test-proxy-environment.ts` clears the machine's proxy variables before any suite runs,
+// so each test starts from nothing and only has to undo what `withEnv` set.
 afterEach(() => {
-  for (const [name, value] of Object.entries(saved)) {
-    if (value === undefined) Reflect.deleteProperty(process.env, name)
-    else process.env[name] = value
-  }
+  for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
 })
 
 /** The launcher normally provides a snapshot; without one the plugin reads the process environment. */
