@@ -13,10 +13,9 @@
  */
 
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
-import { once } from 'node:events'
 import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { delimiter, dirname, isAbsolute, join } from 'node:path'
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Duplex } from 'node:stream'
 import { Context } from 'cordis'
@@ -386,16 +385,36 @@ export function readProcessStart(pid: number): string | undefined {
  * `python3`) would otherwise fail: `env: {}` drops `PATH`, so Node's own lookup
  * falls back to the platform default (`/usr/bin:/bin`) and misses interpreters
  * that live only on the caller's `PATH` (Nix, pyenv, Homebrew, conda). An
- * absolute or explicitly relative path is used verbatim. When no `PATH` entry
- * holds an executable match, `undefined` is returned and the LOAD check rejects
- * the configuration: falling back to the bare name would let spawn's `env: {}`
- * execvp silently start a system interpreter from the platform default PATH
- * that the caller never asked for.
- * @param bin - the configured interpreter (absolute path or bare command).
+ * absolute or explicitly relative path is validated directly: it must exist,
+ * be executable, and be a regular file — a missing, non-executable, or
+ * directory path is a self-contained configuration error that must fail at
+ * load, not at the first run (the child spawns with an empty environment, so
+ * execvp's platform default would otherwise silently mask the mistake). A
+ * relative explicit path resolves against the host CWD, mirroring where
+ * `spawn` would have looked for it. When no `PATH` entry holds an executable
+ * match, `undefined` is returned and the LOAD check rejects the configuration:
+ * falling back to the bare name would let spawn's `env: {}` execvp silently
+ * start a system interpreter from the platform default PATH that the caller
+ * never asked for.
+ * @param bin - the configured interpreter (absolute or relative path, or bare command).
  * @returns an absolute path when resolvable, else `undefined`.
  */
 export function resolvePythonBin(bin: string): string | undefined {
-  if (isAbsolute(bin) || bin.includes('/')) return bin
+  if (isAbsolute(bin) || bin.includes('/')) {
+    // An explicit path is used as given (resolved against the host CWD when
+    // relative), but only when it is a real executable regular file. The same
+    // checks as the PATH branch below: `accessSync(X_OK)` admits directories,
+    // so `isFile` narrows further, and a path that fails either is not a
+    // usable interpreter.
+    const candidate = resolve(bin)
+    try {
+      accessSync(candidate, fsConstants.X_OK)
+      if (!statSync(candidate).isFile()) return undefined
+      return candidate
+    } catch {
+      return undefined
+    }
+  }
   const path = process.env.PATH
   /* v8 ignore next -- PATH is set in every environment the runtime boots in; the guard is defensive. */
   if (path === undefined) return undefined
@@ -760,12 +779,18 @@ export class PythonCodeRuntime extends CodeRuntime {
     if (this.config.pythonBin === '' || this.config.pythonBin.includes('\0')) {
       throw new Error(`dsh-code-runtime-python: config.pythonBin must be a non-empty path without NUL bytes, got ${JSON.stringify(this.config.pythonBin)}`)
     }
-    // A basename that is not on PATH must fail at load, not silently fall to
-    // execvp's platform default PATH (spawn runs with an EMPTY environment, so
-    // execvp would resolve /usr/bin:/bin and could start a system interpreter
-    // the caller never asked for). Absolute paths pass through.
-    if (resolvePythonBin(this.config.pythonBin) === undefined) {
-      throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(this.config.pythonBin)} does not resolve on PATH`)
+    // An explicit path that is not an executable regular file must fail at load
+    // like any other self-contained configuration error (the empty/NUL cases
+    // above); a basename that is not on PATH must fail at load, not silently
+    // fall to execvp's platform default PATH (spawn runs with an EMPTY
+    // environment, so execvp would resolve /usr/bin:/bin and could start a
+    // system interpreter the caller never asked for). resolvePythonBin applies
+    // the executable-regular-file check to both forms and returns undefined for
+    // either failure; the message distinguishes the two so the fix is obvious.
+    const resolvedBin = resolvePythonBin(this.config.pythonBin)
+    if (resolvedBin === undefined) {
+      const explicit = isAbsolute(this.config.pythonBin) || this.config.pythonBin.includes('/')
+      throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(this.config.pythonBin)} ${explicit ? 'is not an executable regular file' : 'does not resolve on PATH'}`)
     }
     // `maxWallMs` and `graceMs` are armed with setTimeout, which clamps any
     // delay past MAX_TIMER_DELAY_MS to 1 ms without a word — turning a
@@ -971,7 +996,31 @@ export class PythonCodeRuntime extends CodeRuntime {
         }
         claimGlobal(errorClass.name, 'errorClass.name')
       }
-      bindings.set(namespace.global, { functions: namespace.functions, ...errorClass ? { errorClass } : {} })
+      // Snapshot the callables into a plain own-property record before the
+      // child can dispatch. `namespace.functions` is caller-supplied, so it may
+      // expose members through getters or a Proxy; reading one of them inside
+      // the fd-3 `data` callback would throw OUTSIDE the dispatcher's try and
+      // terminate the host (defensive-patterns contain-callback-exceptions).
+      // Reading every member here, in run()'s synchronous validation segment,
+      // turns that throw into the seam-misuse rejection run() reserves for
+      // malformed bindings. The snapshot is also the single key set the boot
+      // frame advertises AND dispatch reads, so a getter whose keys differ
+      // between reads cannot desynchronize the child's allowed names from what
+      // the host will actually call. The record is null-prototype: the seam
+      // contract treats member names like `__proto__` or `constructor` as
+      // ordinary own properties, and a plain `{}` assignment of `__proto__`
+      // would hit the prototype setter instead of creating the own property.
+      const functions = Object.create(null) as Record<string, CodeBindingFunction>
+      for (const name of Object.keys(namespace.functions)) {
+        // Only callables enter the snapshot: a getter exposing a non-function
+        // member would otherwise assign a value the dispatcher's `typeof fn
+        // !== 'function'` check rejects anyway, and keeping it out of the
+        // snapshot keeps the boot frame's name list and the dispatch key set
+        // one and the same.
+        const fn = namespace.functions[name]
+        if (typeof fn === 'function') functions[name] = fn
+      }
+      bindings.set(namespace.global, { functions, ...errorClass ? { errorClass } : {} })
     }
     return bindings
   }
@@ -1004,11 +1053,12 @@ export class PythonCodeRuntime extends CodeRuntime {
       // right after the done frame, before any finalization-time flush could
       // run. The `_LogStream` replacement of `sys.stdout`/`sys.stderr` is
       // unaffected (it is a Python object, not the C-level stdio buffer).
-      // Load validated that a basename resolves; absolute paths pass through.
-      // The type assertion is the load-time contract (see the pythonBin load
-      // checks); a PATH change between load and run would make this undefined
-      // and spawn throws synchronously, which the surrounding try settles as
-      // worker-exit like any other spawn failure.
+      // Load validated that the configured interpreter resolves to an
+      // executable regular file (basename through PATH, explicit path
+      // directly). The type assertion is the load-time contract (see the
+      // pythonBin load checks); a PATH change between load and run would make
+      // this undefined and spawn throws synchronously, which the surrounding
+      // try settles as worker-exit like any other spawn failure.
       const resolvedPythonBin = resolvePythonBin(this.config.pythonBin) as string
       child = spawn(resolvedPythonBin, ['-u', '-I', bootstrapPath], {
         env: {},
@@ -1751,6 +1801,24 @@ export class PythonCodeRuntime extends CodeRuntime {
       // memory and the flush timing change.
       const replyQueue: ReplyMessage[] = []
       let draining = false
+      // Resolve when fd 3 can take another frame, OR when it is gone: a pipe
+      // destroyed under the drain (child exited, close-deadline teardown) never
+      // emits 'drain' again, so waiting on that event alone would hang the
+      // drain forever — `draining` stays true and the unconsumed queue is
+      // pinned with the closure. `once` plus the manual detach removes every
+      // listener whichever event wins, so a long backpressure wait leaves none
+      // behind.
+      const waitForDrain = (): Promise<void> => new Promise<void>((resolvePromise) => {
+        const finish = (): void => {
+          proto.off('drain', finish)
+          proto.off('close', finish)
+          proto.off('error', finish)
+          resolvePromise()
+        }
+        proto.once('drain', finish)
+        proto.once('close', finish)
+        proto.once('error', finish)
+      })
       const drainReplies = async (): Promise<void> => {
         if (draining) return
         draining = true
@@ -1761,6 +1829,10 @@ export class PythonCodeRuntime extends CodeRuntime {
             // depths reach 11 without the wall clock landing inside that window.
             /* v8 ignore next -- see above; not schedulable from a test. */
             if (settled) break
+            // A pipe destroyed under us (child exited, close deadline) will
+            // never emit 'drain' again; short-circuit before the write so the
+            // remaining frames are dropped by the `finally` below.
+            if (proto.destroyed) break
             // Read by index, not `shift()`: a large `asyncio.gather` of wide
             // bindings awaiting fd 3's `drain` can queue many frames, and each
             // `shift()` re-slices the remaining array (O(n) per pop, O(n²) over
@@ -1779,7 +1851,7 @@ export class PythonCodeRuntime extends CodeRuntime {
             // longer needs is dropped by the `settled` check above without ever
             // being serialized.
             if (!proto.write(`${encodeJsonPlain(payload)}\n`)) {
-              await once(proto, 'drain')
+              await waitForDrain()
             }
           }
         } catch {

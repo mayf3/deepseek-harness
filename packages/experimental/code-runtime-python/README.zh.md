@@ -25,11 +25,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在需要通过 code-runtime seam 运行 Python 模型代码时选择本包：向 `dsh-tools` 注册 `PythonCodeRuntime`，`run()` 就在全新的 `python3 -I` 子进程中执行每个程序，成功时以 `result.value` resolve、失败时以 `result.error` resolve（正交的 `CodeRunFailure.kind` 分类涵盖解析失败、抛出异常、无效完成值、输出溢出、预算到期、中止与执行基底终止）；只有 seam 误用才 reject——绑定命名空间畸形，或已释放后仍调用。配置在加载期被拒绝：非 Unix 平台、非正或非整数的预算、低于截断标记下限（64）的 `maxLogBytes`、`setTimeout` 会收敛的定时器值、超过单个 fd-3 帧可承载的预算，以及最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`/输出预算组合。
+在需要通过 code-runtime seam 运行 Python 模型代码时选择本包：向 `dsh-tools` 注册 `PythonCodeRuntime`，`run()` 就在全新的 `python3 -I` 子进程中执行每个程序，成功时以 `result.value` resolve、失败时以 `result.error` resolve（正交的 `CodeRunFailure.kind` 分类涵盖解析失败、抛出异常、无效完成值、输出溢出、预算到期、中止与执行基底终止）；只有 seam 误用才 reject——绑定命名空间畸形，或已释放后仍调用。配置在加载期被拒绝：非 Unix 平台、非正或非整数的预算、低于截断标记下限（64）的 `maxLogBytes`、`setTimeout` 会收敛的定时器值、超过单个 fd-3 帧可承载的预算、最坏峰值会突破 `RLIMIT_AS` 的 `addressSpaceMb`/输出预算组合，以及不是可执行普通文件的 `pythonBin`——显式路径（绝对或含 `/`）直接判定，裸名对照 `PATH` 判定。
 
 ### 你得到什么
 
-包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）、`logTruncationMarker`（共享截断标记文本），以及 `resolvePythonBin`（对照当前 `PATH` 的解释器查找）、`readProcessStart`（供测试用的进程启动统计）和 `detachResidual`（已结算运行的资源清理测试 seam）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前对照 `PATH` 解析；在 `PATH` 上无命中的裸名会在加载期被拒绝，而不是静默回退到平台默认 `PATH`）。
+包的默认导出是 `PythonCodeRuntime` 插件。其公开面还重新导出宿主侧协议词汇：`validateChildFrame`（重建每条入站帧）、无损 JSON codec 与计量器（`encodeJsonPlain`、`checkDoneValue`、`hasUnsafeIntegerToken`、`hasNonLosslessNumber`）、`logTruncationMarker`（共享截断标记文本），以及 `resolvePythonBin`（对照当前 `PATH` 的解释器查找）、`readProcessStart`（供测试用的进程启动统计）和 `detachResidual`（已结算运行的资源清理测试 seam）。每个上限都是带默认值并经校验的 `Config` 字段：`cpuSeconds`（60）、`maxWallMs`（600000）、`addressSpaceMb`（512，Darwin 上不生效）、`maxLogBytes`（65536）、`maxValueBytes`（32768）、`graceMs`（3000）与 `pythonBin`（`python3`，在子进程以空环境启动前解析：显式路径必须是可执行普通文件，裸名必须在 `PATH` 上可解析；任一失败都在加载期被拒绝，区分『is not an executable regular file』与『does not resolve on PATH』，而不是静默回退到平台默认 `PATH`）。
 
 ### wire
 

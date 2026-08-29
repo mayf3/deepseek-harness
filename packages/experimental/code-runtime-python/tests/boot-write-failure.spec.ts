@@ -47,6 +47,26 @@ afterEach(() => {
   spawnMock.mockReset()
 })
 
+/** A child that emits an async `error` (an ENOENT-style spawn failure). */
+function fakeChildWithAsyncSpawnError(): EventEmitter {
+  const child = new EventEmitter() as EventEmitter & {
+    pid?: number
+    stdout: PassThrough
+    stderr: PassThrough
+    stdio: unknown[]
+  }
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  const proto = new PassThrough()
+  child.stdio = [new PassThrough(), child.stdout, child.stderr, proto]
+  // `spawn` reports an async failure via the child's `error` event; the run
+  // settles on it as a worker-exit without waiting for `close`.
+  setImmediate(() => {
+    child.emit('error', Object.assign(new Error('ENOENT: no such file or directory, spawn python3'), { code: 'ENOENT' }))
+  })
+  return child
+}
+
 /** A child whose fd-3 pipe accepts the boot write, then rejects the run write. */
 function fakeChildWithAckThenThrowingFd3(): EventEmitter {
   const child = new EventEmitter() as EventEmitter & {
@@ -69,6 +89,41 @@ function fakeChildWithAckThenThrowingFd3(): EventEmitter {
   // hits the throwing pipe.
   setImmediate(() => proto.emit('data', Buffer.from('{"type":"boot-ack"}\n')))
   return child
+}
+
+/**
+ * A child whose fd-3 pipe backpressures every write and is then destroyed
+ * while the host waits for `drain`. The reply-drain loop must settle on the
+ * pipe's `close` (or destroyed state) rather than hanging forever waiting for
+ * a `drain` that can never arrive. Returns the pipe as well so the test can
+ * assert the drain wait left no listener behind.
+ */
+function fakeChildBackpressuredThenDestroyed(): { child: EventEmitter; proto: PassThrough } {
+  const child = new EventEmitter() as EventEmitter & {
+    pid?: number
+    stdout: PassThrough
+    stderr: PassThrough
+    stdio: unknown[]
+  }
+  child.stdout = new PassThrough()
+  child.stderr = new PassThrough()
+  const proto = new PassThrough()
+  // Every write reports backpressure (never a `drain` event): the only way the
+  // reply drain can proceed is the pipe being destroyed under it.
+  proto.write = () => false
+  child.stdio = [new PassThrough(), child.stdout, child.stderr, proto]
+  // Boot-ack → run frame → two binding calls whose replies backpressure, then
+  // destroy the pipe while the host still waits for `drain`: the drain loop
+  // resumes with a queued reply left and must break on the destroyed pipe.
+  setImmediate(() => {
+    proto.emit('data', Buffer.from('{"type":"boot-ack"}\n'))
+    setImmediate(() => {
+      proto.emit('data', Buffer.from('{"type":"call","id":0,"global":"tools","name":"f","args":[]}\n'))
+      proto.emit('data', Buffer.from('{"type":"call","id":1,"global":"tools","name":"f","args":[]}\n'))
+      setImmediate(() => proto.destroy())
+    })
+  })
+  return { child, proto }
 }
 
 describe('PythonCodeRuntime — boot-write failure', () => {
@@ -136,6 +191,60 @@ describe('PythonCodeRuntime — boot-write failure', () => {
 
     expect(result.error?.kind).toBe('worker-exit')
     expect(result.error?.message).toContain('failed to boot python subprocess')
+    await fiber.dispose()
+  })
+
+  it('resolves a worker-exit when spawn reports an async error', async () => {
+    // A spawn that fails asynchronously (ENOENT for an interpreter removed
+    // after load, or a libuv-level failure) surfaces through the child's
+    // `error` event, not a synchronous throw. The run must settle as a
+    // worker-exit from that event.
+    spawnMock.mockImplementation(() => fakeChildWithAsyncSpawnError())
+    const ctx = new Context()
+    const fiber = await ctx.plugin(PythonCodeRuntime)
+    const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
+
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('python spawn error')
+    await fiber.dispose()
+  })
+
+  it('does not hang the reply drain when the pipe is destroyed mid-backpressure', async () => {
+    // The reply drain waits for `drain` when fd 3's buffer is full. A pipe
+    // destroyed under that wait never emits `drain` again; the drain must
+    // settle on `close` instead, or `draining` stays true and the queued reply
+    // (here a 4 MiB string) is pinned with the closure forever. The fake child
+    // backpressures every write and destroys fd 3 right after the binding
+    // call, so the host is mid-drain when the pipe dies. No `done` frame ever
+    // arrives, so the run settles on the wall clock — the drain wait must have
+    // removed its listeners by then (a `once('drain')` wait would leave one
+    // attached to the destroyed pipe forever).
+    let proto: PassThrough | undefined
+    spawnMock.mockImplementation(() => {
+      const fake = fakeChildBackpressuredThenDestroyed()
+      proto = fake.proto
+      return fake.child
+    })
+    const ctx = new Context()
+    const fiber = await ctx.plugin(PythonCodeRuntime, { maxWallMs: 3000 })
+    const runtime = ctx.codeRuntime as InstanceType<typeof PythonCodeRuntime>
+
+    const result = await runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'tools', functions: { f: async () => 'x'.repeat(4 * 1024 * 1024) } }],
+    })
+
+    expect(result.error?.kind).toBe('timeout')
+    // The drain wait settled on `close` and cleaned up after itself. The
+    // discriminating listener is `drain`: a `once('drain')` wait would leave
+    // its wrapper attached to the destroyed pipe forever (the event never
+    // fires again), while the fixed wait removes it. (`error` is not asserted:
+    // the runtime's own `silenceStreamError` occupies one slot.)
+    expect(proto).toBeDefined()
+    expect(proto?.listenerCount('drain')).toBe(0)
+    expect(proto?.listenerCount('close')).toBe(0)
     await fiber.dispose()
   })
 })

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
@@ -21,8 +21,19 @@ import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepsee
  * Names one `py/` script whose `copyFileSync` must fail, for the partial-staging
  * case. A real disk-full or missing-asset failure mid-copy cannot be produced
  * from a test, and the leak only shows when `mkdtempSync` has already succeeded.
+ *
+ * `stagedDirs` records every staging directory THIS test file creates, so the
+ * leak assertions check the exact paths instead of a global tmpdir diff: a
+ * parallel vitest worker running the same prefix could create or remove
+ * `dsh-code-runtime-python-*` directories inside the sampling window, which a
+ * readdir diff would misattribute to this test. `boot-write-failure.spec.ts`
+ * records the same race and solves it with argv-based identity; recording the
+ * mkdtempSync results is the fs-mock equivalent.
  */
-const { failNextCopyOf } = vi.hoisted(() => ({ failNextCopyOf: { value: undefined as string | undefined } }))
+const { failNextCopyOf, stagedDirs } = vi.hoisted(() => ({
+  failNextCopyOf: { value: undefined as string | undefined },
+  stagedDirs: [] as string[],
+}))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
   return {
@@ -33,6 +44,11 @@ vi.mock('node:fs', async (importOriginal) => {
         throw Object.assign(new Error('simulated ENOSPC on copy'), { code: 'ENOSPC' })
       }
       actual.copyFileSync(source, destination)
+    },
+    mkdtempSync(prefix: string): string {
+      const dir = actual.mkdtempSync(prefix)
+      if (basename(prefix).startsWith('dsh-code-runtime-python-')) stagedDirs.push(dir)
+      return dir
     },
   }
 })
@@ -147,6 +163,115 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
       .rejects.toThrow(/pythonBin must be a non-empty path without NUL bytes/)
     await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: 'py\u0000thon3' }))
       .rejects.toThrow(/pythonBin must be a non-empty path without NUL bytes/)
+  })
+
+  it('rejects an explicit pythonBin that is not an executable regular file, at load', async () => {
+    // An explicit path (absolute, or containing a slash) bypasses PATH lookup,
+    // so it must be validated directly: missing, non-executable, or directory
+    // paths are self-contained configuration errors that used to slip through
+    // load and surface only at the first run() as a misleading worker-exit.
+    // The message distinguishes the explicit-path failure from a basename that
+    // simply does not resolve on PATH.
+    const nodePath = await import('node:path')
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
+    const dir = mkdtempSync(nodePath.join(tmpdir(), 'dsh-bad-bin-'))
+    const notExecutable = nodePath.join(dir, 'not-executable')
+    writeFileSync(notExecutable, '#!/bin/sh\nexit 0\n') // Regular file, but no X bit.
+    const directory = nodePath.join(dir, 'is-a-directory')
+    mkdirSync(directory)
+    try {
+      const missing = new Context()
+      await expect(missing.plugin(PythonCodeRuntime, { pythonBin: nodePath.join(dir, 'missing') }))
+        .rejects.toThrow(/is not an executable regular file/)
+      const noX = new Context()
+      await expect(noX.plugin(PythonCodeRuntime, { pythonBin: notExecutable }))
+        .rejects.toThrow(/is not an executable regular file/)
+      const isDir = new Context()
+      await expect(isDir.plugin(PythonCodeRuntime, { pythonBin: directory }))
+        .rejects.toThrow(/is not an executable regular file/)
+      // A relative explicit path fails the same way, resolved against the host
+      // CWD: `dir` is absolute, so a slash-containing relative form of it is
+      // the dirname prefix plus the file, which does not exist as such.
+      const rel = new Context()
+      await expect(rel.plugin(PythonCodeRuntime, { pythonBin: './definitely-not-there-python' }))
+        .rejects.toThrow(/is not an executable regular file/)
+    } finally {
+      const { rmSync } = await import('node:fs')
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps an explicit executable pythonBin working through load and run', async () => {
+    // The same validation that rejects bad explicit paths must admit a good
+    // one: an absolute path to the real interpreter (or a wrapper around it)
+    // is the deployment form the validation exists to serve.
+    const pyAbs = resolvePythonBin('python3') ?? 'python3'
+    const { runtime, fiber } = await setup({ pythonBin: pyAbs, maxWallMs: 30_000 })
+    const result = await runtime.run({ program: 'return 1', bindings: [] })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(1)
+    await fiber.dispose()
+  })
+
+  it('rejects a binding member accessor that throws, as seam misuse', async () => {
+    // `namespace.functions` is caller-supplied, so its members may come from a
+    // getter or Proxy. Reading one of them inside the fd-3 `data` callback used
+    // to throw OUTSIDE the dispatcher's try and terminate the host; the
+    // validation now snapshots the callables synchronously, so the throw
+    // surfaces as the seam-misuse rejection run() reserves for malformed
+    // bindings — the child is never spawned.
+    const { runtime } = await setup()
+    const exploding = {
+      get explode(): CodeBindingFunction {
+        throw new Error('getter blew up')
+      },
+    }
+    await expect(runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'tools', functions: exploding }],
+    })).rejects.toThrow(/getter blew up/)
+  })
+
+  it('snapshots binding callables once, so a getter is read exactly once', async () => {
+    // The snapshot also fixes the key set the boot frame advertises: the child
+    // learns the namespace names from the SAME record dispatch reads, so a
+    // getter whose keys differ between reads cannot desynchronize the two.
+    let reads = 0
+    const countReads = {
+      get first(): CodeBindingFunction {
+        reads += 1
+        return async () => 1
+      },
+    }
+    const { runtime, fiber } = await setup()
+    const result = await runtime.run({
+      program: 'return 1',
+      bindings: [{ global: 'tools', functions: countReads }],
+    })
+    expect(result.error).toBeUndefined()
+    // One read for the validation snapshot; the boot frame and every dispatch
+    // read the snapshot, not the getter.
+    expect(reads).toBe(1)
+    await fiber.dispose()
+  })
+
+  it('keeps a __proto__ binding member dispatchable', async () => {
+    // The seam contract treats member names like `__proto__` or `constructor`
+    // as ordinary own properties (null-prototype construction). The binding
+    // snapshot must preserve that: a plain `{}` record would hit the prototype
+    // setter on assignment and drop the member, so the child would never learn
+    // the name and a call to it would fail with KeyError.
+    const { runtime, fiber } = await setup()
+    const result = await runtime.run({
+      program: 'return await tools["__proto__"]({})',
+      bindings: [{
+        global: 'tools',
+        functions: { ['__proto__']: async () => 'proto-callable' },
+      }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('proto-callable')
+    await fiber.dispose()
   })
 
   it('skips relative PATH entries when resolving a basename pythonBin', async () => {
@@ -371,12 +496,12 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // `dispose()` is called in the same synchronous turn as `run()`, with no
     // `await` between them, so it lands exactly in that window.
     //
-    // The leak assertion compares before and after rather than requiring an
-    // empty tmpdir: other tests in this file build runtimes they never dispose,
-    // so only the directories this test adds are its own evidence.
-    const staged = (): string[] =>
-      readdirSync(realpathSync(tmpdir())).filter(name => name.startsWith('dsh-code-runtime-python-'))
-    const before = new Set(staged())
+    // The leak assertion checks the EXACT paths this test file staged (recorded
+    // by the mocked mkdtempSync) rather than diffing a global tmpdir: a
+    // parallel vitest worker can create or remove same-prefix directories
+    // inside the sampling window, which a readdir diff would misattribute to
+    // this test (boot-write-failure.spec.ts records the same race).
+    const stagedBefore = stagedDirs.length
     const { fiber, runtime } = await setup({ maxWallMs: 8_000 })
     const pending = runtime.run({ program: 'import time\nwhile True: time.sleep(0.1)', bindings: [] })
     const disposed = fiber.dispose()
@@ -385,9 +510,9 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // Whatever the run reports, it must be terminal and must not be a success.
     expect(result.value).toBeUndefined()
     expect(['abort', 'worker-exit', 'timeout']).toContain(result.error?.kind)
-    // Disposal is to quiescence, so this run's directory is gone once it
-    // resolves, and nothing recreated it afterwards.
-    expect(staged().filter(name => !before.has(name))).toEqual([])
+    // Disposal is to quiescence, so every directory this run staged is gone.
+    const created = stagedDirs.slice(stagedBefore)
+    for (const dir of created) expect(existsSync(dir)).toBe(false)
   }, 15_000)
 
   it('settles as abort when the signal fires in the same turn as the first run', async () => {
@@ -445,9 +570,9 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     //
     // Only `copyFileSync` is stubbed, and only for the second script, so
     // `mkdtempSync` really runs and the directory under assertion is real.
-    const staged = (): string[] =>
-      readdirSync(realpathSync(tmpdir())).filter(name => name.startsWith('dsh-code-runtime-python-'))
-    const before = new Set(staged())
+    // The assertion checks the exact paths this test staged (see the sibling
+    // disposal-race test for why a global tmpdir diff races parallel workers).
+    const stagedBefore = stagedDirs.length
     failNextCopyOf.value = 'protocol.py'
     try {
       const { runtime } = await setup()
@@ -455,7 +580,7 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
       expect(result.error?.kind).toBe('worker-exit')
       expect(result.error?.message).toContain('failed to stage the python bootstrap')
       // The partial directory is gone, so nothing accumulates across retries.
-      expect(staged().filter(name => !before.has(name))).toEqual([])
+      for (const dir of stagedDirs.slice(stagedBefore)) expect(existsSync(dir)).toBe(false)
     } finally {
       failNextCopyOf.value = undefined
     }
@@ -2787,7 +2912,22 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
   }, 5000)
 
   it('reports a spawn failure via a bogus python binary as worker-exit', async () => {
-    const { runtime } = await setup({ pythonBin: '/nonexistent/python-binary', maxWallMs: 3000 })
+    // An explicit path that does not exist at LOAD is a configuration error and
+    // is rejected by the constructor (see the seam-misuse block). A path that
+    // is valid at load but gone by run time is a SUBSTRATE failure and must
+    // resolve as worker-exit: stage a real executable wrapper, load the runtime
+    // against it, then delete it before run() — the spawn then fails exactly
+    // like a child that cannot start.
+    const nodePath = await import('node:path')
+    const { mkdtempSync, rmSync, writeFileSync, chmodSync } = await import('node:fs')
+    const dir = mkdtempSync(nodePath.join(tmpdir(), 'dsh-spawn-fail-'))
+    const wrapper = nodePath.join(dir, 'python-wrapper')
+    const pyAbs = resolvePythonBin('python3') ?? 'python3'
+    writeFileSync(wrapper, `#!/bin/sh\nexec ${pyAbs} "$@"\n`, { mode: 0o755 })
+    chmodSync(wrapper, 0o755)
+    const { runtime } = await setup({ pythonBin: wrapper, maxWallMs: 3000 })
+    rmSync(wrapper)
+    rmSync(dir, { recursive: true, force: true })
     const result = await runtime.run({
       program: 'return 1',
       bindings: [],
@@ -4901,6 +5041,35 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error).toBeUndefined()
     expect(result.value).toBe(8 * chunk.length)
   }, 90_000)
+
+  it('drops queued binding replies when the child dies mid-drain, without hanging', async () => {
+    // drainReplies waits for `drain` when fd 3's buffer is full. If the child
+    // exits while a reply is queued, the pipe never emits `drain` again — the
+    // wait must also settle on `close`/`error`/destroyed, or `draining` stays
+    // true and the queue is pinned with the closure forever. The program fills
+    // the pipe with a wide binding reply and then exits without reading it, so
+    // the host is blocked mid-drain when the child dies; the run must still
+    // settle promptly (worker-exit from the close) rather than hanging on the
+    // drain wait.
+    const chunk = 'A'.repeat(4 * 1024 * 1024)
+    const { runtime } = await setup({ maxWallMs: 10_000 })
+    const result = await runtime.run({
+      program: [
+        'import asyncio',
+        // Resolve a reply big enough to backpressure fd 3, then exit without
+        // reading it: the child's `close` lands while the host still waits for
+        // `drain`, exercising the destroyed-pipe branch of the reply drain.
+        'pending = asyncio.create_task(tools.chunk({}))',
+        'await asyncio.sleep(0.05)',
+        'return "done"',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { chunk: async () => chunk } }],
+    })
+    // The program returned, so the completion wins over the mid-flight reply;
+    // whatever the result, the run must settle (no hang on the drain wait).
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+  }, 30_000)
 
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator
