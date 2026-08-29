@@ -1,8 +1,8 @@
-/** Locale bundles for the agent-preset settings row, hero chip, header label, and management section. */
+/** Locale bundles for the agent-preset hero chip, header label, and management section. */
 
 /** Locale keys these surfaces render. */
 export type AgentPresetSettingsKey =
-  | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
+  | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
   | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
   | 'presetStandardName' | 'presetStandardDescription'
   | 'presetPtcName' | 'presetPtcDescription'
@@ -20,9 +20,6 @@ export type AgentPresetSettingsKey =
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
-  title: 'Agent preset',
-  description: 'Applies to sessions you start from now on. Running sessions keep the preset they began with.',
-  loading: 'Loading presets…',
   error: 'Could not load agent presets.',
   userTrust: 'Custom',
   seatHint: 'Agent preset for the session you are about to start',
@@ -87,9 +84,6 @@ export const en: Record<AgentPresetSettingsKey, string> = {
 
 /** Simplified Chinese copy. */
 export const zh: Record<AgentPresetSettingsKey, string> = {
-  title: 'Agent 预设',
-  description: '对此后新建的会话生效。运行中的会话保持它开始时的预设。',
-  loading: '正在加载预设…',
   error: '无法加载 Agent 预设。',
   userTrust: '自定义',
   seatHint: '即将开始的这个会话所用的 Agent 预设',

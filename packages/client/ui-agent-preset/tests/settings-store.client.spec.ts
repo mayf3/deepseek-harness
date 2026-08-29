@@ -1,29 +1,29 @@
 /**
- * The agent-preset settings controller: it derives both the options and the
- * current default from one roster call, writes only the `default` field, and
- * treats an empty roster as "this deployment composes no presets" rather than
- * as a failure.
+ * The agent-preset roster store: it derives the display options from one
+ * roster call and treats an empty roster as "this deployment composes no
+ * presets" rather than as a failure. The default is written by the
+ * management section through `writeDefaultPreset`, which targets only the
+ * `default` field of the agent-presets namespace.
  */
 
 import { describe, expect, it } from 'vitest'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SettingsWireFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/client'
-import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
-  AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController, messageOf,
+  AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController, messageOf, writeDefaultPreset,
 } from '../src/client/settings-store.ts'
 
-/** The two faces the row reads: the roster Remote and the settings wire. */
+/** The two faces these tests drive: the roster Remote and the settings wire. */
 interface FakeWire {
   api: SettingsWireFace
   remote: Pick<ClientRemote, 'agentPresets'>
 }
 
-/** Controller over a real mirror derived from the same fake wire. */
+/** The roster store over the fake wire's Remote face. */
 function derivedController(wire: FakeWire) {
-  return new AgentPresetSettingsController(wire.api, wire.remote, new SettingsDescribeMirror(wire.api))
+  return new AgentPresetSettingsController(wire.remote)
 }
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
 
@@ -59,17 +59,10 @@ function fakeApi(
     failWrite?: string
     failList?: string
     failWriteWith?: Error
-    readOnly?: boolean
   } = {},
 ): FakeWire {
   const api = {
     settings: {
-      // Host persistence is enabled in production only on the selected client path; a read-only provider answers writable:false
-      // and the row disables its control instead of offering a refused write.
-      describe: () => Promise.resolve({
-        ok: true as const,
-        value: { writable: options.readOnly !== true, hasDocument: true, namespaces: [] },
-      }),
       update: (ns: string, patch: { default?: unknown }) => {
         options.writes?.push({ ns, ops: patch })
         if (options.failWriteWith !== undefined) return Promise.reject(options.failWriteWith)
@@ -90,22 +83,8 @@ function fakeApi(
   }
 }
 
-describe('the agent-preset settings controller', () => {
-  it('disables the control when this browser may not write settings', async () => {
-    const controller = derivedController(fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true },
-    ], { readOnly: true }))
-
-    await controller.load()
-
-    // The enabled `settings.describe` path reports a read-only provider;
-    // offering a control whose write answers `settings-rejected` would promise
-    // a switch the host refuses.
-    expect(controller.store.getSnapshot().writable).toBe(false)
-    expect(controller.store.getSnapshot().currentValue).toBe('standard')
-  })
-
-  it('derives options and the current default from one roster call', async () => {
+describe('the agent-preset roster store', () => {
+  it('derives the display options from one roster call', async () => {
     const controller = derivedController(fakeApi([
       { id: 'standard', trust: 'system', isDefault: true },
       { id: 'mine', trust: 'user', isDefault: false },
@@ -115,7 +94,6 @@ describe('the agent-preset settings controller', () => {
 
     const state = controller.store.getSnapshot()
     expect(state.status).toBe('ready')
-    expect(state.currentValue).toBe('standard')
     expect(state.options).toEqual([
       { id: 'standard', trust: 'system' },
       { id: 'mine', trust: 'user' },
@@ -156,7 +134,7 @@ describe('the agent-preset settings controller', () => {
     await controller.load()
 
     // A deployment composing no presets is valid: every session shares the
-    // host composition and the row renders nothing.
+    // host composition and the surfaces render nothing.
     expect(controller.store.getSnapshot().status).toBe('unavailable')
     expect(controller.store.getSnapshot().error).toBeNull()
   })
@@ -175,48 +153,27 @@ describe('the agent-preset settings controller', () => {
     expect(controller.store.getSnapshot()).toMatchObject({ status: 'unavailable', error: null, options: [] })
   })
 
-  it('writes only the default field, into the agent-presets namespace', async () => {
+  it('writeDefaultPreset writes only the default field, into the agent-presets namespace', async () => {
     const writes: Recorded[] = []
-    const controller = derivedController(fakeApi([
+    const wire = fakeApi([
       { id: 'standard', trust: 'system', isDefault: true },
       { id: 'minimal', trust: 'system', isDefault: false },
-    ], { writes }))
-    await controller.load()
+    ], { writes })
 
-    await controller.select('minimal')
+    expect(await writeDefaultPreset(wire.api, 'minimal')).toBeUndefined()
 
     expect(writes).toEqual([{
       ns: AGENT_PRESET_SETTINGS_NS,
       ops: { default: 'minimal' },
     }])
-    expect(controller.store.getSnapshot().currentValue).toBe('minimal')
   })
 
-  it('restores the previous value and surfaces the message when the write fails', async () => {
-    const controller = derivedController(fakeApi([
+  it('writeDefaultPreset surfaces the refusal message when the write fails', async () => {
+    const wire = fakeApi([
       { id: 'standard', trust: 'system', isDefault: true },
-      { id: 'minimal', trust: 'system', isDefault: false },
-    ], { failWrite: 'read-only settings' }))
-    await controller.load()
+    ], { failWrite: 'read-only settings' })
 
-    await controller.select('minimal')
-
-    const state = controller.store.getSnapshot()
-    expect(state.currentValue).toBe('standard')
-    expect(state.error).toBe('read-only settings')
-    expect(state.status).toBe('ready')
-  })
-
-  it('ignores a pick that is already the default', async () => {
-    const writes: Recorded[] = []
-    const controller = derivedController(fakeApi([
-      { id: 'standard', trust: 'system', isDefault: true },
-    ], { writes }))
-    await controller.load()
-
-    await controller.select('standard')
-
-    expect(writes).toEqual([])
+    expect(await writeDefaultPreset(wire.api, 'minimal')).toBe('read-only settings')
   })
 
   it('surfaces a roster failure without claiming the deployment has no presets', async () => {
@@ -227,19 +184,6 @@ describe('the agent-preset settings controller', () => {
     const state = controller.store.getSnapshot()
     expect(state.status).toBe('error')
     expect(state.error).toBe('host down')
-  })
-
-  it('shows the first preset when the roster marks none default', async () => {
-    // Settings can name a preset that was since deleted; the picker still has
-    // to show something rather than an empty control.
-    const controller = derivedController(fakeApi([
-      { id: 'standard', trust: 'system', isDefault: false },
-      { id: 'mine', trust: 'user', isDefault: false },
-    ]))
-
-    await controller.load()
-
-    expect(controller.store.getSnapshot().currentValue).toBe('standard')
   })
 
   it('ignores a load while one is already in flight', async () => {
@@ -270,18 +214,15 @@ describe('the agent-preset settings controller', () => {
     expect(controller.store.getSnapshot()).toMatchObject({ status: 'error', error: 'socket closed' })
   })
 
-  it('reports a transport that rejects mid-write and keeps the old default showing', async () => {
-    const controller = derivedController(fakeApi([
+  it('writeDefaultPreset reports a transport that rejects mid-write', async () => {
+    const wire = fakeApi([
       { id: 'standard', trust: 'system', isDefault: true },
       { id: 'mine', trust: 'user', isDefault: false },
-    ], { failWriteWith: new Error('socket closed') }))
-    await controller.load()
+    ], { failWriteWith: new Error('socket closed') })
 
-    await controller.select('mine')
-
-    // The value snaps back because the host never took it; a picker still
-    // showing "mine" would be claiming a default that does not exist.
-    expect(controller.store.getSnapshot()).toMatchObject({ currentValue: 'standard', error: 'socket closed' })
+    // The caller must be able to say the host never took the value; a surface
+    // still showing "mine" would be claiming a default that does not exist.
+    expect(await writeDefaultPreset(wire.api, 'mine')).toBe('socket closed')
   })
 })
 
@@ -566,23 +507,5 @@ describe('the new-session chip controller', () => {
 
     expect(controller.store.getSnapshot().error).toBe('socket closed')
   })
-
-  it('degrades to a read-only row while the mirror holds no answer', async () => {
-    const controller = derivedController({
-      // The roster answered; the mirror's read is what failed, so the row
-      // shows the current default without offering a write it never confirmed.
-      api: { settings: { describe: () => Promise.reject(new Error('socket closed')) } } as unknown as SettingsWireFace,
-      remote: fakeRoster([{ id: 'standard', trust: 'system', isDefault: true }]),
-    })
-
-    await controller.load()
-
-    expect(controller.store.getSnapshot()).toMatchObject({
-      status: 'ready',
-      writable: false,
-      currentValue: 'standard',
-    })
-  })
-
 
 })

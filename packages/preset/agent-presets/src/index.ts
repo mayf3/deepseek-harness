@@ -23,6 +23,7 @@
 
 import { stat } from 'node:fs/promises'
 import { Context } from '@deepseek-ai/cordis'
+import { evaluate } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
@@ -40,13 +41,20 @@ import {
   copyComposition, deleteComposition, readComposition,
   InvalidPresetIdError, PresetExistsError, PresetNotWritableError,
 } from './authoring.ts'
-import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
+import { livePresetMounts, mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
+import {
+  fileComposition, mountedCompositionRows,
+  type AgentPresetComposition,
+} from './composition-inventory.ts'
 import {
   PresetLockedError, PresetMountError, UnknownPresetError,
   type AgentPreset, type Config, type PresetRoot,
 } from './preset.ts'
 import { agentPresetProjectionDefinition } from './session.ts'
 export type * from './types.ts'
+export type {
+  AgentPresetComposition, AgentPresetCompositionRow, CompositionRowEnablement,
+} from './composition-inventory.ts'
 
 /** Settings namespace carrying the user's chosen default preset. */
 export const SETTINGS_NAMESPACE = 'agent-presets'
@@ -328,6 +336,51 @@ export class AgentPresets extends TypertRemoteService {
       })),
       authorable: this.authorable,
     }
+  }
+
+  /**
+   * Every preset's composition as flattened plugin rows, for plugin-listing
+   * surfaces beside the roster's own picker.
+   *
+   * A preset with a live standing mount answers from its newest generation's
+   * Loader entries — the composition new sessions join — and one never
+   * composed since boot answers from its file, with `!!js` disabled gates
+   * evaluated against the Loader context so both answers reflect the same
+   * host. Reading never mounts: an unmounted preset is parsed, not composed,
+   * so listing a preset's plugins cannot activate them early. A composition
+   * that stopped reading between discovery's health verdict and this read is
+   * reported broken with the raced reason rather than dropped.
+   * @returns one composition per roster preset, in roster order.
+   */
+  async compositionInventory(): Promise<AgentPresetComposition[]> {
+    const defaultId = this.defaultId
+    // The Loader's own expression scope: what a mount decision would consult
+    // (entry.ctx only adds the entry itself, which no disabled gate reads).
+    const evaluateExpression = (expression: string): unknown => evaluate(this.ctx.loader.ctx, expression)
+    const found: AgentPresetComposition[] = []
+    for (const preset of await this.list()) {
+      const identity = {
+        id: preset.id,
+        ...preset.name === undefined ? {} : { name: preset.name },
+        isDefault: preset.id === defaultId,
+      }
+      if (preset.broken !== undefined) {
+        found.push({ ...identity, broken: preset.broken, rows: [] })
+        continue
+      }
+      // Newest generation last: mount records keep insertion order, and a
+      // superseded generation's record precedes its replacement's.
+      const mount = livePresetMounts().findLast(candidate => candidate.presetId === preset.id)
+      if (mount !== undefined) {
+        found.push({ ...identity, rows: mountedCompositionRows(mount.tree) })
+        continue
+      }
+      const read = await fileComposition(preset.path, evaluateExpression)
+      found.push('broken' in read
+        ? { ...identity, broken: read.broken, rows: [] }
+        : { ...identity, rows: read.rows })
+    }
+    return found
   }
 
   /**
