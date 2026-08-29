@@ -63,11 +63,11 @@ export const inject = [
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
-  const controller = new AgentPresetSettingsController(ctx.remote)
+  const controller = new AgentPresetSettingsController(ctx)
   // One roster, four surfaces. The chip is registered in a later scope, so it
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
-  const section = new AgentPresetSectionController(ctx.remote, () => {
+  const section = new AgentPresetSectionController(ctx, () => {
     void controller.load()
     for (const read of rosterReaders) read()
   })
@@ -103,7 +103,7 @@ export function apply(ctx: ClientContext): void {
   // The new-session chip and the header label: one controller, because the
   // staged choice belongs to the flow rather than to any one session.
   ctx.inject(['slots', 'conversation', 'sessions', 'uiWorkspace'], (scope: ClientContext) => {
-    const seat = new AgentPresetSeatController(scope.remote, () => {
+    const seat = new AgentPresetSeatController(scope, () => {
       const state = scope.sessions.list.getSnapshot()
       return state.current === undefined ? undefined : state.byId[state.current]
     })
