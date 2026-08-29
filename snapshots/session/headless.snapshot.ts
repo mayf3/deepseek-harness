@@ -7,6 +7,7 @@ import { homedir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import ts from 'typescript'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
@@ -82,6 +83,49 @@ interface HeadlessScenario {
 interface SessionLog {
   readonly content: string
   readonly header: JsonObject
+}
+
+function propertyName(node: ts.PropertyName): string | undefined {
+  if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNumericLiteral(node)) return node.text
+  return undefined
+}
+
+function bindsOsAssignedPort(argument: ts.Expression | undefined): boolean {
+  if (argument === undefined) return false
+  if (ts.isNumericLiteral(argument)) return Number(argument.text) === 0
+  if (!ts.isObjectLiteralExpression(argument)) return false
+  let portIsZero: boolean | undefined
+  for (const property of argument.properties) {
+    if (ts.isSpreadAssignment(property)) {
+      portIsZero = undefined
+      continue
+    }
+    if (propertyName(property.name) !== 'port') continue
+    portIsZero = ts.isPropertyAssignment(property)
+      && ts.isNumericLiteral(property.initializer)
+      && Number(property.initializer.text) === 0
+  }
+  return portIsZero === true
+}
+
+function listenerPortViolations(path: string, sourceText: string): string[] {
+  const source = ts.createSourceFile(path, sourceText, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS)
+  const violations: string[] = []
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)
+      && ts.isPropertyAccessExpression(node.expression)
+      && node.expression.name.text === 'listen'
+      && !bindsOsAssignedPort(node.arguments[0])) {
+      const line = source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+      const received = node.arguments[0]?.getText(source) ?? '<missing>'
+      violations.push(
+        `${path}:${line}: listener port ${received} must use listen(0, ...) or listen({ port: 0, ... })`,
+      )
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(source)
+  return violations
 }
 
 function harvested(log: SessionLog): HarvestedLog {
@@ -507,17 +551,27 @@ describe('headless recorded-session snapshots', () => {
     }
   })
 
+  it('recognizes the supported OS-assigned listener forms', () => {
+    expect(listenerPortViolations('accepted.mjs', [
+      "server.listen(0, '127.0.0.1')",
+      "server.listen({ port: 0, host: '127.0.0.1' })",
+      'server.listen({ ...options, port: 0 })',
+    ].join('\n'))).toEqual([])
+    expect(listenerPortViolations('fixed.mjs', 'server.listen(43118)')).toEqual([
+      'fixed.mjs:1: listener port 43118 must use listen(0, ...) or listen({ port: 0, ... })',
+    ])
+    expect(listenerPortViolations('dynamic.mjs', 'server.listen({ port, ...options })')).toEqual([
+      'dynamic.mjs:1: listener port { port, ...options } must use listen(0, ...) or listen({ port: 0, ... })',
+    ])
+  })
+
   it('binds scenario HTTP fixtures only to OS-assigned ports', async () => {
-    for (const scenario of scenarios) {
-      const fixtureNames = (await readdir(scenario.dir)).filter(name => name.endsWith('.mjs'))
-      for (const fixtureName of fixtureNames) {
-        const source = await readFile(join(scenario.dir, fixtureName), 'utf8')
-        const boundPorts = [...source.matchAll(/\.listen\(\s*([^,\s)]+)/gu)].map(match => match[1])
-        for (const port of boundPorts) {
-          expect(port, `${scenario.name}/${fixtureName}: listener port`).toBe('0')
-        }
-      }
-    }
+    const fixtureNames = (await readdir(snapshotsRoot, { recursive: true })).filter(name => name.endsWith('.mjs'))
+    const violations = (await Promise.all(fixtureNames.map(async (fixtureName) => listenerPortViolations(
+      fixtureName,
+      await readFile(join(snapshotsRoot, fixtureName), 'utf8'),
+    )))).flat()
+    expect(violations).toEqual([])
   })
 
   it('stores session-owned inputs with typed redaction and no ACP transcript', async () => {
