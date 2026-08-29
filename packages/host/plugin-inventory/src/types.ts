@@ -47,6 +47,8 @@ export interface AgentPresetPluginRow {
 export interface AgentPresetPluginGroup {
   /** Stable preset id. */
   readonly id: string
+  /** Whether the deployment ships the preset or the user owns it. */
+  readonly trust: 'system' | 'user'
   /** Display name the preset published; a reader falls back to the id. */
   readonly name?: string
   /** Whether a session naming no preset composes this one. */

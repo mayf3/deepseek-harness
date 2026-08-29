@@ -96,6 +96,7 @@ describe('PluginInventoryGateway', () => {
       compositionInventory: async () => [
         {
           id: 'standard',
+          trust: 'system',
           name: '标准模式',
           isDefault: true,
           rows: [
@@ -103,7 +104,7 @@ describe('PluginInventoryGateway', () => {
             { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x' },
           ],
         },
-        { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
+        { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
       ],
     } as Partial<AgentPresets> as never)
 
@@ -111,6 +112,7 @@ describe('PluginInventoryGateway', () => {
     expect(snapshot.agentPresets).toEqual([
       {
         id: 'standard',
+        trust: 'system',
         name: '标准模式',
         isDefault: true,
         rows: [
@@ -118,7 +120,7 @@ describe('PluginInventoryGateway', () => {
           { entryId: null, moduleName: 'pkg-file', enabled: 'conditional', condition: 'x', fiberPhase: null },
         ],
       },
-      { id: 'damaged', isDefault: false, broken: 'the composition file is missing', rows: [] },
+      { id: 'damaged', trust: 'user', isDefault: false, broken: 'the composition file is missing', rows: [] },
     ])
   })
 })

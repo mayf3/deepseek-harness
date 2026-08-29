@@ -215,11 +215,13 @@ describe('AgentPresets.compositionInventory', () => {
     expect(await ctx.agentPresets.compositionInventory()).toEqual([
       {
         id: 'minimal',
+        trust: 'system',
         isDefault: true,
         rows: [{ entryId: 'beta', moduleName: '../../plugins/contribute.js', enabled: true }],
       },
       {
         id: 'standard',
+        trust: 'system',
         isDefault: false,
         rows: [
           { entryId: 'alpha', moduleName: '../../plugins/contribute.js', enabled: true },
@@ -228,6 +230,7 @@ describe('AgentPresets.compositionInventory', () => {
       },
       {
         id: 'documented',
+        trust: 'user',
         name: '我的模式',
         isDefault: false,
         rows: [
@@ -273,6 +276,63 @@ describe('AgentPresets.compositionInventory', () => {
       },
       { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false },
     ])
+  })
+
+  it('prefers the standing mount over a file that broke after mounting', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-composition-volatile-'))
+    await mkdir(join(root, 'volatile'))
+    const plugin = join(FIXTURES, 'plugins', 'contribute.js')
+    await writeFile(
+      join(root, 'volatile', COMPOSITION_FILE),
+      `- id: only\n  name: ${plugin}\n  config:\n    tool: volatile\n`,
+    )
+    const ctx = await harness({
+      default: 'volatile',
+      roots: [{ path: root, trust: 'user' }],
+      includeShippedRoot: false,
+      includeUserRoot: false,
+    })
+    await ctx.agents.create({
+      sessionId: SessionId('broken-after-mount'),
+      setup: async (agentCtx: Context) => void await ctx.agentPresets.mount(agentCtx, 'volatile'),
+    })
+    // The file breaks AFTER a session composed it; the standing mount is what
+    // that session still runs, so the inventory must keep answering from it.
+    await writeFile(join(root, 'volatile', COMPOSITION_FILE), 'foo: [')
+
+    const [volatile] = await ctx.agentPresets.compositionInventory()
+    expect(volatile).toMatchObject({ id: 'volatile', trust: 'user', isDefault: true })
+    expect(volatile?.broken).toBeUndefined()
+    expect(volatile?.rows).toEqual([
+      { entryId: 'only', moduleName: plugin, enabled: true, fiberState: FiberState.ACTIVE },
+    ])
+  })
+
+  it('keeps another runtime\'s standing mount out of this runtime\'s inventory', async () => {
+    const roster: Config = {
+      default: 'standard',
+      roots: [SYSTEM_ROOT],
+      includeShippedRoot: false,
+      includeUserRoot: false,
+    }
+    const mountedRuntime = await harness(roster)
+    const idleRuntime = await harness(roster)
+    await mountedRuntime.agents.create({
+      sessionId: SessionId('cross-runtime'),
+      setup: async (agentCtx: Context) => void await mountedRuntime.agentPresets.mount(agentCtx, 'standard'),
+    })
+    expect(livePresetMounts(mountedRuntime.fiber).filter(mount => mount.presetId === 'standard')).toHaveLength(1)
+    expect(livePresetMounts(idleRuntime.fiber).filter(mount => mount.presetId === 'standard')).toHaveLength(0)
+
+    // The other runtime's mount must not answer here: these rows come from
+    // the file, so none carries a root-fiber state.
+    const idle = (await idleRuntime.agentPresets.compositionInventory())
+      .find(composition => composition.id === 'standard')
+    expect(idle?.rows.length).toBeGreaterThan(0)
+    expect(idle?.rows.every(row => row.fiberState === undefined)).toBe(true)
+    const live = (await mountedRuntime.agentPresets.compositionInventory())
+      .find(composition => composition.id === 'standard')
+    expect(live?.rows.some(row => row.fiberState !== undefined)).toBe(true)
   })
 
   it('keeps a broken preset on the inventory with its discovery reason', async () => {

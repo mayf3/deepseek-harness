@@ -277,36 +277,48 @@ export class AgentPresets extends TypertRemoteService {
    * surfaces beside the roster's own picker.
    *
    * A preset with a live standing mount answers from its newest generation's
-   * Loader entries — the composition new sessions join — and one never
-   * composed since boot answers from its file, with `!!js` disabled gates
-   * evaluated against the Loader context so both answers reflect the same
-   * host. Reading never mounts: an unmounted preset is parsed, not composed,
-   * so listing a preset's plugins cannot activate them early. A composition
-   * that stopped reading between discovery's health verdict and this read is
-   * reported broken with the raced reason rather than dropped.
+   * Loader entries — the composition new sessions join — even when the file
+   * behind it has since been edited into an unreadable state: the mount is
+   * what sessions actually run, so the broken verdict only applies to a
+   * preset nothing composed. One never composed since boot answers from its
+   * file, with `!!js` disabled gates evaluated against the Loader context so
+   * both answers reflect the same host. Reading never mounts: an unmounted
+   * preset is parsed, not composed, so listing a preset's plugins cannot
+   * activate them early. A composition that stopped reading between
+   * discovery's health verdict and this read is reported broken with the
+   * raced reason rather than dropped.
    * @returns one composition per roster preset, in roster order.
    */
   async compositionInventory(): Promise<AgentPresetComposition[]> {
     const defaultId = this.defaultId
-    // The Loader's own expression scope: what a mount decision would consult
-    // (entry.ctx only adds the entry itself, which no disabled gate reads).
+    // The Loader's own expression scope: what a mount decision would consult.
+    // An identifier this scope cannot resolve throws under `with`, and the
+    // row stays `'conditional'`; only a gate whose identifiers resolve BOTH
+    // here and under a mounted row's entry chain, with different values,
+    // could report a wrong verdict — the shipped gates read `process` alone.
     const evaluateExpression = (expression: string): unknown => evaluate(this.ctx.loader.ctx, expression)
+    // Mount records span every Cordis runtime in the process; only this
+    // runtime's mounts describe this roster's presets.
+    const rootFiber = this.ctx.root.fiber
     const found: AgentPresetComposition[] = []
     for (const preset of await this.list()) {
       const identity = {
         id: preset.id,
+        trust: preset.trust,
         ...preset.name === undefined ? {} : { name: preset.name },
         isDefault: preset.id === defaultId,
       }
-      if (preset.broken !== undefined) {
-        found.push({ ...identity, broken: preset.broken, rows: [] })
-        continue
-      }
-      // Newest generation last: mount records keep insertion order, and a
+      // Before the broken verdict: a mounted preset whose file was since
+      // deleted or corrupted still runs its standing composition. Newest
+      // generation last: mount records keep insertion order, and a
       // superseded generation's record precedes its replacement's.
-      const mount = livePresetMounts().findLast(candidate => candidate.presetId === preset.id)
+      const mount = livePresetMounts(rootFiber).findLast(candidate => candidate.presetId === preset.id)
       if (mount !== undefined) {
         found.push({ ...identity, rows: mountedCompositionRows(mount.tree) })
+        continue
+      }
+      if (preset.broken !== undefined) {
+        found.push({ ...identity, broken: preset.broken, rows: [] })
         continue
       }
       const read = await fileComposition(preset.path, evaluateExpression)

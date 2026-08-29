@@ -9,15 +9,20 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { PluginInventoryLocaleKey } from './locales.ts'
 import css from './PluginInventorySettingsTab.module.css'
 
+type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
+type AgentPresetGroup = NonNullable<PluginInventorySnapshot['agentPresets']>[number]
+type AgentPresetRow = AgentPresetGroup['rows'][number]
+
 /** Registration-side Remote face used by the section. */
 export interface PluginInventorySettingsTabInjected {
   /** Read a current Host inventory snapshot. */
   list: () => Promise<PluginInventorySnapshot>
+  /**
+   * Display name for one preset: shipped presets resolve through the
+   * agent-preset dictionaries, user-authored ones keep their own metadata.
+   */
+  presetName: (preset: AgentPresetGroup) => string
 }
-
-type PluginInventoryEntry = PluginInventorySnapshot['entries'][number]
-type AgentPresetGroup = NonNullable<PluginInventorySnapshot['agentPresets']>[number]
-type AgentPresetRow = AgentPresetGroup['rows'][number]
 type PluginFiberPhase = PluginInventoryEntry['fiberPhase']
 
 /** Full component props assembled by the Settings slot renderer. */
@@ -68,8 +73,8 @@ function fallbackPreset(presets: readonly AgentPresetGroup[]): AgentPresetGroup 
 }
 
 /** The switcher's display label for one preset. */
-function presetLabel(preset: AgentPresetGroup, t: Translate): string {
-  const name = preset.name ?? preset.id
+function presetLabel(preset: AgentPresetGroup, t: Translate, presetName: (preset: AgentPresetGroup) => string): string {
+  const name = presetName(preset)
   if (preset.broken !== undefined) return t('presetOptionBroken', { name })
   if (preset.isDefault) return t('presetOptionDefault', { name })
   return name
@@ -162,7 +167,7 @@ function StateTag({ kind, label }: { readonly kind: string; readonly label: stri
 }
 
 /** Render the read-only plugin inventory: agent presets first, then the global plane. */
-export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsTabProps): ReactNode {
+export function PluginInventorySettingsTab({ list, presetName, t }: PluginInventorySettingsTabProps): ReactNode {
   const sectionId = useId()
   const [request, setRequest] = useState(0)
   const [query, setQuery] = useState('')
@@ -268,7 +273,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
           moduleLabel={t('moduleLabel')}
           entryId={row.entryId}
           facts={[
-            [t('fromPreset'), preset.name ?? preset.id],
+            [t('fromPreset'), presetName(preset)],
             [t('configuration'), stateText],
             ...row.fiberPhase === null ? [] : [[t('runtime'), phaseLabel(row.fiberPhase, t)] as const],
             ...row.condition === undefined ? [] : [[t('condition'), <code key="condition">{row.condition}</code>] as const],
@@ -318,7 +323,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
               [t('configuration'), t('presetProvidedDetail')],
               [t('enabledIn'), (
                 <span className={css.enabledIn}>
-                  <span>{providers.map(preset => preset.name ?? preset.id).join(' · ')}</span>
+                  <span>{providers.map(preset => presetName(preset)).join(' · ')}</span>
                   <button
                     type="button"
                     className={css.jumpLink}
@@ -380,7 +385,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                   <Menu
                     open={switcherOpen}
                     onClose={() => { setSwitcherOpen(false) }}
-                    items={presets.map(preset => ({ id: preset.id, label: presetLabel(preset, t) }))}
+                    items={presets.map(preset => ({ id: preset.id, label: presetLabel(preset, t, presetName) }))}
                     selectedId={selected.id}
                     onSelect={(id) => {
                       setSwitcherOpen(false)
@@ -397,7 +402,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                         aria-label={t('switcherLabel')}
                         onClick={() => { setSwitcherOpen(value => !value) }}
                       >
-                        <span className={css.switcherLabel}>{presetLabel(selected, t)}</span>
+                        <span className={css.switcherLabel}>{presetLabel(selected, t, presetName)}</span>
                         <IconChevronDownOutline14 className={css.chevron} aria-hidden="true" />
                       </button>
                     )}
@@ -430,7 +435,7 @@ export function PluginInventorySettingsTab({ list, t }: PluginInventorySettingsT
                           className={css.jumpLink}
                           onClick={() => { setChosenPreset(preset.id) }}
                         >
-                          {preset.name ?? preset.id}
+                          {presetName(preset)}
                         </button>
                       ))}
                     </p>

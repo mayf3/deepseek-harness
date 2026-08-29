@@ -16,6 +16,7 @@ import type { FiberState } from '@deepseek-ai/cordis'
 import { isJsExpr, type EntryTree } from '@deepseek-ai/cordis-plugin-loader'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { entryListProblem } from './discovery.ts'
+import type { PresetTrust } from './preset.ts'
 
 /**
  * Effective enablement of one composition row: a literal or evaluated
@@ -52,6 +53,8 @@ export interface AgentPresetCompositionRow {
 export interface AgentPresetComposition {
   /** Stable preset id. */
   readonly id: string
+  /** Whether the deployment ships the preset or the user owns it. */
+  readonly trust: PresetTrust
   /** Display name the preset published. */
   readonly name?: string
   /** Whether a session naming no preset composes this one. */

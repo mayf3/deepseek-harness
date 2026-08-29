@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-客户端与设置页可以展示宿主当前组合了什么：调用 `pluginInventory/list` 即按 Loader 顺序返回当前的非组条目——条目 id、模块标识、有效启用状态与根 Fiber 阶段（`pending`、`loading`、`active`、`failed` 或 `unloading`；条目没有存活根 Fiber 时为 `null`）。当部署组合了 Agent 预设 roster 时，快照还携带每个预设一组——id、显示名、默认标记、健康状态与压平后的组合行——因为挂载 roster 的部署把模型侧插件运行在预设组合里，而不是 Loader 自己的条目上。该快照只表示调用当下：Loader 是唯一的生命周期权威，本包不拥有缓存、历史、来源模型、事件流或修改路径。Client 包通过显式的 [`api-remotes`](../../api/remotes/README.zh.md) 组合消费这个 Remote，而不导入 Host 实现。
+客户端与设置页可以展示宿主当前组合了什么：调用 `pluginInventory/list` 即按 Loader 顺序返回当前的非组条目——条目 id、模块标识、有效启用状态与根 Fiber 阶段（`pending`、`loading`、`active`、`failed` 或 `unloading`；条目没有存活根 Fiber 时为 `null`）。当部署组合了 Agent 预设 roster 时，快照还携带每个预设一组——id、trust、显示名、默认标记、健康状态与压平后的组合行——因为挂载 roster 的部署把模型侧插件运行在预设组合里，而不是 Loader 自己的条目上。该快照只表示调用当下：Loader 是唯一的生命周期权威，本包不拥有缓存、历史、来源模型、事件流或修改路径。Client 包通过显式的 [`api-remotes`](../../api/remotes/README.zh.md) 组合消费这个 Remote，而不导入 Host 实现。
 
 ## 目录
 
@@ -33,7 +33,7 @@ kind: "package-reference"
 
 ### 每个预设的组合
 
-组合了 roster 时，`agentPresets` 按 roster 顺序携带每个预设一组：其 id、发布的显示名、未指名预设的会话是否组合它，以及压平后的插件行——条目 id（文件行未声明时为 null）、模块标识、有效启用状态、行自带的 `!!js` disabled 表达式（如有），以及组合存活时的根 Fiber 阶段。已有会话组合过的预设由其最新 standing 世代作答；开机以来从未被组合的预设由其组合文件作答，disabled 门用 Loader 上下文求值，且读取从不挂载预设。`conditional` 表示宿主无法求值的门；坏预设保留在列表中，携带原因且没有行。没有 roster 时该字段缺席。
+组合了 roster 时，`agentPresets` 按 roster 顺序携带每个预设一组：其 id、随部署内置还是用户自建（`trust`，客户端据此本地化内置预设名）、发布的显示名、未指名预设的会话是否组合它，以及压平后的插件行——条目 id（文件行未声明时为 null）、模块标识、有效启用状态、行自带的 `!!js` disabled 表达式（如有），以及组合存活时的根 Fiber 阶段。已有会话组合过的预设由其最新 standing 世代作答——即使其文件事后损坏也是如此，因为挂载才是这些会话实际运行的组合；开机以来从未被组合的预设由其组合文件作答，disabled 门用 Loader 上下文求值，且读取从不挂载预设。`conditional` 表示宿主无法求值的门；无人组合的坏预设保留在列表中，携带原因且没有行。没有 roster 时该字段缺席。
 
 ### 你能用它做什么、不能做什么
 

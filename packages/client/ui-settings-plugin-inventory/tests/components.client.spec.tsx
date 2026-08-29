@@ -17,10 +17,14 @@ const t = ((key: PluginInventoryLocaleKey, params?: Record<string, string>): str
     en[key],
   )) as PluginInventorySettingsTabProps['t']
 
-function props(list: PluginInventorySettingsTabInjected['list']): PluginInventorySettingsTabProps {
+function props(
+  list: PluginInventorySettingsTabInjected['list'],
+  presetName: PluginInventorySettingsTabInjected['presetName'] = preset => preset.name ?? preset.id,
+): PluginInventorySettingsTabProps {
   return {
     t,
     list,
+    presetName,
   } as PluginInventorySettingsTabProps
 }
 
@@ -38,6 +42,7 @@ const SNAPSHOT = {
   agentPresets: [
     {
       id: 'standard',
+      trust: 'system',
       name: '标准模式',
       isDefault: true,
       rows: [
@@ -57,6 +62,7 @@ const SNAPSHOT = {
     },
     {
       id: 'ptc',
+      trust: 'system',
       isDefault: false,
       rows: [
         { entryId: 'bash', moduleName: '@deepseek-ai/dsh-tool-bash', enabled: true, fiberPhase: null },
@@ -64,7 +70,7 @@ const SNAPSHOT = {
         { entryId: 'fs', moduleName: '@deepseek-ai/dsh-tool-fs', enabled: 'conditional', fiberPhase: null },
       ],
     },
-    { id: 'shattered', name: '坏预设', isDefault: false, broken: 'the composition file is missing', rows: [] },
+    { id: 'shattered', trust: 'user', name: '坏预设', isDefault: false, broken: 'the composition file is missing', rows: [] },
   ],
 } as unknown as Snapshot
 
@@ -203,6 +209,32 @@ describe('PluginInventorySettingsTab', () => {
     expect(toggle.getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('routes every preset name through the display resolver', async () => {
+    // The resolver stands in for presetDisplayText: shipped presets localize,
+    // user-authored ones keep their own metadata.
+    const localized: PluginInventorySettingsTabInjected['presetName'] = preset =>
+      preset.trust === 'system' ? `Localized ${preset.id}` : preset.name ?? preset.id
+    render(<PluginInventorySettingsTab {...props(async () => SNAPSHOT, localized)} />)
+    await screen.findByRole('searchbox', { name: en.search })
+
+    const switcher = screen.getByRole('button', { name: en.switcherLabel })
+    expect(switcher.textContent).toBe('Localized standard (default)')
+    fireEvent.click(switcher)
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual([
+      'Localized standard (default)',
+      'Localized ptc',
+      '坏预设 (failed to load)',
+    ])
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'pwsh, Conditional' }))
+    expect(screen.getByText(en.fromPreset).nextElementSibling?.textContent).toBe('Localized standard')
+
+    fireEvent.click(globalToggle())
+    fireEvent.click(screen.getByRole('button', { name: 'tool-bash, Enabled via presets' }))
+    expect(screen.getByText('Localized standard · Localized ptc')).toBeTruthy()
+  })
+
   it('jumps from a preset-provided row to the preset that enables it', async () => {
     await renderReady()
     fireEvent.click(screen.getByRole('button', { name: en.switcherLabel }))
@@ -271,6 +303,7 @@ describe('PluginInventorySettingsTab', () => {
       entries: [],
       agentPresets: [{
         id: 'solo',
+        trust: 'user',
         isDefault: false,
         rows: [{ entryId: 'one', moduleName: '@fixture/one', enabled: true, fiberPhase: null }],
       }],

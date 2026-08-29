@@ -425,13 +425,16 @@ async list(): Promise<AgentPreset[]>
  * surfaces beside the roster's own picker.
  *
  * A preset with a live standing mount answers from its newest generation's
- * Loader entries — the composition new sessions join — and one never
- * composed since boot answers from its file, with `!!js` disabled gates
- * evaluated against the Loader context so both answers reflect the same
- * host. Reading never mounts: an unmounted preset is parsed, not composed,
- * so listing a preset's plugins cannot activate them early. A composition
- * that stopped reading between discovery's health verdict and this read is
- * reported broken with the raced reason rather than dropped.
+ * Loader entries — the composition new sessions join — even when the file
+ * behind it has since been edited into an unreadable state: the mount is
+ * what sessions actually run, so the broken verdict only applies to a
+ * preset nothing composed. One never composed since boot answers from its
+ * file, with `!!js` disabled gates evaluated against the Loader context so
+ * both answers reflect the same host. Reading never mounts: an unmounted
+ * preset is parsed, not composed, so listing a preset's plugins cannot
+ * activate them early. A composition that stopped reading between
+ * discovery's health verdict and this read is reported broken with the
+ * raced reason rather than dropped.
  * @returns one composition per roster preset, in roster order.
  */
 async compositionInventory(): Promise<AgentPresetComposition[]>

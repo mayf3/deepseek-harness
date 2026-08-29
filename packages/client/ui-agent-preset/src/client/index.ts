@@ -64,7 +64,7 @@ export const inject = [
  */
 export function apply(ctx: ClientContext): void {
   const controller = new AgentPresetSettingsController(ctx)
-  // One roster, four surfaces. The chip is registered in a later scope, so it
+  // One roster, three surfaces. The chip is registered in a later scope, so it
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
   const section = new AgentPresetSectionController(ctx, () => {
