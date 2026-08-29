@@ -208,7 +208,7 @@ describe('gate graph validation', () => {
     expect(completeBuiltBin?.after).not.toContain('docs-site-build')
   })
 
-  it('applies one configured test and polling timeout to both coverage gates', () => {
+  it('applies one configured test, polling, and hook timeout to both coverage gates', () => {
     const gates = withEnv('DSH_COVERAGE_TEST_TIMEOUT_MS', '15000', () =>
       withPnpmEntrypoint(() => gatesForMode('ci-windows-complete')))
 
@@ -216,6 +216,7 @@ describe('gate graph validation', () => {
       expect(gates.find(subject => subject.id === id)?.args).toEqual(expect.arrayContaining([
         '--testTimeout=15000',
         '--expect.poll.timeout=15000',
+        '--hookTimeout=15000',
       ]))
     }
   })
@@ -226,7 +227,7 @@ describe('gate graph validation', () => {
 
     for (const id of ['coverage', 'coverage-exempt-heavy']) {
       expect(gates.find(subject => subject.id === id)?.args).not.toEqual(expect.arrayContaining([
-        expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout)=/),
+        expect.stringMatching(/^--(?:testTimeout|expect\.poll\.timeout|hookTimeout)=/),
       ]))
     }
   })
