@@ -3,7 +3,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { PresetMountError, UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
@@ -15,7 +14,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
   ApiSessionAgentController,
@@ -74,14 +74,14 @@ export class SessionCommandController {
    */
   async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
-      reject('bad-request', 'session.create accepts workspaceId or cwd, not both', {})
+      throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
     }
     const sessionId = request.sessionId ?? SessionId(`session-${randomUUID()}`)
     let workspace: Workspace | undefined
     if (request.workspaceId !== undefined) {
       workspace = this.ctx.workspaceRegistry.get(request.workspaceId)
       if (workspace === undefined) {
-        reject('workspace-not-found', `workspace "${request.workspaceId}" not found`, {
+        throw new RemoteError('workspace/not-found', `workspace "${request.workspaceId}" not found`, {
           workspaceId: request.workspaceId,
         })
       }
@@ -102,8 +102,8 @@ export class SessionCommandController {
       try {
         await workspace.attachSession(sessionId)
       } catch (error) {
-        reject(
-          'workspace-attach-failed',
+        throw new RemoteError(
+          'session/workspace-attach-failed',
           `session "${sessionId}" was created but could not attach to workspace "${workspace.id}": ${String(error)}`,
           { sessionId, workspaceId: workspace.id },
         )
@@ -146,9 +146,9 @@ export class SessionCommandController {
         }
         return { selected: { ...selected } }
       } catch (error) {
-        if (error instanceof TypertRemoteFailure) throw error
-        reject(
-          'model-unavailable',
+        if (remoteErrorOf(error) !== undefined) throw error
+        throw new RemoteError(
+          'session/model-unavailable',
           error instanceof Error ? error.message : String(error),
           { provider: request.provider, model: request.model },
         )
@@ -165,17 +165,17 @@ export class SessionCommandController {
     const agent = await this.resolveAgent(request.sessionId)
     const titles = this.ctx.get('sessionTitle')
     if (titles === undefined) {
-      reject('internal', 'renaming is unavailable: this deployment mounts no session-title service', {})
+      throw new RemoteError('gateway/internal', 'renaming is unavailable: this deployment mounts no session-title service', {})
     }
     try {
       const accepted = titles.rename(agent.session, request.title)
       return { title: accepted.title, seq: accepted.eventSeq }
     } catch (error) {
       if (error instanceof SessionTitleInvalidError) {
-        reject('title-invalid', error.message, { sessionId: request.sessionId })
+        throw new RemoteError('session/title-invalid', error.message, { sessionId: request.sessionId })
       }
-      reject(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         `failed to rename session "${request.sessionId}": ${String(error)}`,
         {},
       )
@@ -190,7 +190,7 @@ export class SessionCommandController {
   async fork(request: SessionForkRequest): Promise<SessionForkValue> {
     if (request.atSeq !== undefined
       && (!Number.isInteger(request.atSeq) || request.atSeq < 0)) {
-      reject('bad-request', 'atSeq must be a non-negative integer', {})
+      throw new RemoteError('gateway/bad-request', 'atSeq must be a non-negative integer', {})
     }
     let observed: SessionObservation
     try {
@@ -198,12 +198,12 @@ export class SessionCommandController {
     } catch (error) {
       if (error instanceof SessionQueryError
         && error.code === 'SESSION_QUERY_SESSION_NOT_FOUND') {
-        reject('session-not-found', `session "${request.sessionId}" not found`, {
+        throw new RemoteError('session/not-found', `session "${request.sessionId}" not found`, {
           sessionId: request.sessionId,
         })
       }
-      reject(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         `fork source unavailable for session "${request.sessionId}": ${String(error)}`,
         {},
       )
@@ -219,8 +219,8 @@ export class SessionCommandController {
         ? source.events.findLast(event => event.type === 'turn/end')
         : undefined)
     if (boundary === undefined) {
-      reject(
-        'fork-unavailable',
+      throw new RemoteError(
+        'session/fork-unavailable',
         atSeq !== undefined && atSeq <= lastSeq
           ? `session "${request.sessionId}" has not completed the turn containing event ${String(atSeq)}`
           : `session "${request.sessionId}" has no completed turn to fork from`,
@@ -233,8 +233,8 @@ export class SessionCommandController {
     try {
       workspace = await this.forkWorkspace(source.header)
     } catch (error) {
-      reject(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         `failed to resolve fork workspace for session "${request.sessionId}": ${String(error)}`,
         {},
       )
@@ -258,8 +258,8 @@ export class SessionCommandController {
         setup: composition.setup,
       })
     } catch (error) {
-      reject(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         `failed to fork session "${request.sessionId}": ${String(error)}`,
         {},
       )
@@ -268,8 +268,8 @@ export class SessionCommandController {
       try {
         await workspace.attachSession(childId)
       } catch (error) {
-        reject(
-          'workspace-attach-failed',
+        throw new RemoteError(
+          'session/workspace-attach-failed',
           `session "${childId}" was forked but could not attach to workspace "${workspace.id}": ${String(error)}`,
           { sessionId: childId, workspaceId: workspace.id },
         )
@@ -288,8 +288,8 @@ export class SessionCommandController {
       ? undefined
       : canonicalClientTimeZone(request.clientTimeZone)
     if (request.clientTimeZone !== undefined && clientTimeZone === undefined) {
-      reject(
-        'invalid-time-zone',
+      throw new RemoteError(
+        'session/invalid-time-zone',
         'clientTimeZone must be UTC or a valid IANA Area/Location name',
         { value: request.clientTimeZone },
       )
@@ -297,8 +297,8 @@ export class SessionCommandController {
     const agent = await this.resolveAgent(request.sessionId)
     const selection = this.agents.selectionFor(agent).current
     if (!routeServed(this.ctx, selection.provider)) {
-      reject(
-        'model-unavailable',
+      throw new RemoteError(
+        'session/model-unavailable',
         `no adapter serves provider "${selection.provider}"; select a model for this session`,
         { provider: selection.provider, model: selection.model },
       )
@@ -315,8 +315,8 @@ export class SessionCommandController {
           const current = this.agents.selectionFor(agent).current
           const model = await this.ctx.llm.resolveModelInfo(current.provider, current.model)
           if (model.inputModalities !== undefined && !model.inputModalities.includes('image')) {
-            reject(
-              'attachment-error',
+            throw new RemoteError(
+              'session/attachment-invalid',
               `Model "${current.model}" does not support image input.`,
               { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' },
             )
@@ -327,11 +327,11 @@ export class SessionCommandController {
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)
       } catch (error) {
-        if (error instanceof TypertRemoteFailure) throw error
+        if (remoteErrorOf(error) !== undefined) throw error
         if (error instanceof AttachmentError) {
-          reject('attachment-error', error.message, { reason: error.code })
+          throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
         }
-        reject('agent-busy', 'prompt rejected', { reason: String(error) })
+        throw new RemoteError('session/agent-busy', 'prompt rejected', { reason: String(error) })
       }
       return { accepted: true }
     }
@@ -349,18 +349,18 @@ export class SessionCommandController {
       source = await this.readSessionState(request.sessionId)
     } catch (error) {
       if (error instanceof ApiSessionNotFound) {
-        reject('session-not-found', error.message, { sessionId: request.sessionId })
+        throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId })
       }
-      reject(
-        'internal',
+      throw new RemoteError(
+        'gateway/internal',
         `attachment authorization unavailable for session "${request.sessionId}": ${String(error)}`,
         {},
       )
     }
     const ref = referencedImage(source.events, String(request.attachmentId))
     if (ref === undefined) {
-      reject(
-        'attachment-error',
+      throw new RemoteError(
+        'session/attachment-invalid',
         'Image is not referenced by this session.',
         { reason: 'ATTACHMENT_NOT_REFERENCED' },
       )
@@ -373,9 +373,9 @@ export class SessionCommandController {
       }
     } catch (error) {
       if (error instanceof AttachmentError) {
-        reject('attachment-error', error.message, { reason: error.code })
+        throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
       }
-      reject('internal', 'Unable to read image attachment.', {})
+      throw new RemoteError('gateway/internal', 'Unable to read image attachment.', {})
     }
   }
 
@@ -387,18 +387,18 @@ export class SessionCommandController {
   updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue {
     if (request.action.kind === 'edit'
       && request.action.content.some(block => block.type !== 'text')) {
-      reject(
-        'attachment-error',
+      throw new RemoteError(
+        'session/attachment-invalid',
         'queue edits accept text content only',
         { reason: 'QUEUE_EDIT_NON_TEXT' },
       )
     }
     const agent = this.ctx.agents.get(request.sessionId)
     if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
+      throw apiSessionSubagentOwnershipError(request.sessionId)
     }
     if (agent === undefined) {
-      reject('queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
+      throw new RemoteError('session/queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
     }
     const nextTurn = agent.inbox.nextTurn.find(message => message.id === request.itemId)
     const nextStep = agent.inbox.nextStep.find(message => message.id === request.itemId)
@@ -406,11 +406,11 @@ export class SessionCommandController {
       ? nextStep === undefined ? undefined : { target: 'next-step' as const, message: nextStep }
       : { target: 'next-turn' as const, message: nextTurn }
     if (located === undefined) {
-      reject('queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
+      throw new RemoteError('session/queue-item-not-found', 'queued item is no longer pending', { itemId: request.itemId })
     }
     const { target, message } = located
     if (request.action.kind === 'steer' && (target !== 'next-turn' || agent.status !== 'running')) {
-      reject('steer-unavailable', 'current turn no longer accepts steering', { itemId: request.itemId })
+      throw new RemoteError('session/steer-unavailable', 'current turn no longer accepts steering', { itemId: request.itemId })
     }
     if (request.action.kind === 'edit') {
       agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
@@ -432,14 +432,14 @@ export class SessionCommandController {
   cancel(request: SessionCancelRequest): SessionCancelValue {
     const agent = this.ctx.agents.get(request.sessionId)
     if (agent === undefined) {
-      reject(
-        'session-not-found',
+      throw new RemoteError(
+        'session/not-found',
         `session "${request.sessionId}" not found (not attached)`,
         { sessionId: request.sessionId },
       )
     }
     if (hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
+      throw apiSessionSubagentOwnershipError(request.sessionId)
     }
     agent.cancel({ kind: 'user' }, { keepInbox: true })
     return { accepted: true }
@@ -459,18 +459,18 @@ export class SessionCommandController {
   killJob(request: SessionKillJobRequest): SessionKillJobValue {
     const jobs = this.ctx.get('jobs')
     if (jobs === undefined) {
-      reject('jobs-unavailable', 'background jobs are not available in this composition', {})
+      throw new RemoteError('session/jobs-unavailable', 'background jobs are not available in this composition', {})
     }
     const agent = this.ctx.agents.get(request.sessionId)
     if (agent !== undefined && hasApiSessionSubagentOwner(this.ctx, agent.session, agent)) {
-      rejectFailure(apiSessionSubagentOwnershipError(request.sessionId))
+      throw apiSessionSubagentOwnershipError(request.sessionId)
     }
     try {
       jobs.get(request.jobId, agent)
     } catch (error) {
       // `unknown job` and `belongs to another session` both mean this session's
       // list no longer carries a killable row; the client renders one story.
-      reject('job-not-found', String(error), {
+      throw new RemoteError('session/job-not-found', String(error), {
         sessionId: request.sessionId,
         jobId: request.jobId,
       })
@@ -487,41 +487,30 @@ export class SessionCommandController {
 
   private async resolveAgent(sessionId: SessionId): Promise<Agent> {
     const found = await this.agents.resolveAgent(sessionId)
-    if ('error' in found) rejectFailure(found.error)
+    if ('error' in found) throw found.error
     return found.agent
   }
 
   private rejectCreation(sessionId: SessionId, error: unknown): never {
+    if (remoteErrorOf(error) !== undefined) throw error
     if (error instanceof ApiSessionPresetConflict) {
-      reject('agent-preset-conflict', error.message, {
+      throw new RemoteError('agent-preset/conflict', error.message, {
         sessionId: error.sessionId,
         requestedPreset: error.requestedPreset,
         ...(error.existingPreset === undefined ? {} : { existingPreset: error.existingPreset }),
       })
     }
-    if (error instanceof UnknownPresetError) {
-      reject('agent-preset-not-found', error.message, {
-        agentPreset: error.presetId,
-        available: [...error.available],
-      })
-    }
-    if (error instanceof PresetMountError) {
-      reject('agent-preset-invalid', error.message, {
-        agentPreset: error.presetId,
-        reason: error.reason,
-      })
-    }
     if (error instanceof ApiSessionCwdConflict) {
-      reject('session-conflict', error.message, {
+      throw new RemoteError('session/conflict', error.message, {
         sessionId: error.sessionId,
         requestedCwd: error.requestedCwd,
         ...(error.existingCwd === undefined ? {} : { existingCwd: error.existingCwd }),
       })
     }
     if (error instanceof ApiSessionSubagentOwnership) {
-      rejectFailure(apiSessionSubagentOwnershipError(error.sessionId))
+      throw apiSessionSubagentOwnershipError(error.sessionId)
     }
-    reject('internal', `failed to create session "${sessionId}": ${String(error)}`, {})
+    throw new RemoteError('gateway/internal', `failed to create session "${sessionId}": ${String(error)}`, {})
   }
 
   private async readSessionState(sessionId: SessionId): Promise<SessionReadState> {
@@ -544,14 +533,6 @@ export class SessionCommandController {
     }
     return undefined
   }
-}
-
-function rejectFailure(error: { readonly code: string; readonly message: string; readonly details: object }): never {
-  throw new TypertRemoteFailure(error)
-}
-
-function reject(code: string, message: string, details: object): never {
-  throw new TypertRemoteFailure({ code, message, details })
 }
 
 async function durablePromptContent(
@@ -621,18 +602,6 @@ function referencedImage(
     if (found !== undefined) return found
   }
   return undefined
-}
-
-const IANA_TIME_ZONE = /^[A-Za-z][A-Za-z0-9_+.-]*(?:\/[A-Za-z0-9_+.-]+)+$/
-
-function canonicalClientTimeZone(value: string): string | undefined {
-  if (value.length === 0 || value.trim() !== value
-    || (value !== 'UTC' && !IANA_TIME_ZONE.test(value))) return undefined
-  try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: value }).resolvedOptions().timeZone
-  } catch {
-    return undefined
-  }
 }
 
 function routeServed(ctx: Context, provider: string): boolean {

@@ -13,7 +13,6 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
-import type { ClientResult } from './result.ts'
 import type { PendingSubmissionImage, SessionSnapshot } from './snapshot.ts'
 
 /**
@@ -84,7 +83,7 @@ export interface ISession {
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
     requestId?: SessionRequestId,
-  ): Promise<ClientResult<{ accepted: true }>>
+  ): Promise<RemoteResult<{ accepted: true }>>
   /**
    * Resolve one durable image referenced by this session.
    * @param attachmentId - opaque id found in the folded session log.
@@ -92,20 +91,20 @@ export interface ISession {
    */
   readAttachment(
     attachmentId: AttachmentIdType,
-  ): Promise<ClientResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>>
+  ): Promise<RemoteResult<{ attachment: ImageAttachmentRef; data: Uint8Array }>>
   /**
    * Apply one edit, remove, or strict steer action to a still-pending queue occurrence.
    * @param itemId - agent-owned inbox occurrence identity.
    * @param action - requested queue operation.
    * @returns acceptance, or a business/transport error.
    */
-  updateQueue(itemId: MessageId, action: QueueAction): Promise<ClientResult<{ accepted: true }>>
+  updateQueue(itemId: MessageId, action: QueueAction): Promise<RemoteResult<{ accepted: true }>>
   /**
    * Cancel the running turn. Pending queued work remains and resumes in FIFO
    * order after the Host reaches cancellation quiescence.
    * @returns acceptance, or the business error.
    */
-  cancel(): Promise<ClientResult<{ accepted: true }>>
+  cancel(): Promise<RemoteResult<{ accepted: true }>>
   /**
    * Kill one background job from this session's task list. The owning agent
    * still receives the standard completion notice, because a human kill has no
@@ -113,14 +112,14 @@ export interface ISession {
    * @param jobId - the job row's registry id.
    * @returns the registry's admission, or the business/transport error.
    */
-  killJob(jobId: string): Promise<ClientResult<{ outcome: 'requested' | 'already-finished' }>>
+  killJob(jobId: string): Promise<RemoteResult<{ outcome: 'requested' | 'already-finished' }>>
   /**
    * Rename this session (explicit user title; pins it against automatic
    * regeneration).
    * @param title - raw title text (the host normalizes acceptance).
    * @returns the normalized accepted title and its event seq, or the business error.
    */
-  rename(title: string): Promise<ClientResult<{ title: string; seq: number }>>
+  rename(title: string): Promise<RemoteResult<{ title: string; seq: number }>>
   /**
    * Extend the history window backwards (older messages pagination).
    * @returns completion; failures land in snapshot.openState/loadingOlder.

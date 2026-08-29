@@ -5,7 +5,7 @@ import type { JobId, JobOutcome } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it } from 'vitest'
 import type { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
@@ -56,10 +56,11 @@ function failureCode(run: () => unknown): string {
   try {
     run()
   } catch (error) {
-    if (error instanceof TypertRemoteFailure) return error.failure.code
+    const failure = remoteErrorOf(error)
+    if (failure !== undefined) return failure.code
     throw error
   }
-  throw new Error('expected a TypertRemoteFailure')
+  throw new Error('expected a RemoteError failure')
 }
 
 describe('session.killJob', () => {
@@ -97,7 +98,7 @@ describe('session.killJob', () => {
   it('rejects an unknown job id as job-not-found', async () => {
     const { session, commands } = await harness()
     expect(failureCode(() => commands.killJob({ sessionId: session.id, jobId: 'bash-99' as JobId })))
-      .toBe('job-not-found')
+      .toBe('session/job-not-found')
   })
 
   it('rejects a foreign session\'s job as job-not-found', async () => {
@@ -108,14 +109,14 @@ describe('session.killJob', () => {
     const other = ctx.sessions.create()
 
     expect(failureCode(() => commands.killJob({ sessionId: other.id, jobId: id })))
-      .toBe('job-not-found')
+      .toBe('session/job-not-found')
     expect(ctx.jobs.get(id, agent).status).toBe('running')
   })
 
   it('rejects when the composition has no job registry', async () => {
     const { session, commands } = await harness(false)
     expect(failureCode(() => commands.killJob({ sessionId: session.id, jobId: 'bash-1' as JobId })))
-      .toBe('jobs-unavailable')
+      .toBe('session/jobs-unavailable')
   })
 
   it('propagates a producer cancel throw instead of masking it as job-not-found', async () => {
@@ -150,7 +151,7 @@ describe('session.killJob', () => {
     const id = ctx.jobs.start({ ...task.spec, owner: childAgent })
 
     expect(failureCode(() => commands.killJob({ sessionId: child.id, jobId: id })))
-      .toBe('agent-busy')
+      .toBe('session/agent-busy')
     expect(ctx.jobs.get(id, childAgent).status).toBe('running')
   })
 })
