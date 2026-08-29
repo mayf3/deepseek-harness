@@ -164,8 +164,12 @@ class ClientRemoteService extends Service implements ClientRemote {
     let loop: ReturnType<ConnectionHandle['start']> | undefined
     const start = (): void => {
       if (disposed) return
+      if (connection.rpc.open === undefined) this.streams.start()
       loop = connection.start({
         onConnected: () => { this.ownerCtx.emit('connection/reset') },
+        onReconnectRequested: () => {
+          if (connection.rpc.open === undefined) this.streams.reconnect()
+        },
       })
     }
     const loader = ctx.get('loader') as LoaderReadiness | undefined

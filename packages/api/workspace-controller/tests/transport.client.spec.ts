@@ -199,9 +199,11 @@ function provideClientServices(ctx: Context, remote: WorkspaceRemote): void {
   const connection: ConnectionHandle = {
     isLoopback: true,
     generation: AVAILABLE_CONNECTION.generation,
+    state: { getSnapshot: () => 'connected' as const, subscribe: () => () => {} },
     rpc: {
       call: () => Promise.reject(new Error('unexpected generic RPC call')),
     },
+    reconnect: () => {},
     registerGenerationSource: () => () => {},
     start: () => ({ stop: () => {} }),
   }

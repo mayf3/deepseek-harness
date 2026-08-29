@@ -57,9 +57,11 @@ async function mount(initialGeneration?: ConnectionGeneration): Promise<Bench> {
         return () => { generationListeners.delete(listener) }
       },
     },
+    state: { getSnapshot: () => 'connected' as const, subscribe: () => () => {} },
     rpc: {
       call: () => Promise.reject(new Error('unexpected generic RPC call')),
     },
+    reconnect: () => {},
     registerGenerationSource: () => () => {},
     start: () => ({ stop: () => {} }),
   }

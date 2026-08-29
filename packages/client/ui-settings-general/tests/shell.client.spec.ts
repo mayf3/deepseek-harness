@@ -24,6 +24,12 @@ async function bench() {
   const settings = {
     describe: async () => ({ ok: false, error: new RemoteError('gateway/internal', 'no settings', {}) }),
   }
+  const reconnect = vi.fn()
+  const connectionState = {
+    getSnapshot: () => 'connected' as const,
+    subscribe: () => () => {},
+  }
+  ctx.provide('connection', { state: connectionState, reconnect } as never)
   ctx.provide('remote', {
     $on: () => () => {},
     $host: { home: undefined, isLoopback: false },
@@ -31,7 +37,7 @@ async function bench() {
   } as never)
   ctx.provide('remote.settings', settings as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
-  return { ctx, slots: ctx.get('slots') as SlotRegistry }
+  return { ctx, slots: ctx.get('slots') as SlotRegistry, connectionState, reconnect }
 }
 
 function declare(slots: SlotRegistry): () => void {
@@ -59,7 +65,7 @@ const CHILD_SPECS = {
 describe('ui-settings apply', () => {
   it('declares only the slot registry (a pure composition face, no locale)', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.settings', 'settingsScope',
+      'slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope',
     ])
   })
 
@@ -109,6 +115,16 @@ describe('ui-settings apply', () => {
     expect(listener).toHaveBeenCalled()
     expect(sections.getSnapshot()).not.toBe(rows)
     off()
+  })
+
+  it('projects the Gateway connection control without copying its state', async () => {
+    const b = await bench()
+    declare(b.slots)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = injectedOf(b.slots)
+    expect(injected.hooks.connectionState).toBe(b.connectionState)
+    injected.reconnect()
+    expect(b.reconnect).toHaveBeenCalledOnce()
   })
 
   it('projects onboarding entries into stable coordinator order', async () => {
