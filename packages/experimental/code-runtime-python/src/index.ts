@@ -217,6 +217,19 @@ const FRAME_PARSE_CAP_BYTES = 64 * 1024 * 1024
 const MAX_PENDING_CHUNKS = 1024
 
 /**
+ * Replies the host retains before fd 3 accepts them. The drain loop writes one
+ * reply per iteration and waits for `drain` when the pipe is full; a child
+ * that never reads its replies (hostile or wedged) leaves the pipe full, so
+ * every call frame it keeps sending adds a reply the drain cannot write, and
+ * the backlog would grow without bound until the wall clock. 1024 keeps
+ * legitimate concurrent gathers (measured queue depths reach 11) far below
+ * the ceiling while bounding the hostile backlog; the run settles as a
+ * worker-exit past it, like the frame cap settles an oversized frame. A
+ * framing invariant, not a deployment choice.
+ */
+const MAX_PENDING_REPLIES = 1024
+
+/**
  * Bytes a frame spends on its own JSON structure around a capped payload, used
  * to bound `maxLogBytes`/`maxValueBytes` against {@link FRAME_PARSE_CAP_BYTES}
  * (the receive path rejects raw frames past that cap, settling the run as a
@@ -969,32 +982,46 @@ export class PythonCodeRuntime extends CodeRuntime {
       injectedGlobals.add(name)
     }
     for (const namespace of request.bindings) {
-      if (!IDENTIFIER.test(namespace.global) || RESERVED_NAMES.has(namespace.global)) {
-        throw new Error(`dsh-code-runtime-python: binding global ${JSON.stringify(namespace.global)} is not a usable Python identifier`)
+      // Snapshot the caller-supplied fields into plain values ONCE. The
+      // namespace and errorClass objects may expose `global`/`name`/
+      // `memberNameProperty` through getters: validation reads each several
+      // times, and the ORIGINAL errorClass object would otherwise be retained
+      // for the boot frame, whose JSON.stringify re-reads it after validation.
+      // A getter that changes or throws on a later read would turn the
+      // seam-misuse rejection into a worker-exit (or inject a different name
+      // than validation approved); reading each field once here and keeping
+      // the plain copy makes validation and the boot frame agree.
+      const global = namespace.global
+      if (!IDENTIFIER.test(global) || RESERVED_NAMES.has(global)) {
+        throw new Error(`dsh-code-runtime-python: binding global ${JSON.stringify(global)} is not a usable Python identifier`)
       }
-      if (bindings.has(namespace.global)) {
-        throw new Error(`dsh-code-runtime-python: duplicate binding global ${JSON.stringify(namespace.global)}`)
+      if (bindings.has(global)) {
+        throw new Error(`dsh-code-runtime-python: duplicate binding global ${JSON.stringify(global)}`)
       }
-      claimGlobal(namespace.global, 'binding global')
+      claimGlobal(global, 'binding global')
       // The error class becomes a program global and its member property an
       // attribute name, so both face the Python identifier rules; the member
       // additionally must be assignable on a BaseException instance.
       const errorClass = namespace.errorClass
+      let validatedErrorClass: CodeBindingErrorClass | undefined
       if (errorClass) {
-        if (!IDENTIFIER.test(errorClass.name) || RESERVED_NAMES.has(errorClass.name)) {
-          throw new Error(`dsh-code-runtime-python: errorClass.name ${JSON.stringify(errorClass.name)} is not a usable Python identifier`)
+        const name = errorClass.name
+        const memberNameProperty = errorClass.memberNameProperty
+        if (!IDENTIFIER.test(name) || RESERVED_NAMES.has(name)) {
+          throw new Error(`dsh-code-runtime-python: errorClass.name ${JSON.stringify(name)} is not a usable Python identifier`)
         }
         // Any non-empty own attribute name is settable via setattr (the
         // program reads exotic names like `tool-name` with getattr), matching
         // the seam contract and the worker backend — only the seam-excluded
         // and protocol-reserved members below are refused.
-        if (errorClass.memberNameProperty.length === 0) {
+        if (memberNameProperty.length === 0) {
           throw new Error('dsh-code-runtime-python: errorClass.memberNameProperty must be a non-empty attribute name')
         }
-        if (EXCEPTION_RESERVED_MEMBERS.has(errorClass.memberNameProperty) || DUNDER.test(errorClass.memberNameProperty)) {
-          throw new Error(`dsh-code-runtime-python: errorClass.memberNameProperty ${JSON.stringify(errorClass.memberNameProperty)} is a reserved error member and cannot be assigned`)
+        if (EXCEPTION_RESERVED_MEMBERS.has(memberNameProperty) || DUNDER.test(memberNameProperty)) {
+          throw new Error(`dsh-code-runtime-python: errorClass.memberNameProperty ${JSON.stringify(memberNameProperty)} is a reserved error member and cannot be assigned`)
         }
-        claimGlobal(errorClass.name, 'errorClass.name')
+        claimGlobal(name, 'errorClass.name')
+        validatedErrorClass = { name, memberNameProperty }
       }
       // Snapshot the callables into a plain own-property record before the
       // child can dispatch. `namespace.functions` is caller-supplied, so it may
@@ -1020,7 +1047,7 @@ export class PythonCodeRuntime extends CodeRuntime {
         const fn = namespace.functions[name]
         if (typeof fn === 'function') functions[name] = fn
       }
-      bindings.set(namespace.global, { functions, ...errorClass ? { errorClass } : {} })
+      bindings.set(global, { functions, ...validatedErrorClass ? { errorClass: validatedErrorClass } : {} })
     }
     return bindings
   }
@@ -1736,6 +1763,18 @@ export class PythonCodeRuntime extends CodeRuntime {
               sendReply({ type: 'reply', id: message.id, ok: false, message: capMessage(`unknown binding ${preview}`, cap) })
               return
             }
+            // A binding that never settles (or resolves too slowly to keep up
+            // with the child's call rate) must not let the flood accumulate one
+            // async closure per frame until the wall clock: the reply cap only
+            // counts resolved calls, so it never trips for in-flight ones.
+            // Count the outstanding binding calls here, before dispatch, and
+            // release the slot in the body's finally — bounding in-flight
+            // closures to MAX_PENDING_REPLIES exactly like the reply backlog.
+            if (pendingCalls >= MAX_PENDING_REPLIES) {
+              finish({ error: { kind: 'worker-exit', message: `call backlog exceeded ${MAX_PENDING_REPLIES} in-flight binding calls (a binding never settled)` } })
+              return
+            }
+            pendingCalls += 1
             void (async () => {
               try {
                 const resolved = await fn(message.args)
@@ -1773,6 +1812,13 @@ export class PythonCodeRuntime extends CodeRuntime {
                 if (settled) return
                 /* oxlint-enable typescript/no-unnecessary-condition */
                 sendReply({ type: 'reply', id: message.id, ok: false, message: messageOf(error) })
+              } finally {
+                // Release the in-flight slot on every exit — reply written,
+                // resolution rejected, or the run settling mid-wait (the
+                // `settled` early returns above). Without this, a binding that
+                // never resolves would leak its slot past the cap check and the
+                // flood bound would erode.
+                pendingCalls -= 1
               }
             })()
             return
@@ -1800,6 +1846,19 @@ export class PythonCodeRuntime extends CodeRuntime {
       // and the bindings themselves still run concurrently. Only the host's peak
       // memory and the flush timing change.
       const replyQueue: ReplyMessage[] = []
+      // Replies queued but not yet written, tracked separately from
+      // `replyQueue.length`: the drain loop clears consumed slots to `undefined`
+      // but does not shrink the array until it finishes, so `length` counts
+      // consumed frames too. The counter is what the cap in `sendReply` reads.
+      let pendingReplies = 0
+      // Binding calls dispatched but not yet settled (the async body below
+      // still awaits the binding's promise). The reply backlog cap only counts
+      // RESOLVED calls — `pendingReplies` grows after the await — so a child
+      // flooding calls against a binding that never settles would accumulate
+      // one async closure per frame until the wall clock without tripping it.
+      // Counted here before dispatch and released in the body's finally, the
+      // in-flight closures are bounded to the same MAX_PENDING_REPLIES.
+      let pendingCalls = 0
       let draining = false
       // Resolve when fd 3 can take another frame, OR when it is gone: a pipe
       // destroyed under the drain (child exited, close-deadline teardown) never
@@ -1847,6 +1906,18 @@ export class PythonCodeRuntime extends CodeRuntime {
             const payload = replyQueue[head] as ReplyMessage
             replyQueue[head] = undefined as unknown as ReplyMessage
             head += 1
+            pendingReplies -= 1
+            // Compact the consumed prefix once it reaches the backlog bound:
+            // the array never shrinks until the drain finishes, and a child
+            // that reads replies just fast enough to keep the drain alive but
+            // never empty would otherwise grow the backing store linearly with
+            // cumulative throughput (consumed slots are undefined, but `length`
+            // keeps counting them). The splice is O(head) once per
+            // MAX_PENDING_REPLIES consumed frames — amortized O(1) per reply.
+            if (head >= MAX_PENDING_REPLIES) {
+              replyQueue.splice(0, head)
+              head = 0
+            }
             // Encode inside the loop, not up front: a queued reply the run no
             // longer needs is dropped by the `settled` check above without ever
             // being serialized.
@@ -1859,12 +1930,24 @@ export class PythonCodeRuntime extends CodeRuntime {
           // the child died. The close path settles the run either way.
         } finally {
           draining = false
+          pendingReplies = 0
           replyQueue.length = 0
         }
       }
       const sendReply = (payload: ReplyMessage): void => {
         /* v8 ignore next -- `settled` covers a race where the child exits between decision and write. */
         if (settled) return
+        // A child that stops reading fd 3 leaves the drain loop blocked on
+        // `drain` forever while its call frames keep resolving into replies:
+        // the backlog would grow without bound until the wall clock, pinning
+        // every binding result the child provokes. Cap the retained backlog and
+        // settle the run as a worker-exit, the same hostile-peer bound the
+        // frame cap applies to inbound bytes.
+        if (pendingReplies >= MAX_PENDING_REPLIES) {
+          finish({ error: { kind: 'worker-exit', message: `reply queue exceeded ${MAX_PENDING_REPLIES} pending frames on fd 3 (the child stopped consuming its replies)` } })
+          return
+        }
+        pendingReplies += 1
         replyQueue.push(payload)
         void drainReplies()
       }

@@ -2491,6 +2491,64 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     expect(result.value).toBe('ToolCallError:fail')
   }, 15_000)
 
+  it('runs when errorClass metadata is exposed through one-read getters', async () => {
+    // Validation reads errorClass.name and errorClass.memberNameProperty, and
+    // the ORIGINAL object used to ride along to the boot frame, whose
+    // JSON.stringify re-read it after validation: a getter that throws or
+    // changes on a second read turned the seam-misuse rejection into a
+    // worker-exit (or injected a different name than validation approved).
+    // The snapshot reads each field exactly once into a plain copy, so a
+    // getter that only tolerates one read must boot and run cleanly.
+    let nameReads = 0
+    let memberReads = 0
+    const errorClass = {
+      get name(): string {
+        nameReads += 1
+        if (nameReads > 1) throw new Error(`errorClass.name read ${nameReads} times`)
+        return 'ToolCallError'
+      },
+      get memberNameProperty(): string {
+        memberReads += 1
+        if (memberReads > 1) throw new Error(`errorClass.memberNameProperty read ${memberReads} times`)
+        return 'toolName'
+      },
+    }
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return "ok"',
+      bindings: [{ global: 'tools', functions: {}, errorClass }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('ok')
+    expect(nameReads).toBe(1)
+    expect(memberReads).toBe(1)
+  }, 15_000)
+
+  it('runs when the binding global is exposed through a one-read getter', async () => {
+    // Validation reads namespace.global several times (identifier check, map
+    // key, claim, boot frame), and the map key came from a fresh read each
+    // time: a getter returning a different name on a later read injected a
+    // global validation never approved, and the program referencing the
+    // approved name died with NameError. Snapshotting reads it exactly once,
+    // so the child must receive the name the program was written against.
+    let globalReads = 0
+    const namespace = {
+      get global(): string {
+        globalReads += 1
+        return globalReads === 1 ? 'tools' : 'evil'
+      },
+      functions: { echo: async (args: unknown) => args as CodeJsonValue },
+    }
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return await tools.echo(41)',
+      bindings: [namespace],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(41)
+    expect(globalReads).toBe(1)
+  }, 15_000)
+
   it('rejects an errorClass name colliding with its namespace global at the seam', async () => {
     const { runtime } = await setup()
     await expect(runtime.run({
@@ -3812,6 +3870,27 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error?.kind).toBe('output-limit')
   })
 
+  it('meters a surrogate-dense completion by counting, not by materializing a match list', async () => {
+    // `_json_str_cost` counted lone surrogates with `_SURROGATE.findall`,
+    // which materializes one single-character string PER surrogate: a
+    // surrogate-dense value near the budget (each surrogate serializes to six
+    // bytes, so a budget-sized value holds millions of them) would allocate
+    // millions of objects before the meter returned — an O(N)-objects spike
+    // that defeats the meter's documented contract of counting without
+    // building. The count is now a length difference over the removal `sub`
+    // already performs. Three million lone surrogates pin the boundary at
+    // scale: 18,000,002 serialized bytes succeed at an 18,000,002 budget and
+    // report output-limit one byte under, proving the meter counts every
+    // surrogate exactly rather than dropping or over-charging any.
+    const { runtime } = await setup({ maxValueBytes: 18_000_002 })
+    const ok = await runtime.run({ program: 'return "\\ud800" * 3000000', bindings: [] })
+    expect(ok.error).toBeUndefined()
+    expect(ok.value).toBe('\ud800'.repeat(3_000_000))
+    const over = await setup({ maxValueBytes: 18_000_001 })
+    const result = await over.runtime.run({ program: 'return "\\ud800" * 3000000', bindings: [] })
+    expect(result.error?.kind).toBe('output-limit')
+  }, 60_000)
+
   it('passes a lone-surrogate binding argument through instead of failing the call', async () => {
     // The argument validator shared the same over-narrow rejection; a host
     // binding must receive the code unit the program passed.
@@ -5067,6 +5146,114 @@ describe('PythonCodeRuntime — hostile peer', () => {
     })
     // The program returned, so the completion wins over the mid-flight reply;
     // whatever the result, the run must settle (no hang on the drain wait).
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+  }, 30_000)
+
+  it('caps the pending reply backlog when a child floods calls without reading its replies', async () => {
+    // drainReplies writes one reply at a time and waits for `drain` when fd 3's
+    // buffer is full. A child that never reads its replies (it only writes
+    // call frames, never draining the reply side) leaves the pipe full, so
+    // every call frame it keeps sending resolves a binding and adds a reply the
+    // drain cannot write: without a bound, the backlog grows until the wall
+    // clock, pinning each binding result in host memory. The cap settles the
+    // run as worker-exit instead, mirroring the frame cap's treatment of an
+    // oversized frame. The child floods 5000 sequential valid calls and never
+    // reads fd 3 (its reply pump is starved by the synchronous write loop and
+    // the blocking sleep); the pipe buffer absorbs ~1600 tiny replies, so the
+    // pending backlog crosses MAX_PENDING_REPLIES long before maxWallMs, and
+    // the run must settle worker-exit with the reply-queue message, not a
+    // wall-clock timeout.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, time',
+        'frame = b\'{"type":"call","id":%d,"global":"tools","name":"echo","args":{}}\\n\'',
+        'for i in range(5000):',
+        '    view = memoryview(frame % i)',
+        '    while view:',
+        '        view = view[os.write(3, view):]',
+        // Keep the child alive without reading fd 3: the run must settle via
+        // the reply-backlog cap, not by the child finishing or exiting.
+        'time.sleep(30)',
+        'return "unreachable"',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { echo: async (args: unknown) => args as CodeJsonValue } }],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('reply queue exceeded')
+  }, 30_000)
+
+  it('caps the outstanding binding-call backlog when a child floods calls against a binding that never settles', async () => {
+    // The reply backlog cap only counts RESOLVED calls (`pendingReplies` grows
+    // after the await), so a child flooding calls against a binding whose
+    // promise never settles would accumulate one async closure per frame until
+    // the wall clock without tripping it. The outstanding-call counter bounds
+    // the in-flight closures to MAX_PENDING_REPLIES and settles the run as
+    // worker-exit, mirroring the reply cap. The binding below never resolves,
+    // so no reply is ever produced; the flood of 5000 sequential calls must
+    // cross the in-flight bound long before maxWallMs.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, time',
+        'frame = b\'{"type":"call","id":%d,"global":"tools","name":"hang","args":{}}\\n\'',
+        'for i in range(5000):',
+        '    view = memoryview(frame % i)',
+        '    while view:',
+        '        view = view[os.write(3, view):]',
+        'time.sleep(30)',
+        'return "unreachable"',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { hang: async () => await new Promise<never>(() => {}) } }],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('call backlog exceeded')
+  }, 30_000)
+
+  it('compacts the reply queue mid-drain without dropping pending frames', async () => {
+    // A reply larger than the writable high-water mark makes the FIRST write
+    // return false, suspending the drain loop while the child's synchronous
+    // flood starves the reply pump; the frames queued behind it push the
+    // drain's consumed head past MAX_PENDING_REPLIES, so the resumed drain
+    // compacts the queue mid-run. The child reads fd 3 itself (blocking the
+    // asyncio pump, so its reads cannot race the host's pushes) and sends a
+    // second wave of calls AFTER reading part of the first wave's replies —
+    // those replies are still pending when the drain's head crosses the
+    // compaction bound, so a compaction that dropped pending frames would
+    // leave the child's reply count short and the read loop spinning to the
+    // wall clock. The second wave is sent mid-delivery (not with the first
+    // flood): pushing it earlier would trip the 1024-pending reply cap
+    // before the drain resumed.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, time',
+        'frame = b\'{"type":"call","id":%d,"global":"tools","name":"big","args":{}}\\n\'',
+        'for i in range(1024):',
+        '    view = memoryview(frame % i)',
+        '    while view:',
+        '        view = view[os.write(3, view):]',
+        'time.sleep(0.5)',
+        'total = b""',
+        'while total.count(b"\\n") < 500:',
+        '    chunk = os.read(3, 65536)',
+        '    if not chunk:',
+        '        break',
+        '    total += chunk',
+        'for i in range(500):',
+        '    view = memoryview(frame % (1024 + i))',
+        '    while view:',
+        '        view = view[os.write(3, view):]',
+        'while total.count(b"\\n") < 1524:',
+        '    chunk = os.read(3, 65536)',
+        '    if not chunk:',
+        '        break',
+        '    total += chunk',
+        'return "done"',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { big: async () => 'x'.repeat(65 * 1024) } }],
+    })
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('done')
   }, 30_000)

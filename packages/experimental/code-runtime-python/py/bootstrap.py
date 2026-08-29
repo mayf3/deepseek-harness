@@ -1725,10 +1725,19 @@ def _json_str_cost(text: str) -> int:
     except UnicodeEncodeError:
         pass
     folded = _SURROGATE_PAIR.sub(_combine_surrogate_pair, text)
-    lone = len(_SURROGATE.findall(folded))
+    # Remove the lone surrogates first, then count them as the length
+    # difference: `_SURROGATE.findall(folded)` materialized one single-character
+    # string PER surrogate, so a surrogate-dense value near the budget
+    # (millions of lone surrogates, each serializing to six bytes) allocated
+    # millions of objects before the meter returned -- an RLIMIT_AS death
+    # surfacing as `exception` instead of the promised `output-limit`. After
+    # pair-combining, every remaining surrogate is lone and exactly one code
+    # point, so the removed length is the count, and the `without` string is
+    # needed for the meter anyway.
+    without = _SURROGATE.sub("", folded)
+    lone = len(folded) - len(without)
     # Six ASCII bytes per lone surrogate; the remainder is ordinary text whose
     # own quotes are dropped here because the outer call adds them once.
-    without = _SURROGATE.sub("", folded)
     return _json_string_cost(without.encode("utf-8")) + lone * 6
 
 
