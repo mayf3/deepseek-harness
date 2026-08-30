@@ -221,6 +221,7 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
       case 'data':
       case 'surfaceOp':
       case 'sourceEventSeqs':
+      case 'ignorable':
         break
       default:
         throw new Error(`seed event at index ${index} has an invalid event envelope`)
@@ -232,7 +233,8 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
   if (typeof type !== 'string'
     || typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0
     || typeof time !== 'number' || !Number.isSafeInteger(time)
-    || event['data'] === undefined) {
+    || event['data'] === undefined
+    || (event['ignorable'] !== undefined && event['ignorable'] !== true)) {
     throw new Error(`seed event at index ${index} has an invalid event envelope`)
   }
   switch (type) {
