@@ -86,9 +86,9 @@ export interface ProjectionDefinition<
  * Change-feed listener: one unit's served value changed for one session.
  * `value` is the schema-validated `view` output; `seq` is the unit's
  * watermark at emission (the seq of the event that caused the change). A
- * changed state whose raw `view` output is `Object.is`-identical to the last
- * delivered one does not fire, so a unit can buffer working fields in state
- * behind an identity-stable projection.
+ * changed state whose raw `view` output is `Object.is`-identical to the
+ * unit's previous projection does not fire, so a unit can buffer working
+ * fields in state behind an identity-stable projection.
  */
 export type ProjectionChangeListener = (
   session: Session,
@@ -145,10 +145,11 @@ interface UnitCell {
   /** Seq of the last event passed through `apply` (regardless of change). */
   observedSeq: number
   /**
-   * Raw (pre-validation) `view` output the change feed last delivered, when
-   * it has delivered one. A changed state whose raw view is `Object.is` to
-   * this stays quiet, so a unit can buffer working fields in state by
-   * keeping its wire projection identity-stable.
+   * Raw (pre-validation) `view` output of the last changed state, stamped
+   * whether or not a listener heard it. A changed state whose raw view is
+   * `Object.is` to this stays quiet, so a unit can buffer working fields in
+   * state by keeping its wire projection identity-stable — and a listener
+   * subscribing later still sees every value transition since this baseline.
    */
   lastView?: { raw: unknown }
 }
@@ -177,7 +178,8 @@ interface Registration {
  * every registered unit's `apply` (eager drive), and a changed state
  * reference in a client-visible unit notifies the change feed with the
  * schema-validated view — unless the raw view output is `Object.is`-identical
- * to the last delivered one (identity-stable projections stay quiet).
+ * to the unit's previous projection (identity-stable projections stay quiet;
+ * the baseline advances with every change, heard or not).
  * Cells build lazily — a unit registered after events flowed, or a session
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
@@ -639,13 +641,17 @@ export class SessionProjectionRegistry extends Service {
       const changed = !Object.is(next, cell.state)
       cell.state = next
       cell.observedSeq = event.seq
-      if (changed && registration.def.wire !== undefined && this.listeners.size > 0) {
+      if (changed && registration.def.wire !== undefined) {
         // Identity gate on the raw view: a changed state whose projection is
-        // reference-identical to the last delivered one stays quiet, so a
-        // unit can buffer working fields without spamming the feed.
+        // reference-identical to the previous one stays quiet, so a unit can
+        // buffer working fields without spamming the feed. The baseline is
+        // stamped on every change — listeners or none — so a later listener
+        // generation cannot be silenced by a value the unobserved state
+        // passed through and returned to.
         const raw = registration.def.wire.view(cell.state)
-        if (cell.lastView !== undefined && Object.is(cell.lastView.raw, raw)) continue
+        const identical = cell.lastView !== undefined && Object.is(cell.lastView.raw, raw)
         cell.lastView = { raw }
+        if (identical || this.listeners.size === 0) continue
         const value = registration.def.wire.viewSchema.parse(raw)
         for (const listener of this.listeners) {
           listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)

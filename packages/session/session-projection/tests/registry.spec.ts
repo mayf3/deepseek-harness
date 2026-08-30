@@ -20,11 +20,13 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
     'test/marks': MarksState
     'test/count': number
     'test/buffered': { marks: string[]; draft: string }
+    'test/label': string
   }
 
   interface SessionProjectionMap {
     'test/marks': { marks: string[] }
     'test/buffered': string[]
+    'test/label': string
   }
 }
 
@@ -147,6 +149,38 @@ describe('SessionProjectionRegistry drive', () => {
     // The quiet applies still advanced the state itself.
     expect(ctx.sessionProjections.stateOf(session, 'test/buffered')?.draft).toBe('')
     expect(ctx.sessionProjections.snapshot(session).values['test/buffered']).toEqual(['a', 'b'])
+  })
+
+  it('advances the dedup baseline while unobserved, so a later listener hears a return to an old value', async () => {
+    const { ctx, session } = await harness()
+    // A primitive-valued view compares by value under Object.is (the title
+    // unit's shape), which is exactly where a stale baseline could silence a
+    // real transition.
+    ctx.sessionProjections.register({
+      key: 'test/label',
+      stateSchema: z.string(),
+      init: () => '',
+      apply: (state, event) => (event.type === 'test/mark' ? event.data.marks[0] ?? '' : state),
+      wire: { viewSchema: z.string(), view: state => state },
+      stateVersion: 1,
+    })
+    const first: string[] = []
+    const stop = ctx.sessionProjections.onChanged((_session, key, value) => {
+      if (key === 'test/label') first.push(value as string)
+    })
+    mark(session, ['A'])
+    stop()
+    // Unobserved transition away from 'A'…
+    mark(session, ['B'])
+    // …then a new listener generation subscribes and the value returns: with
+    // a baseline frozen at 'A' this delivery would be silenced.
+    const second: string[] = []
+    ctx.sessionProjections.onChanged((_session, key, value) => {
+      if (key === 'test/label') second.push(value as string)
+    })
+    mark(session, ['A'])
+    expect(first).toEqual(['A'])
+    expect(second).toEqual(['A'])
   })
 
   it('drives independently per session (cells are per-session watermarks)', async () => {
