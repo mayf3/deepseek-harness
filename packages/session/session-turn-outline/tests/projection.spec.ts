@@ -141,6 +141,50 @@ describe('turn outline projection unit', () => {
     expect(changes.at(-1)?.last?.response).toBe('draft two')
   })
 
+  it('keeps quiet on a draftless turn end and an empty in-turn prompt', async () => {
+    const { ctx, session } = await harness(true)
+    session.append('turn/start', { turn: 1 })
+    // Whitespace-only prompt text normalizes to nothing: the entry stays unlabeled.
+    appendPrompt(session, ' \t  ')
+    endTurn(session, 1)
+    expect(outlineOf(ctx, session)).toEqual([{ turn: 1, seq: 0, prompt: '', response: '' }])
+  })
+
+  it('bounds preview reading and keeps repeated or empty drafts quiet (fabricated envelopes)', () => {
+    const def = turnOutlineProjectionDefinition
+    const assistant = (blocks: readonly unknown[]): SessionEvent => ({
+      type: 'assistant/message',
+      seq: 9,
+      time: 0,
+      data: { message: { content: blocks } },
+    }) as unknown as SessionEvent
+    const base: TurnOutlineState = { turns: [{ turn: 1, seq: 0, prompt: 'p', response: '' }], draft: '' }
+    // Non-text blocks are skipped; whitespace-heavy short blocks cross the raw
+    // reading bound early, so the collapsed (short) draft still marks the
+    // unread remainder with an ellipsis.
+    const airy = Array.from({ length: 40 }, (_, index) => ({ type: 'text', text: `w${String(index)}${' '.repeat(20)}` }))
+    const buffered = def.apply(base, assistant([{ type: 'tool-call' }, ...airy]))
+    expect(buffered.draft.startsWith('w0 w1 ')).toBe(true)
+    expect(buffered.draft.endsWith('…')).toBe(true)
+    expect(buffered.draft.length).toBeLessThan(120)
+    // The same draft again, or a text-free message, changes nothing.
+    expect(def.apply(buffered, assistant([{ type: 'tool-call' }, ...airy]))).toBe(buffered)
+    expect(def.apply(buffered, assistant([{ type: 'text', text: '   ' }]))).toBe(buffered)
+    // A draft with no entry to commit into clears itself at the boundary…
+    const end = {
+      type: 'turn/end',
+      seq: 11,
+      time: 0,
+      data: { turn: 1, reason: { kind: 'completed' } },
+    } as unknown as SessionEvent
+    expect(def.apply({ turns: [], draft: 'orphan' }, end)).toEqual({ turns: [], draft: '' })
+    // …and a re-settled identical response keeps the entries' identity.
+    const settled: TurnOutlineState = { turns: [{ turn: 1, seq: 0, prompt: 'p', response: 'done' }], draft: 'done' }
+    const recommitted = def.apply(settled, end)
+    expect(recommitted.turns).toBe(settled.turns)
+    expect(recommitted.draft).toBe('')
+  })
+
   it('skips a boundary that does not advance the turn number (fabricated envelope)', () => {
     const state: TurnOutlineState = { turns: [{ turn: 2, seq: 5, prompt: 'kept', response: '' }], draft: '' }
     const regressive = {
