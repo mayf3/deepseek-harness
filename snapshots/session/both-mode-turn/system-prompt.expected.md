@@ -159,9 +159,9 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
-  /** Send a message to an adjacent agent by its agent id. The target must be your direct parent or direct child. If it is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
+  /** Send a message to a direct continuable child by its agent id. If you are a continuable agent, you may also target your direct parent. If the target is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
   send_message: {
-    /** The agent id of your direct parent or direct child. */
+    /** The agent id of your direct continuable child, or your direct parent when you are continuable. */
     agent_id: string;
     /** The message to deliver to the agent. */
     message: string;

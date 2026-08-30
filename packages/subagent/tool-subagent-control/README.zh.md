@@ -46,7 +46,7 @@ kind: "package-reference"
 
 ### send_message
 
-向 `agent_id` 指定的相邻 Agent 发送消息：parent 到直接 child，或可继续 child 到直接 parent。正在工作的目标通过 Steer 在最近的 step 边界接收消息；空闲目标会启动一个轮次，冷状态的直接 child 会通过继续执行生命周期恢复。调用只返回接受结果（被接受消息的稳定 `messageId`），绝不返回回复。失败——非相邻目标、不可用的 parent、未知 child、缺少描述符而无法恢复的 child，或准入被拒——会明确说明消息未送达。
+向 `agent_id` 指定的 Agent 发送消息：任何确切在线 Agent 都可以指定自己的直接可继续 child，而可继续 Agent 还可以指定自己的直接 parent。正在工作的目标通过 Steer 在最近的 step 边界接收消息；空闲目标会启动一个轮次，冷状态的直接 child 会通过继续执行生命周期恢复。调用只返回接受结果（被接受消息的稳定 `messageId`），绝不返回回复。失败——不受支持的目标、不可用的 parent、未知 child、缺少描述符而无法恢复的 child，或准入被拒——会明确说明消息未送达。
 
 ### interrupt_agent
 
@@ -168,7 +168,7 @@ kind: "package-reference"
 这些限制说明控制工具无法观察或引导什么；它们是当前包约束。
 
 - **已投递消息没有独立结果**——接受时只返回其 inbox `messageId`；目标后续工作会落入该目标的持久化会话，绝不会通过本工具收集。回复是另一条显式指定地址的 `send_message`，而非本次调用的结果。
-- **只有相邻 Agent 可以通信**——根 Agent 没有 parent 目标，child 不能向 sibling 或更深的后代发消息，child 到 parent 的发送要求 parent 仍在线；只有直接 child 投递支持冷激活。
+- **只有受支持的相邻 Agent 可以通信**——每个 sender 都可以指定直接可继续 child，只有可继续 sender 可以指定自己的直接 parent，且该 parent 必须仍在线；sibling 与更深的后代不能作为消息目标，只有直接 child 投递支持冷激活。
 - **列表是快照，而非投递承诺**——它可能与发布、dispose（资源释放）或后续消息发生竞态，另一个进程也可能激活当前进程报告为 `ready` 的子级；跨进程准确性需要共享租约。`interrupt_agent` 自己执行权威的在线 lineage 检查，因此过期的发现结果不会授予权限。
 - **没有分页或删除**——系统返回完整且稳定排序的集合；只要子级会话仍在持久化存储中，它就会继续出现在列表中，服务级上限或删除操作留待后续产品决策。
 

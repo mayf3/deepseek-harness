@@ -1645,7 +1645,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 
 ### `send_message`
 
-根据 agent id 向相邻 agent 发送消息。目标必须是你的直接 parent 或直接 child。如果它仍在工作，消息会 steer 其最近的 step；如果它处于 idle，消息会启动一个轮次。此调用不会返回该 agent 的答案，只会确认消息已投递。调用失败表示消息**未**投递。
+根据 agent id 向直接可继续 child 发送消息。如果你是可继续 agent，也可以把自己的直接 parent 作为目标。如果目标仍在工作，消息会 steer 其最近的 step；如果目标处于 idle，消息会启动一个轮次。此调用不会返回该 agent 的答案，只会确认消息已投递。调用失败表示消息**未**投递。
 
 ```json
 {
@@ -1653,7 +1653,7 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
   "properties": {
     "agent_id": {
       "type": "string",
-      "description": "The agent id of your direct parent or direct child."
+      "description": "The agent id of your direct continuable child, or your direct parent when you are continuable."
     },
     "message": {
       "type": "string",

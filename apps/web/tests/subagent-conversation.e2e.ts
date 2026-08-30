@@ -442,7 +442,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
       page,
       '[class*="centerCol"]',
       scaffold.workspaceCwd,
-      { omitBackToBottom: true },
+      { scrollToBottom: true },
     )
     await compareOrRefreshGolden(AVAILABLE_CHILD_EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])

@@ -50,7 +50,7 @@ Parents and children inherit the same definition in the same registry order. A c
 
 The instruction is guidance, not settlement enforcement. Sending does not end the child's turn, zero or several calls remain mechanically valid, and the runtime never rejects a child for staying silent. The manager-owned `subagent-settled` notice remains unconditional and separately attributed because it records how an Activation ended and preserves terminal output when the child cannot cooperate.
 
-Human browser prompts are not model-authored Agent messages. The remote prompt path keeps a private Queue delivery so each human prompt remains a distinct turn. Interrupt behavior, settlement delivery, and the continuation setup registry remain independent.
+Human browser prompts are not model-authored Agent messages. The remote prompt path keeps a private Queue delivery so each human prompt remains a distinct turn. Interrupt behavior and settlement delivery remain independent.
 
 ### Complete removal and reintroduction condition
 

@@ -28,7 +28,6 @@ import type {
   Agent,
   AgentHandle,
   AgentOptions,
-  AgentSetupCommit,
   CreateAgentOptions,
 } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
@@ -53,7 +52,6 @@ import { seedDescriptorTurn } from './descriptor-seed.ts'
 import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
-import type SubagentActivationSetupRegistry from './activation-setup-registry.ts'
 
 /** Durable attribution for one model-authored message between adjacent Agents. */
 export interface AgentMessageSource {
@@ -132,15 +130,10 @@ export interface SubagentSendMessageOptions {
   readonly signal: AbortSignal
 }
 
-/** Private scheduling choice for one direct-child delivery. */
-type ChildDelivery = 'queue' | 'steer'
-
 /** Inputs shared by model steering and the human Queue adapter. */
-interface ChildDeliveryOptions {
-  readonly source: MessageSource
-  readonly signal: AbortSignal
-  readonly delivery: ChildDelivery
-}
+type ChildDeliveryOptions =
+  | { readonly delivery: 'steer'; readonly signal: AbortSignal }
+  | { readonly delivery: 'queue'; readonly source: MessageSource; readonly signal: AbortSignal }
 
 /**
  * The residency state of one continuable child, derived from Agent quiescence
@@ -395,7 +388,6 @@ export class SubagentContinuationManager {
   constructor(
     private readonly ctx: Context,
     private readonly host: ContinuationHost,
-    private readonly setupRegistry: SubagentActivationSetupRegistry,
   ) {
     // Ordinary Cordis owner effects unwind in reverse registration order, which
     // cannot express the dynamic child graph. Register the private scope's
@@ -543,7 +535,6 @@ export class SubagentContinuationManager {
       return this.sendToParent(senderActivation, sender, content)
     }
     return this.deliverToChild(sender, targetId, content, {
-      source: agentMessageSource(sender),
       signal: options.signal,
       delivery: 'steer',
     })
@@ -1069,7 +1060,7 @@ export class SubagentContinuationManager {
     // `AgentRegistry.enter()` is the authoritative collision boundary for an id
     // some other owner holds — a duplicate would reject there with rollback.
     inputs.signal.throwIfAborted()
-    const setup = (childCtx: Context): AgentSetupCommit => {
+    const setup = (childCtx: Context): void => {
       // Only fresh creation seeds the delegation policy onto the child's own
       // log (after any fork seed, so fresh policy wins stale seed state); a
       // cold resume replays those persisted events instead.
@@ -1077,7 +1068,6 @@ export class SubagentContinuationManager {
         appendDelegatedPolicyOverrides((childCtx.agent as Agent).session, create.delegatedPolicies)
       }
       applyChildComposition(childCtx, parent, inputs.composition)
-      return this.setupRegistry.apply(childCtx)
     }
     const observer = this.host.observeActivation(provider, childId, parent)
     // Agent creation owns rollback before handle transfer. A rejection leaves
@@ -1212,7 +1202,7 @@ export class SubagentContinuationManager {
     // Parent-originated delivery keeps the parent live through ownership, so
     // establish it before the message can enter the child's inbox.
     this.acquireOwnership(parent, activation.childId)
-    const message = options.source.kind === 'agent-message'
+    const message = options.delivery === 'steer'
       ? agentMessage(parent, content)
       : createUserMessage({ content, source: options.source })
     const accepted = this.admitWaking(activation, message.id, () => {

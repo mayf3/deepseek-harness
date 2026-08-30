@@ -472,7 +472,6 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SpillRef: 'spill.md',
   ContinuableCreateRequest: 'subagent.md',
   ContinuableCreateSpec: 'subagent.md',
-  ContinuableSetupContribution: 'subagent.md',
   ContinuableStart: 'subagent.md',
   ContinuableStartSpec: 'subagent.md',
   AgentMessageSource: 'subagent.md',
