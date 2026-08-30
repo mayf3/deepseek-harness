@@ -379,16 +379,27 @@ export class Session implements SessionFace {
   /** Jump loader: page backwards until the window covers seq (see ISession.loadThrough). */
   loadThrough(seq: number): Promise<void> {
     if (this.openState !== 'open' || !this.hasMore || this.baseSeq <= seq) return Promise.resolve()
-    this.jumpTargetSeq = Math.min(this.jumpTargetSeq ?? seq, seq)
-    if (this.jumpPromise !== null) return this.jumpPromise
+    if (this.jumpPromise !== null) {
+      // Retarget the running loop to the lowest requested seq.
+      this.jumpTargetSeq = Math.min(this.jumpTargetSeq ?? seq, seq)
+      return this.jumpPromise
+    }
     // A plain single-page pull owns the busy flag; the jump does not queue
-    // behind it (the caller may retry once it settles).
+    // behind it (the caller retries once it settles) and must leave no
+    // target behind — only the loop's finally clears that field, and no
+    // loop starts here.
     if (this.loadingOlder) return Promise.resolve()
+    this.jumpTargetSeq = seq
     this.loadingOlder = true
     this.notifier.markDirty()
+    // Stale-pass guard (the doOpen pattern): a resync mid-loop replaces the
+    // stream generation; this pass then stops instead of paging the new
+    // generation toward its old target.
+    const generation = this.openGeneration
     this.jumpPromise = (async () => {
       try {
         while (this.hasMore && this.jumpTargetSeq !== null && this.baseSeq > this.jumpTargetSeq) {
+          if (generation !== this.openGeneration) return
           const events = this.events
           if (events === undefined) return
           const before = this.baseSeq

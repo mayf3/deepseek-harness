@@ -316,6 +316,57 @@ describe('paging', () => {
     expect(api.callsOf('session.history')).toHaveLength(2)
   })
 
+  it('loadThrough refused by a busy pager leaves no target behind for later jumps', async () => {
+    const middle = plainTurn(6, 1, 'c', 'd')
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(12, 2, 'e', 'f'), true)
+    await session.open()
+
+    // A plain single-page pull holds the busy flag while the jump is refused.
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => gate.promise
+    const older = session.loadOlder()
+    await session.loadThrough(0) // refused: must not park seq 0 anywhere
+    gate.resolve(ok(historyValue(middle, true)))
+    await older
+
+    // A later jump to a nearer seq pages exactly to it — a leaked 0 target
+    // would keep pulling three-event pages all the way to the head.
+    api.onHistory = (payload) => {
+      const start = ((payload as { beforeSeq?: number }).beforeSeq ?? 0) - 3
+      return histResponse(
+        [ev.user(start, `u${String(start)}`), ev.user(start + 1, `u${String(start + 1)}`), ev.user(start + 2, `u${String(start + 2)}`)],
+        start > 0,
+      )
+    }
+    await session.loadThrough(4)
+    // Covered at seq 3 (≤ 4) after one page; a leaked 0 target would add a
+    // third call at beforeSeq 3 and pull the head to 0.
+    expect(api.callsOf('session.history').map(call => (call as { beforeSeq?: number }).beforeSeq))
+      .toEqual([12, 6])
+    expect(eventSeqs(session)[0]).toBe(3)
+  })
+
+  it('loadThrough stops paging when the event stream generation moves mid-loop', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(12, 2, 'x', 'y'), true)
+    await session.open()
+
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => gate.promise
+    const jump = session.loadThrough(0)
+    // The address is rebuilt while the first page is in flight.
+    api.onHistory = () => histResponse(plainTurn(12, 2, 'x', 'y'), true)
+    const rebuilt = session.resync()
+    gate.resolve(ok(historyValue(plainTurn(6, 1, 'c', 'd'), true)))
+    await jump
+    await rebuilt
+    // The stale loop must not page the new generation toward its old target:
+    // history calls are the gated page and the resync tail only.
+    expect(api.callsOf('session.history')).toHaveLength(1)
+    expect(session.getSnapshot().loadingOlder).toBe(false)
+  })
+
   it('loadThrough stops on a page that makes no progress instead of looping', async () => {
     const { api, session } = makeSession()
     api.onHistory = payload => payload.beforeSeq === undefined
