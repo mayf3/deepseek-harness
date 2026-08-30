@@ -8,6 +8,7 @@ import type {
   TypertRemoteEventOutcome,
   TypertRemoteEventSource,
 } from '@deepseek-ai/dsh-api-gateway'
+import { Deque } from '@deepseek-ai/dsh-deque'
 import { carrierKeyOf } from '@deepseek-ai/dsh-scope'
 import { isJsonValue } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-session'
@@ -79,13 +80,13 @@ function remoteEventSource(ctx: Context): TypertRemoteEventSource {
 
 /** One pull-driven queue bridging synchronous Cordis listeners to an AsyncIterable. */
 class RemoteEventQueue {
-  private readonly buffer: TypertRemoteEventDispatch[] = []
+  private readonly buffer = new Deque<TypertRemoteEventDispatch>()
   private waiter: (() => void) | undefined
   private done = false
 
   push(frame: TypertRemoteEventDispatch): boolean {
     if (this.done) return false
-    this.buffer.push(frame)
+    this.buffer.pushBack(frame)
     this.waiter?.()
     return true
   }
@@ -93,8 +94,8 @@ class RemoteEventQueue {
   private end(reason: unknown): void {
     if (this.done) return
     this.done = true
-    const buffered = this.buffer.splice(0)
-    for (const dispatch of buffered) {
+    while (this.buffer.size > 0) {
+      const dispatch = this.buffer.popFront() as TypertRemoteEventDispatch
       if ('context' in dispatch) dispatch.reject(reason)
     }
     this.waiter?.()
@@ -106,7 +107,7 @@ class RemoteEventQueue {
     try {
       while (true) {
         if (this.done || signal.aborted) return
-        while (this.buffer.length > 0) yield this.buffer.shift() as TypertRemoteEventDispatch
+        while (this.buffer.size > 0) yield this.buffer.popFront() as TypertRemoteEventDispatch
         await new Promise<void>((resolve) => { this.waiter = resolve })
         this.waiter = undefined
       }

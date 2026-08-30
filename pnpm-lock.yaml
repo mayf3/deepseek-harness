@@ -624,6 +624,9 @@ importers:
 
   packages/api/gateway:
     dependencies:
+      '@deepseek-ai/dsh-deque':
+        specifier: workspace:^
+        version: link:../../util/deque
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
@@ -670,6 +673,9 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:^
         version: link:../session-controller
+      '@deepseek-ai/dsh-deque':
+        specifier: workspace:^
+        version: link:../../util/deque
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -743,6 +749,9 @@ importers:
 
   packages/api/session-controller:
     dependencies:
+      '@deepseek-ai/dsh-deque':
+        specifier: workspace:^
+        version: link:../../util/deque
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -886,6 +895,9 @@ importers:
 
   packages/api/workspace-controller:
     dependencies:
+      '@deepseek-ai/dsh-deque':
+        specifier: workspace:^
+        version: link:../../util/deque
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -9691,6 +9703,15 @@ importers:
         version: link:../../runtime-diagnostics/invariants
 
   packages/util/crypto:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
+  packages/util/deque:
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

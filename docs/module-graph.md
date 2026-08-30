@@ -10,6 +10,7 @@ flowchart TD
   subgraph group_util["packages/util"]
     pkg_atomic_write["atomic-write"]
     pkg_brand["brand"]
+    pkg_deque["deque"]
     pkg_home_paths["home-paths"]
     pkg_launch_environment["launch-environment"]
     pkg_native_command["native-command"]
@@ -360,6 +361,7 @@ flowchart TD
   end
   pkg_atomic_write --> pkg_invariants
   pkg_brand --> pkg_invariants
+  pkg_deque --> pkg_invariants
   pkg_home_paths --> pkg_invariants
   pkg_launch_environment --> pkg_invariants
   pkg_native_command --> pkg_invariants
@@ -1387,6 +1389,7 @@ flowchart TD
 | [`typert-registry`](../packages/typert/registry) | `typert` | — |
 | [`atomic-write`](../packages/util/atomic-write) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`brand`](../packages/util/brand) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
+| [`deque`](../packages/util/deque) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`home-paths`](../packages/util/home-paths) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`launch-environment`](../packages/util/launch-environment) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |
 | [`native-command`](../packages/util/native-command) | `util` | [`invariants`](../packages/runtime-diagnostics/invariants) |

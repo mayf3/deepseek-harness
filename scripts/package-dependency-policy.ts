@@ -35,6 +35,7 @@ const CONFIGURATION_ONLY_DEV_DEPENDENCIES = {
 const SAFE_HOST_DEPENDENCY_EXPORTS = {
   '@deepseek-ai/dsh-api-session-controller/remote-events': ['SESSION_CONTROLLER_REMOTE_EVENTS'],
   '@deepseek-ai/dsh-credentials': ['credentialKey'],
+  '@deepseek-ai/dsh-deque': ['Deque'],
   '@deepseek-ai/dsh-llm': ['MessageId', 'callConfigEquals', 'deepFreeze', 'freezeMessage'],
   '@deepseek-ai/dsh-llm/brand': ['ToolCallId'],
   '@deepseek-ai/dsh-session': ['isJsonValue'],
