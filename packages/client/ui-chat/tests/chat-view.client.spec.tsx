@@ -694,8 +694,11 @@ describe('ChatView', () => {
     })
     const first = view.getByRole('button', { name: '跳转到第 1 轮' })
     expect(first.getAttribute('aria-current')).toBe('true')
-    expect(first.getAttribute('aria-busy')).toBeNull()
+    // The mark stays busy until the jump settles: the loader's completion
+    // runs the final landing correction after the load-earlier button leaves.
+    expect(first.getAttribute('aria-busy')).toBe('true')
     await act(async () => { releaseJump?.() })
+    expect(first.getAttribute('aria-busy')).toBeNull()
     expect(first.getAttribute('aria-current')).toBe('true')
   })
 

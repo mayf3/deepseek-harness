@@ -305,6 +305,8 @@ export function ChatView({
   const anchorRef = useRef<PagingAnchor | null>(null)
   /** Unloaded-turn jump in flight: target turn plus its load-through seq. */
   const pendingJumpRef = useRef<{ turn: number; seq: number } | null>(null)
+  /** Whether the in-flight jump already landed mid-paging (settle then only corrects an untouched landing). */
+  const jumpLandedRef = useRef(false)
   const [busyJumpTurn, setBusyJumpTurn] = useState<number | null>(null)
   /** Bumped when a loadThrough completion settles, after its last page's commit. */
   const [jumpSettleTick, setJumpSettleTick] = useState(0)
@@ -412,18 +414,37 @@ export function ChatView({
     else if (position !== null) chatScroll.save(position)
   }
 
-  /** Land the pending jump once its Turn has a rendered anchor row; false while it must keep waiting. */
-  const realizePendingJump = (local: HTMLElement, el: HTMLElement): boolean => {
+  /**
+   * Land the pending jump once its Turn has a rendered anchor row; false
+   * while it must keep waiting. Mid-jump landings (`settle` false) keep the
+   * jump armed with the target row as the paging anchor, so later chunks and
+   * the load-earlier button's unmount re-land on the same row; the settling
+   * call clears the jump.
+   */
+  const realizePendingJump = (local: HTMLElement, el: HTMLElement, settle: boolean): boolean => {
     const pending = pendingJumpRef.current
     if (pending === null) return true
     const item = railItems.find(candidate => candidate.turn === pending.turn)
     if (item === undefined || item.anchor.kind !== 'loaded') return false
     const row = anchorElement(local, item.anchor.key)
     if (row === null) return false
-    pendingJumpRef.current = null
-    setBusyJumpTurn(null)
-    anchorRef.current = null
+    if (settle) {
+      pendingJumpRef.current = null
+      setBusyJumpTurn(null)
+      const held = anchorRef.current
+      const landedEarlier = jumpLandedRef.current
+      jumpLandedRef.current = false
+      anchorRef.current = null
+      // A reader who moved off an already-landed target mid-jump keeps their
+      // place; a first landing, or an untouched one, takes the correction.
+      if (!landedEarlier || held?.key === item.anchor.key) {
+        landOnRowRef.current(local, el, row, pending.turn)
+      }
+      return true
+    }
     landOnRowRef.current(local, el, row, pending.turn)
+    jumpLandedRef.current = true
+    anchorRef.current = { key: item.anchor.key, top: flowTop(row, el) }
     return true
   }
 
@@ -470,7 +491,7 @@ export function ChatView({
       observedTopRef.current = el.scrollTop
       // A jump chunk lands here: scroll to the target once its rows exist;
       // until then keep holding the reader's row for the next chunk.
-      if (!realizePendingJump(local, el) && row !== null) {
+      if (!realizePendingJump(local, el, false) && row !== null) {
         anchorRef.current = { key: anchor.key, top: flowTop(row, el) }
       }
       firstSeqRef.current = firstSeq
@@ -500,7 +521,7 @@ export function ChatView({
     }
     // A jump whose target committed outside the anchored-prepend path (for
     // example after a mid-jump toBottom dropped the held anchor) lands here.
-    if (pendingJumpRef.current !== null) realizePendingJump(local, el)
+    if (pendingJumpRef.current !== null) realizePendingJump(local, el, false)
   })
 
   const onScrollRef = useRef(() => {})
@@ -604,7 +625,9 @@ export function ChatView({
     const local = listRef.current
     if (pending === null || local === null) return
     const el = scrollerOf(local)
-    if (realizePendingJump(local, el)) return
+    // The settling landing runs after the load-earlier button's unmount
+    // commit, so the target row cannot drift once the jump clears.
+    if (realizePendingJump(local, el, true)) return
     const uncovered = firstSeq === null || firstSeq > pending.seq
     if (uncovered && hasMore && !loadingOlder && jumpRepageHeadRef.current !== firstSeq) {
       jumpRepageHeadRef.current = firstSeq
@@ -656,6 +679,7 @@ export function ChatView({
       }
       pendingJumpRef.current = { turn: item.turn, seq: item.anchor.seq }
       jumpRepageHeadRef.current = null
+      jumpLandedRef.current = false
       setBusyJumpTurn(item.turn)
       void loadThrough(item.anchor.seq).finally(() => { setJumpSettleTick(tick => tick + 1) })
       return
