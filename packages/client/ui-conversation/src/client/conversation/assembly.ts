@@ -25,6 +25,7 @@ export interface ConversationBinding {
   readonly snapshot: ObservableSnapshot<ConversationSnapshot>
   /**
    * Resolve one target-owned snapshot source.
+   * The first subscriber activates the target for the remaining Session lifetime.
    * @param target - registered Conversation target.
    * @returns identity-stable source following the target.
    */
@@ -61,7 +62,11 @@ class BoundConversation implements ConversationBinding {
       const views = this.viewStore as unknown as { get(key: string): unknown }
       source = {
         getSnapshot: () => views.get(target),
-        subscribe: (listener) => { return this.snapshot.subscribe(listener) },
+        subscribe: (listener) => {
+          const unsubscribe = this.snapshot.subscribe(listener)
+          if (this.assembler.activateTarget(target)) this.snapshot.set(this.currentSnapshot())
+          return unsubscribe
+        },
       }
       this.targetSources.set(target, source)
     }
@@ -125,7 +130,7 @@ class BoundConversation implements ConversationBinding {
   private currentSnapshot(): ConversationSnapshot {
     return {
       views: this.viewStore,
-      activeTargets: this.assembler.activeTargets(),
+      activeTargets: this.assembler.activityTargets(),
     }
   }
 }

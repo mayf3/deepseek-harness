@@ -307,9 +307,11 @@ Unknown fallback demonstrates Registry ownership: it handles only append-surface
 
 ## View Builder and React identity
 
-[`ConversationViewRegistry`](../../../../packages/client/ui-conversation/src/client/conversation/view-registry.ts) creates an independent per-Session builder for each target. The Registry stores factories and shares no Session's ordering or caches.
+[`ConversationViewRegistry`](../../../../packages/client/ui-conversation/src/client/conversation/view-registry.ts) stores an independent builder factory for each target and shares no Session's ordering or caches.
 
-The Assembler calls `replace({ nodes, timeline })` on low-frequency complete replacements and `apply({ upserts, timeline })` for ordinary prepend/append flushes. Builders receive only final target Nodes already constructed by Definitions.
+A target source's first subscriber adds that target to the Session's monotonic active-target set. The Assembler indexes each Context under its sole target but creates no builder, Node, or snapshot for an inactive target. First activation flushes pending target-neutral work, creates the builder, and calls `replace({ nodes, timeline })` once from that target's current Contexts.
+
+Ordinary prepend and append flushes call `apply({ upserts, timeline })` only for active targets. Complete window replacement and Registry rebuild call `replace()` only for active targets. Unsubscription does not remove a target, so returning to an opened View does not rebuild it.
 
 [`ChatSnapshotBuilder`](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) maintains `order`, a keyed `nodes` store, the turn/step `locations` index, `timeline`, and the `legacy` slice used by StatsLine and mirrored into top-level public compatibility fields.
 
@@ -346,15 +348,15 @@ SessionEventLike window
        -> Context matches + State + Location
        -> Definition.buildLocationData(step -> turn)
             -> StepLocation.data / TurnLocation.data
-       -> Definition.buildViewNode() for its declared target
-  -> target View Builder
+       -> Definition.buildViewNode() for each active target
+  -> active target View Builder
        -> chat: ChatSnapshotBuilder -> ChatView -> keyed ChatNodeSeat
        -> trajectory: TrajectorySnapshotBuilder -> stages/layout/table
 ```
 
 ## Verification
 
-Runtime tests pin Definition lifecycle registration, exact-ID append, update-before-start collection followed by forward replay after start, prepend identity, Reader window-gap repair, transitive dependencies, Location closure, Step→Turn data phase order, Location data replacement, publication cadence, illegal withdrawal, and per-target Builders.
+Runtime tests pin Definition lifecycle registration, exact-ID append, update-before-start collection followed by forward replay after start, prepend identity, Reader window-gap repair, transitive dependencies, Location closure, Step→Turn data phase order, Location data replacement, publication cadence, illegal withdrawal, first-subscription activation, monotonic active targets, and per-target Builders.
 
 Conversation tests cover every built-in Chat Definition, Assistant Step data, Turn Tail and Deliverables Turn data, Chat ordering and structural sharing, selector isolation, Assistant and Tool running-to-settled identity, nested Code Dispatch, steering, Compaction, Retry, interruption, load-older anchoring, and slot dispatch. Trajectory tests cover its independently registered Message, Assistant, Tool, Compaction, Request-header, and boundary Definitions together with the preserved stage-oriented view model.
 
@@ -390,6 +392,8 @@ History-path tests cover complete replace, non-overlapping prepend, complete-ran
 
 **Reuse one Event Definition across Chat and Trajectory by branching in `buildViewNode(target)`.** Rejected: the views require different business State and intermediate records, so a shared Definition would make each package carry the other's conditions and payloads. Separate target-owned Definitions keep those choices local while sharing the Assembler's ingestion and lifecycle contracts.
 
+**Deactivate a target when its last subscriber leaves.** Rejected: returning to the View would repeatedly rebuild its complete snapshot. Subscription establishes first use; the target then stays incremental for the remaining Session lifetime.
+
 **Add a generic layout model above final business Nodes.** Rejected: activity, tail candidacy, and layout enums would centralize current Chat business semantics in the engine again. Final Nodes carry renderer-required data directly and share only identity, ordering, and Location facts.
 
 **Register the Turn-data Hook only on the Assistant renderer.** Rejected: current-Node Location access is a common capability of the `conversation.chat.node` slot, not one business renderer. The parent Chat entry registers common inject once, and every keyed renderer shares the same strongly typed contract.
@@ -407,6 +411,8 @@ Initial tail, older prepend, and live append share one set of Context invariants
 Append does not scan historical Contexts; prepend replays only Contexts whose Matches, Locations, or Reader answers actually changed. A structural Chat change may still recompute visible order and indexes, but does not rerun unrelated business folds or replace unchanged Node identity.
 
 Separating State updates from publication cadence folds every live Assistant delta and each historical packed run while materializing at most once per animation frame. Step or Turn close and final Events can immediately publish the latest State.
+
+An inactive target retains Definition State and a target Context index but no builder, materialized Nodes, or snapshot. The mounted built-in or third-party View activates its own target through normal subscription; previously opened targets continue receiving incremental updates.
 
 Steps and Turns are stable homes for cross-business aggregates. Turn Tail and Deliverables derive their values without renderer scans of global Nodes; slot-level `useTurnData()` narrows common reads to the current Node's Turn and uses selector equality to isolate unrelated updates.
 

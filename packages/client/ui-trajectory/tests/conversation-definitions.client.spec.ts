@@ -97,7 +97,7 @@ function assembler(events: readonly SessionEventLikeEntry[]): ConversationNodeAs
     new TestViewDefinitions(),
   )
   value.replaceWindow(events, false)
-  value.flush()
+  value.activateTarget('trajectory')
   return value
 }
 
