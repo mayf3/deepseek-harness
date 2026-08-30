@@ -578,7 +578,7 @@ describe('ChatView', () => {
     const view = render(<h.ChatView {...h.props} />)
     const second = view.getByRole('button', { name: '跳转到第 2 轮' })
     const secondPosition = second.parentElement as HTMLElement
-    expect(secondPosition.style.getPropertyValue('--turn-position')).toBe('0%')
+    expect(secondPosition.style.getPropertyValue('--turn-natural-position')).toBe('0px')
 
     const scroller = view.container.querySelector('[class*="scroll"]') as HTMLDivElement
     const metrics = installScrollMetrics(scroller, 1_000, 300)
@@ -598,8 +598,8 @@ describe('ChatView', () => {
     })
     const movedSecond = view.getByRole('button', { name: '跳转到第 2 轮' })
     expect(movedSecond.parentElement).toBe(secondPosition)
+    // Fixed pitch: the mark moves one slot down and never compresses.
     expect(secondPosition.style.getPropertyValue('--turn-natural-position')).toBe('10px')
-    expect(secondPosition.style.getPropertyValue('--turn-position')).toBe('50%')
   })
 
   it('extends the rail with unloaded outline turns, pages on click, and falls back when nothing lands', async () => {
@@ -630,6 +630,43 @@ describe('ChatView', () => {
     expect(h.loadThrough.mock.calls).toEqual([[0], [0]])
     expect(first.getAttribute('aria-busy')).toBeNull()
     expect(view.getByRole('button', { name: '跳转到第 3 轮' }).getAttribute('aria-current')).toBe('true')
+  })
+
+  it('scrolls the fixed-pitch rail inside its frame with gradient fades at the scrollable ends', () => {
+    const h = makeHarness(
+      { nodes: [userInTurn(8, 'latest prompt', 60), assistant(9, 'latest response', 60)] },
+      { hasMore: true },
+    )
+    h.setOutline({
+      turns: Array.from({ length: 60 }, (_, index) => ({
+        turn: index + 1,
+        seq: index * 4,
+        prompt: `p${String(index + 1)}`,
+      })),
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const nav = view.getByRole('navigation', { name: '轮次导航' })
+    // 60 marks at the fixed 10px pitch: the ladder keeps its natural height.
+    expect(nav.style.getPropertyValue('--turn-natural-height')).toBe('602px')
+    const scroller = nav.querySelector('[class*="scroller"]') as HTMLElement
+    Object.defineProperty(scroller, 'scrollHeight', { value: 602, configurable: true })
+    Object.defineProperty(scroller, 'clientHeight', { value: 300, configurable: true })
+    scroller.scrollTop = 0
+    fireEvent.scroll(scroller)
+    expect(scroller.className).toContain('fadeBottom')
+    expect(scroller.className).not.toContain('fadeTop')
+
+    scroller.scrollTop = 150
+    fireEvent.scroll(scroller)
+    expect(scroller.className).toContain('fadeTop')
+    expect(scroller.className).toContain('fadeBottom')
+    expect(nav.style.getPropertyValue('--turn-scroll-top')).toBe('150px')
+
+    // Pointer mapping subtracts the rail scroll: y=94 with scrollTop 150 is
+    // natural offset 238px → the 25th mark.
+    vi.spyOn(nav, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect)
+    fireEvent.pointerMove(nav, { clientY: 94 })
+    expect(view.getByRole('tooltip').textContent).toContain('p25')
   })
 
   it('lands a jump on its turn once the paged rows commit', async () => {
