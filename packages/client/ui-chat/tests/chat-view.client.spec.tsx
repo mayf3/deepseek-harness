@@ -657,6 +657,29 @@ describe('ChatView', () => {
     await act(async () => { releaseJump?.() })
   })
 
+  it('holds a jump issued while a plain pull owns the pager and resumes it when the pull settles', async () => {
+    const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
+    const h = makeHarness({ nodes: later }, { hasMore: true, loadingOlder: true })
+    h.setOutline([
+      { turn: 1, seq: 0, prompt: 'first prompt', response: '' },
+      { turn: 3, seq: 8, prompt: 'third prompt', response: '' },
+    ])
+    const view = render(<h.ChatView {...h.props} />)
+    const first = view.getByRole('button', { name: '加载并跳转到第 1 轮' })
+    fireEvent.click(first)
+    // The session-side guard refuses the busy-pager jump instantly, yet the
+    // mark stays busy instead of degrading to the nearest loaded turn.
+    await act(async () => {})
+    expect(h.loadThrough.mock.calls).toEqual([[0]])
+    expect(first.getAttribute('aria-busy')).toBe('true')
+
+    // The plain pull settles: the flip re-settles the jump, which repages.
+    act(() => { h.setSession({ loadingOlder: false }) })
+    await act(async () => {})
+    expect(h.loadThrough.mock.calls).toEqual([[0], [0]])
+    expect(first.getAttribute('aria-busy')).toBeNull()
+  })
+
   it('scrolls the fixed-pitch rail inside its frame with gradient fades at the scrollable ends', () => {
     const h = makeHarness(
       { nodes: [userInTurn(8, 'latest prompt', 60), assistant(9, 'latest response', 60)] },

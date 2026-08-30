@@ -616,10 +616,12 @@ export function ChatView({
   }, [loadingOlder])
 
   // Jump settlement: every loadThrough completion bumps the tick after its
-  // last page's commit. A still-pending jump is either realized now, repaged
-  // once per head movement (its own paging can be refused while a plain pull
-  // holds the busy flag), or landed on the nearest rendered Turn at or after
-  // the target (failure, exhausted history, or a Turn with no visible row).
+  // last page's commit, and a plain pull's loadingOlder flip re-settles a
+  // jump it made wait. A still-pending jump is realized now, held while a
+  // plain load-earlier pull owns the pager (its completion retries below),
+  // repaged once per head movement, or landed on the nearest rendered Turn
+  // at or after the target (failure, exhausted history, or a Turn with no
+  // visible row).
   useEffect(() => {
     const pending = pendingJumpRef.current
     const local = listRef.current
@@ -629,14 +631,19 @@ export function ChatView({
     // commit, so the target row cannot drift once the jump clears.
     if (realizePendingJump(local, el, true)) return
     const uncovered = firstSeq === null || firstSeq > pending.seq
-    if (uncovered && hasMore && !loadingOlder && jumpRepageHeadRef.current !== firstSeq) {
-      jumpRepageHeadRef.current = firstSeq
-      const held = pagingAnchor(local, el)
-      if (held !== null && held.dataset.chatAnchorKey !== undefined) {
-        anchorRef.current = { key: held.dataset.chatAnchorKey, top: flowTop(held, el) }
+    if (uncovered && hasMore) {
+      // A plain pull owns the pager right now: hold the jump (busy stays)
+      // instead of degrading to a wrong landing.
+      if (loadingOlder) return
+      if (jumpRepageHeadRef.current !== firstSeq) {
+        jumpRepageHeadRef.current = firstSeq
+        const held = pagingAnchor(local, el)
+        if (held !== null && held.dataset.chatAnchorKey !== undefined) {
+          anchorRef.current = { key: held.dataset.chatAnchorKey, top: flowTop(held, el) }
+        }
+        void loadThrough(pending.seq).finally(() => { setJumpSettleTick(tick => tick + 1) })
+        return
       }
-      void loadThrough(pending.seq).finally(() => { setJumpSettleTick(tick => tick + 1) })
-      return
     }
     for (const row of local.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden])')) {
       const turn = Number(row.dataset.chatTurn)
@@ -648,6 +655,12 @@ export function ChatView({
     setBusyJumpTurn(null)
     // Snapshot values are read at settle time; the completion tick is the trigger.
   }, [jumpSettleTick])
+
+  // A jump held while a plain pull owned the pager waits in the effect
+  // above; the pull's completion is its retry signal.
+  useEffect(() => {
+    if (!loadingOlder && pendingJumpRef.current !== null) setJumpSettleTick(tick => tick + 1)
+  }, [loadingOlder])
 
   const loadOlderAnchored = (): void => {
     const local = listRef.current
