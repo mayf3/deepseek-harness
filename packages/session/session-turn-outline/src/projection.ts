@@ -42,7 +42,16 @@ function preview(content: MessageContent, limit: number): string {
       unread = true
       break
     }
-    text += text === '' ? block.text : ` ${block.text}`
+    // Per-block bound: the fold runs on every message event, so a single
+    // multi-megabyte block must not be concatenated (and regex-normalized)
+    // whole for a preview this short.
+    const clipped = block.text.length > limit * 2
+    const chunk = clipped ? block.text.slice(0, limit * 2) : block.text
+    text += text === '' ? chunk : ` ${chunk}`
+    if (clipped) {
+      unread = true
+      break
+    }
   }
   const normalized = text.replace(/\s+/g, ' ').trim()
   if (normalized.length > limit - 1) return `${normalized.slice(0, limit - 1).trimEnd()}…`

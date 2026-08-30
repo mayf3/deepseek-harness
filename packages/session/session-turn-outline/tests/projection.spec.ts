@@ -90,6 +90,22 @@ describe('turn outline projection unit', () => {
     expect(outlineOf(ctx, session)[0]?.response).toBe('streamed but unsettled')
   })
 
+  it('reads a bounded slice of one oversized text block instead of the whole payload', async () => {
+    const { ctx, session } = await harness(true)
+    session.append('turn/start', { turn: 1 })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: `giant ${'g'.repeat(500_000)}` }],
+      source: { kind: 'user' },
+    }), { surfaceOp: 'append' })
+    appendAssistant(session, 1, 1, `answer ${'a'.repeat(500_000)}`)
+    endTurn(session, 1)
+    const entry = outlineOf(ctx, session)[0]
+    expect(entry?.prompt).toMatch(/^giant g+…$/)
+    expect(entry?.prompt).toHaveLength(50)
+    expect(entry?.response).toMatch(/^answer a+…$/)
+    expect(entry?.response).toHaveLength(120)
+  })
+
   it('collapses whitespace and caps previews at their card budgets with an ellipsis', async () => {
     const { ctx, session } = await harness(true)
     session.append('turn/start', { turn: 1 })

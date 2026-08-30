@@ -24,17 +24,22 @@ export interface TurnRailItem {
 
 const EMPTY_ITEMS: readonly TurnRailItem[] = []
 
-/** Structurally narrow one wire outline entry (projection values cross the wire). */
+/**
+ * Structurally narrow one wire outline entry (projection values cross the
+ * wire). `turn` and `seq` are the load-bearing fields — a mark cannot exist
+ * or jump without them — so their damage drops the entry; the previews are
+ * decorative, so a malformed one degrades to `''` and the turn stays
+ * navigable by number.
+ */
 function outlineEntry(value: unknown): { turn: number; seq: number; prompt: string; response: string } | undefined {
   if (typeof value !== 'object' || value === null) return undefined
   const entry = value as { turn?: unknown; seq?: unknown; prompt?: unknown; response?: unknown }
   if (typeof entry.turn !== 'number' || !Number.isSafeInteger(entry.turn) || entry.turn < 0) return undefined
   if (typeof entry.seq !== 'number' || !Number.isSafeInteger(entry.seq) || entry.seq < 0) return undefined
-  if (typeof entry.prompt !== 'string') return undefined
   return {
     turn: entry.turn,
     seq: entry.seq,
-    prompt: entry.prompt,
+    prompt: typeof entry.prompt === 'string' ? entry.prompt : '',
     response: typeof entry.response === 'string' ? entry.response : '',
   }
 }

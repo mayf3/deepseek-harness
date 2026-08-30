@@ -55,19 +55,20 @@ describe('mergeTurnRailItems', () => {
     ])
   })
 
-  it('drops malformed wire entries and shapes without folding the rail', () => {
+  it('drops entries with damaged navigation fields but degrades malformed previews to empty', () => {
     expect(mergeTurnRailItems([loadedItem(1)], 'not an outline')).toEqual([
       { turn: 1, prompt: 'p1', response: 'r1', anchor: { kind: 'loaded', key: 'anchor-1' } },
     ])
     const items = mergeTurnRailItems([], [
       { turn: -1, seq: 0, prompt: 'negative turn', response: '' },
       { turn: 2, seq: 0.5, prompt: 'fractional seq', response: '' },
-      { turn: 3, seq: 4, prompt: 5, response: '' },
+      { turn: 3, seq: 4, prompt: 5, response: 6 },
       { turn: 6, seq: 7, prompt: 'kept', response: 8 },
       null,
     ])
-    // A non-string response degrades to '' while the entry itself survives.
+    // turn/seq are load-bearing (drop); previews are decorative (degrade).
     expect(items).toEqual([
+      { turn: 3, prompt: '', response: '', anchor: { kind: 'unloaded', seq: 4 } },
       { turn: 6, prompt: 'kept', response: '', anchor: { kind: 'unloaded', seq: 7 } },
     ])
   })
