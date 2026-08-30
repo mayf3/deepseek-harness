@@ -71,7 +71,6 @@ function message(overrides: Partial<TeamMessageSnapshot> = {}): TeamMessageSnaps
     senderId: ROOT,
     senderName: 'lead',
     targetId: CHILD,
-    delivery: 'quiet',
     content: [{ type: 'text', text: 'hello' }],
     ...overrides,
   }

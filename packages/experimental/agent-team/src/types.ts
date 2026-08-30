@@ -108,7 +108,6 @@ export interface TeamMessageSnapshot {
   readonly senderId: SessionId
   readonly senderName: string
   readonly targetId: SessionId
-  readonly delivery: 'quiet' | 'wakeup'
   readonly content: ContentBlock[]
 }
 
@@ -160,7 +159,6 @@ export interface SpawnTeammateResult {
 export interface SendTeamMessageRequest {
   readonly target: string
   readonly content: ContentBlock[]
-  readonly delivery: 'quiet' | 'wakeup'
   readonly signal: AbortSignal
 }
 

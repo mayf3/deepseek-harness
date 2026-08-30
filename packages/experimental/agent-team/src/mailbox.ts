@@ -8,7 +8,7 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
-import { queueHostSubagentPrompt } from '@deepseek-ai/dsh-subagent/internal'
+import { steerHostSubagentPrompt } from '@deepseek-ai/dsh-subagent/internal'
 import { errorMessage, TeamError } from './error.ts'
 import type { TeamJournal } from './journal.ts'
 import type { TeamRuntimeLifecycle } from './lifecycle.ts'
@@ -49,7 +49,7 @@ export class TeamMailbox {
   /**
    * Queue one durable peer message, then attempt immediate delivery.
    * @param caller - exact live sending Team member.
-   * @param request - target name, content, scheduling mode, and pre-queue cancellation.
+   * @param request - target name, content, and pre-queue cancellation.
    * @returns durable message identity and immediate-delivery observation.
    */
   async send(caller: Agent, request: SendTeamMessageRequest): Promise<SendTeamMessageResult> {
@@ -93,8 +93,6 @@ export class TeamMailbox {
       && (membership.role === 'lead' || message.targetId === agent.id))
     for (const message of messages) {
       signal.throwIfAborted()
-      if (membership.role === 'lead' && message.delivery === 'quiet'
-        && message.targetId !== membership.root.id && this.ctx.agents.get(message.targetId) === undefined) continue
       await this.tryDispatch(membership.root, message, signal)
     }
   }
@@ -134,7 +132,6 @@ export class TeamMailbox {
         senderId: caller.id,
         senderName: membership.name,
         targetId: target.id,
-        delivery: request.delivery,
         content,
       }
       if (Buffer.byteLength(JSON.stringify(this.deliveryContent(queued)), 'utf8') > this.maxMessageBytes) {
@@ -191,8 +188,7 @@ export class TeamMailbox {
   ): Promise<boolean> {
     const active = this.activeDispatches.get(message.targetId)
     const live = message.targetId === root.id ? root : this.ctx.agents.get(message.targetId)
-    if (active !== undefined && live !== undefined && message.delivery === 'quiet'
-      && this.messagePrecedes(root, message.id, active.id)) {
+    if (active !== undefined && live !== undefined && this.messagePrecedes(root, message.id, active.id)) {
       return await this.dispatchOnce(root, message, signal)
     }
     return await this.serializeDispatch(message, () => this.dispatchOnce(root, message, signal))
@@ -242,17 +238,8 @@ export class TeamMailbox {
       const content = this.deliveryContent(message)
       if (message.targetId === root.id) {
         const input = createUserMessage({ content, source })
-        if (message.delivery === 'wakeup') {
-          root.followup(input)
-          return await this.checkpointDelivered(root, root.session, message.id)
-        }
-        root.inject(input)
+        root.steer(input)
         return await this.checkpointDelivered(root, root.session, message.id)
-      }
-      if (message.delivery === 'quiet') {
-        if (target === undefined) return false
-        target.inject(createUserMessage({ content, source }))
-        return await this.checkpointDelivered(root, target.session, message.id)
       }
       if (target === undefined) {
         const recorded = await this.persistedTargetRecorded(message.targetId, message.id, signal)
@@ -262,7 +249,7 @@ export class TeamMailbox {
           return true
         }
       }
-      await queueHostSubagentPrompt(this.ctx.subagents, root, message.targetId, content, source, signal)
+      await steerHostSubagentPrompt(this.ctx.subagents, root, message.targetId, content, source, signal)
       return target === undefined
         ? true
         : await this.checkpointDelivered(root, target.session, message.id)
