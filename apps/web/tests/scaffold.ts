@@ -1196,10 +1196,14 @@ export async function captureExpandedTurnProcessAria(
   try {
     if (options.scrollToBottom === true) {
       const backToBottom = page.getByRole('button', { name: 'Back to bottom', exact: true })
-      if (await backToBottom.isVisible()) {
-        await backToBottom.click()
-        await expect.poll(() => backToBottom.count(), { timeout: 10_000 }).toBe(0)
-      }
+      const scroll = page.locator('[data-conversation-scroll]')
+      await expect.poll(async () => {
+        const distanceFromBottom = await scroll.evaluate((host) => {
+          host.scrollTop = host.scrollHeight
+          return host.scrollHeight - host.clientHeight - host.scrollTop
+        })
+        return Math.abs(distanceFromBottom) <= 1 && await backToBottom.count() === 0
+      }, { timeout: 10_000 }).toBe(true)
     }
     return await captureStableAria(page, selector, workspaceCwd)
   } finally {
