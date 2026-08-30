@@ -1920,10 +1920,17 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the absolute local document path, or undefined for non-file storage.',
       },
       {
-        signature: 'register<T>(ns: SettingsNamespace, schema: z<T>, options?: SettingsRegisterOptions<T>): SettingsScope<T>',
+        signature: 'register<const Namespace extends string, T>( ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, options?: SettingsRegisterOptions<T>, ): SettingsScope<T>',
         description: 'Register a namespace schema and receive its owner scope. The registration is an effect on the calling plugin\'s fiber: disposing that fiber removes the namespace and its observers. An invalid stored section fails the registration itself — the earliest point where the schema can judge it.',
         parameters: [{ name: 'ns', description: 'unique namespace; duplicate registration fails loud.' }, { name: 'schema', description: 'schemastery schema resolving this namespace\'s value.' }, { name: 'options', description: 'composition `base` layer and effect timing.' }],
         returns: 'the owner scope for reads, observation, and updates.',
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
+      },
+      {
+        signature: 'installSection<const Namespace extends string, T>( owner: Context, ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, entry: T, hooks: SettingsSectionHooks<T>, ): void',
+        description: 'Attach one optional-settings consumer to this provider. The consumer registers its composition entry as the base layer while this provider is present, then falls back to that entry if the provider detaches.',
+        parameters: [{ name: 'owner', description: 'consumer context whose unload suppresses fallback work.' }, { name: 'ns', description: 'consumer-owned settings namespace.' }, { name: 'schema', description: 'schema resolving the namespace.' }, { name: 'entry', description: 'composition entry used as the base and fallback value.' }, { name: 'hooks', description: 'source sink, change notification, and optional validation.' }],
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
         signature: 'describe(options?: SettingsDescribeOptions): SettingsDescriptor[]',
@@ -1932,25 +1939,29 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one descriptor per registered namespace, in registration order.',
       },
       {
-        signature: 'get(ns: SettingsNamespace): unknown',
+        signature: 'get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>): unknown',
         description: 'Read one registered namespace\'s resolved value.',
         parameters: [{ name: 'ns', description: 'the namespace to read.' }],
         returns: 'the resolved value, or `undefined` while unregistered.',
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
-        signature: 'async update(ns: SettingsNamespace, patch: object, expectedRevision?: number): Promise<void>',
+        signature: 'async update<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, patch: object, expectedRevision?: number, ): Promise<void>',
         description: 'Merge a patch into one registered namespace\'s user layer, validate the resolved candidate, persist through the provider, then commit and emit. A validation failure rejects before anything is persisted. Writes to one namespace are serialized: concurrent updates apply in call order, each merging over the previous write\'s committed section.',
         parameters: [{ name: 'ns', description: 'the registered namespace to update.' }, { name: 'patch', description: 'plain-object patch over the user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
-        signature: 'async replace(ns: SettingsNamespace, section: object, expectedRevision?: number): Promise<void>',
+        signature: 'async replace<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, section: object, expectedRevision?: number, ): Promise<void>',
         description: 'Replace one registered namespace\'s user section wholesale, validate, persist, then commit and emit. Keys absent from `section` fall back to the composition `base` and schema defaults — this is the removal/reset path a merge-only patch cannot express (`replace({})` re-inherits everything).',
         parameters: [{ name: 'ns', description: 'the registered namespace to replace.' }, { name: 'section', description: 'the complete next user section.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
       {
-        signature: 'async mutate(ns: SettingsNamespace, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void>',
+        signature: 'async mutate<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, ops: readonly SettingsPathOp[], expectedRevision?: number, ): Promise<void>',
         description: 'Apply path-addressed edits to one registered namespace\'s user section, validate, persist, then commit and emit. The ops are applied to the section as it stands when the write reaches the front of the queue, so a caller never has to restate fields it did not touch — and, crucially, cannot delete fields it never saw. This is the write path for any caller holding a redacted view; `replace` remains the wholesale reset.',
         parameters: [{ name: 'ns', description: 'the registered namespace to edit.' }, { name: 'ops', description: 'ordered path edits; later ops observe earlier ones.' }, { name: 'expectedRevision', description: 'the descriptor `revision` the caller read; a namespace that moved past it rejects with {@link SettingsConflictError}.' }],
+        throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
       },
     ],
   },
@@ -2319,6 +2330,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Register an ordered prompt section in the calling context\'s scope. A scoped section shadows a global section with the same name; duplicates within one layer and non-finite orders throw. Registration and disposal emit `system-prompt/change`.',
         parameters: [{ name: 'section', description: 'the section to register.' }],
         returns: 'the exact Cordis effect disposer.',
+      },
+      {
+        signature: 'getSectionOrder(name: PromptSectionOrderName): number',
+        description: 'Resolve the centrally owned placement of a repository prompt section.',
+        parameters: [{ name: 'name', description: 'stable section placement name.' }],
+        returns: 'the section\'s numeric sort order.',
+      },
+      {
+        signature: 'getContextOrder(name: PromptContextOrderName): number',
+        description: 'Resolve the centrally owned placement of a repository runtime context.',
+        parameters: [{ name: 'name', description: 'stable context placement name.' }],
+        returns: 'the context\'s numeric sort order.',
       },
       {
         signature: 'context(context: PromptContext): () => void',
@@ -4589,8 +4612,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PromptContext {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n}',
   },
   {
+    name: 'PromptContextOrderName',
+    declaration: 'export type PromptContextOrderName = keyof typeof CONTEXT_ORDERS;',
+  },
+  {
     name: 'PromptSection',
     declaration: 'export interface PromptSection {\n    readonly name: string;\n    readonly order: number;\n    readonly text: string | ((context: AssembleContext) => string);\n    readonly complete?: boolean;\n}',
+  },
+  {
+    name: 'PromptSectionOrderName',
+    declaration: 'export type PromptSectionOrderName = keyof typeof SECTION_ORDERS;',
   },
   {
     name: 'ProviderRequestId',
@@ -5237,6 +5268,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SettingsSecretView {\n    path: string[];\n    set: boolean;\n}',
   },
   {
+    name: 'SettingsSectionHooks',
+    declaration: 'export interface SettingsSectionHooks<T> {\n    setSource(current: () => T): void;\n    onChange(): void;\n    validate?: (value: T) => void;\n}',
+  },
+  {
     name: 'SettingsUpdateSource',
     declaration: 'export type SettingsUpdateSource = \'update\' | \'provider\';',
   },
@@ -5542,7 +5577,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SystemPrompt',
-    declaration: 'export class SystemPrompt extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    section(section: PromptSection): () => void;\n    context(context: PromptContext): () => void;\n    suppressRuntimeContext(): () => void;\n    tools(provider: (context: AssembleContext) => ToolProviderResult): () => void;\n    variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void;\n    async assemble(context: AssembleContext = {}): Promise<PromptAssembly>;\n}',
+    declaration: 'export class SystemPrompt extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, config: Config);\n    section(section: PromptSection): () => void;\n    getSectionOrder(name: PromptSectionOrderName): number;\n    getContextOrder(name: PromptContextOrderName): number;\n    context(context: PromptContext): () => void;\n    suppressRuntimeContext(): () => void;\n    tools(provider: (context: AssembleContext) => ToolProviderResult): () => void;\n    variable(name: string, provider: (context: AssembleContext) => string | undefined): () => void;\n    async assemble(context: AssembleContext = {}): Promise<PromptAssembly>;\n}',
   },
   {
     name: 'TableKeyOf',

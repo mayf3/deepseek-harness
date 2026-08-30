@@ -2,6 +2,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
@@ -9,8 +10,7 @@ import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent, SessionHeader, UserMessage } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
 import { canonicalClientTimeZone } from '@deepseek-ai/dsh-util-time'
@@ -73,7 +73,7 @@ export class SessionCommandController {
     if (request.workspaceId !== undefined && request.cwd !== undefined) {
       throw new RemoteError('gateway/bad-request', 'session.create accepts workspaceId or cwd, not both', {})
     }
-    const sessionId = request.sessionId ?? SessionId(`session-${randomUUID()}`)
+    const sessionId = request.sessionId ?? brandString<SessionId>(`session-${randomUUID()}`)
     let workspace: Workspace | undefined
     if (request.workspaceId !== undefined) {
       workspace = this.ctx.workspaceRegistry.get(request.workspaceId)
@@ -236,7 +236,7 @@ export class SessionCommandController {
         {},
       )
     }
-    const childId = SessionId(`session-${randomUUID()}`)
+    const childId = brandString<SessionId>(`session-${randomUUID()}`)
     const composition = await this.agents.composeAgent(this.agents.presetForObservation(source))
     try {
       const { provider, model } = this.ctx.agentDefaultModel.currentSelection()

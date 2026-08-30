@@ -65,15 +65,13 @@
     "@deepseek-ai/cordis": "workspace:^",
     "react": "^18.2.0",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:^",
-    "@deepseek-ai/dsh-session": "workspace:^"
+    "@deepseek-ai/dsh-session": "workspace:^",
+    "@deepseek-ai/dsh-system-prompt": "workspace:^"
   },
   "files": [
     "lib/index.js",
     "lib/invariant.js",
     "lib/client.js",
     "lib/types/**/*.d.ts"
-  ],
-  "dependencies": {
-    "@deepseek-ai/dsh-system-prompt": "workspace:^"
-  }
+  ]
 }

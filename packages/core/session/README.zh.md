@@ -83,14 +83,14 @@ session.deriveMessages()         // the derived model history
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`、`SessionEvent`、`UserMessage`、`SessionHeader`、`TurnEndReasonMap` |
 | [`src/surface.ts`](src/surface.ts) | 有序 surface 投影、替换校验、`deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` 折叠与重建 |
-| [`src/json.ts`](src/json.ts) | 无损 JSON 校验与快照 |
+| [`dsh-util-values`](../../util/values/README.zh.md) | 共享无损 JSON 校验与分离式快照 |
 | [`src/chunk-rows.ts`](src/chunk-rows.ts) | 供持久化后端使用的共享紧凑行存储编解码器 |
 | [`src/repair.ts`](src/repair.ts) | 崩溃遗留日志的冷修复 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式配套：序号、轮次／步骤闭合、工具调用／结果配对 |
 
 ### 追加校验
 
-每次追加都会执行一趟递归处理，对每个嵌套值只读取、校验并复制一次，因此有状态的 getter 无法给校验提供一个值、给存储提供另一个值。非无损 JSON 载荷（BigInt、循环、稀疏数组、`-0`、特殊原型）会在追加位置被拒绝，先于任何后端刷新。表层事件还会校验标记形态、被引用的源事件 seq，以及替换的完整遮蔽节点覆盖。
+每次追加都会使用共享的迭代式 `snapshotJsonValue()` 流程，对每个嵌套值只读取、校验并复制一次，因此有状态的 getter 无法给校验提供一个值、给存储提供另一个值。非无损 JSON 载荷（BigInt、循环、稀疏数组、`-0`、特殊原型）会在追加位置被拒绝，先于任何后端刷新。表层事件还会校验标记形态、被引用的源事件 seq，以及替换的完整遮蔽节点覆盖。
 
 ### 派生历史
 

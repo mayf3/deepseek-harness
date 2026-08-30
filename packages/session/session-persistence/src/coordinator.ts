@@ -12,11 +12,11 @@ import {
   KNOWN_SESSION_EVENT_TYPES,
   SESSION_FORMAT_VERSION,
   SessionPreparation,
-  snapshotJsonValue,
   snapshotSessionEvent,
 } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionId, SessionHeader } from '@deepseek-ai/dsh-session'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
+import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import type { BorrowedSessionSource, SessionInspection, SessionLocation } from './index.ts'
 import { SessionPersistenceNotFoundError } from './errors.ts'
 import type { SessionPersistenceRevision } from './revision.ts'

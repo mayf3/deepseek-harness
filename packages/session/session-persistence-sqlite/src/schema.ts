@@ -8,9 +8,10 @@ import { isAbsolute } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import type { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import {
-  SessionId,
   type SessionHeader,
+  type SessionId,
 } from '@deepseek-ai/dsh-session'
 import { sql } from './sql.ts'
 
@@ -348,10 +349,10 @@ export function decodeStoreIdentity(value: unknown): string {
 export function rowToMeta(row: SessionRow): SessionHeader {
   return {
     version: row.version,
-    id: SessionId(row.id),
+    id: brandString<SessionId>(row.id),
     createdAt: row.created_at,
     ...row.cwd === null ? {} : { cwd: row.cwd },
-    ...row.parent_session === null ? {} : { parentSession: SessionId(row.parent_session) },
+    ...row.parent_session === null ? {} : { parentSession: brandString<SessionId>(row.parent_session) },
     ...row.seed_length === null ? {} : { seedLength: row.seed_length },
     ...row.origin === null ? {} : { origin: row.origin },
     ...row.delegation_depth === null ? {} : { delegationDepth: row.delegation_depth },

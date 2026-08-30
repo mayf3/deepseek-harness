@@ -46,6 +46,9 @@
       "path": "../../util/deque"
     },
     {
+      "path": "../../util/values"
+    },
+    {
       "path": "../../interaction/user-approval"
     },
     {

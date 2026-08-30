@@ -5,8 +5,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Deque } from '@deepseek-ai/dsh-deque'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {
-  JsonValue, Session, SessionEvent, SessionEventMap, SessionId, UserMessage,
+  Session, SessionEvent, SessionEventMap, SessionId, UserMessage,
 } from '@deepseek-ai/dsh-session'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   SessionControlBaseline,
   SessionControlFrame,

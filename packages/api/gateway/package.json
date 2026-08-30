@@ -59,11 +59,11 @@
     "@deepseek-ai/dsh-deque": "workspace:^",
     "@deepseek-ai/dsh-timeout": "workspace:^",
     "@deepseek-ai/schemastery": "workspace:^",
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-brand": "workspace:^",
@@ -74,7 +74,6 @@
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
     "@types/ws": "^8.18.1",
     "@deepseek-ai/cordis": "workspace:^",
-    "zod": "^4.4.3",
-    "@deepseek-ai/dsh-typert-protocol": "workspace:^"
+    "zod": "^4.4.3"
   }
 }
