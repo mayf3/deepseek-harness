@@ -5,7 +5,7 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
-import { Session, type SessionOptions } from '../src/client/sessions/session.ts'
+import { JUMP_PAGE_MESSAGES, Session, type SessionOptions } from '../src/client/sessions/session.ts'
 import { FakeApiClient, deferred, err, fakeRemote, ok } from './fake-api.client.ts'
 import { entries, ev, historyValue, plainTurn } from './event-script.client.ts'
 
@@ -249,6 +249,94 @@ describe('paging', () => {
       const snapshot = session.getSnapshot()
       expect(session.eventSource.getSnapshot().entries).toEqual(windowBefore.entries)
       expect(snapshot.hasMore).toBe(false)
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it('loadThrough pages repeatedly until the window covers the target seq', async () => {
+    const oldest = plainTurn(0, 0, '最旧问', '最旧答')
+    const middle = plainTurn(6, 1, '中问', '中答')
+    const newest = plainTurn(12, 2, '新问', '新答')
+    const { api, session } = makeSession()
+    api.onHistory = (payload) => {
+      if (payload.beforeSeq === undefined) return histResponse(newest, true)
+      return payload.beforeSeq === 12 ? histResponse(middle, true) : histResponse(oldest, false)
+    }
+    await session.open()
+
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = (payload) => {
+      api.onHistory = payload2 => payload2.beforeSeq === 12 ? histResponse(middle, true) : histResponse(oldest, false)
+      void payload
+      return gate.promise
+    }
+    const jump = session.loadThrough(0)
+    expect(session.getSnapshot().loadingOlder).toBe(true)
+    gate.resolve(ok(historyValue(middle, true)))
+    await jump
+    const snapshot = session.getSnapshot()
+    expect(snapshot.loadingOlder).toBe(false)
+    expect(eventSeqs(session)).toEqual([...oldest, ...middle, ...newest].map(event => event.seq))
+    expect(api.callsOf('session.history')).toMatchObject([
+      { beforeSeq: 12, maxMessages: JUMP_PAGE_MESSAGES },
+      { beforeSeq: 6, maxMessages: JUMP_PAGE_MESSAGES },
+    ])
+  })
+
+  it('loadThrough is a no-op when the window already covers the target or the session is not open', async () => {
+    const { api, session } = makeSession()
+    await session.loadThrough(0) // cold: no-op
+    expect(api.calls).toEqual([])
+    api.onHistory = () => histResponse(plainTurn(6, 1, 'x', 'y'), true)
+    await session.open()
+    const calls = api.calls.length
+    await session.loadThrough(6) // baseSeq is already 6
+    await session.loadThrough(9) // inside the window
+    expect(api.calls.length).toBe(calls)
+  })
+
+  it('loadThrough retargets a running jump to the lowest requested seq and shares its completion', async () => {
+    const oldest = plainTurn(0, 0, 'a', 'b')
+    const middle = plainTurn(6, 1, 'c', 'd')
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(12, 2, 'e', 'f'), true)
+    await session.open()
+
+    const gate = deferred<Awaited<ReturnType<FakeApiClient['onHistory']>>>()
+    api.onHistory = () => {
+      api.onHistory = () => histResponse(oldest, false)
+      return gate.promise
+    }
+    const first = session.loadThrough(6)
+    const second = session.loadThrough(0)
+    gate.resolve(ok(historyValue(middle, true)))
+    await Promise.all([first, second])
+    expect(eventSeqs(session)).toEqual([...oldest, ...middle].map(event => event.seq).concat([12, 13, 14, 15, 16, 17]))
+    expect(api.callsOf('session.history')).toHaveLength(2)
+  })
+
+  it('loadThrough stops on a page that makes no progress instead of looping', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = payload => payload.beforeSeq === undefined
+      ? histResponse(plainTurn(12, 2, 'x', 'y'), true)
+      : histResponse([], true) // empty page still claiming more history
+    await session.open()
+    await session.loadThrough(0)
+    expect(session.getSnapshot().loadingOlder).toBe(false)
+    expect(api.callsOf('session.history')).toHaveLength(1)
+  })
+
+  it('loadThrough fails soft on a thrown page and clears its busy state', async () => {
+    const { api, session } = makeSession()
+    api.onHistory = () => histResponse(plainTurn(12, 2, 'x', 'y'), true)
+    await session.open()
+    api.onHistory = () => Promise.reject(new Error('page wire down'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      await session.loadThrough(0)
+      expect(errorSpy).toHaveBeenCalled()
+      expect(session.getSnapshot().loadingOlder).toBe(false)
     } finally {
       errorSpy.mockRestore()
     }
