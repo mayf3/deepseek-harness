@@ -19,10 +19,12 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
     'test/marks': MarksState
     'test/count': number
+    'test/buffered': { marks: string[]; draft: string }
   }
 
   interface SessionProjectionMap {
     'test/marks': { marks: string[] }
+    'test/buffered': string[]
   }
 }
 
@@ -111,6 +113,40 @@ describe('SessionProjectionRegistry drive', () => {
     // Non-matching event: apply returns the same reference — no notification.
     session.append('turn/start', { turn: 1 })
     expect(seen).toEqual([{ key: 'test/marks', value: { marks: ['a'] }, seq: event.seq, sessionId: String(session.id) }])
+  })
+
+  it('keeps the feed quiet while a changed state serves an identity-stable view (draft buffering)', async () => {
+    const { ctx, session } = await harness()
+    // Unit buffering a working field beside its wire array: the view projects
+    // only `marks`, whose identity survives draft-only applies.
+    ctx.sessionProjections.register({
+      key: 'test/buffered',
+      stateSchema: z.object({ marks: z.array(z.string()), draft: z.string() }),
+      init: () => ({ marks: [], draft: '' }),
+      apply: (state, event) => {
+        if (event.type === 'test/mark') return { marks: event.data.marks, draft: '' }
+        if (event.type === 'turn/start') return { marks: state.marks, draft: `draft-${String(event.seq)}` }
+        return state
+      },
+      wire: { viewSchema: z.array(z.string()), view: state => state.marks },
+      stateVersion: 1,
+    })
+    const seen: { value: unknown; seq: number }[] = []
+    ctx.sessionProjections.onChanged((_session, key, value, seq) => {
+      if (key === 'test/buffered') seen.push({ value, seq })
+    })
+    const first = mark(session, ['a'])
+    // Draft-only applies change the state reference but not the served view.
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/start', { turn: 2 })
+    const second = mark(session, ['a', 'b'])
+    expect(seen).toEqual([
+      { value: ['a'], seq: first.seq },
+      { value: ['a', 'b'], seq: second.seq },
+    ])
+    // The quiet applies still advanced the state itself.
+    expect(ctx.sessionProjections.stateOf(session, 'test/buffered')?.draft).toBe('')
+    expect(ctx.sessionProjections.snapshot(session).values['test/buffered']).toEqual(['a', 'b'])
   })
 
   it('drives independently per session (cells are per-session watermarks)', async () => {
