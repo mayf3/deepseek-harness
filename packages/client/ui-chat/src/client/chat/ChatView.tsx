@@ -671,6 +671,12 @@ export function ChatView({
     if (local === null) return
     const el = scrollerOf(local)
     if (item.anchor.kind === 'unloaded') {
+      // Jumping into history is leaving the live tail: release bottom
+      // ownership on the click itself, or the pinned-scroll snap (a
+      // non-reader scroll delivery during the first prepend's compensation)
+      // would call toBottom and cancel the jump.
+      atBottomRef.current = false
+      setAtBottom(false)
       // Hold the reader's place through the paging chunks; the layout effect
       // lands on the target once its rows commit.
       const held = pagingAnchor(local, el)

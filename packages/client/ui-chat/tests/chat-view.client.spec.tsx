@@ -632,6 +632,33 @@ describe('ChatView', () => {
     expect(view.getByRole('button', { name: '跳转到第 3 轮' }).getAttribute('aria-current')).toBe('true')
   })
 
+  it('a jump from the pinned tail releases bottom ownership so the follow snap cannot cancel it', async () => {
+    const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
+    const h = makeHarness({ nodes: later }, { hasMore: true })
+    h.setOutline({
+      turns: [
+        { turn: 1, seq: 0, prompt: 'first prompt' },
+        { turn: 3, seq: 8, prompt: 'third prompt' },
+      ],
+    })
+    let releaseJump: (() => void) | undefined
+    h.loadThrough.mockImplementation(() => new Promise<void>((resolve) => { releaseJump = resolve }))
+    const view = render(<h.ChatView {...h.props} />)
+    // Pinned to the tail on open: the back-to-bottom control is absent.
+    expect(view.queryByRole('button', { name: '回到底部' })).toBeNull()
+
+    const first = view.getByRole('button', { name: '加载并跳转到第 1 轮' })
+    fireEvent.click(first)
+    // The click itself leaves the tail...
+    expect(view.getByRole('button', { name: '回到底部' })).toBeTruthy()
+    // ...so a non-reader scroll delivery at the floor (the first prepend's
+    // compensation fires one) no longer snaps to the tail and cancel the jump.
+    const scroller = view.container.querySelector('[class*="scroll"]') as HTMLElement
+    fireEvent.scroll(scroller)
+    expect(first.getAttribute('aria-busy')).toBe('true')
+    await act(async () => { releaseJump?.() })
+  })
+
   it('scrolls the fixed-pitch rail inside its frame with gradient fades at the scrollable ends', () => {
     const h = makeHarness(
       { nodes: [userInTurn(8, 'latest prompt', 60), assistant(9, 'latest response', 60)] },
