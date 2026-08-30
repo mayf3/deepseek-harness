@@ -42,8 +42,6 @@ import {
 export const name = 'tool-subagent'
 export const inject = ['tools', 'subagents', 'systemPrompt', 'sessionProjections']
 
-/** Prompt order after bounded delegation policy and before child reporting. */
-
 /** Config: which registered provider this tool delegates to, plus child defaults. */
 export interface Config {
   /** The `ctx.subagents` provider name to start runs on (e.g. `spawn`, `acp`). */

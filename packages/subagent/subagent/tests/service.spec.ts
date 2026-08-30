@@ -165,6 +165,16 @@ describe('SubagentRuntime', () => {
     )).rejects.toMatchObject({ code: 'CONTINUATION_UNAVAILABLE' })
   })
 
+  it('registers continuable child setup contributions through the service lifetime', async () => {
+    const { subagents } = await service()
+    const contribution = vi.fn(() => vi.fn())
+
+    const dispose = subagents.registerContinuableSetup(contribution)
+
+    expect(contribution).not.toHaveBeenCalled()
+    expect(() => { dispose() }).not.toThrow()
+  })
+
   it.each([
     ['agentOptions', { agentOptions: { model: 'child-model' } }],
     ['outputSchema', { outputSchema: { type: 'object', properties: {} } }],
