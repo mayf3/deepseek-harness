@@ -12,6 +12,9 @@ const PROMPT_PREVIEW_LIMIT = 50
 const RESPONSE_PREVIEW_LIMIT = 120
 
 /** Join rendered text, collapse whitespace, and cap at `limit` with a trailing ellipsis when clipped. */
+// Deliberate mirror of the turnOutline projection's preview(): the wire
+// boundary forbids sharing code with the host package.
+/* jscpd:ignore-start */
 function preview(parts: Iterable<string>, limit: number): string {
   let text = ''
   let unread = false
@@ -35,6 +38,7 @@ function preview(parts: Iterable<string>, limit: number): string {
   if (normalized.length > limit - 1) return `${normalized.slice(0, limit - 1).trimEnd()}…`
   return unread ? `${normalized}…` : normalized
 }
+/* jscpd:ignore-end */
 
 function promptText(node: ChatNode): string {
   if (node.kind !== 'user') return ''
