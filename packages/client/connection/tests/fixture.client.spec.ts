@@ -1,7 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type {
-  ModelSelection,
-  RpcMessage,
   RpcRequest,
   RpcResponse,
   RpcResult,
@@ -12,7 +10,7 @@ import { RpcId } from '../src/client/api.ts'
 import { decodeStorageRecord } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import {
-  FixtureApiClient,
+  createFixtureConnectionRpc,
   createFixtureFaces,
   type FixtureOptions,
 } from '../src/client/fixture.ts'
@@ -20,6 +18,8 @@ import type {
   ClientConnectionRpc, ConnectionRpcResult,
 } from '../src/rpc.ts'
 import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
+import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
 
 const sid = (id: string): SessionId => id as SessionId
 type WorkspaceId = string & { readonly __fixtureWorkspaceId: 'WorkspaceId' }
@@ -175,6 +175,7 @@ type FixtureSessionClient = {
 }
 
 interface FixtureSessionRemote {
+  modelCatalog(): Promise<ConnectionRpcResult<ModelCatalog>>
   follow(sessionId: SessionId, signal: AbortSignal): AsyncIterable<FixtureFollowFrame>
   control(signal: AbortSignal): AsyncIterable<FixtureControlFrame>
 }
@@ -286,7 +287,7 @@ interface FixtureRemoteEventStream extends AsyncIterable<FixtureRemoteEventFrame
   readonly clientId: Promise<string>
 }
 
-type FixtureTestApi = ReturnType<typeof createFixtureFaces>['api'] & {
+type FixtureTestApi = {
   /** The directory-picking Remote namespace as the fixture serves it. */
   readonly directoryPickerRemote: {
     pick: () => Promise<ConnectionRpcResult<string | null>>
@@ -305,8 +306,8 @@ type FixtureTestApi = ReturnType<typeof createFixtureFaces>['api'] & {
 
 /** Keep existing fixture assertions compact while driving only the new Session Remote endpoints. */
 function createFixtureApi(options: FixtureOptions = {}): FixtureTestApi {
-  const { api, rpc } = createFixtureFaces(options)
-  return Object.assign(api, {
+  const { rpc } = createFixtureFaces(options)
+  return {
     directoryPickerRemote: {
       pick: () => rpc.call('/api', 'directoryPicker/pick', { args: {} }) as
         Promise<ConnectionRpcResult<string | null>>,
@@ -325,7 +326,7 @@ function createFixtureApi(options: FixtureOptions = {}): FixtureTestApi {
     remoteEvents: (signal: AbortSignal) => openFixtureRemoteEvents(rpc, signal),
     answerRemoteEvent: (result: FixtureRemoteEventResult) =>
       rpc.call('/api', '$events/result', { args: result }),
-  })
+  }
 }
 
 /** The fixture's Credentials Remote endpoints over the shared RPC carrier. */
@@ -446,6 +447,8 @@ function createSessionRemote(rpc: ClientConnectionRpc): FixtureSessionRemote {
     return stream as AsyncIterable<F>
   }
   return {
+    modelCatalog: () => rpc.call('/api', 'session/modelCatalog', { args: {} }) as
+      Promise<ConnectionRpcResult<ModelCatalog>>,
     follow: (sessionId, signal) => open<FixtureFollowFrame>('session/follow', {
       request: { address: { kind: 'session', sessionId } },
     }, signal),
@@ -661,7 +664,7 @@ describe('createFixtureApi', () => {
     const aborted = new AbortController()
     aborted.abort()
     await expect(api.sessions.search(req({ query: 'fixture' }), aborted.signal))
-      .resolves.toMatchObject({ result: { ok: false, error: { code: 'cancelled' } } })
+      .resolves.toMatchObject({ result: { ok: false, error: { code: 'gateway/cancelled' } } })
   })
 
   it('pages history backwards on message-boundary cuts with seq-contiguous stitching', async () => {
@@ -732,10 +735,10 @@ describe('createFixtureApi', () => {
   it('serves grouped models and keeps a selection for later history and fixture requests', async () => {
     const api = createFixtureApi()
     const sessionId = sid('fx-alpha')
-    const catalog = await api.llm.models(req({}))
-    if (!catalog.result.ok) throw new Error('models failed')
-    expect(catalog.result.value.groups.map(group => group.name)).toEqual(['DeepSeek', 'OpenAI'])
-    expect(catalog.result.value.groups[0]?.models.map(model => model.id))
+    const catalog = await api.sessionRemote.modelCatalog()
+    if (!catalog.ok) throw new Error('models failed')
+    expect(catalog.value.groups.map(group => group.name)).toEqual(['DeepSeek', 'OpenAI'])
+    expect(catalog.value.groups[0]?.models.map(model => model.id))
       .toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
 
     const selected = await api.sessions.selectModel(req({
@@ -775,7 +778,7 @@ describe('createFixtureApi', () => {
     ]) {
       expect(result).toMatchObject({
         ok: false,
-        error: { code: 'settings-rejected', message: 'fixture: the minimal readiness settings descriptor is read-only' },
+        error: { code: 'settings/rejected', message: 'fixture: the minimal readiness settings descriptor is read-only' },
       })
     }
 
@@ -863,9 +866,9 @@ describe('createFixtureApi', () => {
       for await (const frame of api.sessionRemote.control(controlAbort.signal)) controlFrames.push(frame)
     })()
     await new Promise(resolve => setTimeout(resolve, 10))
-    // Unknown session → session-not-found with the id echoed in details.
+    // Unknown session → session/not-found with the id echoed in details.
     const missing = await api.sessions.prompt(req({ sessionId: sid('ghost'), mode: 'queue' as const, content: [{ type: 'text' as const, text: 'x' }] }))
-    expect(missing.result).toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId: 'ghost' } } })
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'session/not-found', details: { sessionId: 'ghost' } } })
     // Real prompt: replay starts (running flips true), cancel freezes it.
     const accepted = await api.sessions.prompt(req({ sessionId: id, mode: 'queue' as const, content: [{ type: 'text' as const, text: 'render markdown' }] }))
     expect(accepted.result).toMatchObject({ ok: true, value: { accepted: true } })
@@ -1039,7 +1042,7 @@ describe('createFixtureApi', () => {
       clientId,
       eventId: question.eventId,
       outcome: { kind: 'result', value: { answers: {} } },
-    })).resolves.toMatchObject({ ok: false, error: { code: 'invocation-unavailable' } })
+    })).resolves.toMatchObject({ ok: false, error: { code: 'gateway/invocation-unavailable' } })
     const remaining = await readResidentRemoteEvents(api, 1)
     expect(remaining.map(frame => frame.event)).toEqual(['approval/request'])
 
@@ -1094,19 +1097,9 @@ describe('createFixtureApi', () => {
       clientId: await stream.clientId,
       eventId: approval.eventId,
       outcome: { kind: 'next' },
-    })).resolves.toMatchObject({ ok: false, error: { code: 'invocation-unavailable' } })
+    })).resolves.toMatchObject({ ok: false, error: { code: 'gateway/invocation-unavailable' } })
     const remaining = await readResidentRemoteEvents(api, 1)
     expect(remaining.map(frame => frame.event)).toEqual(['user-questions/request'])
-  })
-
-  it('describe answers the fixture identity', async () => {
-    const api = createFixtureApi()
-    const response = await api.host.describe(req({}))
-    expect(response.result).toMatchObject({
-      ok: true, value: { version: '0.0.0-fixture', attachedSessions: 1, home: '/home/fixture' },
-    })
-    const empty = await createFixtureApi({ empty: true }).host.describe(req({}))
-    expect(empty.result).toMatchObject({ ok: true, value: { attachedSessions: 0 } })
   })
 
   it('createDirectory under the root mints /name whose listing and crumbs share the identity', async () => {
@@ -1179,11 +1172,11 @@ describe('createFixtureApi', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
     const wsid = 'fx-ws-fixture' as WorkspaceId
     const missing = await api.workspace.rename(req({ workspaceId: 'fx-ws-void' as WorkspaceId, title: 'x' }))
-    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace-not-found', details: { workspaceId: 'fx-ws-void' } } })
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace/not-found', details: { workspaceId: 'fx-ws-void' } } })
 
     await api.workspace.create(req({ path: '/tmp/fixture-workspaces/occupied' }))
     const conflict = await api.workspace.rename(req({ workspaceId: wsid, title: ' occupied ' }))
-    expect(conflict.result).toMatchObject({ ok: false, error: { code: 'workspace-name-conflict', details: { name: 'occupied' } } })
+    expect(conflict.result).toMatchObject({ ok: false, error: { code: 'workspace/name-conflict', details: { name: 'occupied' } } })
 
     const noop = await api.workspace.rename(req({ workspaceId: wsid, title: ' fixture ' }))
     if (!noop.result.ok) throw new Error('no-op rename failed')
@@ -1217,10 +1210,10 @@ describe('createFixtureApi', () => {
     await new Promise(resolve => setTimeout(resolve, 10))
 
     const missing = await api.sessions.rename(req({ sessionId: sid('fx-void'), title: 'x' }))
-    expect(missing.result).toMatchObject({ ok: false, error: { code: 'session-not-found', details: { sessionId: 'fx-void' } } })
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'session/not-found', details: { sessionId: 'fx-void' } } })
 
     const blank = await api.sessions.rename(req({ sessionId: sid('fx-alpha'), title: '   ' }))
-    expect(blank.result).toMatchObject({ ok: false, error: { code: 'title-invalid', details: { sessionId: 'fx-alpha' } } })
+    expect(blank.result).toMatchObject({ ok: false, error: { code: 'session/title-invalid', details: { sessionId: 'fx-alpha' } } })
 
     const renamed = await api.sessions.rename(req({ sessionId: sid('fx-alpha'), title: '  重命名  ' }))
     if (!renamed.result.ok) throw new Error('rename failed')
@@ -1254,11 +1247,11 @@ describe('createFixtureApi', () => {
     const api = createFixtureApi()
     const wsid = 'fx-ws-fixture' as WorkspaceId
     const missing = await api.workspace.insertSessionBefore(req({ workspaceId: 'fx-ws-void' as WorkspaceId, sessionId: sid('fx-alpha') }))
-    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace-not-found' } })
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace/not-found' } })
     const ghost = await api.workspace.insertSessionBefore(req({ workspaceId: wsid, sessionId: sid('fx-ghost') }))
-    expect(ghost.result).toMatchObject({ ok: false, error: { code: 'workspace-move-invalid', details: { sessionId: 'fx-ghost' } } })
+    expect(ghost.result).toMatchObject({ ok: false, error: { code: 'workspace/move-invalid', details: { sessionId: 'fx-ghost' } } })
     const badAnchor = await api.workspace.insertSessionBefore(req({ workspaceId: wsid, sessionId: sid('fx-alpha'), beforeSessionId: sid('fx-ghost') }))
-    expect(badAnchor.result).toMatchObject({ ok: false, error: { code: 'workspace-move-invalid', details: { beforeSessionId: 'fx-ghost' } } })
+    expect(badAnchor.result).toMatchObject({ ok: false, error: { code: 'workspace/move-invalid', details: { beforeSessionId: 'fx-ghost' } } })
 
     const moved = await api.workspace.insertSessionBefore(req({ workspaceId: wsid, sessionId: sid('fx-gamma'), beforeSessionId: sid('fx-beta') }))
     if (!moved.result.ok) throw new Error('move failed')
@@ -1283,7 +1276,7 @@ describe('createFixtureApi', () => {
     )
     await new Promise(resolve => setTimeout(resolve, 10))
     const missing = await api.workspace.delete(req({ workspaceId: 'fx-ws-void' as WorkspaceId }))
-    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace-not-found' } })
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace/not-found' } })
     const deleted = await api.workspace.delete(req({ workspaceId: 'fx-ws-fixture' as WorkspaceId }))
     expect(deleted.result).toEqual({ ok: true, value: { deleted: true } })
     const frames = await consuming
@@ -1316,7 +1309,7 @@ describe('createFixtureApi', () => {
     )
     await new Promise(resolve => setTimeout(resolve, 10))
     const missing = await api.sessions.create(req({ workspaceId: 'fx-ws-void' as WorkspaceId }))
-    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace-not-found', details: { workspaceId: 'fx-ws-void' } } })
+    expect(missing.result).toMatchObject({ ok: false, error: { code: 'workspace/not-found', details: { workspaceId: 'fx-ws-void' } } })
     const created = await api.sessions.create(req({ workspaceId: 'fx-ws-fixture' as WorkspaceId }))
     if (!created.result.ok) throw new Error('create failed')
     const id = created.result.value.sessionId
@@ -1391,7 +1384,7 @@ describe('createFixtureApi', () => {
     const conflict = await api.sessions.create(req({ sessionId: preallocated, cwd: '/elsewhere' }))
     expect(conflict.result).toMatchObject({
       ok: false,
-      error: { code: 'session-conflict', details: { sessionId: preallocated, requestedCwd: '/elsewhere' } },
+      error: { code: 'session/conflict', details: { sessionId: preallocated, requestedCwd: '/elsewhere' } },
     })
   })
 
@@ -1423,7 +1416,7 @@ describe('createFixtureApi', () => {
     expect(conflict.result).toEqual({
       ok: false,
       error: {
-        code: 'session-conflict',
+        code: 'session/conflict',
         message: `session ${existing.sessionId} already uses no cwd`,
         details: { sessionId: existing.sessionId, requestedCwd: '/tmp/fixture' },
       },
@@ -1439,7 +1432,7 @@ describe('createFixtureApi', () => {
     }))
     expect(created.result).toMatchObject({
       ok: false,
-      error: { code: 'workspace-attach-failed', details: { sessionId, workspaceId: 'fx-ws-fixture' } },
+      error: { code: 'session/workspace-attach-failed', details: { sessionId, workspaceId: 'fx-ws-fixture' } },
     })
     const listed = await api.sessions.list(req({}))
     const workspaces = await readWorkspaceBaseline(api.workspaceRemote)
@@ -1451,7 +1444,7 @@ describe('createFixtureApi', () => {
       workspaceId: 'fx-ws-fixture' as WorkspaceId,
       sessionId,
     }))
-    expect(retried.result).toMatchObject({ ok: false, error: { code: 'workspace-attach-failed' } })
+    expect(retried.result).toMatchObject({ ok: false, error: { code: 'session/workspace-attach-failed' } })
     const afterRetry = await api.sessions.list(req({}))
     if (!afterRetry.result.ok) throw new Error('list failed')
     expect(afterRetry.result.value.items.filter(item => item.sessionId === sessionId)).toHaveLength(1)
@@ -1482,7 +1475,7 @@ describe('createFixtureApi', () => {
       mode: 'queue' as const,
       content: [{ type: 'text' as const, text: 'keep me' }],
     }))
-    expect(prompt.result).toMatchObject({ ok: false, error: { code: 'agent-busy' } })
+    expect(prompt.result).toMatchObject({ ok: false, error: { code: 'session/agent-busy' } })
     const imagePrompt = await rejecting.sessions.prompt(req({
       sessionId: real.result.value.sessionId,
       mode: 'queue' as const,
@@ -1490,7 +1483,7 @@ describe('createFixtureApi', () => {
     }))
     expect(imagePrompt.result).toMatchObject({
       ok: false,
-      error: { code: 'attachment-error', details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' } },
+      error: { code: 'session/attachment-invalid', details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' } },
     })
   })
 
@@ -1609,38 +1602,16 @@ describe('createFixtureApi', () => {
   })
 })
 
-describe('FixtureApiClient (protocol-level fake carrier)', () => {
+describe('fixture Connection RPC', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
   })
 
-  it('doFetch is an unreachable tripwire (all protocol paths overridden)', () => {
-    const client = new FixtureApiClient()
-    // Protected at compile time only; reach it directly to pin the tripwire message.
-    expect(() => (client as unknown as { doFetch(): Promise<Response> }).doFetch()).toThrow(/doFetch must be unreachable/)
-  })
-
-  it('mints request ids and taps unary request/response envelopes without touching doFetch', async () => {
-    const client = new FixtureApiClient()
-    const tapped: RpcMessage[] = []
-    client.subscribeEnvelopes(batch => tapped.push(...batch))
-    const response = await client.host.describe({})
-    expect(response.result.ok).toBe(true)
-    await vi.waitFor(() => {
-      const kinds = tapped.map(m => m.type)
-      expect(kinds).toContain('client-request')
-      expect(kinds).toContain('server-response')
-    })
-    const request = tapped.find(m => m.type === 'client-request')
-    const reply = tapped.find(m => m.type === 'server-response')
-    expect(request?.rpcId).toBe(reply?.rpcId) // echo discipline holds through the fake carrier
-  })
-
-  it('covers the whole unary dispatch table', async () => {
-    const client = new FixtureApiClient()
-    const sessions = createSessionClient(client.rpc)
-    const workspaces = createWorkspaceClient(client.rpc)
+  it('covers the migrated Remote dispatch table', async () => {
+    const rpc = createFixtureConnectionRpc()
+    const sessions = createSessionClient(rpc)
+    const workspaces = createWorkspaceClient(rpc)
     expect((await sessions.search(
       { query: 'fixture' },
       new AbortController().signal,
@@ -1651,8 +1622,7 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     expect((await sessions.history({ sessionId: id })).result.ok).toBe(true)
     expect((await sessions.prompt({ sessionId: id, mode: 'queue', content: [{ type: 'text', text: '嗨' }] })).result.ok).toBe(true)
     expect((await sessions.cancel({ sessionId: id })).result.ok).toBe(true)
-    expect((await client.host.describe({})).result.ok).toBe(true)
-    expect((await readWorkspaceBaseline(createWorkspaceRemote(client.rpc))).items).not.toHaveLength(0)
+    expect((await readWorkspaceBaseline(createWorkspaceRemote(rpc))).items).not.toHaveLength(0)
     const workspace = await workspaces.create({ path: '/tmp/fixture-workspaces/via-client' })
     if (!workspace.result.ok) throw new Error('workspace create failed')
     expect(workspace.result.value.workspace.title).toBe('via-client')
@@ -1668,13 +1638,13 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
   })
 
   it('folds the goal lifecycle over the Goal Remotes', async () => {
-    const client = new FixtureApiClient()
-    const sessions = createSessionClient(client.rpc)
+    const rpc = createFixtureConnectionRpc()
+    const sessions = createSessionClient(rpc)
     const created = await sessions.create({})
     if (!created.result.ok) throw new Error('create failed')
     const id = created.result.value.sessionId
     const goal = (endpoint: string, args: Record<string, unknown>) =>
-      client.rpc.call('/api', endpoint, { args: { agentId: id, ...args } })
+      rpc.call('/api', endpoint, { args: { agentId: id, ...args } })
 
     // create → edit → pause → resume → complete → clear; each mutation advances the CAS
     // revision by one (state rides the projection frames).
@@ -1713,17 +1683,17 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
     vi.stubGlobal('location', {
       search: '?fixture=empty&fixturePrompt=reject&fixtureFrames=workspace-first',
     })
-    const client = new FixtureApiClient()
-    const sessions = createSessionClient(client.rpc)
-    const workspaces = createWorkspaceClient(client.rpc)
-    const workspaceRemote = createWorkspaceRemote(client.rpc)
+    const rpc = createFixtureConnectionRpc()
+    const sessions = createSessionClient(rpc)
+    const workspaces = createWorkspaceClient(rpc)
+    const workspaceRemote = createWorkspaceRemote(rpc)
     await expect(sessions.list({})).resolves.toMatchObject({ result: { ok: true, value: { items: [] } } })
     const made = await workspaces.create({ path: '/tmp/fixture-workspaces/query-workspace' })
     if (!made.result.ok) throw new Error('workspace create failed')
     const hostAbort = new AbortController()
     const workspaceAbort = new AbortController()
     const hostFrames = collectValues(
-      openFixtureRemoteEvents(client.rpc, hostAbort.signal),
+      openFixtureRemoteEvents(rpc, hostAbort.signal),
       hostAbort,
       frames => frames.length === 1,
     )
@@ -1752,24 +1722,24 @@ describe('FixtureApiClient (protocol-level fake carrier)', () => {
       mode: 'queue',
       content: [{ type: 'text', text: 'retain' }],
     })
-    expect(rejected.result).toMatchObject({ ok: false, error: { code: 'agent-busy' } })
+    expect(rejected.result).toMatchObject({ ok: false, error: { code: 'session/agent-busy' } })
   })
 
   it('maps attach-failure and dropped-response query scenarios', async () => {
     vi.stubGlobal('location', { search: '?fixture&fixtureAttach=fail' })
-    const partial = new FixtureApiClient()
-    const partialResult = await createSessionClient(partial.rpc).create({
+    const partial = createFixtureConnectionRpc()
+    const partialResult = await createSessionClient(partial).create({
       workspaceId: 'fx-ws-fixture' as WorkspaceId,
       sessionId: sid('fx-query-partial'),
     })
     expect(partialResult.result).toMatchObject({
       ok: false,
-      error: { code: 'workspace-attach-failed', details: { sessionId: 'fx-query-partial' } },
+      error: { code: 'session/workspace-attach-failed', details: { sessionId: 'fx-query-partial' } },
     })
 
     vi.stubGlobal('location', { search: '?fixture&fixtureSessionCreate=drop-response' })
-    const dropped = new FixtureApiClient()
-    await expect(createSessionClient(dropped.rpc).create({
+    const dropped = createFixtureConnectionRpc()
+    await expect(createSessionClient(dropped).create({
       workspaceId: 'fx-ws-fixture' as WorkspaceId,
       sessionId: sid('fx-query-dropped'),
     })).rejects.toThrow(/dropped session\.create response/)

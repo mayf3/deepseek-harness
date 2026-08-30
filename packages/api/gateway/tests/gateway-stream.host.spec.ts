@@ -12,9 +12,16 @@ import {
   type InvocationDescriptor,
   type TypertContextMap,
   type TypertContextWire,
-  TypertRemoteFailure,
+  RemoteError,
 } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'fixture/rejected': { readonly retryable: boolean }
+    'fixture/broken': { readonly count: bigint }
+  }
+}
 import { provideBrowserCredentials } from './browser-credentials.ts'
 import TypertGatewayService, {
   TypertGatewayError,
@@ -36,6 +43,7 @@ vi.mock('node:crypto', async (importOriginal) => {
 
 const randomUuid = vi.mocked(randomUUID)
 const browserCookies = new WeakMap<Context, string>()
+const REMOTE_HOST = { home: '/home/fixture' } as const
 type AgentWireId = TypertContextWire<TypertContextMap['agent']>
 const agentId = (value: string): AgentWireId => value as AgentWireId
 
@@ -117,16 +125,12 @@ class FeedService extends Service {
 
   @Remote({ mode: 'stream' })
   reject(): Iterable<string> {
-    throw new TypertRemoteFailure({
-      code: 'fixture-rejected', message: 'fixture rejected the stream', details: { retryable: false },
-    })
+    throw new RemoteError('fixture/rejected', 'fixture rejected the stream', { retryable: false })
   }
 
   @Remote({ mode: 'stream' })
   rejectWithNonJsonDetails(): Iterable<string> {
-    throw new TypertRemoteFailure({
-      code: 'fixture-broken', message: 'fixture emitted invalid details', details: { count: 1n },
-    })
+    throw new RemoteError('fixture/broken', 'fixture emitted invalid details', { count: 1n })
   }
 
   unary(label: string): string {
@@ -214,7 +218,7 @@ afterEach(async () => {
 
 describe('Typert Remote streams', () => {
   it('validates the WebSocket heartbeat timer range', () => {
-    expect(TypertGatewayService.Config({})).toEqual({ websocketHeartbeatIntervalMs: 30_000 })
+    expect(TypertGatewayService.Config({})).toEqual({ websocketHeartbeatIntervalMs: 2_000 })
     expect(TypertGatewayService.Config({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS }))
       .toEqual({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS })
     for (const websocketHeartbeatIntervalMs of [0, 1.5, MAX_TIMER_DELAY_MS + 1]) {
@@ -261,7 +265,7 @@ describe('Typert Remote streams', () => {
     }))).resolves.toEqual([1n])
     await expect(ctx.typertGateway.stream({
       namespace: 'feed', method: 'missing', args: {},
-    })).rejects.toMatchObject({ code: 'result-invalid' })
+    })).rejects.toMatchObject({ code: 'gateway/result-invalid' })
 
     await expect(collect(await ctx.typertGateway.stream({
       namespace: 'feed', method: 'src', args: { label: 'c' },
@@ -285,10 +289,10 @@ describe('Typert Remote streams', () => {
     const { ctx } = await setup(false)
     await expect(ctx.typertGateway.invoke({
       namespace: 'feed', method: 'sync', args: { label: 'a' },
-    })).rejects.toMatchObject({ code: 'signature-invalid' } satisfies Partial<TypertGatewayError>)
+    })).rejects.toMatchObject({ code: 'gateway/signature-invalid' } satisfies Partial<TypertGatewayError>)
     await expect(ctx.typertGateway.stream({
       namespace: 'feed', method: 'unary', args: { label: 'a' },
-    })).rejects.toMatchObject({ code: 'signature-invalid' } satisfies Partial<TypertGatewayError>)
+    })).rejects.toMatchObject({ code: 'gateway/signature-invalid' } satisfies Partial<TypertGatewayError>)
   })
 
   it('uses the configured WebSocket heartbeat interval', { timeout: 1_000 }, async () => {
@@ -344,13 +348,13 @@ describe('Typert Remote streams', () => {
         { type: 'end', streamId: 'invalid' },
       ])
       expect(frames.find(frame => frame.streamId === 'non-json')).toMatchObject({
-        type: 'error', error: { code: 'internal' },
+        type: 'error', error: { code: 'gateway/internal' },
       })
       expect(frames.find(frame => frame.streamId === 'rejected')).toEqual({
         type: 'error',
         streamId: 'rejected',
         error: {
-          code: 'fixture-rejected',
+          code: 'fixture/rejected',
           message: 'fixture rejected the stream',
           details: { retryable: false },
         },
@@ -386,8 +390,8 @@ describe('Typert Remote streams', () => {
         }
       })()
     }
-    const unregister = ctx.typertGateway.registerRemoteEvents(source)
-    expect(() => { ctx.typertGateway.registerRemoteEvents(source) })
+    const unregister = ctx.typertGateway.registerRemoteEvents(source, REMOTE_HOST)
+    expect(() => { ctx.typertGateway.registerRemoteEvents(source, REMOTE_HOST) })
       .toThrow('forwarded Remote event source is already registered')
 
     const socket = new WebSocket(`ws://127.0.0.1:${String(ctx.webServer.port)}/api/remote.mux`, {
@@ -402,7 +406,7 @@ describe('Typert Remote streams', () => {
       const eventFrames = frames.filter(frame => frame.streamId === 'events')
       expect(eventFrames).toHaveLength(1)
       expect(eventFrames[0]).toMatchObject({
-        type: 'item', streamId: 'events', value: { type: 'ready' },
+        type: 'item', streamId: 'events', value: { type: 'ready', host: REMOTE_HOST },
       })
       expect(typeof Reflect.get(eventFrames[0]!.value as object, 'clientId')).toBe('string')
     })
@@ -411,7 +415,7 @@ describe('Typert Remote streams', () => {
       const eventFrames = frames.filter(frame => frame.streamId === 'events').slice(0, 2)
       expect(eventFrames).toHaveLength(2)
       expect(eventFrames[0]).toMatchObject({
-        type: 'item', streamId: 'events', value: { type: 'ready' },
+        type: 'item', streamId: 'events', value: { type: 'ready', host: REMOTE_HOST },
       })
       expect(typeof Reflect.get(eventFrames[0]!.value as object, 'clientId')).toBe('string')
       expect(eventFrames[1]).toEqual({
@@ -429,9 +433,9 @@ describe('Typert Remote streams', () => {
       expect(frames).toContainEqual({ type: 'end', streamId: 'events' })
     })
 
-    const unregisterReplacement = ctx.typertGateway.registerRemoteEvents(source)
+    const unregisterReplacement = ctx.typertGateway.registerRemoteEvents(source, REMOTE_HOST)
     await unregister()
-    expect(() => { ctx.typertGateway.registerRemoteEvents(source) })
+    expect(() => { ctx.typertGateway.registerRemoteEvents(source, REMOTE_HOST) })
       .toThrow('forwarded Remote event source is already registered')
     await unregisterReplacement()
     socket.close()
@@ -446,7 +450,7 @@ describe('Typert Remote streams', () => {
       await publish.promise
       yield pending.dispatch
     })()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source, REMOTE_HOST)
     const rejected = expect(pending.outcome).rejects.toThrow(
       'forwarded Remote event source was removed',
     )
@@ -479,7 +483,7 @@ describe('Typert Remote streams', () => {
         else signal.addEventListener('abort', () => { resolve() }, { once: true })
       })
       throw new Error('fixture source rejected during removal')
-    })())
+    })(), REMOTE_HOST)
     const client = await openEventClient(ctx, 'events-removal')
     await vi.waitFor(() => { expect(deliveredInvocation(client)).toBeDefined() })
 
@@ -496,7 +500,7 @@ describe('Typert Remote streams', () => {
   it('delegates unavailable Contexts and rejects malformed scoped invocations', async () => {
     const { ctx } = await setup(false)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
 
     for (const event of [42, ''] as const) {
       const invalidName = pendingInvocation(ctx)
@@ -579,7 +583,7 @@ describe('Typert Remote streams', () => {
         return (async function* () {
           yield frame as unknown as TypertRemoteEventDispatch
         })()
-      })
+      }, REMOTE_HOST)
       await vi.waitFor(() => { expect(sourceSignal?.aborted).toBe(true) })
       const reason: unknown = sourceSignal?.reason
       if (!(reason instanceof Error)) throw new Error('Remote event source did not fail with an Error')
@@ -591,7 +595,7 @@ describe('Typert Remote streams', () => {
   it('retries a colliding Remote event id before publishing the second waterfall', async () => {
     const { ctx } = await setup(false)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const agent = ctx.extend()
     ctx.typert.contexts.registerHost('agent', {
       wire: 'agentId',
@@ -626,7 +630,7 @@ describe('Typert Remote streams', () => {
   it('retries a colliding Remote event Client id before opening the second generation', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const firstId = '00000000-0000-4000-8000-000000000011' as ReturnType<typeof randomUUID>
     const secondId = '00000000-0000-4000-8000-000000000012' as ReturnType<typeof randomUUID>
     randomUuid.mockReturnValueOnce(firstId).mockReturnValueOnce(firstId).mockReturnValueOnce(secondId)
@@ -645,7 +649,7 @@ describe('Typert Remote streams', () => {
   it('fans one scoped waterfall out and accepts the first Client result', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const agent = ctx.extend()
     ctx.typert.contexts.registerHost('agent', {
       wire: 'agentId',
@@ -699,7 +703,7 @@ describe('Typert Remote streams', () => {
   it('rejects the Host waterfall with the first Client listener rejection', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const agent = ctx.extend()
     ctx.typert.contexts.registerHost('agent', {
       wire: 'agentId',
@@ -739,7 +743,7 @@ describe('Typert Remote streams', () => {
   it('delegates to the Host only after every active Client returns next', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const agent = ctx.extend()
     ctx.typert.contexts.registerHost('agent', {
       wire: 'agentId',
@@ -772,7 +776,7 @@ describe('Typert Remote streams', () => {
   it('delivers a pending waterfall to the first Client that connects', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const agent = ctx.extend()
     ctx.typert.contexts.registerHost('agent', {
       wire: 'agentId',
@@ -805,7 +809,7 @@ describe('Typert Remote streams', () => {
   it('replays a pending event id to a replacement Client generation', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const agent = ctx.extend()
     ctx.typert.contexts.registerHost('agent', {
       wire: 'agentId',
@@ -839,7 +843,7 @@ describe('Typert Remote streams', () => {
   it('cancels pending deliveries when the Host signal or Context ends', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()
-    const unregister = ctx.typertGateway.registerRemoteEvents(source.source)
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
     const signalAgent = ctx.extend()
     const contextFiber = ctx.plugin(() => {})
     await contextFiber
@@ -929,7 +933,7 @@ describe('Typert Remote streams', () => {
     const unregister = ctx.typertGateway.registerRemoteEvents(() => {
       sourceCalls += 1
       return (async function *(): AsyncIterable<never> {})()
-    })
+    }, REMOTE_HOST)
     const invalidPayloads: readonly unknown[] = [
       null,
       [],

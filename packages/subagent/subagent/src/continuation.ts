@@ -23,6 +23,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type {
   Agent,
   AgentHandle,
@@ -32,8 +33,7 @@ import type {
 } from '@deepseek-ai/dsh-agent'
 import { ReasoningEffortId, boundContextSummary, createUserMessage, errorChain } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, MessageId, MessageSource } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionObservation, SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
 import type { ToolRestriction } from '@deepseek-ai/dsh-tools'
@@ -295,6 +295,21 @@ function agentMessage(sender: Agent, content: ContentBlock[]) {
   })
 }
 
+/** Append adjacent-Agent return guidance to a continuable child's initial task. */
+function continuableInitialPrompt(parentId: SessionId, prompt: ContentBlock[]): ContentBlock[] {
+  return [
+    ...prompt,
+    {
+      type: 'text',
+      text: `Your parent agent id is ${parentId}. Before you finish, send your result to that agent with `
+        + `send_message({ agent_id: "${parentId}", message: "<self-contained result>" }). The parent shares `
+        + 'your workspace but does not automatically receive your transcript, tool output, or reasoning. Send '
+        + 'earlier messages as well when a finding changes what the parent should do next; sending a message '
+        + 'does not end your turn.',
+    },
+  ]
+}
+
 /**
  * One line telling a parent that a background child is finished and why, in
  * the parent's own task vocabulary.
@@ -420,7 +435,7 @@ export class SubagentContinuationManager {
     this.assertAdmitting(parent)
     const persistence = this.requirePersistence()
     assertSubagentMaxDepth(request.maxDepth)
-    const childId = spec.childId ?? SessionId(randomUUID())
+    const childId = spec.childId ?? brandString<SessionId>(randomUUID())
     this.assertChildIdAvailable(childId)
     const childDepth = resolveChildDepth(parent, request.maxDepth)
     // Snapshot before any await: invalid descriptor JSON rejects the call
@@ -477,7 +492,9 @@ export class SubagentContinuationManager {
       })
       return this.submitMaterialized(
         activation,
-        request.prompt,
+        this.ctx.get('tools')?.get('send_message', activation.handle.agent) === undefined
+          ? request.prompt
+          : continuableInitialPrompt(parent.id, request.prompt),
         { source: { kind: 'user' }, signal: spec.signal, delivery: 'queue' },
         parent,
       )

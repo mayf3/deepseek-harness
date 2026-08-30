@@ -5,7 +5,8 @@ import {
   createToolResultMessage,
   createUserMessage,
 } from '@deepseek-ai/dsh-llm/message'
-import { ToolCallId, type MessageId } from '@deepseek-ai/dsh-llm/brand'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import type { MessageId, ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type {
   AssistantMessage,
   ContentBlock,
@@ -17,11 +18,11 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {
-  JsonValue,
   SessionEvent,
   SessionHeader,
   SessionId,
 } from '@deepseek-ai/dsh-session/types'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import { isChunkRow, packChunkRuns } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
@@ -33,18 +34,33 @@ import type { CredentialInfo } from '@deepseek-ai/dsh-credentials/types'
 import type { DirectoryListing as FixtureDirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
 import type { SettingsDescribeValue, SettingsNamespaceView } from '@deepseek-ai/dsh-settings/types'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
-import type {
-  ApiProxy, ClientRequest,
-  ModelProviderGroup, ModelSelection, RpcRequest, RpcResponse, RpcResult, ServerResponse,
-} from './api.ts'
-import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
-import { AbstractApiClient, RpcId } from './api.ts'
+import type { RpcResult } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
 import type {
   ClientConnectionRpc, ConnectionRpcFailure, ConnectionRpcResult,
 } from '../rpc.ts'
 
 const FIXTURE_SESSION_SEARCH_RESULT_LIMIT = 20
+
+interface ModelSelection {
+  readonly provider: string
+  readonly model: string
+  readonly reasoningEffort?: string
+}
+
+interface ModelProviderGroup {
+  readonly id: string
+  readonly name: string
+  readonly models: readonly {
+    readonly id: string
+    readonly name: string
+    readonly description?: string
+    readonly reasoning?: {
+      readonly efforts: readonly { readonly id: string; readonly name: string; readonly description?: string }[]
+      readonly defaultEffort?: string
+    }
+  }[]
+}
 
 /* jscpd:ignore-start -- The standalone fixture mirrors host timing without importing a target implementation. */
 function isFixtureTokenDelta(chunk: StreamChunk): boolean {
@@ -176,6 +192,7 @@ interface FixtureRemoteEventResult {
 interface FixtureRemoteEventReadyFrame {
   readonly type: 'ready'
   readonly clientId: string
+  readonly host: { readonly home: string }
 }
 
 interface FixtureProjectionFrame {
@@ -323,11 +340,6 @@ interface FixtureWorkspace {
   updatedAt: string
 }
 
-/** The fake carrier mints like a real one (business code never mints). */
-function rpcRequest<P>(payload: P): RpcRequest<P> {
-  return { rpcId: RpcId(randomUuid()), payload }
-}
-
 function text(t: string): ContentBlock[] {
   return [{ type: 'text', text: t }]
 }
@@ -344,7 +356,7 @@ function assistantMessage(content: ContentBlock[], model = 'fx-1'): AssistantMes
 }
 
 function toolResultMessage(callId: string, content: ContentBlock[], isError: boolean): ToolResultMessage {
-  return createToolResultMessage({ callId: ToolCallId(callId), content, isError })
+  return createToolResultMessage({ callId: brandString<ToolCallId>(callId), content, isError })
 }
 
 const MARKDOWN_FIXTURE = [
@@ -551,7 +563,7 @@ const OPENAI_REASONING = {
   defaultEffort: 'medium',
 }
 
-/** Catalog served by `llm.models` (fresh copies per call). */
+/** Catalog served by `session/modelCatalog` (fresh copies per call). */
 function fixtureModelGroups(): ModelProviderGroup[] {
   return [
     {
@@ -1730,34 +1742,22 @@ class FxInbox<Value> implements StreamConn<Value> {
   }
 }
 
-/**
- * In-memory fake host: fx-alpha carries history and replay scripts; fx-beta is fx-alpha's child session (lineage indent material).
- * @param options - fixture branches for empty state and failure timing.
- * @returns an ApiProxy backed entirely by in-memory state — no host process, no network.
- */
-export function createFixtureApi(options: FixtureOptions = {}): ApiProxy {
-  return createFixtureWorld(options).api
-}
-
-/** Both fixture faces over one state graph. */
+/** Fixture RPC face over one in-memory state graph. */
 export interface FixtureWorld {
-  /** Legacy unary/stream API the fixture still answers. */
-  readonly api: ApiProxy
   /** Generic Remote caller for the endpoints business services own. */
   readonly rpc: ClientConnectionRpc
 }
 
 /**
- * Build both fixture faces so a caller can drive the Remote endpoints and the
- * legacy API against one in-memory state graph.
+ * Build the fixture RPC face over one in-memory state graph.
  * @param options - fixture branches for empty state and failure timing.
- * @returns the legacy API face and the Remote RPC face.
+ * @returns the Remote RPC face.
  */
 export function createFixtureFaces(options: FixtureOptions = {}): FixtureWorld {
   return createFixtureWorld(options)
 }
 
-/** Build the fixture's legacy API and Remote RPC faces over one state graph. */
+/** Build the fixture's Remote RPC face over one state graph. */
 function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // The resident fixture sessions all carry history, so none of them is blank.
   const sessions: FixtureSessionSummary[] = options.empty ? [] : [
@@ -1807,7 +1807,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return {
         ok: false,
         error: {
-          code: 'settings-rejected',
+          code: 'settings/rejected',
           message: 'fixture: the minimal readiness settings descriptor is read-only',
           details: { ns },
         },
@@ -1817,7 +1817,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return {
         ok: false,
         error: {
-          code: 'settings-rejected',
+          code: 'settings/rejected',
           message: 'fixture: the minimal readiness settings descriptor is read-only',
           details: { ns },
         },
@@ -1828,11 +1828,30 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return {
         ok: false,
         error: {
-          code: 'settings-rejected',
+          code: 'settings/rejected',
           message: 'fixture: no settings namespaces are registered',
           details: { ns },
         },
       }
+    },
+    openSettingsDocument(): RpcResult<{ opened: true }> {
+      return { ok: true, value: { opened: true } }
+    },
+    openAgentPresetDirectory(agentPreset: string): RpcResult<
+      { opened: true } | { opened: false; path: string }
+    > {
+      const existing = fixturePresets.get(agentPreset)
+      if (existing === undefined || existing.trust === 'system') {
+        return {
+          ok: false,
+          error: {
+            code: 'agent-preset/read-only',
+            message: `agent preset "${agentPreset}" ships with the deployment`,
+            details: { agentPreset, reason: 'it ships with the deployment' },
+          },
+        }
+      }
+      return { ok: true, value: { opened: true } }
     },
   }
 
@@ -1870,7 +1889,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   let fixtureDefaultPreset = 'standard'
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
   let nextSession = 1
-  let attachedSessions = options.empty ? 0 : 1
   // Workspace entities mirroring the host registry: the fixture sessions all
   // live under one workspace, whose account carries them in attach order.
   const wid = (raw: string): WorkspaceId => raw as WorkspaceId
@@ -1995,14 +2013,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     for (const conn of followConns.get(sessionId) ?? []) conn.push(entry)
   }
 
-  /** OK response echoing the caller's rpcId (contract: responses always backfill, never mint). */
-  function ok<P, T>(request: RpcRequest<P>, value: T): Promise<RpcResponse<T>> {
-    return Promise.resolve({ rpcId: request.rpcId, result: { ok: true, value } })
-  }
-  function err<P, T>(request: RpcRequest<P>, error: Extract<RpcResult<T>, { ok: false }>['error']): Promise<RpcResponse<T>> {
-    return Promise.resolve({ rpcId: request.rpcId, result: { ok: false, error } })
-  }
-
   function sessionOk<T>(value: T): Promise<ConnectionRpcResult<T>> {
     return Promise.resolve({ ok: true, value })
   }
@@ -2012,22 +2022,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
 
   const summaryOf = (id: SessionId): FixtureSessionSummary | undefined => sessions.find(s => s.sessionId === id)
-  /** Shared session guard for sessionId-addressed catalog routes: the error
-   *  response when the session is unknown, undefined when it exists. */
-  const requireSession = (request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<never>> | undefined => {
-    if (summaryOf(request.payload.sessionId) !== undefined) return undefined
-    return err<{ sessionId: SessionId }, never>(request, {
-      code: 'session-not-found',
-      message: `no session ${request.payload.sessionId}`,
-      details: { sessionId: request.payload.sessionId },
-    })
-  }
   const requireRemoteSession = (
     request: { readonly sessionId: SessionId },
   ): Promise<ConnectionRpcResult<never>> | undefined => {
     if (summaryOf(request.sessionId) !== undefined) return undefined
     return sessionErr({
-      code: 'session-not-found',
+      code: 'session/not-found',
       message: `no session ${request.sessionId}`,
       details: { sessionId: request.sessionId },
     })
@@ -2080,12 +2080,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
 
   const goalFailure = <T>(message: string): RpcResult<T> => ({
     ok: false,
-    error: { code: 'internal', message, details: {} },
+    error: { code: 'gateway/internal', message, details: {} },
   })
 
   const requireGoalSession = (id: SessionId): RpcResult<never> | undefined => (
     summaryOf(id) === undefined
-      ? { ok: false, error: { code: 'session-not-found', message: `no session ${id}`, details: { sessionId: id } } }
+      ? { ok: false, error: { code: 'session/not-found', message: `no session ${id}`, details: { sessionId: id } } }
       : undefined
   )
 
@@ -2274,7 +2274,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       if (children === undefined) {
         return {
           ok: false,
-          error: { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } },
+          error: { code: 'directory-picker/unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } },
         }
       }
       return {
@@ -2293,13 +2293,13 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     createDirectory(parent: string, name: string): ConnectionRpcResult<string> {
       const children = childrenOf(parent)
       if (children === undefined) {
-        return { ok: false, error: { code: 'directory-create-failed', message: `missing parent ${parent}`, details: { path: parent } } }
+        return { ok: false, error: { code: 'directory-picker/create-failed', message: `missing parent ${parent}`, details: { path: parent } } }
       }
       // Same root special case as list's entry paths: a plain join under '/'
       // would mint '//name' and fork the tree's identity.
       const target = parent === '/' ? `/${name}` : `${parent}/${name}`
       if (children.includes(name)) {
-        return { ok: false, error: { code: 'directory-exists', message: `${target} already exists`, details: { path: target } } }
+        return { ok: false, error: { code: 'directory-picker/exists', message: `${target} already exists`, details: { path: target } } }
       }
       directoryTree.set(parent, [...children, name])
       directoryTree.set(target, [])
@@ -2429,7 +2429,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return {
           ok: false,
           error: {
-            code: 'agent-preset-not-found',
+            code: 'agent-preset/not-found',
             message: `unknown agent preset "${agentPreset}"`,
             details: { agentPreset, available: [...fixturePresets.keys()] },
           },
@@ -2443,7 +2443,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return {
           ok: false,
           error: {
-            code: 'agent-preset-not-found',
+            code: 'agent-preset/not-found',
             message: `unknown agent preset "${from}"`,
             details: { agentPreset: from, available: [...fixturePresets.keys()] },
           },
@@ -2453,7 +2453,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return {
           ok: false,
           error: {
-            code: 'agent-preset-invalid',
+            code: 'agent-preset/invalid',
             message: `agent preset "${id}" already exists`,
             details: { agentPreset: id, reason: 'already exists' },
           },
@@ -2467,7 +2467,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return {
           ok: false,
           error: {
-            code: 'agent-preset-read-only',
+            code: 'agent-preset/read-only',
             message: `agent preset "${id}" ships with the deployment`,
             details: { agentPreset: id, reason: 'it ships with the deployment' },
           },
@@ -2725,7 +2725,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     search: (request, signal) => {
       if (signal.aborted) {
         return sessionErr({
-          code: 'cancelled',
+          code: 'gateway/cancelled',
           message: 'fixture session search was aborted',
           details: {},
         })
@@ -2767,7 +2767,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         : workspaces.find(w => w.workspaceId === request.workspaceId)
       if (request.workspaceId !== undefined && workspace === undefined) {
         return sessionErr({
-          code: 'workspace-not-found',
+          code: 'workspace/not-found',
           message: `no workspace ${request.workspaceId}`,
           details: { workspaceId: request.workspaceId },
         })
@@ -2785,7 +2785,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         sessionId: SessionId,
         workspaceId: WorkspaceId,
       ): Promise<ConnectionRpcResult<{ sessionId: SessionId }>> => sessionErr({
-        code: 'workspace-attach-failed' as const,
+        code: 'session/workspace-attach-failed' as const,
         message: `fixture rejected Workspace attachment for ${sessionId}`,
         details: { sessionId, workspaceId },
       })
@@ -2794,7 +2794,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         if (existing !== undefined) {
           if (existing.cwd !== cwd) {
             return sessionErr({
-              code: 'session-conflict',
+              code: 'session/conflict',
               message: `session ${requestedId} already uses ${existing.cwd ?? 'no cwd'}`,
               details: { sessionId: requestedId, requestedCwd: cwd, ...existing.cwd === undefined ? {} : { existingCwd: existing.cwd } },
             })
@@ -2811,7 +2811,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       sessions.push(created)
       modelSelections.set(created.sessionId, { provider: 'deepseek-official', model: 'deepseek-v4-flash' })
-      attachedSessions += 1
       const emitSession = (): void => {
         emitRemote('api-session/added', [created])
       }
@@ -2836,7 +2835,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const normalized = title.trim().replace(/\s+/g, ' ')
       if (normalized.length === 0) {
         return sessionErr({
-          code: 'title-invalid',
+          code: 'session/title-invalid',
           message: 'session title must contain visible characters',
           details: { sessionId },
         })
@@ -2855,7 +2854,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const source = summaryOf(sessionId)
       if (source === undefined) {
         return sessionErr({
-          code: 'session-not-found',
+          code: 'session/not-found',
           message: `no session ${sessionId}`,
           details: { sessionId },
         })
@@ -2871,7 +2870,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             : undefined)
       if (boundary === undefined) {
         return sessionErr({
-          code: 'fork-unavailable',
+          code: 'session/fork-unavailable',
           message: atSeq !== undefined && atSeq <= lastSeq
             ? `session ${sessionId} has not completed the turn containing event ${String(atSeq)}`
             : `session ${sessionId} has no completed turn`,
@@ -2925,18 +2924,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const { sessionId: id, mode, content } = request
       const summary = summaryOf(id)
       if (summary === undefined) {
-        return sessionErr({ code: 'session-not-found', message: `no session ${id}`, details: { sessionId: id } })
+        return sessionErr({ code: 'session/not-found', message: `no session ${id}`, details: { sessionId: id } })
       }
       if (options.rejectPrompt) {
         if (content.some(block => block.type === 'image')) {
           return sessionErr({
-            code: 'attachment-error',
+            code: 'session/attachment-invalid',
             message: 'fixture: image side exceeds the deployment limit',
             details: { reason: 'IMAGE_DIMENSION_TOO_LARGE' },
           })
         }
         return sessionErr({
-          code: 'agent-busy',
+          code: 'session/agent-busy',
           message: 'fixture: prompt rejected before acceptance',
           details: { reason: 'fixture-prompt-rejection' },
         })
@@ -3031,7 +3030,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const stored = attachments.get(String(request.attachmentId))
       if (stored === undefined) {
         return sessionErr({
-          code: 'attachment-error',
+          code: 'session/attachment-invalid',
           message: 'fixture attachment missing',
           details: { reason: 'ATTACHMENT_NOT_FOUND' },
         })
@@ -3041,7 +3040,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         String(request.attachmentId),
       )) {
         return sessionErr({
-          code: 'attachment-error',
+          code: 'session/attachment-invalid',
           message: 'fixture attachment is not referenced by this session',
           details: { reason: 'ATTACHMENT_NOT_REFERENCED' },
         })
@@ -3049,7 +3048,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return sessionOk(stored)
     },
     updateQueue: request => sessionErr({
-      code: 'queue-item-not-found',
+      code: 'session/queue-item-not-found',
       message: 'fixture has no pending queue item',
       details: { itemId: request.itemId },
     }),
@@ -3156,7 +3155,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       if (gamma !== undefined) setRunning(gamma.sessionId, !gamma.running)
     }, 5000)
     try {
-      yield { type: 'ready', clientId }
+      yield { type: 'ready', clientId, host: { home: FIXTURE_HOME } }
       if (approvalPending) yield approvalInvocation()
       if (questionPending) yield questionInvocation()
       yield* conn.drain(signal)
@@ -3228,7 +3227,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return {
         ok: false,
         error: {
-          code: 'invocation-unavailable',
+          code: 'gateway/invocation-unavailable',
           message: 'fixture Remote event result identifies no active event stream',
           details: {},
         },
@@ -3271,7 +3270,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const workspace = workspaces.find(candidate => candidate.workspaceId === request.workspaceId)
       if (workspace === undefined) {
         return sessionErr({
-          code: 'workspace-not-found',
+          code: 'workspace/not-found',
           message: `no workspace ${request.workspaceId}`,
           details: { workspaceId: request.workspaceId },
         })
@@ -3279,7 +3278,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const title = request.title.trim()
       if (title === '') {
         return sessionErr({
-          code: 'bad-request',
+          code: 'gateway/bad-request',
           message: 'Workspace rename requires a non-blank title',
           details: {},
         })
@@ -3287,7 +3286,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       if (title !== workspace.title) {
         if (workspaces.some(candidate => candidate.workspaceId !== request.workspaceId && candidate.title === title)) {
           return sessionErr({
-            code: 'workspace-name-conflict',
+            code: 'workspace/name-conflict',
             message: `workspace name '${title}' is already in use`,
             details: { name: title },
           })
@@ -3302,7 +3301,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const index = workspaces.findIndex(workspace => workspace.workspaceId === request.workspaceId)
       if (index === -1) {
         return sessionErr({
-          code: 'workspace-not-found',
+          code: 'workspace/not-found',
           message: `no workspace ${request.workspaceId}`,
           details: { workspaceId: request.workspaceId },
         })
@@ -3323,7 +3322,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           : undefined
       if (missing !== undefined) {
         return sessionErr({
-          code: 'workspace-not-found',
+          code: 'workspace/not-found',
           message: `no workspace ${missing}`,
           details: { workspaceId: missing },
         })
@@ -3350,7 +3349,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       const workspace = workspaces.find(candidate => candidate.workspaceId === request.workspaceId)
       if (workspace === undefined) {
         return sessionErr({
-          code: 'workspace-not-found',
+          code: 'workspace/not-found',
           message: `no workspace ${request.workspaceId}`,
           details: { workspaceId: request.workspaceId },
         })
@@ -3358,7 +3357,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       if (!workspace.sessionIds.includes(request.sessionId)
         || (request.beforeSessionId !== undefined && !workspace.sessionIds.includes(request.beforeSessionId))) {
         return sessionErr({
-          code: 'workspace-move-invalid',
+          code: 'workspace/move-invalid',
           message: `session or anchor is not accounted by workspace ${request.workspaceId}`,
           details: {
             workspaceId: request.workspaceId,
@@ -3380,7 +3379,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     archiveSession: (request) => {
       if (summaryOf(request.sessionId) === undefined) {
         return sessionErr({
-          code: 'session-not-found',
+          code: 'session/not-found',
           message: `no session ${request.sessionId}`,
           details: { sessionId: request.sessionId },
         })
@@ -3390,79 +3389,6 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         emitWorkspace({ type: 'archived', archivedSessionIds: [...archivedSessionIds] })
       }
       return sessionOk({ archivedSessionIds: [...archivedSessionIds] })
-    },
-  }
-
-  const api: ApiProxy = {
-    host: {
-      describe: request => ok(request, {
-        version: '0.0.0-fixture', cwd: '/tmp/fixture', attachedSessions, home: FIXTURE_HOME, canOpenPath: true,
-      }),
-      openPath: request => ok(request, { opened: true as const }),
-    },
-    agentPresets: {
-      // Native opens are deterministic no-op successes in this fixture, so the
-      // open-directory affordance renders and the path-text fallback stays a
-      // component-test concern.
-      openDocument: (request) => {
-        const { agentPreset } = request.payload
-        const existing = fixturePresets.get(agentPreset)
-        if (existing === undefined || existing.trust === 'system') {
-          return err(request, {
-            code: 'agent-preset-read-only',
-            message: `agent preset "${agentPreset}" ships with the deployment`,
-            details: { agentPreset, reason: 'it ships with the deployment' },
-          })
-        }
-        return ok(request, { opened: true as const })
-      },
-    },
-
-    skills: {
-      list: (request) => {
-        const missing = requireSession(request)
-        if (missing !== undefined) return missing
-        return ok(request, {
-          skills: [
-            { name: 'fixture-demo', description: 'fixture 技能样本', whenToUse: '仅供 UI 目录渲染验收', modelInvocable: true },
-            { name: 'fixture-user-only', description: 'fixture 仅用户技能样本', modelInvocable: false },
-          ],
-        })
-      },
-    },
-    settings: {
-      // Native opens are deterministic no-op successes in this fixture, as is host.openPath.
-      openDocument: request => ok(request, { opened: true as const }),
-    },
-    llm: {
-      providers: request => ok(request, {
-        providers: [
-          { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-          { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true, declared: false },
-          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], active: false, declared: false },
-          // One hand-declared route, so a surface reading this fixture meets
-          // the tagged shape rather than only the shipped one.
-          { provider: 'acme-gateway', displayName: 'Acme Gateway', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'acme-gateway'], active: true, declared: true },
-        ],
-      }),
-      models: request => ok(request, {
-        default: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
-        routableProviders: ['deepseek-official', 'openai', 'acme-gateway'],
-        groups: fixtureModelGroups(),
-        failures: [],
-      }),
-      // The fixture endpoint is imaginary, so the interrogation answers the
-      // catalog it already serves — enough for a surface to exercise adopting
-      // candidates without a reachable provider.
-      discoverModels: request => ok(request, {
-        models: fixtureModelGroups().flatMap(group => group.models.map(model => ({ id: model.id, name: model.name }))),
-      }),
-    },
-    // Satisfies the ApiProxy contract type only: the browser export button
-    // hands GET /api/session.export to the native download manager, so this
-    // stub is never reached through the fixture's dispatch.
-    downloads: {
-      sessionLog: () => Promise.resolve(new Response('fixture mode does not serve session export', { status: 404 })),
     },
   }
 
@@ -3484,6 +3410,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           refs?: readonly string[]
           value?: string
           ns?: string
+          settingsNs?: string
           agentPreset?: string
           from?: string
           id?: string
@@ -3538,6 +3465,58 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'credentials/set': return Promise.resolve(credentialRemotes.set(args.ref as string))
         case 'credentials/unset': return Promise.resolve(credentialRemotes.unset(args.ref as string))
         case 'settings/describe': return Promise.resolve(settingsRemotes.describe())
+        case 'settings/canOpenAgentPresetDirectory': return Promise.resolve({ ok: true, value: true })
+        case 'settings/openSettingsDocument': return Promise.resolve(settingsRemotes.openSettingsDocument())
+        case 'settings/openAgentPresetDirectory': return Promise.resolve(
+          settingsRemotes.openAgentPresetDirectory(args.agentPreset as string),
+        )
+        case 'skills/list': {
+          const skillRequest = request as { readonly sessionId: SessionId }
+          const missing = requireRemoteSession(skillRequest)
+          if (missing !== undefined) return missing
+          return sessionOk({
+            skills: [
+              { name: 'fixture-demo', description: 'fixture 技能样本', whenToUse: '仅供 UI 目录渲染验收', modelInvocable: true },
+              { name: 'fixture-user-only', description: 'fixture 仅用户技能样本', modelInvocable: false },
+            ],
+          })
+        }
+        case 'session/openWorkspacePath': {
+          return sessionOk({ opened: true as const })
+        }
+        case 'session/canOpenWorkspacePath': return Promise.resolve({ ok: true, value: true })
+        case 'session/modelCatalog': return Promise.resolve({
+          ok: true,
+          value: {
+            default: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+            routableProviders: ['deepseek-official', 'openai', 'acme-gateway'],
+            groups: fixtureModelGroups(),
+            failures: [],
+          },
+        })
+        case 'llm/listProviders': return Promise.resolve({
+          ok: true,
+          value: [
+            { id: 'deepseek-official', name: 'DeepSeek' },
+            { id: 'openai', name: 'openai' },
+            { id: 'acme-gateway', name: 'Acme Gateway' },
+          ],
+        })
+        case 'llm/listConfigurableProviders': return Promise.resolve({
+          ok: true,
+          value: [
+            { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] },
+            { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], declared: false },
+            { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], declared: false },
+            { provider: 'acme-gateway', displayName: 'Acme Gateway', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'acme-gateway'], declared: true },
+          ],
+        })
+        // The fixture endpoint is imaginary, so interrogation answers the
+        // catalog it already serves without a network request.
+        case 'llm/discoverModels': return Promise.resolve({
+          ok: true,
+          value: fixtureModelGroups().flatMap(group => group.models.map(model => ({ id: model.id, name: model.name }))),
+        })
         case 'settings/update': return Promise.resolve(settingsRemotes.update(args.ns as string))
         case 'settings/replace': return Promise.resolve(settingsRemotes.replace(args.ns as string))
         case 'settings/mutate': return Promise.resolve(settingsRemotes.mutate(args.ns as string))
@@ -3612,68 +3591,15 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
     },
   }
-  return { api, rpc }
+  return { rpc }
 }
 
 /**
- * Fixture platform subclass: there is no HTTP at all, so instead of a doFetch transport it
- * overrides the legacy protocol-level call virtual to dispatch
- * straight into the in-memory ApiProxy while still minting rpcIds, fabricating
- * the request/response envelopes, and feeding the same tap as a real carrier. TODO: delete when the fixture
- * moves to the isomorphic pipeline (InProcessApiClient over toFetchHandler(fixtureImpl)).
+ * Build the browser fixture transport from the current page's query switches.
+ * @returns an in-memory Connection RPC transport.
  */
-export class FixtureApiClient extends AbstractApiClient {
-  private readonly api: ApiProxy
-  /** Generic Remote caller backed by the same in-memory state as the legacy fixture API. */
-  readonly rpc: ClientConnectionRpc
-
-  constructor() {
-    super()
-    const world = createFixtureWorld(fixtureOptionsFromLocation())
-    this.api = world.api
-    this.rpc = world.rpc
-  }
-
-  protected doFetch(): Promise<Response> {
-    throw new Error('FixtureApiClient overrides all protocol paths; doFetch must be unreachable')
-  }
-
-  protected override async callUnary<K extends keyof RpcMethodMap>(
-    method: K,
-    payload: RequestPayload<K>,
-    signal?: AbortSignal,
-  ): Promise<RpcResponse<ResponseValue<K>>> {
-    const request = rpcRequest(payload)
-    const full: ClientRequest = { type: 'client-request', rpcId: request.rpcId, method, payload }
-    this.onEnvelope(full)
-    const response = await this.dispatch(
-      method,
-      request as RpcRequest<never>,
-      signal ?? new AbortController().signal,
-    ) as RpcResponse<ResponseValue<K>>
-    const fullResponse: ServerResponse = { type: 'server-response', rpcId: response.rpcId, result: response.result }
-    this.onEnvelope(fullResponse)
-    return response
-  }
-
-  /** Method-key dispatch into the in-memory contract impl (a real carrier routes by URL path instead). */
-  private dispatch(
-    method: keyof RpcMethodMap,
-    request: RpcRequest<never>,
-    signal: AbortSignal,
-  ): Promise<RpcResponse<unknown>> {
-    switch (method) {
-      case 'host.describe': return this.api.host.describe(request)
-      case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
-      case 'skill.list': return this.api.skills.list(request)
-      case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
-      case 'settings.openDocument': return this.api.settings.openDocument(request, signal)
-      case 'llm.providers': return this.api.llm.providers(request)
-      case 'llm.models': return this.api.llm.models(request)
-      case 'llm.discoverModels': return this.api.llm.discoverModels(request, signal)
-    }
-  }
-
+export function createFixtureConnectionRpc(): ClientConnectionRpc {
+  return createFixtureWorld(fixtureOptionsFromLocation()).rpc
 }
 
 /** Browser query mapping; direct unit callers pass FixtureOptions explicitly. */

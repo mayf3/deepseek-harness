@@ -30,7 +30,7 @@ interface PagingAnchor {
 
 /** Find an already-rendered row without interpolating a selector. */
 function anchorElement(list: HTMLElement, key: string): HTMLElement | null {
-  for (const row of list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]')) {
+  for (const row of list.querySelectorAll<HTMLElement>('[data-chat-anchor-key]:not([hidden])')) {
     if (row.dataset.chatAnchorKey === key) return row
   }
   return null
@@ -87,7 +87,9 @@ function pagingAnchor(list: HTMLElement, scrollport: HTMLElement): HTMLElement |
       if (row !== null && list.contains(row)) return row
     }
   }
-  const rows = list.querySelectorAll<HTMLElement>('[data-chat-flow] > [data-chat-flow-key]:not(:empty)')
+  const rows = list.querySelectorAll<HTMLElement>(
+    '[data-chat-flow] > [data-chat-flow-key]:not(:empty):not([hidden])',
+  )
   let low = 0
   let high = rows.length
   while (low < high) {
@@ -154,7 +156,7 @@ function observedRpcIds(
 function runningTurnStartTime(timeline: ConversationTimelineSnapshot): number | null {
   let latest: number | null = null
   for (const turn of timeline.turns.values()) {
-    if (turn.status === 'open' && turn.start !== undefined) latest = turn.start.time
+    if (turn.status === 'open') latest = turn.start?.time ?? null
   }
   return latest
 }
@@ -200,8 +202,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useSessions, useStore, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
-  fileMentions, t,
+  useSession, useChat, useSessions, useStore, actions, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
+  fileMentions, useTranscriptView, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -219,6 +221,7 @@ export function ChatView({
   const hasMore = useSession(s => s.hasMore)
   const loadingOlder = useSession(s => s.loadingOlder)
   const selectedCallId = useStore(s => s.selection?.callId)
+  const compactTranscript = useTranscriptView(mode => mode === 'compact')
   const inspectCall = useCallback((callId: string) => {
     openView('trajectory', callId)
   }, [openView])
@@ -278,8 +281,10 @@ export function ChatView({
 
   const listRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
-  const atBottomRef = useRef(true)
-  const [atBottom, setAtBottom] = useState(true)
+  // A saved position starts disarmed; the first layout effect synchronously
+  // restores it and normalizes a floor-clamped position back to following.
+  const [atBottom, setAtBottom] = useState(() => chatScroll.read() === null)
+  const atBottomRef = useRef(atBottom)
   const [activeTurn, setActiveTurn] = useState<number | null>(
     () => turnNavigationItems.at(-1)?.turn ?? null,
   )
@@ -591,7 +596,11 @@ export function ChatView({
             <ChatNodeSeat
               key={nodeKey}
               nodeKey={nodeKey}
+              historyIncomplete={hasMore}
+              compactTranscript={compactTranscript}
               useChat={useChat}
+              useStore={useStore}
+              actions={actions}
               selectedCallId={selectedCallId}
               cwd={cwd}
               openFile={requestOpenFile}

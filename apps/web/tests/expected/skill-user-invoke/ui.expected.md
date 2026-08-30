@@ -16,14 +16,9 @@
 - text: /user-invoke-demo and confirm the fixture wiring {{clock}}
 - button "Copy":
   - img
-- button "Context injection @deepseek-ai/dsh-system-prompt":
+- button "Thought for a while":
+  - text: Thought for a while
   - img
-  - img
-  - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Context injection user-invoke-demo":
-  - img
-  - img
-  - text: Context injection user-invoke-demo
 - paragraph: USER_INVOKE_REPLY acknowledged; following the injected skill.
 - button "Copy":
   - img
@@ -33,7 +28,10 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img

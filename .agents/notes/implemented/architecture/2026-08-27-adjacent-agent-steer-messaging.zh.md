@@ -1,32 +1,32 @@
-# Agent Note：相邻 Agent 共享一个 Steer 消息操作
+# Agent Note: 相邻 Agent 共享一个 Steer send_message 操作
 
-状态：已实现
+Status: implemented
 
 [English](2026-08-27-adjacent-agent-steer-messaging.md) | 中文
 
 ## 问题
 
-可继续 Agent 曾使用按方向划分的公开操作与消息来源。parent 使用 `followup(parent, childId, content, { source, signal })`，child 使用 `reportFrom(child, content, { delivery, signal })`。前者创建后续 FIFO 轮次并接受调用方提供的来源信息；后者通过部署配置选择静默注入或 next-step steering，并在内部推导接收方。
+可继续 Agent 最初使用方向专属的模型控制。parent 调用 `send_message({ subagent_id, message })`，委托给 FIFO `followup` 服务操作。child 则获得 child 作用域的 `report({ output })` 工具、`tool:report` 系统提示词 section，以及由部署选择的静默或唤醒投递。两个工具用不同 schema、服务路径、来源与调度描述同一个相邻 Agent 操作。
 
-这些差异描述的是最初消费服务的工具，而不是两种生命周期能力。两个方向都跨一条 parent/child 边投递模型编写的内容，都要求继续执行管理器授权确切在线 Agent，也都依赖相同的驻留与冷恢复所有权。按方向划分来源还会让等价消息以不同方式重建。
+可继续 child 拥有自己的 Session，因此 parent 不会自动收到 child 的 transcript（文本记录）、工具输出或推理。返回路径必须保持显式且可重复：child 可以在结束前发送进度、发送后仍保持可用，也可能在来得及配合前失败。把每条最终 assistant 消息变成隐式结果会混淆轮次完成与模型选择的通信，而且无法覆盖异常结束。
 
-[Issue #3220](https://github.com/deepseek-harness/deepseek-harness/issues/3220) 要求先统一这层基础，再统一面向模型的工具。
+child 专属工具与系统提示词 section 还位于每个继承 fork 轮次之前。它们让可继续 fork child 的请求头在 fork 旨在复用的历史之前就与 parent 不同，迫使提供方重新预填充整份复制 transcript。
 
 ## 决策
 
-`SubagentRuntime.sendMessage(sender, targetId, content, { signal })` 是唯一公开的模型编写消息操作。继续执行管理器只接受确切在线 sender，以及位于一条相邻边上的目标：
+`SubagentRuntime.sendMessage(sender, targetId, content, { signal })` 是唯一公开的模型编写消息操作。继续执行管理器只接受确切在线 sender 与一条相邻边上的目标：
 
-- parent 到直接可继续 child，由 child 持久化的 `SessionHeader.parentSession` 授权；
+- parent 到直接可继续 child，由 child 的持久化 `SessionHeader.parentSession` 授权；
 - 驻留的可继续 child 到其确切在线直接 parent，由 child 的 Activation 授权。
 
-sibling、self-target、相隔多于一条边的 ancestor、陈旧 Agent 对象、未知目标与一次性 child 都不是备用路由。该操作不接受调用方提供的 source、投递模式、离线 parent mailbox 或提供方分发。
+sibling、自身目标、超过一条边的 ancestor、陈旧 Agent 对象、未知目标与一次性 child 都不是替代路由。该操作没有调用方提供的 source、投递模式、离线 parent mailbox 或提供方分发。
 
-每条被接受的消息都使用 `Agent.steer()`。运行中的目标在最近的 step 边界接收消息；空闲目标启动一个轮次。不存在 Activation 的直接 child 会先经既有继续执行生命周期完成冷恢复，再接受相同的 Steer 投递。管理器保留唤醒发送记账，避免受继续执行管理的目标在同步 inbox 插入与 driver 准入之间结算。
+每条被接受的消息都使用 `Agent.steer()`。运行中目标在最近 step 边界接收消息；空闲目标启动轮次。缺失的直接 child 会先通过现有继续执行生命周期冷恢复，再接受同一 Steer 投递。管理器保留唤醒发送记账，因此受继续执行管理的目标不会在同步 inbox 插入与 driver 准入之间结算。
 
-两个方向都使用同一个持久化来源：
+两个方向使用同一种持久来源。服务从已授权 Agent 推导 `senderSessionId`，并把模型可见内容组装为 `Agent <sender-id> sent a message:`，因此来源信息不会偏离权限。
 
 ```ts
-type SessionId = string
+import type { SessionId } from '@deepseek-ai/dsh-session'
 
 interface AgentMessageSource {
   readonly kind: 'agent-message'
@@ -35,30 +35,48 @@ interface AgentMessageSource {
 }
 ```
 
-服务从已授权 Agent 推导 `senderSessionId`，并把模型可见内容设为 `Agent <sender-id> sent a message:` 前缀。来源信息因此无法偏离权限。由 runtime 生成的 `subagent-settled` 通知保持独立，因为其中的文字是管理器的记账，而不是 Agent 选择的内容。
+### 一个模型工具与一条返回指令
 
-浏览器中的人类提示不是由模型编写的 Agent 消息。既有远程提示路径保留私有 Queue 投递，使每条人类提示继续形成独立轮次。中断行为与结算投递不变。
+全局注册的模型工具与方向无关，并使用一个固定 schema：
 
-child 作用域的 `report` 工具暂时推导 parent id，并适配到 `sendMessage()`。其 `reportDelivery` 配置被移除：被接受的报告现在与 parent 到 child 的内容使用相同的固定 Steer 调度与 `agent-message` 来源。后续变更可以统一面向模型的工具，而无需改变该服务决策。
+```ts
+interface SendMessageInput {
+  readonly agent_id: string
+  readonly message: string
+}
+```
+
+parent 与 child 以相同注册表顺序继承相同定义。child `toolFilter` 可以显式移除继承的工具，但没有 child 局部注册绕过该选择。当该工具仍可见时，继续执行管理器会把直接 parent id、结束前发送一份自包含结果的指令，以及更早发送可操作发现的指令追加到 child 初始用户任务。对 fork child 而言，该任务位于继承的已完成轮次前缀之后；没有 child 专属系统提示词 section 或工具 schema 位于此前缀之前。
+
+该指令是指导，不是结算强制。发送不会结束 child 轮次，机制仍允许零次或多次调用，runtime 绝不会因 child 保持沉默而拒绝它。由管理器负责的 `subagent-settled` 通知仍无条件发送并采用独立来源，因为它记录 Activation 如何结束，并在 child 无法配合时保留终态输出。
+
+浏览器中的人类提示不是模型编写的 Agent 消息。远程提示路径保留私有 Queue 投递，使每条人类提示保持为独立轮次。中断行为、结算投递与继续执行设置注册表保持独立。
+
+### 完整移除与重新引入条件
+
+独立的 `@deepseek-ai/dsh-tool-subagent-report` 包、`report` schema、`tool:report` 提示词 section、`reportDelivery` 配置、report 专属消息来源、目录项、组合行和受支持行为快照均已不存在。统一工具放弃了无需接收方的 child 快捷方式，也放弃了让结构性返回工具绕过显式 child allow-list 的旧能力。只有具体用例需要相邻 `agent_id` 与固定 Steer 无法表达的语义时，这些能力才会重新出现；重新引入需要独立的模型操作与前缀成本证据，而非 `sendMessage()` 之上的别名。
 
 ## 考虑过的替代方案
 
-**保留 `followup` 并添加 child 到 parent 路由。** 该名称承诺后续轮次，并继承 `Agent.followup()` 语义。它会掩盖已选择的最近 step 行为，也会为方向中立的能力保留以 parent 为中心的操作名称。
+**保留 `followup` 并添加 child 到 parent 路由。** 该名称承诺后续轮次并继承 `Agent.followup()` 语义。它会掩盖选定的最近 step 行为，并为方向无关能力保留以 parent 为中心的名称。
 
-**在同一实现上保留独立的 `followup` 与 `reportFrom` 方法。** 两个公开方法仍允许不同的 options、来源信息与错误行为重新出现。工具专属适配器应归 Consumer 包所有，而不是归 Service Definition 所有。
+**保留 `sendMessage()` 之上无需接收方的 `report` 包装层。** 这会保留便利的 child 快捷方式，并让作用域局部注册绕过全局工具过滤。它落选是因为独立 schema 与提示词重复一个操作、使 parent 与 child 请求头不同，并允许等价方向再次漂移。
 
-**允许调用方提供 `MessageSource`。** sender Agent 已是权限凭据。接受独立来源信息会允许调用方记录一个不同于管理器已授权 Agent 的作者。
+**让 `report` 全局可见。** 根 Agent、一次性 child、远程 child 与无 Agent 调用方无法推导 report 接收方。全局宣传它会让 schema 可见性与权限不一致，而 `send_message` 已显式给出接收方。
 
-**保留静默投递作为部署策略。** 静默的模型编写消息可能已被接受，但空闲目标永远不会读取。固定 Steer 为两个方向提供同一种投递含义，并保留运行中目标 step 边界的批处理。
+**把每条 child 最终消息变成隐式发送。** 长期运行的 child 可能在某个轮次没有值得发送的内容，在另一个轮次却有多条发现。自动投递会混合模型编写通信与 runtime 结算说明，而且无法替代错误、取消或 token 耗尽时的无条件通知。
 
-**对空闲目标使用 `Agent.followup()`，对运行中目标使用 `Agent.steer()`。** `Agent.steer()` 已定义这两种情况。根据发送前读取的状态选择方法会增加竞态与两个 inbox 目标，却不会改变预期的空闲行为。
+**只依赖工具描述。** 工具描述会在模型考虑该工具后提供帮助；失败模式是 child 认为自己已经完成而根本没有考虑返回调用。初始任务指导能触及该决策，又不会改变继承的系统或工具前缀。
+
+**保留静默投递作为部署策略。** 静默的模型编写消息可能被接受，但空闲目标永远不会读取它。固定 Steer 为两个方向提供一种投递含义，并保持与后续结算通知的接受顺序。
 
 ## 后果
 
-- 服务 Consumer 只有一个方向中立的模型消息操作与一种来源词汇。
+- 模型 Consumer 向 parent 与 child 公开一个 `send_message({ agent_id, message })` 定义，不提供模型选择的 Queue 与 Steer 参数。
 - 继续执行管理器仍是相邻关系授权、驻留、冷恢复、唤醒准入与拆卸竞态的唯一所有者。
-- 被接受的消息可能延长运行中目标的当前轮次。多条共同等待的消息共享 next-step FIFO 顺序。
-- 调用方取消只在 inbox 接受前掌管工作；它不会撤回已接受消息，也不会 dispose 目标。
-- 人类提示、结算通知、QueueDock 与启用可继续 fork 仍是独立决策。
+- 被接受的消息可以延长运行中目标的当前轮次；一起等待的消息共享 next-step FIFO 顺序。
+- 调用方取消只在 inbox 接受前掌管工作，不会撤回已接受消息或 dispose（资源释放）目标。
+- 初始任务在 fork 前缀之后携带动态 parent 地址，而请求头系统提示词与工具顺序保持可复用。
+- 人类提示、结算通知、QueueDock 与 base bundle 的一次性 fork 策略仍是独立决策。
 
-本决策取代[按意图命名的 subagent 继续执行操作](../simplification/2026-07-27-intent-named-subagent-continuation-operations.zh.md)中的 `followup` 命名选择、[可继续 subagent report 工具](../feature/2026-07-30-continuable-subagent-report-tool.zh.md)中的公开 `reportFrom` 与可配置投递部分，以及[Subagent 报告先于其结算通知](../bug-fix/2026-08-17-subagent-report-settlement-ordering.zh.md)中的 report 专属投递选择。它们关于提供方、设置贡献、提示词指导、持久性与结算顺序的理由，在未被本记录取代之处仍然适用。
+本决策合并并删除了已完全被取代的 report 工具与 child report 义务记录。它取代[按意图命名的 subagent 继续执行操作](../simplification/2026-07-27-intent-named-subagent-continuation-operations.zh.md)中的 `followup` 命名选择，并保留[Child Agent 消息先于其结算通知](../bug-fix/2026-08-17-subagent-message-settlement-ordering.zh.md)中的接受顺序保证。

@@ -326,11 +326,11 @@ interface ToolArgsMap {
     /** Path to the image file, resolved by the filesystem backend. */
     file_path: string;
   } & Record<string, JsonValue>;
-  /** Send a message to a background subagent by its subagent id, continuing the same conversation. If it is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the subagent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
+  /** Send a message to an adjacent agent by its agent id. The target must be your direct parent or direct child. If it is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered. */
   send_message: {
-    /** The subagent id returned when the background subagent was started. */
-    subagent_id: string;
-    /** The message to deliver to the subagent. */
+    /** The agent id of your direct parent or direct child. */
+    agent_id: string;
+    /** The message to deliver to the agent. */
     message: string;
   } & Record<string, JsonValue>;
   /** Load the full instructions for an available skill. Call this with the exact skill name from the session skill catalog before acting on a task that names or clearly matches that skill. */

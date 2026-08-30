@@ -57,7 +57,6 @@ import {
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
@@ -289,7 +288,7 @@ export interface LaunchOptions {
    * yml default. The code runtime row is always in the tree, so no extra
    * insertion is needed.
    */
-  toolsMode?: 'native' | 'code' | 'both'
+  toolsMode?: 'native' | 'ptc' | 'both'
   /**
    * Insert the opt-in model-facing Cordis tool provider into the shipped tree.
    * Record and replay use the same tool surface, so captured request headers
@@ -636,7 +635,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     await ctx.loader.await()
     assertEntriesLoaded(ctx, 'web e2e scaffold')
     if (options.welcomeNoticePending !== true) {
-      await ctx.settings.mutate(settingsNamespace(WELCOME_NOTICE_SETTINGS_NAMESPACE), [{
+      await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,
       }])
     }
@@ -1167,6 +1166,44 @@ export async function captureStableAria(
     return stable
   }, { timeout: 5_000, message: 'aria snapshot did not stabilize' }).toBe(true)
   return previous
+}
+
+/**
+ * Capture a stable aria snapshot with every eligible Turn process expanded,
+ * then restore the controls that were closed before the capture.
+ * @param page - the page under test.
+ * @param selector - the region locator selector.
+ * @param workspaceCwd - normalization input.
+ * @param options - optional capture-state normalization.
+ * @returns the stable normalized expanded snapshot.
+ */
+export async function captureExpandedTurnProcessAria(
+  page: Page,
+  selector: string,
+  workspaceCwd: string,
+  options: { omitBackToBottom?: boolean } = {},
+): Promise<string> {
+  const controls = page.locator('[data-turn-process]')
+  const count = await controls.count()
+  expect(count).toBeGreaterThan(0)
+  const opened: number[] = []
+  for (let index = 0; index < count; index++) {
+    const control = controls.nth(index)
+    if (!await control.isVisible() || await control.getAttribute('aria-expanded') === 'true') continue
+    await control.click()
+    opened.push(index)
+  }
+  try {
+    const snapshot = await captureStableAria(page, selector, workspaceCwd)
+    return options.omitBackToBottom === true
+      ? snapshot.replace('- button "Back to bottom":\n  - img\n', '')
+      : snapshot
+  } finally {
+    for (const index of opened.reverse()) {
+      const control = controls.nth(index)
+      if (await control.getAttribute('aria-expanded') === 'true') await control.click()
+    }
+  }
 }
 
 /**

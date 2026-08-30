@@ -8,13 +8,15 @@
 import { randomUUID } from 'node:crypto'
 import { Context, Service, symbols } from '@deepseek-ai/cordis'
 import type { ConnectionRpcHandler } from '@deepseek-ai/dsh-client-connection'
+import { Deque } from '@deepseek-ai/dsh-deque'
 import type { WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import z from '@deepseek-ai/schemastery'
+export type { TypertGatewayFaultDetails } from './remote-error-codes.ts'
 import {
+  RemoteError,
+  remoteErrorOf,
   remoteMethods,
-  TypertLookupFailure,
-  TypertRemoteFailure,
   type InvocationDescriptor,
   type InvocationParameterDescriptor,
   type TypertCodec,
@@ -48,6 +50,7 @@ import {
   type RemoteEventCancellationFrame,
   type RemoteEventClientId,
   type RemoteEventEmitFrame,
+  type RemoteEventHostInfo,
   type RemoteEventId,
   type RemoteEventInvocationFrame,
   type RemoteEventReadyFrame,
@@ -66,6 +69,7 @@ export type {
   TypertRemoteEventOutcome,
   TypertRemoteEventSource,
 } from './types.ts'
+export type { RemoteEventHostInfo } from './stream-protocol.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown
@@ -88,6 +92,7 @@ interface PreparedInvocation {
 interface RegisteredRemoteEventSource {
   readonly lifetime: AbortController
   readonly done: Promise<void>
+  readonly host: RemoteEventHostInfo
 }
 
 interface RemoteEventClient {
@@ -108,11 +113,11 @@ interface PendingRemoteEvent {
 type ConnectionRpcResult = Awaited<ReturnType<ConnectionRpcHandler>>
 type ConnectionRpcError = Extract<ConnectionRpcResult, { readonly ok: false }>['error']
 const NEVER_ABORTED_SIGNAL = new AbortController().signal
-const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 30_000
+const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 2_000
 
 /** Gateway transport configuration. */
 export interface Config {
-  /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 30000 */
+  /** WebSocket Ping interval from 1 through 2,147,483,647 milliseconds. @default 2000 */
   readonly websocketHeartbeatIntervalMs?: number
 }
 
@@ -120,10 +125,12 @@ interface ResolvedConfig extends Config {
   readonly websocketHeartbeatIntervalMs: number
 }
 
-/** Dispatch failure produced outside the invoked business method. */
-export class TypertGatewayError extends Error {
-  /** Machine-readable failure category. */
-  readonly code: TypertGatewayErrorCode
+/**
+ * Dispatch failure produced outside the invoked business method. Rides the
+ * shared Remote failure vocabulary, so its code crosses the wire instead of
+ * folding to `internal`.
+ */
+export class TypertGatewayError extends RemoteError<TypertGatewayErrorCode> {
   /** Canonical `<namespace>/<method>` endpoint. */
   readonly endpoint: string
   /** Affected wire field when the failure is field-specific. */
@@ -142,23 +149,15 @@ export class TypertGatewayError extends Error {
     message: string,
     options: GatewayErrorOptions = {},
   ) {
-    super(`typert gateway: ${endpoint}: ${message}`, options.cause === undefined ? undefined : { cause: options.cause })
+    super(
+      code,
+      `typert gateway: ${endpoint}: ${message}`,
+      { endpoint, ...options.field === undefined ? {} : { field: options.field } },
+      options.cause === undefined ? undefined : { cause: options.cause },
+    )
     this.name = 'TypertGatewayError'
-    this.code = code
     this.endpoint = endpoint
     this.field = options.field
-  }
-}
-
-/** Business invocation lost its carrier cancellation race. */
-class RemoteInvocationCancelled extends Error {
-  /**
-   * @param endpoint - canonical Remote endpoint.
-   * @param cause - business rejection observed after carrier cancellation.
-   */
-  constructor(endpoint: string, cause: unknown) {
-    super(`Remote invocation "${endpoint}" was aborted`, { cause })
-    this.name = 'RemoteInvocationCancelled'
   }
 }
 
@@ -233,9 +232,13 @@ export class TypertGatewayService extends Service implements TypertGateway {
   /**
    * Register the sole application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
+   * @param host - stable Host facts included in each Client generation's opening frame.
    * @returns disposer removing this source and cancelling its active streams.
    */
-  registerRemoteEvents(source: TypertRemoteEventSource): () => Promise<void> {
+  registerRemoteEvents(
+    source: TypertRemoteEventSource,
+    host: RemoteEventHostInfo,
+  ): () => Promise<void> {
     if (this.remoteEvents !== undefined) {
       throw new Error('typert gateway: forwarded Remote event source is already registered')
     }
@@ -247,7 +250,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       this.remoteEvents = undefined
       lifetime.abort(error)
     })
-    const registration: RegisteredRemoteEventSource = { lifetime, done }
+    const registration: RegisteredRemoteEventSource = { lifetime, done, host: { home: host.home } }
     this.remoteEvents = registration
     return async () => {
       if (this.remoteEvents === registration) {
@@ -296,7 +299,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const prepared = await this.prepareInvocation(request)
     if (prepared.descriptor.mode === 'stream') {
       throw new TypertGatewayError(
-        'signature-invalid',
+        'gateway/signature-invalid',
         prepared.endpoint,
         'stream Remote methods must be opened through the stream carrier',
       )
@@ -305,7 +308,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     try {
       return await Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
     } catch (error) {
-      if (request.signal?.aborted === true) throw new RemoteInvocationCancelled(prepared.endpoint, error)
+      if (request.signal?.aborted === true) throw remoteCancelled(prepared.endpoint, error)
       throw error
     }
   }
@@ -319,7 +322,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const prepared = await this.prepareInvocation(request)
     if (prepared.descriptor.mode !== 'stream') {
       throw new TypertGatewayError(
-        'signature-invalid',
+        'gateway/signature-invalid',
         prepared.endpoint,
         'unary Remote methods cannot be opened through the stream carrier',
       )
@@ -328,12 +331,12 @@ export class TypertGatewayService extends Service implements TypertGateway {
     try {
       source = Reflect.apply(prepared.method, prepared.receiver, prepared.args) as unknown
     } catch (error) {
-      if (request.signal?.aborted === true) throw new RemoteInvocationCancelled(prepared.endpoint, error)
+      if (request.signal?.aborted === true) throw remoteCancelled(prepared.endpoint, error)
       throw error
     }
     if (!isIterable(source)) {
       throw new TypertGatewayError(
-        'result-invalid',
+        'gateway/result-invalid',
         prepared.endpoint,
         'stream Remote method did not return Iterable or AsyncIterable',
         { field: 'result' },
@@ -393,7 +396,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       || !isPlainObject(payload.args)
       || Reflect.ownKeys(payload.args).length !== 0) {
       throw new TypertGatewayError(
-        'arguments-invalid',
+        'gateway/arguments-invalid',
         REMOTE_EVENT_STREAM_ENDPOINT,
         'forwarded Remote event stream requires an empty args object',
       )
@@ -401,7 +404,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const registration = this.remoteEvents
     if (registration === undefined) {
       throw new TypertGatewayError(
-        'service-unavailable',
+        'gateway/service-unavailable',
         REMOTE_EVENT_STREAM_ENDPOINT,
         'forwarded Remote event source is unavailable',
       )
@@ -417,7 +420,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     this.remoteEventClients.set(clientId, client)
     for (const pending of this.pendingRemoteEvents.values()) this.deliverRemoteEvent(pending, client)
     try {
-      yield { ...REMOTE_EVENT_STREAM_READY, clientId }
+      yield { ...REMOTE_EVENT_STREAM_READY, clientId, host: registration.host }
       yield* client.queue.iterate(lifetime)
     } finally {
       this.removeRemoteEventClient(client)
@@ -604,7 +607,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const receiver = receiverContext.get(descriptor.service) as unknown
     if (!isObject(receiver)) {
       throw new TypertGatewayError(
-        'service-unavailable',
+        'gateway/service-unavailable',
         endpoint,
         `active Service ${JSON.stringify(descriptor.service)} is unavailable`,
       )
@@ -617,7 +620,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const method = Reflect.get(receiver, implementation) as unknown
     if (typeof method !== 'function') {
       throw new TypertGatewayError(
-        'method-unavailable',
+        'gateway/method-unavailable',
         endpoint,
         `active Service ${JSON.stringify(descriptor.service)} has no callable method ${JSON.stringify(implementation)}`,
       )
@@ -630,7 +633,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     if (strict !== undefined) return strict
     if (this.ctx.typert.local.hasSeen(endpoint)) {
       throw new TypertGatewayError(
-        'definition-unavailable',
+        'gateway/definition-unavailable',
         endpoint,
         'its strict definition was withdrawn and SRC fallback is forbidden',
       )
@@ -654,11 +657,11 @@ export class TypertGatewayService extends Service implements TypertGateway {
       candidates.push(this.srcDescriptor(binding, marker, method, endpoint))
     }
     if (candidates.length === 0) {
-      throw new TypertGatewayError('invocation-unavailable', endpoint, 'no active Remote method exports this endpoint')
+      throw new TypertGatewayError('gateway/invocation-unavailable', endpoint, 'no active Remote method exports this endpoint')
     }
     if (candidates.length > 1) {
       throw new TypertGatewayError(
-        'ambiguous-endpoint',
+        'gateway/ambiguous-endpoint',
         endpoint,
         `multiple active Services export this endpoint: ${candidates.map(candidate => candidate.service).sort().join(', ')}`,
       )
@@ -676,7 +679,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const signalIndex = names.indexOf('signal')
     if (signalIndex >= 0 && signalIndex !== names.length - 1) {
       throw new TypertGatewayError(
-        'signature-invalid',
+        'gateway/signature-invalid',
         endpoint,
         'SRC cancellation parameter signal must be the final parameter',
         { field: 'signal' },
@@ -693,7 +696,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         .filter(definition => definition.parameter === name)
       if (matches.length > 1) {
         throw new TypertGatewayError(
-          'signature-invalid',
+          'gateway/signature-invalid',
           endpoint,
           `parameter ${JSON.stringify(name)} matches multiple lookup providers`,
           { field: name },
@@ -711,7 +714,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         }
       if (wires.has(parameter.wire)) {
         throw new TypertGatewayError(
-          'signature-invalid',
+          'gateway/signature-invalid',
           endpoint,
           `multiple parameters use wire field ${JSON.stringify(parameter.wire)}`,
           { field: parameter.wire },
@@ -726,14 +729,14 @@ export class TypertGatewayService extends Service implements TypertGateway {
       const provider = this.ctx.typert.contexts.getHost(marker.invocation.context)
       if (provider === undefined) {
         throw new TypertGatewayError(
-          'context-unavailable',
+          'gateway/context-unavailable',
           endpoint,
           `Context provider ${JSON.stringify(marker.invocation.context)} is unavailable`,
         )
       }
       if (wires.has(provider.wire)) {
         throw new TypertGatewayError(
-          'signature-invalid',
+          'gateway/signature-invalid',
           endpoint,
           `Context identity conflicts with wire field ${JSON.stringify(provider.wire)}`,
           { field: provider.wire },
@@ -771,7 +774,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const provider = this.ctx.typert.contexts.getHost(invocation.context)
     if (provider === undefined) {
       throw new TypertGatewayError(
-        'context-unavailable',
+        'gateway/context-unavailable',
         endpoint,
         `Context provider ${JSON.stringify(invocation.context)} is unavailable`,
       )
@@ -779,7 +782,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     if (provider.wire !== invocation.wire
       || (invocation.codec.mode === 'strict' && provider.wireTypeSymbol !== invocation.codec.typeSymbol)) {
       throw new TypertGatewayError(
-        'provider-mismatch',
+        'gateway/provider-mismatch',
         endpoint,
         `Context provider ${JSON.stringify(invocation.context)} does not match its strict definition`,
         { field: invocation.wire },
@@ -790,9 +793,9 @@ export class TypertGatewayService extends Service implements TypertGateway {
     try {
       context = await provider.resolve(identity)
     } catch (cause) {
-      if (cause instanceof TypertLookupFailure) throw cause
+      if (remoteErrorOf(cause) !== undefined) throw cause
       throw new TypertGatewayError(
-        'context-failed',
+        'gateway/context-failed',
         endpoint,
         `Context provider ${JSON.stringify(invocation.context)} failed`,
         { cause, field: invocation.wire },
@@ -800,7 +803,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     }
     if (context === undefined) {
       throw new TypertGatewayError(
-        'context-not-found',
+        'gateway/context-not-found',
         endpoint,
         `Context provider ${JSON.stringify(invocation.context)} did not resolve the requested identity`,
         { field: invocation.wire },
@@ -825,7 +828,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     /* v8 ignore next -- registry validation rejects strict descriptors without a key, and SRC derivation always supplies one. */
     if (key === undefined) {
       throw new TypertGatewayError(
-        'lookup-unavailable',
+        'gateway/lookup-unavailable',
         endpoint,
         `lookup parameter ${JSON.stringify(parameter.name)} has no provider key`,
         { field: parameter.wire },
@@ -834,7 +837,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const provider = this.ctx.typert.lookups.get(key)
     if (provider === undefined) {
       throw new TypertGatewayError(
-        'lookup-unavailable',
+        'gateway/lookup-unavailable',
         endpoint,
         `lookup provider ${JSON.stringify(key)} is unavailable`,
         { field: parameter.wire },
@@ -843,7 +846,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     if (provider.wire !== parameter.wire
       || (parameter.codec.mode === 'strict' && provider.wireTypeSymbol !== parameter.codec.typeSymbol)) {
       throw new TypertGatewayError(
-        'provider-mismatch',
+        'gateway/provider-mismatch',
         endpoint,
         `lookup provider ${JSON.stringify(key)} does not match its strict definition`,
         { field: parameter.wire },
@@ -853,9 +856,9 @@ export class TypertGatewayService extends Service implements TypertGateway {
     try {
       resolved = await provider.resolve(value)
     } catch (cause) {
-      if (cause instanceof TypertLookupFailure) throw cause
+      if (remoteErrorOf(cause) !== undefined) throw cause
       throw new TypertGatewayError(
-        'lookup-failed',
+        'gateway/lookup-failed',
         endpoint,
         `lookup provider ${JSON.stringify(key)} failed`,
         { cause, field: parameter.wire },
@@ -863,7 +866,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     }
     if (resolved === undefined) {
       throw new TypertGatewayError(
-        'lookup-not-found',
+        'gateway/lookup-not-found',
         endpoint,
         `lookup provider ${JSON.stringify(key)} did not resolve the requested identity`,
         { field: parameter.wire },
@@ -880,13 +883,13 @@ type RemoteEventWireFrame =
 
 /** Pull-driven queue owned by one connected Client event generation. */
 class RemoteEventQueue {
-  private readonly frames: RemoteEventWireFrame[] = []
+  private readonly frames = new Deque<RemoteEventWireFrame>()
   private waiter: (() => void) | undefined
   private closed = false
 
   push(frame: RemoteEventWireFrame): void {
     if (this.closed) return
-    this.frames.push(frame)
+    this.frames.pushBack(frame)
     this.waiter?.()
   }
 
@@ -901,7 +904,7 @@ class RemoteEventQueue {
     signal.addEventListener('abort', abort, { once: true })
     try {
       while (true) {
-        while (this.frames.length > 0) yield this.frames.shift() as RemoteEventWireFrame
+        while (this.frames.size > 0) yield this.frames.popFront() as RemoteEventWireFrame
         if (this.closed || signal.aborted) return
         await new Promise<void>((resolve) => { this.waiter = resolve })
         this.waiter = undefined
@@ -971,11 +974,11 @@ async function *cancellableStream(
   let rejectAbort: ((error: unknown) => void) | undefined
   const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject })
   const onAbort = (): void => {
-    rejectAbort?.(new RemoteInvocationCancelled(endpoint, signal.reason))
+    rejectAbort?.(remoteCancelled(endpoint, signal.reason))
   }
   signal.addEventListener('abort', onAbort, { once: true })
   try {
-    if (signal.aborted) throw new RemoteInvocationCancelled(endpoint, signal.reason)
+    if (signal.aborted) throw remoteCancelled(endpoint, signal.reason)
     while (true) {
       const next = await Promise.race([Promise.resolve(iterator.next()), aborted])
       if (next.done === true) return
@@ -987,23 +990,20 @@ async function *cancellableStream(
   }
 }
 
+/** Carrier-signal cancellation as the shared failure vocabulary expresses it. */
+function remoteCancelled(endpoint: string, cause: unknown): RemoteError<'gateway/cancelled'> {
+  return new RemoteError('gateway/cancelled', `Remote invocation "${endpoint}" was aborted`, {}, { cause })
+}
+
 function rpcFailure(error: unknown): ConnectionRpcResult {
-  if (error instanceof RemoteInvocationCancelled) {
-    return {
-      ok: false,
-      error: { code: 'cancelled', message: error.message, details: {} },
-    }
-  }
-  if (error instanceof TypertLookupFailure) {
-    return { ok: false, error: error.failure as ConnectionRpcError }
-  }
-  if (error instanceof TypertRemoteFailure) {
-    return { ok: false, error: error.failure }
+  const remote = remoteErrorOf(error)
+  if (remote !== undefined) {
+    return { ok: false, error: { code: remote.code, message: remote.message, details: remote.details } }
   }
   return {
     ok: false,
     error: {
-      code: 'internal',
+      code: 'gateway/internal',
       message: error instanceof Error ? error.message : String(error),
       details: {},
     },
@@ -1028,7 +1028,7 @@ function validateBinding(
   const value = Reflect.get(original, 'typertRemote') as unknown
   if (value === undefined) {
     throw new TypertGatewayError(
-      'binding-invalid',
+      'gateway/binding-invalid',
       endpoint,
       `Service ${JSON.stringify(serviceKey)} has no visible typertRemote binding`,
     )
@@ -1052,7 +1052,7 @@ function readBinding(
     || typeof Reflect.get(value, 'namespace') !== 'string'
     || (namespace !== undefined && Reflect.get(value, 'namespace') !== namespace)) {
     throw new TypertGatewayError(
-      'binding-invalid',
+      'gateway/binding-invalid',
       endpoint,
       `Service ${JSON.stringify(serviceKey)} has an inconsistent typertRemote binding`,
     )
@@ -1080,7 +1080,7 @@ function methodParameterNames(service: object, method: string, endpoint: string)
   }
   if (implementation === undefined) {
     throw new TypertGatewayError(
-      'method-unavailable',
+      'gateway/method-unavailable',
       endpoint,
       `Remote marker has no prototype method ${JSON.stringify(method)}`,
     )
@@ -1103,7 +1103,7 @@ function methodParameterNames(service: object, method: string, endpoint: string)
 
 function invalidSignature(endpoint: string, method: string): never {
   throw new TypertGatewayError(
-    'signature-invalid',
+    'gateway/signature-invalid',
     endpoint,
     `SRC method ${JSON.stringify(method)} must use unique identifier parameters without destructuring, defaults, or rest`,
   )
@@ -1115,7 +1115,7 @@ function assertExactArguments(
   endpoint: string,
 ): void {
   if (!isPlainObject(args)) {
-    throw new TypertGatewayError('arguments-invalid', endpoint, 'args must be a plain object')
+    throw new TypertGatewayError('gateway/arguments-invalid', endpoint, 'args must be a plain object')
   }
   const expected = new Set(descriptor.parameters.map(parameter => parameter.wire))
   if (descriptor.invocation.kind === 'context') expected.add(descriptor.invocation.wire)
@@ -1134,7 +1134,7 @@ function assertExactArguments(
   const clauses: string[] = []
   if (missing.length > 0) clauses.push(`missing ${missing.map(key => JSON.stringify(key)).join(', ')}`)
   if (extra.length > 0) clauses.push(`unexpected ${extra.map(key => JSON.stringify(String(key))).join(', ')}`)
-  throw new TypertGatewayError('arguments-invalid', endpoint, `args fields do not match the descriptor: ${clauses.join('; ')}`)
+  throw new TypertGatewayError('gateway/arguments-invalid', endpoint, `args fields do not match the descriptor: ${clauses.join('; ')}`)
 }
 
 function decode(
@@ -1153,7 +1153,7 @@ function decode(
     return value
   } catch (cause) {
     throw new TypertGatewayError(
-      'input-invalid',
+      'gateway/input-invalid',
       endpoint,
       `wire field ${JSON.stringify(field)} failed boundary validation`,
       { cause, field },

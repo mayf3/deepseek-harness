@@ -9,6 +9,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
 import type { GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -72,6 +73,9 @@ async function setupWith(
 ) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  // The registry is a required injection of AgentLoop and SubagentRuntime
+  // (both register projection units on activation).
+  await ctx.plugin(SessionProjectionRegistry)
   let disposePersistence: (() => Promise<void>) | undefined
   let root: string | undefined
   if (options.persistence !== false) {
@@ -123,7 +127,10 @@ function hasUserText(events: readonly SessionEvent[], text: string): boolean {
 /** Caller-supplied user message texts in log order (runtime-context snapshots excluded). */
 function userTexts(events: readonly SessionEvent[]): string[] {
   return events.flatMap(event => event.type === 'user/message' && event.data.source.kind !== 'plugin'
-    ? event.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
+    ? event.data.content.flatMap(block => block.type === 'text'
+      && !block.text.startsWith('Your parent agent id is ')
+      ? [block.text]
+      : [])
     : [])
 }
 
@@ -464,6 +471,7 @@ describe('SubagentRuntime.startContinuable', () => {
 
     const fresh = new Context()
     await mountAgentLoopTestDependencies(fresh)
+    await fresh.plugin(SessionProjectionRegistry)
     const freshPersistence = await fresh.plugin(JsonlSessionPersistence, { root: root! })
     // This context opened a second handle on the same root; register it so
     // afterEach closes it before removing the root (even on a failure path).
@@ -1010,6 +1018,13 @@ describe('continuable durability and teardown', () => {
     expect(ctx.agents.get(sibling.childId)).toBe(siblingAgent)
     releaseSibling.resolve(undefined)
     await waitNoActivation(ctx, sibling.childId)
+  })
+
+  it('ignores a selected direct child that is not resident', async () => {
+    const { ctx, parent } = await setup([])
+
+    await expect(ctx.subagents.drainContinuableChildren(parent, [SessionId('settled-child')]))
+      .resolves.toBeUndefined()
   })
 
   it('reports selected-child disposal failures after releasing the child', async () => {
@@ -1711,6 +1726,15 @@ function settlementNotices(agent: Agent): { sender: string; text: string; summar
 }
 
 describe('continuable adjacent-Agent delivery', () => {
+  it('rejects a stale sender before resolving either adjacent target', async () => {
+    const { ctx, parent } = await setup([])
+    const stale = { ...parent, id: parent.id } as unknown as Agent
+
+    await expect(ctx.subagents.sendMessage(stale, SessionId('target'), message('stale'), {
+      signal: testSignal,
+    })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  })
+
   it('steers an idle direct parent and preserves sender attribution', async () => {
     const releaseChild = Promise.withResolvers<undefined>()
     const adapter = new GatedAdapter([
@@ -1751,6 +1775,55 @@ describe('continuable adjacent-Agent delivery', () => {
     await vi.waitFor(() => {
       expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(2)
     })
+  })
+
+  it('rejects child-to-parent delivery when the direct parent is not live', async () => {
+    const releaseChild = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('child answer'), gate: releaseChild.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const child = await vi.waitFor(() => {
+      const found = ctx.agents.get(started.childId)
+      expect(found).toBeDefined()
+      return found!
+    })
+    const get = ctx.agents.get.bind(ctx.agents)
+    const getSpy = vi.spyOn(ctx.agents, 'get').mockImplementation(id => (
+      id === parent.id ? undefined : get(id)
+    ))
+
+    await expect(ctx.subagents.sendMessage(child, parent.id, message('cannot arrive'), {
+      signal: testSignal,
+    })).rejects.toMatchObject({ code: 'PARENT_UNAVAILABLE' })
+
+    getSpy.mockRestore()
+    releaseChild.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+  })
+
+  it('translates direct-parent Steer rejection into an availability error', async () => {
+    const releaseChild = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('child answer'), gate: releaseChild.promise },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const child = await vi.waitFor(() => {
+      const found = ctx.agents.get(started.childId)
+      expect(found).toBeDefined()
+      return found!
+    })
+    const rejection = new Error('parent closed admission')
+    vi.spyOn(parent, 'steer').mockImplementation(() => { throw rejection })
+
+    await expect(ctx.subagents.sendMessage(child, parent.id, message('cannot arrive'), {
+      signal: testSignal,
+    })).rejects.toMatchObject({ code: 'PARENT_UNAVAILABLE', cause: rejection })
+
+    releaseChild.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
   })
 })
 
@@ -2528,6 +2601,7 @@ describe('continuable errors', () => {
     const adapter = new GatedAdapter([{ chunks: textResponse('child'), gate: hold.promise }])
     const ctx = new Context()
     await mountAgentLoopTestDependencies(ctx)
+    await ctx.plugin(SessionProjectionRegistry)
     const root = mkdtempSync(join(tmpdir(), 'dsh-subagent-continuation-'))
     const persistenceFiber = await ctx.plugin(JsonlSessionPersistence, { root })
     cleanups.push(async () => {

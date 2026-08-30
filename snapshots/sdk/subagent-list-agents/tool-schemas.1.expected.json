@@ -321,38 +321,22 @@
       }
     },
     {
-      "name": "report",
-      "description": "Report selected content to the agent that started you. Call this once before you finish, with a self-contained final result, and earlier for progress or findings that change what that agent does next. That agent shares your workspace but does not automatically receive your transcript, tool output, or reasoning, so finishing your work is not itself a result. Reporting does not end your turn or finish your work, and only your direct parent receives it. If that agent is working, the report steers its nearest step; otherwise it starts a turn. A failed call may still have arrived if a later tool-result hook failed, so do not blindly repeat it.",
-      "parameters": {
-        "type": "object",
-        "properties": {
-          "output": {
-            "type": "string",
-            "description": "Actionable content for your parent; summarize conclusions and reference relevant shared paths."
-          }
-        },
-        "required": [
-          "output"
-        ]
-      }
-    },
-    {
       "name": "send_message",
-      "description": "Send a message to a background subagent by its subagent id, continuing the same conversation. If it is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the subagent — only confirmation that the message was delivered. A failure means the message was NOT delivered.",
+      "description": "Send a message to an adjacent agent by its agent id. The target must be your direct parent or direct child. If it is still working, the message steers its nearest step; if it is idle, the message starts a turn. This call returns no answer from the agent — only confirmation that the message was delivered. A failure means the message was NOT delivered.",
       "parameters": {
         "type": "object",
         "properties": {
-          "subagent_id": {
+          "agent_id": {
             "type": "string",
-            "description": "The subagent id returned when the background subagent was started."
+            "description": "The agent id of your direct parent or direct child."
           },
           "message": {
             "type": "string",
-            "description": "The message to deliver to the subagent."
+            "description": "The message to deliver to the agent."
           }
         },
         "required": [
-          "subagent_id",
+          "agent_id",
           "message"
         ]
       }

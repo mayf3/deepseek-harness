@@ -1,9 +1,7 @@
 /** Workspace archive and directory UI capability. */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
-import type { IApiClient } from '@deepseek-ai/dsh-client-connection/client'
-import type { ClientRemote, DirectoryListing } from '@deepseek-ai/dsh-api-remotes/client'
-import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   ISessions,
   SessionListState,
@@ -50,11 +48,6 @@ export interface UiWorkspace {
    * @returns created absolute path.
    */
   createDirectory(path: string, name: string): Promise<string>
-  /**
-   * Open a path with the Host operating system.
-   * @param path - absolute or Host-resolvable path.
-   */
-  openPath(path: string): Promise<void>
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -80,14 +73,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   /**
    * @param ctx - Client root Context.
-   * @param api - shared Host API carrier.
    * @param directoryPicker - the directory-picking Remote namespace.
    * @param workspaces - pure Workspace Controller.
    * @param sessions - pure Session Controller.
    */
   constructor(
     ctx: Context,
-    private readonly api: IApiClient,
     private readonly directoryPicker: ClientRemote['directoryPicker'],
     private readonly workspaces: IWorkspaces,
     private readonly sessions: ISessions,
@@ -161,13 +152,6 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const result = await this.directoryPicker.createDirectory(path, name)
     if (!result.ok) throw new DirectoryBrowseError(result.error)
     return result.value
-  }
-
-  async openPath(path: string): Promise<void> {
-    const response = await this.api.host.openPath({ path })
-    if (!response.result.ok) {
-      throw new Error(`path open failed: ${response.result.error.message}`)
-    }
   }
 
   private watchNavigation(): () => void {

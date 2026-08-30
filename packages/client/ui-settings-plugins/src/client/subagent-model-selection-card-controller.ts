@@ -1,9 +1,7 @@
 /** Staged editor for the Host-owned subagent model allowlist. */
 
-import type {
-  IApiClient,
-  ModelProviderGroup,
-} from '@deepseek-ai/dsh-api-remotes/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ModelProviderGroup } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { CardShell } from './card-form.ts'
@@ -145,11 +143,12 @@ export class SubagentModelSelectionCardController {
 
   /**
    * @param scope - bound `subagent-model-selection` settings scope.
-   * @param api - Host LLM directory face.
+   * @param ctx - the card plugin's context, whose `remote.session` namespace
+   * answers the Host model catalog.
    */
   constructor(
     private readonly scope: SettingsScope<SubagentModelSelectionSettings>,
-    private readonly api: Pick<IApiClient, 'llm'>,
+    private readonly ctx: ClientContext,
   ) {
     this.store = createSnapshotStore(this.projection())
     this.unsubscribe = scope.subscribe(() => {
@@ -320,15 +319,13 @@ export class SubagentModelSelectionCardController {
     this.catalogStatus = 'loading'
     this.catalogPartial = false
     this.publish()
-    try {
-      const response = await this.api.llm.models({})
-      if (generation !== this.catalogGeneration) return
-      if (!response.result.ok) throw new Error(response.result.error.message)
-      this.catalogGroups = response.result.value.groups
-      this.catalogPartial = response.result.value.failures.length > 0
+    const response = await this.ctx.remote.session.modelCatalog()
+    if (generation !== this.catalogGeneration) return
+    if (response.ok) {
+      this.catalogGroups = response.value.groups
+      this.catalogPartial = response.value.failures.length > 0
       this.catalogStatus = 'ready'
-    } catch {
-      if (generation !== this.catalogGeneration) return
+    } else {
       this.catalogStatus = 'error'
     }
     this.publish()

@@ -5,9 +5,10 @@ import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import {
-  SlotTestRuntime, stubSettingsScope, usePinnedBrowserLanguages,
+  RemoteError, SlotTestRuntime, TestRemote, stubSettingsScope, usePinnedBrowserLanguages,
 } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionBehaviorOverrides } from '@deepseek-ai/dsh-client-test-runtime'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   apply as applyConversation, inject as injectConversation,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -48,10 +49,12 @@ async function bench() {
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
   runtime.ctx.provide('layout', layout as never)
-  const openPath = vi.fn<(path: string) => Promise<void>>(async () => {})
+  const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
+    () => Promise.resolve({ ok: true, value: { opened: true } }),
+  )
+  new TestRemote(runtime.ctx, { session: { openWorkspacePath } })
   runtime.ctx.provide('uiWorkspace', {
     connectWorkspace: vi.fn(async () => ROOT),
-    openPath,
   } as never)
   const session = sessionFakeFor()
   await runtime.sessions.add({
@@ -79,7 +82,7 @@ async function bench() {
     ) => ChatViewInjected)(id, instance.actions)
     return { instance, injected }
   }
-  return { runtime, layout, openPath, session, chatViewApi }
+  return { runtime, layout, openWorkspacePath, session, chatViewApi }
 }
 
 describe('Chat inject API', () => {
@@ -120,10 +123,13 @@ describe('Chat inject API', () => {
     const b = await bench()
     const { injected } = b.chatViewApi(ROOT)
     await injected.openFile('src/a.ts')
-    expect(b.openPath).toHaveBeenCalledWith('/proj/src/a.ts')
+    expect(b.openWorkspacePath).toHaveBeenCalledWith({ path: '/proj/src/a.ts' })
 
-    b.openPath.mockRejectedValueOnce(new Error('xdg-open is not available'))
-    await expect(injected.openFile('src/b.ts')).rejects.toThrow('xdg-open is not available')
+    b.openWorkspacePath.mockResolvedValueOnce({
+      ok: false,
+      error: new RemoteError('gateway/internal', 'xdg-open is not available', {}),
+    })
+    await expect(injected.openFile('src/b.ts')).rejects.toThrow('path open failed: xdg-open is not available')
     await b.runtime.dispose()
   })
 

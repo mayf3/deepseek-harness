@@ -16,10 +16,9 @@
 - text: Reply with a one-sentence description of event sourcing, then stop. {{clock}}
 - button "Copy":
   - img
-- button "Context injection @deepseek-ai/dsh-system-prompt":
+- button "Thought for a while":
+  - text: Thought for a while
   - img
-  - img
-  - text: Context injection @deepseek-ai/dsh-system-prompt
 - paragraph: partial
 - text: Stopped
 - button "Copy":
@@ -30,7 +29,10 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}}
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
 - button "2 queued messages" [expanded]
 - list:
   - listitem:

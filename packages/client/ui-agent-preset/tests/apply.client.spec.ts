@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
-import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import { RemoteError, TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
@@ -74,6 +74,7 @@ async function bench() {
   // The row reads `describe` to learn whether this browser may write at all,
   // and its default write is the one op this spec records.
   const settings = {
+    canOpenAgentPresetDirectory: () => Promise.resolve({ ok: true as const, value: true }),
     describe: () => Promise.resolve({
       ok: true as const,
       value: { writable: true, hasDocument: true, namespaces: [] },
@@ -81,6 +82,10 @@ async function bench() {
     update: (_ns: string, patch: unknown) => {
       calls.push(`settings:${JSON.stringify(patch)}`)
       return Promise.resolve({ ok: true as const, value: {} })
+    },
+    openAgentPresetDirectory: (agentPreset: string) => {
+      calls.push(`openAgentPresetDirectory:${agentPreset}`)
+      return Promise.resolve({ ok: true as const, value: { opened: true as const } })
     },
   }
   const remote = new TestRemote(ctx, { settings })
@@ -110,22 +115,6 @@ async function bench() {
   }
   ctx.provide('remote.agentPresets', agentPresets as never)
   Object.assign(remote, { agentPresets })
-  ctx.provide('connection', {
-    api: {
-      host: {
-        describe: () => Promise.resolve({
-          rpcId: 'r',
-          result: { ok: true as const, value: { canOpenPath: true } },
-        }),
-      },
-      agentPresets: {
-        openDocument: (payload: { agentPreset: string }) => {
-          calls.push(`openDocument:${payload.agentPreset}`)
-          return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { opened: true as const } } })
-        },
-      },
-    },
-  } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote }
 }
@@ -187,7 +176,7 @@ function sessionsDouble(state: {
 describe('ui-agent-preset apply', () => {
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'connection', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
     ])
   })
 
@@ -257,7 +246,7 @@ describe('ui-agent-preset apply', () => {
     // one the roster re-read reflects, and the delete the section confirmed
     // is the one its remove() sees.
     expect(calls).toContain('copy:mine')
-    expect(calls.filter(call => call === 'openDocument:mine').length).toBeGreaterThan(0)
+    expect(calls.filter(call => call === 'openAgentPresetDirectory:mine').length).toBeGreaterThan(0)
     expect(section.hooks.agentPresetSection.getSnapshot().rows).toHaveLength(2)
   })
 
@@ -591,8 +580,10 @@ describe('AgentPresetSeatController reconciliation', () => {
   it('uses the deployment default without a Session and clears it for an uncomposed Session', async () => {
     const state: { current?: { id: SessionId; blank: boolean } } = {}
     const controller = new AgentPresetSeatController({
-      agentPresets: {
-        list: () => Promise.resolve(ROSTER_ONE),
+      remote: {
+        agentPresets: {
+          list: () => Promise.resolve(ROSTER_ONE),
+        },
       },
     } as never, () => state.current)
 
@@ -605,43 +596,35 @@ describe('AgentPresetSeatController reconciliation', () => {
     expect(controller.store.getSnapshot().current).toBe('')
   })
 
-  it.each([
-    {
-      name: 'RPC rejection',
-      select: () => Promise.resolve({
-        ok: false as const, error: { code: 'failed', message: 'selection rejected', details: {} },
-      }),
-      message: 'selection rejected',
-    },
-    {
-      name: 'transport failure',
-      select: () => Promise.reject(new Error('transport failed')),
-      message: 'transport failed',
-    },
-  ])('restores an empty current value after $name for an uncomposed Session', async ({ select, message }) => {
+  it('restores an empty current value after a refused switch for an uncomposed Session', async () => {
+    const select = () => Promise.resolve({
+      ok: false as const, error: new RemoteError('gateway/internal', 'selection rejected', {}),
+    })
     const controller = new AgentPresetSeatController({
-      agentPresets: { select },
+      remote: { agentPresets: { select } },
     } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
 
     await controller.select('minimal')
 
     expect(controller.store.getSnapshot()).toMatchObject({
-      busy: false, current: '', error: message,
+      busy: false, current: '', error: 'selection rejected',
     })
   })
 
   it('keeps the bare cause of a mount failure, not the frame that names the preset again', async () => {
     const reason = 'failed to import loader entry ctx (@deepseek-ai/dsh-gone): Cannot find package'
     const controller = new AgentPresetSeatController({
-      agentPresets: {
-        select: () => Promise.resolve({
-          ok: false as const,
-          error: {
-            code: 'agent-preset-invalid',
-            message: `agent-presets: preset "broken" failed to mount: ${reason}`,
-            details: { agentPreset: 'broken', reason },
-          },
-        }),
+      remote: {
+        agentPresets: {
+          select: () => Promise.resolve({
+            ok: false as const,
+            error: new RemoteError(
+              'agent-preset/invalid',
+              `agent-presets: preset "broken" failed to mount: ${reason}`,
+              { agentPreset: 'broken', reason },
+            ),
+          }),
+        },
       },
     } as never, () => ({ id: SessionId('uncomposed'), blank: true }))
 

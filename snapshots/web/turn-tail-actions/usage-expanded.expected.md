@@ -16,33 +16,10 @@
 - text: Begin your reply with the plain sentence "Reading the workspace now." as text, and in that same message call the bash tool with the command "echo alpha". After the tool result, reply with the single word DONE and stop. {{clock}}
 - button "Copy":
   - img
-- button "Context injection @deepseek-ai/dsh-system-prompt":
+- button "1 tool call · 1 message":
+  - text: 1 tool call · 1 message
   - img
-  - img
-  - text: Context injection @deepseek-ai/dsh-system-prompt
-- button "Think The user wants me to begin with \"Reading the workspace now.\" and call bash with \"echo alpha\" in the same message. Then after the tool result, reply with the single word DONE and stop.":
-  - img
-  - img
-  - text: Think The user wants me to begin with "Reading the workspace now." and call bash with "echo alpha" in the same message. Then after the tool result, reply with the single word DONE and stop.
-- paragraph: Reading the workspace now.
-- button "Bash Print alpha to stdout":
-  - img
-  - img
-  - text: Bash Print alpha to stdout
 - paragraph: DONE
-- button "Turn usage 15.8K tok · Cache hit 49.7%" [expanded]:
-  - img
-  - text: Turn usage 15.8K tok · Cache hit 49.7%
-- term: Provider / model
-- definition: deepseek-official/deepseek-v4-flash
-- term: Uncached input
-- definition: 7,891 tok
-- term: Cached input
-- definition: 7,808 tok
-- term: Output
-- definition: 112 tok (42 tok reasoning)
-- term: Total
-- definition: 15,811 tok
 - button "Copy":
   - img
 - button "Good response":
@@ -51,7 +28,13 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- button "Usage 15.8K tok" [expanded]:
+  - img
+  - text: Usage 15.8K tok
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img

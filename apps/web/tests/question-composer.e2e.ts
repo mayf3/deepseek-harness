@@ -19,7 +19,9 @@ import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
   launchWebScaffold, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
-import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
+import {
+  connectFreshWorkspace, expandTurnProcesses, newEnglishPage, saveFailureShot,
+} from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/question-composer', import.meta.url))
 const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
@@ -30,6 +32,7 @@ const COMPOSED_EXPECTED = join(SNAPSHOT_DIR, 'composed.expected.md')
 // round trip and the final reply, the state the composer goldens cannot see.
 const ANSWERED_EXPECTED = join(SNAPSHOT_DIR, 'answered.expected.md')
 const CANCELLED_EXPECTED = join(SNAPSHOT_DIR, 'cancelled.expected.md')
+const ANSWERED_EXPANDED_EXPECTED = join(SNAPSHOT_DIR, 'answered-expanded.expected.md')
 const MODE = webSnapshotMode()
 const CANCELLED_SEED_ID = 'ask-question-cancelled-row-web-e2e'
 
@@ -289,16 +292,20 @@ describe('web e2e: resident question composer round trip', () => {
     expect(await page.locator('[data-question-key]').count()).toBe(0)
     expect(await selectedRow.locator('[data-state="warning"]').count()).toBe(0)
     await expect.poll(() => page.locator('[data-composer-input]').first().isEnabled(), { timeout: 10_000 }).toBe(true)
-    // Golden of the answered transcript: the ask_user_question round trip
-    // rendered as history (expanded readable answers + DONE), composer takeover gone.
+    // The default golden pins Compact mode before process disclosure.
+    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(ANSWERED_EXPECTED, snapshot, MODE)
+    // Keep the ask_user_question card's readable answer in the expanded golden
+    // even though Compact mode hides the process by default.
+    await expandTurnProcesses(page)
     const answeredRow = page.getByRole('button', { name: 'Ask question 1/1 answered', exact: true })
     await answeredRow.click()
     await page.getByText('Which color do you prefer?', { exact: true }).waitFor({ timeout: 10_000 })
     expect(await page.getByText('Blue', { exact: true }).count()).toBeGreaterThanOrEqual(1)
     expect(await page.getByText('Include accessibility notes', { exact: true }).count()).toBe(1)
     expect(await page.getByText(/"answers"/).count()).toBe(0)
-    const snapshot = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(ANSWERED_EXPECTED, snapshot, MODE)
+    const expanded = await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(ANSWERED_EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 200_000)
@@ -410,6 +417,7 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled question transcript', () 
       'composed.expected.md',
       'answered.expected.md',
       'cancelled.expected.md',
+      'answered-expanded.expected.md',
     ])
   })
 })

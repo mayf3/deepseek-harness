@@ -10,9 +10,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'
 
 export const name = 'tool-subagent-control'
@@ -26,20 +27,20 @@ export function apply(ctx: Context): void {
   ctx.tools.register(defineTool({
     name: 'send_message',
     description:
-      'Send a message to a background subagent by its subagent id, continuing the same conversation. If it '
-      + 'is still working, the message steers its nearest step; if it is idle, the message starts a turn. '
-      + 'This call returns no answer from the subagent — only confirmation that the message was delivered. '
+      'Send a message to an adjacent agent by its agent id. The target must be your direct parent or direct '
+      + 'child. If it is still working, the message steers its nearest step; if it is idle, the message starts '
+      + 'a turn. This call returns no answer from the agent — only confirmation that the message was delivered. '
       + 'A failure means the message was NOT delivered.',
     parameters: {
-      subagent_id: {
+      agent_id: {
         type: 'string',
         required: true,
-        description: 'The subagent id returned when the background subagent was started.',
+        description: 'The agent id of your direct parent or direct child.',
       },
       message: {
         type: 'string',
         required: true,
-        description: 'The message to deliver to the subagent.',
+        description: 'The message to deliver to the agent.',
       },
     },
     output: {
@@ -52,7 +53,7 @@ export function apply(ctx: Context): void {
       },
       render: (args, _value) => [{
         type: 'text',
-        text: `message delivered to subagent ${args.subagent_id}`,
+        text: `message delivered to agent ${args.agent_id}`,
       }],
     },
     async execute(args, exec) {
@@ -63,7 +64,7 @@ export function apply(ctx: Context): void {
       const message: ContentBlock[] = [{ type: 'text', text: args.message }]
       const messageId = await ctx.subagents.sendMessage(
         sender,
-        SessionId(args.subagent_id),
+        brandString<SessionId>(args.agent_id),
         message,
         { signal: exec.signal },
       )
@@ -108,7 +109,7 @@ export function apply(ctx: Context): void {
       }
       // The service authorizes the exact live caller against the target's
       // recorded lineage; the tool adds no authority of its own.
-      ctx.subagents.interrupt(SessionId(args.agent_id), { kind: 'ancestor', agent: caller })
+      ctx.subagents.interrupt(brandString<SessionId>(args.agent_id), { kind: 'ancestor', agent: caller })
       return Promise.resolve({ accepted: true })
     },
   }))

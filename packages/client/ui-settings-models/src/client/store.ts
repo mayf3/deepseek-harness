@@ -1,17 +1,19 @@
 /**
  * Models settings page store: one snapshot joining the configurable-provider
- * directory (`llm.providers`), the settings namespaces (shared settings mirror),
+ * directory (`llm/listProviders` joined with `llm/listConfigurableProviders`),
+ * the settings namespaces (shared settings mirror),
  * and the referenced credentials (`credentials/describe`). The host stays the
  * single fact source — every mutation writes through the wire and the page
  * re-renders from the next describe, pushed or refetched.
  */
 
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
-  ClientRemote, ConfigurableProviderView, CredentialInfo, IApiClient, SettingsNamespaceView,
+  CredentialInfo, LlmConfigurableProvider, LlmProviderInfo, SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsDescribeFace, SettingsRemote } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 
 /**
@@ -20,25 +22,53 @@ import type { SettingsSchemaOperations } from './schema-operations.ts'
  */
 const PROBE_ROUTE = '\u0000probe'
 
-/** The credentials Remote methods the Models page reads and writes through. */
-export type ModelsCredentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+/** One provider row after joining the configurable directory with live routes. */
+export interface ProviderDirectoryEntry {
+  readonly provider: string
+  readonly displayName: string
+  readonly settingsNs: string
+  readonly settingsPath: readonly string[]
+  readonly active: boolean
+  readonly declared?: boolean
+}
 
 /**
- * Every wire face the Models page reaches: the settings and llm unary domains,
- * plus the credentials Remote namespace, which is addressed by reference name
- * and never answers with a value.
+ * Join declared configurable providers with the currently registered routes.
+ * @param registered - live provider routes in registration order.
+ * @param directory - declared configurable providers in declaration order.
+ * @returns declared rows followed by live routes with no declaration.
  */
-export interface ModelsWire extends Pick<IApiClient, 'llm'> {
-  /** The settings Remote namespace: the redacted read and the profile writes. */
-  settings: SettingsRemote
-  /** Credential state and writes for the references provider profiles name. */
-  credentials: ModelsCredentials
+export function joinProviderDirectory(
+  registered: readonly LlmProviderInfo[],
+  directory: readonly LlmConfigurableProvider[],
+): ProviderDirectoryEntry[] {
+  const active = new Set(registered.map(provider => provider.id))
+  const declared = new Set(directory.map(entry => entry.provider))
+  const rows: ProviderDirectoryEntry[] = directory.map(entry => ({
+    provider: entry.provider,
+    displayName: entry.displayName,
+    settingsNs: entry.settingsNs,
+    settingsPath: [...entry.settingsPath],
+    active: active.has(entry.provider),
+    ...entry.declared === undefined ? {} : { declared: entry.declared },
+  }))
+  for (const provider of registered) {
+    if (declared.has(provider.id)) continue
+    rows.push({
+      provider: provider.id,
+      displayName: provider.name,
+      settingsNs: '',
+      settingsPath: [],
+      active: true,
+    })
+  }
+  return rows
 }
 
 /** One provider row the page renders. */
 export interface ProviderRow {
   /** The directory entry (route id, display name, settings address, live state). */
-  entry: ConfigurableProviderView
+  entry: ProviderDirectoryEntry
   /** Whether any layer configures this provider (its profile resolves). */
   configured: boolean
   /** Whether the user layer alone carries the profile (removal restores the base). */
@@ -69,17 +99,6 @@ export interface ModelsSettingsState {
   rows: readonly ProviderRow[]
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
-}
-
-/**
- * Human text for a rejected wire call. A transport failure rejects with an
- * Error; a host or a runtime can reject with anything, and the page still has
- * to say something.
- * @param error - the rejection value.
- * @returns the message to show.
- */
-export function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 /**
@@ -137,11 +156,13 @@ export class ModelsSettingsStore {
   private generation = 0
 
   /**
-   * @param api - the page's credentials Remote and LLM wire faces.
+   * @param ctx - the page plugin's context, whose `remote.llm` and
+   * `remote.credentials` namespaces carry the directory and credential reads.
+   * @param schema - settings-owned schema and immutable path operations.
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
-    private readonly api: Pick<ModelsWire, 'credentials' | 'llm'>,
+    private readonly ctx: ClientContext,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
@@ -157,30 +178,21 @@ export class ModelsSettingsStore {
   async load(): Promise<void> {
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'loading'; s.error = null })
-    let providers: ConfigurableProviderView[]
-    let writable: boolean
-    let views: readonly SettingsNamespaceView[]
-    try {
-      const [providersResponse] = await Promise.all([
-        this.api.llm.providers({}),
-        this.describeFace.ensure(),
-      ])
-      if (!providersResponse.result.ok) throw new Error(providersResponse.result.error.message)
-      const mirrored = this.describeFace.getSnapshot()
-      if (mirrored.view === undefined) {
-        throw new Error(mirrored.error ?? 'settings are unavailable in this browser')
-      }
-      providers = providersResponse.result.value.providers
-      writable = mirrored.view.writable
-      views = mirrored.view.namespaces
-    } catch (error) {
-      if (generation !== this.generation) return
-      this.store.update((s) => {
-        s.status = 'error'
-        s.error = error instanceof Error ? error.message : String(error)
-      })
+    const [registered, declared] = await Promise.all([
+      this.ctx.remote.llm.listProviders(),
+      this.ctx.remote.llm.listConfigurableProviders(),
+      this.describeFace.ensure(),
+    ])
+    if (!registered.ok) { this.failLoad(generation, registered.error.message); return }
+    if (!declared.ok) { this.failLoad(generation, declared.error.message); return }
+    const mirrored = this.describeFace.getSnapshot()
+    if (mirrored.view === undefined) {
+      this.failLoad(generation, mirrored.error ?? 'settings are unavailable in this browser')
       return
     }
+    const providers = joinProviderDirectory(registered.value, declared.value)
+    const writable = mirrored.view.writable
+    const views: readonly SettingsNamespaceView[] = mirrored.view.namespaces
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
@@ -202,16 +214,12 @@ export class ModelsSettingsStore {
     let credentials: Record<string, CredentialInfo> = {}
     let credentialError: string | null = null
     if (refs.length > 0) {
-      try {
-        const response = await this.api.credentials.describe(refs)
-        // Credential state is an enrichment for the Models page: neither a
-        // business rejection nor a transport failure fails the load. The
-        // onboarding projection below retains the failure distinction.
-        if (response.ok) credentials = response.value
-        else credentialError = response.error.message
-      } catch (error) {
-        credentialError = messageOf(error)
-      }
+      const response = await this.ctx.remote.credentials.describe(refs)
+      // Credential state is an enrichment for the Models page: a failure
+      // degrades the badge instead of failing the load. The onboarding
+      // projection below retains the failure distinction.
+      if (response.ok) credentials = response.value
+      else credentialError = response.error.message
     }
     if (generation !== this.generation) return
     this.store.update((s) => {
@@ -229,6 +237,15 @@ export class ModelsSettingsStore {
         }
       })
       s.namespaces = namespaces
+    })
+  }
+
+  /** Publish one load's failure text, unless a newer load already took over. */
+  private failLoad(generation: number, message: string): void {
+    if (generation !== this.generation) return
+    this.store.update((s) => {
+      s.status = 'error'
+      s.error = message
     })
   }
 }

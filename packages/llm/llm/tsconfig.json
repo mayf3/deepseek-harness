@@ -28,6 +28,12 @@
     },
     {
       "path": "../../util/crypto"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }
