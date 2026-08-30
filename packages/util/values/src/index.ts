@@ -1,16 +1,18 @@
-/** Lossless-JSON validation and detached snapshots for durable session data. @module @deepseek-ai/dsh-session/json */
+/** Duplicate-install-safe JSON and immutable-value helpers. @module @deepseek-ai/dsh-util-values */
+
+/** A value that round-trips through JSON without loss. */
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
 
 /**
- * A value that round-trips losslessly through JSON: `null`, a boolean, a finite
- * number other than negative zero, a string, an array of such values, or a
- * plain object whose values are such values. Arrays may carry only their dense
- * indexed elements; extra own properties would be discarded by JSON. TypeScript
- * cannot distinguish `-0` from `number`, so {@link isJsonValue} and
- * {@link snapshotJsonValue} enforce these details at runtime. Use this type for
- * a payload that must survive session-log persistence and replay byte-identically
- * — e.g. a tool's private presentation `meta`.
+ * Mark an unreachable closed-union branch.
+ * @param value - impossible value; an unhandled typed variant fails at the call site.
+ * @param context - optional switch-site label included in the failure message.
+ * @returns never; a runtime value that escaped its type always throws.
  */
-export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
+export function assertNever(value: never, context?: string): never {
+  const rendered = (JSON.stringify(value) as string | undefined) ?? String(value)
+  throw new Error(`unreachable variant${context ? ` in ${context}` : ''}: ${rendered}`)
+}
 
 /** Whether a realm-owned intrinsic prototype is backed by its native constructor. */
 function hasIntrinsicConstructor(prototype: object, name: 'Array' | 'Object'): boolean {
@@ -163,28 +165,75 @@ function walkJsonValue(value: unknown, detach: boolean): JsonValue | true | unde
 }
 
 /**
- * Validate and detach lossless JSON in one read per property, so a stateful
- * getter cannot change between validation and copying. Traversal is iterative,
- * so valid nesting is bounded by available memory rather than the JavaScript
- * call stack. Accepts ordinary arrays, plain or null-prototype objects, and JSON
- * scalars; rejects sparse, cyclic, exotic, negative-zero, and non-finite values.
- * Getter throws propagate.
- *
- * @param value - the candidate value to validate and detach.
- * @returns the detached snapshot, or `undefined` when the value is not
- *   losslessly JSON-serializable.
+ * Validate and detach lossless JSON in one read per property.
+ * @param value - candidate value to validate and detach.
+ * @returns the detached snapshot, or `undefined` when the value is not losslessly JSON-serializable.
  */
 export function snapshotJsonValue<T>(value: T): T | undefined {
   return walkJsonValue(value, true) as T | undefined
 }
 
 /**
- * Test the same lossless JSON boundary as {@link snapshotJsonValue} without
- * detaching it. Only own enumerable string properties participate; `toJSON`
- * is ignored and getters run, so persistence boundaries use the snapshotter.
- * @param value - the candidate event data to test.
- * @returns whether `value` survives JSON round-trip losslessly.
+ * Test the same lossless JSON rules as {@link snapshotJsonValue} without detaching the value.
+ * @param value - candidate value to test.
+ * @returns whether the value survives a JSON round trip without loss.
  */
 export function isJsonValue(value: unknown): boolean {
   return walkJsonValue(value, false) === true
+}
+
+/**
+ * Compare JSON-compatible values structurally.
+ * @param a - one JSON-compatible value.
+ * @param b - the other JSON-compatible value.
+ * @returns whether both values contain the same JSON data.
+ */
+export function deepEqualJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false
+    return a.every((entry, index) => deepEqualJson(entry, b[index]))
+  }
+  const left = a as Record<string, unknown>
+  const right = b as Record<string, unknown>
+  const keys = Object.keys(left)
+  if (keys.length !== Object.keys(right).length) return false
+  return keys.every(key => key in right && deepEqualJson(left[key], right[key]))
+}
+
+/**
+ * Deep-freeze an object graph in place while leaving live AbortSignal objects mutable.
+ * @param value - value to freeze.
+ * @returns the same value after every reachable enumerable child is frozen.
+ */
+export function deepFreeze<T>(value: T): T {
+  const seen = new WeakSet<object>()
+  const pending: (
+    | { kind: 'visit'; node: unknown }
+    | { kind: 'property'; source: Record<string, unknown>; key: string }
+  )[] = [{ kind: 'visit', node: value }]
+  while (pending.length > 0) {
+    const task = pending.pop()
+    /* v8 ignore next -- the loop condition guarantees one pending task. */
+    if (task === undefined) continue
+    if (task.kind === 'property') {
+      pending.push({ kind: 'visit', node: task.source[task.key] })
+      continue
+    }
+    const node = task.node
+    if (node === null || typeof node !== 'object') continue
+    if (node instanceof AbortSignal) continue
+    if (seen.has(node)) continue
+    seen.add(node)
+    Object.freeze(node)
+    const keys = Object.keys(node)
+    for (let index = keys.length - 1; index >= 0; index--) {
+      const key = keys[index]
+      /* v8 ignore next -- the loop is bounded by the captured key count. */
+      if (key === undefined) continue
+      pending.push({ kind: 'property', source: node as Record<string, unknown>, key })
+    }
+  }
+  return value
 }

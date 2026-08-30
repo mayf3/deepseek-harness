@@ -1,4 +1,4 @@
-import type { Branded } from '@deepseek-ai/dsh-brand'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type {
   AssistantMessage,
   ToolCallId,
@@ -11,12 +11,7 @@ import type {
   ToolSchema,
   UserMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { JsonValue } from './json.ts'
-
-// The lossless-JSON payload type belongs to this client-safe face too: a wire
-// contract carrying JSON data must not import the root entry, which merges
-// `ctx.sessions` (a Host-only SessionStore) into every consumer's program.
-export type { JsonValue } from './json.ts'
+import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 
 /** Identifies one session in the store (and its persistence artifacts). */
 export type SessionId = Branded<'SessionId'>
@@ -24,10 +19,10 @@ export type SessionId = Branded<'SessionId'>
 /**
  * Brand a string as a {@link SessionId}.
  * @param id - the raw session id string.
- * @returns the same string, branded (a compile-time cast — no runtime cost).
+ * @returns the same string with the session-id brand.
  */
 export function SessionId(id: string): SessionId {
-  return id as SessionId
+  return brandString<SessionId>(id)
 }
 
 /**

@@ -33,7 +33,8 @@ import type { AgentPresetDocument, AgentPresetRoster } from './types.ts'
 import type {} from '@deepseek-ai/dsh-session-projection'
 // Type-only: resolves the registry notification emitted after scope reparenting.
 import type {} from '@deepseek-ai/dsh-tools'
-import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
+import type SettingsService from '@deepseek-ai/dsh-settings'
+import type { SettingsScope } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
 import { copyComposition, deleteComposition, presetExists, readComposition } from './authoring.ts'
@@ -171,14 +172,14 @@ export class AgentPresets extends TypertRemoteService {
       ...config.roots,
       ...config.includeUserRoot ? [{ path: dshHomePath(USER_PRESET_DIR), trust: 'user' } satisfies PresetRoot] : [],
     ]
-    // Deliberately not `installSettingsSection`: that helper exists to re-judge
+    // Deliberately not `settings.installSection`: that method exists to re-judge
     // what a consumer DERIVED from the source — memoized resolutions,
     // registration-level facts — across attach, detach, and change. Nothing
     // here is derived. `defaultId` reads through on every call, so both of its
     // hooks would be no-ops and the source thunk would restate this field.
     ctx.inject(['settings'], (settingsCtx) => {
       this.settings = settingsCtx.settings.register(
-        settingsNamespace(SETTINGS_NAMESPACE),
+        SETTINGS_NAMESPACE,
         AgentPresetSettingsSchema,
         { base: { default: config.default } },
       )
@@ -521,7 +522,7 @@ export class AgentPresets extends TypertRemoteService {
     // exposes the deployment's own default underneath, which is the layering.
     if (this.settings?.get().default !== id) return
     await this.settingsService?.mutate(
-      settingsNamespace(SETTINGS_NAMESPACE),
+      SETTINGS_NAMESPACE,
       [{ op: 'unset', path: ['default'] }],
     )
   }
