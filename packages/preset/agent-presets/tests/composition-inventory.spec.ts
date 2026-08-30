@@ -177,17 +177,24 @@ describe('mountedCompositionRows', () => {
     })
     await ctx.loader.create({ name: 'cordis:active', group: true })
 
-    expect(mountedCompositionRows(ctx.loader)).toEqual([
-      { entryId: activeId, moduleName: 'cordis:active', enabled: true, fiberState: FiberState.ACTIVE },
-      { entryId: disabledId, moduleName: 'cordis:active', enabled: false },
-      {
-        entryId: evaluatedId,
-        moduleName: 'cordis:active',
-        enabled: true,
-        condition: 'false',
-        fiberState: FiberState.ACTIVE,
-      },
-    ])
+    // Keyed rather than ordered: rows follow `loader.entries()`, whose plain
+    // object store reorders an auto-generated all-digit id ahead of its
+    // siblings by integer-key semantics — ordering is the store's contract,
+    // not this projection's.
+    const rows = mountedCompositionRows(ctx.loader)
+    const byId = new Map(rows.map(row => [row.entryId, row]))
+    expect(rows).toHaveLength(3)
+    expect(byId.get(activeId)).toEqual(
+      { entryId: activeId, moduleName: 'cordis:active', enabled: true, fiberState: FiberState.ACTIVE })
+    expect(byId.get(disabledId)).toEqual(
+      { entryId: disabledId, moduleName: 'cordis:active', enabled: false })
+    expect(byId.get(evaluatedId)).toEqual({
+      entryId: evaluatedId,
+      moduleName: 'cordis:active',
+      enabled: true,
+      condition: 'false',
+      fiberState: FiberState.ACTIVE,
+    })
   })
 })
 
