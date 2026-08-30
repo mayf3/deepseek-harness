@@ -431,6 +431,30 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     return publication
   }
 
+  private createContext(
+    definition: ConversationNodeDefinition,
+    id: string,
+    key: string,
+  ): InternalContext {
+    const context: InternalContext = {
+      key,
+      kind: definition.kind,
+      id,
+      definition,
+      startSeq: undefined,
+      start: undefined,
+      matches: [],
+      state: undefined,
+      revision: 0,
+      current: new Map(),
+      locationData: emptyLocationData(),
+      dependencies: new Map(),
+    }
+    this.contexts.set(key, context)
+    this.indexTargetContext(context)
+    return context
+  }
+
   private acceptMatch(
     definition: ConversationNodeDefinition,
     id: string,
@@ -442,24 +466,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     if (role === 'start' && context?.start !== undefined) {
       throw new Error(`conversation Context ${key} received more than one start Match`)
     }
-    if (context === undefined) {
-      context = {
-        key,
-        kind: definition.kind,
-        id,
-        definition,
-        startSeq: undefined,
-        start: undefined,
-        matches: [],
-        state: undefined,
-        revision: 0,
-        current: new Map(),
-        locationData: emptyLocationData(),
-        dependencies: new Map(),
-      }
-      this.contexts.set(key, context)
-      this.indexTargetContext(context)
-    }
+    context ??= this.createContext(definition, id, key)
     const match = conversationMatch(
       key,
       input,
@@ -504,24 +511,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       const first = entries[0]
       if (first === undefined) continue
       let context = this.contexts.get(key)
-      if (context === undefined) {
-        context = {
-          key,
-          kind: first.definition.kind,
-          id: first.id,
-          definition: first.definition,
-          startSeq: undefined,
-          start: undefined,
-          matches: [],
-          state: undefined,
-          revision: 0,
-          current: new Map(),
-          locationData: emptyLocationData(),
-          dependencies: new Map(),
-        }
-        this.contexts.set(key, context)
-        this.indexTargetContext(context)
-      }
+      context ??= this.createContext(first.definition, first.id, key)
       let discoveredStart: ConversationStartMatch | undefined
       const additions = entries
         .map((entry) => {
