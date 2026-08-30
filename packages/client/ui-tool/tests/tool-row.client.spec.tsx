@@ -264,7 +264,7 @@ describe('ToolRow', () => {
       ([value, replacer, space]) => typeof value === 'object'
         && value !== null
         && 'a' in value
-        && value.a === 1
+        && (value as { a?: unknown }).a === 1
         && replacer === null
         && space === 2,
     ).length
