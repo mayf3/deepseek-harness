@@ -7,10 +7,11 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { Button, IconChevronDownOutline14, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import type { ChatSnapshot, TurnNavigationItem } from '../contract/snapshot.ts'
+import type { ChatSnapshot } from '../contract/snapshot.ts'
 import { PendingSteeringBubble, PendingSubmissionBubble } from './MessageItem.tsx'
 import { ChatNodeSeat } from './ChatNodeSeat.tsx'
 import { TurnNavigator } from './TurnNavigator.tsx'
+import { mergeTurnRailItems, type TurnRailItem } from './turn-rail-items.ts'
 import { formatRunDuration } from './message-chrome.ts'
 import css from './ChatView.module.css'
 
@@ -202,8 +203,8 @@ function TurnStatus({ startTime, t }: {
  * ordered business Node crosses the keyed renderer seat.
  */
 export function ChatView({
-  useSession, useChat, useSessions, useStore, actions, renderSlot, sessionId, openFile, loadOlder, loadImage, openView, chatScroll, forkAt,
-  fileMentions, useTranscriptView, t,
+  useSession, useChat, useSessions, useStore, actions, renderSlot, sessionId, openFile, loadOlder, loadThrough,
+  loadImage, openView, chatScroll, forkAt, fileMentions, useTranscriptView, useProjection, t,
 }: ChatViewSlotProps) {
   const order = useChat(s => s.order)
   const nodeStore = useChat(s => s.nodes)
@@ -211,6 +212,13 @@ export function ChatView({
   // both the data and its change signal: the array identity moves only when a
   // Turn enters, leaves, or changes its preview.
   const turnNavigationItems = useChat(s => s.navigation.items())
+  // Host-computed whole-log outline; the merge is view-layer only (the
+  // conversation snapshot never carries projection values).
+  const turnOutline = useProjection('turnOutline')
+  const railItems = useMemo(
+    () => mergeTurnRailItems(turnNavigationItems, turnOutline),
+    [turnNavigationItems, turnOutline],
+  )
   const timeline = useChat(s => s.timeline)
   const inbox = useSession(s => s.queue)
   // Workspace root off the session list row: path summaries display relative to it.
@@ -295,6 +303,13 @@ export function ChatView({
   /** Paging anchor: semantic row/position at click, updated by reader scrolls
    * while the request is pending and restored after the prepend lands. */
   const anchorRef = useRef<PagingAnchor | null>(null)
+  /** Unloaded-turn jump in flight: target turn plus its load-through seq. */
+  const pendingJumpRef = useRef<{ turn: number; seq: number } | null>(null)
+  const [busyJumpTurn, setBusyJumpTurn] = useState<number | null>(null)
+  /** Bumped when a loadThrough completion settles, after its last page's commit. */
+  const [jumpSettleTick, setJumpSettleTick] = useState(0)
+  /** Window head at the last settle-time repage; an unmoved head falls back instead of repaging forever. */
+  const jumpRepageHeadRef = useRef<number | null>(null)
   const firstSeqRef = useRef<number | null>(null)
   const openedRef = useRef(false)
   const lastKeyRef = useRef<string | null>(null)
@@ -369,12 +384,47 @@ export function ChatView({
 
   const toBottom = (el: HTMLElement): void => {
     anchorRef.current = null
+    // Returning to the live tail supersedes a jump still landing.
+    pendingJumpRef.current = null
+    setBusyJumpTurn(current => current === null ? current : null)
     el.scrollTop = el.scrollHeight
     observedTopRef.current = el.scrollTop
     atBottomRef.current = true
     setAtBottom(true)
     chatScroll.save(null)
     setActiveTurn(turnNavigationItems.at(-1)?.turn ?? null)
+  }
+
+  // Land a row at the reading line and republish scroll-derived state. A
+  // latest-ref, so navigateToTurn's identity stays stable for the memoized rail.
+  const landOnRowRef = useRef<(local: HTMLElement, el: HTMLElement, row: HTMLElement, turn: number) => void>(
+    () => {},
+  )
+  landOnRowRef.current = (local, el, row, turn) => {
+    el.scrollTop += flowTop(row, el) - 24
+    observedTopRef.current = el.scrollTop
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
+    atBottomRef.current = isAtBottom
+    setAtBottom(isAtBottom)
+    setActiveTurn(turn)
+    const position = isAtBottom ? null : scrollPosition(local, el)
+    if (isAtBottom) chatScroll.save(null)
+    else if (position !== null) chatScroll.save(position)
+  }
+
+  /** Land the pending jump once its Turn has a rendered anchor row; false while it must keep waiting. */
+  const realizePendingJump = (local: HTMLElement, el: HTMLElement): boolean => {
+    const pending = pendingJumpRef.current
+    if (pending === null) return true
+    const item = railItems.find(candidate => candidate.turn === pending.turn)
+    if (item === undefined || item.anchor.kind !== 'loaded') return false
+    const row = anchorElement(local, item.anchor.key)
+    if (row === null) return false
+    pendingJumpRef.current = null
+    setBusyJumpTurn(null)
+    anchorRef.current = null
+    landOnRowRef.current(local, el, row, pending.turn)
+    return true
   }
 
   useLayoutEffect(() => {
@@ -418,6 +468,11 @@ export function ChatView({
       const row = anchorElement(local, anchor.key)
       if (row !== null) el.scrollTop += flowTop(row, el) - anchor.top
       observedTopRef.current = el.scrollTop
+      // A jump chunk lands here: scroll to the target once its rows exist;
+      // until then keep holding the reader's row for the next chunk.
+      if (!realizePendingJump(local, el) && row !== null) {
+        anchorRef.current = { key: anchor.key, top: flowTop(row, el) }
+      }
       firstSeqRef.current = firstSeq
       /* v8 ignore next -- ?? arm: a prepend adds nodes, so the flow list here is never empty. */
       lastKeyRef.current = lastKey
@@ -439,7 +494,13 @@ export function ChatView({
     followSigRef.current = followSig
     // Follow new flow content while pinned; do NOT re-pin on every render
     // merely because atBottomRef is true (scroll threshold → setState → snap).
-    if (appendedUser || appendedSteering || appendedSubmission || (tipMoved && atBottomRef.current)) toBottom(el)
+    if (appendedUser || appendedSteering || appendedSubmission || (tipMoved && atBottomRef.current)) {
+      toBottom(el)
+      return
+    }
+    // A jump whose target committed outside the anchored-prepend path (for
+    // example after a mid-jump toBottom dropped the held anchor) lands here.
+    if (pendingJumpRef.current !== null) realizePendingJump(local, el)
   })
 
   const onScrollRef = useRef(() => {})
@@ -533,6 +594,38 @@ export function ChatView({
     if (!loadingOlder) anchorRef.current = null
   }, [loadingOlder])
 
+  // Jump settlement: every loadThrough completion bumps the tick after its
+  // last page's commit. A still-pending jump is either realized now, repaged
+  // once per head movement (its own paging can be refused while a plain pull
+  // holds the busy flag), or landed on the nearest rendered Turn at or after
+  // the target (failure, exhausted history, or a Turn with no visible row).
+  useEffect(() => {
+    const pending = pendingJumpRef.current
+    const local = listRef.current
+    if (pending === null || local === null) return
+    const el = scrollerOf(local)
+    if (realizePendingJump(local, el)) return
+    const uncovered = firstSeq === null || firstSeq > pending.seq
+    if (uncovered && hasMore && !loadingOlder && jumpRepageHeadRef.current !== firstSeq) {
+      jumpRepageHeadRef.current = firstSeq
+      const held = pagingAnchor(local, el)
+      if (held !== null && held.dataset.chatAnchorKey !== undefined) {
+        anchorRef.current = { key: held.dataset.chatAnchorKey, top: flowTop(held, el) }
+      }
+      void loadThrough(pending.seq).finally(() => { setJumpSettleTick(tick => tick + 1) })
+      return
+    }
+    for (const row of local.querySelectorAll<HTMLElement>('[data-chat-turn]:not([hidden])')) {
+      const turn = Number(row.dataset.chatTurn)
+      if (!Number.isSafeInteger(turn) || turn < pending.turn) continue
+      landOnRowRef.current(local, el, row, turn)
+      break
+    }
+    pendingJumpRef.current = null
+    setBusyJumpTurn(null)
+    // Snapshot values are read at settle time; the completion tick is the trigger.
+  }, [jumpSettleTick])
+
   const loadOlderAnchored = (): void => {
     const local = listRef.current
     /* v8 ignore next -- ref-null guard: the paging button renders inside the list tree. */
@@ -550,35 +643,44 @@ export function ChatView({
   }
 
   // Identity feeds the memoized rail; a fresh closure per render would defeat it.
-  const navigateToTurn = useCallback((item: TurnNavigationItem): void => {
+  const navigateToTurn = useCallback((item: TurnRailItem): void => {
     const local = listRef.current
     if (local === null) return
-    const row = anchorElement(local, item.anchorKey)
-    if (row === null) return
     const el = scrollerOf(local)
-    el.scrollTop += flowTop(row, el) - 24
-    observedTopRef.current = el.scrollTop
+    if (item.anchor.kind === 'unloaded') {
+      // Hold the reader's place through the paging chunks; the layout effect
+      // lands on the target once its rows commit.
+      const held = pagingAnchor(local, el)
+      if (held !== null && held.dataset.chatAnchorKey !== undefined) {
+        anchorRef.current = { key: held.dataset.chatAnchorKey, top: flowTop(held, el) }
+      }
+      pendingJumpRef.current = { turn: item.turn, seq: item.anchor.seq }
+      jumpRepageHeadRef.current = null
+      setBusyJumpTurn(item.turn)
+      void loadThrough(item.anchor.seq).finally(() => { setJumpSettleTick(tick => tick + 1) })
+      return
+    }
+    const row = anchorElement(local, item.anchor.key)
+    if (row === null) return
+    // A loaded-mark click supersedes any jump still landing.
+    pendingJumpRef.current = null
+    setBusyJumpTurn(current => current === null ? current : null)
+    landOnRowRef.current(local, el, row, item.turn)
     // A pending older page still has to compensate the prepended height, so
     // navigation moves that anchor to the new position instead of dropping it.
     const landed = loadingOlder ? pagingAnchor(local, el) : null
     anchorRef.current = landed === null || landed.dataset.chatAnchorKey === undefined
       ? null
       : { key: landed.dataset.chatAnchorKey, top: flowTop(landed, el) }
-    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= FOLLOW_THRESHOLD + 1
-    atBottomRef.current = isAtBottom
-    setAtBottom(isAtBottom)
-    setActiveTurn(item.turn)
-    const position = isAtBottom ? null : scrollPosition(local, el)
-    if (isAtBottom) chatScroll.save(null)
-    else if (position !== null) chatScroll.save(position)
-  }, [loadingOlder, chatScroll])
+  }, [loadingOlder, loadThrough])
 
   return (
     <div className={css.root}>
       <div ref={listRef} className={css.scroll}>
         <TurnNavigator
-          items={turnNavigationItems}
+          items={railItems}
           activeTurn={activeTurn}
+          busyTurn={busyJumpTurn}
           onNavigate={navigateToTurn}
           t={t}
         />

@@ -222,6 +222,9 @@ function makeHarness(
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
+  const loadThrough = vi.fn<(seq: number) => Promise<void>>().mockResolvedValue(undefined)
+  // Mutable outline holder: tests swap the value and drive a re-render via set().
+  let outlineValue: unknown
   const openView = vi.fn<(view: string, focus: string) => void>()
   // In-memory scroll memory matching the apply.ts per-session map contract.
   let savedScroll: ReturnType<ChatViewSlotProps['chatScroll']['read']> = null
@@ -348,7 +351,7 @@ function makeHarness(
       createSnapshotStore<SessionPendingInteractionSnapshot>(new Map()),
     ),
     useWorkspaces: emptyWorkspaces(),
-    useProjection: (() => undefined),
+    useProjection: () => outlineValue,
     useInput: (() => { throw new Error('unused') }),
     inputActions: {
       setDraft: () => {},
@@ -368,6 +371,7 @@ function makeHarness(
     openDetails,
     openFile,
     loadOlder,
+    loadThrough,
     loadImage: vi.fn(() => Promise.reject(new Error('not used'))),
     chatScroll,
     forkAt,
@@ -396,7 +400,8 @@ function makeHarness(
   const setSelection = (next: SelectionTarget | null): void => { chat.actions.select(next) }
   return {
     set, setSession: session.set, setChat: chatSource.set, ChatView, props,
-    openDetails, openFile, loadOlder, openView,
+    openDetails, openFile, loadOlder, loadThrough, openView,
+    setOutline: (value: unknown) => { outlineValue = value },
     chatScroll, forkAt, setSelection, toolOwners,
     setTranscriptView: (mode: TranscriptViewMode) => { transcriptView.set(mode) },
     setNodeRenderer: (renderer: React.ComponentProps<typeof ChatNodeSeat>['renderSlot']) => {
@@ -595,6 +600,66 @@ describe('ChatView', () => {
     expect(movedSecond.parentElement).toBe(secondPosition)
     expect(secondPosition.style.getPropertyValue('--turn-natural-position')).toBe('10px')
     expect(secondPosition.style.getPropertyValue('--turn-position')).toBe('50%')
+  })
+
+  it('extends the rail with unloaded outline turns, pages on click, and falls back when nothing lands', async () => {
+    const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
+    const h = makeHarness({ nodes: later }, { hasMore: true })
+    h.setOutline({
+      turns: [
+        { turn: 1, seq: 0, prompt: 'first prompt from outline' },
+        { turn: 2, seq: 4, prompt: 'second prompt from outline' },
+        { turn: 3, seq: 8, prompt: 'third prompt' },
+      ],
+    })
+    const view = render(<h.ChatView {...h.props} />)
+    const first = view.getByRole('button', { name: '加载并跳转到第 1 轮' })
+    view.getByRole('button', { name: '加载并跳转到第 2 轮' })
+    const third = view.getByRole('button', { name: '跳转到第 3 轮' })
+    expect(third.getAttribute('aria-current')).toBe('true')
+    fireEvent.focus(first)
+    expect(view.getByRole('tooltip').textContent).toContain('first prompt from outline')
+
+    fireEvent.click(first)
+    expect(h.loadThrough).toHaveBeenCalledWith(0)
+    expect(first.getAttribute('aria-busy')).toBe('true')
+
+    // The fake loader never delivers rows: settlement repages once for the
+    // unmoved head, then lands on the nearest rendered turn and un-busies.
+    await act(async () => {})
+    expect(h.loadThrough.mock.calls).toEqual([[0], [0]])
+    expect(first.getAttribute('aria-busy')).toBeNull()
+    expect(view.getByRole('button', { name: '跳转到第 3 轮' }).getAttribute('aria-current')).toBe('true')
+  })
+
+  it('lands a jump on its turn once the paged rows commit', async () => {
+    const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
+    const h = makeHarness({ nodes: later }, { hasMore: true })
+    h.setOutline({
+      turns: [
+        { turn: 1, seq: 0, prompt: 'first prompt' },
+        { turn: 3, seq: 8, prompt: 'third prompt' },
+      ],
+    })
+    let releaseJump: (() => void) | undefined
+    h.loadThrough.mockImplementation(() => new Promise<void>((resolve) => { releaseJump = resolve }))
+    const view = render(<h.ChatView {...h.props} />)
+
+    fireEvent.click(view.getByRole('button', { name: '加载并跳转到第 1 轮' }))
+    expect(h.loadThrough).toHaveBeenCalledWith(0)
+
+    // The paged window commits: turn 1's rows and rail item enter the snapshot.
+    act(() => {
+      h.setChat({
+        nodes: [userInTurn(0, 'first prompt', 1), assistant(1, 'first response', 1), ...later],
+        turnTimings: new Map([[1, { startTime: 1_000 }], [3, { startTime: 8_000 }]]),
+      })
+    })
+    const first = view.getByRole('button', { name: '跳转到第 1 轮' })
+    expect(first.getAttribute('aria-current')).toBe('true')
+    expect(first.getAttribute('aria-busy')).toBeNull()
+    await act(async () => { releaseJump?.() })
+    expect(first.getAttribute('aria-current')).toBe('true')
   })
 
   it('hands a windowless tool result to the Tool seat with an empty tool name', () => {

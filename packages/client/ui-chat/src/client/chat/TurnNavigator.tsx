@@ -2,13 +2,15 @@ import {
   memo, useId, useState, type CSSProperties, type MouseEvent, type PointerEvent,
 } from 'react'
 import type { ChatViewSlotProps } from '../contract/slots.ts'
-import type { TurnNavigationItem } from '../contract/snapshot.ts'
+import type { TurnRailItem } from './turn-rail-items.ts'
 import css from './TurnNavigator.module.css'
 
 interface TurnNavigatorProps {
-  readonly items: readonly TurnNavigationItem[]
+  readonly items: readonly TurnRailItem[]
   readonly activeTurn: number | null
-  readonly onNavigate: (item: TurnNavigationItem) => void
+  /** Turn whose jump is still paging history in; its mark pulses. */
+  readonly busyTurn: number | null
+  readonly onNavigate: (item: TurnRailItem) => void
   readonly t: ChatViewSlotProps['t']
 }
 
@@ -43,17 +45,17 @@ function railSize(count: number): TurnRailStyle {
 }
 
 function itemAtPointer(
-  items: readonly TurnNavigationItem[],
+  items: readonly TurnRailItem[],
   rail: HTMLElement,
   clientY: number,
-): TurnNavigationItem | undefined {
+): TurnRailItem | undefined {
   const rect = rail.getBoundingClientRect()
   const usableHeight = Math.max(1, rect.height - 2 * RAIL_INSET_PX)
   const ratio = Math.max(0, Math.min(1, (clientY - rect.top - RAIL_INSET_PX) / usableHeight))
   return items[Math.round(ratio * (items.length - 1))]
 }
 
-function TurnNavigatorRail({ items, activeTurn, onNavigate, t }: TurnNavigatorProps) {
+function TurnNavigatorRail({ items, activeTurn, busyTurn, onNavigate, t }: TurnNavigatorProps) {
   const [previewTurn, setPreviewTurn] = useState<number | null>(null)
   const previewId = useId()
   if (items.length < 2) return null
@@ -81,16 +83,22 @@ function TurnNavigatorRail({ items, activeTurn, onNavigate, t }: TurnNavigatorPr
           {items.map((item, index) => {
             const active = item.turn === activeTurn
             const showingPreview = item.turn === previewTurn
-            const markClass = active
-              ? `${css.mark} ${css.markActive}`
-              : showingPreview ? `${css.mark} ${css.markPreview}` : css.mark
+            const classes = [css.mark]
+            if (item.anchor.kind === 'unloaded') classes.push(css.markUnloaded)
+            if (active) classes.push(css.markActive)
+            else if (showingPreview) classes.push(css.markPreview)
+            if (item.turn === busyTurn) classes.push(css.markBusy)
             return (
               <div key={item.turn} className={css.markPosition} style={itemPosition(index, items.length)}>
                 <button
                   type="button"
-                  className={markClass}
-                  aria-label={t('chat.turnNavigation.jump', { turn: item.turn })}
+                  className={classes.join(' ')}
+                  aria-label={t(
+                    item.anchor.kind === 'loaded' ? 'chat.turnNavigation.jump' : 'chat.turnNavigation.jumpLoad',
+                    { turn: item.turn },
+                  )}
                   aria-current={active ? 'true' : undefined}
+                  aria-busy={item.turn === busyTurn ? 'true' : undefined}
                   aria-describedby={showingPreview ? previewId : undefined}
                   onClick={(event) => {
                     event.stopPropagation()
@@ -117,9 +125,10 @@ function TurnNavigatorRail({ items, activeTurn, onNavigate, t }: TurnNavigatorPr
 }
 
 /**
- * Compact rail of the currently loaded Turns with hover and focus previews.
+ * Compact rail of every known Turn — loaded marks scroll, unloaded marks page
+ * history in first — with hover and focus previews.
  *
- * Memoized because it renders two host elements per loaded Turn while the
+ * Memoized because it renders two host elements per Turn while the
  * enclosing view re-renders on every streaming delta: without the guard a long
  * session rebuilds hundreds of marks per commit for a rail that only changes
  * when a Turn is added, removed, or becomes active. Its props must therefore

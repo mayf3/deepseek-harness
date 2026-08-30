@@ -83,9 +83,19 @@
   transition: width 140ms ease, background-color 140ms ease;
 }
 
+/* Ordered before hover/active so those states keep their stronger tick. */
+.markUnloaded::before {
+  width: 8px;
+  opacity: 0.6;
+}
+
 .markPreview::before {
   width: 18px;
   background: var(--dsw-alias-label-tertiary);
+}
+
+.markBusy::before {
+  animation: dsh-turn-mark-busy 1s ease-in-out infinite;
 }
 
 .markActive::before {
@@ -163,6 +173,12 @@
   to { opacity: 1; transform: translateX(0); }
 }
 
+@keyframes dsh-turn-mark-busy {
+  0%,
+  100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
 @container (max-width: 900px) {
   .slot {
     display: none;
@@ -173,6 +189,7 @@
   .rail,
   .markPosition,
   .mark::before,
+  .markBusy::before,
   .preview {
     transition: none;
     animation: none;
