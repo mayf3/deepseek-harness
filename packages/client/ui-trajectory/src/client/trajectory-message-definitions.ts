@@ -21,33 +21,97 @@ interface InboxSplice {
   readonly outcome?: 'canceled'
 }
 
+interface PendingSnapshot {
+  readonly kind: 'snapshot'
+  readonly ids: readonly string[]
+}
+
+interface PendingSplice {
+  readonly kind: 'splice'
+  readonly previous: PendingState
+  readonly start: number
+  readonly removedCount: number
+  readonly inserted: readonly string[]
+}
+
+type PendingState = PendingSnapshot | PendingSplice
+
 interface InboxState {
-  readonly pending: readonly InboxIdentity[]
+  /** Persistent splice chain materialized only when a next-step batch is claimed. */
+  readonly pending: PendingState
+  /** Message ids in the current claimed batch, shared until the next claim. */
   readonly claimed: ReadonlySet<string>
 }
 
 type MessageNode = UserMessageNode | SteeringMessageNode | ContextMessageNode
 
+const EMPTY_PENDING: PendingState = { kind: 'snapshot', ids: [] }
+const EMPTY_CLAIMED: ReadonlySet<string> = new Set()
+
+function materializePending(state: PendingState): string[] {
+  const splices: PendingSplice[] = []
+  let current = state
+  while (current.kind === 'splice') {
+    splices.push(current)
+    current = current.previous
+  }
+  const pending = [...current.ids]
+  for (let index = splices.length - 1; index >= 0; index--) {
+    const splice = splices[index] as PendingSplice
+    pending.splice(splice.start, splice.removedCount, ...splice.inserted)
+  }
+  return pending
+}
+
+function withoutInserted(
+  claimed: ReadonlySet<string>,
+  inserted: readonly string[],
+): ReadonlySet<string> {
+  let next: Set<string> | undefined
+  for (const id of inserted) {
+    if (!claimed.has(id)) continue
+    next ??= new Set(claimed)
+    next.delete(id)
+  }
+  return next ?? claimed
+}
+
 function applySplice(
   previous: ConversationPreviousContext<InboxState> | undefined,
   splice: InboxSplice,
 ): InboxState {
-  const pending = [...(previous?.state.pending ?? [])]
-  const claimed = new Set(previous?.state.claimed ?? [])
-  const removed = pending.splice(splice.start, splice.removedCount ?? 0, ...splice.inserted)
-  for (const identity of splice.inserted) claimed.delete(identity.id)
-  if (splice.outcome !== 'canceled') {
-    for (const identity of removed) claimed.add(identity.id)
+  const priorPending = previous?.state.pending ?? EMPTY_PENDING
+  const inserted = splice.inserted.map(identity => identity.id)
+  const removedCount = splice.removedCount ?? 0
+  const priorClaimed = withoutInserted(previous?.state.claimed ?? EMPTY_CLAIMED, inserted)
+  if (removedCount > 0 && splice.outcome !== 'canceled') {
+    const pending = materializePending(priorPending)
+    const removed = pending.splice(splice.start, removedCount, ...inserted)
+    return {
+      pending: { kind: 'snapshot', ids: pending },
+      claimed: new Set(removed),
+    }
   }
-  return { pending, claimed }
+  return {
+    pending: {
+      kind: 'splice',
+      previous: priorPending,
+      start: splice.start,
+      removedCount,
+      inserted,
+    },
+    claimed: priorClaimed,
+  }
 }
 
 const trajectoryInboxDefinition: ConversationNodeDefinition<InboxState> = {
   kind: 'trajectory-inbox-next-step',
-  match: event => event.type === 'agent/inbox/spliced'
-    && event.data.target === 'next-step'
-    ? { id: String(event.seq), role: 'start' }
-    : null,
+  match: (event) => {
+    if (event.type === 'agent/inbox/spliced' && event.data.target === 'next-step') {
+      return { id: String(event.seq), role: 'start' }
+    }
+    return null
+  },
   start: (_context, match, reader) => {
     if (match.event.type !== 'agent/inbox/spliced') {
       throw new Error('trajectory-inbox-next-step start requires agent/inbox/spliced')

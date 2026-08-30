@@ -18,6 +18,8 @@ Client Runtime 提供 target-neutral 的 Conversation Node 组装引擎，业务
 
 本 Note 保留实现后仍有价值的方案推导、逐业务适配、职责、算法和取舍。
 
+Chat 只注册 `next-step` Inbox Definition，因为消息分类是其唯一消费方；`next-turn` splice 仍是持久 Session input，但不会创建 Chat Context。Chat 与 Trajectory 各自维护 target 专属 next-step state。每次插入只把消息 ID 写入不可变 splice 节点。成功 claim 时只 materialize 一次 pending 链，以当前批次替换上一个 claimed Set，并让后续 Context 共享该 Set，直到下一次 claim。历史 Context 因而只保留线性 ID state，不再保留累计数组和 Set 快照。
+
 ### 责任分层
 
 | 层 | 长期职责 | 明确不负责 |
@@ -257,8 +259,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 
 | 业务 / `kind` | 稳定 ID | start Match | update Matches | State 与跨 Context 读取 |
 |---|---|---|---|---|
-| Next-turn Inbox / `inbox-next-turn` | splice Event seq | 每条目标为 next-turn 的 `agent/inbox/spliced` | 无 | 从 `reader.previous(ownKind)` 的 pending/claimed 瞬间态应用当前 splice |
-| Next-step Inbox / `inbox-next-step` | splice Event seq | 每条目标为 next-step 的 `agent/inbox/spliced` | 无 | 同样形成逐指令瞬间态，claimed 集合供 Message 读取 |
+| Next-step Inbox / `inbox-next-step` | splice Event seq | 每条目标为 next-step 的 `agent/inbox/spliced` | 无 | 把消息 ID 追加到持久 splice state；每次 claim 只 materialize 一次，并向 Message 暴露共享的当前 claimed batch |
 | Message / `input-message` | message ID | append-surface `user/message` | 无 | 根据 source 生成 context message，或读取最近 next-step Inbox 判断 user/steering |
 | Request Prompt / `request-prompt` | header Event seq | 每条 `request/header` | 无 | 通过 Reader 读取前一条 Request Prompt，保留完整 prompt 状态，并判定 system/tool 变化 |
 | Assistant / `assistant-step` | `turn:step` | `step/start` | scalar 或 packed `assistant/chunk`、final `assistant/message`、同 step Retry | 聚合 blocks、usage、首 token 时间、final 和 retry 隐藏状态，并发布同 key Step data |
@@ -275,7 +276,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 
 | 业务 | `publication()` | Chat 产物 | 历史分页与运行时行为 |
 |---|---|---|---|
-| Inbox | `none` | 不生成 Node | prepend 补前序 splice 时沿 Reader 链重算瞬间态 |
+| Inbox | `none` | 不生成 Node | prepend 补前序 splice 时沿 Reader 链重算 next-step ID state；next-turn 不创建 Chat Context |
 | Message | 默认 immediate | `user`、`steering` 或 `context` | window gap 修复可让同一 message key 重新分类 |
 | Request Prompt | 默认 immediate | 每条带非空 system 字段的 header 都生成一个 `system-prompt` | Step 首条 header 锚定在请求消息之前；同 step 后续序列锚定在表层改写之后；prepend 补入前序 header 后可纠正部分窗口的锚点 |
 | Assistant | scalar chunk 与 packed run 为 RAF，final immediate，纯 usage/finish 为 none | 同 key `assistant-step`，状态为 running/settled/interrupted | scalar 与 packed reducer 等价；缺 `step/start` 可先用 Matches fallback；Location close 生成中断表现 |
@@ -288,7 +289,7 @@ Chat `order` 的结构性变化仍可能重排当前可见 key；纯 data 更新
 | Deliverables | 默认 immediate | 不生成 Node | Tool 结算增量更新所属 Turn data，Turn Tail 扩展槽读取 produced files |
 | Fallback | 默认 immediate | `unknown` JSON row | 只兜底 append surface，普通业务已认领但暂不可见时不会重复生成 |
 
-Inbox 展示了“每条 Event 都是一个 start-only 瞬间态 Context”，不是所有业务都需要 start/update 配对。它通过 Reader 与前一个同 kind Context 形成连续 fold，而非给整个 Inbox 人工制造生命周期 ID。
+Inbox 展示了“每条 Event 都是一个 start-only 瞬间态 Context”，不是所有业务都需要 start/update 配对。每个 next-step state 通过 Reader 与前一个同 kind Context 形成连续 fold，而非给整个 Inbox 人工制造生命周期 ID。state 自身共享不可变 pending splice 节点和一个当前 claimed-batch Set；未消费的 next-turn input 不进入 Conversation，因为 Chat 与 Trajectory 都不读取它来分类。
 
 Request Prompt 展示了如何在不共享 target State 的前提下共用纯解释逻辑：Chat 与 Trajectory 各自在自己的 Definition 中调用 `inspectRequestPrompt()`。该函数规范化完整 header，并判定面向模型的 system/tool 差异；随后每个 target 自行选择产物。Chat 会物化每条带非空 system 字段的 header，包括为显式声明的序列或表层替换后的请求重复未变 header 的 `series` 快照；Trajectory 则保留完整请求事实及其变化分类。普通的仅追加后续 Turn 不会再次写入未变 header。一个 Step 中的首条 header 遵循提供方信封，而不是 header Event 位置：step one 使用所属 Turn start，后续 step 使用各自的 Step start，把 system 字段放到该请求的 user-role 消息之前；同一 Step 的后续 header 保留在开启新序列的表层改写之后。部分窗口未包含前序 header 时，非 `initial` header 会保留在自身 Event，直到 prepend 补入该前序 header。每条 header 都是完整快照，因此已加载窗口中的首条 `resume`、`change` 或 `series` header 无需凭空构造与未加载历史的比较，也能渲染其 system 字段。
 
@@ -408,6 +409,8 @@ Append 不扫描历史 Context；prepend 只 replay Match、Location 或 Reader 
 State 更新与发布频率分离后，Assistant 的每条 live delta 与每个历史 packed run 都会被 fold，同时每 animation frame 最多 materialize 一次。step/turn close 和 final 可立即发布最新 State。
 
 Step/Turn 是业务间共享聚合的稳定宿主。Turn Tail 和 Deliverables 无需由 renderer 扫描全局 Nodes 即可派生值；Slot-level `useTurnData()` 把常见读取限制到当前 Node 所属 Turn，并通过 selector equality 隔离无关更新。
+
+Inbox Context 的保留量随 splice 数和已 claim 消息数增长，不再随其累计前缀增长。该结构消除了重复 state 增长，但不会对持久 Session event 中的消息正文去重，也不会限制已加载 event window。
 
 代价是 Runtime 新增 Registry、Assembler、Location data、依赖重放和 per-target Builder 契约，UI Slots 也新增 parent-owned common inject 与 per-occurrence `hookContext`。消费 Assistant delta 的 Definition 还需要维护等价的 scalar 与 packed update 分支。Definition 作者必须理解稳定 ID、唯一 scalar start、正序 replay、Step→Turn 发布顺序、只读 Reader 和 Node 不撤回规则。
 

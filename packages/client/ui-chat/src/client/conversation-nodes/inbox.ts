@@ -2,68 +2,125 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationNodeDefinition, ConversationPreviousContext,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import type { InboxTarget } from '@deepseek-ai/dsh-agent/types'
 
 interface InboxIdentity {
   readonly id: string
 }
 
 interface InboxSplice {
-  readonly target: InboxTarget
   readonly start: number
   readonly removedCount?: number
   readonly inserted: readonly InboxIdentity[]
   readonly outcome?: 'canceled'
 }
 
+interface PendingSnapshot {
+  readonly kind: 'snapshot'
+  readonly ids: readonly string[]
+}
+
+interface PendingSplice {
+  readonly kind: 'splice'
+  readonly previous: PendingState
+  readonly start: number
+  readonly removedCount: number
+  readonly inserted: readonly string[]
+}
+
+type PendingState = PendingSnapshot | PendingSplice
+
 /** Cumulative state after one durable inbox splice. */
 export interface InboxState {
-  readonly pending: readonly InboxIdentity[]
+  /** Persistent splice chain materialized only when a next-step batch is claimed. */
+  readonly pending: PendingState
+  /** Message ids in the current claimed batch, shared until the next claim. */
   readonly claimed: ReadonlySet<string>
+}
+
+const EMPTY_PENDING: PendingState = { kind: 'snapshot', ids: [] }
+const EMPTY_CLAIMED: ReadonlySet<string> = new Set()
+
+function materializePending(state: PendingState): string[] {
+  const splices: PendingSplice[] = []
+  let current = state
+  while (current.kind === 'splice') {
+    splices.push(current)
+    current = current.previous
+  }
+  const pending = [...current.ids]
+  for (let index = splices.length - 1; index >= 0; index--) {
+    const splice = splices[index] as PendingSplice
+    pending.splice(splice.start, splice.removedCount, ...splice.inserted)
+  }
+  return pending
+}
+
+function withoutInserted(
+  claimed: ReadonlySet<string>,
+  inserted: readonly string[],
+): ReadonlySet<string> {
+  let next: Set<string> | undefined
+  for (const id of inserted) {
+    if (!claimed.has(id)) continue
+    next ??= new Set(claimed)
+    next.delete(id)
+  }
+  return next ?? claimed
 }
 
 function applySplice(
   previous: ConversationPreviousContext<InboxState> | undefined,
   splice: InboxSplice,
 ): InboxState {
-  const pending = [...(previous?.state.pending ?? [])]
-  const claimed = new Set(previous?.state.claimed ?? [])
-  const removed = pending.splice(splice.start, splice.removedCount ?? 0, ...splice.inserted)
-  for (const identity of splice.inserted) claimed.delete(identity.id)
-  if (splice.target === 'next-step' && splice.outcome !== 'canceled') {
-    for (const identity of removed) claimed.add(identity.id)
+  const priorPending = previous?.state.pending ?? EMPTY_PENDING
+  const inserted = splice.inserted.map(identity => identity.id)
+  const removedCount = splice.removedCount ?? 0
+  const priorClaimed = withoutInserted(previous?.state.claimed ?? EMPTY_CLAIMED, inserted)
+  if (removedCount > 0 && splice.outcome !== 'canceled') {
+    const pending = materializePending(priorPending)
+    const removed = pending.splice(splice.start, removedCount, ...inserted)
+    return {
+      pending: { kind: 'snapshot', ids: pending },
+      claimed: new Set(removed),
+    }
   }
-  return { pending, claimed }
-}
-
-function inboxDefinition(target: InboxTarget): ConversationNodeDefinition<InboxState> {
-  const kind = `inbox-${target}`
   return {
-    kind,
-    match: event => event.type === 'agent/inbox/spliced'
-      && event.data.target === target
-      ? { id: String(event.seq), role: 'start' }
-      : null,
-    start: (_context, match, reader) => {
-      if (match.event.type !== 'agent/inbox/spliced') throw new Error(`${kind} start requires agent/inbox/spliced`)
-      return applySplice(reader.previous<InboxState>(kind), match.event.data)
+    pending: {
+      kind: 'splice',
+      previous: priorPending,
+      start: splice.start,
+      removedCount,
+      inserted,
     },
-    update: context => context.state,
-    publication: () => 'none',
+    claimed: priorClaimed,
   }
 }
 
-/** Cumulative next-turn inbox splice Definition. */
-export const nextTurnInboxDefinition = inboxDefinition('next-turn')
+const NEXT_STEP_INBOX_KIND = 'inbox-next-step'
 
-/** Cumulative next-step inbox splice Definition used to classify steering. */
-export const nextStepInboxDefinition = inboxDefinition('next-step')
+/** Cumulative next-step Inbox state used to classify steering. */
+export const nextStepInboxDefinition: ConversationNodeDefinition<InboxState> = {
+  kind: NEXT_STEP_INBOX_KIND,
+  match: (event) => {
+    if (event.type === 'agent/inbox/spliced' && event.data.target === 'next-step') {
+      return { id: String(event.seq), role: 'start' }
+    }
+    return null
+  },
+  start: (_context, match, reader) => {
+    if (match.event.type !== 'agent/inbox/spliced') {
+      throw new Error('inbox-next-step start requires agent/inbox/spliced')
+    }
+    return applySplice(reader.previous<InboxState>(NEXT_STEP_INBOX_KIND), match.event.data)
+  },
+  update: context => context.state,
+  publication: () => 'none',
+}
 
 /**
- * Register the two durable Inbox-state contributions.
+ * Register the next-step Inbox state used by Chat message classification.
  * @param ctx - owning UI Conversation context.
  */
 export function registerInboxConversationNodes(ctx: Context): void {
-  ctx.uiConversation.events.register(nextTurnInboxDefinition)
   ctx.uiConversation.events.register(nextStepInboxDefinition)
 }
