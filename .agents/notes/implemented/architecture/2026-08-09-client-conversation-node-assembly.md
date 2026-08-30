@@ -18,7 +18,7 @@ Client Runtime provides a target-neutral Conversation Node assembly engine. Busi
 
 This Note retains the derivation, business-by-business validation, responsibilities, algorithms, and trade-offs that remain relevant after implementation.
 
-Chat registers an Inbox Definition only for `next-step`, because message classification is its sole consumer; `next-turn` splices remain durable Session inputs but create no Chat Context. Chat and Trajectory each keep target-owned next-step state. Every insertion stores only message IDs in an immutable splice node. A successful claim materializes the pending chain once, replaces the previous claimed set with that batch, and lets later Contexts share the set until another claim. Historical Contexts therefore retain linear ID state instead of cumulative array and Set snapshots.
+Chat registers an Inbox Definition only for `next-step`, because message classification is its sole consumer; `next-turn` splices remain durable Session inputs but create no Chat Context. Chat and Trajectory each keep target-owned next-step state. Every insertion stores only message IDs in an immutable splice node. A successful claim materializes the pending chain once, replaces the previous claimed set with that batch, and lets later Contexts share the set until another claim. The AgentLoop appends every message admitted from that claim before it can claim another batch; a rejected claim appends no `user/message`, so later classification needs only the current batch. Historical Contexts therefore retain linear ID state instead of cumulative array and Set snapshots.
 
 ### Responsibility layers
 

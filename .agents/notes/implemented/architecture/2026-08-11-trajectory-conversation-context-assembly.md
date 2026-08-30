@@ -40,7 +40,7 @@ Assistant chunks update only their `turn:step` Context. Content-bearing chunks r
 
 Trajectory reconstructs steering from durable inbox history, using the same identity rule as the [Chat steering decision](../feature/2026-08-04-web-context-source-and-steer-marks.md) without sharing Chat's final Node.
 
-Each `agent/inbox/spliced` Event targeting `next-step` starts an invisible Context identified by its Event seq. Its `start()` reads the nearest earlier inbox Context, applies the splice, and stores the pending identities plus the cumulative set of claimed message IDs. A later user-origin `user/message` reads the nearest earlier inbox Context: a claimed ID produces a Steering Node, while every other user-origin message produces an ordinary User Node.
+Each `agent/inbox/spliced` Event targeting `next-step` starts an invisible Context identified by its Event seq. Its `start()` reads the nearest earlier inbox Context, appends the splice to persistent pending-ID state, and materializes that state only when a claim replaces the current claimed batch. The AgentLoop appends every admitted message from one claim before it can claim another batch; a rejected claim appends no `user/message`. A later user-origin `user/message` reads the nearest earlier inbox Context: an ID in the current claim produces a Steering Node, while every other user-origin message produces an ordinary User Node.
 
 A Reader miss while older history remains records a window-gap dependency. When prepend supplies the missing predecessor, the Assembler replays the affected inbox chain and message Contexts in forward Event order. Historical page direction therefore cannot permanently misclassify a message.
 

@@ -40,7 +40,7 @@ Assistant chunk 只更新对应的 `turn:step` Context。带内容的 chunk 请�
 
 Trajectory 从持久 inbox 历史恢复 steering，使用与 [Chat steering 决策](../feature/2026-08-04-web-context-source-and-steer-marks.zh.md)相同的标识规则，但不共享 Chat 的最终 Node。
 
-每条目标为 `next-step` 的 `agent/inbox/spliced` Event 都会启动一个以 Event seq 标识的不可见 Context。它的 `start()` 读取最近的前序 inbox Context，应用 splice，并存储待处理标识以及累计的已领取 message ID 集合。后续用户来源的 `user/message` 读取最近的前序 inbox Context：已领取的 ID 生成 Steering Node，其余用户来源消息生成普通 User Node。
+每条目标为 `next-step` 的 `agent/inbox/spliced` Event 都会启动一个以 Event seq 标识的不可见 Context。它的 `start()` 读取最近的前序 inbox Context，把 splice 追加到持久的 pending ID state，并只在 claim 时 materialize 该 state、替换当前 claimed batch。AgentLoop 会在领取下一批消息之前追加当前 claim 接纳的全部消息；被拒绝的 claim 不追加 `user/message`。后续用户来源的 `user/message` 读取最近的前序 inbox Context：ID 属于当前 claim 时生成 Steering Node，其余用户来源消息生成普通 User Node。
 
 仍有更早历史时，Reader miss 会记录 window-gap 依赖。prepend 补齐缺失的前驱后，Assembler 按 Event 正序重放受影响的 inbox chain 与 message Context。因此，历史分页方向不会永久错误分类消息。
 

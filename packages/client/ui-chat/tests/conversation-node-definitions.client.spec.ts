@@ -418,6 +418,63 @@ describe('built-in conversation node Definitions', () => {
     ])
   })
 
+  it('replays pending splice chains and scopes steering to the current claim', () => {
+    const first = textMessage('claim-first', 'first')
+    const second = textMessage('claim-second', 'second')
+    const canceled = textMessage('claim-canceled', 'canceled')
+    const requeued = textMessage('claim-requeued', 'requeued')
+    const later = textMessage('claim-later', 'later')
+    const current = snapshot(assembler([
+      at(1, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, inserted: [first],
+      }),
+      at(2, 'agent/inbox/spliced', {
+        target: 'next-step', start: 1, inserted: [canceled],
+      }),
+      at(3, 'agent/inbox/spliced', {
+        target: 'next-step', start: 1, inserted: [second],
+      }),
+      at(4, 'agent/inbox/spliced', {
+        target: 'next-step', start: 2, removedCount: 1, inserted: [], outcome: 'canceled',
+      }),
+      at(5, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, removedCount: 2, inserted: [],
+      }),
+      at(6, 'user/message', first, { surfaceOp: 'append' }),
+      at(7, 'user/message', second, { surfaceOp: 'append' }),
+      at(8, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, inserted: [requeued],
+      }),
+      at(9, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, removedCount: 1, inserted: [],
+      }),
+      at(10, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, inserted: [requeued],
+      }),
+      at(11, 'user/message', requeued, { surfaceOp: 'append' }),
+      at(12, 'user/message', canceled, { surfaceOp: 'append' }),
+      at(13, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, removedCount: 1, inserted: [], outcome: 'canceled',
+      }),
+      at(14, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, inserted: [later],
+      }),
+      at(15, 'agent/inbox/spliced', {
+        target: 'next-step', start: 0, removedCount: 1, inserted: [],
+      }),
+      at(16, 'user/message', later, { surfaceOp: 'append' }),
+    ]))
+
+    expect(current.order.map(key => current.nodes.get(key)).filter(node =>
+      node?.kind === 'user' || node?.kind === 'steering')).toMatchObject([
+      { kind: 'steering', data: { seq: 6 } },
+      { kind: 'steering', data: { seq: 7 } },
+      { kind: 'user', data: { seq: 11 } },
+      { kind: 'user', data: { seq: 12 } },
+      { kind: 'steering', data: { seq: 16 } },
+    ])
+  })
+
   it('orders a command-started Turn first steering before its process control', () => {
     const steering = textMessage('command-task', 'plan this change')
     const value = assembler([

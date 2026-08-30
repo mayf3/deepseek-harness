@@ -18,7 +18,7 @@ Client Runtime 提供 target-neutral 的 Conversation Node 组装引擎，业务
 
 本 Note 保留实现后仍有价值的方案推导、逐业务适配、职责、算法和取舍。
 
-Chat 只注册 `next-step` Inbox Definition，因为消息分类是其唯一消费方；`next-turn` splice 仍是持久 Session input，但不会创建 Chat Context。Chat 与 Trajectory 各自维护 target 专属 next-step state。每次插入只把消息 ID 写入不可变 splice 节点。成功 claim 时只 materialize 一次 pending 链，以当前批次替换上一个 claimed Set，并让后续 Context 共享该 Set，直到下一次 claim。历史 Context 因而只保留线性 ID state，不再保留累计数组和 Set 快照。
+Chat 只注册 `next-step` Inbox Definition，因为消息分类是其唯一消费方；`next-turn` splice 仍是持久 Session input，但不会创建 Chat Context。Chat 与 Trajectory 各自维护 target 专属 next-step state。每次插入只把消息 ID 写入不可变 splice 节点。成功 claim 时只 materialize 一次 pending 链，以当前批次替换上一个 claimed Set，并让后续 Context 共享该 Set，直到下一次 claim。AgentLoop 会在领取下一批消息之前追加当前 claim 接纳的全部消息；被拒绝的 claim 不追加 `user/message`，因此后续分类只需当前批次。历史 Context 因而只保留线性 ID state，不再保留累计数组和 Set 快照。
 
 ### 责任分层
 

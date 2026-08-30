@@ -260,14 +260,24 @@ describe('ToolRow', () => {
 
   it('formats the argument body only while expanding it', () => {
     const stringify = vi.spyOn(JSON, 'stringify')
+    const bodyFormatCalls = () => stringify.mock.calls.filter(
+      ([value, replacer, space]) => typeof value === 'object'
+        && value !== null
+        && 'a' in value
+        && value.a === 1
+        && replacer === null
+        && space === 2,
+    ).length
     const view = render(<ToolRow {...rowProps} />)
-    expect(stringify).not.toHaveBeenCalled()
+    expect(bodyFormatCalls()).toBe(0)
 
     fireEvent.click(view.getByRole('button'))
-    expect(stringify).toHaveBeenCalledTimes(1)
+    expect(bodyFormatCalls()).toBe(1)
+    expect(view.getByText(/"a": 1/)).toBeTruthy()
 
     fireEvent.click(view.getByRole('button'))
-    expect(stringify).toHaveBeenCalledTimes(1)
+    expect(bodyFormatCalls()).toBe(1)
+    expect(view.queryByText(/"a": 1/)).toBeNull()
   })
 
   it('running keeps the icon (row sweep carries the signal); error swaps in a StateDot', () => {

@@ -29,16 +29,16 @@ interface PendingSplice {
 
 type PendingState = PendingSnapshot | PendingSplice
 
-/** Cumulative state after one durable inbox splice. */
+/** Persistent next-step state after one durable Inbox splice. */
 export interface InboxState {
   /** Persistent splice chain materialized only when a next-step batch is claimed. */
   readonly pending: PendingState
-  /** Message ids in the current claimed batch, shared until the next claim. */
-  readonly claimed: ReadonlySet<string>
+  /** Message ids in the current claim, shared until the next claim. */
+  readonly currentClaimed: ReadonlySet<string>
 }
 
 const EMPTY_PENDING: PendingState = { kind: 'snapshot', ids: [] }
-const EMPTY_CLAIMED: ReadonlySet<string> = new Set()
+const EMPTY_CURRENT_CLAIMED: ReadonlySet<string> = new Set()
 
 function materializePending(state: PendingState): string[] {
   const splices: PendingSplice[] = []
@@ -48,8 +48,7 @@ function materializePending(state: PendingState): string[] {
     current = current.previous
   }
   const pending = [...current.ids]
-  for (let index = splices.length - 1; index >= 0; index--) {
-    const splice = splices[index] as PendingSplice
+  for (const splice of splices.reverse()) {
     pending.splice(splice.start, splice.removedCount, ...splice.inserted)
   }
   return pending
@@ -68,6 +67,12 @@ function withoutInserted(
   return next ?? claimed
 }
 
+/**
+ * Apply one next-step splice under the AgentLoop's durable event ordering.
+ * An entered claim logs its complete message batch before another claim; a
+ * rejected claim logs no messages, so only the current claim can classify a
+ * later `user/message`.
+ */
 function applySplice(
   previous: ConversationPreviousContext<InboxState> | undefined,
   splice: InboxSplice,
@@ -75,15 +80,18 @@ function applySplice(
   const priorPending = previous?.state.pending ?? EMPTY_PENDING
   const inserted = splice.inserted.map(identity => identity.id)
   const removedCount = splice.removedCount ?? 0
-  const priorClaimed = withoutInserted(previous?.state.claimed ?? EMPTY_CLAIMED, inserted)
   if (removedCount > 0 && splice.outcome !== 'canceled') {
     const pending = materializePending(priorPending)
     const removed = pending.splice(splice.start, removedCount, ...inserted)
     return {
       pending: { kind: 'snapshot', ids: pending },
-      claimed: new Set(removed),
+      currentClaimed: new Set(removed),
     }
   }
+  const currentClaimed = withoutInserted(
+    previous?.state.currentClaimed ?? EMPTY_CURRENT_CLAIMED,
+    inserted,
+  )
   return {
     pending: {
       kind: 'splice',
@@ -92,7 +100,7 @@ function applySplice(
       removedCount,
       inserted,
     },
-    claimed: priorClaimed,
+    currentClaimed,
   }
 }
 
