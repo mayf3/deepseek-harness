@@ -63,7 +63,8 @@ Chat 会在历史前插与 renderer 重新挂载时恢复语义锚点。读者�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **视图只反映已加载的 Session 窗口**——只有 Session Controller 加载前一页 event 后，更早的 transcript node 才会出现。轮次导航同样只表示已加载的 Turn；加载更早一页时，已有 Turn 刻度保持身份不变，完整的已加载集合在紧凑轨道中重新排布，不显示未加载历史占位。刻度默认相隔 10px，仅在已加载集合超过可用高度时压缩间距。
+- **transcript 只反映已加载的 Session 窗口**——只有 Session Controller 加载前一页 event 后，更早的 transcript node 才会出现。轮次导航比窗口更宽：轨道把已加载的 Turn 与宿主 `turnOutline` 投影合并，每个已开始的 Turn 都有固定间距刻度（相隔 10px；阶梯高于外框时在框内滚动并以渐变淡出标示可滚方向），激活未加载刻度会先把历史分页拉到该 Turn 的 `turn/start` seq 再落到它的行上。没有该投影时（未挂载 `dsh-session-turn-outline` 的装配），轨道回退到仅显示已加载 Turn。
+- **未加载刻度只预览提示词**——大纲不含回复文本，未加载 Turn 的悬浮预览在其事件载入前只显示首条提示词（或仅轮次号）。
 
 
 <a id="dev-note"></a>

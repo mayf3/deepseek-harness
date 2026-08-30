@@ -63,7 +63,8 @@ None; Chat presentation does not assemble or mutate provider requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- **The view reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation likewise represents only loaded Turns; loading an earlier page preserves existing Turn marks and redistributes the complete loaded set in a compact rail without an unloaded-history placeholder. Marks stay 10px apart until the loaded set exceeds the available height, then compress to fit.
+- **The transcript reflects the loaded Session window** — older transcript nodes become available only after Session Controller loads the preceding event page. Turn navigation is wider than the window: the rail merges the loaded Turns with the host `turnOutline` projection, so every started Turn gets a fixed-pitch mark (10px apart; a ladder taller than the frame scrolls inside it with gradient fades), and activating an unloaded mark pages history through the Turn's `turn/start` seq before landing on its row. Without the projection (assemblies not mounting `dsh-session-turn-outline`) the rail falls back to loaded Turns only.
+- **Unloaded marks preview the prompt only** — the outline carries no response text, so an unloaded Turn's hover preview shows its first prompt (or just the Turn number) until its events load.
 
 
 <a id="dev-note"></a>
