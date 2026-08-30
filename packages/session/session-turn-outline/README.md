@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-turn-outline` serves the whole-log turn outline — every started turn with its `turn/start` seq and a bounded first-prompt preview — as the `turnOutline` projection unit. A client that pages history in windows reads the outline to offer every turn of the session (loaded or not) and to target its backwards paging at the exact seq that brings a turn's events in. Choose it in compositions that already mount the projection registry, such as the web app bundle whose chat turn rail is the reference consumer; assemblies without the registry are unaffected and their consumers fall back to loaded-window navigation. Setup and entry semantics come first; the fold internals live in a collapsible developer section below.
+`dsh-session-turn-outline` serves the whole-log turn outline — every started turn with its `turn/start` seq and bounded prompt and final-response previews — as the `turnOutline` projection unit. A client that pages history in windows reads the outline to offer every turn of the session (loaded or not) and to target its backwards paging at the exact seq that brings a turn's events in. Choose it in compositions that already mount the projection registry, such as the web app bundle whose chat turn rail is the reference consumer; assemblies without the registry are unaffected and their consumers fall back to loaded-window navigation. Setup and entry semantics come first; the fold internals live in a collapsible developer section below.
 
 ## Table of Contents
 
@@ -41,9 +41,10 @@ Mount the plugin beside the session store and the projection registry when clien
 |---|---|
 | `turn` | Host-assigned turn number from the `turn/start` payload |
 | `seq` | The turn's `turn/start` event seq — paging a window back through this seq loads the whole turn |
-| `prompt` | Preview of the turn's first human prompt (space-joined text blocks, collapsed whitespace, 160-character cap); `''` until an eligible prompt lands |
+| `prompt` | Preview of the turn's first human prompt (space-joined text blocks, collapsed whitespace, 50-character cap with a trailing ellipsis when clipped — one rail-card line); `''` until an eligible prompt lands |
+| `response` | Preview of the turn's final text-bearing assistant message (same normalization, 120-character cap — up to three rail-card lines); `''` until the turn ends with assistant text |
 
-Entries are strictly increasing by `turn`, and the wire value is the complete outline (whole-value rule): consumers replace, never merge. Only `user/message` events with the human `user` source fill previews, so injected context and tool results never leak into navigation; a turn whose prompt is images-only keeps `''` and consumers label it by number. The preview budget matches the chat rail's loaded-turn preview, so a turn shows the same words before and after its events load.
+The wire value is the complete entry array, strictly increasing by `turn` (whole-value rule): consumers replace, never merge. Prompts fill only from `user/message` events with the human `user` source, so injected context and tool results never leak into navigation; a turn whose prompt is images-only keeps `''` and consumers label it by number. The response buffers as a draft while its turn streams and commits at `turn/end`; the change feed's raw-view identity gate keeps draft-only changes quiet, so the outline pushes at most three times per turn — boundary, prompt, settled response. Preview budgets match the chat rail's loaded-turn previews, so a turn shows the same words before and after its events load.
 
 ### Failures and recovery
 
@@ -61,7 +62,7 @@ This section explains the fold behind the outline; the observable behavior is fu
 
 ### Design concept
 
-The unit is a pure fold over committed session events. `turn/start` — not the prompt `user/message` — anchors each entry because its seq is the load-through target for a jump: the agent loop logs `turn/start` before the turn's prompt and steps, so a window paged back through that seq contains the whole turn. The preview then fills from the first human `user/message`, and only while the newest entry is still empty — later human messages in the same turn (steering) keep the first preview.
+The unit is a pure fold over committed session events. `turn/start` — not the prompt `user/message` — anchors each entry because its seq is the load-through target for a jump: the agent loop logs `turn/start` before the turn's prompt and steps, so a window paged back through that seq contains the whole turn. The prompt fills from the first human `user/message`, and only while the newest entry is still empty — later human messages in the same turn (steering) keep the first preview. The response cannot fill the same way (`turn/end` carries no text), so each text-bearing `assistant/message` overwrites a state draft and `turn/end` commits the survivor — the newest text, which is the loaded rail's `findLast` semantic.
 
 ### Source map
 
@@ -73,9 +74,9 @@ The unit is a pure fold over committed session events. `turn/start` — not the 
 
 ### Fold rules
 
-- Uninteresting events return the same state reference; the registry's `Object.is` gate keeps the change feed quiet — the outline moves at most twice per turn.
-- A `turn/start` that does not advance the turn number is skipped, keeping the outline sorted; a retried boundary's prompt then lands on the standing entry.
-- State and wire view are the same value, so the persisted-cache state schema is the wire schema.
+- Uninteresting events return the same state reference, and draft-only changes keep the `turns` array's identity; the registry's two `Object.is` gates then hold the feed to at most three pushes per turn.
+- A `turn/start` that does not advance the turn number is skipped, keeping the outline sorted; a retried boundary's previews then land on the standing entry.
+- The wire view projects `state.turns`; the persisted-cache state schema wraps the wire schema with the draft field.
 
 </details>
 
@@ -108,9 +109,9 @@ None; the package never assembles or sends provider requests.
 
 These limits define what the outline describes and when the unit is absent. They are current package constraints.
 
-- **The wire value grows with the session** — every change pushes the complete outline (whole-value rule), roughly 200 bytes per turn; splitting previews into an on-demand read is deferred until sessions with many thousands of turns need it.
-- **Previews carry the prompt only** — assistant-response previews stay window-scoped in the consumer; the outline never re-reads message bodies.
-- **A turn without an eligible text prompt keeps `''`** — images-only and command-only turns are navigable but labeled by number.
+- **The wire value grows with the session** — every push carries the complete outline (whole-value rule), up to ~600 bytes per turn at full CJK budgets and typically far less; splitting previews into an on-demand read is deferred until sessions with many thousands of turns need it.
+- **The response previews only settled turns** — it commits at `turn/end`, so an open turn (or one whose end never logged) shows a prompt-only preview until the boundary lands.
+- **A turn without eligible text keeps `''`** — images-only and command-only turns are navigable but labeled by number, and a turn whose steps emit no text gets no response preview.
 - **Mounted only where the projection registry is composed** — other assemblies serve no `turnOutline` key, and their consumers fall back to loaded-window navigation.
 
 <a id="dev-note"></a>

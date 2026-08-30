@@ -14,7 +14,7 @@ export interface TurnRailItem {
   readonly turn: number
   /** Bounded prompt preview (loaded window first, outline fallback). */
   readonly prompt: string
-  /** Bounded response preview; `''` for unloaded Turns (the outline carries prompts only). */
+  /** Bounded response preview (loaded window first, outline fallback). */
   readonly response: string
   /** How the rail reaches the Turn. */
   readonly anchor:
@@ -25,27 +25,31 @@ export interface TurnRailItem {
 const EMPTY_ITEMS: readonly TurnRailItem[] = []
 
 /** Structurally narrow one wire outline entry (projection values cross the wire). */
-function outlineEntry(value: unknown): { turn: number; seq: number; prompt: string } | undefined {
+function outlineEntry(value: unknown): { turn: number; seq: number; prompt: string; response: string } | undefined {
   if (typeof value !== 'object' || value === null) return undefined
-  const entry = value as { turn?: unknown; seq?: unknown; prompt?: unknown }
+  const entry = value as { turn?: unknown; seq?: unknown; prompt?: unknown; response?: unknown }
   if (typeof entry.turn !== 'number' || !Number.isSafeInteger(entry.turn) || entry.turn < 0) return undefined
   if (typeof entry.seq !== 'number' || !Number.isSafeInteger(entry.seq) || entry.seq < 0) return undefined
   if (typeof entry.prompt !== 'string') return undefined
-  return { turn: entry.turn, seq: entry.seq, prompt: entry.prompt }
+  return {
+    turn: entry.turn,
+    seq: entry.seq,
+    prompt: entry.prompt,
+    response: typeof entry.response === 'string' ? entry.response : '',
+  }
 }
 
 /** Wire outline entries, or none when the projection is absent or malformed. */
 function outlineEntries(outline: unknown): readonly unknown[] {
-  if (typeof outline !== 'object' || outline === null) return EMPTY_ITEMS
-  const turns = (outline as { turns?: unknown }).turns
-  return Array.isArray(turns) ? turns : EMPTY_ITEMS
+  return Array.isArray(outline) ? outline : EMPTY_ITEMS
 }
 
 /**
  * Merge the host outline with the loaded rail items into the full ladder.
- * A turn present in both sides keeps the loaded anchor and response, taking
- * the outline prompt only when the window started mid-Turn (empty loaded
- * preview); turns on one side only pass through. Result ascends by turn.
+ * A turn present in both sides keeps the loaded anchor, taking an outline
+ * preview only where the window's own is empty (a mid-Turn window head, or a
+ * turn whose loaded nodes carry no text); turns on one side only pass
+ * through. Result ascends by turn.
  * @param loaded - loaded-window rail items (timeline order).
  * @param outline - `turnOutline` projection value, treated as wire data.
  * @returns every known turn, ascending; a stable empty array when none.
@@ -61,7 +65,7 @@ export function mergeTurnRailItems(
     byTurn.set(entry.turn, {
       turn: entry.turn,
       prompt: entry.prompt,
-      response: '',
+      response: entry.response,
       anchor: { kind: 'unloaded', seq: entry.seq },
     })
   }
@@ -70,7 +74,7 @@ export function mergeTurnRailItems(
     byTurn.set(item.turn, {
       turn: item.turn,
       prompt: item.prompt !== '' ? item.prompt : preview?.prompt ?? '',
-      response: item.response,
+      response: item.response !== '' ? item.response : preview?.response ?? '',
       anchor: { kind: 'loaded', key: item.anchorKey },
     })
   }

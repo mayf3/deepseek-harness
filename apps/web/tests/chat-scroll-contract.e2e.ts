@@ -582,9 +582,15 @@ describe('web e2e: long Chat scroll contract', () => {
       await expect.poll(() => rail.locator('[class*="fadeTop"]').count(), { timeout: 15_000 }).toBe(1)
 
       // Activate the unloaded mark by keyboard: pointer input belongs to the
-      // rail frame, while each mark is the keyboard/AT destination.
+      // rail frame, while each mark is the keyboard/AT destination. Focus
+      // first shows the outline-backed preview: prompt and settled response
+      // both travel ahead of the events.
       const beforeRows = await loadedFlowRows(world.page)
       await firstUnloaded.focus()
+      const tooltip = world.page.getByRole('tooltip')
+      await expect.poll(() => tooltip.count(), { timeout: 15_000 }).toBe(1)
+      expect(await tooltip.textContent()).toContain(HISTORY_FIXTURE.markers.user(1))
+      expect(await tooltip.textContent()).toContain(HISTORY_FIXTURE.markers.assistant(1))
       await world.page.keyboard.press('Enter')
 
       // The jump pages history in and lands on turn 1: its mark flips to the

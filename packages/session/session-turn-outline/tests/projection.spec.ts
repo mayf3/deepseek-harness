@@ -1,21 +1,23 @@
 /**
  * The `turnOutline` projection unit: mounting the plugin beside the
  * projection registry serves the whole-log turn outline (turn number,
- * `turn/start` seq, bounded first-prompt preview); compositions without the
- * registry are unaffected; unmounting the plugin removes the key (HMR
- * safety). Narrow fold paths with fabricated envelopes (non-human sources,
+ * `turn/start` seq, bounded prompt and final-response previews);
+ * compositions without the registry are unaffected; unmounting the plugin
+ * removes the key (HMR safety). The response buffers as a draft and commits
+ * at `turn/end`, keeping the identity-gated change feed at three pushes per
+ * turn. Narrow fold paths with fabricated envelopes (non-human sources,
  * regressive turn numbers) run against the exported definition directly.
  */
 
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SessionTurnOutlinePlugin from '@deepseek-ai/dsh-session-turn-outline'
 import { turnOutlineProjectionDefinition } from '@deepseek-ai/dsh-session-turn-outline/src/projection.ts'
-import type { TurnOutlineProjection } from '@deepseek-ai/dsh-session-turn-outline/types'
+import type { TurnOutlineEntry, TurnOutlineState } from '@deepseek-ai/dsh-session-turn-outline/types'
 
 async function harness(withOutlinePlugin: boolean): Promise<{ ctx: Context; session: Session }> {
   const ctx = new Context()
@@ -33,54 +35,78 @@ function appendPrompt(session: Session, text: string): number {
   }), { surfaceOp: 'append' }).seq
 }
 
-function outlineOf(ctx: Context, session: Session): TurnOutlineProjection {
-  return ctx.sessionProjections.snapshot(session).values.turnOutline as TurnOutlineProjection
+/** Append one assembled assistant message with a single text block. */
+function appendAssistant(session: Session, turn: number, step: number, text: string): void {
+  session.append('assistant/message', {
+    turn,
+    step,
+    message: createAssistantMessage({
+      content: [{ type: 'text', text }],
+      source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+    }),
+  }, { surfaceOp: 'append' })
+}
+
+function endTurn(session: Session, turn: number): number {
+  return session.append('turn/end', { turn, reason: { kind: 'completed' } }).seq
+}
+
+function outlineOf(ctx: Context, session: Session): readonly TurnOutlineEntry[] {
+  return ctx.sessionProjections.snapshot(session).values.turnOutline as readonly TurnOutlineEntry[]
 }
 
 describe('turn outline projection unit', () => {
   it('serves an empty outline before any turn starts', async () => {
     const { ctx, session } = await harness(true)
-    expect(outlineOf(ctx, session)).toEqual({ turns: [] })
+    expect(outlineOf(ctx, session)).toEqual([])
     expect(ctx.sessionProjections.checkpoint(session).turnOutline)
-      .toEqual({ ver: 1, seq: -1, val: { turns: [] } })
+      .toEqual({ ver: 2, seq: -1, val: { turns: [], draft: '' } })
   })
 
-  it('folds each started turn with its boundary seq and first human prompt only', async () => {
+  it('folds each turn with its boundary seq, first prompt, and turn-end response', async () => {
     const { ctx, session } = await harness(true)
     const firstBoundary = session.append('turn/start', { turn: 1 }).seq
     appendPrompt(session, 'hello world')
     appendPrompt(session, 'a later steer must not replace the prompt')
+    appendAssistant(session, 1, 1, 'first draft answer')
+    appendAssistant(session, 1, 2, 'final answer of turn one')
+    endTurn(session, 1)
     const secondBoundary = session.append('turn/start', { turn: 2 }).seq
     appendPrompt(session, 'second prompt')
-    expect(outlineOf(ctx, session)).toEqual({
-      turns: [
-        { turn: 1, seq: firstBoundary, prompt: 'hello world' },
-        { turn: 2, seq: secondBoundary, prompt: 'second prompt' },
-      ],
-    })
+    expect(outlineOf(ctx, session)).toEqual([
+      { turn: 1, seq: firstBoundary, prompt: 'hello world', response: 'final answer of turn one' },
+      { turn: 2, seq: secondBoundary, prompt: 'second prompt', response: '' },
+    ])
   })
 
-  it('keeps an empty preview for a turn whose prompt never lands', async () => {
+  it('keeps the response empty while its turn is still open (draft only commits at turn/end)', async () => {
     const { ctx, session } = await harness(true)
-    const boundary = session.append('turn/start', { turn: 1 }).seq
-    session.append('step/start', { turn: 1, step: 1 })
-    expect(outlineOf(ctx, session)).toEqual({ turns: [{ turn: 1, seq: boundary, prompt: '' }] })
+    session.append('turn/start', { turn: 1 })
+    appendPrompt(session, 'prompt')
+    appendAssistant(session, 1, 1, 'streamed but unsettled')
+    expect(outlineOf(ctx, session)[0]?.response).toBe('')
+    expect(ctx.sessionProjections.stateOf(session, 'turnOutline')?.draft).toBe('streamed but unsettled')
+    endTurn(session, 1)
+    expect(outlineOf(ctx, session)[0]?.response).toBe('streamed but unsettled')
   })
 
-  it('collapses whitespace, joins text blocks, and caps the preview at 160 characters', async () => {
+  it('collapses whitespace and caps previews at their card budgets with an ellipsis', async () => {
     const { ctx, session } = await harness(true)
     session.append('turn/start', { turn: 1 })
     session.append('user/message', createUserMessage({
       content: [
-        { type: 'text', text: `  first\n\nline\t${'x'.repeat(200)}` },
+        { type: 'text', text: `  spaced\n\nprompt\t${'p'.repeat(80)}` },
         { type: 'text', text: 'never reached past the budget' },
       ],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    const preview = outlineOf(ctx, session).turns[0]?.prompt
-    expect(preview).toBeDefined()
-    expect(preview).toMatch(/^first line x+$/)
-    expect(preview).toHaveLength(160)
+    appendAssistant(session, 1, 1, `answer ${'r'.repeat(200)}`)
+    endTurn(session, 1)
+    const entry = outlineOf(ctx, session)[0]
+    expect(entry?.prompt).toMatch(/^spaced prompt p+…$/)
+    expect(entry?.prompt).toHaveLength(50)
+    expect(entry?.response).toMatch(/^answer r+…$/)
+    expect(entry?.response).toHaveLength(120)
   })
 
   it('ignores non-human user/message sources and pre-turn prompts', async () => {
@@ -91,30 +117,32 @@ describe('turn outline projection unit', () => {
       content: [{ type: 'text', text: 'injected context' }],
       source: { kind: 'plugin', plugin: 'test-injector', form: 'relay' },
     }), { surfaceOp: 'append' })
-    expect(outlineOf(ctx, session)).toEqual({
-      turns: [{ turn: 1, seq: 1, prompt: '' }],
-    })
+    expect(outlineOf(ctx, session)).toEqual([
+      { turn: 1, seq: 1, prompt: '', response: '' },
+    ])
   })
 
-  it('notifies the change feed only when the outline actually moves', async () => {
+  it('pushes at most three times per turn: boundary, prompt, and settled response', async () => {
     const { ctx, session } = await harness(true)
-    const changes: { key: string; seq: number }[] = []
-    ctx.sessionProjections.onChanged((_session, key, _value, seq) => {
-      if (key === 'turnOutline') changes.push({ key, seq })
+    const changes: { seq: number; last: TurnOutlineEntry | undefined }[] = []
+    ctx.sessionProjections.onChanged((_session, key, value, seq) => {
+      if (key !== 'turnOutline') return
+      changes.push({ seq, last: (value as readonly TurnOutlineEntry[]).at(-1) })
     })
     const boundarySeq = session.append('turn/start', { turn: 1 }).seq
     session.append('step/start', { turn: 1, step: 1 })
     const promptSeq = appendPrompt(session, 'hello')
     appendPrompt(session, 'second human message in the same turn')
-    session.append('step/end', { turn: 1, step: 1 })
-    expect(changes).toEqual([
-      { key: 'turnOutline', seq: boundarySeq },
-      { key: 'turnOutline', seq: promptSeq },
-    ])
+    appendAssistant(session, 1, 1, 'draft one')
+    appendAssistant(session, 1, 2, 'draft two')
+    session.append('step/end', { turn: 1, step: 2 })
+    const endSeq = endTurn(session, 1)
+    expect(changes.map(change => change.seq)).toEqual([boundarySeq, promptSeq, endSeq])
+    expect(changes.at(-1)?.last?.response).toBe('draft two')
   })
 
   it('skips a boundary that does not advance the turn number (fabricated envelope)', () => {
-    const state: TurnOutlineProjection = { turns: [{ turn: 2, seq: 5, prompt: 'kept' }] }
+    const state: TurnOutlineState = { turns: [{ turn: 2, seq: 5, prompt: 'kept', response: '' }], draft: '' }
     const regressive = {
       type: 'turn/start',
       seq: 9,
@@ -129,7 +157,7 @@ describe('turn outline projection unit', () => {
     session.append('turn/start', { turn: 1 })
     appendPrompt(session, 'pre-mount prompt')
     await ctx.plugin(SessionTurnOutlinePlugin)
-    expect(outlineOf(ctx, session).turns).toEqual([{ turn: 1, seq: 0, prompt: 'pre-mount prompt' }])
+    expect(outlineOf(ctx, session)).toEqual([{ turn: 1, seq: 0, prompt: 'pre-mount prompt', response: '' }])
   })
 
   it('has no key without the plugin and drops it when the plugin unloads (HMR safety)', async () => {
@@ -151,14 +179,26 @@ describe('turn outline projection unit', () => {
       ...checkpoint,
       turnOutline: {
         ...row!,
-        val: { turns: [{ turn: 2, seq: 1, prompt: '' }, { turn: 2, seq: 4, prompt: '' }] },
+        val: {
+          turns: [
+            { turn: 2, seq: 1, prompt: '', response: '' },
+            { turn: 2, seq: 4, prompt: '', response: '' },
+          ],
+          draft: '',
+        },
       },
     }, [], 0, session.header)).toThrow(/strictly increasing/)
     expect(() => ctx.sessionProjections.restore({
       ...checkpoint,
       turnOutline: {
         ...row!,
-        val: { turns: [{ turn: 1, seq: 1, prompt: 'ok' }, { turn: 2, seq: 4, prompt: '' }] },
+        val: {
+          turns: [
+            { turn: 1, seq: 1, prompt: 'ok', response: 'done' },
+            { turn: 2, seq: 4, prompt: '', response: '' },
+          ],
+          draft: '',
+        },
       },
     }, [], 0, session.header)).not.toThrow()
   })

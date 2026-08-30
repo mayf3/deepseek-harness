@@ -186,14 +186,14 @@
 
 .previewPrompt {
   font: var(--dsw-font-xs-strong-13);
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .previewResponse {
   margin-top: 4px;
   color: var(--dsw-alias-label-caption);
   font: var(--dsw-font-xxs-12);
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 @keyframes dsh-turn-mark-enter {

@@ -605,20 +605,20 @@ describe('ChatView', () => {
   it('extends the rail with unloaded outline turns, pages on click, and falls back when nothing lands', async () => {
     const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
     const h = makeHarness({ nodes: later }, { hasMore: true })
-    h.setOutline({
-      turns: [
-        { turn: 1, seq: 0, prompt: 'first prompt from outline' },
-        { turn: 2, seq: 4, prompt: 'second prompt from outline' },
-        { turn: 3, seq: 8, prompt: 'third prompt' },
-      ],
-    })
+    h.setOutline([
+      { turn: 1, seq: 0, prompt: 'first prompt from outline', response: 'first answer from outline' },
+      { turn: 2, seq: 4, prompt: 'second prompt from outline', response: '' },
+      { turn: 3, seq: 8, prompt: 'third prompt', response: 'third response' },
+    ])
     const view = render(<h.ChatView {...h.props} />)
     const first = view.getByRole('button', { name: '加载并跳转到第 1 轮' })
     view.getByRole('button', { name: '加载并跳转到第 2 轮' })
     const third = view.getByRole('button', { name: '跳转到第 3 轮' })
     expect(third.getAttribute('aria-current')).toBe('true')
     fireEvent.focus(first)
+    // An unloaded turn previews both sides from the outline.
     expect(view.getByRole('tooltip').textContent).toContain('first prompt from outline')
+    expect(view.getByRole('tooltip').textContent).toContain('first answer from outline')
 
     fireEvent.click(first)
     expect(h.loadThrough).toHaveBeenCalledWith(0)
@@ -635,12 +635,10 @@ describe('ChatView', () => {
   it('a jump from the pinned tail releases bottom ownership so the follow snap cannot cancel it', async () => {
     const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
     const h = makeHarness({ nodes: later }, { hasMore: true })
-    h.setOutline({
-      turns: [
-        { turn: 1, seq: 0, prompt: 'first prompt' },
-        { turn: 3, seq: 8, prompt: 'third prompt' },
-      ],
-    })
+    h.setOutline([
+      { turn: 1, seq: 0, prompt: 'first prompt', response: '' },
+      { turn: 3, seq: 8, prompt: 'third prompt', response: '' },
+    ])
     let releaseJump: (() => void) | undefined
     h.loadThrough.mockImplementation(() => new Promise<void>((resolve) => { releaseJump = resolve }))
     const view = render(<h.ChatView {...h.props} />)
@@ -664,13 +662,12 @@ describe('ChatView', () => {
       { nodes: [userInTurn(8, 'latest prompt', 60), assistant(9, 'latest response', 60)] },
       { hasMore: true },
     )
-    h.setOutline({
-      turns: Array.from({ length: 60 }, (_, index) => ({
-        turn: index + 1,
-        seq: index * 4,
-        prompt: `p${String(index + 1)}`,
-      })),
-    })
+    h.setOutline(Array.from({ length: 60 }, (_, index) => ({
+      turn: index + 1,
+      seq: index * 4,
+      prompt: `p${String(index + 1)}`,
+      response: '',
+    })))
     const view = render(<h.ChatView {...h.props} />)
     const nav = view.getByRole('navigation', { name: '轮次导航' })
     // 60 marks at the fixed 10px pitch: the ladder keeps its natural height.
@@ -699,12 +696,10 @@ describe('ChatView', () => {
   it('lands a jump on its turn once the paged rows commit', async () => {
     const later = [userInTurn(8, 'third prompt', 3), assistant(9, 'third response', 3)]
     const h = makeHarness({ nodes: later }, { hasMore: true })
-    h.setOutline({
-      turns: [
-        { turn: 1, seq: 0, prompt: 'first prompt' },
-        { turn: 3, seq: 8, prompt: 'third prompt' },
-      ],
-    })
+    h.setOutline([
+      { turn: 1, seq: 0, prompt: 'first prompt', response: '' },
+      { turn: 3, seq: 8, prompt: 'third prompt', response: '' },
+    ])
     let releaseJump: (() => void) | undefined
     h.loadThrough.mockImplementation(() => new Promise<void>((resolve) => { releaseJump = resolve }))
     const view = render(<h.ChatView {...h.props} />)

@@ -12,7 +12,9 @@ Web 聊天的轮次导航栏从已加载的事件窗口推导刻度，而窗口�
 
 三个相互配合、各自独立可用的部分。
 
-**数据：`turnOutline` 会话投影。** `packages/session/session-turn-outline` 在 `ctx.sessionProjections` 上注册一个纯 fold：每个 `turn/start` 追加 `{turn, seq, prompt: ''}`（跳过未推进轮次号的边界，保持大纲严格递增），该轮首条人类 `user/message` 填入 160 字符的提示词预览，语义与导航栏已加载轮次的预览一致。值搭现有投影载体——尾页 seed、`session/projection` 控制帧、projcache——web-app bundle 挂载该插件。`seq` 是 `turn/start` 事件的 seq：loop 先记它再记该轮的提示词与步骤，窗口向后分页越过该 seq 即载入整轮。
+**数据：`turnOutline` 会话投影。** `packages/session/session-turn-outline` 在 `ctx.sessionProjections` 上注册一个纯 fold：每个 `turn/start` 追加一个条目（跳过未推进轮次号的边界，保持大纲严格递增），该轮首条人类 `user/message` 填入提示词预览，最新一条带文本的 `assistant/message` 缓冲为回复草稿、由 `turn/end` 提交（`turn/end` 自身不带文本）。预览预算对齐导航卡片的截断——提示词一行 50 字符、回复至多三行 120 字符、被裁剪时补省略号——并与已加载轮次的预览一致，同一轮在事件载入前后显示相同的文字。wire 值是裸条目数组，纯草稿的状态变化因此保持其身份，配合下述变更流身份门把推送压到每轮三次：开轮、提示词、落定回复。值搭现有投影载体——尾页 seed、`session/projection` 控制帧、projcache——web-app bundle 挂载该插件。`seq` 是 `turn/start` 事件的 seq：loop 先记它再记该轮的提示词与步骤，窗口向后分页越过该 seq 即载入整轮。
+
+**变更流身份门（session-projection）。** 注册表的变更流此前对客户端可见单元的每次状态引用变化都触发；现在还会把原始 `view` 输出与上一次交付的值比较，`Object.is` 相同即保持安静。正是它让单元可以把工作字段（回复草稿）缓冲在身份稳定投影之后的状态里，而不是每条流式助手消息都推送整值；view 每次新建对象的单元不受影响。备选——在载体侧按序列化比较去重——被否决，因为每次安静变化都要付一次完整序列化。
 
 **分页：`Session.loadThrough(seq)`。** session-controller 客户端在 `loadOlder()` 旁新增跳转加载器：按 200 条 message 一页（`JUMP_PAGE_MESSAGES`）循环现有 prepend 分页器直到 `baseSeq <= seq`，跳转中再次调用会下调共享低水位目标，遇到 `baseSeq` 未动的页即停（对空页仍声称有历史的无进展守卫），忙碌状态复用现有 `loadingOlder` 快照位。零 wire 改动：seq 稠密，客户端仅凭 `beforeSeq` 算术即可。
 
@@ -30,4 +32,4 @@ Web 聊天的轮次导航栏从已加载的事件窗口推导刻度，而窗口�
 
 ## Consequences
 
-导航栏从窗口口径变为会话口径，代价是随会话增长的整值投影（约每轮 200 字节，每轮至多推送两次）；把预览拆成按需读取推迟到数千轮量级的会话真正需要时。深跳仍会加载沿途所有页——连续窗口契约——跳到超长会话的第 1 轮会实体化整个 transcript，与手动翻页的终态相同。未挂载该投影插件的装配保留旧的仅已加载导航。覆盖：新包的投影单元 + Loader 组合 + HMR 测试、session-controller 的 loadThrough 循环测试、ui-chat 的合并与跳转测试（含 settle 校正与忙碌生命周期），以及 chat-scroll e2e 里的浏览器契约——在 88 轮 fixture 的尾部用键盘跳到未加载的第 1 轮，断言落点几何与导航栏渐变。
+导航栏从窗口口径变为会话口径，代价是随会话增长的整值投影（全中文预览预算下每轮上限约 600 字节，每轮至多推送三次）；把预览拆成按需读取推迟到数千轮量级的会话真正需要时。深跳仍会加载沿途所有页——连续窗口契约——跳到超长会话的第 1 轮会实体化整个 transcript，与手动翻页的终态相同。未挂载该投影插件的装配保留旧的仅已加载导航。覆盖：新包的投影单元 + Loader 组合 + HMR 测试、session-controller 的 loadThrough 循环测试、ui-chat 的合并与跳转测试（含 settle 校正与忙碌生命周期），以及 chat-scroll e2e 里的浏览器契约——在 88 轮 fixture 的尾部用键盘跳到未加载的第 1 轮，断言落点几何与导航栏渐变。

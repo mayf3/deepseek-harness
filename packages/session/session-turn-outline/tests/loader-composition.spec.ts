@@ -13,7 +13,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
-import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SessionTurnOutlinePlugin from '@deepseek-ai/dsh-session-turn-outline'
@@ -76,8 +76,17 @@ describe('real Loader composition', () => {
       content: [{ type: 'text', text: 'composed prompt' }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    session.append('assistant/message', {
+      turn: 1,
+      step: 1,
+      message: createAssistantMessage({
+        content: [{ type: 'text', text: 'composed answer' }],
+        source: { provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+      }),
+    }, { surfaceOp: 'append' })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(loaded.sessionProjections.snapshot(session).values.turnOutline)
-      .toEqual({ turns: [{ turn: 1, seq: boundary, prompt: 'composed prompt' }] })
+      .toEqual([{ turn: 1, seq: boundary, prompt: 'composed prompt', response: 'composed answer' }])
   })
 
   it('keeps the function-plugin namespace free of a default export', () => {
