@@ -6,6 +6,7 @@ import {
   collectPackageInvariantViolations,
   packageInvariantOwners,
 } from './package-invariants.ts'
+import { usesFlattenedPackageDependencies } from './package-dependency-policy.ts'
 
 const roots: string[] = []
 
@@ -30,7 +31,10 @@ export const apply = (ctx: { invariants: { register(name: string, install: typeo
 function fixture(options: {
   companion?: boolean
   packageName?: string
+  packageDirectory?: string
   source?: string
+  clientDeclaration?: boolean
+  clientExport?: boolean
   invariantExport?: boolean
   invariantFile?: boolean
   invariantDependency?: boolean
@@ -40,7 +44,8 @@ function fixture(options: {
 } = {}): string {
   const root = mkdtempSync(join(tmpdir(), 'dsh-package-invariants-'))
   roots.push(root)
-  const dir = join(root, 'packages/core/probe')
+  const packageDirectory = options.packageDirectory ?? 'packages/core/probe'
+  const dir = join(root, packageDirectory)
   mkdirSync(join(dir, 'src'), { recursive: true })
   const packageName = options.packageName ?? '@deepseek-ai/dsh-probe'
   const companion = options.companion ?? true
@@ -49,16 +54,30 @@ function fixture(options: {
   const invariantDependency = options.invariantDependency ?? companion
   const invariantReference = options.invariantReference ?? companion
   const buildEntry = options.buildEntry ?? companion
+  const exports = {
+    ...(invariantExport ? { './invariant': {
+      types: './lib/types/invariant.d.ts',
+      default: './lib/invariant.js',
+    } } : {}),
+    ...(options.clientExport === true ? {
+      './client': {
+        types: './lib/types/client/index.d.ts',
+        default: './lib/client.js',
+      },
+    } : {}),
+  }
+  const dsh = options.clientDeclaration === true ? { client: {} } : undefined
+  const developmentOnlyInvariant = usesFlattenedPackageDependencies(
+    `${packageDirectory}/package.json`,
+    packageName,
+    dsh,
+  )
   const manifest = {
     name: packageName,
-    exports: invariantExport ? {
-      './invariant': {
-        types: './lib/types/invariant.d.ts',
-        default: './lib/invariant.js',
-      },
-    } : {},
+    ...(dsh === undefined ? {} : { dsh }),
+    exports,
     files: ['lib/index.js', ...invariantFile ? ['lib/invariant.js'] : []],
-    peerDependencies: !invariantDependency ? {} : {
+    peerDependencies: !invariantDependency || developmentOnlyInvariant ? {} : {
       '@deepseek-ai/dsh-invariants': 'workspace:^',
     },
     devDependencies: !invariantDependency ? {} : {
@@ -103,6 +122,33 @@ describe('package invariant gate', () => {
       path: 'packages/core/probe/README.md',
       message: 'omitted companion requires a package-specific "No ... companion is published" reason',
     })
+  })
+
+  it('accepts development-only invariants for configured Host dependencies', () => {
+    expect(collectPackageInvariantViolations(fixture({ packageName: '@deepseek-ai/dsh-llm' }))).toEqual([])
+  })
+
+  it('accepts development-only invariants for client packages', () => {
+    expect(collectPackageInvariantViolations(fixture({
+      packageName: '@deepseek-ai/dsh-client-probe',
+      packageDirectory: 'packages/client/probe',
+    }))).toEqual([])
+  })
+
+  it('accepts development-only invariants for packages with a dsh.client entry', () => {
+    expect(collectPackageInvariantViolations(fixture({ clientDeclaration: true, clientExport: true }))).toEqual([])
+  })
+
+  it('keeps invariant peers for packages that only export a Client API', () => {
+    expect(collectPackageInvariantViolations(fixture({ clientExport: true }))).toEqual([])
+  })
+
+  it('keeps invariant peers for experimental packages with a dsh.client entry', () => {
+    expect(collectPackageInvariantViolations(fixture({
+      packageDirectory: 'packages/experimental/probe',
+      clientDeclaration: true,
+      clientExport: true,
+    }))).toEqual([])
   })
 
   it('accepts an invariant reference owned by a package-local leaf project', () => {
@@ -228,7 +274,6 @@ export const apply = (ctx: { invariants: { register(name: string, install: () =>
 export const name = 'probe-invariant'
 export const inject = ['invariants']
 const PACKAGE_NAME = '@deepseek-ai/dsh-probe'
-/** No runtime invariant: this pure package owns no events or mutable data. */
 const install = () => {}
 export const apply = (ctx: { invariants: { register(name: string, install: () => void): () => void } }) =>
   ctx.invariants.register(PACKAGE_NAME, install)

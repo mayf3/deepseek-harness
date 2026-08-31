@@ -31,6 +31,7 @@
     { "path": "../../interaction/permission-presets" },
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
+    { "path": "../../util/deque" },
     { "path": "../../util/native-command" },
     { "path": "../../preset/agent-presets" },
     { "path": "../../session/session-persistence" },
@@ -40,6 +41,7 @@
     { "path": "../../session-query/session-query" },
     { "path": "../../skill/skill" },
     { "path": "../../subagent/subagent" },
+    { "path": "../../util/time" },
     { "path": "../../typert/protocol" },
     { "path": "../../typert/registry" },
     { "path": "../../workspace/workspace" }

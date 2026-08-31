@@ -6,7 +6,7 @@ Status: implemented
 
 ## 问题
 
-包不变量规则曾要求每个工作区包都发布 `./invariant`，包括没有运行时关系可检查的包。当前工作区有 207 个带说明的空伴生入口，每个入口都带来源文件、公共导出、发布项、仅供不变量使用的依赖或 TypeScript 引用、构建接线与注册测试。这套机制只表达否定结论，没有增加运行时断言。
+包不变量规则曾要求每个工作区包都发布 `./invariant`，包括没有运行时关系可检查的包。当前工作区有 209 个带说明的空伴生入口，每个入口都带来源文件、公共导出、发布项、仅供不变量使用的依赖或 TypeScript 引用、构建接线与注册测试。这套机制只表达否定结论，没有增加运行时断言。
 
 `dsh-host-webserver` 伴生入口以可执行形式暴露了同一问题。它会在插件生命周期事件上注册并释放合成保留路由，再次调用同一组服务操作来检测残留。该探针没有独立产生的观察：它通过自己要验证的实现修改并检查同一张路由表，而真实路由与 HMR 测试已经覆盖重复拒绝和 disposer 对称性。
 
@@ -28,7 +28,7 @@ Status: implemented
 
 ### 审计结果
 
-全仓库审计删除了 207 个带说明的空伴生入口和合成的 `dsh-host-webserver` 伴生入口，留下 39 项比较独立观察的检查。保留项包括 session、command、approval、workflow 与 hook 生命周期等跨事件协议；settings、storage-domain、Workspace、client modules 与 slots 等事件到状态检查；system prompt 与 time context 等多生产方组装检查；以及 todo、plan mode 与 sandbox mode 等由 projection 或 policy state 消费的持久数据。
+全仓库审计删除了 209 个带说明的空伴生入口和合成的 `dsh-host-webserver` 伴生入口，留下 39 项比较独立观察的检查。保留项包括 session、command、approval、workflow 与 hook 生命周期等跨事件协议；settings、storage-domain、Workspace、client modules 与 slots 等事件到状态检查；system prompt 与 time context 等多生产方组装检查；以及 todo、plan mode 与 sandbox mode 等由 projection 或 policy state 消费的持久数据。
 
 被省略关系继续由现有包行为测试负责，包括 webserver 路由注册与 HMR 释放。产品行为与包根入口不变；被省略的 `./invariant` 子路径按照仓库的预发布兼容策略移除。
 

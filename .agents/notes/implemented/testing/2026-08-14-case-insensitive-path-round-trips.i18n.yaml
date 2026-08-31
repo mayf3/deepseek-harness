@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-14-case-insensitive-path-round-trips.md
+2026-08-14-case-insensitive-path-round-trips.md: 5ff03a4fb55fc3dc136b22850f938685ed15a44f
+2026-08-14-case-insensitive-path-round-trips.zh.md: 6ad6121653badd3f636dda822a95fa7672b22cc3

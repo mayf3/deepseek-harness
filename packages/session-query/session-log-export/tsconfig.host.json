@@ -13,6 +13,7 @@
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../attachment/attachment" },
+    { "path": "../../util/brand" },
     { "path": "../../core/session" },
     { "path": "../../interaction/commands" },
     { "path": "../../session/session-persistence" },
