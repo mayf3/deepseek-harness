@@ -144,14 +144,6 @@ interface UnitCell {
   state: unknown
   /** Seq of the last event passed through `apply` (regardless of change). */
   observedSeq: number
-  /**
-   * Raw (pre-validation) `view` output of the last changed state, stamped
-   * whether or not a listener heard it. A changed state whose raw view is
-   * `Object.is` to this stays quiet, so a unit can buffer working fields in
-   * state by keeping its wire projection identity-stable — and a listener
-   * subscribing later still sees every value transition since this baseline.
-   */
-  lastView?: { raw: unknown }
 }
 
 /**
@@ -179,7 +171,8 @@ interface Registration {
  * reference in a client-visible unit notifies the change feed with the
  * schema-validated view — unless the raw view output is `Object.is`-identical
  * to the unit's previous projection (identity-stable projections stay quiet;
- * the baseline advances with every change, heard or not).
+ * both views are computed from the states in hand each step, so no stored
+ * comparison value exists to go stale across listener generations).
  * Cells build lazily — a unit registered after events flowed, or a session
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
@@ -637,21 +630,19 @@ export class SessionProjectionRegistry extends Service {
       } else {
         this.advanceCell(registration.def, cell, session.events, event.seq - 1)
       }
-      const next = registration.def.apply(cell.state, event)
-      const changed = !Object.is(next, cell.state)
+      const previous = cell.state
+      const next = registration.def.apply(previous, event)
+      const changed = !Object.is(next, previous)
       cell.state = next
       cell.observedSeq = event.seq
-      if (changed && registration.def.wire !== undefined) {
-        // Identity gate on the raw view: a changed state whose projection is
-        // reference-identical to the previous one stays quiet, so a unit can
-        // buffer working fields without spamming the feed. The baseline is
-        // stamped on every change — listeners or none — so a later listener
-        // generation cannot be silenced by a value the unobserved state
-        // passed through and returned to.
-        const raw = registration.def.wire.view(cell.state)
-        const identical = cell.lastView !== undefined && Object.is(cell.lastView.raw, raw)
-        cell.lastView = { raw }
-        if (identical || this.listeners.size === 0) continue
+      if (changed && registration.def.wire !== undefined && this.listeners.size > 0) {
+        // Identity gate on the raw view, computed from the two states in
+        // hand: a changed state whose projection is reference-identical to
+        // the previous state's stays quiet, so a unit can buffer working
+        // fields without spamming the feed. Nothing is stored, so no
+        // comparison value exists to go stale across listener generations.
+        const raw = registration.def.wire.view(next)
+        if (Object.is(registration.def.wire.view(previous), raw)) continue
         const value = registration.def.wire.viewSchema.parse(raw)
         for (const listener of this.listeners) {
           listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)

@@ -151,11 +151,12 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values['test/buffered']).toEqual(['a', 'b'])
   })
 
-  it('advances the dedup baseline while unobserved, so a later listener hears a return to an old value', async () => {
+  it('keeps dedup honest across listener generations: a return to an old value after an unobserved change still fires', async () => {
     const { ctx, session } = await harness()
     // A primitive-valued view compares by value under Object.is (the title
-    // unit's shape), which is exactly where a stale baseline could silence a
-    // real transition.
+    // unit's shape), which is exactly where remembering a delivered value —
+    // instead of comparing the two states in hand — would silence a real
+    // transition.
     ctx.sessionProjections.register({
       key: 'test/label',
       stateSchema: z.string(),
@@ -172,8 +173,9 @@ describe('SessionProjectionRegistry drive', () => {
     stop()
     // Unobserved transition away from 'A'…
     mark(session, ['B'])
-    // …then a new listener generation subscribes and the value returns: with
-    // a baseline frozen at 'A' this delivery would be silenced.
+    // …then a new listener generation subscribes and the value returns:
+    // dedup memory frozen at the delivered 'A' would silence this delivery;
+    // the per-step previous-state comparison sees 'B' → 'A' and fires.
     const second: string[] = []
     ctx.sessionProjections.onChanged((_session, key, value) => {
       if (key === 'test/label') second.push(value as string)
