@@ -3,8 +3,7 @@ import type { PromptContentPart as AttachmentPromptContentPart } from '@deepseek
 import {
   MutableSessionEventSource, type SessionLiveEventEntry,
 } from '../src/client/contract/events.ts'
-import type { PromptContentPart as SessionPromptContentPart } from '../src/client/contract/session.ts'
-import { transportResult } from '../src/client/contract/result.ts'
+import type { PromptContentPart as SessionPromptContentPart } from '../src/types.ts'
 
 function entry(seq: number): SessionLiveEventEntry {
   return {
@@ -82,14 +81,4 @@ describe('Client Session contracts', () => {
     expect(iterate).toHaveBeenCalledOnce()
   })
 
-  it('folds Error and non-Error carrier rejections into Client failures', () => {
-    expect(transportResult(new Error('transport unavailable'))).toEqual({
-      ok: false,
-      error: { code: 'internal', message: 'transport unavailable', details: {} },
-    })
-    expect(transportResult(404)).toEqual({
-      ok: false,
-      error: { code: 'internal', message: '404', details: {} },
-    })
-  })
 })

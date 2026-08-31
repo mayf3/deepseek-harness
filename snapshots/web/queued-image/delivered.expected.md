@@ -33,7 +33,10 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}}
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
 - button "queued.png, click to view original":
   - img "queued.png"
 - text: Compare with this screenshot {{clock}}
@@ -51,7 +54,10 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s Continue with the queued comparison {{clock}}
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}} Continue with the queued comparison {{clock}}
 - button "Copy":
   - img
 - button "Thought for a while":
@@ -66,7 +72,10 @@
   - img
 - button "Branch into a new conversation":
   - img
-- text: {{clock}} Ran for {{duration}} TTFT {{duration}} {{throughput}} tok/s
+- button "Ran for {{duration}}":
+  - img
+  - text: Ran for {{duration}}
+- text: {{clock}}
 - textbox "Message or run a task... / commands, @ files or sessions"
 - button "Commands":
   - img

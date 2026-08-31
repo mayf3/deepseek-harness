@@ -30,7 +30,6 @@ const driverLauncher = fileURLToPath(new URL('./merge-translation-pairing-driver
 const workspaceRoot = fileURLToPath(new URL('../', import.meta.url))
 const tsxLoader = import.meta.resolve('tsx/esm')
 const fixtures: string[] = []
-const compositionTimeoutMs = process.platform === 'win32' ? 60_000 : 15_000
 
 interface Fixture {
   env: NodeJS.ProcessEnv
@@ -262,7 +261,15 @@ function expectMergedPair(fixture: Fixture): void {
   )
 }
 
-describe('translation pairing merge composition', { timeout: compositionTimeoutMs }, () => {
+// Every case in this suite drives real `git` invocations against a scratch
+// repository, so it is bound by process creation rather than by its assertions.
+// The value matches DSH_COVERAGE_TEST_TIMEOUT_MS, which the Windows coverage
+// lane passes as --testTimeout: a describe value overrides that flag rather than
+// yielding to it, so a smaller one here lowers what the lane grants every case
+// in this file, none of which carries an allowance of its own. Measurements and
+// the rejected alternatives are in
+// .agents/notes/implemented/testing/2026-08-27-translation-pairing-merge-budget.md.
+describe('translation pairing merge composition', { timeout: 90_000 }, () => {
   it('rejects a pairing-record path outside the repository', () => {
     const fixture = createFixture(false)
 
