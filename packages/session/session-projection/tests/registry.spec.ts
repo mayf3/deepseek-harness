@@ -151,6 +151,49 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values['test/buffered']).toEqual(['a', 'b'])
   })
 
+  it('compares by the declared viewKey token and runs view only for a push', async () => {
+    const { ctx, session } = await harness()
+    let viewCalls = 0
+    // A fresh-array view would push on every changed state under the default
+    // raw-view token; the declared token pins dedup to `marks` identity and
+    // keeps `view` off the quiet path entirely.
+    ctx.sessionProjections.register({
+      key: 'test/buffered',
+      stateSchema: z.object({ marks: z.array(z.string()), draft: z.string() }),
+      init: () => ({ marks: [], draft: '' }),
+      apply: (state, event) => {
+        if (event.type === 'test/mark') return { marks: event.data.marks, draft: '' }
+        if (event.type === 'turn/start') return { marks: state.marks, draft: `draft-${String(event.seq)}` }
+        return state
+      },
+      wire: {
+        viewSchema: z.array(z.string()),
+        view: (state) => {
+          viewCalls += 1
+          return [...state.marks]
+        },
+        viewKey: state => state.marks,
+      },
+      stateVersion: 1,
+    })
+    const seen: { value: unknown; seq: number }[] = []
+    ctx.sessionProjections.onChanged((_session, key, value, seq) => {
+      if (key === 'test/buffered') seen.push({ value, seq })
+    })
+    const first = mark(session, ['a'])
+    expect(viewCalls).toBe(1)
+    // Draft-only apply: state reference moves, the token does not — and the
+    // fresh-object view is never consulted.
+    session.append('turn/start', { turn: 1 })
+    expect(viewCalls).toBe(1)
+    const second = mark(session, ['a', 'b'])
+    expect(seen).toEqual([
+      { value: ['a'], seq: first.seq },
+      { value: ['a', 'b'], seq: second.seq },
+    ])
+    expect(viewCalls).toBe(2)
+  })
+
   it('keeps dedup honest across listener generations: a return to an old value after an unobserved change still fires', async () => {
     const { ctx, session } = await harness()
     // A primitive-valued view compares by value under Object.is (the title

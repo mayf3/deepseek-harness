@@ -262,4 +262,9 @@ describe('turn outline projection unit', () => {
       },
     }, [], 0, session.header)).not.toThrow()
   })
+
+  it('keys change detection to the turns array identity, so draft-only applies stay quiet without a view call', () => {
+    const state = { turns: [{ turn: 1, seq: 1, prompt: 'p', response: '' }], draft: 'buffering' }
+    expect(turnOutlineProjectionDefinition.wire.viewKey(state)).toBe(state.turns)
+  })
 })

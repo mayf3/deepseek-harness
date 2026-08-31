@@ -133,5 +133,8 @@ export const turnOutlineProjectionDefinition = {
   wire: {
     viewSchema: turnOutlineEntriesSchema,
     view: state => state.turns,
+    // Draft-only applies replace the state object but reuse `turns`, so this
+    // token keeps the feed quiet until a turn-level commit.
+    viewKey: state => state.turns,
   },
 } satisfies ProjectionDefinition<'turnOutline', TurnOutlineState>

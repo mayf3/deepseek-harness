@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-08-30-web-turn-rail-outline-jump.md
-2026-08-30-web-turn-rail-outline-jump.md: ca59263d10dfd84984cae454a2e45027ff1d018e
-2026-08-30-web-turn-rail-outline-jump.zh.md: ab5df81b8521332ef9b3e7f2fac9e3f2fe795d9d
+2026-08-30-web-turn-rail-outline-jump.md: 0c14be30a61f277b05ad3da2169cae5924f89f0b
+2026-08-30-web-turn-rail-outline-jump.zh.md: 707d7e5e8c76bf1fb891628fc0730c72f5ce7612
