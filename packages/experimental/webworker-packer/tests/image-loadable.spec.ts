@@ -68,10 +68,10 @@ describe('preview example overlays', () => {
 })
 
 /**
- * The pack consumes built `lib/` output. An unbuilt checkout (the unit
- * coverage lane runs before any build) self-skips. Native Windows routes this
- * suite through its post-build uninstrumented gate, and preview builds exercise
- * the same path against complete real artifacts.
+ * The pack consumes built `lib/` output. An unbuilt checkout (both coverage
+ * lanes run before any build) self-skips; the serial-windows complete
+ * reference routes this suite through its post-build uninstrumented gate, and
+ * preview builds exercise the same path against complete real artifacts.
  */
 // The subject is zero-dep, but its peer/dependency closure (cordis, loader,
 // include, cosmokit, invariants) must also be built: on the complete lane
