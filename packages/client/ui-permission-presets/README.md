@@ -29,7 +29,7 @@ Mount this plugin alongside the settings and commands packages; the permission r
 
 ### The picker
 
-A pick submits the `/permission <preset>` command line. The argued path (`/permission <preset>` typed directly) still switches directly; the decoration replaces only the bare invocation. Built-in labels are localized, explicit host labels remain unchanged, unknown kebab-case names render in title case, and `auto` uses the localized `Auto review` label and `EXP` badge with an experimental-risk confirmation. `custom` is display state, never a target.
+A pick submits the `/permission <preset>` command line. The argued path (`/permission <preset>` typed directly) still switches directly; the decoration replaces only the bare invocation. The built-in labels are `Read Only`, `Workspace Write`, `Full access`, and `Auto review` in English and `仅可查看`, `工作区内修改`, `完全权限`, and `Auto review` in Chinese. Explicit host labels remain unchanged, unknown kebab-case names render in title case, and `auto` carries an `EXP` badge plus an experimental-risk confirmation. `custom` is display state, never a target.
 
 ### The Settings row
 

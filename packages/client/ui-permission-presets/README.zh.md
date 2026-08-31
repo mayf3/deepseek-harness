@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 选择器
 
-选中即提交 `/permission <preset>` 命令行。带参路径（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。内置标签本地化显示，显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case；`auto` 使用本地化的 `Auto review` 标签与 `EXP` badge，并在可见选择时要求实验风险确认。`custom` 只是显示状态，绝非目标。
+选中即提交 `/permission <preset>` 命令行。带参路径（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。内置标签在英文界面中是 `Read Only`、`Workspace Write`、`Full access` 和 `Auto review`，在中文界面中是「仅可查看」「工作区内修改」「完全权限」和 `Auto review`。显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case；`auto` 带有 `EXP` badge，并在可见选择时要求实验风险确认。`custom` 只是显示状态，绝非目标。
 
 ### 设置行
 

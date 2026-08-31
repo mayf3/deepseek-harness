@@ -1,4 +1,4 @@
-import { useState, type KeyboardEvent } from 'react'
+import { useMemo, useState, type KeyboardEvent } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import clsx from 'clsx'
 import {
@@ -13,7 +13,7 @@ import {
   terminalCardModel,
   terminalFailed,
 } from '../models/terminal-card-model.ts'
-import { toolRowModel, type ToolRowState } from '../models/tool-call-model.ts'
+import { formatToolBody, toolRowModel, type ToolRowState } from '../models/tool-call-model.ts'
 import { CONVERSATION_NS as NS } from '../../locale.ts'
 import css from './bash-sample.module.css'
 
@@ -56,13 +56,18 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   // Execution failures and persistent-shell results have no terminal card.
   // Keep their recorded args and complete output reachable through the generic
   // body; background acknowledgements and malformed calls remain collapsed.
-  const body = model.body
   const output = model.output
   const genericBody = terminal === null
     && (model.state === 'error' || isSettledPersistentShellCall(block))
-    && (body !== null || output !== null)
+    && (model.bodyRaw !== null || output !== null)
   const expandable = terminal !== null || genericBody
   const open = expanded && expandable
+  const body = useMemo(
+    () => open && genericBody && model.bodyRaw !== null
+      ? formatToolBody(model.variant, model.bodyRaw)
+      : null,
+    [genericBody, model.bodyRaw, model.variant, open],
+  )
   const failureLine = model.state === 'error' ? model.errorSummary : null
   const toggleExpand = () => {
     setExpanded(v => !v)
