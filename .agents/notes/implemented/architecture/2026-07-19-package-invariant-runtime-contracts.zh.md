@@ -25,9 +25,9 @@ Status: implemented
 
 中央 `dsh-invariants` 服务只负责配置、注册唯一性、子 fiber 生命周期、回滚、dispose（资源释放）和归属到包的失败。它不暴露通用插件形状、服务形状或启动断言 helper，也不导入产品包。
 
-### 已实施的检查
+### 已实施检查示例
 
-已发布 companion 由 `verify-package-invariants` 机械枚举；当前审计数量记录在[省略不必要 companion 的决策](../simplification/2026-08-28-omit-unneeded-invariant-companions.zh.md)中。
+已发布 companion 由 `verify-package-invariants` 机械枚举；当前审计数量记录在[省略不必要 companion 的决策](../simplification/2026-08-28-omit-unneeded-invariant-companions.zh.md)中。下表仅展示有代表性的运行时关系，不会逐项列出所有 companion。
 
 | 所有者 | 运行时关系 |
 |---|---|

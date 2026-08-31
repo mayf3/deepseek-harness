@@ -25,9 +25,9 @@ When no plausible relationship exists, the package omits the companion and publi
 
 The central `dsh-invariants` service owns only configuration, registration uniqueness, child-fiber lifecycle, rollback, disposal, and package-attributed failure. It exposes no generic plugin-shape, service-shape, or startup-assertion helpers and imports no product package.
 
-### Implemented checks
+### Representative implemented checks
 
-Published companions are enumerated mechanically by `verify-package-invariants`; the current audit count is recorded in the [omit-unneeded-companions decision](../simplification/2026-08-28-omit-unneeded-invariant-companions.md).
+Published companions are enumerated mechanically by `verify-package-invariants`; the current audit count is recorded in the [omit-unneeded-companions decision](../simplification/2026-08-28-omit-unneeded-invariant-companions.md). The table below samples representative runtime relationships rather than listing every companion.
 
 | Owner | Runtime relationship |
 |---|---|

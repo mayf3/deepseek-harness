@@ -113,14 +113,14 @@ describe('package invariant gate', () => {
     expect(packageInvariantOwners(root)).toEqual([])
   })
 
-  it('requires an omitted companion to have a package-specific README reason', () => {
+  it('requires an omitted companion to have a README reason sentence', () => {
     const violations = collectPackageInvariantViolations(fixture({
       companion: false,
       omissionReason: false,
     }))
     expect(violations).toContainEqual({
       path: 'packages/core/probe/README.md',
-      message: 'omitted companion requires a package-specific "No ... companion is published" reason',
+      message: 'omitted companion requires a README "No ... companion is published" reason sentence',
     })
   })
 
@@ -187,11 +187,13 @@ describe('package invariant gate', () => {
       companion: false,
       invariantExport: true,
       invariantFile: true,
+      invariantReference: true,
       buildEntry: true,
     }))
     expect(violations.map(violation => violation.message)).toEqual(expect.arrayContaining([
       expect.stringContaining('exports["./invariant"] must be omitted'),
       expect.stringContaining('files must omit lib/invariant.js'),
+      expect.stringContaining('TypeScript project references must omit ../../runtime-diagnostics/invariants'),
       expect.stringContaining('build override must omit lib/types/invariant.js'),
     ]))
   })

@@ -164,6 +164,12 @@ function checkBuild(
       tsconfigPath,
       'TypeScript project references must include ../../runtime-diagnostics/invariants',
     )
+  } else if (!hasCompanion && projectReferencesInvariants(root, owner.dir, tsconfigPath)) {
+    addViolation(
+      violations,
+      tsconfigPath,
+      'TypeScript project references must omit ../../runtime-diagnostics/invariants when src/invariant.ts is absent',
+    )
   }
 
   const configPath = `${owner.dir}/tsdown.config.ts`
@@ -192,7 +198,7 @@ function checkOmissionReason(
     addViolation(
       violations,
       readmePath,
-      'omitted companion requires a package-specific "No ... companion is published" reason',
+      'omitted companion requires a README "No ... companion is published" reason sentence',
     )
   }
 }
