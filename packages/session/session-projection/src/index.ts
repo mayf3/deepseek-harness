@@ -98,9 +98,9 @@ export interface ProjectionDefinition<
  * Change-feed listener: one unit's served value changed for one session.
  * `value` is the schema-validated `view` output; `seq` is the unit's
  * watermark at emission (the seq of the event that caused the change). A
- * changed state whose raw `view` output is `Object.is`-identical to the
- * unit's previous projection does not fire, so a unit can buffer working
- * fields in state behind an identity-stable projection.
+ * changed state whose `viewKey` token (default: the raw `view` output) is
+ * `Object.is`-identical to the previous state's does not fire, so a unit can
+ * buffer working fields in state behind an identity-stable projection.
  */
 export type ProjectionChangeListener = (
   session: Session,
