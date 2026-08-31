@@ -1204,6 +1204,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // inheriting fd 0 would keep the host process from exiting even after the
       // closeDeadline forced settlement. The child (and any descendant) reads
       // EOF on fd 0 instead, and no host handle survives.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the boot-write-failure fake child has no stdin.
       child.stdin?.destroy()
     } catch (error: unknown) {
       try {
@@ -1385,6 +1386,7 @@ export class PythonCodeRuntime extends CodeRuntime {
           // A line admitted inside the loop may have exhausted the ledger and
           // cleared this pipe (see clearStray); the re-retain below must not
           // resurrect the doomed residual.
+          // oxlint-disable-next-line typescript/no-unnecessary-condition -- admit() (a closure) sets it.
           if (logsTruncated) return
           stray.chunks = detachResidual(buffered)
           stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
@@ -1910,6 +1912,7 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // after `maxWallMs`, an abort, or dispose already settled the run
                 // would spend host heap on a frame that is then discarded, and
                 // binding resolution carries no seam-level byte cap to bound it.
+                // oxlint-disable-next-line typescript/no-unnecessary-condition -- the run can settle while this binding is awaited.
                 if (settled) return
                 // The seam requires a lossy resolution to REJECT descriptively,
                 // not silently coerce: a raw JSON.stringify would turn NaN/
@@ -1929,8 +1932,13 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // before `sendReply` peeks at `settled`. Dropping the framed
                 // reply early spares the host heap and time for a run whose
                 // outcome is already fixed.
+                // (oxlint block-disable so both `v8 ignore next` and the rule
+                // suppression land on the `if`: `settled` flips true mid-wait,
+                // invisible to the type-aware lint, which narrows it to false.)
+                /* oxlint-disable typescript/no-unnecessary-condition */
                 /* v8 ignore next -- a rejection arriving after settlement is not schedulable from a test. */
                 if (settled) return
+                /* oxlint-enable typescript/no-unnecessary-condition */
                 sendReply({ type: 'reply', id: message.id, ok: false, message: messageOf(error) })
               } finally {
                 // Release the in-flight slot on every exit — reply written,
