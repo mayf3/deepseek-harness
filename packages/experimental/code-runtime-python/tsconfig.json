@@ -21,13 +21,13 @@
       "path": "../../code-runtime/code-runtime"
     },
     {
-      "path": "../../core/session"
-    },
-    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
       "path": "../../util/timeout"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }
