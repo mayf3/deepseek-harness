@@ -6,6 +6,7 @@ import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
 import { MessageId } from '@deepseek-ai/dsh-llm'
+import { prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 import {
   SESSION_FORMAT_VERSION, SessionId as sessionId, SessionLogOffset, SessionSeq, type SessionEvent, type SessionHeader, type SessionId,
 } from '@deepseek-ai/dsh-session'
@@ -14,7 +15,7 @@ import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import {
   acknowledgeReloadConnectionLoss, captureExpandedTurnProcessAria, captureStableAria,
   compareOrRefreshGolden,
-  launchWebScaffold, watchConsole,
+  launchWebScaffold, selectedSessionFixture, watchConsole,
   webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import { connectFreshWorkspace, newEnglishPage, saveFailureShot } from './support.ts'
@@ -44,14 +45,28 @@ const POST_FORK_FOLLOWUP = 'Continue the original conversation after the fork.'
 function childFixture(source: string, fixtureId: string, withContinuation: boolean): string {
   const [header, ...eventLines] = source.trimEnd().split('\n')
   if (header === undefined) throw new Error('base replay fixture has no header')
-  const childHeader = header
-    .replace('"id":"{{sessionId}}"', `"id":"${fixtureId}"`)
-    .replace(/"createdAt":\d+/, '"createdAt":1784998084442')
+  const childHeaderValue = JSON.parse(header) as Record<string, unknown>
+  childHeaderValue.id = fixtureId
+  childHeaderValue.createdAt = 1784998084442
+  const childHeader = JSON.stringify(childHeaderValue)
   if (!withContinuation) return [childHeader, ...eventLines, ''].join('\n')
-  const continued = eventLines.map(line => line
-    .replace(/"seq":(\d+)/g, (_match, seq: string) => `"seq":${String(Number(seq) + 100)}`)
-    .replace(/"seq0":(\d+)/g, (_match, seq: string) => `"seq0":${String(Number(seq) + 100)}`)
-    .replaceAll('"turn":1', '"turn":2'))
+  const seqOffset = eventLines.length
+  const continued = eventLines.map((line) => {
+    const event = JSON.parse(line) as {
+      type: string
+      seq: number
+      data: Record<string, unknown>
+    }
+    const data = { ...event.data }
+    if (data.turn === 1) data.turn = 2
+    if (event.type === 'session/title' && Array.isArray(data.messageSeqs)) {
+      data.messageSeqs = data.messageSeqs.map((seq: unknown) => {
+        if (typeof seq !== 'number') throw new Error('base replay fixture title has a non-numeric message seq')
+        return seq + seqOffset
+      })
+    }
+    return JSON.stringify({ ...event, seq: event.seq + seqOffset, data })
+  })
   return [childHeader, ...eventLines, ...continued, ''].join('\n')
 }
 
@@ -89,12 +104,16 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
 
   beforeAll(async () => {
     if (MODE === 'record') throw new Error('subagent conversation is a keyless assembled snapshot')
-    const baseFixture = await readFile(BASE_FIXTURE, 'utf8')
+    const selectedBaseFixture = await selectedSessionFixture(BASE_FIXTURE)
+    const baseFixture = prepareSessionSnapshotFixtureForComparison(
+      await readFile(selectedBaseFixture, 'utf8'),
+      selectedBaseFixture,
+    )
     sidecarRoot = await mkdtemp(join(tmpdir(), 'dsh-web-subagent-'))
     const childFixturePath = join(sidecarRoot, 'child.jsonl')
     await writeFile(childFixturePath, childFixture(baseFixture, 'recorded-subagent', true))
     scaffold = await launchWebScaffold({
-      replayFixture: BASE_FIXTURE,
+      replayFixture: selectedBaseFixture,
       compareReplaySession: false,
       replayChildFixtures: [childFixturePath],
       paceMs: 25,

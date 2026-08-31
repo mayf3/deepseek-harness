@@ -430,6 +430,7 @@ describe('SQLite session search', () => {
     session.append(
       'assistant/message',
       {
+        stream: [],
         turn: 1,
         step: 1,
         message: createAssistantMessage({
@@ -461,7 +462,16 @@ describe('SQLite session search', () => {
       { type: 'user/message', seq: SessionSeq(0), time: 10, data: createUserMessage({
         content: [{ type: 'text', text: 'needle original' }], source: { kind: 'user' },
       }), surfaceOp: 'append' },
-      { type: 'assistant/chunk', seq: SessionSeq(1), time: 11, data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'needle raw' } } },
+      {
+        type: 'assistant/attempt',
+        seq: SessionSeq(1),
+        time: 11,
+        data: {
+          turn: 1,
+          step: 1,
+          stream: [{ type: 'text-chunks', time0: 11, index: 0, dt: [], texts: ['needle raw'] }],
+        },
+      },
       { type: 'user/message', seq: SessionSeq(2), time: 12, data: createUserMessage({
         content: [{ type: 'text', text: 'needle summary' }], source: { kind: 'plugin', plugin: 'test' },
       }), surfaceOp: { op: 'replace', start: SessionSeq(0), end: SessionSeq(0) }, sourceEventSeqs: [SessionSeq(0)] },
@@ -2026,12 +2036,12 @@ describe('SQLite schema, cancellation, and real persistence integration', () => 
         .toBe(SESSION_FORMAT_VERSION)
       expect((await readdir(dirname(v0Path))).sort()).toEqual([
         'session.jsonl',
-        'session.v1.jsonl',
+        'session.v2.jsonl',
       ])
 
       await expect(ctx.sessionPersistence.readRaw(meta.id)).resolves.toMatchObject({
         meta: { ...meta, version: SESSION_FORMAT_VERSION },
-        filename: 'session.v1.jsonl',
+        filename: 'session.v2.jsonl',
         content: current,
       })
       expect(await readFile(currentLocation.path, 'utf8')).toBe(current)

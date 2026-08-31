@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sessionFormatCatalog } from '../src/index.ts'
 
 describe('first-party Session format catalog', () => {
-  it('statically owns the complete v0 to v1 chain', () => {
+  it('statically owns the complete adjacent v0 to v2 chain', () => {
     const header = {
       type: 'session',
       version: 0,
@@ -12,13 +12,13 @@ describe('first-party Session format catalog', () => {
       delegationDepth: 0,
     }
 
-    expect(sessionFormatCatalog.currentVersion).toBe(1)
+    expect(sessionFormatCatalog.currentVersion).toBe(2)
     expect(sessionFormatCatalog.readHeader(header)).toEqual({
       status: 'migration-required',
       storedVersion: 0,
-      targetVersion: 1,
+      targetVersion: 2,
       header: {
-        version: 1,
+        version: 2,
         id: 'catalog',
         createdAt: 1,
         isSeeded: true,
@@ -26,32 +26,29 @@ describe('first-party Session format catalog', () => {
       },
     })
 
-    const currentHeader = { ...header, version: 1 }
-    const current = sessionFormatCatalog.decodeArtifact(currentHeader, [
+    const v1Header = { ...header, version: 1 }
+    const current = sessionFormatCatalog.decodeArtifact(v1Header, [
       { type: 'turn/start', seq: 0, time: 2, data: { turn: 1 } },
     ])
     expect(sessionFormatCatalog.migrate(current)).toMatchObject({
-      header: { version: 1, id: 'catalog' },
+      header: { version: 2, id: 'catalog' },
     })
   })
 
-  it('restores the installed current vocabulary without freezing ordinary payload additions', () => {
+  it('restores only the exact frozen current vocabulary and payloads', () => {
     const header = {
-      type: 'session', version: 1, id: 'current-growth', createdAt: 1, delegationDepth: 0,
+      type: 'session', version: 2, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
     }
-    const extended = sessionFormatCatalog.decodeArtifact(header, [{
+    expect(() => sessionFormatCatalog.decodeArtifact(header, [{
       type: 'turn/start', seq: 0, time: 1, data: { turn: 1, postReleaseMember: true },
-    }])
-    expect(sessionFormatCatalog.migrate(extended).events).toEqual(extended.events)
+    }])).toThrow(/unexpected field postReleaseMember/)
 
-    const unknownRequired = sessionFormatCatalog.decodeArtifact(header, [{
+    expect(() => sessionFormatCatalog.decodeArtifact(header, [{
       type: 'ordinary/not-installed', seq: 0, time: 1, data: 'future',
-    }])
-    expect(() => sessionFormatCatalog.migrate(unknownRequired)).toThrow(/unknown required event/)
+    }])).toThrow(/unknown event type/)
 
-    const unknownIgnorable = sessionFormatCatalog.decodeArtifact(header, [{
+    expect(() => sessionFormatCatalog.decodeArtifact(header, [{
       type: 'ordinary/external', seq: 0, time: 1, data: null, ignorable: true,
-    }])
-    expect(sessionFormatCatalog.migrate(unknownIgnorable).events).toEqual(unknownIgnorable.events)
+    }])).toThrow(/unknown event type/)
   })
 })

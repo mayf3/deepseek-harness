@@ -1,4 +1,4 @@
-import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { createAssistantMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 /**
  * Coordinator semantics against a bare fake backend — the RFC's named unit
  * tier for the seam: adoption (fresh, seeded, re-adoption via the handoff
@@ -93,6 +93,27 @@ function appendTurn(session: Session): void {
   }), { surfaceOp: 'append' })
 }
 
+function appendAssistantMessage(
+  session: Session,
+  turn: number,
+  step: number,
+  texts: readonly string[],
+  time0 = 100,
+): void {
+  session.append('assistant/message', {
+    turn,
+    step,
+    message: createAssistantMessage({
+      content: [{ type: 'text', text: texts.join('') }],
+      source: { provider: 'mock', model: 'mock' },
+    }),
+    stream: [
+      { type: 'text-chunks', time0, index: 0, dt: texts.slice(1).map(() => 5), texts: [...texts] },
+      { type: 'chunk', time: time0 + Math.max(0, texts.length - 1) * 5, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+    ],
+  }, { surfaceOp: 'append' })
+}
+
 describe('SessionTelemetryCoordinator capture', () => {
   it('hands every appended event over with envelope identity and cloned body', async () => {
     const { ctx, backend } = await setup()
@@ -170,28 +191,31 @@ describe('SessionTelemetryCoordinator capture', () => {
     expect(record.body).toEqual({ payload: { nested: ['a', 'b'] } })
   })
 
-  it('ships every assistant chunk in canonical order with its complete body', async () => {
+  it('ships every assistant stream in canonical order with its complete body', async () => {
     const { ctx, backend } = await setup()
     const a = liveSession(ctx, 'a')
     const b = liveSession(ctx, 'b')
-    const chunk = (s: Session, turn: number, step: number, text: string) =>
-      s.append('assistant/chunk', { turn, step, chunk: { type: 'text-delta', index: 0, text } })
-    chunk(a, 1, 1, 'a11-first')
-    chunk(a, 1, 1, 'a11-second')
-    chunk(a, 1, 2, 'a12-first')
-    chunk(b, 1, 1, 'b11-first')
-    chunk(b, 1, 1, 'b11-second')
+    appendAssistantMessage(a, 1, 1, ['a11-first', 'a11-second'], 110)
+    appendAssistantMessage(a, 1, 2, ['a12-first'], 120)
+    appendAssistantMessage(b, 1, 1, ['b11-first', 'b11-second'], 210)
     const shipped = backend.ledger().map(r => [
       r.attributes['session.id'],
       r.attributes['event.seq'],
-      (r.body as { chunk: { text: string } }).chunk.text,
+      (r.body as SessionEvent<'assistant/message'>['data']).stream,
     ])
     expect(shipped).toEqual([
-      ['a', 0, 'a11-first'],
-      ['a', 1, 'a11-second'],
-      ['a', 2, 'a12-first'],
-      ['b', 0, 'b11-first'],
-      ['b', 1, 'b11-second'],
+      ['a', 0, [
+        { type: 'text-chunks', time0: 110, index: 0, dt: [5], texts: ['a11-first', 'a11-second'] },
+        { type: 'chunk', time: 115, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+      ]],
+      ['a', 1, [
+        { type: 'text-chunks', time0: 120, index: 0, dt: [], texts: ['a12-first'] },
+        { type: 'chunk', time: 120, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+      ]],
+      ['b', 0, [
+        { type: 'text-chunks', time0: 210, index: 0, dt: [5], texts: ['b11-first', 'b11-second'] },
+        { type: 'chunk', time: 215, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+      ]],
     ])
   })
 })
@@ -201,17 +225,9 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
     const { ctx, backend, coordinator } = await setup(new FakeBackend(), 'on-demand')
     const session = liveSession(ctx, 'on-demand-prefix')
     appendTurn(session)
-    session.append('assistant/chunk', {
-      turn: 1,
-      step: 1,
-      chunk: { type: 'text-delta', index: 0, text: 'first' },
-    })
+    appendAssistantMessage(session, 1, 1, ['first'], 100)
     const firstBoundary = session.snapshotEvents()[2]!.seq
-    session.append('assistant/chunk', {
-      turn: 1,
-      step: 1,
-      chunk: { type: 'text-delta', index: 0, text: 'second' },
-    })
+    appendAssistantMessage(session, 1, 2, ['second'], 200)
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(backend.records).toEqual([])
 
@@ -219,10 +235,15 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
     expect(backend.ledger().map(record => record.attributes['event.type'])).toEqual([
       'turn/start',
       'user/message',
-      'assistant/chunk',
+      'assistant/message',
     ])
     expect(backend.ledger().map(record => record.attributes['event.seq'])).toEqual([0, 1, 2])
-    expect(backend.ledger()[2]!.body).toMatchObject({ chunk: { text: 'first' } })
+    expect(backend.ledger()[2]!.body).toMatchObject({
+      stream: [
+        { type: 'text-chunks', time0: 100, index: 0, dt: [], texts: ['first'] },
+        { type: 'chunk', time: 100, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+      ],
+    })
 
     expect(backend.ledger()).toHaveLength(3)
     coordinator.captureSession(session)
@@ -230,12 +251,17 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
     expect(backend.ledger().map(record => record.attributes['event.type'])).toEqual([
       'turn/start',
       'user/message',
-      'assistant/chunk',
-      'assistant/chunk',
+      'assistant/message',
+      'assistant/message',
       'turn/end',
     ])
     expect(backend.ledger().map(record => record.attributes['event.seq'])).toEqual([0, 1, 2, 3, 4])
-    expect(backend.ledger()[3]!.body).toMatchObject({ chunk: { text: 'second' } })
+    expect(backend.ledger()[3]!.body).toMatchObject({
+      stream: [
+        { type: 'text-chunks', time0: 200, index: 0, dt: [], texts: ['second'] },
+        { type: 'chunk', time: 200, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+      ],
+    })
   })
 
   it('runs the currently mounted redaction policy during canonical-log capture', async () => {
@@ -323,7 +349,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
       inject: ['sessions'],
       apply: (inner: Context) => void new SessionTelemetryCoordinator(inner, backend),
     })
-    const child = ctx.sessions.prepare(SessionId('seeded'), { seed: parent.snapshotEvents(), meta: {} })
+    const child = ctx.sessions.prepare(SessionId('seeded'), { seed: [...parent.snapshotEvents()], meta: {} })
     child.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     ctx.sessions.enter(child)
     ctx.sessions.announce(child)
@@ -344,7 +370,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
     await ctx.plugin(SessionStore)
     const donor = Session.create(SessionId('donor'))
     donor.append('turn/start', { turn: 1 })
-    donor.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'first' } })
+    appendAssistantMessage(donor, 1, 1, ['first'], 100)
     await ctx.plugin({
       name: 'fake-telemetry',
       inject: ['sessions'],
@@ -370,15 +396,15 @@ describe('SessionTelemetryCoordinator adoption', () => {
       .filter(r => r.attributes['session.id'] === 'resumed')
     expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([0, 1, 2])
     expect(ofResumed().every(r => r.attributes['session.format_version'] === SESSION_FORMAT_VERSION)).toBe(true)
-    resumed.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'continuation' } })
-    resumed.append('assistant/chunk', { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'next step' } })
+    appendAssistantMessage(resumed, 1, 1, ['continuation'], 200)
+    appendAssistantMessage(resumed, 1, 2, ['next step'], 300)
     expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([0, 1, 2, 3, 4])
-    expect(ofResumed().map(r => (r.body as { chunk?: { text: string } }).chunk?.text)).toEqual([
+    expect(ofResumed().map(r => (r.body as { stream?: { type: string; texts?: string[] }[] }).stream?.[0]?.texts)).toEqual([
       undefined,
-      'first',
+      ['first'],
       undefined,
-      'continuation',
-      'next step',
+      ['continuation'],
+      ['next step'],
     ])
   })
 
@@ -389,8 +415,8 @@ describe('SessionTelemetryCoordinator adoption', () => {
     const parent = liveSession(ctx, 'stitch-parent')
     appendTurn(parent)
     const child = ctx.sessions.create(SessionId('stitch-child'), {
-      seed: parent.snapshotEvents(),
-      inheritedEventCount: parent.seq,
+      seed: [...parent.snapshotEvents()],
+      inheritedEventCount: SessionLogOffset(parent.snapshotEvents().length),
       meta: { parentSession: SessionId('stitch-parent'), isSeeded: true },
     })
     await ctx.plugin({
@@ -430,12 +456,12 @@ describe('SessionTelemetryCoordinator adoption', () => {
     const { ctx, fiber } = await setup(backend)
     const session = liveSession(ctx, 'hmr')
     session.append('turn/start', { turn: 1 })
-    session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'first' } })
+    appendAssistantMessage(session, 1, 1, ['first'], 100)
     expect(backend.ledger()).toHaveLength(2)
 
     await fiber.dispose()
     // The reload window: appends while no telemetry listener is registered.
-    session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'mid-step continuation' } })
+    appendAssistantMessage(session, 1, 2, ['mid-step continuation'], 200)
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
 
     const second = new FakeBackend()
@@ -446,7 +472,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
     })
     // Only window events past the same object's cursor are re-handed.
     expect(second.ledger().map(r => [r.attributes['event.seq'], r.attributes['event.type']])).toEqual([
-      [2, 'assistant/chunk'],
+      [2, 'assistant/message'],
       [3, 'turn/end'],
     ])
   })

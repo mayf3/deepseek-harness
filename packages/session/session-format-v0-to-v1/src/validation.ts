@@ -164,12 +164,27 @@ function assertArtifactCoordinates(
     if (record['ignorable'] !== undefined && record['ignorable'] !== true) {
       throw new SessionFormatError(`Session event ${index} ignorable must be true when present`)
     }
-    if (frozenEnvelope && surface) assertSurfaceMetadata(record, index, type)
+    if (frozenEnvelope && surface) assertReleasedSurfaceMetadata(record, index, type, 'allow-empty-assistant')
   }
 }
 
-function assertSurfaceMetadata(record: Record<string, SessionFormatJsonValue>, seq: number, type: string): void {
+/**
+ * Validate shared-layout surface references for one released generation.
+ * @param record - exact event envelope.
+ * @param seq - event position used for earlier-reference checks.
+ * @param type - surface event type used in diagnostics.
+ * @param assistantSources - whether this generation admits empty Assistant chunk provenance.
+ */
+export function assertReleasedSurfaceMetadata(
+  record: Record<string, SessionFormatJsonValue>,
+  seq: number,
+  type: string,
+  assistantSources: 'allow-empty-assistant' | 'forbid-assistant',
+): void {
   const sources = record['sourceEventSeqs']
+  if (type === 'assistant/message' && sources !== undefined && assistantSources === 'forbid-assistant') {
+    throw new SessionFormatError(`assistant/message ${seq} retains obsolete chunk provenance`)
+  }
   if (sources !== undefined) {
     if (!Array.isArray(sources)) throw new SessionFormatError(`${type} ${seq} sourceEventSeqs must be an array`)
     const seen = new Set<number>()
@@ -180,7 +195,8 @@ function assertSurfaceMetadata(record: Record<string, SessionFormatJsonValue>, s
       }
       seen.add(current)
     }
-    if (sources.length === 0 && type !== 'assistant/message') {
+    if (sources.length === 0
+      && (type !== 'assistant/message' || assistantSources === 'forbid-assistant')) {
       throw new SessionFormatError(`${type} ${seq} sourceEventSeqs must be non-empty`)
     }
   }

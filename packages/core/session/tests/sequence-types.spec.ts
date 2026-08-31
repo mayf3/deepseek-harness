@@ -82,25 +82,23 @@ describe('Session log positions', () => {
     expect(fresh.inheritedEventCount).toBe(0)
   })
 
-  it('retains a child-owned constructor-seed suffix after the inherited cut', () => {
+  it('appends child-owned setup after the constructor-owned inherited marker', () => {
     const parent = Session.create(SessionId('suffix-parent'))
     parent.append('turn/start', { turn: 1 })
     parent.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
-    const assembled = Session.create(SessionId('assembled-seed'), parent.snapshotEvents())
-    assembled.append('request/context', { provider: 'provider', model: 'model' })
     const id = SessionId('suffix-child')
 
-    const child = Session.create(id, assembled.snapshotEvents(), {
+    const child = Session.create(id, parent.snapshotEvents(), {
       version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 1,
       isSeeded: true,
     }, parent.seq)
+    child.append('request/context', { provider: 'provider', model: 'model' })
 
     expect(child.ownEvents().map(event => event.type)).toEqual([
       'session/end-seed',
       'request/context',
-      'session/end-seed',
     ])
     expect(child.isOwnSeq(SessionSeq(1))).toBe(false)
     expect(child.isOwnSeq(SessionSeq(2))).toBe(true)
@@ -137,6 +135,15 @@ describe('Session log positions', () => {
     expect(() => Session.create(seededId, [], {
       version: SESSION_FORMAT_VERSION, id: seededId, createdAt: 1, isSeeded: true,
     }, SessionLogOffset(1))).toThrow(/inherited event count exceeds its event log/)
+
+    const shortCutId = SessionId('seeded-short-cut')
+    const seed = [
+      { type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } },
+      { type: 'turn/end', seq: SessionSeq(1), time: 2, data: { turn: 1, reason: { kind: 'completed' } } },
+    ] as const
+    expect(() => Session.create(shortCutId, seed, {
+      version: SESSION_FORMAT_VERSION, id: shortCutId, createdAt: 1, isSeeded: true,
+    }, SessionLogOffset(1))).toThrow(/constructor seed must equal its inherited prefix/)
   })
 
   it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])(

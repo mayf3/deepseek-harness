@@ -1,154 +1,191 @@
-/** Web presentation fold joining durable v1 events with transient assistant frames. */
+/** Web presentation fold joining transient Assistant frames to one durable v2 settlement. */
 
 import type {
   SessionAssistantStreamBaseline,
   SessionAssistantStreamFrame,
 } from '../../types.ts'
+import { expandAssistantStream } from '@deepseek-ai/dsh-llm/assistant-stream'
+import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type {
   SessionEventLikeEntry,
   SessionLiveEventEntry,
+  SessionTransientEventEntry,
 } from '../contract/events.ts'
 
 interface ActiveAttempt {
+  readonly attemptId: string
   readonly startedTime: number
   readonly turn: number
   readonly step: number
-  readonly legacyChunkSeqs: Set<number>
   nextIndex: number
 }
 
 /** One Web publication decision from the assistant stream fold. */
 export type ClientAssistantStreamResult =
   | { readonly type: 'publish'; readonly entry: SessionLiveEventEntry }
+  | { readonly type: 'transient'; readonly entry: SessionTransientEventEntry }
   | { readonly type: 'rebaseline' }
   | undefined
 
-function positionKey(turn: number, step: number): string {
-  return `${String(turn)}:${String(step)}`
-}
-
-function sameSeqs(left: readonly number[], right: readonly number[]): boolean {
-  return left.length === right.length && left.every((seq, index) => seq === right[index])
-}
-
-/**
- * Keeps transient Assistant presentation behind one small interface. Durable
- * chunks and final messages publish only at their matching live frame.
- */
+/** Keeps transient Assistant presentation behind one settlement-aware interface. */
 export class ClientAssistantStream {
-  private readonly attempts = new Map<string, ActiveAttempt>()
-  private readonly pendingChunks = new Map<number, SessionLiveEventEntry>()
-  private readonly pendingMessages = new Map<string, SessionLiveEventEntry>()
+  private activeAttempt: ActiveAttempt | undefined
+  private readonly pending = new Map<number, SessionLiveEventEntry>()
   private publishedSeqs = new Set<number>()
+  private durableCursor = -1
+  private transientInGap = 0
 
   /**
    * Replace the durable Web window and adopt an optional reconnect baseline.
-   * @param entries - complete event window from the journal replacement.
-   * @param baseline - active process-local attempts for a follow opening.
-   * @returns the same durable window; baseline seqs suppress later duplicate live appends.
+   * @param entries - durable entries in the replacement window.
+   * @param baseline - compact prefix for an Assistant attempt that is still live.
+   * @returns immediately visible durable and reconstructed transient entries, with an active settlement withheld.
    */
   replace(
     entries: readonly SessionEventLikeEntry[],
     baseline?: SessionAssistantStreamBaseline,
   ): readonly SessionEventLikeEntry[] {
-    this.pendingChunks.clear()
-    this.pendingMessages.clear()
-    this.attempts.clear()
-    if (baseline !== undefined) {
-      for (const attempt of baseline.attempts) {
-        this.attempts.set(String(attempt.attemptId), {
-          startedTime: attempt.startedTime,
-          turn: attempt.turn,
-          step: attempt.step,
-          legacyChunkSeqs: new Set(attempt.legacyChunkSeqs),
-          nextIndex: attempt.chunks.length,
-        })
+    this.pending.clear()
+    this.transientInGap = 0
+    this.activeAttempt = undefined
+    const opening = baseline?.activeAttempt
+    if (opening !== undefined) {
+      this.activeAttempt = {
+        attemptId: String(opening.attemptId),
+        startedTime: opening.startedTime,
+        turn: opening.turn,
+        step: opening.step,
+        nextIndex: opening.nextIndex,
       }
     }
-    const visible = entries
+    const pending = opening === undefined
+      ? undefined
+      : entries.findLast(entry => entry.type === 'event'
+        && this.attemptForSettlement(entry.event) !== undefined)
+    if (pending?.type === 'event') this.pending.set(pending.event.seq, pending)
+    const visible: SessionEventLikeEntry[] = pending === undefined
+      ? [...entries]
+      : entries.filter(entry => entry !== pending)
     this.publishedSeqs = new Set(visible.map(entry => entry.event.seq))
+    this.durableCursor = visible.reduce((cursor, entry) => Math.max(cursor, entry.event.seq), -1)
+    if (opening !== undefined) {
+      for (const [index, member] of expandAssistantStream(
+        opening.stream as unknown as readonly AssistantStreamRecord[],
+      ).entries()) {
+        this.transientInGap += 1
+        visible.push({
+          type: 'transient',
+          event: {
+            type: 'assistant/live-chunk',
+            seq: this.durableCursor + 1 - 1 / (this.transientInGap + 1),
+            time: member.time,
+            data: {
+              attemptId: opening.attemptId,
+              turn: opening.turn,
+              step: opening.step,
+              chunk: member.chunk,
+            },
+          },
+        })
+        if (index + 1 >= opening.nextIndex) break
+      }
+    }
     return visible
   }
 
   /**
-   * Stage one durable tail event when an active attempt owns its publication.
-   * @param entry - next cursor-validated durable event.
-   * @returns the entry for immediate publication, or undefined while staged.
+   * Stage one durable v2 settlement while its matching live attempt is open.
+   * @param entry - newly followed durable entry.
+   * @returns a publication decision, or `undefined` when no entry becomes visible.
    */
   acceptDurable(entry: SessionLiveEventEntry): ClientAssistantStreamResult {
     const event = entry.event
-    if (event.type === 'assistant/chunk') {
-      const attempt = this.attemptFor(event.data.turn, event.data.step)
-      if (attempt === undefined) return this.publish(entry)
-      if (attempt.legacyChunkSeqs.has(event.seq)) return this.publish(entry)
-      this.pendingChunks.set(event.seq, entry)
-      return undefined
-    }
-    if (event.type === 'assistant/message') {
-      if (event.surfaceOp !== 'append') return this.publish(entry)
-      const attempt = this.attemptFor(event.data.turn, event.data.step)
-      if (attempt === undefined) return this.publish(entry)
-      this.pendingMessages.set(positionKey(event.data.turn, event.data.step), entry)
+    this.durableCursor = Math.max(this.durableCursor, event.seq)
+    this.transientInGap = 0
+    if (this.attemptForSettlement(event) !== undefined) {
+      this.pending.set(event.seq, entry)
       return undefined
     }
     return this.publish(entry)
   }
 
   /**
-   * Fold one validated transient frame and release its matching durable event.
-   * @param frame - next dense process-local frame.
-   * @returns one durable event whose Web publication commits at this frame.
+   * Fold one dense transient frame and release its named durable settlement.
+   * @param frame - next Assistant stream frame received by the follow connection.
+   * @returns a transient, publication, or rebaseline decision, or `undefined` when no entry becomes visible.
    */
   acceptFrame(frame: SessionAssistantStreamFrame): ClientAssistantStreamResult {
     switch (frame.type) {
       case 'start':
-        this.attempts.set(String(frame.attemptId), {
+        this.pending.clear()
+        this.activeAttempt = {
+          attemptId: String(frame.attemptId),
           startedTime: frame.startedTime,
           turn: frame.turn,
           step: frame.step,
-          legacyChunkSeqs: new Set(),
           nextIndex: 0,
-        })
+        }
         return undefined
       case 'chunk': {
-        const attempt = this.attempts.get(String(frame.attemptId))
-        if (attempt === undefined || frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
+        const attempt = this.activeAttempt
+        if (attempt === undefined
+          || attempt.attemptId !== String(frame.attemptId)
+          || frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         attempt.nextIndex += 1
-        attempt.legacyChunkSeqs.add(frame.legacyChunkSeq)
-        if (this.publishedSeqs.has(frame.legacyChunkSeq)) return undefined
-        const entry = this.pendingChunks.get(frame.legacyChunkSeq)
-        if (entry === undefined) return { type: 'rebaseline' }
-        this.pendingChunks.delete(frame.legacyChunkSeq)
-        return this.publish(entry)
+        this.transientInGap += 1
+        return {
+          type: 'transient',
+          entry: {
+            type: 'transient',
+            event: {
+              type: 'assistant/live-chunk',
+              seq: this.durableCursor + 1 - 1 / (this.transientInGap + 1),
+              time: frame.time,
+              data: {
+                attemptId: frame.attemptId,
+                turn: attempt.turn,
+                step: attempt.step,
+                chunk: frame.chunk as never,
+              },
+            },
+          },
+        }
       }
       case 'end': {
-        const attempt = this.attempts.get(String(frame.attemptId))
-        this.attempts.delete(String(frame.attemptId))
-        if (attempt === undefined) return { type: 'rebaseline' }
+        const attempt = this.activeAttempt
+        this.activeAttempt = undefined
+        if (attempt === undefined || attempt.attemptId !== String(frame.attemptId)) {
+          return { type: 'rebaseline' }
+        }
         if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
-        if (!sameSeqs([...attempt.legacyChunkSeqs], frame.legacyChunkSeqs)) {
+        if (frame.outcome.kind === 'abandoned') {
+          return this.pending.size === 0 ? undefined : { type: 'rebaseline' }
+        }
+        if (this.publishedSeqs.has(frame.outcome.seq)) return undefined
+        const entry = this.pending.get(frame.outcome.seq)
+        if (entry === undefined
+          || entry.event.type !== frame.outcome.eventType
+          || entry.event.data.turn !== attempt.turn
+          || entry.event.data.step !== attempt.step) {
           return { type: 'rebaseline' }
         }
-        const key = positionKey(attempt.turn, attempt.step)
-        const entry = this.pendingMessages.get(key)
-        if (entry === undefined) {
-          return frame.outcome === 'aborted' ? undefined : { type: 'rebaseline' }
-        }
-        if (entry.event.type !== 'assistant/message') return { type: 'rebaseline' }
-        const sourceEventSeqs = entry.event.sourceEventSeqs
-        if (sourceEventSeqs === undefined || !sameSeqs(sourceEventSeqs, frame.legacyChunkSeqs)) {
-          return { type: 'rebaseline' }
-        }
-        this.pendingMessages.delete(key)
+        this.pending.delete(frame.outcome.seq)
         return this.publish(entry)
       }
     }
   }
 
-  private attemptFor(turn: number, step: number): ActiveAttempt | undefined {
-    return [...this.attempts.values()].find(attempt => (
-      attempt.turn === turn && attempt.step === step
-    ))
+  private attemptForSettlement(
+    event: SessionLiveEventEntry['event'],
+  ): ActiveAttempt | undefined {
+    const attempt = this.activeAttempt
+    if (attempt === undefined
+      || (event.type !== 'assistant/message' && event.type !== 'assistant/attempt')
+      || (event.type === 'assistant/message' && event.surfaceOp !== 'append')
+      || event.time < attempt.startedTime
+      || attempt.turn !== event.data.turn
+      || attempt.step !== event.data.step) return undefined
+    return attempt
   }
 
   private publish(entry: SessionLiveEventEntry): ClientAssistantStreamResult {

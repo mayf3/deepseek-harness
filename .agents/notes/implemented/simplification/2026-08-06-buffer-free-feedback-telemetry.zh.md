@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-遥测协调器提供 `live` 与 `on-demand` 捕获。按需捕获不注册会话、flush 或运维事件监听器，也不保留记录副本。`captureSession(session, throughSeq?)` 从同一对象 handoff 游标之后读取权威会话日志，直至可选的包含式序列号边界，按顺序深拷贝每个事件、运行当前的 `session-telemetry/record` waterfall（瀑布式事件），并为每个事件向后端交接一条记录，其中包括每条 `assistant/chunk` 及其完整 body。新 Session 对象没有 WeakMap 条目，因此逻辑游标为 `-1`，捕获从 seq 0 开始。
+遥测 coordinator 提供 `live` 与 `on-demand` capture。按需 capture 不注册 Session、flush 或 operational-event listener，也不保留 record 副本。`captureSession(session, throughSeq?)` 从同一对象 handoff cursor 之后读取规范 Session log，直至可选的包含式序号 boundary，按序 deep-copy 每个 event、运行当前 `session-telemetry/record` waterfall，并为每个 event 向 backend 交接一条 record，其中包括每个带完整嵌入式 stream 的 `assistant/message` 或 `assistant/attempt`。新 Session 对象没有 WeakMap entry，因此逻辑 cursor 为 `-1`，capture 从 seq 0 开始。
 
 `FEEDBACK_ONLY` 以 `feedback/record` 事件的序列号调用该方法。`session/event` 监听器运行时，追加已经提交，因此回放包含该反馈事件，且无法包含后续后缀。以对象为键的 handoff 游标可区分后续回放，无需另一个待处理记录索引：同一对象上的重复反馈只释放后缀，而新的 resume 或迁移对象上的首次反馈会释放其完整当前权威前缀。
 

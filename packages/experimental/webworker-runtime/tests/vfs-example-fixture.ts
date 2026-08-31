@@ -81,7 +81,6 @@ interface EventDraft {
   readonly type: string
   readonly data: unknown
   readonly surfaceOp?: 'append'
-  readonly sourceEventSeqs?: SessionSeqType[]
   readonly ignorable?: true
 }
 
@@ -114,6 +113,38 @@ function userMessage(id: string, text: string): EventDraft {
   }
 }
 
+function assistantStream(content: readonly unknown[]): unknown[] {
+  const stream: unknown[] = []
+  let toolCalls = false
+  for (const [index, value] of content.entries()) {
+    const block = value as Record<string, unknown>
+    stream.push({ type: 'chunk', time: 0, chunk: { type: 'block-start', index, blockType: block.type } })
+    if (block.type === 'text') {
+      stream.push({ type: 'text-chunks', time0: 0, index, dt: [], texts: [block.text] })
+    } else if (block.type === 'reasoning') {
+      stream.push({ type: 'reasoning-chunks', time0: 0, index, dt: [], texts: [block.text] })
+    } else if (block.type === 'tool-call') {
+      toolCalls = true
+      stream.push({
+        type: 'tool-call-chunks',
+        time0: 0,
+        index,
+        dt: [],
+        id: block.id,
+        name: block.name,
+        args: [block.arguments],
+      })
+    }
+    stream.push({ type: 'chunk', time: 0, chunk: { type: 'block-end', index, block } })
+  }
+  stream.push({
+    type: 'chunk',
+    time: 0,
+    chunk: { type: 'finish', reason: { kind: toolCalls ? 'tool-calls' : 'stop' } },
+  })
+  return stream
+}
+
 function assistantMessage(id: string, turn: number, step: number, content: unknown[]): EventDraft {
   return {
     type: 'assistant/message',
@@ -126,8 +157,8 @@ function assistantMessage(id: string, turn: number, step: number, content: unkno
         content,
         source: { kind: 'model', provider: 'preview-fixture', model: 'deterministic' },
       },
+      stream: assistantStream(content),
     },
-    sourceEventSeqs: [],
     surfaceOp: 'append',
   }
 }
@@ -333,7 +364,7 @@ function mainLog(): {
 
 function oneShotLog(seed: readonly SessionEvent[]): SessionEvent[] {
   const log = new EventLog(CREATED_AT + 100_000, seed)
-  log.add({ type: 'session/end-seed', data: {} })
+  log.add({ type: 'session/end-seed', data: { inherited: true } })
   const turn = HISTORICAL_TURNS + 1
   log.add({ type: 'turn/start', data: { turn } })
   log.add(userMessage('preview-review-user', 'Review whether the preview fixture is isolated from future WebFS data.'))
@@ -405,7 +436,7 @@ function renderLog(
   storage: { readonly meta: SessionHeader; readonly inheritedEventCount: SessionLogOffsetType },
   events: readonly SessionEvent[],
 ): string {
-  return `${JSON.stringify(toHeaderLine(storage.meta, storage.inheritedEventCount))}\n${eventLines(events, true)}\n`
+  return `${JSON.stringify(toHeaderLine(storage.meta, storage.inheritedEventCount))}\n${eventLines(events)}\n`
 }
 
 /** Build every committed fixture file as repository-relative UTF-8 text. */

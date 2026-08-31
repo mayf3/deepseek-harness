@@ -10,6 +10,8 @@ export interface AlphaSessionFormatRefusalFixture {
   readonly path: string
   /** Exact source-qualified migration diagnostic the corpus must retain. */
   readonly expectedMessage: string
+  /** Exact current-generation relationship diagnostic admitted during paired comparison. */
+  readonly expectedCurrentMessage?: string
 }
 
 const REPOSITORY_ROOT = resolve(import.meta.dirname, '../../../..')
@@ -20,6 +22,7 @@ export const ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES: readonly AlphaSessionFormatR
     repoRelativePath: 'snapshots/session/agent-instructions/session.jsonl',
     path: resolve(REPOSITORY_ROOT, 'snapshots/session/agent-instructions/session.jsonl'),
     expectedMessage: 'session snapshot line 22: @deepseek-ai/dsh-session-format-v0-to-v1 refuses this format v0 Session: compaction checkpoint at seq 20 has no matching compaction/start',
+    expectedCurrentMessage: 'session snapshot line 17: compaction checkpoint at seq 15 has no matching compaction/start',
   }),
   Object.freeze({
     repoRelativePath: 'snapshots/web/schedule-catalog/session.jsonl',

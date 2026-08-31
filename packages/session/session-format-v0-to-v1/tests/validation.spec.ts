@@ -211,7 +211,10 @@ describe('released event and payload inventory', () => {
   it('has an executable valid fixture for every frozen released-v0 event type', () => {
     expect(Object.keys(validPayloads).sort()).toEqual([...RELEASED_V0_EVENT_TYPES].sort())
     expect(RELEASED_V0_EVENT_TYPES).toHaveLength(51)
-    expect(RELEASED_V0_EVENT_TYPES.every(type => KNOWN_SESSION_EVENT_TYPES.has(type))).toBe(true)
+    expect(RELEASED_V0_EVENT_TYPES
+      .filter(type => type !== 'assistant/chunk')
+      .every(type => KNOWN_SESSION_EVENT_TYPES.has(type))).toBe(true)
+    expect(KNOWN_SESSION_EVENT_TYPES.has('assistant/chunk')).toBe(false)
     for (const [type, data] of Object.entries(validPayloads)) {
       expect(() => { assertPayload(type, data) }, type).not.toThrow()
     }

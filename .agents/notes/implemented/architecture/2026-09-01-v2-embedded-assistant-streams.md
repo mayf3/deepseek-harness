@@ -1,0 +1,68 @@
+# Agent Note: Embed Assistant streams in v2 attempt settlements
+
+Status: implemented
+
+English | [中文](2026-09-01-v2-embedded-assistant-streams.zh.md)
+
+## Problem
+
+Token-sized `assistant/chunk` events preserve exact stream order, timing, usage, terminal state, replay metadata, and partial failed output, but making each chunk a top-level Session event repeats envelopes throughout persistence, telemetry, history transport, indexing, and client assembly. Physical packed rows reduce JSONL bytes without reducing logical event count or the work of consumers that receive the canonical stream.
+
+Storing only assembled successful messages would remove that overhead but lose failed and abandoned output, token boundaries, timestamps, and deterministic provider replay. The durable record needs one unit per model attempt without reducing the evidence that replay, diagnostics, cancellation recovery, usage accounting, snapshots, and UI history rely on.
+
+Changing event cardinality also changes Session sequence numbers. A released migration must preserve the relative order of unrelated events, rewrite every declared same-Session reference, retain the exact fork cut, and refuse any relationship it cannot preserve semantically.
+
+## Decision
+
+Session format v2 has no top-level `assistant/chunk` event. Each model attempt commits one durable settlement containing `stream: AssistantStreamRecord[]`:
+
+- `assistant/message` is the surface settlement for a successful response or a cancelled response with visible assembled content. It embeds the exact compact timed stream beside the assembled message, optional usage, and optional `interrupted: true` marker.
+- `assistant/attempt` is log-only. It preserves the stream for a failed, retried, cancelled, or crash-tail attempt that commits no surface message, so diagnostics and accounting do not fabricate model-visible history.
+
+`AssistantStreamAccumulator` snapshots each chunk once. Consecutive text, reasoning, or tool-argument deltas for the same block become one compact run with its first timestamp, exact timestamp gaps, and one array member per original delta. Every other chunk remains a timestamped raw record. `expandAssistantStream()` strictly validates and reconstructs the exact timed sequence; compaction never joins delta boundaries.
+
+The current v2 validator requires the embedded stream to reproduce a non-empty `assistant/message`'s content, usage, and replay state. An empty stream remains valid for a migrated legacy message that had no source chunks. `assistant/message` cannot carry obsolete chunk `sourceEventSeqs`; ordinary user and tool surface provenance remains available.
+
+### Live presentation and durable replay
+
+`agent/assistant-stream` publishes process-local start, transient chunk, and end frames. The loop appends the complete `assistant/message` or `assistant/attempt` before a committed end frame names its type and sequence. An abandoned end has no settlement.
+
+The Web follow adapter opts into these cursorless frames. It presents chunks as Client-only `assistant/live-chunk` updates between durable cursors, stages the matching settlement until the committed end, and reopens follow on a revision gap. A reconnect baseline carries the active attempt's compact prefix. Paged history, replay, telemetry, token accounting, and cold UI assembly read the durable embedded stream rather than the live frames.
+
+### Released v1 to v2 migration
+
+The adjacent migration validates the complete frozen v1 artifact, groups chunks by turn, step, terminal boundary, and exact message provenance, and then substitutes one settlement per attempt. A successful group's chunks move into its message. An unclaimed group becomes `assistant/attempt` at the last consumed chunk's position. Unrelated interleaved events retain their relative order, and survivors receive dense v2 sequence numbers.
+
+The edge remaps the finite declared reference inventory: envelope provenance, surface replacement endpoints, command source events, compaction ranges and shadowed lists, and title message lists. A reference to a consumed chunk refuses migration; it is never redirected to a settlement with different meaning. The edge also refuses an inherited cut that splits an attempt.
+
+The v2 physical header requires `isSeeded` and stores no numeric cut. A seeded artifact marks its exact cut with `session/end-seed { inherited: true }`; decoding derives the cut from the last tagged marker. The v2 codec writes one durable event per physical row and range-encodes only `sourceEventSeqs`. Frozen v0 and v1 codecs retain packed-row decoding for their immutable historical generations.
+
+Generation selection and publication follow the [released Session migration decision](2026-08-31-released-session-format-migrations.md): the source path, bytes, and inode remain unchanged, only the final version-named successor is published, and retained predecessors provide neither fallback nor downgrade support.
+
+## Verification
+
+The compact-stream tests pin exact accumulation and expansion for text, reasoning, tool arguments, raw chunks, timestamp gaps, malformed records, and detached snapshots. The v1-to-v2 tests cover successful and failed attempts, interleaving, dense sequence and reference remapping, seed-cut insertion and split refusal, strict source and target validation, one-row v2 encoding, provenance ranges, raw and Zstandard publication, and no-write current reads.
+
+The manual performance acceptance compares current v2 catalog dispatch with a direct-current read of the same physical input across three runs, 100 warmup pairs, and 600 measured pairs. It requires every pooled median and p95 regression to remain within 5%; the accepted run's worst p95 regression was 2.201%. `--smoke` reports a non-gating diagnostic sample.
+
+Agent-loop tests pin durable-before-end ordering, interrupted visible prefixes, failed and retry attempts, abandonment, usage, and replay metadata. Session Controller and Conversation tests pin live transient display, reconnect baselines, committed settlement release, history replay, Chat and Trajectory parity, while TypeScript and Python SDK snapshots pin the external event representation.
+
+## Alternatives considered
+
+**Persist only assembled successful messages.** This loses partial failed output, timing, token boundaries, usage from attempts without a message, and exact deterministic replay. `assistant/attempt` and the embedded compact stream preserve those facts without adding them to model history.
+
+**Keep top-level chunks and pack only physical rows.** This preserves the v1 logical representation but leaves sequence density, telemetry volume, wire envelopes, Client entries, and consumer dispatch proportional to token count. Historical codecs still decode that representation; it is not the current event model.
+
+**Carry packed chunk rows through the history API.** This reduces wire and Client work for v1 but gives the Client a second event vocabulary and keeps transport coupled to token-row cardinality. The current API carries scalar durable settlements plus a separate live transient stream.
+
+**Store the stream in a sidecar or replay-only fixture.** This splits one attempt's message and evidence across durability owners and cannot give ordinary resumed sessions the same failed-output and timing facts. The settlement is the atomic owner.
+
+**Redirect references from consumed chunks to their settlement.** A chunk and an attempt settlement are not interchangeable facts. Refusal prevents a migration from silently changing the meaning of plugin-owned references.
+
+## Consequences
+
+Current logs, telemetry, history pages, and cold Client assembly scale by model attempts rather than token chunks while retaining exact stream evidence inside each settlement. Live presentation remains incremental and intentionally process-local.
+
+One settlement can be large, and v1-to-v2 migration materializes the whole artifact plus its sequence map. The closed alpha inventory refuses unknown v1 events and undeclared references instead of guessing. Consumers that need individual chunks call `expandAssistantStream()` and must not infer durability from `agent/assistant-stream`.
+
+Migration changes sequence numbers after consumed v1 chunks, so every same-Session reference belongs to an explicit rewrite rule. This constraint makes future cardinality-changing migrations expensive by design and keeps silent semantic redirection out of the format chain.

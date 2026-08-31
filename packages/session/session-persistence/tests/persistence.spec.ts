@@ -828,7 +828,7 @@ describe('PersistenceCoordinator stored identity', () => {
     try {
       await coordinator.create(header, SessionLogOffset(1))
       const live = ctx.sessions.create(id, {
-        seed: oneTurnLog(),
+        seed: oneTurnLog().slice(0, 2),
         inheritedEventCount: SessionLogOffset(2),
         meta: { cwd: '/workspace', isSeeded: true },
       })
@@ -868,7 +868,7 @@ describe('PersistenceCoordinator stored identity', () => {
       await expect(ctx.sessions.flush(wrongCwd)).rejects.toThrow(/different cwd/)
 
       const wrongCut = ctx.sessions.create(cutId, {
-        seed: oneTurnLog(),
+        seed: oneTurnLog().slice(0, 2),
         inheritedEventCount: SessionLogOffset(2),
         meta: { cwd: '/workspace', isSeeded: true },
       })

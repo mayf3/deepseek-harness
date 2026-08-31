@@ -10,7 +10,7 @@
 
 import { isAbsolute, join } from 'node:path'
 import {
-  decodeSeqRanges, decodeStorageRecord, encodeSeqRanges, packChunkRuns, SESSION_FORMAT_VERSION,
+  decodeSeqRanges, encodeSeqRanges, SESSION_FORMAT_VERSION,
   SessionLogOffset,
 } from '@deepseek-ai/dsh-session'
 import type {
@@ -18,7 +18,6 @@ import type {
   SessionHeader,
   SessionId,
   SessionLogOffset as SessionLogOffsetType,
-  StorageRecord,
 } from '@deepseek-ai/dsh-session'
 import {
   SessionFormatUnsupportedError,
@@ -75,9 +74,8 @@ export function parseGenerationLogFilename(
 }
 
 /**
- * The current shared-layout physical header stored as the first JSONL record.
- * Its optional numeric `seedLength` translates to logical lineage metadata
- * plus a separately carried exact inherited cut.
+ * The current v2 physical header stored as the first JSONL record. The exact
+ * inherited cut lives on the last tagged `session/end-seed` event.
  */
 interface HeaderLine {
   type: 'session'
@@ -86,14 +84,14 @@ interface HeaderLine {
   createdAt: number
   cwd?: string
   parentSession?: SessionId
-  seedLength?: number
+  isSeeded: boolean
   origin?: 'subagent'
   delegationDepth: number
   agentPreset?: string
 }
 
-const HEADER_REQUIRED_KEYS = ['type', 'version', 'id', 'createdAt', 'delegationDepth'] as const
-const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'seedLength', 'origin', 'agentPreset'] as const
+const HEADER_REQUIRED_KEYS = ['type', 'version', 'id', 'createdAt', 'isSeeded', 'delegationDepth'] as const
+const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
 const HEADER_KEYS = new Set<string>([...HEADER_REQUIRED_KEYS, ...HEADER_OPTIONAL_KEYS])
 
 function assertNoRetiredHeaderFields(value: unknown): void {
@@ -128,7 +126,7 @@ export function toHeaderLine(
     createdAt: header.createdAt,
     ...header.cwd !== undefined ? { cwd: header.cwd } : {},
     ...header.parentSession !== undefined ? { parentSession: header.parentSession } : {},
-    ...header.isSeeded ? { seedLength: cut } : {},
+    isSeeded: header.isSeeded,
     ...header.origin !== undefined ? { origin: header.origin } : {},
     delegationDepth: header.delegationDepth ?? 0,
     ...header.agentPreset !== undefined ? { agentPreset: header.agentPreset } : {},
@@ -148,12 +146,12 @@ function fromHeaderLine(line: HeaderLine): SessionStorageMetadata {
       createdAt: line.createdAt,
       ...line.cwd !== undefined ? { cwd: line.cwd } : {},
       ...line.parentSession !== undefined ? { parentSession: line.parentSession } : {},
-      isSeeded: line.seedLength !== undefined,
+      isSeeded: line.isSeeded,
       ...line.origin !== undefined ? { origin: line.origin } : {},
       delegationDepth: line.delegationDepth,
       ...line.agentPreset !== undefined ? { agentPreset: line.agentPreset } : {},
     },
-    inheritedEventCount: SessionLogOffset(line.seedLength ?? 0),
+    inheritedEventCount: SessionLogOffset(0),
   }
 }
 
@@ -179,11 +177,7 @@ function isHeaderLine(value: unknown): value is HeaderLine {
         && isAbsolute((value as { cwd: string }).cwd)))
     && ((value as { parentSession?: unknown }).parentSession === undefined
       || typeof (value as { parentSession?: unknown }).parentSession === 'string')
-    && ((value as { seedLength?: unknown }).seedLength === undefined
-      || (typeof (value as { seedLength?: unknown }).seedLength === 'number'
-        && Number.isSafeInteger((value as { seedLength: number }).seedLength)
-        && (value as { seedLength: number }).seedLength >= 0
-        && !Object.is((value as { seedLength: number }).seedLength, -0)))
+    && typeof (value as { isSeeded?: unknown }).isSeeded === 'boolean'
     && ((value as { origin?: unknown }).origin === undefined
       || (value as { origin?: unknown }).origin === 'subagent')
     && ((value as { agentPreset?: unknown }).agentPreset === undefined
@@ -335,19 +329,13 @@ export function logPath(
 }
 
 /**
- * Serialize an event batch as JSONL lines (no trailing newline). With
- * `packChunks` on, delta-chunk runs pack into `text-chunks` /
- * `reasoning-chunks` / `tool-call-chunks` storage rows; off writes one event
- * per line. Both modes range-encode provenance at the storage boundary.
- * Reading is layout-blind either way ({@link scanLog} always decodes rows),
- * so the switch changes only newly written bytes.
+ * Serialize a v2 event batch as JSONL lines (no trailing newline). Compact
+ * Assistant streams are nested event data; every event occupies one row.
  * @param events - the batch to serialize, in log order.
- * @param packChunks - whether to pack delta runs into storage rows.
  * @returns the batch's JSONL text; the writer adds the final newline.
  */
-export function eventLines(events: readonly SessionEvent[], packChunks: boolean): string {
-  const records: readonly StorageRecord[] = packChunks ? packChunkRuns(events) : events
-  return records.map(record => JSON.stringify(encodeProvenanceForStorage(record))).join('\n')
+export function eventLines(events: readonly SessionEvent[]): string {
+  return events.map(record => JSON.stringify(encodeProvenanceForStorage(record))).join('\n')
 }
 
 /**
@@ -358,7 +346,7 @@ export function eventLines(events: readonly SessionEvent[], packChunks: boolean)
  * @returns the record with its provenance in storage form (widened from the
  *   in-memory `SessionSeq[]`; {@link expandProvenanceFromStorage} restores it).
  */
-function encodeProvenanceForStorage(record: StorageRecord): unknown {
+function encodeProvenanceForStorage(record: SessionEvent): unknown {
   if (!('sourceEventSeqs' in record)) return record
   return { ...record, sourceEventSeqs: encodeSeqRanges(record.sourceEventSeqs) }
 }
@@ -386,6 +374,21 @@ interface SessionLogScan {
   inheritedEventCount: SessionLogOffsetType
   events: SessionEvent[]
   committedBytes: number
+}
+
+/** Derive the v2 fork cut from the last lineage-tagged seed marker. */
+function inheritedCut(meta: SessionHeader, events: readonly SessionEvent[]): SessionLogOffsetType {
+  let cut: SessionLogOffsetType | undefined
+  for (const event of events) {
+    if (event.type === 'session/end-seed' && event.data.inherited === true) cut = SessionLogOffset(event.seq)
+  }
+  if (meta.isSeeded && cut === undefined) {
+    throw new Error('corrupt session log: seeded v2 header lacks an inherited end-seed marker')
+  }
+  if (!meta.isSeeded && cut !== undefined) {
+    throw new Error('corrupt session log: unseeded v2 header contains an inherited end-seed marker')
+  }
+  return cut ?? SessionLogOffset(0)
 }
 
 /**
@@ -431,7 +434,6 @@ function parseHeaderRecord(record: Buffer): ReturnType<typeof fromHeaderLine> {
  */
 export class SessionLogScanner {
   private readonly meta: SessionHeader
-  private readonly inheritedEventCount: SessionLogOffsetType
   private readonly events: SessionEvent[] = []
   private fragments: Buffer[] = []
   private fragmentBytes = 0
@@ -449,7 +451,6 @@ export class SessionLogScanner {
   constructor(headerRecord: Buffer, storage?: SessionStorageMetadata) {
     const parsed = storage ?? parseHeaderRecord(headerRecord)
     this.meta = parsed.meta
-    this.inheritedEventCount = parsed.inheritedEventCount
     this.inputBytes = headerRecord.length
     this.committedBytes = headerRecord.length
   }
@@ -510,7 +511,7 @@ export class SessionLogScanner {
     this.finished = true
     return {
       meta: this.meta,
-      inheritedEventCount: this.inheritedEventCount,
+      inheritedEventCount: inheritedCut(this.meta, this.events),
       events: this.events,
       committedBytes: this.committedBytes,
     }
@@ -521,7 +522,7 @@ export class SessionLogScanner {
     this.eventLine += 1
     let decoded: SessionEvent[]
     try {
-      decoded = decodeStorageRecord(expandProvenanceFromStorage(JSON.parse(line.toString('utf8'))))
+      decoded = [expandProvenanceFromStorage(JSON.parse(line.toString('utf8'))) as SessionEvent]
     } catch {
       this.issue ??= new Error(`corrupt session log: unparsable committed event at line ${this.eventLine}`)
       return

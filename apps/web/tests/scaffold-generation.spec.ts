@@ -7,6 +7,7 @@ import {
   fixtureIdentity,
   normalizeAria,
   normalizeWebSessionVolatiles,
+  parseSeedFixture,
   realizeSeedFixture,
   recordedSessionFixturePath,
   selectedSessionFixture,
@@ -143,12 +144,14 @@ describe('Web snapshot generation filenames', () => {
   it('selects the highest parent and child generations without counting retained inputs twice', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
     roots.push(root)
-    for (const name of [
-      'session.jsonl',
-      'session.v2.jsonl',
-      'session.1.jsonl',
-      'session.1.v1.jsonl',
-    ]) await writeFile(join(root, name), '')
+    for (const [name, version] of [
+      ['session.jsonl', 0],
+      ['session.v2.jsonl', 2],
+      ['session.1.jsonl', 0],
+      ['session.1.v1.jsonl', 1],
+    ] as const) {
+      await writeFile(join(root, name), `${JSON.stringify({ type: 'session', version })}\n`)
+    }
 
     await expect(selectedSessionFixture(join(root, 'session.jsonl')))
       .resolves.toBe(join(root, 'session.v2.jsonl'))
@@ -158,12 +161,43 @@ describe('Web snapshot generation filenames', () => {
       .resolves.toBe(join(root, 'replay.override.json'))
   })
 
-  it('leaves an absent override-only parent fixture unresolved', async () => {
+  it('selects a current successor after its requested predecessor is removed', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
+    roots.push(root)
+    await writeFile(join(root, 'session.v2.jsonl'), `${JSON.stringify({ type: 'session', version: 2 })}\n`)
+
+    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+      .resolves.toBe(join(root, 'session.v2.jsonl'))
+  })
+
+  it('keeps an absent canonical fixture only for an override-only replay script', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
     roots.push(root)
 
-    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+    await expect(selectedSessionFixture(join(root, 'session.jsonl'), true))
       .resolves.toBe(join(root, 'session.jsonl'))
+    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+      .rejects.toThrow('missing parent session fixture')
+  })
+
+  it('rejects a selected Web fixture whose filename and header generations disagree', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
+    roots.push(root)
+    await writeFile(join(root, 'session.v2.jsonl'), `${JSON.stringify({ type: 'session', version: 1 })}\n`)
+
+    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+      .rejects.toThrow('filename declares Session format v2, header declares v1')
+  })
+
+  it('projects a historical seed to a current header before callers append current events', () => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'seed', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({ type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } }),
+      '',
+    ].join('\n')
+
+    expect(parseSeedFixture(source).header).toMatchObject({ version: 2, isSeeded: false })
   })
 
   it('selects a committed sibling when the requested older generation is absent', async () => {

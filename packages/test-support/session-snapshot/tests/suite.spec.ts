@@ -179,12 +179,12 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
     // The scenario's own env layer reached the subprocess.
     expect(stdout).toContain('\\"permissionMode\\":\\"never\\"')
 
-    const blocked = readFileSync(join(refreshDir, 'blocked-log', 'session.v1.jsonl'), 'utf8')
+    const blocked = readFileSync(join(refreshDir, 'blocked-log', 'session.v2.jsonl'), 'utf8')
     expect(blocked).toContain('"decision":"block"')
     expect(blocked).not.toContain('"decision":"stale"')
 
-    const authored = readFileSync(join(refreshDir, 'authored-error', 'session.v1.jsonl'), 'utf8')
-    expect(authored).toContain('"error":"model exploded"')
+    const authored = readFileSync(join(refreshDir, 'authored-error', 'session.v2.jsonl'), 'utf8')
+    expect(authored).toContain('"message":"model exploded"')
     expect(authored).not.toContain('"error":"stale"')
 
     expect(readFileSync(join(refreshDir, 'pin-turn', 'system-prompt.expected.md'), 'utf8')).toBe([
@@ -206,7 +206,7 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
     const childPrompt = readFileSync(join(refreshDir, 'plain-turn', 'system-prompt.1.expected.md'), 'utf8')
     expect(childPrompt).toBe('SYS PROMPT\n\nCHILD GUIDANCE\n')
 
-    const pinSession = readFileSync(join(refreshDir, 'pin-turn', 'session.v1.jsonl'), 'utf8')
+    const pinSession = readFileSync(join(refreshDir, 'pin-turn', 'session.v2.jsonl'), 'utf8')
     expect(pinSession).toContain('"cwd":"{{cwd}}"')
     expect(readFileSync(join(refreshDir, 'pin-turn', 'session.jsonl'), 'utf8'))
       .not.toContain('"version"')
@@ -215,7 +215,7 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
 
 describe('defineAcpSnapshotSuite: record inventory write-back', () => {
   it('creates a missing primary fixture and removes generations for a retired child role', () => {
-    const fixture = readFileSync(join(recordDir, 'rec-pin', 'session.v1.jsonl'), 'utf8')
+    const fixture = readFileSync(join(recordDir, 'rec-pin', 'session.v2.jsonl'), 'utf8')
     expect(fixture).toContain('"type":"session"')
     expect(fixture).toContain('"cwd":"{{cwd}}"')
     if (!BOOTSTRAP) {
@@ -228,7 +228,7 @@ describe('defineAcpSnapshotSuite: record inventory write-back', () => {
   it('retains an unchanged message relationship across the recorded parent and child fixtures', () => {
     const existingMessageId = '22222222-2222-4222-8222-222222222222'
     const freshMessageId = '11111111-1111-4111-8111-111111111111'
-    const fixtures = ['session.v1.jsonl', 'session.1.v1.jsonl']
+    const fixtures = ['session.v2.jsonl', 'session.1.v2.jsonl']
       .map(file => readFileSync(join(recordDir, 'rec-child', file), 'utf8'))
 
     for (const fixture of fixtures) {

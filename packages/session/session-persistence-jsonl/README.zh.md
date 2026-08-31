@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-persistence-jsonl` 以规范的具名版本 JSONL generation 存储每个 Session，普通写入向当前文件追加：默认使用带 checksum 的 Zstandard frame，禁用压缩时使用换行分隔的原始文本行。已发布 v0 使用 `session.jsonl[.zstd]`；v1 及后续版本使用小写 `session.vN.jsonl[.zstd]`。迁移会在不改变源文件的情况下于其旁边发布此前不存在的后继文件，绝不重命名、替换或删除已提交 generation 路径。后端提供与任何持久化后端相同的逻辑 `SessionEvent` 流，因此物理命名、压缩、打包、迁移与崩溃恢复仍是存储细节。当消费方需要逐会话磁盘产物时选择它：`locate(meta)` 返回版本限定目标，选择 `compression: 'none'` 后原始 generation 可作为纯文本逐行读取。根目录是唯一必填配置；持久性、延迟物化与中断轮次恢复都随后端提供。
+`dsh-session-persistence-jsonl` 以规范的具名版本 JSONL generation 存储每个 Session，普通写入向当前文件追加：默认使用带 checksum 的 Zstandard frame，禁用压缩时使用换行分隔的原始文本行。已发布 v0 使用 `session.jsonl[.zstd]`；正版本使用小写 `session.vN.jsonl[.zstd]`。迁移会在不改变源文件的情况下于其旁边发布此前不存在的后继文件，绝不重命名、替换或删除已提交 generation 路径。后端提供与任何持久化后端相同的逻辑 `SessionEvent` 流，因此物理命名、压缩、历史解码、迁移与崩溃恢复仍是存储细节。当消费方需要逐会话磁盘产物时选择它：`locate(meta)` 返回版本限定目标，选择 `compression: 'none'` 后原始 generation 可作为纯文本逐行读取。根目录是唯一必填配置；持久性、延迟物化与中断轮次恢复都随后端提供。
 
 ## 目录
 
@@ -45,7 +45,6 @@ kind: "package-reference"
 | 字段 | 默认值 | 含义 |
 |---|---|---|
 | `root` | 必填 | 所有会话文件的根目录 |
-| `packChunks` | `true` | 把符合条件的 `assistant/chunk` 连续段写为打包行；`false` 为诊断保留每事件一行 |
 | `compression` | `'zstd'` | 物理编码：`'zstd'` 带校验和帧，或 `'none'` 换行分隔 UTF-8 文本 |
 | `preparedSessionCacheSize` | `5` | 为恢复复用而保留的冷会话准备结果数量 |
 | `writeBatchMaxDelayMs` | `200` | 实时事件的固定聚合窗口，单位为毫秒 |
@@ -54,7 +53,7 @@ kind: "package-reference"
 
 ### 磁盘布局
 
-每个 Session 在可读项目目录下获得一个会话自有目录。每个规范 generation 都以版本与文件名一致的物理 header 开始，之后每个逻辑事件一条存储记录，或每个符合条件的连续段一条打包分片行。格式目录会先翻译所有受支持的历史 header 与事件表示，持久化协调器只接收当前逻辑值。存储记录使用下文所述的无损来源序列表示：
+每个 Session 在可读项目目录下获得一个会话自有目录。每个规范 generation 都以版本与文件名一致的物理 header 开始。当前 v2 为每个持久事件存储一条物理行；冻结的 v0 与 v1 读取器也理解各自的历史打包 Assistant delta 行。格式目录会先翻译所有受支持的历史 header 与事件表示，持久化协调器只接收当前逻辑值。当前存储记录使用下文所述的无损来源序列表示：
 
 ```text
 <root>/
@@ -62,8 +61,10 @@ kind: "package-reference"
     <encoded-id>/                # session-owned directory
       session.jsonl.zstd         # released v0, compressed root
       session.v1.jsonl.zstd      # released v1, compressed root
+      session.v2.jsonl.zstd      # released v2, compressed root
       session.jsonl              # released v0, raw root
-      session.v1.jsonl           # released v1, raw root; later versions use vN
+      session.v1.jsonl           # released v1, raw root
+      session.v2.jsonl           # released v2, raw root; later versions use vN
 ```
 
 会话 id 在使用前被单射转义为一个安全路径段（无遍历、无冲突）。规范化 cwd 让项目目录保持可读、便于导航；规范化相同的 cwd 字符串共享项目目录，而会话 id 仍选择不同会话目录。`locate(meta)` 不执行任何文件系统 I/O，并为 `meta.version` 返回 `{ kind: 'jsonl', path }`：v0 无版本后缀，每个正版本使用 `.vN`。列表则报告它在磁盘上找到的精确最高 generation。
@@ -92,14 +93,14 @@ Session 延迟物化：`create(meta)` 不写入任何内容，第一次 `append`
 
 ### 物理编码
 
-默认产物是独立 [Zstandard 帧](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.zh.md) 的标准拼接：一个仅包含 header 行的带校验和帧，后跟每个持久 append 批次一个带校验和帧，使用 Node 内置 Zstandard API 的默认压缩级别（无级别开关）。`sourceEventSeqs` 使用无损存储形式：至少包含三个序列号的连续段会变成 `[start, end]` 区间对，其他列表原样保留；读取时会展开回精确的内存数组。列表只读取并验证 header 帧。`compression: 'none'` 保留相同的存储形式逻辑行，但不使用帧压缩。配置的后缀只选择一次帧格式；代迁移对已解码 JSON 值工作，原始文本文件与压缩文件使用同一套发布算法。一个根只属于一种编码：启动发现与定向查找会拒绝相反后缀，且不提供压缩迁移、混合根回退或双写。启用 `packChunks` 时，符合条件的分片连续段使用格式 codec 的无损打包表示。
+默认产物是独立 [Zstandard 帧](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.zh.md) 的标准拼接：一个仅包含 header 行的带校验和帧，后跟每个持久 append 批次一个带校验和帧，使用 Node 内置 Zstandard API 的默认压缩级别（无级别开关）。当前 v2 每行写入一个事件；`sourceEventSeqs` 使用无损存储形式，至少包含三个序列号的连续段会变成 `[start, end]` 区间对，其他列表原样保留，读取时会展开回精确的内存数组。列表只读取并验证 header 帧。`compression: 'none'` 保留相同的存储形式逻辑行，但不使用帧压缩。配置的后缀只选择一次帧格式；代迁移对已解码 JSON 值工作，原始文本文件与压缩文件使用同一套发布算法。一个根只属于一种编码：启动发现与定向查找会拒绝相反后缀，且不提供压缩迁移、混合根回退或双写。冻结的 v0 与 v1 编解码器保留 packed-row decoder，仅用于历史 generation。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、后端类、协调器接线 |
-| [`src/format.ts`](src/format.ts) | 日志路径派生、header 编码、记录扫描、打包行布局 |
+| [`src/format.ts`](src/format.ts) | 日志路径派生、header 编码与当前记录扫描 |
 | [`src/generation.ts`](src/generation.ts) | 精确源读取、最终目标暂存、源重新检查与后继排他发布 |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard 帧压缩、解码与帧扫描 |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through 且不覆盖的文件与目录发布 |
@@ -129,7 +130,7 @@ Session 延迟物化：`create(meta)` 不写入任何内容，第一次 `append`
 
 #### 模型看到什么
 
-JSONL 存储不会向实时请求提供提示词或 schema。加载会恢复已存储的表层历史，并保留之前的请求 header 用于重建；新 loop 组合当前 envelope。恢复会用 `TOOL_NOT_STARTED` 平衡没有持久调用的 assistant 请求；持久调用无结果时则变为 `TOOL_OUTCOME_UNKNOWN`，它要求模型只重试只读或幂等工作，并验证可能的副作用或询问用户。原始 `assistant/chunk` 记录不会重复生成消息。
+JSONL 存储不会向实时请求提供提示词或 schema。加载会恢复已存储的表层历史，并保留之前的请求 header 用于重建；新 loop 组合当前 envelope。恢复会用 `TOOL_NOT_STARTED` 平衡没有持久调用的 assistant 请求；持久调用无结果时则变为 `TOOL_OUTCOME_UNKNOWN`，它要求模型只重试只读或幂等工作，并验证可能的副作用或询问用户。嵌入式 Assistant stream 与仅日志 attempt 不会重复生成消息。
 
 #### Token 影响
 

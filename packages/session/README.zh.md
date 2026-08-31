@@ -30,6 +30,7 @@ session 组让 agent（智能体）的对话在实时 loop 之外持久可复用
 |---|---|---|
 | [`session-format/`](session-format/README.zh.md) | 纯相邻格式链与产物校验库 | 库，不使用 ctx key |
 | [`session-format-v0-to-v1/`](session-format-v0-to-v1/README.zh.md) | 冻结的 released-v0 解码器，以及到 released v1 的恒等迁移 | 库，不使用 ctx key |
+| [`session-format-v1-to-v2/`](session-format-v1-to-v2/README.zh.md) | 冻结的 released-v1 解码器，以及把 Assistant 流嵌入 released v2 的基数变化迁移 | 库，不使用 ctx key |
 | [`session-format-catalog/`](session-format-catalog/README.zh.md) | 已交付相邻迁移的生成式静态目录 | 库，不使用 ctx key |
 | [`session-persistence/`](session-persistence/README.zh.md) | 定义持久会话存储服务，以及每个后端组合的共享写入协调机制 | `ctx.sessionPersistence` |
 | [`session-persistence-jsonl/`](session-persistence-jsonl/README.zh.md) | 随产品交付的后端：逐 Session 使用不可变规范 generation 文件名并排他发布后继；可选 Zstandard 压缩 | 注册到 `ctx.sessionPersistence` |

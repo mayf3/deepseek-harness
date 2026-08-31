@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-llm-replay` 让快照测试无需 API 密钥即可运行：它安装一个回放 LLM（大语言模型）适配器，从已记录的会话 JSONL fixture（测试前置数据）重建模型流，使测试针对固定 transcript（文本记录）启动真实 agent（智能体）。fixture 是持久化会话日志的投影——`assistant/chunk` 事件按调用分组为分片序列，显式标记的本地压缩（compaction）调用回放为一条规范流。`replay.override.json` 伴随文件覆盖日志无法重建的情况：任何分片之前就抛出、取消/挂起，或注入重试。实时会话按首次调用顺序绑定到已记录脚本，因此父会话与 subagent 场景各自获得自己的脚本。它是 ACP 与 headless 快照套件以及 Web 浏览器 e2e 流水线的模型来源。
+`dsh-llm-replay` 让快照测试无需 API 密钥即可运行：它安装一个回放 LLM（大语言模型）适配器，从已记录的会话 JSONL fixture（测试前置数据）重建模型流，使测试针对固定 transcript（文本记录）启动真实 agent（智能体）。fixture 是持久化会话日志的投影——每个 `assistant/message` 或 `assistant/attempt` 都嵌入一次模型调用的 stream，显式标记的本地压缩（compaction）调用则回放为一条规范流。`replay.override.json` 伴随文件覆盖 settlement 无法重建的情况：任何分片之前就抛出、取消/挂起，或注入重试。实时会话按首次调用顺序绑定到已记录脚本，因此父会话与 subagent 场景各自获得自己的脚本。它是 ACP 与 headless 快照套件以及 Web 浏览器 e2e 流水线的模型来源。
 
 ## 目录
 
@@ -65,7 +65,7 @@ kind: "package-reference"
 
 ### fixture 的工作方式
 
-fixture 是运行一次真实 agent 所产生的一份选定持久化 Session generation 投影，本插件不录制。snapshot harness 会提供数值最高的规范 parent 路径（v0 为 `<scenario>/session.jsonl`，正 generation 为 `<scenario>/session.vN.jsonl`），并在 replay 前校验文件名与 header 一致。fixture 保留 header 与每个事件 payload，但省略正文的 `seq`/`time` envelope（打包行使用 `seq0`/`time0`）。replay 补充连续序号与确定性 timestamp，恢复被 snapshot token 替换的类型化值，拒绝不完整或混合 envelope，通过构建期静态 Session 格式 catalog 解码完整物理产物，并在公开事件或继承 cut 前于内存中迁移历史输入；当前输入直接 restore。仅对投影 v0 header，缺失的 `delegationDepth` 表示 `0`。parser 从不重写或重命名 fixture。runtime persistence 继续写入完整日志。replay 从当前视图的 `assistant/chunk` 事件派生每次模型调用的 chunk 序列，因此已记录 fixture 会 replay 与在线模型产生的相同逻辑流。fixture 的 `request/header` 内容可能 token 化为 `{{system}}`/`{{tools}}`；replay 会物化仅用于校验的值，而派生只读取 chunk、summary 事件与 Session metadata。仓库中的两个精确 v0 fixture 只在 catalog 返回 manifest 固定的 alpha 拒绝后使用来源限定的旧格式提取；无路径解析、复制的相似 fixture 与变化后的拒绝诊断仍保持严格。此例外只影响 replay 与预期输出比较，真实 catalog 与 persistence 继续拒绝这些产物。
+fixture 是运行一次真实 agent 所产生的一份选定持久化 Session generation 投影，本插件不录制。snapshot harness 会提供数值最高的规范 parent 路径（v0 为 `<scenario>/session.jsonl`，正 generation 为 `<scenario>/session.vN.jsonl`），并在 replay 前校验文件名与 header 一致。fixture 保留 header 与每个事件 payload，但省略正文的 `seq`/`time` envelope（历史 packed row 使用 `seq0`/`time0`）。replay 补充连续序号与确定性 timestamp，恢复被 snapshot token 替换的类型化值，拒绝不完整或混合 envelope，通过构建期静态 Session 格式 catalog 解码完整物理产物，并在公开事件或继承 cut 前于内存中迁移历史输入；当前输入直接 restore。仅对投影 v0 header，缺失的 `delegationDepth` 表示 `0`。parser 从不重写或重命名 fixture。runtime persistence 继续写入完整日志。replay 会展开当前视图中每个 `assistant/message` 或 `assistant/attempt` 的紧凑 stream，因此已记录 fixture 会 replay 与在线模型产生的相同逻辑流。fixture 的 `request/header` 内容可能 token 化为 `{{system}}`/`{{tools}}`；replay 会物化仅用于校验的值，而派生只读取 Assistant settlement、带标记的 summary 事件与 Session metadata。仓库中的两个精确 v0 fixture 只在 catalog 返回 manifest 固定的 alpha 拒绝后使用来源限定的 repair；无路径解析、复制的相似 fixture 与变化后的拒绝诊断仍保持严格。此例外只影响 replay 与预期输出比较，真实 catalog 与 persistence 继续拒绝这些产物。
 
 ### 嵌套 agent
 
@@ -75,7 +75,7 @@ parent agent 委托给进程内 subagent 的场景会为每个 Session 记录一
 
 当回放在带有 `ctx.deepseekLlmApiExtensions` 的组合中服务 `deepseek-official` 时，它会在选择有效脚本条目后、产生首个分片前准备并接受这些字段。这与实时适配器的 2xx 后提交点一致，因此持久接受水位与 SDK 事件通知在录制和回放中行为相同。回放提供合成 `{ messages: [] }` 基础 body：它证明接受副作用，而非准备后的字段字节。
 
-有两种失败模式无法仅根据 `assistant/chunk` 重建：在产生任何分片前直接抛出（例如 HTTP 401，此时日志只有 `turn/end {error}`），以及取消或挂起。需要这些行为的场景可提供可选伴随文件（`<scenario>/replay.override.json`）：它用裸 `ReplayEntry[]` 替换派生脚本，或用 `{ patches: [{ at, entry }] }` 增补——保留所有派生调用，只替换指定的从 0 开始计数的调用索引；当 `at` 等于派生长度时，则在注入瞬态异常后的重试位置追加。有前缀分片的 `throw` 条目会接受 DeepSeek 请求扩展；零分片 throw 默认表示 2xx 前未接受，也可设 `accepted: true` 表示 2xx 后无分片失败。`hang` 条目可以指定 `readyFile`，回放在等待取消前写入它，使外部 driver 可以确定性取消。
+有两种失败模式无法仅根据持久 Assistant settlement 重建：任何 chunk 之前的纯 throw 没有携带异常的 stream member，而 cancel/hang 需要的是不终止语义，不能用有限前缀回放。需要这些行为的场景可提供可选伴随文件（`<scenario>/replay.override.json`）：它用裸 `ReplayEntry[]` 替换派生脚本，或用 `{ patches: [{ at, entry }] }` 增补——保留所有派生调用，只替换指定的从 0 开始计数的调用索引；当 `at` 等于派生长度时，则在注入瞬态异常后的重试位置追加。有前缀分片的 `throw` 条目会接受 DeepSeek 请求扩展；零分片 throw 默认表示 2xx 前未接受，也可设 `accepted: true` 表示 2xx 后无分片失败。`hang` 条目可以指定 `readyFile`，回放在等待取消前写入它，使外部 driver 可以确定性取消。
 
 ### 可能出什么问题
 
@@ -95,7 +95,7 @@ parent agent 委托给进程内 subagent 的场景会为每个 Session 记录一
 
 ### 设计
 
-replay 把选定的投影 Session generation 视为 fixture。一个 parser 补全投影 envelope，通过 `sessionFormatCatalog` 校验并迁移完整产物，再以一个结果返回当前 header、继承 cut 与事件列表。`deriveReplayScript` 按 `(turn, step)` 键在每次 `finish` chunk 处切分生成的 `assistant/chunk` 事件，使每次已记录的 `stream()` 调用成为一条 `chunks` entry；没有 `finish` chunk 的 assistant group 是 `stream()` 抛出异常的 fingerprint，必须通过 override sidecar 表达。携带 `llmStreamCall: true` 与完整 `rawOutput` 的 `compaction/summary` 会在该事件位置 replay 为一条规范成功 stream。脚本字符串可以内嵌 `{{fromRequest:<regex>}}`；stream 输出时每个 placeholder 针对 live request 的 string leaf 解析，取该 pattern 的最后一次 match，用其第一个 capture group（无 capture group 时用整个 match）原位替换。
+replay 把选定的投影 Session generation 视为 fixture。一个 parser 补全投影 envelope，通过 `sessionFormatCatalog` 校验并迁移完整产物，再以一个结果返回当前 header、继承 cut 与事件列表。`deriveReplayScript` 按日志顺序展开每个 `assistant/message` 或 `assistant/attempt` stream，因此每个持久 settlement 都成为一条 `chunks` entry；非空 stream 缺少 `finish` chunk 是 `stream()` 抛出异常的 fingerprint，必须通过 override sidecar 表达。携带 `llmStreamCall: true` 与完整 `rawOutput` 的 `compaction/summary` 会在该事件位置 replay 为一条规范成功 stream。脚本字符串可以内嵌 `{{fromRequest:<regex>}}`；stream 输出时每个 placeholder 针对 live request 的 string leaf 解析，取该 pattern 的最后一次 match，用其第一个 capture group（无 capture group 时用整个 match）原位替换。
 
 已提交语料测试会发现 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下每个带版本的 `session*.jsonl`。除 manifest 中两项精确拒绝外，每个产物都必须通过真实目录还原为当前视图：`snapshots/session/agent-instructions/session.jsonl` 的投影 compaction checkpoint 没有匹配项，`snapshots/web/schedule-catalog/session.jsonl` 的 title 来源与其 citation 矛盾。共享 manifest 只为相同绝对路径授予仅回放提取，而语料仍断言真实的不受支持迁移类型与诊断。新的或发生变化的拒绝会使测试失败，直到其底层数据规则得到显式处理。
 

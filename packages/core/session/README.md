@@ -47,7 +47,7 @@ session.append('user/message', { role: 'user', content: [{ type: 'text', text: '
 session.deriveMessages()         // the derived model history
 ```
 
-Surface events (`user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface; raw chunks, boundaries, and other log-only events never produce a message.
+Surface events (`user/message`, `assistant/message`, `tool/result`) must declare how they join the ordered surface. An Assistant message embeds the exact compact provider stream that produced it; `assistant/attempt`, boundaries, and other log-only events never produce a message.
 
 ### Read the log
 
@@ -77,7 +77,7 @@ This section explains how the package realizes the behavior above; the observabl
 
 ### Design concept
 
-The package is built on event sourcing: a `Session` is an append-only log of typed `SessionEvent`s, and everything else — model history, transcripts, telemetry, titles, persistence — derives from that stream. The surface is a derived projection: an incremental manager validates append candidates, advances the ordered view from committed events, and tracks a `replaceGeneration` that bumps on every committed rewrite. Model-visible means logged: anything that reaches a model request must be reconstructable from the log. The shared [row codec](src/chunk-rows.ts) losslessly converts event sequences to compact rows and back, preserves unrecognized events verbatim, and rejects malformed rows. Persistence backends decide whether to pack writes; bounded history transports can use the same rows while retaining the complete logical interval and exact decoding for consumers that need token boundaries.
+The package is built on event sourcing: a `Session` is an append-only log of typed `SessionEvent`s, and everything else — model history, transcripts, telemetry, titles, persistence — derives from that stream. The surface is a derived projection: an incremental manager validates append candidates, advances the ordered view from committed events, and tracks a `replaceGeneration` that bumps on every committed rewrite. Model-visible means logged: anything that reaches a model request must be reconstructable from the log. Each model attempt commits one settlement: `assistant/message` carries the assembled model-visible message plus its compact timed stream, while `assistant/attempt` retains a failed, retried, cancelled, or crash-tail stream without adding model history.
 
 ### Request headers
 
@@ -92,7 +92,6 @@ The package is built on event sourcing: a `Session` is an append-only log of typ
 | [`src/surface.ts`](src/surface.ts) | Ordered surface projection, replacement validation, `deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` folding and reconstruction |
 | [`dsh-util-values`](../../util/values/README.md) | Shared lossless JSON validation and detached snapshots |
-| [`src/chunk-rows.ts`](src/chunk-rows.ts) | Shared compact-row storage codec for persistence backends |
 | [`src/repair.ts`](src/repair.ts) | Cold repair of crash-orphaned logs |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: seq, turn/step enclosure, tool call/result pairing |
 
@@ -102,7 +101,7 @@ Every append uses the shared iterative `snapshotJsonValue()` pass, which reads, 
 
 ### Derived history
 
-`deriveMessages()` caches each surface node's projection once and returns a fresh array per call over shared, deep-frozen messages; each of the three surface event types (`user/message`, `assistant/message`, `tool/result`) projects its own message kind — user content verbatim, the assembled assistant message with its provider and model, or a user-role tool result. A surface rewrite rebuilds the projection — there is no raw-log fallback, so the surface is the single source of derived history.
+`deriveMessages()` caches each surface node's projection once and returns a fresh array per call over shared, deep-frozen messages; each of the three surface event types (`user/message`, `assistant/message`, `tool/result`) projects its own message kind — user content verbatim, the assembled assistant message with its provider and model, or a user-role tool result. Embedded Assistant streams and `assistant/attempt` events remain replay and diagnostic data only. A surface rewrite rebuilds the projection — there is no raw-log fallback, so the surface is the single source of derived history.
 
 ### The request header
 
@@ -132,7 +131,7 @@ The package-level contract is enough for most consumers; read these when you nee
 
 #### What the model sees
 
-The model receives the complete messages from `user/message`, `assistant/message`, and `tool/result` surface entries verbatim — identities, roles, sources, and content blocks are the same values established at creation, and projections never mint identities. Direct prompts and injected context remain separate `user/message` events whose sources preserve their provenance. Chunks, boundaries, usage, and other log-only events add no message.
+The model receives the complete messages from `user/message`, `assistant/message`, and `tool/result` surface entries verbatim — identities, roles, sources, and content blocks are the same values established at creation, and projections never mint identities. Direct prompts and injected context remain separate `user/message` events whose sources preserve their provenance. Embedded streams, `assistant/attempt`, boundaries, and other log-only facts add no message.
 
 #### Token effect
 

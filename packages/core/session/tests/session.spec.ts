@@ -28,8 +28,12 @@ describe('Session', () => {
     session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
-    session.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'hi' } })
+    session.append('assistant/attempt', {
+      turn: 1, step: 1,
+      stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['hi'] }],
+    })
     session.append('assistant/message', {
+      stream: [],
       turn: 1, step: 1,
       message: createMessage({
         role: 'assistant',
@@ -122,6 +126,7 @@ describe('Session', () => {
       content: [{ type: 'text', text: 'q' }], source: { kind: 'user' },
     }), { surfaceOp: 'append' })
     original.append('assistant/message', {
+      stream: [],
       turn: 1, step: 1,
       message: createMessage({
         role: 'assistant',
@@ -1536,18 +1541,10 @@ describe('SessionStore', () => {
       }
     })
 
-    expect(() => session.append('assistant/message', {
-      turn: 1,
-      step: 1,
-      message: createMessage({
-        role: 'assistant',
-        content: [{ type: 'text', text: 'replacement' }],
-        source: {
-          kind: 'model',
-          ...{ provider: 'mock', model: 'mock' },
-        },
-      }),
-    }, {
+    expect(() => session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'replacement' }],
+      source: { kind: 'plugin', plugin: 'test' },
+    }), {
       surfaceOp: { op: 'replace', start: SessionSeq(2), end: SessionSeq(2) },
       sourceEventSeqs: [SessionSeq(2)],
     })).toThrow('reject surface candidate')

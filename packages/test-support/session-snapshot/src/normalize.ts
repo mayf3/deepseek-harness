@@ -8,11 +8,6 @@
 
 import {
   decodeSeqRanges,
-  decodeStorageRecord,
-  packChunkRuns,
-  SessionLogOffset,
-  SessionSeq,
-  type SessionEvent,
 } from '@deepseek-ai/dsh-session'
 import { prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 import { redactSessionSnapshotIds } from './identity.ts'
@@ -368,6 +363,19 @@ export function normalizeSessionLog(
     } else if ('time' in record) {
       record.time = 0
     }
+    if ((record.type === 'assistant/message' || record.type === 'assistant/attempt')
+      && record.data !== null && typeof record.data === 'object') {
+      const stream = (record.data as { stream?: unknown }).stream
+      if (Array.isArray(stream)) {
+        for (const member of stream) {
+          if (member === null || typeof member !== 'object') continue
+          const timed = member as { time?: unknown; time0?: unknown; dt?: unknown }
+          if (typeof timed.time === 'number') timed.time = 0
+          if (typeof timed.time0 === 'number') timed.time0 = 0
+          if (Array.isArray(timed.dt)) timed.dt = timed.dt.map(() => 0)
+        }
+      }
+    }
     if (record.type === 'hook/result' && record.data !== null && typeof record.data === 'object') {
       const data = record.data as Record<string, unknown>
       if ('durationMs' in data) data.durationMs = 0
@@ -386,28 +394,16 @@ export function normalizeSessionLog(
 }
 
 /**
- * Repack projected body records so persistence flush boundaries do not affect
- * committed snapshots. Synthetic envelopes exist only while the storage codec
- * reconstructs and packs the logical event stream; returned rows stay projected.
+ * Canonicalize projected v2 body records. Compact streams are nested event data,
+ * so persistence flush boundaries cannot change the row layout.
  */
 function repackSessionSnapshot(rawLog: string): string {
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
   const header = lines.shift() as string
 
-  let nextSeq = SessionLogOffset(0)
-  const events = lines.flatMap((line) => {
+  const body = lines.map((line) => {
     const record = JSON.parse(line) as Record<string, unknown>
-    if (isPackedFixtureRow(record)) {
-      const decoded = decodeStorageRecord({ ...record, seq0: nextSeq, time0: 0 })
-      nextSeq = SessionLogOffset(nextSeq + decoded.length)
-      return decoded
-    }
-    const event = { ...record, seq: SessionSeq(nextSeq), time: 0 } as SessionEvent
-    nextSeq = SessionLogOffset(nextSeq + 1)
-    return [event]
-  })
-  const body = packChunkRuns(events).map((stored) => {
-    const projected = { ...stored } as Record<string, unknown>
+    const projected = { ...record }
     omitFixtureEnvelope(projected)
     return JSON.stringify(projected)
   })
@@ -468,10 +464,64 @@ export function normalizeSessionSnapshots(
  * @returns the same records without delivery or captured-source generation qualifiers.
  */
 export function normalizeSessionFormatProvenance(rawLog: string): string {
-  return rawLog.split('\n').map((line) => {
-    if (line.trim().length === 0) return line
-    const record = JSON.parse(line) as Record<string, unknown>
+  const lines = rawLog.split('\n')
+  const records = lines.map(line => line.trim().length === 0
+    ? undefined
+    : JSON.parse(line) as Record<string, unknown>)
+  const inertEndSeeds = records.flatMap((record) => {
+    if (record?.type !== 'session/end-seed' || record.data === null
+      || typeof record.data !== 'object' || Array.isArray(record.data)
+      || (record.data as Record<string, unknown>).inherited === true) return []
+    return typeof record.seq === 'number' ? [record.seq] : []
+  }).sort((left, right) => left - right)
+  const remapSeq = (value: unknown): unknown => {
+    if (typeof value !== 'number' || !Number.isSafeInteger(value)) return value
+    if (inertEndSeeds.includes(value)) {
+      throw new Error(`Session snapshot comparison reference targets inert end-seed ${String(value)}`)
+    }
+    return value - inertEndSeeds.filter(seq => seq < value).length
+  }
+  const remapList = (value: unknown): unknown => Array.isArray(value) ? value.map(remapSeq) : value
+
+  return records.flatMap((record, index) => {
+    if (record === undefined) return [lines[index] as string]
+    if (record.type === 'session/end-seed' && record.data !== null
+      && typeof record.data === 'object' && !Array.isArray(record.data)
+      && (record.data as Record<string, unknown>).inherited !== true) return []
     let changed = normalizeCapturedFormatProvenance(record)
+    const recordSeq = record.seq
+    if (typeof recordSeq === 'number' && inertEndSeeds.some(seq => seq < recordSeq)) {
+      record.seq = remapSeq(recordSeq)
+      changed = true
+    }
+    if (Array.isArray(record.sourceEventSeqs)) {
+      record.sourceEventSeqs = remapList(record.sourceEventSeqs)
+      changed = true
+    }
+    if (record.surfaceOp !== null && typeof record.surfaceOp === 'object' && !Array.isArray(record.surfaceOp)) {
+      const operation = record.surfaceOp as Record<string, unknown>
+      record.surfaceOp = { ...operation, start: remapSeq(operation.start), end: remapSeq(operation.end) }
+      changed = true
+    }
+    if (record.data !== null && typeof record.data === 'object' && !Array.isArray(record.data)) {
+      const data = record.data as Record<string, unknown>
+      if (Object.hasOwn(data, 'sourceEventSeq')) {
+        record.data = { ...data, sourceEventSeq: remapSeq(data.sourceEventSeq) }
+        changed = true
+      } else if (Array.isArray(data.messageSeqs)) {
+        record.data = { ...data, messageSeqs: remapList(data.messageSeqs) }
+        changed = true
+      } else if (data.shadowedRange !== null && typeof data.shadowedRange === 'object'
+        && !Array.isArray(data.shadowedRange)) {
+        const range = data.shadowedRange as Record<string, unknown>
+        record.data = {
+          ...data,
+          shadowedRange: { ...range, start: remapSeq(range.start), end: remapSeq(range.end) },
+          shadowedSeqs: remapList(data.shadowedSeqs),
+        }
+        changed = true
+      }
+    }
     if (record.type === 'session' && Object.hasOwn(record, 'version')) {
       delete record.version
       changed = true
@@ -479,13 +529,14 @@ export function normalizeSessionFormatProvenance(rawLog: string): string {
     if (record.type === 'session-log-deepseek/delivery-accepted'
       && record.data !== null && typeof record.data === 'object' && !Array.isArray(record.data)) {
       const data = { ...record.data as Record<string, unknown> }
-      if (Object.hasOwn(data, 'sessionFormatVersion')) {
+      if (Object.hasOwn(data, 'sessionFormatVersion') || Object.hasOwn(data, 'throughSeq')) {
         delete data.sessionFormatVersion
+        delete data.throughSeq
         record.data = data
         changed = true
       }
     }
-    return changed ? JSON.stringify(record) : line
+    return [changed ? JSON.stringify(record) : lines[index] as string]
   }).join('\n')
 }
 

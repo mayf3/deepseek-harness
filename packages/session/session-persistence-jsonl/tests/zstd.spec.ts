@@ -5,7 +5,7 @@ import type { FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { SessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
@@ -16,7 +16,7 @@ import {
 } from '../src/zstd.ts'
 import { NodePrivateZstdFrameDecoder } from '../src/zstd-private-decoder.ts'
 import { PublicZstdFrameDecoder } from '../src/zstd-public-decoder.ts'
-import { runPersistenceContract, meta, oneTurnLog } from '../../session-persistence/tests/contract.ts'
+import { runPersistenceContract, meta, oneTurnLog, releasedV1OneTurnLog } from '../../session-persistence/tests/contract.ts'
 import { runCoordinatorContract, type CoordinatorFixture } from '../../session-persistence/tests/coordinator-contract.ts'
 
 const physicalReadProbe = vi.hoisted(() => ({
@@ -91,7 +91,14 @@ async function decodeCompleteFrames(buffer: Buffer): Promise<Buffer> {
 }
 
 function releasedV0Header(header: ReturnType<typeof meta>): Record<string, unknown> {
-  return { ...toHeaderLine(header), version: 0 }
+  return {
+    type: 'session',
+    version: 0,
+    id: header.id,
+    createdAt: header.createdAt,
+    ...(header.cwd === undefined ? {} : { cwd: header.cwd }),
+    delegationDepth: header.delegationDepth ?? 0,
+  }
 }
 
 function zstdGenerationPath(root: string, header: ReturnType<typeof meta>, version: number): string {
@@ -517,7 +524,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     const path = logPath(root, undefined, id, 'zstd')
     await mkdir(sessionDir(root, undefined, id), { recursive: true })
     await writeFile(path, Buffer.concat([
-      await compressZstdFrame(`${JSON.stringify({ type: 'session', version: 1 })}\n`),
+      await compressZstdFrame(`${JSON.stringify({ type: 'session', version: 2 })}\n`),
       await compressZstdFrame(`${JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } })}\n`),
     ]))
     const backend = ctx.sessionPersistence as JsonlSessionPersistence
@@ -533,9 +540,10 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     await mkdir(sessionDir(root, undefined, id), { recursive: true })
     await writeFile(path, await compressZstdFrame(`${JSON.stringify({
       type: 'session',
-      version: 1,
+      version: 2,
       id,
       createdAt: 1,
+      isSeeded: false,
       delegationDepth: 0,
       sandboxMode: 'read-only',
     })}\n`))
@@ -585,23 +593,23 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     const v0Header = releasedV0Header(current)
     const source = Buffer.concat([
       await compressZstdFrame(`${JSON.stringify(v0Header)}\n`),
-      await compressZstdFrame(`${oneTurnLog().map(event => JSON.stringify(event)).join('\n')}\n`),
+      await compressZstdFrame(`${releasedV1OneTurnLog().map(event => JSON.stringify(event)).join('\n')}\n`),
     ])
     await mkdir(sessionDir(root, current.cwd, current.id), { recursive: true })
     await writeFile(path, source)
 
     await expect(ctx.sessionPersistence.list()).resolves.toEqual([
-      expect.objectContaining({ status: 'migration-required', storedVersion: 0, targetVersion: 1 }),
+      expect.objectContaining({ status: 'migration-required', storedVersion: 0, targetVersion: 2 }),
     ])
     expect(await readFile(path)).toEqual(source)
 
     const raw = await ctx.sessionPersistence.readRaw(current.id)
 
-    expect(raw?.meta.version).toBe(1)
-    expect(JSON.parse(raw?.content.split('\n')[0] as string)).toMatchObject({ version: 1 })
+    expect(raw?.meta.version).toBe(2)
+    expect(JSON.parse(raw?.content.split('\n')[0] as string)).toMatchObject({ version: 2 })
     expect(await readFile(path)).toEqual(source)
     expect(JSON.parse((await decodeCompleteFrames(await readFile(currentPath))).toString().split('\n')[0] as string))
-      .toMatchObject({ version: 1 })
+      .toMatchObject({ version: 2 })
   })
 
   it('restores a migrated compressed prefix when publication validation consumed its first decoder', async () => {
@@ -612,11 +620,11 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     await mkdir(sessionDir(root, current.cwd, current.id), { recursive: true })
     await writeFile(path, Buffer.concat([
       await compressZstdFrame(`${JSON.stringify(releasedV0Header(current))}\n`),
-      await compressZstdFrame(`${oneTurnLog().map(event => JSON.stringify(event)).join('\n')}\n`),
+      await compressZstdFrame(`${releasedV1OneTurnLog().map(event => JSON.stringify(event)).join('\n')}\n`),
     ]))
 
     await expect(ctx.sessionPersistence.inspect(current.id)).resolves.toMatchObject({
-      meta: { id: current.id, version: 1 },
+      meta: { id: current.id, version: 2 },
       events: oneTurnLog(),
     })
   })
@@ -649,28 +657,18 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       path,
     })
 
-    const base = oneTurnLog()
-    const events: SessionEvent[] = [
-      ...base.slice(0, 3),
-      ...Array.from({ length: 3 }, (_, index): SessionEvent => ({
-        type: 'assistant/chunk',
-        seq: SessionSeq(3 + index),
-        time: 4 + index,
-        data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: `part-${index}` } },
-      })),
-      ...base.slice(3).map((event): SessionEvent => ({
-        ...event,
-        seq: SessionSeq(event.seq + 3),
-        time: event.time + 3,
-      })),
-    ]
+    const events = oneTurnLog()
     await backend.create(header)
     await backend.append(header.id, events)
 
     const plaintext = (await decodeCompleteFrames(await readFile(path))).toString()
     const recordTypes = plaintext.trimEnd().split('\n')
       .map(line => (JSON.parse(line) as { type: string }).type)
-    expect(recordTypes).toContain('text-chunks')
+    expect(recordTypes).not.toContain('text-chunks')
+    const assistant = plaintext.trimEnd().split('\n')
+      .map(line => JSON.parse(line) as { type: string; data?: { stream?: Array<{ type: string }> } })
+      .find(record => record.type === 'assistant/message')
+    expect(assistant?.data?.stream?.some(record => record.type === 'text-chunks')).toBe(true)
     expect((await backend.load(header.id)).events).toEqual(events)
   })
 
@@ -804,7 +802,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     expect(loaded.events.map(event => event.seq)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
     expect(loaded.events[6]).toEqual(openTurn[0])
     expect(loaded.events[7]).toEqual(openTurn[1])
-    expect(loaded.events.some(event => event.type === 'assistant/chunk' && event.seq === 8)).toBe(false)
+    expect(loaded.events.some(event => (event.type as string) === 'assistant/chunk' && event.seq === 8)).toBe(false)
     expect(loaded.events[8]?.type).toBe('step/end')
     expect(loaded.events[9]?.type).toBe('turn/end')
     expect(warn).toHaveBeenCalledWith('session-persistence-jsonl: session "recover-torn" recovered from a torn tail; incomplete tail bytes were discarded')

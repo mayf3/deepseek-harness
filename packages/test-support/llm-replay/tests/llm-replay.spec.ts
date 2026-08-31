@@ -8,7 +8,17 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format-catalog'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
-import LlmRuntime, { ToolCallId, createUserMessage, GenerateOptions, LlmAdapter, StreamChunk } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, {
+  AssistantStreamAccumulator,
+  BlockAssembler,
+  ToolCallId,
+  createAssistantMessage,
+  createToolResultMessage,
+  createUserMessage,
+  GenerateOptions,
+  LlmAdapter,
+  StreamChunk,
+} from '@deepseek-ai/dsh-llm'
 import {
   type Config,
   type ReplayEntry,
@@ -24,6 +34,7 @@ import {
   parseSessionLogForReplay,
   parseSessionHeader,
   parseSessionLog,
+  prepareSessionEventNotificationsForComparison,
   prepareSessionSnapshotFixtureForComparison,
   resolveScriptedEntry,
 } from '../src/index.ts'
@@ -55,13 +66,15 @@ const COMPACTION_ID = CompactionId('replay-compaction')
 /** Build a minimal session-JSONL string: a header line + the given events. */
 function sessionJsonl(
   events: SessionEvent[],
-  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 },
+  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 | 2 },
 ): string {
+  const version = header?.version ?? 0
   const headerLine = JSON.stringify({
     type: 'session',
-    version: header?.version ?? 0,
+    version,
     id: header?.id ?? 's1',
     createdAt: header?.createdAt ?? 0,
+    ...version === 2 ? { isSeeded: false } : {},
     ...header?.seedLength !== undefined ? { seedLength: header.seedLength } : {},
     delegationDepth: 0,
   })
@@ -71,8 +84,9 @@ function sessionJsonl(
 /** Build a valid one-turn Session around recorded model calls. */
 function replaySessionJsonl(
   calls: readonly StreamChunk[][],
-  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 },
+  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 | 2 },
 ): string {
+  const version = header?.version ?? 2
   const events: SessionEvent[] = []
   let seq = 0
   const push = (type: string, data: SessionEvent['data']): void => {
@@ -82,11 +96,36 @@ function replaySessionJsonl(
   for (const [index, chunks] of calls.entries()) {
     const step = index + 1
     push('step/start', { turn: 1, step })
-    for (const chunk of chunks) events.push(chunkEvent(SessionSeq(seq++), 1, step, chunk))
+    if (version === 2) {
+      events.push(streamEvent(seq++, 1, step, chunks))
+      for (const chunk of chunks) {
+        if (chunk.type !== 'block-end' || chunk.block.type !== 'tool-call') continue
+        push('tool/call', {
+          turn: 1,
+          step,
+          callId: chunk.block.id,
+          name: chunk.block.name,
+          arguments: chunk.block.arguments,
+        })
+        events.push({
+          type: 'tool/result',
+          seq: SessionSeq(seq++),
+          time: 0,
+          data: {
+            turn: 1,
+            step,
+            message: createToolResultMessage({ callId: chunk.block.id, content: [], isError: false }),
+          },
+          surfaceOp: 'append',
+        })
+      }
+    } else {
+      for (const chunk of chunks) events.push(legacyChunkEvent(seq++, 1, step, chunk))
+    }
     push('step/end', { turn: 1, step })
   }
   push('turn/end', { turn: 1, reason: { kind: 'completed' } })
-  return sessionJsonl(events, header)
+  return sessionJsonl(events, { ...header, version })
 }
 
 /** Remove persistence envelopes to produce the committed snapshot projection. */
@@ -98,9 +137,57 @@ function projectSessionJsonl(complete: string): string {
   }).join('\n')
 }
 
-/** A SessionEvent of type assistant/chunk for (turn, step). */
-function chunkEvent(seq: SessionSeq, turn: number, step: number, chunk: StreamChunk): SessionEvent {
-  return { type: 'assistant/chunk', seq, time: 0, data: { turn, step, chunk } }
+/** One current durable Assistant stream event for a model attempt. */
+function streamEvent(
+  seq: number,
+  turn: number,
+  step: number,
+  chunks: readonly StreamChunk[],
+  time0 = 1_000,
+): SessionEvent<'assistant/message'> | SessionEvent<'assistant/attempt'> {
+  const accumulator = new AssistantStreamAccumulator()
+  const assembler = new BlockAssembler()
+  for (const [index, chunk] of chunks.entries()) {
+    accumulator.push({ time: time0 + index * 7, chunk })
+    assembler.push(chunk)
+  }
+  const time = time0 + Math.max(0, chunks.length - 1) * 7
+  const common = {
+    seq: SessionSeq(seq),
+    time,
+    data: { turn, step, stream: [...accumulator.snapshot()] },
+  }
+  const finish = chunks.at(-1)
+  if (finish?.type !== 'finish' || finish.reason.kind === 'error') {
+    return { type: 'assistant/attempt', ...common }
+  }
+  return {
+    type: 'assistant/message',
+    ...common,
+    data: {
+      ...common.data,
+      message: createAssistantMessage({
+        content: assembler.blocks(),
+        source: {
+          provider: 'mock',
+          model: 'mock',
+          ...assembler.replayState === undefined ? {} : { replayState: assembler.replayState },
+        },
+      }),
+      ...assembler.usage === undefined ? {} : { usage: assembler.usage },
+    },
+    surfaceOp: 'append',
+  }
+}
+
+/** One released v0/v1 raw chunk event used only at migration inputs. */
+function legacyChunkEvent(seq: number, turn: number, step: number, chunk: StreamChunk): SessionEvent {
+  return {
+    type: 'assistant/chunk',
+    seq: SessionSeq(seq),
+    time: 0,
+    data: { turn, step, chunk },
+  } as unknown as SessionEvent
 }
 
 let dir: string
@@ -402,11 +489,16 @@ describe('parseSessionLog', () => {
       type: 'text-chunks', seq0: 2, time0: 0,
       data: { turn: 1, step: 1, index: 0, dt: [0, 0], texts: ['a', 'b', 'c'] },
     })
-    expect(parseSessionLog(`${header}\n${turn}\n${step}\n${row}\n`).slice(2)).toEqual([
-      chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
-      chunkEvent(SessionSeq(3), 1, 1, { type: 'text-delta', index: 0, text: 'b' }),
-      chunkEvent(SessionSeq(4), 1, 1, { type: 'text-delta', index: 0, text: 'c' }),
-    ])
+    expect(parseSessionLog(`${header}\n${turn}\n${step}\n${row}\n`).slice(2)).toEqual([{
+      type: 'assistant/attempt',
+      seq: 2,
+      time: 0,
+      data: {
+        turn: 1,
+        step: 1,
+        stream: [{ type: 'text-chunks', time0: 0, index: 0, dt: [0, 0], texts: ['a', 'b', 'c'] }],
+      },
+    }])
   })
 
   it('synthesizes omitted ordinary and packed snapshot envelopes', () => {
@@ -420,8 +512,16 @@ describe('parseSessionLog', () => {
     expect(parseSessionLog(`${header}\n${ordinary}\n${step}\n${packed}\n`)).toEqual([
       { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
       { type: 'step/start', seq: 1, time: 0, data: { turn: 1, step: 1 } },
-      chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
-      { ...chunkEvent(SessionSeq(3), 1, 1, { type: 'text-delta', index: 0, text: 'b' }), time: 3 },
+      {
+        type: 'assistant/attempt',
+        seq: 2,
+        time: 3,
+        data: {
+          turn: 1,
+          step: 1,
+          stream: [{ type: 'text-chunks', time0: 0, index: 0, dt: [3], texts: ['a', 'b'] }],
+        },
+      },
     ])
   })
 
@@ -491,14 +591,24 @@ describe('parseSessionLog', () => {
       }),
     ].join('\n')
 
-    expect(parseSessionLog(source).slice(2)).toEqual([
-      chunkEvent(SessionSeq(2), 1, 1, {
-        type: 'tool-call-delta', index: 0, id: callId, name: 'read', argumentsDelta: '{',
-      }),
-      chunkEvent(SessionSeq(3), 1, 1, {
-        type: 'tool-call-delta', index: 0, id: callId, name: 'read', argumentsDelta: '}',
-      }),
-    ])
+    expect(parseSessionLog(source).slice(2)).toEqual([{
+      type: 'assistant/attempt',
+      seq: 2,
+      time: 0,
+      data: {
+        turn: 1,
+        step: 1,
+        stream: [{
+          type: 'tool-call-chunks',
+          time0: 0,
+          index: 0,
+          dt: [0],
+          id: callId,
+          name: 'read',
+          args: ['{', '}'],
+        }],
+      },
+    }])
   })
 
   it.each([
@@ -546,6 +656,7 @@ describe('parseSessionLog', () => {
           content: [{ type: 'text', text: 'migrated' }],
           source: { kind: 'model', provider: 'mock', model: 'mock' },
         },
+        stream: [],
       },
       surfaceOp: 'append',
     })
@@ -569,7 +680,7 @@ describe('parseSessionLog', () => {
       }),
     ].join('\n')
 
-    expect(() => parseSessionLog(source)).toThrow(/assistant\/message.*lacks an identified message/)
+    expect(() => parseSessionLog(source)).toThrow(/assistant\/message.*unexpected member "content"/)
   })
 
   it('refuses a retired v0 event through the released migration policy', () => {
@@ -596,23 +707,248 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
     expect(prepared.endsWith('\n')).toBe(false)
   })
 
-  it('rewrites only the physical header generation for an exact alpha refusal', () => {
+  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
+    'structurally prepares the exact alpha refusal $repoRelativePath without changing its source',
+    (fixture) => {
+      const source = readFileSync(fixture.path, 'utf8')
+
+      const prepared = prepareSessionSnapshotFixtureForComparison(source, fixture.path)
+      expect(JSON.parse(source.split('\n')[0]!)).toMatchObject({ version: 0 })
+      expect(JSON.parse(prepared.split('\n')[0]!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
+      expect(prepared).not.toContain('"type":"assistant/chunk"')
+      expect(readFileSync(fixture.path, 'utf8')).toBe(source)
+      if (fixture.repoRelativePath.includes('agent-instructions')) {
+        expect(prepared).toContain('"plugin":"alpha-comparison-compact"')
+        expect(prepared).toContain('"stream":')
+      } else {
+        expect(prepared).toContain('"source":{"kind":"fallback"}')
+      }
+    },
+  )
+
+  it('repairs the paired current agent-instructions result through the same closed source identity', () => {
     const fixture = ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES[0]!
     const source = readFileSync(fixture.path, 'utf8')
-
     const prepared = prepareSessionSnapshotFixtureForComparison(source, fixture.path)
-    const [sourceHeader, ...sourceBody] = source.split('\n')
-    const [preparedHeader, ...preparedBody] = prepared.split('\n')
+    const invalidCurrent = prepared.replace(
+      '"plugin":"alpha-comparison-compact"',
+      '"plugin":"compact","compactionId":"workspace-context-fixture"',
+    )
 
-    expect(JSON.parse(sourceHeader!)).toMatchObject({ version: 0 })
-    expect(JSON.parse(preparedHeader!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
-    expect(preparedBody).toEqual(sourceBody)
+    expect(prepareSessionSnapshotFixtureForComparison(invalidCurrent, fixture.path)).toBe(prepared)
+    expect(() => prepareSessionSnapshotFixtureForComparison(invalidCurrent, resolve(dir, fixture.repoRelativePath)))
+      .toThrow(/compaction checkpoint.*has no matching compaction\/start/)
+  })
+})
+
+describe('prepareSessionEventNotificationsForComparison', () => {
+  const wrapHeadlessEvent = (event: Record<string, unknown>) => JSON.stringify({
+    type: 'session_event', sessionId: 'session-1', event,
+  })
+
+  it('migrates a v1 notification tail while retaining non-event protocol rows', () => {
+    const events = [
+      { type: 'turn/start', seq: 3, time: 0, data: { turn: 1 } },
+      { type: 'step/start', seq: 4, time: 0, data: { turn: 1, step: 1 } },
+      { type: 'assistant/chunk', seq: 5, time: 5, data: {
+        turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
+      } },
+      { type: 'assistant/chunk', seq: 6, time: 6, data: {
+        turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'done' },
+      } },
+      { type: 'assistant/chunk', seq: 7, time: 7, data: {
+        turn: 1, step: 1, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'done' } },
+      } },
+      { type: 'assistant/chunk', seq: 8, time: 8, data: {
+        turn: 1, step: 1, chunk: { type: 'finish', reason: { kind: 'stop' } },
+      } },
+      { type: 'assistant/message', seq: 9, time: 9, data: {
+        turn: 1,
+        step: 1,
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'done' }],
+          source: { kind: 'model', provider: 'fixture', model: 'fixture' },
+          id: 'message-1',
+        },
+      }, sourceEventSeqs: [5, 6, 7, 8], surfaceOp: 'append' },
+      { type: 'step/end', seq: 10, time: 10, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 11, time: 11, data: { turn: 1, reason: { kind: 'completed' } } },
+    ]
+    const source = [
+      ...events.map(event => ({ type: 'session_event', sessionId: 'session-1', event })),
+      { type: 'session_event', sessionId: 'session-1', event: {
+        type: 'turn/end', seq: 2, time: 12, data: { turn: 1, reason: { kind: 'completed' } },
+      } },
+      { type: 'session_event', sessionId: 'session-1', event: {
+        type: 'feedback/record', seq: 12, time: 13, data: { text: 'resumed parent' },
+      } },
+      { type: 'result', status: 'completed' },
+    ].map(row => JSON.stringify(row)).join('\n') + '\n'
+
+    const prepared = prepareSessionEventNotificationsForComparison(source)
+    const rows = prepared.trimEnd().split('\n').map(line => JSON.parse(line) as Record<string, unknown>)
+    const migrated = rows.flatMap((row) => {
+      const event = row['event']
+      return event !== null && typeof event === 'object' ? [event] : []
+    })
+
+    expect(migrated.some(event => 'type' in event && event.type === 'assistant/chunk')).toBe(false)
+    expect(migrated.find(event => 'type' in event && event.type === 'assistant/message')).toMatchObject({
+      seq: 5,
+      data: { stream: expect.any(Array) as unknown },
+    })
+    expect(rows.at(-1)).toEqual({ type: 'result', status: 'completed' })
+    expect(prepared.endsWith('\n')).toBe(true)
+  })
+
+  it('leaves a current notification stream byte-identical', () => {
+    const current = `${JSON.stringify({
+      method: 'session.event',
+      params: {
+        sessionId: 'session-1',
+        event: { type: 'assistant/attempt', seq: 0, time: 0, data: { turn: 1, step: 1, stream: [] } },
+      },
+    })}\n`
+
+    expect(prepareSessionEventNotificationsForComparison(current)).toBe(current)
+  })
+
+  it('omits generation-dependent delivery cursors', () => {
+    const source = `${JSON.stringify({
+      method: 'session.event',
+      params: {
+        sessionId: 'session-1',
+        event: {
+          type: 'session-log-deepseek/delivery-accepted',
+          seq: 3,
+          time: 0,
+          data: { sessionId: 'source-1', sessionFormatVersion: 1, throughSeq: 21 },
+        },
+      },
+    })}\n`
+
+    expect(JSON.parse(prepareSessionEventNotificationsForComparison(source))).toMatchObject({
+      params: { event: { data: { sessionId: 'source-1' } } },
+    })
+  })
+
+  it.each([
+    { tools: '{{tools}}', expected: '{{tools}}' },
+    { tools: ['read'], expected: [{ name: 'read', description: '', parameters: {} }] },
+  ])('migrates a projected request header with tools $tools', ({ tools, expected }) => {
+    const events = [
+      { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: 0, data: { turn: 1, step: 1 } },
+      {
+        type: 'request/header',
+        seq: 2,
+        time: 0,
+        data: {
+          header: {
+            config: { provider: 'fixture', model: 'fixture' },
+            system: '{{system}}',
+            tools,
+          },
+          reason: 'initial',
+        },
+      },
+      {
+        type: 'assistant/chunk',
+        seq: 3,
+        time: 0,
+        data: { turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+      },
+      { type: 'step/end', seq: 4, time: 0, data: { turn: 1, step: 1 } },
+    ]
+    const source = events.map(event => JSON.stringify({
+      type: 'session_event',
+      sessionId: 'session-1',
+      event,
+    })).join('\n')
+
+    const rows = prepareSessionEventNotificationsForComparison(source).split('\n')
+      .map(line => JSON.parse(line) as { event: Record<string, unknown> })
+    const request = rows.find(row => row.event['type'] === 'request/header') as {
+      event: { data: { header: { tools: unknown } } }
+    }
+
+    expect(request.event.data.header.tools).toEqual(expected)
+    expect(rows.some(row => row.event['type'] === 'assistant/chunk')).toBe(false)
+    expect(rows.some(row => row.event['type'] === 'assistant/attempt')).toBe(true)
+  })
+
+  it('assigns an unterminated final chunk group to its last source row', () => {
+    const events = [
+      { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: 0, data: { turn: 1, step: 1 } },
+      {
+        type: 'assistant/chunk',
+        seq: 2,
+        time: 0,
+        data: { turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+      },
+    ]
+    const source = events.map(event => JSON.stringify({
+      method: 'session.event',
+      params: { sessionId: 'session-1', event },
+    })).join('\n')
+
+    const rows = prepareSessionEventNotificationsForComparison(source).split('\n')
+      .map(line => JSON.parse(line) as { params: { event: Record<string, unknown> } })
+
+    expect(rows).toHaveLength(3)
+    expect(rows.at(-1)?.params.event['type']).toBe('assistant/attempt')
+    expect(prepareSessionEventNotificationsForComparison('{"type":"result"}')).toBe('{"type":"result"}')
+  })
+
+  it('keeps malformed SDK wrappers and delivery payloads outside migration unchanged', () => {
+    const rows = [
+      { method: 'session.event', params: { sessionId: 7, event: {} } },
+      { method: 'session.event', params: { sessionId: 'session-1' } },
+      {
+        method: 'session.event',
+        params: {
+          sessionId: 'session-1',
+          event: { type: 'session-log-deepseek/delivery-accepted', seq: 0, time: 0, data: null },
+        },
+      },
+    ]
+    const source = rows.map(row => JSON.stringify(row)).join('\n')
+
+    expect(prepareSessionEventNotificationsForComparison(source)).toBe(source)
+  })
+
+  it('rejects malformed notification rows and invalid v1 tails before migration', () => {
+    expect(() => prepareSessionEventNotificationsForComparison('null'))
+      .toThrow('session event comparison line 1 must be an object')
+
+    expect(() => prepareSessionEventNotificationsForComparison(wrapHeadlessEvent({
+      type: 'assistant/chunk', seq: -1, time: 0, data: {},
+    }))).toThrow('session event comparison requires a non-negative first seq')
+    expect(() => prepareSessionEventNotificationsForComparison([
+      wrapHeadlessEvent({ type: 'assistant/chunk', seq: 0, time: 0, data: {} }),
+      wrapHeadlessEvent({ type: 7, seq: 1, time: 0, data: {} }),
+    ].join('\n'))).toThrow('session event comparison requires a contiguous event tail for session-1')
+  })
+
+  it('delegates malformed request headers to the released-format validator', () => {
+    const source = [
+      wrapHeadlessEvent({ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } }),
+      wrapHeadlessEvent({ type: 'request/header', seq: 1, time: 0, data: null }),
+      wrapHeadlessEvent({ type: 'assistant/chunk', seq: 2, time: 0, data: {
+        turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
+      } }),
+    ].join('\n')
+
+    expect(() => prepareSessionEventNotificationsForComparison(source))
+      .toThrow(/request\/header 1 data must be a JSON object/)
   })
 })
 
 describe('deriveReplayScript', () => {
-  it('groups one finished assistant/chunk stream into one replay entry', () => {
-    const events: SessionEvent[] = TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))
+  it('expands one finished embedded Assistant stream into one replay entry', () => {
+    const events: SessionEvent[] = [streamEvent(1, 1, 1, TEXT_CHUNKS)]
     expect(deriveReplayScript(events)).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
   })
 
@@ -621,10 +957,9 @@ describe('deriveReplayScript', () => {
       { type: 'usage', usage: { inputTokens: 0, outputTokens: 0 } },
       { type: 'finish', reason: { kind: 'error', failure: { message: 'empty', code: 'EMPTY_RESPONSE' } } },
     ]
-    let seq = 1
     const events: SessionEvent[] = [
-      ...failed.map(chunk => chunkEvent(SessionSeq(seq++), 1, 1, chunk)),
-      ...TEXT_CHUNKS.map(chunk => chunkEvent(SessionSeq(seq++), 1, 1, chunk)),
+      streamEvent(1, 1, 1, failed),
+      streamEvent(2, 1, 1, TEXT_CHUNKS),
     ]
     expect(deriveReplayScript(events)).toEqual([
       { kind: 'chunks', chunks: failed },
@@ -639,10 +974,9 @@ describe('deriveReplayScript', () => {
       { type: 'text-delta', index: 0, text: 'two' },
       { type: 'finish', reason: { kind: 'stop' } },
     ]
-    let seq = 1
     const events: SessionEvent[] = [
-      ...callA.map(c => chunkEvent(SessionSeq(seq++), 1, 1, c)),
-      ...callB.map(c => chunkEvent(SessionSeq(seq++), 1, 2, c)), // same turn, next step
+      streamEvent(1, 1, 1, callA),
+      streamEvent(2, 1, 2, callB), // same turn, next step
     ]
     expect(deriveReplayScript(events)).toEqual([
       { kind: 'chunks', chunks: callA },
@@ -651,26 +985,26 @@ describe('deriveReplayScript', () => {
   })
 
   it('separates calls across turns too', () => {
-    let seq = 1
     const events: SessionEvent[] = [
-      ...TEXT_CHUNKS.map(c => chunkEvent(SessionSeq(seq++), 1, 1, c)),
-      ...TEXT_CHUNKS.map(c => chunkEvent(SessionSeq(seq++), 2, 1, c)), // new turn, step resets to 1
+      streamEvent(1, 1, 1, TEXT_CHUNKS),
+      streamEvent(2, 2, 1, TEXT_CHUNKS), // new turn, step resets to 1
     ]
     expect(deriveReplayScript(events)).toHaveLength(2)
   })
 
-  it('ignores non-assistant/chunk events', () => {
+  it('ignores non-Assistant-stream events', () => {
     let seq = 1
     const events: SessionEvent[] = [
       { type: 'turn/start', seq: SessionSeq(seq++), time: 0, data: { turn: 1 } },
-      ...TEXT_CHUNKS.map(c => chunkEvent(SessionSeq(seq++), 1, 1, c)),
+      streamEvent(seq++, 1, 1, TEXT_CHUNKS),
       { type: 'turn/end', seq: SessionSeq(seq++), time: 0, data: { turn: 1, reason: { kind: 'completed' } } },
     ]
     expect(deriveReplayScript(events)).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
   })
 
-  it('returns an empty script for a log with no assistant/chunk events', () => {
+  it('returns an empty script for a log with no Assistant stream events', () => {
     expect(deriveReplayScript([])).toEqual([])
+    expect(deriveReplayScript([streamEvent(1, 1, 1, [])])).toEqual([])
   })
 
   it('keeps a finish-error chunk in the derived entry (replays naturally)', () => {
@@ -678,7 +1012,7 @@ describe('deriveReplayScript', () => {
       { type: 'block-start', index: 0, blockType: 'text' },
       { type: 'finish', reason: { kind: 'error', failure: { message: 'boom', code: 'X' } } },
     ]
-    const events = errChunks.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))
+    const events = [streamEvent(1, 1, 1, errChunks)]
     expect(deriveReplayScript(events)).toEqual([{ kind: 'chunks', chunks: errChunks }])
   })
 
@@ -697,7 +1031,7 @@ describe('deriveReplayScript', () => {
     ]
     let seq = 1
     const events: SessionEvent[] = [
-      ...overflow.map(chunk => chunkEvent(SessionSeq(seq++), 1, 2, chunk)),
+      streamEvent(seq++, 1, 2, overflow),
       {
         type: 'compaction/start',
         seq: SessionSeq(seq++),
@@ -721,7 +1055,7 @@ describe('deriveReplayScript', () => {
           usage,
         },
       },
-      ...TEXT_CHUNKS.map(chunk => chunkEvent(SessionSeq(seq++), 1, 2, chunk)),
+      streamEvent(seq++, 1, 2, TEXT_CHUNKS),
     ]
 
     expect(deriveReplayScript(events)).toEqual([
@@ -849,8 +1183,10 @@ describe('deriveReplayScript', () => {
   it('throws on a group that lacks a terminal finish chunk (a thrown stream)', () => {
     // A thrown stream(): prefix chunks logged, then turn/end (error reason), NO finish.
     const events: SessionEvent[] = [
-      chunkEvent(SessionSeq(1), 1, 1, { type: 'block-start', index: 0, blockType: 'text' }),
-      chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'par' }),
+      streamEvent(1, 1, 1, [
+        { type: 'block-start', index: 0, blockType: 'text' },
+        { type: 'text-delta', index: 0, text: 'par' },
+      ]),
       { type: 'turn/end', seq: SessionSeq(3), time: 0, data: { turn: 1, reason: { kind: 'error', error: { message: 'x', code: 'UNKNOWN' } } } },
     ]
     expect(() => deriveReplayScript(events)).toThrow(/without a finish chunk.*replay\.override\.json/s)
@@ -858,22 +1194,22 @@ describe('deriveReplayScript', () => {
 
   it('names the offending (turn, step) when a group is incomplete', () => {
     const events: SessionEvent[] = [
-      chunkEvent(SessionSeq(1), 2, 3, { type: 'block-start', index: 0, blockType: 'text' }),
+      streamEvent(1, 2, 3, [{ type: 'block-start', index: 0, blockType: 'text' }]),
     ]
     expect(() => deriveReplayScript(events)).toThrow(/2\/3/)
   })
 
   it('rejects an unfinished call before consuming chunks from a new step', () => {
     const events: SessionEvent[] = [
-      chunkEvent(SessionSeq(1), 1, 1, { type: 'block-start', index: 0, blockType: 'text' }),
-      chunkEvent(SessionSeq(2), 1, 2, { type: 'finish', reason: { kind: 'stop' } }),
+      streamEvent(1, 1, 1, [{ type: 'block-start', index: 0, blockType: 'text' }]),
+      streamEvent(2, 1, 2, [{ type: 'finish', reason: { kind: 'stop' } }]),
     ]
     expect(() => deriveReplayScript(events)).toThrow(/model call 1\/1 ended without a finish chunk/)
   })
 
   it('rejects an unfinished call at a compact summary boundary', () => {
     const events: SessionEvent[] = [
-      chunkEvent(SessionSeq(1), 1, 1, { type: 'block-start', index: 0, blockType: 'text' }),
+      streamEvent(1, 1, 1, [{ type: 'block-start', index: 0, blockType: 'text' }]),
       {
         type: 'compaction/summary',
         seq: SessionSeq(2),
@@ -905,7 +1241,7 @@ describe('loadReplayScript', () => {
     writeFileSync(file, source, 'utf8')
 
     expect(loadReplayScript({ file })).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
-    expect(JSON.parse(migrateSessionSnapshotFixture(source).split('\n')[0] as string)).toMatchObject({ version: 1 })
+    expect(JSON.parse(migrateSessionSnapshotFixture(source).split('\n')[0] as string)).toMatchObject({ version: 2 })
     expect(readFileSync(file, 'utf8')).toBe(source)
   })
 
@@ -1600,8 +1936,8 @@ describe('loadSessionScripts', () => {
     const childEvents: SessionEvent[] = [
       { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } },
       { type: 'step/start', seq: SessionSeq(1), time: 0, data: { turn: 1, step: 1 } },
-      chunkEvent(SessionSeq(2), 1, 1, parentChunk),
-      chunkEvent(SessionSeq(3), 1, 1, { type: 'finish', reason: { kind: 'stop' } }),
+      legacyChunkEvent(2, 1, 1, parentChunk),
+      legacyChunkEvent(3, 1, 1, { type: 'finish', reason: { kind: 'stop' } }),
       { type: 'step/end', seq: SessionSeq(4), time: 0, data: { turn: 1, step: 1 } },
       {
         type: 'turn/end', seq: SessionSeq(5), time: 0,
@@ -1609,8 +1945,8 @@ describe('loadSessionScripts', () => {
       },
       { type: 'turn/start', seq: SessionSeq(6), time: 0, data: { turn: 2 } },
       { type: 'step/start', seq: SessionSeq(7), time: 0, data: { turn: 2, step: 1 } },
-      chunkEvent(SessionSeq(8), 2, 1, childChunks[0]!),
-      chunkEvent(SessionSeq(9), 2, 1, childChunks[1]!),
+      legacyChunkEvent(8, 2, 1, childChunks[0]!),
+      legacyChunkEvent(9, 2, 1, childChunks[1]!),
       { type: 'step/end', seq: SessionSeq(10), time: 0, data: { turn: 2, step: 1 } },
       {
         type: 'turn/end', seq: SessionSeq(11), time: 0,
@@ -1618,7 +1954,9 @@ describe('loadSessionScripts', () => {
       },
     ]
     const childPath = join(dir, 'session.1.jsonl')
-    writeFileSync(childPath, sessionJsonl(childEvents, { id: 'child', createdAt: 200, seedLength: 6 }), 'utf8')
+    writeFileSync(childPath, sessionJsonl(childEvents, {
+      id: 'child', createdAt: 200, seedLength: 6, version: 0,
+    }), 'utf8')
 
     const scripts = loadSessionScripts({ file: f, childFiles: [childPath] })
     // The child script is ONLY the child's own model call — the parent's seeded

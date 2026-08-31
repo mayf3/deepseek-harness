@@ -67,10 +67,55 @@ export function oneTurnLog(): SessionEvent[] {
           ...{ provider: 'mock', model: 'mock' },
         },
       }),
+      stream: [
+        { type: 'chunk', time: 3, chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+        { type: 'text-chunks', time0: 3, index: 0, dt: [], texts: ['hello'] },
+        { type: 'chunk', time: 4, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'hello' } } },
+        { type: 'chunk', time: 4, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+      ],
     }, surfaceOp: 'append' },
     { type: 'step/end', seq: SessionSeq(4), time: 5, data: { turn: 1, step: 1 } },
     { type: 'turn/end', seq: SessionSeq(5), time: 6, data: { turn: 1, reason: { kind: 'completed' } } },
   ]
+}
+
+/** Frozen v0/v1 form of {@link oneTurnLog} with top-level raw chunk events. */
+export function releasedV1OneTurnLog(): SessionEvent[] {
+  const current = oneTurnLog()
+  const message = current[3] as SessionEvent<'assistant/message'>
+  return [
+    current[0] as SessionEvent,
+    current[1] as SessionEvent,
+    current[2] as SessionEvent,
+    { type: 'assistant/chunk', seq: SessionSeq(3), time: 3, data: {
+      turn: 1, step: 1, chunk: { type: 'block-start', index: 0, blockType: 'text' },
+    } } as unknown as SessionEvent,
+    { type: 'assistant/chunk', seq: SessionSeq(4), time: 3, data: {
+      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'hello' },
+    } } as unknown as SessionEvent,
+    { type: 'assistant/chunk', seq: SessionSeq(5), time: 4, data: {
+      turn: 1, step: 1, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'hello' } },
+    } } as unknown as SessionEvent,
+    { type: 'assistant/chunk', seq: SessionSeq(6), time: 4, data: {
+      turn: 1, step: 1, chunk: { type: 'finish', reason: { kind: 'stop' } },
+    } } as unknown as SessionEvent,
+    { ...message, seq: SessionSeq(7), data: {
+      turn: message.data.turn,
+      step: message.data.step,
+      message: message.data.message,
+    }, sourceEventSeqs: [SessionSeq(3), SessionSeq(4), SessionSeq(5), SessionSeq(6)] } as SessionEvent,
+    { ...(current[4] as SessionEvent), seq: SessionSeq(8) },
+    { ...(current[5] as SessionEvent), seq: SessionSeq(9) },
+  ]
+}
+
+/** Insert the v2 child-owned lineage marker at one exact inherited cut. */
+function withInheritedMarker(events: readonly SessionEvent[], cut: number): SessionEvent[] {
+  return [
+    ...events.slice(0, cut),
+    { type: 'session/end-seed', seq: SessionSeq(cut), time: 1, data: { inherited: true } } as SessionEvent,
+    ...events.slice(cut),
+  ].map((event, seq) => ({ ...event, seq: SessionSeq(seq) }))
 }
 
 /**
@@ -141,7 +186,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           .rejects.toThrow('unseeded session metadata inherited event count must be 0')
 
         await persistence.create(seeded, SessionLogOffset(0))
-        await persistence.append(seeded.id, oneTurnLog())
+        await persistence.append(seeded.id, withInheritedMarker(oneTurnLog(), 0))
         await expect(persistence.load(seeded.id)).resolves.toMatchObject({
           meta: { isSeeded: true },
           inheritedEventCount: 0,
@@ -162,7 +207,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           .filter(isReadableSessionPersistenceListing)
           .map(listing => listing.header.id)).not.toContain(seeded.id)
 
-        await persistence.append(seeded.id, oneTurnLog())
+        await persistence.append(seeded.id, withInheritedMarker(oneTurnLog(), 2))
         await expect(persistence.load(seeded.id)).resolves.toMatchObject({
           inheritedEventCount: 2,
         })
@@ -240,6 +285,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           { type: 'step/start', seq: SessionSeq(7), time: 8, data: { turn: 2, step: 1 } },
           { type: 'assistant/message', seq: SessionSeq(8), time: 9, data: {
             turn: 2, step: 1,
+            stream: [],
             message: createMessage({
               role: 'assistant',
               content: [
@@ -290,6 +336,7 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           { type: 'step/start', seq: SessionSeq(1), time: 2, data: { turn: 1, step: 1 } },
           { type: 'assistant/message', seq: SessionSeq(2), time: 3, data: {
             turn: 1, step: 1,
+            stream: [],
             message: createMessage({
               role: 'assistant',
               content: [

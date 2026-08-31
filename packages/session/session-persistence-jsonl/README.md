@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-persistence-jsonl` stores each Session in canonical version-named JSONL generations whose ordinary writes append to the current file — checksummed Zstandard frames by default, raw newline-delimited lines when compression is disabled. Released v0 uses `session.jsonl[.zstd]`; v1 and later use lowercase `session.vN.jsonl[.zstd]`. Migration publishes a previously absent successor beside the unchanged source and never renames, replaces, or deletes a committed generation path. The backend serves the same logical `SessionEvent` stream as any persistence backend, so physical naming, compression, packing, migration, and crash recovery remain storage details. Choose it when consumers need per-session artifacts on disk: `locate(meta)` returns the version-qualified target, and raw generations are line-readable with `compression: 'none'`. A root directory is the one required configuration; durability, lazy materialization, and interrupted-turn recovery come with the backend.
+`dsh-session-persistence-jsonl` stores each Session in canonical version-named JSONL generations whose ordinary writes append to the current file — checksummed Zstandard frames by default, raw newline-delimited lines when compression is disabled. Released v0 uses `session.jsonl[.zstd]`; positive versions use lowercase `session.vN.jsonl[.zstd]`. Migration publishes a previously absent successor beside the unchanged source and never renames, replaces, or deletes a committed generation path. The backend serves the same logical `SessionEvent` stream as any persistence backend, so physical naming, compression, historical decoding, migration, and crash recovery remain storage details. Choose it when consumers need per-session artifacts on disk: `locate(meta)` returns the version-qualified target, and raw generations are line-readable with `compression: 'none'`. A root directory is the one required configuration; durability, lazy materialization, and interrupted-turn recovery come with the backend.
 
 ## Table of Contents
 
@@ -45,7 +45,6 @@ Choose this backend when consumers benefit from one artifact per session — nav
 | Field | Default | Meaning |
 |---|---|---|
 | `root` | required | Root directory for all session files |
-| `packChunks` | `true` | Write eligible `assistant/chunk` runs as packed rows; `false` keeps one event per line for diagnostics |
 | `compression` | `'zstd'` | Physical encoding: `'zstd'` checksummed frames, or `'none'` newline-delimited UTF-8 text |
 | `preparedSessionCacheSize` | `5` | Cold session preparations retained for resume reuse |
 | `writeBatchMaxDelayMs` | `200` | Fixed live-event coalescing window, in milliseconds |
@@ -54,7 +53,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### On-disk layout
 
-Each Session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename, followed by one storage record per logical event or one packed chunk row per eligible run. The format catalog translates every supported historical header and event representation before the persistence coordinator receives current logical values. Storage records use the lossless provenance representation described below:
+Each Session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename. Current v2 stores one physical row per durable event; the frozen v0 and v1 readers also understand their historical packed Assistant-delta rows. The format catalog translates every supported historical header and event representation before the persistence coordinator receives current logical values. Current storage records use the lossless provenance representation described below:
 
 ```text
 <root>/
@@ -62,8 +61,10 @@ Each Session gets a session-owned directory under a readable project directory. 
     <encoded-id>/                # session-owned directory
       session.jsonl.zstd         # released v0, compressed root
       session.v1.jsonl.zstd      # released v1, compressed root
+      session.v2.jsonl.zstd      # released v2, compressed root
       session.jsonl              # released v0, raw root
-      session.v1.jsonl           # released v1, raw root; later versions use vN
+      session.v1.jsonl           # released v1, raw root
+      session.v2.jsonl           # released v2, raw root; later versions use vN
 ```
 
 Session ids are injectively escaped to one safe path segment before use (no traversal, no collision). The normalized cwd keeps the project directory readable for navigation; cwd strings that normalize alike share a project directory while session ids still select distinct session directories. `locate(meta)` performs no filesystem I/O and returns `{ kind: 'jsonl', path }` for `meta.version`: suffixless for v0 and `.vN` for every positive version. Listing instead reports the exact highest generation it found on disk.
@@ -92,14 +93,14 @@ The backend is a thin storage layer over the shared [PersistenceCoordinator](../
 
 ### Physical encoding
 
-The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). `sourceEventSeqs` uses a lossless storage representation: consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. `compression: 'none'` keeps the same storage-form logical lines without frame compression. The configured suffix selects framing once; generation migration operates on decoded JSON values and uses the same publication algorithm for raw and compressed files. A root belongs to one encoding: startup discovery and targeted lookup reject the opposite suffix, and there is no compression migration, mixed-root fallback, or dual write. When `packChunks` is enabled, eligible chunk runs use the format codec's lossless packed representation.
+The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). Current v2 writes one event per row; `sourceEventSeqs` uses a lossless storage representation in which consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. `compression: 'none'` keeps the same storage-form logical lines without frame compression. The configured suffix selects framing once; generation migration operates on decoded JSON values and uses the same publication algorithm for raw and compressed files. A root belongs to one encoding: startup discovery and targeted lookup reject the opposite suffix, and there is no compression migration, mixed-root fallback, or dual write. Frozen v0 and v1 codecs retain their packed-row decoders solely for historical generations.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, backend class, coordinator wiring |
-| [`src/format.ts`](src/format.ts) | Log path derivation, header encoding, record scanning, packed-row layout |
+| [`src/format.ts`](src/format.ts) | Log path derivation, header encoding, and current record scanning |
 | [`src/generation.ts`](src/generation.ts) | Exact source reads, final-target staging, source recheck, and exclusive successor publication |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard frame compression, decoding, and frame scanning |
 | [`src/win32.ts`](src/win32.ts) | Windows write-through no-overwrite file and directory publication |
@@ -129,7 +130,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### What the model sees
 
-JSONL storage contributes no live prompt or schema. Loading restores stored surface history and preserves prior request headers for reconstruction; the new loop composes its current envelope. Recovery balances an assistant request without a durable call with `TOOL_NOT_STARTED`; a durable call without a result becomes `TOOL_OUTCOME_UNKNOWN`, which tells the model to retry only read-only or idempotent work and to verify possible side effects or ask the user. Raw `assistant/chunk` records do not duplicate messages.
+JSONL storage contributes no live prompt or schema. Loading restores stored surface history and preserves prior request headers for reconstruction; the new loop composes its current envelope. Recovery balances an assistant request without a durable call with `TOOL_NOT_STARTED`; a durable call without a result becomes `TOOL_OUTCOME_UNKNOWN`, which tells the model to retry only read-only or idempotent work and to verify possible side effects or ask the user. Embedded Assistant streams and log-only attempts do not duplicate messages.
 
 #### Token effect
 

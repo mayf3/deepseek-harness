@@ -1,31 +1,30 @@
 /** Process-local assistant state retained for reconnecting Web followers. */
 
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
+import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   SessionAssistantStreamAttempt,
   SessionAssistantStreamBaseline,
 } from './types.ts'
 
-type ChunkFrame = Extract<AssistantStreamFrame, { type: 'chunk' }>
-
 interface MutableAttempt {
   readonly attemptId: SessionAssistantStreamAttempt['attemptId']
   readonly startedTime: number
   readonly turn: number
   readonly step: number
-  readonly chunks: ChunkFrame[]
-  readonly legacyChunkSeqs: number[]
+  readonly stream: AssistantStreamAccumulator
+  nextIndex: number
 }
 
-const EMPTY_BASELINE: SessionAssistantStreamBaseline = { revision: 0, attempts: [] }
+const EMPTY_BASELINE: SessionAssistantStreamBaseline = { revision: 0 }
 
 /**
  * Folds dense Agent frames and materializes one shared immutable reconnect
  * baseline per accepted revision.
  */
 export class SessionAssistantStreamAccumulator {
-  private readonly attempts = new Map<string, MutableAttempt>()
+  private activeAttempt: MutableAttempt | undefined
   private revision = 0
   private snapshotValue: SessionAssistantStreamBaseline = EMPTY_BASELINE
   private dirty = false
@@ -36,11 +35,11 @@ export class SessionAssistantStreamAccumulator {
    */
   accept(frame: AssistantStreamFrame): void {
     if (frame.type === 'start' && frame.revision === 1 && this.revision !== 0) {
-      this.attempts.clear()
+      this.activeAttempt = undefined
       this.revision = 0
     }
     if (frame.revision !== this.revision + 1) {
-      this.attempts.clear()
+      this.activeAttempt = undefined
       this.revision = frame.revision
       this.dirty = true
       return
@@ -48,27 +47,29 @@ export class SessionAssistantStreamAccumulator {
     this.revision = frame.revision
     switch (frame.type) {
       case 'start':
-        this.attempts.set(String(frame.attemptId), {
+        this.activeAttempt = {
           attemptId: frame.attemptId,
           startedTime: frame.startedTime,
           turn: frame.turn,
           step: frame.step,
-          chunks: [],
-          legacyChunkSeqs: [],
-        })
+          stream: new AssistantStreamAccumulator(),
+          nextIndex: 0,
+        }
         break
       case 'chunk': {
-        const attempt = this.attempts.get(String(frame.attemptId))
-        if (attempt === undefined || frame.index !== attempt.chunks.length) {
-          this.attempts.clear()
+        const attempt = this.activeAttempt
+        if (attempt === undefined
+          || attempt.attemptId !== frame.attemptId
+          || frame.index !== attempt.nextIndex) {
+          this.activeAttempt = undefined
           break
         }
-        attempt.chunks.push(frame)
-        attempt.legacyChunkSeqs.push(frame.legacyChunkSeq)
+        attempt.stream.push({ time: frame.time, chunk: frame.chunk })
+        attempt.nextIndex += 1
         break
       }
       case 'end':
-        this.attempts.delete(String(frame.attemptId))
+        this.activeAttempt = undefined
         break
     }
     this.dirty = true
@@ -82,14 +83,16 @@ export class SessionAssistantStreamAccumulator {
     if (!this.dirty) return this.snapshotValue
     this.snapshotValue = {
       revision: this.revision,
-      attempts: [...this.attempts.values()].map(attempt => ({
-        attemptId: attempt.attemptId,
-        startedTime: attempt.startedTime,
-        turn: attempt.turn,
-        step: attempt.step,
-        chunks: attempt.chunks.map(frame => frame.chunk as JsonValue),
-        legacyChunkSeqs: [...attempt.legacyChunkSeqs],
-      })),
+      ...this.activeAttempt === undefined ? {} : {
+        activeAttempt: {
+          attemptId: this.activeAttempt.attemptId,
+          startedTime: this.activeAttempt.startedTime,
+          turn: this.activeAttempt.turn,
+          step: this.activeAttempt.step,
+          nextIndex: this.activeAttempt.nextIndex,
+          stream: this.activeAttempt.stream.snapshot() as unknown as readonly JsonValue[],
+        },
+      },
     }
     this.dirty = false
     return this.snapshotValue

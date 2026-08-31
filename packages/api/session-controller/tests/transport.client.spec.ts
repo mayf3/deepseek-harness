@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  isRemoteFailure,
   RemoteStream,
   RemoteStreamCarrierError,
   type RemoteStreamOptions,
@@ -42,18 +41,6 @@ function entry(seq: number): SessionEventEntry {
   return { type: 'event', event: { type: 'turn/start', seq, time: seq, data: { turn: seq } } }
 }
 
-function chunks(seq0: number): SessionHistoryRecord {
-  return {
-    type: 'chunks',
-    event: {
-      type: 'chunkrow/text-chunks',
-      seq: seq0,
-      time: seq0,
-      data: { turn: 1, step: 1, index: 0, texts: ['a', 'b', 'c'], dt: [1, 1] },
-    },
-  }
-}
-
 function page(records: readonly SessionHistoryRecord[], hasMore = false): SessionPage {
   return { records, hasMore }
 }
@@ -62,14 +49,15 @@ function snapshot(
   cursor: number,
   records: readonly SessionHistoryRecord[],
   hasMore = false,
-  assistantStream: SessionAssistantStreamBaseline = { revision: 0, attempts: [] },
+  assistantStream: SessionAssistantStreamBaseline = { revision: 0 },
 ): SessionFollowFrame {
   return {
     type: 'snapshot',
     header: {
-      version: 1,
+      version: 2,
       id: ADDRESS.kind === 'session' ? ADDRESS.sessionId : ADDRESS.childSessionId,
       createdAt: 0,
+      isSeeded: false,
     },
     cursor,
     records,
@@ -154,18 +142,18 @@ describe('Session Client stream adapters', () => {
     const attemptId = LlmAttemptId('transport-attempt')
     const baseline: SessionAssistantStreamBaseline = {
       revision: 2,
-      attempts: [{
+      activeAttempt: {
         attemptId,
         startedTime: 1,
         turn: 1,
         step: 1,
-        chunks: [{ type: 'text-delta', index: 0, text: 'a' }],
-        legacyChunkSeqs: [0],
-      }],
+        nextIndex: 1,
+        stream: [{ type: 'text-chunks', time0: 0, index: 0, dt: [], texts: ['a'] }],
+      },
     }
     const frame: SessionAssistantStreamFrame = {
       type: 'chunk', attemptId, revision: 3, index: 1,
-      chunk: { type: 'text-delta', index: 0, text: 'b' }, legacyChunkSeq: 1,
+      time: 1, chunk: { type: 'text-delta', index: 0, text: 'b' },
     }
     const remote = new ScriptedSessionRemote(
       [{ frames: [snapshot(0, [entry(0)], false, baseline), assistantFrame(frame)], hold: true }],
@@ -193,9 +181,10 @@ describe('Session Client stream adapters', () => {
       frames: [{
         type: 'snapshot',
         header: {
-          version: 1,
+          version: 2,
           id: ADDRESS.sessionId,
           createdAt: 0,
+          isSeeded: false,
         },
         cursor: -1,
         records: [],
@@ -249,19 +238,18 @@ describe('Session Client stream adapters', () => {
     }
     const gap: SessionAssistantStreamFrame = {
       type: 'chunk', attemptId, revision: 3, index: 0,
-      chunk: { type: 'text-delta', index: 0, text: 'lost predecessor' },
-      legacyChunkSeq: 1,
+      time: 1, chunk: { type: 'text-delta', index: 0, text: 'lost predecessor' },
     }
     const replacement: SessionAssistantStreamBaseline = {
       revision: 3,
-      attempts: [{
+      activeAttempt: {
         attemptId,
         startedTime: 1,
         turn: 1,
         step: 1,
-        chunks: [gap.chunk],
-        legacyChunkSeqs: [1],
-      }],
+        nextIndex: 1,
+        stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['lost predecessor'] }],
+      },
     }
     const remote = new ScriptedSessionRemote([
       {
@@ -297,14 +285,14 @@ describe('Session Client stream adapters', () => {
     const attemptId = LlmAttemptId('replacement-lifecycle-attempt')
     const previous: SessionAssistantStreamBaseline = {
       revision: 2,
-      attempts: [{
+      activeAttempt: {
         attemptId,
         startedTime: 1,
         turn: 1,
         step: 1,
-        chunks: [{ type: 'text-delta', index: 0, text: 'old' }],
-        legacyChunkSeqs: [0],
-      }],
+        nextIndex: 1,
+        stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['old'] }],
+      },
     }
     const replacementStart: SessionAssistantStreamFrame = {
       type: 'start', attemptId, revision: 1, startedTime: 2,
@@ -312,14 +300,14 @@ describe('Session Client stream adapters', () => {
     }
     const replacement: SessionAssistantStreamBaseline = {
       revision: 1,
-      attempts: [{
+      activeAttempt: {
         attemptId,
         startedTime: 2,
         turn: 2,
         step: 1,
-        chunks: [],
-        legacyChunkSeqs: [],
-      }],
+        nextIndex: 0,
+        stream: [],
+      },
     }
     const remote = new ScriptedSessionRemote([
       {
@@ -350,10 +338,9 @@ describe('Session Client stream adapters', () => {
     }
   })
 
-  it('validates a packed logical range before publishing one compact Client entry', async () => {
-    const row = chunks(1)
+  it('validates one scalar current-event range before publishing Client entries', async () => {
     const remote = new ScriptedSessionRemote(
-      [{ frames: [snapshot(4, [entry(0), row, entry(4)]), entry(5)], hold: true }],
+      [{ frames: [snapshot(2, [entry(0), entry(1), entry(2)]), entry(3)], hold: true }],
       [],
     )
     const changes: SessionJournalChange[] = []
@@ -369,34 +356,11 @@ describe('Session Client stream adapters', () => {
       type: 'replace',
       entries: [
         entry(0),
-        row,
-        entry(4),
+        entry(1),
+        entry(2),
       ],
     })
-    expect(changes[0]?.type === 'replace' ? changes[0].entries[1] : undefined).toBe(row)
-    expect(changes[1]).toEqual({ type: 'append', entry: entry(5) })
-    await stream.dispose()
-  })
-
-  it('rejects a packed record emitted by the live follow path', async () => {
-    const failed = vi.fn()
-    const remote = new ScriptedSessionRemote(
-      [{ frames: [snapshot(-1, []), chunks(0) as SessionFollowFrame], hold: true }],
-      [],
-    )
-    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
-      publish: vi.fn(),
-      failed,
-    })
-
-    await stream.open({})
-    await vi.waitFor(() => { expect(failed).toHaveBeenCalledOnce() })
-    const violation: unknown = failed.mock.calls[0]?.[0]
-    expect(isRemoteFailure(violation)).toBe(true)
-    expect(violation).toMatchObject({
-      code: 'gateway/internal',
-      message: 'session live stream emitted a packed history record',
-    })
+    expect(changes[1]).toEqual({ type: 'append', entry: entry(3) })
     await stream.dispose()
   })
 

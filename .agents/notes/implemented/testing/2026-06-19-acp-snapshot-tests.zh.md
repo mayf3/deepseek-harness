@@ -18,13 +18,13 @@ Status: implemented
 
 ### fixture 投影持久化会话 JSONL
 
-每个场景数值最高的选定 parent generation 都从真实运行中采集：v0 为 `session.jsonl`，正 generation 为 `session.vN.jsonl`。`assistant/chunk` 事件复现模型 stream；工具、消息与边界事件捕获 harness 行为。因此，一份普通 Session generation 同时充当 replay source 与行为预期输出。
+每个场景数值最高的选定 parent generation 都从真实运行中采集：v0 为 `session.jsonl`，正 generation 为 `session.vN.jsonl`。`assistant/message` 与 `assistant/attempt` 中嵌入的紧凑 stream 会复现模型 attempt；工具、message 与 boundary event 捕获 harness 行为。因此，一份普通 Session generation 同时充当 replay source 与行为预期输出。
 
-每个签入仓库的会话格式 fixture 都使用规范的打包物理布局。覆盖所有行类型的场景从一份独立的真实录制机械派生；测试要求它包含每一种打包存储行类型，并在两份 fixture 解码后逐事件精确相等；随后，普通回放与日志比较会证明组装后的进程能够消费并复现该布局。
+每个当前 v2 Session-format fixture 都为每个持久事件使用一条物理行。保留的 v0 与 v1 predecessor generation 可以包含其冻结 packed-row 表示，并保持不可变。普通 replay 与 log 比较证明组装进程会选择、迁移、消费并复现当前 generation。
 
 ### 回放从日志推导模型脚本
 
-`llm-replay` 短路了提供方无关的 `llm/stream` waterfall（瀑布式事件）。`deriveReplayScript()` 在终止的 `finish` 分片处切分已记录的 `assistant/chunk` 事件，并用 `(turn, step)` 变化拒绝前一条未终止的调用。携带 `llmStreamCall: true` 的 `compaction/summary` 会在其持久日志位置贡献一次调用：回放根据 `rawOutput` 重建规范块边界，保留已记录的 usage（如有），并提供终止的 `stop`。该标记将这次本地调用与模板摘要或远程摘要区分开；后两者即使保留了 `rawOutput`，也未使用此上下文的适配器。
+`llm-replay` 短路 provider-neutral `llm/stream` waterfall。`deriveReplayScript()` 把每个已记录 `assistant/message` 或 `assistant/attempt` stream 展开为一次位置式调用，并校验其 terminal chunk。携带 `llmStreamCall: true` 的 `compaction/summary` 会在其持久 log 位置贡献一次调用：replay 根据 `rawOutput` 重建规范 block boundary，保留已记录 usage（如有），并提供 terminal `stop`。该 marker 将这次本地调用与 template 或 remote summary 区分开；后两者即使保留 `rawOutput`，也未使用此 context 的 adapter。
 
 ### 内存中的回放条目遵守完整的 LLM 约定
 
@@ -36,7 +36,7 @@ Status: implemented
 | { kind: 'hang' }
 ```
 
-日志从已结束的 assistant 流和显式标记的压缩（compaction）调用推导分片条目。流开始前的抛出、挂起和外部摘要器调用没有可重建的本地分片表示，因此这些场景提供 `replay.override.json`。throw 条目可以包含前缀分片以模拟流中途失败。显式覆盖避免了从有损的轮次结束原因或单独的提供方输出推断适配器行为。
+Log 从持久 Assistant settlement 与显式标记的 compaction call 推导 chunk 或 throw entry。Stream 开始前的 throw、hang 与 external summarizer call 没有可重建的本地 stream 表示，因此这些场景提供 `replay.override.json`。throw entry 可以包含 prefix chunk 以模拟 stream 中途失败。显式 override 避免从有损 turn-end reason 或单独 provider output 推断 adapter 行为。
 
 ### 位置式回放，单个在途流
 

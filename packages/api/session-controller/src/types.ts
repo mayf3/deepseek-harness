@@ -5,8 +5,7 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
-import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
+import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
@@ -384,15 +383,15 @@ export interface SessionEventEntry {
   readonly event: SessionWireEvent
 }
 
-/** v0-compatible Session metadata carried on the browser wire. */
+/** Current logical Session metadata carried on the browser wire. */
 export interface SessionWireHeader {
   readonly version: number
   readonly id: SessionId
   readonly createdAt: number
   readonly cwd?: string
   readonly parentSession?: SessionId
-  /** Exact inherited prefix length; absent for an unseeded Session. */
-  readonly seedLength?: number
+  /** Whether the Session contains a fork-inherited prefix. */
+  readonly isSeeded: boolean
   readonly origin?: 'subagent'
   readonly delegationDepth?: number
   readonly agentPreset?: string
@@ -403,24 +402,8 @@ export type SessionWireSurfaceOp =
   | 'append'
   | { readonly op: 'replace'; readonly start: number; readonly end: number }
 
-/** Event-shaped wire representation of one packed chunk row. */
-export type ChunkRowEvent = {
-  [Kind in ChunkRow['type']]: {
-    readonly type: `chunkrow/${Kind}`
-    readonly seq: number
-    readonly time: number
-    readonly data: Extract<ChunkRow, { readonly type: Kind }>['data']
-  }
-}[ChunkRow['type']]
-
-/** One lossless run of consecutive Assistant delta events in a history page. */
-export interface SessionChunkRun {
-  readonly type: 'chunks'
-  readonly event: ChunkRowEvent
-}
-
-/** One history-page record: a raw event or a packed Assistant delta run. */
-export type SessionHistoryRecord = SessionEventEntry | SessionChunkRun
+/** One history-page record. V2 embeds compact Assistant streams inside events. */
+export type SessionHistoryRecord = SessionEventEntry
 
 /** Session event wire form; durable readers own recognition of merge-extensible event names. */
 export interface SessionWireEvent {
@@ -457,15 +440,16 @@ export interface SessionAssistantStreamAttempt {
   readonly startedTime: number
   readonly turn: number
   readonly step: number
-  readonly chunks: readonly JsonValue[]
-  /** Exact durable v1 chunk records already represented by {@link chunks}. */
-  readonly legacyChunkSeqs: readonly number[]
+  /** Dense position expected for the next live chunk frame. */
+  readonly nextIndex: number
+  /** Compact detached stream accumulated at this opening revision. */
+  readonly stream: readonly JsonValue[]
 }
 
 /** Complete process-local assistant state at one follow opening. */
 export interface SessionAssistantStreamBaseline {
   readonly revision: number
-  readonly attempts: readonly SessionAssistantStreamAttempt[]
+  readonly activeAttempt?: SessionAssistantStreamAttempt
 }
 
 /** Browser wire form of one process-local assistant frame. */
@@ -483,8 +467,8 @@ export type SessionAssistantStreamFrame =
     readonly attemptId: LlmAttemptId
     readonly revision: number
     readonly index: number
+    readonly time: number
     readonly chunk: JsonValue
-    readonly legacyChunkSeq: number
   }
   | {
     readonly type: 'end'
@@ -492,8 +476,13 @@ export type SessionAssistantStreamFrame =
     readonly revision: number
     /** Number of chunk frames represented by this terminal marker. */
     readonly index: number
-    readonly outcome: 'committed' | 'aborted'
-    readonly legacyChunkSeqs: readonly number[]
+    readonly outcome:
+      | {
+        readonly kind: 'committed'
+        readonly eventType: 'assistant/message' | 'assistant/attempt'
+        readonly seq: number
+      }
+      | { readonly kind: 'abandoned' }
   }
 
 /** One contiguous backwards page of a Session log. */

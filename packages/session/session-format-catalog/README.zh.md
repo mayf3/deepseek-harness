@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-session-format-catalog` 为持久化提供一个确定性的 Session 格式读取器，且无需查询已挂载插件。它把冻结的 v0 和 v1 编解码器与唯一的 v0 到 v1 迁移边装配起来，在模块初始化时校验完整且无缺口的迁移链，并通过 `sessionFormatCatalog` 暴露物理分派、仅标头分类、迁移和当前格式编码。
+`dsh-session-format-catalog` 为持久化提供一个确定性的 Session 格式读取器，且无需查询已挂载插件。它把冻结的 v0、v1 与 v2 编解码器和相邻的 v0 到 v1、v1 到 v2 迁移边装配起来，在模块初始化时校验完整且无缺口的迁移链，并通过 `sessionFormatCatalog` 暴露物理分派、仅标头分类、迁移和当前格式编码。
 
 ## 目录
 
@@ -59,6 +59,7 @@ const current = sessionFormatCatalog.migrate(sessionFormatCatalog.decodeArtifact
 
 - [迁移机制](../session-format/README.zh.md)——目录构造与分派行为。
 - [已发布 v0 到 v1 迁移边](../session-format-v0-to-v1/README.zh.md)——编解码器与校验器所有权。
+- [已发布 v1 到 v2 迁移边](../session-format-v1-to-v2/README.zh.md)——Assistant stream 嵌入与基数变化引用重映射。
 - [JSONL 持久化](../session-persistence-jsonl/README.zh.md)——不可变 generation 命名与排他发布。
 
 -----

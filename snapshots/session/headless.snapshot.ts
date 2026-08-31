@@ -621,7 +621,13 @@ describe('headless recorded-session snapshots', () => {
       const cloned = structuredClone(event) as {
         time?: unknown
         type?: unknown
-        data?: { durationMs?: unknown; id?: unknown; inserted?: Array<{ id?: unknown }>; message?: { id?: unknown } }
+        data?: {
+          durationMs?: unknown
+          id?: unknown
+          inserted?: Array<{ id?: unknown }>
+          message?: { id?: unknown }
+          stream?: Array<{ time?: number; time0?: number; dt?: number[] }>
+        }
       }
       delete cloned.time
       if (cloned.type === 'agent/inbox/spliced') {
@@ -629,6 +635,13 @@ describe('headless recorded-session snapshots', () => {
       }
       if (cloned.type === 'user/message') delete cloned.data?.id
       if (cloned.type === 'assistant/message' || cloned.type === 'tool/result') delete cloned.data?.message?.id
+      if (cloned.type === 'assistant/message' || cloned.type === 'assistant/attempt') {
+        for (const record of cloned.data?.stream ?? []) {
+          if (record.time !== undefined) record.time = 0
+          if (record.time0 !== undefined) record.time0 = 0
+          if (record.dt !== undefined) record.dt = record.dt.map(() => 0)
+        }
+      }
       if (cloned.type === 'hook/result') delete cloned.data?.durationMs
       return cloned
     }
@@ -777,9 +790,12 @@ describe('headless recorded-session snapshots', () => {
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
       const fixtureContext = contextOf(fixtures)
-      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
+      const sourcePaths = fixtureFiles.map(file => join(scenario.dir, file))
+      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext, {
+        sourcePaths,
+      })
       const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext, {
-        sourcePaths: fixtureFiles.map(file => join(scenario.dir, file)),
+        sourcePaths,
       })
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])

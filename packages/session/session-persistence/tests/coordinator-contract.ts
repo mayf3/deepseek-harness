@@ -24,6 +24,14 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { isReadableSessionPersistenceListing } from '../src/index.ts'
 import { meta, oneTurnLog, appendLog } from './contract.ts'
 
+function taggedSeed(events: readonly SessionEvent[], cut: number): SessionEvent[] {
+  return [
+    ...events.slice(0, cut),
+    { type: 'session/end-seed', seq: SessionSeq(cut), time: 1, data: { inherited: true } } as SessionEvent,
+    ...events.slice(cut),
+  ].map((event, seq) => ({ ...event, seq: SessionSeq(seq) }))
+}
+
 /**
  * The backend-specific capabilities the orchestration suite needs beyond the
  * public service API. A fresh fixture is created per test (isolated storage);
@@ -858,7 +866,7 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
           SessionLogOffset(0),
         )
         const live = ctx.sessions.create(id, {
-          seed: oneTurnLog(),
+          seed: oneTurnLog().slice(0, 1),
           inheritedEventCount: SessionLogOffset(1),
           meta: { cwd: WORK, isSeeded: true },
         })
@@ -880,7 +888,7 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
           { ...meta(id, WORK), isSeeded: true },
           SessionLogOffset(0),
         )
-        await first.ctx.sessionPersistence.append(id, oneTurnLog())
+        await first.ctx.sessionPersistence.append(id, taggedSeed(oneTurnLog(), 0))
       } finally {
         await first.fiber.dispose()
       }
@@ -888,7 +896,7 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
       const second = await freshCtx(fix)
       try {
         const live = second.ctx.sessions.create(id, {
-          seed: oneTurnLog(),
+          seed: oneTurnLog().slice(0, 1),
           inheritedEventCount: SessionLogOffset(1),
           meta: { cwd: WORK, isSeeded: true },
         })

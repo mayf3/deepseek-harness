@@ -154,14 +154,14 @@ describe('session.history projections block', () => {
     const snapshot = await opening(remote(ctx), child.id)
 
     expect(snapshot.header).toEqual({
-      version: 1,
+      version: 2,
       id: child.id,
       createdAt: child.header.createdAt,
       cwd: '/workspace',
       parentSession: parent.id,
-      seedLength: inheritedEventCount,
+      isSeeded: true,
     })
-    expect(snapshot.header).not.toHaveProperty('isSeeded')
+    expect(snapshot.header).not.toHaveProperty('seedLength')
   })
 
   it('tracks pending and used model selections across repeated request headers', async () => {

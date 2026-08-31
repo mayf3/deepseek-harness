@@ -6,7 +6,14 @@ export interface ReleasedV0PayloadDisposition {
   readonly opaque: readonly string[]
 }
 
-function disposition(
+/**
+ * Freeze one exact released payload-member disposition for adjacent format validators.
+ * @param required - members that must be present.
+ * @param optional - additional admitted members.
+ * @param opaque - members retained as lossless JSON without nested semantic inspection.
+ * @returns the detached frozen disposition.
+ */
+export function defineReleasedPayloadDisposition(
   required: readonly string[],
   optional: readonly string[] = [],
   opaque: readonly string[] = [],
@@ -17,6 +24,8 @@ function disposition(
     opaque: Object.freeze([...opaque]),
   })
 }
+
+const disposition = defineReleasedPayloadDisposition
 
 /**
  * Frozen released-v0 event and payload-member inventory.

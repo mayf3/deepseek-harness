@@ -20,7 +20,8 @@ export type SessionEventType = keyof SessionEventMap
 /**
  * The subset of {@link SessionEventType} values whose events produce LLM
  * messages and are eligible to appear on the ordered surface. Only these
- * event types may carry {@link SurfaceOp} and {@link SessionEvent.sourceEventSeqs}.
+ * event types may carry {@link SurfaceOp}; user and tool events may also cite
+ * earlier sources through {@link SessionEvent.sourceEventSeqs}.
  */
 export type SurfaceEventType =
   | 'user/message'
@@ -53,7 +54,7 @@ export type SurfaceOp =
  * The {@link sourceEventSeqs} and {@link surfaceOp} fields are conditional:
  * they only exist on {@link SurfaceEventType} variants (`user/message`,
  * `assistant/message`, `tool/result`).
- * Non-surface events (boundary markers, chunks, usage, errors) never carry
+ * Non-surface events (boundary markers, attempts, errors) never carry
  * surface metadata — the compiler enforces this at `Session.append()`
  * call sites.
  */
@@ -78,12 +79,9 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
     ignorable?: true
   } & (K extends SurfaceEventType ? {
     /**
-     * Seq numbers of earlier events that this event cites as sources
-     * (e.g. the `assistant/chunk` seqs that built an `assistant/message`,
-     * or the surface nodes shadowed by a compaction replace node). An
-     * `assistant/message` may carry a present empty array for a known empty
-     * provider stream; when the field is absent, the event does not record which
-     * earlier events produced the message.
+     * Seq numbers of earlier events that this event cites as sources, such as
+     * the surface nodes shadowed by a compaction replacement. A v2
+     * `assistant/message` embeds its provider stream and cannot carry this field.
      */
     sourceEventSeqs?: SessionSeq[]
     /** How this event entered the surface; absent for non-surface events. */
@@ -92,7 +90,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }[T]
 ```
 
-来源：[`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:373`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:402`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:434`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:377`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:385`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:414`](../packages/core/session/src/types.ts) · [`packages/core/session/src/types.ts:445`](../packages/core/session/src/types.ts)
 
 ## 事件
 
@@ -206,18 +204,20 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 ### `assistant/*`
 
-<a id="assistantchunk--log-only"></a>
+<a id="assistantattempt--log-only"></a>
 
-#### `assistant/chunk` — log-only
+#### `assistant/attempt` — log-only
 
 ```ts persistence-catalog
-/** Raw stream chunk — token-level replay fidelity. */
-'assistant/chunk': { turn: number; step: number; chunk: StreamChunk }
+/**
+ * One model attempt that committed no surface message. The embedded stream
+ * preserves failed, retried, cancelled, or crash-tail output without
+ * fabricating model-visible history.
+ */
+'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```
 
-类型：[StreamChunk](subsystems/llm-streaming.zh.md)
-
-来源：[`packages/core/session/src/types.ts:289`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:311`](../packages/core/session/src/types.ts)
 
 <a id="assistantmessage--surface"></a>
 
@@ -234,12 +234,20 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * marker distinguishes that prefix without re-deriving interruption from turn
  * boundaries. An aborted turn with no such event streamed no visible content.
  */
-'assistant/message': { turn: number; step: number; message: AssistantMessage; usage?: TokenUsage; interrupted?: true }
+'assistant/message': {
+  turn: number
+  step: number
+  message: AssistantMessage
+  /** Exact timed model stream, compacted without joining delta boundaries. */
+  stream: AssistantStreamRecord[]
+  usage?: TokenUsage
+  interrupted?: true
+}
 ```
 
 类型：[TokenUsage](subsystems/llm-streaming.zh.md)
 
-来源：[`packages/core/session/src/types.ts:300`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:297`](../packages/core/session/src/types.ts)
 
 ### `command/*`
 
@@ -638,12 +646,12 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * Marks the end of a constructor seed. Events before it have smaller seq
  * values and came from the seed (resume, fork, or replay); this lifecycle
  * produced none of them. This log-only event is the durable projection of
- * {@link Session.firstLiveSeq}. Its payload is empty — position and `time`
- * carry the meaning.
+ * {@link Session.firstLiveSeq}.
  *
- * Locate the LAST one in stored history. A seed already ending in one is not
- * re-marked, so reopening an untouched session does not grow its log per
- * pickup and the event need not be at the current `firstLiveSeq`.
+ * A fresh fork child owns one `{ inherited: true }` marker at its exact
+ * inherited-prefix cut, even when that prefix ends in an ancestor marker.
+ * The last tagged marker is the current Session's cut; untagged markers keep
+ * ordinary restore and replay lifecycle boundaries.
  *
  * `Session`'s constructor is the only legitimate writer. The invariant
  * companion deliberately constrains nothing here, so a plugin appending one
@@ -656,10 +664,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
  * writers — a concurrently live session holds its own boundary elsewhere,
  * so tolerating concurrent writers needs a signal beyond the log.
  */
-'session/end-seed': Record<string, never>
+'session/end-seed': { inherited?: true }
 ```
 
-来源：[`packages/core/session/src/types.ts:362`](../packages/core/session/src/types.ts)
+来源：[`packages/core/session/src/types.ts:373`](../packages/core/session/src/types.ts)
 
 <a id="sessiontitle--log-only"></a>
 

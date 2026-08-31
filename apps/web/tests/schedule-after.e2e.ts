@@ -607,8 +607,6 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     const fixture = await readFile(CATALOG_FIXTURE, 'utf8')
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,
-      replayFixture: CATALOG_FIXTURE,
-      replayProvidersOnly: true,
     })
     await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard', CATALOG_FIXTURE)
     const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)

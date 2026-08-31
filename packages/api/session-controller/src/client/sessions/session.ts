@@ -651,7 +651,7 @@ export class Session implements SessionFace {
     // attempts makes a held notification reopen follow once for an atomic
     // page/baseline pair instead of applying it to an unrelated repair cut.
     const visible = this.assistantStream.replace(entries, assistantStream)
-    this.baseSeq = SessionLogOffset(visible[0]?.event.seq ?? 0)
+    this.baseSeq = SessionLogOffset(entries[0]?.event.seq ?? 0)
     this.hasMore = hasMore
     if (visible.some(entry => entry.event.type === 'turn/start')) this.firstPromptPendingTurn = false
     if (projections !== undefined) this.projections.seed(projections)
@@ -669,6 +669,9 @@ export class Session implements SessionFace {
       return
     }
     if (result?.type === 'publish' && this.appendLive(result.entry)) {
+      this.notifier.markDirty()
+    } else if (result?.type === 'transient') {
+      this.eventSource.append(result.entry)
       this.notifier.markDirty()
     }
   }

@@ -1,6 +1,4 @@
-import type {
-  SessionEventLikeEntry, SessionLiveEventEntry,
-} from '@deepseek-ai/dsh-api-session-controller/client'
+import type { SessionEventLikeEntry } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
   ConversationContextReader, ConversationLocationData, ConversationMatch,
   ConversationNodeContext, ConversationNodeDefinition, ConversationPreviousContext,
@@ -129,8 +127,8 @@ function conversationMatch(
   location: ConversationMatch['location'],
 ): ConversationMatch {
   if (role === 'start') {
-    if (input.type === 'chunks') {
-      throw new Error(`conversation Context ${key} received a packed start Match`)
+    if (input.type !== 'event') {
+      throw new Error(`conversation Context ${key} received a transient start Match`)
     }
     return { event: input.event, role, location }
   }
@@ -217,13 +215,13 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
    * @param record - appended Session event entry.
    * @returns highest requested publication cadence.
    */
-  append(record: SessionLiveEventEntry): ConversationPublication {
+  append(record: SessionEventLikeEntry): ConversationPublication {
     const event = record.event
     if (this.inputs.has(event.seq)) return 'none'
     this.revised.clear()
     this.inputs.set(event.seq, record)
     let publication: ConversationPublication = 'none'
-    if (isLocationBoundary(event.type)) {
+    if (event.type !== 'assistant/live-chunk' && isLocationBoundary(event.type)) {
       const previousTimeline = this.locationIndex.snapshot()
       const changed = this.locationIndex.appendBoundary(event)
       if (this.locationIndex.snapshot() !== previousTimeline) {

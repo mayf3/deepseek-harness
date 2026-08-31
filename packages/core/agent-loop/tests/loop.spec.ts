@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import LlmRuntime, { createUserMessage, ToolCallId, LlmError, ReasoningEffortId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId, LlmError, ReasoningEffortId, StreamChunk, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
@@ -52,7 +52,7 @@ function userTexts(agent: Agent): string[] {
 }
 
 describe('agent loop', () => {
-  it('publishes one dense live assistant attempt while retaining durable v1 chunks', async () => {
+  it('publishes one dense live attempt and commits one v2 message with the exact embedded stream', async () => {
     const ctx = await harness(new MockAdapter([textResponse('live')]))
     const agent = ctx.agentLoop.create(SessionId('live-assistant-attempt'), {
       provider: 'mock',
@@ -63,7 +63,7 @@ describe('agent loop', () => {
     ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
       if (subject !== agent) return
       frames.push(frame)
-      if (frame.type === 'end' && frame.outcome === 'committed') {
+      if (frame.type === 'end' && frame.outcome.kind === 'committed') {
         committedAfterMessage = agent.session.snapshotEvents().at(-1)?.type === 'assistant/message'
       }
     })
@@ -85,16 +85,49 @@ describe('agent loop', () => {
       (frame): frame is Extract<AssistantStreamFrame, { type: 'chunk' }> => frame.type === 'chunk',
     )
     expect(chunks.map(frame => frame.index)).toEqual(chunks.map((_frame, index) => index))
-    const durableChunks = agent.session.snapshotEvents().filter(event => event.type === 'assistant/chunk')
-    expect(chunks).toHaveLength(durableChunks.length)
+    expect(agent.session.snapshotEvents().some(event => (event.type as string) === 'assistant/chunk')).toBe(false)
+    const message = agent.session.snapshotEvents().findLast(event => event.type === 'assistant/message')
+    expect(message?.type === 'assistant/message'
+      ? expandAssistantStream(message.data.stream).map(member => member.chunk)
+      : undefined).toStrictEqual(chunks.map(frame => frame.chunk))
     const end = frames.at(-1)
     expect(end).toMatchObject({
-      type: 'end', outcome: 'committed', index: chunks.length,
+      type: 'end',
+      index: chunks.length,
+      outcome: { kind: 'committed', eventType: 'assistant/message', seq: message?.seq },
     })
     if (end?.type === 'end') {
       expect(committedAfterMessage).toBe(true)
-      expect(end.legacyChunkSeqs).toEqual(durableChunks.map(event => event.seq))
     }
+  })
+
+  it('abandons the live row when durable Assistant settlement is rejected', async () => {
+    const ctx = await harness(new MockAdapter([textResponse('cannot commit')]))
+    const agent = ctx.agentLoop.create(SessionId('abandoned-assistant-attempt'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject === agent) frames.push(frame)
+    })
+    const append = agent.session.append.bind(agent.session)
+    Object.defineProperty(agent.session, 'append', {
+      configurable: true,
+      value: (...args: Parameters<typeof agent.session.append>): ReturnType<typeof agent.session.append> => {
+        if (args[0] === 'assistant/message') throw new Error('settlement rejected')
+        return Reflect.apply(append, agent.session, args) as ReturnType<typeof agent.session.append>
+      },
+    })
+
+    send(agent, 'stream this')
+    await waitForIdle(ctx, agent)
+
+    expect(frames.at(-1)).toMatchObject({
+      type: 'end',
+      outcome: { kind: 'abandoned' },
+    })
+    expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
   })
 
   it('does not emit an end frame when prepared dispatch throws before start', async () => {
@@ -179,6 +212,25 @@ describe('agent loop', () => {
     expect(() => AgentLoop.Config({
       agents: [{ id: 'configured-agent', reasoningEffort: ReasoningEffortId('') }],
     })).toThrow()
+  })
+
+  it('rejects concurrent maintenance while one job owns the Agent', async () => {
+    const ctx = await harness(new MockAdapter([textResponse('unused')]))
+    const agent = ctx.agentLoop.create(SessionId('concurrent-maintenance'), {
+      provider: 'mock', model: 'mock',
+    })
+    const started = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    const active = agent.runMaintenance(async () => {
+      started.resolve(undefined)
+      await finish.promise
+    })
+    await started.promise
+
+    expect(() => agent.runMaintenance(async () => {})).toThrow('already has active work')
+
+    finish.resolve(undefined)
+    await active
   })
 
   it('cancels queued wakeup work together with an active maintenance task', async () => {
@@ -631,7 +683,7 @@ describe('agent loop', () => {
     }])
   })
 
-  it('records raw chunks for replay as assistant/chunk session events', async () => {
+  it('records exact replay chunks inside the durable assistant message', async () => {
     const adapter = new MockAdapter([textResponse('abc')])
     const ctx = await harness(adapter)
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
@@ -639,12 +691,12 @@ describe('agent loop', () => {
     send(agent, 'hi')
     await waitForIdle(ctx, agent)
 
-    const chunkEvents = agent.session.snapshotEvents().filter(e => e.type === 'assistant/chunk')
+    const message = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')
+    const chunks = message?.type === 'assistant/message' ? expandAssistantStream(message.data.stream) : []
     // textResponse('abc') = block-start + 3 deltas + block-end + usage + finish = 7
-    expect(chunkEvents).toHaveLength(7)
-    // replay: chunk events alone re-assemble to the recorded assistant message
-    const deltaText = chunkEvents
-      .flatMap(e => e.type === 'assistant/chunk' ? [e.data.chunk] : [])
+    expect(chunks).toHaveLength(7)
+    const deltaText = chunks
+      .map(member => member.chunk)
       .filter((c: StreamChunk): c is Extract<StreamChunk, { type: 'text-delta' }> => c.type === 'text-delta')
       .map(c => c.text)
       .join('')
@@ -1067,7 +1119,9 @@ describe('agent loop', () => {
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
     const chunks = frames.filter(frame => frame.type === 'chunk')
     expect(frames.at(-1)).toMatchObject({
-      type: 'end', outcome: 'aborted', index: chunks.length,
+      type: 'end',
+      index: chunks.length,
+      outcome: { kind: 'committed', eventType: 'assistant/message' },
     })
   })
 
@@ -1202,7 +1256,7 @@ describe('agent loop', () => {
     // Empty content still needs an assistant/message to carry usage; derivation
     // skips that host so it does not create a spurious assistant turn.
     const assistantMessage = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')
-    expect(assistantMessage?.type === 'assistant/message' && assistantMessage.data).toEqual({
+    expect(assistantMessage?.type === 'assistant/message' && assistantMessage.data).toMatchObject({
       turn: 1,
       step: 1,
       message: {
@@ -1242,7 +1296,7 @@ describe('agent loop', () => {
 
     expect(reasons).toEqual([{ kind: 'max-tokens' }])
     const assistant = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')!
-    expect(assistant.type === 'assistant/message' && assistant.data).toEqual({
+    expect(assistant.type === 'assistant/message' && assistant.data).toMatchObject({
       turn: 1,
       step: 1,
       message: {
@@ -1252,7 +1306,8 @@ describe('agent loop', () => {
         source: { kind: 'model', provider: 'mock', model: 'mock' },
       },
     })
-    expect(assistant.sourceEventSeqs?.length).toBeGreaterThan(0)
+    expect(assistant.sourceEventSeqs).toBeUndefined()
+    expect(assistant.type === 'assistant/message' ? assistant.data.stream.length : 0).toBeGreaterThan(0)
     expect(agent.session.deriveMessages()).toEqual([{
       id: expect.any(String) as unknown,
       role: 'user',
@@ -1276,7 +1331,7 @@ describe('agent loop', () => {
 
     expect(reasons).toEqual([{ kind: 'completed' }])
     const assistant = agent.session.snapshotEvents().find(e => e.type === 'assistant/message')!
-    expect(assistant.type === 'assistant/message' && assistant.data).toEqual({
+    expect(assistant.type === 'assistant/message' && assistant.data).toMatchObject({
       turn: 1,
       step: 1,
       message: {
@@ -1286,7 +1341,8 @@ describe('agent loop', () => {
         source: { kind: 'model', provider: 'mock', model: 'mock' },
       },
     })
-    expect(assistant.sourceEventSeqs?.length).toBe(1)
+    expect(assistant.sourceEventSeqs).toBeUndefined()
+    expect(assistant.type === 'assistant/message' ? assistant.data.stream.length : 0).toBe(1)
     expect(agent.session.deriveMessages()).toEqual([{
       id: expect.any(String) as unknown,
       role: 'user',
@@ -1444,11 +1500,10 @@ describe('agent loop', () => {
     const turns: number[] = []
     ctx.on('session/event', (_s, event) => { if (event.type === 'turn/start') turns.push(event.data.turn) })
 
-    // queue two messages while idle — first starts turn 1 immediately;
-    // queue the second during turn 1 when the first assistant chunk streams
+    // Queue the second from the first turn's durable Assistant settlement.
     let queued = false
     ctx.on('session/event', (_s, event) => {
-      if (event.type === 'assistant/chunk' && !queued) {
+      if (event.type === 'assistant/message' && !queued) {
         queued = true
         queueMicrotask(() => { send(agent, 'second message') })
       }
@@ -1606,7 +1661,7 @@ describe('agent loop', () => {
     send(agent, 'run')
     await waitForIdle(ctx, agent)
 
-    const replayed = ctx.sessions.create(SessionId('replayed'), { seed: agent.session.snapshotEvents() })
+    const replayed = ctx.sessions.create(SessionId('replayed'), { seed: [...agent.session.snapshotEvents()] })
     expect(replayed.deriveMessages()).toEqual(agent.session.deriveMessages())
     // event-by-event identity of types over the inherited prefix
     expect(replayed.snapshotEvents().slice(0, agent.session.seq).map(e => e.type)).toEqual(

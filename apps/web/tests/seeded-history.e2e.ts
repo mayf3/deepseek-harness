@@ -148,7 +148,7 @@ function withCompaction(raw: string, meter: TokenMeter): string {
   })
   at({
     type: 'user/message',
-    data: {
+    data: createUserMessage({
       content: [{
         type: 'text',
         text: '<context_checkpoint>Model-only compact checkpoint.</context_checkpoint>',
@@ -156,7 +156,7 @@ function withCompaction(raw: string, meter: TokenMeter): string {
       source: {
         kind: 'plugin', plugin: 'compact', compactionId, sourceCommandId: commandId,
       },
-    },
+    }),
     surfaceOp: { op: 'replace', start: first, end: last },
     sourceEventSeqs: [startSeq, summarySeq, ...surfaceSeqs],
   })

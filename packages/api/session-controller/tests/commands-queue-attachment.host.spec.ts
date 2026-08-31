@@ -178,6 +178,7 @@ describe('Session attachment authorization', () => {
       { ...event('assistant/message', SessionSeq(1), {
         turn: 1,
         step: 1,
+        stream: [],
         message: createAssistantMessage({
           content: [{ type: 'image', attachment: message }],
           source: { provider: 'fixture', model: 'fixture' },
@@ -191,10 +192,30 @@ describe('Session attachment authorization', () => {
           source: { kind: 'user' },
         })],
       }),
-      event('assistant/chunk', SessionSeq(3), {
+      event('assistant/attempt', SessionSeq(3), {
         turn: 1,
         step: 1,
-        chunk: { type: 'block-end', index: 0, block: { type: 'image', attachment: streamed } },
+        stream: [
+          {
+            type: 'chunk',
+            time: 3,
+            chunk: { type: 'block-start', index: 0, blockType: 'text' },
+          },
+          {
+            type: 'chunk',
+            time: 3,
+            chunk: { type: 'block-end', index: 0, block: { type: 'text', text: '' } },
+          },
+        ],
+      }),
+      event('assistant/attempt', SessionSeq(4), {
+        turn: 1,
+        step: 1,
+        stream: [{
+          type: 'chunk',
+          time: 4,
+          chunk: { type: 'block-end', index: 0, block: { type: 'image', attachment: streamed } },
+        }],
       }),
     ]
     const readImage = vi.fn((ref: ImageAttachmentRef) => Promise.resolve({ ref, data: Uint8Array.of(1) }))

@@ -37,6 +37,7 @@ import Group from '@deepseek-ai/cordis-plugin-group'
 import {
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
+  assertSessionFixtureVersion,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
   normalizedSystemPrompts,
@@ -47,8 +48,10 @@ import {
   normalizeSessionSnapshots,
   scrubRequestHeaders,
   scrubSessionSnapshot,
+  sessionFixtureFiles,
   sessionFixtureName,
   stabilizeFixtureMessageIds,
+  stabilizeRefreshLog,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
@@ -68,6 +71,7 @@ import {
   installLlmReplay,
   parseSessionLog,
   parseSessionLogForReplay,
+  prepareSessionSnapshotFixtureForComparison,
 } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
@@ -147,18 +151,20 @@ async function ownsReplayFixture(replayFixture: string | undefined): Promise<boo
 /**
  * Resolve one requested fixture role to its highest committed generation.
  * @param path - any generation path for the requested parent or child role.
+ * @param allowAbsent - Keep an absent canonical path only for an override-only replay script.
  * @returns the highest canonical sibling generation, or the input for non-Session files.
  */
-export async function selectedSessionFixture(path: string): Promise<string> {
+export async function selectedSessionFixture(path: string, allowAbsent = false): Promise<string> {
   const requested = parseSessionFixtureName(basename(path))
   if (requested === undefined) return path
-  const selected = (await readdir(dirname(path)))
-    .map(parseSessionFixtureName)
-    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate?.index === requested.index)
-    .sort((left, right) => right.version - left.version)[0]
-  // An override-only scenario deliberately has no projected parent role. Keep
-  // the absent source only when no committed generation exists for that role.
-  return selected === undefined ? path : join(dirname(path), selected.name)
+  const entries = await readdir(dirname(path))
+  if (allowAbsent && !entries.some(name => parseSessionFixtureName(name) !== undefined)) return path
+  const selected = sessionFixtureFiles(entries)
+    .find(candidate => candidate.index === requested.index)
+  if (selected === undefined) throw new Error(`${path}: missing Session fixture role ${requested.index}`)
+  const resolved = join(dirname(path), selected.name)
+  assertSessionFixtureVersion(selected.name, await readFile(resolved, 'utf8'))
+  return resolved
 }
 
 /**
@@ -404,10 +410,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
   const mode = webSnapshotMode()
   const replayFixture = options.replayFixture === undefined
     ? undefined
-    : await selectedSessionFixture(options.replayFixture)
+    : await selectedSessionFixture(options.replayFixture, options.replayOverride !== undefined)
   const replayChildFixtures = options.replayChildFixtures === undefined
     ? undefined
-    : await Promise.all(options.replayChildFixtures.map(selectedSessionFixture))
+    : await Promise.all(options.replayChildFixtures.map(path => selectedSessionFixture(path)))
   const compareReplaySession = options.compareReplaySession ?? await ownsReplayFixture(replayFixture)
   const browserHost = options.remoteAuthority ?? '127.0.0.1'
   if (mode === 'record') {
@@ -718,7 +724,8 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       }
       const recorded = parseSessionLogForReplay(fixtureText, replayFixture)
       const hasModelCall = recorded.some(event => (
-        event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
+        event.type === 'assistant/message' || event.type === 'assistant/attempt'
+          || event.type === 'request/header' || event.type === 'tool/call'
       ))
       if (hasModelCall) {
         throw new Error('replayProvidersOnly fixture must record no model calls')
@@ -855,7 +862,7 @@ function rawSessionLog(session: Session): string {
     // Session validates durable payloads as JSON; its closed event unions do
     // not carry the index signature used by the format package's JSON types.
     events: session.snapshotEvents() as unknown as readonly SessionFormatEvent[],
-  }, { packChunks: true })
+  }, { packChunks: false })
   return [
     JSON.stringify(encoded.header),
     ...encoded.rows.map(record => JSON.stringify(record)),
@@ -946,8 +953,23 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
   }).join('\n')
 }
 
-function stableSessionFixture(session: Session, existing: string, workspaceCwd: string): string {
-  const fresh = scrubSessionSnapshot(normalizeWebSessionVolatiles(rawSessionLog(session), workspaceCwd))
+function stableSessionFixture(
+  session: Session,
+  existing: string,
+  workspaceCwd: string,
+  sourcePath?: string,
+): string {
+  const prepared = prepareSessionSnapshotFixtureForComparison(
+    normalizeWebSessionVolatiles(rawSessionLog(session), workspaceCwd),
+    sourcePath,
+  )
+  const stabilized = existing === ''
+    ? prepared
+    : stabilizeRefreshLog(prepared, existing, [], {
+      sessionIds: [String(session.id)],
+      cwd: workspaceCwd,
+    })
+  const fresh = scrubSessionSnapshot(stabilized)
     .split(session.id).join('{{sessionId}}')
   const stable = redactSessionSnapshotIds(stabilizeFixtureMessageIds([fresh], [existing]))[0]
   if (stable === undefined) throw new Error('session harvest produced no stabilized fixture')
@@ -961,6 +983,10 @@ async function assertReplaySession(
   webUrl: string,
 ): Promise<void> {
   let expected = await readFile(fixturePath, 'utf8')
+  const fixtureDir = dirname(fixturePath)
+  const manifestPath = join(fixtureDir, 'snapshot.yml')
+  const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+  let expectedPath = fixturePath
   const userPrompts = fixtureUserPrompts(expected, fixturePath)
   const candidates = sessions.filter((session) => {
     if (session.header.parentSession !== undefined) return false
@@ -976,9 +1002,10 @@ async function assertReplaySession(
   const sessionCwd = session.header.cwd
   if (sessionCwd === undefined) throw new Error(`${fixturePath}: replayed session has no cwd`)
   const actual = rawSessionLog(session)
-  if (mode === 'refresh') {
-    expected = stableSessionFixture(session, expected, sessionCwd)
-    await writeFile(fixturePath, expected)
+  if (mode === 'refresh' && manifest.session === undefined) {
+    expected = stableSessionFixture(session, expected, sessionCwd, fixturePath)
+    expectedPath = recordedSessionFixturePath(fixturePath, session.header.version)
+    await writeFile(expectedPath, expected)
   }
   const expectedHeader = JSON.parse(expected.split('\n').find(line => line.trim() !== '') ?? '{}') as {
     id?: unknown
@@ -991,12 +1018,9 @@ async function assertReplaySession(
   }
   expect(normalizeSessionSnapshots([normalizeWebSessionVolatiles(actual)], actualContext)[0], `${fixturePath}: persisted replay`)
     .toBe(normalizeSessionSnapshots([normalizeWebSessionVolatiles(expected)], expectedContext, {
-      sourcePaths: [fixturePath],
+      sourcePaths: [expectedPath],
     })[0])
 
-  const fixtureDir = dirname(fixturePath)
-  const manifestPath = join(fixtureDir, 'snapshot.yml')
-  const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
   if (manifest.header?.pin !== true) return
   const normalizePrompt = (value: string): string => value
     .split(REPO_ROOT).join('{{sourceRoot}}')
@@ -1018,6 +1042,7 @@ async function assertReplaySession(
  * Record-mode fixture write-back: harvest the live session, scrub request
  * headers to {{system}}/{{tools}}, tokenize the run-local cwd, redact opaque
  * identities with typed relationship-preserving tokens, and write the fixture.
+ * A manifest-retained historical generation makes the write-back a no-op.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
  * @param fixturePath - any committed generation for the fixture role.
@@ -1025,10 +1050,13 @@ async function assertReplaySession(
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
   const agent = scaffold.ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
+  const manifestPath = join(dirname(fixturePath), 'snapshot.yml')
+  const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
+  if (manifest.session !== undefined) return
   const target = recordedSessionFixturePath(fixturePath, agent.session.header.version)
   const existingPath = existsSync(target) ? target : fixturePath
   const existing = existsSync(existingPath) ? await readFile(existingPath, 'utf8') : ''
-  await writeFile(target, stableSessionFixture(agent.session, existing, scaffold.workspaceCwd))
+  await writeFile(target, stableSessionFixture(agent.session, existing, scaffold.workspaceCwd, existingPath))
 }
 
 /**
@@ -1098,20 +1126,48 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
  * Parse a committed web seed fixture through the replay reader.
  * @param fixtureText - session JSONL fixture contents.
  * @param fixturePath - exact source path for the closed replay-only refusal policy.
- * @returns the original header line, parsed header, and logical events.
+ * @returns the current header line, parsed header, and logical events.
  */
+/** Give a migrated fixture stream positive relative timing before its final wall-clock rebase. */
+function spreadMigratedSeedStream(
+  stream: SessionEvent<'assistant/message'>['data']['stream'],
+): SessionEvent<'assistant/message'>['data']['stream'] {
+  let nextTime = 0
+  return stream.map((record) => {
+    if ('time' in record) {
+      const timed = { ...record, time: nextTime }
+      nextTime += 1
+      return timed
+    }
+    const timed = { ...record, time0: nextTime }
+    nextTime += record.dt.reduce((total, delta) => total + delta, 0) + 1
+    return timed
+  })
+}
+
 export function parseSeedFixture(fixtureText: string, fixturePath?: string): {
   headerLine: string
   header: Record<string, unknown>
   events: SessionEvent[]
 } {
-  const headerLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
+  const sourceHeaderLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
+  if (sourceHeaderLine === undefined) throw new Error('seed fixture has no session header')
+  const sourceHeader = JSON.parse(sourceHeaderLine) as { version?: unknown }
+  const current = prepareSessionSnapshotFixtureForComparison(fixtureText, fixturePath)
+  const headerLine = current.split(/\r?\n/).find(line => line.trim().length > 0)
   if (headerLine === undefined) throw new Error('seed fixture has no session header')
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
-  const events = fixturePath === undefined
-    ? parseSessionLog(fixtureText)
-    : parseSessionLogForReplay(fixtureText, fixturePath)
+  const events = parseSessionLog(current).map((event) => {
+    if (sourceHeader.version === SESSION_FORMAT_VERSION) return event
+    if (event.type === 'assistant/message') {
+      return { ...event, data: { ...event.data, stream: spreadMigratedSeedStream(event.data.stream) } }
+    }
+    if (event.type === 'assistant/attempt') {
+      return { ...event, data: { ...event.data, stream: spreadMigratedSeedStream(event.data.stream) } }
+    }
+    return event
+  })
   return { headerLine, header, events }
 }
 
@@ -1130,6 +1186,34 @@ export function renderSeedFixture(
     ...events.map(({ seq: _seq, time: _time, ...event }) => JSON.stringify(event)),
     '',
   ].join('\n')
+}
+
+/** Re-anchor one projected embedded stream while preserving every intra-stream gap. */
+function rebaseSeedStream(
+  stream: SessionEvent<'assistant/message'>['data']['stream'],
+  startAt: number,
+): SessionEvent<'assistant/message'>['data']['stream'] {
+  const first = stream[0]
+  if (first === undefined) return stream
+  const sourceStart = 'time' in first ? first.time : first.time0
+  const delta = startAt - sourceStart
+  return stream.map(record => 'time' in record
+    ? { ...record, time: record.time + delta }
+    : { ...record, time0: record.time0 + delta })
+}
+
+/** Last logical timestamp carried by an embedded Assistant stream. */
+function seedStreamEnd(
+  stream: SessionEvent<'assistant/message'>['data']['stream'],
+): number | undefined {
+  let end: number | undefined
+  for (const record of stream) {
+    const recordEnd = 'time' in record
+      ? record.time
+      : record.time0 + record.dt.reduce((total, delta) => total + delta, 0)
+    end = end === undefined ? recordEnd : Math.max(end, recordEnd)
+  }
+  return end
 }
 
 /**
@@ -1171,7 +1255,32 @@ export async function seedSession(
     throw new Error('seed fixture requires a numeric createdAt header')
   }
   const timeAnchor = fixtureCreatedAt === 0 ? meta.createdAt : fixtureCreatedAt
-  const materializedEvents = events.map((event, index) => ({ ...event, time: timeAnchor + index }))
+  let nextTime = timeAnchor
+  const materializedEvents: SessionEvent[] = events.map((event) => {
+    const time = nextTime
+    if (event.type === 'assistant/message') {
+      const stream = rebaseSeedStream(event.data.stream, time)
+      const completedAt = Math.max(time, seedStreamEnd(stream) ?? time)
+      nextTime = completedAt + 1
+      return {
+        ...event,
+        time: completedAt,
+        data: { ...event.data, stream },
+      }
+    }
+    if (event.type === 'assistant/attempt') {
+      const stream = rebaseSeedStream(event.data.stream, time)
+      const completedAt = Math.max(time, seedStreamEnd(stream) ?? time)
+      nextTime = completedAt + 1
+      return {
+        ...event,
+        time: completedAt,
+        data: { ...event.data, stream },
+      }
+    }
+    nextTime = time + 1
+    return { ...event, time }
+  })
   await persistSeedSession(scaffold, meta, materializedEvents)
   return meta.id
 }

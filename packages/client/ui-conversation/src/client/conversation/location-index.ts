@@ -444,7 +444,7 @@ export class ConversationLocationIndex {
    * Index one non-boundary tail event without rescanning the window.
    * @param event - contiguous appended event.
    */
-  appendNonBoundary(event: SessionEvent): void {
+  appendNonBoundary(event: SessionEventLike): void {
     const explicit = payloadCoordinates(event)
     if (explicit.session === true) {
       this.coordinates.set(event.seq, {})

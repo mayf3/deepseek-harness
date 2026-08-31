@@ -58,6 +58,7 @@ import {
   type RunResult,
   type SdkPromptContentBlock,
 } from '@deepseek-ai/dsh-sdk-client'
+import { prepareSessionEventNotificationsForComparison } from '@deepseek-ai/dsh-llm-replay'
 
 const corpusRoot = fileURLToPath(new URL('../', import.meta.url))
 
@@ -807,13 +808,13 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
 
       // Persisted transcripts match the committed fixtures.
       const expectedContext = contextOfContents(expectedContents)
-      const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext)
+      const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext, {
+        sourcePaths: files,
+      })
       const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext, {
         sourcePaths: files,
       })
-      for (const [index, actual] of actualSnapshots.entries()) {
-        expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
-      }
+      expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
       await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig)
 
       // Genuine SDK protocol cases retain their secondary wire projections.
@@ -826,7 +827,12 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           await writeFile(notificationsExpectedPath, normalizedNotifications)
           await writeFile(resultExpectedPath, normalizedResult)
         }
-        expect(normalizedNotifications).toBe(await readFile(notificationsExpectedPath, 'utf8'))
+        const expectedNotifications = await readFile(notificationsExpectedPath, 'utf8')
+        expect(
+          records(prepareSessionEventNotificationsForComparison(normalizedNotifications)),
+          `${scenario.name}: notifications`,
+        )
+          .toEqual(records(prepareSessionEventNotificationsForComparison(expectedNotifications)))
         expect(normalizedResult).toBe(await readFile(resultExpectedPath, 'utf8'))
       }
 

@@ -12,7 +12,7 @@ type JsonRecord = Record<string, SessionFormatJsonValue>
  * @param event - known event with exact top-level members.
  * @param version - source or current payload generation.
  */
-export function assertReleasedPayloadSemantics(event: SessionFormatEvent, version: 0 | 1): void {
+export function assertReleasedPayloadSemantics(event: SessionFormatEvent, version: number): void {
   const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
   const label = `${event.type} ${event.seq}`
   switch (event.type) {
@@ -419,13 +419,13 @@ function tokenUsageValue(value: SessionFormatJsonValue | undefined, label: strin
   for (const key of Object.keys(usage)) countValue(usage[key], `${label} ${key}`)
 }
 
-function contentBlocksValue(value: SessionFormatJsonValue | undefined, label: string, version: 0 | 1): void {
+function contentBlocksValue(value: SessionFormatJsonValue | undefined, label: string, version: number): void {
   arrayValue(value, label, (member, memberLabel) => {
     contentBlockValue(member, memberLabel, version)
   })
 }
 
-function contentBlockValue(value: SessionFormatJsonValue, label: string, version: 0 | 1): void {
+function contentBlockValue(value: SessionFormatJsonValue, label: string, version: number): void {
   const block = releasedV0Record(value, label)
   switch (block['type']) {
     case 'text':
@@ -478,7 +478,7 @@ function imageAttachmentValue(value: SessionFormatJsonValue | undefined, label: 
 function messageValue(
   value: SessionFormatJsonValue | undefined,
   label: string,
-  version: 0 | 1,
+  version: number,
   expected?: 'user' | 'assistant' | 'tool',
 ): void {
   const message = exactRecord(value, label, ['id', 'role', 'content', 'source'])
@@ -503,7 +503,7 @@ function messageValue(
 function messageSourceValue(
   value: SessionFormatJsonValue | undefined,
   label: string,
-  version: 0 | 1,
+  version: number,
   expected?: 'user' | 'assistant' | 'tool',
 ): void {
   const source = releasedV0Record(value, label)
@@ -618,7 +618,7 @@ function pluginSourceValue(source: JsonRecord, label: string): void {
   else if (source['summary'] !== undefined) throw new SessionFormatError(`${label} summary requires notice form`)
 }
 
-function sessionReferenceSourceValue(source: JsonRecord, label: string, version: 0 | 1): void {
+function sessionReferenceSourceValue(source: JsonRecord, label: string, version: number): void {
   assertReleasedV0Keys(source, ['kind', 'form', 'version', 'references'], [], label)
   literalValue(source['form'], ['recall'], `${label} form`)
   literalValue(source['version'], [1], `${label} version`)
@@ -632,14 +632,19 @@ function sessionReferenceSourceValue(source: JsonRecord, label: string, version:
         'sessionId', 'label', 'capturedThroughSeq', 'compacted', 'originalMessages',
         'retainedMessages', 'omittedMessages', 'omittedBytes', 'truncated', 'inputIndex',
       ],
-      version === 1 ? ['capturedFormatVersion'] : [],
+      version >= 1 ? ['capturedFormatVersion'] : [],
     )
     nonEmptyString(reference['sessionId'], `${memberLabel} sessionId`)
     stringValue(reference['label'], `${memberLabel} label`)
     if (reference['capturedThroughSeq'] !== null) countValue(reference['capturedThroughSeq'], `${memberLabel} capturedThroughSeq`)
-    if (reference['capturedFormatVersion'] !== undefined
-      && countValue(reference['capturedFormatVersion'], `${memberLabel} capturedFormatVersion`) !== 1) {
-      throw new SessionFormatError(`${memberLabel} capturedFormatVersion must be 1`)
+    if (reference['capturedFormatVersion'] !== undefined) {
+      const capturedVersion = countValue(
+        reference['capturedFormatVersion'],
+        `${memberLabel} capturedFormatVersion`,
+      )
+      if (capturedVersion < 1 || capturedVersion > version) {
+        throw new SessionFormatError(`${memberLabel} capturedFormatVersion must be between 1 and ${version}`)
+      }
     }
     booleanValue(reference['compacted'], `${memberLabel} compacted`)
     const original = countValue(reference['originalMessages'], `${memberLabel} originalMessages`)
@@ -984,7 +989,7 @@ function teamTaskValue(value: SessionFormatJsonValue | undefined, label: string)
   arrayValue(task['writeScopes'], `${label} writeScopes`, stringValue)
 }
 
-function teamMessageValue(value: SessionFormatJsonValue | undefined, label: string, version: 0 | 1): void {
+function teamMessageValue(value: SessionFormatJsonValue | undefined, label: string, version: number): void {
   const message = exactRecord(value, label, ['id', 'senderId', 'senderName', 'targetId', 'delivery', 'content'])
   for (const key of ['id', 'senderId', 'targetId'] as const) nonEmptyString(message[key], `${label} ${key}`)
   stringValue(message['senderName'], `${label} senderName`)

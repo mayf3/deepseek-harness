@@ -114,7 +114,19 @@ async function authorChild(
     isSeeded: false,
     ...header,
   }, header.isSeeded === true ? inheritedEventCount : undefined)
-  await ctx.sessionPersistence.append(sessionId, events)
+  const committed = header.isSeeded !== true
+    ? events
+    : [
+      ...events.slice(0, inheritedEventCount),
+      {
+        type: 'session/end-seed',
+        seq: inheritedEventCount,
+        time: events[inheritedEventCount]?.time ?? events[inheritedEventCount - 1]?.time ?? 1,
+        data: { inherited: true },
+      } as SessionEvent,
+      ...events.slice(inheritedEventCount),
+    ].map((event, seq) => ({ ...event, seq: SessionSeq(seq) }))
+  await ctx.sessionPersistence.append(sessionId, committed)
   return sessionId
 }
 

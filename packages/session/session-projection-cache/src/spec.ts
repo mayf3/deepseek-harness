@@ -73,7 +73,7 @@ export type CheckpointRecord = z.infer<typeof checkpointRecord>
  */
 export const projectionCacheDomainSpec = defineDomain({
   name: 'session_projcache',
-  version: 6,
+  version: 7,
   layout: 'per-record',
   tables: { sessions: domainTable<SessionId, CheckpointRecord>(checkpointRecord) },
 })

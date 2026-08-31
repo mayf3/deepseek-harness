@@ -182,7 +182,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
       version: SESSION_FORMAT_VERSION,
       id: sessionId,
     })
-    expect((await readdir(dirname(v0Path))).sort()).toEqual(['session.jsonl', 'session.v1.jsonl'])
+    expect((await readdir(dirname(v0Path))).sort()).toEqual(['session.jsonl', 'session.v2.jsonl'])
 
     handle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'new question' }],

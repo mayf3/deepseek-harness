@@ -66,13 +66,6 @@ function toSessionJournalChange(
     case 'prepend':
       return { ...change, entries: historyEntries(change.entries) }
     case 'append': {
-      if (change.entry.type !== 'event') {
-        throw new RemoteError(
-          'gateway/internal',
-          'session live stream emitted a packed history record',
-          {},
-        )
-      }
       return {
         type: 'append',
         entry: change.entry as unknown as SessionLiveEventEntry,

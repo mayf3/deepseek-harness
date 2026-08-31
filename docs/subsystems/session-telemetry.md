@@ -55,7 +55,7 @@ interface SessionTelemetryRecord {
 }
 ```
 
-Every canonical [session event](session.md), including every `assistant/chunk` and plugin-merged type the seam never heard of, passes through whole as one ordered ledger record. A new Session object replays its complete log from seq 0, including constructor seed history; re-adopting the same object resumes after its handoff cursor. Delivery is best-effort: the cursor marks handed-off, not delivered, and records can be lost (crash, reload window) or duplicated (new-object replay, SDK retries), so receivers dedupe ledger records on `(session.id, session.format_version, event.seq)`; ops records deliberately omit that identity — they are signals to alert on, not entries to sum, and tolerate duplicates instead.
+Every canonical [session event](session.md), including each `assistant/message` or `assistant/attempt` with its complete compact stream and every plugin-merged type the seam never heard of, passes through whole as one ordered ledger record. Process-local `agent/assistant-stream` frames do not enter this durable feed. A new Session object replays its complete log from seq 0, including constructor seed history; re-adopting the same object resumes after its handoff cursor. Delivery is best-effort: the cursor marks handed-off, not delivered, and records can be lost (crash, reload window) or duplicated (new-object replay, SDK retries), so receivers dedupe ledger records on `(session.id, session.format_version, event.seq)`; ops records deliberately omit that identity — they are signals to alert on, not entries to sum, and tolerate duplicates instead.
 
 ## The sharing disclosure
 

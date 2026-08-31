@@ -88,9 +88,9 @@ export type AssistantStreamFrame =
     readonly revision: number
     /** Dense zero-based position within the attempt. */
     readonly index: number
+    /** Safe-integer timestamp reused by the durable embedded stream. */
+    readonly time: number
     readonly chunk: StreamChunk
-    /** Matching durable v1 `assistant/chunk` record for duplicate suppression. */
-    readonly legacyChunkSeq: SessionSeq
   }
   | {
     readonly type: 'end'
@@ -98,10 +98,14 @@ export type AssistantStreamFrame =
     readonly revision: number
     /** Number of chunk frames emitted by this attempt. */
     readonly index: number
-    /** The durable assistant message committed before this notification. */
-    readonly outcome: 'committed' | 'aborted'
-    /** Every durable v1 chunk represented by this attempt. */
-    readonly legacyChunkSeqs: readonly SessionSeq[]
+    /** Durable settlement committed before this notification, or live abandonment without one. */
+    readonly outcome:
+      | {
+        readonly kind: 'committed'
+        readonly eventType: 'assistant/message' | 'assistant/attempt'
+        readonly seq: SessionSeq
+      }
+      | { readonly kind: 'abandoned' }
   }
 
 declare module './types.ts' {
@@ -302,9 +306,9 @@ declare module '@deepseek-ai/cordis' {
      */
     'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
     /**
-     * Process-local assistant-stream publication. The loop appends each v1
-     * `assistant/chunk` before the matching chunk frame and appends the final
-     * `assistant/message` before a committed end frame.
+     * Process-local assistant-stream publication. Chunk frames are transient;
+     * the loop appends one final v2 `assistant/message` or `assistant/attempt`
+     * with the same stream before a committed end frame.
      * @param payload.agent - the agent whose attempt produced the frame.
      * @param payload.frame - one ordered start, chunk, or end publication.
      * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.

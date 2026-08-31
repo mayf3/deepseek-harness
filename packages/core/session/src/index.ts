@@ -25,8 +25,6 @@ export { SessionPreparation } from './preparation.ts'
 export type { SessionPreparationOptions } from './preparation.ts'
 export type { AssistantMessage, ToolResultMessage, UserMessage } from '@deepseek-ai/dsh-llm'
 export { interruptedTurnClosers, TOOL_NOT_STARTED, TOOL_OUTCOME_UNKNOWN } from './repair.ts'
-export { decodeStorageRecord, packChunkRuns } from './chunk-rows.ts'
-export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
 export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
@@ -559,12 +557,16 @@ export class Session {
     if (inheritedEventCount > this.log.length) {
       throw new Error('session inherited event count exceeds its event log')
     }
+    if (mode === 'snapshot' && this.header.isSeeded && inheritedEventCount !== this.log.length) {
+      throw new Error('seeded session constructor seed must equal its inherited prefix')
+    }
     this.inheritedEventCount = inheritedEventCount
-    // Appended here so the marker is already in `events` when a backend
-    // captures the creation seed: no load-time write. Re-marking is skipped
-    // because a cold session is resumed on first touch, so repeatedly opening
-    // one must not grow its log per open.
-    if (seed !== undefined && this.log.at(-1)?.type !== 'session/end-seed') {
+    // A fresh seeded child always owns one tagged marker at its inherited cut,
+    // even when the copied prefix already ends in an ancestor marker. Restore
+    // retains that durable marker and appends only the ordinary resume marker.
+    if (seed !== undefined && mode === 'snapshot' && this.header.isSeeded) {
+      this.append('session/end-seed', { inherited: true })
+    } else if (seed !== undefined && this.log.at(-1)?.type !== 'session/end-seed') {
       this.append('session/end-seed', {})
     }
   }
@@ -639,7 +641,8 @@ export class Session {
    *   declare how it joins the surface, the sole source of derived model
    *   history) and
    *   rejected by the compiler for non-surface types like `turn/start` or
-   *   `assistant/chunk`.
+   *   `assistant/attempt`. Assistant messages embed their exact provider
+   *   stream and cannot cite top-level source events.
    * @returns the logged event — its assigned `seq`/`time` plus the SNAPSHOT of
    *   `data` that entered the log, so reading `event.data` back sees the logged
    *   value, never the caller's still-mutable input.
@@ -660,7 +663,7 @@ export class Session {
   append<T extends SessionEventType>(
     type: T,
     data: SessionEventMap[T],
-    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+    ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
   ): SessionEvent<T> {
     const surfaceOpts: SurfaceIntent | undefined = opts[0]
     const surfaceMetadata = {

@@ -107,7 +107,8 @@ interface CreateSessionOptions {
   readonly seed?: readonly SessionEvent[]
   /**
    * Exact fork-inherited prefix length when `meta.isSeeded` is true. A
-   * constructor seed may also contain child-owned setup events after this cut.
+   * In v2 the constructor seed is exactly this inherited prefix; the constructor
+   * appends the child-owned tagged marker at the cut.
    */
   readonly inheritedEventCount?: SessionLogOffset
   /**
@@ -144,7 +145,7 @@ interface SessionStorageMetadata {
 
 ## `SessionRawArtifact`——逐字存储工件文本
 
-后端为一个 Session 选定的 generation 文本，在解码物理压缩后与其持久写入内容逐字节相同。`readRaw` 不通过已解析事件重建就返回该文本，因此后端特定的序列化（chunk 打包、key 顺序、换行）都会保留。JSONL 把 `filename` 设为不带 `.zstd` 的选定逻辑 basename：v0 为 `session.jsonl`，每个正 generation 为 `session.vN.jsonl`。消费方先检查 `supportsRawArtifacts`：`false` 表示后端不提供该能力，而 `readRaw(...) === undefined` 表示支持该能力的后端中不存在该 Session 的已物化 generation。
+后端为一个 Session 选定的 generation 文本，在解码物理压缩后与其持久写入内容逐字节相同。`readRaw` 不通过已解析事件重建就返回该文本，因此 key 顺序、换行与历史 v0/v1 packed row 都会保留。当前 JSONL v2 为每个持久事件存储一行。JSONL 把 `filename` 设为不带 `.zstd` 的选定逻辑 basename：v0 为 `session.jsonl`，每个正 generation 为 `session.vN.jsonl`。消费方先检查 `supportsRawArtifacts`：`false` 表示后端不提供该能力，而 `readRaw(...) === undefined` 表示支持该能力的后端中不存在该 Session 的已物化 generation。
 
 ```ts type-equiv
 /** A backend's own raw artifact text for one session, verbatim. */

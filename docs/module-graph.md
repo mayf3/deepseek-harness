@@ -286,6 +286,7 @@ flowchart TD
     pkg_session_format["session-format"]
     pkg_session_format_catalog["session-format-catalog"]
     pkg_session_format_v0_to_v1["session-format-v0-to-v1"]
+    pkg_session_format_v1_to_v2["session-format-v1-to-v2"]
     pkg_session_log_deepseek["session-log-deepseek"]
     pkg_session_persistence["session-persistence"]
     pkg_session_persistence_jsonl["session-persistence-jsonl"]
@@ -1224,6 +1225,7 @@ flowchart TD
 | [`sandbox-windows-acl`](../packages/sandbox/sandbox-windows-acl) | `sandbox` | — |
 | [`session-format`](../packages/session/session-format) | `session` | — |
 | [`session-format-v0-to-v1`](../packages/session/session-format-v0-to-v1) | `session` | — |
+| [`session-format-v1-to-v2`](../packages/session/session-format-v1-to-v2) | `session` | — |
 | [`storage`](../packages/storage/storage) | `storage` | — |
 | [`subprocess`](../packages/subprocess/subprocess) | `subprocess` | — |
 | [`win32-process`](../packages/subprocess/win32-process) | `subprocess` | — |

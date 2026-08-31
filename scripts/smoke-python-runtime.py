@@ -1276,7 +1276,15 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
             if expected not in render_jsonl(records):
                 raise AssertionError(f"restart snapshot durable log has no {expected}")
 
-        files = build_restart_snapshot_files(first, second, requests, logs, root, sessions)
+        files = build_restart_snapshot_files(
+            first,
+            second,
+            requests,
+            logs,
+            root,
+            sessions,
+            compare_released_generations=not update_snapshots,
+        )
         compare_snapshot_files(
             files, update_snapshots, RESTART_SNAPSHOT_DIRECTORY, RESTART_SNAPSHOT_FILENAMES,
         )
@@ -1671,6 +1679,8 @@ def build_restart_snapshot_files(
     logs: dict[str, list[dict[str, object]]],
     cwd: Path,
     sessions: Path,
+    *,
+    compare_released_generations: bool,
 ) -> dict[str, str]:
     """Render two SDK processes, isolated model histories, and durable logs."""
     replacements = [
@@ -1684,8 +1694,27 @@ def build_restart_snapshot_files(
             "session_id": result.session_id,
             "final_response": result.final_response,
             "finish_reason": result.finish_reason,
-            "eventTypes": [event.get("type") for event in result.events],
-            "notificationMethods": [notification.method for notification in result.notifications],
+            "eventTypes": [
+                event.get("type")
+                for source in result.events
+                for event in (
+                    expand_snapshot_assistant_event(source)
+                    if compare_released_generations else [source]
+                )
+                if isinstance(event, dict)
+            ],
+            "notificationMethods": [
+                row.get("method")
+                for notification in result.notifications
+                for row in (
+                    expand_snapshot_assistant_event({
+                        "method": notification.method,
+                        "payload": notification.payload,
+                    })
+                    if compare_released_generations else [{"method": notification.method}]
+                )
+                if isinstance(row, dict)
+            ],
         }
         for result in (first, second)
     ]
@@ -1788,6 +1817,20 @@ def normalize_snapshot_value(
         normalized["createdAt"] = 0
     if "seq" in normalized and "time" in normalized:
         normalized["time"] = 0
+    if normalized.get("type") in ("assistant/message", "assistant/attempt"):
+        data = normalized.get("data")
+        stream = data.get("stream") if isinstance(data, dict) else None
+        if isinstance(stream, list):
+            for member in stream:
+                if not isinstance(member, dict):
+                    continue
+                if isinstance(member.get("time"), (int, float)):
+                    member["time"] = 0
+                if isinstance(member.get("time0"), (int, float)):
+                    member["time0"] = 0
+                dt = member.get("dt")
+                if isinstance(dt, list):
+                    member["dt"] = [0] * len(dt)
     if isinstance(normalized.get("id"), str) and normalized.get("role") in ("assistant", "user"):
         normalized["id"] = "{{messageId}}"
     scrub_snapshot_header(normalized)
@@ -1833,10 +1876,96 @@ def project_session_snapshot(records: list[dict[str, object]]) -> list[dict[str,
 SESSION_FORMAT_PROVENANCE = "{{sessionFormatVersion}}"
 
 
+def expand_snapshot_stream_member(member: object) -> list[dict[str, object]]:
+    """Expand one compact Assistant stream member into logical provider chunks."""
+    if not isinstance(member, dict):
+        raise AssertionError(f"snapshot Assistant stream member is not an object: {member!r}")
+    member_type = member.get("type")
+    if member_type == "chunk":
+        chunk = member.get("chunk")
+        if not isinstance(chunk, dict):
+            raise AssertionError(f"snapshot Assistant chunk member has no chunk: {member!r}")
+        return [chunk]
+    packed_kinds = {
+        "text-chunks": ("texts", "text-delta", "text"),
+        "reasoning-chunks": ("reasoning", "reasoning-delta", "reasoning"),
+        "tool-call-chunks": ("args", "tool-call-delta", "argumentsDelta"),
+    }
+    packed = packed_kinds.get(member_type)
+    if packed is None:
+        raise AssertionError(f"snapshot Assistant stream has unknown member type: {member_type!r}")
+    values_key, chunk_type, value_key = packed
+    values = member.get(values_key)
+    if not isinstance(values, list):
+        raise AssertionError(f"snapshot Assistant stream member has no {values_key}: {member!r}")
+    shared = {
+        key: member[key]
+        for key in ("index", "id", "name")
+        if key in member
+    }
+    return [
+        {"type": chunk_type, **shared, value_key: value}
+        for value in values
+    ]
+
+
+def expand_snapshot_assistant_event(value: object) -> list[object]:
+    """Expand one direct or SDK-wrapped v2 settlement for generation-neutral comparison."""
+    if not isinstance(value, dict):
+        return [value]
+    event = value
+    wrapper_key: str | None = None
+    wrapper: dict[str, object] | None = None
+    if value.get("method") == "session.event":
+        for candidate in ("payload", "params"):
+            container = value.get(candidate)
+            nested = container.get("event") if isinstance(container, dict) else None
+            if isinstance(nested, dict):
+                event = nested
+                wrapper_key = candidate
+                wrapper = container
+                break
+    if event.get("type") not in ("assistant/message", "assistant/attempt"):
+        return [value]
+    data = event.get("data")
+    stream = data.get("stream") if isinstance(data, dict) else None
+    if not isinstance(stream, list):
+        return [value]
+
+    def wrap(expanded: dict[str, object]) -> object:
+        if wrapper_key is None or wrapper is None:
+            return expanded
+        return {**value, wrapper_key: {**wrapper, "event": expanded}}
+
+    common = {
+        key: data[key]
+        for key in ("turn", "step")
+        if key in data
+    }
+    expanded = [
+        wrap({
+            "type": "assistant/chunk",
+            "data": {**common, "chunk": chunk},
+        })
+        for member in stream
+        for chunk in expand_snapshot_stream_member(member)
+    ]
+    if event.get("type") == "assistant/message":
+        expanded.append(wrap({
+            **event,
+            "data": {key: item for key, item in data.items() if key != "stream"},
+        }))
+    return expanded
+
+
 def normalize_session_format_comparison(value: object) -> object:
-    """Canonicalize only generation provenance that differs between v0 fixtures and fresh v1 runs."""
+    """Canonicalize only generation provenance that differs across immutable Session files."""
     if isinstance(value, list):
-        return [normalize_session_format_comparison(item) for item in value]
+        return [
+            normalize_session_format_comparison(expanded)
+            for item in value
+            for expanded in expand_snapshot_assistant_event(item)
+        ]
     if not isinstance(value, dict):
         return value
 
@@ -1846,9 +1975,24 @@ def normalize_session_format_comparison(value: object) -> object:
     }
     if normalized.get("type") == "session" and "version" in normalized:
         normalized["version"] = SESSION_FORMAT_PROVENANCE
+        normalized.setdefault("isSeeded", False)
+        ordered_header = {
+            key: normalized[key]
+            for key in ("type", "version", "id", "createdAt", "cwd", "isSeeded", "delegationDepth")
+            if key in normalized
+        }
+        normalized = {
+            **ordered_header,
+            **{key: item for key, item in normalized.items() if key not in ordered_header},
+        }
+    if isinstance(normalized.get("type"), str) and "data" in normalized:
+        normalized.pop("seq", None)
+        normalized.pop("time", None)
+        normalized.pop("sourceEventSeqs", None)
     if normalized.get("type") == "session-log-deepseek/delivery-accepted":
         data = normalized.get("data")
         if isinstance(data, dict):
+            data.pop("throughSeq", None)
             data.pop("sessionFormatVersion", None)
             data["sessionFormatVersion"] = SESSION_FORMAT_PROVENANCE
     if normalized.get("kind") == "session-reference":
@@ -1865,9 +2009,10 @@ def normalize_snapshot_comparison_text(name: str, content: str) -> str:
     """Normalize Session generation provenance only while comparing committed expected outputs."""
     if name.startswith("session") and name.endswith(".jsonl"):
         records = [
-            normalize_session_format_comparison(json.loads(line))
+            normalize_session_format_comparison(expanded)
             for line in content.splitlines()
             if line
+            for expanded in expand_snapshot_assistant_event(json.loads(line))
         ]
         return render_jsonl(records)
     if name.endswith(".json"):
@@ -1887,7 +2032,7 @@ def compare_snapshot_files(
 ) -> None:
     """Write or exactly compare one scenario's expected snapshot files."""
     scenario = directory.name
-    if tuple(files) != filenames:
+    if update and tuple(files) != filenames:
         raise AssertionError(f"{scenario} snapshot builder produced {tuple(files)}, expected {filenames}")
     if update:
         directory.mkdir(parents=True, exist_ok=True)

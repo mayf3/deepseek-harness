@@ -161,7 +161,6 @@ export class FakeApiClient {
   }
   assistantStreamBaseline: SessionAssistantStreamBaseline = {
     revision: 0,
-    attempts: [],
   }
   workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {
     items: [],
@@ -393,9 +392,10 @@ export class FakeApiClient {
       yield {
         type: 'snapshot',
         header: {
-          version: 1,
+          version: 2,
           id: sessionId,
           createdAt: 0,
+          isSeeded: false,
           ...(request.address.kind === 'subagent'
             ? { origin: 'subagent' as const, parentSession: request.address.parentSessionId }
             : {}),

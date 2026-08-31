@@ -26,6 +26,7 @@ const SEED_ID = 'message-actions-web-e2e'
 
 const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.'
 const MID_TURN_TEXT = 'I will read both files before answering.'
+const INTERRUPTED_REASONING = 'Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I\'ll now reply with DONE as instructed.'
 const SECOND_PROMPT = 'Now give the final answer.'
 
 /**
@@ -37,25 +38,40 @@ const SECOND_PROMPT = 'Now give the final answer.'
  */
 function completedTailFixture(raw: string): string {
   const decoded = parseSeedFixture(raw)
-  const kept = decoded.events.filter(event => event.seq < 101).map((event) => {
-    if (event.type === 'assistant/message' && event.seq === 64) {
-      const data = event.data as unknown as { message?: { content?: unknown[] } }
-      const content = data.message?.content
-      if (!Array.isArray(content)) throw new Error('borrowed step-one assistant message has no content')
-      return {
-        ...event,
-        data: {
-          ...data,
-          message: {
-            ...data.message,
-            content: [...content.slice(0, 1), { type: 'text', text: MID_TURN_TEXT }, ...content.slice(1)],
-          },
+  const stepTwoStart = decoded.events.findIndex(event =>
+    event.type === 'step/start' && event.data.turn === 1 && event.data.step === 2)
+  if (stepTwoStart < 0) throw new Error('borrowed fixture has no step-two start')
+  const kept = decoded.events.slice(0, stepTwoStart + 1).map((event) => {
+    if (event.type !== 'assistant/message' || event.data.turn !== 1 || event.data.step !== 1) return event
+    const finish = event.data.stream.findIndex(record =>
+      record.type === 'chunk' && record.chunk.type === 'finish')
+    if (finish < 0) throw new Error('borrowed step-one Assistant message has no finish record')
+    const finishRecord = event.data.stream[finish]!
+    if (finishRecord.type !== 'chunk') throw new Error('borrowed step-one finish is not a chunk record')
+    const streamTime = finishRecord.time
+    return {
+      ...event,
+      data: {
+        ...event.data,
+        message: {
+          ...event.data.message,
+          content: [...event.data.message.content, { type: 'text' as const, text: MID_TURN_TEXT }],
         },
-      }
+        stream: [
+          ...event.data.stream.slice(0, finish),
+          { type: 'chunk' as const, time: streamTime, chunk: { type: 'block-start' as const, index: 3, blockType: 'text' as const } },
+          { type: 'text-chunks' as const, time0: streamTime, index: 3, dt: [], texts: [MID_TURN_TEXT] },
+          {
+            type: 'chunk' as const,
+            time: streamTime,
+            chunk: { type: 'block-end' as const, index: 3, block: { type: 'text' as const, text: MID_TURN_TEXT } },
+          },
+          ...event.data.stream.slice(finish),
+        ],
+      },
     }
-    return event
   })
-  let seq = kept.length
+  let seq = (kept.at(-1)?.seq ?? -1) + 1
   let time = (kept.at(-1)?.time ?? -1) + 1
   const at = (event: Record<string, unknown>): { seq: number; time: number } & Record<string, unknown> => ({
     ...event,
@@ -63,12 +79,57 @@ function completedTailFixture(raw: string): string {
     time: time++,
   })
   const tail = [
+    at({
+      type: 'assistant/attempt',
+      data: {
+        turn: 1,
+        step: 2,
+        stream: [
+          { type: 'chunk', time, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+          { type: 'reasoning-chunks', time0: time, index: 0, dt: [], texts: [INTERRUPTED_REASONING] },
+          {
+            type: 'chunk',
+            time,
+            chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: INTERRUPTED_REASONING } },
+          },
+          { type: 'chunk', time, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+        ],
+      },
+    }),
     at({ type: 'step/end', data: { turn: 1, step: 2 } }),
-    at({ type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted' } } }),
-    at({ type: 'turn/start', data: { turn: 2, trigger: { kind: 'message', source: { kind: 'user', rpcId: '{{rpcId}}' } } } }),
-    at({ type: 'user/message', data: { content: [{ type: 'text', text: SECOND_PROMPT }], source: { kind: 'user', rpcId: '{{rpcId}}' } }, surfaceOp: 'append' }),
+    at({ type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted', reason: { kind: 'user' } } } }),
+    at({ type: 'turn/start', data: { turn: 2 } }),
+    at({
+      type: 'user/message',
+      data: {
+        content: [{ type: 'text', text: SECOND_PROMPT }],
+        source: { kind: 'user' },
+        role: 'user',
+        id: '{{message:98}}',
+      },
+      surfaceOp: 'append',
+    }),
     at({ type: 'step/start', data: { turn: 2, step: 1 } }),
-    at({ type: 'assistant/message', data: { turn: 2, step: 1, content: [{ type: 'text', text: 'DONE' }], provenance: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }, sourceEventSeqs: [], surfaceOp: 'append' }),
+    at({
+      type: 'assistant/message',
+      data: {
+        turn: 2,
+        step: 1,
+        message: {
+          role: 'assistant',
+          content: [{ type: 'text', text: 'DONE' }],
+          source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' },
+          id: '{{message:99}}',
+        },
+        stream: [
+          { type: 'chunk', time: 0, chunk: { type: 'block-start', index: 0, blockType: 'text' } },
+          { type: 'text-chunks', time0: 0, index: 0, dt: [], texts: ['DONE'] },
+          { type: 'chunk', time: 0, chunk: { type: 'block-end', index: 0, block: { type: 'text', text: 'DONE' } } },
+          { type: 'chunk', time: 0, chunk: { type: 'finish', reason: { kind: 'stop' } } },
+        ],
+      },
+      surfaceOp: 'append',
+    }),
     at({ type: 'step/end', data: { turn: 2, step: 1 } }),
     at({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } }),
   ]

@@ -1,6 +1,7 @@
 # Agent Note: 将打包分片行设为默认 JSONL 布局
 
 Status: implemented
+Archived: 2026-09-01
 
 [English](2026-07-26-packed-chunk-rows-by-default.md) | 中文
 

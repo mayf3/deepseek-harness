@@ -6,8 +6,6 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
   decodeSeqRanges,
-  decodeStorageRecord,
-  packChunkRuns,
   SessionLogOffset,
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
@@ -63,12 +61,10 @@ function validationHeader(value: unknown): unknown {
 function renderFixture(headerLine: string, events: readonly SessionEvent[]): string {
   return [
     headerLine,
-    ...packChunkRuns(events).map((stored) => {
-      const record = { ...stored } as unknown as Record<string, unknown>
+    ...events.map((event) => {
+      const record = { ...event } as unknown as Record<string, unknown>
       delete record.seq
       delete record.time
-      delete record.seq0
-      delete record.time0
       return JSON.stringify(record)
     }),
     '',
@@ -119,17 +115,28 @@ function parseFixtureRows(content: string, headerValue: unknown): SessionEvent[]
     rowLines.push(index + 1)
     nextSeq = SessionLogOffset(nextSeq + projectedRowCardinality(record))
   }
-  // Versionless protocol fixtures are outside the released format catalog;
-  // they exercise only the current storage-row projection.
+  // Versionless protocol fixtures and current projected snapshots use scalar
+  // event rows. Current snapshots may contain owner-restored scrub tokens such
+  // as `{{tools}}`; semantic replay restores those sidecars, while this layout
+  // gate owns only envelopes, provenance ranges, and one-event-per-row form.
+  const projectedCurrent = headerValue !== null
+    && typeof headerValue === 'object'
+    && !Array.isArray(headerValue)
+    && (headerValue as Record<string, unknown>).version === sessionFormatCatalog.currentVersion
   if (headerValue === null || typeof headerValue !== 'object' || Array.isArray(headerValue)
-    || !Object.hasOwn(headerValue, 'version')) {
-    return rows.flatMap((source, index) => {
+    || !Object.hasOwn(headerValue, 'version') || projectedCurrent) {
+    return rows.map((source, index) => {
       const record = { ...source }
       try {
+        if (record.type === 'text-chunks'
+          || record.type === 'reasoning-chunks'
+          || record.type === 'tool-call-chunks') {
+          throw new Error('current projected fixtures cannot contain legacy packed rows')
+        }
         if (Object.hasOwn(record, 'sourceEventSeqs')) {
           record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
         }
-        return decodeStorageRecord(record)
+        return record as unknown as SessionEvent
       } catch (error) {
         const detail = error instanceof Error ? error.message : String(error)
         throw new Error(`session snapshot line ${rowLines[index] ?? 1}: ${detail}`, { cause: error })
@@ -158,7 +165,7 @@ function withoutEnvelope(events: readonly SessionEvent[]): Array<Omit<SessionEve
 /**
  * Canonicalize one JSONL document when its first record is a session header.
  * The header line remains byte-identical; body records decode to logical events,
- * re-encode with {@link packChunkRuns}, and omit storage sequence/time envelopes.
+ * re-encode one event per row, and omit storage sequence/time envelopes.
  * Non-session JSONL returns undefined.
  *
  * @param content - JSONL source text.
@@ -183,6 +190,18 @@ export function canonicalSessionFixture(content: string, label = '<session-fixtu
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`${label}: ${detail}`, { cause: error })
+  }
+  const storedVersion = headerValue !== null
+    && typeof headerValue === 'object'
+    && !Array.isArray(headerValue)
+    && typeof (headerValue as Record<string, unknown>).version === 'number'
+    ? (headerValue as Record<string, number>).version
+    : undefined
+  // Released predecessor generations are immutable compatibility fixtures.
+  // Parsing above still validates their physical rows, but canonicalization
+  // never rewrites their committed bytes into the current scalar layout.
+  if (storedVersion !== undefined && storedVersion < sessionFormatCatalog.currentVersion) {
+    return content
   }
   const canonical = renderFixture(headerLine, events)
   const decoded = parseFixtureRows(canonical, headerValue)

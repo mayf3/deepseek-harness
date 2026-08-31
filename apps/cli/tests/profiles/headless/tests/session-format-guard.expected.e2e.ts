@@ -1,7 +1,7 @@
 /**
  * Assembled-app regressions for Session-format lifecycle behavior: a physical
  * v0 log migrates through the real Loader composition, remains byte-for-byte
- * intact beside v1, and accepts the next append through v1; a future format or unknown
+ * intact beside v2, and accepts the next append through v2; a future format or unknown
  * required current event refuses with the direction and raw log path.
  * @module session-format-guard-snapshot
  */
@@ -46,7 +46,11 @@ async function seedSession(root: string, cwd: string, version: number, events: S
     const location = ctx.sessionPersistence.locate(meta)
     if (location === undefined) throw new Error('JSONL backend did not locate the seeded session')
     const content = [
-      { type: 'session', version, id: sessionId, createdAt: 1, cwd, delegationDepth: 0 },
+      {
+        type: 'session', version, id: sessionId, createdAt: 1, cwd,
+        ...(version >= 2 ? { isSeeded: false } : {}),
+        delegationDepth: 0,
+      },
       ...events,
     ].map(record => JSON.stringify(record)).join('\n') + '\n'
     const path = join(dirname(location.path), generationLogFilename(version, 'none'))
@@ -66,7 +70,7 @@ function closedTurn(): SessionEvent[] {
 }
 
 describe('session format guard through the assembled app', () => {
-  it('migrates a raw v0 log before resume, preserves exact source bytes, and appends only to v1', async () => {
+  it('migrates a raw v0 log before resume, preserves exact source bytes, and appends only to v2', async () => {
     let v0Path = ''
     let v0 = ''
     let v0Identity: { readonly dev: bigint; readonly ino: bigint } | undefined
@@ -97,7 +101,7 @@ describe('session format guard through the assembled app', () => {
           .toBe(SESSION_FORMAT_VERSION)
         expect(current).not.toBe(v0)
         expect(current.trimEnd().split('\n').length).toBeGreaterThan(closedTurn().length + 1)
-        expect((await readdir(dirname(v0Path))).sort()).toEqual(['session.jsonl', 'session.v1.jsonl'])
+        expect((await readdir(dirname(v0Path))).sort()).toEqual(['session.jsonl', 'session.v2.jsonl'])
       },
     })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)

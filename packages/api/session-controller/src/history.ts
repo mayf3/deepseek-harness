@@ -8,7 +8,6 @@ import {
   SessionLogOffset,
   SessionSeq,
 } from '@deepseek-ai/dsh-session'
-import { isChunkRow, packChunkRuns, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type {
   SessionEvent,
   SessionHeader,
@@ -23,7 +22,6 @@ import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   SessionAddress,
   SessionAssistantStreamFrame,
-  SessionChunkRun,
   SessionEventEntry,
   SessionFollowRequest,
   SessionFollowFrame,
@@ -183,7 +181,7 @@ export class SessionHistoryController {
       snapshotCursor = cursor
       const page = paginate(events, undefined, request.maxMessages ?? DEFAULT_MAX_MESSAGES)
       const assistantStream = request.assistantStream === true
-        ? this.assistantStreams.get(target)?.snapshot() ?? { revision: 0, attempts: [] }
+        ? this.assistantStreams.get(target)?.snapshot() ?? { revision: 0 }
         : undefined
       // The accumulator snapshot and this watermark are synchronous. Frames
       // through the cut are represented or superseded by that baseline,
@@ -192,7 +190,7 @@ export class SessionHistoryController {
       const assistantStreamOrdinalCut = assistantStreamOrdinal
       yield {
         type: 'snapshot',
-        header: wireHeader(source.header, source.inheritedEventCount),
+        header: wireHeader(source.header),
         cursor,
         records: pageRecords(page.events),
         hasMore: page.hasMore,
@@ -402,16 +400,9 @@ function paginate(
   return { events: events.slice(cut, end), hasMore: cut > 0 }
 }
 
-/** Translate logical Session metadata to the unchanged v0 browser wire. */
-function wireHeader(
-  header: SessionHeader,
-  inheritedEventCount: SessionLogOffsetType,
-): SessionWireHeader {
-  const { isSeeded, ...wire } = header
-  return {
-    ...wire,
-    ...isSeeded ? { seedLength: inheritedEventCount } : {},
-  }
+/** Translate current logical Session metadata to the browser wire. */
+function wireHeader(header: SessionHeader): SessionWireHeader {
+  return { ...header }
 }
 
 function entryFor(event: SessionEvent): SessionEventEntry {
@@ -422,29 +413,7 @@ function entryFor(event: SessionEvent): SessionEventEntry {
   }
 }
 
-function chunkEntryFor(row: ChunkRow): SessionChunkRun {
-  switch (row.type) {
-    case 'text-chunks':
-      return {
-        type: 'chunks',
-        event: { type: 'chunkrow/text-chunks', seq: row.seq0, time: row.time0, data: row.data },
-      }
-    case 'reasoning-chunks':
-      return {
-        type: 'chunks',
-        event: { type: 'chunkrow/reasoning-chunks', seq: row.seq0, time: row.time0, data: row.data },
-      }
-    case 'tool-call-chunks':
-      return {
-        type: 'chunks',
-        event: { type: 'chunkrow/tool-call-chunks', seq: row.seq0, time: row.time0, data: row.data },
-      }
-  }
-}
-
 /** Encode one bounded logical page without changing its pagination cut. */
 function pageRecords(events: readonly SessionEvent[]): SessionHistoryRecord[] {
-  return packChunkRuns(events).map(record => isChunkRow(record)
-    ? chunkEntryFor(record)
-    : entryFor(record))
+  return events.map(entryFor)
 }

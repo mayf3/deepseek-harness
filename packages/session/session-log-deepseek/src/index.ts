@@ -59,7 +59,7 @@ function wireHeader(session: Session): DeepSeekSessionLogWireHeader {
     createdAt: header.createdAt,
     ...header.cwd === undefined ? {} : { cwd: header.cwd },
     ...header.parentSession === undefined ? {} : { parentSession: String(header.parentSession) },
-    ...header.isSeeded ? { seedLength: Number(session.inheritedEventCount) } : {},
+    isSeeded: header.isSeeded,
     ...header.origin === undefined ? {} : { origin: header.origin },
     ...header.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth },
     ...header.agentPreset === undefined ? {} : { agentPreset: header.agentPreset },

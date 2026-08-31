@@ -55,8 +55,8 @@ describe('incremental DeepSeek session-log upload', () => {
     expectTypeOf<DeepSeekSessionLogExtension['throughSeq']>().toEqualTypeOf<number>()
     expectTypeOf<DeepSeekSessionLogExtension['events'][number]['seq']>().toEqualTypeOf<number>()
     expectTypeOf<DeepSeekSessionLogExtension['events'][number]['data']>().toEqualTypeOf<JsonValue>()
-    expectTypeOf<DeepSeekSessionLogExtension['session']['seedLength']>()
-      .toEqualTypeOf<number | undefined>()
+    expectTypeOf<DeepSeekSessionLogExtension['session']['isSeeded']>()
+      .toEqualTypeOf<boolean>()
   })
 
   it('does not contribute the session log under its default configuration', async () => {
@@ -325,12 +325,12 @@ describe('incremental DeepSeek session-log upload', () => {
       id: 'wire-child',
       cwd: '/wire-workspace',
       parentSession: 'wire-parent',
-      seedLength: seed.length,
+      isSeeded: true,
       origin: 'subagent',
       delegationDepth: 1,
       agentPreset: 'minimal',
     })
-    expect(wire.session).not.toHaveProperty('isSeeded')
+    expect(wire.session).not.toHaveProperty('seedLength')
     expect(typeof wire.afterSeq).toBe('number')
     expect(typeof wire.throughSeq).toBe('number')
     expect(Array.isArray(wire.events)).toBe(true)

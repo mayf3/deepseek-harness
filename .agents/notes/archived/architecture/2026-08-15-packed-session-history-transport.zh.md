@@ -1,6 +1,7 @@
 # Agent Note: 在会话历史中传输打包分片行
 
 Status: implemented
+Archived: 2026-09-01
 
 [English](2026-08-15-packed-session-history-transport.md) | 中文
 

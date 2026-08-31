@@ -1,6 +1,7 @@
 # Agent Note: Make packed chunk rows the default JSONL layout
 
 Status: implemented
+Archived: 2026-09-01
 
 English | [中文](2026-07-26-packed-chunk-rows-by-default.zh.md)
 

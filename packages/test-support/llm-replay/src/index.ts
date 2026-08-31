@@ -1,6 +1,6 @@
 /**
  * Keyless snapshot-test LLM replay. It derives one model-call script per
- * recorded session from `assistant/chunk` events and explicitly marked local
+ * recorded session from v2 embedded Assistant streams and explicitly marked local
  * compaction calls, then binds fresh live sessions to parent/child scripts by
  * first-call order. Throw and hang cases require an explicit override because
  * a session log cannot reconstruct them alone.
@@ -31,7 +31,7 @@ import type {
   StreamChunk,
   TokenUsage,
 } from '@deepseek-ai/dsh-llm'
-import { LlmAdapter, LlmError, ReasoningEffortId, requestImageHandleText, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, LlmError, ReasoningEffortId, expandAssistantStream, requestImageHandleText, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { alphaSessionFormatRefusalForPath } from './alpha-refusal-fixtures.ts'
 
@@ -139,7 +139,7 @@ export interface ReplayConfig {
    * Optional sidecar for the PRIMARY session: a bare `ReplayEntry[]` replaces
    * the derived script; `{ patches }` keeps it and swaps the named call
    * indexes ({@link ReplayOverrideDoc}). Used by single-session scenarios not
-   * expressible as `assistant/chunk` (throw-before-chunk, cancel/hang,
+   * expressible as a durable embedded stream (throw-before-chunk, cancel/hang,
    * injected transient failures). Absent for normal and nested scenarios.
    */
   overrideFile?: string
@@ -283,7 +283,25 @@ function parseSessionFixture(text: string, replaySourcePath?: string): ParsedSes
     decoded = sessionFormatCatalog.decodeArtifact(header, rows)
   } catch (error: unknown) {
     const physicalRow = locateUnlabelledPhysicalFailure(error, header, rows)
-    rethrowFixtureFormatError(error, headerLine.lineNumber, rowLines, eventLines, physicalRow)
+    const failure = fixtureFormatError(
+      error,
+      headerLine.lineNumber,
+      rowLines,
+      eventLines,
+      physicalRow,
+    )
+    const refusal = replaySourcePath === undefined
+      ? undefined
+      : alphaSessionFormatRefusalForPath(replaySourcePath)
+    if (refusal?.expectedCurrentMessage === failure.message
+      && header['version'] === SESSION_FORMAT_VERSION) {
+      decoded = sessionFormatCatalog.decodeArtifact(
+        header,
+        repairAlphaRefusalEvents(rows, refusal.repoRelativePath),
+      )
+    } else {
+      throw failure
+    }
   }
   try {
     const current = sessionFormatCatalog.migrate(decoded)
@@ -296,7 +314,10 @@ function parseSessionFixture(text: string, replaySourcePath?: string): ParsedSes
     if (refusal !== undefined
       && failure instanceof SessionFormatUnsupportedMigrationError
       && failure.message === refusal.expectedMessage) {
-      return parsedSessionFixture(decoded, headerLine.value)
+      return parsedSessionFixture(
+        migrateAlphaRefusalForComparison(decoded, refusal.repoRelativePath),
+        headerLine.value,
+      )
     }
     throw failure
   }
@@ -317,6 +338,43 @@ function parsedSessionFixture(
   }
 }
 
+/** Structurally migrate one closed invalid-v0 fixture without weakening production validation. */
+function migrateAlphaRefusalForComparison(
+  source: ReturnType<typeof sessionFormatCatalog.decodeArtifact>,
+  repoRelativePath: string,
+): ReturnType<typeof sessionFormatCatalog.migrate> {
+  const repaired = {
+    ...structuredClone(source),
+    events: repairAlphaRefusalEvents(source.events, repoRelativePath),
+  }
+  return sessionFormatCatalog.migrate(repaired)
+}
+
+/** Repair the exact known invalid relationship before test-only migration or comparison. */
+function repairAlphaRefusalEvents<T extends readonly Record<string, unknown>[]>(
+  sourceEvents: T,
+  repoRelativePath: string,
+): T {
+  const events = structuredClone(sourceEvents)
+  if (repoRelativePath === 'snapshots/session/agent-instructions/session.jsonl') {
+    const compact = events.find((event) => {
+      if (event.type !== 'user/message') return false
+      const provenance = (event.data as Record<string, unknown>)['source']
+      return typeof provenance === 'object' && provenance !== null
+        && (provenance as Record<string, unknown>)['plugin'] === 'compact'
+    }) as Record<string, unknown>
+    const provenance = ((compact['data'] as Record<string, unknown>)['source']) as Record<string, unknown>
+    provenance['plugin'] = 'alpha-comparison-compact'
+    delete provenance['compactionId']
+    delete provenance['sourceCommandId']
+  } else {
+    const title = events.find(event => event.type === 'session/title') as Record<string, unknown>
+    const sourceRecord = ((title['data'] as Record<string, unknown>)['source']) as Record<string, unknown>
+    sourceRecord['kind'] = 'fallback'
+  }
+  return events
+}
+
 /**
  * Convert one persisted or projected snapshot fixture to the current physical format in memory.
  * Projected cwd tokens remain tokens so the ordinary snapshot normalizer can compare them with a fresh run.
@@ -330,8 +388,8 @@ export function migrateSessionSnapshotFixture(text: string): string {
 
 /**
  * Prepare one source-qualified fixture for expected-output comparison.
- * Exact alpha refusals keep their events and normalize only the physical header
- * generation; every other versioned fixture must migrate through the real catalog.
+ * Exact alpha refusals receive their source-qualified test repair before migration;
+ * production decoding and migration remain strict.
  * @param text - one complete Session fixture.
  * @param sourcePath - exact committed source path, when known.
  * @returns current-generation comparison JSONL without modifying the source file.
@@ -341,10 +399,195 @@ export function prepareSessionSnapshotFixtureForComparison(
   sourcePath?: string,
 ): string {
   const parsed = parseSessionFixture(text, sourcePath)
-  if (parsed.artifact.header.version !== SESSION_FORMAT_VERSION) {
-    return rewritePhysicalHeaderVersion(text)
-  }
   return encodeCurrentSessionSnapshotFixture(text, parsed)
+}
+
+interface WrappedSessionEvent {
+  readonly sessionId: string
+  readonly event: Record<string, unknown>
+  readonly replace: (event: Readonly<Record<string, unknown>>) => Record<string, unknown>
+}
+
+/** Read one headless or SDK event-notification wrapper. */
+function wrappedSessionEvent(row: Record<string, unknown>): WrappedSessionEvent | undefined {
+  if (row['type'] === 'session_event' && typeof row['sessionId'] === 'string'
+    && row['event'] !== null && typeof row['event'] === 'object' && !Array.isArray(row['event'])) {
+    return {
+      sessionId: row['sessionId'],
+      event: row['event'] as Record<string, unknown>,
+      replace: event => ({ ...row, event }),
+    }
+  }
+  const params = row['params']
+  if (row['method'] !== 'session.event' || params === null || typeof params !== 'object' || Array.isArray(params)) {
+    return undefined
+  }
+  const record = params as Record<string, unknown>
+  if (typeof record['sessionId'] !== 'string'
+    || record['event'] === null || typeof record['event'] !== 'object' || Array.isArray(record['event'])) {
+    return undefined
+  }
+  return {
+    sessionId: record['sessionId'],
+    event: record['event'] as Record<string, unknown>,
+    replace: event => ({ ...row, params: { ...record, event } }),
+  }
+}
+
+interface WrappedEventEntry extends WrappedSessionEvent {
+  readonly rowIndex: number
+}
+
+/** Append one migrated event to the output assigned to its v1 source row. */
+function assignMigratedEvent(
+  assigned: Map<number, Readonly<Record<string, unknown>>[]>,
+  rowIndex: number,
+  event: Readonly<Record<string, unknown>>,
+): void {
+  assigned.set(rowIndex, [...assigned.get(rowIndex) ?? [], event])
+}
+
+/** Restore fixture tokens materialized only to satisfy released-format validation. */
+function restoreProjectedRequestHeader(
+  target: Readonly<Record<string, unknown>>,
+  source: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  if (target['type'] !== 'request/header' || source['type'] !== 'request/header') return target
+  const targetData = target['data'] as Record<string, unknown>
+  const sourceData = source['data'] as Record<string, unknown>
+  const targetHeader = targetData['header'] as Record<string, unknown>
+  const sourceHeader = sourceData['header'] as Record<string, unknown>
+  const sourceTools = sourceHeader['tools']
+  if (sourceTools !== '{{tools}}') return target
+  return {
+    ...target,
+    data: {
+      ...targetData,
+      header: { ...targetHeader, tools: sourceTools },
+    },
+  }
+}
+
+/** Omit delivery cursors whose numeric value depends on the source Session generation. */
+function normalizeWrappedEventProvenance(
+  event: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  if (event['type'] !== 'session-log-deepseek/delivery-accepted') return event
+  const data = event['data']
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return event
+  const normalized = { ...data as Record<string, unknown> }
+  delete normalized['sessionFormatVersion']
+  delete normalized['throughSeq']
+  return { ...event, data: normalized }
+}
+
+type WrappedEventGroup = [WrappedEventEntry, ...WrappedEventEntry[]]
+
+/** Migrate one session's contiguous v1 notification tail and align its surviving rows. */
+function migrateWrappedEventGroup(
+  entries: Readonly<WrappedEventGroup>,
+): Map<number, Readonly<Record<string, unknown>>[]> {
+  const first = entries[0]
+  if (!entries.some(entry => entry.event['type'] === 'assistant/chunk')) return new Map()
+  const firstSeq = first.event['seq']
+  if (!Number.isSafeInteger(firstSeq) || (firstSeq as number) < 0) {
+    throw new Error('session event comparison requires a non-negative first seq')
+  }
+  for (const [index, entry] of entries.entries()) {
+    if (entry.event['seq'] !== (firstSeq as number) + index || typeof entry.event['type'] !== 'string') {
+      throw new Error(`session event comparison requires a contiguous event tail for ${first.sessionId}`)
+    }
+  }
+  const prefix = Array.from({ length: firstSeq as number }, (_, seq) => ({
+    type: 'feedback/record',
+    seq,
+    time: 0,
+    data: { text: `comparison prefix ${String(seq)}` },
+  }))
+  const migrated = sessionFormatCatalog.migrate({
+    header: {
+      version: 1,
+      id: first.sessionId,
+      createdAt: 0,
+      isSeeded: false,
+      delegationDepth: 0,
+    },
+    inheritedEventCount: 0,
+    events: [...prefix, ...entries.map(entry => normalizeProjectedRow(entry.event))] as never,
+  }).events.slice(prefix.length) as readonly Readonly<Record<string, unknown>>[]
+
+  const assigned = new Map<number, Readonly<Record<string, unknown>>[]>()
+  let migratedIndex = 0
+  let lastChunkRow: number | undefined
+  // Catalog validation preserves every non-chunk event's type and order; only a preceding chunk row yields assistant/attempt.
+  for (const entry of entries) {
+    if (entry.event['type'] === 'assistant/chunk') {
+      lastChunkRow = entry.rowIndex
+      continue
+    }
+    while (migrated[migratedIndex]?.['type'] === 'assistant/attempt') {
+      assignMigratedEvent(assigned, lastChunkRow as number, migrated[migratedIndex] as Record<string, unknown>)
+      migratedIndex += 1
+    }
+    const next = migrated[migratedIndex] as Readonly<Record<string, unknown>>
+    assignMigratedEvent(assigned, entry.rowIndex, restoreProjectedRequestHeader(next, entry.event))
+    migratedIndex += 1
+  }
+  while (migrated[migratedIndex]?.['type'] === 'assistant/attempt') {
+    assignMigratedEvent(assigned, lastChunkRow as number, migrated[migratedIndex] as Record<string, unknown>)
+    migratedIndex += 1
+  }
+  return assigned
+}
+
+/**
+ * Project v1 session-event notifications to current settlement cardinality in memory.
+ * Non-event protocol rows retain their exact positions, and current v2 input passes through.
+ * @param text - headless `session_event` or SDK `session.event` JSONL.
+ * @returns comparison JSONL using current Session events without modifying its source file.
+ */
+export function prepareSessionEventNotificationsForComparison(text: string): string {
+  const trailingNewline = text.endsWith('\n')
+  const rows = text.split('\n').filter(line => line.trim().length > 0).map((line, index) => {
+    const value: unknown = JSON.parse(line)
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+      throw new Error(`session event comparison line ${String(index + 1)} must be an object`)
+    }
+    return value as Record<string, unknown>
+  })
+  const entries = rows.flatMap((row, rowIndex): WrappedEventEntry[] => {
+    const wrapped = wrappedSessionEvent(row)
+    return wrapped === undefined ? [] : [{ ...wrapped, rowIndex }]
+  })
+  const groups: WrappedEventGroup[] = []
+  for (const entry of entries) {
+    const nextSeq = entry.event['seq']
+    const group = groups.findLast((candidate) => {
+      const previous = candidate.at(-1)
+      const previousSeq = previous?.event['seq']
+      return previous?.sessionId === entry.sessionId
+        && Number.isSafeInteger(previousSeq) && Number.isSafeInteger(nextSeq)
+        && nextSeq === (previousSeq as number) + 1
+    })
+    if (group === undefined) groups.push([entry])
+    else group.push(entry)
+  }
+  const assigned = new Map<number, Readonly<Record<string, unknown>>[]>()
+  for (const group of groups) {
+    for (const [rowIndex, events] of migrateWrappedEventGroup(group)) assigned.set(rowIndex, events)
+  }
+  const output = rows.flatMap((row, rowIndex) => {
+    const wrapped = wrappedSessionEvent(row)
+    if (wrapped === undefined) return [row]
+    const migrated = assigned.get(rowIndex)
+    if (migrated === undefined) {
+      return wrapped.event['type'] === 'assistant/chunk'
+        ? []
+        : [wrapped.replace(normalizeWrappedEventProvenance(wrapped.event))]
+    }
+    return migrated.map(event => wrapped.replace(normalizeWrappedEventProvenance(event)))
+  }).map(row => JSON.stringify(row)).join('\n')
+  return trailingNewline ? `${output}\n` : output
 }
 
 /** Encode one migrated fixture while retaining a projected cwd token. */
@@ -355,18 +598,6 @@ function encodeCurrentSessionSnapshotFixture(text: string, parsed: ParsedSession
   if (typeof sourceCwd === 'string' && /^\{\{cwd\}\}(?:\/|$)/.test(sourceCwd)) header['cwd'] = sourceCwd
   const output = [header, ...encoded.rows].map(record => JSON.stringify(record)).join('\n')
   return text.endsWith('\n') ? `${output}\n` : output
-}
-
-/** Rewrite only the first physical header's generation for an exact replay-only refusal. */
-function rewritePhysicalHeaderVersion(text: string): string {
-  let rewritten = false
-  return text.split('\n').map((line) => {
-    if (rewritten || line.trim().length === 0) return line
-    const header = JSON.parse(line) as Record<string, unknown>
-    header['version'] = SESSION_FORMAT_VERSION
-    rewritten = true
-    return JSON.stringify(header)
-  }).join('\n')
 }
 
 /** Restore typed request-header values replaced by snapshot sidecar tokens. */
@@ -441,17 +672,6 @@ function fixtureFormatError(
   return new Error(message, { cause: error })
 }
 
-/** Attach the nearest physical source line and throw the classified fixture error. */
-function rethrowFixtureFormatError(
-  error: unknown,
-  headerLine: number,
-  rowLines: readonly number[],
-  eventLines: readonly number[],
-  physicalRow?: number,
-): never {
-  throw fixtureFormatError(error, headerLine, rowLines, eventLines, physicalRow)
-}
-
 /** Locate range-decoder failures whose frozen diagnostic predates physical-row labels. */
 function locateUnlabelledPhysicalFailure(
   error: unknown,
@@ -494,8 +714,7 @@ export function parseSessionHeader(text: string): {
 /**
  * Reconstruct the per-`stream()` replay script from a recorded session log.
  *
- * Splits `assistant/chunk` events at every `finish`, using turn and step changes
- * to detect an unterminated prior call. A `compaction/summary` explicitly marked
+ * Reads one embedded stream from each Assistant settlement. A `compaction/summary` explicitly marked
  * as one local LLM-stream call becomes a canonical successful stream from its
  * complete `rawOutput` at the summary's log position. A
  * missing assistant terminator means the live stream threw, so derivation
@@ -506,8 +725,6 @@ export function parseSessionHeader(text: string): {
  */
 export function deriveReplayScript(events: SessionEvent[]): ReplayEntry[] {
   const script: ReplayEntry[] = []
-  let currentKey: string | undefined
-  let current: StreamChunk[] = []
   const close = (key: string | undefined, chunks: StreamChunk[]): void => {
     if (chunks.length === 0) return
     if (chunks[chunks.length - 1]?.type !== 'finish') {
@@ -520,9 +737,6 @@ export function deriveReplayScript(events: SessionEvent[]): ReplayEntry[] {
   }
   for (const event of events) {
     if (event.type === 'compaction/summary') {
-      close(currentKey, current)
-      currentKey = undefined
-      current = []
       // JSONL decoding crosses an untyped durable boundary, so retain its wider
       // shape even though current in-process producers enforce this correlation.
       const persisted: {
@@ -545,21 +759,10 @@ export function deriveReplayScript(events: SessionEvent[]): ReplayEntry[] {
       }
       continue
     }
-    if (event.type !== 'assistant/chunk') continue
-    const { turn, step, chunk } = event.data
-    const key = `${turn}/${step}`
-    if (current.length > 0 && key !== currentKey) {
-      close(currentKey, current)
-    }
-    if (current.length === 0) currentKey = key
-    current.push(chunk)
-    if (chunk.type === 'finish') {
-      close(currentKey, current)
-      currentKey = undefined
-      current = []
-    }
+    if (event.type !== 'assistant/message' && event.type !== 'assistant/attempt') continue
+    const chunks = expandAssistantStream(event.data.stream).map(member => member.chunk)
+    close(`${String(event.data.turn)}/${String(event.data.step)}`, chunks)
   }
-  close(currentKey, current)
   return script
 }
 

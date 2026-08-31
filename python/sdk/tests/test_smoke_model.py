@@ -106,6 +106,98 @@ def test_snapshot_comparison_normalizes_only_session_generation_provenance() -> 
     assert normalize(expected)["header"]["otherVersion"] == 7
 
 
+def test_snapshot_value_normalizes_embedded_assistant_stream_timing() -> None:
+    normalize = SMOKE["normalize_snapshot_value"]
+    event = {
+        "type": "assistant/message",
+        "seq": 4,
+        "time": 100,
+        "data": {
+            "stream": [
+                {"type": "chunk", "time": 101, "chunk": {"type": "finish"}},
+                {"type": "text-chunks", "time0": 102, "dt": [1, 2], "texts": ["a", "b", "c"]},
+            ],
+        },
+    }
+
+    normalized = normalize(event, [])
+
+    assert normalized["time"] == 0
+    assert normalized["data"]["stream"] == [
+        {"type": "chunk", "time": 0, "chunk": {"type": "finish"}},
+        {"type": "text-chunks", "time0": 0, "dt": [0, 0], "texts": ["a", "b", "c"]},
+    ]
+
+
+def test_snapshot_comparison_expands_embedded_assistant_streams() -> None:
+    normalize = SMOKE["normalize_session_format_comparison"]
+    expected = [
+        {
+            "type": "assistant/chunk",
+            "seq": 4,
+            "time": 0,
+            "data": {"turn": 1, "step": 1, "chunk": {
+                "type": "text-delta", "index": 0, "text": "done",
+            }},
+        },
+        {
+            "type": "assistant/message",
+            "seq": 5,
+            "time": 0,
+            "data": {"turn": 1, "step": 1, "message": {"role": "assistant"}},
+            "sourceEventSeqs": [4],
+            "surfaceOp": "append",
+        },
+    ]
+    actual = [{
+        "type": "assistant/message",
+        "seq": 4,
+        "time": 0,
+        "data": {
+            "turn": 1,
+            "step": 1,
+            "message": {"role": "assistant"},
+            "stream": [{
+                "type": "text-chunks", "time0": 0, "index": 0, "dt": [], "texts": ["done"],
+            }],
+        },
+        "surfaceOp": "append",
+    }]
+
+    assert normalize(actual) == normalize(expected)
+
+
+def test_snapshot_comparison_expands_sdk_wrapped_attempts() -> None:
+    normalize = SMOKE["normalize_session_format_comparison"]
+    actual = [{
+        "method": "session.event",
+        "payload": {
+            "sessionId": "s",
+            "event": {
+                "type": "assistant/attempt",
+                "seq": 7,
+                "time": 0,
+                "data": {
+                    "turn": 1,
+                    "step": 1,
+                    "stream": [{"type": "chunk", "time": 0, "chunk": {"type": "finish"}}],
+                },
+            },
+        },
+    }]
+
+    assert normalize(actual) == [{
+        "method": "session.event",
+        "payload": {
+            "sessionId": "s",
+            "event": {
+                "type": "assistant/chunk",
+                "data": {"turn": 1, "step": 1, "chunk": {"type": "finish"}},
+            },
+        },
+    }]
+
+
 def test_snapshot_generation_names_select_highest_role_without_double_counting(
     tmp_path: Path,
 ) -> None:

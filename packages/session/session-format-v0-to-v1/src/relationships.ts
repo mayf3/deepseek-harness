@@ -48,7 +48,8 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
   const commandRuns = new Set<string>()
 
   for (const event of artifact.events) {
-    if (RELEASED_V0_EVENT_DISPOSITIONS[event.type] === undefined) continue
+    if (RELEASED_V0_EVENT_DISPOSITIONS[event.type] === undefined
+      && event.type !== 'assistant/attempt') continue
     const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
     if (SURFACE_TYPES.has(event.type)) surface = applySurface(surface, event)
     if ((event.type === 'turn/start' || event.type === 'turn/end')
@@ -94,6 +95,7 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
         nextStep += 1
         break
       case 'assistant/chunk':
+      case 'assistant/attempt':
         requireOpenStep(event, data, openTurn, openStep)
         break
       case 'assistant/message': {

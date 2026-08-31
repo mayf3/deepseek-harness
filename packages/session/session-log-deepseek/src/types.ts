@@ -10,8 +10,8 @@ export interface DeepSeekSessionLogWireHeader {
   readonly createdAt: number
   readonly cwd?: string
   readonly parentSession?: string
-  /** Exact inherited prefix length; absent for an unseeded Session. */
-  readonly seedLength?: number
+  /** Whether the event stream contains an inherited prefix ending at its tagged marker. */
+  readonly isSeeded: boolean
   readonly origin?: 'subagent'
   readonly delegationDepth?: number
   readonly agentPreset?: string

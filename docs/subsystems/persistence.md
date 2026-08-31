@@ -107,7 +107,8 @@ interface CreateSessionOptions {
   readonly seed?: readonly SessionEvent[]
   /**
    * Exact fork-inherited prefix length when `meta.isSeeded` is true. A
-   * constructor seed may also contain child-owned setup events after this cut.
+   * In v2 the constructor seed is exactly this inherited prefix; the constructor
+   * appends the child-owned tagged marker at the cut.
    */
   readonly inheritedEventCount?: SessionLogOffset
   /**
@@ -144,7 +145,7 @@ interface SessionStorageMetadata {
 
 ## `SessionRawArtifact` — verbatim stored artifact text
 
-A backend's selected generation text for one Session, byte-identical to what it durably wrote after decoding the physical compression. `readRaw` returns it without reconstructing from parsed events, so backend-specific serialization (chunk packing, key order, line breaks) survives. JSONL sets `filename` to the selected logical basename without `.zstd`: `session.jsonl` for v0 and `session.vN.jsonl` for every positive generation. Consumers first test `supportsRawArtifacts`: `false` means the backend does not provide this capability, while `readRaw(...) === undefined` means a supported backend has no materialized generation for that Session.
+A backend's selected generation text for one Session, byte-identical to what it durably wrote after decoding the physical compression. `readRaw` returns it without reconstructing from parsed events, so key order, line breaks, and historical v0/v1 packed rows survive. Current JSONL v2 stores one row per durable event. JSONL sets `filename` to the selected logical basename without `.zstd`: `session.jsonl` for v0 and `session.vN.jsonl` for every positive generation. Consumers first test `supportsRawArtifacts`: `false` means the backend does not provide this capability, while `readRaw(...) === undefined` means a supported backend has no materialized generation for that Session.
 
 ```ts type-equiv
 /** A backend's own raw artifact text for one session, verbatim. */

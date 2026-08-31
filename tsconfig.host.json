@@ -158,6 +158,7 @@
     { "path": "./packages/session/session-persistence" },
     { "path": "./packages/session/session-format" },
     { "path": "./packages/session/session-format-v0-to-v1" },
+    { "path": "./packages/session/session-format-v1-to-v2" },
     { "path": "./packages/session/session-format-catalog" },
     { "path": "./packages/session/session-checkpoint-policy" },
     { "path": "./packages/session/session-log-deepseek" },

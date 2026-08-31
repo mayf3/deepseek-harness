@@ -18,7 +18,6 @@ import type {
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
-  BlockAssembler,
   LlmError,
   createAssistantMessage,
   errorChain,
@@ -27,7 +26,7 @@ import {
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+import type { EpochHeader, RequestContext, Session, SessionId, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
 import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
 import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
@@ -362,8 +361,6 @@ export class ReactLoopAgent implements Agent {
         signal,
       )
       startsRequestSeries = false
-      const assembler = new BlockAssembler()
-      const chunkSeqs: SessionSeq[] = []
       const live = new AssistantStreamAttempt(
         this.session.id,
         ++this.assistantAttemptCounter,
@@ -372,25 +369,23 @@ export class ReactLoopAgent implements Agent {
         step,
         (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) },
       )
-      let liveStarted = false
+      let started = false
       try {
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
         live.start()
-        liveStarted = true
+        started = true
         for await (const chunk of stream) {
           signal.throwIfAborted()
-          const legacyChunkSeq = this.session.append('assistant/chunk', { turn, step, chunk }).seq
-          chunkSeqs.push(legacyChunkSeq)
-          assembler.push(chunk)
-          live.push(chunk, legacyChunkSeq)
+          live.push(chunk)
         }
         signal.throwIfAborted()
       } catch (error: unknown) {
+        if (!started) throw error
         if (signal.aborted) {
-          const content = assembler.interruptedBlocks()
+          const content = live.interruptedBlocks()
           if (content.length > 0) {
-            this.session.append('assistant/message', {
+            live.settle('assistant/message', () => this.session.append('assistant/message', {
               turn,
               step,
               message: createAssistantMessage({
@@ -398,16 +393,29 @@ export class ReactLoopAgent implements Agent {
                 source: { provider: request.provider, model: request.model },
               }),
               interrupted: true,
-              ...assembler.usage === undefined ? {} : { usage: assembler.usage },
-            }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+              ...live.usage === undefined ? {} : { usage: live.usage },
+              stream: live.stream,
+            }, { surfaceOp: 'append' }).seq)
+          } else {
+            live.settle(
+              'assistant/attempt',
+              () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
+            )
           }
+        } else {
+          live.settle(
+            'assistant/attempt',
+            () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
+          )
         }
-        if (liveStarted) live.end('aborted')
         throw error
       }
-      const finish = assembler.finish
+      const finish = live.finish
       if (finish.kind === 'error' || finish.kind === 'aborted') {
-        live.end('aborted')
+        live.settle(
+          'assistant/attempt',
+          () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
+        )
         const action = await this.dispatch.waterfall(
           'agent/request-error', {
             turn,
@@ -427,24 +435,23 @@ export class ReactLoopAgent implements Agent {
       }
 
       const message = createAssistantMessage({
-        content: assembler.blocks(),
+        content: live.blocks(),
         source: {
           provider: request.provider,
           model: request.model,
-          ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
+          ...live.replayState !== undefined ? { replayState: live.replayState } : {},
         },
       })
-      this.session.append(
+      live.settle(
         'assistant/message',
-        {
+        () => this.session.append('assistant/message', {
           turn,
           step,
           message,
-          ...assembler.usage === undefined ? {} : { usage: assembler.usage },
-        },
-        { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
+          ...live.usage === undefined ? {} : { usage: live.usage },
+          stream: live.stream,
+        }, { surfaceOp: 'append' }).seq,
       )
-      live.end('committed')
       if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
 
       const toolCalls = message.content.filter(block => block.type === 'tool-call')

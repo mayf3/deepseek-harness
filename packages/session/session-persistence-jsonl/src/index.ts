@@ -63,7 +63,6 @@ import {
 
 export type { JsonlCompression } from './format.ts'
 
-const DEFAULT_PACK_CHUNKS = true
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
 /**
  * Internal scheduling constant, not deployment configuration: balance
@@ -85,7 +84,7 @@ export const JsonlCompressionSchema: z<JsonlCompression> = z.union([
   z.const('none'),
 ]).default(DEFAULT_COMPRESSION)
 
-/** Plugin config: where the JSONL backend keeps its session logs, and the packed-row write switch. */
+/** Plugin config for the JSONL backend's root, encoding, cache, and write batching. */
 export interface Config {
   /**
    * Root directory for all session files. Required (no default): a default of
@@ -95,14 +94,6 @@ export interface Config {
    * readable directory; an absent root is created on first materialization.
    */
   root: string
-  /**
-   * Write runs of consecutive `assistant/chunk` delta events as packed
-   * `text-chunks`/`reasoning-chunks`/`tool-call-chunks` rows (lossless,
-   * ~60% smaller logs measured on a real session). Defaults to true; false
-   * keeps one `SessionEvent` per line for diagnostics. Reading packed rows is
-   * unconditional: a log's layout never depends on this switch.
-   */
-  packChunks?: boolean
   /** Physical encoding; defaults to checksummed Zstandard frames. */
   compression?: JsonlCompression
   /** Maximum cold Session preparations retained for history-to-resume reuse. */
@@ -170,7 +161,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   static Config: z<Config> = z.object({
     root: z.string().required(),
-    packChunks: z.boolean().default(DEFAULT_PACK_CHUNKS),
     compression: JsonlCompressionSchema,
     preparedSessionCacheSize: z.number().step(1).min(1).default(DEFAULT_PREPARED_SESSION_CACHE_SIZE),
     writeBatchMaxDelayMs: z.number().step(1).min(1).max(MAX_WRITE_BATCH_DELAY_MS)
@@ -185,7 +175,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
   override readonly name = 'session-persistence-jsonl'
 
   private root: string
-  private packChunks: boolean
   private compression: JsonlCompression
   private coordinator: PersistenceCoordinator<JsonlTornMarker>
   private rootEncodingCheck: Promise<void> | undefined
@@ -208,7 +197,6 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       ?? DEFAULT_PREPARED_SESSION_CACHE_SIZE
     const writeBatchMaxDelayMs = config.writeBatchMaxDelayMs
       ?? DEFAULT_WRITE_BATCH_MAX_DELAY_MS
-    this.packChunks = config.packChunks ?? DEFAULT_PACK_CHUNKS
     this.compression = config.compression ?? DEFAULT_COMPRESSION
     this.generationFormat = {
       currentVersion: sessionFormatCatalog.currentVersion,
@@ -222,7 +210,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
             ...current,
             events: [...current.events, ...closers] as unknown as typeof current.events,
           }
-        return sessionFormatCatalog.encodeCurrent(repaired, { packChunks: this.packChunks })
+        return sessionFormatCatalog.encodeCurrent(repaired, { packChunks: false })
       },
       validateCurrent: (candidate) => {
         const decoded = sessionFormatCatalog.decodeArtifact(candidate.header, candidate.rows)
@@ -497,17 +485,18 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     } else {
       content = buffer.toString('utf8')
     }
-    const storage = current?.storage ?? parseHeader(content.split('\n', 1)[0] as string)
-    if (storage === undefined || storage.meta.id !== id) {
+    const header = current?.storage ?? parseHeader(content.split('\n', 1)[0] as string)
+    if (header === undefined || header.meta.id !== id) {
       throw new Error(`corrupt session log: invalid header line in "${path}"`)
     }
+    const storage = scanLog(Buffer.from(content))
     // Raw transfer retains the immutable generation name while removing only
     // the physical compression suffix from a Zstandard artifact.
     const storedFilename = basename(path)
     const filename = this.compression === 'zstd'
       ? storedFilename.slice(0, -'.zstd'.length)
       : storedFilename
-    return { ...storage, filename, content }
+    return { meta: storage.meta, inheritedEventCount: storage.inheritedEventCount, filename, content }
   }
 
   /**
@@ -1027,7 +1016,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     if (events.length === 0) {
       return this.compression === 'none' ? header : compressZstdFrame(header)
     }
-    const body = eventLines(events, this.packChunks) + '\n'
+    const body = eventLines(events) + '\n'
     if (this.compression === 'none') return header + body
     const headerFrame = await compressZstdFrame(header)
     const eventFrame = await compressZstdFrame(body)
@@ -1036,7 +1025,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
 
   /** Encode one durable append batch in the configured physical representation. */
   private async encodeEventBatch(events: readonly SessionEvent[]): Promise<Buffer | string> {
-    const body = eventLines(events, this.packChunks) + '\n'
+    const body = eventLines(events) + '\n'
     return this.compression === 'zstd' ? compressZstdFrame(body) : body
   }
 
