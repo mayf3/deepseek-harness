@@ -771,6 +771,7 @@ describe('PythonCodeRuntime — process identity', () => {
 })
 
 describe('PythonCodeRuntime — inherited resource limits', () => {
+  // Darwin deliberately does not apply RLIMIT_AS, and its shell rejects `ulimit -v`.
   it.skipIf(process.platform === 'darwin')('runs under an inherited hard limit tighter than addressSpaceMb', async () => {
     // An unprivileged process may lower a hard rlimit but never raise it. Under
     // a harness started with `ulimit -v` below `addressSpaceBytes`, requesting
@@ -826,7 +827,8 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     }
   }, 15_000)
 
-  it('applies the configured limits when nothing tighter is inherited', async () => {
+  // The expected tuple includes RLIMIT_AS, which the backend deliberately skips on Darwin.
+  it.skipIf(process.platform === 'darwin')('applies the configured limits when nothing tighter is inherited', async () => {
     // The clamp must not weaken the normal path: with an infinite inherited hard
     // limit there is nothing to clamp against, and RLIM_INFINITY compares as -1,
     // so treating it as a numeric bound would collapse every limit to -1.
