@@ -151,6 +151,45 @@ describe('SessionProjectionRegistry drive', () => {
     expect(ctx.sessionProjections.snapshot(session).values['test/buffered']).toEqual(['a', 'b'])
   })
 
+  it("computes each distinct state's view once: the memo serves previous states to the gate and snapshots", async () => {
+    const { ctx, session } = await harness()
+    let viewCalls = 0
+    ctx.sessionProjections.register({
+      key: 'test/buffered',
+      stateSchema: z.object({ marks: z.array(z.string()), draft: z.string() }),
+      init: () => ({ marks: [], draft: '' }),
+      apply: (state, event) => {
+        if (event.type === 'test/mark') return { marks: event.data.marks, draft: '' }
+        if (event.type === 'turn/start') return { marks: state.marks, draft: `draft-${String(event.seq)}` }
+        return state
+      },
+      wire: {
+        viewSchema: z.array(z.string()),
+        view: (state) => {
+          viewCalls += 1
+          return state.marks
+        },
+      },
+      stateVersion: 1,
+    })
+    const seen: unknown[] = []
+    ctx.sessionProjections.onChanged((_session, key, value) => {
+      if (key === 'test/buffered') seen.push(value)
+    })
+    // First change touches two never-seen states (init and next): two calls.
+    mark(session, ['a'])
+    expect(viewCalls).toBe(2)
+    // Draft-only change: the new state computes, the previous is a memo hit.
+    session.append('turn/start', { turn: 1 })
+    expect(viewCalls).toBe(3)
+    mark(session, ['a', 'b'])
+    expect(viewCalls).toBe(4)
+    expect(seen).toEqual([['a'], ['a', 'b']])
+    // Snapshot reads reuse the same memo instead of recomputing the view.
+    expect(ctx.sessionProjections.snapshot(session).values['test/buffered']).toEqual(['a', 'b'])
+    expect(viewCalls).toBe(4)
+  })
+
   it('keeps dedup honest across listener generations: a return to an old value after an unobserved change still fires', async () => {
     const { ctx, session } = await harness()
     // A primitive-valued view compares by value under Object.is (the title

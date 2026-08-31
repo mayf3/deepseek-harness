@@ -160,6 +160,13 @@ interface UnitCell {
 interface Registration {
   readonly def: ErasedDefinition
   readonly cells: WeakMap<Session, UnitCell>
+  /**
+   * Raw `view` output per state object (pure-view memo). An entry is the
+   * view of that exact state — not a last-delivered record — so it cannot go
+   * stale; a missing entry recomputes. Weak keys die with their states;
+   * primitive states bypass the memo.
+   */
+  readonly viewMemo: WeakMap<object, unknown>
   /** Live registrants sharing this unit; the last one out removes the key. */
   refs: number
 }
@@ -170,9 +177,10 @@ interface Registration {
  * every registered unit's `apply` (eager drive), and a changed state
  * reference in a client-visible unit notifies the change feed with the
  * schema-validated view — unless the raw view output is `Object.is`-identical
- * to the unit's previous projection (identity-stable projections stay quiet;
- * both views are computed from the states in hand each step, so no stored
- * comparison value exists to go stale across listener generations).
+ * to the unit's previous projection (identity-stable projections stay quiet).
+ * Views are memoized by state object identity, so each distinct state's view
+ * computes once and no last-delivered record exists to go stale across
+ * listener generations.
  * Cells build lazily — a unit registered after events flowed, or a session
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
@@ -262,7 +270,7 @@ export class SessionProjectionRegistry extends Service {
       const key = erased.key
       const existing = this.registrations.get(key)
       if (existing === undefined) {
-        this.registrations.set(key, { def: erased, cells: new WeakMap(), refs: 1 })
+        this.registrations.set(key, { def: erased, cells: new WeakMap(), viewMemo: new WeakMap(), refs: 1 })
       } else {
         if (existing.def.stateVersion !== erased.stateVersion) {
           throw new Error(`session projection key ${JSON.stringify(key)} is already registered at stateVersion ${String(existing.def.stateVersion)}; refusing to share it with stateVersion ${String(erased.stateVersion)}`)
@@ -636,13 +644,13 @@ export class SessionProjectionRegistry extends Service {
       cell.state = next
       cell.observedSeq = event.seq
       if (changed && registration.def.wire !== undefined && this.listeners.size > 0) {
-        // Identity gate on the raw view, computed from the two states in
-        // hand: a changed state whose projection is reference-identical to
-        // the previous state's stays quiet, so a unit can buffer working
-        // fields without spamming the feed. Nothing is stored, so no
-        // comparison value exists to go stale across listener generations.
-        const raw = registration.def.wire.view(next)
-        if (Object.is(registration.def.wire.view(previous), raw)) continue
+        // Identity gate on the raw view, memoized by state identity: the
+        // previous state's view was cached when that state was current, so
+        // each distinct state's view computes once and the quiet path
+        // allocates nothing. The memo cannot go stale — an entry is the view
+        // of that exact state, not a record of what the feed last delivered.
+        const raw = this.viewOf(registration.def.wire, registration.viewMemo, next)
+        if (Object.is(this.viewOf(registration.def.wire, registration.viewMemo, previous), raw)) continue
         const value = registration.def.wire.viewSchema.parse(raw)
         for (const listener of this.listeners) {
           listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)
@@ -655,7 +663,22 @@ export class SessionProjectionRegistry extends Service {
   private viewCell(registration: Registration, cell: UnitCell): unknown {
     const wire = registration.def.wire
     if (wire === undefined) throw new Error(`session projection ${JSON.stringify(registration.def.key)} has no wire view`)
-    return wire.viewSchema.parse(wire.view(cell.state))
+    return wire.viewSchema.parse(this.viewOf(wire, registration.viewMemo, cell.state))
+  }
+
+  /**
+   * One unit's raw `view` output for one state, memoized by state object
+   * identity (the pure-view contract makes the entry permanently correct).
+   * Primitive states have no WeakMap key and compute directly.
+   * @param wire - the unit's wire block.
+   * @param memo - the unit's per-state view memo.
+   * @param state - a state produced by the unit's `init`/`apply`.
+   * @returns the raw (pre-validation) `view` output for that state.
+   */
+  private viewOf(wire: NonNullable<ErasedDefinition['wire']>, memo: WeakMap<object, unknown>, state: unknown): unknown {
+    if (typeof state !== 'object' || state === null) return wire.view(state)
+    if (!memo.has(state)) memo.set(state, wire.view(state))
+    return memo.get(state)
   }
 }
 

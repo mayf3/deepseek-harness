@@ -78,7 +78,7 @@ const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
 
 ### 设计理念
 
-本包是能力 seam 的 Service Definition 与驱动角色：框架负责驱动，领域负责计算。注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个已注册单元的 `apply`（cell 在首次触达时惰性构建）。变更流以 `Object.is` 把关两道——返回同一状态引用的单元只花一次调用、不产生任何下游工作；状态已变但原始 `view` 输出与上一个状态的投影相同的同样保持安静——两侧视图都在驱动当步现算、不存任何比较值，因此没有东西会在监听器换代期间过期（单元因此可以把工作字段缓冲在身份稳定的投影之后）。载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此；误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
+本包是能力 seam 的 Service Definition 与驱动角色：框架负责驱动，领域负责计算。注册表只订阅一次 `session/event`；每个已提交事件都会主动经过每个已注册单元的 `apply`（cell 在首次触达时惰性构建）。变更流以 `Object.is` 把关两道——返回同一状态引用的单元只花一次调用、不产生任何下游工作；状态已变但原始 `view` 输出与上一个状态的投影相同的同样保持安静——视图按状态对象身份做备忘，每个不同状态的视图只计算一次，且不存在会在监听器换代期间过期的「上次交付」记录（单元因此可以把工作字段缓冲在身份稳定的投影之后）。载体在切出页面切片的同一 tick 内读取 `snapshot()`，`asOfSeq` 之所以是一个一致切面正系于此；误写成异步的 view 会返回 Promise，并被 `wire.viewSchema.parse` 拒绝。
 
 ### 源码地图
 
