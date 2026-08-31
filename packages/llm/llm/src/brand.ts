@@ -51,6 +51,18 @@ export function ProviderRequestId(id: string): ProviderRequestId {
   return brandString<ProviderRequestId>(id)
 }
 
+/** Process-local identity of one loop-owned model streaming attempt. */
+export type LlmAttemptId = Branded<'LlmAttemptId'>
+
+/**
+ * Brand one loop-owned streaming attempt identifier.
+ * @param id - the opaque process-local identifier.
+ * @returns the same string with the attempt-id brand.
+ */
+export function LlmAttemptId(id: string): LlmAttemptId {
+  return brandString<LlmAttemptId>(id)
+}
+
 /** Adapter-owned identifier for one model's selectable reasoning effort. */
 export type ReasoningEffortId = Branded<'ReasoningEffortId'>
 

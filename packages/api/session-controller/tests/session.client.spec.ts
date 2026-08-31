@@ -433,6 +433,7 @@ describe('prompt and cancel errors', () => {
         address: {
           kind: 'subagent', parentSessionId: PARENT, childSessionId: SID, mode: 'continuable',
         },
+        assistantStream: true,
         maxMessages: 50,
       },
     ])
@@ -527,6 +528,7 @@ describe('prompt and cancel errors', () => {
         address: {
           kind: 'subagent', parentSessionId: PARENT, childSessionId: SID, mode: 'one-shot',
         },
+        assistantStream: true,
         maxMessages: 50,
       },
     ])

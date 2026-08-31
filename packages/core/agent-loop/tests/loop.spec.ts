@@ -4,7 +4,7 @@ import LlmRuntime, { createUserMessage, ToolCallId, LlmError, ReasoningEffortId,
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
-import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -52,6 +52,51 @@ function userTexts(agent: Agent): string[] {
 }
 
 describe('agent loop', () => {
+  it('publishes one dense live assistant attempt while retaining durable v1 chunks', async () => {
+    const ctx = await harness(new MockAdapter([textResponse('live')]))
+    const agent = ctx.agentLoop.create(SessionId('live-assistant-attempt'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const frames: AssistantStreamFrame[] = []
+    let committedAfterMessage = false
+    ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject !== agent) return
+      frames.push(frame)
+      if (frame.type === 'end' && frame.outcome === 'committed') {
+        committedAfterMessage = agent.session.snapshotEvents().at(-1)?.type === 'assistant/message'
+      }
+    })
+
+    send(agent, 'stream this')
+    await waitForIdle(ctx, agent)
+
+    expect(frames.at(0)?.type).toBe('start')
+    const start = frames.at(0)
+    if (start?.type === 'start') {
+      expect(typeof start.startedTime).toBe('number')
+      expect(Number.isSafeInteger(start.startedTime)).toBe(true)
+    }
+    expect(frames.at(-1)?.type).toBe('end')
+    expect(frames.map(frame => frame.revision)).toEqual(
+      frames.map((_frame, index) => index + 1),
+    )
+    const chunks = frames.filter(
+      (frame): frame is Extract<AssistantStreamFrame, { type: 'chunk' }> => frame.type === 'chunk',
+    )
+    expect(chunks.map(frame => frame.index)).toEqual(chunks.map((_frame, index) => index))
+    const durableChunks = agent.session.snapshotEvents().filter(event => event.type === 'assistant/chunk')
+    expect(chunks).toHaveLength(durableChunks.length)
+    const end = frames.at(-1)
+    expect(end).toMatchObject({
+      type: 'end', outcome: 'committed', index: chunks.length,
+    })
+    if (end?.type === 'end') {
+      expect(committedAfterMessage).toBe(true)
+      expect(end.legacyChunkSeqs).toEqual(durableChunks.map(event => event.seq))
+    }
+  })
+
   it.each([0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
     'rejects invalid AgentOptions.maxTokens %s before publication',
     async (maxTokens) => {
@@ -979,7 +1024,9 @@ describe('agent loop', () => {
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })
 
     const reasons: TurnEndReason[] = []
+    const frames: AssistantStreamFrame[] = []
     ctx.on('session/event', (_s, event) => { if (event.type === 'turn/end') reasons.push(event.data.reason) })
+    ctx.on('agent/assistant-stream', ({ frame }) => { frames.push(frame) })
 
     send(agent, 'go')
     // wait until the stream is hanging, then cancel
@@ -989,6 +1036,10 @@ describe('agent loop', () => {
     await waitForIdle(ctx, agent)
 
     expect(reasons).toEqual([{ kind: 'aborted', reason: { kind: 'user' } }])
+    const chunks = frames.filter(frame => frame.type === 'chunk')
+    expect(frames.at(-1)).toMatchObject({
+      type: 'end', outcome: 'aborted', index: chunks.length,
+    })
   })
 
   it('surfaces max-tokens as the turn-end reason when the last step is cut off', async () => {

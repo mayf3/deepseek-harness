@@ -813,6 +813,29 @@ Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index
 
 ### `agent/*` events
 
+<a id="agentassistant-stream--emit"></a>
+
+#### `agent/assistant-stream` — emit
+
+Process-local assistant-stream publication. The loop appends each v1 `assistant/chunk` before the matching chunk frame and appends the final `assistant/message` before a committed end frame.
+
+```ts cordis-catalog
+/**
+ * Process-local assistant-stream publication. The loop appends each v1
+ * `assistant/chunk` before the matching chunk frame and appends the final
+ * `assistant/message` before a committed end frame.
+ * @param payload.agent - the agent whose attempt produced the frame.
+ * @param payload.frame - one ordered start, chunk, or end publication.
+ * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+ * @mode emit
+ */
+'agent/assistant-stream'(this: Scoped<Agent>, payload: { agent: Agent; frame: AssistantStreamFrame }): void
+```
+
+Types: [Scoped](scope.zh.md)
+
+Source: [`packages/core/agent/src/runtime-types.ts`](../../packages/core/agent/src/runtime-types.ts)
+
 <a id="agentcreated--emit"></a>
 
 #### `agent/created` — emit

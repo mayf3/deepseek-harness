@@ -2,10 +2,10 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { type Agent, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionSeq } from '@deepseek-ai/dsh-session'
 import { decodeStorageRecord, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
-import { ToolCallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { LlmAttemptId, ToolCallId, createMessage, createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import type {
@@ -83,6 +83,17 @@ async function openFollow(
   return { [Symbol.asyncIterator]: () => iterator }
 }
 
+/** Abort one follow and await both its iterator and owning Context teardown. */
+async function disposeFollow(
+  ctx: Context,
+  iterator: AsyncIterator<SessionFollowFrame>,
+  abort: AbortController,
+): Promise<void> {
+  abort.abort()
+  await iterator.return?.()
+  await ctx.fiber.dispose()
+}
+
 /** Expand packed page records for assertions over the logical journal. */
 function pageEvents(page: SessionPage): SessionWireEvent[] {
   return page.records.flatMap(record => record.type === 'event'
@@ -102,6 +113,494 @@ function chunkRow(event: ChunkRowEvent): ChunkRow {
 }
 
 describe('Session history raw journal', () => {
+  it('opens an opted-in assistant baseline and preserves mixed live FIFO order', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId('live-follow-attempt')
+    const emit = (frame: AssistantStreamFrame): void => {
+      ctx.emit('agent/assistant-stream', { agent, frame })
+    }
+    emit({
+      type: 'start', attemptId, revision: 1, startedTime: 100,
+      turn: 1, step: 1,
+    })
+    const firstChunk = session.append('assistant/chunk', {
+      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'a' },
+    })
+    emit({
+      type: 'chunk', attemptId, revision: 2, index: 0,
+      chunk: firstChunk.data.chunk, legacyChunkSeq: firstChunk.seq,
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        type: 'snapshot',
+        assistantStream: {
+          revision: 2,
+          attempts: [{
+            attemptId,
+            startedTime: 100,
+            turn: 1,
+            step: 1,
+            chunks: [firstChunk.data.chunk],
+            legacyChunkSeqs: [firstChunk.seq],
+          }],
+        },
+      },
+    })
+    const nextChunk = session.append('assistant/chunk', {
+      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'b' },
+    })
+    const nextFrame: AssistantStreamFrame = {
+      type: 'chunk', attemptId, revision: 3, index: 1,
+      chunk: nextChunk.data.chunk, legacyChunkSeq: nextChunk.seq,
+    }
+    emit(nextFrame)
+    const message = appendAssistantText(session, 'ab', 1)
+    const endFrame: AssistantStreamFrame = {
+      type: 'end', attemptId, revision: 4, index: 2, outcome: 'committed',
+      legacyChunkSeqs: [firstChunk.seq, nextChunk.seq],
+    }
+    emit(endFrame)
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false, value: { type: 'event', event: nextChunk },
+    })
+    await expect(iterator.next()).resolves.toEqual({
+      done: false, value: { type: 'assistant-stream', frame: nextFrame },
+    })
+    await expect(iterator.next()).resolves.toEqual({
+      done: false, value: { type: 'event', event: message },
+    })
+    await expect(iterator.next()).resolves.toEqual({
+      done: false, value: { type: 'assistant-stream', frame: endFrame },
+    })
+    abort.abort()
+    await iterator.next()
+    await ctx.fiber.dispose()
+  })
+
+  it('forwards revision one when the attached Agent lifecycle restarts after opening', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId(`${session.id}:1`)
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 100,
+        turn: 1, step: 1,
+      },
+    })
+    const oldChunk = session.append('assistant/chunk', {
+      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'old' },
+    })
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'chunk', attemptId, revision: 2, index: 0,
+        chunk: oldChunk.data.chunk, legacyChunkSeq: oldChunk.seq,
+      },
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      await expect(iterator.next()).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          assistantStream: {
+            revision: 2,
+            attempts: [{
+              attemptId,
+              startedTime: 100,
+              turn: 1,
+              step: 1,
+              chunks: [oldChunk.data.chunk],
+              legacyChunkSeqs: [oldChunk.seq],
+            }],
+          },
+        },
+      })
+
+      ctx.emit('agent/disposed', { agent })
+      const replacementAgent = { id: session.id, session, status: 'running', ctx } as Agent
+      const replacement: AssistantStreamFrame = {
+        type: 'start', attemptId, revision: 1, startedTime: 200,
+        turn: 2, step: 1,
+      }
+      ctx.emit('agent/assistant-stream', { agent: replacementAgent, frame: replacement })
+      await expect(iterator.next()).resolves.toEqual({
+        done: false,
+        value: { type: 'assistant-stream', frame: replacement },
+      })
+    } finally {
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
+  it('publishes an empty replacement baseline after an Agent frame revision gap', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId('revision-gap-attempt')
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 100,
+        turn: 1, step: 1,
+      },
+    })
+    const chunk = session.append('assistant/chunk', {
+      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'after gap' },
+    })
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'chunk', attemptId, revision: 3, index: 0,
+        chunk: chunk.data.chunk, legacyChunkSeq: chunk.seq,
+      },
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      await expect(iterator.next()).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          assistantStream: { revision: 3, attempts: [] },
+        },
+      })
+    } finally {
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
+  it('drops active attempts when an Agent chunk index is not dense', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId('dense-index-attempt')
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 100,
+        turn: 1, step: 1,
+      },
+    })
+    const chunk = session.append('assistant/chunk', {
+      turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'out of order' },
+    })
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'chunk', attemptId, revision: 2, index: 1,
+        chunk: chunk.data.chunk, legacyChunkSeq: chunk.seq,
+      },
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      await expect(iterator.next()).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          assistantStream: { revision: 2, attempts: [] },
+        },
+      })
+    } finally {
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
+  it('reuses an unchanged Assistant baseline across follow openings', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId('cached-baseline-attempt')
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 100,
+        turn: 1, step: 1,
+      },
+    })
+
+    const firstAbort = new AbortController()
+    const firstIterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, firstAbort.signal)[Symbol.asyncIterator]()
+    const secondAbort = new AbortController()
+    const secondIterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, secondAbort.signal)[Symbol.asyncIterator]()
+    try {
+      const first = await firstIterator.next()
+      if (first.done || first.value.type !== 'snapshot') throw new Error('first follow did not open')
+      const baseline = first.value.assistantStream
+      expect(baseline).toMatchObject({ revision: 1, attempts: [{ attemptId }] })
+      const second = await secondIterator.next()
+      if (second.done || second.value.type !== 'snapshot') throw new Error('second follow did not open')
+      expect(second.value.assistantStream).toEqual(baseline)
+    } finally {
+      firstAbort.abort()
+      secondAbort.abort()
+      await firstIterator.return?.()
+      await secondIterator.return?.()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('opens an empty Assistant baseline before the target Agent emits frames', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      await expect(iterator.next()).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          assistantStream: { revision: 0, attempts: [] },
+        },
+      })
+    } finally {
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
+  it('filters Assistant frames from another Session out of the target follow', async () => {
+    const { ctx } = await harness()
+    const target = ctx.sessions.create(undefined, { meta: { cwd: '/target' } })
+    const other = ctx.sessions.create(undefined, { meta: { cwd: '/other' } })
+    const otherAgent = { id: other.id, session: other, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: target.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+    try {
+      await expect(iterator.next()).resolves.toMatchObject({
+        done: false,
+        value: { type: 'snapshot' },
+      })
+
+      ctx.emit('agent/assistant-stream', {
+        agent: otherAgent,
+        frame: {
+          type: 'start', attemptId: LlmAttemptId('other-session-attempt'),
+          revision: 1, startedTime: 100, turn: 1, step: 1,
+        },
+      })
+      const targetEvent = target.append('turn/start', { turn: 1 })
+      await expect(iterator.next()).resolves.toEqual({
+        done: false,
+        value: { type: 'event', event: targetEvent },
+      })
+    } finally {
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
+  it('does not replay a buffered Assistant frame already represented by the opening baseline', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const observationStarted = Promise.withResolvers<undefined>()
+    const releaseObservation = Promise.withResolvers<undefined>()
+    const originalObserve = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+    const observe = vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation(async (sessionId, options) => {
+      observationStarted.resolve(undefined)
+      await releaseObservation.promise
+      return await originalObserve(sessionId, options)
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      const opening = iterator.next()
+      await observationStarted.promise
+      const frame: AssistantStreamFrame = {
+        type: 'start', attemptId: LlmAttemptId('opening-cut-attempt'),
+        revision: 1, startedTime: 100, turn: 1, step: 1,
+      }
+      ctx.emit('agent/assistant-stream', { agent, frame })
+      releaseObservation.resolve(undefined)
+      await expect(opening).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          assistantStream: { revision: 1, attempts: [{ attemptId: frame.attemptId }] },
+        },
+      })
+
+      const durable = session.append('turn/start', { turn: 1 })
+      await expect(iterator.next()).resolves.toEqual({
+        done: false,
+        value: { type: 'event', event: durable },
+      })
+    } finally {
+      releaseObservation.resolve(undefined)
+      observe.mockRestore()
+      abort.abort()
+      await iterator.return?.()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('does not release an old-lifecycle frame after the opening baseline resets to revision one', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId(`${session.id}:1`)
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 100,
+        turn: 1, step: 1,
+      },
+    })
+    const observationStarted = Promise.withResolvers<undefined>()
+    const releaseObservation = Promise.withResolvers<undefined>()
+    const originalObserve = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+    const observe = vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation(async (sessionId, options) => {
+      observationStarted.resolve(undefined)
+      await releaseObservation.promise
+      return await originalObserve(sessionId, options)
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      const opening = iterator.next()
+      await observationStarted.promise
+      const oldChunk = session.append('assistant/chunk', {
+        turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'old lifecycle' },
+      })
+      ctx.emit('agent/assistant-stream', {
+        agent,
+        frame: {
+          type: 'chunk', attemptId, revision: 2, index: 0,
+          chunk: oldChunk.data.chunk, legacyChunkSeq: oldChunk.seq,
+        },
+      })
+      ctx.emit('agent/assistant-stream', {
+        agent,
+        frame: {
+          type: 'start', attemptId, revision: 1, startedTime: 200,
+          turn: 2, step: 1,
+        },
+      })
+      releaseObservation.resolve(undefined)
+      await expect(opening).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          assistantStream: {
+            revision: 1,
+            attempts: [{ attemptId, startedTime: 200, turn: 2, step: 1, chunks: [] }],
+          },
+        },
+      })
+
+      const durable = session.append('turn/start', { turn: 2 })
+      await expect(iterator.next()).resolves.toEqual({
+        done: false,
+        value: { type: 'event', event: durable },
+      })
+    } finally {
+      releaseObservation.resolve(undefined)
+      observe.mockRestore()
+      abort.abort()
+      await iterator.return?.()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('keeps assistant frames out of a durable-only follower', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+    }, abort.signal)[Symbol.asyncIterator]()
+    const opening = await iterator.next()
+    expect(opening.value).not.toHaveProperty('assistantStream')
+    const attemptId = LlmAttemptId('durable-only-attempt')
+
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 200,
+        turn: 1, step: 1,
+      },
+    })
+    const durable = session.append('turn/start', { turn: 1 })
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'end', attemptId, revision: 2, index: 0,
+        outcome: 'aborted', legacyChunkSeqs: [],
+      },
+    })
+    const next = session.append('turn/end', {
+      turn: 1, reason: { kind: 'completed' },
+    })
+
+    await expect(iterator.next()).resolves.toEqual({
+      done: false, value: { type: 'event', event: durable },
+    })
+    await expect(iterator.next()).resolves.toEqual({
+      done: false, value: { type: 'event', event: next },
+    })
+    abort.abort()
+    await iterator.next()
+    await ctx.fiber.dispose()
+  })
+
+
   it('follows raw tool events and preserves result metadata without a Tools service', async () => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })

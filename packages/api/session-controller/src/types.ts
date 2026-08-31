@@ -4,7 +4,7 @@ import type {
   AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
-import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -446,7 +446,55 @@ export interface SessionPageRequest {
 export interface SessionFollowRequest {
   readonly address: SessionAddress
   readonly maxMessages?: number
+  /** Include process-local assistant presentation frames for the Web client. */
+  readonly assistantStream?: true
 }
+
+/** One active assistant attempt in a reconnect opening snapshot. */
+export interface SessionAssistantStreamAttempt {
+  readonly attemptId: LlmAttemptId
+  /** Safe-integer wall-clock time copied from the attempt's start frame. */
+  readonly startedTime: number
+  readonly turn: number
+  readonly step: number
+  readonly chunks: readonly JsonValue[]
+  /** Exact durable v1 chunk records already represented by {@link chunks}. */
+  readonly legacyChunkSeqs: readonly number[]
+}
+
+/** Complete process-local assistant state at one follow opening. */
+export interface SessionAssistantStreamBaseline {
+  readonly revision: number
+  readonly attempts: readonly SessionAssistantStreamAttempt[]
+}
+
+/** Browser wire form of one process-local assistant frame. */
+export type SessionAssistantStreamFrame =
+  | {
+    readonly type: 'start'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    readonly startedTime: number
+    readonly turn: number
+    readonly step: number
+  }
+  | {
+    readonly type: 'chunk'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    readonly index: number
+    readonly chunk: JsonValue
+    readonly legacyChunkSeq: number
+  }
+  | {
+    readonly type: 'end'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    /** Number of chunk frames represented by this terminal marker. */
+    readonly index: number
+    readonly outcome: 'committed' | 'aborted'
+    readonly legacyChunkSeqs: readonly number[]
+  }
 
 /** One contiguous backwards page of a Session log. */
 export interface SessionPage {
@@ -454,7 +502,7 @@ export interface SessionPage {
   readonly hasMore: boolean
 }
 
-/** Complete opening window followed by ordered events appended after its cursor. */
+/** Complete opening window followed by ordered durable events and opted-in assistant frames. */
 export type SessionFollowFrame =
   | {
     readonly type: 'snapshot'
@@ -463,8 +511,10 @@ export type SessionFollowFrame =
     readonly records: readonly SessionHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: SessionProjectionBaseline
+    readonly assistantStream?: SessionAssistantStreamBaseline
   }
   | SessionEventEntry
+  | { readonly type: 'assistant-stream'; readonly frame: SessionAssistantStreamFrame }
 
 /** One pending inbox occurrence in the authoritative queue snapshot. */
 export interface SessionQueuedItem {

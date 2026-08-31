@@ -9,6 +9,7 @@ import type {
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   SessionAddress,
+  SessionAssistantStreamBaseline,
   SessionControlBaseline,
   SessionControlFrame,
   SessionFollowFrame,
@@ -158,6 +159,10 @@ export class FakeApiClient {
     jobs: {},
     projections: {},
   }
+  assistantStreamBaseline: SessionAssistantStreamBaseline = {
+    revision: 0,
+    attempts: [],
+  }
   workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {
     items: [],
     archivedSessionIds: [],
@@ -276,7 +281,7 @@ export class FakeApiClient {
   /** Push one live Session event to every follower of that Session. */
   async pushFollow(
     sessionId: SessionId,
-    frame: Extract<SessionFollowFrame, { type: 'event' }>,
+    frame: Exclude<SessionFollowFrame, { type: 'snapshot' }>,
   ): Promise<void> {
     await Promise.all([...(this.followConns.get(sessionId) ?? [])].map(conn => new Promise<void>((resolve) => {
       conn.feed({ kind: 'frame', value: frame, delivered: resolve })
@@ -399,6 +404,9 @@ export class FakeApiClient {
         records: page.records.filter(record => historyRecordLastSeq(record) <= cursor),
         hasMore: page.hasMore,
         projections: page.projections ?? { asOfSeq: cursor, values: {} },
+        ...request.assistantStream === true
+          ? { assistantStream: this.assistantStreamBaseline }
+          : {},
       }
       yield* stream.values
     } finally {

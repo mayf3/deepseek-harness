@@ -125,6 +125,7 @@ type FixtureSessionAddress =
 
 interface FixtureFollowRequest {
   readonly address: FixtureSessionAddress
+  readonly assistantStream?: true
   readonly maxMessages?: number
 }
 
@@ -155,6 +156,10 @@ type FixtureFollowFrame =
     readonly records: readonly FixtureHistoryRecord[]
     readonly hasMore: boolean
     readonly projections: FixtureProjectionsBlock
+    readonly assistantStream?: {
+      readonly revision: 0
+      readonly attempts: readonly []
+    }
   }
   | FixtureHistoryEntry
 
@@ -3218,6 +3223,11 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         records: initial.records,
         hasMore: initial.hasMore,
         projections: { asOfSeq: cursor, values: projectionValuesOf(snapshot) },
+        // The fixture has no process-local frame producer, but an opted-in
+        // consumer still requires a complete opening baseline.
+        ...(request.assistantStream === true
+          ? { assistantStream: { revision: 0, attempts: [] } }
+          : {}),
       }
       for await (const frame of conn.drain(signal)) {
         if (frame.event.seq < nextSeq) continue

@@ -91,6 +91,10 @@ type FixtureFollowFrame =
       readonly asOfSeq: number
       readonly values: Readonly<Record<string, unknown>>
     }
+    readonly assistantStream?: {
+      readonly revision: 0
+      readonly attempts: readonly []
+    }
   }
   | FixtureHistoryEntry
 
@@ -451,7 +455,7 @@ function createSessionRemote(rpc: ClientConnectionRpc): FixtureSessionRemote {
     modelCatalog: () => rpc.call('/api', 'session/modelCatalog', { args: {} }) as
       Promise<ConnectionRpcResult<ModelCatalog>>,
     follow: (sessionId, signal) => open<FixtureFollowFrame>('session/follow', {
-      request: { address: { kind: 'session', sessionId } },
+      request: { address: { kind: 'session', sessionId }, assistantStream: true },
     }, signal),
     control: signal => open<FixtureControlFrame>('session/control', {}, signal),
   }
@@ -613,6 +617,20 @@ describe('createFixtureApi', () => {
     if (!response.result.ok) throw new Error('list failed')
     expect(response.result.value.items.map(s => s.sessionId)).toEqual(['fx-alpha', 'fx-beta', 'fx-gamma'])
     expect(response.result.value.items[1]?.parentSessionId).toBe('fx-alpha') // lineage material
+  })
+
+  it('returns an empty Assistant baseline when Session follow opts in', async () => {
+    const api = createFixtureApi()
+    const abort = new AbortController()
+    const iterator = api.sessionRemote.follow(sid('fx-alpha'), abort.signal)[Symbol.asyncIterator]()
+    try {
+      const opening = await iterator.next()
+      if (opening.done || opening.value.type !== 'snapshot') throw new Error('follow opening snapshot missing')
+      expect(opening.value.assistantStream).toEqual({ revision: 0, attempts: [] })
+    } finally {
+      abort.abort()
+      await iterator.return?.()
+    }
   })
 
   it('searches current message text with literal unicode61-style token phrases', async () => {

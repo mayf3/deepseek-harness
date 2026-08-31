@@ -34,6 +34,7 @@ import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { Context } from '@deepseek-ai/cordis'
 import { RuntimeContextProjection } from './runtime-context.ts'
+import { AssistantStreamAttempt } from './assistant-stream.ts'
 import { executeToolCalls } from './tool-calls.ts'
 
 type Phase =
@@ -84,6 +85,9 @@ export class ReactLoopAgent implements Agent {
   /** Surface generation of the preceding built request. */
   private requestSurfaceGeneration: number | undefined
   private readonly runtimeContext: RuntimeContextProjection
+  /** Process-local revision of assistant frames for this attached Session. */
+  private assistantStreamRevision = 0
+  private assistantAttemptCounter = 0
 
   constructor(
     private loopCtx: Context,
@@ -360,13 +364,24 @@ export class ReactLoopAgent implements Agent {
       startsRequestSeries = false
       const assembler = new BlockAssembler()
       const chunkSeqs: SessionSeq[] = []
+      const live = new AssistantStreamAttempt(
+        this.session.id,
+        ++this.assistantAttemptCounter,
+        () => ++this.assistantStreamRevision,
+        turn,
+        step,
+        (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) },
+      )
       try {
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
+        live.start()
         for await (const chunk of stream) {
           signal.throwIfAborted()
-          chunkSeqs.push(this.session.append('assistant/chunk', { turn, step, chunk }).seq)
+          const legacyChunkSeq = this.session.append('assistant/chunk', { turn, step, chunk }).seq
+          chunkSeqs.push(legacyChunkSeq)
           assembler.push(chunk)
+          live.push(chunk, legacyChunkSeq)
         }
         signal.throwIfAborted()
       } catch (error: unknown) {
@@ -385,10 +400,12 @@ export class ReactLoopAgent implements Agent {
             }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
           }
         }
+        live.end('aborted')
         throw error
       }
       const finish = assembler.finish
       if (finish.kind === 'error' || finish.kind === 'aborted') {
+        live.end('aborted')
         const action = await this.dispatch.waterfall(
           'agent/request-error', {
             turn,
@@ -425,6 +442,7 @@ export class ReactLoopAgent implements Agent {
         },
         { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
       )
+      live.end('committed')
       if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
 
       const toolCalls = message.content.filter(block => block.type === 'tool-call')

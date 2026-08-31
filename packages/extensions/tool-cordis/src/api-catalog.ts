@@ -2891,6 +2891,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'sessionId', description: 'the session whose composition changed.' }, { name: 'agentPreset', description: 'the preset recorded by the committed selection.' }],
   },
   {
+    name: 'agent/assistant-stream',
+    mode: 'emit',
+    signature: '\'agent/assistant-stream\'(this: Scoped<Agent>, payload: { agent: Agent; frame: AssistantStreamFrame }): void',
+    summary: 'Process-local assistant-stream publication.',
+    description: 'Process-local assistant-stream publication. The loop appends each v1 `assistant/chunk` before the matching chunk frame and appends the final `assistant/message` before a committed end frame.',
+    parameters: [{ name: 'payload', description: '.frame - one ordered start, chunk, or end publication. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.' }],
+  },
+  {
     name: 'agent/created',
     mode: 'emit',
     signature: '\'agent/created\'(this: Scoped<Agent>, payload: { agent: Agent }): void',
@@ -3537,6 +3545,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AssistantProvenance',
     declaration: 'export interface AssistantProvenance {\n    provider: string;\n    model: string;\n    replayState?: unknown;\n}',
+  },
+  {
+    name: 'AssistantStreamFrame',
+    declaration: 'export type AssistantStreamFrame = {\n    readonly type: \'start\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly startedTime: number;\n    readonly turn: number;\n    readonly step: number;\n} | {\n    readonly type: \'chunk\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly chunk: StreamChunk;\n    readonly legacyChunkSeq: SessionSeq;\n} | {\n    readonly type: \'end\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly outcome: \'committed\' | \'aborted\';\n    readonly legacyChunkSeqs: readonly SessionSeq[];\n};',
   },
   {
     name: 'AttachmentId',
@@ -4279,6 +4291,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
+    name: 'LlmAttemptId',
+    declaration: 'export type LlmAttemptId = Branded<\'LlmAttemptId\'>;',
+  },
+  {
     name: 'LlmCallConfig',
     declaration: 'export interface LlmCallConfig {\n    provider: string;\n    model: string;\n    reasoningEffort?: ReasoningEffortId;\n    temperature?: number;\n    maxTokens?: number;\n    stop?: string[];\n}',
   },
@@ -4815,6 +4831,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionAddress = {\n    readonly kind: \'session\';\n    readonly sessionId: SessionId;\n} | {\n    readonly kind: \'subagent\';\n    readonly parentSessionId: SessionId;\n    readonly childSessionId: SessionId;\n    readonly mode: \'one-shot\' | \'continuable\';\n};',
   },
   {
+    name: 'SessionAssistantStreamAttempt',
+    declaration: 'export interface SessionAssistantStreamAttempt {\n    readonly attemptId: LlmAttemptId;\n    readonly startedTime: number;\n    readonly turn: number;\n    readonly step: number;\n    readonly chunks: readonly JsonValue[];\n    readonly legacyChunkSeqs: readonly number[];\n}',
+  },
+  {
+    name: 'SessionAssistantStreamBaseline',
+    declaration: 'export interface SessionAssistantStreamBaseline {\n    readonly revision: number;\n    readonly attempts: readonly SessionAssistantStreamAttempt[];\n}',
+  },
+  {
+    name: 'SessionAssistantStreamFrame',
+    declaration: 'export type SessionAssistantStreamFrame = {\n    readonly type: \'start\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly startedTime: number;\n    readonly turn: number;\n    readonly step: number;\n} | {\n    readonly type: \'chunk\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly chunk: JsonValue;\n    readonly legacyChunkSeq: number;\n} | {\n    readonly type: \'end\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly outcome: \'committed\' | \'aborted\';\n    readonly legacyChunkSeqs: readonly number[];\n};',
+  },
+  {
     name: 'SessionAttachmentRequest',
     declaration: 'export interface SessionAttachmentRequest {\n    readonly sessionId: SessionId;\n    readonly attachmentId: AttachmentIdType;\n}',
   },
@@ -4928,11 +4956,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionFollowFrame',
-    declaration: 'export type SessionFollowFrame = {\n    readonly type: \'snapshot\';\n    readonly header: SessionWireHeader;\n    readonly cursor: number;\n    readonly records: readonly SessionHistoryRecord[];\n    readonly hasMore: boolean;\n    readonly projections: SessionProjectionBaseline;\n} | SessionEventEntry;',
+    declaration: 'export type SessionFollowFrame = {\n    readonly type: \'snapshot\';\n    readonly header: SessionWireHeader;\n    readonly cursor: number;\n    readonly records: readonly SessionHistoryRecord[];\n    readonly hasMore: boolean;\n    readonly projections: SessionProjectionBaseline;\n    readonly assistantStream?: SessionAssistantStreamBaseline;\n} | SessionEventEntry | {\n    readonly type: \'assistant-stream\';\n    readonly frame: SessionAssistantStreamFrame;\n};',
   },
   {
     name: 'SessionFollowRequest',
-    declaration: 'export interface SessionFollowRequest {\n    readonly address: SessionAddress;\n    readonly maxMessages?: number;\n}',
+    declaration: 'export interface SessionFollowRequest {\n    readonly address: SessionAddress;\n    readonly maxMessages?: number;\n    readonly assistantStream?: true;\n}',
   },
   {
     name: 'SessionForkRequest',

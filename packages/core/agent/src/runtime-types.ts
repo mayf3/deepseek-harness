@@ -7,8 +7,10 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { LlmCallConfig, LlmFailure, ReasoningEffortId, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
-import type { AgentCancelCause, Session, UserMessage } from '@deepseek-ai/dsh-session'
+import type {
+  LlmAttemptId, LlmCallConfig, LlmFailure, ReasoningEffortId, ResolvedRetryPolicy, StreamChunk,
+} from '@deepseek-ai/dsh-llm'
+import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Inbox } from './inbox.ts'
 import type { Agent } from './types.ts'
@@ -67,6 +69,40 @@ export type RequestErrorAction = { kind: 'retry' } | undefined
 
 /** Why a session lifecycle began; seeded creates are `startup`, while persisted loads are `resume`. */
 export type SessionStartSource = 'startup' | 'resume' | 'clear' | 'compact'
+
+/** One process-local live assistant streaming publication. */
+export type AssistantStreamFrame =
+  | {
+    readonly type: 'start'
+    readonly attemptId: LlmAttemptId
+    /** Monotone while this Session remains attached to this process. */
+    readonly revision: number
+    /** Safe-integer wall-clock time captured when this attempt started. */
+    readonly startedTime: number
+    readonly turn: number
+    readonly step: number
+  }
+  | {
+    readonly type: 'chunk'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    /** Dense zero-based position within the attempt. */
+    readonly index: number
+    readonly chunk: StreamChunk
+    /** Matching durable v1 `assistant/chunk` record for duplicate suppression. */
+    readonly legacyChunkSeq: SessionSeq
+  }
+  | {
+    readonly type: 'end'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    /** Number of chunk frames emitted by this attempt. */
+    readonly index: number
+    /** The durable assistant message committed before this notification. */
+    readonly outcome: 'committed' | 'aborted'
+    /** Every durable v1 chunk represented by this attempt. */
+    readonly legacyChunkSeqs: readonly SessionSeq[]
+  }
 
 declare module './types.ts' {
   interface Agent {
@@ -265,6 +301,16 @@ declare module '@deepseek-ai/cordis' {
      * @mode waterfall
      */
     'agent/request-error'(this: Scoped<Agent>, payload: { agent: Agent; turn: number; step: number; provider: string; failure: LlmFailure; retryPolicy: ResolvedRetryPolicy | undefined; signal: AbortSignal }, next: () => Promise<RequestErrorAction>): Promise<RequestErrorAction>
+    /**
+     * Process-local assistant-stream publication. The loop appends each v1
+     * `assistant/chunk` before the matching chunk frame and appends the final
+     * `assistant/message` before a committed end frame.
+     * @param payload.agent - the agent whose attempt produced the frame.
+     * @param payload.frame - one ordered start, chunk, or end publication.
+     * Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent.
+     * @mode emit
+     */
+    'agent/assistant-stream'(this: Scoped<Agent>, payload: { agent: Agent; frame: AssistantStreamFrame }): void
     /**
      * The turn is about to close: the model owes no response (no live tool
      * calls, no fresh steering). Awaited before the boundary commits — a

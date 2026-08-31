@@ -6,6 +6,7 @@ import {
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   createSessionControlStream,
@@ -16,6 +17,8 @@ import {
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
 import type {
   SessionAddress,
+  SessionAssistantStreamBaseline,
+  SessionAssistantStreamFrame,
   SessionControlFrame,
   SessionEventEntry,
   SessionFollowFrame,
@@ -59,6 +62,7 @@ function snapshot(
   cursor: number,
   records: readonly SessionHistoryRecord[],
   hasMore = false,
+  assistantStream: SessionAssistantStreamBaseline = { revision: 0, attempts: [] },
 ): SessionFollowFrame {
   return {
     type: 'snapshot',
@@ -71,7 +75,12 @@ function snapshot(
     records,
     hasMore,
     projections: { asOfSeq: cursor, values: {} },
+    assistantStream,
   }
+}
+
+function assistantFrame(frame: SessionAssistantStreamFrame): SessionFollowFrame {
+  return { type: 'assistant-stream', frame }
 }
 
 function sessionClient(remote: SessionTransportRemote): SessionRemotes {
@@ -141,6 +150,206 @@ class ScriptedSessionRemote implements SessionTransportRemote {
 }
 
 describe('Session Client stream adapters', () => {
+  it('opts into assistant notifications and publishes the reconnect baseline plus live frame', async () => {
+    const attemptId = LlmAttemptId('transport-attempt')
+    const baseline: SessionAssistantStreamBaseline = {
+      revision: 2,
+      attempts: [{
+        attemptId,
+        startedTime: 1,
+        turn: 1,
+        step: 1,
+        chunks: [{ type: 'text-delta', index: 0, text: 'a' }],
+        legacyChunkSeqs: [0],
+      }],
+    }
+    const frame: SessionAssistantStreamFrame = {
+      type: 'chunk', attemptId, revision: 3, index: 1,
+      chunk: { type: 'text-delta', index: 0, text: 'b' }, legacyChunkSeq: 1,
+    }
+    const remote = new ScriptedSessionRemote(
+      [{ frames: [snapshot(0, [entry(0)], false, baseline), assistantFrame(frame)], hold: true }],
+      [],
+    )
+    const changes: SessionJournalChange[] = []
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) },
+      failed: vi.fn(),
+    })
+
+    await stream.open({})
+    await vi.waitFor(() => { expect(changes).toHaveLength(2) })
+
+    expect(remote.followRequests).toEqual([{ address: ADDRESS, assistantStream: true }])
+    expect(changes).toMatchObject([
+      { type: 'replace', page: { assistantStream: baseline } },
+      { type: 'assistant-stream', frame },
+    ])
+    await stream.dispose()
+  })
+
+  it('rejects an opted-in opening that omits its Assistant baseline', async () => {
+    const remote = new ScriptedSessionRemote([{
+      frames: [{
+        type: 'snapshot',
+        header: {
+          version: 1,
+          id: ADDRESS.sessionId,
+          createdAt: 0,
+        },
+        cursor: -1,
+        records: [],
+        hasMore: false,
+        projections: { asOfSeq: -1, values: {} },
+      }],
+    }], [])
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: vi.fn(),
+      failed: vi.fn(),
+    })
+
+    try {
+      await expect(stream.open({})).rejects.toMatchObject({
+        code: 'gateway/internal',
+        message: 'session assistant stream omitted its opted-in opening baseline',
+      })
+    } finally {
+      await stream.dispose()
+    }
+  })
+
+  it('rejects an Assistant frame that arrives before the opening baseline', async () => {
+    const remote = new ScriptedSessionRemote([{
+      frames: [assistantFrame({
+        type: 'start', attemptId: LlmAttemptId('pre-opening-attempt'),
+        revision: 1, startedTime: 1, turn: 1, step: 1,
+      })],
+    }], [])
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: vi.fn(),
+      failed: vi.fn(),
+    })
+
+    try {
+      await expect(stream.open({})).rejects.toMatchObject({
+        code: 'gateway/internal',
+        message: 'session event stream emitted an entry before its opening cursor',
+      })
+      expect(remote.followRequests).toEqual([{ address: ADDRESS, assistantStream: true }])
+    } finally {
+      await stream.dispose()
+    }
+  })
+
+  it('rebaselines after a transient assistant revision gap without advancing the durable cursor', async () => {
+    const attemptId = LlmAttemptId('gapped-attempt')
+    const start: SessionAssistantStreamFrame = {
+      type: 'start', attemptId, revision: 1, startedTime: 1,
+      turn: 1, step: 1,
+    }
+    const gap: SessionAssistantStreamFrame = {
+      type: 'chunk', attemptId, revision: 3, index: 0,
+      chunk: { type: 'text-delta', index: 0, text: 'lost predecessor' },
+      legacyChunkSeq: 1,
+    }
+    const replacement: SessionAssistantStreamBaseline = {
+      revision: 3,
+      attempts: [{
+        attemptId,
+        startedTime: 1,
+        turn: 1,
+        step: 1,
+        chunks: [gap.chunk],
+        legacyChunkSeqs: [1],
+      }],
+    }
+    const remote = new ScriptedSessionRemote([
+      {
+        frames: [snapshot(0, [entry(0)]), assistantFrame(start), assistantFrame(gap)],
+      },
+      { frames: [snapshot(0, [entry(0)], false, replacement)], hold: true },
+    ], [])
+    const changes: SessionJournalChange[] = []
+    const carrierFailed = vi.fn()
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) },
+      carrierFailed,
+      failed: vi.fn(),
+    })
+
+    await stream.open({})
+    await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
+
+    expect(changes.map(change => change.type)).toEqual([
+      'replace', 'assistant-stream', 'replace',
+    ])
+    expect(changes.at(-1)).toMatchObject({
+      type: 'replace', page: { assistantStream: replacement },
+    })
+    expect(remote.pageRequests).toEqual([])
+    expect(carrierFailed).toHaveBeenCalledWith(expect.objectContaining({
+      message: 'session assistant stream skipped revision 2',
+    }))
+    await stream.dispose()
+  })
+
+  it('rebaselines when a replacement Agent lifecycle restarts at revision one', async () => {
+    const attemptId = LlmAttemptId('replacement-lifecycle-attempt')
+    const previous: SessionAssistantStreamBaseline = {
+      revision: 2,
+      attempts: [{
+        attemptId,
+        startedTime: 1,
+        turn: 1,
+        step: 1,
+        chunks: [{ type: 'text-delta', index: 0, text: 'old' }],
+        legacyChunkSeqs: [0],
+      }],
+    }
+    const replacementStart: SessionAssistantStreamFrame = {
+      type: 'start', attemptId, revision: 1, startedTime: 2,
+      turn: 2, step: 1,
+    }
+    const replacement: SessionAssistantStreamBaseline = {
+      revision: 1,
+      attempts: [{
+        attemptId,
+        startedTime: 2,
+        turn: 2,
+        step: 1,
+        chunks: [],
+        legacyChunkSeqs: [],
+      }],
+    }
+    const remote = new ScriptedSessionRemote([
+      {
+        frames: [snapshot(0, [entry(0)], false, previous), assistantFrame(replacementStart)],
+      },
+      { frames: [snapshot(0, [entry(0)], false, replacement)], hold: true },
+    ], [])
+    const changes: SessionJournalChange[] = []
+    const carrierFailed = vi.fn()
+    const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
+      publish: (change) => { changes.push(change) },
+      carrierFailed,
+      failed: vi.fn(),
+    })
+
+    try {
+      await stream.open({})
+      await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
+      expect(changes).toMatchObject([
+        { type: 'replace', page: { assistantStream: previous } },
+        { type: 'replace', page: { assistantStream: replacement } },
+      ])
+      expect(carrierFailed).toHaveBeenCalledWith(expect.objectContaining({
+        message: 'session assistant stream skipped revision 3',
+      }))
+    } finally {
+      await stream.dispose()
+    }
+  })
+
   it('validates a packed logical range before publishing one compact Client entry', async () => {
     const row = chunks(1)
     const remote = new ScriptedSessionRemote(
@@ -215,7 +424,9 @@ describe('Session Client stream adapters', () => {
     await vi.waitFor(() => { expect(changes).toHaveLength(2) })
     await stream.prepend({ beforeSeq: 2, maxMessages: 50 })
 
-    expect(remote.followRequests).toEqual([{ address: ADDRESS, maxMessages: 50 }])
+    expect(remote.followRequests).toEqual([{
+      address: ADDRESS, assistantStream: true, maxMessages: 50,
+    }])
     expect(remote.pageRequests).toEqual([
       { address: ADDRESS, throughSeq: 4, beforeSeq: 2, maxMessages: 50 },
     ])
@@ -252,8 +463,8 @@ describe('Session Client stream adapters', () => {
     await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
 
     expect(remote.followRequests).toEqual([
-      { address: ADDRESS, maxMessages: 50 },
-      { address: ADDRESS, maxMessages: 50 },
+      { address: ADDRESS, assistantStream: true, maxMessages: 50 },
+      { address: ADDRESS, assistantStream: true, maxMessages: 50 },
     ])
     expect(remote.pageRequests).toEqual([])
     expect(changes.map(change => change.type)).toEqual(['replace', 'append', 'replace'])
@@ -282,7 +493,10 @@ describe('Session Client stream adapters', () => {
     await stream.open({})
     finish.resolve(undefined)
     await vi.waitFor(() => { expect(remote.followRequests).toHaveLength(2) })
-    expect(remote.followRequests).toEqual([{ address: ADDRESS }, { address: ADDRESS }])
+    expect(remote.followRequests).toEqual([
+      { address: ADDRESS, assistantStream: true },
+      { address: ADDRESS, assistantStream: true },
+    ])
     expect(remote.pageRequests).toEqual([])
     await stream.dispose()
   })
