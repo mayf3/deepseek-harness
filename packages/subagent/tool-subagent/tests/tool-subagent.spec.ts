@@ -1081,7 +1081,8 @@ describe('dsh-tool-subagent background mode', () => {
       arguments: { job_id: 'subagent-1', wait: true },
       agent: parent,
     })
-    expect(text(output)).toBe('(no new output)\n[status: killed]')
+    // The model's job_kill reason lands in the killed detail.
+    expect(text(output)).toBe('(no new output)\n[status: killed, no longer needed]')
   })
 
   it('reports startup rollback failure after cancellation as a failed job', async () => {
@@ -1168,7 +1169,8 @@ describe('dsh-tool-subagent background mode', () => {
 
     // The aborted children settle as killed tasks.
     const killed = await ctx.tools.execute({ signal: testToolSignal, callId: ToolCallId('w1'), name: 'job_output', arguments: { job_id: 'subagent-1', wait: true }, agent: parent })
-    expect(text(killed)).toBe('(no new output)\n[status: killed]')
+    // The model's own job_kill reason lands in the killed detail.
+    expect(text(killed)).toBe('(no new output)\n[status: killed, superseded]')
   })
 
 })

@@ -167,6 +167,26 @@ describe('ActivityListAction merged rows', () => {
     expect(screen.queryByRole('button', { name: zh['section.clear'] })).toBeNull()
   })
 
+  it('clearing drops an expanded settled panel with its rows', () => {
+    const observe = vi.fn(() => () => {})
+    render(<ActivityListAction {...props({
+      rowsBySession: {
+        [SESSION]: [row({
+          id: 'bash-act-9' as ActivityId,
+          status: 'completed',
+          correlation: { jobId: 'bash-2' as never },
+        })],
+      },
+    }, observe, [job({ id: 'bash-2' as SessionJob['id'], label: 'settled work', status: 'completed', finishedAt: 1_700_000_012_000 })])} />)
+    openList()
+    // Nothing live: the tail is open; expand the settled row's output panel.
+    fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'settled work') }))
+    expect(observe).toHaveBeenCalledWith('bash-act-9')
+    fireEvent.click(screen.getByRole('button', { name: zh['section.clear'] }))
+    expect(screen.queryByText('settled work')).toBeNull()
+    expect(screen.queryByRole('button', { name: zh['row.collapseAria'].replace('{label}', 'settled work') })).toBeNull()
+  })
+
   it('opens the settled tail by default when nothing is live', () => {
     render(<ActivityListAction {...props({}, undefined, [
       job({ status: 'completed', finishedAt: 1_700_000_012_000 }),
