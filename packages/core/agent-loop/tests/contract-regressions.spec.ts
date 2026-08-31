@@ -540,7 +540,7 @@ describe('adapter registration, routing, and accepted-input ownership', () => {
     send(agent, 'go')
     await waitForIdle(ctx, agent)
 
-    const events = agent.session.events
+    const events = agent.session.snapshotEvents()
     const claims = events.flatMap(event => event.type === 'agent/inbox/spliced'
       && event.data.target === 'next-step'
       && event.data.outcome !== 'canceled'

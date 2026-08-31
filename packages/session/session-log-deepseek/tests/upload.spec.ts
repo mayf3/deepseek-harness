@@ -133,6 +133,17 @@ describe('incremental DeepSeek session-log upload', () => {
     expect(reads).toBe(2)
   })
 
+  it('rejects a missing event below the captured Session length', () => {
+    const session = {
+      id: SessionId('missing-event'),
+      seq: 1,
+      eventAt: () => undefined,
+    } as unknown as Session
+
+    expect(() => SessionLogDeepSeek.acceptedThrough(session))
+      .toThrow('session-log-deepseek: missing event 0 below captured length 1')
+  })
+
   it('omits the field for direct or stale requests and uploads the prior acceptance marker next', async () => {
     const { ctx, session } = await harness('edges')
     await expect(ctx.deepseekLlmApiExtensions.prepare({ body: body(), signal: SIGNAL }))

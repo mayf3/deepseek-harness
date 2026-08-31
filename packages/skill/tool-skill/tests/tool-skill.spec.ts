@@ -585,6 +585,18 @@ describe('dsh-tool-skill', () => {
     expect(JSON.stringify(published[0]?.data.content)).toContain('live-skill')
   })
 
+  it('rejects a missing event below the current Session length', async () => {
+    const home = await tempDir('tool-catalog-missing-event')
+    const ctx = await setup(home)
+    const session = Session.create(SessionId('catalog-missing-event'))
+    const agent = sessionAgent(session)
+    openMessageTurn(session)
+    Object.defineProperty(session, 'eventAt', { value: () => undefined })
+
+    await expect(fireStep(ctx, agent, 1, 1))
+      .rejects.toThrow('skill catalog cannot read seq 1 below the current Session length')
+  })
+
   it('re-establishes the current catalog after compaction hides its durable message', async () => {
     const home = await tempDir('tool-catalog-compaction')
     const ctx = await setup(home)
