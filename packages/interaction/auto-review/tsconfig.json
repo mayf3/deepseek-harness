@@ -15,6 +15,7 @@
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
     { "path": "../permission-presets" },
-    { "path": "../../core/tools" }
+    { "path": "../../core/tools" },
+    { "path": "../../util/values" }
   ]
 }

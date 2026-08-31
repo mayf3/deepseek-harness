@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包为 Web GUI 中两种生命周期提供权限预设表面：General Settings 中的一行选择之后创建会话所用的配置默认值，但不会切换当前会话。挂在宿主 `/permission` 命令上的选择器通过 live 预设列表切换当前会话，并标记 active 值。Kebab-case 名称渲染为 Title Case 标签，`danger-full-access` 显示为 `Full access`，仅限当前会话的 `auto` contribution 显示为带 `EXP` badge 的 `Auto review`。通过可见选择器选择 Full access 或 Auto review 时，必须分别显式确认对应风险；已经带参数的 `/permission <preset>` 命令直接执行。两个表面通过宿主命令或设置 owner 写入，而当前会话投影仍是选择器与 composer chip 的权威值。
+本包为 Web GUI 中两种生命周期提供权限预设表面：通用设置中的一行选择之后创建会话所用的默认值，但不会切换当前会话；挂在宿主 `/permission` 命令上的选择器则通过一张扁平的实时预设列表切换当前会话，并标记 active 值。规范内置名称渲染为 locale 所有的产品标签，显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case，仅限当前会话的 `auto` contribution 显示为带 `EXP` badge 的 `Auto review`。通过任一表面选择完全权限，或通过可见选择器选择 Auto review 时，都必须分别显式确认对应风险；已经带参数的 `/permission <preset>` 命令仍直接执行。两个表面通过宿主命令或设置 owner 写入，而当前会话投影仍是选择器与 composer chip 的权威值。
 
 ## 目录
 
@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 选择器
 
-选中即提交 `/permission <preset>` 命令行。带参路径（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。`auto` 使用本地化的 `Auto review` 标签与 `EXP` badge，其可见选择需要实验风险确认。未知 kebab-case 预设名渲染为 Title Case 标签，`custom` 只是显示状态，绝非目标。
+选中即提交 `/permission <preset>` 命令行。带参路径（直接键入 `/permission <preset>`）仍直接切换；装饰只替换裸调用。内置标签本地化显示，显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case；`auto` 使用本地化的 `Auto review` 标签与 `EXP` badge，并在可见选择时要求实验风险确认。`custom` 只是显示状态，绝非目标。
 
 ### 设置行
 
-该行从宿主配置的 `defaultPreset` enum 推导选项，写入一条设置变更操作。`auto` 等仅限当前会话的 contribution 不会出现。该值只在之后创建会话时生效；改变它绝不会切换或改写当前会话。
+该行从宿主动态的 `defaultPreset` enum 推导选项，使用与当前会话选择器相同的本地化内置标签，并写入一条设置变更操作。`auto` 等仅限当前会话的 contribution 不会出现。该值只在之后创建会话时生效；改变它绝不会切换或改写当前会话。
 
 -----
 

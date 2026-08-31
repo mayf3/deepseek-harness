@@ -595,11 +595,15 @@ describe('header / drilled descent', () => {
   /** A source that publishes one crumb per path segment of a drilled query. */
   function crumbSource() {
     const requests: Array<{ query: string; quoted?: boolean; drilled: boolean }> = []
+    const fetches: boolean[] = []
     const picks: InputTriggerPick[] = []
     const source: InputTriggerSource = {
       trigger: '@',
       name: 'reference',
-      candidates: () => Promise.resolve([{ name: 'src', drill: true, value: 'src' }]),
+      candidates: (_session, req) => {
+        fetches.push(req.drilled)
+        return Promise.resolve([{ name: 'src', drill: true, value: 'src' }])
+      },
       header: (_session, req) => {
         requests.push({ ...req })
         if (!req.drilled || !req.query.includes('/')) return undefined
@@ -610,7 +614,7 @@ describe('header / drilled descent', () => {
         return pick.action === 'drill' ? { text: `@${String(pick.candidate.value)}/`, continue: true } : undefined
       },
     }
-    return { source, requests, picks }
+    return { source, requests, fetches, picks }
   }
 
   it('publishes no crumbs for a typed path and asks every source how the menu was reached', async () => {
@@ -658,6 +662,26 @@ describe('header / drilled descent', () => {
     controller.pickCrumb('reference', 0)
     expect(picks).toHaveLength(1)
     expect(picks[0]).toMatchObject({ candidate: { name: 'src', value: 'src' }, action: 'drill', via: 'menu' })
+  })
+
+  it('publishes crumbs when the input re-tracks inside the drill edit', async () => {
+    const { source, fetches } = crumbSource()
+    const { controller, actx } = controllerBench([source])
+    // A pointer drill reaches the input outside any editor update, so the
+    // descent commits synchronously and re-tracks before the pick that asked
+    // for it has returned — the keyboard drill, dispatched inside an update,
+    // re-tracks only once that update commits. Both orders must reach the
+    // header and candidate requests as a drill.
+    actx.on('slash/input-insert-text', (req) => {
+      controller.track(req.text, req.text.length, { tier: 'plain' }, 2)
+      return true
+    })
+    controller.track('@sr', 3, { tier: 'plain' }, 1)
+    await tick()
+    controller.pick('reference', 0, 'drill')
+    await tick()
+    expect(controller.headers.getSnapshot().get('reference')).toEqual([{ label: 'src', value: 'src' }])
+    expect(fetches).toEqual([false, true])
   })
 
   it('publishes no crumbs when the input refused the drill edit', async () => {

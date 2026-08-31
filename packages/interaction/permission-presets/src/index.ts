@@ -23,8 +23,8 @@ import { SANDBOX_MODES, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-shell'
 import type { ApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
 import { APPROVAL_POLICIES, setApprovalPolicy } from '@deepseek-ai/dsh-user-approval'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
-// Type-only: resolves the required projection service and optional command child.
+import type {} from '@deepseek-ai/dsh-settings'
+// Type-only: resolves the required projection service and optional settings/command children.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-commands'
 import type { PermissionSelect, PresetOption } from './types.ts'
@@ -86,7 +86,7 @@ const AUTO_PRESET_SPEC: PresetSpec = {
 }
 
 /** Settings namespace carrying the default for future sessions. */
-export const PERMISSION_SETTINGS_NAMESPACE = settingsNamespace('permission')
+export const PERMISSION_SETTINGS_NAMESPACE = 'permission'
 
 /**
  * The projection unit's knob state: the last seen value of each knob event,
@@ -231,13 +231,15 @@ export class PermissionPresetService extends Service {
     const settingsSchema: z<PermissionSettings> = z.object({
       defaultPreset: z.union(presetChoices).required(),
     })
-    installSettingsSection(ctx, PERMISSION_SETTINGS_NAMESPACE, settingsSchema, baseSettings, {
-      setSource: (current) => {
-        this.defaultSettings = current
-      },
-      // The source thunk reads the latest scope snapshot at session creation;
-      // no process-level registration needs replacement on change.
-      onChange: () => {},
+    ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(ctx, PERMISSION_SETTINGS_NAMESPACE, settingsSchema, baseSettings, {
+        setSource: (current) => {
+          this.defaultSettings = current
+        },
+        // The source thunk reads the latest scope snapshot at session creation;
+        // no process-level registration needs replacement on change.
+        onChange: () => {},
+      })
     })
 
     // zod `.optional()` types the key `string | undefined` while the domain

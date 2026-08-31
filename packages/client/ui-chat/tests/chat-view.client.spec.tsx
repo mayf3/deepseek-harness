@@ -16,10 +16,9 @@ import type {
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
-import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
+import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createChatStore } from '../src/client/stores.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
@@ -858,7 +857,10 @@ describe('ChatView', () => {
       { nodes: [assistant(1, 'working')] },
       {
         pendingSubmissions: [
-          { requestId: 'req-1' as never, time: 5_000, text: '即发即显', images: [] },
+          {
+            requestId: 'req-1' as never, placement: 'transcript',
+            time: 5_000, text: '即发即显', images: [],
+          },
         ],
       },
     )
@@ -887,18 +889,57 @@ describe('ChatView', () => {
     expect(view.getAllByText('即发即显')).toHaveLength(1)
   })
 
-  it('hides an echo once its queue occurrence carries the rpcId (running-turn submission)', () => {
+  it('renders a local steer echo as pending steering before Host image admission completes', () => {
+    const h = makeHarness(
+      { nodes: [assistant(1, 'working')] },
+      {
+        running: true,
+        pendingSubmissions: [{
+          requestId: 'req-steer' as never,
+          placement: 'steering',
+          time: 5_500,
+          text: '带图纠偏',
+          images: [{ previewUrl: 'blob:steer-preview', name: 'steer.png' }],
+        }],
+      },
+    )
+    const view = render(<h.ChatView {...h.props} />)
+    const local = view.getByText('带图纠偏').closest('[data-submission-echo]')
+    expect(local?.hasAttribute('data-pending-steering')).toBe(true)
+
+    act(() => {
+      h.setSession({
+        queue: [{
+          id: 'steer-occurrence' as never,
+          messageId: 'steer-message' as never,
+          placement: 'steering',
+          rpcId: 'req-steer' as never,
+          content: [{ type: 'text', text: '带图纠偏' }],
+          preview: '带图纠偏',
+          text: '带图纠偏',
+        }],
+      })
+    })
+    expect(view.getAllByText('带图纠偏')).toHaveLength(1)
+    expect(view.container.querySelector('[data-submission-echo]')).toBeNull()
+    expect(view.container.querySelector('[data-pending-steering]')).not.toBeNull()
+  })
+
+  it('keeps a queued echo out of the Chat flow before and after Host admission', () => {
     const h = makeHarness(
       { nodes: [assistant(1, 'working')] },
       {
         running: true,
         pendingSubmissions: [
-          { requestId: 'req-q' as never, time: 6_000, text: '排队中', images: [] },
+          {
+            requestId: 'req-q' as never, placement: 'queued',
+            time: 6_000, text: '排队中', images: [],
+          },
         ],
       },
     )
     const view = render(<h.ChatView {...h.props} />)
-    expect(view.getByText('排队中')).toBeTruthy()
+    expect(view.queryByText('排队中')).toBeNull()
     act(() => {
       h.setSession({
         queue: [{
@@ -912,8 +953,8 @@ describe('ChatView', () => {
         }],
       })
     })
-    // The queued occurrence renders in the queue dock, not the flow; the
-    // flow-tail echo yields to it in the same snapshot.
+    // The queued occurrence and its local predecessor both belong to the
+    // queue dock, never the Chat flow.
     expect(view.queryByText('排队中')).toBeNull()
   })
 
@@ -923,6 +964,7 @@ describe('ChatView', () => {
       {
         pendingSubmissions: [{
           requestId: 'req-img' as never,
+          placement: 'transcript',
           time: 7_000,
           text: '',
           images: [
@@ -2275,7 +2317,7 @@ describe('ChatView', () => {
   it('shows open error and loading states', () => {
     const h = makeHarness({}, {
       openState: 'error',
-      openError: { code: 'internal', message: 'boom' } as never,
+      openError: { code: 'gateway/internal', message: 'boom' } as never,
     })
     const view = render(<h.ChatView {...h.props} />)
     expect(view.getByText(/历史加载失败：boom/)).toBeTruthy()

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides permission preset surfaces for two lifetimes in the Web GUI: a General-settings row chooses a configured default for later sessions without switching the current session. A picker on the host `/permission` command switches the current session through the live preset list with the active value marked. Kebab-case names render as title-case labels, `danger-full-access` is presented as `Full access`, and the current-session-only `auto` contribution is presented as `Auto review` with an `EXP` badge. Choosing Full access or Auto review through a visible picker requires its own explicit risk acknowledgement; an already argued `/permission <preset>` command executes directly. Both surfaces write through the host command or settings owner, while the current-session projection remains authoritative for the picker and composer chip.
+This package provides permission preset surfaces for two lifetimes in the Web GUI: a General-settings row chooses the default for later sessions without switching the current session, while a picker on the host `/permission` command switches the current session through one flat live preset list with the active value marked. Canonical built-in names render as locale-owned product labels, explicit host labels remain unchanged, unknown kebab-case names render in title case, and the current-session-only `auto` contribution appears as `Auto review` with an `EXP` badge. Choosing full access through either surface or Auto review through a visible picker requires its own explicit risk acknowledgement; an already argued `/permission <preset>` command executes directly. Both surfaces write through the host command or settings owner, while the current-session projection remains authoritative for the picker and composer chip.
 
 ## Table of Contents
 
@@ -29,11 +29,11 @@ Mount this plugin alongside the settings and commands packages; the permission r
 
 ### The picker
 
-A pick submits the `/permission <preset>` command line. The argued path (`/permission <preset>` typed directly) still switches directly; the decoration replaces only the bare invocation. `auto` uses the localized `Auto review` label and `EXP` badge, and its visible selection requires the experimental-risk confirmation. Unknown kebab-case preset names render in title case, and `custom` is display state, never a target.
+A pick submits the `/permission <preset>` command line. The argued path (`/permission <preset>` typed directly) still switches directly; the decoration replaces only the bare invocation. Built-in labels are localized, explicit host labels remain unchanged, unknown kebab-case names render in title case, and `auto` uses the localized `Auto review` label and `EXP` badge with an experimental-risk confirmation. `custom` is display state, never a target.
 
 ### The Settings row
 
-The row derives its options from the host's configured `defaultPreset` enum and writes one settings mutation. Current-session-only contributions such as `auto` are absent. The value applies only when a later session is created; changing it never switches or rewrites the current session.
+The row derives its options from the host's dynamic `defaultPreset` enum, uses the same localized built-in labels as the current-session picker, and writes one settings mutation. Current-session-only contributions such as `auto` are absent. The value applies only when a later session is created; changing it never switches or rewrites the current session.
 
 -----
 

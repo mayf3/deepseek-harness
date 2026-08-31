@@ -13,7 +13,6 @@ import { isCompactCheckpointSource } from '@deepseek-ai/dsh-compaction/checkpoin
 import {
   BlockAssembler,
   createUserMessage,
-  deepFreeze,
   type ContentBlock,
   type GenerateOptions,
   type MessageSource,
@@ -21,6 +20,7 @@ import {
   type ToolCallId,
   type ToolSchema,
 } from '@deepseek-ai/dsh-llm'
+import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import {
   AUTO_PRESET,
 } from '@deepseek-ai/dsh-permission-presets'
