@@ -52,6 +52,18 @@ interface ProjectionDefinition<
      * @returns the whole current value for this unit's key.
      */
     view(state: NoInfer<S>): SessionProjectionMap[K]
+    /**
+     * Change-detection token for the served view: after a changed `apply`,
+     * the feed compares this token across the previous and next states with
+     * `Object.is` and stays quiet when identical, so `view` runs only for an
+     * actual push. Must be a cheap pure read (a state field, not a
+     * computation). Omitted, the raw `view` output itself is the token —
+     * correct for identity-stable views, but then `view` runs per changed
+     * state, and views building fresh objects per call push on every change.
+     * @param state - a state on either side of the comparison.
+     * @returns the token deciding whether the served view changed.
+     */
+    viewKey?(state: NoInfer<S>): unknown
   } : never
   /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
@@ -86,9 +98,9 @@ interface ProjectionSnapshot {
  * Change-feed listener: one unit's served value changed for one session.
  * `value` is the schema-validated `view` output; `seq` is the unit's
  * watermark at emission (the seq of the event that caused the change). A
- * changed state whose raw `view` output is `Object.is`-identical to the
- * unit's previous projection does not fire, so a unit can buffer working
- * fields in state behind an identity-stable projection.
+ * changed state whose `viewKey` token (default: the raw `view` output) is
+ * `Object.is`-identical to the previous state's does not fire, so a unit can
+ * buffer working fields in state behind an identity-stable projection.
  */
 type ProjectionChangeListener = (
   session: Session,
