@@ -1,10 +1,11 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format-catalog'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import LlmRuntime, { ToolCallId, createUserMessage, GenerateOptions, LlmAdapter, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -18,11 +19,15 @@ import {
   installLlmReplay,
   loadReplayScript,
   loadSessionScripts,
+  migrateSessionSnapshotFixture,
   name,
+  parseSessionLogForReplay,
   parseSessionHeader,
   parseSessionLog,
+  prepareSessionSnapshotFixtureForComparison,
   resolveScriptedEntry,
 } from '../src/index.ts'
+import { ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES } from '../src/alpha-refusal-fixtures.ts'
 
 declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types' {
   interface DeepSeekLlmApiExtensionMap {
@@ -48,15 +53,49 @@ const TEXT_CHUNKS: StreamChunk[] = [
 const COMPACTION_ID = CompactionId('replay-compaction')
 
 /** Build a minimal session-JSONL string: a header line + the given events. */
-function sessionJsonl(events: SessionEvent[], header?: { id?: string; createdAt?: number; seedLength?: number }): string {
+function sessionJsonl(
+  events: SessionEvent[],
+  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 },
+): string {
   const headerLine = JSON.stringify({
     type: 'session',
-    version: 0,
+    version: header?.version ?? 0,
     id: header?.id ?? 's1',
     createdAt: header?.createdAt ?? 0,
     ...header?.seedLength !== undefined ? { seedLength: header.seedLength } : {},
+    delegationDepth: 0,
   })
-  return [headerLine, ...events.map(e => JSON.stringify(e))].join('\n') + '\n'
+  return [headerLine, ...events.map(event => JSON.stringify(event))].join('\n') + '\n'
+}
+
+/** Build a valid one-turn Session around recorded model calls. */
+function replaySessionJsonl(
+  calls: readonly StreamChunk[][],
+  header?: { id?: string; createdAt?: number; seedLength?: number; version?: 0 | 1 },
+): string {
+  const events: SessionEvent[] = []
+  let seq = 0
+  const push = (type: string, data: SessionEvent['data']): void => {
+    events.push({ type, seq: SessionSeq(seq++), time: 0, data } as SessionEvent)
+  }
+  push('turn/start', { turn: 1 })
+  for (const [index, chunks] of calls.entries()) {
+    const step = index + 1
+    push('step/start', { turn: 1, step })
+    for (const chunk of chunks) events.push(chunkEvent(SessionSeq(seq++), 1, step, chunk))
+    push('step/end', { turn: 1, step })
+  }
+  push('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  return sessionJsonl(events, header)
+}
+
+/** Remove persistence envelopes to produce the committed snapshot projection. */
+function projectSessionJsonl(complete: string): string {
+  return complete.split('\n').map((line, index) => {
+    if (index === 0 || line.length === 0) return line
+    const { seq: _seq, time: _time, ...projected } = JSON.parse(line) as Record<string, unknown>
+    return JSON.stringify(projected)
+  }).join('\n')
 }
 
 /** A SessionEvent of type assistant/chunk for (turn, step). */
@@ -69,11 +108,8 @@ let file: string
 
 /** Write a session log file and return its path. */
 function writeSession(filename: string, header: { id: string; createdAt: number }, calls: StreamChunk[][]): string {
-  let seq = 1
-  const events: SessionEvent[] = []
-  calls.forEach((chunks, step) => { for (const c of chunks) events.push(chunkEvent(SessionSeq(seq++), 1, step + 1, c)) })
   const path = join(dir, filename)
-  writeFileSync(path, sessionJsonl(events, header), 'utf8')
+  writeFileSync(path, replaySessionJsonl(calls, header), 'utf8')
   return path
 }
 
@@ -92,38 +128,250 @@ async function drain(iter: AsyncIterable<StreamChunk>): Promise<StreamChunk[]> {
   return out
 }
 
+describe('Session format package parity', () => {
+  it('refuses catalog and Session version skew at module load', async () => {
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          currentVersion: SESSION_FORMAT_VERSION + 1,
+        },
+      }
+    })
+    try {
+      await expect(import('../src/index.ts'))
+        .rejects.toThrow(`format catalog v${SESSION_FORMAT_VERSION + 1} does not match Session v${SESSION_FORMAT_VERSION}`)
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+    }
+  })
+})
+
+describe('fixture format diagnostics', () => {
+  it('attaches the header line to a non-Error catalog failure', async () => {
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          decodeArtifact(): never {
+            const failure: unknown = 'decoder exploded'
+            throw failure
+          },
+        },
+      }
+    })
+    try {
+      const replay = await import('../src/index.ts')
+
+      expect(() => replay.parseSessionLog(sessionJsonl([])))
+        .toThrow('session snapshot line 1: decoder exploded')
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+    }
+  })
+
+  it('falls back to the header when a source-range diagnostic has no matching physical prefix', async () => {
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          decodeArtifact(): never {
+            throw new Error('sourceEventSeqs synthetic unmatched failure')
+          },
+        },
+      }
+    })
+    try {
+      const replay = await import('../src/index.ts')
+
+      expect(() => replay.parseSessionLog(sessionJsonl([])))
+        .toThrow('session snapshot line 1: sourceEventSeqs synthetic unmatched failure')
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+    }
+  })
+
+  it('maps a matching non-Error source-range prefix failure to its physical row', async () => {
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      let callCount = 0
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          decodeArtifact(): never {
+            callCount += 1
+            if (callCount === 1) throw new Error('sourceEventSeqs synthetic prefix failure')
+            const failure: unknown = callCount === 2
+              ? 'sourceEventSeqs different prefix failure'
+              : 'sourceEventSeqs synthetic prefix failure'
+            throw failure
+          },
+        },
+      }
+    })
+    try {
+      const replay = await import('../src/index.ts')
+      const events: SessionEvent[] = [
+        { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } },
+        { type: 'permission/preset', seq: SessionSeq(1), time: 0, data: { preset: 'auto' } },
+      ]
+
+      expect(() => replay.parseSessionLog(sessionJsonl(events)))
+        .toThrow('session snapshot line 3: sourceEventSeqs synthetic prefix failure')
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+    }
+  })
+
+  it('falls back to the header for an out-of-range physical-row diagnostic', async () => {
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          decodeArtifact(): never {
+            throw new Error('released Session row 99 is malformed')
+          },
+        },
+      }
+    })
+    try {
+      const replay = await import('../src/index.ts')
+      const event: SessionEvent = { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }
+
+      expect(() => replay.parseSessionLog(sessionJsonl([event])))
+        .toThrow('session snapshot line 1: released Session row 99 is malformed')
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+    }
+  })
+
+  it('falls back to the header for an out-of-range logical-event diagnostic', async () => {
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          migrate(): never {
+            throw new Error('Session event 99 is malformed')
+          },
+        },
+      }
+    })
+    try {
+      const replay = await import('../src/index.ts')
+      const event: SessionEvent = { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }
+
+      expect(() => replay.parseSessionLog(sessionJsonl([event])))
+        .toThrow('session snapshot line 1: Session event 99 is malformed')
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+    }
+  })
+})
+
 describe('parseSessionLog', () => {
+  it('reports invalid JSON at its physical source line', () => {
+    const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
+
+    expect(() => parseSessionLog(`${header}\n{"type":\n`))
+      .toThrow('session snapshot line 2 contains invalid JSON')
+  })
+
+  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
+    'keeps pathless parsing strict for $repoRelativePath',
+    (fixture) => {
+      const source = readFileSync(fixture.path, 'utf8')
+
+      expect(() => parseSessionLog(source)).toThrow(SessionFormatUnsupportedMigrationError)
+    },
+  )
+
+  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
+    'permits replay extraction only for the exact allowlisted path $repoRelativePath',
+    (fixture) => {
+      const source = readFileSync(fixture.path, 'utf8')
+      const lookalike = resolve(dir, fixture.repoRelativePath)
+
+      expect(parseSessionLogForReplay(source, fixture.path).length).toBeGreaterThan(0)
+      expect(() => parseSessionLogForReplay(source, lookalike))
+        .toThrow(SessionFormatUnsupportedMigrationError)
+    },
+  )
+
   it('skips the header line and parses each event', () => {
-    const events = [chunkEvent(SessionSeq(1), 1, 1, TEXT_CHUNKS[0] as StreamChunk)]
+    const events: SessionEvent[] = [{ type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }]
     expect(parseSessionLog(sessionJsonl(events))).toEqual(events)
   })
 
   it('ignores blank lines', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
-    const ev = chunkEvent(SessionSeq(1), 1, 1, TEXT_CHUNKS[0] as StreamChunk)
+    const ev: SessionEvent = { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }
     expect(parseSessionLog(`${header}\n\n${JSON.stringify(ev)}\n\n`)).toEqual([ev])
   })
 
   it('expands range-encoded source provenance', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
-    const event = {
-      ...chunkEvent(SessionSeq(4), 1, 1, TEXT_CHUNKS[0] as StreamChunk),
-      sourceEventSeqs: [[1, 3], 5],
-    }
-    expect(parseSessionLog(`${header}\n${JSON.stringify(event)}\n`)).toEqual([{
-      ...event,
-      sourceEventSeqs: [1, 2, 3, 5],
-    }])
+    const events = Array.from({ length: 5 }, (_, seq) => ({
+      type: 'user/message',
+      seq,
+      time: 0,
+      data: { role: 'user', id: `message-${seq}`, content: [], source: { kind: 'user' } },
+      surfaceOp: 'append',
+      ...(seq === 4 ? { sourceEventSeqs: [[0, 2], 3] } : {}),
+    }))
+    const parsed = parseSessionLog(`${header}\n${events.map(event => JSON.stringify(event)).join('\n')}\n`)
+    expect(parsed[4]).toEqual({ ...events[4], sourceEventSeqs: [0, 1, 2, 3] })
   })
 
   it('reports malformed range provenance with its source line', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
-    const event = {
-      ...chunkEvent(SessionSeq(4), 1, 1, TEXT_CHUNKS[0] as StreamChunk),
-      sourceEventSeqs: [[3, 1]],
-    }
-    expect(() => parseSessionLog(`${header}\n${JSON.stringify(event)}\n`))
-      .toThrow('session snapshot line 2: sourceEventSeqs ranges require start <= end')
+    const events = Array.from({ length: 5 }, (_, seq) => ({
+      type: 'user/message',
+      seq,
+      time: 0,
+      data: { role: 'user', id: `message-${seq}`, content: [], source: { kind: 'user' } },
+      surfaceOp: 'append',
+      ...(seq === 4 ? { sourceEventSeqs: [[3, 1]] } : {}),
+    }))
+    expect(() => parseSessionLog(`${header}\n${events.map(event => JSON.stringify(event)).join('\n')}\n`))
+      .toThrow(/session snapshot line 6: sourceEventSeqs range/)
+  })
+
+  it('locates malformed range provenance with a materialized v0 seedLength header', () => {
+    const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0, seedLength: 0 })
+    const events = Array.from({ length: 3 }, (_, seq) => ({
+      type: 'user/message',
+      seq,
+      time: 0,
+      data: { role: 'user', id: `message-${seq}`, content: [], source: { kind: 'user' } },
+      surfaceOp: 'append',
+      ...(seq === 2 ? { sourceEventSeqs: [[2, 1]] } : {}),
+    }))
+
+    expect(() => parseSessionLog(`${header}\n${events.map(event => JSON.stringify(event)).join('\n')}\n`))
+      .toThrow(/session snapshot line 4: sourceEventSeqs range/)
   })
 
   it('rejects non-object body rows with their source line', () => {
@@ -132,31 +380,233 @@ describe('parseSessionLog', () => {
       .toThrow('session snapshot line 2 must be a JSON object')
   })
 
+  it('rejects partial and mixed projected envelopes at their source lines', () => {
+    const header = JSON.stringify({
+      type: 'session', version: 0, id: 's1', createdAt: 0, delegationDepth: 0,
+    })
+    const partial = JSON.stringify({ type: 'turn/start', seq: 0, data: { turn: 1 } })
+    expect(() => parseSessionLog(`${header}\n${partial}\n`))
+      .toThrow('session snapshot line 2 must contain both seq and time, or neither')
+
+    const projected = JSON.stringify({ type: 'turn/start', data: { turn: 1 } })
+    const complete = JSON.stringify({ type: 'permission/preset', seq: 1, time: 0, data: { preset: 'auto' } })
+    expect(() => parseSessionLog(`${header}\n${projected}\n${complete}\n`))
+      .toThrow('session snapshot line 3 cannot mix projected and complete body rows')
+  })
+
   it('expands a packed chunk row into its events (a fixture recorded with packChunks on)', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
+    const turn = JSON.stringify({ type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } })
+    const step = JSON.stringify({ type: 'step/start', seq: 1, time: 0, data: { turn: 1, step: 1 } })
     const row = JSON.stringify({
-      type: 'text-chunks', seq0: 1, time0: 0,
+      type: 'text-chunks', seq0: 2, time0: 0,
       data: { turn: 1, step: 1, index: 0, dt: [0, 0], texts: ['a', 'b', 'c'] },
     })
-    expect(parseSessionLog(`${header}\n${row}\n`)).toEqual([
-      chunkEvent(SessionSeq(1), 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
-      chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'b' }),
-      chunkEvent(SessionSeq(3), 1, 1, { type: 'text-delta', index: 0, text: 'c' }),
+    expect(parseSessionLog(`${header}\n${turn}\n${step}\n${row}\n`).slice(2)).toEqual([
+      chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
+      chunkEvent(SessionSeq(3), 1, 1, { type: 'text-delta', index: 0, text: 'b' }),
+      chunkEvent(SessionSeq(4), 1, 1, { type: 'text-delta', index: 0, text: 'c' }),
     ])
   })
 
   it('synthesizes omitted ordinary and packed snapshot envelopes', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 7 })
     const ordinary = JSON.stringify({ type: 'turn/start', data: { turn: 1 } })
+    const step = JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } })
     const packed = JSON.stringify({
       type: 'text-chunks',
       data: { turn: 1, step: 1, index: 0, dt: [3], texts: ['a', 'b'] },
     })
-    expect(parseSessionLog(`${header}\n${ordinary}\n${packed}\n`)).toEqual([
+    expect(parseSessionLog(`${header}\n${ordinary}\n${step}\n${packed}\n`)).toEqual([
       { type: 'turn/start', seq: 0, time: 0, data: { turn: 1 } },
-      chunkEvent(SessionSeq(1), 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
-      { ...chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'b' }), time: 3 },
+      { type: 'step/start', seq: 1, time: 0, data: { turn: 1, step: 1 } },
+      chunkEvent(SessionSeq(2), 1, 1, { type: 'text-delta', index: 0, text: 'a' }),
+      { ...chunkEvent(SessionSeq(3), 1, 1, { type: 'text-delta', index: 0, text: 'b' }), time: 3 },
     ])
+  })
+
+  it('materializes tokenized request tools before released-format validation', () => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'tokens', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({
+        type: 'request/header',
+        data: {
+          header: { config: { provider: 'mock', model: 'mock' }, system: '{{system}}', tools: '{{tools}}' },
+          reason: 'initial',
+        },
+      }),
+    ].join('\n')
+
+    expect(parseSessionLog(source)[1]).toMatchObject({
+      type: 'request/header',
+      data: { header: { system: '{{system}}', tools: [] } },
+    })
+  })
+
+  it('materializes Python snapshot tool-name projections before format validation', () => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'tool-names', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({
+        type: 'request/header',
+        data: {
+          header: { config: { provider: 'mock', model: 'mock' }, tools: ['bash', 'workflow'] },
+          reason: 'initial',
+        },
+      }),
+    ].join('\n')
+
+    expect(parseSessionLog(source)[1]).toMatchObject({
+      type: 'request/header',
+      data: { header: { tools: [
+        { name: 'bash', description: '', parameters: {} },
+        { name: 'workflow', description: '', parameters: {} },
+      ] } },
+    })
+  })
+
+  it.each([
+    ['non-object request data', null],
+    ['non-object request header', { header: [] }],
+    ['unsupported tools projection', { header: { tools: [42] } }],
+  ])('keeps %s unchanged so released-format validation rejects its source line', (_name, data) => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'malformed-request', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({ type: 'request/header', data }),
+    ].join('\n')
+
+    expect(() => parseSessionLog(source)).toThrow(/session snapshot line 2:/)
+  })
+
+  it('synthesizes projected tool-call chunk envelopes from their argument count', () => {
+    const callId = ToolCallId('call-1')
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'packed-tool', createdAt: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
+      JSON.stringify({
+        type: 'tool-call-chunks',
+        data: { turn: 1, step: 1, index: 0, id: 'call-1', name: 'read', dt: [0], args: ['{', '}'] },
+      }),
+    ].join('\n')
+
+    expect(parseSessionLog(source).slice(2)).toEqual([
+      chunkEvent(SessionSeq(2), 1, 1, {
+        type: 'tool-call-delta', index: 0, id: callId, name: 'read', argumentsDelta: '{',
+      }),
+      chunkEvent(SessionSeq(3), 1, 1, {
+        type: 'tool-call-delta', index: 0, id: callId, name: 'read', argumentsDelta: '}',
+      }),
+    ])
+  })
+
+  it.each([
+    ['non-object packed data', { type: 'text-chunks', data: null }],
+    ['empty packed payload', {
+      type: 'text-chunks',
+      data: { turn: 1, step: 1, index: 0, dt: [], texts: [] },
+    }],
+  ])('reports %s at its one synthesized event line', (_name, row) => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'malformed-packed', createdAt: 0 }),
+      JSON.stringify(row),
+    ].join('\n')
+
+    expect(() => parseSessionLog(source)).toThrow(/session snapshot line 2:/)
+  })
+
+  it('migrates projected v0 legacy messages through the released catalog before returning events', () => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'legacy', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({ type: 'turn/start', data: { turn: 1 } }),
+      JSON.stringify({ type: 'step/start', data: { turn: 1, step: 1 } }),
+      JSON.stringify({
+        type: 'assistant/message',
+        data: {
+          turn: 1,
+          step: 1,
+          content: [{ type: 'text', text: 'migrated' }],
+          provenance: { provider: 'mock', model: 'mock' },
+        },
+        surfaceOp: 'append',
+      }),
+    ].join('\n')
+
+    expect(parseSessionLog(source)[2]).toEqual({
+      type: 'assistant/message',
+      seq: 2,
+      time: 0,
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'legacy-message:legacy:2',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'migrated' }],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+      },
+      surfaceOp: 'append',
+    })
+  })
+
+  it('takes the direct v1 path and rejects v0-only message fields', () => {
+    const current = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS], { version: 1 }))
+    expect(deriveReplayScript(parseSessionLog(current))).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
+
+    const source = [
+      JSON.stringify({ type: 'session', version: 1, id: 'current', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({
+        type: 'assistant/message',
+        data: {
+          turn: 1,
+          step: 1,
+          content: [{ type: 'text', text: 'legacy-only' }],
+          provenance: { provider: 'mock', model: 'mock' },
+        },
+        surfaceOp: 'append',
+      }),
+    ].join('\n')
+
+    expect(() => parseSessionLog(source)).toThrow(/assistant\/message.*lacks an identified message/)
+  })
+
+  it('refuses a retired v0 event through the released migration policy', () => {
+    const source = [
+      JSON.stringify({ type: 'session', version: 0, id: 'legacy', createdAt: 7, delegationDepth: 0 }),
+      JSON.stringify({ type: 'mode/set', data: { mode: 'plan' } }),
+    ].join('\n')
+
+    expect(() => parseSessionLog(source)).toThrow(/unsupported legacy mode\/set event at seq 0/)
+  })
+})
+
+describe('prepareSessionSnapshotFixtureForComparison', () => {
+  it('encodes a migrated fixture without inventing a trailing newline and retains its cwd token', () => {
+    const projected = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS])).trimEnd()
+    const [headerLine, ...bodyLines] = projected.split('\n')
+    const header = { ...(JSON.parse(headerLine!) as Record<string, unknown>), cwd: '{{cwd}}/workspace' }
+    const source = [JSON.stringify(header), ...bodyLines].join('\n')
+
+    const prepared = prepareSessionSnapshotFixtureForComparison(source)
+    const [preparedHeader] = prepared.split('\n')
+
+    expect(JSON.parse(preparedHeader!)).toMatchObject({ version: SESSION_FORMAT_VERSION, cwd: '{{cwd}}/workspace' })
+    expect(prepared.endsWith('\n')).toBe(false)
+  })
+
+  it('rewrites only the physical header generation for an exact alpha refusal', () => {
+    const fixture = ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES[0]!
+    const source = readFileSync(fixture.path, 'utf8')
+
+    const prepared = prepareSessionSnapshotFixtureForComparison(source, fixture.path)
+    const [sourceHeader, ...sourceBody] = source.split('\n')
+    const [preparedHeader, ...preparedBody] = prepared.split('\n')
+
+    expect(JSON.parse(sourceHeader!)).toMatchObject({ version: 0 })
+    expect(JSON.parse(preparedHeader!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
+    expect(preparedBody).toEqual(sourceBody)
   })
 })
 
@@ -321,28 +771,50 @@ describe('deriveReplayScript', () => {
     expect(deriveReplayScript([event])).toEqual([])
   })
 
+  it('rejects a durable compact stream marker whose complete output is absent', () => {
+    const event = {
+      type: 'compaction/summary',
+      seq: SessionSeq(1),
+      time: 0,
+      data: { llmStreamCall: true },
+    } as unknown as SessionEvent
+
+    expect(() => deriveReplayScript([event]))
+      .toThrow('llm-replay: compaction/summary marks an LLM stream call without rawOutput')
+  })
+
   it('rejects a persisted marked compact LLM call without its complete output', () => {
-    const [event] = parseSessionLog([
-      JSON.stringify({ type: 'session', version: 0, id: 'invalid-compact', createdAt: 0 }),
+    const source = [
+      JSON.stringify({
+        type: 'session', version: 0, id: 'invalid-compact', createdAt: 0, delegationDepth: 0,
+      }),
+      JSON.stringify({
+        type: 'user/message', seq: 0, time: 0,
+        data: { role: 'user', id: 'source', content: [], source: { kind: 'user' } },
+        surfaceOp: 'append',
+      }),
+      JSON.stringify({
+        type: 'compaction/start', seq: 1, time: 0,
+        data: { compactionId: COMPACTION_ID, turn: 1 },
+      }),
       JSON.stringify({
         type: 'compaction/summary',
-        seq: 1,
+        seq: 2,
         time: 0,
         data: {
           compactionId: COMPACTION_ID,
           summary: [{ type: 'text', text: 'missing source events' }],
           llmStreamCall: true,
-          shadowedRange: { start: 1, end: 1 },
-          shadowedSeqs: [1],
+          shadowedRange: { start: 0, end: 0 },
+          shadowedSeqs: [0],
           shadowedTokenCount: 20,
           provider: 'mock',
           model: 'mock',
         },
       }),
-    ].join('\n'))
+    ].join('\n')
 
-    expect(() => deriveReplayScript(event === undefined ? [] : [event]))
-      .toThrow(/LLM stream call without rawOutput/)
+    expect(() => parseSessionLog(source)).toThrow(/llmStreamCall requires rawOutput/)
   })
 
   it('derives a compaction/summary stream when usage is unavailable', () => {
@@ -424,8 +896,17 @@ describe('deriveReplayScript', () => {
 
 describe('loadReplayScript', () => {
   it('derives from the session JSONL when no override is present', () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     expect(loadReplayScript({ file })).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
+  })
+
+  it('never rewrites a projected source fixture while migrating it in memory', () => {
+    const source = projectSessionJsonl(replaySessionJsonl([TEXT_CHUNKS]))
+    writeFileSync(file, source, 'utf8')
+
+    expect(loadReplayScript({ file })).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
+    expect(JSON.parse(migrateSessionSnapshotFixture(source).split('\n')[0] as string)).toMatchObject({ version: 1 })
+    expect(readFileSync(file, 'utf8')).toBe(source)
   })
 
   it('uses the sidecar override when present, ignoring the JSONL', () => {
@@ -436,8 +917,16 @@ describe('loadReplayScript', () => {
     expect(loadReplayScript({ file, overrideFile })).toEqual(override)
   })
 
+  it('uses a whole-script override reused as the primary fixture path', () => {
+    const overrideFile = join(dir, 'replay.override.json')
+    const override: ReplayEntry[] = [{ kind: 'hang' }]
+    writeFileSync(overrideFile, JSON.stringify(override), 'utf8')
+
+    expect(loadReplayScript({ file: overrideFile, overrideFile })).toEqual(override)
+  })
+
   it('falls back to the JSONL when the override path is set but absent', () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     expect(loadReplayScript({ file, overrideFile: join(dir, 'nope.json') }))
       .toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
   })
@@ -459,11 +948,7 @@ describe('loadReplayScript', () => {
       { type: 'text-delta', index: 0, text: 'two' },
       { type: 'finish', reason: { kind: 'stop' } },
     ]
-    let seq = 1
-    writeFileSync(file, sessionJsonl([
-      ...TEXT_CHUNKS.map(c => chunkEvent(SessionSeq(seq++), 1, 1, c)),
-      ...callB.map(c => chunkEvent(SessionSeq(seq++), 1, 2, c)),
-    ]), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS, callB]), 'utf8')
     const overrideFile = join(dir, 'replay.override.json')
     writeFileSync(overrideFile, JSON.stringify({
       patches: [{ at: 0, entry: { kind: 'throw', chunks: [], message: 'transient', code: 'SERVER' } }],
@@ -475,7 +960,7 @@ describe('loadReplayScript', () => {
   })
 
   it('patches form: at == derived length appends (the retry-attempt slot)', () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     const overrideFile = join(dir, 'replay.override.json')
     writeFileSync(overrideFile, JSON.stringify({
       patches: [
@@ -490,7 +975,7 @@ describe('loadReplayScript', () => {
   })
 
   it('patches form: an out-of-range index fails loud with the derived length', () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     const overrideFile = join(dir, 'replay.override.json')
     writeFileSync(overrideFile, JSON.stringify({ patches: [{ at: 2, entry: { kind: 'hang' } }] }), 'utf8')
     expect(() => loadReplayScript({ file, overrideFile })).toThrow(/patch index 2 out of range.*1 call/s)
@@ -522,7 +1007,7 @@ describe('loadReplayScript', () => {
   })
 
   it('rejects duplicate patch indexes instead of silently taking the last one', () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     const overrideFile = join(dir, 'replay.override.json')
     writeFileSync(overrideFile, JSON.stringify({
       patches: [
@@ -536,12 +1021,7 @@ describe('loadReplayScript', () => {
 
 describe('installLlmReplay (through the real LlmRuntime)', () => {
   function writeLog(...calls: StreamChunk[][]): void {
-    let seq = 1
-    const events: SessionEvent[] = []
-    calls.forEach((chunks, step) => {
-      for (const c of chunks) events.push(chunkEvent(SessionSeq(seq++), 1, step + 1, c))
-    })
-    writeFileSync(file, sessionJsonl(events), 'utf8')
+    writeFileSync(file, replaySessionJsonl(calls), 'utf8')
   }
 
   it('serves derived chunks back, short-circuiting the adapter', async () => {
@@ -1038,10 +1518,7 @@ describe('installLlmReplay (through the real LlmRuntime)', () => {
   it('assertConsumed reports recorded scripts no live session ever bound', async () => {
     writeLog(TEXT_CHUNKS)
     const childFile = join(dir, 'session.1.jsonl')
-    writeFileSync(childFile, sessionJsonl(
-      TEXT_CHUNKS.map((chunk, i) => chunkEvent(SessionSeq(i + 1), 1, 1, chunk)),
-      { id: 'child', createdAt: 10 },
-    ), 'utf8')
+    writeFileSync(childFile, replaySessionJsonl([TEXT_CHUNKS], { id: 'child', createdAt: 10 }), 'utf8')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     const handle = installLlmReplay(ctx, { file, childFiles: [childFile] })
@@ -1058,21 +1535,31 @@ describe('parseSessionHeader', () => {
   })
 
   it('reads a non-zero v0 seedLength as the inherited event count', () => {
-    expect(parseSessionHeader('{"type":"session","version":0,"id":"child","createdAt":7,"seedLength":4}\n'))
+    const events: SessionEvent[] = Array.from({ length: 4 }, (_, seq) => ({
+      type: 'permission/preset', seq: SessionSeq(seq), time: 0, data: { preset: 'workspace-write' },
+    }))
+    expect(parseSessionHeader(sessionJsonl(events, { id: 'child', createdAt: 7, seedLength: 4 })))
       .toEqual({ id: 'child', createdAt: 7, inheritedEventCount: 4 })
   })
 
-  it('falls back to id="" / createdAt=0 / inheritedEventCount=0 when the header lacks them', () => {
-    expect(parseSessionHeader('{"type":"session","version":0}\n')).toEqual({ id: '', createdAt: 0, inheritedEventCount: 0 })
+  it('materializes omitted v0 delegation depth and tokenized cwd for projected validation', () => {
+    expect(parseSessionHeader(
+      '{"type":"session","version":0,"id":"projected","createdAt":7,"cwd":"{{cwd}}/workspace"}\n',
+    )).toEqual({ id: 'projected', createdAt: 7, inheritedEventCount: 0 })
   })
 
-  it('falls back on an empty buffer (no header line)', () => {
-    expect(parseSessionHeader('')).toEqual({ id: '', createdAt: 0, inheritedEventCount: 0 })
+  it('rejects a projected header that lacks required identity fields', () => {
+    expect(() => parseSessionHeader('{"type":"session","version":0}\n')).toThrow(/lacks required member "id"/)
+  })
+
+  it('rejects an empty fixture instead of inventing header identity', () => {
+    expect(() => parseSessionHeader('')).toThrow(/must start with a session header/)
   })
 
   it.each([-1, 0.5, Number.MAX_SAFE_INTEGER + 1])('rejects invalid v0 seedLength %s', (seedLength) => {
-    expect(() => parseSessionHeader(JSON.stringify({ type: 'session', version: 0, seedLength })))
-      .toThrow(/SessionLogOffset/)
+    expect(() => parseSessionHeader(JSON.stringify({
+      type: 'session', version: 0, id: 'invalid', createdAt: 0, seedLength, delegationDepth: 0,
+    }))).toThrow(/seedLength/)
   })
 })
 
@@ -1108,16 +1595,30 @@ describe('loadSessionScripts', () => {
     const parentChunk: StreamChunk = { type: 'text-delta', index: 0, text: 'PARENT-RESPONSE' }
     const childChunks: StreamChunk[] = [{ type: 'text-delta', index: 0, text: 'CHILD-RESPONSE' }, { type: 'finish', reason: { kind: 'stop' } }]
     const f = writeSession('session.jsonl', { id: 'parent', createdAt: 100 }, [TEXT_CHUNKS])
-    // The child fixture: 2 seeded parent events (a chunk + its finish) then the
-    // child's own turn. seedLength = 2 marks where the inherited prefix ends.
+    // The child fixture contains one complete inherited turn followed by its own turn.
+    // seedLength = 6 marks the exact cut between those lifecycles.
     const childEvents: SessionEvent[] = [
-      chunkEvent(SessionSeq(0), 1, 1, parentChunk),
-      chunkEvent(SessionSeq(1), 1, 1, { type: 'finish', reason: { kind: 'stop' } }),
-      chunkEvent(SessionSeq(2), 2, 1, childChunks[0]!),
-      chunkEvent(SessionSeq(3), 2, 1, childChunks[1]!),
+      { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } },
+      { type: 'step/start', seq: SessionSeq(1), time: 0, data: { turn: 1, step: 1 } },
+      chunkEvent(SessionSeq(2), 1, 1, parentChunk),
+      chunkEvent(SessionSeq(3), 1, 1, { type: 'finish', reason: { kind: 'stop' } }),
+      { type: 'step/end', seq: SessionSeq(4), time: 0, data: { turn: 1, step: 1 } },
+      {
+        type: 'turn/end', seq: SessionSeq(5), time: 0,
+        data: { turn: 1, reason: { kind: 'completed' } },
+      },
+      { type: 'turn/start', seq: SessionSeq(6), time: 0, data: { turn: 2 } },
+      { type: 'step/start', seq: SessionSeq(7), time: 0, data: { turn: 2, step: 1 } },
+      chunkEvent(SessionSeq(8), 2, 1, childChunks[0]!),
+      chunkEvent(SessionSeq(9), 2, 1, childChunks[1]!),
+      { type: 'step/end', seq: SessionSeq(10), time: 0, data: { turn: 2, step: 1 } },
+      {
+        type: 'turn/end', seq: SessionSeq(11), time: 0,
+        data: { turn: 2, reason: { kind: 'completed' } },
+      },
     ]
     const childPath = join(dir, 'session.1.jsonl')
-    writeFileSync(childPath, sessionJsonl(childEvents, { id: 'child', createdAt: 200, seedLength: 2 }), 'utf8')
+    writeFileSync(childPath, sessionJsonl(childEvents, { id: 'child', createdAt: 200, seedLength: 6 }), 'utf8')
 
     const scripts = loadSessionScripts({ file: f, childFiles: [childPath] })
     // The child script is ONLY the child's own model call — the parent's seeded
@@ -1144,6 +1645,20 @@ describe('loadSessionScripts', () => {
     const scripts = loadSessionScripts({ file: join(dir, 'absent.jsonl'), overrideFile })
     expect(scripts).toHaveLength(1)
     expect(scripts[0]).toMatchObject({ recordedId: '', createdAt: 0, primary: true })
+  })
+
+  it('does not parse a whole-script override reused as the primary fixture path', () => {
+    const overrideFile = join(dir, 'replay.override.json')
+    writeFileSync(overrideFile, JSON.stringify([{ kind: 'hang' }]), 'utf8')
+
+    const scripts = loadSessionScripts({ file: overrideFile, overrideFile })
+
+    expect(scripts).toEqual([{
+      recordedId: '',
+      createdAt: 0,
+      entries: [{ kind: 'hang' }],
+      primary: true,
+    }])
   })
 
   it('orders two same-createdAt children deterministically after the primary', () => {
@@ -1341,7 +1856,7 @@ describe('apply (the plugin entry)', () => {
   })
 
   it('installs replay and its catalog from explicit config', async () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     apply(ctx, {
@@ -1358,7 +1873,7 @@ describe('apply (the plugin entry)', () => {
   })
 
   it('declares flat image request pricing only for models that configure it', async () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     installLlmReplay(ctx, {
@@ -1432,7 +1947,7 @@ describe('apply (the plugin entry)', () => {
   })
 
   it('uses only the file when no override path is configured or in the env', async () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS]), 'utf8')
     process.env.DSH_SNAPSHOT_FILE = file
     delete process.env.DSH_SNAPSHOT_OVERRIDE
     const ctx = new Context()
@@ -1461,9 +1976,9 @@ describe('apply (the plugin entry)', () => {
       { type: 'text-delta', index: 0, text: 'kid' },
       { type: 'finish', reason: { kind: 'stop' } },
     ]
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c)), { id: 'p', createdAt: 1 }), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS], { id: 'p', createdAt: 1 }), 'utf8')
     const childFile = join(dir, 'session.1.jsonl')
-    writeFileSync(childFile, sessionJsonl(childSecond.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c)), { id: 'c', createdAt: 2 }), 'utf8')
+    writeFileSync(childFile, replaySessionJsonl([childSecond], { id: 'c', createdAt: 2 }), 'utf8')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     apply(ctx, { file, childFiles: [childFile] })
@@ -1479,9 +1994,9 @@ describe('apply (the plugin entry)', () => {
       { type: 'text-delta', index: 0, text: 'env-kid' },
       { type: 'finish', reason: { kind: 'stop' } },
     ]
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c)), { id: 'p', createdAt: 1 }), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS], { id: 'p', createdAt: 1 }), 'utf8')
     const childFile = join(dir, 'session.1.jsonl')
-    writeFileSync(childFile, sessionJsonl(childChunks.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c)), { id: 'c', createdAt: 2 }), 'utf8')
+    writeFileSync(childFile, replaySessionJsonl([childChunks], { id: 'c', createdAt: 2 }), 'utf8')
     process.env.DSH_SNAPSHOT_FILE = file
     process.env.DSH_SNAPSHOT_CHILD_FILES = childFile // single entry, no delimiter needed
     const ctx = new Context()
@@ -1494,7 +2009,7 @@ describe('apply (the plugin entry)', () => {
   })
 
   it('ignores an empty $DSH_SNAPSHOT_CHILD_FILES (single-session)', async () => {
-    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c)), { id: 'p', createdAt: 1 }), 'utf8')
+    writeFileSync(file, replaySessionJsonl([TEXT_CHUNKS], { id: 'p', createdAt: 1 }), 'utf8')
     process.env.DSH_SNAPSHOT_FILE = file
     process.env.DSH_SNAPSHOT_CHILD_FILES = ''
     const ctx = new Context()

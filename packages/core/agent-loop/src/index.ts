@@ -30,6 +30,7 @@ import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
+import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { ReactLoopAgent } from './agent.ts'
 import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
@@ -481,11 +482,9 @@ export class AgentLoop extends Service implements AgentFactory {
       return
     } catch (error: unknown) {
       if (!this.ownership.isActive()) return
-      // A load is the per-id serialization barrier for eager write-behind and
-      // lifecycle retirement. Only a genuinely absent artifact falls back to
-      // first creation; corruption and backend failures stay loud.
-      const exists = (await persistence.list()).some(header => header.id === sessionId)
-      if (exists) throw error
+      // Only the persistence service's exact absence result may create this id;
+      // unsupported formats, corruption, and backend failures stay loud.
+      if (!(error instanceof SessionPersistenceNotFoundError)) throw error
     }
     this.create(sessionId, agentOptions, meta)
   }

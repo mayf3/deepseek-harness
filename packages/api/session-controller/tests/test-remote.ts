@@ -2,13 +2,14 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionLogOffset } from '@deepseek-ai/dsh-session'
+import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import {
   SessionPersistenceCorruptionError,
   SessionPersistenceNotFoundError,
   SessionPersistenceRevision,
   type BorrowedSessionSource,
+  type CurrentSessionPersistenceListing,
   type SessionInspection,
 } from '@deepseek-ai/dsh-session-persistence'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -96,6 +97,20 @@ type LegacyTestPersistence = Record<string, unknown> & {
     sessionId: SessionId,
     signal?: AbortSignal,
   ) => Promise<BorrowedSessionSource>
+}
+
+/**
+ * Describe one current logical header through the persistence listing contract.
+ * @param header - current logical header exposed by the test backend.
+ * @returns one current-format header-only listing descriptor.
+ */
+export function currentSessionListing(header: SessionHeader): CurrentSessionPersistenceListing {
+  return {
+    status: 'current',
+    header,
+    storedVersion: SESSION_FORMAT_VERSION,
+    targetVersion: SESSION_FORMAT_VERSION,
+  }
 }
 
 /** Add the preparation-backed point-read contract to compact persistence doubles. */

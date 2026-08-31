@@ -191,7 +191,7 @@ type MessageFeedbackDeleteResult =
 
 ## 目标与生命周期权威
 
-`SessionPersistence.inspect()` 提供目标 Session 的观测，且不会发布或恢复 Agent，也不会提交 cold repair。cold 路径先由 `listSnapshots()` 预检明确不存在；已进入目录的 Session 若检查失败，会按基础设施故障原样传播。`put` 只接受具有指定 `MessageId` 的非空、append-origin `assistant/message`；replacement-origin、仅承载 usage 的空记录和非 assistant 记录都不是反馈目标。
+`SessionPersistence.inspect()` 提供目标 Session 的观测，且不会发布或恢复 Agent。已经是当前格式的检查只在内存中保留 cold repair；受支持的历史正文读取会先发布其迁移并修复后的当前 generation。cold 路径先由 `listSnapshots()` 预检明确不存在；已进入目录的 Session 若检查失败，会按基础设施故障原样传播。`put` 只接受具有指定 `MessageId` 的非空、append-origin `assistant/message`；replacement-origin、仅承载 usage 的空记录和非 assistant 记录都不是反馈目标。
 
 存储的 `{createdAt, cwd}` 身份必须与检查所得 header 匹配。不匹配按不存在处理：`list` 返回空条目，`put` 则可用绑定当前 header 身份的新记录替换陈旧行。fork 使用新的 Session 身份，即使种子包含相同消息，也不获得伴随记录副本。
 

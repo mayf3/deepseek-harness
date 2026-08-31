@@ -75,6 +75,7 @@ function markdownFixture(): string {
       id: '{{sessionId}}',
       createdAt: 0,
       cwd: '{{cwd}}',
+      delegationDepth: 0,
     }),
     ...session.snapshotEvents().map(event => JSON.stringify({
       ...event,

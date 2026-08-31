@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决策
 
-遥测协调器提供 `live` 与 `on-demand` 捕获。按需捕获不注册会话、flush 或运维事件监听器，也不保留投影记录。`captureSession(session, throughSeq?)` 从 handoff 游标之后读取权威会话日志，直至可选的序列号边界（含边界），应用固定投影、深拷贝每个已接受事件、运行当前的 `session-telemetry/record` waterfall（瀑布式事件），并将结果交给后端。
+遥测协调器提供 `live` 与 `on-demand` 捕获。按需捕获不注册会话、flush 或运维事件监听器，也不保留记录副本。`captureSession(session, throughSeq?)` 从同一对象 handoff 游标之后读取权威会话日志，直至可选的包含式序列号边界，按顺序深拷贝每个事件、运行当前的 `session-telemetry/record` waterfall（瀑布式事件），并为每个事件向后端交接一条记录，其中包括每条 `assistant/chunk` 及其完整 body。新 Session 对象没有 WeakMap 条目，因此逻辑游标为 `-1`，捕获从 seq 0 开始。
 
-`FEEDBACK_ONLY` 以 `feedback/record` 事件的序列号调用该方法。`session/event` 监听器运行时，追加已经提交，因此回放包含该反馈事件，且无法包含后续后缀。现有 handoff 游标可区分后续回放，无需另一个待处理记录索引。
+`FEEDBACK_ONLY` 以 `feedback/record` 事件的序列号调用该方法。`session/event` 监听器运行时，追加已经提交，因此回放包含该反馈事件，且无法包含后续后缀。以对象为键的 handoff 游标可区分后续回放，无需另一个待处理记录索引：同一对象上的重复反馈只释放后缀，而新的 resume 或迁移对象上的首次反馈会释放其完整当前权威前缀。
 
 按需捕获只读取权威日志，因此不会发出 `agent-error` 或 `shutdown` 运维记录。脱敏在反馈时而非追加时求值。[反馈模式决策](../feature/2026-08-05-feedback-gated-session-telemetry.zh.md)规定公开的共享行为；本记录规定其无缓冲实现。
 
@@ -26,4 +26,4 @@ Status: implemented
 
 ## 后果
 
-没有反馈的会话不会消耗随事件数量增长的遥测自有内存；权威会话日志仍是反馈前的唯一副本。反馈处理会在后端非阻塞入队前同步执行投影、深拷贝与脱敏，因此其开销随未释放前缀增长。反馈前的脱敏策略变更会影响该次回放，而反馈前发生崩溃时什么都不上传。后续反馈只处理 handoff 游标之后的事件。
+没有反馈的会话不会消耗随事件数量增长的遥测自有内存；权威会话日志仍是反馈前的唯一副本。反馈处理会在后端非阻塞入队前同步执行深拷贝与脱敏，因此其开销随未释放前缀增长，并包含每条 chunk 事件。反馈前的脱敏策略变更会影响该次回放；反馈前发生崩溃时不会上传任何内容，除非后续恢复出新的 Session 对象并由反馈释放其日志。每个新对象首次捕获时从 seq 0 开始；同一对象上的后续反馈只处理 handoff 游标之后的事件。接收端基于 `(session.id, session.format_version, event.seq)` 对新对象回放去重。

@@ -25,7 +25,7 @@ Replay is keyed **per calling session**, and the harness harvests **every** sess
 
 ### 2. Replay binds live sessions to recorded scripts by first-call order
 
-A nested scenario records more than one log: the parent (`session.jsonl`) plus one per subagent child (`session.1.jsonl`, …). `dsh-llm-replay` loads them all, derives one script per recorded session, and orders the scripts by header `createdAt` (the parent is created before its children).
+A nested scenario records more than one role: parent `session[.vN].jsonl`, then one per subagent child as `session.<ordinal>[.vN].jsonl`. V0 omits `.v0`; positive generations use lowercase `.vN`; the harness selects the numerically highest file per role. `dsh-llm-replay` loads that selected set, derives one script per recorded Session, and orders the scripts by role (parent then contiguous children), while persisted discovery still uses header `createdAt` to assign child ordinals.
 
 Live session ids are freshly random every run and never equal the recorded ones, so a live session cannot bind to a script by id equality. Instead it binds by **first-call order**: the first live session to make any model call claims the first ordered script (the parent — earliest `createdAt`, and necessarily the first to stream, because it must run a turn before it can delegate), the next new live session claims the next script, and so on. Each session then advances its own cursor independently.
 
@@ -39,7 +39,7 @@ The alternative considered and rejected was a **call-ordered merge of the parent
 
 ### 3. The harness harvests every log, primary-first
 
-`harvestSessionLogs` recursively collects every fixed `session.jsonl` transcript under the sessions root (the JSONL backend gives each parent and child its own project/session directory), parses each header, and orders them primary-first: the top-level session (no `parentSession`) leads, then each child by ascending `createdAt`. `RunResult.sessionLogs` is the plural result; the spec writes each back to its fixture on record (`session.jsonl` + `session.<n>.jsonl`) and diffs each harvested log against its fixture on replay. The normalizer already accepted plural session ids and collapses any stray UUID, so no normalizer change was needed.
+`harvestSessionLogs` recursively selects the numerically highest canonical generation under each persistence Session directory, parses each header, and orders them primary-first: the top-level Session (no `parentSession`) leads, then each child by ascending `createdAt`. `RunResult.sessionLogs` is the plural result; record and refresh write each current output under `session[.vN].jsonl` or `session.<ordinal>[.vN].jsonl`, retain older generations for roles still produced, and diff the selected highest replay inputs against fresh current outputs. The normalizer already accepted plural Session ids and collapses any stray UUID, so no normalizer change was needed.
 
 ### 4. Scenarios
 

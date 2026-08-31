@@ -416,6 +416,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   BorrowedSessionSource: 'persistence.md',
   SessionLocation: 'persistence.md',
   SessionPreparation: 'persistence.md',
+  SessionPersistenceListing: 'persistence.md',
   SessionPersistenceSnapshot: 'persistence.md',
   SessionRawArtifact: 'persistence.md',
   ConfinedArgv: 'sandbox.md',

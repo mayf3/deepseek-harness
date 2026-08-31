@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
-import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
@@ -19,7 +19,7 @@ import {
   inspectApiSession,
 } from '../src/agent.ts'
 import { installModelSelectionProjection } from '../src/model-selection-projection.ts'
-import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
+import { currentSessionListing, installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 const roots: Context[] = []
 
@@ -45,7 +45,7 @@ async function harness(): Promise<{ ctx: Context; agents: ApiSessionAgentControl
 
 function header(id: string, cwd: string | null = '/workspace'): SessionHeader {
   return {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id: SessionId(id),
     createdAt: 1,
     isSeeded: false,
@@ -106,7 +106,7 @@ describe('ApiSession identity failures', () => {
 
     const listed = header('cwd-less-catalog', null)
     const disposeListed = providePersistence(ctx, {
-      list: () => Promise.resolve([listed]),
+      list: () => Promise.resolve([currentSessionListing(listed)]),
       inspect: () => Promise.resolve(unseededInspection(listed)),
     })
     await expect(inspectApiSession(ctx, listed.id)).rejects.toBeInstanceOf(ApiSessionNotFound)
@@ -115,7 +115,7 @@ describe('ApiSession identity failures', () => {
     const catalog = header('cwd-less-inspect')
     const inspected = header('cwd-less-inspect', null)
     providePersistence(ctx, {
-      list: () => Promise.resolve([catalog]),
+      list: () => Promise.resolve([currentSessionListing(catalog)]),
       inspect: () => Promise.resolve(unseededInspection(inspected)),
     })
     await expect(inspectApiSession(ctx, catalog.id)).rejects.toBeInstanceOf(ApiSessionNotFound)
@@ -187,7 +187,7 @@ describe('ApiSession Agent lookup and recovery', () => {
     const ordinary = await harness()
     const ordinaryMeta = header('ordinary-race')
     providePersistence(ordinary.ctx, {
-      list: () => Promise.resolve([ordinaryMeta]),
+      list: () => Promise.resolve([currentSessionListing(ordinaryMeta)]),
       inspect: () => Promise.resolve(unseededInspection(ordinaryMeta)),
     })
     const winner = agent(ordinary.ctx, ordinaryMeta)
@@ -200,7 +200,7 @@ describe('ApiSession Agent lookup and recovery', () => {
     const child = await harness()
     const childMeta = header('child-race')
     providePersistence(child.ctx, {
-      list: () => Promise.resolve([childMeta]),
+      list: () => Promise.resolve([currentSessionListing(childMeta)]),
       inspect: () => Promise.resolve(unseededInspection(childMeta)),
     })
     vi.spyOn(child.ctx.agents, 'resume').mockImplementation(async () => {
@@ -227,7 +227,7 @@ describe('ApiSession Agent lookup and recovery', () => {
     const failed = await harness()
     const meta = header('failed')
     providePersistence(failed.ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       inspect: () => Promise.resolve(unseededInspection(meta)),
     })
     vi.spyOn(failed.ctx.agents, 'resume').mockRejectedValue(new Error('factory unavailable'))
@@ -380,7 +380,7 @@ describe('ApiSession create or adoption', () => {
       data: { agentPreset: 'minimal' },
     }] as SessionEvent[]
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       inspect: () => Promise.resolve(unseededInspection(meta, events)),
     })
     ctx.provide('agentPresets', {
@@ -412,7 +412,7 @@ describe('ApiSession create or adoption', () => {
     const child = await harness()
     const childMeta = header('resume-child-race')
     providePersistence(child.ctx, {
-      list: () => Promise.resolve([childMeta]),
+      list: () => Promise.resolve([currentSessionListing(childMeta)]),
       inspect: () => Promise.resolve(unseededInspection(childMeta)),
     })
     child.ctx.provide('agentPresets', {
@@ -431,7 +431,7 @@ describe('ApiSession create or adoption', () => {
     const conflict = await harness()
     const stored = header('stored-cwd-conflict', '/stored')
     providePersistence(conflict.ctx, {
-      list: () => Promise.resolve([stored]),
+      list: () => Promise.resolve([currentSessionListing(stored)]),
       inspect: () => Promise.resolve(unseededInspection(stored)),
     })
     await expect(conflict.agents.ensureSession(stored.id, '/requested', true))

@@ -101,7 +101,7 @@ The decision history lives in the [unified service decision](../../../.agents/no
 
 ### Corpus resolution
 
-`SessionCorpus` binds optional `ctx.sessionPersistence` through a fiber and resolves each read live-first: a known live target is snapshotted without consulting persistence; otherwise the session is listed, inspected non-mutatingly, and re-checked for a live attachment before cloning. Header compatibility is asserted between listed and loaded observations. Batch title reads run one metadata listing and bounded-concurrency inspections, isolating per-session failures while cancellation rejects the whole batch.
+`SessionCorpus` binds optional `ctx.sessionPersistence` through a fiber and resolves each read live-first: a known live target is snapshotted without consulting persistence; otherwise the session is listed, inspected, and re-checked for a live attachment before cloning. Already-current inspection keeps recovery in memory; a supported historical body read may first publish migration and repair. Header compatibility is asserted between listed and loaded observations. Batch title reads run one metadata listing and bounded-concurrency inspections, isolating per-session failures while cancellation rejects the whole observer batch; a shared persistence load or migration already admitted for another observer may continue.
 
 ### Reads and traces
 

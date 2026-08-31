@@ -62,7 +62,7 @@ kind: "package-reference"
 
 ### 缓存保证什么
 
-日志领先，缓存跟随：实时检查点先把会话的缓冲事件持久化，然后才保存缓存记录。因此崩溃可能让缓存落后于日志，但绝不会让缓存领先。读取和写入共享存储域内一致的内存状态；逐单元写入链只在持久化成功后修改内存。每个带版本戳的记录必须匹配实时单元 schema 与完整生命周期身份（`createdAt`、`cwd`、`isSeeded` 和 `inheritedEventCount`），因此在一个 fork 切点下初始化的行不能播种另一个切点。JSON 后端把每条记录存于仅所有者可访问的 `<root>/session_projcache/sessions/<id>.json` 目录树中。
+日志领先，缓存跟随：实时检查点先把会话的缓冲事件持久化，然后才保存缓存记录。因此崩溃可能让缓存落后于日志，但绝不会让缓存领先。读取和写入共享存储域内一致的内存状态；逐单元写入链只在持久化成功后修改内存。每个带版本戳的记录必须匹配实时单元 schema 与完整生命周期身份（`formatVersion`、`createdAt`、`cwd`、`isSeeded` 和 `inheritedEventCount`），因此从另一会话格式代或 fork 切点折叠出的行不能播种调用方。JSON 后端把每条记录存于仅所有者可访问的 `<root>/session_projcache/sessions/<id>.json` 目录树中。
 
 -----
 

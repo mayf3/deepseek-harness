@@ -10,6 +10,7 @@ import s from '@deepseek-ai/schemastery'
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { deriveEventMessage, isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session/types'
+import { isReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
@@ -304,7 +305,8 @@ export class MessageFeedbackService extends TypertRemoteService {
   private async inspectSession(sessionId: SessionId): Promise<KnownSession> {
     if (this.ctx.sessions.get(sessionId) === undefined) {
       const snapshots = await this.ctx.sessionPersistence.listSnapshots()
-      if (!snapshots.some(snapshot => snapshot.header.id === sessionId)
+      if (!snapshots.some(snapshot => isReadableSessionPersistenceListing(snapshot)
+        && snapshot.header.id === sessionId)
         && this.ctx.sessions.get(sessionId) === undefined) {
         return rejected({ code: 'session-not-found', sessionId })
       }

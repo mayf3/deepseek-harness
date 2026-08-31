@@ -69,7 +69,7 @@ export interface SnapshotInputManifest {
 
 /** Optional reference to another scenario's canonical session. */
 export interface SnapshotSessionReference {
-  /** Repository-relative POSIX path from this scenario directory to the owning `session.jsonl`. */
+  /** Repository-relative POSIX path to the owning scenario's selected parent Session fixture. */
   source: string
 }
 
@@ -99,7 +99,7 @@ export interface SnapshotManifest {
   workspace?: SnapshotWorkspaceManifest
   /** Exceptional controller input absent for ordinary log-driven scenarios. */
   input?: SnapshotInputManifest
-  /** Absent when this directory owns `session.jsonl`; present for a read-only borrower. */
+  /** Absent when this directory owns its selected parent fixture; present for a read-only borrower. */
   session?: SnapshotSessionReference
 }
 

@@ -753,6 +753,11 @@
     },
     {
       "doc": "docs/subsystems/session-reference.md",
+      "symbol": "SessionReferenceSource",
+      "source": "packages/context/session-reference/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/session-reference.md",
       "symbol": "PreparedReferencedMessage",
       "source": "packages/context/session-reference/src/types.ts"
     },
@@ -1520,6 +1525,11 @@
       "doc": "docs/subsystems/persistence.md",
       "symbol": "SessionPersistenceRevision",
       "source": "packages/session/session-persistence/src/revision.ts"
+    },
+    {
+      "doc": "docs/subsystems/persistence.md",
+      "symbol": "SessionPersistenceListing",
+      "source": "packages/session/session-persistence/src/index.ts"
     },
     {
       "doc": "docs/subsystems/persistence.md",

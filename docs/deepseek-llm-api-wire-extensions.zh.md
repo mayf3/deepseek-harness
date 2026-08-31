@@ -79,8 +79,9 @@
 {
   "dsh_session_log": {
     "version": 1,
+    "sessionFormatVersion": 1,
     "session": {
-      "version": 0,
+      "version": 1,
       "id": "session-id",
       "createdAt": 1780000000000
     },
@@ -103,20 +104,21 @@
 | 成员 | 类型 | 含义 |
 |---|---|---|
 | `version` | `1` | `dsh_session_log` 的 schema 版本 |
-| `session` | 对象 | 不可变的权威 `SessionHeader` |
+| `sessionFormatVersion` | 非负整数 | 该后缀所表示的 Session 格式 generation |
+| `session` | 对象 | 当前 Session header 与继承切点的不可变协议投影 |
 | `afterSeq` | 整数 | 本次请求前记录为已接受的最大序号，或 `-1` |
 | `throughSeq` | 非负整数 | 本次请求所表示的最大序号 |
 | `events` | 数组 | 从 `afterSeq + 1` 到 `throughSeq` 的连续事件 |
 
 首次上传使用 `afterSeq: -1`，并携带当前的完整日志。此后每次上传都从同一会话 id 的最大已接受水位（watermark）之后开始。发送方为每次请求仅快照一次事件数组；快照后的追加内容属于后续请求。
 
-### 会话头
+### Session 协议 header
 
-`session` 成员是确切的 `Session.header`，不是完整的运行时会话。外层 `dsh_session_log.version` 选择本扩展 schema，`session.version` 则选择权威磁盘会话格式；两个版本值相互独立演进。
+`session` 成员投影 `Session.header`，既不是完整的运行时 Session，也不是 header 对象本身。它复制当前 header 事实，并把 `isSeeded` 替换为根据精确 `Session.inheritedEventCount` 得出的数值 `seedLength`。外层 `dsh_session_log.version` 选择本扩展 schema，`session.version` 则选择逻辑 Session 格式；两个版本值相互独立演进。
 
 | 成员 | 出现条件 | 含义 |
 |---|---|---|
-| `version` | 必需 | 权威会话格式版本；当前为 `0` |
+| `version` | 必需 | 逻辑 Session 格式版本；当前为 `1` |
 | `id` | 必需 | 确切的会话 id |
 | `createdAt` | 必需 | 非负安全整数 Unix epoch 毫秒数 |
 | `cwd` | 可选 | 创建会话时记录的绝对工作目录 |
@@ -141,14 +143,15 @@
   "time": 1780000000002,
   "data": {
     "sessionId": "session-id",
+    "sessionFormatVersion": 1,
     "throughSeq": 7
   }
 }
 ```
 
-`delivery-accepted` 表示已配置端点为包含该字段的 LLM 请求返回 HTTP 2xx。它不表示 SSE 已完整结束，也不表示远端已经持久化。该事件的 `throughSeq` 必须标识一项更早的事件，`sessionId` 则标识已发送后缀所属的会话。
+`delivery-accepted` 表示已配置端点为包含该字段的 LLM 请求返回 HTTP 2xx。它不表示 SSE 已完整结束，也不表示远端已经持久化。该事件的 `throughSeq` 必须标识一项更早的事件，`sessionId` 标识已发送后缀所属的 Session，`sessionFormatVersion` 则把水位绑定到该逻辑 generation。缺少该字段表示历史格式 v0。
 
-发送方会折叠最大的匹配 `throughSeq`，因此并发已接受请求无法使游标倒退。恢复后的进程会从持久日志重建游标。fork 会忽略命名其父会话的继承水位，因此先发送自身完整的继承前缀，再以子会话 id 推进。水位事件自身属于下一段未发送后缀。
+发送方只会为当前 Session id 与格式 generation 折叠最大的匹配 `throughSeq`，因此并发已接受请求无法使游标倒退，迁移后的 v0 水位也不能授权 v1 后缀。恢复后的进程会从持久日志重建游标。fork 会忽略命名其他 Session 的继承水位，因此先发送自身完整的继承前缀，再以子会话 id 推进。水位事件自身属于下一段未发送后缀。
 
 传输失败和非 2xx 响应不会追加水位。端点接受后、本地持久化前发生崩溃时，系统可能重新发送已接受范围；不确定性只会产生重复，绝不会产生序号缺口。系统没有独立上传存储、大小上限或截断路径。
 

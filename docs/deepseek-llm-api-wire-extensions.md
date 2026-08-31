@@ -79,8 +79,9 @@ An enabled inventory with no qualifying entries sends `packages: []`; disabling 
 {
   "dsh_session_log": {
     "version": 1,
+    "sessionFormatVersion": 1,
     "session": {
-      "version": 0,
+      "version": 1,
       "id": "session-id",
       "createdAt": 1780000000000
     },
@@ -103,20 +104,21 @@ An enabled inventory with no qualifying entries sends `packages: []`; disabling 
 | Member | Type | Meaning |
 |---|---|---|
 | `version` | `1` | Schema version for `dsh_session_log` |
-| `session` | object | Immutable canonical `SessionHeader` |
+| `sessionFormatVersion` | non-negative integer | Session format generation represented by this suffix |
+| `session` | object | Immutable wire projection of the current Session header and inherited cut |
 | `afterSeq` | integer | Greatest sequence recorded as accepted before this request, or `-1` |
 | `throughSeq` | non-negative integer | Greatest sequence represented by this request |
 | `events` | array | Contiguous events from `afterSeq + 1` through `throughSeq` |
 
 The first upload uses `afterSeq: -1` and carries the complete current log. Each later upload starts after the greatest accepted watermark for the same Session id. The sender snapshots the event array once per request; appends after that snapshot belong to a later request.
 
-### Session header
+### Wire Session header
 
-The `session` member is the exact `Session.header`, not a complete runtime Session. The outer `dsh_session_log.version` selects this extension schema, while `session.version` selects the canonical on-disk Session format; the two version values evolve independently.
+The `session` member projects `Session.header`, not a complete runtime Session or the header object itself. It copies the current header facts and replaces `isSeeded` with numeric `seedLength` derived from the exact `Session.inheritedEventCount`. The outer `dsh_session_log.version` selects this extension schema, while `session.version` selects the logical Session format; the two version values evolve independently.
 
 | Member | Presence | Meaning |
 |---|---|---|
-| `version` | required | Canonical Session format version; currently `0` |
+| `version` | required | Logical Session format version; currently `1` |
 | `id` | required | Exact Session id |
 | `createdAt` | required | Non-negative safe-integer Unix epoch milliseconds |
 | `cwd` | optional | Absolute working directory recorded at Session creation |
@@ -141,14 +143,15 @@ After the endpoint returns HTTP 2xx, the contribution appends this canonical eve
   "time": 1780000000002,
   "data": {
     "sessionId": "session-id",
+    "sessionFormatVersion": 1,
     "throughSeq": 7
   }
 }
 ```
 
-`delivery-accepted` means that the configured endpoint returned HTTP 2xx for the containing LLM request. It does not assert SSE completion or remote persistence. The event's `throughSeq` must identify an earlier event, and its `sessionId` identifies the Session whose suffix was sent.
+`delivery-accepted` means that the configured endpoint returned HTTP 2xx for the containing LLM request. It does not assert SSE completion or remote persistence. The event's `throughSeq` must identify an earlier event, its `sessionId` identifies the Session whose suffix was sent, and `sessionFormatVersion` binds the watermark to that exact logical generation. Absence means historical format v0.
 
-The sender folds the greatest matching `throughSeq`, so concurrent accepted requests cannot move the cursor backward. A resumed process rebuilds the cursor from the durable log. A fork ignores inherited watermarks that name its parent, and therefore sends its own complete inherited prefix before advancing under the child id. The watermark event itself belongs to the next unsent suffix.
+The sender folds the greatest matching `throughSeq` for the current Session id and format generation, so concurrent accepted requests cannot move the cursor backward and a migrated v0 watermark cannot authorize a v1 suffix. A resumed process rebuilds the cursor from the durable log. A fork ignores inherited watermarks that name another Session, and therefore sends its own complete inherited prefix before advancing under the child id. The watermark event itself belongs to the next unsent suffix.
 
 Transport and non-2xx failures append no watermark. A crash after endpoint acceptance but before local persistence may resend an already accepted range; uncertainty produces duplicates, never a sequence gap. There is no independent upload store, size cap, or truncation path.
 

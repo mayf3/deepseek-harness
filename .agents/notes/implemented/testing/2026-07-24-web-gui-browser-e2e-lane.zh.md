@@ -32,7 +32,7 @@ Web GUI 以一条真实组装链交付——chromium 页面 → client 插件 bu
 
 ### 预期输出
 
-具有稳定所属区域的场景会为每个不同的用户可见状态提交一份规范化的 `ariaSnapshot()`；跨区域的工作区管理状态则使用语义 DOM 断言和权威的 host 状态检查。UUID、cwd、工作区目录名与时长等易变内容会归一为稳定 token；采集过程持续轮询，直到连续两次规范化读取结果相同。Role 与文本锚点继续充当可评审预期输出周围的语义防线，并直接覆盖跨区域状态。拥有录制会话的场景默认将规范化后的重新持久化根会话与同一份 `session.jsonl` 比较；借用或派生 fixture 的场景显式关闭该比较。世界状态断言仍使用权威 host 状态或独立、完整的 `workspace.expected/`，因为 transcript 匹配不能证明外部效果。`refresh` 是 ARIA 预期输出的唯一写入者；回放模式下缺少预期输出时，测试会连同重新生成命令一起失败。
+具有稳定所属区域的场景会为每个不同的用户可见状态提交一份规范化的 `ariaSnapshot()`；跨区域的 workspace 管理状态则使用语义 DOM 断言与权威 host 状态检查。UUID、cwd、workspace basename 与时长等易变内容会归一为稳定 token；采集过程持续轮询，直到连续两次规范化读取结果相同。Role 与文本锚点继续充当可评审预期输出周围的语义防线，并直接覆盖跨区域状态。拥有录制 Session 的场景默认将规范化后的重新持久化根 generation 与选定的最高 parent fixture 比较（v0 为 `session.jsonl`，正 generation 为 `session.vN.jsonl`）；借用或派生 fixture 的场景显式关闭该比较。世界状态断言仍使用权威 host 状态或独立、完整的 `workspace.expected/`，因为 transcript 匹配不能证明外部效果。`refresh` 是 ARIA 预期输出的唯一 writer；replay 模式下缺少预期输出时，测试会连同重新生成命令一起失败。
 
 类型检查平面切分是结构性的：host scaffold、其支持模块，以及每个启动或检查 host 组合的 web spec 都会从注册在 client 侧的 `apps/web` 工程中排除，并逐文件纳入 `tsconfig.host.json`。一个程序不能同时持有 Cordis `Context` 合并的两侧。
 
@@ -66,7 +66,7 @@ Web GUI 以一条真实组装链交付——chromium 页面 → client 插件 bu
 
 **`packages/test-support/web-snapshot` 包 + `defineWebSnapshotSuite` 工厂。** 已否决：驱动 chromium 的源码在无浏览器的覆盖率 runner 上无法诚实保持逐文件 100%，且除受门禁的包已导出的辅助工具与本地 scaffold 外，这些场景专用交互尚未形成稳定的无浏览器约定。出现第二个 web 形态消费方，或被证实重复的生命周期代码确立该约定后，再重新考虑。
 
-**单独维护第二份规范化会话日志预期输出。** 已否决：把录制 fixture 再复制成另一个文件会使刷新成本翻倍，却不会增加独立 oracle。语料改为将规范化持久化结果与驱动回放的同一份 `session.jsonl` 比较，同时以 host 状态和完整 workspace 断言保留独立的世界验证义务。
+**单独维护第二份规范化 Session 日志预期输出。** 不予采用：把选定的录制 generation 再复制成另一个文件会使 refresh 成本翻倍，却不会增加独立 oracle。语料改为将规范化持久化结果与驱动 replay 的同一份最高 generation parent fixture 比较，同时以 host 状态和完整 workspace 断言保留独立的世界验证义务。
 
 **以 `DSH_SNAPSHOT` 回放分支拉起 `dsh web` bin。** 已否决：它需要在交付的 CLI 中增加测试专用回放分支和环境变量管道。进程内 scaffold 已加载同一份 `apps/cli/config/base.cordis.yml` 与 `apps/cli/config/web.cordis.yml`；只剩 argv、profile JSON 和 `AppCLIEntry` 胶水不在其覆盖范围内，而这些路径已由无密钥 CLI 冒烟覆盖。
 

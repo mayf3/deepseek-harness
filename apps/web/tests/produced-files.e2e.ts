@@ -94,7 +94,7 @@ function producedFixture(): string {
   return [
     JSON.stringify({
       type: 'session', version: SESSION_FORMAT_VERSION, id: '{{sessionId}}',
-      createdAt: 0, cwd: '{{cwd}}',
+      createdAt: 0, cwd: '{{cwd}}', delegationDepth: 0,
     }),
     ...session.snapshotEvents().map(event => JSON.stringify({
       ...event, time: eventTimeOrigin + event.seq * 1_000,

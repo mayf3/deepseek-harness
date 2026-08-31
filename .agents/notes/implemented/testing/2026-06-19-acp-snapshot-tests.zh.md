@@ -18,7 +18,7 @@ Status: implemented
 
 ### fixture 投影持久化会话 JSONL
 
-每个场景的 `session.jsonl` 都从真实运行中采集。`assistant/chunk` 事件复现模型流；工具、消息和边界事件捕获 harness 行为。因此，一份普通会话产物同时充当回放来源和行为预期输出。
+每个场景数值最高的选定 parent generation 都从真实运行中采集：v0 为 `session.jsonl`，正 generation 为 `session.vN.jsonl`。`assistant/chunk` 事件复现模型 stream；工具、消息与边界事件捕获 harness 行为。因此，一份普通 Session generation 同时充当 replay source 与行为预期输出。
 
 每个签入仓库的会话格式 fixture 都使用规范的打包物理布局。覆盖所有行类型的场景从一份独立的真实录制机械派生；测试要求它包含每一种打包存储行类型，并在两份 fixture 解码后逐事件精确相等；随后，普通回放与日志比较会证明组装后的进程能够消费并复现该布局。
 
@@ -53,7 +53,7 @@ Status: implemented
 快照运行断言**两个**归一化后的表面，因为 harness 的外部表面是不同的：
 
 1. **stdout transcript**——自动化客户端收到的、分帧后的 ACP JSON-RPC 响应与已提交的消息更新。它捕获传输约定的回归，与已提交的 `stdout.expected.jsonl` 比较。
-2. **重新持久化的会话 JSONL**，经过规范化后与 `session.jsonl` 比较。同一 fixture 同时作为回放来源和预期日志。提示词与工具的主体内容会被清理；每种请求头类别由一个场景固定余下的请求头序列。该 pin 默认拥有可读的提示词与工具 schema 伴随文件；当完整的对应序列相同时，也可将另一个 pin 指定为其中任一来源，因此每个不同的伴随文件版本只提交一次。fixture 守卫会拒绝重复的伴随文件内容，录制/刷新会拒绝生成不同字节的共享引用方。最初的请求头固定理由保留在[请求头固定 Agent Note](../../archived/testing/2026-07-06-pin-request-header-content-in-one-scenario.md)中。Override 场景仅从其伴随文件派生模型行为。
+2. **重新持久化的 Session JSONL**，规范化后与选定的最高 parent fixture 比较。同一个 generation 同时作为 replay source 与预期日志；新鲜当前 writer 可以产生更高的规范文件名，而逻辑比较会保留较旧 replay 输入。prompt 与工具 bulk 会被清理；每种 request header 类别由一个场景固定余下 header sequence。该 pin 默认拥有可读的 prompt 与工具 schema sidecar；完整对应 sequence 相同时，也可把另一个 pin 指定为任一来源，因此每个不同 sidecar 版本只提交一次。fixture guard 会拒绝重复 sidecar 内容，record/refresh 会拒绝生成不同字节的共享 claimant。最初的 request header 固定理由保留在[请求头固定 Agent Note](../../archived/testing/2026-07-06-pin-request-header-content-in-one-scenario.md)中。Override 场景只从其 sidecar 派生模型行为。
 
 两个表面互补：stdout 覆盖精简的自动化协议格式，JSONL 覆盖协议格式有意省略的循环、工具和边界结构。
 
@@ -69,7 +69,7 @@ Status: implemented
 
 ### 两个子命令，回放在默认门禁中
 
-`pnpm run test:snapshot` 无需密钥即可回放已提交 fixture；`test:snapshot:record` 使用真实 API，并重写投影后的会话快照与接口专属预期输出。同一无密钥门禁会通过 `session` 头记录发现仓库中的 JSONL，并拒绝与共享编解码器的投影后规范打包表示不同的任何 fixture。缺少 fixture 时会明确报错。每个 ACP 场景都包含 `input.json`、`stdout.expected.jsonl` 和 `session.jsonl`；不调用模型的情况使用仅含头记录的日志。其他 profile 从 `session.jsonl` 推导普通的已受理用户输入，只在 `snapshot.yml` 中保留已受理会话无法重建的控制器输入。只有成功模型行为无法从日志推导的场景才需要 `replay.override.json`。fixture 守卫会拒绝缺失、不匹配和孤立文件。两个命令都接受场景过滤器。
+`pnpm run test:snapshot` 无需密钥即可 replay 已提交 fixture；`test:snapshot:record` 使用真实 API，并写入投影后的当前 Session generation 与接口专属预期输出。同一无密钥 gate 会通过文件名/header 一致性发现仓库中的规范 JSONL generation，并拒绝与共享 codec 的投影后规范打包表示不同的任何 fixture。缺失角色会明确失败。每个 ACP 场景都包含 `input.json`、`stdout.expected.jsonl` 与一个选定 parent `session[.vN].jsonl`；不调用模型的情况使用仅含 header 的日志。其他 profile 从选定 parent generation 推导普通 accepted user input，只在 `snapshot.yml` 中保留 accepted Session 无法重建的 controller input。只有成功模型行为无法从日志推导的场景才需要 `replay.override.json`。fixture guard 会拒绝缺失、不匹配、非规范与孤立文件。两个命令都接受场景 filter。
 
 ## 曾考虑的替代方案
 

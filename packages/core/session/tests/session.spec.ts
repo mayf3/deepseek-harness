@@ -187,6 +187,27 @@ describe('Session', () => {
       .toEqual([unrelatedPrimitiveData])
   })
 
+  it('rejects historical or malformed request-header lifecycle markers on seed/load', () => {
+    const base = {
+      type: 'request/header', seq: SessionSeq(0), time: 1,
+      data: { header: { config: { provider: 'mock', model: 'model' } }, reason: 'initial' },
+    } as const
+    for (const reason of ['fallback', 'unknown', null]) {
+      const invalid = structuredClone(base) as unknown as SessionEvent
+      if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
+      invalid.data.reason = reason as never
+      expect(() => Session.create(SessionId('invalid-header-reason'), [invalid]))
+        .toThrow('seed request/header at index 0 has an invalid reason')
+    }
+    for (const startsSeries of [false, 1, 'true']) {
+      const invalid = structuredClone(base) as unknown as SessionEvent
+      if (invalid.type !== 'request/header') throw new Error('test fixture must be a request header')
+      invalid.data.startsSeries = startsSeries as never
+      expect(() => Session.create(SessionId('invalid-series-marker'), [invalid]))
+        .toThrow('seed request/header at index 0 has an invalid startsSeries marker')
+    }
+  })
+
   it('rejects event-specific malformed message shapes on seed/load', () => {
     const user = {
       id: 'user',
@@ -1002,7 +1023,7 @@ describe('Session', () => {
       cwd: '/accepted',
       parentSession: SessionId('parent'),
       isSeeded: true,
-    }
+    } satisfies SessionHeader
 
     const session = Session.create(SessionId('header-owned'), [], input, SessionLogOffset(0))
     input.cwd = '/caller-mutated'
@@ -1067,7 +1088,7 @@ describe('Session', () => {
     const cases: Array<{ header: unknown; error: RegExp }> = [
       { header: 1, error: /not a plain JSON record/ },
       { header: null, error: /not a plain JSON record/ },
-      { header: { ...base, version: 1 }, error: /header version/ },
+      { header: { ...base, version: SESSION_FORMAT_VERSION + 1 }, error: /header version/ },
       { header: { ...base, createdAt: '123' }, error: /createdAt must be a non-negative safe integer/ },
       { header: { ...base, cwd: 1 }, error: /header cwd must be a string/ },
       { header: { ...base, cwd: 'relative' }, error: /header cwd must be an absolute path/ },

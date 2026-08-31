@@ -1,5 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { Session, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, {
+  SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionSeq,
+} from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import type { BorrowedSessionSource } from '@deepseek-ai/dsh-session-persistence'
@@ -8,7 +10,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { SessionObservationReader } from '../src/observation.ts'
 
 function header(id: string): SessionHeader {
-  return { version: 0, id: SessionId(id), createdAt: 1, cwd: '/workspace', isSeeded: false }
+  return {
+    version: SESSION_FORMAT_VERSION,
+    id: SessionId(id),
+    createdAt: 1,
+    cwd: '/workspace',
+    isSeeded: false,
+  }
 }
 
 function preparedSource(

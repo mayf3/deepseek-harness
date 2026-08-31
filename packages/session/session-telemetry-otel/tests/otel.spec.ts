@@ -16,7 +16,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
-import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import OpenTelemetrySessionBackend, { Config, DEFAULT_TELEMETRY_MODE, SessionTelemetryMode } from '../src/index.ts'
 
 interface Capture {
@@ -124,6 +124,16 @@ describe('OpenTelemetrySessionBackend wire', () => {
     const { ctx, fiber } = await boot(url)
     const session = ctx.sessions.create(SessionId('wire'), { meta: { cwd: '/tmp/w' } })
     session.append('turn/start', { turn: 1 })
+    session.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'text-delta', index: 0, text: 'first complete chunk' },
+    })
+    session.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'text-delta', index: 0, text: 'second complete chunk' },
+    })
     session.append('turn/end', { turn: 1, reason: { kind: 'error', error: { message: 'boom', code: 'UNKNOWN' } } })
     ctx.sessionTelemetry.emit({
       channel: 'ledger',
@@ -151,11 +161,59 @@ describe('OpenTelemetrySessionBackend wire', () => {
     expect(start).toBeDefined()
     expect(start?.record.severityNumber).toBe(9)
     expect(BigInt(start!.record.timeUnixNano)).toBe(BigInt(session.snapshotEvents()[0]!.time) * 1_000_000n)
+    expect(start?.record.attributes).toContainEqual({
+      key: 'session.format_version',
+      value: { intValue: SESSION_FORMAT_VERSION },
+    })
     expect(start?.record.attributes).toContainEqual({ key: 'session.cwd', value: { stringValue: '/tmp/w' } })
 
     const end = ledger.find(r => r.record.attributes?.some(a => a.key === 'event.type' && a.value.stringValue === 'turn/end'))
     expect(end?.record.severityNumber).toBe(17)
     expect(end?.record.severityText).toBe('ERROR')
+    const chunks = ledger.filter(r =>
+      r.record.attributes?.some(a => a.key === 'event.type' && a.value.stringValue === 'assistant/chunk'))
+    expect(chunks.map(({ record }) => record.body)).toEqual([
+      {
+        kvlistValue: {
+          values: [
+            { key: 'turn', value: { intValue: 1 } },
+            { key: 'step', value: { intValue: 1 } },
+            {
+              key: 'chunk',
+              value: {
+                kvlistValue: {
+                  values: [
+                    { key: 'type', value: { stringValue: 'text-delta' } },
+                    { key: 'index', value: { intValue: 0 } },
+                    { key: 'text', value: { stringValue: 'first complete chunk' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+      {
+        kvlistValue: {
+          values: [
+            { key: 'turn', value: { intValue: 1 } },
+            { key: 'step', value: { intValue: 1 } },
+            {
+              key: 'chunk',
+              value: {
+                kvlistValue: {
+                  values: [
+                    { key: 'type', value: { stringValue: 'text-delta' } },
+                    { key: 'index', value: { intValue: 0 } },
+                    { key: 'text', value: { stringValue: 'second complete chunk' } },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      },
+    ])
     expect(eventTypes(captures)).toContain('manual')
 
     expect(ops).toHaveLength(1)

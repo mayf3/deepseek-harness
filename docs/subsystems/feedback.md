@@ -191,7 +191,7 @@ One Session sidecar row contains its header identity `{createdAt, cwd}` and feed
 
 ## Target and lifecycle authority
 
-`SessionPersistence.inspect()` supplies the target Session observation without publishing or resuming an Agent and without committing cold repair. A cold `listSnapshots()` preflight classifies definite absence; inspection failure for a catalogued Session propagates as infrastructure failure. `put` accepts only a non-empty, append-origin `assistant/message` with the requested `MessageId`; replacement-origin, usage-only empty, and non-assistant records are not feedback targets.
+`SessionPersistence.inspect()` supplies the target Session observation without publishing or resuming an Agent. Already-current inspection keeps cold repair in memory; a supported historical body read first publishes its migrated and repaired current generation. A cold `listSnapshots()` preflight classifies definite absence; inspection failure for a catalogued Session propagates as infrastructure failure. `put` accepts only a non-empty, append-origin `assistant/message` with the requested `MessageId`; replacement-origin, usage-only empty, and non-assistant records are not feedback targets.
 
 The stored `{createdAt, cwd}` identity must match the inspected header. A mismatch is treated as absence: `list` returns no items, while `put` may replace the stale row with one bound to the current header identity. Forks use a new Session identity and receive no sidecar copy even when their seed contains the same messages.
 

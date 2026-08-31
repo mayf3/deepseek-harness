@@ -9,7 +9,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
@@ -28,6 +28,7 @@ import {
 import { ApiSessionList } from '../src/list.ts'
 import {
   createSessionTestRemote,
+  currentSessionListing,
   installSessionReadTestServices,
   testSessionPersistence,
 } from './test-remote.ts'
@@ -49,7 +50,7 @@ function promptRequest(
 }
 
 function header(id: string, createdAt: number, extra: Partial<SessionHeader> = {}): SessionHeader {
-  return { version: 0, id: sid(id), createdAt, cwd: '/proj', isSeeded: false, ...extra }
+  return { version: SESSION_FORMAT_VERSION, id: sid(id), createdAt, cwd: '/proj', isSeeded: false, ...extra }
 }
 
 function providePersistence(ctx: Context, persistence: Record<string, unknown>): () => void {
@@ -62,10 +63,12 @@ describe('sessions.list cold merge', () => {
     await ctx.plugin(SessionStore)
     const root = mkdtempSync(join(tmpdir(), 'dsh-cold-'))
     const smallPath = join(root, 'small.log')
+    const historicalPath = join(root, 'historical.log')
     const largePath = join(root, 'large.log')
     writeFileSync(smallPath, 'x'.repeat(1024))
+    writeFileSync(historicalPath, 'historical')
     writeFileSync(largePath, 'x'.repeat(1025))
-    const metas = [
+    const metas: SessionHeader[] = [
       header('small-blank', 100),
       header('small-conversation', 200),
       header('large-unknown', 300),
@@ -74,7 +77,8 @@ describe('sessions.list cold merge', () => {
       header('locationless', 500, { parentSession: sid('session-parent'), origin: 'subagent' }),
       header('vanished', 600),
       header('read-failure', 700),
-      { version: 0, id: sid('missing-cwd'), createdAt: 800, isSeeded: false },
+      { version: SESSION_FORMAT_VERSION, id: sid('missing-cwd'), createdAt: 800, isSeeded: false },
+      header('migration-small-blank', 900),
     ]
     const inspect = vi.fn(async (id: SessionId) => {
       if (id === sid('small-blank')) {
@@ -96,14 +100,32 @@ describe('sessions.list cold merge', () => {
           ] satisfies SessionEvent[],
         }
       }
+      if (id === sid('migration-small-blank')) {
+        return {
+          meta: metas[9]!,
+          events: [{ type: 'session/end-seed', seq: 0, time: 900, data: {} }] as SessionEvent[],
+        }
+      }
       if (id === sid('read-failure')) throw new Error('simulated read failure')
       throw new Error(`unexpected cold read: ${id}`)
     })
     providePersistence(ctx, {
-      list: () => Promise.resolve(metas),
+      list: () => Promise.resolve([
+        ...metas.slice(0, -1).map(currentSessionListing),
+        {
+          status: 'migration-required' as const,
+          storedVersion: 0,
+          targetVersion: SESSION_FORMAT_VERSION,
+          header: metas[9]!,
+          location: { kind: 'jsonl', path: historicalPath },
+        },
+      ]),
       locate: (meta: SessionHeader) => {
         if (meta.id === sid('large-unknown') || meta.id === sid('seeded-cold')) {
           return { kind: 'jsonl', path: largePath }
+        }
+        if (meta.id === sid('migration-small-blank')) {
+          return { kind: 'jsonl', path: join(root, 'missing-current.log') }
         }
         if (meta.id === sid('locationless')) return undefined
         if (meta.id === sid('vanished')) return { kind: 'jsonl', path: join(root, 'vanished.log') }
@@ -148,11 +170,13 @@ describe('sessions.list cold merge', () => {
     expect(byId['vanished']).toMatchObject({ blank: false, updatedAt: 600 })
     expect(byId['read-failure']).toMatchObject({ blank: false, updatedAt: 700 })
     expect(byId['missing-cwd']).toBeUndefined()
-    expect(inspect).toHaveBeenCalledTimes(3)
+    expect(byId['migration-small-blank']).toMatchObject({ blank: true, updatedAt: 900 })
+    expect(inspect).toHaveBeenCalledTimes(4)
     expect(inspect.mock.calls.map(([id]) => id)).toEqual(expect.arrayContaining([
       sid('small-blank'),
       sid('small-conversation'),
       sid('read-failure'),
+      sid('migration-small-blank'),
     ]))
   })
 
@@ -162,7 +186,7 @@ describe('sessions.list cold merge', () => {
     const meta = header('probe-disabled', 100)
     const inspect = vi.fn()
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       locate: () => ({ kind: 'jsonl', path: '/not-read' }),
       inspect,
     })
@@ -191,7 +215,7 @@ describe('sessions.list cold merge', () => {
       list: async () => {
         started.resolve(undefined)
         await release.promise
-        return [meta]
+        return [currentSessionListing(meta)]
       },
     })
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
@@ -236,7 +260,7 @@ describe('sessions.list cold merge', () => {
     writeFileSync(path, 'small')
     const meta = header('attached-during-probe', 100)
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       locate: () => ({ kind: 'jsonl', path }),
       inspect: () => {
         const session = ctx.sessions.create(meta.id, {
@@ -268,7 +292,7 @@ describe('sessions.list cold merge', () => {
     await ctx.plugin(SessionStore)
     const meta = header('broken-cache', 100)
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       locate: () => { throw new Error('location failed') },
     })
     const remote = createSessionTestRemote(ctx, {
@@ -292,7 +316,7 @@ describe('sessions.list cold merge', () => {
     writeFileSync(path, 'small')
     const meta = header('unprojected-small', 100)
     ctx.provide('sessionPersistence', {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       locate: () => ({ kind: 'jsonl', path }),
     } as never)
     vi.spyOn(ctx.sessionQuery, 'listSessions').mockResolvedValue([{
@@ -385,7 +409,7 @@ describe('cold history recovery view', () => {
       ),
       appendBatch: () => Promise.resolve(),
       commitRepair: () => Promise.resolve(),
-      list: () => Promise.resolve([structuredClone(meta)]),
+      list: () => Promise.resolve([currentSessionListing(structuredClone(meta))]),
     }
     const coordinator = new PersistenceCoordinator(ctx, backend)
     providePersistence(ctx, {
@@ -445,7 +469,7 @@ describe('Remote Agent and Session lookup policy', () => {
       events: [] as SessionEvent[],
     }))
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       inspect,
       locate: () => undefined,
     })
@@ -493,7 +517,7 @@ describe('Remote Agent and Session lookup policy', () => {
       events: [] as SessionEvent[],
     }))
     providePersistence(ctx, {
-      list: () => Promise.resolve([coldMeta]),
+      list: () => Promise.resolve([currentSessionListing(coldMeta)]),
       inspect,
       locate: () => undefined,
     })
@@ -573,7 +597,7 @@ describe('subagent ownership fence', () => {
       events,
     }))
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       inspect,
       locate: () => undefined,
     })
@@ -636,7 +660,7 @@ describe('subagent ownership fence', () => {
       },
     ] satisfies SessionEvent[]
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       inspect: () => Promise.resolve({
         meta,
         inheritedEventCount: SessionLogOffset(0),
@@ -900,7 +924,7 @@ describe('sessions.prompt synchronous rejection', () => {
     const sessionId = sid('race-resume')
     const meta: SessionHeader = header('race-resume', 1000)
     providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
+      list: () => Promise.resolve([currentSessionListing(meta)]),
       inspect: () => Promise.resolve({
         meta,
         inheritedEventCount: SessionLogOffset(0),

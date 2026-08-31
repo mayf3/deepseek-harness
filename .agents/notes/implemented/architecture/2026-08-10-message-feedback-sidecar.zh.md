@@ -16,7 +16,7 @@ Status: implemented
 
 每条可用记录都绑定到经检查的 Session header 身份 `{createdAt, cwd}`，而不只是其 `SessionId`。生命周期不匹配按不存在处理：`list` 返回空条目，`put` 可以用绑定当前身份的新记录替换陈旧行。因此，以不同 header 身份复用的 id 不会继承陈旧反馈。fork 拥有自己的 Session 身份，且不复制伴随记录：即使 fork 种子包含相同的 assistant 消息，反馈仍只属于人类记录它的那个 Session。
 
-`put` 只接受由 `SessionPersistence.inspect()` 观测到的非空、append-origin `assistant/message`，且其 `MessageId` 必须与目标相同。replacement-origin 消息、仅承载 usage 的空 assistant 记录以及非 assistant 目标都会被拒绝。检查使用 cold-safe 权威路径：它不会仅为验证反馈而发布或恢复 Agent，也不会提交 cold 日志修复。cold 路径由 `listSnapshots()` 预检明确不存在；已进入目录的 Session 若检查失败，仍按基础设施故障处理。因此，请求若恰落在 live detach 到 header materialization 的极短窗口，可能返回 `session-not-found`，调用方在 retirement materialization 后重试。
+`put` 只接受由 `SessionPersistence.inspect()` 观测到的非空、append-origin `assistant/message`，且其 `MessageId` 必须与目标相同。replacement-origin 消息、仅承载 usage 的空 assistant 记录以及非 assistant 目标都会被拒绝。检查使用 cold-safe 权威路径：它绝不发布或恢复 Agent；已经是当前格式的修复留在内存中，受支持的历史正文读取则可能先发布迁移与修复。cold 路径由 `listSnapshots()` 预检明确不存在；已进入目录的 Session 若检查失败，仍按基础设施故障处理。因此，请求若恰落在 live detach 到 header materialization 的极短窗口，可能返回 `session-not-found`，调用方在 retirement materialization 后重试。
 
 `put` 提交伴随记录前，会先让目标日志通过 durability barrier。身份匹配的 live Session 经过权威 `ctx.sessions.flush` checkpoint，随后 live 与 cold 路径都会通过 `SessionPersistence.readFrom` 从序列零做物理复读。之后再次校验所得观测的 header 身份与目标。缺少 flush 参与方、身份变化、目标消失或物理读取失败都会阻止伴随记录写入，因此已提交反馈绝不会先于它引用的持久 assistant 消息。
 

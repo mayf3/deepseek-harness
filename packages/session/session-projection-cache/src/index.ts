@@ -25,7 +25,6 @@ import type {
   SessionEvent,
   SessionHeader,
   SessionId,
-  SessionSeqCursor,
 } from '@deepseek-ai/dsh-session'
 import type {
   ProjectionCheckpoint,
@@ -147,15 +146,12 @@ export class SessionProjectionCache extends Service {
     // The block carries ONE cut: the lowest served watermark is the seq every
     // value is at least current as of (under-claiming is safe under
     // higher-seq-wins; over-claiming would let a stale value outrank pushes).
-    let asOfSeq: SessionSeqCursor | undefined
-    for (const key of servedKeys) {
-      const row = record.rows[key]
-      if (row !== undefined && (asOfSeq === undefined || row.seq < asOfSeq)) {
-        asOfSeq = row.seq
-      }
+    const firstKey = servedKeys[0] as string
+    let asOfSeq = (record.rows[firstKey] as ProjectionCheckpoint[string]).seq
+    for (const key of servedKeys.slice(1)) {
+      const row = record.rows[key] as ProjectionCheckpoint[string]
+      if (row.seq < asOfSeq) asOfSeq = row.seq
     }
-    /* v8 ignore next -- A nonempty checkpoint view contains a stored row for every returned key. */
-    if (asOfSeq === undefined) return undefined
     return { asOfSeq, values }
   }
 
@@ -360,6 +356,7 @@ function identityOf(
     throw new Error('unseeded projection-cache identity inherited event count must be 0')
   }
   return {
+    formatVersion: header.version,
     createdAt: header.createdAt,
     ...header.cwd === undefined ? {} : { cwd: header.cwd },
     isSeeded: header.isSeeded,
@@ -369,7 +366,8 @@ function identityOf(
 
 /** Whether a stored record's bound identity names the caller's lifecycle. */
 function identityMatches(stored: CheckpointIdentity, expected: CheckpointIdentity): boolean {
-  return stored.createdAt === expected.createdAt
+  return stored.formatVersion === expected.formatVersion
+    && stored.createdAt === expected.createdAt
     && stored.cwd === expected.cwd
     && stored.isSeeded === expected.isSeeded
     && stored.inheritedEventCount === expected.inheritedEventCount

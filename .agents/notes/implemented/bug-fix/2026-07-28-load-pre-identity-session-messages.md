@@ -12,17 +12,17 @@ Changing the message representation without a version bump made those logs indis
 
 ## Decision
 
-`PersistenceCoordinator` normalizes the four exact pre-identity message payloads after backend decoding and before current message validation. It wraps their existing semantic fields in the current role-specific message shape and assigns `legacy-message:<session-id>:<event-seq>` as the deterministic imported `MessageId`. A legacy `tool/result` content replacement inherits the imported id of its replacement target, preserving the current content-only rewrite invariant.
+The frozen `@deepseek-ai/dsh-session-format-v0-to-v1` edge normalizes the four exact pre-identity message payloads after v0 decoding and before v1 validation. It wraps their existing semantic fields in the current role-specific message shape and assigns `legacy-message:<session-id>:<event-seq>` as the deterministic imported `MessageId`. A legacy `tool/result` content replacement inherits the imported id of its replacement target, preserving the current content-only rewrite invariant.
 
-The same normalization runs for `load`, `inspect`, an ownerless loaded state claiming its live session, and HMR prefix adoption. Prefix comparisons therefore compare the live current-shape seed with the same normalized stored view. Current-looking wrappers with missing or invalid fields are not repaired, and unsupported event vocabulary, request headers, versions, and surface relations retain their existing rejection paths.
+Every event-body operation runs the same edge through the build-static catalog before current Session construction. `load`, `inspect`, ownerless-state adoption, HMR prefix adoption, query, export, fork, and suffix reads therefore see one normalized current generation. Current-looking wrappers with missing or invalid fields are not repaired, and unsupported event vocabulary, request headers, versions, and surface relations retain their refusal paths.
 
-The upgrade is read-only. Stored legacy records remain unchanged; a resumed session appends only current-shape events after them. Deterministic identities make repeated loads and a mixed legacy/current log reproduce the same message ids without a backend-specific rewrite transaction.
+JSONL migration leaves the exact suffixless v0 artifact path, bytes, and inode unchanged and exclusively publishes `session.v1.jsonl[.zstd]` beside it. Deterministic identities make repeated restoration reproduce the same message ids, and subsequent appends target only v1.
 
 ## Alternatives considered
 
-**Reject the logs under the pre-release compatibility stance.** This is the default for unrelated v0 churn, but it strands real first-party sessions even though every old field maps unambiguously to the current message representation.
+**Reject the released logs.** This strands real first-party sessions even though every old field maps unambiguously to the current message representation.
 
-**Rewrite the complete stored log in place.** This would canonicalize the artifact but violate the append-only storage contract, require an atomic replacement mechanism, and expand a read compatibility fix into a migration system.
+**Keep a same-version importer inside the coordinator.** This avoids a format edge but leaves historical payloads in current Session code and provides neither immutable source/successor naming nor independently testable publication. The released adjacent migration system owns canonical publication instead.
 
 **Mint random ids on each load.** The messages would satisfy the type shape but lose stable identity across inspect, resume, restart, and mixed legacy/current appends.
 
@@ -30,7 +30,7 @@ The upgrade is read-only. Stored legacy records remain unchanged; a resumed sess
 
 Pre-identity JSONL Sessions resume with their original message content, sources, assistant provider/model fields, tool correlation, errors, metadata, and surface replacements. The returned events are otherwise indistinguishable from current imported message snapshots and remain deeply frozen.
 
-This is one explicit same-version import exception, not a general v0 compatibility layer. Adding another exception requires another complete, unambiguous mapping at the persistence boundary; malformed current data continues to fail rather than being guessed into validity. The shared coordinator contract exercises the upgrade against the in-memory reference and JSONL provider, including deterministic reload and tool-result replacement identity.
+This is one explicit released-v0 normalization, not a permissive compatibility layer. Adding another normalization requires another complete, unambiguous mapping in the frozen edge; malformed current data continues to fail rather than being guessed into validity. Edge and JSONL generation tests exercise deterministic restoration and tool-result replacement identity.
 
 ## Related
 

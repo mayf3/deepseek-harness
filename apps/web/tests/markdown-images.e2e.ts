@@ -124,6 +124,7 @@ function markdownImageFixture(remoteUrl: string): string {
     id: '{{sessionId}}',
     createdAt: 0,
     cwd: '{{cwd}}',
+    delegationDepth: 0,
   }
   return [
     JSON.stringify(header),

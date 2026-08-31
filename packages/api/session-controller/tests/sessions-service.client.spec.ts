@@ -268,7 +268,7 @@ describe('Agent scope disposal lifecycle', () => {
                     value: {
                       type: 'snapshot',
                       header: {
-                        version: 0,
+                        version: 1,
                         id: request.address.kind === 'session'
                           ? request.address.sessionId
                           : request.address.childSessionId,
@@ -342,7 +342,7 @@ describe('Agent scope disposal lifecycle', () => {
                     done: false,
                     value: {
                       type: 'snapshot',
-                      header: { version: 0, id: sessionId, createdAt: 0 },
+                      header: { version: 1, id: sessionId, createdAt: 0 },
                       cursor: -1,
                       records: [],
                       hasMore: false,

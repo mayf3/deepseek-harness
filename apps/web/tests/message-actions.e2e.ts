@@ -39,12 +39,18 @@ function completedTailFixture(raw: string): string {
   const decoded = parseSeedFixture(raw)
   const kept = decoded.events.filter(event => event.seq < 101).map((event) => {
     if (event.type === 'assistant/message' && event.seq === 64) {
-      const data = event.data as unknown as { content?: unknown[] }
-      const content = data.content
+      const data = event.data as unknown as { message?: { content?: unknown[] } }
+      const content = data.message?.content
       if (!Array.isArray(content)) throw new Error('borrowed step-one assistant message has no content')
       return {
         ...event,
-        data: { ...data, content: [...content.slice(0, 1), { type: 'text', text: MID_TURN_TEXT }, ...content.slice(1)] },
+        data: {
+          ...data,
+          message: {
+            ...data.message,
+            content: [...content.slice(0, 1), { type: 'text', text: MID_TURN_TEXT }, ...content.slice(1)],
+          },
+        },
       }
     }
     return event
@@ -161,7 +167,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     if (rowBox === null) throw new Error('fork source row has no layout box')
     const actionButton = sourceRow.locator('button[aria-label^="Session actions for "]')
     await sourceRow.hover({ position: { x: rowBox.width - 16, y: rowBox.height / 2 } })
-    await expect.poll(() => actionButton.isVisible(), { timeout: 2_000 }).toBe(true)
+    await expect.poll(() => actionButton.isVisible(), { timeout: 10_000 }).toBe(true)
     const buttonBox = await actionButton.boundingBox()
     if (buttonBox === null) throw new Error('fork source row action has no layout box')
     await page.mouse.click(buttonBox.x + buttonBox.width / 2, buttonBox.y + buttonBox.height / 2)

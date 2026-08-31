@@ -14,6 +14,7 @@ import {
   SessionSeq,
   type SessionEvent,
 } from '@deepseek-ai/dsh-session'
+import { prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 import { redactSessionSnapshotIds } from './identity.ts'
 
 const SESSION_ID = '{{sessionId}}'
@@ -106,6 +107,12 @@ export interface NormalizeOptions {
   cwdPathMode?: CwdPathMode
   /** Keep already-redacted typed ids and arbitrary UUID-like prose unchanged. */
   identityMode?: 'legacy' | 'preserve'
+}
+
+/** Multi-Session comparison controls, including optional committed source identities. */
+export interface NormalizeSessionSnapshotsOptions extends Omit<NormalizeOptions, 'identityMode'> {
+  /** Primary-first source paths; exact alpha-refusal fixtures receive replay-only comparison policy. */
+  sourcePaths?: readonly (string | undefined)[]
 }
 
 /** Return every known spelling of the generated cwd, most specific first. */
@@ -436,15 +443,89 @@ export function normalizeSessionSnapshot(
 export function normalizeSessionSnapshots(
   rawLogs: readonly string[],
   ctx: NormalizeContext,
-  options: Omit<NormalizeOptions, 'identityMode'> = {},
+  options: NormalizeSessionSnapshotsOptions = {},
 ): string[] {
-  return redactSessionSnapshotIds(rawLogs).map(log => repackSessionSnapshot(
+  const { sourcePaths, ...normalizeOptions } = options
+  if (sourcePaths !== undefined && sourcePaths.length !== rawLogs.length) {
+    throw new Error('Session snapshot source path count must match its log count')
+  }
+  const currentLogs = rawLogs.map((log, index) => hasSessionFormatVersion(log)
+    ? prepareSessionSnapshotFixtureForComparison(log, sourcePaths?.[index])
+    : log)
+  const comparableLogs = currentLogs.map(normalizeSessionFormatProvenance)
+  return redactSessionSnapshotIds(comparableLogs).map(log => repackSessionSnapshot(
     scrubSessionSnapshot(normalizeSessionLog(
       log,
       { ...ctx, sessionIds: [] },
-      { ...options, identityMode: 'preserve' },
+      { ...normalizeOptions, identityMode: 'preserve' },
     )),
   ))
+}
+
+/**
+ * Omit only generation-qualified operational provenance from expected-output comparison.
+ * @param rawLog - Session records or events as compact JSON lines.
+ * @returns the same records without delivery or captured-source generation qualifiers.
+ */
+export function normalizeSessionFormatProvenance(rawLog: string): string {
+  return rawLog.split('\n').map((line) => {
+    if (line.trim().length === 0) return line
+    const record = JSON.parse(line) as Record<string, unknown>
+    let changed = normalizeCapturedFormatProvenance(record)
+    if (record.type === 'session' && Object.hasOwn(record, 'version')) {
+      delete record.version
+      changed = true
+    }
+    if (record.type === 'session-log-deepseek/delivery-accepted'
+      && record.data !== null && typeof record.data === 'object' && !Array.isArray(record.data)) {
+      const data = { ...record.data as Record<string, unknown> }
+      if (Object.hasOwn(data, 'sessionFormatVersion')) {
+        delete data.sessionFormatVersion
+        record.data = data
+        changed = true
+      }
+    }
+    return changed ? JSON.stringify(record) : line
+  }).join('\n')
+}
+
+/** Omit captured generations only from an actual current Message source position. */
+function normalizeCapturedFormatProvenance(event: Record<string, unknown>): boolean {
+  if (event.data === null || typeof event.data !== 'object' || Array.isArray(event.data)) return false
+  const data = event.data as Record<string, unknown>
+  const message = event.type === 'user/message'
+    ? data
+    : event.type === 'assistant/message' || event.type === 'tool/result'
+      ? data.message
+      : undefined
+  if (message === null || typeof message !== 'object' || Array.isArray(message)) return false
+  const source = (message as Record<string, unknown>).source
+  if (source === null || typeof source !== 'object' || Array.isArray(source)) return false
+  const record = source as Record<string, unknown>
+  if (record.kind !== 'session-reference' || record.form !== 'recall' || record.version !== 1
+    || !Array.isArray(record.references)) return false
+  let changed = false
+  for (const reference of record.references) {
+    if (reference === null || typeof reference !== 'object' || Array.isArray(reference)) continue
+    const captured = reference as Record<string, unknown>
+    if (Object.hasOwn(captured, 'capturedFormatVersion')) {
+      delete captured.capturedFormatVersion
+      changed = true
+    }
+  }
+  return changed
+}
+
+/** Whether a fixture declares a released Session format and therefore participates in migration burn-in. */
+function hasSessionFormatVersion(rawLog: string): boolean {
+  const firstLine = rawLog.split(/\r?\n/).find(line => line.trim().length > 0)
+  if (firstLine === undefined) throw new Error('session snapshot must start with a session header')
+  const header = JSON.parse(firstLine) as unknown
+  if (header === null || typeof header !== 'object' || Array.isArray(header)
+    || (header as Record<string, unknown>)['type'] !== 'session') {
+    throw new Error('session snapshot must start with a session header')
+  }
+  return Object.hasOwn(header, 'version')
 }
 
 /**

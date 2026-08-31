@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, {
+  SESSION_FORMAT_VERSION,
   Session,
   SessionId,
   SessionLogOffset,
@@ -15,13 +16,12 @@ import type {
 import {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE, DEFAULT_WRITE_BATCH_MAX_DELAY_MS, MAX_WRITE_BATCH_DELAY_MS,
   SessionPersistence, SessionPersistenceRevision, PersistenceCoordinator,
+  SessionFormatUnsupportedError, sessionFormatVersionRefusal,
   type PersistenceBackend, type SessionEventSuffix, type SessionInspection, type SessionPersistenceSnapshot,
-  type SessionStorageMetadata, type StoredPrefix, type StoredSuffix,
+  type SessionRawArtifact, type SessionStorageMetadata, type StoredPrefix, type StoredSuffix,
 } from '../src/index.ts'
 import { runPersistenceContract, meta, oneTurnLog } from './contract.ts'
-import {
-  legacyMessageLog, preReactLoopLog, runCoordinatorContract, type CoordinatorFixture,
-} from './coordinator-contract.ts'
+import { runCoordinatorContract, type CoordinatorFixture } from './coordinator-contract.ts'
 
 /** The durable store shape: materialized sessions only (no lazy entries). */
 type MemoryStore = Map<string, {
@@ -37,36 +37,6 @@ function memoryRevision(entry: {
   events: SessionEvent[]
 }): SessionPersistenceRevision {
   return SessionPersistenceRevision(JSON.stringify(entry))
-}
-
-/** An obsolete event fixture that emulates an untyped pre-change producer. */
-function legacyHeaderDelta(seq = 0): SessionEvent {
-  return {
-    type: 'request/header-delta',
-    seq,
-    time: 1,
-    data: { config: { model: 'legacy' } },
-  } as unknown as SessionEvent
-}
-
-/** An unsupported named-mode fixture emulating an untyped producer. */
-function legacyModeSet(seq = 0): SessionEvent {
-  return {
-    type: 'mode/set',
-    seq,
-    time: 1,
-    data: { mode: 'plan' },
-  } as unknown as SessionEvent
-}
-
-/** An obsolete full-header reason fixture from the removed delta codec. */
-function legacyFallbackHeader(seq = 0): SessionEvent {
-  return {
-    type: 'request/header',
-    seq,
-    time: 1,
-    data: { header: { config: { model: 'legacy' } }, reason: 'fallback' },
-  } as unknown as SessionEvent
 }
 
 /** Optional plugin config: an EXTERNAL store shared across backend instances. */
@@ -218,15 +188,23 @@ class MemoryPersistence extends SessionPersistence implements PersistenceBackend
     if (closers.length > 0) entry.events.push(...structuredClone(closers) as SessionEvent[])
   }
 
-  async list(signal?: AbortSignal): Promise<SessionHeader[]> {
+  async list(signal?: AbortSignal): Promise<import('../src/index.ts').SessionPersistenceListing[]> {
     signal?.throwIfAborted()
-    return [...this.store.values()].map(e => structuredClone(e.meta))
+    return [...this.store.values()].map(entry => ({
+      status: 'current',
+      header: structuredClone(entry.meta),
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
+    }))
   }
 
   async listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]> {
     signal?.throwIfAborted()
     return [...this.store.values()].map(entry => ({
+      status: 'current',
       header: structuredClone(entry.meta),
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
       revision: memoryRevision(entry),
     }))
   }
@@ -241,8 +219,19 @@ class ControlledBackend implements PersistenceBackend<never> {
   appendAttempts = 0
   loadAttempts = 0
   repairAttempts = 0
+  rawReadAttempts = 0
+  ensureCurrentAttempts = 0
   beforeAppend?: (attempt: number) => Promise<void>
+  beforeEnsureCurrent?: (attempt: number, signal?: AbortSignal) => Promise<void>
   beforeLoadStored?: (attempt: number, signal?: AbortSignal) => Promise<void>
+  beforeReadRawStored?: (attempt: number, signal?: AbortSignal) => Promise<void>
+
+  async ensureCurrent(_id: SessionId, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted()
+    const attempt = ++this.ensureCurrentAttempts
+    await this.beforeEnsureCurrent?.(attempt, signal)
+    signal?.throwIfAborted()
+  }
   /** When set, the declared seek hook delegates here so readFrom exercises it; unset throws (tests set it first). */
   seekHook?: (
     id: SessionId,
@@ -278,6 +267,19 @@ class ControlledBackend implements PersistenceBackend<never> {
     return entry === undefined ? undefined : memoryRevision(entry)
   }
 
+  async readRawStored(id: SessionId, signal?: AbortSignal): Promise<SessionRawArtifact | undefined> {
+    const attempt = ++this.rawReadAttempts
+    await this.beforeReadRawStored?.(attempt, signal)
+    const entry = this.store.get(id)
+    if (entry === undefined) return undefined
+    return {
+      meta: structuredClone(entry.meta),
+      inheritedEventCount: SessionLogOffset(entry.inheritedEventCount ?? 0),
+      filename: 'session.jsonl',
+      content: `${JSON.stringify(entry.meta)}\n`,
+    }
+  }
+
   async appendBatch(
     storage: SessionStorageMetadata,
     events: readonly SessionEvent[],
@@ -309,8 +311,13 @@ class ControlledBackend implements PersistenceBackend<never> {
     if (entry !== undefined) entry.events.push(...structuredClone(closers) as SessionEvent[])
   }
 
-  async list(): Promise<SessionHeader[]> {
-    return [...this.store.values()].map(entry => structuredClone(entry.meta))
+  async list(): Promise<import('../src/index.ts').SessionPersistenceListing[]> {
+    return [...this.store.values()].map(entry => ({
+      status: 'current',
+      header: structuredClone(entry.meta),
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
+    }))
   }
 
   async close(): Promise<void> {
@@ -499,6 +506,257 @@ describe('PersistenceCoordinator bounded writes', () => {
 })
 
 describe('PersistenceCoordinator stored identity', () => {
+  it('checks a create collision without loading the stored event body', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('create-collision-header-only')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    const revision = vi.spyOn(backend, 'readStoredRevision')
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await expect(coordinator.create(meta(id))).rejects.toThrow(/already has a persisted log/)
+      expect(revision).toHaveBeenCalledExactlyOnceWith(id)
+      expect(backend.loadAttempts).toBe(0)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('refuses older and newer stored formats with direction-aware located diagnostics', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const located: PersistenceBackend<never> = Object.assign(backend, {
+      locate: (header: SessionHeader) => ({
+        kind: 'memory',
+        path: `/sessions/${header.id}/session.jsonl`,
+      }),
+    })
+    const oldId = SessionId('unsupported-old-format')
+    const futureId = SessionId('unsupported-future-format')
+    const oldVersion = SESSION_FORMAT_VERSION - 1
+    const futureVersion = SESSION_FORMAT_VERSION + 1
+    backend.store.set(oldId, {
+      meta: { ...meta(oldId), version: oldVersion } as unknown as SessionHeader,
+      events: oneTurnLog(),
+    })
+    backend.store.set(futureId, {
+      meta: { ...meta(futureId), version: futureVersion } as unknown as SessionHeader,
+      events: oneTurnLog(),
+    })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, located)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const oldReason = sessionFormatVersionRefusal(oldId, oldVersion)
+      const futureReason = sessionFormatVersionRefusal(futureId, futureVersion)
+      expect(oldReason).toContain('older than the supported')
+      expect(futureReason).toContain('written by a newer harness')
+      await expect(coordinator.inspect(oldId)).rejects.toMatchObject({
+        name: SessionFormatUnsupportedError.name,
+        message: `${oldReason} (raw log: /sessions/${oldId}/session.jsonl)`,
+        location: { kind: 'memory', path: `/sessions/${oldId}/session.jsonl` },
+      })
+      await expect(coordinator.inspect(futureId)).rejects.toMatchObject({
+        name: SessionFormatUnsupportedError.name,
+        message: `${futureReason} (raw log: /sessions/${futureId}/session.jsonl)`,
+        location: { kind: 'memory', path: `/sessions/${futureId}/session.jsonl` },
+      })
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('fails raw reads when the backend exposes neither current nor fallback artifacts', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    Object.defineProperty(backend, 'readRawStored', { configurable: true, value: undefined })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await expect(coordinator.readRaw(SessionId('raw-unsupported-backend')))
+        .rejects.toThrow(/does not expose raw artifacts/)
+      expect(backend.rawReadAttempts).toBe(0)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('flushes a live owner before reading its current raw artifact', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const session = ctx.sessions.create(SessionId('raw-live-owner'))
+      session.append('turn/start', { turn: 1 })
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+
+      await expect(coordinator.readRaw(session.id)).resolves.toMatchObject({
+        meta: { id: session.id },
+        filename: 'session.jsonl',
+      })
+      expect(backend.store.get(session.id)?.events.map(event => event.seq)).toEqual([0, 1])
+      expect(backend.rawReadAttempts).toBe(1)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('serializes raw reads after an in-flight append for the same Session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('serialized-raw-read')
+    const appendGate = Promise.withResolvers<undefined>()
+    backend.beforeAppend = async () => { await appendGate.promise }
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      await coordinator.create(meta(id))
+      const append = coordinator.append(id, [{
+        type: 'turn/start',
+        seq: SessionSeq(0),
+        time: 1,
+        data: { turn: 1 },
+      }])
+      await vi.waitFor(() => { expect(backend.appendAttempts).toBe(1) })
+
+      const raw = coordinator.readRaw(id)
+      await Promise.resolve()
+      expect(backend.rawReadAttempts).toBe(0)
+
+      appendGate.resolve(undefined)
+      await expect(append).resolves.toBeUndefined()
+      await expect(raw).resolves.toMatchObject({ meta: { id }, filename: 'session.jsonl' })
+      expect(backend.rawReadAttempts).toBe(1)
+    } finally {
+      appendGate.resolve(undefined)
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('ensures the current generation before every public stored-body read', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    backend.seekHook = async (id, fromSeq, signal) => {
+      signal?.throwIfAborted()
+      const entry = backend.store.get(id)
+      return entry === undefined
+        ? undefined
+        : {
+          meta: structuredClone(entry.meta),
+          inheritedEventCount: SessionLogOffset(entry.inheritedEventCount ?? 0),
+          events: structuredClone(entry.events.filter(event => event.seq >= fromSeq)),
+        }
+    }
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const stored = (name: string): SessionId => {
+      const id = SessionId(`ensure-current-${name}`)
+      backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+      return id
+    }
+    const expectOneEnsure = async (read: () => Promise<unknown>): Promise<void> => {
+      const before = backend.ensureCurrentAttempts
+      await read()
+      expect(backend.ensureCurrentAttempts).toBe(before + 1)
+    }
+
+    try {
+      await expectOneEnsure(async () => {
+        const preparation = await coordinator.prepare(stored('prepare'))
+        preparation[Symbol.dispose]()
+      })
+      await expectOneEnsure(() => coordinator.load(stored('load')))
+      await expectOneEnsure(() => coordinator.inspect(stored('inspect')))
+      await expectOneEnsure(async () => {
+        using observation = await coordinator.borrowSession(stored('borrow'))
+        expect(observation.source).toBe('prepared')
+      })
+      await expectOneEnsure(() => coordinator.readFrom(
+        stored('read-from'),
+        SessionLogOffset(0),
+      ))
+      await expectOneEnsure(() => coordinator.readRaw(stored('read-raw')))
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('prefers fused current reads while retaining their cancellation and failure semantics', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const fused: PersistenceBackend<never> = backend
+    const fusedLoad = vi.fn((id: SessionId, signal?: AbortSignal) => backend.loadStored(id, signal))
+    const legacyRaw = backend.readRawStored.bind(backend)
+    const fusedRaw = vi.fn((id: SessionId, signal?: AbortSignal) => legacyRaw(id, signal))
+    Object.defineProperties(fused, {
+      loadStoredFrom: { configurable: true, value: undefined },
+      readRawStored: { configurable: true, value: undefined },
+      loadCurrentStored: { configurable: true, value: fusedLoad },
+      readCurrentRawStored: { configurable: true, value: fusedRaw },
+    })
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, fused)
+    }, { inject: ['sessions'] }))
+    const stored = (name: string): SessionId => {
+      const id = SessionId(`fused-current-${name}`)
+      backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+      return id
+    }
+
+    try {
+      const preparation = await coordinator.prepare(stored('prepare'))
+      preparation[Symbol.dispose]()
+      await coordinator.readFrom(stored('read-from'), SessionLogOffset(0))
+      const signal = new AbortController().signal
+      await coordinator.readRaw(stored('read-raw'), signal)
+
+      expect(fusedLoad).toHaveBeenCalledTimes(2)
+      expect(fusedRaw).toHaveBeenCalledTimes(1)
+      expect(fusedRaw.mock.calls[0]?.[1]).toBe(signal)
+      expect(backend.ensureCurrentAttempts).toBe(0)
+
+      const failure = new Error('fused read failed')
+      fusedLoad.mockRejectedValueOnce(failure)
+      await expect(coordinator.inspect(stored('failure'))).rejects.toBe(failure)
+      expect(backend.ensureCurrentAttempts).toBe(0)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('rejects a mismatched backend header before repair or state publication', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -550,6 +808,110 @@ describe('PersistenceCoordinator stored identity', () => {
       await expect(coordinator.load(id)).rejects.toThrow(/inherited event count exceeds its stored event count/)
       expect(backend.repairAttempts).toBe(0)
       expect((coordinator as unknown as CoordinatorInternals).states.size).toBe(0)
+    } finally {
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects a live owner whose inherited cut differs from tracked ownerless state', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const id = SessionId('ownerless-inherited-cut-mismatch')
+    const header = { ...meta(id, '/workspace'), isSeeded: true }
+
+    try {
+      await coordinator.create(header, SessionLogOffset(1))
+      const live = ctx.sessions.create(id, {
+        seed: oneTurnLog(),
+        inheritedEventCount: SessionLogOffset(2),
+        meta: { cwd: '/workspace', isSeeded: true },
+      })
+
+      await expect(ctx.sessions.flush(live)).rejects.toThrow(/different inherited event count/)
+      expect(backend.appendAttempts).toBe(0)
+    } finally {
+      await fiber.dispose().catch(() => undefined)
+      await ctx.fiber.dispose().catch(() => undefined)
+    }
+  })
+
+  it('rejects storage-only live adoption across cwd and inherited-cut identities', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const cwdId = SessionId('adopt-cwd-mismatch')
+    const cutId = SessionId('adopt-inherited-cut-mismatch')
+    backend.store.set(cwdId, {
+      meta: meta(cwdId, '/stored-workspace'),
+      events: oneTurnLog(),
+    })
+    backend.store.set(cutId, {
+      meta: { ...meta(cutId, '/workspace'), isSeeded: true },
+      inheritedEventCount: SessionLogOffset(1),
+      events: oneTurnLog(),
+    })
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const wrongCwd = ctx.sessions.create(cwdId, {
+        seed: oneTurnLog(),
+        meta: { cwd: '/live-workspace' },
+      })
+      await expect(ctx.sessions.flush(wrongCwd)).rejects.toThrow(/different cwd/)
+
+      const wrongCut = ctx.sessions.create(cutId, {
+        seed: oneTurnLog(),
+        inheritedEventCount: SessionLogOffset(2),
+        meta: { cwd: '/workspace', isSeeded: true },
+      })
+      await expect(ctx.sessions.flush(wrongCut)).rejects.toThrow(/different inherited event count/)
+      expect(backend.appendAttempts).toBe(0)
+    } finally {
+      await fiber.dispose().catch(() => undefined)
+      await ctx.fiber.dispose().catch(() => undefined)
+    }
+  })
+
+  it('commits a storage-only torn marker before publishing a live owner', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('adopt-torn-marker')
+    backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
+    const loadStored = backend.loadStored.bind(backend)
+    const commitRepair = backend.commitRepair.bind(backend)
+    const tornBackend = backend as unknown as PersistenceBackend<string>
+    tornBackend.loadStored = async (storedId, signal) => {
+      const stored = await loadStored(storedId, signal)
+      return stored === undefined ? undefined : { ...stored, tornMarker: 'torn-tail' }
+    }
+    const repair = vi.fn(async (
+      storage: SessionStorageMetadata,
+      marker: string | undefined,
+      closers: readonly SessionEvent[],
+    ) => {
+      expect(marker).toBe('torn-tail')
+      expect(closers).toEqual([])
+      await commitRepair(storage, undefined, closers)
+    })
+    tornBackend.commitRepair = repair
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      new PersistenceCoordinator(inner, tornBackend)
+    }, { inject: ['sessions'] }))
+
+    try {
+      const live = ctx.sessions.create(id, { seed: oneTurnLog(), meta: meta(id) })
+      await expect(ctx.sessions.flush(live)).resolves.toBe(true)
+      expect(repair).toHaveBeenCalledOnce()
+      expect(backend.store.get(id)?.events.at(-1)).toMatchObject({ type: 'session/end-seed' })
     } finally {
       await fiber.dispose()
       await ctx.fiber.dispose()
@@ -1298,82 +1660,6 @@ describe('PersistenceCoordinator session preparations', () => {
   })
 })
 
-describe('PersistenceCoordinator seek reads', () => {
-  it('loads the whole prefix only when a bounded legacy suffix needs earlier message identities', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const backend = new ControlledBackend()
-    const id = SessionId('seek-read-from-legacy')
-    let coordinator!: PersistenceCoordinator<never>
-    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
-      coordinator = new PersistenceCoordinator(inner, backend)
-    }, { inject: ['sessions'] }))
-    backend.seekHook = async (hookId, fromSeq) => {
-      const entry = backend.store.get(hookId)
-      if (entry === undefined) return undefined
-      return {
-        meta: structuredClone(entry.meta),
-        inheritedEventCount: SessionLogOffset(entry.inheritedEventCount ?? 0),
-        events: entry.events.filter(e => e.seq >= fromSeq),
-      }
-    }
-
-    try {
-      const assertLegacySuffixUsesWholePrefix = async (
-        events: SessionEvent[],
-        fromSeq: SessionLogOffsetType,
-        firstType: SessionEvent['type'],
-      ): Promise<void> => {
-        backend.store.set(id, { meta: meta(id), events })
-        const loadsBefore = backend.loadAttempts
-        const result = await coordinator.readFrom(id, fromSeq)
-        expect(result.events[0]?.type).toBe(firstType)
-        expect(backend.loadAttempts).toBe(loadsBefore + 1)
-      }
-      const legacyMessages = legacyMessageLog()
-      await assertLegacySuffixUsesWholePrefix(legacyMessages, SessionLogOffset(1), 'user/message')
-      await assertLegacySuffixUsesWholePrefix(legacyMessages, SessionLogOffset(3), 'assistant/message')
-      await assertLegacySuffixUsesWholePrefix(legacyMessages, SessionLogOffset(5), 'tool/result')
-      await assertLegacySuffixUsesWholePrefix(preReactLoopLog(), SessionLogOffset(3), 'user/message')
-
-      backend.store.set(id, { meta: meta(id), events: legacyMessages })
-      const directCurrent = await coordinator.readFrom(id, SessionLogOffset(0))
-      backend.store.set(id, { meta: meta(id), events: [...directCurrent.events] })
-      const loadsBeforeCurrent = backend.loadAttempts
-      await coordinator.readFrom(id, SessionLogOffset(1))
-      await coordinator.readFrom(id, SessionLogOffset(3))
-      await coordinator.readFrom(id, SessionLogOffset(5))
-      expect(backend.loadAttempts).toBe(loadsBeforeCurrent)
-
-      for (const [type, data] of [
-        ['user/message', {}],
-        ['assistant/message', {}],
-        ['tool/result', {}],
-      ] as const) {
-        backend.store.set(id, {
-          meta: meta(id),
-          events: [{ type, seq: 0, time: 1, data } as unknown as SessionEvent],
-        })
-        const loadsBefore = backend.loadAttempts
-        await expect(coordinator.readFrom(id, SessionLogOffset(0))).rejects.toThrow('lacks an identified message')
-        expect(backend.loadAttempts).toBe(loadsBefore)
-      }
-      backend.store.set(id, {
-        meta: meta(id),
-        events: [{
-          type: 'external/null', seq: 0, time: 1, data: null, ignorable: true,
-        } as unknown as SessionEvent],
-      })
-      const loadsBeforeNullData = backend.loadAttempts
-      expect((await coordinator.readFrom(id, SessionLogOffset(0))).events[0]?.data).toBeNull()
-      expect(backend.loadAttempts).toBe(loadsBeforeNullData)
-    } finally {
-      await fiber.dispose()
-      await ctx.fiber.dispose()
-    }
-  })
-})
-
 describe('PersistenceCoordinator observation cancellation', () => {
   it('borrows live Sessions before, during, and after cold source validation', async () => {
     const ctx = new Context()
@@ -1585,8 +1871,8 @@ describe('PersistenceCoordinator observation cancellation', () => {
     const backend = new ControlledBackend()
     const id = SessionId('creating-inspect-cancellation')
     backend.store.set(id, { meta: meta(id), events: oneTurnLog() })
-    const loadGate = Promise.withResolvers<boolean>()
-    backend.beforeLoadStored = () => loadGate.promise.then(() => undefined)
+    const migrationGate = Promise.withResolvers<boolean>()
+    backend.beforeEnsureCurrent = () => migrationGate.promise.then(() => undefined)
     let coordinator!: PersistenceCoordinator<never>
     const fiber = await ctx.plugin(Object.assign((inner: Context) => {
       coordinator = new PersistenceCoordinator(inner, backend)
@@ -1597,17 +1883,18 @@ describe('PersistenceCoordinator observation cancellation', () => {
       const controller = new AbortController()
       const reason = new Error('creating inspect cancelled')
       const inspection = coordinator.inspect(id, controller.signal)
-      await vi.waitFor(() => { expect(backend.loadAttempts).toBe(1) })
+      await vi.waitFor(() => { expect(backend.ensureCurrentAttempts).toBe(1) })
       const reservation = coordinator.prepare(id)
 
       controller.abort(reason)
       await expect(inspection).rejects.toBe(reason)
-      loadGate.resolve(true)
+      migrationGate.resolve(true)
       prepared = await reservation
       expect(prepared.session.id).toBe(id)
+      expect(backend.ensureCurrentAttempts).toBe(1)
       expect(backend.loadAttempts).toBe(1)
     } finally {
-      loadGate.resolve(true)
+      migrationGate.resolve(true)
       prepared?.[Symbol.dispose]()
       await fiber.dispose()
       await ctx.fiber.dispose()
@@ -1751,6 +2038,55 @@ describe('PersistenceCoordinator observation cancellation', () => {
 })
 
 describe('PersistenceCoordinator retirement', () => {
+  it('queues uncancelled raw and borrowed reads while cancelling one raw observer', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    let coordinator!: PersistenceCoordinator<never>
+    const backendFiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    const internals = coordinator as unknown as CoordinatorInternals
+    const appendGate = Promise.withResolvers<boolean>()
+    backend.beforeAppend = async () => { await appendGate.promise }
+    let borrowed: Awaited<ReturnType<typeof coordinator.borrowSession>> | undefined
+
+    try {
+      const id = SessionId('retiring-raw-read')
+      let session!: Session
+      const sessionFiber = await ctx.plugin(Object.assign((inner: Context) => {
+        session = inner.sessions.create(id)
+      }, { inject: ['sessions'] }))
+      session.append('turn/start', { turn: 1 })
+      session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+      await sessionFiber.dispose()
+      await vi.waitFor(() => { expect(internals.retirements.has(id)).toBe(true) })
+      await vi.waitFor(() => { expect(backend.appendAttempts).toBe(1) })
+
+      const raw = coordinator.readRaw(id)
+      const borrow = coordinator.borrowSession(id)
+      const controller = new AbortController()
+      const reason = new Error('raw observer cancelled during retirement')
+      const cancelled = coordinator.readRaw(id, controller.signal)
+      controller.abort(reason)
+
+      await expect(cancelled).rejects.toBe(reason)
+      expect(backend.rawReadAttempts).toBe(0)
+      expect(backend.loadAttempts).toBe(1)
+
+      appendGate.resolve(true)
+      await expect(raw).resolves.toMatchObject({ meta: { id }, filename: 'session.jsonl' })
+      borrowed = await borrow
+      expect(borrowed).toMatchObject({ source: 'prepared', inspection: { meta: { id } } })
+      expect(backend.rawReadAttempts).toBe(1)
+    } finally {
+      appendGate.resolve(true)
+      borrowed?.[Symbol.dispose]()
+      await backendFiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('a retiring unmaterialized owner without buffered events releases its id', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -2134,7 +2470,12 @@ describe('SessionPersistence service registration', () => {
     await ctx.sessionPersistence.ensureMaterialized(session)
     await ctx.sessionPersistence.ensureMaterialized(session)
 
-    await expect(ctx.sessionPersistence.list()).resolves.toEqual([session.header])
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([{
+      status: 'current',
+      header: session.header,
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
+    }])
     await expect(ctx.sessionPersistence.load(session.id)).resolves.toEqual({
       meta: session.header,
       inheritedEventCount: SessionLogOffset(0),
@@ -2269,77 +2610,6 @@ describe('SessionPersistence service registration', () => {
 
     await expect(ctx.sessionPersistence.create(invalid))
       .rejects.toThrow('session metadata must be losslessly JSON-serializable')
-    await fiber.dispose()
-  })
-
-  it('rejects a legacy header delta from a pre-change live producer', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(MemoryPersistence)
-    const session = ctx.sessions.create(SessionId('legacy-live'), { meta: { cwd: '/legacy' } })
-    // Model the runtime shape available to JavaScript or a hot-loaded plugin
-    // compiled against the obsolete event vocabulary.
-    const appendLegacy = session.append.bind(session) as (type: string, data: unknown) => SessionEvent
-    expect(() => appendLegacy('request/header-delta', { config: { model: 'legacy' } }))
-      .toThrow(/unsupported legacy request\/header-delta format/)
-    expect(session.snapshotEvents()).toHaveLength(0)
-    await fiber.dispose()
-  })
-
-  it('rejects a legacy fallback header buffered by a pre-change live producer', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(MemoryPersistence)
-    const session = ctx.sessions.create(SessionId('legacy-fallback-live'), { meta: { cwd: '/legacy' } })
-    const appendLegacy = session.append.bind(session) as (type: string, data: unknown) => SessionEvent
-
-    expect(() => appendLegacy('request/header', legacyFallbackHeader().data))
-      .toThrow('unsupported legacy request/header reason "fallback"')
-    expect(session.snapshotEvents()).toHaveLength(0)
-    await fiber.dispose()
-  })
-
-  it('rejects a legacy stored prefix during live HMR adoption', async () => {
-    const id = SessionId('legacy-hmr')
-    const m = meta(id, '/legacy')
-    const legacy = legacyHeaderDelta()
-    const store: MemoryStore = new Map([[id, { meta: m, events: [legacy] }]])
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    // A current live session cannot carry the obsolete event in its seed, but
-    // HMR still has to identify the persisted prefix as unsupported rather than
-    // treating it as an ordinary live-prefix collision.
-    const session = ctx.sessions.create(id, { meta: { cwd: '/legacy' } })
-    const fiber = await ctx.plugin(MemoryPersistence, { store })
-
-    await expect(ctx.sessions.flush(session))
-      .rejects.toThrow(/unsupported legacy request\/header-delta event at seq 0/)
-    await Promise.allSettled([fiber.dispose()])
-  })
-
-  it('rejects a stored legacy fallback header during load', async () => {
-    const id = SessionId('legacy-fallback-load')
-    const m = meta(id, '/legacy')
-    const store: MemoryStore = new Map([[id, { meta: m, events: [legacyFallbackHeader()] }]])
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(MemoryPersistence, { store })
-
-    await expect(ctx.sessionPersistence.load(id))
-      .rejects.toThrow('unsupported legacy request/header reason "fallback" at seq 0')
-    await fiber.dispose()
-  })
-
-  it('rejects a stored legacy named-mode event during load', async () => {
-    const id = SessionId('legacy-mode-load')
-    const m = meta(id, '/legacy')
-    const store: MemoryStore = new Map([[id, { meta: m, events: [legacyModeSet()] }]])
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    const fiber = await ctx.plugin(MemoryPersistence, { store })
-
-    await expect(ctx.sessionPersistence.load(id))
-      .rejects.toThrow('unsupported legacy mode/set event at seq 0')
     await fiber.dispose()
   })
 

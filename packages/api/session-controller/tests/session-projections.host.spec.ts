@@ -18,7 +18,7 @@ import { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-presets'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
@@ -27,7 +27,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import type { SessionControlFrame, SessionFollowFrame } from '@deepseek-ai/dsh-api-session-controller/types'
-import { createSessionTestRemote, type TestSessionRemote } from './test-remote.ts'
+import { createSessionTestRemote, currentSessionListing, type TestSessionRemote } from './test-remote.ts'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
@@ -132,7 +132,7 @@ function seedMessages(session: Session, count: number): void {
 const remote = (ctx: Context) => createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 describe('session.history projections block', () => {
-  it('keeps the v0 numeric seed cut on the wire while logical headers expose only lineage', async () => {
+  it('keeps the numeric seed cut on the wire while logical headers expose only lineage', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
@@ -154,7 +154,7 @@ describe('session.history projections block', () => {
     const snapshot = await opening(remote(ctx), child.id)
 
     expect(snapshot.header).toEqual({
-      version: 0,
+      version: 1,
       id: child.id,
       createdAt: child.header.createdAt,
       cwd: '/workspace',
@@ -435,7 +435,13 @@ describe('session.list projections column', () => {
     const coldId = SessionId('session-cold-listing')
     const load = () => { throw new Error('list must not load event logs') }
     ctx.provide('sessionPersistence', {
-      list: async () => [{ version: 0, id: coldId, createdAt: 5, cwd: '/tmp' }],
+      list: async () => [currentSessionListing({
+        version: SESSION_FORMAT_VERSION,
+        id: coldId,
+        createdAt: 5,
+        cwd: '/tmp',
+        isSeeded: false,
+      })],
       locate: () => undefined,
       load,
       inspect: load,
@@ -467,6 +473,35 @@ describe('session.list projections column', () => {
         title: 'Cached title',
       },
     })
+  })
+
+  it('does not use a zero-cut cache row for a seeded cold listing', async () => {
+    const { ctx } = await harness(true)
+    const coldId = SessionId('session-seeded-cold-listing')
+    const load = () => { throw new Error('list must not load event logs') }
+    ctx.provide('sessionPersistence', {
+      list: async () => [currentSessionListing({
+        version: SESSION_FORMAT_VERSION,
+        id: coldId,
+        createdAt: 6,
+        cwd: '/tmp',
+        isSeeded: true,
+      })],
+      locate: () => undefined,
+      load,
+      inspect: load,
+      readFrom: load,
+    } as never)
+    const cachedSnapshot = vi.fn(() => ({ asOfSeq: 7, values: { title: 'Wrong cut' } }))
+    ctx.provide('sessionProjectionCache', { cachedSnapshot } as never)
+
+    const response = await remote(ctx).list(request({}))
+    if (!response.ok) throw new Error('unreachable')
+    const row = response.value.items.find(item => item.sessionId === coldId)
+
+    expect(row).toBeDefined()
+    expect(row !== undefined && 'projections' in row).toBe(false)
+    expect(cachedSnapshot).not.toHaveBeenCalled()
   })
 
   it('keeps persisted host-only state out of a cold session.list response', async () => {
@@ -507,7 +542,7 @@ describe('session.list projections column', () => {
       await owner.dispose()
       expect(ctx.sessions.get(id)).toBeUndefined()
       ctx.provide('sessionPersistence', {
-        list: async () => [header],
+        list: async () => [currentSessionListing(header)],
         locate: () => undefined,
       } as never)
 
@@ -527,7 +562,13 @@ describe('session.list projections column', () => {
     const { ctx } = await harness(true)
     const coldId = SessionId('session-cold-uncached')
     ctx.provide('sessionPersistence', {
-      list: async () => [{ version: 0, id: coldId, createdAt: 5, cwd: '/tmp' }],
+      list: async () => [currentSessionListing({
+        version: SESSION_FORMAT_VERSION,
+        id: coldId,
+        createdAt: 5,
+        cwd: '/tmp',
+        isSeeded: false,
+      })],
       locate: () => undefined,
     } as never)
     const response = await remote(ctx).list(request({}))

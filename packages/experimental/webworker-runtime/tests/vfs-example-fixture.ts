@@ -2,6 +2,7 @@
 
 import { fileURLToPath } from 'node:url'
 import {
+  SESSION_FORMAT_VERSION,
   SessionId,
   SessionLogOffset,
   SessionSeq,
@@ -11,8 +12,9 @@ import {
   type SessionSeq as SessionSeqType,
 } from '@deepseek-ai/dsh-session'
 import {
-  eventLines, projectKey, toHeaderLine,
+  eventLines, generationLogFilename, projectKey, toHeaderLine,
 } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
+import { projectionCacheDomainSpec } from '@deepseek-ai/dsh-session-projection-cache'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 
 /** Root copied by the preview image's repository adapter. */
@@ -383,7 +385,7 @@ function header(
   const inheritedEventCount = child?.seedLength ?? SessionLogOffset(0)
   return {
     meta: {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id,
       createdAt,
       cwd: WORKSPACE,
@@ -410,14 +412,16 @@ function renderLog(
 export function buildVfsExampleFiles(): ReadonlyMap<string, string> {
   const main = mainLog()
   const project = projectKey(WORKSPACE)
-  const sessionPath = (id: string): string => `home/sessions/${project}/${id}/session.jsonl`
+  const sessionPath = (id: string): string =>
+    `home/sessions/${project}/${id}/${generationLogFilename(SESSION_FORMAT_VERSION, 'none')}`
   const projectionCache = `${JSON.stringify({
-    unit: { name: 'session_projcache', version: 5 },
+    unit: { name: 'session_projcache', version: projectionCacheDomainSpec.version },
     global: null,
     tables: {
       sessions: {
         [VFS_EXAMPLE_SESSION_IDS.main]: {
           identity: {
+            formatVersion: SESSION_FORMAT_VERSION,
             createdAt: CREATED_AT,
             cwd: WORKSPACE,
             isSeeded: false,

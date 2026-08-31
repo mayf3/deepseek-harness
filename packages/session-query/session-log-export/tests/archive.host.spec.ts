@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { unzipSync, strFromU8 } from 'fflate'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionLineageNode } from '@deepseek-ai/dsh-session-query'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
@@ -22,7 +22,7 @@ const sid = (id: string): SessionId => id as SessionId
 
 function header(id: string, parentSession?: SessionId): SessionHeader {
   return {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id: sid(id),
     createdAt: 1000,
     cwd: '/proj',
@@ -165,7 +165,8 @@ describe('session export compression config', () => {
 
 describe('session.export download endpoint', () => {
   it('streams a ZIP with the root artifact verbatim under its original filename', async () => {
-    const api = await buildApi({ 'session-root': artifact('session-root') })
+    const root = { ...artifact('session-root'), filename: 'session.v1.jsonl' }
+    const api = await buildApi({ 'session-root': root })
     const response = await toFetchHandler(api).fetch(
       new Request('http://host/api/session.export?sessionId=session-root'),
     )
@@ -173,8 +174,8 @@ describe('session.export download endpoint', () => {
     expect(response.headers.get('content-type')).toBe('application/zip')
     expect(response.headers.get('content-disposition')).toContain('dsh-session-session-root.zip')
     const files = unzipSync(await responseBytes(response))
-    expect(Object.keys(files)).toEqual(['session.jsonl'])
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(artifact('session-root').content)
+    expect(Object.keys(files)).toEqual(['session.v1.jsonl'])
+    expect(strFromU8(files['session.v1.jsonl'] as Uint8Array)).toBe(root.content)
   })
 
   it('preflights root preparation through HEAD without streaming a body', async () => {

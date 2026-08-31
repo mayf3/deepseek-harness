@@ -8,7 +8,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { DatabaseSync } from 'node:sqlite'
 import { Context, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import type {
   Session,
   SessionEvent,
@@ -157,6 +157,7 @@ interface Observation {
 
 interface IndexedPersistedRow {
   id: string
+  version: number
   revision: string
   generation: number
 }
@@ -404,7 +405,7 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
     assertNotAborted(signal)
     const db = this._requireDb()
     const persistedRows = db.prepare(
-      'SELECT id, revision, generation FROM persisted_sessions',
+      'SELECT id, version, revision, generation FROM persisted_sessions',
     ).all() as unknown as IndexedPersistedRow[]
     const liveRows = db.prepare(
       'SELECT id, fingerprint, persisted, generation FROM temp.live_sessions',
@@ -506,11 +507,14 @@ export class SqliteSessionQueryEngine extends SessionQueryEngine {
           assertNotAborted(signal)
           persisted = materializePersistenceSnapshots(before)
           for (const entry of persisted.values()) {
-            if (canReuseIndexed && indexed.get(entry.header.id)?.revision === entry.revision) continue
-            // Skip work already shadowed by a live owner. `inspect()` is
-            // non-mutating, so an owner attaching after this check cannot cause
-            // crash-repair side effects; the live-membership retry below makes
-            // the returned observation live-preferred.
+            const current = indexed.get(entry.header.id)
+            if (canReuseIndexed
+              && current?.revision === entry.revision
+              && current.version === entry.header.version) continue
+            // Skip work already shadowed by a live owner. An owner attaching
+            // after this check shares persistence's per-id chain, so historical
+            // publication completes before adoption; the live-membership retry
+            // below then discards this cold observation in favor of live state.
             if (initiallyLive.has(entry.header.id) || this.ctx.sessions.get(entry.header.id) !== undefined) continue
             assertNotAborted(signal)
             const loaded = await persistence.inspect(entry.header.id, signal)
@@ -898,6 +902,7 @@ function materializePersistenceSnapshots(
     if (typeof snapshot.revision !== 'string') {
       throw new Error('persistence snapshot revision must be a string')
     }
+    if (snapshot.status !== 'current' && snapshot.status !== 'migration-required') continue
     const header = structuredClone(snapshot.header)
     if (result.has(header.id)) {
       throw new Error(`persistence listed duplicate session "${header.id}"`)
@@ -935,8 +940,7 @@ function sameSessionIds(
 }
 
 function sameHeader(a: SessionHeader, b: SessionHeader): boolean {
-  return a.version === b.version
-    && a.id === b.id
+  return a.id === b.id
     && a.createdAt === b.createdAt
     && a.cwd === b.cwd
     && a.parentSession === b.parentSession
@@ -947,7 +951,7 @@ function sameHeader(a: SessionHeader, b: SessionHeader): boolean {
 
 function rowHeader(row: SessionHeaderRow): SessionHeader {
   return {
-    version: row.version,
+    version: SESSION_FORMAT_VERSION,
     id: row.session_id as SessionId,
     createdAt: row.created_at,
     ...row.cwd === null ? {} : { cwd: row.cwd },

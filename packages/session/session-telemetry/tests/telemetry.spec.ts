@@ -2,13 +2,19 @@ import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm
 /**
  * Coordinator semantics against a bare fake backend — the RFC's named unit
  * tier for the seam: adoption (fresh, seeded, re-adoption via the handoff
- * cursor), the fixed chunk projection, deep-copy isolation, turn-latency and
+ * cursor), complete-log replay, deep-copy isolation, turn-latency and
  * dispose-ordering pins, failure containment, and the `agent/error` relay.
  */
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, {
+  SESSION_FORMAT_VERSION,
+  Session,
+  SessionId,
+  SessionLogOffset,
+  type SessionEvent,
+} from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import {
   SessionTelemetryCoordinator,
@@ -95,7 +101,12 @@ describe('SessionTelemetryCoordinator capture', () => {
 
     const start = backend.ledger()[0]!
     const message = backend.ledger()[1]!
-    expect(start.attributes).toMatchObject({ 'session.id': 'cap', 'event.type': 'turn/start', 'event.seq': 0 })
+    expect(start.attributes).toMatchObject({
+      'session.id': 'cap',
+      'session.format_version': SESSION_FORMAT_VERSION,
+      'event.type': 'turn/start',
+      'event.seq': 0,
+    })
     expect(start.time).toBe(session.snapshotEvents()[0]!.time)
     expect(start.severity).toBe('info')
     expect(message.attributes['event.seq']).toBe(1)
@@ -111,6 +122,7 @@ describe('SessionTelemetryCoordinator capture', () => {
     const session = ctx.sessions.create(SessionId('child'), { meta: { cwd: '/tmp/proj', parentSession: parent } })
     appendTurn(session)
     for (const record of backend.ledger()) {
+      expect(record.attributes['session.format_version']).toBe(SESSION_FORMAT_VERSION)
       expect(record.attributes['session.cwd']).toBe('/tmp/proj')
       expect(record.attributes['session.parent_id']).toBe('parent')
     }
@@ -158,7 +170,7 @@ describe('SessionTelemetryCoordinator capture', () => {
     expect(record.body).toEqual({ payload: { nested: ['a', 'b'] } })
   })
 
-  it('ships only the first chunk of each (turn, step), per session', async () => {
+  it('ships every assistant chunk in canonical order with its complete body', async () => {
     const { ctx, backend } = await setup()
     const a = liveSession(ctx, 'a')
     const b = liveSession(ctx, 'b')
@@ -169,11 +181,17 @@ describe('SessionTelemetryCoordinator capture', () => {
     chunk(a, 1, 2, 'a12-first')
     chunk(b, 1, 1, 'b11-first')
     chunk(b, 1, 1, 'b11-second')
-    const shipped = backend.ledger().map(r => [r.attributes['session.id'], (r.body as { chunk: { text: string } }).chunk.text])
+    const shipped = backend.ledger().map(r => [
+      r.attributes['session.id'],
+      r.attributes['event.seq'],
+      (r.body as { chunk: { text: string } }).chunk.text,
+    ])
     expect(shipped).toEqual([
-      ['a', 'a11-first'],
-      ['a', 'a12-first'],
-      ['b', 'b11-first'],
+      ['a', 0, 'a11-first'],
+      ['a', 1, 'a11-second'],
+      ['a', 2, 'a12-first'],
+      ['b', 0, 'b11-first'],
+      ['b', 1, 'b11-second'],
     ])
   })
 })
@@ -183,7 +201,17 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
     const { ctx, backend, coordinator } = await setup(new FakeBackend(), 'on-demand')
     const session = liveSession(ctx, 'on-demand-prefix')
     appendTurn(session)
-    const firstBoundary = session.snapshotEvents()[1]!.seq
+    session.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'text-delta', index: 0, text: 'first' },
+    })
+    const firstBoundary = session.snapshotEvents()[2]!.seq
+    session.append('assistant/chunk', {
+      turn: 1,
+      step: 1,
+      chunk: { type: 'text-delta', index: 0, text: 'second' },
+    })
     session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     expect(backend.records).toEqual([])
 
@@ -191,16 +219,23 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
     expect(backend.ledger().map(record => record.attributes['event.type'])).toEqual([
       'turn/start',
       'user/message',
+      'assistant/chunk',
     ])
+    expect(backend.ledger().map(record => record.attributes['event.seq'])).toEqual([0, 1, 2])
+    expect(backend.ledger()[2]!.body).toMatchObject({ chunk: { text: 'first' } })
 
-    expect(backend.ledger()).toHaveLength(2)
+    expect(backend.ledger()).toHaveLength(3)
     coordinator.captureSession(session)
     coordinator.captureSession(session)
     expect(backend.ledger().map(record => record.attributes['event.type'])).toEqual([
       'turn/start',
       'user/message',
+      'assistant/chunk',
+      'assistant/chunk',
       'turn/end',
     ])
+    expect(backend.ledger().map(record => record.attributes['event.seq'])).toEqual([0, 1, 2, 3, 4])
+    expect(backend.ledger()[3]!.body).toMatchObject({ chunk: { text: 'second' } })
   })
 
   it('runs the currently mounted redaction policy during canonical-log capture', async () => {
@@ -277,7 +312,7 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
 })
 
 describe('SessionTelemetryCoordinator adoption', () => {
-  it('exports an unpublished suffix without re-exporting constructor history', async () => {
+  it('replays a new fork object from seq -1, including its inherited prefix', async () => {
     const backend = new FakeBackend()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -295,37 +330,56 @@ describe('SessionTelemetryCoordinator adoption', () => {
 
     const seqs = backend.ledger().map(r => [r.attributes['session.id'], r.attributes['event.seq']])
     expect(seqs).toEqual(expect.arrayContaining([['seed-parent', 0], ['seed-parent', 1]]))
-    // 2 end-seed, 3 turn/end: both this lifecycle's own writes, while
-    // inherited 0-1 stay with the parent stream.
-    expect(seqs.filter(([id]) => id === 'seeded')).toEqual([['seeded', 2], ['seeded', 3]])
+    expect(seqs.filter(([id]) => id === 'seeded')).toEqual([
+      ['seeded', 0],
+      ['seeded', 1],
+      ['seeded', 2],
+      ['seeded', 3],
+    ])
   })
 
-  it('resume shape: a full-log seed exports only its own end-seed and rebuilds the chunk projection', async () => {
+  it('replays a restored post-migration Session from seq -1 with current-version identity', async () => {
     const backend = new FakeBackend()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    const donor = ctx.sessions.create(SessionId('donor'), { meta: {} })
+    const donor = Session.create(SessionId('donor'))
     donor.append('turn/start', { turn: 1 })
     donor.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'first' } })
-    const resumed = ctx.sessions.create(SessionId('resumed'), { seed: donor.snapshotEvents(), meta: {} })
     await ctx.plugin({
       name: 'fake-telemetry',
       inject: ['sessions'],
       apply: (inner: Context) => void new SessionTelemetryCoordinator(inner, backend),
     })
+    // Session persistence migrates before it constructs the restored Session;
+    // telemetry therefore receives a current-format object with the complete
+    // migrated canonical seed.
+    const resumed = ctx.sessions.prepare(SessionId('resumed'), {
+      seed: structuredClone(donor.snapshotEvents()) as SessionEvent[],
+      meta: {
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('resumed'),
+        createdAt: 1,
+        isSeeded: false,
+      },
+      inheritedEventCount: SessionLogOffset(0),
+      seedSource: 'persistence',
+    })
+    ctx.sessions.enter(resumed)
+    ctx.sessions.announce(resumed)
     const ofResumed = () => backend.ledger()
       .filter(r => r.attributes['session.id'] === 'resumed')
-      .map(r => r.attributes['event.seq'])
-    // Nothing inherited is re-exported; seq 2 is this session's own first
-    // write — the end-seed event its constructor appended after the seed.
-    expect(ofResumed()).toEqual([2])
-    // The seed fed the projection: the (turn 1, step 1) first chunk already
-    // shipped from the original process, so its continuation is re-dropped…
+    expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([0, 1, 2])
+    expect(ofResumed().every(r => r.attributes['session.format_version'] === SESSION_FORMAT_VERSION)).toBe(true)
     resumed.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'continuation' } })
-    expect(ofResumed()).toEqual([2])
-    // …while a new step's first chunk exports normally.
     resumed.append('assistant/chunk', { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'next step' } })
-    expect(ofResumed()).toEqual([2, 4])
+    expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([0, 1, 2, 3, 4])
+    expect(ofResumed().map(r => (r.body as { chunk?: { text: string } }).chunk?.text)).toEqual([
+      undefined,
+      'first',
+      undefined,
+      'continuation',
+      'next step',
+    ])
   })
 
   it('stamps session.seed_length from the exact Session cut so receivers can stitch fork streams', async () => {
@@ -371,7 +425,7 @@ describe('SessionTelemetryCoordinator adoption', () => {
     expect(backend.ledger()).toHaveLength(2)
   })
 
-  it('resumes from the handoff cursor across a reload, re-dropping mid-step chunks', async () => {
+  it('resumes from the handoff cursor across same-object re-adoption without duplicates', async () => {
     const backend = new FakeBackend()
     const { ctx, fiber } = await setup(backend)
     const session = liveSession(ctx, 'hmr')
@@ -390,9 +444,11 @@ describe('SessionTelemetryCoordinator adoption', () => {
       inject: ['sessions'],
       apply: (inner: Context) => void new SessionTelemetryCoordinator(inner, second),
     })
-    // Only the window events past the cursor are re-handed, and the mid-step
-    // continuation is re-dropped because ≤cursor events rebuilt the projection.
-    expect(second.ledger().map(r => r.attributes['event.type'])).toEqual(['turn/end'])
+    // Only window events past the same object's cursor are re-handed.
+    expect(second.ledger().map(r => [r.attributes['event.seq'], r.attributes['event.type']])).toEqual([
+      [2, 'assistant/chunk'],
+      [3, 'turn/end'],
+    ])
   })
 
   it('replays past a record the backend rejects: one event withheld, the rest adopted', async () => {

@@ -2,7 +2,7 @@ import { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import { DatabaseSync } from 'node:sqlite'
-import { chmod, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import SessionStore, {
@@ -14,8 +14,14 @@ import SessionStore, {
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
 import SessionPersistence, { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionEventSuffix, SessionInspection, SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
+import type {
+  SessionEventSuffix,
+  SessionInspection,
+  SessionPersistenceListing,
+  SessionPersistenceSnapshot,
+} from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { generationLogFilename } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import SqliteSessionQueryEngine, {
   SESSION_QUERY_SQLITE_SCHEMA_VERSION,
 } from '@deepseek-ai/dsh-session-query-sqlite'
@@ -192,11 +198,16 @@ class TestPersistence extends SessionPersistence {
     return { ...whole, fromSeq, events: whole.events.filter(event => event.seq >= fromSeq) }
   }
 
-  async list(): Promise<SessionHeader[]> {
+  async list(): Promise<SessionPersistenceListing[]> {
     TestPersistence.listStarted?.()
     await TestPersistence.listGate
     if (TestPersistence.failure !== undefined) throw TestPersistence.failure
-    return [...TestPersistence.entries.values()].map(entry => structuredClone(entry.meta))
+    return [...TestPersistence.entries.values()].map(entry => ({
+      status: 'current' as const,
+      header: structuredClone(entry.meta),
+      storedVersion: entry.meta.version,
+      targetVersion: SESSION_FORMAT_VERSION,
+    }))
   }
 
 
@@ -207,7 +218,10 @@ class TestPersistence extends SessionPersistence {
     if (TestPersistence.failure !== undefined) throw TestPersistence.failure
     const snapshots = TestPersistence.snapshotOverride?.()
       ?? [...TestPersistence.entries.values()].map(entry => ({
+        status: 'current' as const,
         header: structuredClone(entry.meta),
+        storedVersion: entry.meta.version,
+        targetVersion: SESSION_FORMAT_VERSION,
         revision: SessionPersistenceRevision(`test:${TestPersistence.revisions.get(entry.meta.id)}`),
       }))
     await TestPersistence.snapshotEffect?.(signal)
@@ -1047,6 +1061,52 @@ describe('SQLite reconciliation and source lifecycle', () => {
     await replacement.dispose()
   })
 
+  it('retries a format-changing revision and expires its prior event cursor', async () => {
+    const durable = header('format-migration')
+    const oldEvents = [
+      ...messageEvents('old needle one', 1),
+      { ...messageEvents('old needle two', 2)[0]!, seq: SessionSeq(1) },
+    ]
+    TestPersistence.reset([{ meta: durable, events: oldEvents }])
+    const ctx = await liveContext({ path: ':memory:', defaultLimit: 1, maxLimit: 2 })
+    await ctx.plugin(TestPersistence)
+    const first = await ctx.sessionQuery.searchEvents({
+      sessionId: durable.id,
+      query: 'old needle',
+      limit: 1,
+    })
+    expect(first.nextCursor).toEqual(expect.any(String))
+    const cursor = first.nextCursor
+    if (cursor === undefined) throw new Error('fixture did not return a cursor')
+    const db = (ctx.sessionQuery as unknown as { _db: DatabaseSync })._db
+    db.prepare('UPDATE persisted_sessions SET version = ? WHERE id = ?')
+      .run(SESSION_FORMAT_VERSION - 1, durable.id)
+    TestPersistence.inspectEffect = (observed) => {
+      observed.events = [
+        ...messageEvents('new needle one', 3),
+        { ...messageEvents('new needle two', 4)[0]!, seq: SessionSeq(1) },
+      ]
+      TestPersistence.revisions.set(durable.id, ++TestPersistence.nextRevision)
+    }
+
+    await expect(ctx.sessionQuery.searchEvents({
+      sessionId: durable.id,
+      query: 'old needle',
+      limit: 1,
+      cursor,
+    })).rejects.toThrow(expectCode('SESSION_QUERY_STALE_CURSOR'))
+    expect(TestPersistence.inspections.get(durable.id)).toBe(3)
+    expect(TestPersistence.snapshotSignals).toHaveLength(6)
+    await expect(ctx.sessionQuery.searchEvents({
+      sessionId: durable.id,
+      query: 'new needle',
+      limit: 2,
+    })).resolves.toMatchObject({
+      session: { version: SESSION_FORMAT_VERSION },
+      items: [{}, {}],
+    })
+  })
+
   it('retries when a successful observation belongs to a source unmounted during listing', async () => {
     const durable = header('successful-unmount')
     TestPersistence.reset([{ meta: durable, events: messageEvents('durable needle') }])
@@ -1131,15 +1191,44 @@ describe('SQLite reconciliation and source lifecycle', () => {
     TestPersistence.snapshotOverride = () => 'not-an-array' as never
     await expect(ctx.sessionQuery.searchSessions({ query: 'needle' }))
       .rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
-    TestPersistence.snapshotOverride = () => [{ header: durable, revision: 1 as never }]
+    TestPersistence.snapshotOverride = () => [{
+      status: 'current',
+      header: durable,
+      storedVersion: durable.version,
+      targetVersion: SESSION_FORMAT_VERSION,
+      revision: 1 as never,
+    }]
     await expect(ctx.sessionQuery.searchSessions({ query: 'needle' }))
       .rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
     TestPersistence.snapshotOverride = () => [
-      { header: durable, revision: SessionPersistenceRevision('duplicate:1') },
-      { header: durable, revision: SessionPersistenceRevision('duplicate:2') },
+      {
+        status: 'current',
+        header: durable,
+        storedVersion: durable.version,
+        targetVersion: SESSION_FORMAT_VERSION,
+        revision: SessionPersistenceRevision('duplicate:1'),
+      },
+      {
+        status: 'current',
+        header: durable,
+        storedVersion: durable.version,
+        targetVersion: SESSION_FORMAT_VERSION,
+        revision: SessionPersistenceRevision('duplicate:2'),
+      },
     ]
     await expect(ctx.sessionQuery.searchSessions({ query: 'needle' }))
       .rejects.toThrow(expectCode('SESSION_QUERY_PERSISTENCE_FAILED'))
+
+    TestPersistence.snapshotOverride = () => [{
+      status: 'unsupported',
+      storedVersion: SESSION_FORMAT_VERSION + 1,
+      targetVersion: SESSION_FORMAT_VERSION,
+      location: { kind: 'test', path: '/unsupported/session.jsonl' },
+      reason: 'future format',
+      revision: SessionPersistenceRevision('unsupported:1'),
+    }]
+    await expect(ctx.sessionQuery.searchSessions({ query: 'needle' }))
+      .resolves.toEqual({ items: [] })
 
     TestPersistence.snapshotOverride = undefined
     const typed = new SessionQueryError('typed persistence failure', 'SESSION_QUERY_PERSISTENCE_FAILED')
@@ -1864,6 +1953,124 @@ describe('SQLite schema, cancellation, and real persistence integration', () => 
     await search.dispose()
     await expect(ctx.sessionPersistence.load(meta.id)).resolves.toMatchObject({ meta, events: [{ seq: 0 }] })
     await persistence.dispose()
+  })
+
+  it('migrates a listed v0 JSONL session through search before preparing and forking it', async () => {
+    const persistenceRoot = await temporaryPath('canonical-v0')
+    const searchPath = await temporaryPath('derived-v0.db')
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SessionStore)
+      await ctx.plugin(SessionProjectionRegistry)
+      await ctx.plugin(JsonlSessionPersistence, {
+        root: persistenceRoot,
+        compression: 'none',
+      })
+      const meta = header('real-v0', 10, { cwd: '/work', delegationDepth: 0 })
+      const currentLocation = ctx.sessionPersistence.locate(meta)
+      if (currentLocation === undefined) throw new Error('JSONL backend did not locate the v0 fixture')
+      const v0Path = join(dirname(currentLocation.path), generationLogFilename(0, 'none'))
+      const v0Location = { kind: 'jsonl', path: v0Path }
+      const source = [
+        {
+          type: 'session', version: 0, id: meta.id, createdAt: meta.createdAt,
+          cwd: meta.cwd, delegationDepth: 0,
+        },
+        { type: 'turn/start', seq: 0, time: 11, data: { turn: 1 } },
+        {
+          type: 'user/message', seq: 1, time: 12, surfaceOp: 'append',
+          data: createUserMessage({
+            content: [{ type: 'text', text: 'migration search needle' }],
+            source: { kind: 'user' },
+          }),
+        },
+        { type: 'turn/end', seq: 2, time: 13, data: { turn: 1, reason: { kind: 'completed' } } },
+      ].map(record => JSON.stringify(record)).join('\n') + '\n'
+      await mkdir(dirname(v0Path), { recursive: true })
+      await writeFile(v0Path, source, { flush: true })
+      const v0Before = await stat(v0Path, { bigint: true })
+
+      const snapshots = await ctx.sessionPersistence.listSnapshots()
+      expect(snapshots).toHaveLength(1)
+      expect(snapshots[0]).toMatchObject({
+        status: 'migration-required',
+        storedVersion: 0,
+        targetVersion: SESSION_FORMAT_VERSION,
+        header: { ...meta, version: SESSION_FORMAT_VERSION },
+        location: v0Location,
+      })
+      expect(typeof snapshots[0]?.revision).toBe('string')
+      expect(await readFile(v0Path, 'utf8')).toBe(source)
+      expect(await readdir(dirname(v0Path))).toEqual(['session.jsonl'])
+
+      await ctx.plugin(SqliteSessionQueryEngine, { path: searchPath })
+      expect(await readFile(v0Path, 'utf8')).toBe(source)
+      expect(await readdir(dirname(v0Path))).toEqual(['session.jsonl'])
+
+      await expect(ctx.sessionQuery.searchEvents({
+        sessionId: meta.id,
+        query: 'migration search needle',
+      })).resolves.toMatchObject({
+        session: { ...meta, version: SESSION_FORMAT_VERSION },
+        items: [{ sessionId: meta.id, seq: 1, type: 'user/message' }],
+      })
+      expect(await readFile(v0Path, 'utf8')).toBe(source)
+      const v0AfterMigration = await stat(v0Path, { bigint: true })
+      const v1AfterMigration = await stat(currentLocation.path, { bigint: true })
+      expect({ dev: v0AfterMigration.dev, ino: v0AfterMigration.ino })
+        .toEqual({ dev: v0Before.dev, ino: v0Before.ino })
+      expect({ dev: v1AfterMigration.dev, ino: v1AfterMigration.ino })
+        .not.toEqual({ dev: v0Before.dev, ino: v0Before.ino })
+      const current = await readFile(currentLocation.path, 'utf8')
+      expect((JSON.parse(current.split('\n')[0] as string) as { version: number }).version)
+        .toBe(SESSION_FORMAT_VERSION)
+      expect((await readdir(dirname(v0Path))).sort()).toEqual([
+        'session.jsonl',
+        'session.v1.jsonl',
+      ])
+
+      await expect(ctx.sessionPersistence.readRaw(meta.id)).resolves.toMatchObject({
+        meta: { ...meta, version: SESSION_FORMAT_VERSION },
+        filename: 'session.v1.jsonl',
+        content: current,
+      })
+      expect(await readFile(currentLocation.path, 'utf8')).toBe(current)
+      expect(await readFile(v0Path, 'utf8')).toBe(source)
+
+      const preparation = await ctx.sessionPersistence.prepare(meta.id)
+      const resumed = preparation.session
+      const detach = ctx.sessions.enter(resumed)
+      try {
+        ctx.sessions.announce(resumed)
+        const child = ctx.sessions.fork(resumed, SessionSeq(2), SessionId('real-v0-child'))
+        expect(resumed.header.version).toBe(SESSION_FORMAT_VERSION)
+        expect(child.header).toMatchObject({
+          version: SESSION_FORMAT_VERSION,
+          parentSession: meta.id,
+          isSeeded: true,
+        })
+        expect(child.snapshotEvents().map(event => event.type)).toEqual([
+          'turn/start',
+          'user/message',
+          'turn/end',
+          'session/end-seed',
+        ])
+        expect(child.snapshotEvents()[1]).toMatchObject({
+          type: 'user/message',
+          data: { content: [{ type: 'text', text: 'migration search needle' }] },
+        })
+      } finally {
+        detach()
+        preparation[Symbol.dispose]()
+      }
+      expect(await readFile(currentLocation.path, 'utf8')).toBe(current)
+      expect(await readFile(v0Path, 'utf8')).toBe(source)
+      const v0AfterFork = await stat(v0Path, { bigint: true })
+      expect({ dev: v0AfterFork.dev, ino: v0AfterFork.ino })
+        .toEqual({ dev: v0Before.dev, ino: v0Before.ino })
+    } finally {
+      await ctx.fiber.dispose()
+    }
   })
 
   it('reconciles colliding local revisions when a derived index reopens against another JSONL store', async () => {

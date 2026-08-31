@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { HostConnectionService } from '@deepseek-ai/dsh-client-connection'
 import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser-auth.ts'
-import { SessionLogOffset } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionRawArtifact } from '@deepseek-ai/dsh-session-persistence'
 import { strFromU8, unzipSync } from 'fflate'
@@ -17,7 +17,7 @@ const sid = (value: string): SessionId => value as SessionId
 
 function artifact(id: string): SessionRawArtifact {
   const header: SessionHeader = {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id: sid(id),
     createdAt: 1,
     cwd: '/workspace',
@@ -27,7 +27,7 @@ function artifact(id: string): SessionRawArtifact {
   return {
     meta: header,
     inheritedEventCount: SessionLogOffset(0),
-    filename: 'session.jsonl',
+    filename: 'session.v1.jsonl',
     content: `${JSON.stringify({
       type: 'session',
       version: header.version,
@@ -74,7 +74,7 @@ describe('Session log export Fetch route', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    const exported = strFromU8(files['session.jsonl'] as Uint8Array)
+    const exported = strFromU8(files['session.v1.jsonl'] as Uint8Array)
     expect(exported).toContain('"id":"session-1"')
     expect(exported).not.toContain('isSeeded')
 

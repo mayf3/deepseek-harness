@@ -11,6 +11,7 @@ import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, Sess
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { isReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import SessionProjectionCache from '@deepseek-ai/dsh-session-projection-cache'
@@ -570,7 +571,10 @@ describe('SubagentRuntime.listChildren', () => {
   })
 
   it.each([
-    ['version', (meta: SessionHeader): SessionHeader => ({ ...meta, version: meta.version + 1 })],
+    ['version', (meta: SessionHeader): SessionHeader => ({
+      ...meta,
+      version: SESSION_FORMAT_VERSION + 1,
+    }) as unknown as SessionHeader],
     ['id', (meta: SessionHeader): SessionHeader => ({ ...meta, id: SessionId('another-lifecycle') })],
     ['createdAt', (meta: SessionHeader): SessionHeader => ({ ...meta, createdAt: meta.createdAt + 1 })],
     ['cwd', (meta: SessionHeader): SessionHeader => ({ ...meta, cwd: '/elsewhere' })],
@@ -875,7 +879,9 @@ describe('SubagentRuntime.listChildren', () => {
     const childId = await startChild(ctx, parent, 'cached child')
     // The child's turn/end and disposal are the cache's mandatory checkpoint
     // points; both writes are fail-soft asynchronous, so wait for the row.
-    const header = (await ctx.sessionPersistence.list()).find(meta => meta.id === childId)
+    const header = (await ctx.sessionPersistence.list())
+      .filter(isReadableSessionPersistenceListing)
+      .find(listing => listing.header.id === childId)?.header
     await vi.waitFor(() => {
       expect(ctx.sessionProjectionCache.cachedSnapshot(header!, SessionLogOffset(0))?.values.subagent).toBeDefined()
     }, { timeout: 5_000 })

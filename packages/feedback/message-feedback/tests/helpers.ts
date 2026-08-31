@@ -18,6 +18,7 @@ import SessionPersistence, {
   type SessionEventSuffix,
   type SessionInspection,
   type SessionLocation,
+  type SessionPersistenceListing,
   type SessionPersistenceSnapshot,
 } from '@deepseek-ai/dsh-session-persistence'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -173,14 +174,22 @@ class TestPersistence extends SessionPersistence {
       }
   }
 
-  list(): Promise<SessionHeader[]> {
-    return Promise.resolve([...this.durable.values()].map(value => value.meta))
+  list(): Promise<SessionPersistenceListing[]> {
+    return Promise.resolve([...this.durable.values()].map(value => ({
+      status: 'current',
+      header: value.meta,
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
+    })))
   }
 
   async listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
     await this.onListSnapshots?.()
     return [...this.durable.values()].map((value, index) => ({
+      status: 'current',
       header: value.meta,
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
       revision: SessionPersistenceRevision(`test:${index}:${value.events.length}`),
     }))
   }

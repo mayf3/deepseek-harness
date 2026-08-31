@@ -212,9 +212,6 @@ function freezeRestoredObject<T extends object>(value: T): T {
 /** Validate the fixed event envelope after one-pass JSON materialization. */
 function assertSessionEventEnvelope(value: Record<string, unknown>, index: number): asserts value is SessionEvent {
   const event = value
-  if (event['type'] === 'request/header-delta') {
-    throw new Error(`seed event at index ${index} uses unsupported legacy request/header-delta format`)
-  }
   for (const key in event) {
     switch (key) {
       case 'type':
@@ -269,6 +266,13 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
       throw new Error(`seed request/header at index ${index} has an invalid reasoningEffort`)
     }
     assertAdapterDefaults(headerRecord?.['adapterDefaults'], configRecord, index)
+    const reason = record?.['reason']
+    if (reason !== 'initial' && reason !== 'resume' && reason !== 'change' && reason !== 'series') {
+      throw new Error(`seed request/header at index ${index} has an invalid reason`)
+    }
+    if (record?.['startsSeries'] !== undefined && record['startsSeries'] !== true) {
+      throw new Error(`seed request/header at index ${index} has an invalid startsSeries marker`)
+    }
   }
   const type = event['type']
   if (type !== 'user/message' && type !== 'assistant/message'
@@ -359,18 +363,6 @@ function hasProviderModel(value: unknown): boolean {
     && typeof pair['model'] === 'string' && pair['model'].length > 0
 }
 
-/** Reject request-header vocabulary removed with the legacy delta codec. */
-function assertSupportedRequestHeader(type: string, data: unknown, location: string): void {
-  if (type === 'request/header-delta') {
-    throw new Error(`${location} uses unsupported legacy request/header-delta format`)
-  }
-  if (type === 'request/header'
-    && data !== null && typeof data === 'object' && !Array.isArray(data)
-    && (data as Record<string, unknown>)['reason'] === 'fallback') {
-    throw new Error(`${location} uses unsupported legacy request/header reason "fallback"`)
-  }
-}
-
 type SessionCallback = (...args: unknown[]) => unknown
 
 /** Resolve one listener snapshot, including Cordis's internal dispatch checks. */
@@ -454,9 +446,10 @@ export class Session {
    * The first seq appended IN THIS PROCESS: the length of the constructor
    * seed (0 without one). Events with smaller seq values entered through
    * construction — replay, fork, or resume — and were never published on the
-   * `session/event` firehose (constructor seeds do not emit), so consumers
-   * that replay the log as a publication substitute (telemetry adoption)
-   * start here. Distinct from {@link inheritedEventCount}, the DURABLE
+   * `session/event` firehose (constructor seeds do not emit). This offset marks
+   * the constructor-input boundary for lifecycle ownership and persistence
+   * adoption; consumers that need complete canonical history still start at
+   * seq 0. Distinct from {@link inheritedEventCount}, the DURABLE
    * fork-lineage cut: a resumed session's constructor seed is its full stored
    * log, while the inherited count keeps the original fork value — this field is the
    * in-process construction fact.
@@ -537,7 +530,6 @@ export class Session {
           throw new Error(`seed event at index ${index} is not losslessly JSON-serializable`)
         }
         assertSessionEventEnvelope(snapshot, index)
-        assertSupportedRequestHeader(snapshot.type, snapshot.data, `seed event at index ${index}`)
         if (snapshot.seq !== index) {
           throw new Error(`seed event at index ${index} has seq ${snapshot.seq} (expected ${index}); seed must be contiguous from 0`)
         }
@@ -679,7 +671,6 @@ export class Session {
     if (dataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable data`)
     }
-    assertSupportedRequestHeader(type, dataSnapshot, `session event "${type}"`)
     const surfaceMetadataSnapshot = snapshotJsonValue(surfaceMetadata)
     if (surfaceMetadataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable surface metadata`)

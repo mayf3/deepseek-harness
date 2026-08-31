@@ -10,7 +10,8 @@ import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-persistence'
+import { isReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
+import type { SessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
@@ -82,6 +83,11 @@ const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): b
 const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
   right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
 
+/** Select the latest logical headers a workspace can index. */
+function listedHeaders(listings: readonly SessionPersistenceListing[]): SessionHeader[] {
+  return listings.filter(isReadableSessionPersistenceListing).map(listing => listing.header)
+}
+
 /**
  * Durable workspace registry. Startup waits for `sessionPersistence`, builds
  * one canonical-cwd header index, and completes the one-time history
@@ -126,11 +132,11 @@ export class WorkspaceRegistry extends Service {
     await this.recoverPendingMutation()
     this.validateStoredState(this.state)
     if (!this.state.initialized) {
-      const headers = await this.ctx.sessionPersistence.list()
+      const headers = listedHeaders(await this.ctx.sessionPersistence.list())
       await this.replaceHeaderIndex(headers)
       await this.bootstrap(headers)
     } else if (this.table.size > 0) {
-      await this.replaceHeaderIndex(await this.ctx.sessionPersistence.list())
+      await this.replaceHeaderIndex(listedHeaders(await this.ctx.sessionPersistence.list()))
     }
 
     await this.indexLiveSessions()
@@ -263,7 +269,7 @@ export class WorkspaceRegistry extends Service {
   private async sessionKnown(id: SessionId): Promise<boolean> {
     if (this.ctx.get('sessions')?.get(id) !== undefined) return true
     if (this.headers.has(id)) return true
-    await this.indexHeaders(await this.ctx.sessionPersistence.list())
+    await this.indexHeaders(listedHeaders(await this.ctx.sessionPersistence.list()))
     return this.headers.has(id)
   }
 
@@ -621,7 +627,7 @@ export class WorkspaceRegistry extends Service {
     const cached = this.headers.get(id)
     if (cached !== undefined) return cached
 
-    const headers = await this.ctx.sessionPersistence.list()
+    const headers = listedHeaders(await this.ctx.sessionPersistence.list())
     await this.indexHeaders(headers)
     const header = this.headers.get(id)
     if (header === undefined) {

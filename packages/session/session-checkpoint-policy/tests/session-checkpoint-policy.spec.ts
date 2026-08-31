@@ -5,7 +5,11 @@ import { agentEvents, type Agent } from '@deepseek-ai/dsh-agent'
 import LlmRuntime, { ToolCallId, type GenerateOptions, LlmAdapter, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionLogOffset } from '@deepseek-ai/dsh-session'
-import SessionPersistence, { type SessionEventSuffix, type SessionInspection } from '@deepseek-ai/dsh-session-persistence'
+import SessionPersistence, {
+  type SessionEventSuffix,
+  type SessionInspection,
+  type SessionPersistenceListing,
+} from '@deepseek-ai/dsh-session-persistence'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import * as checkpointPolicy from '../src/index.ts'
@@ -30,7 +34,7 @@ class TestPersistence extends SessionPersistence {
   readFrom(_id: SessionId, _fromSeq: SessionLogOffset): Promise<SessionEventSuffix> {
     return Promise.reject(new Error('not used'))
   }
-  list(): Promise<SessionHeader[]> { return Promise.resolve([]) }
+  list(): Promise<SessionPersistenceListing[]> { return Promise.resolve([]) }
   listSnapshots(): Promise<never[]> { return Promise.resolve([]) }
 }
 

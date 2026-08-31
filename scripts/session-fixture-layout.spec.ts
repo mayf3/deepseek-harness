@@ -14,7 +14,7 @@ const root = resolve(import.meta.dirname, '..')
 function chunkRun(): SessionEvent[] {
   return Array.from({ length: 4 }, (_, index) => ({
     type: 'assistant/chunk',
-    seq: SessionSeq(index),
+    seq: SessionSeq(index + 2),
     time: 10 + index,
     data: {
       turn: 1,
@@ -24,8 +24,16 @@ function chunkRun(): SessionEvent[] {
   }))
 }
 
+function fixtureEvents(): SessionEvent[] {
+  return [
+    { type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } },
+    { type: 'step/start', seq: SessionSeq(1), time: 2, data: { turn: 1, step: 1 } },
+    ...chunkRun(),
+  ]
+}
+
 function unpackedFixture(): string {
-  return [HEADER, ...chunkRun().map(event => JSON.stringify(event)), ''].join('\n')
+  return [HEADER, ...fixtureEvents().map(event => JSON.stringify(event)), ''].join('\n')
 }
 
 function decodedBody(content: string): SessionEvent[] {
@@ -37,12 +45,14 @@ describe('canonicalSessionFixture', () => {
     const canonical = canonicalSessionFixture(unpackedFixture(), 'fixture.jsonl')
     expect(canonical).toBeDefined()
     expect(canonical?.split('\n')[0]).toBe(HEADER)
-    const packed = JSON.parse(canonical?.split('\n')[1] ?? '{}') as Record<string, unknown>
+    const packed = canonical?.split('\n')
+      .map(line => JSON.parse(line || '{}') as Record<string, unknown>)
+      .find(record => record.type === 'text-chunks')
     expect(packed).toMatchObject({ type: 'text-chunks' })
     expect(packed).not.toHaveProperty('seq0')
     expect(packed).not.toHaveProperty('time0')
     expect(decodedBody(canonical ?? '').map(({ seq: _seq, time: _time, ...event }) => event))
-      .toStrictEqual(chunkRun().map(({ seq: _seq, time: _time, ...event }) => event))
+      .toStrictEqual(fixtureEvents().map(({ seq: _seq, time: _time, ...event }) => event))
   })
 
   it('ignores JSONL whose first record is not a session header', () => {
@@ -71,7 +81,7 @@ describe('canonicalSessionFixture', () => {
 
   it('labels malformed packed rows with the fixture path and line', () => {
     expect(() => canonicalSessionFixture(`${HEADER}\n{"type":"text-chunks"}\n`, 'broken.jsonl'))
-      .toThrow(/broken\.jsonl: session snapshot line 2: malformed text-chunks storage row/)
+      .toThrow(/broken\.jsonl: session snapshot line 2: released text-chunks row 0 lacks required member "data"/)
   })
 })
 
@@ -81,7 +91,13 @@ describe('isPhysicalSessionFixture', () => {
       'packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/main/session.jsonl',
     )).toBe(true)
     expect(isPhysicalSessionFixture(
+      'packages/experimental/webworker-runtime/tests/fixtures/vfs-example/home/sessions/--dsh-workspace--/main/session.v1.jsonl',
+    )).toBe(true)
+    expect(isPhysicalSessionFixture(
       'scripts/snapshots/python-sdk-single-exe/advanced/session.1.jsonl',
+    )).toBe(true)
+    expect(isPhysicalSessionFixture(
+      'scripts/snapshots/python-sdk-single-exe/advanced/session.1.v1.jsonl',
     )).toBe(true)
     expect(isPhysicalSessionFixture(
       'scripts/snapshots/python-sdk-single-exe/advanced/session.jsonl',

@@ -8,7 +8,11 @@ import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-session-projection-cache'
-import { SessionQueryError, type SessionSearchCursor } from '@deepseek-ai/dsh-session-query'
+import {
+  SessionQueryError,
+  type SessionRecord,
+  type SessionSearchCursor,
+} from '@deepseek-ai/dsh-session-query'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { z } from 'zod'
 import {
@@ -139,7 +143,7 @@ export class ApiSessionList {
     const records = await this.ctx.sessionQuery.listSessions(signal)
     signal?.throwIfAborted()
     const items: SessionSummary[] = []
-    const cold: SessionHeader[] = []
+    const cold: SessionRecord[] = []
     for (const record of records) {
       const live = this.ctx.sessions.get(record.header.id)
       if (live !== undefined) {
@@ -147,11 +151,11 @@ export class ApiSessionList {
         continue
       }
       if (record.header.cwd === undefined) continue
-      cold.push(record.header)
+      cold.push(record)
     }
     for (let offset = 0; offset < cold.length; offset += COLD_SUMMARY_BATCH_SIZE) {
       const settled = await Promise.allSettled(cold.slice(offset, offset + COLD_SUMMARY_BATCH_SIZE)
-        .map(header => this.summarizeCold(header, signal)))
+        .map(record => this.summarizeCold(record, signal)))
       for (const result of settled) {
         if (result.status === 'rejected') throw result.reason
         items.push(result.value)
@@ -162,13 +166,14 @@ export class ApiSessionList {
   }
 
   private async summarizeCold(
-    header: SessionHeader,
+    record: SessionRecord,
     signal: AbortSignal | undefined,
   ): Promise<SessionSummary> {
+    const { header } = record
     const cached = this.projectionsFor(header, undefined)
     const projections = cached?.values.sessionListMetadata?.blank === false
       ? cached
-      : await this.probeSmallCold(header, signal) ?? cached
+      : await this.probeSmallCold(record, signal) ?? cached
     const raced = this.ctx.sessions.get(header.id)
     if (raced !== undefined) return this.summaryFor(raced)
     const metadata = projections?.values.sessionListMetadata
@@ -184,12 +189,13 @@ export class ApiSessionList {
   }
 
   private async probeSmallCold(
-    header: SessionHeader,
+    record: SessionRecord,
     signal: AbortSignal | undefined,
   ): Promise<SessionProjectionHints | undefined> {
     if (this.coldBlankProbeMaxBytes === 0) return undefined
+    const { header } = record
     const persistence = this.ctx.get('sessionPersistence')
-    const location = persistence?.locate(header)
+    const location = record.location ?? persistence?.locate(header)
     if (location === undefined) return undefined
     signal?.throwIfAborted()
     try {

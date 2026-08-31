@@ -39,6 +39,7 @@ export {
 } from './launcher.ts'
 export {
   extractSnapshotSpillPaths,
+  normalizeSessionFormatProvenance,
   normalizeSessionLog,
   normalizeSessionSnapshot,
   normalizeSessionSnapshots,
@@ -51,6 +52,7 @@ export {
   type CwdPathMode,
   type NormalizeContext,
   type NormalizeOptions,
+  type NormalizeSessionSnapshotsOptions,
 } from './normalize.ts'
 export {
   parseSnapshotManifest,
@@ -67,6 +69,20 @@ export {
   type SnapshotWorkspaceManifest,
 } from './manifest.ts'
 export {
+  assertPersistedSessionVersion,
+  assertSessionFixtureVersion,
+  latestPersistedSessionPaths,
+  parsePersistedSessionFilename,
+  parseSessionFixtureName,
+  persistedSessionFilename,
+  sessionFixtureFiles,
+  sessionFixtureName,
+  sessionFixtureNames,
+  sessionHeaderVersion,
+  type PersistedSessionFile,
+  type SessionFixtureFile,
+} from './session-files.ts'
+export {
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
   fixtureContext,
@@ -78,7 +94,6 @@ export {
   parseToolSchemasSnapshot,
   refreshFixtureReplacements,
   restorePinnedToolSchemas,
-  sessionFixtureNames,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   type Scenario,

@@ -29,7 +29,7 @@ Mount one persistence backend to make sessions durable. The backend registers it
 
 ### Choosing a backend
 
-The seam ships the [JSONL](../session-persistence-jsonl/README.md) backend. It stores one append-only `.jsonl.zstd` artifact per Session and returns its absolute path from `locate(meta)`. A third-party backend may implement the service directly; the [backend contract](#understand-the-implementation) below is what it must honor.
+The seam ships the [JSONL](../session-persistence-jsonl/README.md) backend. It stores one append-only current generation per Session and retains older version-named generations beside it; `locate(meta)` returns the absolute target path for the supplied logical header version. A third-party backend may implement the service directly; the [backend contract](#understand-the-implementation) below is what it must honor.
 
 ### What the service provides
 
@@ -40,10 +40,12 @@ await ctx.sessionPersistence.create(meta, inheritedEventCount) // cut required w
 await ctx.sessionPersistence.ensureMaterialized(session)   // persist an empty resumable session
 await ctx.sessionPersistence.append(id, events)            // durably persist a batch
 const { meta, inheritedEventCount, events } = await ctx.sessionPersistence.load(id)
-const headers = await ctx.sessionPersistence.list()        // every stored session
+const listings = await ctx.sessionPersistence.list()       // header-only artifact descriptors
 ```
 
-`append` resolves only after the batch is durable, so a resolved write survives an OS crash or power loss. Ordinary `create(meta, inheritedEventCount)` remains lazy; `meta.isSeeded: true` requires the sibling exact cut, while unseeded metadata may omit it and rejects a nonzero value. The first materializing batch for a seeded session must reach the complete inherited prefix, so storage never exposes metadata whose cut exceeds its log. A lifecycle frontend calls `ensureMaterialized` only when an empty session must itself appear in durable listing without inventing an event. `load` returns an immutable balanced log and commits any needed crash recovery; `inspect` reads the same complete view without committing recovery. `readFrom` accepts a `SessionLogOffset` and returns a detached `SessionEventSuffix` carrying that `fromSeq`, the unchanged inherited cut, and only stored events at or after the cut. A session's artifact location (`locate`) resolves without filesystem I/O.
+`append` resolves only after the batch is durable, so a resolved write survives an OS crash or power loss. Ordinary `create(meta, inheritedEventCount)` remains lazy; `meta.isSeeded: true` requires the sibling exact cut, while unseeded metadata may omit it and rejects a nonzero value. The first materializing batch for a seeded session must reach the complete inherited prefix, so storage never exposes metadata whose cut exceeds its log. A lifecycle frontend calls `ensureMaterialized` only when an empty session must itself appear in durable listing without inventing an event. `list` and `listSnapshots` read only independent headers and return one current, migration-required, unsupported, or malformed descriptor for the highest canonical generation in each Session directory. `load` returns an immutable balanced log and commits any needed crash recovery. For already-current storage, `inspect` keeps synthetic recovery in memory; a supported historical inspection first publishes a repaired current successor beside the unchanged source. `readFrom` accepts a `SessionLogOffset` and returns a detached `SessionEventSuffix` carrying that `fromSeq`, the unchanged inherited cut, and only stored events at or after the cut. A session's version-qualified artifact target (`locate`) resolves without filesystem I/O.
+
+Cancellation on `prepare`, `inspect`, or `borrowSession` stops only that observer's wait. Shared cold preparation or historical migration that another observer can reuse may continue to completion; cancellation never rolls back a generation already entering durable publication. Detached `readFrom` and `readRaw` instead pass their cancellation signal to the serialized backend read.
 
 ### Resuming and crash recovery
 
@@ -51,7 +53,7 @@ Resume is `load` plus session preparation: the stored log comes back with its he
 
 ### Failures and recovery
 
-A stored log the current build cannot faithfully interpret is refused with a direction-aware error, never misread. `SESSION_FORMAT_VERSION` remains v0 and this build provides no format-migration path; a newer version instructs the operator to upgrade the harness. The decoder accepts only the bounded same-version record variants named below. An event type unknown to this build refuses unless its envelope marks it `ignorable`, and committed-prefix corruption rejects as `SessionPersistenceCorruptionError`. A `load` on an id still bound to a live session first flushes its snapshot and rejects while its turn is open; a cold load applies recovery.
+A stored log the current build cannot faithfully interpret is refused with a direction-aware error, never misread. On a cold body read, the shipped JSONL backend selects the numerically highest canonical generation, refuses a future version even when an older readable file remains, and migrates a supported older generation through the static adjacent catalog. It publishes only the final current filename without overwriting the source or materializing intermediate versions. Header-only listing rescans and does not migrate. Catalog construction refuses a missing edge, committed-prefix corruption rejects as `SessionPersistenceCorruptionError`, equal-version unknown events require `ignorable: true`, and alpha historical migration refuses every unknown v0 event before publication. Retained predecessors are an operator escape hatch only: the service performs no automatic fallback and promises no downgrade compatibility. A `load` on an id still bound to a live session first flushes its snapshot and rejects while its turn is open; a cold load applies recovery.
 
 -----
 
@@ -91,7 +93,7 @@ Each `session/event` copies the event into its session's controller. The first p
 
 ### Stored-record compatibility
 
-Backend reads normalize only the explicitly supported v0 record variants before validating current records. The coordinator uses the same normalized view for `load`, `inspect`, `readFrom`, ownerless-state claims, and HMR adoption. Reads do not rewrite stored records, and later appends use current v0. The [pre-identity message](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.md) and [pre-react-loop session](../../../.agents/notes/implemented/bug-fix/2026-08-04-load-pre-react-loop-sessions.md) notes own these bounded exceptions; they are not a general format-migration promise.
+The coordinator and current Session code receive only the latest logical representation. `@deepseek-ai/dsh-session-format-catalog` supplies the profile-independent complete adjacent chain, and each named edge owns its historical header, physical records, payload inventory, normalizers, and target validator. Every body read completes backend-owned ensure-current work inside the per-Session serialization chain before current restoration. A backend may fuse that work with its current read; the generic fallback calls `ensureCurrent` and then the ordinary current hook. The [released-format lifecycle](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) owns immutable generation naming, highest-generation selection, and exclusive successor publication.
 
 </details>
 -----
@@ -102,6 +104,7 @@ Backend reads normalize only the explicitly supported v0 record variants before 
 Read these pages when the package-level contract is not enough. They move from the shared durability model to the shipped backends and the decision evidence.
 
 - [Session persistence subsystem](../../../docs/subsystems/persistence.md) — the full service contract, flush checkpoint, crash recovery, and generated Cordis API.
+- [Session format chain](../session-format/README.md) — pure historical dispatch and adjacent migration composition.
 - [JSONL persistence backend](../session-persistence-jsonl/README.md) — the shipped per-session-file backend.
 - [Session checkpoint policy](../session-checkpoint-policy/README.md) — the plugin that flushes through this service at semantic boundaries.
 - [Session package map](../README.md) — adjacent persistence, projection, title, and telemetry packages.
@@ -133,7 +136,7 @@ Persistence does not mutate live request prefixes. A resumed loop can reuse prov
 These limits define where the seam's guarantees stop. They are current package constraints, not a task backlog.
 
 - **No deletion or retention API** — pruning stored sessions is out-of-band backend maintenance.
-- **`list()` is unpaginated and unfiltered** — it returns every stored session's header; fine for local stores, unindexed at scale.
+- **`list()` is unpaginated and unfiltered** — it returns one header-only descriptor for every stored Session directory's highest canonical generation; fine for local stores, unindexed at scale.
 - **Synthetic closers are the only crash story** — a backend must synthesize `tool/result`/`step/end`/`turn/end` closers on load; there is no partial-turn resume that continues an interrupted turn instead of closing it.
 
 <a id="dev-note"></a>

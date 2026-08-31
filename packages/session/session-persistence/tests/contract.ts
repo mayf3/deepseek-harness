@@ -26,6 +26,7 @@ import type {
   SurfaceIntent,
 } from '@deepseek-ai/dsh-session'
 import { ToolCallId, MessageId, createMessage, freezeMessage } from '@deepseek-ai/dsh-llm'
+import { isReadableSessionPersistenceListing } from '../src/index.ts'
 import type { SessionPersistence } from '../src/index.ts'
 
 /** A backend under test plus its teardown. */
@@ -157,7 +158,9 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         await persistence.create(seeded, SessionLogOffset(2))
         await expect(persistence.append(seeded.id, oneTurnLog().slice(0, 1)))
           .rejects.toThrow('cannot materialize before its inherited prefix is complete')
-        expect((await persistence.list()).map(header => header.id)).not.toContain(seeded.id)
+        expect((await persistence.list())
+          .filter(isReadableSessionPersistenceListing)
+          .map(listing => listing.header.id)).not.toContain(seeded.id)
 
         await persistence.append(seeded.id, oneTurnLog())
         await expect(persistence.load(seeded.id)).resolves.toMatchObject({
@@ -181,11 +184,13 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           { type: 'step/start', seq: SessionSeq(7), time: 8, data: { turn: 2, step: 1 } },
         ])
         const beforeRepair = (await persistence.listSnapshots())
-          .find(snapshot => snapshot.header.id === m.id)?.revision
+          .find(snapshot => isReadableSessionPersistenceListing(snapshot)
+            && snapshot.header.id === m.id)?.revision
 
         const inspected = await persistence.inspect(m.id)
         const afterInspect = (await persistence.listSnapshots())
-          .find(snapshot => snapshot.header.id === m.id)?.revision
+          .find(snapshot => isReadableSessionPersistenceListing(snapshot)
+            && snapshot.header.id === m.id)?.revision
         expect(afterInspect).toBe(beforeRepair)
         expect(inspected.events.map(e => e.type)).toEqual([
           'turn/start', 'user/message', 'step/start', 'assistant/message', 'step/end', 'turn/end',
@@ -197,7 +202,8 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         // boundary events: step/end (the step was open) then turn/end {interrupted}.
         const loaded = await persistence.load(m.id)
         const afterRepair = (await persistence.listSnapshots())
-          .find(snapshot => snapshot.header.id === m.id)?.revision
+          .find(snapshot => isReadableSessionPersistenceListing(snapshot)
+            && snapshot.header.id === m.id)?.revision
         expect(afterRepair).not.toBe(beforeRepair)
         expect(loaded.events.map(e => e.type)).toEqual([
           'turn/start', 'user/message', 'step/start', 'assistant/message', 'step/end', 'turn/end', // turn 1
@@ -322,8 +328,13 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
       const { persistence, dispose } = await make()
       try {
         await persistence.create(meta('empty'))
-        expect((await persistence.list()).map(m => m.id)).not.toContain(SessionId('empty'))
-        expect((await persistence.listSnapshots()).map(snapshot => snapshot.header.id))
+        expect((await persistence.list())
+          .filter(isReadableSessionPersistenceListing)
+          .map(listing => listing.header.id)).not.toContain(SessionId('empty'))
+        expect((await persistence.listSnapshots())
+          .flatMap(snapshot => isReadableSessionPersistenceListing(snapshot)
+            ? [snapshot.header.id]
+            : []))
           .not.toContain(SessionId('empty'))
       } finally {
         await dispose()
@@ -401,9 +412,13 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         const m = meta('s2')
         await persistence.create(m)
         await persistence.append(m.id, oneTurnLog())
-        expect((await persistence.list()).map(x => x.id)).toContain(m.id)
-        const first = (await persistence.listSnapshots()).find(snapshot => snapshot.header.id === m.id)
-        const repeated = (await persistence.listSnapshots()).find(snapshot => snapshot.header.id === m.id)
+        expect((await persistence.list())
+          .filter(isReadableSessionPersistenceListing)
+          .map(listing => listing.header.id)).toContain(m.id)
+        const first = (await persistence.listSnapshots()).find(snapshot =>
+          isReadableSessionPersistenceListing(snapshot) && snapshot.header.id === m.id)
+        const repeated = (await persistence.listSnapshots()).find(snapshot =>
+          isReadableSessionPersistenceListing(snapshot) && snapshot.header.id === m.id)
         expect(first).toBeDefined()
         expect(repeated?.revision).toBe(first?.revision)
 
@@ -413,7 +428,8 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
           time: 7,
           data: { turn: 2 },
         }])
-        const changed = (await persistence.listSnapshots()).find(snapshot => snapshot.header.id === m.id)
+        const changed = (await persistence.listSnapshots()).find(snapshot =>
+          isReadableSessionPersistenceListing(snapshot) && snapshot.header.id === m.id)
         expect(changed?.revision).not.toBe(first?.revision)
       } finally {
         await dispose()

@@ -41,7 +41,7 @@ Delta processing is O(1) when no new events and O(new events) when new events ar
 
 ### Persistence
 
-The new fields are serialized as top-level JSON properties. JSONL storage requires no separate column mapping: its lossless JSON boundary preserves both values. The session format `version` is pinned at `SESSION_FORMAT_VERSION = 0`; the optional surface fields are absorbed without bumping it.
+The new fields are serialized as top-level JSON properties. JSONL storage requires no separate column mapping: its lossless JSON boundary preserves both values. Released v0 and v1 share this surface representation, and the identity v0-to-v1 edge preserves it exactly; a future structural representation change increments `SESSION_FORMAT_VERSION` and owns an adjacent migration.
 
 ### Crash recovery
 
@@ -51,7 +51,7 @@ The `repair.ts` module synthesizes `tool/result` closers for orphaned tool calls
 
 `Session` validates `sourceEventSeqs` and `surfaceOp` at the always-on seed/append boundary: only `assistant/message` may use an empty source-event list; references are unique, earlier, and known; replacement endpoints exist in surface order; and `sourceEventSeqs` covers every shadowed node. These are single-record acceptance and storage-projection rules, not optional invariant-service contributions.
 
-Every surface-eligible event must carry `surfaceOp` or it would disappear from derived history. Typed `append` overloads enforce this for literal event types; runtime checks in `append` and the seed constructor cover widened unions and loaded logs. Invalid seeds are rejected rather than upgraded under the pre-release format policy.
+Every surface-eligible event must carry `surfaceOp` or it would disappear from derived history. Typed `append` overloads enforce this for literal event types; runtime checks in `append` and the seed constructor cover widened unions and current loaded logs. Historical v0 validation and normalization belong to the v0-to-v1 edge rather than generic Session code.
 
 ## Alternatives considered
 

@@ -55,7 +55,7 @@ With `providers` configured, the plugin registers a replay-only adapter whose ca
 
 | Field | Default | Meaning |
 |---|---|---|
-| `file` | `$DSH_SNAPSHOT_FILE` | Path to the primary (parent) `session.jsonl` fixture; required (config or env) |
+| `file` | `$DSH_SNAPSHOT_FILE` | Path to the selected primary fixture: `session.jsonl` for v0 or `session.vN.jsonl` for a positive generation; required (config or env) |
 | `overrideFile` | `$DSH_SNAPSHOT_OVERRIDE` | Optional `ReplayOverrideDoc` sidecar for the primary session |
 | `childFiles` | `$DSH_SNAPSHOT_CHILD_FILES` | Recorded subagent child-session logs for a nested scenario |
 | `providers` | — | Optional replay-only provider and model catalog; a model may declare `contextWindow`, text/image modalities, and positive `imageRequestTokens` when image-capable; invalid values fail at load and routes never perform provider I/O |
@@ -65,11 +65,11 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### How the fixture works
 
-The fixture is a projection of a persisted session log (`<scenario>/session.jsonl`) produced by running the real agent once — this plugin does not record. It keeps the header and every event payload but omits body `seq`/`time` envelopes (`seq0`/`time0` for packed rows); replay restores contiguous synthetic envelopes while parsing, and one file cannot mix projected and complete body rows. Runtime persistence continues to write complete logs. Replay derives each model call's chunk sequence from `assistant/chunk` events, so a recorded fixture replays the same logical stream the live model produced. A fixture may carry its `request/header` content tokenized to `{{system}}`/`{{tools}}`; replay is indifferent because derivation reads only the chunk and summary events plus the line-0 session header.
+The fixture is a projection of one selected persisted Session generation produced by running the real agent once — this plugin does not record. The snapshot harness supplies the numerically highest canonical parent path (`<scenario>/session.jsonl` for v0 or `<scenario>/session.vN.jsonl` for a positive generation), and validates filename/header agreement before replay. The fixture keeps the header and every event payload but omits body `seq`/`time` envelopes (`seq0`/`time0` for packed rows). Replay supplies contiguous sequences and deterministic timestamps, restores typed values replaced by snapshot tokens, rejects partial or mixed envelopes, decodes the complete physical artifact through the build-static Session format catalog, and migrates historical input in memory before it exposes events or the inherited cut; current input takes direct restoration. For a projected v0 header only, an absent `delegationDepth` denotes `0`. The parser never rewrites or renames the fixture. Runtime persistence continues to write complete logs. Replay derives each model call's chunk sequence from current-view `assistant/chunk` events, so a recorded fixture replays the same logical stream the live model produced. A fixture may carry its `request/header` content tokenized to `{{system}}`/`{{tools}}`; replay materializes validation-only values, while derivation reads only the chunk and summary events plus the Session metadata. Two exact repository v0 fixtures use source-qualified legacy extraction only after the catalog returns their manifest-pinned alpha refusal; pathless parsing, copied lookalikes, and changed refusal diagnostics remain strict. This exception affects replay and expected-output comparison only, while the real catalog and persistence continue to refuse those artifacts.
 
 ### Nested agents
 
-A scenario where a parent agent delegates to in-process subagents records one log per session: the parent (`session.jsonl`) plus one per child (`session.1.jsonl`, …). Live session ids are freshly random each run, so replay binds each live session to a recorded script by first-call order: the first live session to make a model call claims the first script, the next new session the next, and so on, with each session advancing its own cursor. More distinct live sessions than recorded scripts fails loud.
+A scenario where a parent agent delegates to in-process subagents records one role per Session: parent `session[.vN].jsonl`, then contiguous children `session.<ordinal>[.vN].jsonl`. The snapshot harness supplies only the highest generation of each role. Live Session ids are freshly random each run, so replay binds each live Session to a recorded script by first-call order: the first live Session to make a model call claims the parent script, the next new Session the next child script, and so on, with each Session advancing its own cursor. More distinct live Sessions than recorded scripts fails loud.
 
 ### Failure modes and overrides
 
@@ -95,13 +95,17 @@ This section explains the design of the replay plugin; the observable behavior i
 
 ### Design
 
-Replay is built on one idea: the projected session log is the fixture. `deriveReplayScript` parses the JSONL header (for `id`/`createdAt` ordering facts) and splits `assistant/chunk` events at every `finish` chunk, keyed by `(turn, step)`, so each recorded `stream()` call becomes one `chunks` entry; an assistant group without a `finish` chunk is the fingerprint of a thrown `stream()` and must be expressed through an override sidecar. A `compaction/summary` carrying `llmStreamCall: true` and a complete `rawOutput` replays as one canonical successful stream at that event's position. Scripted strings may embed `{{fromRequest:<regex>}}`; at stream time each placeholder resolves against the live request's string leaves, taking the pattern's last match and its first capture group (or the whole match) in place.
+Replay treats the selected projected Session generation as the fixture. One parser completes projected envelopes, validates and migrates the whole artifact through `sessionFormatCatalog`, and returns the current header, inherited cut, and event list as one result. `deriveReplayScript` splits the resulting `assistant/chunk` events at every `finish` chunk, keyed by `(turn, step)`, so each recorded `stream()` call becomes one `chunks` entry; an assistant group without a `finish` chunk is the fingerprint of a thrown `stream()` and must be expressed through an override sidecar. A `compaction/summary` carrying `llmStreamCall: true` and a complete `rawOutput` replays as one canonical successful stream at that event's position. Scripted strings may embed `{{fromRequest:<regex>}}`; at stream time each placeholder resolves against the live request's string leaves, taking the pattern's last match and its first capture group (or the whole match) in place.
+
+The committed-corpus test discovers every versioned `session*.jsonl` under `snapshots/`, `packages/`, and `scripts/snapshots/python-sdk-single-exe/`. Every artifact must restore to the current view through the real catalog except two exact manifest refusals: `snapshots/session/agent-instructions/session.jsonl` has an unmatched projected compaction checkpoint, and `snapshots/web/schedule-catalog/session.jsonl` has a title source that contradicts its citations. The shared manifest grants replay-only extraction to those same absolute paths while the corpus continues to assert their real unsupported-migration class and message. A new or changed refusal fails until its underlying data rule is resolved explicitly.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Types, fixture derivation, override validation, placeholder resolution, session binding, `installLlmReplay`, and the plugin export |
+| [`src/alpha-refusal-fixtures.ts`](src/alpha-refusal-fixtures.ts) | Closed source-path and diagnostic manifest for the two replay-only alpha refusals |
+| [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | Complete committed-generation restoration burn-in and the closed alpha-refusal manifest |
 | — | No runtime invariant companion is published; this test-only adapter consumes a fixed replay script; its stream grammar is checked by the LLM companion and fixture derivation tests. |
 
 ### Binding and stream flow

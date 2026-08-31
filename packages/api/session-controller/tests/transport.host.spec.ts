@@ -1,13 +1,13 @@
 import { Context } from '@deepseek-ai/cordis'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader, SurfaceIntent } from '@deepseek-ai/dsh-session'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { snapshotSubagentDescriptor } from '@deepseek-ai/dsh-subagent'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import { describe, expect, it, vi } from 'vitest'
 import { SessionHistoryController } from '../src/history.ts'
-import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
+import { currentSessionListing, installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 const signal = (): AbortSignal => new AbortController().signal
 
@@ -52,7 +52,7 @@ function cold(
 ): void {
   if (header.isSeeded) throw new Error('seeded cold fixtures require an explicit inherited cut')
   ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
-    list: () => Promise.resolve([header]),
+    list: () => Promise.resolve([currentSessionListing(header)]),
     inspect: () => Promise.resolve({
       meta: header,
       inheritedEventCount: SessionLogOffset(0),
@@ -170,8 +170,8 @@ describe('SessionHistoryController', () => {
   it('subscribes before a cold read and ignores unrelated and replayed buffered events', async () => {
     const { ctx, transport } = await setup()
     const sessionId = SessionId('cold-race')
-    const header = {
-      version: 0,
+    const header: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 1,
       cwd: '/workspace',
@@ -210,8 +210,8 @@ describe('SessionHistoryController', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const sessionId = SessionId('created-during-observation')
-    const header = {
-      version: 0,
+    const header: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 1,
       cwd: '/workspace',
@@ -268,8 +268,8 @@ describe('SessionHistoryController', () => {
       { inject: ['sessions'] },
     ))
     const sessionId = SessionId('cold-attach')
-    const header = {
-      version: 0,
+    const header: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 1,
       cwd: '/workspace',
@@ -316,8 +316,8 @@ describe('SessionHistoryController', () => {
   it('rejects gaps in replayed and live event sequences', async () => {
     const replay = await setup()
     const replayId = SessionId('replay-gap')
-    const replayHeader = {
-      version: 0,
+    const replayHeader: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: replayId,
       createdAt: 1,
       cwd: '/workspace',
@@ -365,8 +365,8 @@ describe('SessionHistoryController', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const sessionId = SessionId('projectionless-follow')
-    const meta = {
-      version: 0,
+    const meta: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 1,
       cwd: '/workspace',
@@ -399,7 +399,13 @@ describe('SessionHistoryController', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const sessionId = SessionId('promotion-failure')
-    const meta = { version: 0, id: sessionId, createdAt: 1, cwd: '/workspace' }
+    const meta: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+      createdAt: 1,
+      cwd: '/workspace',
+      isSeeded: false,
+    }
     const disposePromotion = vi.fn()
     const promotion = {
       source: 'prepared', header: meta, events: [], cursor: -1,
@@ -468,9 +474,15 @@ describe('SessionHistoryController', () => {
     const { ctx, transport } = await setup()
     const sessionId = SessionId('corrupt-cold')
     const failure = new Error('cold log is corrupt')
-    const header = { version: 0, id: sessionId, createdAt: 1, cwd: '/workspace' }
+    const header: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+      createdAt: 1,
+      cwd: '/workspace',
+      isSeeded: false,
+    }
     ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
-      list: () => Promise.resolve([header]),
+      list: () => Promise.resolve([currentSessionListing(header)]),
       inspect: () => Promise.reject(failure),
     }) as never)
 
@@ -506,7 +518,7 @@ describe('SessionHistoryController', () => {
     const corruptId = SessionId('missing-through-seq')
     cold(
       corrupt.ctx,
-      { version: 0, id: corruptId, createdAt: 1, cwd: '/workspace', isSeeded: false },
+      { version: SESSION_FORMAT_VERSION, id: corruptId, createdAt: 1, cwd: '/workspace', isSeeded: false },
       [event('fixture/start', SessionSeq(0)), event('fixture/gap', SessionSeq(2))],
     )
     await expect(corrupt.transport.page({
@@ -547,9 +559,11 @@ describe('SessionHistoryController', () => {
     const first = await setup()
     const sessionId = SessionId('incomplete')
     const address = { kind: 'session' as const, sessionId }
-    const firstHeader = { version: 0, id: sessionId, createdAt: 1, isSeeded: false }
+    const firstHeader: SessionHeader = {
+      version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, isSeeded: false,
+    }
     first.ctx.provide('sessionPersistence', testSessionPersistence(first.ctx, {
-      list: () => Promise.resolve([firstHeader]),
+      list: () => Promise.resolve([currentSessionListing(firstHeader)]),
       inspect: () => Promise.resolve({
         meta: firstHeader,
         inheritedEventCount: SessionLogOffset(0),
@@ -560,10 +574,14 @@ describe('SessionHistoryController', () => {
       .rejects.toMatchObject({ code: 'session/not-found' })
 
     const second = await setup()
-    const listed = { version: 0, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false }
-    const inspected = { version: 0, id: sessionId, createdAt: 1, isSeeded: false }
+    const listed: SessionHeader = {
+      version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, cwd: '/workspace', isSeeded: false,
+    }
+    const inspected: SessionHeader = {
+      version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 1, isSeeded: false,
+    }
     second.ctx.provide('sessionPersistence', testSessionPersistence(second.ctx, {
-      list: () => Promise.resolve([listed]),
+      list: () => Promise.resolve([currentSessionListing(listed)]),
       inspect: () => Promise.resolve({
         meta: inspected,
         inheritedEventCount: SessionLogOffset(0),
@@ -577,8 +595,8 @@ describe('SessionHistoryController', () => {
   it('serves cold ordinary history and validates every durable subagent descriptor state', async () => {
     const ordinaryBench = await setup()
     const ordinaryId = SessionId('cold-ordinary')
-    const ordinaryHeader = {
-      version: 0,
+    const ordinaryHeader: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: ordinaryId,
       createdAt: 1,
       cwd: '/workspace',
@@ -594,13 +612,13 @@ describe('SessionHistoryController', () => {
 
     const parentSessionId = SessionId('cold-parent')
     const childSessionId = SessionId('cold-child')
-    const childHeader = {
-      version: 0,
+    const childHeader: SessionHeader = {
+      version: SESSION_FORMAT_VERSION,
       id: childSessionId,
       createdAt: 1,
       cwd: '/workspace',
       isSeeded: false,
-      origin: 'subagent' as const,
+      origin: 'subagent',
       parentSession: parentSessionId,
     }
     const childAddress = {
@@ -632,7 +650,7 @@ describe('SessionHistoryController', () => {
     const parentSessionId = SessionId('missing-projection-parent')
     const childSessionId = SessionId('missing-projection-child')
     const meta: SessionHeader = {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: childSessionId,
       createdAt: 1,
       cwd: '/workspace',

@@ -395,9 +395,10 @@ declare class Session {
    * The first seq appended IN THIS PROCESS: the length of the constructor
    * seed (0 without one). Events with smaller seq values entered through
    * construction — replay, fork, or resume — and were never published on the
-   * `session/event` firehose (constructor seeds do not emit), so consumers
-   * that replay the log as a publication substitute (telemetry adoption)
-   * start here. Distinct from {@link inheritedEventCount}, the DURABLE
+   * `session/event` firehose (constructor seeds do not emit). This offset marks
+   * the constructor-input boundary for lifecycle ownership and persistence
+   * adoption; consumers that need complete canonical history still start at
+   * seq 0. Distinct from {@link inheritedEventCount}, the DURABLE
    * fork-lineage cut: a resumed session's constructor seed is its full stored
    * log, while the inherited count keeps the original fork value — this field is the
    * in-process construction fact.
@@ -569,7 +570,7 @@ declare class Session {
 - `tool/result` → a user message carrying a `tool-result` block.
 - `user/message` (injected context, i.e. non-`user` source) → a user-role message carrying its `content` verbatim at its chronological position; its typed source names the producer and carries any producer-specific data.
 
-Everything else (`turn/*`, `step/*`, plugin-owned `llm/retry`) is structural and does not project into a message. Token accounting reads per-step `assistant/chunk { type: 'usage' }` records and treats `assistant/message.usage` as the committed-step fallback when no usage chunk exists; failed model-request attempts have no assistant message, so their usage chunk is the durable accounting record. Because this unreleased format intentionally has no compatibility promise, seed/load validation rejects request headers and assistant messages that omit provider/model instead of guessing a route for historical data.
+Everything else (`turn/*`, `step/*`, plugin-owned `llm/retry`) is structural and does not project into a message. Token accounting reads per-step `assistant/chunk { type: 'usage' }` records and treats `assistant/message.usage` as the committed-step fallback when no usage chunk exists; failed model-request attempts have no assistant message, so their usage chunk is the durable accounting record. Current logical validation rejects request headers and assistant messages that omit provider/model instead of guessing a route; supported historical representations are normalized and validated by their adjacent format edge before a current Session exists.
 
 ## Live-session fork API
 

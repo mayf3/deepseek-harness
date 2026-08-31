@@ -9,17 +9,21 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 import {
+  assertPersistedSessionVersion,
+  assertSessionFixtureVersion,
   captureExpectedWorkspaceSnapshot,
   captureWorkspaceSnapshot,
   fixtureContext,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
+  latestPersistedSessionPaths,
   materializeProfilePatch,
   normalizeSessionSnapshots,
   normalizedHeaders,
   normalizedSystemPrompts,
   normalizedToolSchemas,
   parseSnapshotManifest,
+  parseSessionFixtureName,
   parseToolSchemasSnapshot,
   redactSessionSnapshotIds,
   refreshFixtureReplacements,
@@ -27,7 +31,9 @@ import {
   scrubSessionSnapshot,
   scrubSystemPrompts,
   scrubToolSchemas,
+  sessionFixtureName,
   sessionFixtureNames,
+  sessionHeaderVersion,
   snapshotSpillRoot,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
@@ -157,10 +163,10 @@ function contextOf(logs: readonly string[]): NormalizeContext {
 
 async function persistedSessions(cwd: string): Promise<SessionLog[]> {
   const root = join(cwd, '.dsh', 'sessions')
-  const files = (await readdir(root, { recursive: true }))
-    .filter(file => file.endsWith('session.jsonl'))
+  const files = latestPersistedSessionPaths(await readdir(root, { recursive: true }))
   const logs = await Promise.all(files.map(async (file): Promise<SessionLog> => {
     const content = await readFile(join(root, file), 'utf8')
+    assertPersistedSessionVersion(basename(file), content)
     return { content, header: headerOf(content) }
   }))
   return logs.sort((left, right) => {
@@ -173,7 +179,19 @@ async function persistedSessions(cwd: string): Promise<SessionLog[]> {
 
 async function fixtureSessions(scenario: HeadlessScenario): Promise<string[]> {
   const files = sessionFixtureNames(await readdir(scenario.dir))
-  return Promise.all(files.map(file => readFile(join(scenario.dir, file), 'utf8')))
+  return Promise.all(files.map(async (file) => {
+    const content = await readFile(join(scenario.dir, file), 'utf8')
+    assertSessionFixtureVersion(file, content)
+    return content
+  }))
+}
+
+async function primaryFixtureFile(dir: string): Promise<string> {
+  const [primary] = sessionFixtureNames(await readdir(dir))
+  if (primary === undefined) throw new Error(`${dir}: missing parent Session fixture`)
+  const content = await readFile(join(dir, primary), 'utf8')
+  assertSessionFixtureVersion(primary, content)
+  return primary
 }
 
 async function writeSessionFixtures(
@@ -182,10 +200,10 @@ async function writeSessionFixtures(
   existing: readonly string[],
   ctx: NormalizeContext,
 ): Promise<string[]> {
-  const names = [
-    'session.jsonl',
-    ...Array.from({ length: actualLogs.length - 1 }, (_, index) => `session.${index + 1}.jsonl`),
-  ]
+  const names = actualLogs.map((log, index) => sessionFixtureName(
+    index,
+    sessionHeaderVersion(log.content, `harvested Session ${index}`),
+  ))
   const prior = names.map((_, index) => existing[index] ?? '')
   const replacements = mode === 'refresh'
     ? refreshFixtureReplacements(actualLogs.map(harvested), prior)
@@ -201,7 +219,8 @@ async function writeSessionFixtures(
   if (mode === 'record') {
     const retained = new Set(names)
     for (const entry of await readdir(scenario.dir, { withFileTypes: true })) {
-      if (entry.isFile() && /^session\.[1-9]\d*\.jsonl$/.test(entry.name) && !retained.has(entry.name)) {
+      const fixture = entry.isFile() ? parseSessionFixtureName(entry.name) : undefined
+      if (fixture !== undefined && fixture.index >= names.length && !retained.has(entry.name)) {
         await rm(join(scenario.dir, entry.name))
       }
     }
@@ -495,7 +514,7 @@ function pinOf(scenario: HeadlessScenario): HeadlessScenario {
 
 async function verifyHeaders(scenario: HeadlessScenario, actualLogs: readonly SessionLog[], ctx: NormalizeContext): Promise<void> {
   const pin = pinOf(scenario)
-  const fixture = await readFile(join(pin.dir, 'session.jsonl'), 'utf8')
+  const fixture = await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8')
   const pinned = normalizedHeaders(fixture, fixtureContext(fixture))
   const changes = pin.manifest.header.changes ?? 0
   expect(pinned, `${scenario.name}: pin header count`).toHaveLength(1 + changes)
@@ -588,8 +607,10 @@ describe('headless recorded-session snapshots', () => {
   })
 
   it('keeps packed chunk rows logically equal to their unpacked recording', async () => {
-    const source = await readFile(join(snapshotsRoot, 'hook-cc-pretool-deny', 'session.jsonl'), 'utf8')
-    const packed = await readFile(join(snapshotsRoot, 'packed-chunks', 'session.jsonl'), 'utf8')
+    const sourceDir = join(snapshotsRoot, 'hook-cc-pretool-deny')
+    const packedDir = join(snapshotsRoot, 'packed-chunks')
+    const source = await readFile(join(sourceDir, await primaryFixtureFile(sourceDir)), 'utf8')
+    const packed = await readFile(join(packedDir, await primaryFixtureFile(packedDir)), 'utf8')
     const rowTypes = records(packed).flatMap((record) => {
       const type = record.type
       return type === 'text-chunks' || type === 'reasoning-chunks' || type === 'tool-call-chunks' ? [type] : []
@@ -656,12 +677,12 @@ describe('headless recorded-session snapshots', () => {
       try {
         model = modelFromSession(primaryFixture)
       } catch {
-        model = modelFromSession(await readFile(join(pin.dir, 'session.jsonl'), 'utf8'))
+        model = modelFromSession(await readFile(join(pin.dir, await primaryFixtureFile(pin.dir)), 'utf8'))
       }
       const composition = ownerOf(scenario)
       const baseComposition = compositionOwners.get('default')
       if (baseComposition === undefined) throw new Error('headless corpus has no default composition')
-      const fixtureFiles = sessionFixtureNames(await readdir(scenario.dir))
+      let fixtureFiles = sessionFixtureNames(await readdir(scenario.dir))
       const replaying = mode !== 'record'
       const compositionPatch = join(composition.dir, replaying ? 'cordis.snapshot.yml' : 'cordis.yml')
       const patchSources = [
@@ -677,7 +698,7 @@ describe('headless recorded-session snapshots', () => {
       let actualLogs: SessionLog[] = []
       let initialWorkspace: WorkspaceSnapshotEntry[] | undefined
       let finalWorkspace: WorkspaceSnapshotEntry[] | undefined
-      const spillRoot = snapshotSpillRoot(join(scenario.dir, 'session.jsonl'))
+      const spillRoot = snapshotSpillRoot(join(scenario.dir, fixtureFiles[0] as string))
       await rm(spillRoot, { recursive: true, force: true })
       let result: Awaited<ReturnType<typeof runLoaderSmoke>>
       try {
@@ -702,7 +723,7 @@ describe('headless recorded-session snapshots', () => {
             DSH_SNAPSHOT_PROVIDER: model.provider,
             DSH_SNAPSHOT_MODEL: model.model,
             DSH_SNAPSHOT_SPILL_ROOT: spillRoot,
-            DSH_SNAPSHOT_FILE: join(scenario.dir, 'session.jsonl'),
+            DSH_SNAPSHOT_FILE: join(scenario.dir, fixtureFiles[0] as string),
             ...(replaying && fixtureFiles.length > 1
               ? { DSH_SNAPSHOT_CHILD_FILES: fixtureFiles.slice(1).map(file => join(scenario.dir, file)).join(delimiter) }
               : {}),
@@ -745,6 +766,10 @@ describe('headless recorded-session snapshots', () => {
 
       if (mode !== 'replay') {
         fixtures = await writeSessionFixtures(scenario, actualLogs, fixtures, contextOf(actualLogs.map(log => log.content)))
+        fixtureFiles = actualLogs.map((log, index) => sessionFixtureName(
+          index,
+          sessionHeaderVersion(log.content, `harvested Session ${index}`),
+        ))
       }
 
       expect(result.stdout).toBe(`${finalTextFromSession(fixtures[0] as string)}\n`)
@@ -753,7 +778,9 @@ describe('headless recorded-session snapshots', () => {
       const actualContext = contextOf(actualLogs.map(log => log.content))
       const fixtureContext = contextOf(fixtures)
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
-      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
+      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext, {
+        sourcePaths: fixtureFiles.map(file => join(scenario.dir, file)),
+      })
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
       }

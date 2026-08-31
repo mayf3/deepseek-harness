@@ -388,7 +388,7 @@ export class FakeApiClient {
       yield {
         type: 'snapshot',
         header: {
-          version: 0,
+          version: 1,
           id: sessionId,
           createdAt: 0,
           ...(request.address.kind === 'subagent'

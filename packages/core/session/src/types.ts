@@ -62,11 +62,11 @@ export type SessionSeqCursor = SessionSeq | -1
 export type OptionalSessionSeq = SessionSeq | null
 
 /**
- * The on-disk session format version, stamped into every newly-written {@link SessionHeader}
- * and enforced by every persistence backend on load. The single source of truth for the
- * version — write sites and the load-time check all read it.
- * While the harness is unreleased it is pinned at `0`: no compatibility is
- * implied, incompatible logs are rejected, and no migration is provided.
+ * Current logical Session format version, stamped into every newly written
+ * {@link SessionHeader}. Current Session and persistence code accept only this
+ * value; header-only readers classify supported historical formats, while an
+ * event-body read composes the build-static adjacent chain and publishes only
+ * this final generation before constructing a Session.
  *
  * The version is a single monotonic integer with no major/minor split. Whether
  * a bump is needed is decided by what the WRITER emits, never by what a newer
@@ -79,23 +79,21 @@ export type OptionalSessionSeq = SessionSeq | null
  * Adding an ordinary event type does not bump — the per-event
  * {@link SessionEvent.ignorable} guard covers vocabulary growth instead. When
  * in doubt, bump: a near-identity upgrade step is almost free, a missed bump
- * makes older runtimes read new logs wrong silently. The full mechanism
- * (upgrade-step chain, in-memory view conversion, migrate-on-continue) is
- * recorded in the session-log-version-mechanism Agent Note
- * (`.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md`).
+ * makes older runtimes read new logs wrong silently. The released migration,
+ * immutable prior-generation, and current fast-path rules are recorded in
+ * `.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md`.
  */
-export const SESSION_FORMAT_VERSION = 0
+export const SESSION_FORMAT_VERSION = 1
 
 /**
  * Immutable validated storage metadata, kept outside the conversation event log.
  */
 export interface SessionHeader {
   /**
-   * On-disk format version, stamped from {@link SESSION_FORMAT_VERSION} when the
-   * session is created. A persistence backend rejects any other version on load
-   * (no migration — see the constant).
+   * Current logical format version, stamped from {@link SESSION_FORMAT_VERSION}.
+   * Historical physical headers are translated before entering this interface.
    */
-  readonly version: number
+  readonly version: typeof SESSION_FORMAT_VERSION
   /** The session's id (mirrors the {@link Session}'s id). */
   readonly id: SessionId
   /** Non-negative safe-integer Unix epoch milliseconds when the session was created. */

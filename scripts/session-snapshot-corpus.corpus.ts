@@ -5,9 +5,11 @@ import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 import { expect, it } from 'vitest'
 import {
+  assertSessionFixtureVersion,
   captureExpectedWorkspaceSnapshot,
   EMPTY_WORKSPACE_MARKER,
   parseSnapshotManifest,
+  parseSessionFixtureName,
   redactSessionSnapshotIds,
   scrubSystemPrompts,
   scrubToolSchemas,
@@ -113,11 +115,12 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
     const classKey = `${manifest.composition}/${manifest.header.class}`
     expect(pinByClass.has(classKey), `${key}: missing composition/header pin ${classKey}`).toBe(true)
 
-    const localSession = join(dir, 'session.jsonl')
+    const localEntries = await readdir(dir)
+    const localSessionNames = localEntries.filter(name => parseSessionFixtureName(name) !== undefined)
     if (manifest.session === undefined) {
-      expect(existsSync(localSession), `${key}: owner session.jsonl`).toBe(true)
+      expect(localSessionNames.length, `${key}: owner Session fixture`).toBeGreaterThan(0)
     } else {
-      expect(existsSync(localSession), `${key}: borrower must not own session.jsonl`).toBe(false)
+      expect(localSessionNames, `${key}: borrower must not own a Session fixture`).toEqual([])
       const target = resolve(dir, manifest.session.source)
       expect(existsSync(target), `${key}: session source`).toBe(true)
       const targetDir = await realpath(dirname(target))
@@ -161,8 +164,11 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
     }
 
     if (manifest.session !== undefined) continue
-    const names = sessionFixtureNames(await readdir(dir))
+    const names = sessionFixtureNames(localEntries)
     const fixtures = await Promise.all(names.map(name => readFile(join(dir, name), 'utf8')))
+    for (const name of localSessionNames) {
+      assertSessionFixtureVersion(name, await readFile(join(dir, name), 'utf8'))
+    }
     expect(redactSessionSnapshotIds(fixtures), `${key}: typed identity fixed point`).toEqual(fixtures)
     for (const [index, fixture] of fixtures.entries()) {
       expect(scrubSystemPrompts(fixture), `${key}/${names[index]}: system prompt must be a sidecar`).toBe(fixture)

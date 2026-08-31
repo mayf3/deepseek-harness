@@ -25,7 +25,7 @@ Status: implemented
 
 ### 2. 回放按首次调用顺序将活跃会话绑定到录制脚本
 
-嵌套场景录制多份日志：父会话（`session.jsonl`）加每个 subagent 子会话各一份（`session.1.jsonl`……）。`dsh-llm-replay` 全部加载，为每个录制会话派生一份脚本，并按 header 中的 `createdAt` 排序（父会话先于子会话创建）。
+嵌套场景录制多个角色：parent 使用 `session[.vN].jsonl`，每个 subagent child 使用 `session.<ordinal>[.vN].jsonl`。V0 省略 `.v0`，正 generation 使用小写 `.vN`，harness 为每个角色选择数值最高的文件。`dsh-llm-replay` 加载这个选定集合，为每个录制 Session 派生一份脚本，并按角色排序（parent 后接连续 child）；持久化发现仍按 header `createdAt` 分配 child ordinal。
 
 活跃会话 id 每次运行都是全新随机值，永远不等于录制时的 id，因此活跃会话无法通过 id 相等绑定到脚本。取而代之的是**首次调用顺序**绑定：第一个发起任何模型调用的活跃会话认领第一份有序脚本（即父会话：`createdAt` 最早，且必然最先流式输出，因为它必须先运行一个轮次才能委派），下一个新活跃会话认领下一份脚本，依此类推。此后每个会话独立推进自己的游标。
 
@@ -39,7 +39,7 @@ Status: implemented
 
 ### 3. harness 收集所有日志，主会话优先
 
-`harvestSessionLogs` 递归收集 sessions 根目录下所有固定命名为 `session.jsonl` 的 transcript（JSONL 后端为每个父会话和子会话分别提供独立的项目/会话目录），解析各自的 header，并按主会话优先排序：顶层会话（无 `parentSession`）在前，各子会话按 `createdAt` 升序排列。`RunResult.sessionLogs` 包含多份日志；spec 在录制时将每份日志写回对应 fixture（`session.jsonl` + `session.<n>.jsonl`），在回放时将每份收集到的日志与其 fixture 做 diff。归一化器已支持多个会话 id 并会折叠任何游离 UUID，因此无需修改归一化器。
+`harvestSessionLogs` 会在每个持久化 Session 目录下递归选择数值最高的规范 generation，解析各自 header，并按 primary 优先排序：顶层 Session（无 `parentSession`）在前，各 child 按 `createdAt` 升序排列。`RunResult.sessionLogs` 包含多份日志；record 与 refresh 会把每份当前输出写入 `session[.vN].jsonl` 或 `session.<ordinal>[.vN].jsonl`，为仍产生的角色保留旧 generation，并把选定的最高 replay 输入与新鲜当前输出做 diff。normalizer 已支持多个 Session id 并会折叠任何游离 UUID，因此无需修改 normalizer。
 
 ### 4. 场景
 

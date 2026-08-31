@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
+import { isReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import {
   captureStableAria, compareOrRefreshGolden, launchWebScaffold, seedBlankSession,
   watchConsole, webSnapshotMode, type WebScaffold,
@@ -29,10 +30,11 @@ describe('web e2e: cold blank Session visibility', () => {
     const cwd = join(scaffold.workspaceCwd, WORKSPACE_NAME)
     await mkdir(cwd, { recursive: true })
     await seedBlankSession(scaffold, SESSION_ID, cwd)
-    const header = (await scaffold.ctx.sessionPersistence.list())
-      .find(candidate => candidate.id === SESSION_ID)
-    if (header === undefined) throw new Error('blank Session fixture did not materialize')
-    const location = scaffold.ctx.sessionPersistence.locate(header)
+    const listing = (await scaffold.ctx.sessionPersistence.list())
+      .filter(isReadableSessionPersistenceListing)
+      .find(candidate => candidate.header.id === SESSION_ID)
+    if (listing === undefined) throw new Error('blank Session fixture did not materialize')
+    const location = scaffold.ctx.sessionPersistence.locate(listing.header)
     if (location === undefined) throw new Error('JSONL fixture has no physical artifact')
     expect((await stat(location.path)).size).toBeLessThanOrEqual(1024)
 

@@ -9,6 +9,7 @@ import type {
   SessionLogOffset,
 } from '@deepseek-ai/dsh-session'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
+import type { ReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionRecord } from './types.ts'
 import { SessionQueryError } from './config.ts'
 import { assertSessionHeadersCompatible } from './sources.ts'
@@ -71,14 +72,20 @@ export class SessionCorpus {
     const persisted = persistence === undefined ? [] : await listPersisted(persistence, signal)
     signal?.throwIfAborted()
     const records = new Map<SessionId, SessionRecord>()
-    for (const header of persisted) {
-      records.set(header.id, { header: structuredClone(header), live: false, persisted: true })
+    for (const listing of persisted) {
+      records.set(listing.header.id, {
+        header: structuredClone(listing.header),
+        ...listing.location === undefined ? {} : { location: structuredClone(listing.location) },
+        live: false,
+        persisted: true,
+      })
     }
     for (const session of this._ctx.sessions.list()) {
       const durable = records.get(session.id)
       if (durable !== undefined) assertSessionHeadersCompatible(session.header, durable.header)
       records.set(session.id, {
         header: structuredClone(session.header),
+        ...durable?.location === undefined ? {} : { location: structuredClone(durable.location) },
         live: true,
         persisted: durable !== undefined,
       })
@@ -105,7 +112,8 @@ export class SessionCorpus {
     }
     const persistence = this._persistence
     if (persistence === undefined) throw notFound(sessionId)
-    const listed = (await listPersisted(persistence, signal)).find(header => header.id === sessionId)
+    const listed = (await listPersisted(persistence, signal))
+      .find(listing => listing.header.id === sessionId)
     signal?.throwIfAborted()
     if (listed === undefined) throw notFound(sessionId)
     const loaded = await inspectPersisted(persistence, sessionId, signal)
@@ -116,7 +124,7 @@ export class SessionCorpus {
       signal?.throwIfAborted()
       return snapshot
     }
-    assertSessionHeadersCompatible(loaded.meta, listed)
+    assertSessionHeadersCompatible(loaded.meta, listed.header)
     const snapshot = {
       header: structuredClone(loaded.meta),
       inheritedEventCount: loaded.inheritedEventCount,
@@ -163,7 +171,7 @@ export class SessionCorpus {
       return orderedResults(ids, resolved)
     }
 
-    let persisted: SessionHeader[]
+    let persisted: ReadableSessionPersistenceListing[]
     try {
       persisted = await listPersisted(persistence, signal)
       signal?.throwIfAborted()
@@ -174,7 +182,7 @@ export class SessionCorpus {
       }
       return orderedResults(ids, resolved)
     }
-    const persistedById = new Map(persisted.map(header => [header.id, header]))
+    const persistedById = new Map(persisted.map(listing => [listing.header.id, listing]))
     const resolvePersisted = async (sessionId: SessionId): Promise<void> => {
       const listed = persistedById.get(sessionId)
       if (listed === undefined) {
@@ -193,7 +201,7 @@ export class SessionCorpus {
           resolved.set(sessionId, projectSource(sessionId, sourceLive(attached), project, signal))
           return
         }
-        assertSessionHeadersCompatible(loaded.meta, listed)
+        assertSessionHeadersCompatible(loaded.meta, listed.header)
         resolved.set(sessionId, projectSource(sessionId, {
           header: loaded.meta,
           inheritedEventCount: loaded.inheritedEventCount,
@@ -268,9 +276,12 @@ function orderedResults<Value>(
 async function listPersisted(
   persistence: SessionPersistence,
   signal?: AbortSignal,
-): Promise<SessionHeader[]> {
+): Promise<ReadableSessionPersistenceListing[]> {
   try {
-    return await persistence.list(signal)
+    return (await persistence.list(signal))
+      .flatMap(listing => listing.status === 'current' || listing.status === 'migration-required'
+        ? [listing]
+        : [])
   } catch (error: unknown) {
     if (signal?.aborted) signal.throwIfAborted()
     throw new SessionQueryError(

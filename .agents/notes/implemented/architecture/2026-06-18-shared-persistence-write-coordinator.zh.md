@@ -24,15 +24,14 @@ JSONL provider 需要在其存储原语周围执行对正确性要求很高的�
 
 ### 钩子接口（`PersistenceBackend<TornMarker>`）
 
-五个必需成员加可选的空会话实体化与生命周期钩子，构成协调器与存储之间唯一的边界：
+六个必需的持久原语，加上可选的格式融合、seek、空会话物化、产物与生命周期钩子，构成协调器与存储之间唯一的边界：
 
-- `name`——后端标签，用于 dispose 失败时的 `AggregateError`。
-- `loadStored(id)`——按 id 跨所有存储范围读取一个已存储前缀。准备、逻辑加载/检查、物理后缀读取、存活会话接管与创建碰撞探测共用此查找。协调器会断言返回的 id，并在修复或发布状态之前拒绝已存储记录与存活会话的 cwd 不匹配。
-- `appendBatch(meta, events, isMaterialized)`——持久追加一个连续批次，在尚未物化时原子地惰性物化会话。因此，普通创建不会留下被放弃的已物化空会话。
-- `materializeHeader?(meta)`——为 `SessionPersistence.ensureMaterialized(session)` 显式持久化仅含 header 的会话。它只供把空会话本身视为可恢复持久资源的生命周期前端使用；[标准 ACP 自动化控制](../feature/2026-08-22-standard-acp-automation-controls.zh.md)是第一个 consumer。支持该生命周期的后端实现此钩子；惰性创建仍是默认行为。
-- `commitRepair(meta, tornMarker, closers)`——使崩溃修复持久化：截断损坏的尾部（当且仅当 `tornMarker !== undefined`）并追加 `closers`。**不要求原子性**——JSONL 合理地分两步 fsync，先截断再追加。用于 `prepare`/`load`（截断 + 合成收尾事件）和存活会话接管（仅截断，`closers = []`）。
-- `list()`——列出所有已存储的元数据。
-- `close?()`——供拥有资源的 provider 使用的可选生命周期清理；JSONL 省略该钩子。dispose effect 在排空至完全停稳后 await 它，因此 close 失败不会掩盖排空错误。
+- `name` 标记聚合 dispose 失败；`loadStored(id)` 读取一个已经是当前格式的分离前缀；`readStoredRevision(id)` 返回其低成本来源标识。协调器会断言 id，并在修复或发布状态之前拒绝存储记录与活动会话的 cwd 不匹配。
+- `ensureCurrent?(id)` 让后端在当前格式读取前发布任何受支持历史 generation 的当前后继。`loadCurrentStored?(id)` 把该操作与基于一个稳定选定 generation 快照的前缀解码融合；否则协调器依次调用 `ensureCurrent` 与 `loadStored`。原始产物通过 `readCurrentRawStored?` 与 `readRawStored?` 使用同一分工。
+- `loadStoredFrom?(id, fromSeq)` 是可选的可 seek 当前格式后缀读取。顺序后端省略它并复用完整当前前缀。
+- `appendBatch(meta, events, isMaterialized)` 持久追加一个连续批次，并原子执行惰性首次物化。`materializeHeader?(meta)` 为 [标准 ACP 自动化控制](../feature/2026-08-22-standard-acp-automation-controls.zh.md)这类生命周期前端显式持久化空的可恢复 Session。
+- `commitRepair(meta, tornMarker, closers)` 在存在 torn tail 时截断它，在存在 closer 时追加它，从而持久化崩溃修复。它不要求原子性：JSONL 合理地分两步同步，先截断再追加。准备与加载提交截断和合成 closer；活动接管只提交截断。
+- `list()` 为每个存储产物返回一个仅 header descriptor；`locate?()` 不经 I/O 解析后端拥有的产物；`close?()` 在协调器排空至完全停稳后释放后端资源。
 
 ### 不透明的 torn marker
 
@@ -40,13 +39,13 @@ JSONL provider 需要在其存储原语周围执行对正确性要求很高的�
 
 ## 测试
 
-共享 `runPersistenceContract` 证明 JSONL 的 `inspect` 会配平被中断的逻辑视图但不改变存储或修订版本，随后由 `prepare` 或 `load` 提交恢复。`runCoordinatorContract`（`tests/coordinator-contract.ts`）通过内存参考实现与 JSONL 覆盖接管、HMR、碰撞、Session 与 provider dispose 排空和崩溃尾部修复。`persistence.spec.ts`、`preparations.spec.ts` 与 `write-behind.spec.ts` 覆盖准备复用与预留、有界准备状态淘汰、固定窗口后续批次、存活控制器清理、同 id 链尾竞态、失败批次重试与关闭顺序。JSONL 规格保留存储机制，以及覆盖不透明 marker 分支的经由协调器崩溃尾部用例。
+共享 `runPersistenceContract` 证明已经是当前格式的 JSONL `inspect` 会配平被中断的逻辑视图但不改变存储或 revision，随后由 `prepare` 或 `load` 提交恢复；受支持的历史检查会先在不改变源文件的情况下于其旁边发布迁移并修复后的当前后继。`runCoordinatorContract`（`tests/coordinator-contract.ts`）通过内存参考实现与 JSONL 覆盖接管、HMR、碰撞、Session 与 provider dispose 排空和崩溃尾部修复。`persistence.spec.ts`、`preparations.spec.ts` 与 `write-behind.spec.ts` 覆盖准备复用与预留、有界准备状态淘汰、固定窗口后续批次、存活 controller 清理、同 id 链尾竞态、失败批次重试与关闭顺序。JSONL spec 保留存储机制，以及覆盖不透明 marker 分支的经由协调器崩溃尾部用例。
 
 ## 曾考虑的替代方案
 
 - **后端继承的基类**——否决，改用组合：后端只暴露钩子，无法触及协调器的私有编排状态，且第三方后端仍可完全不使用协调器、直接实现抽象服务。
-- **更宽的钩子 API**——每个候选钩子都被折叠掉：没有限定存储范围的存活会话查找，因为 `loadStored` 加上协调器的 cwd 检查即可维持碰撞边界；没有存储定位器泛型，因为经验证的 JSONL 元数据可还原其路径；没有单独的 `materialize` 钩子，因为首批事件必须与物化原子提交；没有单独的创建碰撞探测，因为它就是 `loadStored(id) !== undefined`；`list()` 也不经由协调器透传，因为列举不需要任何编排。
+- **把历史格式放入协调器，或要求两次物理读取**——不予采用，因为格式 framing、最高 generation 选择、不可变后继发布与稳定来源解码属于后端。可选的融合当前格式读取保留一个协调器生命周期，同时让 JSONL 对同一个精确快照完成分类或迁移与解码；普通钩子继续作为其他后端的 fallback。
 
 ## 后果
 
-协调器增加一层间接、一个不透明 torn marker、脱离 Session 生命周期的退役任务，以及有界的已准备 Session 状态，但为 JSONL provider 与未来实现集中管理对正确性要求很高的编排。Session dispose 仍是仅观察事件，因此 Session owner 不等待持久化退役；协调器收容失败、在存活控制器中保留待处理事件，并以 provider teardown 为完全停稳边界。其钩子面保持窄小：标识校验、接管、碰撞检查、准备与不可变检查共用 `loadStored`；物化保持在 `appendBatch` 内原子完成；列举绕过协调器。读模型使用 `inspect` 而非 `load`，因此观察已持久化但仍开放的轮次时不会提交中断收尾事件；复用、预留与发布由 [Session 准备阶段决策](2026-08-05-session-preparation.zh.md)定义。新 provider 只需实现存储原语，而无需复制有界写入生命周期。
+协调器增加一层间接、一个不透明 torn marker、脱离 Session 生命周期的退役任务，以及有界的已准备 Session 状态，但为 JSONL provider 与未来实现集中管理对正确性要求很高的编排。Session dispose 仍是仅观察事件，因此 Session owner 不等待持久化退役；协调器收容失败、在活动 controller 中保留待处理事件，并以 provider teardown 为完全停稳边界。其钩子只服务当前 consumer：标识、接管、碰撞检查、准备与不可变检查共用串行化当前前缀路径；物化保持在 `appendBatch` 内原子完成；列举绕过有状态编排。对已经是当前格式的输入，读模型使用 `inspect` 而非 `load`，因此观察开放轮次时不会提交中断 closer；历史输入会先发布一个独立的迁移并修复后继。复用、预留与发布由 [Session 准备阶段决策](2026-08-05-session-preparation.zh.md)定义。新 provider 只需实现存储原语，而无需复制有界写入生命周期。

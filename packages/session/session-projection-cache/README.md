@@ -62,7 +62,7 @@ Three mandatory points always write: session creation persists the seed-derived 
 
 ### What the cache guarantees
 
-The log leads and the cache follows: a live checkpoint flushes the session's buffered events durably before the cache row lands, so a crash can leave the cache behind the log but never ahead of it. Reads and writes share the storage domain's coherent in-memory state; the per-unit write chain mutates memory only after durability. Each version-stamped record must match the live unit schema and complete lifecycle identity (`createdAt`, `cwd`, `isSeeded`, and `inheritedEventCount`), so a row initialized under one fork cut cannot seed another. The JSON backend stores each record at `<root>/session_projcache/sessions/<id>.json` in an owner-only directory tree.
+The log leads and the cache follows: a live checkpoint flushes the session's buffered events durably before the cache row lands, so a crash can leave the cache behind the log but never ahead of it. Reads and writes share the storage domain's coherent in-memory state; the per-unit write chain mutates memory only after durability. Each version-stamped record must match the live unit schema and complete lifecycle identity (`formatVersion`, `createdAt`, `cwd`, `isSeeded`, and `inheritedEventCount`), so a row folded from another Session format generation or fork cut cannot seed the caller. The JSON backend stores each record at `<root>/session_projcache/sessions/<id>.json` in an owner-only directory tree.
 
 -----
 

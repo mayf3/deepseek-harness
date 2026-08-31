@@ -4,12 +4,14 @@ import { Context } from '@deepseek-ai/cordis'
 import { appendFile, mkdtemp, mkdir, rm, readFile, writeFile, readdir, stat, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
-import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import type { SessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import {
-  encodeSegment, eventLines, logPath, parseHeader, projectDir, projectKey, scanLog, sessionDir, SessionLogScanner,
-  toHeaderLine,
+  encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, parseGenerationLogFilename,
+  parseHeader, parseHeaderValue, projectDir, projectKey, scanLog, sessionDir,
+  SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
 import { runPersistenceContract, meta, oneTurnLog, appendLog } from '../../session-persistence/tests/contract.ts'
 import { runCoordinatorContract, type CoordinatorFixture } from '../../session-persistence/tests/coordinator-contract.ts'
@@ -19,10 +21,43 @@ const statRace = vi.hoisted(() => ({
   reads: 0,
 }))
 
+const physicalReadProbe = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  opens: 0,
+  reads: 0,
+}))
+
+const directoryReadFailure = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  error: undefined as Error | undefined,
+}))
+
+const directoryReadProbe = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  reads: 0,
+}))
+
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>()
   return {
     ...actual,
+    readdir: async (...args: Parameters<typeof actual.readdir>) => {
+      if (String(args[0]) === directoryReadProbe.path) directoryReadProbe.reads += 1
+      if (String(args[0]) === directoryReadFailure.path && directoryReadFailure.error !== undefined) {
+        throw directoryReadFailure.error
+      }
+      return actual.readdir(...args)
+    },
+    open: async (...args: Parameters<typeof actual.open>) => {
+      if (typeof args[0] === 'string' && args[0] === physicalReadProbe.path && args[1] === 'r') {
+        physicalReadProbe.opens += 1
+      }
+      return actual.open(...args)
+    },
+    readFile: (async (...args: Parameters<typeof actual.readFile>) => {
+      if (typeof args[0] === 'string' && args[0] === physicalReadProbe.path) physicalReadProbe.reads += 1
+      return actual.readFile(...args)
+    }) as typeof actual.readFile,
     stat: (async (...args: Parameters<typeof actual.stat>) => {
       const identity = await actual.stat(...args)
       if (String(args[0]) !== statRace.path || !('mtimeNs' in identity)) return identity
@@ -84,9 +119,33 @@ function rawLogPath(root: string, cwd: string | undefined, id: SessionId): strin
   return logPath(root, cwd, id, 'none')
 }
 
+function rawGenerationPath(root: string, cwd: string | undefined, id: SessionId, version: number): string {
+  return generationLogPath(root, cwd, id, version, 'none')
+}
+
+function releasedV0Header(header: SessionHeader): Record<string, unknown> {
+  return { ...toHeaderLine(header), version: 0 }
+}
+
+function listedHeaders(listings: readonly SessionPersistenceListing[]): SessionHeader[] {
+  return listings.flatMap(listing =>
+    listing.status === 'current' || listing.status === 'migration-required' ? [listing.header] : [])
+}
+
+function listedIds(listings: readonly SessionPersistenceListing[]): SessionId[] {
+  return listedHeaders(listings).map(header => header.id)
+}
+
 afterEach(async () => {
   statRace.path = undefined
   statRace.reads = 0
+  physicalReadProbe.path = undefined
+  physicalReadProbe.opens = 0
+  physicalReadProbe.reads = 0
+  directoryReadFailure.path = undefined
+  directoryReadFailure.error = undefined
+  directoryReadProbe.path = undefined
+  directoryReadProbe.reads = 0
   vi.restoreAllMocks()
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true })
 })
@@ -134,11 +193,67 @@ runCoordinatorContract('jsonl-none', async (): Promise<CoordinatorFixture> => {
 })
 
 describe('JsonlSessionPersistence: format helpers', () => {
+  it('enforces seeded header cuts and rejects invalid standalone header JSON', () => {
+    expect(() => toHeaderLine({ ...meta('missing-seed-cut'), isSeeded: true }))
+      .toThrow('seeded session header requires an inherited event count')
+    expect(() => toHeaderLine(meta('unexpected-seed-cut'), SessionLogOffset(1)))
+      .toThrow('unseeded session header inherited event count must be 0')
+    expect(parseHeader('{not-json')).toBeUndefined()
+  })
+
+  it('classifies already-parsed header values before translating current metadata', () => {
+    const current = toHeaderLine({
+      ...meta('parsed-header', '/work'),
+      parentSession: SessionId('parsed-parent'),
+      origin: 'subagent',
+      delegationDepth: 1,
+    })
+
+    expect(parseHeaderValue(null)).toBeUndefined()
+    expect(parseHeaderValue([])).toBeUndefined()
+    expect(parseHeaderValue({ ...current, version: '1' })).toBeUndefined()
+    expect(parseHeaderValue({ ...current, delegationDepth: undefined })).toBeUndefined()
+    expect(parseHeaderValue(current)?.meta).toMatchObject({
+      parentSession: SessionId('parsed-parent'),
+      origin: 'subagent',
+    })
+    expect(() => parseHeaderValue({ version: 42, id: 123 }))
+      .toThrow('session "123" uses log format v42')
+  })
+
+  it('refuses catalog and Session version skew before probing the configured root', async () => {
+    const blockedRoot = join(await freshRoot(), 'not-a-directory')
+    await writeFile(blockedRoot, 'must remain unread')
+    vi.resetModules()
+    vi.doMock('@deepseek-ai/dsh-session-format-catalog', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('@deepseek-ai/dsh-session-format-catalog')>()
+      return {
+        ...actual,
+        sessionFormatCatalog: {
+          ...actual.sessionFormatCatalog,
+          currentVersion: SESSION_FORMAT_VERSION + 1,
+        },
+      }
+    })
+    const skewCtx = new Context()
+    try {
+      const { default: SkewedJsonlSessionPersistence } = await import('../src/index.ts')
+      expect(() => new SkewedJsonlSessionPersistence(skewCtx, {
+        root: blockedRoot,
+        compression: 'none',
+      })).toThrow(`format catalog v${SESSION_FORMAT_VERSION + 1} does not match Session v${SESSION_FORMAT_VERSION}`)
+    } finally {
+      vi.doUnmock('@deepseek-ai/dsh-session-format-catalog')
+      vi.resetModules()
+      await skewCtx.fiber.dispose()
+    }
+  })
+
   it.each([
     ['absent', undefined, false, 0],
     ['zero', 0, true, 0],
     ['nonzero', 3, true, 3],
-  ] as const)('round-trips the v0 physical seedLength when it is %s', (
+  ] as const)('round-trips the current physical seedLength when it is %s', (
     _case,
     seedLength,
     isSeeded,
@@ -146,7 +261,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
   ) => {
     const line = {
       type: 'session',
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: SessionId(`physical-seed-${_case}`),
       createdAt: 1000,
       ...seedLength === undefined ? {} : { seedLength },
@@ -212,6 +327,35 @@ describe('JsonlSessionPersistence: format helpers', () => {
     expect(() => projectKey('')).toThrow(/empty project path/)
   })
 
+  it('names immutable generations with suffixless v0 and lowercase vN', () => {
+    expect(generationLogFilename(0, 'none')).toBe('session.jsonl')
+    expect(generationLogFilename(1, 'none')).toBe('session.v1.jsonl')
+    expect(generationLogFilename(27, 'zstd')).toBe('session.v27.jsonl.zstd')
+    expect(rawLogPath('/sessions', '/work', SessionId('current')))
+      .toBe(rawGenerationPath('/sessions', '/work', SessionId('current'), SESSION_FORMAT_VERSION))
+    for (const invalid of [-1, -0, 1.5, Number.MAX_SAFE_INTEGER + 1, Number.NaN]) {
+      expect(() => generationLogFilename(invalid, 'none')).toThrow(/non-negative safe integer/)
+    }
+  })
+
+  it('parses only canonical committed generation filenames', () => {
+    expect(parseGenerationLogFilename('session.jsonl', 'none')).toBe(0)
+    expect(parseGenerationLogFilename('session.v1.jsonl', 'none')).toBe(1)
+    expect(parseGenerationLogFilename('session.v42.jsonl.zstd', 'zstd')).toBe(42)
+    for (const ignored of [
+      'session.v0.jsonl',
+      'session.v01.jsonl',
+      'session.V1.jsonl',
+      'session.v1.20260831T010203000Z.backup.jsonl',
+      'session.migration.deadbeef.tmp.jsonl',
+      'session.v9007199254740992.jsonl',
+      'metadata.json',
+    ]) {
+      expect(parseGenerationLogFilename(ignored, 'none')).toBeUndefined()
+    }
+    expect(parseGenerationLogFilename('session.v1.jsonl.zstd', 'none')).toBeUndefined()
+  })
+
   it('resolves a relative custom root before locating a session', async () => {
     const absoluteRoot = await freshRoot()
     const ctx = new Context()
@@ -238,7 +382,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     // createdAt, unknown fields): the version must be refused before shape
     // validation, so the user sees the upgrade direction.
     const id = SessionId('future-shape')
-    const path = rawLogPath(resolve(absoluteRoot), '/work', id)
+    const path = rawGenerationPath(resolve(absoluteRoot), '/work', id, 42)
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id, futureOnly: true })}\n{"future":"row"}\n`)
     const failure = await ctx.sessionPersistence.load(id).then(() => undefined, (error: unknown) => error as Error)
@@ -261,7 +405,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     await writeFile(path, '42\n')
     const failure = await ctx.sessionPersistence.load(id).then(() => undefined, (error: unknown) => error as Error)
     expect(failure?.name).not.toBe('SessionFormatUnsupportedError')
-    expect(failure?.message).toContain('first line is not a session header')
+    expect(failure?.message).toContain('first line is not a JSON object')
     await fiber.dispose()
   })
 
@@ -273,7 +417,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     // A future header's id field is as untrusted as the rest of its shape:
     // the refusal must still name the session it read, not crash on the type.
     const id = SessionId('numeric-id')
-    const path = rawLogPath(resolve(absoluteRoot), '/work', id)
+    const path = rawGenerationPath(resolve(absoluteRoot), '/work', id, 42)
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, `${JSON.stringify({ type: 'session', version: 42, id: 123 })}\n`)
     const failure = await ctx.sessionPersistence.load(id).then(() => undefined, (error: unknown) => error as Error)
@@ -292,15 +436,17 @@ describe('JsonlSessionPersistence: format helpers', () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(JsonlSessionPersistence, { root: absoluteRoot, compression: 'none' })
-    const m = { ...meta('newer-format', '/work'), version: 7 }
-    await ctx.sessionPersistence.create(m)
-    await ctx.sessionPersistence.append(m.id, [
-      { type: 'turn/start', seq: SessionSeq(0), time: 1, data: { turn: 1 } },
-      { type: 'turn/end', seq: SessionSeq(1), time: 2, data: { turn: 1, reason: { kind: 'completed' } } },
-    ])
+    const m = meta('newer-format', '/work')
+    const path = rawGenerationPath(absoluteRoot, m.cwd, m.id, 7)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ ...toHeaderLine(m), version: 7 })}\n`)
+    const [listing] = await ctx.sessionPersistence.list()
+    expect(listing).toMatchObject({ status: 'unsupported', storedVersion: 7, targetVersion: 1 })
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+    await expect(backend.loadStored(m.id)).rejects.toThrow(`(raw log: ${path})`)
     const failure = await ctx.sessionPersistence.load(m.id).then(() => undefined, (error: unknown) => error as Error)
     expect(failure?.name).toBe('SessionFormatUnsupportedError')
-    expect(failure?.message).toContain(`(raw log: ${rawLogPath(resolve(absoluteRoot), '/work', m.id)})`)
+    expect(failure?.message).toContain(`(raw log: ${path})`)
     await fiber.dispose()
   })
 })
@@ -326,17 +472,17 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     // materializes a file before the first append.
     const dir = sessionDir(root, '/work', m.id)
     await expect(stat(rawLogPath(root, '/work', m.id))).rejects.toThrow()
-    expect((await ctx.sessionPersistence.list()).map(h => h.id)).not.toContain(m.id)
+    expect(listedIds(await ctx.sessionPersistence.list())).not.toContain(m.id)
 
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     expect((await stat(dir)).isDirectory()).toBe(true)
     expect((await stat(rawLogPath(root, '/work', m.id))).isFile()).toBe(true)
-    expect((await ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
+    expect(listedIds(await ctx.sessionPersistence.list())).toContain(m.id)
   })
 
   it('lists a seeded header without reading an event body', async () => {
     const id = SessionId('header-only-seeded')
-    const path = rawLogPath(root, '/work', id)
+    const path = rawGenerationPath(root, '/work', id, 0)
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, `${JSON.stringify({
       type: 'session',
@@ -348,9 +494,56 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
       delegationDepth: 0,
     })}\n{not-valid-json`)
 
-    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
-      expect.objectContaining({ id, isSeeded: true }),
-    ])
+    const [listing] = await ctx.sessionPersistence.list()
+    expect(listing).toMatchObject({ status: 'migration-required', storedVersion: 0 })
+    if (listing?.status !== 'migration-required') throw new Error('expected migration-required listing')
+    expect(listing.header).toMatchObject({ id, isSeeded: true })
+  })
+
+  it('lists current lineage and subagent origin from the header alone', async () => {
+    const id = SessionId('header-only-lineage')
+    const parentSession = SessionId('header-only-parent')
+    const path = rawLogPath(root, '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify(toHeaderLine({
+      ...meta(id, '/work'),
+      parentSession,
+      origin: 'subagent',
+      delegationDepth: 1,
+    }))}\n`)
+
+    const [listing] = await ctx.sessionPersistence.list()
+
+    if (listing?.status !== 'current') throw new Error('expected current listing')
+    expect(listing.header).toMatchObject({ id, parentSession, origin: 'subagent' })
+    await expect(ctx.sessionPersistence.inspect(id)).resolves.toMatchObject({
+      meta: { id, parentSession, origin: 'subagent' },
+    })
+  })
+
+  it('classifies malformed current headers identically for list, inspect, and raw read', async () => {
+    const fixtures = [
+      ['extra', { unexpected: true }],
+      ['cwd-type', { cwd: 7 }],
+      ['cwd-relative', { cwd: 'relative/path' }],
+      ['parent-type', { parentSession: 7 }],
+    ] as const
+    for (const [name, change] of fixtures) {
+      const id = SessionId(`malformed-current-${name}`)
+      const path = rawLogPath(root, '/work', id)
+      await mkdir(dirname(path), { recursive: true })
+      await writeFile(path, `${JSON.stringify({ ...toHeaderLine(meta(id, '/work')), ...change })}\n`)
+    }
+
+    const listings = await ctx.sessionPersistence.list()
+
+    expect(listings).toHaveLength(fixtures.length)
+    expect(listings.every(listing => listing.status === 'malformed')).toBe(true)
+    for (const [name] of fixtures) {
+      const id = SessionId(`malformed-current-${name}`)
+      await expect(ctx.sessionPersistence.inspect(id)).rejects.toThrow(/invalid current header|cwd must be absolute/)
+      await expect(ctx.sessionPersistence.readRaw(id)).rejects.toThrow(/invalid current header|cwd must be absolute/)
+    }
   })
 
   it('materializes an explicitly durable empty live session without an event row', async () => {
@@ -378,13 +571,290 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     preparation[Symbol.dispose]()
   })
 
+  it('delegates borrowed current sources through the JSONL provider', async () => {
+    const m = meta('direct-borrow', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+
+    using borrowed = await ctx.sessionPersistence.borrowSession(m.id)
+
+    expect(borrowed.inspection.meta.id).toBe(m.id)
+  })
+
+  it('lists released v0 without mutation, then persists v1 on the first body read', async () => {
+    expect(SESSION_FORMAT_VERSION).toBe(1)
+    const m = meta('released-v0-on-read', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
+    const currentPath = rawLogPath(root, m.cwd, m.id)
+    const v0Header = releasedV0Header(m)
+    const source = Buffer.from(`${JSON.stringify(v0Header)}\n${eventLines(oneTurnLog(), true)}\n`)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, source)
+
+    const [before] = await ctx.sessionPersistence.list()
+    expect(before).toMatchObject({ status: 'migration-required', storedVersion: 0, targetVersion: 1 })
+    if (before?.status !== 'migration-required') throw new Error('expected migration-required listing')
+    expect(before.header).toMatchObject({ id: m.id, version: 1 })
+    expect(await readFile(path)).toEqual(source)
+
+    directoryReadProbe.path = dirname(path)
+    await expect(ctx.sessionPersistence.inspect(m.id)).resolves.toEqual({
+      meta: { ...m, version: 1, delegationDepth: 0 },
+      inheritedEventCount: SessionLogOffset(0),
+      events: oneTurnLog(),
+    })
+    expect(directoryReadProbe.reads).toBe(1)
+    await expect(ctx.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: { id: m.id } })
+    expect(directoryReadProbe.reads).toBe(1)
+    expect(await readFile(path)).toEqual(source)
+    expect(JSON.parse((await readFile(currentPath, 'utf8')).split('\n')[0] as string)).toMatchObject({ version: 1 })
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
+      expect.objectContaining({ status: 'current', storedVersion: 1 }),
+    ])
+    expect(directoryReadProbe.reads).toBe(2)
+  })
+
+  it('cold-opens the numeric highest generation and refuses a retained future successor', async () => {
+    const m = meta('cold-future-successor', '/work')
+    const v1Path = rawGenerationPath(root, m.cwd, m.id, 1)
+    const v2Path = rawGenerationPath(root, m.cwd, m.id, 2)
+    const v1 = `${JSON.stringify(toHeaderLine(m))}\n${eventLines(oneTurnLog(), true)}\n`
+    const v2 = `${JSON.stringify({ type: 'session', version: 2, id: m.id })}\n`
+    await mkdir(dirname(v1Path), { recursive: true })
+    await writeFile(v1Path, v1)
+    await writeFile(v2Path, v2)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
+      expect.objectContaining({
+        status: 'unsupported',
+        storedVersion: 2,
+        location: { kind: 'jsonl', path: v2Path },
+      }),
+    ])
+    await expect(ctx.sessionPersistence.inspect(m.id))
+      .rejects.toThrow(/log format v2.*newer harness/)
+    expect(await readFile(v1Path, 'utf8')).toBe(v1)
+    expect(await readFile(v2Path, 'utf8')).toBe(v2)
+  })
+
+  it('reuses a validated current selection while header listing always rescans', async () => {
+    const m = meta('validated-generation-cache', '/work')
+    const path = rawLogPath(root, m.cwd, m.id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify(toHeaderLine(m))}\n${eventLines(oneTurnLog(), true)}\n`)
+    directoryReadProbe.path = dirname(path)
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(ctx.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: { id: m.id } })
+    expect(directoryReadProbe.reads).toBe(1)
+    await expect(ctx.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: { id: m.id } })
+    await expect(backend.readStoredRevision(m.id)).resolves.toBeDefined()
+    expect(directoryReadProbe.reads).toBe(1)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
+      expect.objectContaining({ status: 'current', storedVersion: SESSION_FORMAT_VERSION }),
+    ])
+    expect(directoryReadProbe.reads).toBe(2)
+
+    directoryReadProbe.reads = 0
+    const reopened = new Context()
+    await reopened.plugin(SessionStore)
+    await reopened.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+    try {
+      await expect(reopened.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: { id: m.id } })
+      expect(directoryReadProbe.reads).toBe(1)
+    } finally {
+      await reopened.fiber.dispose()
+    }
+  })
+
+  it('caches a newly materialized current generation for later opens', async () => {
+    const m = meta('materialized-generation-cache', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    directoryReadProbe.path = sessionDir(root, m.cwd, m.id)
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(ctx.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: { id: m.id } })
+    await expect(backend.readStoredRevision(m.id)).resolves.toBeDefined()
+    expect(directoryReadProbe.reads).toBe(0)
+  })
+
+  it('selects the highest canonical generation across gaps and refuses a future version', async () => {
+    const m = meta('generation-gap-future', '/work')
+    const v0Path = rawGenerationPath(root, m.cwd, m.id, 0)
+    const v3Path = rawGenerationPath(root, m.cwd, m.id, 3)
+    const v0 = `${JSON.stringify(releasedV0Header(m))}\n`
+    const v3 = `${JSON.stringify({ type: 'session', version: 3, id: m.id })}\n`
+    await mkdir(dirname(v0Path), { recursive: true })
+    await writeFile(v0Path, v0)
+    await writeFile(v3Path, v3)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
+      expect.objectContaining({
+        status: 'unsupported',
+        storedVersion: 3,
+        location: { kind: 'jsonl', path: v3Path },
+      }),
+    ])
+    await expect(ctx.sessionPersistence.inspect(m.id))
+      .rejects.toThrow(/log format v3.*newer harness/)
+    expect(await readFile(v0Path, 'utf8')).toBe(v0)
+    expect(await readFile(v3Path, 'utf8')).toBe(v3)
+  })
+
+  it('ignores backup and temporary names while selecting the committed v0 source', async () => {
+    const m = meta('generation-ignores-archives', '/work')
+    const v0Path = rawGenerationPath(root, m.cwd, m.id, 0)
+    await mkdir(dirname(v0Path), { recursive: true })
+    await writeFile(v0Path, `${JSON.stringify(releasedV0Header(m))}\n`)
+    await writeFile(join(dirname(v0Path), 'session.v9.20260831T010203000Z.backup.jsonl'), 'archive')
+    await writeFile(join(dirname(v0Path), 'session.migration.deadbeef.tmp.jsonl'), 'stage')
+
+    await expect(ctx.sessionPersistence.inspect(m.id)).resolves.toMatchObject({
+      meta: { id: m.id, version: SESSION_FORMAT_VERSION },
+    })
+    expect(await readFile(v0Path, 'utf8')).toBe(`${JSON.stringify(releasedV0Header(m))}\n`)
+  })
+
+  it('marks a generation whose filename and physical header disagree as malformed', async () => {
+    const m = meta('generation-header-mismatch', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 3)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ type: 'session', version: 2, id: m.id })}\n`)
+
+    const [listing] = await ctx.sessionPersistence.list()
+    expect(listing?.status).toBe('malformed')
+    if (listing?.status !== 'malformed') throw new Error('expected malformed listing')
+    expect(listing.reason).toMatch(/filename identifies v3.*header identifies v2/)
+    await expect(ctx.sessionPersistence.inspect(m.id)).rejects.toThrow(/filename identifies v3.*header identifies v2/)
+  })
+
+  it('rejects a versioned generation encoded with the opposite configured suffix', async () => {
+    const m = meta('opposite-versioned-generation', '/work')
+    const path = generationLogPath(root, m.cwd, m.id, 4, 'zstd')
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, 'opposite encoding')
+
+    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/uses \.jsonl\.zstd/)
+    await expect(ctx.sessionPersistence.inspect(m.id)).rejects.toThrow(/uses \.jsonl\.zstd/)
+  })
+
+  it('migrates a disk-only v0 prefix before a direct cold append', async () => {
+    const m = meta('released-v0-cold-append', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
+    const sourceEvents = oneTurnLog()
+    const source = Buffer.from(`${JSON.stringify(releasedV0Header(m))}\n${eventLines(sourceEvents, true)}\n`)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, source)
+    const suffix: SessionEvent[] = [
+      { type: 'turn/start', seq: SessionSeq(6), time: 7, data: { turn: 2 } },
+      { type: 'turn/end', seq: SessionSeq(7), time: 8, data: { turn: 2, reason: { kind: 'completed' } } },
+    ]
+
+    await ctx.sessionPersistence.append(m.id, suffix)
+
+    expect(await readFile(path)).toEqual(source)
+    const active = await ctx.sessionPersistence.readRaw(m.id)
+    expect(active?.meta.version).toBe(SESSION_FORMAT_VERSION)
+    expect(active?.content.trimEnd().split('\n').map(line => JSON.parse(line) as { type: string }).map(row => row.type))
+      .toEqual([
+        'session',
+        'turn/start',
+        'user/message',
+        'step/start',
+        'assistant/message',
+        'step/end',
+        'turn/end',
+        'turn/start',
+        'turn/end',
+      ])
+    expect((await readdir(dirname(path))).filter(name => name.startsWith('session')).sort())
+      .toEqual(['session.jsonl', 'session.v1.jsonl'])
+  })
+
+  it('leaves the immutable v0 source unchanged when alpha policy refuses an unknown ignorable event', async () => {
+    const m = meta('released-v0-unknown', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
+    const source = Buffer.from([
+      JSON.stringify(releasedV0Header(m)),
+      JSON.stringify({ type: 'external/info', seq: 0, time: 1, data: {}, ignorable: true }),
+      '',
+    ].join('\n'))
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, source)
+
+    const failure = await ctx.sessionPersistence.inspect(m.id).then(() => undefined, (error: unknown) => error as Error)
+
+    expect(failure?.name).toBe('SessionFormatUnsupportedError')
+    expect(failure?.message).toContain('unknown historical event type "external/info" at seq 0')
+    expect(failure?.message).toContain('source v0 artifact remains unchanged')
+    expect(failure?.message).toContain(`(raw log: ${path})`)
+    expect(await readFile(path)).toEqual(source)
+    await expect(stat(rawLogPath(root, m.cwd, m.id))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('leaves the immutable v0 source unchanged when a historical relationship cannot migrate', async () => {
+    const m = meta('released-v0-title-refusal', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
+    const source = Buffer.from([
+      JSON.stringify(releasedV0Header(m)),
+      JSON.stringify({
+        type: 'user/message', seq: 0, time: 1, surfaceOp: 'append',
+        data: {
+          id: 'human', role: 'user', content: [{ type: 'text', text: 'hello' }], source: { kind: 'user' },
+        },
+      }),
+      JSON.stringify({
+        type: 'session/title', seq: 1, time: 2,
+        data: { title: 'Title', messageSeqs: [0], source: { kind: 'user' } },
+      }),
+      '',
+    ].join('\n'))
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, source)
+
+    const failure = await ctx.sessionPersistence.inspect(m.id)
+      .then(() => undefined, (error: unknown) => error as Error)
+
+    expect(failure?.name).toBe('SessionFormatUnsupportedError')
+    expect(failure?.message).toContain('session/title 1 messageSeqs must be empty exactly for a user title')
+    expect(failure?.message).toContain('source v0 artifact remains unchanged')
+    expect(await readFile(path)).toEqual(source)
+    await expect(stat(rawLogPath(root, m.cwd, m.id))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('retains a torn v0 source exactly and publishes its current repaired prefix', async () => {
+    const m = meta('released-v0-torn', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
+    const open = { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }
+    const source = Buffer.from([
+      JSON.stringify(releasedV0Header(m)),
+      JSON.stringify(open),
+      '{"type":"assistant/chunk","seq":1',
+    ].join('\n'))
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, source)
+
+    const raw = await ctx.sessionPersistence.readRaw(m.id)
+
+    expect(await readFile(path)).toEqual(source)
+    const records = raw?.content.trimEnd().split('\n').map(record => JSON.parse(record) as Record<string, unknown>)
+    expect(records?.map(record => record['type'])).toEqual(['session', 'turn/start', 'turn/end'])
+    expect(records?.at(-1)).toMatchObject({
+      seq: 1,
+      time: 1,
+      data: { turn: 1, reason: { kind: 'interrupted' } },
+    })
+  })
+
   it('readRaw returns the stored artifact text verbatim with its original filename', async () => {
     const m = meta('raw-read', '/work')
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     const raw = await ctx.sessionPersistence.readRaw(m.id)
     expect(raw).toBeDefined()
-    expect(raw!.filename).toBe('session.jsonl')
+    expect(raw!.filename).toBe(`session.v${SESSION_FORMAT_VERSION}.jsonl`)
     expect(raw!.meta.id).toBe(m.id)
     // Byte-identical to the physical file — never a reconstruction.
     expect(raw!.content).toBe(await readFile(rawLogPath(root, '/work', m.id), 'utf8'))
@@ -416,6 +886,145 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect(raw).toBeDefined()
     // Two stat calls per iteration; the mocked revision change forces a retry.
     expect(statRace.reads).toBe(4)
+  })
+
+  it('reads each current body exactly once and consumes its prefetch once', async () => {
+    const m = meta('current-single-physical-read', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    physicalReadProbe.path = rawLogPath(root, m.cwd, m.id)
+
+    await expect(ctx.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: m })
+    expect(physicalReadProbe.opens).toBe(0)
+    expect(physicalReadProbe.reads).toBe(1)
+
+    await expect(ctx.sessionPersistence.readRaw(m.id)).resolves.toMatchObject({ meta: m })
+    expect(physicalReadProbe.opens).toBe(0)
+    expect(physicalReadProbe.reads).toBe(2)
+  })
+
+  it('restores a current inspection from the same one-shot physical read', async () => {
+    const m = meta('current-single-inspection-read', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    physicalReadProbe.path = rawLogPath(root, m.cwd, m.id)
+
+    await expect(ctx.sessionPersistence.inspect(m.id)).resolves.toMatchObject({ meta: m })
+
+    expect(physicalReadProbe.opens).toBe(0)
+    expect(physicalReadProbe.reads).toBe(1)
+  })
+
+  it('validates current storage identity once in both fused and direct prefix reads', async () => {
+    const m = meta('current-single-identity-check', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+    const internals = backend as unknown as {
+      assertStoredIdentity(...args: unknown[]): Promise<void>
+      rememberCurrentGeneration(...args: unknown[]): void
+    }
+    const identity = vi.spyOn(internals, 'assertStoredIdentity')
+    const remember = vi.spyOn(internals, 'rememberCurrentGeneration')
+
+    await backend.loadCurrentStored(m.id)
+    expect(identity).toHaveBeenCalledTimes(1)
+    expect(remember).toHaveBeenCalledTimes(1)
+
+    identity.mockClear()
+    remember.mockClear()
+    await backend.loadStored(m.id)
+    expect(identity).toHaveBeenCalledTimes(1)
+    expect(remember).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns one coherent fused snapshot and observes later writes on the next operation', async () => {
+    const m = meta('current-prefetch-race', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const path = rawLogPath(root, m.cwd, m.id)
+    physicalReadProbe.path = path
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    const first = await backend.readCurrentRawStored(m.id)
+    await appendFile(path, `${JSON.stringify({
+      type: 'plugin/test', seq: 6, time: 7, data: null, ignorable: true,
+    })}\n`)
+
+    expect(first?.content).not.toContain('"plugin/test"')
+    expect(physicalReadProbe.opens).toBe(0)
+    expect(physicalReadProbe.reads).toBe(1)
+    const second = await backend.readCurrentRawStored(m.id)
+    expect(second?.content).toContain('"plugin/test"')
+    expect(physicalReadProbe.opens).toBe(0)
+    expect(physicalReadProbe.reads).toBe(2)
+  })
+
+  it('rejects a cancelled fused read before touching the artifact', async () => {
+    const m = meta('current-prefetch-abort', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const path = rawLogPath(root, m.cwd, m.id)
+    physicalReadProbe.path = path
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+    const controller = new AbortController()
+
+    const reason = new Error('cancelled before fused read')
+    controller.abort(reason)
+
+    await expect(backend.readCurrentRawStored(m.id, controller.signal)).rejects.toBe(reason)
+    expect(physicalReadProbe.opens + physicalReadProbe.reads).toBe(0)
+  })
+
+  it('keeps direct legacy raw reads and absent fused reads well-defined', async () => {
+    const m = meta('legacy-raw-hook', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    const path = rawLogPath(root, m.cwd, m.id)
+    physicalReadProbe.path = path
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(backend.readRawStored(m.id)).resolves.toMatchObject({ meta: m })
+    expect(physicalReadProbe.opens).toBe(0)
+    expect(physicalReadProbe.reads).toBe(1)
+    await expect(backend.readCurrentRawStored(SessionId('absent-fused'))).resolves.toBeUndefined()
+    await expect(backend.readRawStored(SessionId('absent-legacy'))).resolves.toBeUndefined()
+    await expect(backend.loadStored(SessionId('absent-prefix'))).resolves.toBeUndefined()
+    await expect(backend.ensureCurrent(SessionId('absent-ensure'))).resolves.toBeUndefined()
+  })
+
+  it('keeps direct legacy raw identity validation fail-closed', async () => {
+    const requested = SessionId('legacy-raw-mismatch')
+    const path = rawLogPath(root, undefined, requested)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify(toHeaderLine(meta('different-id')))}\n`)
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(backend.readRawStored(requested)).rejects.toThrow('invalid header line')
+  })
+
+  it('rejects a current header stored under the reserved v0 filename in direct hooks', async () => {
+    const m = meta('direct-filename-version-mismatch', '/work')
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify(toHeaderLine(m))}\n${eventLines(oneTurnLog(), true)}\n`)
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(backend.loadStored(m.id))
+      .rejects.toThrow(/filename identifies v0.*decoded header identifies v1/)
+    await expect(backend.readRawStored(m.id))
+      .rejects.toThrow(/filename identifies v0.*decoded header identifies v1/)
+  })
+
+  it('rejects malformed current metadata before exposing a fused snapshot', async () => {
+    const id = SessionId('malformed-current-header')
+    const path = rawLogPath(root, undefined, id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({ type: 'session', version: 1 })}\n`)
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(backend.readCurrentRawStored(id))
+      .rejects.toThrow('corrupt session log: invalid current header')
   })
 
   it('keeps the same location on resume and gives a fork its own location', async () => {
@@ -516,16 +1125,21 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     const persistence = ctx.sessionPersistence as JsonlSessionPersistence
     const internals = persistence as unknown as {
-      findLog(id: SessionId, signal?: AbortSignal): Promise<string | undefined>
+      findLog(id: SessionId, signal?: AbortSignal): Promise<{
+        sourcePath: string
+        sourceVersion: number
+        currentPath: string
+      } | undefined>
     }
     const path = rawLogPath(root, m.cwd, m.id)
-    const findLog = vi.spyOn(internals, 'findLog').mockResolvedValue(path)
+    const resolved = { sourcePath: path, sourceVersion: SESSION_FORMAT_VERSION, currentPath: path }
+    const findLog = vi.spyOn(internals, 'findLog').mockResolvedValue(resolved)
 
     await rm(path)
     expect(await persistence.readStoredRevision(m.id)).toBeUndefined()
 
     const invalidPath = `${path}\0`
-    findLog.mockResolvedValue(invalidPath)
+    findLog.mockResolvedValue({ ...resolved, sourcePath: invalidPath })
     await expect(persistence.readStoredRevision(m.id)).rejects.toMatchObject({
       code: 'ERR_INVALID_ARG_VALUE',
     })
@@ -534,7 +1148,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     const controller = new AbortController()
     findLog.mockImplementation(async () => {
       controller.abort(reason)
-      return invalidPath
+      return { ...resolved, sourcePath: invalidPath }
     })
     await expect(persistence.readStoredRevision(m.id, controller.signal)).rejects.toBe(reason)
   })
@@ -605,11 +1219,18 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     const persistence = ctx.sessionPersistence as unknown as {
-      listArtifacts(signal?: AbortSignal): Promise<Array<{ header: SessionHeader; path: string }>>
+      listArtifacts(signal?: AbortSignal): Promise<Array<{ listing: SessionPersistenceListing; path: string }>>
     }
+    const path = rawLogPath(root, m.cwd, m.id)
     const discovery = vi.spyOn(persistence, 'listArtifacts').mockResolvedValue([{
-      header: m,
-      path: rawLogPath(root, m.cwd, m.id),
+      listing: {
+        status: 'current',
+        header: m,
+        storedVersion: SESSION_FORMAT_VERSION,
+        targetVersion: SESSION_FORMAT_VERSION,
+        location: { kind: 'jsonl', path },
+      },
+      path,
     }])
     const reason = new Error('JSONL snapshot stat cancelled')
     const controller = new AbortController()
@@ -622,25 +1243,26 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
 
   it('rejects a stored v0 log containing a legacy request/header-delta event', async () => {
     const m = meta('legacy-header-delta', '/legacy')
-    const path = rawLogPath(root, m.cwd, m.id)
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
     await mkdir(sessionDir(root, m.cwd, m.id), { recursive: true })
     await writeFile(path, [
-      JSON.stringify(toHeaderLine(m)),
+      JSON.stringify(releasedV0Header(m)),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'request/header-delta', seq: 1, time: 2, data: { config: { model: 'legacy' } } }),
       JSON.stringify({ type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }),
       '',
     ].join('\n'))
 
-    await expect(ctx.sessionPersistence.load(m.id)).rejects.toThrow(/unsupported legacy request\/header-delta event at seq 1/)
+    await expect(ctx.sessionPersistence.load(m.id))
+      .rejects.toThrow(/unsupported legacy request\/header-delta event at seq 1.*source v0 artifact remains unchanged/)
   })
 
   it('rejects a stored v0 full header carrying the legacy fallback reason', async () => {
     const m = meta('legacy-header-fallback', '/legacy')
-    const path = rawLogPath(root, m.cwd, m.id)
+    const path = rawGenerationPath(root, m.cwd, m.id, 0)
     await mkdir(sessionDir(root, m.cwd, m.id), { recursive: true })
     await writeFile(path, [
-      JSON.stringify(toHeaderLine(m)),
+      JSON.stringify(releasedV0Header(m)),
       JSON.stringify({
         type: 'request/header',
         seq: 0,
@@ -651,7 +1273,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     ].join('\n'))
 
     await expect(ctx.sessionPersistence.load(m.id))
-      .rejects.toThrow(/unsupported legacy request\/header reason "fallback" at seq 0/)
+      .rejects.toThrow(/unsupported request\/header reason "fallback" at seq 0.*source v0 artifact remains unchanged/)
   })
 
   it('persists a forked child seed through the existing session write path', async () => {
@@ -849,6 +1471,24 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect(await readFile(bPath)).toEqual(beforeB)
   })
 
+  it('rejects a mismatched v0 header before publishing a migrated generation', async () => {
+    const requested = meta('identity-v0-requested', '/same')
+    const path = rawGenerationPath(root, requested.cwd, requested.id, 0)
+    const source = Buffer.from([
+      JSON.stringify({ ...releasedV0Header(requested), id: 'identity-v0-other' }),
+      eventLines(oneTurnLog(), true),
+      '',
+    ].join('\n'))
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, source)
+
+    await expect(ctx.sessionPersistence.load(requested.id))
+      .rejects.toThrow(/requested id "identity-v0-requested" does not match header id "identity-v0-other"/)
+    expect(await readFile(path)).toEqual(source)
+    await expect(readFile(rawLogPath(root, requested.cwd, requested.id)))
+      .rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('rejects a re-append of an already-stored seq', async () => {
     const m = meta('reappend')
     await ctx.sessionPersistence.create(m)
@@ -858,7 +1498,7 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
 
   it('path-traversal session ids are neutralized (no escape from root)', async () => {
     const evil = SessionId('../../etc/pwn')
-    const m = { version: 0, id: evil, createdAt: 1, isSeeded: false }
+    const m: SessionHeader = { version: SESSION_FORMAT_VERSION, id: evil, createdAt: 1, isSeeded: false }
     await ctx.sessionPersistence.create(m)
     await ctx.sessionPersistence.append(evil, oneTurnLog())
     // The file lives UNDER root, not at ../../etc.
@@ -989,7 +1629,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
   ])('rejects a session header with a %s createdAt', (_label, createdAt) => {
     const log = JSON.stringify({
       type: 'session',
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: 'invalid-created-at',
       createdAt,
       delegationDepth: 0,
@@ -998,7 +1638,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
   })
 
   it('rejects a session header with negative-zero createdAt', () => {
-    const log = '{"type":"session","version":0,"id":"invalid-created-at","createdAt":-0,"delegationDepth":0}\n'
+    const log = `{"type":"session","version":${SESSION_FORMAT_VERSION},"id":"invalid-created-at","createdAt":-0,"delegationDepth":0}\n`
     expect(() => scanLog(Buffer.from(log))).toThrow(/session header/)
   })
 
@@ -1010,7 +1650,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
   ])('rejects a session header with %s delegationDepth', (_label, delegationDepth) => {
     const log = JSON.stringify({
       type: 'session',
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: 'invalid-depth',
       createdAt: 1,
       ...delegationDepth === undefined ? {} : { delegationDepth },
@@ -1019,13 +1659,13 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
   })
 
   it('rejects a session header with negative-zero delegationDepth', () => {
-    const log = '{"type":"session","version":0,"id":"invalid-depth","createdAt":1,"delegationDepth":-0}\n'
+    const log = `{"type":"session","version":${SESSION_FORMAT_VERSION},"id":"invalid-depth","createdAt":1,"delegationDepth":-0}\n`
     expect(() => scanLog(Buffer.from(log))).toThrow(/session header/)
   })
 
   it('round-trips the agent preset a session was composed from', () => {
     const line = toHeaderLine({
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id: SessionId('composed'),
       createdAt: 1,
       isSeeded: false,
@@ -1040,14 +1680,14 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
   })
 
   it('rejects a session header whose agentPreset is not a string', () => {
-    const log = '{"type":"session","version":0,"id":"bad-preset","createdAt":1,"delegationDepth":0,"agentPreset":7}\n'
+    const log = `{"type":"session","version":${SESSION_FORMAT_VERSION},"id":"bad-preset","createdAt":1,"delegationDepth":0,"agentPreset":7}\n`
 
     expect(() => scanLog(Buffer.from(log))).toThrow(/session header/)
   })
 
   it('a seq gap after the last turn/end bounds the preserved tail (torn fragment tolerated)', () => {
     const log = [
-      JSON.stringify({ type: 'session', version: 0, id: 'g', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'g', createdAt: 1, delegationDepth: 0 }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'step/start', seq: 2, time: 2, data: { turn: 1, step: 1 } }), // gap: missing seq 1
     ].join('\n') + '\n'
@@ -1059,7 +1699,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
 
   it('rejects a seq gap BEFORE a later committed turn/end (committed data damaged)', () => {
     const log = [
-      JSON.stringify({ type: 'session', version: 0, id: 'g2', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'g2', createdAt: 1, delegationDepth: 0 }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'step/start', seq: 2, time: 2, data: { turn: 1, step: 1 } }), // gap: missing seq 1
       JSON.stringify({ type: 'turn/end', seq: 3, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }),
@@ -1077,7 +1717,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
     ]
     for (const record of corruptRecords) {
       const log = [
-        JSON.stringify({ type: 'session', version: 0, id: 'c', createdAt: 1, delegationDepth: 0 }),
+        JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'c', createdAt: 1, delegationDepth: 0 }),
         record,
         JSON.stringify({ type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } }),
       ].join('\n') + '\n'
@@ -1086,7 +1726,9 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
   })
 
   it('a header-only log (no event lines at all) preserves nothing — committedBytes is the header', () => {
-    const log = JSON.stringify({ type: 'session', version: 0, id: 'h0', createdAt: 1, delegationDepth: 0 }) + '\n'
+    const log = JSON.stringify({
+      type: 'session', version: SESSION_FORMAT_VERSION, id: 'h0', createdAt: 1, delegationDepth: 0,
+    }) + '\n'
     const scanned = scanLog(Buffer.from(log))
     expect(scanned.events).toEqual([])
     // committedBytes falls back to the header line's end (no preserved events).
@@ -1095,7 +1737,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
 
   it('a corrupt line after the last turn/end bounds the preserved tail', () => {
     const log = [
-      JSON.stringify({ type: 'session', version: 0, id: 'c2', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'c2', createdAt: 1, delegationDepth: 0 }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       '{not json', // corrupt crash fragment, no turn/end committed
     ].join('\n') + '\n'
@@ -1106,7 +1748,7 @@ describe('JsonlSessionPersistence: scanLog unit', () => {
 
   it('tolerates a seq gap AFTER a turn/end (uncommitted tail)', () => {
     const log = [
-      JSON.stringify({ type: 'session', version: 0, id: 't', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 't', createdAt: 1, delegationDepth: 0 }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } }),
       JSON.stringify({ type: 'step/start', seq: 9, time: 3, data: { turn: 2, step: 1 } }), // gap in uncommitted tail
@@ -1203,7 +1845,9 @@ describe('JsonlSessionPersistence: default packed chunk rows', () => {
     // file, hand-planted so this packed-config backend adopts it on load).
     await mkdir(sessionDir(root, '/work', m.id), { recursive: true })
     await writeFile(rawLogPath(root, '/work', m.id), [
-      JSON.stringify({ type: 'session', version: 0, id: 'mixed', createdAt: 1000, cwd: '/work', delegationDepth: 0 }),
+      JSON.stringify({
+        type: 'session', version: SESSION_FORMAT_VERSION, id: 'mixed', createdAt: 1000, cwd: '/work', delegationDepth: 0,
+      }),
       ...log.map(e => JSON.stringify(e)),
     ].join('\n') + '\n')
     // Adopt the stored log (cursor = stored length), then append a second turn
@@ -1227,7 +1871,7 @@ describe('JsonlSessionPersistence: default packed chunk rows', () => {
 
   it('scanLog: a packed row advances the seq cursor by its whole run', () => {
     const logText = [
-      JSON.stringify({ type: 'session', version: 0, id: 'rows', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'rows', createdAt: 1, delegationDepth: 0 }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       JSON.stringify({ type: 'text-chunks', seq0: 1, time0: 2, data: { turn: 1, step: 1, index: 0, dt: [1, 1], texts: ['a', 'b', 'c'] } }),
       JSON.stringify({ type: 'turn/end', seq: 4, time: 5, data: { turn: 1, reason: { kind: 'completed' } } }),
@@ -1239,7 +1883,7 @@ describe('JsonlSessionPersistence: default packed chunk rows', () => {
 
   it('scanLog: a malformed packed row in the committed region rejects like corrupt JSON', () => {
     const logText = [
-      JSON.stringify({ type: 'session', version: 0, id: 'bad-row', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'bad-row', createdAt: 1, delegationDepth: 0 }),
       // dt arity mismatch — row validation throws, so the line is a committed hole.
       JSON.stringify({ type: 'text-chunks', seq0: 0, time0: 1, data: { turn: 1, step: 1, index: 0, dt: [], texts: ['a', 'b'] } }),
       JSON.stringify({ type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }),
@@ -1249,7 +1893,7 @@ describe('JsonlSessionPersistence: default packed chunk rows', () => {
 
   it('scanLog: a packed row with a mid-run seq gap after the last turn/end drops the whole row', () => {
     const logText = [
-      JSON.stringify({ type: 'session', version: 0, id: 'row-gap', createdAt: 1, delegationDepth: 0 }),
+      JSON.stringify({ type: 'session', version: SESSION_FORMAT_VERSION, id: 'row-gap', createdAt: 1, delegationDepth: 0 }),
       JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }),
       // seq0 skips 1 — the run's first member is already a gap; no turn/end follows.
       JSON.stringify({ type: 'text-chunks', seq0: 2, time0: 2, data: { turn: 1, step: 1, index: 0, dt: [1, 1], texts: ['a', 'b', 'c'] } }),
@@ -1316,7 +1960,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
     await ctx.sessionPersistence.create(meta('p3')) // no cwd → _no-cwd project directory
     await ctx.sessionPersistence.append(SessionId('p3'), oneTurnLog())
 
-    const ids = (await ctx.sessionPersistence.list()).map(x => x.id).sort()
+    const ids = listedIds(await ctx.sessionPersistence.list()).sort()
     expect(ids).toEqual(['p1', 'p2', 'p3'])
   })
 
@@ -1333,7 +1977,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
       encodeSegment(first.id),
       encodeSegment(second.id),
     ]))
-    expect((await ctx.sessionPersistence.list()).map(header => header.id).sort())
+    expect(listedIds(await ctx.sessionPersistence.list()).sort())
       .toEqual([first.id, second.id].sort())
   })
 
@@ -1350,8 +1994,11 @@ describe('JsonlSessionPersistence: edge cases', () => {
     await writeFile(join(projectDir(root, m.cwd), 'README'), 'project metadata\n')
     await mkdir(join(projectDir(root, m.cwd), 'reserved-session'), { recursive: true })
 
-    expect(await readdir(dir)).toEqual(expect.arrayContaining(['metadata.json', 'session.jsonl']))
-    expect((await ctx.sessionPersistence.list()).map(header => header.id)).toContain(m.id)
+    expect(await readdir(dir)).toEqual(expect.arrayContaining([
+      'metadata.json',
+      generationLogFilename(SESSION_FORMAT_VERSION, 'none'),
+    ]))
+    expect(listedIds(await ctx.sessionPersistence.list())).toContain(m.id)
     expect((await ctx.sessionPersistence.load(m.id)).events).toEqual(oneTurnLog())
   })
 
@@ -1380,7 +2027,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
     await expect(ctx.sessionPersistence.load(m.id)).rejects.toThrow(/unsupported flat-file layout/)
   })
 
-  it('list skips empty and non-header session logs (metadata-only read)', async () => {
+  it('list isolates empty and non-header session logs as malformed descriptors', async () => {
     // A real session…
     await ctx.sessionPersistence.create(meta('real', '/p'))
     await ctx.sessionPersistence.append(SessionId('real'), oneTurnLog())
@@ -1396,18 +2043,21 @@ describe('JsonlSessionPersistence: edge cases', () => {
       await writeFile(path, content)
     }
 
-    const ids = (await ctx.sessionPersistence.list()).map(x => x.id).sort()
-    expect(ids).toEqual(['real'])
+    const listings = await ctx.sessionPersistence.list()
+    expect(listedIds(listings)).toEqual(['real'])
+    expect(listings.filter(listing => listing.status === 'malformed')).toHaveLength(3)
   })
 
   it('list reads a header line longer than the 8KB read chunk', async () => {
-    // A tolerated extra field makes this valid header exceed the 8192-byte read buffer, proving
+    // A long valid field makes this header exceed the 8192-byte read buffer, proving
     // `readFirstLine` accumulates chunks before `list()` parses it.
     const id = SessionId('big')
     await mkdir(sessionDir(root, undefined, id), { recursive: true })
-    const bigHeader = JSON.stringify({ type: 'session', version: 0, id: 'big', createdAt: 1, delegationDepth: 0, pad: 'x'.repeat(9000) })
-    await writeFile(rawLogPath(root, undefined, id), bigHeader + '\n')
-    const ids = (await ctx.sessionPersistence.list()).map(x => x.id)
+    const bigHeader = JSON.stringify({
+      type: 'session', version: 0, id: 'big', createdAt: 1, delegationDepth: 0, agentPreset: 'x'.repeat(9000),
+    })
+    await writeFile(rawGenerationPath(root, undefined, id, 0), bigHeader + '\n')
+    const ids = listedIds(await ctx.sessionPersistence.list())
     expect(ids).toContain('big')
   })
 
@@ -1423,7 +2073,10 @@ describe('JsonlSessionPersistence: edge cases', () => {
     await ctx.sessionPersistence.append(m.id, oneTurnLog())
     await rewriteHeader(rawLogPath(root, m.cwd, m.id), (header) => { header.cwd = '/elsewhere' })
 
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/and cwd identify/)
+    const [listing] = await ctx.sessionPersistence.list()
+    expect(listing?.status).toBe('malformed')
+    if (listing?.status !== 'malformed') throw new Error('expected malformed listing')
+    expect(listing.reason).toMatch(/and cwd identify/)
   })
 
   it('accepts an alternate project path only when it identifies the same physical log', async () => {
@@ -1440,7 +2093,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
     await rewriteHeader(path, (header) => { header.cwd = aliasCwd })
 
     expect((await ctx.sessionPersistence.load(m.id)).meta.cwd).toBe(aliasCwd)
-    expect((await ctx.sessionPersistence.list()).map(header => header.id)).toContain(m.id)
+    expect(listedIds(await ctx.sessionPersistence.list())).toContain(m.id)
   })
 
   it('list rejects a session header whose id cannot name a storage path', async () => {
@@ -1450,7 +2103,29 @@ describe('JsonlSessionPersistence: edge cases', () => {
       type: 'session', version: 0, id: '', createdAt: 1, delegationDepth: 0,
     }) + '\n')
 
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/header id cannot name a storage path/)
+    const [listing] = await ctx.sessionPersistence.list()
+    expect(listing?.status).toBe('malformed')
+    if (listing?.status !== 'malformed') throw new Error('expected malformed listing')
+    expect(listing.reason).toMatch(/header id cannot name a storage path/)
+    await expect(ctx.sessionPersistence.load(SessionId('invalid-id')))
+      .rejects.toThrow(/requested id "invalid-id" does not match header id ""/)
+  })
+
+  it('refuses a malformed historical header before interpreting its body', async () => {
+    const id = SessionId('malformed-historical-header')
+    const path = rawGenerationPath(root, undefined, id, 0)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, `${JSON.stringify({
+      type: 'not-a-session',
+      version: 0,
+      id,
+      createdAt: 1,
+      delegationDepth: 0,
+    })}\n{not-json}`)
+
+    await expect(ctx.sessionPersistence.load(id))
+      .rejects.toThrow('expected released v0 physical Session header')
+    expect(await readFile(path, 'utf8')).toContain('{not-json}')
   })
 
   it('load and list reject one id materialized in multiple project directories', async () => {
@@ -1463,7 +2138,13 @@ describe('JsonlSessionPersistence: edge cases', () => {
     }
 
     await expect(ctx.sessionPersistence.load(id)).rejects.toThrow(/appears in multiple project directories/)
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/appears in multiple project directories/)
+    const listings = await ctx.sessionPersistence.list()
+    expect(listings).toHaveLength(2)
+    expect(listings.every(listing => listing.status === 'malformed')).toBe(true)
+    for (const listing of listings) {
+      if (listing.status !== 'malformed') throw new Error('expected malformed listing')
+      expect(listing.reason).toMatch(/appears in multiple project directories/)
+    }
   })
 
   it('a DIFFERENT live session object reusing a disposed id gets its own init (no stale cache)', async () => {
@@ -1588,6 +2269,27 @@ describe('JsonlSessionPersistence: edge cases', () => {
     await expect(backend.exists(join(blocker, 'child.jsonl'))).rejects.toThrow(/ENOTDIR/)
   })
 
+  it('per-id cold generation scan surfaces a Session-directory read failure', async () => {
+    const id = SessionId('generation-directory-failure')
+    const dir = sessionDir(root, undefined, id)
+    await mkdir(dir, { recursive: true })
+    const reason = new Error('simulated Session-directory read failure')
+    directoryReadFailure.path = dir
+    directoryReadFailure.error = reason
+
+    await expect(ctx.sessionPersistence.inspect(id)).rejects.toBe(reason)
+  })
+
+  it('append surfaces a Session-directory read failure while checking the opposite encoding', async () => {
+    const m = meta('opposite-generation-directory-failure', '/x')
+    await ctx.sessionPersistence.create(m)
+    const reason = Object.assign(new Error('simulated opposite-generation read failure'), { code: 'EACCES' })
+    directoryReadFailure.path = sessionDir(root, m.cwd, m.id)
+    directoryReadFailure.error = reason
+
+    await expect(ctx.sessionPersistence.append(m.id, oneTurnLog())).rejects.toBe(reason)
+  })
+
   it('materialization surfaces a project-directory storage fault', async () => {
     const cwd = '/x'
     const ctx2 = new Context()
@@ -1708,7 +2410,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
     circ.self = circ
     await expect(ctx.sessionPersistence.append(m.id, bad(circ))).rejects.toThrow(/non-JSON-serializable/)
     // The session was never materialized by any of the rejected appends.
-    expect((await ctx.sessionPersistence.list()).map(h => h.id)).not.toContain(m.id)
+    expect(listedIds(await ctx.sessionPersistence.list())).not.toContain(m.id)
   })
 
   it('accepts well-formed JSON values (null, booleans, nested arrays/objects)', async () => {
@@ -1718,7 +2420,7 @@ describe('JsonlSessionPersistence: edge cases', () => {
       content: [{ type: 'text', text: 'x' }], source: { kind: 'user' }, extra: { a: null, b: true, c: [1, 2, { d: 'nested' }] },
     }) }] as unknown as SessionEvent[]
     await ctx.sessionPersistence.append(m.id, ev)
-    expect((await ctx.sessionPersistence.list()).map(h => h.id)).toContain(m.id)
+    expect(listedIds(await ctx.sessionPersistence.list())).toContain(m.id)
   })
 
   it('Session.append rejects a non-serializable event at the source (never enters the log)', () => {

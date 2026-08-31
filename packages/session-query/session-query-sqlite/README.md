@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-query-sqlite` searches session history with a SQLite FTS5 index and returns ranked, cursor-paginated results grouped by session or within one session. Mount it together with `dsh-session-query` and you get full-text search plus the whole query surface — exact reads, filters, and traces — at once. Live sessions are indexed from memory and persisted sessions from a dedicated derived-index database, so results always reflect the newest state without touching the session-persistence store. Search is opt-in and off by default in shipped compositions: `openAt` decides whether the index opens at startup, at the first search, or never. Setup and usage come first; the implementation internals live in a collapsible developer section below.
+`dsh-session-query-sqlite` searches session history with a SQLite FTS5 index and returns ranked, cursor-paginated results grouped by session or within one session. Mount it together with `dsh-session-query` and you get full-text search plus the whole query surface — exact reads, filters, and traces — at once. Live sessions are indexed from memory and persisted sessions from a dedicated derived-index database, so results reflect the newest stable state. Inspecting a supported historical Session can publish its current generation through the persistence service; the disposable FTS database remains separate from that authoritative store. Search is opt-in and off by default in shipped compositions: `openAt` decides whether the index opens at startup, at the first search, or never. Setup and usage come first; the implementation internals live in a collapsible developer section below.
 
 ## Table of Contents
 
@@ -83,7 +83,7 @@ This section explains the design decisions behind the backend and points at the 
 
 The backend is built on one separation and three commitments:
 
-- **Derived index, never the source store.** The FTS rows live in a dedicated disposable database; the session-persistence database is never opened here.
+- **Derived index, not the source store.** The FTS rows live in a dedicated disposable database; this package never opens a persistence artifact directly, but its inherited inspection may ask persistence to migrate a supported historical Session.
 - **Live-preferred observation.** One serialized state machine compares persistence snapshot revisions, inspects only new or changed logs, and reconciles in one transaction, so a search reflects the newest stable state.
 - **Generation-bound cursors.** Every corpus change bumps a generation; cursors carry the generation they were created under and fail stale rather than returning a shifted page.
 - **Literal phrases as data.** Caller query text is quoted into one FTS5 phrase so query syntax stays inert, and reserved highlight markers are stripped from documents before indexing.
@@ -101,7 +101,7 @@ The design history lives in the [SQLite FTS5 session search note](../../../.agen
 
 ### Index lifecycle
 
-Persisted FTS rows live in a dedicated derived database and survive restarts; live sessions use connection-local TEMP tables that shadow the durable base for the same session and reveal it again when the live owner detaches. Both tables retain the exact inherited cut in numeric `seed_length`; reconstructed headers expose only `isSeeded`, while the cut participates in live fingerprints and persisted source revisions. Each search runs one serialized observation: list persistence snapshots, compare per-session revisions with the indexed rows, inspect only new or changed logs, extract semantic documents, and commit the reconciliation in one transaction before running the query. Repeated queries and unchanged reopens inspect nothing; switching stores or observing new, changed, deleted, or externally repaired sources reconciles on the next stable observation. Source or transaction failure commits nothing and the next search retries.
+Persisted FTS rows live in a dedicated derived database and survive restarts; live sessions use connection-local TEMP tables that shadow the durable base for the same session and reveal it again when the live owner detaches. Both tables retain the exact inherited cut in numeric `seed_length`; reconstructed headers expose only `isSeeded`, while the cut participates in live fingerprints and persisted source revisions. Each search runs one serialized observation: list persistence snapshots, compare each source revision and Session format version with the indexed row, inspect only new or changed generations, verify that listing stayed stable across inspection, extract semantic documents, and commit the reconciliation in one transaction before running the query. A format change cannot reuse prior FTS rows or cursors even if an opaque revision collides. Repeated queries and unchanged reopens inspect nothing; switching stores or observing new, changed, deleted, or externally repaired sources reconciles on the next stable observation. Source or transaction failure commits nothing and the next search retries.
 
 ### Schema ownership
 

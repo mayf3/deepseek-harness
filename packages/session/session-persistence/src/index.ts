@@ -20,12 +20,83 @@ export type { SessionHeader } from '@deepseek-ai/dsh-session'
 export { SessionPersistenceRevision } from './revision.ts'
 export { SessionPersistenceNotFoundError } from './errors.ts'
 
+/** One current-format artifact whose header is already the latest logical type. */
+export interface CurrentSessionPersistenceListing {
+  readonly status: 'current'
+  /** Latest logical header decoded without reading event bodies. */
+  readonly header: SessionHeader
+  /** Physical format version read from the artifact header. */
+  readonly storedVersion: number
+  /** Format version this build writes and restores. */
+  readonly targetVersion: number
+  /** Backend artifact location when the backend owns one per Session. */
+  readonly location?: SessionLocation
+}
+
+/** One supported historical artifact that will migrate on its first body read. */
+export interface MigrationRequiredSessionPersistenceListing {
+  readonly status: 'migration-required'
+  /** Latest logical header translated without reading event bodies. */
+  readonly header: SessionHeader
+  /** Physical historical format version read from the artifact header. */
+  readonly storedVersion: number
+  /** Format version this build will publish on the first body read. */
+  readonly targetVersion: number
+  /** Backend artifact location when the backend owns one per Session. */
+  readonly location?: SessionLocation
+}
+
+/** One intact artifact whose format has no complete migration path in this build. */
+export interface UnsupportedSessionPersistenceListing {
+  readonly status: 'unsupported'
+  /** Physical version when the minimal header exposes one. */
+  readonly storedVersion?: number
+  /** Format version this build writes and restores. */
+  readonly targetVersion: number
+  /** Stable backend location for operator diagnosis. */
+  readonly location: SessionLocation
+  /** Direction-aware refusal that does not require event-body parsing. */
+  readonly reason: string
+}
+
+/** One artifact whose minimal header is not structurally readable. */
+export interface MalformedSessionPersistenceListing {
+  readonly status: 'malformed'
+  /** Format version this build writes and restores. */
+  readonly targetVersion: number
+  /** Stable backend location for operator diagnosis. */
+  readonly location: SessionLocation
+  /** Header-only corruption diagnostic. */
+  readonly reason: string
+}
+
+/** One complete header-only listing result; event bodies are never read. */
+export type SessionPersistenceListing =
+  | CurrentSessionPersistenceListing
+  | MigrationRequiredSessionPersistenceListing
+  | UnsupportedSessionPersistenceListing
+  | MalformedSessionPersistenceListing
+
+/** A listing entry that safely exposes the latest logical Session header. */
+export type ReadableSessionPersistenceListing =
+  | CurrentSessionPersistenceListing
+  | MigrationRequiredSessionPersistenceListing
+
+/**
+ * Whether a listing entry carries a latest logical Session header.
+ * @param listing - header-only descriptor to narrow.
+ * @returns `true` for current and migration-required artifacts.
+ */
+export function isReadableSessionPersistenceListing(
+  listing: SessionPersistenceListing,
+): listing is ReadableSessionPersistenceListing {
+  return listing.status === 'current' || listing.status === 'migration-required'
+}
+
 /** Lightweight immutable source identity returned without loading a full log. */
-export interface SessionPersistenceSnapshot {
-  /** Detached metadata for one materialized session. */
-  header: SessionHeader
-  /** Opaque source-qualified token that changes whenever this stored log changes. */
-  revision: SessionPersistenceRevision
+export type SessionPersistenceSnapshot = SessionPersistenceListing & {
+  /** Opaque source-qualified token that changes whenever this stored artifact changes. */
+  readonly revision: SessionPersistenceRevision
 }
 
 /** Logical Session header paired with its exact inherited cut for body-bearing storage operations. */
@@ -72,7 +143,7 @@ export type BorrowedSessionSource = Disposable & (
 
 /** A backend's own raw artifact text for one session, verbatim. */
 export interface SessionRawArtifact extends SessionStorageMetadata {
-  /** The artifact's base filename on disk, without any physical encoding suffix. */
+  /** Selected generation basename; physical `.zstd` is omitted, while `.vN` remains. */
   readonly filename: string
   /** The artifact's full text content, decoded from the backend's physical encoding. */
   readonly content: string
@@ -125,16 +196,18 @@ export abstract class SessionPersistence extends Service {
   }
 
   /**
-   * Resolve this backend's independent local artifact for a session without
-   * reading, creating, flushing, or otherwise materializing it. A backend
-   * that does not own one artifact per Session returns `undefined`.
+   * Resolve this backend's current-generation target for a session without
+   * reading, creating, flushing, or otherwise materializing it. Historical
+   * generations may live at other immutable paths; listing descriptors carry
+   * the exact selected stored location. A backend without per-Session files
+   * returns `undefined`.
    * @param meta - the immutable session header whose artifact is requested.
    * @returns the backend-specific absolute location, when one exists.
    */
   abstract locate(meta: SessionHeader): SessionLocation | undefined
 
   /**
-   * Whether this backend exposes one verbatim raw artifact per session.
+   * Whether this backend exposes the selected verbatim raw generation per Session.
    * A backend that declares `true` must override {@link readRaw}.
    */
   abstract readonly supportsRawArtifacts: boolean
@@ -146,7 +219,9 @@ export abstract class SessionPersistence extends Service {
    * reconstruction from parsed events, so it preserves backend-specific
    * serialization (chunk packing, key order, line breaks). Callers first test
    * {@link supportsRawArtifacts}; `undefined` then means only that the requested
-   * session has no materialized artifact.
+   * session has no materialized artifact. Reading a supported historical
+   * artifact leaves that generation untouched and exclusively publishes a
+   * separate repaired current successor; an already-current artifact is not rewritten.
    * @param _id - the persisted session to read (unused by the default: no
    * per-session artifact).
    * @param signal - optional cancellation for backend read work.
@@ -200,8 +275,12 @@ export abstract class SessionPersistence extends Service {
    * their durable revision is still current; disposal releases an unpublished
    * reservation. Revision retries require the durable log to remain unchanged
    * for one read/check round trip; continuous external writers may delay completion.
+   * Preparing a supported historical artifact first persists its migration and
+   * current-format repair, while current input takes the no-write fast path.
    * @param id - persisted session to prepare.
-   * @param signal - optional cancellation for preparation work.
+   * @param signal - optional cancellation for this caller's wait. A shared
+   * preparation or historical migration already started for another observer
+   * may continue to completion.
    * @returns one owned unpublished Session preparation.
    */
   async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
@@ -221,8 +300,10 @@ export abstract class SessionPersistence extends Service {
   }
 
   /**
-   * Load an immutable balanced logical view and commit any required cold
-   * recovery. A complete interrupted final turn is preserved and durably
+   * Load an immutable balanced current logical view and commit any required cold
+   * recovery. A supported historical artifact remains immutable while a
+   * separate repaired current successor is published before restoration. A complete
+   * interrupted final turn is preserved and durably
    * closed with missing tool errors plus any open step and turn boundaries;
    * only a torn final record is discarded. Unknown versions and corruption in
    * the committed prefix reject. Implementations MUST NOT crash-repair an
@@ -236,10 +317,12 @@ export abstract class SessionPersistence extends Service {
   abstract load(id: SessionId): Promise<SessionInspection>
 
   /**
-   * Inspect an immutable logical session without committing recovery or
-   * publishing it. A cold complete interrupted turn receives synthetic closers
-   * in memory and a torn physical tail remains untouched. An already-live
-   * Session instead yields its current immutable snapshot, which may contain an
+   * Inspect an immutable current logical session without publishing a live
+   * Session. For an already-current cold artifact, a complete interrupted turn receives
+   * synthetic closers only in memory and a torn physical tail remains untouched.
+   * A supported historical artifact first publishes its separate repaired
+   * current successor, so inspection is not storage-read-only in that case. An
+   * already-live Session instead yields its current immutable snapshot, which may contain an
    * open turn and its `session/end-seed` boundary. Coordinator-backed
    * implementations retain the exact cold unpublished Session for bounded
    * reuse by a later {@link prepare}. A stale ready source is reloaded; a source
@@ -247,7 +330,9 @@ export abstract class SessionPersistence extends Service {
    * may borrow its immutable view. Callers borrow only the immutable header and
    * log. Continuous external writers may delay revision convergence.
    * @param id - the persisted session to inspect.
-   * @param signal - optional cancellation for queued and backend read work.
+   * @param signal - optional cancellation for this observer. Shared cold
+   * preparation and an already-started historical migration may continue for
+   * another inspector or later resume.
    * @returns the validated header and current logical event log.
    */
   abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>
@@ -256,9 +341,11 @@ export abstract class SessionPersistence extends Service {
    * Borrow one exact inspection while retaining any reusable prepared source.
    * A cold observation must pin the exact prepared Session that a later
    * {@link prepare} reserves. Implementations must not degrade this operation
-   * to a detached {@link inspect} result.
+   * to a detached {@link inspect} result. Borrowing a supported historical
+   * artifact first persists its migration and current-format repair.
    * @param id - persisted session to observe.
-   * @param signal - optional cancellation for preparation work.
+   * @param signal - optional cancellation for this observer's wait; shared
+   * preparation or migration work may continue for another owner.
    * @returns a disposable immutable observation.
    */
   abstract borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>
@@ -268,8 +355,11 @@ export abstract class SessionPersistence extends Service {
    * primitive for read models that resume from a watermark (e.g. a persisted
    * projection cache folding only the tail past its checkpoint). Unlike
    * {@link inspect}, it is a detached physical suffix read: no preparation
-   * cache, torn-tail truncation, synthetic closers, or coordinator-state
-   * publication. Only events from the valid contiguous stored prefix are
+   * cache or coordinator-state publication. Current input performs no
+   * torn-tail truncation or synthetic repair. A supported historical artifact
+   * leaves its exact source unchanged and publishes a separate repaired current
+   * successor, so its returned suffix may include those current closers.
+   * Only events from the valid contiguous stored prefix are
    * returned, so a torn fragment never reaches the caller. `fromSeq` at or
    * beyond the stored prefix returns an empty event list (never an error).
    * A backend whose medium can seek by seq may read only the suffix;
@@ -287,19 +377,22 @@ export abstract class SessionPersistence extends Service {
   /**
    * Lightweight listing from metadata, without a full-log parse.
    * @param signal - optional cancellation for backend listing work.
-   * @returns one header per materialized session.
+   * @returns one isolated descriptor per materialized artifact.
    */
-  abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
+  abstract list(signal?: AbortSignal): Promise<SessionPersistenceListing[]>
 
   /**
    * List materialized sessions with cheap per-log change tokens.
    *
    * Repeated observations of an unchanged log return the same revision. A
-   * successful mutating {@link load} repair changes the next listed revision.
+   * successful mutating {@link load} repair changes the next listed revision;
+   * so does migration publication from any supported historical body read.
    * Revisions also distinguish independently backed stores so backend-local
    * counters cannot compare equal across different persistence sources.
    * @param signal - optional cancellation for backend snapshot-listing work.
-   * @returns one header and opaque revision per materialized session without loading full logs.
+   * @returns one isolated current, migration-required, unsupported, or malformed
+   * descriptor plus its opaque revision per materialized artifact, without
+   * loading full logs.
    */
   abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>
 }

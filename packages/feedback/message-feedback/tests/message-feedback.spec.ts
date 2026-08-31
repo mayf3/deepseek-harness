@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
-import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import {
+  SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset,
+} from '@deepseek-ai/dsh-session'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import MessageFeedbackService, { messageFeedbackRowSchema } from '../src/index.ts'
 import type {
@@ -261,8 +263,18 @@ describe('MessageFeedbackService public contract', () => {
     const rawCtx = new Context()
     rawCtx.provide('sessions', { get: () => undefined } as never)
     rawCtx.provide('sessionPersistence', {
-      listSnapshots: () => Promise.resolve([{ header: fixture.session.header, revision: 'test' }]),
-      inspect: () => Promise.resolve({ meta: fixture.session.header, events: fixture.session.snapshotEvents() }),
+      listSnapshots: () => Promise.resolve([{
+        status: 'current',
+        header: fixture.session.header,
+        storedVersion: SESSION_FORMAT_VERSION,
+        targetVersion: SESSION_FORMAT_VERSION,
+        revision: 'test',
+      }]),
+      inspect: () => Promise.resolve({
+        meta: fixture.session.header,
+        inheritedEventCount: SessionLogOffset(0),
+        events: fixture.session.snapshotEvents(),
+      }),
     } as never)
     const raw = new MessageFeedbackService(rawCtx, { maxNoteBytes: 1 })
     await expect(raw.list({ sessionId: fixture.session.id }))

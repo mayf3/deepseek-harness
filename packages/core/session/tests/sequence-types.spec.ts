@@ -1,6 +1,7 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   Session,
+  SESSION_FORMAT_VERSION,
   SessionId,
   SessionLogOffset,
   SessionSeq,
@@ -50,7 +51,7 @@ describe('Session log positions', () => {
     expect(() => Session.fromRestore(id, [{
       type: 'turn/start', seq: -0, time: 1, data: { turn: 1 },
     }] as never, {
-      version: 0, id, createdAt: 1, isSeeded: false,
+      version: SESSION_FORMAT_VERSION, id, createdAt: 1, isSeeded: false,
     }, SessionLogOffset(0))).toThrow(/invalid event envelope/)
   })
 
@@ -60,7 +61,7 @@ describe('Session log positions', () => {
     source.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
     const id = SessionId('child')
     const header: SessionHeader = {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 1,
       isSeeded: true,
@@ -90,7 +91,7 @@ describe('Session log positions', () => {
     const id = SessionId('suffix-child')
 
     const child = Session.create(id, assembled.snapshotEvents(), {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 1,
       isSeeded: true,
@@ -109,7 +110,7 @@ describe('Session log positions', () => {
   it('requires a separately supplied inherited cut for a seeded header', () => {
     const id = SessionId('missing-cut')
     expect(() => Session.create(id, [], {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 1,
       isSeeded: true,
@@ -119,7 +120,7 @@ describe('Session log positions', () => {
   it('requires an explicit constructor seed for seeded lineage', () => {
     const id = SessionId('missing-seed')
     expect(() => Session.create(id, undefined, {
-      version: 0,
+      version: SESSION_FORMAT_VERSION,
       id,
       createdAt: 1,
       isSeeded: true,
@@ -129,12 +130,12 @@ describe('Session log positions', () => {
   it('requires the exact cut to agree with lineage and log length', () => {
     const unseededId = SessionId('unseeded-nonzero-cut')
     expect(() => Session.create(unseededId, [], {
-      version: 0, id: unseededId, createdAt: 1, isSeeded: false,
+      version: SESSION_FORMAT_VERSION, id: unseededId, createdAt: 1, isSeeded: false,
     }, SessionLogOffset(1))).toThrow(/unseeded session inherited event count must be 0/)
 
     const seededId = SessionId('seeded-oversized-cut')
     expect(() => Session.create(seededId, [], {
-      version: 0, id: seededId, createdAt: 1, isSeeded: true,
+      version: SESSION_FORMAT_VERSION, id: seededId, createdAt: 1, isSeeded: true,
     }, SessionLogOffset(1))).toThrow(/inherited event count exceeds its event log/)
   })
 
@@ -143,7 +144,7 @@ describe('Session log positions', () => {
     (value) => {
       const id = SessionId(`bad-inherited-count-${value}`)
       expect(() => Session.create(id, [], {
-        version: 0,
+        version: SESSION_FORMAT_VERSION,
         id,
         createdAt: 1,
         isSeeded: true,

@@ -1465,18 +1465,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'abstract locate(meta: SessionHeader): SessionLocation | undefined',
-        description: 'Resolve this backend\'s independent local artifact for a session without reading, creating, flushing, or otherwise materializing it. A backend that does not own one artifact per Session returns `undefined`.',
+        description: 'Resolve this backend\'s current-generation target for a session without reading, creating, flushing, or otherwise materializing it. Historical generations may live at other immutable paths; listing descriptors carry the exact selected stored location. A backend without per-Session files returns `undefined`.',
         parameters: [{ name: 'meta', description: 'the immutable session header whose artifact is requested.' }],
         returns: 'the backend-specific absolute location, when one exists.',
       },
       {
         signature: 'abstract readonly supportsRawArtifacts: boolean',
-        description: 'Whether this backend exposes one verbatim raw artifact per session. A backend that declares `true` must override readRaw.',
+        description: 'Whether this backend exposes the selected verbatim raw generation per Session. A backend that declares `true` must override readRaw.',
         parameters: [],
       },
       {
         signature: 'readRaw(_id: SessionId, signal?: AbortSignal): Promise<SessionRawArtifact | undefined>',
-        description: 'Read a session\'s backend-owned artifact text verbatim — the exact durable bytes the backend wrote (decoded from its physical encoding, e.g. a decompressed JSONL). The returned `content` is the raw text, not a reconstruction from parsed events, so it preserves backend-specific serialization (chunk packing, key order, line breaks). Callers first test supportsRawArtifacts; `undefined` then means only that the requested session has no materialized artifact.',
+        description: 'Read a session\'s backend-owned artifact text verbatim — the exact durable bytes the backend wrote (decoded from its physical encoding, e.g. a decompressed JSONL). The returned `content` is the raw text, not a reconstruction from parsed events, so it preserves backend-specific serialization (chunk packing, key order, line breaks). Callers first test supportsRawArtifacts; `undefined` then means only that the requested session has no materialized artifact. Reading a supported historical artifact leaves that generation untouched and exclusively publishes a separate repaired current successor; an already-current artifact is not rewritten.',
         parameters: [{ name: '_id', description: 'the persisted session to read (unused by the default: no per-session artifact).' }, { name: 'signal', description: 'optional cancellation for backend read work.' }],
         returns: 'the raw artifact plus its parsed header, or `undefined` when the session is absent.',
         throws: ['when this backend does not expose per-session raw artifacts.'],
@@ -1498,45 +1498,45 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>',
-        description: 'Prepare the exact unpublished Session used by resume. Implementations may reuse object graphs retained by an earlier inspect after confirming their durable revision is still current; disposal releases an unpublished reservation. Revision retries require the durable log to remain unchanged for one read/check round trip; continuous external writers may delay completion.',
-        parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }],
+        description: 'Prepare the exact unpublished Session used by resume. Implementations may reuse object graphs retained by an earlier inspect after confirming their durable revision is still current; disposal releases an unpublished reservation. Revision retries require the durable log to remain unchanged for one read/check round trip; continuous external writers may delay completion. Preparing a supported historical artifact first persists its migration and current-format repair, while current input takes the no-write fast path.',
+        parameters: [{ name: 'id', description: 'persisted session to prepare.' }, { name: 'signal', description: 'optional cancellation for this caller\'s wait. A shared preparation or historical migration already started for another observer may continue to completion.' }],
         returns: 'one owned unpublished Session preparation.',
       },
       {
         signature: 'abstract load(id: SessionId): Promise<SessionInspection>',
-        description: 'Load an immutable balanced logical view and commit any required cold recovery. A complete interrupted final turn is preserved and durably closed with missing tool errors plus any open step and turn boundaries; only a torn final record is discarded. Unknown versions and corruption in the committed prefix reject. Implementations MUST NOT crash-repair an identity still bound to a live Session: a balanced live log may return as a durable snapshot, while an open live turn rejects. Returned values may be shared with immutable live or prepared state and must not be mutated. Revision-based implementations may wait for one stable read/check round trip.',
+        description: 'Load an immutable balanced current logical view and commit any required cold recovery. A supported historical artifact remains immutable while a separate repaired current successor is published before restoration. A complete interrupted final turn is preserved and durably closed with missing tool errors plus any open step and turn boundaries; only a torn final record is discarded. Unknown versions and corruption in the committed prefix reject. Implementations MUST NOT crash-repair an identity still bound to a live Session: a balanced live log may return as a durable snapshot, while an open live turn rejects. Returned values may be shared with immutable live or prepared state and must not be mutated. Revision-based implementations may wait for one stable read/check round trip.',
         parameters: [{ name: 'id', description: 'the persisted session to reload.' }],
         returns: 'the header and a log ending on a balanced `turn/end`.',
       },
       {
         signature: 'abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>',
-        description: 'Inspect an immutable logical session without committing recovery or publishing it. A cold complete interrupted turn receives synthetic closers in memory and a torn physical tail remains untouched. An already-live Session instead yields its current immutable snapshot, which may contain an open turn and its `session/end-seed` boundary. Coordinator-backed implementations retain the exact cold unpublished Session for bounded reuse by a later prepare. A stale ready source is reloaded; a source already committing or reserved for resume remains exclusive, and inspection may borrow its immutable view. Callers borrow only the immutable header and log. Continuous external writers may delay revision convergence.',
-        parameters: [{ name: 'id', description: 'the persisted session to inspect.' }, { name: 'signal', description: 'optional cancellation for queued and backend read work.' }],
+        description: 'Inspect an immutable current logical session without publishing a live Session. For an already-current cold artifact, a complete interrupted turn receives synthetic closers only in memory and a torn physical tail remains untouched. A supported historical artifact first publishes its separate repaired current successor, so inspection is not storage-read-only in that case. An already-live Session instead yields its current immutable snapshot, which may contain an open turn and its `session/end-seed` boundary. Coordinator-backed implementations retain the exact cold unpublished Session for bounded reuse by a later prepare. A stale ready source is reloaded; a source already committing or reserved for resume remains exclusive, and inspection may borrow its immutable view. Callers borrow only the immutable header and log. Continuous external writers may delay revision convergence.',
+        parameters: [{ name: 'id', description: 'the persisted session to inspect.' }, { name: 'signal', description: 'optional cancellation for this observer. Shared cold preparation and an already-started historical migration may continue for another inspector or later resume.' }],
         returns: 'the validated header and current logical event log.',
       },
       {
         signature: 'abstract borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>',
-        description: 'Borrow one exact inspection while retaining any reusable prepared source. A cold observation must pin the exact prepared Session that a later prepare reserves. Implementations must not degrade this operation to a detached inspect result.',
-        parameters: [{ name: 'id', description: 'persisted session to observe.' }, { name: 'signal', description: 'optional cancellation for preparation work.' }],
+        description: 'Borrow one exact inspection while retaining any reusable prepared source. A cold observation must pin the exact prepared Session that a later prepare reserves. Implementations must not degrade this operation to a detached inspect result. Borrowing a supported historical artifact first persists its migration and current-format repair.',
+        parameters: [{ name: 'id', description: 'persisted session to observe.' }, { name: 'signal', description: 'optional cancellation for this observer\'s wait; shared preparation or migration work may continue for another owner.' }],
         returns: 'a disposable immutable observation.',
       },
       {
         signature: 'abstract readFrom(id: SessionId, fromSeq: SessionLogOffset, signal?: AbortSignal): Promise<SessionEventSuffix>',
-        description: 'Read the stored events from `fromSeq` onward — the read-from-seq primitive for read models that resume from a watermark (e.g. a persisted projection cache folding only the tail past its checkpoint). Unlike inspect, it is a detached physical suffix read: no preparation cache, torn-tail truncation, synthetic closers, or coordinator-state publication. Only events from the valid contiguous stored prefix are returned, so a torn fragment never reaches the caller. `fromSeq` at or beyond the stored prefix returns an empty event list (never an error). A backend whose medium can seek by seq may read only the suffix; sequential media such as JSONL still parse the whole artifact and skip forward. The primitive bounds what is returned and refolded, not every backend\'s physical read.',
+        description: 'Read the stored events from `fromSeq` onward — the read-from-seq primitive for read models that resume from a watermark (e.g. a persisted projection cache folding only the tail past its checkpoint). Unlike inspect, it is a detached physical suffix read: no preparation cache or coordinator-state publication. Current input performs no torn-tail truncation or synthetic repair. A supported historical artifact leaves its exact source unchanged and publishes a separate repaired current successor, so its returned suffix may include those current closers. Only events from the valid contiguous stored prefix are returned, so a torn fragment never reaches the caller. `fromSeq` at or beyond the stored prefix returns an empty event list (never an error). A backend whose medium can seek by seq may read only the suffix; sequential media such as JSONL still parse the whole artifact and skip forward. The primitive bounds what is returned and refolded, not every backend\'s physical read.',
         parameters: [{ name: 'id', description: 'the persisted session to read.' }, { name: 'fromSeq', description: 'first event offset to include.' }, { name: 'signal', description: 'optional cancellation for queued and backend read work.' }],
         returns: 'storage metadata, the requested offset, and stored events with `seq >= fromSeq`.',
       },
       {
-        signature: 'abstract list(signal?: AbortSignal): Promise<SessionHeader[]>',
+        signature: 'abstract list(signal?: AbortSignal): Promise<SessionPersistenceListing[]>',
         description: 'Lightweight listing from metadata, without a full-log parse.',
         parameters: [{ name: 'signal', description: 'optional cancellation for backend listing work.' }],
-        returns: 'one header per materialized session.',
+        returns: 'one isolated descriptor per materialized artifact.',
       },
       {
         signature: 'abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>',
-        description: 'List materialized sessions with cheap per-log change tokens.\n\nRepeated observations of an unchanged log return the same revision. A successful mutating load repair changes the next listed revision. Revisions also distinguish independently backed stores so backend-local counters cannot compare equal across different persistence sources.',
+        description: 'List materialized sessions with cheap per-log change tokens.\n\nRepeated observations of an unchanged log return the same revision. A successful mutating load repair changes the next listed revision; so does migration publication from any supported historical body read. Revisions also distinguish independently backed stores so backend-local counters cannot compare equal across different persistence sources.',
         parameters: [{ name: 'signal', description: 'optional cancellation for backend snapshot-listing work.' }],
-        returns: 'one header and opaque revision per materialized session without loading full logs.',
+        returns: 'one isolated current, migration-required, unsupported, or malformed descriptor plus its opaque revision per materialized artifact, without loading full logs.',
       },
     ],
   },
@@ -3867,6 +3867,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
   },
   {
+    name: 'CurrentSessionPersistenceListing',
+    declaration: 'export interface CurrentSessionPersistenceListing {\n    readonly status: \'current\';\n    readonly header: SessionHeader;\n    readonly storedVersion: number;\n    readonly targetVersion: number;\n    readonly location?: SessionLocation;\n}',
+  },
+  {
     name: 'DeepSeekLlmApiExtensionMap',
     declaration: 'export interface DeepSeekLlmApiExtensionMap {\n}',
   },
@@ -4375,6 +4379,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
   },
   {
+    name: 'MalformedSessionPersistenceListing',
+    declaration: 'export interface MalformedSessionPersistenceListing {\n    readonly status: \'malformed\';\n    readonly targetVersion: number;\n    readonly location: SessionLocation;\n    readonly reason: string;\n}',
+  },
+  {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
   },
@@ -4469,6 +4477,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'MessageSourceMap',
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
+  },
+  {
+    name: 'MigrationRequiredSessionPersistenceListing',
+    declaration: 'export interface MigrationRequiredSessionPersistenceListing {\n    readonly status: \'migration-required\';\n    readonly header: SessionHeader;\n    readonly storedVersion: number;\n    readonly targetVersion: number;\n    readonly location?: SessionLocation;\n}',
   },
   {
     name: 'ModelCatalog',
@@ -4936,7 +4948,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionHeader',
-    declaration: 'export interface SessionHeader {\n    readonly version: number;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly isSeeded: boolean;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
+    declaration: 'export interface SessionHeader {\n    readonly version: typeof SESSION_FORMAT_VERSION;\n    readonly id: SessionId;\n    readonly createdAt: number;\n    readonly cwd?: string;\n    readonly parentSession?: SessionId;\n    readonly isSeeded: boolean;\n    readonly origin?: \'subagent\';\n    readonly delegationDepth?: number;\n    readonly agentPreset?: string;\n}',
   },
   {
     name: 'SessionHistoryRecord',
@@ -5007,12 +5019,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface SessionPageRequest {\n    readonly address: SessionAddress;\n    readonly throughSeq: number;\n    readonly beforeSeq?: number;\n    readonly maxMessages?: number;\n}',
   },
   {
+    name: 'SessionPersistenceListing',
+    declaration: 'export type SessionPersistenceListing = CurrentSessionPersistenceListing | MigrationRequiredSessionPersistenceListing | UnsupportedSessionPersistenceListing | MalformedSessionPersistenceListing;',
+  },
+  {
     name: 'SessionPersistenceRevision',
     declaration: 'export type SessionPersistenceRevision = Branded<\'SessionPersistenceRevision\'>;',
   },
   {
     name: 'SessionPersistenceSnapshot',
-    declaration: 'export interface SessionPersistenceSnapshot {\n    header: SessionHeader;\n    revision: SessionPersistenceRevision;\n}',
+    declaration: 'export type SessionPersistenceSnapshot = SessionPersistenceListing & {\n    readonly revision: SessionPersistenceRevision;\n};',
   },
   {
     name: 'SessionPreparation',
@@ -5068,7 +5084,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionRecord',
-    declaration: 'export interface SessionRecord {\n    header: SessionHeader;\n    live: boolean;\n    persisted: boolean;\n}',
+    declaration: 'export interface SessionRecord {\n    header: SessionHeader;\n    location?: SessionLocation;\n    live: boolean;\n    persisted: boolean;\n}',
   },
   {
     name: 'SessionReferenceCandidate',
@@ -5945,6 +5961,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'TypertTypeModel',
     declaration: 'export interface TypertTypeModel {\n    readonly name: string;\n    readonly declaration: string;\n}',
+  },
+  {
+    name: 'UnsupportedSessionPersistenceListing',
+    declaration: 'export interface UnsupportedSessionPersistenceListing {\n    readonly status: \'unsupported\';\n    readonly storedVersion?: number;\n    readonly targetVersion: number;\n    readonly location: SessionLocation;\n    readonly reason: string;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

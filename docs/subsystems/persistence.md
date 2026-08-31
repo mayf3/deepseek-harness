@@ -16,11 +16,11 @@ A backend that reloads a log crashed mid-turn finds an open `turn/start` with no
 
 Repair applies only to cold sessions. For a live id, `SessionPersistence.load(id)` waits until the authoritative in-memory snapshot is durable and returns it only when balanced; an open live turn rejects rather than receiving synthetic interruption boundaries. HMR adopts a live prefix without closing its active turn.
 
-`SessionPersistence.inspect(id)` constructs an immutable logical Session without publishing it or writing recovery. Cold inspection balances an interrupted turn in memory while leaving torn physical tails untouched; inspection of an already-live Session borrows its current immutable snapshot and may therefore contain an open turn. Coordinator-backed implementations retain the exact cold unpublished Session in a bounded LRU, so repeated history reads and a later `prepare(id)` share one read, decompression, validation, freeze, and Session construction. `prepare(id)` reserves the Session, commits pending repair, and returns a disposable publication handle; `load(id)` uses the same machinery to commit repair without publication. The [Session preparation decision](../../.agents/notes/implemented/architecture/2026-08-05-session-preparation.md) owns this lifecycle.
+`SessionPersistence.inspect(id)` constructs an immutable logical Session without publishing it. For an already-current cold generation, inspection balances an interrupted turn in memory without writing recovery and leaves torn physical tails untouched. A supported historical generation is different: the serialized body-read operation first publishes its repaired current successor at a new version-qualified path while preserving the source, so inspection never exposes an old logical format. Inspection of an already-live Session borrows its current immutable snapshot and may therefore contain an open turn. Coordinator-backed implementations retain the exact cold unpublished Session in a bounded LRU, so repeated history reads and a later `prepare(id)` share one read, decompression, validation, freeze, and Session construction. `prepare(id)` reserves the Session, commits pending current-format repair, and returns a disposable publication handle; `load(id)` uses the same machinery to commit repair without publication. The [Session preparation decision](../../.agents/notes/implemented/architecture/2026-08-05-session-preparation.md) owns this lifecycle.
 
 ## `SessionLocation` — optional per-session artifact target
 
-`SessionPersistence.locate(meta)` synchronously resolves a backend-owned independent artifact without reading, creating, or flushing it. JSONL returns the absolute transcript path inside its project/session directory; a backend without one independent artifact per session returns `undefined`. A returned path can therefore name a file that does not yet exist or lacks the current unflushed turn; it is a location hint, not authorization or a freshness guarantee.
+`SessionPersistence.locate(meta)` synchronously resolves a backend-owned independent artifact target without reading, creating, or flushing it. JSONL derives the canonical filename from `meta.version`: v0 is `session.jsonl[.zstd]`, while every positive version is lowercase `session.vN.jsonl[.zstd]`. A backend without one independent artifact per Session returns `undefined`. The returned path may not exist yet and says nothing about a different highest generation already stored in the directory; it is a version-qualified location hint, not authorization, discovery, or a freshness guarantee. Header-only listing owns discovery and returns the exact selected generation in `listing.location`.
 
 ```ts type-equiv
 /**
@@ -50,11 +50,10 @@ Source: [`packages/core/session/src/types.ts`](../../packages/core/session/src/t
  */
 interface SessionHeader {
   /**
-   * On-disk format version, stamped from {@link SESSION_FORMAT_VERSION} when the
-   * session is created. A persistence backend rejects any other version on load
-   * (no migration — see the constant).
+   * Current logical format version, stamped from {@link SESSION_FORMAT_VERSION}.
+   * Historical physical headers are translated before entering this interface.
    */
-  readonly version: number
+  readonly version: typeof SESSION_FORMAT_VERSION
   /** The session's id (mirrors the {@link Session}'s id). */
   readonly id: SessionId
   /** Non-negative safe-integer Unix epoch milliseconds when the session was created. */
@@ -91,7 +90,7 @@ interface SessionHeader {
 
 ## Format refusal — logs a build cannot faithfully read
 
-A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. A header `version` ahead of `SESSION_FORMAT_VERSION` names the direction ("written by a newer harness — upgrade the harness to open it"); one behind it states that this build ships no upgrade path. After legacy-shape normalization, an event type outside this build's generated vocabulary (`KNOWN_SESSION_EVENT_TYPES`, emitted by `gen-persistence-catalog`) refuses the same way unless the event's envelope carries `ignorable: true` — silently skipping an unrecognized required event could change how the rest of the log must be read. The message appends the raw log path when the backend keeps one artifact per session, so the refused text stays reachable. The JSONL backend refuses a foreign version straight from the raw header line, before validating this format version's header shape or decoding any event row — a structurally different future format still reports the upgrade direction, never "corrupt". An out-of-tree backend must enforce the equivalent direction-aware refusal at its own physical-format boundary. Design rationale and the deferred upgrader chain live in the [session-log-version-mechanism note](../../.agents/notes/implemented/architecture/2026-08-10-session-log-version-mechanism.md).
+A backend refuses a log it cannot faithfully interpret with `SessionFormatUnsupportedError`, distinct from `SessionPersistenceCorruptionError` because nothing is damaged. Header-only listing rescans and classifies the numerically highest canonical generation before applying event rules. A supported older version is reported as migration-required; every event-body read runs inside the per-Session serialization chain, completes the static adjacent migration operation, leaves the source path, bytes, and inode unchanged, exclusively publishes only the final current filename, and reopens it before current restoration. A future highest generation refuses even when an older readable generation remains. Catalog generation and initialization reject a missing edge. An alpha body-migration refusal remains unsupported and publishes nothing. Equal-version reads allow an unknown event only when its envelope carries `ignorable: true`; historical v0 migration deliberately refuses every unknown type, including an ignorable one. Retention provides no automatic fallback and no downgrade compatibility promise. See the [released-format lifecycle](../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) and [alpha historical-event rule](../../.agents/notes/implemented/architecture/2026-08-31-alpha-historical-unknown-event-refusal.md).
 
 ## `CreateSessionOptions` — seeding and metadata
 
@@ -131,7 +130,7 @@ Plain replay is `ctx.sessions.create(id, { seed: seedEvents })`; a fork addition
 
 ## `SessionStorageMetadata` — logical header and inherited cut
 
-Every persistence result that reads a Session body carries `SessionStorageMetadata`: the current logical header plus the separately validated inherited-event cut. Header-only listing intentionally returns only `SessionHeader`.
+Every persistence result that reads a Session body carries `SessionStorageMetadata`: the current logical header plus the separately validated inherited-event cut. Header-only listing carries no inherited cut; its current and migration-required descriptors expose the latest `SessionHeader`, while unsupported and malformed descriptors do not.
 
 ```ts type-equiv
 /** Logical Session header paired with its exact inherited cut for body-bearing storage operations. */
@@ -145,12 +144,12 @@ interface SessionStorageMetadata {
 
 ## `SessionRawArtifact` — verbatim stored artifact text
 
-A backend's own artifact text for one session, byte-identical to what it durably wrote (decoded from its physical encoding). `readRaw` returns it without reconstructing from parsed events, so backend-specific serialization (chunk packing, key order, line breaks) survives. Consumers first test `supportsRawArtifacts`: `false` means the backend does not provide this capability, while `readRaw(...) === undefined` means a supported backend has no materialized artifact for that session.
+A backend's selected generation text for one Session, byte-identical to what it durably wrote after decoding the physical compression. `readRaw` returns it without reconstructing from parsed events, so backend-specific serialization (chunk packing, key order, line breaks) survives. JSONL sets `filename` to the selected logical basename without `.zstd`: `session.jsonl` for v0 and `session.vN.jsonl` for every positive generation. Consumers first test `supportsRawArtifacts`: `false` means the backend does not provide this capability, while `readRaw(...) === undefined` means a supported backend has no materialized generation for that Session.
 
 ```ts type-equiv
 /** A backend's own raw artifact text for one session, verbatim. */
 interface SessionRawArtifact extends SessionStorageMetadata {
-  /** The artifact's base filename on disk, without any physical encoding suffix. */
+  /** Selected generation basename; physical `.zstd` is omitted, while `.vN` remains. */
   readonly filename: string
   /** The artifact's full text content, decoded from the backend's physical encoding. */
   readonly content: string
@@ -239,7 +238,14 @@ interface SessionEventSuffix extends SessionStorageMetadata {
 
 ## Lightweight source revisions
 
-Consumers of derived state compare a cheap opaque revision before loading a full event log. The persistence backend owns its representation and changes it transactionally with append or mutating load repair; callers compare it only for equality.
+Consumers of derived state compare a cheap opaque revision before loading a full event log. The persistence backend owns its representation and changes it transactionally with append, mutating load repair, or successor publication; callers compare it only for equality. Header-only listing rescans each Session directory and returns one tagged descriptor for its highest canonical generation: current and migration-required results expose the latest logical header, while unsupported and malformed results expose only that selected file's location and diagnosis.
+
+| Status | Header | Version and diagnosis facts |
+|---|---|---|
+| `current` | latest logical header | highest stored version, target version, exact selected location |
+| `migration-required` | latest header translated in memory | highest stored version, target version, exact historical source location |
+| `unsupported` | none | optional stored version, target version, required location and reason |
+| `malformed` | none | target version, required location and reason |
 
 ```ts type-equiv
 /**
@@ -250,12 +256,19 @@ type SessionPersistenceRevision = Branded<'SessionPersistenceRevision'>
 ```
 
 ```ts type-equiv
+/** One complete header-only listing result; event bodies are never read. */
+type SessionPersistenceListing =
+  | CurrentSessionPersistenceListing
+  | MigrationRequiredSessionPersistenceListing
+  | UnsupportedSessionPersistenceListing
+  | MalformedSessionPersistenceListing
+```
+
+```ts type-equiv
 /** Lightweight immutable source identity returned without loading a full log. */
-interface SessionPersistenceSnapshot {
-  /** Detached metadata for one materialized session. */
-  header: SessionHeader
-  /** Opaque source-qualified token that changes whenever this stored log changes. */
-  revision: SessionPersistenceRevision
+type SessionPersistenceSnapshot = SessionPersistenceListing & {
+  /** Opaque source-qualified token that changes whenever this stored artifact changes. */
+  readonly revision: SessionPersistenceRevision
 }
 ```
 
@@ -263,7 +276,7 @@ interface SessionPersistenceSnapshot {
 
 The shipped provider implements the abstract `SessionPersistence` contract (locate/create/append/prepare/load/inspect/readFrom/list/listSnapshots over `SessionEvent`, with optional cancellation on observation methods) and passes the shared `runPersistenceContract` suite:
 
-- **[dsh-session-persistence-jsonl](../../packages/session/session-persistence-jsonl)** — an append-only logical JSONL log per session, stored as checksummed concatenated Zstandard frames by default or raw lines by configuration, with crash-safe atomic writes, interrupted-turn recovery, and a read/replay path.
+- **[dsh-session-persistence-jsonl](../../packages/session/session-persistence-jsonl)** — canonical immutable generation filenames per Session, stored as checksummed concatenated Zstandard frames by default or raw lines by configuration, with append-only ordinary writes, exclusive successor publication beside retained predecessors, interrupted-turn recovery, and a read/replay path.
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -281,9 +294,11 @@ Durable append-only session storage. Implementations preserve contiguous, lossle
 
 ```ts cordis-catalog
 /**
- * Resolve this backend's independent local artifact for a session without
- * reading, creating, flushing, or otherwise materializing it. A backend
- * that does not own one artifact per Session returns `undefined`.
+ * Resolve this backend's current-generation target for a session without
+ * reading, creating, flushing, or otherwise materializing it. Historical
+ * generations may live at other immutable paths; listing descriptors carry
+ * the exact selected stored location. A backend without per-Session files
+ * returns `undefined`.
  * @param meta - the immutable session header whose artifact is requested.
  * @returns the backend-specific absolute location, when one exists.
  */
@@ -296,7 +311,9 @@ abstract locate(meta: SessionHeader): SessionLocation | undefined
  * reconstruction from parsed events, so it preserves backend-specific
  * serialization (chunk packing, key order, line breaks). Callers first test
  * {@link supportsRawArtifacts}; `undefined` then means only that the requested
- * session has no materialized artifact.
+ * session has no materialized artifact. Reading a supported historical
+ * artifact leaves that generation untouched and exclusively publishes a
+ * separate repaired current successor; an already-current artifact is not rewritten.
  * @param _id - the persisted session to read (unused by the default: no
  * per-session artifact).
  * @param signal - optional cancellation for backend read work.
@@ -343,15 +360,21 @@ abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
  * their durable revision is still current; disposal releases an unpublished
  * reservation. Revision retries require the durable log to remain unchanged
  * for one read/check round trip; continuous external writers may delay completion.
+ * Preparing a supported historical artifact first persists its migration and
+ * current-format repair, while current input takes the no-write fast path.
  * @param id - persisted session to prepare.
- * @param signal - optional cancellation for preparation work.
+ * @param signal - optional cancellation for this caller's wait. A shared
+ * preparation or historical migration already started for another observer
+ * may continue to completion.
  * @returns one owned unpublished Session preparation.
  */
 async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>
 
 /**
- * Load an immutable balanced logical view and commit any required cold
- * recovery. A complete interrupted final turn is preserved and durably
+ * Load an immutable balanced current logical view and commit any required cold
+ * recovery. A supported historical artifact remains immutable while a
+ * separate repaired current successor is published before restoration. A complete
+ * interrupted final turn is preserved and durably
  * closed with missing tool errors plus any open step and turn boundaries;
  * only a torn final record is discarded. Unknown versions and corruption in
  * the committed prefix reject. Implementations MUST NOT crash-repair an
@@ -365,10 +388,12 @@ async prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation>
 abstract load(id: SessionId): Promise<SessionInspection>
 
 /**
- * Inspect an immutable logical session without committing recovery or
- * publishing it. A cold complete interrupted turn receives synthetic closers
- * in memory and a torn physical tail remains untouched. An already-live
- * Session instead yields its current immutable snapshot, which may contain an
+ * Inspect an immutable current logical session without publishing a live
+ * Session. For an already-current cold artifact, a complete interrupted turn receives
+ * synthetic closers only in memory and a torn physical tail remains untouched.
+ * A supported historical artifact first publishes its separate repaired
+ * current successor, so inspection is not storage-read-only in that case. An
+ * already-live Session instead yields its current immutable snapshot, which may contain an
  * open turn and its `session/end-seed` boundary. Coordinator-backed
  * implementations retain the exact cold unpublished Session for bounded
  * reuse by a later {@link prepare}. A stale ready source is reloaded; a source
@@ -376,7 +401,9 @@ abstract load(id: SessionId): Promise<SessionInspection>
  * may borrow its immutable view. Callers borrow only the immutable header and
  * log. Continuous external writers may delay revision convergence.
  * @param id - the persisted session to inspect.
- * @param signal - optional cancellation for queued and backend read work.
+ * @param signal - optional cancellation for this observer. Shared cold
+ * preparation and an already-started historical migration may continue for
+ * another inspector or later resume.
  * @returns the validated header and current logical event log.
  */
 abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection>
@@ -385,9 +412,11 @@ abstract inspect(id: SessionId, signal?: AbortSignal): Promise<SessionInspection
  * Borrow one exact inspection while retaining any reusable prepared source.
  * A cold observation must pin the exact prepared Session that a later
  * {@link prepare} reserves. Implementations must not degrade this operation
- * to a detached {@link inspect} result.
+ * to a detached {@link inspect} result. Borrowing a supported historical
+ * artifact first persists its migration and current-format repair.
  * @param id - persisted session to observe.
- * @param signal - optional cancellation for preparation work.
+ * @param signal - optional cancellation for this observer's wait; shared
+ * preparation or migration work may continue for another owner.
  * @returns a disposable immutable observation.
  */
 abstract borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSessionSource>
@@ -397,8 +426,11 @@ abstract borrowSession(id: SessionId, signal?: AbortSignal): Promise<BorrowedSes
  * primitive for read models that resume from a watermark (e.g. a persisted
  * projection cache folding only the tail past its checkpoint). Unlike
  * {@link inspect}, it is a detached physical suffix read: no preparation
- * cache, torn-tail truncation, synthetic closers, or coordinator-state
- * publication. Only events from the valid contiguous stored prefix are
+ * cache or coordinator-state publication. Current input performs no
+ * torn-tail truncation or synthetic repair. A supported historical artifact
+ * leaves its exact source unchanged and publishes a separate repaired current
+ * successor, so its returned suffix may include those current closers.
+ * Only events from the valid contiguous stored prefix are
  * returned, so a torn fragment never reaches the caller. `fromSeq` at or
  * beyond the stored prefix returns an empty event list (never an error).
  * A backend whose medium can seek by seq may read only the suffix;
@@ -415,19 +447,22 @@ abstract readFrom(id: SessionId, fromSeq: SessionLogOffset, signal?: AbortSignal
 /**
  * Lightweight listing from metadata, without a full-log parse.
  * @param signal - optional cancellation for backend listing work.
- * @returns one header per materialized session.
+ * @returns one isolated descriptor per materialized artifact.
  */
-abstract list(signal?: AbortSignal): Promise<SessionHeader[]>
+abstract list(signal?: AbortSignal): Promise<SessionPersistenceListing[]>
 
 /**
  * List materialized sessions with cheap per-log change tokens.
  *
  * Repeated observations of an unchanged log return the same revision. A
- * successful mutating {@link load} repair changes the next listed revision.
+ * successful mutating {@link load} repair changes the next listed revision;
+ * so does migration publication from any supported historical body read.
  * Revisions also distinguish independently backed stores so backend-local
  * counters cannot compare equal across different persistence sources.
  * @param signal - optional cancellation for backend snapshot-listing work.
- * @returns one header and opaque revision per materialized session without loading full logs.
+ * @returns one isolated current, migration-required, unsupported, or malformed
+ * descriptor plus its opaque revision per materialized artifact, without
+ * loading full logs.
  */
 abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot[]>
 ```

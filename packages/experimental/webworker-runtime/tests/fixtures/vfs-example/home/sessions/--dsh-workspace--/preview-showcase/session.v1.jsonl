@@ -1,4 +1,4 @@
-{"type":"session","version":0,"id":"preview-showcase","createdAt":1787472000000,"cwd":"/dsh/workspace","delegationDepth":0,"agentPreset":"standard"}
+{"type":"session","version":1,"id":"preview-showcase","createdAt":1787472000000,"cwd":"/dsh/workspace","delegationDepth":0,"agentPreset":"standard"}
 {"type":"turn/start","data":{"turn":1},"seq":0,"time":1787472000000}
 {"type":"user/message","data":{"id":"preview-user-01","role":"user","content":[{"type":"text","text":"History checkpoint 01: verify deterministic preview state."}],"source":{"kind":"user"}},"surfaceOp":"append","seq":1,"time":1787472000001}
 {"type":"session/title","data":{"title":"WebWorker Preview Showcase","messageSeqs":[],"source":{"kind":"user"}},"seq":2,"time":1787472000002}

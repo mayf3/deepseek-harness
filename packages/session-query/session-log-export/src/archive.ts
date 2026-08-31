@@ -1,7 +1,7 @@
 /**
  * Host-side session-log download: streams one ZIP archive whose files are the
  * sessions' stored artifact text verbatim plus every referenced media object.
- * The root artifact sits under its original base name (`session.jsonl`); each
+ * The root artifact sits under its backend-reported generation basename; each
  * subagent descendant under `subagents/<id>/<filename>`; each image referenced
  * by any included log under `media/<attachmentId>.<ext>` (content-addressed,
  * so one archive never duplicates a shared image). No manifest is written —

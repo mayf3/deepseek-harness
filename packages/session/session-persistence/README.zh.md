@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 选择后端
 
-seam 随产品交付 [JSONL](../session-persistence-jsonl/README.zh.md) 后端。它把每个 Session 存为一份仅追加 `.jsonl.zstd` 产物，并由 `locate(meta)` 返回绝对路径。第三方后端可以直接实现该服务；必须遵守的[后端约定](#understand-the-implementation)见下文。
+seam 随产品交付 [JSONL](../session-persistence-jsonl/README.zh.md) 后端。它为每个 Session 存储一个仅追加的当前 generation，并在旁边保留较旧的具名版本 generation；`locate(meta)` 返回所给逻辑 header 版本的绝对目标路径。第三方后端可以直接实现该服务；必须遵守的[后端约定](#understand-the-implementation)见下文。
 
 ### 服务提供什么
 
@@ -40,10 +40,12 @@ await ctx.sessionPersistence.create(meta, inheritedEventCount) // cut required w
 await ctx.sessionPersistence.ensureMaterialized(session)   // persist an empty resumable session
 await ctx.sessionPersistence.append(id, events)            // durably persist a batch
 const { meta, inheritedEventCount, events } = await ctx.sessionPersistence.load(id)
-const headers = await ctx.sessionPersistence.list()        // every stored session
+const listings = await ctx.sessionPersistence.list()       // header-only artifact descriptors
 ```
 
-`append` 只在批次持久后返回，因此成功返回的写入在操作系统崩溃或断电后依然存在。普通 `create(meta, inheritedEventCount)` 保持惰性；`meta.isSeeded: true` 要求单独的精确 cut，unseeded metadata 可以省略它并拒绝非零值。seeded 会话的首个物化批次必须到达完整继承前缀，因此存储绝不公开 cut 超过日志的 metadata。只有当空会话本身必须出现在持久列表中时，生命周期前端才调用 `ensureMaterialized`，且不会虚构事件。`load` 返回不可变的平衡日志并提交任何需要的崩溃恢复；`inspect` 读取同一份完整视图但不提交恢复。`readFrom` 接受 `SessionLogOffset`，并返回分离的 `SessionEventSuffix`，其中携带该 `fromSeq`、不变的继承 cut，以及 cut 位置或之后的存储事件。会话的产物位置（`locate`）不经文件系统 I/O 即可解析。
+`append` 只在批次持久后返回，因此成功返回的写入在操作系统崩溃或断电后依然存在。普通 `create(meta, inheritedEventCount)` 保持惰性；`meta.isSeeded: true` 要求单独的精确 cut，unseeded metadata 可以省略它并拒绝非零值。seeded 会话的首个物化批次必须到达完整继承前缀，因此存储绝不公开 cut 超过日志的 metadata。只有当空会话本身必须出现在持久列表中时，生命周期前端才调用 `ensureMaterialized`，且不会虚构事件。`list` 与 `listSnapshots` 只读取独立 header，并为每个 Session 目录中数值最高的规范 generation 返回一个 current、migration-required、unsupported 或 malformed descriptor。`load` 返回不可变的平衡日志并提交任何需要的崩溃恢复。对于已经是当前格式的存储，`inspect` 只在内存中保留合成恢复；受支持的历史检查会先在不改变源文件的情况下于其旁边发布已修复的当前后继 generation。`readFrom` 接受 `SessionLogOffset`，并返回分离的 `SessionEventSuffix`，其中携带该 `fromSeq`、不变的继承 cut，以及 cut 位置或之后的存储事件。会话的版本限定产物目标（`locate`）不经文件系统 I/O 即可解析。
+
+`prepare`、`inspect` 或 `borrowSession` 的取消只停止该观察者等待。可由另一观察者复用的共享冷准备或历史迁移可以继续完成；取消绝不会回滚已经进入持久发布阶段的 generation。分离的 `readFrom` 与 `readRaw` 则会把取消信号传给串行化后端读取。
 
 ### 恢复与崩溃恢复
 
@@ -51,7 +53,7 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 
 ### 失败与恢复
 
-当前构建无法忠实解读的存储日志会以方向感知的错误被拒绝，绝不错读。`SESSION_FORMAT_VERSION` 保持 v0，本构建不提供格式迁移路径；更高版本会要求操作者升级 harness。解码器只接受下文点名的有限同版本记录变体。本构建不认识的事件类型会被拒绝，除非其信封标记为 `ignorable`；已提交前缀中的损坏以 `SessionPersistenceCorruptionError` 拒绝。对仍绑定到活动会话的 id 执行 `load`，会先刷新其快照并在轮次开放时拒绝；冷 load 应用恢复。
+当前构建无法忠实解读的存储日志会以方向感知的错误被拒绝，绝不错读。冷正文读取会让随附 JSONL 后端选择数值最高的规范 generation；即使仍有可读旧文件，未来版本也会被拒绝。受支持的旧 generation 会通过静态相邻 catalog 迁移，并且只以不覆盖源文件、也不物化中间版本的方式发布最终当前文件名。仅 header 的列表会重新扫描且不会迁移。catalog 构造会拒绝缺失迁移边，已提交前缀中的损坏以 `SessionPersistenceCorruptionError` 拒绝，同版本未知事件要求 `ignorable: true`，alpha 历史迁移会在发布前拒绝每个未知 v0 事件。保留的旧 generation 只为 operator 提供逃生通道：服务不会自动 fallback，也不承诺 downgrade compatibility。对仍绑定到活动会话的 id 执行 `load`，会先刷新其快照并在轮次开放时拒绝；冷 load 应用恢复。
 
 -----
 
@@ -91,7 +93,7 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 
 ### 存储记录兼容
 
-后端读取只会在校验当前记录之前，规范化明确支持的 v0 记录变体。协调器对 `load`、`inspect`、`readFrom`、无所有者状态认领与 HMR 接管使用同一份规范化视图。读取不会重写已存记录，后续追加使用当前 v0。[消息标识机制引入前的消息](../../../.agents/notes/implemented/bug-fix/2026-07-28-load-pre-identity-session-messages.zh.md)与 [react-loop 引入前会话](../../../.agents/notes/implemented/bug-fix/2026-08-04-load-pre-react-loop-sessions.zh.md)笔记规定这些有限例外；它们不构成通用格式迁移承诺。
+协调器与当前 Session 代码只接收最新逻辑表示。`@deepseek-ai/dsh-session-format-catalog` 提供与 profile 无关的完整相邻链，每个具名迁移边拥有其历史 header、物理记录、payload 清单、归一化器与目标 validator。每个正文读取都会在当前恢复前，于逐 Session 串行链中完成后端拥有的 ensure-current 工作。后端可以把这项工作与当前读取融合；通用 fallback 会先调用 `ensureCurrent`，再调用普通当前读取钩子。[已发布格式生命周期](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.zh.md)定义不可变 generation 命名、最高 generation 选择与后继排他发布。
 
 </details>
 -----
@@ -102,6 +104,7 @@ const headers = await ctx.sessionPersistence.list()        // every stored sessi
 当包级约定不够用时阅读以下页面。它们从共享持久性模型逐步进入随产品交付的后端与决策证据。
 
 - [会话持久化子系统](../../../docs/subsystems/persistence.zh.md)——完整服务约定、flush 检查点、崩溃恢复与生成的 Cordis API。
+- [Session 格式链](../session-format/README.zh.md)——纯历史分派与相邻迁移组合。
 - [JSONL 持久化后端](../session-persistence-jsonl/README.zh.md)——随产品交付、按会话存储文件的后端。
 - [会话检查点策略](../session-checkpoint-policy/README.zh.md)——在语义边界上经由本服务刷新的插件。
 - [会话包映射](../README.zh.md)——相邻的持久化、投影、标题与遥测包。
@@ -133,7 +136,7 @@ seam 不添加提示词或 schema。恢复会将已存储的表层事件还原�
 这些限制界定 seam 保证的终点。它们是当前包约束，不是任务积压。
 
 - **无删除或保留接口**——剪枝已存储会话属于带外后端维护。
-- **`list()` 无分页且无过滤**——它返回每个已存储会话的 header；适合本地存储，大规模时无索引。
+- **`list()` 无分页且无过滤**——它为每个已存储 Session 目录的最高规范 generation 返回一个仅 header 的 descriptor；适合本地存储，大规模时无索引。
 - **合成 closer 是唯一崩溃方案**——后端必须在 load 时合成 `tool/result`/`step/end`/`turn/end` closer；没有继续中断轮次而不先关闭它的部分轮次恢复。
 
 <a id="dev-note"></a>

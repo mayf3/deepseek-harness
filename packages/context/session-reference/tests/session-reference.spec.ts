@@ -536,6 +536,31 @@ describe('session reference discovery and preparation', () => {
     expect(context.content[0].text).not.toContain('later source mutation')
   })
 
+  it('records the current source format generation without rebasing its frozen sequence', async () => {
+    const ctx = await harness()
+    const target = ctx.sessions.create(SessionId('target'))
+    const source = ctx.sessions.create(SessionId('source'))
+    appendConversation(source)
+    const snapshot = await ctx.sessionQuery.readSurface(source.id)
+    vi.spyOn(ctx.sessionQuery, 'readSurface').mockResolvedValue(snapshot)
+
+    const prepared = await ctx.sessionReferenceResolver.prepare(
+      fakeAgent(target),
+      [{ type: 'text', text: 'use @source' }],
+      [{ sessionId: source.id }],
+    )
+
+    const captured = prepared.additionalContext?.source
+    expect(captured).toMatchObject({
+      kind: 'session-reference',
+      references: [{
+        sessionId: source.id,
+        capturedFormatVersion: snapshot.session.version,
+        capturedThroughSeq: snapshot.capturedThroughSeq,
+      }],
+    })
+  })
+
   it('excludes injected context when projecting a referenced session', async () => {
     const ctx = await harness()
     const target = ctx.sessions.create(SessionId('target'))

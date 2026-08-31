@@ -397,9 +397,10 @@ declare class Session {
    * The first seq appended IN THIS PROCESS: the length of the constructor
    * seed (0 without one). Events with smaller seq values entered through
    * construction — replay, fork, or resume — and were never published on the
-   * `session/event` firehose (constructor seeds do not emit), so consumers
-   * that replay the log as a publication substitute (telemetry adoption)
-   * start here. Distinct from {@link inheritedEventCount}, the DURABLE
+   * `session/event` firehose (constructor seeds do not emit). This offset marks
+   * the constructor-input boundary for lifecycle ownership and persistence
+   * adoption; consumers that need complete canonical history still start at
+   * seq 0. Distinct from {@link inheritedEventCount}, the DURABLE
    * fork-lineage cut: a resumed session's constructor seed is its full stored
    * log, while the inherited count keeps the original fork value — this field is the
    * in-process construction fact.
@@ -571,7 +572,7 @@ declare class Session {
 - `tool/result` → 一条携带 `tool-result` 块的 user 消息。
 - `user/message`（注入上下文，即非 `user` 来源）→ 按时间顺序在相应位置生成一条 user-role 消息，并原样承载其 `content`；其类型化 source 标明生产方，并携带所有生产方专用数据。
 
-其余所有事件（`turn/*`、`step/*`、插件所属的 `llm/retry`）均为结构信息，不会投影为消息。token 记账读取每个步骤的 `assistant/chunk { type: 'usage' }` 记录；如果没有用量分片，则将 `assistant/message.usage` 作为已提交步骤的后备。失败的模型请求尝试没有 assistant 消息，因此其用量分片是持久化的记账记录。由于这一尚未发布的格式有意不提供兼容性承诺，seed/load 校验会拒绝没有提供方／模型的请求头和 assistant 消息，而不会猜测历史数据应走的提供方路由。
+其余所有事件（`turn/*`、`step/*`、插件所属的 `llm/retry`）均为结构信息，不会投影为消息。token 记账读取每个步骤的 `assistant/chunk { type: 'usage' }` 记录；如果没有用量分片，则将 `assistant/message.usage` 作为已提交步骤的后备。失败的模型请求尝试没有 assistant 消息，因此其用量分片是持久化的记账记录。当前逻辑校验会拒绝没有提供方／模型的 request header 和 assistant 消息，而不会猜测路由；受支持的历史表示会在当前 Session 存在前，由其相邻格式迁移边归一化并校验。
 
 ## 活跃会话 fork API
 

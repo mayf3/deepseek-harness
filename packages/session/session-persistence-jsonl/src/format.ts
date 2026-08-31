@@ -8,7 +8,7 @@
  * @module dsh-session-persistence-jsonl/format
  */
 
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
 import {
   decodeSeqRanges, decodeStorageRecord, encodeSeqRanges, packChunkRuns, SESSION_FORMAT_VERSION,
   SessionLogOffset,
@@ -39,7 +39,43 @@ export function logSuffix(compression: JsonlCompression): '.jsonl.zstd' | '.json
 }
 
 /**
- * The private version-0 physical header stored as the first JSONL record.
+ * Return the canonical filename for one immutable Session format generation.
+ * Version zero retains the original suffix-only name; every later generation
+ * carries a lowercase numeric `vN` component.
+ * @param version - non-negative safe Session format version.
+ * @param compression - configured JSONL artifact encoding.
+ * @returns the generation filename inside one Session directory.
+ */
+export function generationLogFilename(version: number, compression: JsonlCompression): string {
+  if (!Number.isSafeInteger(version) || version < 0 || Object.is(version, -0)) {
+    throw new TypeError('session log generation version must be a non-negative safe integer')
+  }
+  const generation = version === 0 ? '' : `.v${version}`
+  return `session${generation}${logSuffix(compression)}`
+}
+
+/**
+ * Parse one canonical generation filename for the selected physical encoding.
+ * Noncanonical, temporary, uppercase, leading-zero, and version-zero-tagged names do
+ * not identify committed generations.
+ * @param filename - one entry from a Session directory.
+ * @param compression - configured JSONL artifact encoding.
+ * @returns its format version, or `undefined` when the name is not canonical.
+ */
+export function parseGenerationLogFilename(
+  filename: string,
+  compression: JsonlCompression,
+): number | undefined {
+  const suffix = logSuffix(compression)
+  if (filename === `session${suffix}`) return 0
+  const match = new RegExp(`^session\\.v([1-9][0-9]*)${suffix.replaceAll('.', '\\.')}$`).exec(filename)
+  if (match === null) return undefined
+  const version = Number(match[1])
+  return Number.isSafeInteger(version) ? version : undefined
+}
+
+/**
+ * The current shared-layout physical header stored as the first JSONL record.
  * Its optional numeric `seedLength` translates to logical lineage metadata
  * plus a separately carried exact inherited cut.
  */
@@ -54,6 +90,17 @@ interface HeaderLine {
   origin?: 'subagent'
   delegationDepth: number
   agentPreset?: string
+}
+
+const HEADER_REQUIRED_KEYS = ['type', 'version', 'id', 'createdAt', 'delegationDepth'] as const
+const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'seedLength', 'origin', 'agentPreset'] as const
+const HEADER_KEYS = new Set<string>([...HEADER_REQUIRED_KEYS, ...HEADER_OPTIONAL_KEYS])
+
+function assertNoRetiredHeaderFields(value: unknown): void {
+  if (typeof value !== 'object' || value === null) return
+  if (Object.hasOwn(value, 'sandboxMode') || Object.hasOwn(value, 'approvalPolicy')) {
+    throw new Error('session header uses retired policy baseline fields')
+  }
 }
 
 /**
@@ -89,17 +136,14 @@ export function toHeaderLine(
 }
 
 /**
- * Translate one version-0 physical header into logical metadata and its cut.
+ * Translate one current physical header into logical metadata and its cut.
  * @param line - the shape-checked first line of a log (see the `isHeaderLine` guard).
  * @returns logical Session metadata paired with the exact inherited prefix length.
  */
 function fromHeaderLine(line: HeaderLine): SessionStorageMetadata {
-  if (Object.hasOwn(line, 'sandboxMode') || Object.hasOwn(line, 'approvalPolicy')) {
-    throw new Error('session header uses retired policy baseline fields')
-  }
   return {
     meta: {
-      version: line.version,
+      version: SESSION_FORMAT_VERSION,
       id: line.id,
       createdAt: line.createdAt,
       ...line.cwd !== undefined ? { cwd: line.cwd } : {},
@@ -116,7 +160,9 @@ function fromHeaderLine(line: HeaderLine): SessionStorageMetadata {
 /** Type guard: a parsed first line is a well-formed session header. */
 function isHeaderLine(value: unknown): value is HeaderLine {
   return (
-    typeof value === 'object' && value !== null
+    typeof value === 'object' && value !== null && !Array.isArray(value)
+    && HEADER_REQUIRED_KEYS.every(key => Object.hasOwn(value, key))
+    && Object.keys(value).every(key => HEADER_KEYS.has(key))
     && (value as { type?: unknown }).type === 'session'
     && typeof (value as { version?: unknown }).version === 'number'
     && typeof (value as { id?: unknown }).id === 'string'
@@ -128,6 +174,11 @@ function isHeaderLine(value: unknown): value is HeaderLine {
     && Number.isSafeInteger((value as { delegationDepth: number }).delegationDepth)
     && (value as { delegationDepth: number }).delegationDepth >= 0
     && !Object.is((value as { delegationDepth: number }).delegationDepth, -0)
+    && ((value as { cwd?: unknown }).cwd === undefined
+      || (typeof (value as { cwd?: unknown }).cwd === 'string'
+        && isAbsolute((value as { cwd: string }).cwd)))
+    && ((value as { parentSession?: unknown }).parentSession === undefined
+      || typeof (value as { parentSession?: unknown }).parentSession === 'string')
     && ((value as { seedLength?: unknown }).seedLength === undefined
       || (typeof (value as { seedLength?: unknown }).seedLength === 'number'
         && Number.isSafeInteger((value as { seedLength: number }).seedLength)
@@ -224,12 +275,31 @@ export function sessionDir(root: string, cwd: string | undefined, id: SessionId)
 }
 
 /**
- * The append-only event-log file path for a session.
+ * Build one immutable Session format generation path.
+ * @param root - the backend's session root directory.
+ * @param cwd - the session's project directory (`undefined` → `_no-cwd`).
+ * @param id - the session id, path-encoded via {@link encodeSegment} before filesystem use.
+ * @param version - physical Session format generation.
+ * @param compression - physical artifact encoding and filename suffix.
+ * @returns the selected generation's configured JSONL artifact path.
+ */
+export function generationLogPath(
+  root: string,
+  cwd: string | undefined,
+  id: SessionId,
+  version: number,
+  compression: JsonlCompression,
+): string {
+  return join(sessionDir(root, cwd, id), generationLogFilename(version, compression))
+}
+
+/**
+ * Build the current generation's append target path for a Session.
  * @param root - the backend's session root directory.
  * @param cwd - the session's project directory (`undefined` → `_no-cwd`).
  * @param id - the session id, path-encoded via {@link encodeSegment} before filesystem use.
  * @param compression - physical artifact encoding and filename suffix.
- * @returns the session's configured JSONL artifact path.
+ * @returns the current Session format generation path.
  */
 export function logPath(
   root: string,
@@ -237,7 +307,7 @@ export function logPath(
   id: SessionId,
   compression: JsonlCompression,
 ): string {
-  return join(sessionDir(root, cwd, id), `session${logSuffix(compression)}`)
+  return generationLogPath(root, cwd, id, SESSION_FORMAT_VERSION, compression)
 }
 
 /**
@@ -294,7 +364,6 @@ interface SessionLogScan {
   committedBytes: number
 }
 
-/** Parse one complete header record supplied independently from event rows. */
 /**
  * Refuse a header carrying a format version this build does not read BEFORE
  * validating the current header shape or decoding any event row: a future
@@ -311,6 +380,7 @@ function refuseForeignFormatVersion(parsed: unknown): void {
   )
 }
 
+/** Parse one complete header record supplied independently from event rows. */
 function parseHeaderRecord(record: Buffer): ReturnType<typeof fromHeaderLine> {
   if (record.length === 0 || record.at(-1) !== 0x0A || record.indexOf(0x0A) !== record.length - 1) {
     throw new Error('empty or header-less session log')
@@ -322,6 +392,7 @@ function parseHeaderRecord(record: Buffer): ReturnType<typeof fromHeaderLine> {
     throw new Error('corrupt session log: header line is not valid JSON')
   }
   refuseForeignFormatVersion(parsed)
+  assertNoRetiredHeaderFields(parsed)
   if (!isHeaderLine(parsed)) {
     throw new Error('corrupt session log: first line is not a session header')
   }
@@ -349,9 +420,10 @@ export class SessionLogScanner {
   /**
    * Create an event scanner from exactly one newline-terminated header record.
    * @param headerRecord - the complete first JSONL record, including its newline.
+   * @param storage - already-decoded current metadata from the same header bytes.
    */
-  constructor(headerRecord: Buffer) {
-    const parsed = parseHeaderRecord(headerRecord)
+  constructor(headerRecord: Buffer, storage?: SessionStorageMetadata) {
+    const parsed = storage ?? parseHeaderRecord(headerRecord)
     this.meta = parsed.meta
     this.inheritedEventCount = parsed.inheritedEventCount
     this.inputBytes = headerRecord.length
@@ -483,16 +555,17 @@ export function parseHeader(firstLine: string): SessionStorageMetadata | undefin
   } catch {
     return undefined
   }
-  refuseForeignFormatVersion(parsed)
-  if (!isHeaderLine(parsed)) return undefined
-  return fromHeaderLine(parsed)
+  return parseHeaderValue(parsed)
 }
 
 /**
- * Parse only the logical header fields needed by lightweight listing.
- * @param firstLine - first JSONL line without its trailing newline.
- * @returns the logical Session header, or `undefined` for a malformed line.
+ * Translate one already-parsed current physical header without parsing its JSON twice.
+ * @param value - parsed first JSONL record.
+ * @returns current storage metadata, or `undefined` for a malformed header.
  */
-export function parseHeaderMeta(firstLine: string): SessionHeader | undefined {
-  return parseHeader(firstLine)?.meta
+export function parseHeaderValue(value: unknown): SessionStorageMetadata | undefined {
+  refuseForeignFormatVersion(value)
+  assertNoRetiredHeaderFields(value)
+  if (!isHeaderLine(value)) return undefined
+  return fromHeaderLine(value)
 }

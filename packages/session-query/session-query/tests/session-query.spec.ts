@@ -10,7 +10,13 @@ import SessionStore, {
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
 import SessionPersistence, { SessionPersistenceCorruptionError, SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
-import type { SessionEventSuffix, SessionInspection } from '@deepseek-ai/dsh-session-persistence'
+import type {
+  CurrentSessionPersistenceListing,
+  SessionEventSuffix,
+  SessionInspection,
+  SessionPersistenceListing,
+  SessionPersistenceSnapshot,
+} from '@deepseek-ai/dsh-session-persistence'
 import SessionQueryEngine, {
   SESSION_QUERY_DEFAULT_PERSISTED_INSPECT_CONCURRENCY,
   type SessionEventSurface,
@@ -23,6 +29,15 @@ const TITLE_SERVICE_CONFIG = { fallbackMaxWords: 8, fallbackMaxBytes: 64, maxTit
 
 function header(id: string, createdAt = 1, extra: Partial<SessionHeader> = {}): SessionHeader {
   return { version: SESSION_FORMAT_VERSION, id: SessionId(id), createdAt, isSeeded: false, ...extra }
+}
+
+function listing(header: SessionHeader): CurrentSessionPersistenceListing {
+  return {
+    status: 'current',
+    header,
+    storedVersion: SESSION_FORMAT_VERSION,
+    targetVersion: SESSION_FORMAT_VERSION,
+  }
 }
 
 function eventLog(text = 'hello'): SessionEvent<'user/message'>[] {
@@ -42,7 +57,7 @@ class TestPersistence extends SessionPersistence {
 
   static entries = new Map<SessionIdType, { meta: SessionHeader; events: SessionEvent[] }>()
   static listFailure: unknown
-  static listOverride: ((signal?: AbortSignal) => Promise<SessionHeader[]>) | undefined
+  static listOverride: ((signal?: AbortSignal) => Promise<SessionPersistenceListing[]>) | undefined
   static inspectFailure: unknown
   static inspectEffect: (() => void) | undefined
   static inspectOverride: ((
@@ -123,20 +138,24 @@ class TestPersistence extends SessionPersistence {
     return { ...whole, fromSeq, events: whole.events.filter(event => event.seq >= fromSeq) }
   }
 
-  list(signal?: AbortSignal): Promise<SessionHeader[]> {
+  list(signal?: AbortSignal): Promise<SessionPersistenceListing[]> {
     TestPersistence.listCalls += 1
     TestPersistence.listSignals.push(signal)
     if (TestPersistence.listOverride !== undefined) return TestPersistence.listOverride(signal)
     if (TestPersistence.listFailure !== undefined) return rejectUnknown(TestPersistence.listFailure)
-    const headers = [...TestPersistence.entries.values()].map(entry => structuredClone(entry.meta))
+    const headers = [...TestPersistence.entries.values()]
+      .map(entry => listing(structuredClone(entry.meta)))
     TestPersistence.afterList?.()
     return Promise.resolve(headers)
   }
 
 
-  async listSnapshots() {
+  async listSnapshots(): Promise<SessionPersistenceSnapshot[]> {
     return [...TestPersistence.entries.values()].map(entry => ({
+      status: 'current',
       header: structuredClone(entry.meta),
+      storedVersion: SESSION_FORMAT_VERSION,
+      targetVersion: SESSION_FORMAT_VERSION,
       revision: SessionPersistenceRevision(`events:${entry.events.length}`),
     }))
   }
@@ -263,7 +282,7 @@ describe.each(cancellableSessionListings)('$name cancellation', ({ run }) => {
     const controller = new AbortController()
     const reason = new Error('session listing cancelled before persistence returned')
     const started = Promise.withResolvers<undefined>()
-    const listing = Promise.withResolvers<SessionHeader[]>()
+    const listing = Promise.withResolvers<SessionPersistenceListing[]>()
     TestPersistence.listOverride = (_signal) => {
       started.resolve(undefined)
       return listing.promise
@@ -368,7 +387,7 @@ describe.each(cancellableExactReads)('$name cancellation', ({ inspects, run }) =
         started.resolve(undefined)
         await release.promise
         active = false
-        return [structuredClone(persisted)]
+        return [listing(structuredClone(persisted))]
       }
     }
 
@@ -1131,6 +1150,21 @@ describe('session-query exact reads', () => {
     await expect(ctx.sessionQuery.listSessions()).resolves.toEqual([
       { header: shared, live: true, persisted: false },
     ])
+  })
+
+  it('omits unreadable persistence descriptors from the logical corpus', async () => {
+    TestPersistence.reset()
+    const ctx = await liveContext()
+    await ctx.plugin(TestPersistence)
+    TestPersistence.listOverride = async () => [{
+      status: 'unsupported',
+      storedVersion: SESSION_FORMAT_VERSION + 1,
+      targetVersion: SESSION_FORMAT_VERSION,
+      location: { kind: 'test', path: '/unsupported/session.jsonl' },
+      reason: 'future format',
+    }]
+
+    await expect(ctx.sessionQuery.listSessions()).resolves.toEqual([])
   })
 
   it('keeps known live reads independent from persistence health', async () => {

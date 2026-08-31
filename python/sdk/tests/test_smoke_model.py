@@ -71,3 +71,71 @@ def test_mcp_smoke_accepts_the_external_server_result() -> None:
         for chunk in chunks
         for choice in chunk.get("choices", [])
     )
+
+
+def test_snapshot_comparison_normalizes_only_session_generation_provenance() -> None:
+    normalize = SMOKE["normalize_session_format_comparison"]
+    expected = {
+        "header": {"type": "session", "version": 0, "otherVersion": 7},
+        "accepted": {
+            "type": "session-log-deepseek/delivery-accepted",
+            "data": {"sessionId": "s", "throughSeq": 4},
+        },
+        "source": {
+            "kind": "session-reference",
+            "references": [{"sessionId": "other", "capturedThroughSeq": 8}],
+        },
+    }
+    actual = {
+        "header": {"type": "session", "version": 1, "otherVersion": 7},
+        "accepted": {
+            "type": "session-log-deepseek/delivery-accepted",
+            "data": {"sessionId": "s", "sessionFormatVersion": 1, "throughSeq": 4},
+        },
+        "source": {
+            "kind": "session-reference",
+            "references": [{
+                "sessionId": "other",
+                "capturedFormatVersion": 1,
+                "capturedThroughSeq": 8,
+            }],
+        },
+    }
+
+    assert normalize(expected) == normalize(actual)
+    assert normalize(expected)["header"]["otherVersion"] == 7
+
+
+def test_snapshot_generation_names_select_highest_role_without_double_counting(
+    tmp_path: Path,
+) -> None:
+    render = SMOKE["snapshot_session_filename"]
+    select = SMOKE["selected_snapshot_session_files"]
+    assert render(0, 0) == "session.jsonl"
+    assert render(0, 2) == "session.v2.jsonl"
+    assert render(3, 0) == "session.3.jsonl"
+    assert render(3, 2) == "session.3.v2.jsonl"
+
+    (tmp_path / "session.jsonl").write_text(
+        '{"type":"session","version":0}\n', encoding="utf-8",
+    )
+    (tmp_path / "session.v1.jsonl").write_text(
+        '{"type":"session","version":1}\n', encoding="utf-8",
+    )
+    (tmp_path / "session.1.jsonl").write_text(
+        '{"type":"session","version":0}\n', encoding="utf-8",
+    )
+
+    assert {index: path.name for index, path in select(tmp_path).items()} == {
+        0: "session.v1.jsonl",
+        1: "session.1.jsonl",
+    }
+
+
+def test_snapshot_generation_filename_must_match_header(tmp_path: Path) -> None:
+    (tmp_path / "session.v1.jsonl").write_text(
+        '{"type":"session","version":0}\n', encoding="utf-8",
+    )
+
+    with pytest.raises(AssertionError, match="filename declares Session format v1"):
+        SMOKE["selected_snapshot_session_files"](tmp_path)

@@ -10,7 +10,12 @@ import SessionStore, {
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { Session, SessionEvent, SessionHeader, SessionId as SessionIdType } from '@deepseek-ai/dsh-session'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
-import type { SessionEventSuffix, SessionInspection } from '@deepseek-ai/dsh-session-persistence'
+import type {
+  CurrentSessionPersistenceListing,
+  SessionEventSuffix,
+  SessionInspection,
+  SessionPersistenceListing,
+} from '@deepseek-ai/dsh-session-persistence'
 import { type SessionQueryErrorCode } from '@deepseek-ai/dsh-session-query'
 import { TestSessionQueryEngine } from './test-service.ts'
 
@@ -23,6 +28,15 @@ function mutableHeader(value: SessionHeader): MutableSessionHeader {
 
 function header(id: string, createdAt = 1, extra: Partial<SessionHeader> = {}): SessionHeader {
   return { version: SESSION_FORMAT_VERSION, id: SessionId(id), createdAt, isSeeded: false, ...extra }
+}
+
+function listing(header: SessionHeader): CurrentSessionPersistenceListing {
+  return {
+    status: 'current',
+    header,
+    storedVersion: SESSION_FORMAT_VERSION,
+    targetVersion: SESSION_FORMAT_VERSION,
+  }
 }
 
 function appendEvent(seq: SessionSeq, sources?: number[]): SessionEvent {
@@ -97,10 +111,11 @@ class TracePersistence extends SessionPersistence {
     return { ...whole, fromSeq, events: whole.events.filter(event => event.seq >= fromSeq) }
   }
 
-  list(): Promise<SessionHeader[]> {
+  list(): Promise<SessionPersistenceListing[]> {
     TracePersistence.listCalls += 1
     if (TracePersistence.listFailure !== undefined) return Promise.reject(TracePersistence.listFailure)
-    const result = [...TracePersistence.entries.values()].map(entry => structuredClone(entry.meta))
+    const result = [...TracePersistence.entries.values()]
+      .map(entry => listing(structuredClone(entry.meta)))
     TracePersistence.afterList?.()
     return Promise.resolve(result)
   }

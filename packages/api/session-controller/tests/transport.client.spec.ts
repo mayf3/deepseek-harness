@@ -63,7 +63,7 @@ function snapshot(
   return {
     type: 'snapshot',
     header: {
-      version: 0,
+      version: 1,
       id: ADDRESS.kind === 'session' ? ADDRESS.sessionId : ADDRESS.childSessionId,
       createdAt: 0,
     },

@@ -1,9 +1,9 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SESSION_FORMAT_VERSION, Session, SessionId, SessionLogOffset, SessionPreparation, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
@@ -11,7 +11,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 
-import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import JsonlSessionPersistence, { type JsonlCompression } from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { generationLogFilename } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
@@ -19,13 +20,20 @@ import { MockAdapter, textResponse } from './mock-adapter.ts'
 const dirs: string[] = []
 afterEach(async () => { for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true }) })
 
-async function persistentHarness(adapter: MockAdapter): Promise<{ ctx: Context; root: string }> {
+async function persistentHarness(
+  adapter: MockAdapter,
+  compression?: JsonlCompression,
+): Promise<{ ctx: Context; root: string }> {
   const root = await mkdtemp(join(tmpdir(), 'dsh-resume-'))
   dirs.push(root)
-  return { ctx: await mountPersistentHarness(root, adapter), root }
+  return { ctx: await mountPersistentHarness(root, adapter, compression), root }
 }
 
-async function mountPersistentHarness(root: string, adapter: MockAdapter): Promise<Context> {
+async function mountPersistentHarness(
+  root: string,
+  adapter: MockAdapter,
+  compression?: JsonlCompression,
+): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(SessionStore)
@@ -34,7 +42,7 @@ async function mountPersistentHarness(root: string, adapter: MockAdapter): Promi
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(AgentLoop, { agents: [] })
-  await ctx.plugin(JsonlSessionPersistence, { root })
+  await ctx.plugin(JsonlSessionPersistence, { root, ...(compression === undefined ? {} : { compression }) })
   ctx.llm.registerAdapter(['mock'], adapter)
   return ctx
 }
@@ -98,14 +106,12 @@ function throwUnknown(value: unknown): never {
 describe('the session-persistence Agent Note: AgentLoop factory create/resume', () => {
   it('resumes a pre-react-loop session including pre-identity message events', async () => {
     const sessionId = SessionId('pre-identity-resume')
-    const first = await persistentHarness(new MockAdapter([]))
-    await first.ctx.sessionPersistence.create({
-      version: SESSION_FORMAT_VERSION,
-      id: sessionId,
-      createdAt: 1,
-      isSeeded: false,
-    })
-    await first.ctx.sessionPersistence.append(sessionId, [
+    const first = await persistentHarness(new MockAdapter([]), 'none')
+    const placeholder = first.ctx.sessions.create(sessionId)
+    const currentPath = first.ctx.sessionPersistence.locate(placeholder.header)?.path
+    if (currentPath === undefined) throw new Error('expected a JSONL artifact path')
+    const v0Path = join(dirname(currentPath), generationLogFilename(0, 'none'))
+    const legacyRows = [
       {
         type: 'turn/start', seq: 0, time: 1,
         data: { turn: 1, trigger: { kind: 'message', source: { kind: 'user' } } },
@@ -143,10 +149,17 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
       },
       { type: 'step/end', seq: 5, time: 6, data: { turn: 1, step: 1 } },
       { type: 'turn/end', seq: 6, time: 7, data: { turn: 1, reason: { kind: 'completed' } } },
-    ] as unknown as SessionEvent[])
+    ]
+    const legacySource = [
+      { type: 'session', version: 0, id: sessionId, createdAt: 1, delegationDepth: 0 },
+      ...legacyRows,
+    ].map(value => JSON.stringify(value)).join('\n') + '\n'
+    await mkdir(dirname(v0Path), { recursive: true })
+    await writeFile(v0Path, legacySource, { flush: true })
+    const v0Before = await stat(v0Path, { bigint: true })
     await first.ctx.fiber.dispose()
 
-    const ctx = await mountPersistentHarness(first.root, new MockAdapter([textResponse('new answer')]))
+    const ctx = await mountPersistentHarness(first.root, new MockAdapter([textResponse('new answer')]), 'none')
     const handle = await ctx.agents.resume({
       resumeSessionId: sessionId,
       agentOptions: { provider: 'mock', model: 'mock' },
@@ -158,6 +171,18 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     ])
     expect(handle.agent.inbox.nextTurn).toEqual([])
     expect(handle.agent.inbox.nextStep).toEqual([])
+    const v0AfterMigration = await stat(v0Path, { bigint: true })
+    const v1AfterMigration = await stat(currentPath, { bigint: true })
+    expect(await readFile(v0Path, 'utf8')).toBe(legacySource)
+    expect({ dev: v0AfterMigration.dev, ino: v0AfterMigration.ino })
+      .toEqual({ dev: v0Before.dev, ino: v0Before.ino })
+    expect({ dev: v1AfterMigration.dev, ino: v1AfterMigration.ino })
+      .not.toEqual({ dev: v0Before.dev, ino: v0Before.ino })
+    expect(JSON.parse((await readFile(currentPath, 'utf8')).split('\n', 1)[0] ?? '')).toMatchObject({
+      version: SESSION_FORMAT_VERSION,
+      id: sessionId,
+    })
+    expect((await readdir(dirname(v0Path))).sort()).toEqual(['session.jsonl', 'session.v1.jsonl'])
 
     handle.agent.followup(createUserMessage({
       content: [{ type: 'text', text: 'new question' }],
@@ -169,6 +194,10 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
       type: 'turn/end',
       data: { reason: { kind: 'completed' } },
     })
+    const v0AfterAppend = await stat(v0Path, { bigint: true })
+    expect(await readFile(v0Path, 'utf8')).toBe(legacySource)
+    expect({ dev: v0AfterAppend.dev, ino: v0AfterAppend.ino })
+      .toEqual({ dev: v0Before.dev, ino: v0Before.ino })
     await handle.dispose()
     await ctx.fiber.dispose()
   })
@@ -882,9 +911,8 @@ describe('configured-start failure edges', () => {
     const sessionId = SessionId('config-existing-corrupt')
     const root = await persistSession(sessionId)
     const ctx = await mountPersistentHarness(root, new MockAdapter([]))
-    // The artifact exists (list reports it) but its load fails: this is
-    // corruption, not first creation — the failure must be reported, and no
-    // fresh same-id session may shadow the broken one.
+    // The artifact's restore fails: this is corruption, not first creation —
+    // the failure must be reported, and no fresh same-id session may shadow it.
     ctx.sessionPersistence.prepare = () => Promise.reject(new Error('artifact corrupt'))
 
     const configured = new Context()

@@ -7,8 +7,9 @@ import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
+import type { CurrentSessionPersistenceListing, SessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import WorkspaceRegistry, {
   WorkspaceId,
@@ -20,11 +21,18 @@ import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
 const DOMAIN_VERSION = 2
 
 const header = (id: string, cwd?: string, createdAt = 0): SessionHeader => ({
-  version: 0,
+  version: SESSION_FORMAT_VERSION,
   id: SessionId(id),
   createdAt,
   isSeeded: false,
   ...(cwd === undefined ? {} : { cwd }),
+})
+
+const currentListing = (value: SessionHeader): CurrentSessionPersistenceListing => ({
+  status: 'current',
+  header: value,
+  storedVersion: SESSION_FORMAT_VERSION,
+  targetVersion: SESSION_FORMAT_VERSION,
 })
 
 interface HarnessOptions {
@@ -46,7 +54,7 @@ async function harness(options: HarnessOptions = {}) {
   ctx.provide('storageDomain', facility)
 
   let listed = options.sessions ?? []
-  const list = vi.fn(async () => listed)
+  const list = vi.fn(async () => listed.map(currentListing))
   const load = vi.fn(() => { throw new Error('event bodies must not be loaded') })
   const inspect = vi.fn(() => { throw new Error('event bodies must not be inspected') })
   ctx.provide('sessionPersistence', { list, load, inspect } as never)
@@ -192,7 +200,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     expect(ctx.get('workspaceRegistry')).toBeUndefined()
     expect(pool.media.has('workspace')).toBe(false)
 
-    const list = vi.fn(async () => [] as SessionHeader[])
+    const list = vi.fn(async () => [] as SessionPersistenceListing[])
     ctx.provide('sessionPersistence', { list } as never)
     await fiber.await()
     expect(ctx.workspaceRegistry.list()).toEqual([])

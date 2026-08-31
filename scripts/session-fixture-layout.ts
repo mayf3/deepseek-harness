@@ -4,8 +4,15 @@ import { deepStrictEqual } from 'node:assert'
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { packChunkRuns, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import {
+  decodeSeqRanges,
+  decodeStorageRecord,
+  packChunkRuns,
+  SessionLogOffset,
+  type SessionEvent,
+} from '@deepseek-ai/dsh-session'
+import type { SessionLogOffset as SessionLogOffsetType } from '@deepseek-ai/dsh-session'
+import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 
 /** Physical persistence artifacts validated by the WebWorker runtime fixture spec. */
 const WEBWORKER_PHYSICAL_SESSION_FIXTURE_ROOT =
@@ -33,21 +40,31 @@ export interface SessionFixtureLayout {
  */
 export function isPhysicalSessionFixture(path: string): boolean {
   if (path.startsWith(WEBWORKER_PHYSICAL_SESSION_FIXTURE_ROOT)) {
-    return path.endsWith('/session.jsonl')
+    return /\/session(?:\.v[1-9]\d*)?\.jsonl$/.test(path)
   }
   return path.startsWith(PYTHON_RUNTIME_PHYSICAL_SESSION_FIXTURE_ROOT)
-    && /\/session(?:\.\d+)?\.jsonl$/.test(path)
+    && /\/session(?:\.[1-9]\d*)?(?:\.v[1-9]\d*)?\.jsonl$/.test(path)
 }
 
 function isSessionHeader(value: unknown): boolean {
   return value !== null && typeof value === 'object' && (value as { type?: unknown }).type === 'session'
 }
 
+function validationHeader(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+  const header = { ...value as Record<string, unknown> }
+  if (header.version === 0 && !Object.hasOwn(header, 'delegationDepth')) header.delegationDepth = 0
+  if (typeof header.cwd === 'string' && /^\{\{cwd\}\}(?:\/|$)/.test(header.cwd)) {
+    header.cwd = header.cwd.replace('{{cwd}}', '/dsh-snapshot-cwd')
+  }
+  return header
+}
+
 function renderFixture(headerLine: string, events: readonly SessionEvent[]): string {
   return [
     headerLine,
     ...packChunkRuns(events).map((stored) => {
-      const record = stored as unknown as Record<string, unknown>
+      const record = { ...stored } as unknown as Record<string, unknown>
       delete record.seq
       delete record.time
       delete record.seq0
@@ -56,6 +73,79 @@ function renderFixture(headerLine: string, events: readonly SessionEvent[]): str
     }),
     '',
   ].join('\n')
+}
+
+function projectedRowCardinality(record: Readonly<Record<string, unknown>>): number {
+  const data = record.data
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return 1
+  const key = record.type === 'tool-call-chunks' ? 'args' : 'texts'
+  const values = (data as Record<string, unknown>)[key]
+  return Array.isArray(values) && values.length > 0 ? values.length : 1
+}
+
+function parseFixtureObjectLine(line: string, lineNumber: number): Record<string, unknown> {
+  let value: unknown
+  try {
+    value = JSON.parse(line) as unknown
+  } catch (error) {
+    throw new Error(`session snapshot line ${lineNumber} contains invalid JSON`, { cause: error })
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`session snapshot line ${lineNumber} must be a JSON object`)
+  }
+  return value as Record<string, unknown>
+}
+
+function parseFixtureRows(content: string, headerValue: unknown): SessionEvent[] {
+  const rows: Record<string, unknown>[] = []
+  const rowLines: number[] = []
+  let nextSeq: SessionLogOffsetType = SessionLogOffset(0)
+  let headerSkipped = false
+  for (const [index, line] of content.split(/\r?\n/).entries()) {
+    if (line.trim().length === 0) continue
+    if (!headerSkipped) {
+      headerSkipped = true
+      continue
+    }
+    const record = parseFixtureObjectLine(line, index + 1)
+    const packed = record.type === 'text-chunks'
+      || record.type === 'reasoning-chunks'
+      || record.type === 'tool-call-chunks'
+    const seqKey = packed ? 'seq0' : 'seq'
+    const timeKey = packed ? 'time0' : 'time'
+    if (!Object.hasOwn(record, seqKey)) record[seqKey] = nextSeq
+    if (!Object.hasOwn(record, timeKey)) record[timeKey] = 0
+    rows.push(record)
+    rowLines.push(index + 1)
+    nextSeq = SessionLogOffset(nextSeq + projectedRowCardinality(record))
+  }
+  // Versionless protocol fixtures are outside the released format catalog;
+  // they exercise only the current storage-row projection.
+  if (headerValue === null || typeof headerValue !== 'object' || Array.isArray(headerValue)
+    || !Object.hasOwn(headerValue, 'version')) {
+    return rows.flatMap((source, index) => {
+      const record = { ...source }
+      try {
+        if (Object.hasOwn(record, 'sourceEventSeqs')) {
+          record.sourceEventSeqs = decodeSeqRanges(record.sourceEventSeqs)
+        }
+        return decodeStorageRecord(record)
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(`session snapshot line ${rowLines[index] ?? 1}: ${detail}`, { cause: error })
+      }
+    })
+  }
+  try {
+    return [
+      ...sessionFormatCatalog.decodeArtifact(validationHeader(headerValue), rows).events,
+    ] as unknown as SessionEvent[]
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    const storedRow = /\brow (\d+)\b/.exec(detail)
+    const line = storedRow === null ? 1 : rowLines[Number(storedRow[1])] ?? 1
+    throw new Error(`session snapshot line ${line}: ${detail}`, { cause: error })
+  }
 }
 
 function withoutEnvelope(events: readonly SessionEvent[]): Array<Omit<SessionEvent, 'seq' | 'time'>> {
@@ -89,13 +179,13 @@ export function canonicalSessionFixture(content: string, label = '<session-fixtu
 
   let events
   try {
-    events = parseSessionLog(content)
+    events = parseFixtureRows(content, headerValue)
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`${label}: ${detail}`, { cause: error })
   }
   const canonical = renderFixture(headerLine, events)
-  const decoded = parseSessionLog(canonical)
+  const decoded = parseFixtureRows(canonical, headerValue)
   try {
     deepStrictEqual(withoutEnvelope(decoded), withoutEnvelope(events))
   } catch (error) {

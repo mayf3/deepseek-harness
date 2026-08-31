@@ -1,9 +1,9 @@
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, SessionPreparation } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -35,6 +35,22 @@ async function makeCoreContext(): Promise<Context> {
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
   return ctx
+}
+
+/** Materialize one ordinary JSONL artifact and return its exact active path. */
+async function persistConfiguredArtifact(sessionId: SessionId): Promise<{ root: string; path: string }> {
+  const root = await mkdtemp(join(tmpdir(), 'dsh-cfg-artifact-'))
+  dirs.push(root)
+  const ctx = await makeCoreContext()
+  await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+  const session = ctx.sessions.create(sessionId)
+  session.append('turn/start', { turn: 1 })
+  session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+  await ctx.sessions.flush(session)
+  const path = ctx.sessionPersistence.locate(session.header)?.path
+  await ctx.fiber.dispose()
+  if (path === undefined) throw new Error('JSONL test fixture has no artifact path')
+  return { root, path }
 }
 
 describe('config-driven session id', () => {
@@ -217,7 +233,7 @@ describe('config-driven session id', () => {
     await ctx.fiber.dispose()
   })
 
-  it('contains an exact-id persistence lookup failure', async () => {
+  it('contains an exact-id persistence restore failure', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-cfg-exact-failure-'))
     dirs.push(root)
     const ctx = await makeCoreContext()
@@ -231,7 +247,7 @@ describe('config-driven session id', () => {
     ctx.on('agent-loop/config-start-failed', ({ sessionId, error }) => {
       failures.push({ sessionId, error })
     })
-    vi.spyOn(ctx.sessionPersistence, 'list').mockRejectedValue(failure)
+    vi.spyOn(ctx.sessionPersistence, 'prepare').mockRejectedValue(failure)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
 
     await ctx.plugin(AgentLoop, {
@@ -253,6 +269,46 @@ describe('config-driven session id', () => {
     await ctx.fiber.dispose()
   })
 
+  it.each([
+    ['future', (header: Record<string, unknown>) => { header['version'] = 99 }, /newer|version 99/i],
+    ['malformed', (header: Record<string, unknown>) => { header['unexpected'] = true }, /invalid current header/i],
+  ] as const)('keeps a configured exact-id %s artifact failure instead of attempting creation', async (
+    _kind,
+    mutate,
+    expected,
+  ) => {
+    const sessionId = SessionId(`config-exact-${_kind}`)
+    const { root, path } = await persistConfiguredArtifact(sessionId)
+    const lines = (await readFile(path, 'utf8')).split('\n')
+    const header = JSON.parse(lines[0] as string) as Record<string, unknown>
+    mutate(header)
+    lines[0] = JSON.stringify(header)
+    const source = lines.join('\n')
+    const artifactPath = _kind === 'future'
+      ? join(dirname(path), 'session.v99.jsonl')
+      : path
+    await writeFile(artifactPath, source)
+    if (artifactPath !== path) await rm(path)
+
+    const ctx = await makeCoreContext()
+    await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
+    const failures: unknown[] = []
+    ctx.on('agent-loop/config-start-failed', ({ error }) => { failures.push(error) })
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    await ctx.plugin(AgentLoop, {
+      agents: [{ id: 'main', sessionId, model: 'mock' }],
+    })
+
+    await expect.poll(() => failures.length).toBe(1)
+    expect(failures[0]).toBeInstanceOf(Error)
+    expect((failures[0] as Error).message).toMatch(expected)
+    expect(ctx.agents.get(sessionId)).toBeUndefined()
+    expect(await readFile(artifactPath, 'utf8')).toBe(source)
+    expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('already has a persisted log'))
+    warn.mockRestore()
+    await ctx.fiber.dispose()
+  })
+
   it('contains startup and observer failures whose string coercion throws', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-cfg-exact-unrenderable-'))
     dirs.push(root)
@@ -269,7 +325,7 @@ describe('config-driven session id', () => {
     // oxlint-disable-next-line typescript/prefer-promise-reject-errors
     ctx.on('agent-loop/config-start-failed', () => Promise.reject(unrenderable) as never)
     ctx.on('agent-loop/config-start-failed', ({ error }) => { failures.push(error) })
-    vi.spyOn(ctx.sessionPersistence, 'list').mockRejectedValue(unrenderable)
+    vi.spyOn(ctx.sessionPersistence, 'prepare').mockRejectedValue(unrenderable)
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
 
     await ctx.plugin(AgentLoop, {

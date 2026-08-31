@@ -6,7 +6,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
+import type { CurrentSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { makeBridgeHarness, textResponse, type BridgeHarness } from './harness.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
@@ -22,6 +23,15 @@ function oneToolCall(): StreamChunk[] {
     },
     { type: 'finish', reason: { kind: 'tool-calls' } },
   ]
+}
+
+function currentListing(header: SessionHeader): CurrentSessionPersistenceListing {
+  return {
+    status: 'current',
+    header,
+    storedVersion: SESSION_FORMAT_VERSION,
+    targetVersion: SESSION_FORMAT_VERSION,
+  }
 }
 
 describe('automation-only ACP bridge', () => {
@@ -249,13 +259,13 @@ describe('automation-only ACP bridge', () => {
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     const sessionId = SessionId('other-frontend-live')
     harness.ctx.sessions.create(sessionId, { meta: { cwd: process.cwd() } })
-    vi.spyOn(harness.ctx.sessionPersistence, 'list').mockResolvedValue([{
-      version: 0,
+    vi.spyOn(harness.ctx.sessionPersistence, 'list').mockResolvedValue([currentListing({
+      version: SESSION_FORMAT_VERSION,
       id: sessionId,
       createdAt: 1,
       cwd: process.cwd(),
       isSeeded: false,
-    }])
+    })])
     const resume = vi.spyOn(harness.ctx.agents, 'resume')
 
     await expect(harness.client.listSessions({})).resolves.toEqual({ sessions: [] })
@@ -364,14 +374,63 @@ describe('automation-only ACP bridge', () => {
     const active = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
     const persistence = harness.ctx.get('sessionPersistence')!
     vi.spyOn(persistence, 'list').mockResolvedValue([
-      { version: 0, id: SessionId(active.sessionId), createdAt: 9, cwd: process.cwd(), isSeeded: false },
-      { version: 0, id: SessionId('subagent'), createdAt: 8, cwd: '/missing/filter', isSeeded: false, origin: 'subagent' },
-      { version: 0, id: SessionId('fork'), createdAt: 7, cwd: '/missing/filter', isSeeded: true, parentSession: SessionId('parent') },
-      { version: 0, id: SessionId('no-cwd'), createdAt: 6, isSeeded: false },
-      { version: 0, id: SessionId('relative'), createdAt: 5, cwd: 'relative', isSeeded: false },
-      { version: 0, id: SessionId('other'), createdAt: 4, cwd: '/missing/other', isSeeded: false },
-      { version: 0, id: SessionId('valid-b'), createdAt: 3, cwd: '/missing/filter', isSeeded: false },
-      { version: 0, id: SessionId('valid-a'), createdAt: 3, cwd: '/missing/filter', isSeeded: false },
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId(active.sessionId),
+        createdAt: 9,
+        cwd: process.cwd(),
+        isSeeded: false,
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('subagent'),
+        createdAt: 8,
+        cwd: '/missing/filter',
+        isSeeded: false,
+        origin: 'subagent',
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('fork'),
+        createdAt: 7,
+        cwd: '/missing/filter',
+        isSeeded: true,
+        parentSession: SessionId('parent'),
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('no-cwd'),
+        createdAt: 6,
+        isSeeded: false,
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('relative'),
+        createdAt: 5,
+        cwd: 'relative',
+        isSeeded: false,
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('other'),
+        createdAt: 4,
+        cwd: '/missing/other',
+        isSeeded: false,
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('valid-b'),
+        createdAt: 3,
+        cwd: '/missing/filter',
+        isSeeded: false,
+      }),
+      currentListing({
+        version: SESSION_FORMAT_VERSION,
+        id: SessionId('valid-a'),
+        createdAt: 3,
+        cwd: '/missing/filter',
+        isSeeded: false,
+      }),
     ])
 
     await expect(harness.client.listSessions({ cwd: 'relative' })).rejects.toThrow(/absolute path/)

@@ -5,10 +5,11 @@ import type { FileHandle } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
-import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { logPath, scanLog, sessionDir, toHeaderLine, type JsonlCompression } from '../src/format.ts'
+import type { SessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
+import { generationLogPath, logPath, scanLog, sessionDir, toHeaderLine, type JsonlCompression } from '../src/format.ts'
 import {
   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
   type ZstdFrameDecoder,
@@ -17,6 +18,29 @@ import { NodePrivateZstdFrameDecoder } from '../src/zstd-private-decoder.ts'
 import { PublicZstdFrameDecoder } from '../src/zstd-public-decoder.ts'
 import { runPersistenceContract, meta, oneTurnLog } from '../../session-persistence/tests/contract.ts'
 import { runCoordinatorContract, type CoordinatorFixture } from '../../session-persistence/tests/coordinator-contract.ts'
+
+const physicalReadProbe = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  opens: 0,
+  reads: 0,
+}))
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return {
+    ...actual,
+    open: async (...args: Parameters<typeof actual.open>) => {
+      if (typeof args[0] === 'string' && args[0] === physicalReadProbe.path && args[1] === 'r') {
+        physicalReadProbe.opens += 1
+      }
+      return actual.open(...args)
+    },
+    readFile: (async (...args: Parameters<typeof actual.readFile>) => {
+      if (typeof args[0] === 'string' && args[0] === physicalReadProbe.path) physicalReadProbe.reads += 1
+      return actual.readFile(...args)
+    }) as typeof actual.readFile,
+  }
+})
 
 const MAGIC = Buffer.from([0x28, 0xB5, 0x2F, 0xFD])
 const roots: string[] = []
@@ -51,6 +75,11 @@ async function mount(root: string, compression?: JsonlCompression): Promise<Cont
   return ctx
 }
 
+function listedHeaders(listings: readonly SessionPersistenceListing[]): SessionHeader[] {
+  return listings.flatMap(listing =>
+    listing.status === 'current' || listing.status === 'migration-required' ? [listing.header] : [])
+}
+
 async function decodeCompleteFrames(buffer: Buffer): Promise<Buffer> {
   const { frames, tornStart } = scanZstdFrames(buffer)
   expect(tornStart).toBeUndefined()
@@ -59,6 +88,14 @@ async function decodeCompleteFrames(buffer: Buffer): Promise<Buffer> {
     plaintext.push(await decompressZstdFrame(buffer.subarray(frame.start, frame.end)))
   }
   return Buffer.concat(plaintext)
+}
+
+function releasedV0Header(header: ReturnType<typeof meta>): Record<string, unknown> {
+  return { ...toHeaderLine(header), version: 0 }
+}
+
+function zstdGenerationPath(root: string, header: ReturnType<typeof meta>, version: number): string {
+  return generationLogPath(root, header.cwd, header.id, version, 'zstd')
 }
 
 async function tornFrame(
@@ -108,6 +145,9 @@ function emptyStructuralFrame(descriptor: number): Buffer {
 
 afterEach(async () => {
   vi.restoreAllMocks()
+  physicalReadProbe.path = undefined
+  physicalReadProbe.opens = 0
+  physicalReadProbe.reads = 0
   for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true })
 })
@@ -343,9 +383,40 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     )
     await writeFile(path, Buffer.concat([headerFrame, Buffer.from('invalid event frame')]))
 
-    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
-      expect.objectContaining({ id: header.id, isSeeded: true }),
-    ])
+    const [listing] = await ctx.sessionPersistence.list()
+    if (listing?.status !== 'current' && listing?.status !== 'migration-required') {
+      throw new Error('expected readable listing')
+    }
+    expect(listing.header).toMatchObject({ id: header.id, isSeeded: true })
+  })
+
+  it('keeps compressed list and fused body reads aligned on malformed current headers', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const fixtures = [
+      ['extra', { unexpected: true }],
+      ['cwd-type', { cwd: 7 }],
+      ['cwd-relative', { cwd: 'relative/path' }],
+      ['parent-type', { parentSession: 7 }],
+    ] as const
+    for (const [name, change] of fixtures) {
+      const id = SessionId(`zstd-malformed-current-${name}`)
+      const path = logPath(root, '/work', id, 'zstd')
+      await mkdir(sessionDir(root, '/work', id), { recursive: true })
+      await writeFile(path, await compressZstdFrame(
+        `${JSON.stringify({ ...toHeaderLine(meta(id, '/work')), ...change })}\n`,
+      ))
+    }
+
+    const listings = await ctx.sessionPersistence.list()
+
+    expect(listings).toHaveLength(fixtures.length)
+    expect(listings.every(listing => listing.status === 'malformed')).toBe(true)
+    for (const [name] of fixtures) {
+      const id = SessionId(`zstd-malformed-current-${name}`)
+      await expect(ctx.sessionPersistence.inspect(id)).rejects.toThrow(/invalid current header|cwd must be absolute/)
+      await expect(ctx.sessionPersistence.readRaw(id)).rejects.toThrow(/invalid current header|cwd must be absolute/)
+    }
   })
 
   it('materializes an explicitly durable empty session as one header frame', async () => {
@@ -399,7 +470,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     const raw = await ctx.sessionPersistence.readRaw(header.id)
     expect(raw).toBeDefined()
     // The logical name drops the physical encoding suffix.
-    expect(raw!.filename).toBe('session.jsonl')
+    expect(raw!.filename).toBe(`session.v${SESSION_FORMAT_VERSION}.jsonl`)
     expect(raw!.meta.id).toBe(header.id)
     expect(raw!.content).toBe([
       JSON.stringify(toHeaderLine(header)),
@@ -408,6 +479,146 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     ].join('\n'))
     const scanned = scanLog(Buffer.from(raw!.content))
     expect(scanned.events.map(event => event.type)).toEqual(oneTurnLog().map(event => event.type))
+  })
+
+  it('reads each current compressed body exactly once', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const header = meta('zstd-current-single-read', '/work')
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    physicalReadProbe.path = logPath(root, header.cwd, header.id, 'zstd')
+
+    await expect(ctx.sessionPersistence.readRaw(header.id)).resolves.toMatchObject({ meta: header })
+    expect(physicalReadProbe.reads).toBe(1)
+    expect(physicalReadProbe.opens).toBe(0)
+
+    await expect(ctx.sessionPersistence.readRaw(header.id)).resolves.toMatchObject({ meta: header })
+    expect(physicalReadProbe.reads).toBe(2)
+    expect(physicalReadProbe.opens).toBe(0)
+  })
+
+  it('closes standalone current classification and retains the legacy raw hook', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const header = meta('zstd-standalone-current', '/work')
+    await ctx.sessionPersistence.create(header)
+    await ctx.sessionPersistence.append(header.id, oneTurnLog())
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(backend.ensureCurrent(header.id, new AbortController().signal)).resolves.toBeUndefined()
+    await expect(backend.readRawStored(header.id)).resolves.toMatchObject({ meta: header })
+  })
+
+  it('closes current Zstandard classification when latest metadata is malformed', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const id = SessionId('zstd-malformed-current-header')
+    const path = logPath(root, undefined, id, 'zstd')
+    await mkdir(sessionDir(root, undefined, id), { recursive: true })
+    await writeFile(path, Buffer.concat([
+      await compressZstdFrame(`${JSON.stringify({ type: 'session', version: 1 })}\n`),
+      await compressZstdFrame(`${JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } })}\n`),
+    ]))
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
+
+    await expect(backend.readCurrentRawStored(id))
+      .rejects.toThrow('corrupt session log: invalid current header')
+  })
+
+  it('closes the current decoder when strict header translation throws', async () => {
+    const root = await freshRoot()
+    const id = SessionId('zstd-retired-header-decoder')
+    const path = logPath(root, undefined, id, 'zstd')
+    await mkdir(sessionDir(root, undefined, id), { recursive: true })
+    await writeFile(path, await compressZstdFrame(`${JSON.stringify({
+      type: 'session',
+      version: 1,
+      id,
+      createdAt: 1,
+      delegationDepth: 0,
+      sandboxMode: 'read-only',
+    })}\n`))
+    let closed = 0
+    vi.resetModules()
+    vi.doMock('../src/zstd.ts', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../src/zstd.ts')>()
+      return {
+        ...actual,
+        createZstdFrameDecoder(): ZstdFrameDecoder {
+          const inner = actual.createZstdFrameDecoder()
+          return {
+            *decode(source, frames) {
+              try {
+                yield* inner.decode(source, frames)
+              } finally {
+                closed += 1
+                inner.close()
+              }
+            },
+            close(): void { inner.close() },
+          }
+        },
+      }
+    })
+    const ctx = new Context()
+    contexts.push(ctx)
+    await ctx.plugin(SessionStore)
+    try {
+      const { default: InstrumentedJsonlSessionPersistence } = await import('../src/index.ts')
+      await ctx.plugin(InstrumentedJsonlSessionPersistence, { root, compression: 'zstd' })
+
+      await expect(ctx.sessionPersistence.readRaw(id)).rejects.toThrow(/retired policy baseline fields/)
+      expect(closed).toBe(1)
+    } finally {
+      vi.doUnmock('../src/zstd.ts')
+      vi.resetModules()
+    }
+  })
+
+  it('migrates a released v0 compressed artifact before raw export and keeps its exact frames', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const current = meta('zstd-v0-on-read', '/work')
+    const path = zstdGenerationPath(root, current, 0)
+    const currentPath = logPath(root, current.cwd, current.id, 'zstd')
+    const v0Header = releasedV0Header(current)
+    const source = Buffer.concat([
+      await compressZstdFrame(`${JSON.stringify(v0Header)}\n`),
+      await compressZstdFrame(`${oneTurnLog().map(event => JSON.stringify(event)).join('\n')}\n`),
+    ])
+    await mkdir(sessionDir(root, current.cwd, current.id), { recursive: true })
+    await writeFile(path, source)
+
+    await expect(ctx.sessionPersistence.list()).resolves.toEqual([
+      expect.objectContaining({ status: 'migration-required', storedVersion: 0, targetVersion: 1 }),
+    ])
+    expect(await readFile(path)).toEqual(source)
+
+    const raw = await ctx.sessionPersistence.readRaw(current.id)
+
+    expect(raw?.meta.version).toBe(1)
+    expect(JSON.parse(raw?.content.split('\n')[0] as string)).toMatchObject({ version: 1 })
+    expect(await readFile(path)).toEqual(source)
+    expect(JSON.parse((await decodeCompleteFrames(await readFile(currentPath))).toString().split('\n')[0] as string))
+      .toMatchObject({ version: 1 })
+  })
+
+  it('restores a migrated compressed prefix when publication validation consumed its first decoder', async () => {
+    const root = await freshRoot()
+    const ctx = await mount(root)
+    const current = meta('zstd-v0-prefix-on-read', '/work')
+    const path = zstdGenerationPath(root, current, 0)
+    await mkdir(sessionDir(root, current.cwd, current.id), { recursive: true })
+    await writeFile(path, Buffer.concat([
+      await compressZstdFrame(`${JSON.stringify(releasedV0Header(current))}\n`),
+      await compressZstdFrame(`${oneTurnLog().map(event => JSON.stringify(event)).join('\n')}\n`),
+    ]))
+
+    await expect(ctx.sessionPersistence.inspect(current.id)).resolves.toMatchObject({
+      meta: { id: current.id, version: 1 },
+      events: oneTurnLog(),
+    })
   })
 
   it('readRaw rejects a present zstd artifact that carries no frame', async () => {
@@ -495,7 +706,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     buffer[eventFrame.end - 1] = buffer[eventFrame.end - 1]! ^ 0xFF
     await writeFile(path, buffer)
 
-    expect((await ctx.sessionPersistence.list()).map(item => item.id)).toEqual([header.id])
+    expect(listedHeaders(await ctx.sessionPersistence.list()).map(item => item.id)).toEqual([header.id])
     await expect(ctx.sessionPersistence.load(header.id)).rejects.toThrow(/frame at byte .* failed validation/)
   })
 
@@ -684,7 +895,7 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     expect((await ctx.sessionPersistence.load(header.id)).events).toEqual([...oneTurnLog(), ...secondTurn])
   })
 
-  it('skips empty, incomplete, and non-header compressed artifacts while rejecting malformed header frames', async () => {
+  it('isolates empty, incomplete, and non-header compressed artifacts as malformed descriptors', async () => {
     const root = await freshRoot()
     for (const [id, content] of [
       ['empty', Buffer.alloc(0)],
@@ -696,7 +907,9 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       await writeFile(logPath(root, undefined, sessionId, 'zstd'), content)
     }
     const ctx = await mount(root)
-    expect(await ctx.sessionPersistence.list()).toEqual([])
+    const initialListings = await ctx.sessionPersistence.list()
+    expect(initialListings).toHaveLength(3)
+    expect(initialListings.every(listing => listing.status === 'malformed')).toBe(true)
 
     const twoLinesId = SessionId('two-lines')
     await mkdir(sessionDir(root, undefined, twoLinesId), { recursive: true })
@@ -705,7 +918,14 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       JSON.stringify({ type: 'turn/start' }),
       '',
     ].join('\n')))
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/first frame is not exactly one header line/)
+    const twoLineListing = (await ctx.sessionPersistence.list())
+      .find(listing => listing.location?.path.endsWith(join(
+        'two-lines',
+        `session.v${SESSION_FORMAT_VERSION}.jsonl.zstd`,
+      )) === true)
+    expect(twoLineListing?.status).toBe('malformed')
+    if (twoLineListing?.status !== 'malformed') throw new Error('expected malformed listing')
+    expect(twoLineListing.reason).toMatch(/first frame is not exactly one header line/)
     await expect(ctx.sessionPersistence.load(SessionId('two-lines')))
       .rejects.toThrow(/first frame is not exactly one header line/)
   })
@@ -721,12 +941,19 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
     corruptHeader[corruptHeader.length - 1] = corruptHeader[corruptHeader.length - 1]! ^ 0xFF
     await writeFile(logPath(root, undefined, SessionId('bad-checksum'), 'zstd'), corruptHeader)
     const ctx = await mount(root)
+    const backend = ctx.sessionPersistence as JsonlSessionPersistence
 
     await expect(ctx.sessionPersistence.load(SessionId('partial-only')))
       .rejects.toThrow(/empty or header-less Zstandard session log/)
+    await expect(backend.readRawStored(SessionId('partial-only')))
+      .rejects.toThrow(/empty or header-less Zstandard session log/)
+    await expect(backend.loadStored(SessionId('partial-only')))
+      .rejects.toThrow(/empty or header-less Zstandard session log/)
     await expect(ctx.sessionPersistence.load(SessionId('empty-header')))
       .rejects.toThrow(/first frame is not exactly one header line/)
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/header frame failed validation/)
+    const listings = await ctx.sessionPersistence.list()
+    expect(listings.some(listing =>
+      listing.status === 'malformed' && /header frame failed validation/.test(listing.reason))).toBe(true)
   })
 })
 
@@ -739,6 +966,10 @@ describe('JsonlSessionPersistence: encoding selection', () => {
     await raw.sessionPersistence.append(rawHeader.id, oneTurnLog())
     const defaultBackend = await mount(rawRoot)
     await expect(defaultBackend.sessionPersistence.list()).rejects.toThrow(/configured for compression "zstd"/)
+    const blockedZstd = meta('blocked-zstd-write')
+    await defaultBackend.sessionPersistence.create(blockedZstd)
+    await expect(defaultBackend.sessionPersistence.append(blockedZstd.id, oneTurnLog()))
+      .rejects.toThrow(/configured for compression "zstd"/)
 
     const zstdRoot = await freshRoot('dsh-jsonl-zstd-mismatch-')
     const zstd = await mount(zstdRoot)
@@ -756,8 +987,8 @@ describe('JsonlSessionPersistence: encoding selection', () => {
 
     const loadHeader = meta('late-raw-load', '/late')
     await mkdir(sessionDir(root, loadHeader.cwd, loadHeader.id), { recursive: true })
-    await writeFile(logPath(root, loadHeader.cwd, loadHeader.id, 'none'), [
-      JSON.stringify(toHeaderLine(loadHeader)),
+    await writeFile(generationLogPath(root, loadHeader.cwd, loadHeader.id, 7, 'none'), [
+      JSON.stringify({ ...toHeaderLine(loadHeader), version: 7 }),
       ...oneTurnLog().map(e => JSON.stringify(e)),
       '',
     ].join('\n'))
@@ -770,15 +1001,18 @@ describe('JsonlSessionPersistence: encoding selection', () => {
   it('refuses materialization when an opposite artifact appears after create', async () => {
     const root = await freshRoot()
     const ctx = await mount(root)
-    await ctx.sessionPersistence.list()
+    const priming = meta('prime-encoding-check', '/late')
+    await ctx.sessionPersistence.create(priming)
+    await ctx.sessionPersistence.append(priming.id, oneTurnLog())
     const header = meta('late-raw-materialize', '/late')
     await ctx.sessionPersistence.create(header)
     await mkdir(sessionDir(root, header.cwd, header.id), { recursive: true })
-    await writeFile(logPath(root, header.cwd, header.id, 'none'), [
-      JSON.stringify(toHeaderLine(header)),
+    await writeFile(generationLogPath(root, header.cwd, header.id, 7, 'none'), [
+      JSON.stringify({ ...toHeaderLine(header), version: 7 }),
       ...oneTurnLog().map(e => JSON.stringify(e)),
       '',
     ].join('\n'))
+    await writeFile(generationLogPath(root, header.cwd, header.id, 4, 'none'), 'older opposite generation')
     await expect(ctx.sessionPersistence.append(header.id, oneTurnLog())).rejects.toThrow(/uses \.jsonl/)
     expect((await readdir(sessionDir(root, header.cwd, header.id))).some(name => name.endsWith('.jsonl.zstd'))).toBe(false)
   })

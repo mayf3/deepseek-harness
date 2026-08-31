@@ -4,12 +4,12 @@ import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { createAssistantMessage, createUserMessage, MessageId } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
-import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
+import { currentSessionListing, installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 async function commandHarness(): Promise<{
   ctx: Context
@@ -143,14 +143,14 @@ async function persistedController(
   await ctx.plugin(SessionStore)
   const sessionId = SessionId('cold-attachment')
   const meta: SessionHeader = {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id: sessionId,
     createdAt: 1,
     cwd: '/workspace',
     isSeeded: false,
   }
   ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
-    list: () => Promise.resolve([meta]),
+    list: () => Promise.resolve([currentSessionListing(meta)]),
     inspect: () => Promise.resolve({
       meta,
       inheritedEventCount: SessionLogOffset(0),

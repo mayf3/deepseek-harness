@@ -13,11 +13,12 @@ import { join } from 'node:path'
 import type { Browser, Locator, Page } from 'playwright'
 import { chromium } from 'playwright'
 import { afterAll, beforeAll, describe, expect, it, onTestFailed } from 'vitest'
-import type { SessionEvent } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   assertFixtureInventory, captureStableAria, compareOrRefreshGolden, fixtureUserPrompts,
-  launchWebScaffold, recordFixture, seedSession, watchConsole, webSnapshotMode, type WebScaffold,
+  launchWebScaffold, recordedSessionFixturePath, recordFixture, seedSession,
+  watchConsole, webSnapshotMode, type WebScaffold,
 } from './scaffold.ts'
 import {
   connectFreshWorkspace, expandTurnProcesses, newEnglishPage, saveFailureShot,
@@ -107,7 +108,6 @@ function cancelledFixture(fixture: string): string {
     message.content[0].isError = true
     data.error = {
       name: 'UserQuestionError',
-      message: 'the user cancelled ask_user_question',
       code: 'ASK_CANCELLED',
     }
     replaced = true
@@ -274,6 +274,11 @@ describe('web e2e: resident question composer round trip', () => {
     const sessionId = await settled
     if (MODE === 'record') {
       await recordFixture(scaffold, sessionId, FIXTURE)
+      const recorded = await readFile(recordedSessionFixturePath(FIXTURE, SESSION_FORMAT_VERSION), 'utf8')
+      const header = JSON.parse(recorded.split('\n').find(line => line.trim().length > 0) ?? '{}') as {
+        cwd?: unknown
+      }
+      expect(header.cwd).toBe('{{cwd}}')
       return
     }
     answeredSession = sessionId

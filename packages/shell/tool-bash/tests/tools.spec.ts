@@ -11,7 +11,9 @@ import ToolRuntime, { TOOL_ABORTED, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepse
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
-import SessionStore, { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, {
+  SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq,
+} from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -71,7 +73,7 @@ function registerFakeAgent(ctx: Context, sessionId: string, inject: (...args: un
     id,
     ctx: scopeFiber.ctx,
     inject,
-    session: { id, header: { version: 0, id, createdAt: 0 } },
+    session: { id, header: { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false } },
   } as unknown as Agent
   ctx.agents.register(agent)
   return agent
@@ -220,7 +222,7 @@ function sandboxAgent(
     ...ctx === undefined ? {} : { ctx: ctx.plugin(() => {}).ctx },
     session: {
       id,
-      header: { version: 0, id, createdAt: 0, isSeeded: false },
+      header: { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false },
       inheritedEventCount: SessionLogOffset(0),
       firstLiveSeq: SessionLogOffset(0),
       get seq() { return SessionLogOffset(events.length) },
@@ -832,7 +834,12 @@ describe('processOutcome', () => {
 describe('session-cwd routing (per-session workdir)', () => {
   // An agent whose session header carries a cwd (what session/new records).
   const agentInCwd = (cwd: string) =>
-    ({ inject: () => undefined, session: { header: { version: 0, id: 'c', createdAt: 0, cwd } } }) as unknown as Agent
+    ({
+      inject: () => undefined,
+      session: {
+        header: { version: SESSION_FORMAT_VERSION, id: 'c', createdAt: 0, cwd, isSeeded: false },
+      },
+    }) as unknown as Agent
 
   it('defaults bash to the agent\'s session cwd (not the server launch dir)', async () => {
     const ctx = await setup()

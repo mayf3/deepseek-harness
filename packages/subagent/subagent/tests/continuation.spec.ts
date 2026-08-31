@@ -6,9 +6,10 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
@@ -253,6 +254,30 @@ describe('SubagentRuntime.startContinuable', () => {
       childId: reservedId,
     })).rejects.toMatchObject({ code: 'DUPLICATE_CHILD' })
     expect(ctx.agents.get(reservedId)).toBeUndefined()
+  })
+
+  it('rejects a reserved identity already present as a migration-required Session', async () => {
+    const { ctx, parent } = await setup([])
+    const reservedId = SessionId('00000000-0000-4000-8000-000000000124')
+    const listSnapshots = vi.spyOn(ctx.sessionPersistence, 'listSnapshots').mockResolvedValue([{
+      status: 'migration-required',
+      header: {
+        version: SESSION_FORMAT_VERSION,
+        id: reservedId,
+        createdAt: 1,
+        isSeeded: false,
+      },
+      storedVersion: 0,
+      targetVersion: SESSION_FORMAT_VERSION,
+      revision: SessionPersistenceRevision('migration-required:1'),
+    }])
+
+    await expect(ctx.subagents.startContinuable({
+      ...startSpec(parent),
+      childId: reservedId,
+    })).rejects.toMatchObject({ code: 'DUPLICATE_CHILD' })
+    expect(ctx.agents.get(reservedId)).toBeUndefined()
+    listSnapshots.mockRestore()
   })
 
   it('rejects without ids when the provider has no prepareContinuable capability', async () => {

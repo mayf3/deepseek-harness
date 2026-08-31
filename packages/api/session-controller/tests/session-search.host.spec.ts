@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionSeq } from '@deepseek-ai/dsh-session'
+import SessionStore, { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import {
@@ -17,7 +17,7 @@ import {
   type SessionSearchHit,
   type SessionSearchRequest,
 } from '@deepseek-ai/dsh-session-query'
-import { createSessionTestRemote } from './test-remote.ts'
+import { createSessionTestRemote, currentSessionListing } from './test-remote.ts'
 import { ApiSessionList } from '../src/list.ts'
 
 const sid = (value: string): SessionId => value as SessionId
@@ -29,7 +29,7 @@ function request(query: string): { query: string } {
 
 function header(id: string, cwd: string | null = '/project'): SessionHeader {
   return {
-    version: 0,
+    version: SESSION_FORMAT_VERSION,
     id: sid(id),
     createdAt: 100,
     isSeeded: false,
@@ -114,7 +114,7 @@ describe('session.search', () => {
     const cold = header('cold', '/cold')
     const legacy = header('legacy', null)
     ctx.provide('sessionPersistence', {
-      list: () => Promise.resolve([cold, legacy]),
+      list: () => Promise.resolve([currentSessionListing(cold), currentSessionListing(legacy)]),
       locate: () => undefined,
     } as never)
 
@@ -771,7 +771,7 @@ describe('session.search', () => {
       (_, index) => header(`cold-${index}`, `/cold-${index}`),
     )
     ctx.provide('sessionPersistence', {
-      list: () => Promise.resolve(cold),
+      list: () => Promise.resolve(cold.map(currentSessionListing)),
       locate: () => undefined,
     } as never)
     const searchSessions = vi.fn((_request: SessionSearchRequest) => Promise.resolve({
@@ -802,7 +802,7 @@ describe('session.search', () => {
     const list = vi.fn((signal?: AbortSignal) => {
       expect(signal).toBe(controller.signal)
       controller.abort()
-      return Promise.resolve(cold)
+      return Promise.resolve(cold.map(currentSessionListing))
     })
     let locateCalls = 0
     ctx.provide('sessionPersistence', {
@@ -834,7 +834,7 @@ describe('session.search', () => {
     const cold = Array.from({ length: 16 }, (_, index) => header(`cold-${index}`, `/cold-${index}`))
     const locate = vi.fn((meta: SessionHeader) => ({ kind: 'jsonl', path: `/logs/${meta.id}.jsonl` }))
     ctx.provide('sessionPersistence', {
-      list: () => Promise.resolve(cold),
+      list: () => Promise.resolve(cold.map(currentSessionListing)),
       locate,
     } as never)
     const searchSessions = vi.fn(() => Promise.resolve({ items: [] }))

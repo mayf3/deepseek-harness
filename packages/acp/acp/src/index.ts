@@ -47,7 +47,7 @@ import {
 } from '@agentclientprotocol/sdk'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type {} from '@deepseek-ai/dsh-session-persistence'
+import { isReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 // Side-effect type import: declaration-merges the approval waterfall answered below.
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { supportsAcpImagePrompts } from './content.ts'
@@ -244,7 +244,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
       }
       activating.add(sessionId)
       return (async (): Promise<ResumeSessionResponse> => {
-        const persisted = (await persistence.list(signal)).find(header => header.id === sessionId)
+        const persisted = (await persistence.list(signal))
+          .filter(isReadableSessionPersistenceListing)
+          .map(listing => listing.header)
+          .find(header => header.id === sessionId)
         if (persisted === undefined || persisted.origin === 'subagent' || persisted.parentSession !== undefined) {
           throw invalidParams(`session is not resumable: ${sessionId}`)
         }
@@ -299,7 +302,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
       } catch (error: unknown) {
         throw invalidParams((error as Error).message)
       }
-      const listed = await persistence.list(signal)
+      const listed = (await persistence.list(signal))
+        .filter(isReadableSessionPersistenceListing)
+        .map(listing => listing.header)
       const filtered = await Promise.all(listed.map(async (header) => {
         if (
           sessions.has(header.id)
