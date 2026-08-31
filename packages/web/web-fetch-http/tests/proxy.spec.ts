@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
 import { HttpFetchProvider } from '@deepseek-ai/dsh-web-fetch-http'
 import type { HttpFetchLimits } from '@deepseek-ai/dsh-web-fetch-http'
-import { publicHttpNetwork } from '../src/network.ts'
+import { isNonPublicIpLiteral, publicHttpNetwork } from '../src/network.ts'
 
 const limits: HttpFetchLimits = {
   maxResponseBytes: 5_000_000,
@@ -103,7 +103,7 @@ describe('fetching through a proxy', () => {
     expect(resolve).toHaveBeenCalledOnce()
   })
 
-  it.each(['10.0.0.5', '169.254.169.254', '127.0.0.2', '[::ffff:127.0.0.1]'])(
+  it.each(['10.0.0.5', '169.254.169.254', '127.0.0.2'])(
     'refuses %s instead of letting the proxy reach it for us',
     async (host) => {
       const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
@@ -119,6 +119,16 @@ describe('fetching through a proxy', () => {
       expect(resolve).toHaveBeenCalledOnce()
     },
   )
+
+  it('reads an IPv4-mapped literal as non-public without asking the network', () => {
+    // Driven through the predicate rather than a fetch: an IPv6 literal sends `resolvePublicAddresses`
+    // looking for a NAT64 prefix before it refuses anything, and that is a real DNS query. The three
+    // IPv4 cases above already prove the branch end to end without one.
+    expect(isNonPublicIpLiteral('[::ffff:7f00:1]')).toBe(true)
+    expect(isNonPublicIpLiteral('[::1]')).toBe(true)
+    expect(isNonPublicIpLiteral('[::ffff:808:808]')).toBe(false)
+    expect(isNonPublicIpLiteral('example.com')).toBe(false)
+  })
 
   it('still refuses a cross-origin redirect on the proxied path', async () => {
     proxy.removeAllListeners('request')
