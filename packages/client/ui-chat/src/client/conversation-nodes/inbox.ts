@@ -106,7 +106,7 @@ function applySplice(
 
 const NEXT_STEP_INBOX_KIND = 'inbox-next-step'
 
-/** Cumulative next-step Inbox state used to classify steering. */
+/** Persistent next-step Inbox state used to classify the current claimed batch as steering. */
 export const nextStepInboxDefinition: ConversationNodeDefinition<InboxState> = {
   kind: NEXT_STEP_INBOX_KIND,
   match: (event) => {

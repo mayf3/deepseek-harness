@@ -309,7 +309,9 @@ Unknown fallback demonstrates Registry ownership: it handles only append-surface
 
 [`ConversationViewRegistry`](../../../../packages/client/ui-conversation/src/client/conversation/view-registry.ts) stores an independent builder factory for each target and shares no Session's ordering or caches.
 
-A target source's first subscriber adds that target to the Session's monotonic active-target set. The Assembler indexes each Context under its sole target but creates no builder, Node, or snapshot for an inactive target. First activation flushes pending target-neutral work, creates the builder, and calls `replace({ nodes, timeline })` once from that target's current Contexts.
+A shell selection or a target source's first subscriber adds that target to the Session's monotonic active-target set. The Assembler indexes each Context under its sole target but creates no builder, Node, or snapshot for an inactive target. First activation flushes pending target-neutral work, creates the builder, and calls `replace({ nodes, timeline })` once from that target's current Contexts.
+
+The shell synchronously resolves the persisted selection when a Session binding becomes available, when a cached binding becomes current, or when the View roster changes, then explicitly activates that registered View or the Chat fallback. Tab and focus actions activate their resolved target before updating selection state. A blank Session does not render the View slot, and `ConversationSnapshot.activeTargets` derives only from materialized active snapshots without querying inactive target Contexts for activity.
 
 Ordinary prepend and append flushes call `apply({ upserts, timeline })` only for active targets. Complete window replacement and Registry rebuild call `replace()` only for active targets. Unsubscription does not remove a target, so returning to an opened View does not rebuild it.
 

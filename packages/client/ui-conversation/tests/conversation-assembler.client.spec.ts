@@ -161,6 +161,18 @@ function fallbackDefinition(start: () => string): ConversationNodeDefinition<str
 }
 
 describe('ConversationNodeAssembler', () => {
+  it('reports a replacement only when an active target has a registered builder', () => {
+    const assembler = new RuntimeConversationNodeAssembler(
+      new TestEventDefinitions([]),
+      new TestViewDefinitions([]),
+    )
+
+    expect(assembler.activateTarget('registered-later')).toBe(false)
+    assembler.replaceWindow([], false)
+
+    expect(assembler.flush()).toBe(false)
+  })
+
   it('updates only active targets and never deactivates one after first use', () => {
     type State = { readonly updates: number }
     const definition = (

@@ -22,9 +22,9 @@ Chat 与 Trajectory 可以识别同一个持久 event family，但各自保留�
 
 ## Target 激活
 
-每个 Session 都保留单调增长的 active target 集合。创建或读取 target source 不会激活它，首个 subscriber 才会激活。首次激活会创建该 target 的 builder，并从当前按 target 索引的 Context 调用一次 `replace()`。后续 flush 对每个 active target 调用 `apply()`，取消订阅不会移除 target。
+每个 Session 都保留单调增长的 active target 集合。创建或读取 target source 不会激活它。shell 会显式激活持久化选择或新选择的 View，其他消费者则通过 target source 的首个订阅激活 target。首次激活会创建该 target 的 builder，并从当前按 target 索引的 Context 调用一次 `replace()`。后续 flush 对每个 active target 调用 `apply()`，取消订阅不会移除 target。
 
-已挂载的 View 通过自己的 target source 控制需求。持久化选择、标签页切换和第三方 View 使用同一订阅路径，因此 assembler 不会指定 Chat 或其他默认 target。
+shell 拥有 View 选择，并在 binding 创建、被选为 current 或 View roster 变化时，于渲染前解析已注册的偏好 View 或 Chat fallback。assembler 只接收解析后的 target id，不自行选择 Chat 或其他默认 target。第三方 View 使用相同的选择与激活操作。
 
 ## 可回放 event family
 
@@ -253,6 +253,6 @@ Assembler 会记录这项依赖。如果后续 older prepend 带来了更近的�
 5. 重复的可见 delta 保持 `context.key`，并在请求 `animation-frame` 时每帧最多发布一次。
 6. keyed renderer 只消费 `node.data` 与受限 Location hook，不扫描 Session 事件窗口、Context 或 Chat Node。
 7. scalar 与 packed Assistant 历史产生相同的最终 State、timing boundary 和 target snapshot；一个 packed run 在 replace、prepend、Location replay 与 registry rebuild 中始终只保留一个 Match。
-8. 创建 target source 不执行 builder 工作；首次订阅执行一次完整 replace，后续更新送达所有 active target，重新订阅不会再次 replace。
+8. 创建 target source 不执行 builder 工作；显式选择或首次订阅执行一次完整 replace，后续更新送达所有 active target，重复激活不会再次 replace。
 
 流式与中断处理可参考 [`packages/client/ui-chat/src/client/conversation-nodes/assistant.ts`](../../packages/client/ui-chat/src/client/conversation-nodes/assistant.ts)，前序查询可参考 [`inbox.ts`](../../packages/client/ui-chat/src/client/conversation-nodes/inbox.ts) 与 [`message.ts`](../../packages/client/ui-chat/src/client/conversation-nodes/message.ts)，只发布 Turn data 而不创建自有 Node 的例子见 [`packages/client/ui-deliverables`](../../packages/client/ui-deliverables)。

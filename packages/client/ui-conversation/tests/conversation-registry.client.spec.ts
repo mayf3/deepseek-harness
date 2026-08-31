@@ -246,7 +246,7 @@ describe('Conversation registries', () => {
     rebuild.mockRestore()
   })
 
-  it('activates each target on first use and keeps it active after unsubscribe', async () => {
+  it('activates each target on explicit selection or first use and never deactivates it', async () => {
     const { uiConversation, binding, views } = await bootRegistries()
     const chat = viewDefinition('chat')
     const trajectory = viewDefinition('trajectory')
@@ -261,6 +261,9 @@ describe('Conversation registries', () => {
     const trajectorySource = conversation.target('trajectory')
     expect(createChat).not.toHaveBeenCalled()
     expect(createTrajectory).not.toHaveBeenCalled()
+
+    conversation.activate('chat')
+    expect(createChat).toHaveBeenCalledOnce()
 
     const unsubscribeChat = chatSource.subscribe(vi.fn())
     const trajectoryListener = vi.fn()

@@ -309,7 +309,9 @@ Unknown fallback 展示了 Registry ownership：fallback 只处理没有任何�
 
 [`ConversationViewRegistry`](../../../../packages/client/ui-conversation/src/client/conversation/view-registry.ts) 为每个 target 保存独立的 builder factory，不共享某个 Session 的排序或缓存。
 
-target source 的首个 subscriber 会把该 target 加入 Session 单调增长的 active-target set。Assembler 按唯一 target 索引每个 Context，但不会为 inactive target 创建 builder、Node 或 snapshot。首次激活会 flush 尚未发布的 target-neutral 工作、创建 builder，并从该 target 的当前 Context 调用一次 `replace({ nodes, timeline })`。
+shell 选择或 target source 的首个 subscriber 会把该 target 加入 Session 单调增长的 active-target set。Assembler 按唯一 target 索引每个 Context，但不会为 inactive target 创建 builder、Node 或 snapshot。首次激活会 flush 尚未发布的 target-neutral 工作、创建 builder，并从该 target 的当前 Context 调用一次 `replace({ nodes, timeline })`。
+
+Session binding 可用、缓存的 binding 成为 current 或 View roster 变化时，shell 会同步解析持久化选择，再显式激活已注册的偏好 View 或 Chat fallback。Tab 与 focus action 在更新选择状态前先激活解析出的 target。blank Session 不渲染 View slot；`ConversationSnapshot.activeTargets` 只从已物化的 active snapshot 派生，不查询 inactive target Context 的 activity。
 
 普通 prepend 与 append flush 只对 active target 调用 `apply({ upserts, timeline })`。完整 window replace 与 Registry rebuild 只对 active target 调用 `replace()`。取消订阅不会移除 target，因此返回已打开的 View 不会重建。
 

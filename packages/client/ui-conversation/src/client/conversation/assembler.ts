@@ -291,6 +291,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
     if (!this.replacePending && this.dirty.size === 0 && !this.timelineDirty) return false
     if (this.replacePending) {
       this.replaceLocationData()
+      let published = false
       for (const target of this.activeTargets) {
         const view = this.views.get(target)
         if (view === undefined) continue
@@ -300,12 +301,13 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
           nodes: this.buildTargetNodes(target, this.contextsByTarget.get(target)),
           timeline: this.locationIndex.snapshot(),
         })
+        published = true
       }
       this.replacePending = false
       this.dirty.clear()
       this.dirtyByTarget.clear()
       this.timelineDirty = false
-      return this.activeTargets.size > 0
+      return published
     }
 
     let published = false
