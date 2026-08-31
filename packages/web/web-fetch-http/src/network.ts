@@ -159,6 +159,21 @@ function embeddedIpv4Address(bytes: readonly number[], prefixLength: Nat64Prefix
 }
 
 /**
+ * Whether a hostname is an IP literal that {@link resolvePublicAddresses} would refuse.
+ *
+ * A proxied hop skips those checks because the proxy resolves the origin, but a literal needs no
+ * resolution: the address is already stated, and handing it to a proxy running on this machine
+ * would reach exactly the loopback or private service the checks exist to keep out of reach.
+ *
+ * @param hostname - a URL's hostname, bracketed or not.
+ * @returns true when the host is a literal address no request may be sent to.
+ */
+export function isNonPublicIpLiteral(hostname: string): boolean {
+  const unbracketed = stripIpv6Brackets(hostname)
+  return isIP(unbracketed) !== 0 && !isPublicIpAddress(unbracketed)
+}
+
+/**
  * Fetch through an Undici agent whose lookup callback returns only the already
  * validated address set. The URL hostname remains intact for HTTP Host and TLS SNI.
  *

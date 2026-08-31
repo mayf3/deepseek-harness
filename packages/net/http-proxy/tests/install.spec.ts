@@ -21,6 +21,13 @@ let origin: Server
 let proxyUrl: string
 let originUrl: string
 
+/**
+ * The target for every assertion about a tunnelled hop. It is deliberately not loopback: no policy
+ * routes this machine through a proxy, so a loopback target could only ever prove a direct hop. The
+ * host never resolves — the client connects to the proxy, which answers the absolute-form request.
+ */
+const proxyTarget = 'http://origin.test/probe'
+
 function listen(server: Server): Promise<AddressInfo> {
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => { resolve(server.address() as AddressInfo) })
@@ -67,8 +74,8 @@ describe('installGlobalProxy', () => {
   it('routes the built-in global fetch through the proxy', async () => {
     const dispose = await installGlobalProxy(proxyAll())
     try {
-      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
-      expect(proxied).toEqual([`GET ${originUrl}`])
+      await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
+      expect(proxied).toEqual([`GET ${proxyTarget}`])
     } finally {
       await dispose()
     }
@@ -148,8 +155,8 @@ describe('installGlobalProxy', () => {
       await expect(fetch('https://refused-scheme.invalid/', { signal: AbortSignal.timeout(1500) })).rejects.toThrow()
       expect(proxied).toEqual([])
       // The same policy still tunnels http, so the empty expectation above is not vacuous.
-      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
-      expect(proxied).toEqual([`GET ${originUrl}`])
+      await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
+      expect(proxied).toEqual([`GET ${proxyTarget}`])
     } finally {
       await dispose()
     }
@@ -159,10 +166,10 @@ describe('installGlobalProxy', () => {
 describe('createDispatcher', () => {
   it('tunnels through the proxy when the policy covers the URL', async () => {
     const dispose = await installGlobalProxy(proxyAll())
-    const dispatcher = await createDispatcher(new URL(originUrl))
+    const dispatcher = await createDispatcher(new URL(proxyTarget))
     try {
       const undici = await import('undici')
-      const response = await undici.fetch(originUrl, { dispatcher })
+      const response = await undici.fetch(proxyTarget, { dispatcher })
       await expect(response.text()).resolves.toBe('VIA-PROXY')
     } finally {
       await dispatcher.close()
@@ -202,10 +209,10 @@ describe('createDispatcher', () => {
     // the plugin here is what a hot reload does mid-request; reading the active policy again would
     // hand back a direct agent and connect to an origin nothing validated.
     await dispose()
-    const dispatcher = await createDispatcher(new URL(originUrl), {}, branched)
+    const dispatcher = await createDispatcher(new URL(proxyTarget), {}, branched)
     try {
       const undici = await import('undici')
-      await expect((await undici.fetch(originUrl, { dispatcher })).text()).resolves.toBe('VIA-PROXY')
+      await expect((await undici.fetch(proxyTarget, { dispatcher })).text()).resolves.toBe('VIA-PROXY')
     } finally {
       await dispatcher.close()
     }
@@ -343,18 +350,19 @@ describe('installGlobalProxy over an existing installation', () => {
   it('stops proxying when a direct policy is installed over a proxied one', async () => {
     const outer = await installGlobalProxy(proxyAll())
     try {
-      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
+      await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
       const off = await installGlobalProxy(DIRECT_POLICY)
       try {
         // `mode: 'off'` must actually stop proxying, not merely report a direct policy while the
-        // launcher's agent keeps tunnelling.
+        // launcher's agent keeps tunnelling. A direct hop needs a host that answers, so this one
+        // reaches the real origin rather than the name only the proxy can resolve.
         await expect((await fetch(originUrl)).text()).resolves.toBe('DIRECT')
         expect(currentProxyPolicy()).toBe(DIRECT_POLICY)
       } finally {
         await off()
       }
       // Disposing the direct policy restores the proxy the launcher installed.
-      await expect((await fetch(originUrl)).text()).resolves.toBe('VIA-PROXY')
+      await expect((await fetch(proxyTarget)).text()).resolves.toBe('VIA-PROXY')
     } finally {
       await outer()
     }

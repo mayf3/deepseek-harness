@@ -2,7 +2,7 @@
 
 English | [中文](network-proxy.zh.md)
 
-DSH routes every outbound request — model calls, web search, page fetches, MCP servers over HTTP, and telemetry — through the proxy named by the standard proxy environment variables. It reads them at launch; nothing else needs configuring.
+DSH routes its outbound requests — model calls, web search, page fetches, and MCP servers over HTTP — through the proxy named by the standard proxy environment variables. It reads them at launch; nothing else needs configuring. A few paths stay direct by design or by runtime limit, listed under "What stays direct" below.
 
 ## Export the variables
 
@@ -58,6 +58,17 @@ export NODE_EXTRA_CA_CERTS=/path/to/corporate-ca.pem
 Node reads that variable only at process start, so export it before running `dsh`.
 
 **Tools DSH runs for you follow the same proxy.** Commands in the bash tool, `git`, `gh`, and MCP servers started as child processes all inherit these variables. A child that is itself a Node program honors them only on Node 22.21 or later; an older Node connects directly.
+
+**A password in the proxy URL reaches those tools too.** `HTTPS_PROXY=http://alice:s3cret@proxy.example:8080` is a normal environment variable, so every command DSH runs — including the ones the model writes — can read it, and a command that prints its environment puts the password in output that is kept. This is how the variable already behaves for everything else in your shell. If that matters, give the proxy a credential-free entry point, or authenticate it some other way than in the URL.
+
+## What stays direct
+
+Not every request DSH makes goes through the proxy:
+
+- **Anything on this machine.** Loopback is always direct: `localhost`, the whole `127.0.0.0/8` range, `::1`, and `0.0.0.0`. A proxy cannot usefully reach a service that only listens locally.
+- **Code the model writes.** The workflow and code-runtime workers never receive the proxy settings, so a script the model authors cannot read a proxy URL that may carry a password. Such a script reaches the network only if it configures that itself.
+- **Telemetry on an older Node.** The OTLP exporter uses Node's own HTTP client, which learned to honor these variables in Node 22.21 and 24.5. On 22.19, 22.20, and 24.0–24.4 telemetry connects directly.
+- **`web_fetch` to a literal private address.** A URL naming an address like `http://10.0.0.5/` is refused rather than handed to the proxy, the same refusal it gets with no proxy configured.
 
 ## Check that it worked
 

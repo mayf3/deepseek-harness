@@ -20,6 +20,13 @@ let proxy: Server
 let origin: Server
 let proxyUrl: string
 let originUrl: string
+
+/**
+ * The target for every assertion about a tunnelled hop. Loopback cannot serve: no policy routes
+ * this machine through a proxy. The host never resolves — the proxy answers the absolute-form
+ * request — which is also what makes the skipped resolver observable.
+ */
+const proxyTarget = 'http://origin.test/page'
 let disposeProxy: (() => Promise<void>) | undefined
 
 function listen(server: Server): Promise<AddressInfo> {
@@ -65,10 +72,10 @@ describe('fetching through a proxy', () => {
     const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
     disposeProxy = await installGlobalProxy(policy())
 
-    const result = await new HttpFetchProvider(limits).fetch({ url: originUrl })
+    const result = await new HttpFetchProvider(limits).fetch({ url: proxyTarget })
 
     expect(result.body.content).toBe('via-proxy')
-    expect(proxied).toEqual([originUrl])
+    expect(proxied).toEqual([proxyTarget])
     // Through a proxy the origin's DNS happens proxy-side, so the resolver that rejects non-public
     // destinations is not consulted at all.
     expect(resolve).not.toHaveBeenCalled()
@@ -96,6 +103,23 @@ describe('fetching through a proxy', () => {
     expect(resolve).toHaveBeenCalledOnce()
   })
 
+  it.each(['10.0.0.5', '169.254.169.254', '127.0.0.2', '[::ffff:127.0.0.1]'])(
+    'refuses %s instead of letting the proxy reach it for us',
+    async (host) => {
+      const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
+      disposeProxy = await installGlobalProxy(policy())
+
+      // The proxied path exists because a proxy resolves the origin; a literal needs no resolution,
+      // so taking it would spend the address checks for nothing and hand a proxy on this machine
+      // the private or loopback destination those checks exist to refuse. The hop therefore takes
+      // the validated path instead, where the existing refusal already covers it.
+      await expect(new HttpFetchProvider(limits).fetch({ url: `http://${host}:8080/` }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_BLOCKED_URL' }))
+      expect(proxied).toEqual([])
+      expect(resolve).toHaveBeenCalledOnce()
+    },
+  )
+
   it('still refuses a cross-origin redirect on the proxied path', async () => {
     proxy.removeAllListeners('request')
     proxy.on('request', (request, response) => {
@@ -105,7 +129,7 @@ describe('fetching through a proxy', () => {
     })
     disposeProxy = await installGlobalProxy(policy())
 
-    await expect(new HttpFetchProvider(limits).fetch({ url: originUrl }))
+    await expect(new HttpFetchProvider(limits).fetch({ url: proxyTarget }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_REDIRECT_BLOCKED' }))
   })
 

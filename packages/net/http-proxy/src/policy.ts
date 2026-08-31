@@ -233,6 +233,35 @@ function splitHostPort(entry: string): { host: string; port?: string } {
   return { host: entry }
 }
 
+/** One IPv4 octet, so a loopback match cannot accept `127.999.1.1`. */
+const OCTET = '(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)'
+
+/** The whole `127.0.0.0/8` block, not just its first address. */
+const LOOPBACK_IPV4 = new RegExp(`^127\\.${OCTET}\\.${OCTET}\\.${OCTET}$`)
+
+/**
+ * Whether a host names this machine.
+ *
+ * A proxy cannot meaningfully reach one: it would resolve the address in its own network, and a
+ * proxy running on this machine would reach a service that only listens on loopback. The bypass
+ * list carries {@link LOOPBACK_NO_PROXY} for the consumers that read an environment rather than a
+ * policy, but those are four literal entries — matching them alone leaves `127.0.0.2`, the whole
+ * rest of `127.0.0.0/8`, and the IPv4-mapped spelling routed through the proxy.
+ *
+ * @param hostname - a URL's hostname, bracketed or not.
+ * @returns true when the host is loopback or the unspecified address.
+ */
+export function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').replace(/\.$/, '').toLowerCase()
+  if (host === 'localhost' || host.endsWith('.localhost')) return true
+  if (host === '::1' || host === '::' || host === '0.0.0.0') return true
+  // An IPv4-mapped IPv6 address may keep its dotted tail or, once a URL has normalized it, carry
+  // the same four bytes as two hex groups: `::ffff:127.0.0.1` and `::ffff:7f00:1` are one address.
+  const mappedHigh = /^::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}$/.exec(host)?.[1]
+  if (mappedHigh !== undefined) return Number.parseInt(mappedHigh, 16) >>> 8 === 127
+  return LOOPBACK_IPV4.test(host.startsWith('::ffff:') ? host.slice('::ffff:'.length) : host)
+}
+
 /**
  * Decide whether a bypass list exempts one URL. Entries match an exact host, a `.suffix` or
  * `*.suffix` domain, an optional `:port`, or `*` for everything. CIDR notation is not matched —
@@ -325,6 +354,7 @@ export function resolveProxyPolicy(
 export function proxyForUrl(policy: ProxyPolicy, url: URL): string | undefined {
   const proxy = url.protocol === 'https:' ? policy.httpsProxy : url.protocol === 'http:' ? policy.httpProxy : undefined
   if (proxy === undefined) return undefined
+  if (isLoopbackHost(url.hostname)) return undefined
   return bypassesProxy(policy.noProxy, url) ? undefined : proxy
 }
 

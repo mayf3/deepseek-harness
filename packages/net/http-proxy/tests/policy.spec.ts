@@ -3,6 +3,7 @@ import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environ
 import {
   bypassesProxy,
   describeProxyPolicy,
+  isLoopbackHost,
   proxyForUrl,
   resolveProxyPolicy,
   DIRECT_POLICY,
@@ -17,6 +18,41 @@ function env(values: Record<string, string>): ReturnType<typeof createLaunchEnvi
 
 /** Windows folds environment names, so a case distinction cannot be expressed there at all. */
 const FOLDS_ENV_CASE = process.platform === 'win32'
+
+describe('loopback routing', () => {
+  const proxied = { httpProxy: PROXY, httpsProxy: PROXY, noProxy: '', source: 'env' } as const
+
+  // The published bypass list carries four literal entries for the consumers that read an
+  // environment. Matching only those left the rest of `127.0.0.0/8` — including the resolver stub
+  // at `127.0.0.53` — routed through a proxy that could then reach it on the caller's behalf.
+  it.each([
+    '127.0.0.1', '127.0.0.2', '127.0.0.53', '127.255.255.254',
+    'localhost', 'app.localhost', '[::1]', '[::ffff:127.0.0.1]', '0.0.0.0',
+  ])('never routes %s through a proxy', (host) => {
+    expect(proxyForUrl(proxied, new URL(`http://${host}:8080/`))).toBeUndefined()
+  })
+
+  it.each(['128.0.0.1', '10.0.0.5', '[::ffff:10.0.0.1]', 'notlocalhost', 'example.com'])(
+    'still routes %s, which is not this machine',
+    (host) => {
+      expect(proxyForUrl(proxied, new URL(`http://${host}:8080/`))).toBe(PROXY)
+    },
+  )
+
+  it('rejects an out-of-range octet rather than reading it as loopback', () => {
+    expect(isLoopbackHost('127.999.1.1')).toBe(false)
+    expect(isLoopbackHost('1270.0.0.1')).toBe(false)
+  })
+
+  it('reads an IPv4-mapped address in either spelling', () => {
+    // A URL normalizes the dotted tail into hex groups, but a caller reading a bypass list or a
+    // configuration value has the dotted form in hand, and both name the same address.
+    expect(isLoopbackHost('::ffff:127.0.0.1')).toBe(true)
+    expect(isLoopbackHost('::ffff:7f00:1')).toBe(true)
+    expect(isLoopbackHost('::ffff:10.0.0.1')).toBe(false)
+    expect(isLoopbackHost('::ffff:a00:1')).toBe(false)
+  })
+})
 
 describe('resolveProxyPolicy', () => {
   it('resolves nothing when the environment carries no proxy', () => {

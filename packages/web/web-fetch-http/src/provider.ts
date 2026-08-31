@@ -11,7 +11,7 @@ import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } 
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { Response } from 'undici'
 import { currentProxyPolicy, proxyForUrl, DIRECT_POLICY } from '@deepseek-ai/dsh-http-proxy'
-import { publicHttpNetwork } from './network.ts'
+import { isNonPublicIpLiteral, publicHttpNetwork } from './network.ts'
 import type { PublicAddress } from './network.ts'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
 
@@ -128,8 +128,12 @@ export class HttpFetchProvider implements WebFetchProvider {
       // One snapshot decides both the branch and the dispatcher. Reading the active policy again
       // inside the transport would let a mount or disposal land between the two reads and return a
       // direct, unpinned agent for a URL this branch cleared as proxied.
+      //
+      // An IP literal the address checks would refuse never takes it. The proxy would resolve
+      // nothing — the address is already stated — so the shortcut would spend the checks for
+      // nothing and let a proxy on this machine reach the very service they keep out of reach.
       const policy = currentProxyPolicy() ?? DIRECT_POLICY
-      if (proxyForUrl(policy, url) !== undefined) {
+      if (proxyForUrl(policy, url) !== undefined && !isNonPublicIpLiteral(url.hostname)) {
         return await publicHttpNetwork.requestProxied(url, headers, signal, policy)
       }
       const addresses = await this.resolveAddresses(url.hostname, signal)

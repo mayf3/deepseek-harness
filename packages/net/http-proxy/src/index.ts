@@ -22,6 +22,7 @@ import { describeProxyPolicy, resolveProxyPolicy, type ProxyConfig } from './pol
 
 export {
   bypassesProxy,
+  isLoopbackHost,
   describeProxyPolicy,
   proxyForUrl,
   resolveProxyPolicy,
