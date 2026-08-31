@@ -13,11 +13,12 @@ import { Context } from '@deepseek-ai/cordis'
  * which is exactly the branch that regressed. The mock is confined to this file
  * so the real-subprocess suite in runtime.spec.ts is untouched.
  */
-const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }))
-vi.mock('node:child_process', async importOriginal => ({
-  ...(await importOriginal<typeof import('node:child_process')>()),
-  spawn: spawnMock,
-}))
+const { execFileSyncMock, spawnMock } = vi.hoisted(() => ({ execFileSyncMock: vi.fn(), spawnMock: vi.fn() }))
+vi.mock('node:child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('node:child_process')>()
+  execFileSyncMock.mockImplementation(original.execFileSync)
+  return { ...original, execFileSync: execFileSyncMock, spawn: spawnMock }
+})
 
 const { PythonCodeRuntime } = await import('../src/index.ts')
 
@@ -44,6 +45,7 @@ function fakeChildWithThrowingFd3(): EventEmitter {
 }
 
 afterEach(() => {
+  execFileSyncMock.mockClear()
   spawnMock.mockReset()
 })
 
@@ -127,6 +129,18 @@ function fakeChildBackpressuredThenDestroyed(): { child: EventEmitter; proto: Pa
 }
 
 describe('PythonCodeRuntime — boot-write failure', () => {
+  it('force-kills a version probe that exceeds its load-time deadline', async () => {
+    const ctx = new Context()
+    const fiber = await ctx.plugin(PythonCodeRuntime)
+
+    expect(execFileSyncMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(['-I', '-c']),
+      expect.objectContaining({ timeout: 5_000, killSignal: 'SIGKILL' }),
+    )
+    await fiber.dispose()
+  })
+
   it('resolves a worker-exit when the fd-3 boot write throws (no TDZ ReferenceError)', async () => {
     // Before the fix, the boot-write block ran BEFORE `wallTimer`, `onAbort`,
     // and `live` were initialized, so its `finish()` (which clears `wallTimer`,

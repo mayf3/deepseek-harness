@@ -596,8 +596,9 @@ export interface Config {
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
   graceMs?: number
   /**
-   * Absolute path or basename of the CPython interpreter to spawn. Resolved
-   * through `PATH` when a basename is given.
+   * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
+   * Resolved and validated once at plugin load under a five-second force-kill
+   * deadline; a basename searches `PATH`.
    */
   pythonBin?: string
 }

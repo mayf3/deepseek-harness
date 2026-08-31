@@ -7,8 +7,8 @@ the completion), and posts a terminal :class:`DoneMessage`. The program calls
 host functions through the ``tools`` (or other namespace) proxy, whose attribute
 and subscript access return awaitables that ride binding messages over fd 3.
 
-This module runs under ``python3 -I`` with an empty environment and
-``sys.path`` containing only its own directory.
+This module runs under ``python3 -I`` with only ``TMPDIR`` in its environment
+and ``sys.path`` containing only its own directory.
 """
 
 from __future__ import annotations
@@ -223,7 +223,7 @@ class _LogStream(io.TextIOBase):
     Installed as ``sys.stdout`` / ``sys.stderr`` before executing the model
     program. ``print(...)`` calls ``write`` once per argument, separator, and
     newline, so a raw one-push-per-write stream would emit
-    ``["a", " ", "b", "\\n"]`` for ``print("a", "b")`` — and Code Mode renders
+    ``["a", " ", "b", "\\n"]`` for ``print("a", "b")`` — and PTC mode renders
     ``logs`` with ``join('\\n')``, turning that into spurious blank lines. This
     stream instead buffers writes and pushes one LogBuffer entry per completed
     LINE (the text up to each ``\\n``, newline stripped), so the rendered join
@@ -1137,7 +1137,7 @@ async def _run(channel: ProtocolChannel) -> None:
         error_class = error_classes.get(global_name)
 
         def call_failure(message: str) -> BaseException:
-            # The namespace's declared rejection contract (e.g. Code Mode's
+            # The namespace's declared rejection contract (e.g. PTC mode's
             # ToolCallError with .toolName) when present; RuntimeError keeps
             # the pre-errorClass behavior for namespaces that declared none.
             if error_class is not None:
@@ -2150,7 +2150,7 @@ def _make_cpu_enforcer() -> Any:
     :func:`_run`'s frame and reads its locals, so a program determined to
     tamper still can — consistent with this backend's documented posture, where
     the in-process interpreter is containment rather than a security boundary
-    (§Trust posture in the Code Mode RFC). The bounds that model code cannot
+    (§Trust posture in the PTC mode Agent Note). The bounds that model code cannot
     forge are outside the interpreter: the RLIMIT_CPU HARD limit at
     ``cpuSeconds + 1``, whose SIGKILL is undeliverable to a handler and
     unraisable by a process that cannot raise its own hard limit, and the

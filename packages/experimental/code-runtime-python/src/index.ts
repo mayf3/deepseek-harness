@@ -2,15 +2,15 @@
  * CPython subprocess code runtime: a fresh `python3` process runs each model program under an
  * asyncio event loop with top-level ``await``. Binding calls travel on fd 3 as JSON-lines,
  * leaving stdout/stderr free for the program's own output. This is containment, not a security
- * boundary: model code has bash-equivalent trust, contained by an empty environment, RLIMIT_CPU
- * + RLIMIT_AS, wall-clock timeout, and SIGTERM→grace→SIGKILL on the process group.
+ * boundary: model code has bash-equivalent trust, contained by a tempdir-only environment,
+ * RLIMIT_CPU + RLIMIT_AS, wall-clock timeout, and SIGTERM→grace→SIGKILL on the process group.
  *
  * The package also owns the versionless fd-3 wire protocol itself; its host-side codec and
  * hostile-frame validators are re-exported so every consumer of the wire shares one vocabulary.
  * @module @deepseek-ai/dsh-experimental-code-runtime-python
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -90,8 +90,9 @@ export interface Config {
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
   graceMs?: number
   /**
-   * Absolute path or basename of the CPython interpreter to spawn. Resolved
-   * through `PATH` when a basename is given.
+   * Absolute path, relative path, or basename of a CPython 3.10+ interpreter.
+   * Resolved and validated once at plugin load under a five-second force-kill
+   * deadline; a basename searches `PATH`.
    */
   pythonBin?: string
 }
@@ -449,41 +450,33 @@ export function readProcessStart(pid: number): string | undefined {
 }
 
 /**
- * Resolve `pythonBin` to an absolute path against the CURRENT process `PATH`,
- * BEFORE the child spawns with an empty environment. A basename (the default
- * `python3`) would otherwise fail: `env: {}` drops `PATH`, so Node's own lookup
- * falls back to the platform default (`/usr/bin:/bin`) and misses interpreters
+ * Resolve `pythonBin` to one executable absolute path at plugin load. A basename
+ * (the default `python3`) searches the current process `PATH`; the child receives
+ * no `PATH`, so Node's own lookup would otherwise fall back to the platform
+ * default (`/usr/bin:/bin`) and miss interpreters
  * that live only on the caller's `PATH` (Nix, pyenv, Homebrew, conda). An
- * absolute or explicitly relative path is validated directly: it must exist,
- * be executable, and be a regular file — a missing, non-executable, or
- * directory path is a self-contained configuration error that must fail at
- * load, not at the first run (the child spawns with an empty environment, so
- * execvp's platform default would otherwise silently mask the mistake). A
- * relative explicit path resolves against the host CWD, mirroring where
- * `spawn` would have looked for it. When no `PATH` entry holds an executable
- * match, `undefined` is returned and the LOAD check rejects the configuration:
- * falling back to the bare name would let spawn's `env: {}` execvp silently
- * start a system interpreter from the platform default PATH that the caller
- * never asked for.
- * @param bin - the configured interpreter (absolute or relative path, or bare command).
+ * absolute path is verified in place, and an explicitly relative path is first
+ * resolved against the load-time working directory. When no candidate is an
+ * executable regular file, `undefined` is returned and the load check rejects
+ * the configuration: falling back to the bare name would let spawn's scrubbed env
+ * execvp silently start a system interpreter from the platform default PATH
+ * that the caller never asked for.
+ * @param bin - the configured interpreter (absolute path, relative path, or bare command).
  * @returns an absolute path when resolvable, else `undefined`.
  */
 export function resolvePythonBin(bin: string): string | undefined {
-  if (isAbsolute(bin) || bin.includes('/')) {
-    // An explicit path is used as given (resolved against the host CWD when
-    // relative), but only when it is a real executable regular file. The same
-    // checks as the PATH branch below: `accessSync(X_OK)` admits directories,
-    // so `isFile` narrows further, and a path that fails either is not a
-    // usable interpreter.
-    const candidate = resolve(bin)
+  const executableFile = (candidate: string): string | undefined => {
     try {
       accessSync(candidate, fsConstants.X_OK)
-      if (!statSync(candidate).isFile()) return undefined
-      return candidate
+      return statSync(candidate).isFile() ? candidate : undefined
     } catch {
+      // Missing, inaccessible, and non-stat-able candidates are ordinary
+      // lookup misses; the constructor reports the final load error.
       return undefined
     }
   }
+  if (isAbsolute(bin)) return executableFile(bin)
+  if (bin.includes('/')) return executableFile(resolve(bin))
   const path = process.env.PATH
   /* v8 ignore next -- PATH is set in every environment the runtime boots in; the guard is defensive. */
   if (path === undefined) return undefined
@@ -494,19 +487,56 @@ export function resolvePythonBin(bin: string): string | undefined {
     // path — spawn() resolves a relative pythonBin against the host CWD, which
     // is outside the seam contract.
     if (dir === '' || !isAbsolute(dir)) continue
-    const candidate = join(dir, bin)
-    try {
-      accessSync(candidate, fsConstants.X_OK)
-      // A directory passes X_OK too, so require a regular file: a PATH entry
-      // named like the interpreter (e.g. a `python3` directory) must not be
-      // chosen over a later real interpreter.
-      if (!statSync(candidate).isFile()) continue
-      return candidate
-    } catch {
-      // Not executable here; try the next PATH entry.
-    }
+    const executable = executableFile(join(dir, bin))
+    if (executable !== undefined) return executable
   }
   return undefined
+}
+
+/** Lowest CPython version supported by the bootstrap and its traceback behavior. */
+const MIN_CPYTHON = { major: 3, minor: 10 } as const
+
+/** Fixed load-time probe bound; a configured executable must not hang plugin activation. */
+const PYTHON_PROBE_TIMEOUT_MS = 5_000
+
+/** The only host environment fact exposed to the child. */
+function pythonEnvironment(): NodeJS.ProcessEnv {
+  return { TMPDIR: tmpdir() }
+}
+
+/** Fail load unless `bin` is a responsive CPython 3.10+ interpreter. */
+function validatePythonBin(bin: string): void {
+  let output: string
+  try {
+    output = execFileSync(bin, [
+      '-I',
+      '-c',
+      'import sys; print(sys.implementation.name, sys.version_info.major, sys.version_info.minor, sys.version_info.micro)',
+    ], {
+      encoding: 'utf8',
+      env: pythonEnvironment(),
+      timeout: PYTHON_PROBE_TIMEOUT_MS,
+      // The configured executable is outside our control. Force-kill it at the
+      // deadline so a wrapper that ignores SIGTERM cannot block plugin load.
+      killSignal: 'SIGKILL',
+      maxBuffer: 1_024,
+    }).trim()
+  } catch (error: unknown) {
+    throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(bin)} failed the CPython version probe: ${messageOf(error)}`)
+  }
+  const match = /^(\S+) (\d+) (\d+) (\d+)$/.exec(output)
+  if (match === null) {
+    throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(bin)} did not report a CPython version`)
+  }
+  const [, implementation, majorText, minorText, patchText] = match
+  const major = Number(majorText)
+  const minor = Number(minorText)
+  if (implementation !== 'cpython') {
+    throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(bin)} must be CPython, got ${implementation}`)
+  }
+  if (major < MIN_CPYTHON.major || (major === MIN_CPYTHON.major && minor < MIN_CPYTHON.minor)) {
+    throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(bin)} must be CPython ${MIN_CPYTHON.major}.${MIN_CPYTHON.minor} or newer, got ${implementation} ${majorText}.${minorText}.${patchText}`)
+  }
 }
 
 /** The marker appended when a diagnostic message is byte-capped host-side. */
@@ -787,6 +817,7 @@ export class PythonCodeRuntime extends CodeRuntime {
   readonly isolation = 'process'
 
   private readonly config: ResolvedConfig
+  private readonly pythonBin: string
   // The frame cap this instance enforces: the protocol cap, or the host's
   // heap-derived parse ceiling when a constrained heap makes the protocol cap
   // unsafe to parse (see {@link hostFrameParseCeiling}). Computed per
@@ -846,25 +877,12 @@ export class PythonCodeRuntime extends CodeRuntime {
     // throws `ERR_INVALID_ARG_TYPE` — both from inside `run()`, so the method
     // REJECTS instead of resolving the `worker-exit` the seam promises for a
     // child that cannot start. A basename with no `PATH` match would silently
-    // fall to execvp's platform default `PATH` under the empty spawn
+    // fall to execvp's platform default `PATH` under the minimal spawn
     // environment (see the resolvePythonBin JSDoc), so it is rejected here
     // too. All three are self-contained configuration errors that fail at
     // load.
     if (this.config.pythonBin === '' || this.config.pythonBin.includes('\0')) {
       throw new Error(`dsh-code-runtime-python: config.pythonBin must be a non-empty path without NUL bytes, got ${JSON.stringify(this.config.pythonBin)}`)
-    }
-    // An explicit path that is not an executable regular file must fail at load
-    // like any other self-contained configuration error (the empty/NUL cases
-    // above); a basename that is not on PATH must fail at load, not silently
-    // fall to execvp's platform default PATH (spawn runs with an EMPTY
-    // environment, so execvp would resolve /usr/bin:/bin and could start a
-    // system interpreter the caller never asked for). resolvePythonBin applies
-    // the executable-regular-file check to both forms and returns undefined for
-    // either failure; the message distinguishes the two so the fix is obvious.
-    const resolvedBin = resolvePythonBin(this.config.pythonBin)
-    if (resolvedBin === undefined) {
-      const explicit = isAbsolute(this.config.pythonBin) || this.config.pythonBin.includes('/')
-      throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(this.config.pythonBin)} ${explicit ? 'is not an executable regular file' : 'does not resolve on PATH'}`)
     }
     // `maxWallMs` and `graceMs` are armed with setTimeout, which clamps any
     // delay past MAX_TIMER_DELAY_MS to 1 ms without a word — turning a
@@ -975,6 +993,19 @@ export class PythonCodeRuntime extends CodeRuntime {
         throw new Error(`dsh-code-runtime-python: config.${key} times the ${OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE}x worst-case Unicode expansion must fit within the ${budgetableBytes} bytes left after the ${INTERPRETER_BASELINE_BYTES}-byte interpreter baseline within the ${addressSpaceBytes}-byte addressSpaceMb, so a near-budget output truncates rather than breaching RLIMIT_AS as worker-exit; got ${String(this.config[key])} against a limit of ${admissibleBudget}`)
       }
     }
+    // Resolve and validate the executable ONCE, after the pure config checks.
+    // Re-resolving a basename in each run would let a later PATH change silently
+    // switch interpreters, while an unchecked explicit path would turn
+    // self-contained misconfiguration into a late worker-exit. A missing or
+    // unsupported interpreter is a load failure. Later filesystem mutation is
+    // outside config validation; a missing executable settles as worker-exit.
+    const pythonBin = resolvePythonBin(this.config.pythonBin)
+    if (pythonBin === undefined) {
+      const explicit = isAbsolute(this.config.pythonBin) || this.config.pythonBin.includes('/')
+      throw new Error(`dsh-code-runtime-python: config.pythonBin ${JSON.stringify(this.config.pythonBin)} ${explicit ? 'is not an executable regular file' : 'does not resolve on PATH'}`)
+    }
+    validatePythonBin(pythonBin)
+    this.pythonBin = pythonBin
     ctx.effect(() => () => this.teardown(), 'python code-runtime teardown')
   }
 
@@ -1131,8 +1162,8 @@ export class PythonCodeRuntime extends CodeRuntime {
     // This run's own staging directory, removed at settlement.
     const bootstrapDir = dirname(bootstrapPath)
     // Explicit pipe count of 4 puts the framed-JSON channel at fd 3 in the child.
-    // Resolve the interpreter against the current PATH first: the child's empty
-    // env would otherwise strip PATH and miss a basename python3 (see resolvePythonBin).
+    // The constructor resolved and validated the interpreter once; runs keep that
+    // exact path even if the host later changes PATH.
     // `spawn` can throw SYNCHRONOUSLY — a descriptor-exhausted host (EMFILE) or a
     // libuv-level failure surfaces here, before the Promise executor and its
     // settlement path exist. Left uncaught it would REJECT run() (the seam
@@ -1150,15 +1181,11 @@ export class PythonCodeRuntime extends CodeRuntime {
       // right after the done frame, before any finalization-time flush could
       // run. The `_LogStream` replacement of `sys.stdout`/`sys.stderr` is
       // unaffected (it is a Python object, not the C-level stdio buffer).
-      // Load validated that the configured interpreter resolves to an
-      // executable regular file (basename through PATH, explicit path
-      // directly). The type assertion is the load-time contract (see the
-      // pythonBin load checks); a PATH change between load and run would make
-      // this undefined and spawn throws synchronously, which the surrounding
-      // try settles as worker-exit like any other spawn failure.
-      const resolvedPythonBin = resolvePythonBin(this.config.pythonBin) as string
-      child = spawn(resolvedPythonBin, ['-u', '-I', bootstrapPath], {
-        env: {},
+      child = spawn(this.pythonBin, ['-u', '-I', bootstrapPath], {
+        // Preserve only the platform temp directory. macOS system Python emits a
+        // startup warning when TMPDIR is absent; ambient credentials, PATH, HOME,
+        // and other host state remain unavailable to model code.
+        env: pythonEnvironment(),
         detached: true, // Own process group — kill(-pid, sig) reaches subprocesses the model program spawns.
         stdio: ['pipe', 'pipe', 'pipe', 'pipe'],
       })
@@ -1177,7 +1204,6 @@ export class PythonCodeRuntime extends CodeRuntime {
       // inheriting fd 0 would keep the host process from exiting even after the
       // closeDeadline forced settlement. The child (and any descendant) reads
       // EOF on fd 0 instead, and no host handle survives.
-      // oxlint-disable-next-line typescript/no-unnecessary-condition -- the boot-write-failure fake child has no stdin.
       child.stdin?.destroy()
     } catch (error: unknown) {
       try {
@@ -1299,7 +1325,7 @@ export class PythonCodeRuntime extends CodeRuntime {
       // (native prints, C-extension writes) still counts against the ledger.
       //
       // Output is admitted per LINE, not per transport chunk. `logs` entries
-      // are joined with `\n` downstream (Code Mode), so each entry must be one
+      // are joined with `\n` downstream (PTC mode), so each entry must be one
       // line: pushing a raw `data` chunk would turn every arbitrary pipe-read
       // boundary into a model-visible newline, so a single 200 KiB native write
       // split across pipe reads would read back with spurious line breaks. The
@@ -1359,7 +1385,6 @@ export class PythonCodeRuntime extends CodeRuntime {
           // A line admitted inside the loop may have exhausted the ledger and
           // cleared this pipe (see clearStray); the re-retain below must not
           // resurrect the doomed residual.
-          // oxlint-disable-next-line typescript/no-unnecessary-condition -- admit() (a closure) sets it.
           if (logsTruncated) return
           stray.chunks = detachResidual(buffered)
           stray.utf8 = { expected: 0, width: 0, lowerFirst: 0, upperFirst: 0 }
@@ -1885,7 +1910,6 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // after `maxWallMs`, an abort, or dispose already settled the run
                 // would spend host heap on a frame that is then discarded, and
                 // binding resolution carries no seam-level byte cap to bound it.
-                // oxlint-disable-next-line typescript/no-unnecessary-condition -- the run can settle while this binding is awaited.
                 if (settled) return
                 // The seam requires a lossy resolution to REJECT descriptively,
                 // not silently coerce: a raw JSON.stringify would turn NaN/
@@ -1905,13 +1929,8 @@ export class PythonCodeRuntime extends CodeRuntime {
                 // before `sendReply` peeks at `settled`. Dropping the framed
                 // reply early spares the host heap and time for a run whose
                 // outcome is already fixed.
-                // (oxlint block-disable so both `v8 ignore next` and the rule
-                // suppression land on the `if`: `settled` flips true mid-wait,
-                // invisible to the type-aware lint, which narrows it to false.)
-                /* oxlint-disable typescript/no-unnecessary-condition */
                 /* v8 ignore next -- a rejection arriving after settlement is not schedulable from a test. */
                 if (settled) return
-                /* oxlint-enable typescript/no-unnecessary-condition */
                 sendReply({ type: 'reply', id: message.id, ok: false, message: messageOf(error) })
               } finally {
                 // Release the in-flight slot on every exit — reply written,
