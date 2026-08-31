@@ -154,6 +154,11 @@ describe('CI workflow', () => {
       isRecord(step) && typeof step.run === 'string'
     ))
     expect(coverageCommands.map(step => step.run)).toContain('pnpm run check:ci:coverage')
+    // Windows coverage runs zero-build like the Linux lane: workspace imports
+    // resolve to src through the tsconfig paths map, and the lib-consuming
+    // suites (webworker-packer image-loadable, session-persistence-sqlite
+    // built-package) self-skip on unbuilt checkouts.
+    expect(coverageCommands.map(step => step.run)).not.toContain('pnpm run build')
 
     // windows-native-tests runs the Windows-specific specs.
     expect(windowsNativeTests.name).toBe('windows node 24 / native tests')
