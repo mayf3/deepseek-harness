@@ -687,8 +687,13 @@ describe('direct-child Queue residency routing', () => {
     const oneShotId = run.id
     await run.dispose()
 
-    await expect(queuePrompt(ctx, parent, oneShotId, message('continue')))
-      .rejects.toThrow(/no supported continuation state/)
+    const rejection: unknown = await queuePrompt(ctx, parent, oneShotId, message('continue'))
+      .catch((error: unknown) => error)
+    expect(rejection).toMatchObject({
+      code: 'NOT_RESUMABLE',
+      message: `subagent "${oneShotId}" has no supported continuation state and cannot be resumed; choose a different target`,
+    })
+    expect(String(rejection)).not.toContain('send_message')
   })
 
   it('reports an unknown child id as unavailable', async () => {
@@ -1733,6 +1738,25 @@ describe('continuable adjacent-Agent delivery', () => {
     await expect(ctx.subagents.sendMessage(stale, SessionId('target'), message('stale'), {
       signal: testSignal,
     })).rejects.toMatchObject({ code: 'UNAUTHORIZED' })
+  })
+
+  it('explains that a host-owned child Session is not a resident continuable child', async () => {
+    const { ctx, parent } = await setup([])
+    const childId = SessionId('host-owned-child')
+    const handle = await ctx.agents.create({
+      sessionId: childId,
+      meta: { parentSession: parent.id, origin: 'subagent' },
+      agentOptions: { provider: 'mock', model: 'mock' },
+    })
+
+    await expect(ctx.subagents.sendMessage(handle.agent, parent.id, message('cannot report'), {
+      signal: testSignal,
+    })).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: `agent "${childId}" is not a resident continuable child and cannot send to parent "${parent.id}"`,
+    })
+
+    await handle.dispose()
   })
 
   it('steers an idle direct parent and preserves sender attribution', async () => {

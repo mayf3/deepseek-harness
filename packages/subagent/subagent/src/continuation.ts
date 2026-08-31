@@ -52,6 +52,7 @@ import { seedDescriptorTurn } from './descriptor-seed.ts'
 import type { ContinuableCreateRequest, ContinuableCreateSpec, SubagentResult, SubagentStartRequest } from './types.ts'
 import type { ActivationObserver, ActivationTerminal } from './lifecycle.ts'
 import { SubagentError } from './error.ts'
+import { isAdjacentAgentSendMessageTool } from './internal.ts'
 
 /** Durable attribution for one model-authored message between adjacent Agents. */
 export interface AgentMessageSource {
@@ -290,12 +291,13 @@ function agentMessage(sender: Agent, content: ContentBlock[]) {
 
 /** Append adjacent-Agent return guidance to a continuable child's initial task. */
 function continuableInitialPrompt(parentId: SessionId, prompt: ContentBlock[]): ContentBlock[] {
+  const encodedParentId = JSON.stringify(parentId)
   return [
     ...prompt,
     {
       type: 'text',
-      text: `Your parent agent id is ${parentId}. Before you finish, send your result to that agent with `
-        + `send_message({ agent_id: "${parentId}", message: "<self-contained result>" }). The parent shares `
+      text: `Your parent agent id is ${encodedParentId}. Before you finish, send your result to that agent with `
+        + `send_message({ agent_id: ${encodedParentId}, message: "<self-contained result>" }). The parent shares `
         + 'your workspace but does not automatically receive your transcript, tool output, or reasoning. Send '
         + 'earlier messages as well when a finding changes what the parent should do next; sending a message '
         + 'does not end your turn.',
@@ -484,9 +486,9 @@ export class SubagentContinuationManager {
       })
       return this.submitMaterialized(
         activation,
-        this.ctx.get('tools')?.get('send_message', activation.handle.agent) === undefined
-          ? request.prompt
-          : continuableInitialPrompt(parent.id, request.prompt),
+        isAdjacentAgentSendMessageTool(this.ctx.get('tools')?.get('send_message', activation.handle.agent))
+          ? continuableInitialPrompt(parent.id, request.prompt)
+          : request.prompt,
         { source: { kind: 'user' }, signal: spec.signal, delivery: 'queue' },
         parent,
       )
@@ -533,6 +535,12 @@ export class SubagentContinuationManager {
       && senderActivation.parentSession === targetId) {
       options.signal.throwIfAborted()
       return this.sendToParent(senderActivation, sender, content)
+    }
+    if (sender.session.header.parentSession === targetId) {
+      throw new SubagentError(
+        `agent "${sender.id}" is not a resident continuable child and cannot send to parent "${targetId}"`,
+        'UNAUTHORIZED',
+      )
     }
     return this.deliverToChild(sender, targetId, content, {
       signal: options.signal,
@@ -971,8 +979,7 @@ export class SubagentContinuationManager {
     )
     if (descriptor === undefined || descriptor.mode !== 'continuable') {
       throw new SubagentError(
-        `subagent "${childId}" has no supported continuation state and cannot be resumed; `
-        + 'do not retry send_message with this id',
+        `subagent "${childId}" has no supported continuation state and cannot be resumed; choose a different target`,
         'NOT_RESUMABLE',
       )
     }

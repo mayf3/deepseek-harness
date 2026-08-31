@@ -46,7 +46,7 @@ interface SendMessageInput {
 }
 ```
 
-Parents and children inherit the same definition in the same registry order. A child `toolFilter` may explicitly remove the inherited tool, but no child-local registration bypasses that choice. When the tool remains visible, the continuation manager appends the direct parent id and the instruction to send one self-contained result before finishing, plus earlier actionable findings, to the child's initial user task. For a fork child this task follows the inherited completed-turn prefix; no child-only system-prompt section or tool schema precedes that prefix.
+Parents and children inherit the same definition in the same registry order. The standard definition carries a process-stable internal identity that a scoped same-name tool does not satisfy. A child `toolFilter` may explicitly remove the inherited tool, and a scoped replacement may provide different semantics; neither case receives the standard call instruction. When the standard tool remains visible, the continuation manager appends the JSON-encoded direct parent id and the instruction to send one self-contained result before finishing, plus earlier actionable findings, to the child's initial user task. For a fork child this task follows the inherited completed-turn prefix; no child-only system-prompt section or tool schema precedes that prefix.
 
 The instruction is guidance, not settlement enforcement. Sending does not end the child's turn, zero or several calls remain mechanically valid, and the runtime never rejects a child for staying silent. The manager-owned `subagent-settled` notice remains unconditional and separately attributed because it records how an Activation ended and preserves terminal output when the child cannot cooperate.
 
@@ -76,7 +76,7 @@ The standalone `@deepseek-ai/dsh-tool-subagent-report` package, `report` schema,
 - The continuation manager remains the sole owner of adjacency authorization, residency, cold resume, waking admission, and teardown races.
 - Accepted messages may extend a running target's current turn; messages waiting together share next-step FIFO ordering.
 - Caller cancellation owns work only until inbox acceptance and does not retract an accepted message or dispose the target.
-- The initial task carries dynamic parent addressing after a fork prefix, while the request-head system prompt and tool ordering remain reusable.
+- The initial task carries JSON-encoded dynamic parent addressing after a fork prefix, while the request-head system prompt and tool ordering remain reusable.
 - Human prompts, settlement notices, QueueDock, and the base bundle's one-shot fork policy remain separate decisions.
 
 This decision consolidates and removes the fully superseded report-tool and child-report-obligation records. It supersedes the `followup` naming choice in [Intent-named subagent continuation operations](../simplification/2026-07-27-intent-named-subagent-continuation-operations.md) and retains the accepted-order guarantee in [Child Agent messages precede their settlement notices](../bug-fix/2026-08-17-subagent-message-settlement-ordering.md).

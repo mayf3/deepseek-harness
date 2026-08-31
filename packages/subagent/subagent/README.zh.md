@@ -48,7 +48,7 @@ kind: "package-reference"
 
 ### 消息、中断与发现
 
-每个确切在线 Agent 都可以对直接可继续 child 使用 `sendMessage()`；可继续 Agent 还可以对自己的直接 parent 使用它。正在工作的目标通过 Steer 在最近 step 接收消息；空闲目标启动轮次，且只有直接 child 可以冷恢复。parent 也可以随时中断正在运行的后代或列举自己的子级。发现覆盖两种形态：服务列举直接子级与完整后代树——模式、活动状态与血缘——直接读取在线会话状态与可选持久化，不加载任何子 agent。
+每个确切在线 Agent 都可以对直接可继续 child 使用 `sendMessage()`；驻留的可继续 child 还可以对自己的直接 parent 使用它。正在工作的目标通过 Steer 在最近 step 接收消息；空闲目标启动轮次，且只有直接 child 可以冷恢复。parent 也可以随时中断正在运行的后代或列举自己的子级。发现覆盖两种形态：服务列举直接子级与完整后代树——模式、活动状态与血缘——直接读取在线会话状态与可选持久化，不加载任何子 agent。
 
 ### 失败与恢复
 
@@ -97,7 +97,7 @@ kind: "package-reference"
 
 - **发布即边界**——发布前提供方拥有设置并须在失败时回滚；发布后调用方拥有运行并须 dispose（资源释放）它。
 - **注册受 effect 作用域约束**——移除提供方会阻止新启动，但绝不撤销已接受的运行。
-- **Agent 消息权限基于确切相邻关系**——`sendMessage()` 要求确切在线 sender，以及其直接 parent 或直接可继续 child。
+- **Agent 消息权限基于确切相邻关系**——`sendMessage()` 要求确切在线 sender；每个 sender 都可以指定直接可继续 child，只有具备驻留可继续 Activation 的 sender 可以指定自己的直接 parent。
 - **描述符仅进日志**——它是会话事件，不进入模型历史，并跨压缩（compaction）保留；可继续描述符会显式记录解析后的子级提供方、模型与推理等级，用于冷恢复。
 
 </details>
@@ -163,12 +163,12 @@ You are a delegated subagent: your permission scope was fixed when you were star
 这些限制说明该 seam 何时不合适，或何时需要特别的运维注意。它们是当前包约束，不是通用委派对比或任务积压。
 
 - **ACP 子级仍为一次性，且无法通过追踪枚举**——ACP 运行在父级会话语料中没有本地子会话，远程提供方需要 Activation 所有权约定才能支持可继续子级。
-- **仅允许相邻模型消息**——`sendMessage()` 要求确切在线 sender，以及直接 parent 或直接可继续 child；浏览器提示使用独立的 Queue 控制路径。
+- **仅允许相邻模型消息**——`sendMessage()` 要求确切在线 sender；每个 sender 都可以指定直接可继续 child，只有具备驻留可继续 Activation 的 sender 可以指定自己的直接 parent。浏览器提示使用独立的 Queue 控制路径。
 - **child 到 parent 的投递要求直接 parent 保持在线**——服务没有持久 parent mailbox；parent 缺失时会拒绝消息，而非接受无法唤醒的工作。
 - **取消收敛期间存在唤醒缺口**——中断信号发出后、driver 进入 idle 前被接受的后续消息会保持排队，直到另一条唤醒发送到达。
 - **驻留仅限进程内**——Activation inbox 与所有权图不会在两个 harness 进程之间协调；对单个持久化存储的并发访问需要持久化邮箱与跨进程租约协议。
 - **不回放已接受但未记录的消息**——崩溃可能丢失从未写入子会话日志、已被接受的提示词；丢失的消息不会自动回放。
-- **没有持久化 parent mailbox**——child 到 parent 的消息要求直接 parent 在线，提供的是接受标识，不保证恰好一次投递。
+- **没有持久化 parent mailbox**——child 到 parent 的消息要求驻留的可继续 child 与在线直接 parent，提供的是接受标识，不保证恰好一次投递。
 - **生命周期事件只供观察**——影响运行的 `subagent/end` 延续或决策接口仍需等待具体消费方。
 
 <a id="dev-note"></a>

@@ -116,9 +116,9 @@ describe('dsh-tool-subagent-control', () => {
     expect(schemas[0]!.description).not.toContain('job id')
     expect(schemas[0]!.description).toContain('nearest step')
     expect(schemas[0]!.description).toContain('direct continuable child')
-    expect(schemas[0]!.description).toContain('If you are a continuable agent')
+    expect(schemas[0]!.description).toContain('If you are a resident continuable child')
     expect(props.agent_id).toMatchObject({
-      description: 'The agent id of your direct continuable child, or your direct parent when you are continuable.',
+      description: 'The agent id of your direct continuable child, or your direct parent when you are a resident continuable child.',
     })
   })
 
@@ -161,9 +161,31 @@ describe('dsh-tool-subagent-control', () => {
     if (prompt?.type !== 'user/message') throw new Error('expected the initial fork task')
     const texts = prompt.data.content.flatMap(block => block.type === 'text' ? [block.text] : [])
     expect(texts[0]).toBe('fork task')
-    expect(texts[1]).toContain(`Your parent agent id is ${parent.id}`)
-    expect(texts[1]).toContain(`send_message({ agent_id: "${parent.id}"`)
+    expect(texts[1]).toContain(`Your parent agent id is ${JSON.stringify(parent.id)}`)
+    expect(texts[1]).toContain(`send_message({ agent_id: ${JSON.stringify(parent.id)}`)
     expect(texts[1]).not.toContain('report tool')
+  })
+
+  it('JSON-encodes a caller-supplied parent id in the initial return instruction', async () => {
+    const { ctx } = await setup([textResponse('child done')])
+    const parent = ctx.agentLoop.create(SessionId('parent"\nagent'), { provider: 'mock', model: 'mock' })
+    parkParent(ctx, parent)
+    const started = await ctx.subagents.startContinuable({
+      provider: 'spawn',
+      label: 'encoded parent',
+      request: { prompt: [{ type: 'text', text: 'encoded task' }], parent },
+      signal: testToolSignal,
+    })
+    await waitNoActivation(ctx, started.childId)
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const prompt = loaded.events.find(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'text' && block.text === 'encoded task'))
+    if (prompt?.type !== 'user/message') throw new Error('expected the encoded initial task')
+    const guidance = prompt.data.content.findLast(block => block.type === 'text')?.text ?? ''
+
+    expect(guidance).toContain(`Your parent agent id is ${JSON.stringify(parent.id)}`)
+    expect(guidance).toContain(`agent_id: ${JSON.stringify(parent.id)}`)
+    expect(guidance).not.toContain(parent.id)
   })
 
   it('lets a continuable child steer its direct parent with send_message', async () => {

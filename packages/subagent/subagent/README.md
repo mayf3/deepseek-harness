@@ -48,7 +48,7 @@ One-shot children run once and settle with a single result, plus an optional str
 
 ### Messaging, interrupting, and discovering
 
-Every exact live Agent can use `sendMessage()` with a direct continuable child; a continuable Agent can also use it with its direct parent. A working target receives the message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. Discovery covers both shapes: the service lists direct children and the full descendant tree — mode, activity, and lineage — reading live session state and optional persistence, without loading any child.
+Every exact live Agent can use `sendMessage()` with a direct continuable child; a resident continuable child can also use it with its direct parent. A working target receives the message through Steer at its nearest step; an idle target starts a turn, and only a direct child can be cold-resumed. The parent can also interrupt a running descendant or list its children at any time. Discovery covers both shapes: the service lists direct children and the full descendant tree — mode, activity, and lineage — reading live session state and optional persistence, without loading any child.
 
 ### Failure and recovery
 
@@ -97,7 +97,7 @@ The manager reserves a child identity, resolves the durable descriptor, creates 
 
 - **Publication is the boundary** — before it the provider owns the setup and must roll back on failure; after it the caller owns the run and must dispose it.
 - **Registration is effect-scoped** — removing a provider blocks new starts but never revokes accepted runs.
-- **Agent-message authority is exact adjacency** — `sendMessage()` requires the exact live sender and its direct parent or direct continuable child.
+- **Agent-message authority is exact adjacency** — `sendMessage()` requires the exact live sender; every sender may target a direct continuable child, while only a sender with a resident continuable Activation may target its direct parent.
 - **The descriptor is log-only** — a session event absent from model history and retained across compaction; a continuable descriptor records the resolved child provider, model, and reasoning effort explicitly for cold resume.
 
 </details>
@@ -163,12 +163,12 @@ Prefix-stable within a child: the statement never changes during the child's lif
 These limits define when the seam is a poor fit or needs special operational care. They are current package constraints, not a general delegation comparison or a task backlog.
 
 - **ACP children remain one-shot and are not trace-enumerable** — an ACP run has no local child session in the parent's session corpus, and remote providers need an Activation ownership contract before they can support continuable children.
-- **Adjacent model messaging only** — `sendMessage()` requires an exact live sender and a direct parent or direct continuable child; browser prompts use the separate Queue control path.
+- **Adjacent model messaging only** — `sendMessage()` requires an exact live sender; every sender may target a direct continuable child, while only a sender with a resident continuable Activation may target its direct parent. Browser prompts use the separate Queue control path.
 - **A direct parent must remain live for child-to-parent delivery** — the service has no durable parent mailbox; a missing parent rejects the message instead of accepting work it cannot wake.
 - **Wake gap during cancellation convergence** — a follow-up accepted after an interrupt signal but before the driver becomes idle stays queued until another waking send.
 - **Process-local residency** — the Activation inbox and ownership graph do not coordinate two harness processes; concurrent access to one persistence store needs a durable mailbox and cross-process lease protocol.
 - **No replay of accepted-but-unlogged messages** — a crash can lose an accepted prompt that never reached the child's session log; the lost message is not replayed automatically.
-- **No durable parent mailbox** — child-to-parent messages require a live direct parent and provide acceptance identity rather than exactly-once delivery.
+- **No durable parent mailbox** — child-to-parent messages require a resident continuable child and live direct parent, and provide acceptance identity rather than exactly-once delivery.
 - **Lifecycle events are observe-only** — a run-affecting `subagent/end` continuation or decision API waits for a concrete consumer.
 
 <a id="dev-note"></a>

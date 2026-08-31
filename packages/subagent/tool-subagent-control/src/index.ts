@@ -15,6 +15,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-subagent'
+import { markAdjacentAgentSendMessageTool } from '@deepseek-ai/dsh-subagent/internal'
 
 export const name = 'tool-subagent-control'
 export const inject = ['tools', 'subagents']
@@ -24,18 +25,18 @@ export const inject = ['tools', 'subagents']
  * @param ctx - context carrying the tool registry and subagent service.
  */
 export function apply(ctx: Context): void {
-  ctx.tools.register(defineTool({
+  ctx.tools.register(markAdjacentAgentSendMessageTool(defineTool({
     name: 'send_message',
     description:
-      'Send a message to a direct continuable child by its agent id. If you are a continuable agent, you may '
-      + 'also target your direct parent. If the target is still working, the message steers its nearest step; '
+      'Send a message to a direct continuable child by its agent id. If you are a resident continuable child, '
+      + 'you may also target your direct parent. If the target is still working, the message steers its nearest step; '
       + 'if it is idle, the message starts a turn. This call returns no answer from the agent — only confirmation '
       + 'that the message was delivered. A failure means the message was NOT delivered.',
     parameters: {
       agent_id: {
         type: 'string',
         required: true,
-        description: 'The agent id of your direct continuable child, or your direct parent when you are continuable.',
+        description: 'The agent id of your direct continuable child, or your direct parent when you are a resident continuable child.',
       },
       message: {
         type: 'string',
@@ -70,7 +71,7 @@ export function apply(ctx: Context): void {
       )
       return { messageId }
     },
-  }))
+  })))
 
   ctx.tools.register(defineTool({
     name: 'interrupt_agent',
