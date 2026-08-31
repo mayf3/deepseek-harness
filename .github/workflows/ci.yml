@@ -515,8 +515,8 @@ jobs:
       # No build before coverage, matching the Linux lane: workspace imports
       # resolve to src through the tsconfig paths map, and the lib-consuming
       # suites (webworker-packer image-loadable, webworker-runtime
-      # transform-corpus, session-persistence-sqlite built-package, client
-      # ui-trajectory client-bundle) self-skip on unbuilt checkouts.
+      # transform-corpus, client ui-trajectory client-bundle) self-skip on
+      # unbuilt checkouts.
       - name: Run Windows coverage
         shell: pwsh
         run: pnpm run check:ci:coverage
@@ -577,7 +577,6 @@ jobs:
           packages/workflow/workflow-worker-thread/tests/workflow-worker-thread.spec.ts
           packages/workflow/tool-ralph/tests/integration.spec.ts
           packages/subprocess/subprocess-local/tests/process-exit.spec.ts
-          packages/session/session-persistence-sqlite/tests/differential.spec.ts
 
   windows-observational:
     if: github.event_name == 'pull_request'
