@@ -25,7 +25,7 @@ import {
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/question-composer', import.meta.url))
-const FIXTURE = join(SNAPSHOT_DIR, 'session.jsonl')
+const FIXTURE = join(SNAPSHOT_DIR, 'session.v2.jsonl')
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const SIDEBAR_EXPECTED = join(SNAPSHOT_DIR, 'sidebar.expected.md')
 const COMPOSED_EXPECTED = join(SNAPSHOT_DIR, 'composed.expected.md')
@@ -416,7 +416,7 @@ describe.skipIf(MODE === 'record')('web e2e: cancelled question transcript', () 
 
   it('keeps the fixture inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.jsonl',
+      'session.v2.jsonl',
       'ui.expected.md',
       'sidebar.expected.md',
       'composed.expected.md',

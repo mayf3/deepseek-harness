@@ -6,7 +6,7 @@
 // record cannot hang on a live model answering differently); assertion steps
 // run in replay/refresh only. Settled states only — streaming fidelity is
 // asserted from the durable embedded Assistant stream, not transient DOM.
-// Record: DSH_SNAPSHOT=record rewrites session.jsonl, then a keyless
+// Record: DSH_SNAPSHOT=record writes session.v2.jsonl, then a keyless
 // DSH_SNAPSHOT=refresh regenerates ui.expected.md.
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -26,7 +26,7 @@ import {
 } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/session.v2.jsonl', import.meta.url))
 const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/ui.expected.md', import.meta.url))
 const ECHO_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/fresh-round-trip/submission-echo.expected.md', import.meta.url))
 const UI_EXPANDED_EXPECTED = fileURLToPath(
@@ -218,7 +218,7 @@ describe('web e2e: fresh round trip through the real assembly', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'session.jsonl',
+      'session.v2.jsonl',
       'submission-echo.expected.md',
       'system-prompt.expected.md',
       'tool-schemas.expected.json',

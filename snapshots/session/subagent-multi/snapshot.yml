@@ -2,6 +2,9 @@ version: 1
 scenario: subagent-multi
 profile: headless
 composition: default
-recording: live
+recording: authored
+sessionFormat:
+  version: 0
+  coverage: [multi-hop, shipped-profile]
 header:
   class: default

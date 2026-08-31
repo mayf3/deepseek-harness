@@ -18,7 +18,7 @@ import { newEnglishPage, saveFailureShot } from './support.ts'
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/message-actions', import.meta.url))
 // Borrowed read-only: this scenario needs any settled user+assistant pair, not
 // a new recording (workspace-management / sidebar-scrollbar pattern).
-const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.jsonl', import.meta.url))
+const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v2.jsonl', import.meta.url))
 const UI_EXPECTED = join(SNAPSHOT_DIR, 'ui.expected.md')
 const FORK_EXPECTED = join(SNAPSHOT_DIR, 'fork.expected.md')
 const MODE = webSnapshotMode()
@@ -26,7 +26,6 @@ const SEED_ID = 'message-actions-web-e2e'
 
 const PROMPT = 'Use the read tool twice in one assistant message: read a.txt and b.txt. Then reply with the single word DONE and stop.'
 const MID_TURN_TEXT = 'I will read both files before answering.'
-const INTERRUPTED_REASONING = 'Both files have been read. a.txt contains "alpha" and b.txt contains "beta". I\'ll now reply with DONE as instructed.'
 const SECOND_PROMPT = 'Now give the final answer.'
 
 /**
@@ -86,11 +85,11 @@ function completedTailFixture(raw: string): string {
         step: 2,
         stream: [
           { type: 'chunk', time, chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
-          { type: 'reasoning-chunks', time0: time, index: 0, dt: [], texts: [INTERRUPTED_REASONING] },
+          { type: 'reasoning-chunks', time0: time, index: 0, dt: [], texts: ['This path was interrupted.'] },
           {
             type: 'chunk',
             time,
-            chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: INTERRUPTED_REASONING } },
+            chunk: { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'This path was interrupted.' } },
           },
           { type: 'chunk', time, chunk: { type: 'finish', reason: { kind: 'stop' } } },
         ],

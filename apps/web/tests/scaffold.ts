@@ -52,6 +52,7 @@ import {
   sessionFixtureName,
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
+  writesCurrentSessionFixtures,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
 import {
@@ -1002,7 +1003,7 @@ async function assertReplaySession(
   const sessionCwd = session.header.cwd
   if (sessionCwd === undefined) throw new Error(`${fixturePath}: replayed session has no cwd`)
   const actual = rawSessionLog(session)
-  if (mode === 'refresh' && manifest.session === undefined) {
+  if (mode === 'refresh' && writesCurrentSessionFixtures(manifest, mode)) {
     expected = stableSessionFixture(session, expected, sessionCwd, fixturePath)
     expectedPath = recordedSessionFixturePath(fixturePath, session.header.version)
     await writeFile(expectedPath, expected)
@@ -1052,7 +1053,7 @@ export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId,
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
   const manifestPath = join(dirname(fixturePath), 'snapshot.yml')
   const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
-  if (manifest.session !== undefined) return
+  if (!writesCurrentSessionFixtures(manifest, 'record')) return
   const target = recordedSessionFixturePath(fixturePath, agent.session.header.version)
   const existingPath = existsSync(target) ? target : fixturePath
   const existing = existsSync(existingPath) ? await readFile(existingPath, 'utf8') : ''

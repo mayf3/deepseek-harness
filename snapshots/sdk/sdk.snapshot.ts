@@ -41,11 +41,11 @@ import {
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   tokenizeSessionFixtureCwd,
+  writesCurrentSessionFixtures,
   materializeProfilePatch,
   formatSystemPromptSnapshot,
   formatToolSchemasSnapshot,
   latestPersistedSessionPaths,
-  parseSessionFixtureName,
   type HarvestedLog,
   type NormalizeContext,
   type SnapshotManifest,
@@ -75,6 +75,7 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 const mode = process.env.DSH_SNAPSHOT ?? 'replay'
 const recording = mode === 'record'
 const refreshing = mode === 'refresh'
+const sessionWriteMode = recording ? 'record' : refreshing ? 'refresh' : 'replay'
 const RUNTIME_WORKSPACE_ENTRIES = [
   '.agents',
   '.child-dsh',
@@ -737,13 +738,17 @@ async function verifyHeaders(
 
 describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
   for (const scenario of sdkScenarios) {
-    const scenarioTest = recording && scenario.manifest.recording === 'authored' ? it.skip : it
+    const scenarioTest = recording
+      && (scenario.manifest.recording === 'authored' || scenario.manifest.sessionFormat !== undefined)
+      ? it.skip
+      : it
     scenarioTest(`${mode}s ${scenario.name} through dsh --profile sdk`, async () => {
       const scenarioDir = scenario.dir
       const notificationsExpectedPath = join(scenarioDir, 'notifications.expected.jsonl')
       const resultExpectedPath = join(scenarioDir, 'result.expected.json')
       const hasWireGoldens = existsSync(notificationsExpectedPath) || existsSync(resultExpectedPath)
       const assertions = SDK_ASSERTIONS[scenario.name] ?? {}
+      const writesSessionFixtures = writesCurrentSessionFixtures(scenario.manifest, sessionWriteMode)
 
       let files = await fixtureFiles(scenario)
       const { results, notifications, observedMethods, logs, initialWorkspace, finalWorkspace, cwd } = await runScenario(scenario)
@@ -763,7 +768,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         ))
       }
 
-      if (refreshing) {
+      if (refreshing && writesSessionFixtures) {
         const harvested = ordered.map((log): HarvestedLog => ({
           id: String(log.header.id),
           createdAt: Number(log.header.createdAt),
@@ -781,20 +786,12 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
         expectedContents = redactSessionSnapshotIds(stabilizeFixtureMessageIds(refreshed, expectedContents))
       }
 
-      if (recording || refreshing) {
+      if (writesSessionFixtures) {
         const outputFiles = ordered.map((log, index) => join(scenarioDir, sessionFixtureName(
           index,
           sessionHeaderVersion(log.content, `harvested Session ${index}`),
         )))
         await Promise.all(expectedContents.map((stable, index) => writeFile(outputFiles[index] as string, stable)))
-        if (recording) {
-          const retained = new Set(outputFiles.map(file => basename(file)))
-          for (const entry of await readdir(scenarioDir, { withFileTypes: true })) {
-            if (!entry.isFile() || retained.has(entry.name)) continue
-            const fixture = parseSessionFixtureName(entry.name)
-            if (fixture !== undefined && fixture.index >= outputFiles.length) await rm(join(scenarioDir, entry.name))
-          }
-        }
         files = outputFiles
         await writeHeaderSidecars(scenario, ordered, actualContext)
       }

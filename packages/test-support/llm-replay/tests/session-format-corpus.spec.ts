@@ -1,16 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { join, relative, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format-catalog'
 import { parseSessionLog } from '../src/index.ts'
-import { ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES } from '../src/alpha-refusal-fixtures.ts'
 
 const repoRoot = resolve(import.meta.dirname, '../../../..')
 const excludedDirectories = new Set(['dist', 'lib', 'node_modules'])
-
-const alphaRefusalManifest: ReadonlyMap<string, string> = new Map(
-  ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES.map(fixture => [fixture.repoRelativePath, fixture.expectedMessage]),
-)
 
 function committedSessionFixtures(directory: string): string[] {
   const files: string[] = []
@@ -44,8 +38,7 @@ function filenameFormatVersion(path: string): number {
 }
 
 describe('committed Session format corpus', () => {
-  it('migrates every versioned fixture or matches one exact alpha refusal', () => {
-    const seenRefusals = new Set<string>()
+  it('restores every versioned fixture through the current format catalog', () => {
     const files = ['snapshots', 'packages', 'scripts/snapshots/python-sdk-single-exe']
       .flatMap(root => committedSessionFixtures(join(repoRoot, root)))
       .sort()
@@ -58,23 +51,7 @@ describe('committed Session format corpus', () => {
         version?: unknown
       }
       expect(header.version, `${key}: filename/header Session generation`).toBe(filenameFormatVersion(file))
-      let failure: unknown
-      try {
-        parseSessionLog(source)
-      } catch (error: unknown) {
-        failure = error
-      }
-      const expected = alphaRefusalManifest.get(key)
-      if (expected === undefined) {
-        expect(failure, `${key}: unclassified Session format refusal`).toBeUndefined()
-      } else {
-        expect(failure, `${key}: refusal no longer occurs`)
-          .toBeInstanceOf(SessionFormatUnsupportedMigrationError)
-        expect((failure as Error).message).toBe(expected)
-        seenRefusals.add(key)
-      }
+      expect(() => parseSessionLog(source), `${key}: current-format restoration`).not.toThrow()
     }
-
-    expect([...seenRefusals].sort()).toEqual([...alphaRefusalManifest.keys()].sort())
   })
 })

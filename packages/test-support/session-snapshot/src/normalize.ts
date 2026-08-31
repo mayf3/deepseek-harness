@@ -106,7 +106,7 @@ export interface NormalizeOptions {
 
 /** Multi-Session comparison controls, including optional committed source identities. */
 export interface NormalizeSessionSnapshotsOptions extends Omit<NormalizeOptions, 'identityMode'> {
-  /** Primary-first source paths; exact alpha-refusal fixtures receive replay-only comparison policy. */
+  /** Primary-first source paths paired with logs; they never change format validation. */
   sourcePaths?: readonly (string | undefined)[]
 }
 

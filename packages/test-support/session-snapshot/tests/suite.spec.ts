@@ -584,10 +584,21 @@ describe('scenarioSkipped', () => {
   const authored: Scenario = { name: 'authored', hasModelTurn: true, recorded: false }
   const posix: Scenario = { name: 'posix-cancel', hasModelTurn: true, recorded: false, posixOnly: true }
   const pwsh: Scenario = { name: 'pwsh-tool', hasModelTurn: true, recorded: false, pwshOnly: true }
+  const retained: Scenario = {
+    name: 'retained-v0',
+    hasModelTurn: true,
+    recorded: true,
+    sessionFormat: { version: 0, coverage: ['multi-hop'] },
+  }
 
   it('skips authored scenarios only while recording', () => {
     expect(scenarioSkipped(authored, true, 'linux')).toBe(true)
     expect(scenarioSkipped(authored, false, 'linux')).toBe(false)
+  })
+
+  it('skips a retained historical generation while recording but replays and refreshes it', () => {
+    expect(scenarioSkipped(retained, true, 'linux')).toBe(true)
+    expect(scenarioSkipped(retained, false, 'linux')).toBe(false)
   })
 
   it('skips posixOnly scenarios on Windows and nowhere else', () => {

@@ -2,8 +2,9 @@
 
 import { existsSync } from 'node:fs'
 import { lstat, readFile, readdir, realpath } from 'node:fs/promises'
-import { dirname, join, relative, resolve } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { expect, it } from 'vitest'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import {
   assertSessionFixtureVersion,
   captureExpectedWorkspaceSnapshot,
@@ -13,9 +14,11 @@ import {
   redactSessionSnapshotIds,
   scrubSystemPrompts,
   scrubToolSchemas,
+  sessionFixtureFiles,
   sessionFixtureNames,
   type SnapshotManifest,
 } from '@deepseek-ai/dsh-session-snapshot'
+import { assertV2SnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
 
 const repoRoot = resolve(import.meta.dirname, '..')
 const corpusRoot = join(repoRoot, 'snapshots')
@@ -127,6 +130,9 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
       const sourceKey = relative(corpusRoot, targetDir).split(/[/\\]/).join('/')
       expect(byKey.has(sourceKey), `${key}: session source must name a corpus owner`).toBe(true)
       expect(byKey.get(sourceKey)?.manifest.session, `${key}: session source cannot chain through a borrower`).toBeUndefined()
+      const [selectedParent] = sessionFixtureFiles(await readdir(targetDir))
+      expect(basename(target), `${key}: session source must name the owner's selected parent generation`)
+        .toBe(selectedParent?.name)
     }
 
     expect(existsSync(join(dir, 'replay.override.json')), `${key}: replay override presence`)
@@ -183,4 +189,21 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
       expect(existsSync(join(dir, `tool-schemas.${index}.expected.json`)), `${key}: child schema sidecar ${index}`).toBe(true)
     }
   }
+})
+
+it('keeps a current v2 majority plus the bounded declared v0/v1 migration corpus', async () => {
+  expect(SESSION_FORMAT_VERSION).toBe(2)
+  const owners = (await scenarios()).filter(scenario => scenario.manifest.session === undefined)
+  const inventory = await Promise.all(owners.map(async scenario => ({
+    key: scenario.key,
+    selectedVersions: sessionFixtureFiles(await readdir(scenario.dir)).map(file => file.version),
+    ...(scenario.manifest.sessionFormat === undefined
+      ? {}
+      : { retained: scenario.manifest.sessionFormat }),
+  })))
+
+  expect(assertV2SnapshotCorpusPolicy(inventory)).toMatchObject({
+    retainedRoles: 7,
+    retainedScenarios: 5,
+  })
 })

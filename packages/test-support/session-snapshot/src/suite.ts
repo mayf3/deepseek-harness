@@ -23,7 +23,11 @@ import { join } from 'node:path'
 import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
 import { describe, expect, it } from 'vitest'
 import { type AgentUnderTest, type HarvestedLog, type InputScript, runScenario } from './harness.ts'
-import { parseSnapshotManifest } from './manifest.ts'
+import {
+  parseSnapshotManifest,
+  writesCurrentSessionFixtures,
+  type SnapshotSessionFormatManifest,
+} from './manifest.ts'
 import { redactSessionSnapshotIds } from './identity.ts'
 import { captureExpectedWorkspaceSnapshot } from './workspace.ts'
 import {
@@ -97,6 +101,8 @@ export interface Scenario {
    * a live model won't reproduce) are NEVER re-recorded.
    */
   recorded: boolean
+  /** Historical generation retained as a read-only migration fixture. */
+  sessionFormat?: SnapshotSessionFormatManifest
   /**
    * Whether replay is driven by a hand-written `replay.override.json` sidecar
    * (a `ReplayOverrideDoc` that replaces or patches the script derived from
@@ -216,7 +222,7 @@ export function scenarioSkipped(
   platform: NodeJS.Platform = process.platform,
   hasPwsh?: boolean,
 ): boolean {
-  if (recording && !scenario.recorded) return true
+  if (recording && (!scenario.recorded || scenario.sessionFormat !== undefined)) return true
   if (scenario.posixOnly === true && platform === 'win32') return true
   return scenario.pwshOnly === true && hasPwsh !== true
 }
@@ -1245,8 +1251,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
         const portableFixture = scenario.workspaceParent === undefined
           ? tokenizeSessionFixtureCwd
           : (log: string): string => log
-        const writesSessionFixtures = (RECORDING && scenario.recorded && scenario.hasModelTurn)
-          || (REFRESHING && comparesLog)
+        const writesSessionFixtures = writesCurrentSessionFixtures(manifest, mode)
+          && ((RECORDING && scenario.recorded && scenario.hasModelTurn) || (REFRESHING && comparesLog))
         if (writesSessionFixtures) {
           expect(result.sessionLogs.length, `${mode} produced no session log to harvest`).toBeGreaterThan(0)
           if (REFRESHING) {

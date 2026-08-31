@@ -114,7 +114,7 @@ ADVANCED_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "advanced"
 )
 ADVANCED_SNAPSHOT_FILENAMES = (
-    "result.json", "session.v1.jsonl", "session.1.v1.jsonl", "session.2.v1.jsonl",
+    "result.json", "session.v2.jsonl", "session.1.v2.jsonl", "session.2.v2.jsonl",
 )
 MINIMAL_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal"
@@ -126,7 +126,7 @@ RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
 RESTART_SNAPSHOT_FILENAMES = (
-    "result.json", "requests.json", "session.1.v1.jsonl", "session.2.v1.jsonl",
+    "result.json", "requests.json", "session.1.v2.jsonl", "session.2.v2.jsonl",
 )
 MCP_SERVER_SCRIPT = """\
 import json
@@ -1283,7 +1283,6 @@ def smoke_sdk_restart_snapshot(base_url: str, executable: Path, update_snapshots
             logs,
             root,
             sessions,
-            compare_released_generations=not update_snapshots,
         )
         compare_snapshot_files(
             files, update_snapshots, RESTART_SNAPSHOT_DIRECTORY, RESTART_SNAPSHOT_FILENAMES,
@@ -1679,8 +1678,6 @@ def build_restart_snapshot_files(
     logs: dict[str, list[dict[str, object]]],
     cwd: Path,
     sessions: Path,
-    *,
-    compare_released_generations: bool,
 ) -> dict[str, str]:
     """Render two SDK processes, isolated model histories, and durable logs."""
     replacements = [
@@ -1696,24 +1693,11 @@ def build_restart_snapshot_files(
             "finish_reason": result.finish_reason,
             "eventTypes": [
                 event.get("type")
-                for source in result.events
-                for event in (
-                    expand_snapshot_assistant_event(source)
-                    if compare_released_generations else [source]
-                )
-                if isinstance(event, dict)
+                for event in result.events
             ],
             "notificationMethods": [
-                row.get("method")
+                notification.method
                 for notification in result.notifications
-                for row in (
-                    expand_snapshot_assistant_event({
-                        "method": notification.method,
-                        "payload": notification.payload,
-                    })
-                    if compare_released_generations else [{"method": notification.method}]
-                )
-                if isinstance(row, dict)
             ],
         }
         for result in (first, second)

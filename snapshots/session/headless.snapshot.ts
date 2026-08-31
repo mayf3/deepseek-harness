@@ -23,7 +23,6 @@ import {
   normalizedSystemPrompts,
   normalizedToolSchemas,
   parseSnapshotManifest,
-  parseSessionFixtureName,
   parseToolSchemasSnapshot,
   redactSessionSnapshotIds,
   refreshFixtureReplacements,
@@ -38,6 +37,7 @@ import {
   stabilizeFixtureMessageIds,
   stabilizeRefreshLog,
   tokenizeSessionFixtureCwd,
+  writesCurrentSessionFixtures,
   type HarvestedLog,
   type NormalizeContext,
   type SnapshotManifest,
@@ -45,7 +45,7 @@ import {
 } from '@deepseek-ai/dsh-session-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
-import { parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { parseSessionLog, prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url))
 const snapshotsRoot = fileURLToPath(new URL('./', import.meta.url))
@@ -197,6 +197,7 @@ async function primaryFixtureFile(dir: string): Promise<string> {
 async function writeSessionFixtures(
   scenario: HeadlessScenario,
   actualLogs: readonly SessionLog[],
+  existingFiles: readonly string[],
   existing: readonly string[],
   ctx: NormalizeContext,
 ): Promise<string[]> {
@@ -208,23 +209,18 @@ async function writeSessionFixtures(
   const replacements = mode === 'refresh'
     ? refreshFixtureReplacements(actualLogs.map(harvested), prior)
     : []
-  const fresh = actualLogs.map((log, index) => scrubSessionSnapshot(tokenizeSessionFixtureCwd(
-    mode === 'refresh'
+  const fresh = actualLogs.map((log, index) => {
+    const stable = tokenizeSessionFixtureCwd(mode === 'refresh'
       ? stabilizeRefreshLog(log.content, prior[index] as string, replacements, ctx)
-      : log.content,
-  )))
+      : log.content)
+    const sourceFile = existingFiles[index]
+    return scrubSessionSnapshot(prepareSessionSnapshotFixtureForComparison(
+      stable,
+      sourceFile === undefined ? undefined : join(scenario.dir, sourceFile),
+    ))
+  })
   const output = redactSessionSnapshotIds(stabilizeFixtureMessageIds(fresh, prior))
   await Promise.all(output.map((content, index) => writeFile(join(scenario.dir, names[index] as string), content)))
-
-  if (mode === 'record') {
-    const retained = new Set(names)
-    for (const entry of await readdir(scenario.dir, { withFileTypes: true })) {
-      const fixture = entry.isFile() ? parseSessionFixtureName(entry.name) : undefined
-      if (fixture !== undefined && fixture.index >= names.length && !retained.has(entry.name)) {
-        await rm(join(scenario.dir, entry.name))
-      }
-    }
-  }
 
   if (scenario.manifest.header.pin === true) {
     const primary = actualLogs[0]
@@ -340,26 +336,19 @@ function stderrFromSession(log: string): string {
     open = false
     endsWithNewline = true
   }
-  for (const record of records(log)) {
-    if (record.type === 'turn/start') {
-      close()
-      started = true
-      continue
-    }
-    if (!started) continue
-    const data = record.data as JsonObject | undefined
-    if (record.type === 'reasoning-chunks') {
+  const consume = (type: unknown, data: JsonObject | undefined): void => {
+    if (type === 'reasoning-chunks') {
       if (!Array.isArray(data?.texts) || data.texts.some(text => typeof text !== 'string')) {
         throw new Error('headless snapshot reasoning chunks have invalid text')
       }
       for (const text of data.texts as string[]) appendReasoning(text)
-      continue
+      return
     }
-    if (record.type === 'text-chunks' || record.type === 'tool-call-chunks') {
+    if (type === 'text-chunks' || type === 'tool-call-chunks') {
       close()
-      continue
+      return
     }
-    if (record.type !== 'assistant/chunk') continue
+    if (type !== 'assistant/chunk' && type !== 'chunk') return
     const chunk = data?.chunk as JsonObject | undefined
     switch (chunk?.type) {
       case 'reasoning-delta':
@@ -382,6 +371,26 @@ function stderrFromSession(log: string): string {
         close()
         break
     }
+  }
+  for (const record of records(log)) {
+    if (record.type === 'turn/start') {
+      close()
+      started = true
+      continue
+    }
+    if (!started) continue
+    const data = record.data as JsonObject | undefined
+    if (record.type === 'assistant/message' && Array.isArray(data?.stream)) {
+      for (const entry of data.stream) {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error('headless snapshot embedded stream has an invalid entry')
+        }
+        const streamRecord = entry as JsonObject
+        consume(streamRecord.type, streamRecord)
+      }
+      continue
+    }
+    consume(record.type, data)
   }
   close()
   const reason = turnReasonFromSession(log)
@@ -645,10 +654,13 @@ describe('headless recorded-session snapshots', () => {
       if (cloned.type === 'hook/result') delete cloned.data?.durationMs
       return cloned
     }
-    const logical = (fixture: string): unknown[] => [
-      records(fixture)[0],
-      ...parseSessionLog(fixture).map(withoutVolatileMessage),
-    ]
+    const logical = (fixture: string): unknown[] => {
+      const current = prepareSessionSnapshotFixtureForComparison(fixture)
+      return [
+        records(current)[0],
+        ...parseSessionLog(current).map(withoutVolatileMessage),
+      ]
+    }
     expect(logical(packed)).toStrictEqual(logical(source))
   })
 
@@ -674,10 +686,30 @@ describe('headless recorded-session snapshots', () => {
     ].join('\n'))
   })
 
+  it('reconstructs reasoning stderr from embedded current Assistant streams', () => {
+    const log = [
+      { type: 'turn/start', data: { turn: 1 } },
+      {
+        type: 'assistant/message',
+        data: {
+          stream: [
+            { type: 'chunk', chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+            { type: 'reasoning-chunks', texts: ['first', ' thought'] },
+            { type: 'chunk', chunk: { type: 'block-start', index: 1, blockType: 'text' } },
+          ],
+        },
+      },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ].map(record => JSON.stringify(record)).join('\n')
+
+    expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\n')
+  })
+
   for (const scenario of scenarios) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
       || scenario.manifest.platform === 'pwsh' && !hasPwsh
       || mode === 'record' && scenario.manifest.recording === 'authored'
+      || mode === 'record' && scenario.manifest.sessionFormat !== undefined
     const scenarioTest = skipped ? it.skip : mode === 'replay' ? it.concurrent : it
     scenarioTest(`${mode}s ${scenario.name} through dsh --profile headless`, async () => {
       let fixtures = await fixtureSessions(scenario)
@@ -696,6 +728,7 @@ describe('headless recorded-session snapshots', () => {
       const baseComposition = compositionOwners.get('default')
       if (baseComposition === undefined) throw new Error('headless corpus has no default composition')
       let fixtureFiles = sessionFixtureNames(await readdir(scenario.dir))
+      const replayFixtureFiles = [...fixtureFiles]
       const replaying = mode !== 'record'
       const compositionPatch = join(composition.dir, replaying ? 'cordis.snapshot.yml' : 'cordis.yml')
       const patchSources = [
@@ -777,8 +810,14 @@ describe('headless recorded-session snapshots', () => {
       if (stderrLog === undefined) throw new Error(`${scenario.name}: stderr projection has no primary session`)
       const expectedStderr = stderrFromSession(stderrLog)
 
-      if (mode !== 'replay') {
-        fixtures = await writeSessionFixtures(scenario, actualLogs, fixtures, contextOf(actualLogs.map(log => log.content)))
+      if (writesCurrentSessionFixtures(scenario.manifest, mode)) {
+        fixtures = await writeSessionFixtures(
+          scenario,
+          actualLogs,
+          replayFixtureFiles,
+          fixtures,
+          contextOf(actualLogs.map(log => log.content)),
+        )
         fixtureFiles = actualLogs.map((log, index) => sessionFixtureName(
           index,
           sessionHeaderVersion(log.content, `harvested Session ${index}`),
@@ -790,12 +829,13 @@ describe('headless recorded-session snapshots', () => {
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
       const fixtureContext = contextOf(fixtures)
-      const sourcePaths = fixtureFiles.map(file => join(scenario.dir, file))
+      const actualSourcePaths = replayFixtureFiles.map(file => join(scenario.dir, file))
+      const expectedSourcePaths = fixtureFiles.map(file => join(scenario.dir, file))
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext, {
-        sourcePaths,
+        sourcePaths: actualSourcePaths,
       })
       const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext, {
-        sourcePaths,
+        sourcePaths: expectedSourcePaths,
       })
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
