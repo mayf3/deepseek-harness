@@ -171,17 +171,22 @@ describe('JsonlSessionPersistence: format helpers', () => {
 
   it('resolves a relative custom root before locating a session', async () => {
     const absoluteRoot = await freshRoot()
+    // Resolve the same relative root the plugin receives, not the original absolute
+    // path, so both sides of the comparison pass through one `resolve()` call. See
+    // .agents/notes/implemented/testing/2026-08-14-case-insensitive-path-round-trips.md
+    // for why an absolute root can arrive under a different casing.
+    const relativeRoot = relative(process.cwd(), absoluteRoot)
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     const fiber = await ctx.plugin(JsonlSessionPersistence, {
-      root: relative(process.cwd(), absoluteRoot),
+      root: relativeRoot,
       compression: 'none',
       writeBatchMaxDelayMs: 1,
     })
     const m = meta('relative-location', '/work')
     expect(ctx.sessionPersistence.locate(m)).toEqual({
       kind: 'jsonl',
-      path: rawLogPath(resolve(absoluteRoot), '/work', m.id),
+      path: rawLogPath(resolve(relativeRoot), '/work', m.id),
     })
     await fiber.dispose()
   })
