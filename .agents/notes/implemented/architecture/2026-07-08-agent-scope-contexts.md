@@ -47,7 +47,7 @@ flowchart LR
 
 The missing cross-edges are the isolation rule: Agent A's local registrations do not enter Agent B's view, and a parent's registrations do not enter a child merely because the parent owns the child's lifetime.
 
-The companion [runtime-design Agent Note](2026-07-12-agent-scope-runtime-design.md) explains the implementation and correctness reasoning. The [subagent composition-controls Agent Note](../feature/2026-07-12-subagent-persona-tool-filter-and-depth.md) owns the separate `persona`, `toolFilter`, and `maxDepth` feature.
+The companion [runtime-design Agent Note](2026-07-12-agent-scope-runtime-design.md) explains the implementation and correctness reasoning. The [explicit runtime-identity Agent Note](2026-08-31-explicit-agent-runtime-identity.md) owns why lifecycle, event, and transport interfaces pass Agent identity instead of exposing it through Context. The [subagent composition-controls Agent Note](../feature/2026-07-12-subagent-persona-tool-filter-and-depth.md) owns the separate `persona`, `toolFilter`, and `maxDepth` feature.
 
 ### Registration origin chooses visibility and cleanup
 

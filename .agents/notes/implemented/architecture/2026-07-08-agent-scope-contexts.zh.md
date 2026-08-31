@@ -47,7 +47,7 @@ flowchart LR
 
 缺失的交叉边即隔离规则：Agent A 的本地注册不会进入 Agent B 的视图，父级的注册也不会仅因父级拥有子级的生命周期就进入子级。
 
-配套的[运行时设计 Agent Note](2026-07-12-agent-scope-runtime-design.zh.md) 阐述了实现与正确性推理。[subagent 组合控制 Agent Note](../feature/2026-07-12-subagent-persona-tool-filter-and-depth.zh.md) 负责独立的 `persona`、`toolFilter` 和 `maxDepth` 功能。
+配套的[运行时设计 Agent Note](2026-07-12-agent-scope-runtime-design.zh.md)阐述实现与正确性推理。[显式运行时身份 Agent Note](2026-08-31-explicit-agent-runtime-identity.zh.md)说明生命周期、事件和传输接口为何显式传递 Agent 身份，而不通过 Context 暴露该身份。[subagent 组合控制 Agent Note](../feature/2026-07-12-subagent-persona-tool-filter-and-depth.zh.md)负责独立的 `persona`、`toolFilter` 和 `maxDepth` 功能。
 
 ### 注册来源决定可见性与清理
 
