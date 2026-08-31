@@ -2816,7 +2816,7 @@ describe('PythonCodeRuntime — programs and bindings', () => {
     // asked for.
     const ctx = new Context()
     await expect(ctx.plugin(PythonCodeRuntime, { pythonBin: 'definitely-no-such-python-xyz' }))
-      .rejects.toThrow(/does not resolve to an executable file/)
+      .rejects.toThrow(/does not resolve on PATH/)
   })
 
   it('rejects a memberNameProperty naming a constrained BaseException attribute', async () => {
