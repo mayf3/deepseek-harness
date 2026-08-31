@@ -52,18 +52,6 @@ interface ProjectionDefinition<
      * @returns the whole current value for this unit's key.
      */
     view(state: NoInfer<S>): SessionProjectionMap[K]
-    /**
-     * Change-detection token for the served view: after a changed `apply`,
-     * the feed compares this token across the previous and next states with
-     * `Object.is` and stays quiet when identical, so `view` runs only for an
-     * actual push. Must be a cheap pure read (a state field, not a
-     * computation). Omitted, the raw `view` output itself is the token —
-     * correct for identity-stable views, but then `view` runs per changed
-     * state, and views building fresh objects per call push on every change.
-     * @param state - a state on either side of the comparison.
-     * @returns the token deciding whether the served view changed.
-     */
-    viewKey?(state: NoInfer<S>): unknown
   } : never
   /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
@@ -98,9 +86,9 @@ interface ProjectionSnapshot {
  * Change-feed listener: one unit's served value changed for one session.
  * `value` is the schema-validated `view` output; `seq` is the unit's
  * watermark at emission (the seq of the event that caused the change). A
- * changed state whose `viewKey` token (default: the raw `view` output) is
- * `Object.is`-identical to the previous state's does not fire, so a unit can
- * buffer working fields in state behind an identity-stable projection.
+ * changed state whose raw `view` output is `Object.is`-identical to the
+ * unit's previous projection does not fire, so a unit can buffer working
+ * fields in state behind an identity-stable projection.
  */
 type ProjectionChangeListener = (
   session: Session,
@@ -110,7 +98,7 @@ type ProjectionChangeListener = (
 ) => void
 ```
 
-`snapshot(session)` 完全同步：载体在切出页面切片的同一 tick 内读取它，因此 `asOfSeq` 使两次读取使用同一个序号。它只返回客户端视图，并在返回前通过各单元的 `viewSchema` 校验。`stateOf(session, key)` 可在不计算无关视图的情况下读取一份实时 host 状态；调用方不得修改这一借用引用。对于每个已提交事件，变更流会为每个状态*引用*已变化的客户端可见单元触发一次——除非 `viewKey` 令牌（缺省为原始 `view` 输出）在前后两个状态上 `Object.is` 相同（两侧令牌都在驱动当步现算，不存比较值故无从过期；声明了 `viewKey` 时安静路径完全不跑 `view`），因此单元可以把工作字段缓冲在状态里，用身份稳定的投影保持安静，后来的监听者也不会错过任何值变化；状态未变时，`apply` 必须返回同一引用。
+`snapshot(session)` 完全同步：载体在切出页面切片的同一 tick 内读取它，因此 `asOfSeq` 使两次读取使用同一个序号。它只返回客户端视图，并在返回前通过各单元的 `viewSchema` 校验。`stateOf(session, key)` 可在不计算无关视图的情况下读取一份实时 host 状态；调用方不得修改这一借用引用。对于每个已提交事件，变更流会为每个状态*引用*已变化的客户端可见单元触发一次——除非原始 `view` 输出与上一个状态的投影 `Object.is` 相同（两侧视图都在驱动当步现算，不存比较值故无从过期），因此单元可以把工作字段缓冲在状态里，用身份稳定的投影保持安静，后来的监听者也不会错过任何值变化；状态未变时，`apply` 必须返回同一引用。
 
 ## 注册表：`ctx.sessionProjections`
 
@@ -192,7 +180,7 @@ Source: [`packages/session/session-projection-cache/src/index.ts`](../../package
 
 ### `ctx.sessionProjections` — `SessionProjectionRegistry`
 
-`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit's `apply` (eager drive), and a changed state reference in a client-visible unit notifies the change feed with the schema-validated view — unless the unit's `viewKey` token (default: the raw view output) is `Object.is`-identical across the previous and next states. Both tokens are computed from the states in hand each step, so no stored comparison value exists to go stale across listener generations, and `view` runs only for an actual push when a `viewKey` is declared. Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin's key disappears from snapshots and clients read it as capability absence. A host reader either declares `sessionProjections` in its plugin `inject` or fails explicitly when the registry or required key is absent. Contributors may preserve optional registration through `ctx.inject(['sessionProjections'], ...)`. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.
+`ctx.sessionProjections`: the projection unit table and its drive. The service subscribes to `session/event` once; every committed event passes every registered unit's `apply` (eager drive), and a changed state reference in a client-visible unit notifies the change feed with the schema-validated view — unless the raw view output is `Object.is`-identical to the unit's previous projection (identity-stable projections stay quiet; both views are computed from the states in hand each step, so no stored comparison value exists to go stale across listener generations). Cells build lazily — a unit registered after events flowed, or a session older than the registry, folds `init` over the in-memory log on first touch (event or read). Registration is an effect (disposer rides the calling fiber): an unloaded domain plugin's key disappears from snapshots and clients read it as capability absence. A host reader either declares `sessionProjections` in its plugin `inject` or fails explicitly when the registry or required key is absent. Contributors may preserve optional registration through `ctx.inject(['sessionProjections'], ...)`. Registrants sharing a key share one unit and are counted: the same tool package mounted in N agent presets registers N times, and the key survives until the last one unloads.
 
 ```ts cordis-catalog
 /**

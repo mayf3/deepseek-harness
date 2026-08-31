@@ -72,18 +72,6 @@ export interface ProjectionDefinition<
      * @returns the whole current value for this unit's key.
      */
     view(state: NoInfer<S>): SessionProjectionMap[K]
-    /**
-     * Change-detection token for the served view: after a changed `apply`,
-     * the feed compares this token across the previous and next states with
-     * `Object.is` and stays quiet when identical, so `view` runs only for an
-     * actual push. Must be a cheap pure read (a state field, not a
-     * computation). Omitted, the raw `view` output itself is the token —
-     * correct for identity-stable views, but then `view` runs per changed
-     * state, and views building fresh objects per call push on every change.
-     * @param state - a state on either side of the comparison.
-     * @returns the token deciding whether the served view changed.
-     */
-    viewKey?(state: NoInfer<S>): unknown
   } : never
   /**
    * Persisted-cache invalidation version: bump whenever the serialized state fields or the
@@ -98,9 +86,9 @@ export interface ProjectionDefinition<
  * Change-feed listener: one unit's served value changed for one session.
  * `value` is the schema-validated `view` output; `seq` is the unit's
  * watermark at emission (the seq of the event that caused the change). A
- * changed state whose `viewKey` token (default: the raw `view` output) is
- * `Object.is`-identical to the previous state's does not fire, so a unit can
- * buffer working fields in state behind an identity-stable projection.
+ * changed state whose raw `view` output is `Object.is`-identical to the
+ * unit's previous projection does not fire, so a unit can buffer working
+ * fields in state behind an identity-stable projection.
  */
 export type ProjectionChangeListener = (
   session: Session,
@@ -147,11 +135,7 @@ interface ErasedDefinition {
   stateSchema: { parse(value: unknown): unknown }
   init(header: SessionHeader): unknown
   apply(state: unknown, event: SessionEvent): unknown
-  wire: {
-    viewSchema: { parse(value: unknown): unknown }
-    view(state: unknown): unknown
-    viewKey?(state: unknown): unknown
-  } | undefined
+  wire: { viewSchema: { parse(value: unknown): unknown }; view(state: unknown): unknown } | undefined
   stateVersion: number
 }
 
@@ -185,11 +169,10 @@ interface Registration {
  * service subscribes to `session/event` once; every committed event passes
  * every registered unit's `apply` (eager drive), and a changed state
  * reference in a client-visible unit notifies the change feed with the
- * schema-validated view — unless the unit's `viewKey` token (default: the raw
- * view output) is `Object.is`-identical across the previous and next states.
- * Both tokens are computed from the states in hand each step, so no stored
- * comparison value exists to go stale across listener generations, and
- * `view` runs only for an actual push when a `viewKey` is declared.
+ * schema-validated view — unless the raw view output is `Object.is`-identical
+ * to the unit's previous projection (identity-stable projections stay quiet;
+ * both views are computed from the states in hand each step, so no stored
+ * comparison value exists to go stale across listener generations).
  * Cells build lazily — a unit registered after events flowed, or a session
  * older than the registry, folds `init` over the in-memory log on first
  * touch (event or read). Registration is an effect (disposer rides the
@@ -261,9 +244,7 @@ export class SessionProjectionRegistry extends Service {
     const wire = definition.wire as {
       viewSchema: ZodType
       view(state: S): unknown
-      viewKey?(state: S): unknown
     } | undefined
-    const viewKey = wire?.viewKey
     const erased: ErasedDefinition = {
       key: definition.key,
       stateSchema: definition.stateSchema,
@@ -271,11 +252,7 @@ export class SessionProjectionRegistry extends Service {
       apply: (state, event) => definition.apply(state as S, event),
       wire: wire === undefined
         ? undefined
-        : {
-          viewSchema: wire.viewSchema,
-          view: state => wire.view(state as S),
-          ...(viewKey === undefined ? {} : { viewKey: (state: unknown) => viewKey(state as S) }),
-        },
+        : { viewSchema: wire.viewSchema, view: state => wire.view(state as S) },
       stateVersion: definition.stateVersion,
     }
     if (!Number.isSafeInteger(definition.stateVersion) || definition.stateVersion < 0) {
@@ -659,15 +636,14 @@ export class SessionProjectionRegistry extends Service {
       cell.state = next
       cell.observedSeq = event.seq
       if (changed && registration.def.wire !== undefined && this.listeners.size > 0) {
-        // Identity gate on the unit's comparison token, computed from the
-        // two states in hand: identical tokens mean the served view did not
-        // change, so a unit can buffer working fields without spamming the
-        // feed and `view` runs only for an actual push. Nothing is stored,
-        // so no comparison value exists to go stale across listener
-        // generations.
-        const keyOf = registration.def.wire.viewKey ?? registration.def.wire.view
-        if (Object.is(keyOf(previous), keyOf(next))) continue
-        const value = registration.def.wire.viewSchema.parse(registration.def.wire.view(next))
+        // Identity gate on the raw view, computed from the two states in
+        // hand: a changed state whose projection is reference-identical to
+        // the previous state's stays quiet, so a unit can buffer working
+        // fields without spamming the feed. Nothing is stored, so no
+        // comparison value exists to go stale across listener generations.
+        const raw = registration.def.wire.view(next)
+        if (Object.is(registration.def.wire.view(previous), raw)) continue
+        const value = registration.def.wire.viewSchema.parse(raw)
         for (const listener of this.listeners) {
           listener(session, registration.def.key as Extract<keyof SessionProjectionMap, string>, value, event.seq)
         }
