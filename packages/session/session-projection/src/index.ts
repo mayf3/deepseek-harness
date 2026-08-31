@@ -656,6 +656,8 @@ export class SessionProjectionRegistry extends Service {
           views[1] = undefined
         }
       }
+      // An unchanged state keeps its current view as the valid comparison
+      // value for the next state change.
     }
   }
 

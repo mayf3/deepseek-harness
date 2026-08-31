@@ -102,6 +102,47 @@ async function harness(): Promise<{ ctx: Context; session: Session }> {
 const mark = (session: Session, marks: string[]): SessionEvent =>
   session.append('test/mark', { marks })
 
+const STATE_SEQUENCES = [
+  [0, 0, 0, 0],
+  [0, 0, 0, 1],
+  [0, 0, 1, 0],
+  [0, 0, 1, 1],
+  [0, 0, 1, 2],
+  [0, 1, 0, 0],
+  [0, 1, 0, 1],
+  [0, 1, 0, 2],
+  [0, 1, 1, 0],
+  [0, 1, 1, 1],
+  [0, 1, 1, 2],
+  [0, 1, 2, 0],
+  [0, 1, 2, 1],
+  [0, 1, 2, 2],
+  [0, 1, 2, 3],
+] as const
+
+function identitySequences(length: number): number[][] {
+  const sequences: number[][] = []
+  const visit = (sequence: number[], highest: number): void => {
+    if (sequence.length === length) {
+      sequences.push(sequence)
+      return
+    }
+    for (let value = 0; value <= highest + 1; value++) {
+      visit([...sequence, value], Math.max(highest, value))
+    }
+  }
+  visit([0], 0)
+  return sequences
+}
+
+function sameIdentities(left: readonly unknown[], right: readonly unknown[]): boolean {
+  return left.length === right.length && left.every((value, index) => Object.is(value, right[index]))
+}
+
+function sequenceName(sequence: readonly number[], prefix: string): string {
+  return sequence.map(value => `${prefix}${String(value + 1)}`).join(',')
+}
+
 describe('SessionProjectionRegistry drive', () => {
   it('drives a registered unit over committed events and snapshots the current value', async () => {
     const { ctx, session } = await harness()
@@ -200,6 +241,135 @@ describe('SessionProjectionRegistry drive', () => {
     expect(first).toEqual([{ marks: [] }])
     expect(resumed).toEqual([{ marks: [] }])
     expect(view).toHaveBeenCalledTimes(2)
+  })
+
+  it('matches every four-state identity sequence across listener gaps and raw-view identities', async () => {
+    const { ctx } = await harness()
+    const initialState: MarksState = { marks: ['initial'] }
+    const stateByEvent = new Map<string, MarksState>()
+    const viewByState = new Map<MarksState, MarksView>()
+    const computedViews: MarksView[] = []
+    ctx.sessionProjections.register({
+      key: 'test/marks',
+      stateSchema: marksViewSchema.nullable(),
+      init: () => initialState,
+      apply: (state, event) => {
+        if (event.type !== 'test/mark') return state
+        const token = event.data.marks[0]
+        if (token === undefined || !stateByEvent.has(token)) return state
+        return stateByEvent.get(token) as MarksState
+      },
+      wire: {
+        viewSchema: marksViewSchema,
+        view: (state) => {
+          const value = viewByState.get(state)
+          if (value === undefined) throw new Error('test state lacks a raw view')
+          computedViews.push(value)
+          return value
+        },
+      },
+      stateVersion: 1,
+    })
+
+    const failures = new Map<string, unknown>()
+    let mismatchCount = 0
+    let checked = 0
+    for (const stateSequence of STATE_SEQUENCES) {
+      const stateCount = Math.max(...stateSequence) + 1
+      for (const viewSequence of identitySequences(stateCount)) {
+        for (const baselineKnown of [false, true]) {
+          for (let listenerMask = 0; listenerMask < 8; listenerMask++) {
+            const scenario = String(checked++)
+            const states = Array.from(
+              { length: stateCount },
+              (_, index): MarksState => ({ marks: [`state-${scenario}-${String(index)}`] }),
+            )
+            const views = Array.from(
+              { length: Math.max(...viewSequence) + 1 },
+              (): MarksView => ({ marks: [] }),
+            )
+            for (let index = 0; index < stateCount; index++) {
+              viewByState.set(states[index] as MarksState, views[viewSequence[index] as number] as MarksView)
+            }
+            for (let index = 0; index < stateSequence.length; index++) {
+              stateByEvent.set(`${scenario}:${String(index)}`, states[stateSequence[index] as number] as MarksState)
+            }
+
+            const session = ctx.sessions.create()
+            const notifications: number[] = []
+            let stop: (() => void) | undefined
+            const setListening = (listening: boolean): void => {
+              if (listening && stop === undefined) {
+                stop = ctx.sessionProjections.onChanged((changedSession, key, _value, seq) => {
+                  if (changedSession === session && key === 'test/marks') notifications.push(seq)
+                })
+              } else if (!listening && stop !== undefined) {
+                stop()
+                stop = undefined
+              }
+            }
+
+            setListening(baselineKnown)
+            mark(session, [`${scenario}:0`])
+            computedViews.length = 0
+            notifications.length = 0
+
+            const expectedViews: MarksView[] = []
+            const expectedNotifications: number[] = []
+            let comparable = baselineKnown
+              ? views[viewSequence[stateSequence[0] as number] as number] as MarksView
+              : undefined
+            for (let index = 1; index < stateSequence.length; index++) {
+              const listening = (listenerMask & (1 << (index - 1))) !== 0
+              setListening(listening)
+              const changed = stateSequence[index] !== stateSequence[index - 1]
+              if (changed) {
+                if (listening) {
+                  const current = views[viewSequence[stateSequence[index] as number] as number] as MarksView
+                  expectedViews.push(current)
+                  if (comparable === undefined || !Object.is(comparable, current)) {
+                    expectedNotifications.push(index)
+                  }
+                  comparable = current
+                } else {
+                  comparable = undefined
+                }
+              }
+              mark(session, [`${scenario}:${String(index)}`])
+            }
+            setListening(false)
+
+            if (!sameIdentities(computedViews, expectedViews)
+              || notifications.length !== expectedNotifications.length
+              || notifications.some((seq, index) => seq !== expectedNotifications[index])) {
+              mismatchCount += 1
+              const stateName = sequenceName(stateSequence, 'v')
+              if (!failures.has(stateName) || (baselineKnown && listenerMask === 7)) {
+                failures.set(stateName, {
+                  state: stateName,
+                  view: stateSequence.map(value => `r${String((viewSequence[value] as number) + 1)}`).join(','),
+                  baseline: baselineKnown ? 'known' : 'unknown',
+                  listeners: [0, 1, 2]
+                    .map(index => (listenerMask & (1 << index)) === 0 ? 'off' : 'on')
+                    .join(','),
+                  expectedViewCalls: expectedViews.length,
+                  actualViewCalls: computedViews.length,
+                  expectedNotifications,
+                  actualNotifications: [...notifications],
+                })
+              }
+            }
+            computedViews.length = 0
+          }
+        }
+      }
+    }
+
+    expect({ checked, mismatchCount, failures: [...failures.values()] }).toEqual({
+      checked: 960,
+      mismatchCount: 0,
+      failures: [],
+    })
   })
 
   it('drives independently per session (cells are per-session watermarks)', async () => {
