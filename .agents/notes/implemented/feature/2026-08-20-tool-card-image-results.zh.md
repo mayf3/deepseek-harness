@@ -20,7 +20,7 @@ Status: implemented
 
 不加 `presentResult`，也不给封闭的 `ToolResultView` 联合新增成员。客户端卡片从原始 event 字段派生，宿主的 `presentCall`／`presentResult` 值永不进入客户端（见 [ui-tool README](../../../../packages/client/ui-tool/README.zh.md)），因此新增一个 result-view 分支等于扩展一个无人读取的封闭公共联合。
 
-**客户端侧。** `imageCardModel` 按其他所有第一方卡片的方式派生：`parsedToolCall` 校验调用头与其 `file_path`，`block.meta` 提供路径，附件引用从结果自己的 image 块中防御式 narrow 出来，信封在同一内容中定位。它按形状匹配自己的信封而不用 `singleResultText`，因为那个 helper 只接受单个文本块，而图像读取返回 `[text envelope, image block]`——按形状匹配同时意味着其他层前置的内容永远不会被误认为信封。
+**客户端侧。** `imageCardModel` 按其他所有第一方卡片的方式派生：`parsedToolCall` 校验调用头与其 `file_path`，`block.meta` 提供路径——嵌套调用（从 `run_code` 内部派发的 `read_image`）不持久化 `meta`，于是用调用自身的 `file_path` 参数补足标签——附件引用从结果自己的 image 块中防御式 narrow 出来，信封在同一内容中定位。它按形状匹配自己的信封而不用 `singleResultText`，因为那个 helper 只接受单个文本块，而图像读取返回 `[text envelope, image block]`——按形状匹配同时意味着其他层前置的内容永远不会被误认为信封。
 
 该 narrowing 只检查附件 id 是否存在。id 是不透明且由提供方拥有的：本地存储铸造内容地址，但消费者既不得解析该表示、也不得假定其形状，且提供方可以不经通知改变它。按本地形式做模式匹配会拒绝替代存储铸造的合法 id，并让该部署中每个图像卡片静默降级。
 
@@ -44,13 +44,13 @@ Status: implemented
 
 ## 验证
 
-`read-image.spec.ts` 覆盖元数据投影、省略显示名，以及一次真实执行——其持久化的引用与附件存储实际提交的一致。`image-card.client.spec.tsx` 覆盖从元数据与信封的派生、路径相对化、来自替代存储的不透明 id、防御式 narrowing 的每个拒绝分支、running／error／嵌套三种拒绝、按 key 的行渲染点（携带 loader 分发 `tool.call.images`）、带子槽声明的按 key 注册，以及空槽位降级。
+`read-image.spec.ts` 覆盖元数据投影、省略显示名，以及一次真实执行——其持久化的引用与附件存储实际提交的一致。`image-card.client.spec.tsx` 覆盖从元数据与信封的派生、路径相对化、来自替代存储的不透明 id、防御式 narrowing 的每个拒绝分支、running／error 两种拒绝、嵌套调用派生及其参数路径回退、按 key 的行渲染点（携带 loader 分发 `tool.call.images`）、带子槽声明的按 key 注册，以及空槽位降级。
 
 每组断言在保留之前都跑过负例：移除 variant 分类、让图像渲染分支失效、把 registrant 的 key 打错、恢复 `sha256:` id 模式、把卡片文本指回行的压平输出——每一项都让目标断言变红。
 
 ## 后果
 
-顶层 `read_image` 现在渲染为图像，与嵌套调用早已具备的行为一致；工具卡片获得一种图像种类。图像种类并不由元数据单独自动产生：卡片还要求 `tool.call.images` 槽位被填充（附件呈现插件），并且工具注册按 key 的 toolview——因为模型把调用头收窄到 `read_image`，槽位只能从声明的子 entry 渲染。
+`read_image` 的结果现在在工具卡片上渲染为图像，顶层调用与嵌套调用（从 `run_code` 内部派发的调用）皆然；工具卡片获得一种图像种类。嵌套调用此前已在消息路径上显示图像——`execute` 会为它 defer 一条真正的用户消息——但它自己的工具行仍是 generic；现在卡片派生也覆盖它，用调用自身的 `file_path` 参数替代持久化路径。图像种类并不由元数据单独自动产生：卡片还要求 `tool.call.images` 槽位被填充（附件呈现插件），并且工具注册按 key 的 toolview——因为模型把调用头收窄到 `read_image`，槽位只能从声明的子 entry 渲染。
 
 持久化的呈现元数据为每次图像读取在会话日志中增加一条很小的 `{ path }` 记录。附件引用完全不在元数据里——它位于已结算结果 content 的 image 块中；图像字节本身从不进入日志，因为存储是内容寻址的，块里只携带附件 id。
 

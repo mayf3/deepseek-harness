@@ -192,13 +192,16 @@ describe('imageCardModel', () => {
     }
   })
 
-  it('declines malformed metadata instead of throwing', () => {
+  it('falls back to the call argument when metadata is malformed, instead of throwing', () => {
     // Metadata arrives unvalidated on replay, so an obsolete or hand-edited log
-    // must land on the generic card, never crash the tool message. A log written
-    // before this change carries no path and lands here too.
+    // must never crash the tool message. A call whose meta does not match still
+    // carries a usable file_path argument, which fills the label; only a call
+    // with no usable argument declines (covered by the call-head case below).
     for (const meta of [undefined, null, 'meta', [{ path: 'a.png' }], {}, { path: '' }, { path: 7 }]) {
       expect(() => imageCardModel(settled({ meta }))).not.toThrow()
-      expect(imageCardModel(settled({ meta }))).toBeNull()
+      const card = imageCardModel(settled({ meta }))
+      expect(card).not.toBeNull()
+      expect(card?.label).toBe('shots/card.png')
     }
   })
 
@@ -237,11 +240,20 @@ describe('imageCardModel', () => {
     expect(imageCardModel(settled({ content: [] }))).toBeNull()
   })
 
-  it('declines a running call, an error result, and a nested call', () => {
-    // The image card is result-side only, and only a root call owns a row.
+  it('declines a running call and an error result, and derives a nested call from its own path', () => {
+    // The image card is result-side only: a running call has no content.
     expect(imageCardModel(running())).toBeNull()
     expect(imageCardModel(settled({ isError: true }))).toBeNull()
-    expect(imageCardModel(settled({ parentCallId: 'parent' }))).toBeNull()
+    // A nested call (a read_image dispatched from inside run_code) settles as a
+    // ToolResultNode too and renders the card; it persists no presentationMeta,
+    // so the label falls back to the call's file_path argument.
+    const nested = imageCardModel(settled({ parentCallId: 'parent', meta: undefined }))
+    expect(nested).not.toBeNull()
+    expect(nested?.label).toBe('shots/card.png')
+    expect(nested?.images).toHaveLength(1)
+    // Persisted meta still wins over the argument when a nested call has one.
+    const withMeta = imageCardModel(settled({ parentCallId: 'parent', meta: { path: 'shots/persisted.png' } }))
+    expect(withMeta?.label).toBe('shots/persisted.png')
   })
 
   it('declines a call head that is not read_image', () => {

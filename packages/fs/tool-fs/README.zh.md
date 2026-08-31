@@ -244,6 +244,7 @@ Use the edit tool for targeted changes to existing UTF-8 text files. It replaces
 - **对象路径重新走源准入**：对规范化附件对象调用 `read_image` 会把其字节作为新来源重新准入，因此把 `maxImageBytes`/`maxMessageImageBytes` 配置得低于规范化图片字节预算的部署可能拒绝 `ctx.attachments.readImage` 仍可读取的对象路径；默认配置下规范化预算（4 MiB）远低于源上限（20 MiB）。
 - **内嵌图像预览依赖 UI 组合**：工具结果卡片经由浏览器的 `tool.call.images` 槽位渲染图像，由附件呈现插件填充；未组合该插件的 UI 改为显示结果的信封文本。
 **没有附件区域工具**：agent 在拥有文件系统路径时可以通过其他可用工具裁剪图片；没有路径的粘贴或拖入图片无法按更高分辨率重新读取。
+- **没有附件区域工具**：agent 在拥有文件系统路径时可以通过其他可用工具裁剪图片；没有路径的粘贴或拖入图片无法按更高分辨率重新读取。
 - **没有超时接口**：`read`/`write`/`edit` 不接受超时参数，也不声明超时预算；取消只通过 `exec.signal` 传递（见[提供方理由](../README.zh.md)）。
 
 <a id="dev-note"></a>

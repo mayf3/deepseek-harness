@@ -31,6 +31,10 @@ export interface ImageCardModel {
 /**
  * The persisted `presentationMeta` this card reads: the authored path only.
  *
+ * Root calls persist it; a nested call (a read_image dispatched from inside
+ * run_code) settles without `meta`, so the card falls back to the call's own
+ * `file_path` argument for the label.
+ *
  * The attachment reference deliberately does NOT come from here. The settled
  * `content` already carries the image block with its complete reference, so
  * reading the reference from `meta` too would keep two copies of one fact — and a
@@ -69,28 +73,17 @@ function isImageMediaType(value: string): value is ImageMediaType {
 }
 
 /**
- * Validate that this block is a well-formed `read_image` call.
- * @param block - running or settled Tool block.
- * @returns whether the call head names read_image with a usable path argument.
- */
-function validImageCall(block: ToolCallBlock): boolean {
-  const call = parsedToolCall(block)
-  if (call?.name !== 'read_image') return false
-  const { file_path: path } = call.args
-  return typeof path === 'string' && path.trim() !== ''
-}
-
-/**
  * Narrow the persisted metadata, defensively. Every field arrives unvalidated on
  * replay (an obsolete or hand-edited log reaches here), so any mismatch declines
- * to the generic card rather than throwing.
+ * to the generic card rather than throwing. An absent `meta` (a nested call
+ * persists none) leaves the path to the call's own `file_path` argument.
  *
  * The attachment id is checked for existence only: it is opaque and
  * provider-owned, and consumers must not parse that representation, so
  * pattern-matching the local content-address form would reject a legitimate id
  * minted by an alternative store.
  * @param meta - persisted presentation metadata of unknown shape.
- * @returns the narrowed path/image pair, or null when it does not match.
+ * @returns the narrowed path, or null when it does not match.
  */
 function imageMeta(meta: unknown): ImageMeta | null {
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) return null
@@ -195,11 +188,14 @@ function fullyRendered(content: readonly unknown[]): boolean {
 }
 
 /**
- * Derive a settled root image card after validating its persisted metadata and
- * model-facing image envelope.
+ * Derive a settled image card after validating the call head, persisted
+ * metadata (or its argument fallback), and the model-facing image envelope.
  *
  * The card is result-side only: a call carries no content until `execute`
  * returns, so a running `read_image` has none and this returns null for it.
+ * Both root and nested calls settle as ToolResultNode; the nested one (a
+ * read_image dispatched from inside run_code) persists no presentationMeta, so
+ * its label falls back to the call's own `file_path` argument.
  * @param block - running or settled Tool block.
  * @param sessionCwd - the session workspace root; a workspace-rooted absolute
  *   path label displays relative to it. Absent leaves the path as authored.
@@ -211,10 +207,17 @@ export function imageCardModel(
   sessionCwd?: string,
   home?: string,
 ): ImageCardModel | null {
-  if (block.parentCallId !== undefined || !('kind' in block) || block.isError) return null
-  if (!validImageCall(block)) return null
-  const meta = imageMeta(block.meta)
-  if (meta === null) return null
+  // Result-side only: a running call is not a ToolResultNode and carries no
+  // content, so it has no card here.
+  if (!('kind' in block) || block.isError) return null
+  const call = parsedToolCall(block)
+  if (call?.name !== 'read_image') return null
+  const { file_path: filePath } = call.args
+  if (typeof filePath !== 'string' || filePath.trim() === '') return null
+  // The label path: root calls persist it in presentationMeta; a nested call
+  // persists none, so its own file_path argument fills the label.
+  const metaPath = imageMeta(block.meta)?.path
+  const path = metaPath ?? filePath
   // The card renders only text and image blocks; a block of any other type must
   // not be silently hidden, so the whole card declines to the generic form.
   if (!fullyRendered(block.content)) return null
@@ -225,7 +228,7 @@ export function imageCardModel(
   const text = imageTexts(block.content)
   if (text === null) return null
   return {
-    label: abbreviateHomePath(relativizeToCwd(meta.path, sessionCwd), home),
+    label: abbreviateHomePath(relativizeToCwd(path, sessionCwd), home),
     images: refs.map(ref => ({ attachment: ref })),
     text,
   }
