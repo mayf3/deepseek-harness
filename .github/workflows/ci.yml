@@ -514,8 +514,9 @@ jobs:
           }
       # No build before coverage, matching the Linux lane: workspace imports
       # resolve to src through the tsconfig paths map, and the lib-consuming
-      # suites (webworker-packer image-loadable, session-persistence-sqlite
-      # built-package) self-skip on unbuilt checkouts.
+      # suites (webworker-packer image-loadable, webworker-runtime
+      # transform-corpus, session-persistence-sqlite built-package) self-skip
+      # on unbuilt checkouts.
       - name: Run Windows coverage
         shell: pwsh
         run: pnpm run check:ci:coverage
