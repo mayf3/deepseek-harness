@@ -7,8 +7,9 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
-import { SessionId, type Session } from '@deepseek-ai/dsh-session'
+import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { DeepSeekSessionLogExtension } from './types.ts'
 
 export type * from './types.ts'
@@ -75,7 +76,7 @@ export function apply(ctx: Context, config: Config): void {
     prepare: (request) => {
       // TODO: Define an explicit wire result for direct or stale-session calls if they become a supported product path.
       if (request.sessionId === undefined) return undefined
-      const session = ctx.sessions.get(SessionId(request.sessionId))
+      const session = ctx.sessions.get(brandString<SessionId>(request.sessionId))
       if (session === undefined) return undefined
 
       const afterSeq = acceptedThrough(session)

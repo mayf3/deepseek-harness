@@ -5,9 +5,9 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { HarnessError } from '@deepseek-ai/dsh-llm'
 import {
-  SessionId,
   type SessionHeader,
   type SessionId as SessionIdValue,
 } from '@deepseek-ai/dsh-session'
@@ -69,7 +69,7 @@ function callerOf(exec: ToolRunContext, ctx: Context): Caller {
 }
 
 function targetId(args: { readonly session_id?: string }, caller: Caller): SessionIdValue {
-  return args.session_id === undefined ? caller.id : SessionId(args.session_id)
+  return args.session_id === undefined ? caller.id : brandString<SessionIdValue>(args.session_id)
 }
 
 async function authorizeTarget(
