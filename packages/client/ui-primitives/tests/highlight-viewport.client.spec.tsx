@@ -125,6 +125,19 @@ describe('viewport-activated syntax highlighting', () => {
     expect(view.container.querySelector('pre.shiki')).not.toBeNull()
   })
 
+  it('keeps an intersecting streaming block plain until its lazy grammar loads', async () => {
+    const view = render(
+      <CodeBlock code="print(1)" lang="python" streaming {...markdownLabels.code} />,
+    )
+    const block = view.container.querySelector('.md-code-block')!
+    const observer = IntersectionObserverStub.instances[0]!
+
+    act(() => { observer.intersect(block, true) })
+    expect(block.querySelector('pre.shiki')).toBeNull()
+
+    await waitFor(() => { expect(block.querySelector('pre.shiki')).not.toBeNull() }, { timeout: 5_000 })
+  })
+
   it('keeps a read card plain until that card intersects', async () => {
     const view = render(
       <ReadBlock
