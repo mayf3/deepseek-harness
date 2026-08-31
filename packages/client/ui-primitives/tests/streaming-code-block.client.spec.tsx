@@ -80,6 +80,26 @@ describe('StreamingHighlightSession', () => {
     expect(session.updateFrame('const a = 1\nlet b = 2\n// tail', 'ts')).toBe(second)
   })
 
+  it('emits one completed line per frame across an 800-line stream', () => {
+    const session = new StreamingHighlightSession()
+    let code = ''
+    let generation: number | undefined
+    let appended = 0
+    for (let index = 0; index < 800; index += 1) {
+      const line = `const value${String(index)} = ${String(index)}`
+      code += `${line}\n`
+      const frame = session.updateFrame(code, 'ts')
+      expect(frame?.appended).toHaveLength(1)
+      expect(frame?.appended[0]?.map(span => span.text).join('')).toBe(line)
+      generation ??= frame?.generation
+      expect(frame?.generation).toBe(generation)
+      appended += frame?.appended.length ?? 0
+    }
+    // Frame cardinality is stable across CI hosts; wall-clock thresholds are
+    // diagnostics owned by the manual Web performance inventory.
+    expect(appended).toBe(800)
+  })
+
   it('is idempotent per input: repeated calls return the identical result array', () => {
     const session = new StreamingHighlightSession()
     const result = session.update('const a = 1', 'ts')
@@ -222,6 +242,16 @@ describe('CodeBlock streaming arm', () => {
     // Newlines separate the line spans, so pre textContent (the copy source)
     // stays the code verbatim.
     expect(view.container.querySelector('pre.shiki')?.textContent).toBe('const a = 1\nlet partial = 2\n// tail')
+  })
+
+  it('keeps a tail line mounted when the next frame completes it', () => {
+    const view = render(<CodeBlock code={'const first = 1\n'} lang="ts" streaming {...LABELS} />)
+    const firstLine = view.container.querySelector('pre.shiki .line')
+    expect(firstLine).not.toBeNull()
+    view.rerender(
+      <CodeBlock code={'const first = 1\nconst second = 2\nlet tail'} lang="ts" streaming {...LABELS} />,
+    )
+    expect(view.container.querySelector('pre.shiki .line')).toBe(firstLine)
   })
 
   it('keeps completed line groups mounted while later groups grow', () => {

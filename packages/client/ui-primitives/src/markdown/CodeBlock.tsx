@@ -117,7 +117,7 @@ export function CodeBlock({ code, lang, streaming, className, copyLabel, copiedL
       pending = []
     }
     const tail = frame.tail.map((line, index) => renderLine(line, nextLine + index))
-    const tailGroup = <Fragment key={nextLine - pending.length}>{pending}{tail}</Fragment>
+    const tailGroup = <Fragment key={nextLine - pending.length}>{[...pending, ...tail]}</Fragment>
     const body = <pre {...SHIKI_PRE_PROPS}><code>{groups}{tailGroup}</code></pre>
     lineCacheRef.current = {
       code: trimmed, lang, generation: frame.generation, frame, groups, pending, nextLine, body,
