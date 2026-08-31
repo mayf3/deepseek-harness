@@ -71,6 +71,14 @@ function optionBadge(value: string, t: ComposerBarProps['t']): string | undefine
   return value === AUTO_REVIEW ? t('access.experimentalBadge') : undefined
 }
 
+/** Resolve locale-owned copy for the shipped Auto option; preserve host copy for other presets. */
+function optionDescription(
+  option: PermissionSelectValue['options'][number],
+  t: ComposerBarProps['t'],
+): string | undefined {
+  return option.value === AUTO_REVIEW ? t('access.autoDescription') : option.description
+}
+
 export interface PermissionSelectProps {
   value: PermissionSelectValue | undefined
   locked: boolean
@@ -179,7 +187,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
             type="button"
             className={css.trigger}
             aria-label={t('input.accessMode', { name: currentAccessibleLabel })}
-            title={current?.description}
+            title={current === undefined ? undefined : optionDescription(current, t)}
             disabled={locked || busy}
             onClick={() => { setOpen(!open) }}
           >

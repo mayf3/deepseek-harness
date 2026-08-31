@@ -1367,7 +1367,11 @@ describe('command launcher chrome and control seats', () => {
     const permissions = {
       options: [
         { value: 'workspace-write', name: 'workspace-write' },
-        { value: 'auto', name: 'Auto review' },
+        {
+          value: 'auto',
+          name: 'Auto review',
+          description: 'Run without a sandbox after an experimental same-model review of every tool call.',
+        },
       ],
       currentValue: 'workspace-write',
     }
@@ -1392,6 +1396,7 @@ describe('command launcher chrome and control seats', () => {
     expect(view.queryByRole('dialog')).toBeNull()
     const trigger = view.getByLabelText('访问模式，当前：Auto review EXP')
     expect(trigger.querySelector('sup')?.textContent).toBe('EXP')
+    expect(trigger.getAttribute('title')).toBe('无沙箱运行；每次工具调用前由同一模型进行实验性审查。')
     await act(async () => {})
   })
 

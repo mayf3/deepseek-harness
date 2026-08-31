@@ -65,7 +65,9 @@ function optionsOf(value: PermissionSelect, t: (key: string) => string): SelectO
         ? t('auto.label')
         : displayPermissionPreset(option.value, option.name),
       ...(option.value === AUTO_REVIEW_PRESET ? { badge: t('auto.badge') } : {}),
-      ...(option.description !== undefined ? { detail: option.description } : {}),
+      ...(option.value === AUTO_REVIEW_PRESET
+        ? { detail: t('auto.description') }
+        : option.description !== undefined ? { detail: option.description } : {}),
       ...(option.value === value.currentValue ? { active: true } : {}),
       ...(option.value === FULL_ACCESS_PRESET || option.value === AUTO_REVIEW_PRESET
         ? {
@@ -102,6 +104,7 @@ export function apply(ctx: ClientContext): void {
         'confirm.enable': accessZh['confirm.enable'],
         'auto.label': accessZh['auto.label'],
         'auto.badge': accessZh['auto.badge'],
+        'auto.description': accessZh['auto.description'],
         'auto.confirm.title': accessZh['auto.confirm.title'],
         'auto.confirm.description': accessZh['auto.confirm.description'],
         'auto.confirm.acknowledge': accessZh['auto.confirm.acknowledge'],
@@ -115,6 +118,7 @@ export function apply(ctx: ClientContext): void {
         'confirm.enable': accessEn['confirm.enable'],
         'auto.label': accessEn['auto.label'],
         'auto.badge': accessEn['auto.badge'],
+        'auto.description': accessEn['auto.description'],
         'auto.confirm.title': accessEn['auto.confirm.title'],
         'auto.confirm.description': accessEn['auto.confirm.description'],
         'auto.confirm.acknowledge': accessEn['auto.confirm.acknowledge'],

@@ -30,7 +30,11 @@ const SELECT: PermissionSelect = {
     { value: 'read-only', name: 'read-only', description: 'Reads only.' },
     { value: 'workspace-write', name: 'workspace-write' },
     { value: 'danger-full-access', name: 'danger-full-access' },
-    { value: 'auto', name: 'Auto review' },
+    {
+      value: 'auto',
+      name: 'Auto review',
+      description: 'Run without a sandbox after an experimental same-model review of every tool call.',
+    },
   ],
   currentValue: 'workspace-write',
 }
@@ -129,6 +133,8 @@ describe('ui-permission browser plugin', () => {
     const again = await c.ui.options(proj, new AbortController().signal)
     expect(again.find(option => option.id === 'workspace-write')?.active).toBe(true)
     expect(again.find(option => option.id === 'read-only')?.detail).toBe('Reads only.')
+    expect(again.find(option => option.id === 'auto')?.detail)
+      .toBe('Run without a sandbox after an experimental same-model review of every tool call.')
     // Kebab-case names title-case; non-kebab host-configured names pass through.
     expect(again.map(option => option.label)).toEqual(['Read Only', 'Workspace Write', 'Full access', 'Auto review'])
     expect(again.find(option => option.id === 'danger-full-access')?.confirmation).toEqual({
@@ -154,6 +160,16 @@ describe('ui-permission browser plugin', () => {
     // A projection that vanished between availability and open throws.
     expect(() => c.ui.options({ sessionId: sid('ghost') }, new AbortController().signal))
       .toThrow(/not available on this host/)
+  })
+
+  it('localizes the Auto description instead of displaying host English copy', async () => {
+    const b = await bench()
+    b.ctx.locale.setLocale('zh')
+    const proj = { sessionId: sid('s1') }
+    b.values.set(sid('s1'), SELECT)
+    const options = await b.decoration()!.ui.options(proj, new AbortController().signal)
+    expect(options.find(option => option.id === 'auto')?.detail)
+      .toBe('无沙箱运行；每次工具调用前由同一模型进行实验性审查。')
   })
 
   it('a pick submits the /permission line; rejection and unmatched throw', async () => {
