@@ -9,7 +9,9 @@ import {
   type PersistenceBackend, type SessionPersistenceSnapshot, type StoredPrefix, type StoredSuffix,
 } from '../src/index.ts'
 import { runPersistenceContract, meta, oneTurnLog } from './contract.ts'
-import { runCoordinatorContract, type CoordinatorFixture } from './coordinator-contract.ts'
+import {
+  legacyMessageLog, preReactLoopLog, runCoordinatorContract, type CoordinatorFixture,
+} from './coordinator-contract.ts'
 
 /** The durable store shape: materialized sessions only (no lazy entries). */
 type MemoryStore = Map<string, { meta: SessionHeader; events: SessionEvent[] }>
@@ -65,8 +67,8 @@ interface CoordinatorInternals {
 /**
  * Reference {@link PersistenceCoordinator} vehicle and abstract-service coverage, backed by a
  * dependency-free map with atomic writes and no torn-tail marker. Supplying the map lets multiple
- * instances share materialized sessions, the in-memory analogue of reload over one file/database;
- * durable behavior is covered by the JSONL and SQLite backends.
+ * instances share materialized sessions, the in-memory analogue of reload over one artifact;
+ * durable behavior is covered by the JSONL provider.
  */
 class MemoryPersistence extends SessionPersistence implements PersistenceBackend<never> {
   override readonly supportsRawArtifacts = false
@@ -285,7 +287,7 @@ describe('the inherited readRaw default', () => {
 })
 
 // Each fixture shares one map across mounts. No `corruptTail` is supplied because map writes are
-// atomic; the suite asserts that skip while JSONL and SQLite cover the repair branch.
+// atomic; the suite asserts that skip while JSONL covers the repair branch.
 runCoordinatorContract('memory', async (): Promise<CoordinatorFixture> => {
   const store: MemoryStore = new Map()
   return {
@@ -305,7 +307,7 @@ describe('PersistenceCoordinator seed ownership', () => {
 
     try {
       const session = ctx.sessions.create(SessionId('shared-seed'), { seed: oneTurnLog() })
-      const seed = session.events
+      const seed = session.snapshotEvents()
       await ctx.sessions.flush(session)
 
       expect(backend.lastAppendedBatch).toBe(seed)
@@ -765,7 +767,7 @@ describe('PersistenceCoordinator session preparations', () => {
       first = await coordinator.prepare(id)
 
       expect(backend.loadAttempts).toBe(1)
-      expect(first.session.events[0]).toBe(inspected.events[0])
+      expect(first.session.snapshotEvents()[0]).toBe(inspected.events[0])
 
       first[Symbol.dispose]()
       second = await coordinator.prepare(id)
@@ -827,8 +829,8 @@ describe('PersistenceCoordinator session preparations', () => {
       )
 
       preparation = await coordinator.prepare(id)
-      expect(preparation.session.events).toHaveLength(9)
-      expect(preparation.session.events[0]).not.toBe(inspected.events[0])
+      expect(preparation.session.snapshotEvents()).toHaveLength(9)
+      expect(preparation.session.snapshotEvents()[0]).not.toBe(inspected.events[0])
       expect(backend.loadAttempts).toBe(2)
     } finally {
       preparation?.[Symbol.dispose]()
@@ -987,7 +989,7 @@ describe('PersistenceCoordinator session preparations', () => {
       session.append('turn/start', { turn: 1 })
 
       const inspected = await coordinator.inspect(session.id)
-      expect(inspected.events).toBe(session.events)
+      expect(inspected.events).toBe(session.snapshotEvents())
       expect(inspected.events.map(event => event.type)).toEqual(['turn/start'])
       await expect(coordinator.load(session.id)).rejects.toThrow(/live turn is open/)
     } finally {
@@ -1069,7 +1071,7 @@ describe('PersistenceCoordinator session preparations', () => {
     try {
       preparation = await coordinator.prepare(id)
 
-      expect(preparation.session.events.map(event => event.type)).toEqual([
+      expect(preparation.session.snapshotEvents().map(event => event.type)).toEqual([
         'turn/start',
         'turn/end',
         'turn/start',
@@ -1198,6 +1200,78 @@ describe('PersistenceCoordinator session preparations', () => {
       }])).rejects.toThrow(/persisted preparation is reserved/)
     } finally {
       preparation?.[Symbol.dispose]()
+      await fiber.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
+})
+
+describe('PersistenceCoordinator seek reads', () => {
+  it('loads the whole prefix only when a bounded legacy suffix needs earlier message identities', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const backend = new ControlledBackend()
+    const id = SessionId('seek-read-from-legacy')
+    let coordinator!: PersistenceCoordinator<never>
+    const fiber = await ctx.plugin(Object.assign((inner: Context) => {
+      coordinator = new PersistenceCoordinator(inner, backend)
+    }, { inject: ['sessions'] }))
+    backend.seekHook = async (hookId, fromSeq) => {
+      const entry = backend.store.get(hookId)
+      if (entry === undefined) return undefined
+      return { meta: structuredClone(entry.meta), events: entry.events.filter(e => e.seq >= fromSeq) }
+    }
+
+    try {
+      const assertLegacySuffixUsesWholePrefix = async (
+        events: SessionEvent[],
+        fromSeq: number,
+        firstType: SessionEvent['type'],
+      ): Promise<void> => {
+        backend.store.set(id, { meta: meta(id), events })
+        const loadsBefore = backend.loadAttempts
+        const result = await coordinator.readFrom(id, fromSeq)
+        expect(result.events[0]?.type).toBe(firstType)
+        expect(backend.loadAttempts).toBe(loadsBefore + 1)
+      }
+      const legacyMessages = legacyMessageLog()
+      await assertLegacySuffixUsesWholePrefix(legacyMessages, 1, 'user/message')
+      await assertLegacySuffixUsesWholePrefix(legacyMessages, 3, 'assistant/message')
+      await assertLegacySuffixUsesWholePrefix(legacyMessages, 5, 'tool/result')
+      await assertLegacySuffixUsesWholePrefix(preReactLoopLog(), 3, 'user/message')
+
+      backend.store.set(id, { meta: meta(id), events: legacyMessages })
+      const directCurrent = await coordinator.readFrom(id, 0)
+      backend.store.set(id, { meta: meta(id), events: directCurrent.events })
+      const loadsBeforeCurrent = backend.loadAttempts
+      await coordinator.readFrom(id, 1)
+      await coordinator.readFrom(id, 3)
+      await coordinator.readFrom(id, 5)
+      expect(backend.loadAttempts).toBe(loadsBeforeCurrent)
+
+      for (const [type, data] of [
+        ['user/message', {}],
+        ['assistant/message', {}],
+        ['tool/result', {}],
+      ] as const) {
+        backend.store.set(id, {
+          meta: meta(id),
+          events: [{ type, seq: 0, time: 1, data } as unknown as SessionEvent],
+        })
+        const loadsBefore = backend.loadAttempts
+        await expect(coordinator.readFrom(id, 0)).rejects.toThrow('lacks an identified message')
+        expect(backend.loadAttempts).toBe(loadsBefore)
+      }
+      backend.store.set(id, {
+        meta: meta(id),
+        events: [{
+          type: 'external/null', seq: 0, time: 1, data: null, ignorable: true,
+        } as unknown as SessionEvent],
+      })
+      const loadsBeforeNullData = backend.loadAttempts
+      expect((await coordinator.readFrom(id, 0)).events[0]?.data).toBeNull()
+      expect(backend.loadAttempts).toBe(loadsBeforeNullData)
+    } finally {
       await fiber.dispose()
       await ctx.fiber.dispose()
     }
@@ -2103,7 +2177,7 @@ describe('SessionPersistence service registration', () => {
     const appendLegacy = session.append.bind(session) as (type: string, data: unknown) => SessionEvent
     expect(() => appendLegacy('request/header-delta', { config: { model: 'legacy' } }))
       .toThrow(/unsupported legacy request\/header-delta format/)
-    expect(session.events).toHaveLength(0)
+    expect(session.snapshotEvents()).toHaveLength(0)
     await fiber.dispose()
   })
 
@@ -2116,7 +2190,7 @@ describe('SessionPersistence service registration', () => {
 
     expect(() => appendLegacy('request/header', legacyFallbackHeader().data))
       .toThrow('unsupported legacy request/header reason "fallback"')
-    expect(session.events).toHaveLength(0)
+    expect(session.snapshotEvents()).toHaveLength(0)
     await fiber.dispose()
   })
 

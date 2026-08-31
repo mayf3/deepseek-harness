@@ -207,7 +207,7 @@ describe('SubagentRuntime.startContinuable', () => {
     ctx.on('agent/inbox/inserted', ({ agent, message }) => {
       // Acceptance is the boundary `startContinuable` resolves at, so observe
       // the log state exactly there rather than after later microtasks.
-      enqueued.push({ id: message.id, loggedYet: hasUserText(agent.session.events, 'child task') })
+      enqueued.push({ id: message.id, loggedYet: hasUserText(agent.session.snapshotEvents(), 'child task') })
     })
 
     const started = await ctx.subagents.startContinuable(startSpec(parent))
@@ -417,7 +417,7 @@ describe('SubagentRuntime.startContinuable', () => {
       expect(found).toBeDefined()
       return found!
     })
-    const descriptor = child.session.events.find(event => event.type === 'subagent/descriptor')
+    const descriptor = child.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')
 
     expect(descriptor?.data).toEqual({
       version: SUBAGENT_DESCRIPTOR_VERSION,
@@ -452,7 +452,7 @@ describe('SubagentRuntime.startContinuable', () => {
       return found!
     })
 
-    expect(child.session.events.find(event => event.type === 'subagent/descriptor')?.data)
+    expect(child.session.snapshotEvents().find(event => event.type === 'subagent/descriptor')?.data)
       .toEqual({
         version: SUBAGENT_DESCRIPTOR_VERSION,
         mode: 'continuable',
@@ -537,6 +537,120 @@ describe('SubagentRuntime.startContinuable', () => {
     await waitNoActivation(ctx, started.childId)
     const resumed = await ctx.sessionPersistence.load(started.childId)
     expect(hasUserText(resumed.events, 'resume it')).toBe(true)
+  })
+})
+
+describe('continuable image Queue prompts', () => {
+  const imageBlock = {
+    type: 'image' as const,
+    attachment: {
+      attachmentId: 'att-1' as never, mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1,
+    },
+  }
+
+  it('refuses an image follow-up when the child model declines image input, leaving no partial message', async () => {
+    const { ctx, parent } = await setup([textResponse('child work')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo')
+      .mockResolvedValue({ inputModalities: ['text'] } as never)
+
+    await expect(queuePrompt(ctx, parent, started.childId, [
+      { type: 'text' as const, text: 'see this' },
+      imageBlock,
+    ]))
+      .rejects.toMatchObject({ code: 'MODEL_DOES_NOT_SUPPORT_IMAGES' })
+
+    expect(resolve).toHaveBeenCalledWith('mock', 'mock', testSignal)
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(hasUserText(loaded.events, 'see this')).toBe(false)
+    await drainManager(ctx)
+  })
+
+  it('delivers an image follow-up to a resident child when its model accepts image input', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([
+      { chunks: textResponse('child work'), gate: releaseFirst.promise },
+      { chunks: textResponse('image reply') },
+    ])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => {
+      expect(adapter.requests).toHaveLength(1)
+    })
+    vi.spyOn(ctx.llm, 'resolveModelInfo')
+      .mockResolvedValue({ inputModalities: ['text', 'image'] } as never)
+
+    await queuePrompt(ctx, parent, started.childId, [
+      { type: 'text' as const, text: 'compare' },
+      imageBlock,
+    ])
+    releaseFirst.resolve(undefined)
+    await waitNoActivation(ctx, started.childId)
+
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    const delivered = loaded.events.find(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'image'))
+    expect(delivered?.type === 'user/message' && delivered.data.content).toEqual([
+      { type: 'text', text: 'compare' },
+      imageBlock,
+    ])
+    await drainManager(ctx)
+  })
+
+  it('re-checks the disposal cutoff when a drain begins during a live image capability read', async () => {
+    const releaseFirst = Promise.withResolvers<undefined>()
+    const adapter = new GatedAdapter([{ chunks: textResponse('child work'), gate: releaseFirst.promise }])
+    const { ctx, parent } = await setupWith(adapter)
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+    const capability = Promise.withResolvers<{ inputModalities: string[] }>()
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo').mockReturnValue(capability.promise as never)
+
+    const delivery = queuePrompt(ctx, parent, started.childId, [imageBlock])
+    delivery.catch(() => undefined)
+    await vi.waitFor(() => { expect(resolve).toHaveBeenCalled() })
+    releaseFirst.resolve(undefined)
+    const draining = drainManager(ctx)
+    capability.resolve({ inputModalities: ['text', 'image'] })
+
+    await expect(delivery).rejects.toMatchObject({ code: 'DRAINING' })
+    await draining
+  })
+
+  it('rejects a materialized image follow-up whose capability read raced a drain', async () => {
+    const { ctx, parent } = await setup([textResponse('child work')])
+    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    await waitNoActivation(ctx, started.childId)
+    const capability = Promise.withResolvers<{ inputModalities: string[] }>()
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo').mockReturnValue(capability.promise as never)
+
+    const delivery = queuePrompt(ctx, parent, started.childId, [imageBlock])
+    delivery.catch(() => undefined)
+    await vi.waitFor(() => { expect(resolve).toHaveBeenCalled() })
+    const draining = drainManager(ctx)
+    capability.resolve({ inputModalities: ['text', 'image'] })
+
+    await expect(delivery).rejects.toMatchObject({ code: 'ACTIVATION_CLOSING' })
+    await draining
+    const loaded = await ctx.sessionPersistence.load(started.childId)
+    expect(loaded.events.some(event => event.type === 'user/message'
+      && event.data.content.some(block => block.type === 'image'))).toBe(false)
+  })
+
+  it('defers to the text-only projection when the descriptor declares no model route', async () => {
+    const { ctx } = await setup([])
+    const routeless = ctx.agentLoop.create(SessionId('routeless-image'), {})
+    const started = await ctx.subagents.startContinuable(startSpec(routeless))
+    await waitNoActivation(ctx, started.childId)
+    const resolve = vi.spyOn(ctx.llm, 'resolveModelInfo')
+
+    // Acceptance is the success boundary: with no declared route there is no
+    // model to refuse against, so the image message enters the child inbox.
+    await queuePrompt(ctx, routeless, started.childId, [imageBlock])
+
+    expect(resolve).not.toHaveBeenCalled()
+    await drainManager(ctx)
   })
 })
 
@@ -1386,7 +1500,7 @@ describe('continuable review regressions', () => {
     const started = await ctx.subagents.startContinuable(startSpec(parent))
     await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
     const child = ctx.agents.get(started.childId)!
-    const before = child.session.events.length
+    const before = child.session.snapshotEvents().length
 
     const controller = new AbortController()
     controller.abort('caller gave up')
@@ -1719,7 +1833,7 @@ describe('continuable review regressions', () => {
 
 /** Every settlement notice this agent received, in order, as flat text. */
 function settlementNotices(agent: Agent): { sender: string; text: string; summary: string }[] {
-  const logged = agent.session.events.flatMap(event => event.type === 'user/message' ? [event.data] : [])
+  const logged = agent.session.snapshotEvents().flatMap(event => event.type === 'user/message' ? [event.data] : [])
   return [...logged, ...agent.inbox.nextStep, ...agent.inbox.nextTurn].flatMap((message) => {
     if (message.source.kind !== 'subagent-settled') return []
     return [{
@@ -2075,7 +2189,7 @@ describe('continuable settlement delivery', () => {
 
     // Turn 1 closed cleanly and no later turn opened, so the cancelled queue is
     // the only record that this epoch was cut short.
-    expect(hasUserText(child.session.events, 'never runs')).toBe(false)
+    expect(hasUserText(child.session.snapshotEvents(), 'never runs')).toBe(false)
     await vi.waitFor(() => { expect(settlementNotices(parent)).toHaveLength(1) })
     expect(settlementNotices(parent)[0]!.text).toBe(
       `Background subagent ${started.childId} was stopped before it finished.`
@@ -2252,8 +2366,8 @@ describe('continuable settlement delivery', () => {
       `Background subagent ${started.childId} was stopped before it finished.`
       + '\nIt left no closing message.',
     )
-    expect(parent.session.events.some(event => event.type === 'agent/inbox/spliced')).toBe(true)
-    expect(parent.session.events.some(event => event.type === 'turn/start')).toBe(false)
+    expect(parent.session.snapshotEvents().some(event => event.type === 'agent/inbox/spliced')).toBe(true)
+    expect(parent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
     expect(parent.status).toBe('idle')
   })
 
@@ -2269,7 +2383,7 @@ describe('continuable settlement delivery', () => {
     await drained
 
     expect(settlementNotices(parent)).toHaveLength(1)
-    expect(parent.session.events.some(event => event.type === 'turn/start')).toBe(false)
+    expect(parent.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
   })
 
   it('records but cannot deliver a teardown notice once the parent is disposed too', async () => {
