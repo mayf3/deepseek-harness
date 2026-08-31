@@ -355,7 +355,7 @@ const HOST_PARSE_BASELINE_BYTES = 64 * 1024 * 1024
  * ≤64 MiB wide-object frame materializes several times that in property
  * storage — so the effective cap is the smaller of the two. A default Node
  * heap (~4 GiB) never binds; a constrained host (e.g.
- * `--max-old-space-size=256` reports a ~300 MiB limit) lowers it to ~29 MiB,
+ * `--max-old-space-size=256` reports a ~300 MiB limit) lowers it to ~14 MiB,
  * and the load gate rejects budgets that cannot cross it.
  * @param heapLimit - the host's configured heap limit; the live
  * `heap_size_limit` when omitted. A parameter so the derivation is unit

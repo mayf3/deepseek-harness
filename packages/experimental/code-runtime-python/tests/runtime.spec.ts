@@ -182,7 +182,7 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // The load gate bounds the CHILD's build-and-encode under RLIMIT_AS; it
     // does not bound the HOST's JSON.parse, which materializes several times a
     // wide frame's raw bytes in property storage. In a child node with a
-    // 128 MiB old space the heap-derived frame cap is ~14 MiB, so a 50 MiB
+    // 128 MiB old space the heap-derived frame cap is ~7 MiB, so a 50 MiB
     // budget is rejected at load even though the address-space gate alone
     // would admit it (50 MiB * 12 = 600 MiB < 1 GiB - 64 MiB).
     const script = [
