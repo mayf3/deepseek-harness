@@ -16,7 +16,7 @@ A host reaches that state when `tmpdir()` and `process.cwd()` share a path prefi
 
 The expectation resolves the same relative root the plugin receives. Both sides pass through one `resolve(cwd, relative)` call, so the case-insensitive round-trip cannot place two spellings on the two sides of the comparison.
 
-This is a test-only change. The platform treats both spellings as the same file, so storage behaviour does not depend on which spelling `resolve()` produces. The string itself stays observable: hook payloads carry it as `transcript_path` and the shell contributor exports it as `DSH_SESSION_JSONL`, so a consumer that compares those strings can still see the difference. Composition fixtures such as [`apps/cli/tests/profiles/headless/tests/fixtures/cli.cordis.yml`](../../../../apps/cli/tests/profiles/headless/tests/fixtures/cli.cordis.yml) set a relative session root — but the plugin resolves whatever it receives before use, so a relative root reaches disk as one spelling rather than two.
+This is a test-only change. The platform treats both spellings as the same file, so storage behaviour does not depend on which spelling `resolve()` produces. The string itself stays observable: hook payloads carry it as `transcript_path` and the shell contributor exports it as `DSH_SESSION_JSONL`, so a consumer that compares those strings can still see the difference. Composition fixtures set a relative session root — but the plugin resolves whatever it receives before use, so a relative root reaches disk as one spelling rather than two.
 
 The case still asserts what it names: with the plugin's `resolve(config.root)` reduced to `config.root`, so a relative root is no longer resolved, the case fails.
 

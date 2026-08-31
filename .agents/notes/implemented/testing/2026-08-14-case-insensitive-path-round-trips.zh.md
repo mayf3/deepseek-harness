@@ -16,7 +16,7 @@ Status: implemented
 
 期望值改为解析「插件实际收到的那个相对 root」。两侧都经过同一次 `resolve(cwd, relative)`，大小写不敏感的往返就不可能把两种拼写分别放到比较的两边。
 
-这是只改测试的变更。平台把两种拼写视为同一个文件，所以存储行为不依赖 `resolve()` 产出哪种拼写。字符串本身仍可被观察到：hook 载荷以 `transcript_path` 携带它，shell 贡献者以 `DSH_SESSION_JSONL` 导出它，因此比较这些字符串的消费方仍能看出差异。组合 fixture（测试前置数据）如 [`apps/cli/tests/profiles/headless/tests/fixtures/cli.cordis.yml`](../../../../apps/cli/tests/profiles/headless/tests/fixtures/cli.cordis.yml) 就设置了相对的会话 root——但插件会先解析收到的值再使用，因此相对 root 落盘时只有一种拼写而非两种。
+这是只改测试的变更。平台把两种拼写视为同一个文件，所以存储行为不依赖 `resolve()` 产出哪种拼写。字符串本身仍可被观察到：hook 载荷以 `transcript_path` 携带它，shell 贡献者以 `DSH_SESSION_JSONL` 导出它，因此比较这些字符串的消费方仍能看出差异。组合 fixture（测试前置数据）设置相对的会话 root——但插件会先解析收到的值再使用，因此相对 root 落盘时只有一种拼写而非两种。
 
 该用例仍然在验证它声称的东西：把插件的 `resolve(config.root)` 降级成 `config.root`（即不再解析相对 root）后，用例转红。
 

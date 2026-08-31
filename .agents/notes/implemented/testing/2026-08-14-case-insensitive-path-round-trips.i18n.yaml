@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/testing/2026-08-14-case-insensitive-path-round-trips.md
-2026-08-14-case-insensitive-path-round-trips.md: 5ff03a4fb55fc3dc136b22850f938685ed15a44f
-2026-08-14-case-insensitive-path-round-trips.zh.md: 6ad6121653badd3f636dda822a95fa7672b22cc3
+2026-08-14-case-insensitive-path-round-trips.md: 43cfa06f430418923ebc6d8c20bd23656cab5f9b
+2026-08-14-case-insensitive-path-round-trips.zh.md: 98bac2b95b081b3e7bc87c3556b9d66ac7242b23
