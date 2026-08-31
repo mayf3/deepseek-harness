@@ -539,7 +539,7 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     const entry = await entryOf()
     expect(entry.endsWith('/bootstrap.py')).toBe(true)
     const dir = dirname(entry)
-    expect(dir.startsWith(realpathSync(tmpdir()))).toBe(true)
+    expect(dir.startsWith(tmpdir()) || dir.startsWith(realpathSync(tmpdir()))).toBe(true)
     expect(dir).not.toContain('/packages/')
     // Staging is per RUN and removed at settlement, so by the time `run()`
     // resolved the directory is already gone — nothing survives to be rewritten
@@ -709,7 +709,8 @@ describe('PythonCodeRuntime — process identity', () => {
 })
 
 describe('PythonCodeRuntime — inherited resource limits', () => {
-  it('runs under an inherited hard limit tighter than addressSpaceMb', async () => {
+  // Darwin deliberately does not apply RLIMIT_AS, and its shell rejects `ulimit -v`.
+  it.skipIf(process.platform === 'darwin')('runs under an inherited hard limit tighter than addressSpaceMb', async () => {
     // An unprivileged process may lower a hard rlimit but never raise it. Under
     // a harness started with `ulimit -v` below `addressSpaceBytes`, requesting
     // the configured cap made `setrlimit` raise `ValueError` and every run
@@ -764,7 +765,8 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     }
   }, 15_000)
 
-  it('applies the configured limits when nothing tighter is inherited', async () => {
+  // The expected tuple includes RLIMIT_AS, which the backend deliberately skips on Darwin.
+  it.skipIf(process.platform === 'darwin')('applies the configured limits when nothing tighter is inherited', async () => {
     // The clamp must not weaken the normal path: with an infinite inherited hard
     // limit there is nothing to clamp against, and RLIM_INFINITY compares as -1,
     // so treating it as a numeric bound would collapse every limit to -1.
