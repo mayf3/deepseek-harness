@@ -291,6 +291,12 @@ export function logTruncationMarker(maxBytes: number): string {
  * @returns the compact JSON encoding.
  */
 export function encodeJsonPlain(value: unknown): string {
+  // The task stack holds every member of the currently open containers — O(width)
+  // — but the encoded OUTPUT is itself O(total bytes) and the stack holds only
+  // references, so the walk's auxiliary state is same-order as its result; the
+  // metering walks (checkDoneValue/hasNonLosslessNumber) are the ones that must
+  // stay O(depth), since they can reject a wide payload without producing any
+  // output. Exempted by that same-order argument.
   type Task = { text: string } | { value: unknown }
   const chunks: string[] = []
   const tasks: Task[] = [{ value }]
@@ -430,9 +436,36 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
   // classify differently (non-lossless vs over-budget), and the JSDoc promises
   // an over-budget value is rejected as over-budget regardless.
   let nonLossless = false
-  const stack: unknown[] = [value]
-  while (stack.length > 0) {
-    const current = stack.pop()
+  // One cursor per OPEN container (a values iterator for the root and arrays,
+  // an entries iterator for objects), mirroring hasNonLosslessNumber and the
+  // child's _check_done_value: a wide completion near the frame cap would
+  // otherwise copy every member's reference onto an explicit work stack —
+  // O(width) — OOMing the host after the parse already succeeded. The byte
+  // budget still bounds the walk: each member is metered as its cursor yields
+  // it, and the width lower-bound checks below bail an over-budget container
+  // before the cursor descends.
+  const cursors: Cursor[] = [{ kind: 'values', iter: [value].values() }]
+  while (cursors.length > 0) {
+    // The loop condition guarantees a top cursor.
+    const cursor = cursors.at(-1) as Cursor
+    const step = cursor.iter.next()
+    if (step.done === true) {
+      cursors.pop()
+      continue
+    }
+    let current: unknown
+    if (cursor.kind === 'entries') {
+      // Meter the key's escaped form without allocating it (same reason as the
+      // string branch), then add the colon separator, before the value's own
+      // bytes are counted.
+      const [key, member] = step.value as readonly [string, unknown]
+      const keyBytes = jsonStringBytesUpTo(key, maxBytes - bytes)
+      if (keyBytes === undefined) return { ok: false, reason: 'over-budget' }
+      bytes += keyBytes + 1
+      current = member
+    } else {
+      current = step.value
+    }
     if (typeof current === 'number') {
       // Flag a non-lossless number but keep counting its encoded bytes: a value
       // that is BOTH non-lossless and over-budget must classify as over-budget
@@ -451,13 +484,13 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
       bytes += stringBytes
     } else if (Array.isArray(current)) {
       // Brackets plus one comma per gap; elements add themselves. Reject
-      // BEFORE enqueuing children: every element serializes to at least one
+      // BEFORE the cursor descends: every element serializes to at least one
       // byte, so a forged flat array far above the budget fails here without
-      // pushing its elements onto the host stack. (The array itself is already
-      // materialized by the upstream parse; this only bounds the extra stack.)
+      // the cursor yielding any of them. (The array itself is already
+      // materialized by the upstream parse; this only bounds the extra walk.)
       bytes += 2 + (current.length > 1 ? current.length - 1 : 0)
       if (bytes + current.length > maxBytes) return { ok: false, reason: 'over-budget' }
-      for (const item of current) stack.push(item)
+      cursors.push({ kind: 'values', iter: (current as unknown[]).values() })
     } else if (typeof current === 'object' && current !== null) {
       const record = current as Record<string, unknown>
       // Count own keys with for...in + hasOwn. This IS O(keys) — JS has no lazy
@@ -469,15 +502,7 @@ export function checkDoneValue(value: unknown, maxBytes: number): { ok: true; by
       for (const key in record) if (Object.hasOwn(record, key)) count += 1
       bytes += 2 + (count > 1 ? count - 1 : 0)
       if (bytes + count * 4 > maxBytes) return { ok: false, reason: 'over-budget' }
-      for (const key in record) {
-        if (!Object.hasOwn(record, key)) continue
-        // Meter the key's escaped form without allocating it (same reason as the
-        // string branch), then add the colon separator. `+ 1` for the `:`.
-        const keyBytes = jsonStringBytesUpTo(key, maxBytes - bytes)
-        if (keyBytes === undefined) return { ok: false, reason: 'over-budget' }
-        bytes += keyBytes + 1
-        stack.push(record[key])
-      }
+      cursors.push({ kind: 'entries', iter: ownEntries(record) })
     } else {
       bytes += Buffer.byteLength(scalarJson(current), 'utf8')
     }
@@ -536,6 +561,31 @@ export function hasUnsafeIntegerToken(line: string): boolean {
     }
   }
   return false
+}
+
+/**
+ * One open container in checkDoneValue's cursor walk: a values iterator (the
+ * root and arrays) or an entries iterator (objects, so each key's escaped
+ * bytes can be metered when the entry is reached). A cursor bounds the walk's
+ * auxiliary state to O(depth), not O(width).
+ */
+type Cursor =
+  | { kind: 'values'; iter: Iterator<unknown> }
+  | { kind: 'entries'; iter: Iterator<readonly [string, unknown]> }
+
+/**
+ * Lazily yield one plain object's own enumerable [key, value] entries. The
+ * key escapes are metered when {@link checkDoneValue}'s cursor walk reaches
+ * each entry, so a wide object never materializes a member list: each entry
+ * is produced straight off the already-parsed record, and the escaped key
+ * bytes are counted without building the escaped string.
+ * @param record - a JSON-parse-produced object.
+ * @yields each own enumerable [key, value] pair, in key order.
+ */
+function* ownEntries(record: Record<string, unknown>): Generator<readonly [string, unknown]> {
+  for (const key in record) {
+    if (Object.hasOwn(record, key)) yield [key, record[key]]
+  }
 }
 
 /**

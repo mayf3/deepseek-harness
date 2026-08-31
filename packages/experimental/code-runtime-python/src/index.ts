@@ -5,10 +5,8 @@
  * boundary: model code has bash-equivalent trust, contained by a tempdir-only environment,
  * RLIMIT_CPU + RLIMIT_AS, wall-clock timeout, and SIGTERM→grace→SIGKILL on the process group.
  *
- * The package owns the versionless fd-3 wire protocol between the Node host and
- * the CPython subprocess. The protocol's host-side codec and hostile-frame
- * validators are re-exported so every consumer of the wire shares one
- * vocabulary.
+ * The package also owns the versionless fd-3 wire protocol itself; its host-side codec and
+ * hostile-frame validators are re-exported so every consumer of the wire shares one vocabulary.
  * @module @deepseek-ai/dsh-experimental-code-runtime-python
  */
 
@@ -17,12 +15,13 @@ import { accessSync, copyFileSync, constants as fsConstants, mkdtempSync, readFi
 import { tmpdir } from 'node:os'
 import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { getHeapStatistics } from 'node:v8'
 import type { Duplex } from 'node:stream'
-import { Context } from 'cordis'
-import z from 'schemastery'
+import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import { CodeRuntime, DUNDER_MEMBER, PORTABLE_RESERVED_WORDS, RESERVED_BINDING_GLOBALS, RESERVED_ERROR_MEMBERS } from '@deepseek-ai/dsh-code-runtime'
 import type { CodeBindingErrorClass, CodeBindingFunction, CodeJsonValue, CodeRunFailure, CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
-import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
+import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type { BootMessage, ChildToHost, ReplyMessage } from './protocol.ts'
 import { checkDoneValue, encodeJsonPlain, hasUnsafeIntegerToken, logTruncationMarker, validateChildFrame } from './protocol.ts'
@@ -70,7 +69,9 @@ export interface Config {
    * under RLIMIT_AS with several copies live at once, so this cap times the
    * worst-case Unicode expansion must fit the address space left after the
    * interpreter baseline (see `addressSpaceMb`) — a load-time rejection, not a
-   * runtime clamp.
+   * runtime clamp. Also bounded at load by the host's configured heap like
+   * `maxValueBytes` (see its JSDoc): the effective frame cap minus the frame
+   * envelope.
    */
   maxLogBytes?: number
   /**
@@ -78,7 +79,12 @@ export interface Config {
    * the same way `maxLogBytes` is: the child builds and encodes a near-budget
    * value under RLIMIT_AS with several copies live at once, so this cap times the
    * worst-case Unicode expansion must fit the address space left after the
-   * interpreter baseline.
+   * interpreter baseline. Both budgets are ALSO bounded at load by the host's
+   * configured heap: the effective frame cap (the protocol cap, or a lower
+   * heap-derived ceiling when the host heap cannot safely parse a near-cap
+   * frame — see `hostFrameParseCeiling`) minus the frame envelope, so a budget
+   * whose honest frame could OOM the host's own JSON.parse is rejected up
+   * front.
    */
   maxValueBytes?: number
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
@@ -309,6 +315,56 @@ const OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE = 12
  * fixed safety margin, not a deployment knob.
  */
 const INTERPRETER_BASELINE_BYTES = 64 * 1024 * 1024
+
+/**
+ * Worst-case peak host-heap bytes the PARSE of one inbound fd-3 frame can
+ * transiently occupy, expressed as a multiple of the frame's raw bytes.
+ * `JSON.parse` of a wide container materializes the object's property storage
+ * and key strings on top of the raw text; the WORST shape is a dict of many
+ * SHORT UNIQUE keys, which forces V8's dictionary-mode property storage
+ * (~32-64 bytes per entry) plus one interned string per key (header + data)
+ * plus string-table growth: measured 6.4x for a 3,000,000-key frame (~31 MB
+ * raw) on a 1 GiB heap, trending up with key count (a flat unique-key array
+ * is ~4x, a repeated-key dict ~3x). On a constrained heap the parse also
+ * retains the raw frame string while the object builds, so the safety factor
+ * is 16x — ~2.5x over the measured worst shape, ~1.6x over the claimed
+ * GC-headroom bound. Used with the host's configured heap limit to derive the
+ * largest frame whose parse cannot OOM the host process. This bounds the
+ * HOST's parse; {@link OUTPUT_BUDGET_WORST_CASE_ADDRESS_SPACE_MULTIPLE} bounds
+ * the CHILD's build and encode under RLIMIT_AS, a different resource. A fixed
+ * safety invariant, not a knob.
+ */
+const HOST_PARSE_WORST_CASE_MULTIPLE = 16
+
+/**
+ * Fixed host-heap headroom reserved for the application itself (the dsh
+ * fiber, plugins, and this runtime's own state) before the frame-parse
+ * multiple claims the rest: the effective frame cap is derived from
+ * `heap_size_limit - HOST_PARSE_BASELINE_BYTES`, so a constrained host's
+ * parse ceiling never spends the application's working set. A fixed safety
+ * margin, not a knob.
+ */
+const HOST_PARSE_BASELINE_BYTES = 64 * 1024 * 1024
+
+/**
+ * The largest inbound fd-3 frame the HOST can parse without risking a
+ * process-level OOM on its current heap: the configured heap limit (honoring
+ * `--max-old-space-size`) minus the application baseline, divided by the
+ * worst-case parse multiple, floored to the protocol frame cap. The
+ * raw-byte cap alone does not protect the heap — `JSON.parse` of a
+ * ≤64 MiB wide-object frame materializes several times that in property
+ * storage — so the effective cap is the smaller of the two. A default Node
+ * heap (~4 GiB) never binds; a constrained host (e.g.
+ * `--max-old-space-size=256` reports a ~300 MiB limit) lowers it to ~29 MiB,
+ * and the load gate rejects budgets that cannot cross it.
+ * @param heapLimit - the host's configured heap limit; the live
+ * `heap_size_limit` when omitted. A parameter so the derivation is unit
+ * testable against simulated heap sizes.
+ * @returns the effective frame parse cap in bytes.
+ */
+export function hostFrameParseCeiling(heapLimit: number = getHeapStatistics().heap_size_limit): number {
+  return Math.min(FRAME_PARSE_CAP_BYTES, Math.floor((heapLimit - HOST_PARSE_BASELINE_BYTES) / HOST_PARSE_WORST_CASE_MULTIPLE))
+}
 
 /**
  * Interval between process-group liveness probes while settlement waits for an
@@ -762,6 +818,11 @@ export class PythonCodeRuntime extends CodeRuntime {
 
   private readonly config: ResolvedConfig
   private readonly pythonBin: string
+  // The frame cap this instance enforces: the protocol cap, or the host's
+  // heap-derived parse ceiling when a constrained heap makes the protocol cap
+  // unsafe to parse (see {@link hostFrameParseCeiling}). Computed per
+  // instance so the config gate and the inbound checks agree.
+  private readonly frameParseCapBytes = hostFrameParseCeiling()
   private readonly live = new Set<LiveRun>()
   private disposed = false
 
@@ -852,10 +913,12 @@ export class PythonCodeRuntime extends CodeRuntime {
     // into `CodeRunResult.error.message` and never re-crosses a frame-bounded
     // channel, so it is not part of the wire-width bound (see its JSDoc). The
     // admissible cap is therefore `parse-cap - envelope`: the receive path
-    // rejects raw frames past FRAME_PARSE_CAP_BYTES before decoding (the run
-    // settles as a worker-exit; a hostile compact-wide-frame OOM guard), so a
-    // budget must not exceed what an honest child's frame can actually carry
-    // through that parser.
+    // rejects raw frames past the effective parse cap (`frameParseCapBytes` —
+    // the protocol cap, or the host's heap-derived ceiling when a constrained
+    // heap makes the protocol cap unsafe to parse; see hostFrameParseCeiling)
+    // before decoding (the run settles as a worker-exit; a hostile
+    // compact-wide-frame OOM guard), so a budget must not exceed what an
+    // honest child's frame can actually carry through that parser.
     for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
       // Require an integer: the child reads these budgets through `int(...)`,
       // which silently floors a float, so `maxLogBytes: 3.5` would truncate at 3
@@ -865,9 +928,16 @@ export class PythonCodeRuntime extends CodeRuntime {
       if (!Number.isInteger(this.config[key])) {
         throw new Error(`dsh-code-runtime-python: config.${key} must be a positive integer (the child reads it as an int, so a float diverges from the host), got ${String(this.config[key])}`)
       }
-      const limit = FRAME_PARSE_CAP_BYTES - FRAME_ENVELOPE_BYTES
+      const limit = this.frameParseCapBytes - FRAME_ENVELOPE_BYTES
       if (this.config[key] > limit) {
-        throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the fd-3 frame PARSER, which rejects raw frames past ${FRAME_PARSE_CAP_BYTES} bytes before decoding to bound host memory — a larger budget would admit a config whose honest child frames the host then rejects as a worker-exit), got ${String(this.config[key])}`)
+        // Only a host whose heap is below the protocol cap reaches the
+        // heap-constrained note; the constrained-heap rejection is exercised
+        // by the subprocess load test, but subprocess runs are not
+        // coverage-instrumented, so the note's arm is not schedulable from the
+        // instrumented suite (whose heap never binds).
+        /* v8 ignore next -- the heap-constrained message arm needs a host heap below the protocol cap. */
+        const heapNote = this.frameParseCapBytes < FRAME_PARSE_CAP_BYTES ? ` — this host's heap limits the parse to ${this.frameParseCapBytes} bytes, so the protocol cap of ${FRAME_PARSE_CAP_BYTES} would be unsafe` : ''
+        throw new Error(`dsh-code-runtime-python: config.${key} must not exceed ${limit} (a payload that large cannot cross the fd-3 frame PARSER, which rejects raw frames past ${this.frameParseCapBytes} bytes before decoding to bound host memory${heapNote} — a larger budget would admit a config whose honest child frames the host then rejects as a worker-exit), got ${String(this.config[key])}`)
       }
       // Reject a log budget too small to honor: the truncation marker alone
       // must serialize within the budget, or a marker-only truncated run
@@ -1446,6 +1516,29 @@ export class PythonCodeRuntime extends CodeRuntime {
         // fd 3 between finish() and close must not regrow the host buffer.
         /* v8 ignore next -- post-settlement data needs the child to outrace close after we decided. */
         if (settled) return
+        // Schedule ONE post-batch outstanding-call check per macrotask. The
+        // check must see the TRUE count — the live count is inflated by this
+        // batch's own frames (the finallys run on the microtask queue, which
+        // drains only when the macrotask ends), and a per-event snapshot is
+        // stale when flowing mode fires several 'data' events within one
+        // macrotask before any microtask drains. setImmediate runs after the
+        // current macrotask's microtasks, so the count is exact; the flag
+        // dedupes the check across the events of one macrotask. The threshold
+        // is STRICT: exactly MAX_PENDING_REPLIES outstanding calls are allowed,
+        // so a program that returns with calls it never awaited still
+        // completes (the done frame settles the run; the check no-ops on
+        // `settled`).
+        if (!postBatchCheckPending) {
+          postBatchCheckPending = true
+          setImmediate(() => {
+            postBatchCheckPending = false
+            /* v8 ignore next -- the done frame can settle the run between the schedule and this callback. */
+            if (settled) return
+            if (pendingCalls > MAX_PENDING_REPLIES) {
+              finish({ error: { kind: 'worker-exit', message: `call backlog exceeded ${MAX_PENDING_REPLIES} in-flight binding calls (a binding never settled)` } })
+            }
+          })
+        }
         pendingChunks.push(chunk)
         pendingBytes += chunk.length
         // Check the counter BEFORE the join, not the joined line afterwards:
@@ -1476,11 +1569,11 @@ export class PythonCodeRuntime extends CodeRuntime {
         // of the wire bytes. When this chunk DOES carry a newline the buffer
         // holds several frames, so the FIRST-FRAME check below (not this
         // counter, which charges them all) decides.
-        if (pendingBytes > FRAME_PARSE_CAP_BYTES && !chunk.includes(0x0a)) {
+        if (pendingBytes > this.frameParseCapBytes && !chunk.includes(0x0a)) {
           pendingChunks = []
           sealedBlocks = []
           pendingBytes = 0
-          finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${FRAME_PARSE_CAP_BYTES} bytes on fd 3` } })
+          finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${this.frameParseCapBytes} bytes on fd 3` } })
           return
         }
         // Bound the FRAGMENT COUNT as well as the byte total, but only AFTER the
@@ -1535,11 +1628,11 @@ export class PythonCodeRuntime extends CodeRuntime {
             }
             firstFrameLen += c.length
           }
-          if (sawNewline && firstFrameLen > FRAME_PARSE_CAP_BYTES) {
+          if (sawNewline && firstFrameLen > this.frameParseCapBytes) {
             pendingChunks = []
             sealedBlocks = []
             pendingBytes = 0
-            finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${FRAME_PARSE_CAP_BYTES} bytes on fd 3` } })
+            finish({ error: { kind: 'worker-exit', message: `protocol frame exceeded ${this.frameParseCapBytes} bytes on fd 3` } })
             return
           }
           let buffered = Buffer.concat(sealedBlocks.length > 0 ? [...sealedBlocks, ...pendingChunks] : pendingChunks)
@@ -1724,6 +1817,19 @@ export class PythonCodeRuntime extends CodeRuntime {
             admit(message.text)
             return
           case 'done': {
+            // The call-backlog cap must also hold when the child finishes in
+            // the SAME batch as its flood: the post-macrotask check no-ops once
+            // this done frame settles the run, so a done arriving right after
+            // more than MAX_PENDING_REPLIES call frames in one data event would
+            // otherwise complete successfully with the outstanding closures
+            // left behind (a single sub-64 KiB write can carry 1025 compact
+            // calls plus a done). The strict threshold lets exactly
+            // MAX_PENDING_REPLIES outstanding calls — a program that returned
+            // without awaiting its calls — complete normally.
+            if (pendingCalls > MAX_PENDING_REPLIES) {
+              finish({ error: { kind: 'worker-exit', message: `call backlog exceeded ${MAX_PENDING_REPLIES} in-flight binding calls (a binding never settled)` } })
+              return
+            }
             if (message.error) {
               finish({ error: { kind: message.error.kind, message: capMessage(message.error.message, this.config.maxValueBytes) } })
               return
@@ -1788,17 +1894,12 @@ export class PythonCodeRuntime extends CodeRuntime {
               sendReply({ type: 'reply', id: message.id, ok: false, message: capMessage(`unknown binding ${preview}`, cap) })
               return
             }
-            // A binding that never settles (or resolves too slowly to keep up
-            // with the child's call rate) must not let the flood accumulate one
-            // async closure per frame until the wall clock: the reply cap only
-            // counts resolved calls, so it never trips for in-flight ones.
-            // Count the outstanding binding calls here, before dispatch, and
-            // release the slot in the body's finally — bounding in-flight
-            // closures to MAX_PENDING_REPLIES exactly like the reply backlog.
-            if (pendingCalls >= MAX_PENDING_REPLIES) {
-              finish({ error: { kind: 'worker-exit', message: `call backlog exceeded ${MAX_PENDING_REPLIES} in-flight binding calls (a binding never settled)` } })
-              return
-            }
+            // Count the outstanding binding call before dispatch and release the
+            // slot in the async body's finally. The CAP CHECK runs in the data
+            // handler's post-macrotask pass (where the finallys have drained),
+            // not here: a per-frame check would see every frame of one event as
+            // in-flight and false-positive on a legitimate gather of more than
+            // MAX_PENDING_REPLIES instant calls.
             pendingCalls += 1
             void (async () => {
               try {
@@ -1875,9 +1976,14 @@ export class PythonCodeRuntime extends CodeRuntime {
       // RESOLVED calls — `pendingReplies` grows after the await — so a child
       // flooding calls against a binding that never settles would accumulate
       // one async closure per frame until the wall clock without tripping it.
-      // Counted here before dispatch and released in the body's finally, the
-      // in-flight closures are bounded to the same MAX_PENDING_REPLIES.
+      // Counted here before dispatch and released in the body's finally; the
+      // data handler schedules a post-macrotask check (see there) that settles
+      // the run as worker-exit when the true outstanding count passes
+      // MAX_PENDING_REPLIES.
       let pendingCalls = 0
+      // Dedupes the post-batch outstanding-call check across the 'data' events
+      // of one macrotask (see the data handler).
+      let postBatchCheckPending = false
       let draining = false
       // Resolve when fd 3 can take another frame, OR when it is gone: a pipe
       // destroyed under the drain (child exited, close-deadline teardown) never

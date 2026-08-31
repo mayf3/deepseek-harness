@@ -1,10 +1,11 @@
-import { existsSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, relative } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { basename, dirname, join, relative, resolve } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import { PythonCodeRuntime, readProcessStart, resolvePythonBin } from '../src/index.ts'
+import { PythonCodeRuntime, hostFrameParseCeiling, readProcessStart, resolvePythonBin } from '../src/index.ts'
 import { logTruncationMarker } from '../src/protocol.ts'
 import type { Config } from '../src/index.ts'
 
@@ -27,9 +28,16 @@ import type { CodeBindingFunction, CodeJsonValue, CodeRunResult } from '@deepsee
  * records the same race and solves it with argv-based identity; recording the
  * mkdtempSync results is the fs-mock equivalent.
  */
-const { failNextCopyOf, stagedDirs } = vi.hoisted(() => ({
+const { failNextCopyOf, stagedDirs, tempDirs, tempFiles } = vi.hoisted(() => ({
   failNextCopyOf: { value: undefined as string | undefined },
   stagedDirs: [] as string[],
+  // Test-created temp dirs/files, registered by the helpers below and removed
+  // after each test: a suite run over real python3 subprocesses must not
+  // permanently accumulate `dsh-*` fixtures in the shared tmpdir (the runtime
+  // cleans its own per-run staging dir; these are the stubs and wrappers the
+  // tests themselves build).
+  tempDirs: [] as string[],
+  tempFiles: [] as string[],
 }))
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>()
@@ -67,6 +75,27 @@ async function setup(config: Config = {}) {
 function tools(functions: Record<string, CodeBindingFunction>) {
   return [{ global: 'tools', functions }]
 }
+
+/** Create a test temp dir registered for afterEach removal. */
+async function makeTempDir(prefix: string): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+/** Synchronous variant of {@link makeTempDir} for the PATH-stub fixtures. */
+function makeTempDirSync(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix))
+  tempDirs.push(dir)
+  return dir
+}
+
+// Remove every fixture this file created, so repeated runs do not accumulate
+// `dsh-*` directories and wrappers in the shared tmpdir.
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  for (const file of tempFiles.splice(0)) rmSync(file, { force: true })
+})
 
 describe('PythonCodeRuntime — seam descriptors and misuse', () => {
   it('registers the seam descriptors', async () => {
@@ -149,6 +178,66 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     await boundary.dispose()
   })
 
+  it('rejects a completion budget whose frame a constrained host heap cannot safely parse', async () => {
+    // The load gate bounds the CHILD's build-and-encode under RLIMIT_AS; it
+    // does not bound the HOST's JSON.parse, which materializes several times a
+    // wide frame's raw bytes in property storage. In a child node with a
+    // 128 MiB old space the heap-derived frame cap is ~14 MiB, so a 50 MiB
+    // budget is rejected at load even though the address-space gate alone
+    // would admit it (50 MiB * 12 = 600 MiB < 1 GiB - 64 MiB).
+    const script = [
+      "import { Context } from '@deepseek-ai/cordis'",
+      "import { PythonCodeRuntime } from './packages/experimental/code-runtime-python/src/index.ts'",
+      'const ctx = new Context()',
+      'try {',
+      '  await ctx.plugin(PythonCodeRuntime, { maxValueBytes: 50 * 1024 * 1024, addressSpaceMb: 1024 })',
+      "  console.log('LOADED')",
+      '  process.exit(1)',
+      '} catch (error) {',
+      "  console.log('REJECTED:' + (error instanceof Error ? error.message : String(error)))",
+      '  process.exit(0)',
+      '}',
+    ].join('\n')
+    const out = execFileSync(process.execPath, ['--max-old-space-size=128', '--import', 'tsx', '-e', script], {
+      cwd: resolve(import.meta.dirname, '../../../..'),
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: { ...process.env, TSX_TSCONFIG_PATH: resolve(import.meta.dirname, '../../../../tsconfig.json') },
+    })
+    expect(out).toContain('REJECTED:')
+    expect(out).toContain('must not exceed')
+  }, 60_000)
+
+  it('parses a worst-shape frame at the derived cap on a constrained heap', async () => {
+    // The host-heap frame cap must be measured against the WORST parse shape —
+    // a dict of many short unique keys, which forces dictionary-mode property
+    // storage plus interned keys (~6.4x at 3M keys, trending up), not the ~3x
+    // of a repeated-key dict. A child node with a 128 MiB old space (~176 MiB
+    // heap limit) derives a cap of floor((176 - 64) / 16) = 7 MiB; the
+    // subprocess builds a unique-key dict whose frame is AT that cap and
+    // parses it, which must survive. Verified fail-before: with the multiple
+    // at 8 the derived cap doubles to 14 MiB and the same subprocess OOMs
+    // during the parse (plain JS, no tsx — the frame and parse are builtins).
+    const cap = hostFrameParseCeiling(176 * 1024 * 1024)
+    const script = [
+      `const cap = ${cap}`,
+      // Each entry "k<base36>:1," is ~9-12 raw bytes; a few hundred thousand
+      // unique keys put the frame just at the cap.
+      'const count = Math.floor(cap / 12)',
+      'const obj = {}',
+      'for (let i = 0; i < count; i++) obj[`k${i.toString(36)}`] = 1',
+      'const frame = JSON.stringify(obj)',
+      "if (Buffer.byteLength(frame, 'utf8') > cap) throw new Error('frame over cap: ' + frame.length)",
+      'JSON.parse(frame)',
+      "console.log('SURVIVED:' + Buffer.byteLength(frame, 'utf8'))",
+    ].join('\n')
+    const out = execFileSync(process.execPath, ['--max-old-space-size=128', '-e', script], {
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
+    expect(out).toContain('SURVIVED:')
+  }, 60_000)
+
   it('rejects a pythonBin that spawn() would throw on, at load', async () => {
     // Both values pass the string schema and both make `spawn` throw
     // SYNCHRONOUSLY from inside run() — ERR_INVALID_ARG_VALUE for the empty
@@ -170,8 +259,8 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // The message distinguishes the explicit-path failure from a basename that
     // simply does not resolve on PATH.
     const nodePath = await import('node:path')
-    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs')
-    const dir = mkdtempSync(nodePath.join(tmpdir(), 'dsh-bad-bin-'))
+    const { writeFileSync, mkdirSync } = await import('node:fs')
+    const dir = makeTempDirSync('dsh-bad-bin-')
     const notExecutable = nodePath.join(dir, 'not-executable')
     writeFileSync(notExecutable, '#!/bin/sh\nexit 0\n') // Regular file, but no X bit.
     const directory = nodePath.join(dir, 'is-a-directory')
@@ -386,10 +475,9 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // real interpreter is used.
     const cp = await import('node:child_process')
     const nodePath = await import('node:path')
-    const { mkdtempSync, mkdirSync } = await import('node:fs')
-    const { tmpdir } = await import('node:os')
+    const { mkdirSync } = await import('node:fs')
     const realPythonDir = nodePath.dirname(cp.execFileSync('which', ['python3'], { encoding: 'utf8' }).trim())
-    const fakeDir = mkdtempSync(nodePath.join(tmpdir(), 'dsh-fake-bin-'))
+    const fakeDir = makeTempDirSync('dsh-fake-bin-')
     mkdirSync(nodePath.join(fakeDir, 'python3')) // A directory named python3, executable by default.
     vi.stubEnv('PATH', `${fakeDir}:${realPythonDir}`)
     try {
@@ -608,7 +696,7 @@ describe('PythonCodeRuntime — seam descriptors and misuse', () => {
     // `os.tmpdir()`, so pointing it at a path that is not a directory makes the
     // real call fail without stubbing the module under test.
     const previous = process.env.TMPDIR
-    const notADirectory = join(await mkdtemp(join(tmpdir(), 'dsh-staging-')), 'file')
+    const notADirectory = join(await makeTempDir('dsh-staging-'), 'file')
     await writeFile(notADirectory, '')
     process.env.TMPDIR = notADirectory
     try {
@@ -694,7 +782,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // `pythonBin` is the honest lever: a wrapper that lowers RLIMIT_AS and then
     // execs the real interpreter reproduces the inherited-limit condition
     // without touching this test process's own limits.
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
+    const dir = await makeTempDir('dsh-rlimit-')
     const wrapper = join(dir, 'python3-capped')
     // 256 MiB, half the 512 MiB addressSpaceMb default, so the requested cap is
     // unambiguously above the inherited ceiling.
@@ -722,7 +810,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // rejected. The rejection surfaces as an 'exception' (bootstrap's
     // setrlimit-phase failure class), not a mid-run OOM. The repro is Linux-only
     // (macOS ignores `ulimit -v`); there the run proceeds.
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-'))
+    const dir = await makeTempDir('dsh-rlimit-')
     const wrapper = join(dir, 'python3-tight')
     await writeFile(wrapper, `#!/bin/sh\nulimit -v 131072\nexec "${PYABS}" "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, maxLogBytes: 32 * 1024 * 1024, addressSpaceMb: 512 })
@@ -772,7 +860,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // requested soft (`cpuSeconds`) sits above the inherited soft — the case that
     // exposed the bug. RLIMIT_CPU is used because macOS ignores `ulimit -v`
     // (RLIMIT_AS), which is exactly why the backend skips address space there.
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-soft-'))
+    const dir = await makeTempDir('dsh-rlimit-soft-')
     const wrapper = join(dir, 'python3-soft-capped')
     // Soft CPU 5 s, well below the configured 30 s, hard left unlimited.
     await writeFile(wrapper, `#!/bin/sh\nulimit -S -t 5\nexec "${PYABS}" "$@"\n`, { mode: 0o755 })
@@ -797,7 +885,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // timeout. This uses `ulimit -t 2` (hard == 2, so the soft is lowered to 1)
     // and leaves SIGXCPU unhandled, so the kernel terminates the busy loop at
     // 1 s with SIGXCPU and the host classifies it as a timeout.
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-rlimit-dual-'))
+    const dir = await makeTempDir('dsh-rlimit-dual-')
     const wrapper = join(dir, 'python3-dual-capped')
     // Both soft and hard CPU 2 s; configured cpuSeconds 30 s.
     await writeFile(wrapper, `#!/bin/sh\nulimit -t 2\nexec "${PYABS}" "$@"\n`, { mode: 0o755 })
@@ -848,6 +936,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // before model code runs, so a busy loop still ends as a timeout rather
     // than running to the hard limit and being misclassified as worker-exit.
     const wrapper = join(tmpdir(), `dsh-xcpu-ignore-${process.pid}.sh`)
+    tempFiles.push(wrapper)
     writeFileSync(wrapper, `#!/bin/sh\ntrap "" XCPU\nexec "${PYABS}" "$@"\n`, { mode: 0o755 })
     try {
       const { runtime } = await setup({ maxWallMs: 30_000, cpuSeconds: 1, pythonBin: wrapper })
@@ -900,7 +989,7 @@ describe('PythonCodeRuntime — inherited resource limits', () => {
     // the inherited limit. The wrapper sets a 1 s soft CPU limit; the program
     // traps SIGXCPU and busy-loops past it, then returns — the recheck must
     // re-deliver SIGXCPU so the host classifies the run as a timeout.
-    const dir = await mkdtemp(join(tmpdir(), 'dsh-cpu-recheck-'))
+    const dir = await makeTempDir('dsh-cpu-recheck-')
     const wrapper = join(dir, 'python3-cpu-capped')
     await writeFile(wrapper, `#!/bin/sh\nulimit -S -t 1\nexec "${PYABS}" "$@"\n`, { mode: 0o755 })
     const { runtime } = await setup({ pythonBin: wrapper, cpuSeconds: 30, maxWallMs: 12_000 })
@@ -3587,7 +3676,7 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     // means whether the killed descendant is reaped or lingers as a zombie (a
     // SIGKILL'd process runs no more code either way). It sleeps 30 s as a safety
     // net so a broken fix cannot leak it forever.
-    const handoff = await mkdtemp(join(tmpdir(), 'dsh-samegroup-'))
+    const handoff = await makeTempDir('dsh-samegroup-')
     const readyMarker = join(handoff, 'ready')
     const heartbeat = join(handoff, 'heartbeat')
     const { runtime } = await setup({ maxWallMs: 10_000, graceMs: 300 })
@@ -3652,7 +3741,7 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     // is called; the heartbeat must be stale BY THE TIME dispose() resolves —
     // proving teardown waited for the reap, not merely that the reap eventually
     // happened.
-    const handoff = await mkdtemp(join(tmpdir(), 'dsh-dispose-quiesce-'))
+    const handoff = await makeTempDir('dsh-dispose-quiesce-')
     const readyMarker = join(handoff, 'ready')
     const heartbeat = join(handoff, 'heartbeat')
     const { runtime, fiber } = await setup({ maxWallMs: 10_000, graceMs: 300 })
@@ -3705,7 +3794,7 @@ describe('PythonCodeRuntime — budgets, termination, disposal', () => {
     // rather than cancel the unfired escalation — otherwise a SIGTERM-ignoring
     // same-group survivor is released for good. A synchronous busy-loop after
     // run() resolves reproduces the block deterministically.
-    const handoff = await mkdtemp(join(tmpdir(), 'dsh-deadline-'))
+    const handoff = await makeTempDir('dsh-deadline-')
     const readyMarker = join(handoff, 'ready')
     const heartbeat = join(handoff, 'heartbeat')
     const graceMs = 300
@@ -5309,52 +5398,203 @@ describe('PythonCodeRuntime — hostile peer', () => {
     expect(result.error?.message).toContain('call backlog exceeded')
   }, 30_000)
 
-  it('compacts the reply queue mid-drain without dropping pending frames', async () => {
-    // A reply larger than the writable high-water mark makes the FIRST write
-    // return false, suspending the drain loop while the child's synchronous
-    // flood starves the reply pump; the frames queued behind it push the
-    // drain's consumed head past MAX_PENDING_REPLIES, so the resumed drain
-    // compacts the queue mid-run. The child reads fd 3 itself (blocking the
-    // asyncio pump, so its reads cannot race the host's pushes) and sends a
-    // second wave of calls AFTER reading part of the first wave's replies —
-    // those replies are still pending when the drain's head crosses the
-    // compaction bound, so a compaction that dropped pending frames would
-    // leave the child's reply count short and the read loop spinning to the
-    // wall clock. The second wave is sent mid-delivery (not with the first
-    // flood): pushing it earlier would trip the 1024-pending reply cap
-    // before the drain resumed.
+  it('runs a legitimate gather of more than 1024 concurrent binding calls', async () => {
+    // The in-flight call cap must not count a synchronous batch of instant
+    // calls: the async bodies' finallys run on the microtask queue, which
+    // drains only between 'data' events, so a per-frame check would trip on
+    // the 1025th frame of a single event even though every binding settled
+    // immediately — killing a valid large concurrent gather as worker-exit.
+    // The cap is checked at event boundaries (after the microtask queue
+    // drained), so this gather of 1025 instant calls completes.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import asyncio',
+        'return len(await asyncio.gather(*[tools.echo(i) for i in range(1025)]))',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { echo: async (args: unknown) => args as CodeJsonValue } }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(1025)
+  }, 30_000)
+
+  it('completes normally when a program returns with binding calls still outstanding', async () => {
+    // The in-flight call cap refuses to admit NEW calls past the bound; it must
+    // not reclassify a `done` frame as worker-exit just because the program
+    // returned with calls it started but never awaited. The child schedules
+    // exactly 1024 slow bindings (still pending when the program returns), so
+    // the done frame arrives with the outstanding count AT the cap — the event
+    // must complete with its value, not settle as `call backlog exceeded`.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import asyncio',
+        'for i in range(1024):',
+        '    asyncio.create_task(tools.slow(i))',
+        'await asyncio.sleep(0.2)',
+        'return "done"',
+      ].join('\n'),
+      bindings: [{
+        global: 'tools',
+        functions: { slow: async () => { await new Promise((resolve) => { setTimeout(resolve, 5_000) }); return 1 } },
+      }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe('done')
+  }, 30_000)
+
+  it('settles a single-batch never-settling flood as worker-exit without further frames', async () => {
+    // The outstanding-call cap must take effect even when the whole flood fits
+    // in ONE data event: a per-event admission snapshot never re-checks once no
+    // further frames arrive, so a single 62 KiB write of 1025 compact calls
+    // against a never-settling binding would otherwise wait out the full wall
+    // clock instead of tripping the cap. The post-macrotask check runs after
+    // the batch's finallys (which never run for this binding) and settles the
+    // run as worker-exit long before maxWallMs.
     const { runtime } = await setup({ maxWallMs: 30_000 })
     const result = await runtime.run({
       program: [
         'import os, time',
+        'frame = b\'{"type":"call","id":%d,"global":"tools","name":"hang","args":{}}\\n\'',
+        'payload = b"".join(frame % i for i in range(1025))',
+        'view = memoryview(payload)',
+        'while view:',
+        '    view = view[os.write(3, view):]',
+        'time.sleep(30)',
+        'return "unreachable"',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { hang: async () => await new Promise<never>(() => {}) } }],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('call backlog exceeded')
+  }, 30_000)
+
+  it('runs a burst of 1300 instant calls whose frames split across pipe reads', async () => {
+    // Flowing mode can fire several 'data' events within one macrotask, before
+    // any microtask drains, so a per-event snapshot of the outstanding count
+    // could see the first chunk's in-flight calls in the second chunk's check
+    // and false-positive on a legitimate burst. The post-macrotask check always
+    // sees the true count (all finallys have run), so this burst of compact
+    // frames — sized so the pipe read splits it — completes with all results.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import asyncio',
+        'return len(await asyncio.gather(*[t.e(i) for i in range(1300)]))',
+      ].join('\n'),
+      bindings: [{ global: 't', functions: { e: async (args: unknown) => args as CodeJsonValue } }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toBe(1300)
+  }, 30_000)
+
+  it('settles as worker-exit when a done frame lands in the same batch as a call flood', async () => {
+    // A done frame processed in the SAME data event as more than 1024 call
+    // frames settles the run before the post-macrotask check runs (which no-ops
+    // once settled), so a child could finish "successfully" while leaving the
+    // outstanding closures behind — one sub-64 KiB write carries 1025 compact
+    // calls plus a done. The done handler re-checks the count before accepting
+    // the frame, so the run settles as worker-exit with the call-backlog
+    // message instead.
+    const { runtime } = await setup({ maxWallMs: 30_000 })
+    const result = await runtime.run({
+      program: [
+        'import os, time',
+        'frame = b\'{"type":"call","id":%d,"global":"tools","name":"hang","args":{}}\\n\'',
+        'payload = b"".join(frame % i for i in range(1025)) + b\'{"type":"done","value":1}\\n\'',
+        'view = memoryview(payload)',
+        'while view:',
+        '    view = view[os.write(3, view):]',
+        'time.sleep(30)',
+        'return "unreachable"',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { hang: async () => await new Promise<never>(() => {}) } }],
+    })
+    expect(result.error?.kind).toBe('worker-exit')
+    expect(result.error?.message).toContain('call backlog exceeded')
+  }, 30_000)
+
+  it('rejects a completion whose dict keys fold to one JSON member', async () => {
+    // `_dump_string` folds a spelled-out surrogate pair into its astral code
+    // point, so `"\ud83d\ude00"` and `"\U0001f600"` are DIFFERENT Python keys
+    // that encode to the SAME JSON member — the host's JSON.parse would
+    // silently drop one of them, violating the lossless-JSON completion
+    // contract. The child's meter rejects the collision before encoding.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: 'return {"\\ud83d\\ude00": 1, "\\U0001f600": 2}',
+      bindings: [],
+    })
+    expect(result.error?.kind).toBe('invalid-output')
+    expect(result.error?.message).toContain('duplicate dict key')
+  }, 30_000)
+
+  it('rejects binding arguments whose dict keys fold to one JSON member', async () => {
+    // The same collision on the binding-argument path: the call is rejected as
+    // not lossless JSON, so the program's `await` raises and the program
+    // surfaces the rejection message.
+    const { runtime } = await setup()
+    const result = await runtime.run({
+      program: [
+        'try:',
+        '    await tools.echo({"\\ud83d\\ude00": 1, "\\U0001f600": 2})',
+        '    return "no-error"',
+        'except Exception as e:',
+        '    return str(e)',
+      ].join('\n'),
+      bindings: [{ global: 'tools', functions: { echo: async (args: unknown) => args as CodeJsonValue } }],
+    })
+    expect(result.error).toBeUndefined()
+    expect(result.value).toContain('duplicate dict key')
+  }, 30_000)
+
+  it('compacts the reply queue mid-drain without dropping pending frames', async () => {
+    // A reply larger than the writable high-water mark makes the FIRST write
+    // return false, suspending the drain loop; the frames queued behind it
+    // push the drain's consumed head past MAX_PENDING_REPLIES, so the resumed
+    // drain compacts the queue mid-run. The child reads fd 3 itself (blocking
+    // the asyncio pump, so its reads cannot race the host's pushes) and sends
+    // a second wave of calls AFTER reading part of the first wave's replies —
+    // those replies are still pending when the drain's head crosses the
+    // compaction bound, so a compaction that dropped pending frames would
+    // leave the child's reply count short and the read loop spinning to the
+    // wall clock. No fixed sleep: the child's reads pace at the drain's
+    // delivery rate (each write blocks until the child reads), and the host
+    // finishes pushing all of a wave within milliseconds — orders of magnitude
+    // before the head crosses the bound — so the queue is always full at the
+    // splice. Newlines are counted per chunk (each reply carries exactly one),
+    // never by re-scanning the accumulated total, which would be O(n²).
+    const { runtime } = await setup({ maxWallMs: 60_000 })
+    const result = await runtime.run({
+      program: [
+        'import os',
         'frame = b\'{"type":"call","id":%d,"global":"tools","name":"big","args":{}}\\n\'',
         'for i in range(1024):',
         '    view = memoryview(frame % i)',
         '    while view:',
         '        view = view[os.write(3, view):]',
-        'time.sleep(0.5)',
-        'total = b""',
-        'while total.count(b"\\n") < 500:',
+        'seen = 0',
+        'while seen < 500:',
         '    chunk = os.read(3, 65536)',
         '    if not chunk:',
         '        break',
-        '    total += chunk',
+        '    seen += chunk.count(b"\\n")',
         'for i in range(500):',
         '    view = memoryview(frame % (1024 + i))',
         '    while view:',
         '        view = view[os.write(3, view):]',
-        'while total.count(b"\\n") < 1524:',
+        'while seen < 1524:',
         '    chunk = os.read(3, 65536)',
         '    if not chunk:',
         '        break',
-        '    total += chunk',
+        '    seen += chunk.count(b"\\n")',
         'return "done"',
       ].join('\n'),
       bindings: [{ global: 'tools', functions: { big: async () => 'x'.repeat(65 * 1024) } }],
     })
     expect(result.error).toBeUndefined()
     expect(result.value).toBe('done')
-  }, 30_000)
+  }, 60_000)
 
   it('bounds a flood of zero-byte log lines through the per-entry separator charge', async () => {
     // Blank print() lines carry zero content bytes; without the +1 separator

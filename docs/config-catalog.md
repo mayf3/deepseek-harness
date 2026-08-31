@@ -573,7 +573,9 @@ export interface Config {
    * under RLIMIT_AS with several copies live at once, so this cap times the
    * worst-case Unicode expansion must fit the address space left after the
    * interpreter baseline (see `addressSpaceMb`) — a load-time rejection, not a
-   * runtime clamp.
+   * runtime clamp. Also bounded at load by the host's configured heap like
+   * `maxValueBytes` (see its JSDoc): the effective frame cap minus the frame
+   * envelope.
    */
   maxLogBytes?: number
   /**
@@ -581,7 +583,12 @@ export interface Config {
    * the same way `maxLogBytes` is: the child builds and encodes a near-budget
    * value under RLIMIT_AS with several copies live at once, so this cap times the
    * worst-case Unicode expansion must fit the address space left after the
-   * interpreter baseline.
+   * interpreter baseline. Both budgets are ALSO bounded at load by the host's
+   * configured heap: the effective frame cap (the protocol cap, or a lower
+   * heap-derived ceiling when the host heap cannot safely parse a near-cap
+   * frame — see `hostFrameParseCeiling`) minus the frame envelope, so a budget
+   * whose honest frame could OOM the host's own JSON.parse is rejected up
+   * front.
    */
   maxValueBytes?: number
   /** SIGTERM→SIGKILL grace period on kill, matching bash-local's default. */
@@ -595,7 +602,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/experimental/code-runtime-python/src/index.ts:43`](../packages/experimental/code-runtime-python/src/index.ts)
+Source: [`packages/experimental/code-runtime-python/src/index.ts:42`](../packages/experimental/code-runtime-python/src/index.ts)
 
 <a id="deepseek-aidsh-experimental-inspector"></a>
 

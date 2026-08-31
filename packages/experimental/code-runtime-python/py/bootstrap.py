@@ -1883,7 +1883,7 @@ def _check_done_value(value: Any, max_bytes: int):
     # forgery before any iteration begins.
     exhausted = object()
     visit, list_cursor, dict_cursor = 0, 1, 2
-    stack: list[tuple[int, Any, Any]] = [(visit, value, None)]
+    stack: list[tuple[int, Any, Any, Any]] = [(visit, value, None, None)]
     while stack:
         frame = stack.pop()
         kind = frame[0]
@@ -1896,10 +1896,10 @@ def _check_done_value(value: Any, max_bytes: int):
             # Resume this cursor after the child is fully walked; the child goes
             # on top so it is visited next (order does not affect the byte total).
             stack.append(frame)
-            stack.append((visit, child, None))
+            stack.append((visit, child, None, None))
             continue
         if kind == dict_cursor:
-            container, iterator = frame[1], frame[2]
+            container, iterator, seen = frame[1], frame[2], frame[3]
             entry = next(iterator, exhausted)
             if entry is exhausted:
                 on_path.discard(id(container))
@@ -1910,6 +1910,16 @@ def _check_done_value(value: Any, max_bytes: int):
             # the encoder emits its real characters.
             if type(key) is not str:
                 return invalid(f"non-string dict key ({type(key).__name__})")
+            # The key's JSON form folds a spelled-out surrogate pair into its
+            # astral code point (`_dump_string`), so two DIFFERENT Python keys —
+            # the two code units and the single character — encode to the same
+            # JSON member, and the host's JSON.parse silently drops one of them.
+            # That is a lossless-JSON violation, so the collision is rejected
+            # here, before any encoding.
+            combined_key = _SURROGATE_PAIR.sub(_combine_surrogate_pair, key)
+            if combined_key in seen:
+                return invalid("duplicate dict key after surrogate-pair combining")
+            seen.add(combined_key)
             # The same string lower bound, before escaping the key.
             if total + len(key) + 3 > max_bytes:
                 return over_budget
@@ -1919,7 +1929,7 @@ def _check_done_value(value: Any, max_bytes: int):
             if total > max_bytes:
                 return over_budget
             stack.append(frame)
-            stack.append((visit, item, None))
+            stack.append((visit, item, None, None))
             continue
         current = frame[1]
         if current is None or type(current) is bool:
@@ -1969,7 +1979,7 @@ def _check_done_value(value: Any, max_bytes: int):
             if total + count > max_bytes:
                 return over_budget
             on_path.add(id(current))
-            stack.append((list_cursor, current, iter(current)))
+            stack.append((list_cursor, current, iter(current), None))
         elif type(current) is dict:
             if id(current) in on_path:
                 return invalid("circular reference")
@@ -1984,7 +1994,10 @@ def _check_done_value(value: Any, max_bytes: int):
             if total + count * 4 > max_bytes:
                 return over_budget
             on_path.add(id(current))
-            stack.append((dict_cursor, current, iter(current.items())))
+            # The seen-set holds one combined key per member — O(keys), the same
+            # order as the dict itself — so the surrogate-collision check below
+            # can detect two keys that fold to one JSON member.
+            stack.append((dict_cursor, current, iter(current.items()), set()))
         else:
             # tuple, set, or any other type: not round-trippable JSON.
             return invalid(f"unsupported type ({type(current).__name__})")
@@ -2034,12 +2047,13 @@ def _lossless_json_violation(value: Any) -> str | None:
     # iterator; children are pulled one at a time.
     exhausted = object()
     visit, container_cursor = 0, 1
-    # A visit frame is (visit, value); a cursor frame is (cursor, container, iterator).
-    stack: list[tuple[int, Any, Any]] = [(visit, value, None)]
+    # A visit frame is (visit, value, None, None); a cursor frame is
+    # (cursor, container, iterator, seen-keys-for-dicts).
+    stack: list[tuple[int, Any, Any, Any]] = [(visit, value, None, None)]
     while stack:
         kind = stack[-1][0]
         if kind == container_cursor:
-            _, container, iterator = stack[-1]
+            _, container, iterator, seen = stack[-1]
             child = next(iterator, exhausted)
             if child is exhausted:
                 # Leaving the container: it is no longer on the current path, so
@@ -2055,9 +2069,19 @@ def _lossless_json_violation(value: Any) -> str | None:
                 key, child = child
                 if type(key) is not str:
                     return f"non-string dict key ({type(key).__name__})"
-            stack.append((visit, child, None))
+                # The key's JSON form folds a spelled-out surrogate pair into its
+                # astral code point (`_dump_string`), so two DIFFERENT Python
+                # keys -- the two code units and the single character -- encode
+                # to the same JSON member, and the host's JSON.parse silently
+                # drops one of them. A lossless-JSON violation, rejected here
+                # before any encoding.
+                combined_key = _SURROGATE_PAIR.sub(_combine_surrogate_pair, key)
+                if combined_key in seen:
+                    return "duplicate dict key after surrogate-pair combining"
+                seen.add(combined_key)
+            stack.append((visit, child, None, None))
             continue
-        _, current, _unused = stack.pop()
+        _, current, _unused, _unused2 = stack.pop()
         if current is None or type(current) is bool:
             continue
         if type(current) is str:
@@ -2095,10 +2119,12 @@ def _lossless_json_violation(value: Any) -> str | None:
                 # Keys are checked as the cursor pulls each entry, not in a
                 # separate pass: ``current.values()`` would need a second walk,
                 # and materializing ``items()`` up front allocates one tuple per
-                # member -- the very spike the cursor removes.
-                stack.append((container_cursor, current, iter(current.items())))
+                # member -- the very spike the cursor removes. The seen-set holds
+                # one combined key per member -- O(keys), the same order as the
+                # dict itself -- for the surrogate-collision check.
+                stack.append((container_cursor, current, iter(current.items()), set()))
             else:
-                stack.append((container_cursor, current, iter(current)))
+                stack.append((container_cursor, current, iter(current), None))
             continue
         return f"unsupported type ({type(current).__name__})"
     return None
