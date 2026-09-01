@@ -103,7 +103,7 @@
   max-height: min(560px, calc(100vh - 140px));
   padding: 4px;
   overflow: auto;
-  border-radius: 16px;
+  border-radius: 20px;
   background: var(--dsw-specific-menu);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);

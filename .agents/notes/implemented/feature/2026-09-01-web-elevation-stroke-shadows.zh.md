@@ -12,11 +12,11 @@ Web 客户端的高层级表面——菜单、浮层、对话框、面板、悬�
 
 `gradient-shadow-text.css`（ui-theme 的阴影归属地）在 `--dsw-shadow-lv*` 阶旁定义 elevation token：
 
-- `--dsw-elevation-stroke-color`——发丝描边颜色，默认 `--dsw-alias-border-l4`（浅色黑 16%、深色白 20%）；组件可按表面或状态重绑：所有菜单面（`--dsw-specific-menu` 背景）与输入框重绑最浅的 `--dsw-alias-border-l1`，两者都比面板与按钮安静。默认色只声明在 `body` 上，而下述派生 token 在 `body, body *` 上逐元素重声明：自定义属性的计算值已替换完 `var()`，派生 token 若只在 body 声明会把 body 的颜色固化进去，让所有重绑失效（与 scrollbar.css 对 `--dsh-scrollbar-thumb` 声明的逐元素重替换是同一契约）。
+- `--dsw-elevation-stroke-color`——发丝描边颜色，默认 `--dsw-alias-border-l4`（浅色黑 16%、深色白 20%）；组件可按表面或状态重绑：所有菜单面（`--dsw-specific-menu` 背景）重绑最浅的 `--dsw-alias-border-l1`、输入框重绑 `--dsw-alias-border-l2`，两者都比面板与按钮安静。默认色只声明在 `body` 上，而下述派生 token 在 `body, body *` 上逐元素重声明：自定义属性的计算值已替换完 `var()`，派生 token 若只在 body 声明会把 body 的颜色固化进去，让所有重绑失效（与 scrollbar.css 对 `--dsh-scrollbar-thumb` 声明的逐元素重替换是同一契约）。
 - `--dsw-elevation-stroke: 0 0 0 0.5px var(--dsw-elevation-stroke-color)`——单独的描边，供只要轮廓的行内卡片独立使用（插件清单卡片）。
 - `--dsw-elevation-panel` / `--dsw-elevation-prominent`——描边加两层极淡柔光（3px 方向光 + 16/20px 辉光，黑 2–5%），panel 用于小型悬浮部件与卡片，prominent 用于浮层，soft——更大模糊、更低透明度——用于输入框。
 
-被转换的表面设 `border: 0` 加一个 elevation 投影：所有 `--dsw-shadow-lv3` 浮层（Menu、Modal、弹出选择、模型选择、用量/上下文浮层、反馈操作条、日程/任务浮层、子代理谱系、设置面板、cordis 面板、实验性 team 面板）取 prominent；lv2 表面（回到底部按钮、回合预览卡、附件栏箭头、问题 composer、轨迹 tooltip）取 panel。输入框卡片取 soft 档并重绑 l1 描边，其 workspace-trigger 态把描边色设为 `transparent`，替代原先的 `border-color: transparent`。深色主题无需投影覆盖：柔光在深色下几乎不可见，分离由描边承担，与 Codex 相同。
+被转换的表面设 `border: 0` 加一个 elevation 投影：所有 `--dsw-shadow-lv3` 浮层（Menu、Modal、弹出选择、模型选择、用量/上下文浮层、反馈操作条、日程/任务浮层、子代理谱系、设置面板、cordis 面板、实验性 team 面板）取 prominent；lv2 表面（回到底部按钮、回合预览卡、附件栏箭头、问题 composer、轨迹 tooltip）取 panel。输入框卡片取 soft 档并重绑 l2 描边，其 workspace-trigger 态把描边色设为 `transparent`，替代原先的 `border-color: transparent`。深色主题无需投影覆盖：柔光在深色下几乎不可见，分离由描边承担，与 Codex 相同。
 
 `packages/client/ui-theme/tests/elevation-styles.client.spec.ts` 钉住 token 组成并扫描 `packages/` 下全部样式表：lv/elevation `box-shadow` 与 `--dsw-alias-border-*` border 配对的规则即失败；中性 `--dsw-alias-border-*` token 上的每个 `solid` border 必须为 `0.5px` 宽。有意保留：Toast 与 HoverCard（反色填充，跟随主题的描边色在其上无意义）、ImageLightbox（裸图片）、warn 描边的审批/计划面板——状态色 border 保持真 border，扫描放行。
 

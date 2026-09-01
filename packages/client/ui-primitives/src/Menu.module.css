@@ -14,7 +14,7 @@
   flex-direction: column;
   gap: 0;
   border: 0;
-  border-radius: 16px;
+  border-radius: 20px;
   background: var(--dsw-specific-menu);
   --dsw-elevation-stroke-color: var(--dsw-alias-border-l1);
   box-shadow: var(--dsw-elevation-prominent);
