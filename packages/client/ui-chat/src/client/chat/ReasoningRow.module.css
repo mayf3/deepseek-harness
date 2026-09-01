@@ -3,6 +3,11 @@
   flex-direction: column;
 }
 
+.root:not([data-expanded]) {
+  contain: size layout;
+  height: calc(24px + var(--dsh-content-font-delta, 0px));
+}
+
 .row {
   position: relative;
   overflow: hidden;

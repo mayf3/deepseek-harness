@@ -28,7 +28,12 @@ export function ReasoningRow({ text, running, t }: { text: string; running: bool
   const summary = running ? latestLine(text) : firstLine(text)
 
   return (
-    <div className={css.root} data-variant="think" data-state={running ? 'running' : 'ok'}>
+    <div
+      className={css.root}
+      data-variant="think"
+      data-state={running ? 'running' : 'ok'}
+      data-expanded={expanded || undefined}
+    >
       {running && <span className={a11yCss.visuallyHidden}>{t('row.running')}</span>}
       <DisclosureRow
         rowClassName={css.row}
