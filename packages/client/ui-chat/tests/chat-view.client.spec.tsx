@@ -19,8 +19,9 @@ import type {
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
+import type { KeyedSnapshotSelectorHook, SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { EMPTY_CONVERSATION_SNAPSHOT } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { createChatStore } from '../src/client/stores.ts'
@@ -204,6 +205,21 @@ function emptyWorkspaces() {
   return bindSnapshotSelector(store)
 }
 
+function bindKeyedSnapshotSelector<Value>(
+  resolve: (key: string) => ObservableSnapshot<Value>,
+): KeyedSnapshotSelectorHook<Value> {
+  const hooks = new WeakMap<object, SnapshotSelectorHook<Value>>()
+  return ((key: string, selector?: (value: Value) => unknown, equal?: (left: unknown, right: unknown) => boolean) => {
+    const source = resolve(key)
+    let useValue = hooks.get(source)
+    if (useValue === undefined) {
+      useValue = bindSnapshotSelector(source)
+      hooks.set(source, useValue)
+    }
+    return useValue(selector ?? ((value: Value) => value), equal)
+  }) as KeyedSnapshotSelectorHook<Value>
+}
+
 function makeHarness(
   init: HarnessUpdate = {},
   sessionOverrides: Partial<SessionSnapshot> = {},
@@ -223,6 +239,12 @@ function makeHarness(
   }
   const session = makeSessionSource({ ...sessionInit, ...sessionOverrides })
   const chatSource = makeChatSource(chatSlice, initialChat ?? chatSnapshot)
+  const useChatNode = bindKeyedSnapshotSelector(
+    key => chatSource.source.getSnapshot().nodes.source(key),
+  )
+  const useChatNodeProcess = bindKeyedSnapshotSelector(
+    key => chatSource.source.getSnapshot().nodes.processSource(key),
+  )
   const openDetails = vi.fn<(t: SelectionTarget) => void>()
   const openFile = vi.fn<(path: string) => Promise<void>>().mockResolvedValue(undefined)
   const loadOlder = vi.fn()
@@ -344,6 +366,8 @@ function makeHarness(
     sessionId: SID,
     useSession: bindSnapshotSelector(session.source),
     useChat: bindSnapshotSelector(chatSource.source),
+    useChatNode,
+    useChatNodeProcess,
     useConversation: bindSnapshotSelector(createSnapshotStore(EMPTY_CONVERSATION_SNAPSHOT)),
     useTrajectory: (() => { throw new Error('unused') }),
     useSessions: emptySessions(),
@@ -421,7 +445,11 @@ function turnProcessControl(container: HTMLElement): HTMLButtonElement | null {
   return container.querySelector<HTMLButtonElement>('[data-turn-process]')
 }
 
-function withSystemPrompt(snapshot: ChatSnapshot, text = '# System'): ChatSnapshot {
+function withSystemPrompt(
+  snapshot: ChatSnapshot,
+  builder = new ChatSnapshotBuilder(),
+  text = '# System',
+): ChatSnapshot {
   const turn = snapshot.timeline.turns.get(1)
   if (turn === undefined) throw new Error('fixture lacks Turn 1')
   const prompt: ChatNode<'system-prompt'> = {
@@ -434,7 +462,7 @@ function withSystemPrompt(snapshot: ChatSnapshot, text = '# System'): ChatSnapsh
     visibility: 'visible',
     data: { text },
   }
-  return new ChatSnapshotBuilder().replace({
+  return builder.replace({
     nodes: [prompt, ...snapshot.nodes.values()],
     timeline: snapshot.timeline,
   })
@@ -1315,25 +1343,10 @@ describe('ChatView', () => {
   })
 
   it('keeps the first System prompt above User and outside Process through completion and expansion', () => {
+    const builder = new ChatSnapshotBuilder()
     const initial = withSystemPrompt(chatSnapshotFixture({
       nodes: [userInTurn(2, 'question', 1), context(3, 'runtime policy', 1)],
-    }))
-    const running = withSystemPrompt(chatSnapshotFixture({
-      nodes: [
-        userInTurn(2, 'question', 1),
-        context(3, 'runtime policy', 1),
-        reasoningAssistant(4, 'inspect', 1, 1),
-      ],
-    }))
-    const completed = withSystemPrompt(chatSnapshotFixture({
-      nodes: [
-        userInTurn(2, 'question', 1),
-        context(3, 'runtime policy', 1),
-        reasoningAssistant(4, 'inspect', 1, 1),
-        assistant(6, 'final answer', 1, 2),
-      ],
-      turnEnds: new Map([[1, 7]]),
-    }))
+    }), builder)
     const h = makeHarness({ chat: initial }, { running: true })
     const view = render(<h.ChatView {...h.props} />)
     const promptRow = view.container.querySelector<HTMLElement>('[data-chat-flow-kind="system-prompt"]')!
@@ -1342,14 +1355,38 @@ describe('ChatView', () => {
     expect(promptRow.getAttribute('hidden')).toBeNull()
     expect(promptRow.hasAttribute('data-turn-process-member')).toBe(false)
 
-    act(() => { h.set({ chat: running, running: true }) })
+    act(() => {
+      h.set({
+        chat: withSystemPrompt(chatSnapshotFixture({
+          nodes: [
+            userInTurn(2, 'question', 1),
+            context(3, 'runtime policy', 1),
+            reasoningAssistant(4, 'inspect', 1, 1),
+          ],
+        }), builder),
+        running: true,
+      })
+    })
     expect(renderedFlowKinds(view.container)).toEqual([
       'system-prompt', 'user', 'turn-process', 'context', 'assistant-step',
     ])
     expect(view.container.querySelector('[data-chat-flow-kind="system-prompt"]')).toBe(promptRow)
     expect(promptRow.getAttribute('hidden')).toBeNull()
 
-    act(() => { h.set({ chat: completed, running: false }) })
+    act(() => {
+      h.set({
+        chat: withSystemPrompt(chatSnapshotFixture({
+          nodes: [
+            userInTurn(2, 'question', 1),
+            context(3, 'runtime policy', 1),
+            reasoningAssistant(4, 'inspect', 1, 1),
+            assistant(6, 'final answer', 1, 2),
+          ],
+          turnEnds: new Map([[1, 7]]),
+        }), builder),
+        running: false,
+      })
+    })
     const toggle = turnProcessControl(view.container)!
     const members = [...view.container.querySelectorAll<HTMLElement>('[data-turn-process-member]')]
     expect(renderedFlowKinds(view.container)).toEqual([

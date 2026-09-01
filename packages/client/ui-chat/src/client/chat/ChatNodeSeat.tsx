@@ -1,17 +1,17 @@
-import { memo, useCallback, useMemo, useSyncExternalStore } from 'react'
+import { memo, useCallback, useMemo } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConversationLocationDataStore, ConversationTurnDataMap } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
-import type { ChatNodeProcessSource, ChatNodeSource } from '../contract/snapshot.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
 import { storedTurnProcessEntry } from '../stores.ts'
 import { useSearchableHidden } from './searchable-hidden.ts'
 import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
-  readonly nodeSource: ChatNodeSource
-  readonly processSource: ChatNodeProcessSource
+  readonly nodeKey: string
+  readonly useChatNode: ChatViewSlotProps['useChatNode']
+  readonly useChatNodeProcess: ChatViewSlotProps['useChatNodeProcess']
   readonly historyIncomplete: boolean
   readonly compactTranscript: boolean
   readonly useStore: ChatViewSlotProps['useStore']
@@ -36,17 +36,14 @@ function turnOf(node: ChatNode | undefined): number | undefined {
 
 /** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeSource, processSource, historyIncomplete, compactTranscript,
+  nodeKey, useChatNode, useChatNodeProcess, historyIncomplete, compactTranscript,
   selectedCallId, cwd, openFile, inspectCall, forkAt,
   renderMessageImages, fileMentions, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
-  const node = useSyncExternalStore(nodeSource.subscribe, nodeSource.getSnapshot)
+  const node = useChatNode(nodeKey)
   const routedNode = node as ChatNode | undefined
   const turn = turnOf(routedNode)
-  const processPresentation = useSyncExternalStore(
-    processSource.subscribe,
-    processSource.getSnapshot,
-  )
+  const processPresentation = useChatNodeProcess(nodeKey)
   const processSpec = processPresentation?.spec
   const storedEntry = useStore(state => processSpec === undefined
     ? undefined

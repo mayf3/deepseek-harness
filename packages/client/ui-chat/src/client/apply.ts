@@ -104,10 +104,16 @@ export function apply(ctx: Context): void {
       },
       store: chatStore,
       inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ChatViewInjected => {
-        const session = ctx.sessions.binding(sessionId)?.session
-        if (session === undefined) throw new Error(`ui-chat: unknown session "${sessionId}"`)
+        const binding = ctx.sessions.binding(sessionId)
+        if (binding === undefined) throw new Error(`ui-chat: unknown session "${sessionId}"`)
+        const session = binding.session
+        const chat = chatSource(binding)
         return {
           hooks: { transcriptView: transcriptView.mode },
+          keyedHooks: {
+            chatNode: key => chat.getSnapshot().nodes.source(key),
+            chatNodeProcess: key => chat.getSnapshot().nodes.processSource(key),
+          },
           openDetails: (target) => {
             actions.select(target)
             ctx.layout.openDetails()
