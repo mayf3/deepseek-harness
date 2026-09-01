@@ -141,7 +141,9 @@ describe('installGlobalProxy', () => {
       await dispose()
       delete process.env.HTTP_PROXY
     }
-    expect(currentProxyPolicy()).toBeUndefined()
+    // With nothing installed the accessor still answers, so a caller never has to spell the direct
+    // case itself — that spelling is what let two reads disagree about one request.
+    expect(currentProxyPolicy()).toBe(DIRECT_POLICY)
   })
   it('keeps a scheme direct when the policy refused the proxy the user named for it', async () => {
     // What `HTTPS_PROXY=socks5://…` plus `HTTP_PROXY=http://p` resolves to: http proxied, https
@@ -278,30 +280,6 @@ describe('childProxyEnv', () => {
       expect(child.http_proxy).toBe(proxyUrl)
       expect(child.HTTPS_PROXY).toBe(proxyUrl)
       expect(child.https_proxy).toBe(proxyUrl)
-    } finally {
-      await dispose()
-      for (const [name, value] of Object.entries(saved)) {
-        if (value === undefined) Reflect.deleteProperty(process.env, name)
-        else process.env[name] = value
-      }
-    }
-  })
-
-  it('propagates a proxy that only a composition declared', async () => {
-    const saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
-    for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
-    const dispose = await installGlobalProxy({ ...proxyAll('example.com'), source: 'config' })
-    try {
-      // Nothing was exported, so every name carries the configured policy rather than being removed.
-      expect(childProxyEnv()).toEqual({
-        NODE_USE_ENV_PROXY: '1',
-        http_proxy: proxyUrl,
-        HTTP_PROXY: proxyUrl,
-        https_proxy: proxyUrl,
-        HTTPS_PROXY: proxyUrl,
-        no_proxy: 'example.com',
-        NO_PROXY: 'example.com',
-      })
     } finally {
       await dispose()
       for (const [name, value] of Object.entries(saved)) {

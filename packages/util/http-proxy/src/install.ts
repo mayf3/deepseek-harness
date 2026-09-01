@@ -30,11 +30,13 @@ let inheritedProxyEnv: Readonly<Record<string, string | undefined>> | undefined
 /**
  * The policy governing this process's outbound requests.
  *
- * @returns the installed policy, or `undefined` when {@link installGlobalProxy} has not run. A caller
- *   that only needs to route a URL can treat `undefined` as {@link DIRECT_POLICY}.
+ * A caller that branches on the answer must hold this value and pass it back to
+ * {@link createDispatcher}: reading it twice lets an install or disposal land between the two reads.
+ *
+ * @returns the installed policy, or the direct one when {@link installGlobalProxy} has not run.
  */
-export function currentProxyPolicy(): ProxyPolicy | undefined {
-  return active
+export function currentProxyPolicy(): ProxyPolicy {
+  return active ?? DIRECT_POLICY
 }
 
 /**

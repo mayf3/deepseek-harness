@@ -14,11 +14,15 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运�
 
 ## Decision
 
-**一份策略，从启动环境解析一次，装为全局 dispatcher。** `packages/net/http-proxy` 解析出 `ProxyPolicy`，并在 `runProfile` 中于环境快照提供之后、任何 entry 挂载之前完成安装。Node 的 `fetch` 解析的正是 undici 的全局 dispatcher，因此每一处普通 `fetch()` 以及每一个最终落到 `globalThis.fetch` 的 SDK 都无需改动即被覆盖——撰写时是九个调用点，未来新增的也自动覆盖。`loadLayeredEnv` 只有一个调用方，且 `apps/web` 不提供 bin，因此这一处即覆盖全部 profile，包括不叠加 `base` 的 `sdk-minimal`。
+**一份策略，从启动环境解析一次，装为全局 dispatcher。** `packages/util/http-proxy` 解析出 `ProxyPolicy`，并在 `runProfile` 中于环境快照提供之后、任何 entry 挂载之前完成安装。Node 的 `fetch` 解析的正是 undici 的全局 dispatcher，因此每一处普通 `fetch()` 以及每一个最终落到 `globalThis.fetch` 的 SDK 都无需改动即被覆盖——撰写时是九个调用点，未来新增的也自动覆盖。`loadLayeredEnv` 只有一个调用方，且 `apps/web` 不提供 bin，因此这一处即覆盖全部 profile，包括不叠加 `base` 的 `sdk-minimal`。
 
 解析读取的是启动器的快照而非 `process.env`，这正是让 `.env` 层中的代理生效的原因——也是环境变量方案不可能具备的能力。
 
-**新增 `packages/net/` 分组。** 本包必须依赖 `undici`（Node 不暴露 `node:undici`），因此无法加入零依赖的 `util/` 组；而 `boot`、`web`、`subprocess` 与 `workflow` 都消费它，放进其中任何一组都会让另外三条依赖反向。它刻意不是能力接缝：传输策略每个进程只有一种实现、一个答案，没有可替换的对象。
+**放在 `util/` 的库，而非插件。** 传输策略每个进程只有一个答案：没有可替换的实现，也没有比进程更窄的作用域可赋予。因此本包只导出函数、不挂载任何东西——`boot`、`web`、`subprocess` 与 `workflow` 都消费它，而 `util/` 正是其他所有组都可以依赖的那一组。
+
+早先的修订把它放进新建的 `net/` 包组，理由是依赖 `undici` 使它不符合“零依赖”组。那个理解是错的：[优先使用依赖而非手写](../process/2026-07-26-dependencies-over-hand-rolling.zh.md) 记录了该章程约束的是 *harness* 依赖——util 不依赖它们，任何组才都能依赖 util——并不禁止外部包。真正需要去掉的是对 `dsh-launch-environment` 的依赖：解析只用到它的一个方法，于是改为声明结构化的 `EnvLookup`，启动器原样传入自己的快照即可。
+
+那次修订一并引入的插件也随之删除。它让某个组合可以把策略写进 `cordis.yml`，但没有任何随附 bundle 挂载它，因此启动器那条路径是唯一可达的——而它的 `Config` 是那条配置分支唯一的供给方，别处无从到达。
 
 **已安装的 dispatcher 按策略路由，而不是重新解析一遍环境。** `installGlobalProxy` 构造一个 `Agent`，其按 origin 调用的 `factory` 会询问 `proxyForUrl` 该 origin 的去向，并据此返回 `ProxyAgent` 或 undici 自带的默认客户端。undici 的 `EnvHttpProxyAgent` 曾是首选，但对这套策略是错的：没有 `HTTPS_PROXY` 时它会把 HTTPS agent 设为 HTTP agent，于是本包在拒绝某个 SOCKS 或畸形 URL 后本应保持直连的 scheme 仍会被隧道转发，而诊断却声称直连。让路由走同一个谓词，从构造上而非靠测试消除了这一类分歧。把策略发布到环境中的做法保留下来，但如今只服务那些拿不到策略对象的读者：Node 的 `proxyEnv` 选项，以及每个派生的子进程。
 
@@ -72,7 +76,7 @@ userland undici 能触及 Node 内置的 `fetch`，依赖于两者都会写入 l
 
 ## Testing
 
-`packages/net/http-proxy` 有 64 个测试，per-file 覆盖率 100%。解析覆盖优先级、`ALL_PROXY` 兜底、空值遮蔽、SOCKS 与畸形值诊断，以及 `mode: 'off'`；绕过匹配覆盖后缀、端口、两种 IPv6 写法，以及刻意不匹配的 CIDR 条目。安装驱动一个真实的 loopback 代理，断言绝对形式的请求确实抵达、被绕过的目标不抵达，且 dispose 会还原 dispatcher、策略与环境。
+`packages/util/http-proxy` 有 89 个测试，per-file 覆盖率 100%。解析覆盖优先级、`ALL_PROXY` 兜底、空值遮蔽、SOCKS 与畸形值诊断，以及只设 https 变量时 `http:` 保持直连；路由以结构化方式覆盖整个 loopback 网段，绕过匹配覆盖后缀、端口、两种 IPv6 写法，以及刻意不匹配的 CIDR 条目。安装驱动一个真实的 loopback 代理，断言绝对形式的请求确实抵达、被绕过的目标不抵达，且 dispose 会还原 dispatcher、策略与环境。
 
 `packages/web/web-fetch-http/tests/proxy.spec.ts` 断言了最关键的那个决定：经由代理时公网地址解析器完全不被调用，而被绕过的一跳仍恰好调用一次，且跨域重定向拒绝在代理路径上依然成立。
 

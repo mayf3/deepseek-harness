@@ -10,7 +10,7 @@ import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import type { Response } from 'undici'
-import { currentProxyPolicy, proxyForUrl, DIRECT_POLICY } from '@deepseek-ai/dsh-http-proxy'
+import { currentProxyPolicy, proxyForUrl } from '@deepseek-ai/dsh-http-proxy'
 import { isNonPublicIpLiteral, publicHttpNetwork } from './network.ts'
 import type { PublicAddress } from './network.ts'
 import { classifyContentType, decoderForCharset, isSameOrigin, parseCharset, validateFetchUrl } from './policy.ts'
@@ -132,7 +132,7 @@ export class HttpFetchProvider implements WebFetchProvider {
       // An IP literal the address checks would refuse never takes it. The proxy would resolve
       // nothing — the address is already stated — so the shortcut would spend the checks for
       // nothing and let a proxy on this machine reach the very service they keep out of reach.
-      const policy = currentProxyPolicy() ?? DIRECT_POLICY
+      const policy = currentProxyPolicy()
       if (proxyForUrl(policy, url) !== undefined && !isNonPublicIpLiteral(url.hostname)) {
         return await publicHttpNetwork.requestProxied(url, headers, signal, policy)
       }

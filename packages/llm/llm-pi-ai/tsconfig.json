@@ -48,7 +48,7 @@
       "path": "../../util/timeout"
     },
     {
-      "path": "../../net/http-proxy"
+      "path": "../../util/http-proxy"
     }
   ]
 }

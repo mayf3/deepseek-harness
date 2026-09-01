@@ -8,7 +8,19 @@
  * @module @deepseek-ai/dsh-http-proxy/policy
  */
 
-import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+/**
+ * The one thing resolution needs from an environment: a name in, the winning value out. The
+ * launcher's snapshot satisfies this structurally and is passed unchanged, so this module names no
+ * package to describe its input — and a test builds one from an object literal.
+ */
+export interface EnvLookup {
+  /**
+   * Resolve one variable name.
+   * @param name - the variable name.
+   * @returns the winning entry, or `undefined` when nothing supplies it.
+   */
+  get(name: string): { readonly value: string } | undefined
+}
 
 /**
  * Loopback entries merged into every policy's `noProxy`. A proxy that also serves the harness's own
@@ -60,7 +72,7 @@ export interface ProxyPolicy {
   /** The bypass list, already merged with {@link LOOPBACK_NO_PROXY}. Empty when nothing is bypassed. */
   readonly noProxy: string
   /** Which layer supplied the winning proxy URL; `env` when either field came from the environment. */
-  readonly source: 'env' | 'config' | 'none'
+  readonly source: 'env' | 'none'
 }
 
 /** A policy that proxies nothing. Callers that have not installed a policy resolve URLs against this. */
@@ -76,27 +88,6 @@ export interface ProxyDiagnostic {
   readonly message: string
 }
 
-/**
- * Proxy settings a composition may declare in `cordis.yml`. Real environment variables win over every
- * field here except `mode`, which governs whether the environment is consulted at all.
- */
-export interface ProxyConfig {
-  /**
-   * `env` (default) resolves from the environment and lets the fields below fill the gaps; `custom`
-   * does the same but is the honest label for a composition that supplies its own proxy; `off`
-   * ignores every source and keeps the harness's own requests direct.
-   *
-   * `off` governs requests this process issues. It does not strip proxy variables from the
-   * environment child tools inherit, because those belong to the user, not to the harness.
-   */
-  mode?: 'env' | 'custom' | 'off'
-  /** Proxy for `http:` origins when the environment supplies none. */
-  httpProxy?: string
-  /** Proxy for `https:` origins when the environment supplies none. */
-  httpsProxy?: string
-  /** Bypass list when the environment supplies none. {@link LOOPBACK_NO_PROXY} is merged in regardless. */
-  noProxy?: string
-}
 
 /** A resolved policy plus every candidate value that was rejected on the way to it. */
 export interface ProxyResolution {
@@ -116,7 +107,7 @@ export interface ProxyResolution {
  * @returns the trimmed value and the name that supplied it, or `undefined` when neither is set.
  */
 function readEnv(
-  env: LaunchEnvironmentSnapshot,
+  env: EnvLookup,
   lower: string,
 ): { value: string; name: string } | undefined {
   for (const name of [lower, lower.toUpperCase()]) {
@@ -292,50 +283,29 @@ export function bypassesProxy(noProxy: string, url: URL): boolean {
 /**
  * Resolve the outbound proxy policy for this process.
  *
- * Precedence is environment first, configuration second: a value the user exported wins over one a
- * composition declares, and `ALL_PROXY` backs both schemes. HTTPS falls back to the HTTP proxy last,
- * matching undici, so this function and the installed dispatcher never disagree about one URL.
+ * A scheme's own variable wins, then `ALL_PROXY`, then — for HTTPS only — the HTTP proxy, matching
+ * undici so this function and the installed dispatcher never disagree about one URL.
  *
- * @param env - the launch environment snapshot, whose own layering already prefers real variables over `.env` files.
- * @param config - optional composition-declared settings.
+ * @param env - the launch environment, whose own layering already prefers real variables over `.env` files.
  * @returns the policy to install plus every rejected candidate.
  */
-export function resolveProxyPolicy(
-  env: LaunchEnvironmentSnapshot,
-  config: ProxyConfig = {},
-): ProxyResolution {
+export function resolveProxyPolicy(env: EnvLookup): ProxyResolution {
   const diagnostics: ProxyDiagnostic[] = []
-  if (config.mode === 'off') return { policy: DIRECT_POLICY, diagnostics }
-
   const all = acceptProxyUrl(readEnv(env, 'all_proxy'), diagnostics)
   const allValue = all.kind === 'accepted' ? all.value : undefined
-  const configHttp = acceptProxyUrl(
-    config.httpProxy === undefined ? undefined : { value: config.httpProxy, name: 'config.httpProxy' },
-    diagnostics,
-  )
-  const configHttps = acceptProxyUrl(
-    config.httpsProxy === undefined ? undefined : { value: config.httpsProxy, name: 'config.httpsProxy' },
-    diagnostics,
-  )
-  const configHttpValue = configHttp.kind === 'accepted' ? configHttp.value : undefined
-  const configHttpsValue = configHttps.kind === 'accepted' ? configHttps.value : undefined
-
   const envHttp = acceptProxyUrl(readEnv(env, 'http_proxy'), diagnostics)
   const envHttps = acceptProxyUrl(readEnv(env, 'https_proxy'), diagnostics)
-  const httpProxy = resolveScheme(envHttp, allValue, configHttpValue)
+  const httpProxy = resolveScheme(envHttp, allValue)
   // HTTPS falls back to the HTTP proxy last, matching undici — but never past a value the user named
   // for HTTPS and this package refused.
-  const httpsProxy = resolveScheme(envHttps, allValue, configHttpsValue, httpProxy)
+  const httpsProxy = resolveScheme(envHttps, allValue, httpProxy)
   if (httpProxy === undefined && httpsProxy === undefined) return { policy: DIRECT_POLICY, diagnostics }
-
-  const noProxy = withLoopback(readEnv(env, 'no_proxy')?.value ?? config.noProxy)
-  const fromEnv = envHttp.kind === 'accepted' || envHttps.kind === 'accepted' || all.kind === 'accepted'
   return {
     policy: {
       ...httpProxy === undefined ? {} : { httpProxy },
       ...httpsProxy === undefined ? {} : { httpsProxy },
-      noProxy,
-      source: fromEnv ? 'env' : 'config',
+      noProxy: withLoopback(readEnv(env, 'no_proxy')?.value),
+      source: 'env',
     },
     diagnostics,
   }
@@ -356,27 +326,4 @@ export function proxyForUrl(policy: ProxyPolicy, url: URL): string | undefined {
   if (proxy === undefined) return undefined
   if (isLoopbackHost(url.hostname)) return undefined
   return bypassesProxy(policy.noProxy, url) ? undefined : proxy
-}
-
-/**
- * Render a policy for an operator, with any proxy password replaced. The username survives because it
- * identifies the account without granting it, which is what makes the line useful in a bug report.
- *
- * @param policy - a policy whose URLs {@link resolveProxyPolicy} already validated.
- * @returns one line naming the effective proxies and bypass list.
- */
-export function describeProxyPolicy(policy: ProxyPolicy): string {
-  if (policy.source === 'none') return 'no proxy (direct)'
-  const redact = (value: string): string => {
-    const url = new URL(value)
-    if (url.password !== '') url.password = '***'
-    return url.toString()
-  }
-  const parts = [
-    `http=${policy.httpProxy === undefined ? 'direct' : redact(policy.httpProxy)}`,
-    `https=${policy.httpsProxy === undefined ? 'direct' : redact(policy.httpsProxy)}`,
-    `no_proxy=${policy.noProxy}`,
-    `from=${policy.source}`,
-  ]
-  return parts.join(' ')
 }

@@ -200,7 +200,7 @@ importers:
         version: link:../../packages/hooks/hooks-codex
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../packages/net/http-proxy
+        version: link:../../packages/util/http-proxy
       '@deepseek-ai/dsh-jobs-local':
         specifier: workspace:^
         version: link:../../packages/jobs/jobs-local
@@ -4667,7 +4667,7 @@ importers:
         version: link:../fs-e2b
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -6542,7 +6542,7 @@ importers:
         version: link:../../util/home-paths
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -6600,7 +6600,7 @@ importers:
         version: link:../../fs/fs
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -6891,7 +6891,7 @@ importers:
         version: link:../../attachment/attachment-local
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -6916,25 +6916,6 @@ importers:
       '@modelcontextprotocol/server-filesystem':
         specifier: ^2026.7.4
         version: 2026.7.10(zod@4.4.3)
-
-  packages/net/http-proxy:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-      undici:
-        specifier: ^8.10.0
-        version: 8.10.0
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-invariants':
-        specifier: workspace:^
-        version: link:../../runtime-diagnostics/invariants
-      '@deepseek-ai/dsh-launch-environment':
-        specifier: workspace:^
-        version: link:../../util/launch-environment
 
   packages/plan/plan-mode:
     dependencies:
@@ -7802,7 +7783,7 @@ importers:
         version: link:../../feedback/command-feedback
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -9379,7 +9360,7 @@ importers:
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -9704,7 +9685,7 @@ importers:
         version: link:../../boot/app-boot
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -9747,7 +9728,7 @@ importers:
         version: link:../../compaction/compaction
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -9942,6 +9923,19 @@ importers:
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
 
+  packages/util/http-proxy:
+    dependencies:
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
   packages/util/launch-environment:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -10096,7 +10090,7 @@ importers:
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -10127,7 +10121,7 @@ importers:
         version: link:../../credentials/credentials-local
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -10155,7 +10149,7 @@ importers:
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -10177,7 +10171,7 @@ importers:
         version: link:../../../vendor/cordis
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -10413,7 +10407,7 @@ importers:
         version: link:../../test-support/agent-loop-testkit
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../net/http-proxy
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -10603,7 +10597,7 @@ importers:
         version: link:../../packages/hooks/hooks-codex
       '@deepseek-ai/dsh-http-proxy':
         specifier: workspace:^
-        version: link:../../packages/net/http-proxy
+        version: link:../../packages/util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../packages/runtime-diagnostics/invariants

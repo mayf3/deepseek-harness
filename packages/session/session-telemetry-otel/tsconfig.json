@@ -36,7 +36,7 @@
       "path": "../../runtime-diagnostics/invariants"
     },
     {
-      "path": "../../net/http-proxy"
+      "path": "../../util/http-proxy"
     }
   ]
 }

@@ -57,7 +57,7 @@
       "path": "../../identity/anonymous-user-id"
     },
     {
-      "path": "../../net/http-proxy"
+      "path": "../../util/http-proxy"
     }
   ]
 }

@@ -23,7 +23,7 @@ import ts from 'typescript'
 const root = resolve(import.meta.dirname, '..')
 
 /** The package that owns dispatcher construction; its own agents are the implementation. */
-export const DISPATCHER_OWNER = 'packages/net/http-proxy/'
+export const DISPATCHER_OWNER = 'packages/util/http-proxy/'
 
 /**
  * A comment carrying this marker states why the construction or option is exempt. It counts on the

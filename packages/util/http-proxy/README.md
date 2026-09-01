@@ -25,7 +25,7 @@ Node's built-in `fetch` ignores `HTTP_PROXY` and `HTTPS_PROXY`, so a harness beh
 <a id="use-this-package"></a>
 ## Use this package
 
-Nothing to mount. The `dsh` launcher resolves and installs the policy for every profile before the first plugin loads, so a user who exports `HTTPS_PROXY` is proxied everywhere. Mount the plugin only when a composition wants the policy declared in `cordis.yml` instead of the environment.
+Nothing to mount, and nothing to configure. The `dsh` launcher resolves and installs the policy for every profile before the first plugin loads, so a user who exports `HTTPS_PROXY` is proxied everywhere. This is a library rather than a plugin because transport policy has one answer per process: there is no second implementation to swap and no scope narrower than the process to give one.
 
 ### Writing a new outbound call
 
@@ -50,7 +50,7 @@ Loopback is always bypassed — `localhost`, the whole `127.0.0.0/8` range, `::1
 
 ### Failures
 
-A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable string, an unsupported scheme — is reported and skipped, and the process connects directly. That variable may have been exported for other tools, so it must not stop the agent from starting. The same value supplied through this plugin's `Config` throws at load instead: that is the harness's own configuration surface, where a typo has to be loud.
+A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable string, an unsupported scheme — is reported and skipped, and that scheme connects directly. The variable may have been exported for other tools, so it must not stop the agent from starting.
 
 -----
 
@@ -61,7 +61,7 @@ A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable stri
 
 **One resolution, one matcher.** `proxyForUrl()` and the installed dispatcher must never disagree about a URL, or `dsh-web-fetch-http` would pin a connection the dispatcher meant to tunnel. The dispatcher is therefore an `Agent` whose per-origin `factory` calls `proxyForUrl()` itself, so there is no second parser to drift from the first. undici's `EnvHttpProxyAgent` cannot serve here: with no `HTTPS_PROXY` present it reuses the HTTP proxy for `https:`, which would tunnel a scheme this package keeps direct after refusing the URL the user named for it.
 
-**A child inherits the user's own values, and the resolved policy for what they left unset.** A scheme the user named in either casing reaches a child exactly as they wrote it, so a SOCKS proxy `curl` uses is never replaced by an HTTP one named for another scheme. A scheme they named in neither casing carries the resolved value instead, because otherwise the child's routing diverges from its parent's: Node's `NODE_USE_ENV_PROXY` reads neither `ALL_PROXY` nor a proxy that came from `cordis.yml`. The bypass list is always the resolved one — it only ever adds the loopback entries, so nothing the user wrote is lost. The cost of one routing answer for parent and child alike is that `curl` also sees the `https:` proxy this package derives from the HTTP one.
+**A child inherits the user's own values, and the resolved policy for what they left unset.** A scheme the user named in either casing reaches a child exactly as they wrote it, so a SOCKS proxy `curl` uses is never replaced by an HTTP one named for another scheme. A scheme they named in neither casing carries the resolved value instead, because otherwise the child's routing diverges from its parent's: Node's `NODE_USE_ENV_PROXY` does not read `ALL_PROXY`. The bypass list is always the resolved one — it only ever adds the loopback entries, so nothing the user wrote is lost. The cost of one routing answer for parent and child alike is that `curl` also sees the `https:` proxy this package derives from the HTTP one.
 
 ### Source map
 
@@ -69,7 +69,7 @@ A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable stri
 |---|---|
 | `src/policy.ts` | Resolution, bypass matching, and redaction. Imports no transport, so it stays loadable where undici is absent. |
 | `src/install.ts` | The global dispatcher, the active-policy record, `createDispatcher`, and `childProxyEnv`. Imports undici dynamically. |
-| `src/index.ts` | Re-exports both halves and the optional Cordis plugin. |
+| `src/index.ts` | The package face: six functions and the types they use. |
 
 ### Bypass matching
 
@@ -101,7 +101,7 @@ No direct invalidation: the package contributes no request tokens and never muta
 
 These limits define when the package is a poor fit. They are current package constraints.
 
-- **No SOCKS, PAC, or operating-system proxy detection** — only `http(s)://` proxy URLs from the environment or configuration. A macOS or Windows system-proxy setting is not read, so a user who only toggled it in a proxy application must still export the variables; a SOCKS URL is reported and that scheme stays direct rather than borrowing another scheme's proxy.
+- **No SOCKS, PAC, or operating-system proxy detection** — only `http(s)://` proxy URLs from the environment. A macOS or Windows system-proxy setting is not read, so a user who only toggled it in a proxy application must still export the variables; a SOCKS URL is reported and that scheme stays direct rather than borrowing another scheme's proxy.
 - **No custom certificate authority** — a TLS-intercepting corporate proxy needs `NODE_EXTRA_CA_CERTS` set on the process before launch, which this package neither sets nor validates.
 - **A separate Node context honors the policy only on a new enough runtime** — a spawned child reads it through Node's `NODE_USE_ENV_PROXY` (22.21+, 24+), and the OTLP exporter's agent through Node's `proxyEnv` option (22.21+, **24.5+**). The engines range admits 22.19, 22.20, and 24.0–24.4, where those two paths stay direct. Such a context also matches bypass entries with Node's own `NO_PROXY` rules, which differ from this package's in their separators and IPv4-range support.
 - **A worker that executes model-authored code gets no proxy at all** — neither the `code-runtime` worker nor the `workflow` worker receives proxy configuration, so their own requests go direct. A proxy URL may carry `user:password`, and both run scripts the model wrote.

@@ -924,39 +924,6 @@ export interface Config {
 
 Source: [`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
 
-<a id="deepseek-aidsh-http-proxy"></a>
-
-## `@deepseek-ai/dsh-http-proxy`
-
-```ts config-catalog
-/** Composition-declared proxy settings; every field is optional and the environment outranks them. */
-export interface Config extends ProxyConfig {}
-
-/**
- * Proxy settings a composition may declare in `cordis.yml`. Real environment variables win over every
- * field here except `mode`, which governs whether the environment is consulted at all.
- */
-export interface ProxyConfig {
-  /**
-   * `env` (default) resolves from the environment and lets the fields below fill the gaps; `custom`
-   * does the same but is the honest label for a composition that supplies its own proxy; `off`
-   * ignores every source and keeps the harness's own requests direct.
-   *
-   * `off` governs requests this process issues. It does not strip proxy variables from the
-   * environment child tools inherit, because those belong to the user, not to the harness.
-   */
-  mode?: 'env' | 'custom' | 'off'
-  /** Proxy for `http:` origins when the environment supplies none. */
-  httpProxy?: string
-  /** Proxy for `https:` origins when the environment supplies none. */
-  httpsProxy?: string
-  /** Bypass list when the environment supplies none. {@link LOOPBACK_NO_PROXY} is merged in regardless. */
-  noProxy?: string
-}
-```
-
-Source: [`packages/net/http-proxy/src/index.ts:51`](../packages/net/http-proxy/src/index.ts)
-
 <a id="deepseek-aidsh-invariants"></a>
 
 ## `@deepseek-ai/dsh-invariants`
@@ -3564,6 +3531,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-experimental-webworker-runtime` ([`packages/experimental/webworker-runtime/src/index.ts`](../packages/experimental/webworker-runtime/src/index.ts))
 - `@deepseek-ai/dsh-home-paths` ([`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts))
 - `@deepseek-ai/dsh-hook-protocol` ([`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts))
+- `@deepseek-ai/dsh-http-proxy` ([`packages/util/http-proxy/src/index.ts`](../packages/util/http-proxy/src/index.ts))
 - `@deepseek-ai/dsh-launch-environment` ([`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts))
 - `@deepseek-ai/dsh-llm-mock-server` ([`packages/test-support/llm-mock-server/src/index.ts`](../packages/test-support/llm-mock-server/src/index.ts))
 - `@deepseek-ai/dsh-loader-smoke` ([`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts))

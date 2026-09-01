@@ -21,7 +21,7 @@
       "path": "../../core/session"
     },
     {
-      "path": "../../net/http-proxy"
+      "path": "../../util/http-proxy"
     }
   ]
 }

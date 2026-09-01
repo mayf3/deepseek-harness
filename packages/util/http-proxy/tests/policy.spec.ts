@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import {
   bypassesProxy,
-  describeProxyPolicy,
   isLoopbackHost,
   proxyForUrl,
   resolveProxyPolicy,
@@ -82,6 +81,16 @@ describe('resolveProxyPolicy', () => {
     expect(policy.httpProxy).toBe(PROXY)
   })
 
+  it('leaves http direct when only the https variable is set', () => {
+    // The reverse of the HTTP-only case: the fallback runs one way, so naming only HTTPS proxies
+    // that scheme alone and every `http:` request stays direct.
+    const { policy } = resolveProxyPolicy(env({ HTTPS_PROXY: PROXY }))
+    expect(policy.httpProxy).toBeUndefined()
+    expect(policy.httpsProxy).toBe(PROXY)
+    expect(proxyForUrl(policy, new URL('http://example.com/'))).toBeUndefined()
+    expect(proxyForUrl(policy, new URL('https://example.com/'))).toBe(PROXY)
+  })
+
   it('backs both schemes with ALL_PROXY, which neither Node nor undici reads', () => {
     const { policy } = resolveProxyPolicy(env({ ALL_PROXY: PROXY }))
     expect(policy.httpProxy).toBe(PROXY)
@@ -147,36 +156,6 @@ describe('resolveProxyPolicy', () => {
     expect(diagnostics[0]?.message).toMatch(/unsupported ftp:\/\/ scheme/)
   })
 
-  it('lets configuration fill a gap the environment leaves', () => {
-    const { policy } = resolveProxyPolicy(env({}), { httpProxy: PROXY, noProxy: 'internal.example' })
-    expect(policy.httpProxy).toBe(PROXY)
-    expect(policy.httpsProxy).toBe(PROXY)
-    expect(policy.noProxy).toBe('internal.example,localhost,127.0.0.1,::1,[::1]')
-    expect(policy.source).toBe('config')
-  })
-
-  it('takes each scheme from its own configured field', () => {
-    const { policy } = resolveProxyPolicy(env({}), { httpProxy: PROXY, httpsProxy: OTHER })
-    expect(policy.httpProxy).toBe(PROXY)
-    expect(policy.httpsProxy).toBe(OTHER)
-    expect(policy.source).toBe('config')
-  })
-
-  it('lets the environment outrank configuration', () => {
-    const { policy } = resolveProxyPolicy(env({ HTTP_PROXY: PROXY }), { httpProxy: OTHER })
-    expect(policy.httpProxy).toBe(PROXY)
-    expect(policy.source).toBe('env')
-  })
-
-  it('names configuration as the origin of a rejected configured value', () => {
-    const { diagnostics } = resolveProxyPolicy(env({}), { httpsProxy: 'socks5://127.0.0.1:1080' })
-    expect(diagnostics[0]?.origin).toBe('config.httpsProxy')
-  })
-
-  it('ignores every source under mode off', () => {
-    const { policy } = resolveProxyPolicy(env({ HTTP_PROXY: PROXY }), { mode: 'off' })
-    expect(policy).toEqual(DIRECT_POLICY)
-  })
 })
 
 describe('bypassesProxy', () => {
@@ -247,30 +226,5 @@ describe('proxyForUrl', () => {
 
   it('returns nothing under a direct policy', () => {
     expect(proxyForUrl(DIRECT_POLICY, new URL('https://example.com/'))).toBeUndefined()
-  })
-})
-
-describe('describeProxyPolicy', () => {
-  it('names a direct policy', () => {
-    expect(describeProxyPolicy(DIRECT_POLICY)).toBe('no proxy (direct)')
-  })
-
-  it('replaces the password and keeps the username', () => {
-    const { policy } = resolveProxyPolicy(env({ HTTP_PROXY: 'http://alice:s3cret@proxy.example:8080' }))
-    const described = describeProxyPolicy(policy)
-    expect(described).toContain('alice')
-    expect(described).toContain('***')
-    expect(described).not.toContain('s3cret')
-  })
-
-  it('reports a scheme left direct', () => {
-    expect(describeProxyPolicy({ httpsProxy: PROXY, noProxy: '', source: 'env' })).toContain('http=direct')
-    expect(describeProxyPolicy({ httpProxy: PROXY, noProxy: '', source: 'env' })).toContain('https=direct')
-  })
-
-  it('resolves an https-only environment without an http proxy', () => {
-    const { policy } = resolveProxyPolicy(env({ HTTPS_PROXY: PROXY }))
-    expect(policy.httpProxy).toBeUndefined()
-    expect(policy.httpsProxy).toBe(PROXY)
   })
 })

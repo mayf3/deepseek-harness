@@ -25,7 +25,7 @@
 
 import { globSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { PROXY_ENV_NAMES } from '../packages/net/http-proxy/src/policy.ts'
+import { PROXY_ENV_NAMES } from '../packages/util/http-proxy/src/policy.ts'
 
 /** The flag a Node process reads before honoring the names above; ambient in the same way. */
 const NODE_PROXY_FLAG = 'NODE_USE_ENV_PROXY'

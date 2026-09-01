@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { PROXY_ENV_NAMES } from '../packages/net/http-proxy/src/policy.ts'
+import { PROXY_ENV_NAMES } from '../packages/util/http-proxy/src/policy.ts'
 import { clearAmbientProxyEnv, TEST_PROXY_SETUP_FILE, vitestConfigFiles } from './test-proxy-environment.ts'
 
 describe('ambient proxy environment', () => {
