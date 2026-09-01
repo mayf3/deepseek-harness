@@ -209,8 +209,8 @@ Source: [`packages/interaction/user-approval/src/index.ts:33`](../packages/inter
 ```ts persistence-catalog
 /**
  * One model attempt that committed no surface message. The embedded stream
- * preserves failed, retried, cancelled, or crash-tail output without
- * fabricating model-visible history.
+ * preserves a failed, retried, cancelled, or stream-error attempt that
+ * reached settlement without fabricating model-visible history.
  */
 'assistant/attempt': { turn: number; step: number; stream: AssistantStreamRecord[] }
 ```

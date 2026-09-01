@@ -100,8 +100,6 @@ export interface SessionFormatCodec {
     headerValue: unknown,
     rowValues: readonly unknown[],
   ): SessionFormatArtifact
-  /** Validate and encode one exact-version logical artifact. */
-  encodeArtifact(artifact: SessionFormatArtifact, options: SessionFormatEncodeOptions): EncodedSessionFormatArtifact
 }
 
 /** Header-only classification that never inspects event rows. */
@@ -129,6 +127,8 @@ export type SessionFormatHeaderReadResult =
 /** Inputs for a build-static physical codec and migration catalog. */
 export interface SessionFormatCatalogOptions extends SessionFormatChainOptions {
   readonly codecs: readonly SessionFormatCodec[]
+  /** Encode one already-restored current artifact through its format-specific writer. */
+  readonly encodeCurrentArtifact: (artifact: SessionFormatArtifact) => EncodedSessionFormatArtifact
 }
 
 /** Build-static physical dispatch and adjacent migration catalog. */
@@ -148,5 +148,5 @@ export interface SessionFormatCatalog {
   /** Restore current input directly or run all required adjacent migrations in memory. */
   migrate(artifact: SessionFormatArtifact): SessionFormatArtifact
   /** Validate and encode an exact current logical artifact. */
-  encodeCurrent(artifact: SessionFormatArtifact, options: SessionFormatEncodeOptions): EncodedSessionFormatArtifact
+  encodeCurrent(artifact: SessionFormatArtifact): EncodedSessionFormatArtifact
 }

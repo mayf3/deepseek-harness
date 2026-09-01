@@ -17,7 +17,7 @@ Token 粒度的 `assistant/chunk` 事件会保留精确的 stream 顺序、时�
 Session format v2 没有顶层 `assistant/chunk` 事件。每个模型 attempt 提交一个包含 `stream: AssistantStreamRecord[]` 的持久 settlement：
 
 - `assistant/message` 是成功响应或具有可见组装内容的已取消响应所对应的 surface settlement。它在组装 message 旁嵌入精确的紧凑带时间 stream、可选 usage 与可选 `interrupted: true` marker。
-- `assistant/attempt` 只进入日志。它保留失败、重试、取消或崩溃尾部 attempt 的 stream；这些 attempt 没有提交 surface message，因此诊断与记账不会虚构模型可见历史。
+- `assistant/attempt` 只进入日志。它保留已到达 settlement、但没有 surface message 的失败、重试、取消或 stream error attempt，因此诊断与记账不会虚构模型可见历史。
 
 `AssistantStreamAccumulator` 对每个 chunk 只快照一次。同一 block 的连续 text、reasoning 或 tool argument delta 会变成一个紧凑 run，包含首个时间戳、精确时间戳间隔和每个原始 delta 对应的一个数组成员。其他 chunk 保留为带时间戳的 raw record。`expandAssistantStream()` 会严格校验并重建精确的带时间序列；压缩绝不会合并 delta 边界。
 
@@ -27,7 +27,7 @@ Session format v2 没有顶层 `assistant/chunk` 事件。每个模型 attempt �
 
 `agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 命名其类型和序号前追加完整的 `assistant/message` 或 `assistant/attempt`。abandoned end 没有 settlement。
 
-Web follow adapter 显式选择接收这些无 cursor frame。它把 chunk 呈现为持久 cursor 之间的 Client-only `assistant/live-chunk` update，把匹配的 settlement 暂存到 committed end，并在 revision 缺口时重新打开 follow。重连 baseline 携带活跃 attempt 的紧凑前缀。分页历史、replay、遥测、token 记账与冷 UI 组装读取持久嵌入式 stream，而不是 live frame。
+Web follow adapter 显式选择接收这些进程本地 frame，并为每个 start 补充当时观察到的最后一个持久序号。它把 chunk 呈现为持久 cursor 之间的 Client-only `assistant/live-chunk` update，只暂存 start 之后匹配的 settlement，在 committed end 到达时用 settlement 替换该 attempt 的瞬态 row，并在 revision 缺口时重新打开 follow。重连 baseline 携带活跃 attempt 的持久起始 cursor 与紧凑前缀。分页历史、replay、遥测、token 记账与冷 UI 组装读取持久嵌入式 stream，而不是 live frame。
 
 ### 已发布 v1 到 v2 迁移
 
@@ -43,7 +43,7 @@ Generation 选择与发布遵循[已发布 Session 迁移决策](2026-08-31-rele
 
 紧凑 stream 测试固定 text、reasoning、tool argument、raw chunk、时间戳间隔、格式错误 record 与分离 snapshot 的精确累积和展开。v1 到 v2 测试覆盖成功与失败 attempt、交错、密集序号与引用重映射、seed 切点插入与切分拒绝、严格源与目标校验、每行一个事件的 v2 编码、provenance range、原始与 Zstandard 发布，以及无写入的当前读取。
 
-手工 performance acceptance 会在三轮、100 组 warmup pair 与 600 组 measured pair 下，把当前 v2 catalog dispatch 与同一物理输入的 direct-current 读取比较。它要求每个 pooled median 与 p95 regression 保持在 5% 以内；已接受运行的最差 p95 regression 为 2.201%。`--smoke` 报告不参与 gate 的诊断 sample。
+手工 performance acceptance 会在三轮、100 组 warmup pair 与 600 组 measured pair 下，把当前 v2 catalog dispatch 与同一物理输入的 direct-current 读取比较。它要求每个 pooled median 与 p95 regression 保持在 5% 以内；已接受运行的最差 p95 regression 为 3.150%。`--smoke` 报告不参与 gate 的诊断 sample。
 
 Agent-loop 测试固定先持久后 end 的顺序、中断的可见前缀、失败与重试 attempt、abandonment、usage 与 replay metadata。Session Controller 与 Conversation 测试固定实时瞬态显示、重连 baseline、committed settlement 发布、历史回放以及 Chat 与 Trajectory 一致性；TypeScript 与 Python SDK snapshot 固定外部事件表示。
 
@@ -62,6 +62,8 @@ Agent-loop 测试固定先持久后 end 的顺序、中断的可见前缀、失�
 ## 后果
 
 当前日志、遥测、历史页与冷 Client 组装按模型 attempt 而非 token chunk 扩展，同时在每个 settlement 内保留精确 stream 证据。实时呈现保持增量，并且有意仅存在于进程内。
+
+v1 的顶层 chunk 可能在 attempt 结束前由带缓冲的持久化 writer 刷盘；与之不同，v2 在 settlement 之前没有持久 attempt 证据。如果进程或主机在 settlement 前硬中断，完整的 in-flight stream 都会丢失；`agent/assistant-stream` 不是 write-ahead log。这项取舍避免为实时输出增加第二个持久性 owner。
 
 一个 settlement 可能很大，v1 到 v2 迁移会物化完整产物及其序号映射。封闭的 Alpha 清单会拒绝未知 v1 事件与未声明引用，而不会猜测。需要单独 chunk 的消费方调用 `expandAssistantStream()`，并且绝不能从 `agent/assistant-stream` 推断持久性。
 

@@ -382,30 +382,42 @@ export class ReactLoopAgent implements Agent {
         signal.throwIfAborted()
       } catch (error: unknown) {
         if (!started) throw error
-        if (signal.aborted) {
-          const content = live.interruptedBlocks()
-          if (content.length > 0) {
-            live.settle('assistant/message', () => this.session.append('assistant/message', {
-              turn,
-              step,
-              message: createAssistantMessage({
-                content,
-                source: { provider: request.provider, model: request.model },
-              }),
-              interrupted: true,
-              ...live.usage === undefined ? {} : { usage: live.usage },
-              stream: live.stream,
-            }, { surfaceOp: 'append' }).seq)
+        try {
+          if (signal.aborted) {
+            const content = live.interruptedBlocks()
+            if (content.length > 0) {
+              live.settle('assistant/message', () => this.session.append('assistant/message', {
+                turn,
+                step,
+                message: createAssistantMessage({
+                  content,
+                  source: {
+                    provider: request.provider,
+                    model: request.model,
+                    ...live.replayState === undefined ? {} : { replayState: live.replayState },
+                  },
+                }),
+                interrupted: true,
+                ...live.usage === undefined ? {} : { usage: live.usage },
+                stream: live.stream,
+              }, { surfaceOp: 'append' }).seq)
+            } else {
+              live.settle(
+                'assistant/attempt',
+                () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
+              )
+            }
           } else {
             live.settle(
               'assistant/attempt',
               () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
             )
           }
-        } else {
-          live.settle(
-            'assistant/attempt',
-            () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
+        } catch (settlementError: unknown) {
+          throw new AggregateError(
+            [error, settlementError],
+            'Assistant stream failed and its durable settlement was rejected',
+            { cause: error },
           )
         }
         throw error

@@ -157,6 +157,8 @@ interface FixtureAssistantStreamBaseline {
   readonly revision: number
   readonly activeAttempt?: {
     readonly attemptId: ReturnType<typeof LlmAttemptId>
+    readonly startedTime: number
+    readonly startedAfterSeq: number
     readonly turn: number
     readonly step: number
     readonly nextIndex: number
@@ -169,6 +171,8 @@ type FixtureAssistantStreamFrame =
     readonly type: 'start'
     readonly attemptId: ReturnType<typeof LlmAttemptId>
     readonly revision: number
+    readonly startedTime: number
+    readonly startedAfterSeq: number
     readonly turn: number
     readonly step: number
   }
@@ -2040,6 +2044,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   const followConns = new Map<SessionId, Set<StreamConn<FixtureFollowEventFrame>>>()
   interface FixtureAttemptState {
     readonly attemptId: ReturnType<typeof LlmAttemptId>
+    readonly startedTime: number
+    readonly startedAfterSeq: number
     readonly turn: number
     readonly step: number
     readonly stream: AssistantStreamAccumulator
@@ -2074,10 +2080,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
   const beginAssistant = (sessionId: SessionId, turn: number, step: number): FixtureAttemptState => {
     const attemptId = LlmAttemptId(`${sessionId}:fixture:${String(nextAssistantRevision(sessionId))}`)
-    const attempt = { attemptId, turn, step, stream: new AssistantStreamAccumulator(), index: 0 }
+    const startedTime = Date.now()
+    const startedAfterSeq = logOf(sessionId).length - 1
+    const attempt = {
+      attemptId, startedTime, startedAfterSeq, turn, step,
+      stream: new AssistantStreamAccumulator(), index: 0,
+    }
     activeAttempts.set(sessionId, attempt)
     emitAssistant(sessionId, {
-      type: 'start', attemptId, revision: assistantRevisions.get(sessionId) as number, turn, step,
+      type: 'start', attemptId, revision: assistantRevisions.get(sessionId) as number,
+      startedTime, startedAfterSeq, turn, step,
     })
     return attempt
   }
@@ -3331,6 +3343,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
               ? {}
               : { activeAttempt: {
                 attemptId: (activeAttempts.get(sessionId) as FixtureAttemptState).attemptId,
+                startedTime: (activeAttempts.get(sessionId) as FixtureAttemptState).startedTime,
+                startedAfterSeq: (activeAttempts.get(sessionId) as FixtureAttemptState).startedAfterSeq,
                 turn: (activeAttempts.get(sessionId) as FixtureAttemptState).turn,
                 step: (activeAttempts.get(sessionId) as FixtureAttemptState).step,
                 nextIndex: (activeAttempts.get(sessionId) as FixtureAttemptState).index,

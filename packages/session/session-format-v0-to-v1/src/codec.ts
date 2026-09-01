@@ -28,13 +28,13 @@ const PHYSICAL_HEADER_OPTIONAL = ['cwd', 'parentSession', 'seedLength', 'origin'
 const PACKED_TAGS = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])
 
 /** Frozen physical JSON codec for the released v0 layout. */
-export const releasedV0SessionFormatCodec: SessionFormatCodec = createReleasedCodec(0)
+export const releasedV0SessionFormatCodec = createReleasedCodec(0)
 
 /** Frozen physical JSON codec for the shared-layout released v1 format. */
-export const releasedV1SessionFormatCodec: SessionFormatCodec = createReleasedCodec(1)
+export const releasedV1SessionFormatCodec = createReleasedCodec(1)
 
-function createReleasedCodec(version: 0 | 1): SessionFormatCodec {
-  return Object.freeze<SessionFormatCodec>({
+function createReleasedCodec(version: 0 | 1) {
+  return Object.freeze({
     version,
     decodeHeader: (value: unknown) => decodeHeader(value, version),
     decodeArtifact(headerValue: unknown, rowValues: readonly unknown[]) {
@@ -65,6 +65,11 @@ function createReleasedCodec(version: 0 | 1): SessionFormatCodec {
       else assertReleasedV1PhysicalArtifact(artifact)
       return encodeArtifact(artifact, options, version)
     },
+  } satisfies SessionFormatCodec & {
+    encodeArtifact(
+      artifact: SessionFormatArtifact,
+      options: SessionFormatEncodeOptions,
+    ): EncodedSessionFormatArtifact
   })
 }
 

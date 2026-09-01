@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-session-format-v1-to-v2` 把完整的已发布 v1 Session 转换为已发布 v2 事件模型。它会消费顶层 `assistant/chunk` 事件，把精确的带时间流嵌入匹配的 `assistant/message`，并在失败、重试、取消或崩溃尾部尝试没有产生 surface message 时记录 `assistant/attempt`。该迁移边会密集重映射存活事件和每个已声明的同 Session 序号引用；v2 编解码器则让每行只存一个事件，并从带标记的 `session/end-seed` 事件推导继承切点。
+`dsh-session-format-v1-to-v2` 把完整的已发布 v1 Session 转换为已发布 v2 事件模型。它会消费顶层 `assistant/chunk` 事件，把精确的带时间流嵌入匹配的 `assistant/message`，并在失败、重试、取消或 stream error attempt 已到达 settlement、但没有产生 surface message 时记录 `assistant/attempt`。该迁移边会密集重映射存活事件和每个已声明的同 Session 序号引用；v2 编解码器则让每行只存一个事件，并从带标记的 `session/end-seed` 事件推导继承切点。
 
 ## 目录
 
@@ -42,12 +42,12 @@ const migratedV2 = sessionFormatV1ToV2.migrate(decodedV1)
 
 如果引用指向被消费的 chunk，迁移会失败，而不会把它重定向到语义不同的事件。它会重映射已声明的事件 provenance、surface replacement、command source event、compaction range 与 list，以及 title message list。带 seed 的源若让继承切点切开一个 Assistant attempt，也会迁移失败；目标会用 `session/end-seed { inherited: true }` 标出精确切点。
 
-v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从最后一个 inherited end-seed marker 推导切点，每行写入一个事件，并且只对 `sourceEventSeqs` 做范围编码。严格 v2 校验会拒绝未知事件类型（即使信封带有 ignorable 标记）、意外成员、格式错误的紧凑 stream，以及非空 stream 与组装后的 message、usage 或 replay state 之间的不一致。
+v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从最后一个 inherited end-seed marker 推导切点，每行写入一个事件，并且只对 `sourceEventSeqs` 做范围编码。严格的迁移目标校验会拒绝未知事件类型；当前恢复则保留已安装的扩展，以及携带 `ignorable: true` 的未知事件。两条路径都会拒绝意外成员、格式错误的紧凑 stream，以及非空 stream 与组装后的 message、usage 或 replay state 之间的不一致。
 
 ### 测量当前读取验收
 
 ```text
-node --expose-gc --import tsx/esm packages/session/session-format-v1-to-v2/benchmarks/acceptance.ts
+pnpm run benchmark:session-format-v1-to-v2
 ```
 
 手工 acceptance 会运行三轮，每个 case 使用 100 组 warmup pair 与 600 组交替测量 pair。它把当前 v2 catalog-dispatch 读取与相同 backend、id、file 和 decoder 的 direct-current 读取比较，并要求每个 pooled median 与 p95 regression 都保持在 5% 以内。只在需要较短的正确性与报告检查时添加 `--smoke`；smoke timing 不参与 gate，也不是 acceptance 结果。
@@ -68,7 +68,7 @@ node --expose-gc --import tsx/esm packages/session/session-format-v1-to-v2/bench
 | [`src/codec.ts`](src/codec.ts) | 已发布 v2 header、每行一个事件的编码、provenance 范围与可恢复前缀解码 |
 | [`src/validation.ts`](src/validation.ts) | 精确的 v2 header、信封、payload、stream、关系与 seed 切点校验 |
 | [`src/dispositions.ts`](src/dispositions.ts) | 冻结的已发布 v2 事件与 payload 成员清单 |
-| [`benchmarks/acceptance.ts`](benchmarks/acceptance.ts) | 手工 current-read、migration、token-meter、size 与 memory acceptance report |
+| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | 仅用于仓库的 current-read、migration、token-meter、size 与 memory acceptance report |
 
 </details>
 

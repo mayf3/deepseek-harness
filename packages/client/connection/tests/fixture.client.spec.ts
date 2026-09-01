@@ -53,7 +53,15 @@ function historyEvents(records: readonly FixtureHistoryRecord[]): SessionEvent[]
 }
 
 type FixtureAssistantStreamFrame =
-  | { readonly type: 'start'; readonly attemptId: string; readonly revision: number; readonly turn: number; readonly step: number }
+  | {
+    readonly type: 'start'
+    readonly attemptId: string
+    readonly revision: number
+    readonly startedTime: number
+    readonly startedAfterSeq: number
+    readonly turn: number
+    readonly step: number
+  }
   | {
     readonly type: 'chunk'
     readonly attemptId: string
@@ -86,6 +94,7 @@ type FixtureFollowFrame =
       readonly activeAttempt?: {
         readonly attemptId: string
         readonly startedTime: number
+        readonly startedAfterSeq: number
         readonly turn: number
         readonly step: number
         readonly nextIndex: number

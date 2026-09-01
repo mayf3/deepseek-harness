@@ -6,7 +6,7 @@ import type {
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId, MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { SessionId, SessionSeqCursor } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -438,6 +438,8 @@ export interface SessionAssistantStreamAttempt {
   readonly attemptId: LlmAttemptId
   /** Safe-integer wall-clock time copied from the attempt's start frame. */
   readonly startedTime: number
+  /** Last durable Session seq observed when this attempt started. */
+  readonly startedAfterSeq: SessionSeqCursor
   readonly turn: number
   readonly step: number
   /** Dense position expected for the next live chunk frame. */
@@ -459,6 +461,7 @@ export type SessionAssistantStreamFrame =
     readonly attemptId: LlmAttemptId
     readonly revision: number
     readonly startedTime: number
+    readonly startedAfterSeq: SessionSeqCursor
     readonly turn: number
     readonly step: number
   }

@@ -12,7 +12,6 @@ import type {
   SessionFormatCatalog,
   SessionFormatCatalogOptions,
   SessionFormatCodec,
-  SessionFormatEncodeOptions,
   SessionFormatHeaderReadResult,
   SessionFormatJsonObject,
 } from './types.ts'
@@ -125,14 +124,12 @@ export function createSessionFormatCatalog(options: SessionFormatCatalogOptions)
 
   function encodeCurrent(
     artifact: Parameters<SessionFormatCatalog['encodeCurrent']>[0],
-    encodeOptions: SessionFormatEncodeOptions,
   ): EncodedSessionFormatArtifact {
     if (inspectSessionFormatVersion(artifact.header) !== chain.currentVersion) {
       throw new SessionFormatError(`encodeCurrent requires Session format v${chain.currentVersion}`)
     }
     const current = chain.migrate(artifact)
-    const codec = codecs.get(chain.currentVersion) as SessionFormatCodec
-    const encoded = codec.encodeArtifact(current, encodeOptions)
+    const encoded = options.encodeCurrentArtifact(current)
     const header = snapshotSessionFormatJson(encoded.header, 'encoded current Session header') as SessionFormatJsonObject
     const rows = Object.freeze(encoded.rows.map((row, index) =>
       snapshotSessionFormatJson(row, `encoded current Session row ${index}`) as SessionFormatJsonObject))

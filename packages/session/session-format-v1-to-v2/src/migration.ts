@@ -101,7 +101,7 @@ export const sessionFormatV1ToV2 = defineSessionFormatMigration({
     const target = snapshotSessionFormatArtifact({
       header: { ...source.header, version: 2 },
       inheritedEventCount,
-      events: staged.map(({ event }, seq) => remapReferences(event, seq, oldToNew, source.events.length)),
+      events: staged.map(({ event }, seq) => remapReferences(event, seq, oldToNew)),
     }, 'released v1-to-v2 target')
     assertReleasedV2Artifact(target)
     return target
@@ -115,9 +115,9 @@ function collectAttemptGroups(events: readonly SessionFormatEvent[]): readonly A
   const current = new Map<string, AttemptGroup>()
   for (const event of events) {
     if (event.type === 'assistant/chunk') {
-      const data = record(event.data, `assistant/chunk ${event.seq} data`)
-      const turn = coordinate(data['turn'], `assistant/chunk ${event.seq} turn`)
-      const step = coordinate(data['step'], `assistant/chunk ${event.seq} step`)
+      const data = record(event.data)
+      const turn = coordinate(data['turn'])
+      const step = coordinate(data['step'])
       const key = `${turn}:${step}`
       let group = current.get(key)
       if (group === undefined || group.terminal) {
@@ -126,7 +126,7 @@ function collectAttemptGroups(events: readonly SessionFormatEvent[]): readonly A
         current.set(key, group)
       }
       group.chunks.push(event)
-      const chunk = record(data['chunk'], `assistant/chunk ${event.seq} chunk`)
+      const chunk = record(data['chunk'])
       if (chunk['type'] === 'finish') group.terminal = true
       continue
     }
@@ -134,9 +134,9 @@ function collectAttemptGroups(events: readonly SessionFormatEvent[]): readonly A
       closeAttemptAtBoundary(event, current)
       continue
     }
-    const data = record(event.data, `assistant/message ${event.seq} data`)
-    const turn = coordinate(data['turn'], `assistant/message ${event.seq} turn`)
-    const step = coordinate(data['step'], `assistant/message ${event.seq} step`)
+    const data = record(event.data)
+    const turn = coordinate(data['turn'])
+    const step = coordinate(data['step'])
     const sources = event.sourceEventSeqs
     if (!Array.isArray(sources)) {
       const unclaimed = groups.some(candidate => candidate.messageSeq === undefined
@@ -168,8 +168,8 @@ function closeAttemptAtBoundary(
   current: ReadonlyMap<string, AttemptGroup>,
 ): void {
   if (event.type === 'turn/end') {
-    const data = record(event.data, `turn/end ${event.seq} data`)
-    const turn = coordinate(data['turn'], `turn/end ${event.seq} turn`)
+    const data = record(event.data)
+    const turn = coordinate(data['turn'])
     for (const group of current.values()) {
       if (group.turn === turn) group.terminal = true
     }
@@ -178,9 +178,9 @@ function closeAttemptAtBoundary(
   if (event.type !== 'step/end'
     && event.type !== 'llm/retry'
     && event.type !== 'llm/retry-started') return
-  const data = record(event.data, `${event.type} ${event.seq} data`)
-  const turn = coordinate(data['turn'], `${event.type} ${event.seq} turn`)
-  const step = coordinate(data['step'], `${event.type} ${event.seq} step`)
+  const data = record(event.data)
+  const turn = coordinate(data['turn'])
+  const step = coordinate(data['step'])
   const group = current.get(`${turn}:${step}`)
   if (group !== undefined) group.terminal = true
 }
@@ -188,7 +188,7 @@ function closeAttemptAtBoundary(
 function streamOf(group: AttemptGroup) {
   const accumulator = new AssistantStreamAccumulator()
   for (const event of group.chunks) {
-    const data = record(event.data, `assistant/chunk ${event.seq} data`)
+    const data = record(event.data)
     accumulator.push({
       time: event.time,
       chunk: data['chunk'] as Parameters<AssistantStreamAccumulator['push']>[0]['chunk'],
@@ -198,7 +198,7 @@ function streamOf(group: AttemptGroup) {
 }
 
 function messageEvent(source: SessionFormatEvent, group: AttemptGroup): SessionFormatEvent {
-  const data = record(source.data, `assistant/message ${source.seq} data`)
+  const data = record(source.data)
   const { sourceEventSeqs: _sourceEventSeqs, ...event } = source
   return {
     ...event,
@@ -247,34 +247,30 @@ function remapReferences(
   source: SessionFormatEvent,
   targetSeq: number,
   mapping: ReadonlyMap<number, number>,
-  sourceLength: number,
 ): SessionFormatEvent {
   const { sourceEventSeqs, surfaceOp, ...event } = source
   const sources = sourceEventSeqs === undefined
     ? {}
     : {
       sourceEventSeqs: mapList(
-        numberArray(sourceEventSeqs, `${source.type} ${source.seq} sources`),
+        numberArray(sourceEventSeqs),
         mapping,
-        sourceLength,
         `${source.type} ${source.seq} sources`,
       ),
     }
   let operation: SessionFormatJsonValue | undefined = surfaceOp
   if (surfaceOp !== undefined && surfaceOp !== 'append') {
-    const replacement = record(surfaceOp, `${source.type} ${source.seq} surface operation`)
+    const replacement = record(surfaceOp)
     operation = {
       op: 'replace',
       start: mapOne(
-        coordinate(replacement['start'], `${source.type} ${source.seq} surface start`),
+        coordinate(replacement['start']),
         mapping,
-        sourceLength,
         `${source.type} ${source.seq} surface start`,
       ),
       end: mapOne(
-        coordinate(replacement['end'], `${source.type} ${source.seq} surface end`),
+        coordinate(replacement['end']),
         mapping,
-        sourceLength,
         `${source.type} ${source.seq} surface end`,
       ),
     }
@@ -282,7 +278,7 @@ function remapReferences(
   return {
     ...event,
     seq: targetSeq,
-    data: remapPayloadReferences(source, mapping, sourceLength),
+    data: remapPayloadReferences(source, mapping),
     ...sources,
     ...(operation === undefined ? {} : { surfaceOp: operation }),
   }
@@ -291,9 +287,8 @@ function remapReferences(
 function remapPayloadReferences(
   event: SessionFormatEvent,
   mapping: ReadonlyMap<number, number>,
-  sourceLength: number,
 ): SessionFormatJsonValue {
-  const data = record(event.data, `${event.type} ${event.seq} data`)
+  const data = record(event.data)
   switch (event.type) {
     case 'command/done':
       return data['sourceEventSeq'] === undefined
@@ -301,35 +296,31 @@ function remapPayloadReferences(
         : {
           ...data,
           sourceEventSeq: mapOne(
-            coordinate(data['sourceEventSeq'], `command/done ${event.seq} sourceEventSeq`),
+            coordinate(data['sourceEventSeq']),
             mapping,
-            sourceLength,
             `command/done ${event.seq} sourceEventSeq`,
           ),
         }
     case 'compaction/prune':
     case 'compaction/summary': {
-      const range = record(data['shadowedRange'], `${event.type} ${event.seq} shadowedRange`)
+      const range = record(data['shadowedRange'])
       return {
         ...data,
         shadowedRange: {
           start: mapOne(
-            coordinate(range['start'], `${event.type} ${event.seq} shadowedRange start`),
+            coordinate(range['start']),
             mapping,
-            sourceLength,
             `${event.type} ${event.seq} shadowedRange start`,
           ),
           end: mapOne(
-            coordinate(range['end'], `${event.type} ${event.seq} shadowedRange end`),
+            coordinate(range['end']),
             mapping,
-            sourceLength,
             `${event.type} ${event.seq} shadowedRange end`,
           ),
         },
         shadowedSeqs: mapList(
-          numberArray(data['shadowedSeqs'] as SessionFormatJsonValue, `${event.type} ${event.seq} shadowedSeqs`),
+          numberArray(data['shadowedSeqs'] as SessionFormatJsonValue),
           mapping,
-          sourceLength,
           `${event.type} ${event.seq} shadowedSeqs`,
         ),
       }
@@ -339,9 +330,8 @@ function remapPayloadReferences(
       return {
         ...data,
         messageSeqs: mapList(
-          numberArray(data['messageSeqs'] as SessionFormatJsonValue, `${event.type} ${event.seq} messageSeqs`),
+          numberArray(data['messageSeqs'] as SessionFormatJsonValue),
           mapping,
-          sourceLength,
           `${event.type} ${event.seq} messageSeqs`,
         ),
       }
@@ -353,16 +343,14 @@ function remapPayloadReferences(
 function mapList(
   values: readonly number[],
   mapping: ReadonlyMap<number, number>,
-  sourceLength: number,
   label: string,
 ): number[] {
-  return values.map(value => mapOne(value, mapping, sourceLength, label))
+  return values.map(value => mapOne(value, mapping, label))
 }
 
 function mapOne(
   value: number,
   mapping: ReadonlyMap<number, number>,
-  _sourceLength: number,
   label: string,
 ): number {
   const mapped = mapping.get(value)
@@ -370,15 +358,16 @@ function mapOne(
   return mapped
 }
 
-function record(value: SessionFormatJsonValue | undefined, _label: string): SessionFormatJsonObject {
+/* assertReleasedV1Artifact validates these payload coordinates before migration. */
+function record(value: SessionFormatJsonValue | undefined): SessionFormatJsonObject {
   return value as SessionFormatJsonObject
 }
 
-function numberArray(value: SessionFormatJsonValue, _label: string): number[] {
+function numberArray(value: SessionFormatJsonValue): number[] {
   return value as number[]
 }
 
-function coordinate(value: SessionFormatJsonValue | undefined, _label: string): number {
+function coordinate(value: SessionFormatJsonValue | undefined): number {
   return value as number
 }
 

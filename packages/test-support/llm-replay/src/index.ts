@@ -592,7 +592,7 @@ export function prepareSessionEventNotificationsForComparison(text: string): str
 
 /** Encode one migrated fixture while retaining a projected cwd token. */
 function encodeCurrentSessionSnapshotFixture(text: string, parsed: ParsedSessionFixture): string {
-  const encoded = sessionFormatCatalog.encodeCurrent(parsed.artifact, { packChunks: false })
+  const encoded = sessionFormatCatalog.encodeCurrent(parsed.artifact)
   const header = { ...encoded.header }
   const sourceCwd = parsed.sourceHeader['cwd']
   if (typeof sourceCwd === 'string' && /^\{\{cwd\}\}(?:\/|$)/.test(sourceCwd)) header['cwd'] = sourceCwd

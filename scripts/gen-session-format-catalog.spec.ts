@@ -103,6 +103,7 @@ describe('session format catalog generator', () => {
     expect(declarations.map(item => [item.from, item.to])).toEqual([[0, 1], [1, 2]])
     expect(output).toContain("from '@deepseek-ai/dsh-session-format-v0-to-v1'")
     expect(output).toContain('currentVersion: 2')
+    expect(output).toContain('encodeCurrentArtifact: artifact => releasedV2SessionFormatCodec.encodeArtifact(artifact)')
     expect(output).toContain('restoreReleasedV2Artifact(artifact, KNOWN_SESSION_EVENT_TYPES)')
     expect(output).toContain('assertReleasedV2Header(header)')
     expect(output).toContain('validateInstalledCurrentSessionHeader(header)')

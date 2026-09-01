@@ -3,7 +3,7 @@
  *
  * Run the full gate from the repository root with:
  *
- *   node --expose-gc --import tsx/esm packages/session/session-format-v1-to-v2/benchmarks/acceptance.ts
+ *   pnpm run benchmark:session-format-v1-to-v2
  *
  * Use `--smoke` for a short correctness and reporting pass. The smoke mode
  * reports timing deltas but does not enforce the acceptance ceiling.
@@ -43,20 +43,20 @@ import {
   assertReleasedV2Artifact,
   releasedV2SessionFormatCodec,
   sessionFormatV1ToV2,
-} from '../src/index.ts'
+} from '../packages/session/session-format-v1-to-v2/src/index.ts'
 import {
   validateInstalledCurrentSessionArtifact,
-} from '../../session-format-catalog/src/current.ts'
+} from '../packages/session/session-format-catalog/src/current.ts'
 import {
   compressZstdFrame,
   createZstdFrameDecoder,
   scanZstdFrames,
-} from '../../session-persistence-jsonl/src/zstd.ts'
+} from '../packages/session/session-persistence-jsonl/src/zstd.ts'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {
   generationLogPath,
   type JsonlCompression,
-} from '../../session-persistence-jsonl/src/format.ts'
+} from '../packages/session/session-persistence-jsonl/src/format.ts'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import TokenMeter from '@deepseek-ai/dsh-token-meter'
 
@@ -154,17 +154,19 @@ export function parseOptions(argv: readonly string[]): BenchmarkOptions {
     }
     const match = /^--(runs|warmups|samples|threshold-percent)(?:=(.+))?$/.exec(argument)
     if (match === null) throw new Error(`unknown benchmark option ${JSON.stringify(argument)}`)
+    const name = match[1]
+    if (name === undefined) throw new Error(`unknown benchmark option ${JSON.stringify(argument)}`)
     const raw = match[2] ?? argv[index + 1]
     if (raw === undefined || (match[2] === undefined && raw.startsWith('--'))) {
-      throw new Error(`${match[1]} requires a numeric value`)
+      throw new Error(`${name} requires a numeric value`)
     }
     if (match[2] === undefined) index += 1
     const value = Number(raw)
     if (!Number.isSafeInteger(value) || value < 0) {
-      throw new Error(`${match[1]} must be a non-negative safe integer`)
+      throw new Error(`${name} must be a non-negative safe integer`)
     }
-    if (match[1] !== 'warmups' && value === 0) throw new Error(`${match[1]} must be positive`)
-    switch (match[1]) {
+    if (name !== 'warmups' && value === 0) throw new Error(`${name} must be positive`)
+    switch (name) {
       case 'runs': values.runs = value; break
       case 'warmups': values.warmups = value; break
       case 'samples': values.samples = value; break
@@ -228,14 +230,14 @@ async function main(): Promise<void> {
     console.log('Absolute costs (informational; no speedup claim)')
     for (const fixture of fixtures) {
       const migration = runDistribution(
-        () => consumeArtifact(sessionFormatV1ToV2.migrate(fixture.v1)),
+        () => { consumeArtifact(sessionFormatV1ToV2.migrate(fixture.v1)) },
         options,
       )
       printDistribution(`${fixture.name} v1->v2 migration`, migration)
 
       const session = restoredSession(fixture.v2)
       const tokenMeter = runDistribution(
-        () => consumeMeasurement(measureWithFreshTokenMeter(session)),
+        () => { consumeMeasurement(measureWithFreshTokenMeter(session)) },
         options,
       )
       printDistribution(`${fixture.name} TokenMeter cold replay+measure`, tokenMeter)
@@ -295,7 +297,7 @@ async function createFixture(name: Fixture['name'], turns: number): Promise<Fixt
     && ((event.data as SessionFormatJsonObject)['stream'] as readonly unknown[]).length > 0))
 
   const v1Physical = await encodePhysical(releasedV1SessionFormatCodec.encodeArtifact(v1, { packChunks: true }))
-  const v2Physical = await encodePhysical(releasedV2SessionFormatCodec.encodeArtifact(v2, { packChunks: false }))
+  const v2Physical = await encodePhysical(releasedV2SessionFormatCodec.encodeArtifact(v2))
   const v1Decoded = releasedV1SessionFormatCodec.decodeArtifact(...physicalArguments(parseRaw(v1Physical.raw)))
   const v2Decoded = releasedV2SessionFormatCodec.decodeArtifact(...physicalArguments(parseRaw(v2Physical.raw)))
   deepStrictEqual(v1Decoded, v1)
@@ -645,7 +647,7 @@ function consumeMeasurement(measurement: ReturnType<TokenMeter['measure']>): voi
 function restoredSession(artifact: SessionFormatArtifact): Session {
   return Session.fromRestore(
     SessionId(artifact.header.id),
-    artifact.events as readonly SessionEvent[] as SessionEvent[],
+    artifact.events as SessionEvent[],
     artifact.header as unknown as SessionHeader,
     SessionLogOffset(artifact.inheritedEventCount),
   )

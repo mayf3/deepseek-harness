@@ -63,6 +63,13 @@ function safeTime(value: number): number {
   return value
 }
 
+function safeIndex(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+    throw new TypeError(`${label} index must be a non-negative safe integer`)
+  }
+  return value
+}
+
 function snapshotChunk(chunk: StreamChunk): StreamChunk {
   const snapshot = snapshotJsonValue(chunk)
   if (snapshot === undefined) throw new TypeError('Assistant stream chunk must be losslessly JSON-serializable')
@@ -91,6 +98,8 @@ export class AssistantStreamAccumulator {
     switch (chunk.type) {
       case 'text-delta':
       case 'reasoning-delta': {
+        safeIndex(chunk.index, chunk.type)
+        if (typeof chunk.text !== 'string') throw new TypeError(`${chunk.type} text must be a string`)
         const type = chunk.type === 'text-delta' ? 'text-chunks' : 'reasoning-chunks'
         const gap = previous !== undefined && previous.type === type ? safeGap(previous.lastTime, time) : undefined
         if (previous !== undefined && previous.type === type && previous.index === chunk.index && gap !== undefined) {
@@ -103,6 +112,16 @@ export class AssistantStreamAccumulator {
         return timed
       }
       case 'tool-call-delta': {
+        safeIndex(chunk.index, chunk.type)
+        if (typeof chunk.id !== 'string' || chunk.id.length === 0) {
+          throw new TypeError('tool-call-delta id must be a non-empty string')
+        }
+        if (Object.hasOwn(chunk, 'name') && (typeof chunk.name !== 'string' || chunk.name.length === 0)) {
+          throw new TypeError('tool-call-delta name must be a non-empty string')
+        }
+        if (typeof chunk.argumentsDelta !== 'string') {
+          throw new TypeError('tool-call-delta argumentsDelta must be a string')
+        }
         const gap = previous?.type === 'tool-call-chunks' ? safeGap(previous.lastTime, time) : undefined
         const sameName = previous?.type === 'tool-call-chunks'
           && Object.hasOwn(previous, 'name') === Object.hasOwn(chunk, 'name')
@@ -222,14 +241,19 @@ function validateRecord(value: unknown): AssistantStreamRecord {
     }
     case 'chunk': {
       exactKeys(record, ['type', 'time', 'chunk'], 'chunk')
-      safeTime(record.time as number)
-      if (snapshotJsonValue(record.chunk) === undefined
-        || typeof record.chunk !== 'object'
+      const time = safeTime(record.time as number)
+      if (typeof record.chunk !== 'object'
         || record.chunk === null
         || Array.isArray(record.chunk)) {
         throw new TypeError('Assistant stream raw chunk must be a lossless JSON object')
       }
-      return record as unknown as AssistantStreamRecord
+      let chunk: StreamChunk
+      try {
+        chunk = snapshotChunk(record.chunk as StreamChunk)
+      } catch (error: unknown) {
+        throw new TypeError('Assistant stream raw chunk must be a lossless JSON object', { cause: error })
+      }
+      return deepFreeze({ type: 'chunk', time, chunk })
     }
     default:
       throw new TypeError(`Unsupported Assistant stream record ${JSON.stringify(record.type)}`)
@@ -238,9 +262,7 @@ function validateRecord(value: unknown): AssistantStreamRecord {
 
 function validateRun(record: Record<string, unknown>, members: number, label: string): void {
   safeTime(record.time0 as number)
-  if (!Number.isSafeInteger(record.index) || (record.index as number) < 0 || Object.is(record.index, -0)) {
-    throw new TypeError(`${label} index must be a non-negative safe integer`)
-  }
+  safeIndex(record.index as number, label)
   if (!Array.isArray(record.dt) || record.dt.some(value => !Number.isSafeInteger(value))) {
     throw new TypeError(`${label} dt must contain safe integers`)
   }

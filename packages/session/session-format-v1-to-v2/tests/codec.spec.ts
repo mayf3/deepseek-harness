@@ -67,7 +67,7 @@ describe('releasedV2SessionFormatCodec headers', () => {
       agentPreset: 'default',
     })
 
-    const encodedMinimal = releasedV2SessionFormatCodec.encodeArtifact(artifact([]), { packChunks: false })
+    const encodedMinimal = releasedV2SessionFormatCodec.encodeArtifact(artifact([]))
     expect(encodedMinimal).toStrictEqual({ header: minimalPhysicalHeader, rows: [] })
     const complete = artifact([], {
       header: {
@@ -82,7 +82,7 @@ describe('releasedV2SessionFormatCodec headers', () => {
         agentPreset: 'default',
       },
     })
-    expect(releasedV2SessionFormatCodec.encodeArtifact(complete, { packChunks: false }).header)
+    expect(releasedV2SessionFormatCodec.encodeArtifact(complete).header)
       .toStrictEqual(fullPhysicalHeader)
   })
 
@@ -116,13 +116,23 @@ describe('releasedV2SessionFormatCodec rows', () => {
       userMessage(2, [0, 1]),
       userMessage(3, [0, 1, 2]),
     ])
-    const encoded = releasedV2SessionFormatCodec.encodeArtifact(source, { packChunks: true })
+    const encoded = releasedV2SessionFormatCodec.encodeArtifact(source)
     expect(encoded.rows.map(row => row['sourceEventSeqs'])).toStrictEqual([
       undefined,
       [0],
       [0, 1],
       [[0, 2]],
     ])
+    expect(releasedV2SessionFormatCodec.decodeArtifact(encoded.header, encoded.rows)).toStrictEqual(source)
+  })
+
+  it('round-trips an unknown ignorable event for current-build restoration', () => {
+    const source = artifact([{
+      type: 'external/ignorable', seq: 0, time: 1, data: { retained: true }, ignorable: true,
+    }])
+
+    const encoded = releasedV2SessionFormatCodec.encodeArtifact(source)
+
     expect(releasedV2SessionFormatCodec.decodeArtifact(encoded.header, encoded.rows)).toStrictEqual(source)
   })
 

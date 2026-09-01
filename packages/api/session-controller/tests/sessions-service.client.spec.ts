@@ -12,6 +12,7 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
+import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions, SessionCreateError } from '../src/client/sessions/service.ts'
 import { scopeOf } from '../src/client/scope.ts'
 import type { SessionFollowFrame } from '../src/types.ts'
@@ -170,7 +171,7 @@ describe('scope tree', () => {
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 1,
+        type: 'start', attemptId, revision: 1, startedTime: 1, startedAfterSeq: -1,
         turn: 1, step: 1,
       },
     })
@@ -197,12 +198,12 @@ describe('scope tree', () => {
       },
     })
     await vi.waitFor(() => {
-      expect(binding.eventSource.getSnapshot().entries).toHaveLength(2)
+      expect(binding.eventSource.getSnapshot().entries).toHaveLength(1)
     })
 
     expect(publications).toEqual([
       ['assistant/live-chunk'],
-      ['assistant/live-chunk', 'assistant/message'],
+      ['assistant/message'],
     ])
     dispose()
   })
@@ -215,7 +216,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 2,
       activeAttempt: {
-        attemptId, startedTime: 1, turn: 1, step: 1,
+        attemptId, startedTime: 1, startedAfterSeq: -1, turn: 1, step: 1,
         nextIndex: 1,
         stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['a'] }],
       },
@@ -232,7 +233,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 3,
       activeAttempt: {
-        attemptId, startedTime: 1, turn: 1, step: 1,
+        attemptId, startedTime: 1, startedAfterSeq: -1, turn: 1, step: 1,
         nextIndex: 2,
         stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [1], texts: ['a', 'b'] }],
       },
@@ -256,7 +257,7 @@ describe('scope tree', () => {
     const priorMessage = {
       type: 'event' as const,
       event: {
-        type: 'assistant/message', seq: 0, time: 11,
+        type: 'assistant/message', seq: 0, time: 30,
         data: {
           turn: 1,
           step: 1,
@@ -274,7 +275,7 @@ describe('scope tree', () => {
     const currentMessage = {
       type: 'event' as const,
       event: {
-        type: 'assistant/message', seq: 1, time: 21,
+        type: 'assistant/message', seq: 1, time: 19,
         data: {
           turn: 1,
           step: 1,
@@ -298,6 +299,7 @@ describe('scope tree', () => {
       activeAttempt: {
         attemptId,
         startedTime: 20,
+        startedAfterSeq: SessionSeq(0),
         turn: 1,
         step: 1,
         nextIndex: 1,
@@ -325,10 +327,10 @@ describe('scope tree', () => {
     })
     await vi.waitFor(() => {
       expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
-        .toEqual(['assistant/message', 'assistant/live-chunk', 'assistant/message'])
+        .toEqual(['assistant/message', 'assistant/message'])
     })
     expect(binding.eventSource.getSnapshot().change).toEqual({
-      kind: 'append', entries: [currentMessage],
+      kind: 'replace', entries: [priorMessage, currentMessage],
     })
   })
 
@@ -362,6 +364,7 @@ describe('scope tree', () => {
       activeAttempt: {
         attemptId,
         startedTime: 20,
+        startedAfterSeq: SessionSeq(0),
         turn: 1,
         step: 1,
         nextIndex: 1,

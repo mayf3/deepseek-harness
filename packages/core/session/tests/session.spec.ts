@@ -192,6 +192,49 @@ describe('Session', () => {
       .toEqual([unrelatedPrimitiveData])
   })
 
+  it('rejects malformed current Assistant streams at the restore boundary', () => {
+    const id = SessionId('invalid-restored-assistant-stream')
+    const header = {
+      version: SESSION_FORMAT_VERSION,
+      id,
+      createdAt: 1,
+      isSeeded: false,
+      delegationDepth: 0,
+    } as const
+    const invalidAttempt = {
+      type: 'assistant/attempt',
+      seq: 0,
+      time: 1,
+      data: {
+        turn: 1,
+        step: 1,
+        stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [1], texts: ['only'] }],
+      },
+    } as unknown as SessionEvent
+    expect(() => Session.fromRestore(id, [invalidAttempt], header, SessionLogOffset(0)))
+      .toThrow(/invalid embedded stream/)
+
+    const mismatchedMessage = {
+      type: 'assistant/message',
+      seq: 0,
+      time: 1,
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'different' }],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+        stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['streamed'] }],
+      },
+      surfaceOp: 'append',
+    } as unknown as SessionEvent
+    expect(() => Session.fromRestore(id, [mismatchedMessage], header, SessionLogOffset(0)))
+      .toThrow(/disagrees with its embedded stream/)
+  })
+
   it('rejects historical or malformed request-header lifecycle markers on seed/load', () => {
     const base = {
       type: 'request/header', seq: SessionSeq(0), time: 1,

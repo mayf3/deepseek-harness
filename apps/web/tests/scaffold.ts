@@ -862,7 +862,7 @@ function rawSessionLog(session: Session): string {
     // Session validates durable payloads as JSON; its closed event unions do
     // not carry the index signature used by the format package's JSON types.
     events: session.snapshotEvents() as unknown as readonly SessionFormatEvent[],
-  }, { packChunks: false })
+  })
   return [
     JSON.stringify(encoded.header),
     ...encoded.rows.map(record => JSON.stringify(record)),

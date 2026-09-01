@@ -14,7 +14,7 @@ import type {
 
 interface ActiveAttempt {
   readonly attemptId: string
-  readonly startedTime: number
+  readonly startedAfterSeq: number
   readonly turn: number
   readonly step: number
   nextIndex: number
@@ -23,6 +23,11 @@ interface ActiveAttempt {
 /** One Web publication decision from the assistant stream fold. */
 export type ClientAssistantStreamResult =
   | { readonly type: 'publish'; readonly entry: SessionLiveEventEntry }
+  | {
+    readonly type: 'settlement'
+    readonly attemptId: string
+    readonly entry: SessionLiveEventEntry
+  }
   | { readonly type: 'transient'; readonly entry: SessionTransientEventEntry }
   | { readonly type: 'rebaseline' }
   | undefined
@@ -52,7 +57,7 @@ export class ClientAssistantStream {
     if (opening !== undefined) {
       this.activeAttempt = {
         attemptId: String(opening.attemptId),
-        startedTime: opening.startedTime,
+        startedAfterSeq: opening.startedAfterSeq,
         turn: opening.turn,
         step: opening.step,
         nextIndex: opening.nextIndex,
@@ -120,7 +125,7 @@ export class ClientAssistantStream {
         this.pending.clear()
         this.activeAttempt = {
           attemptId: String(frame.attemptId),
-          startedTime: frame.startedTime,
+          startedAfterSeq: frame.startedAfterSeq,
           turn: frame.turn,
           step: frame.step,
           nextIndex: 0,
@@ -170,7 +175,8 @@ export class ClientAssistantStream {
           return { type: 'rebaseline' }
         }
         this.pending.delete(frame.outcome.seq)
-        return this.publish(entry)
+        this.publishedSeqs.add(entry.event.seq)
+        return { type: 'settlement', attemptId: attempt.attemptId, entry }
       }
     }
   }
@@ -182,7 +188,7 @@ export class ClientAssistantStream {
     if (attempt === undefined
       || (event.type !== 'assistant/message' && event.type !== 'assistant/attempt')
       || (event.type === 'assistant/message' && event.surfaceOp !== 'append')
-      || event.time < attempt.startedTime
+      || event.seq <= attempt.startedAfterSeq
       || attempt.turn !== event.data.turn
       || attempt.step !== event.data.step) return undefined
     return attempt

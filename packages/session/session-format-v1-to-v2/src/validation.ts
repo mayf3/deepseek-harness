@@ -20,7 +20,7 @@ import {
   assertReleasedPayloadSemantics,
   assertReleasedSurfaceMetadata,
 } from '@deepseek-ai/dsh-session-format-v0-to-v1'
-import { RELEASED_V2_EVENT_DISPOSITIONS } from './dispositions.ts'
+import { RELEASED_V2_EVENT_DISPOSITIONS, RELEASED_V2_EVENT_TYPES } from './dispositions.ts'
 
 const HEADER_REQUIRED = ['version', 'id', 'createdAt', 'isSeeded', 'delegationDepth'] as const
 const HEADER_OPTIONAL = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
@@ -28,6 +28,7 @@ const EVENT_REQUIRED = ['type', 'seq', 'time', 'data'] as const
 const SURFACE_TYPES = new Set(['user/message', 'assistant/message', 'tool/result'])
 const SURFACE_OPTIONAL = ['ignorable', 'sourceEventSeqs', 'surfaceOp'] as const
 const LOG_OPTIONAL = ['ignorable'] as const
+const RELEASED_V2_EVENT_TYPE_SET = new Set(RELEASED_V2_EVENT_TYPES)
 
 /**
  * Validate the exact logical header written by released v2.
@@ -62,6 +63,14 @@ export function assertReleasedV2Header(header: SessionFormatHeader): void {
  * @throws {SessionFormatUnsupportedMigrationError} when the artifact contains an unknown event type.
  */
 export function assertReleasedV2Artifact(artifact: SessionFormatArtifact): void {
+  validateReleasedV2Artifact(artifact, RELEASED_V2_EVENT_TYPE_SET, false)
+}
+
+function validateReleasedV2Artifact(
+  artifact: SessionFormatArtifact,
+  knownEventTypes: ReadonlySet<string>,
+  allowIgnorableUnknown: boolean,
+): void {
   assertReleasedV2Header(artifact.header)
   const cut = sessionFormatCount(artifact.inheritedEventCount, 'format v2 inherited event count')
   if (cut > artifact.events.length) throw new SessionFormatError('format v2 inherited event count exceeds its events')
@@ -72,20 +81,27 @@ export function assertReleasedV2Artifact(artifact: SessionFormatArtifact): void 
     const type = record['type']
     if (typeof type !== 'string') throw new SessionFormatError(`format v2 event ${index} type must be a string`)
     const disposition = RELEASED_V2_EVENT_DISPOSITIONS[type]
-    if (disposition === undefined) {
+    const installed = knownEventTypes.has(type)
+    const ignorableUnknown = disposition === undefined
+      && allowIgnorableUnknown
+      && record['ignorable'] === true
+    if (disposition === undefined && !installed && !ignorableUnknown) {
       throw new SessionFormatUnsupportedMigrationError(
         `format v2 contains unknown event type ${JSON.stringify(type)} at seq ${index}`,
       )
     }
-    const surface = SURFACE_TYPES.has(type)
-    exactKeys(record, EVENT_REQUIRED, surface ? SURFACE_OPTIONAL : LOG_OPTIONAL, `format v2 event ${index}`)
+    const surface = disposition !== undefined && SURFACE_TYPES.has(type)
+    const optional = disposition === undefined
+      ? SURFACE_OPTIONAL
+      : surface ? SURFACE_OPTIONAL : LOG_OPTIONAL
+    exactKeys(record, EVENT_REQUIRED, optional, `format v2 event ${index}`)
     if (record['seq'] !== index) throw new SessionFormatError(`format v2 event ${index} is not dense`)
     sessionFormatSafeInteger(record['time'], `format v2 event ${index} time`)
     if (record['ignorable'] !== undefined && record['ignorable'] !== true) {
       throw new SessionFormatError(`format v2 event ${index} ignorable must be true when present`)
     }
     if (surface) assertReleasedSurfaceMetadata(record, index, type, 'forbid-assistant')
-    assertPayload(event, disposition)
+    if (disposition !== undefined) assertPayload(event, disposition)
     if (type === 'session/end-seed') {
       const data = jsonRecord(event.data, `session/end-seed ${index} data`)
       if (data['inherited'] === true) lastInheritedMarker = index
@@ -178,13 +194,13 @@ function exactKeys(
 /**
  * Restore and validate one decoded released-v2 artifact.
  * @param artifact - detached vocabulary-restored artifact.
- * @param _knownEventTypes - installed first-party inventory, accepted to keep every generated target restorer uniform.
+ * @param knownEventTypes - event types understood by the installed current Session package.
  * @returns the same validated artifact.
  */
 export function restoreReleasedV2Artifact(
   artifact: SessionFormatArtifact,
-  _knownEventTypes: ReadonlySet<string>,
+  knownEventTypes: ReadonlySet<string>,
 ): SessionFormatArtifact {
-  assertReleasedV2Artifact(artifact)
+  validateReleasedV2Artifact(artifact, knownEventTypes, true)
   return artifact
 }

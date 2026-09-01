@@ -9,9 +9,10 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { isAbsolute } from 'node:path'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
+import { deepEqualJson, deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import { scopeOf, scopeTarget } from '@deepseek-ai/dsh-scope'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
+import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
@@ -237,6 +238,7 @@ function assertSessionEventEnvelope(value: Record<string, unknown>, index: numbe
   switch (type) {
     case 'request/header':
     case 'user/message':
+    case 'assistant/attempt':
     case 'assistant/message':
     case 'tool/result':
       assertCurrentLlmShape(event, index)
@@ -273,9 +275,43 @@ function assertCurrentLlmShape(event: Record<string, unknown>, index: number): v
     }
   }
   const type = event['type']
+  if (type === 'assistant/attempt') {
+    assertCurrentAssistantStream(record, type, index)
+    return
+  }
   if (type !== 'user/message' && type !== 'assistant/message'
     && type !== 'tool/result') return
   assertMessageEventShape(event, `seed ${type} at index ${index}`)
+  if (type === 'assistant/message') assertCurrentAssistantStream(record, type, index)
+}
+
+/** Validate the current settlement stream and its duplicated message fields at a durable restore boundary. */
+function assertCurrentAssistantStream(
+  data: Record<string, unknown> | undefined,
+  type: 'assistant/attempt' | 'assistant/message',
+  index: number,
+): void {
+  const assembler = new BlockAssembler()
+  let timed: ReturnType<typeof expandAssistantStream>
+  try {
+    timed = expandAssistantStream(data?.['stream'] as never)
+    for (const member of timed) assembler.push(member.chunk)
+  } catch (error: unknown) {
+    throw new Error(`seed ${type} at index ${index} has an invalid embedded stream`, { cause: error })
+  }
+  if (type === 'assistant/attempt' || timed.length === 0) return
+  const message = data?.['message'] as Record<string, unknown>
+  const content = data?.['interrupted'] === true ? assembler.interruptedBlocks() : assembler.blocks()
+  if (!deepEqualJson(message['content'], content)) {
+    throw new Error(`seed assistant/message at index ${index} content disagrees with its embedded stream`)
+  }
+  if (!deepEqualJson(data?.['usage'], assembler.usage)) {
+    throw new Error(`seed assistant/message at index ${index} usage disagrees with its embedded stream`)
+  }
+  const source = message['source'] as Record<string, unknown>
+  if (!deepEqualJson(source['replayState'], assembler.replayState)) {
+    throw new Error(`seed assistant/message at index ${index} replay state disagrees with its embedded stream`)
+  }
 }
 
 const allowedAdapterKeys = new Set(['reasoningEffort', 'maxTokens'])

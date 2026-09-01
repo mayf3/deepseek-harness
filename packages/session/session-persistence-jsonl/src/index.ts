@@ -210,7 +210,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
             ...current,
             events: [...current.events, ...closers] as unknown as typeof current.events,
           }
-        return sessionFormatCatalog.encodeCurrent(repaired, { packChunks: false })
+        return sessionFormatCatalog.encodeCurrent(repaired)
       },
       validateCurrent: (candidate) => {
         const decoded = sessionFormatCatalog.decodeArtifact(candidate.header, candidate.rows)
@@ -489,7 +489,9 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     if (header === undefined || header.meta.id !== id) {
       throw new Error(`corrupt session log: invalid header line in "${path}"`)
     }
-    const storage = scanLog(Buffer.from(content))
+    // Unseeded raw transfer needs only the validated header. Seeded v2 keeps
+    // its exact inherited cut in the body, so only that lineage case scans rows.
+    const storage = header.meta.isSeeded ? scanLog(Buffer.from(content)) : header
     // Raw transfer retains the immutable generation name while removing only
     // the physical compression suffix from a Zstandard artifact.
     const storedFilename = basename(path)

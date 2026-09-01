@@ -72,6 +72,20 @@ describe('AssistantStreamAccumulator', () => {
     expect(Object.isFrozen((first[0] as { texts: readonly string[] }).texts)).toBe(true)
   })
 
+  it('detaches raw records while expanding durable input', () => {
+    const chunk = { type: 'usage', usage: { inputTokens: 3, outputTokens: 2 } }
+    const expanded = expandAssistantStream([{
+      type: 'chunk', time: 10, chunk,
+    }] as never)
+
+    chunk.usage.inputTokens = 99
+
+    expect(expanded).toStrictEqual([{
+      time: 10,
+      chunk: { type: 'usage', usage: { inputTokens: 3, outputTokens: 2 } },
+    }])
+  })
+
   it('keeps incompatible delta runs separate and expands reasoning and nameless tool calls', () => {
     const accumulator = new AssistantStreamAccumulator()
     const chunks: readonly TimedStreamChunk[] = [
@@ -127,6 +141,20 @@ describe('AssistantStreamAccumulator', () => {
       time: 1,
       chunk: { type: 'future', callback: () => undefined } as never,
     })).toThrow(/JSON-serializable/)
+    expect(() => accumulator.push({
+      time: 1,
+      chunk: { type: 'text-delta', index: -1, text: 'bad' },
+    })).toThrow(/index/)
+    expect(() => accumulator.push({
+      time: 1,
+      chunk: { type: 'tool-call-delta', index: 0, id: ToolCallId(''), argumentsDelta: '{}' },
+    })).toThrow(/id/)
+    expect(() => accumulator.push({
+      time: 1,
+      chunk: {
+        type: 'tool-call-delta', index: 0, id: ToolCallId('call'), name: '', argumentsDelta: '{}',
+      },
+    })).toThrow(/name/)
     expect(accumulator.snapshot()).toStrictEqual([])
   })
 

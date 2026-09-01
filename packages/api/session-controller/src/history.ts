@@ -57,7 +57,7 @@ export class SessionHistoryController {
         stream = new SessionAssistantStreamAccumulator()
         this.assistantStreams.set(agent.session.id, stream)
       }
-      stream.accept(frame)
+      stream.accept(frame, cursorBeforeNext(agent.session.seq))
     }, { global: true })
     ctx.on('agent/disposed', ({ agent }) => {
       this.assistantStreams.delete(agent.session.id)
@@ -166,7 +166,7 @@ export class SessionHistoryController {
         if (agent.session.id !== target) return
         buffered.pushBack({
           type: 'assistant-stream',
-          frame: wireAssistantStreamFrame(frame),
+          frame: wireAssistantStreamFrame(frame, cursorBeforeNext(agent.session.seq)),
           ordinal: ++assistantStreamOrdinal,
         })
         notify()
@@ -274,8 +274,16 @@ export class SessionHistoryController {
 
 }
 
-function wireAssistantStreamFrame(frame: AssistantStreamFrame): SessionAssistantStreamFrame {
-  if (frame.type !== 'chunk') return frame
+function cursorBeforeNext(nextSeq: SessionLogOffsetType): SessionSeqCursor {
+  return nextSeq === 0 ? -1 : SessionSeq(nextSeq - 1)
+}
+
+function wireAssistantStreamFrame(
+  frame: AssistantStreamFrame,
+  durableCursor: SessionSeqCursor,
+): SessionAssistantStreamFrame {
+  if (frame.type === 'start') return { ...frame, startedAfterSeq: durableCursor }
+  if (frame.type === 'end') return frame
   return {
     ...frame,
     chunk: frame.chunk as JsonValue,

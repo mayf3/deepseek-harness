@@ -32,11 +32,11 @@ Use this library from persistence or format-catalog code that must classify a ph
 ### Entry point
 
 ```text
-const catalog = createSessionFormatCatalog({ currentVersion, codecs, migrations, restoreCurrent, restoreCurrentHeader })
+const catalog = createSessionFormatCatalog({ currentVersion, codecs, encodeCurrentArtifact, migrations, restoreCurrent, restoreCurrentHeader })
 const descriptor = catalog.readHeader(physicalHeader)
 ```
 
-`createSessionFormatCatalog()` accepts one frozen codec per supported version, one migration per adjacent version pair, and current artifact and header restorers. `inspectVersion()` reads only the physical version for directional dispatch. `readHeader()` returns a `current`, `migration-required`, `unsupported`, or `malformed` descriptor without reading events. Each edge validates its target header before the final current-header restorer runs. Body readers call `decodeArtifact()` or `decodeRecoverableArtifact()`, then `migrate()`; writers call `encodeCurrent()` only with a validated current artifact.
+`createSessionFormatCatalog()` accepts one frozen decoder per supported version, the current format's encoder, one migration per adjacent version pair, and current artifact and header restorers. `inspectVersion()` reads only the physical version for directional dispatch. `readHeader()` returns a `current`, `migration-required`, `unsupported`, or `malformed` descriptor without reading events. Each edge validates its target header before the final current-header restorer runs. Body readers call `decodeArtifact()` or `decodeRecoverableArtifact()`, then `migrate()`; writers call `encodeCurrent()` only with a validated current artifact. Frozen v0/v1 codec exports retain their format-specific `packChunks` option without adding that historical control to the current writer or common decoder interface.
 
 The recoverable decoder returns the accepted logical prefix. A codec may drop one malformed or sequence-gapped row and its uncommitted suffix, but a later decoded `turn/end` makes the original issue fatal.
 

@@ -145,6 +145,7 @@ describe('Session Client stream adapters', () => {
       activeAttempt: {
         attemptId,
         startedTime: 1,
+        startedAfterSeq: -1,
         turn: 1,
         step: 1,
         nextIndex: 1,
@@ -211,7 +212,7 @@ describe('Session Client stream adapters', () => {
     const remote = new ScriptedSessionRemote([{
       frames: [assistantFrame({
         type: 'start', attemptId: LlmAttemptId('pre-opening-attempt'),
-        revision: 1, startedTime: 1, turn: 1, step: 1,
+        revision: 1, startedTime: 1, startedAfterSeq: -1, turn: 1, step: 1,
       })],
     }], [])
     const stream = new SessionEventStream(sessionClient(remote), ADDRESS, {
@@ -233,7 +234,7 @@ describe('Session Client stream adapters', () => {
   it('rebaselines after a transient assistant revision gap without advancing the durable cursor', async () => {
     const attemptId = LlmAttemptId('gapped-attempt')
     const start: SessionAssistantStreamFrame = {
-      type: 'start', attemptId, revision: 1, startedTime: 1,
+      type: 'start', attemptId, revision: 1, startedTime: 1, startedAfterSeq: -1,
       turn: 1, step: 1,
     }
     const gap: SessionAssistantStreamFrame = {
@@ -245,6 +246,7 @@ describe('Session Client stream adapters', () => {
       activeAttempt: {
         attemptId,
         startedTime: 1,
+        startedAfterSeq: -1,
         turn: 1,
         step: 1,
         nextIndex: 1,
@@ -288,6 +290,7 @@ describe('Session Client stream adapters', () => {
       activeAttempt: {
         attemptId,
         startedTime: 1,
+        startedAfterSeq: -1,
         turn: 1,
         step: 1,
         nextIndex: 1,
@@ -295,7 +298,7 @@ describe('Session Client stream adapters', () => {
       },
     }
     const replacementStart: SessionAssistantStreamFrame = {
-      type: 'start', attemptId, revision: 1, startedTime: 2,
+      type: 'start', attemptId, revision: 1, startedTime: 2, startedAfterSeq: -1,
       turn: 2, step: 1,
     }
     const replacement: SessionAssistantStreamBaseline = {
@@ -303,6 +306,7 @@ describe('Session Client stream adapters', () => {
       activeAttempt: {
         attemptId,
         startedTime: 2,
+        startedAfterSeq: -1,
         turn: 2,
         step: 1,
         nextIndex: 0,

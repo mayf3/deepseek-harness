@@ -2,6 +2,7 @@
 
 import type { AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm'
+import type { SessionSeqCursor } from '@deepseek-ai/dsh-session'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type {
   SessionAssistantStreamAttempt,
@@ -11,6 +12,7 @@ import type {
 interface MutableAttempt {
   readonly attemptId: SessionAssistantStreamAttempt['attemptId']
   readonly startedTime: number
+  readonly startedAfterSeq: SessionSeqCursor
   readonly turn: number
   readonly step: number
   readonly stream: AssistantStreamAccumulator
@@ -32,8 +34,9 @@ export class SessionAssistantStreamAccumulator {
   /**
    * Fold one trusted frame from the current attached Agent lifecycle.
    * @param frame - next dense process-local Assistant frame.
+   * @param durableCursor - last committed Session seq when this frame was observed.
    */
-  accept(frame: AssistantStreamFrame): void {
+  accept(frame: AssistantStreamFrame, durableCursor: SessionSeqCursor): void {
     if (frame.type === 'start' && frame.revision === 1 && this.revision !== 0) {
       this.activeAttempt = undefined
       this.revision = 0
@@ -50,6 +53,7 @@ export class SessionAssistantStreamAccumulator {
         this.activeAttempt = {
           attemptId: frame.attemptId,
           startedTime: frame.startedTime,
+          startedAfterSeq: durableCursor,
           turn: frame.turn,
           step: frame.step,
           stream: new AssistantStreamAccumulator(),
@@ -87,6 +91,7 @@ export class SessionAssistantStreamAccumulator {
         activeAttempt: {
           attemptId: this.activeAttempt.attemptId,
           startedTime: this.activeAttempt.startedTime,
+          startedAfterSeq: this.activeAttempt.startedAfterSeq,
           turn: this.activeAttempt.turn,
           step: this.activeAttempt.step,
           nextIndex: this.activeAttempt.nextIndex,

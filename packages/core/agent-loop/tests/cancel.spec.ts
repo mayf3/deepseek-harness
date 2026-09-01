@@ -10,7 +10,7 @@ import { ToolCallId, createUserMessage, expandAssistantStream } from '@deepseek-
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId, SessionLogOffset, TurnEndReason } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime, { defineContentToolFixture, TOOL_ABORTED_BEFORE_DISPATCH } from '@deepseek-ai/dsh-tools'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
@@ -515,6 +515,38 @@ describe('Agent.cancel()', () => {
       .flatMap(m => m.content)
       .flatMap(b => b.type === 'text' ? [b.text] : [])
     expect(replayed).toContain('partial')
+  })
+
+  it('retains terminal replay state when cancellation races the final stream chunk', async () => {
+    const response = textResponse('complete')
+    const replayState = { response: { id: 'response' }, blocks: ['text-meta'] }
+    response[response.length - 1] = {
+      type: 'finish', reason: { kind: 'stop' }, replayState,
+    }
+    const adapter = new MockAdapter([response])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('terminal-cancel-replay'), {
+      provider: 'mock', model: 'mock',
+    })
+    ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject === agent && frame.type === 'chunk' && frame.chunk.type === 'finish') {
+        agent.cancel({ kind: 'user' })
+      }
+    })
+
+    send(agent, 'go')
+    await waitForIdle(ctx, agent)
+
+    const message = agent.session.snapshotEvents().find(event => event.type === 'assistant/message')
+    expect(message?.type === 'assistant/message' ? message.data.message.source.replayState : undefined)
+      .toEqual(replayState)
+    expect(message?.type === 'assistant/message' ? message.data.interrupted : undefined).toBe(true)
+    expect(() => Session.fromRestore(
+      agent.session.id,
+      structuredClone(agent.session.snapshotEvents()),
+      structuredClone(agent.session.header),
+      SessionLogOffset(0),
+    )).not.toThrow()
   })
 
   it('cancel during reasoning-only streaming finalizes the reasoning prefix', async () => {

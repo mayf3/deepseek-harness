@@ -163,6 +163,20 @@ export class MutableSessionEventSource implements SessionEventSource {
     })
   }
 
+  /**
+   * Replace one attempt's transient rows with its committed durable settlement.
+   * @param attemptId - process-local attempt whose live rows are now redundant.
+   * @param entry - durable settlement committed for that attempt.
+   */
+  settleAssistant(attemptId: string, entry: SessionLiveEventEntry): void {
+    const entries = materialize(this.window).filter(candidate => (
+      candidate.type !== 'transient' || String(candidate.event.data.attemptId) !== attemptId
+    ))
+    entries.push(entry)
+    this.window = leaf(entries)
+    this.publish(this.snapshot.hasMore, { kind: 'replace', entries })
+  }
+
   private publish(
     hasMore: boolean,
     change: SessionEventChange,

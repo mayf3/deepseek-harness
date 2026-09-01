@@ -668,6 +668,12 @@ export class Session implements SessionFace {
       })
       return
     }
+    if (result?.type === 'settlement') {
+      this.eventSource.settleAssistant(result.attemptId, result.entry)
+      this.observeSubmissionEvent(result.entry.event)
+      this.notifier.markDirty()
+      return
+    }
     if (result?.type === 'publish' && this.appendLive(result.entry)) {
       this.notifier.markDirty()
     } else if (result?.type === 'transient') {

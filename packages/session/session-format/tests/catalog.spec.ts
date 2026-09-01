@@ -6,13 +6,13 @@ import {
   type SessionFormatCodec,
 } from '../src/index.ts'
 
-function codec(version: number): SessionFormatCodec {
+function codec(version: number) {
   return {
     version,
-    decodeHeader(value) {
+    decodeHeader(value: unknown) {
       return value as never
     },
-    decodeArtifact(headerValue, rowValues) {
+    decodeArtifact(headerValue: unknown, rowValues: readonly unknown[]) {
       const header = headerValue as SessionFormatArtifact['header']
       return {
         header,
@@ -20,10 +20,10 @@ function codec(version: number): SessionFormatCodec {
         events: rowValues as SessionFormatArtifact['events'],
       }
     },
-    decodeRecoverableArtifact(headerValue, rowValues) {
+    decodeRecoverableArtifact(headerValue: unknown, rowValues: readonly unknown[]) {
       return this.decodeArtifact(headerValue, rowValues)
     },
-    encodeArtifact(artifact) {
+    encodeArtifact(artifact: SessionFormatArtifact) {
       return { header: artifact.header, rows: artifact.events }
     },
   }
@@ -38,6 +38,7 @@ describe('Session format catalog', () => {
     const catalog = createSessionFormatCatalog({
       currentVersion: 1,
       codecs: [codec(0), codec(1)],
+      encodeCurrentArtifact: (artifact: SessionFormatArtifact) => codec(1).encodeArtifact(artifact),
       migrations: [defineSessionFormatMigration({
         name: '@test/v0-to-v1',
         fromVersion: 0,
@@ -85,6 +86,7 @@ describe('Session format catalog', () => {
     const catalog = createSessionFormatCatalog({
       currentVersion: 1,
       codecs: [codec(0), currentCodec],
+      encodeCurrentArtifact: artifact => currentCodec.encodeArtifact(artifact),
       migrations: [defineSessionFormatMigration({
         name: '@test/v0-to-v1', fromVersion: 0, toVersion: 1,
         migrateHeader: header => ({ ...header, version: 1 }),
@@ -105,11 +107,11 @@ describe('Session format catalog', () => {
 
     expect(catalog.readHeader(current.header)).toMatchObject({ status: 'current', header: current.header })
     expect(catalog.decodeRecoverableArtifact(current.header, current.events)).toEqual(current)
-    expect(catalog.encodeCurrent(current, { packChunks: false })).toEqual({
+    expect(catalog.encodeCurrent(current)).toEqual({
       header: current.header,
       rows: current.events,
     })
-    expect(() => catalog.encodeCurrent({ ...current, header: { ...current.header, version: 0 } }, { packChunks: false }))
+    expect(() => catalog.encodeCurrent({ ...current, header: { ...current.header, version: 0 } }))
       .toThrow(/requires Session format v1/)
   })
 
@@ -124,6 +126,7 @@ describe('Session format catalog', () => {
     const options = {
       currentVersion: 1,
       migrations: [edge],
+      encodeCurrentArtifact: (artifact: SessionFormatArtifact) => codec(1).encodeArtifact(artifact),
       restoreCurrent: (value: SessionFormatArtifact) => value,
       restoreCurrentHeader: (value: SessionFormatArtifact['header']) => value,
     }
@@ -142,6 +145,7 @@ describe('Session format catalog', () => {
     const catalog = createSessionFormatCatalog({
       currentVersion: 1,
       codecs: [refusing, codec(1)],
+      encodeCurrentArtifact: artifact => codec(1).encodeArtifact(artifact),
       migrations: [defineSessionFormatMigration({
         name: '@test/v0-to-v1', fromVersion: 0, toVersion: 1,
         migrateHeader: header => ({ ...header, version: 1 }),
@@ -160,13 +164,16 @@ describe('Session format catalog', () => {
   })
 
   it('rejects a current encoder that returns a non-current header', () => {
-    const bad: SessionFormatCodec = {
+    const bad = {
       ...codec(1),
-      encodeArtifact: artifact => ({ header: { ...artifact.header, version: 0 }, rows: artifact.events }),
+      encodeArtifact: (artifact: SessionFormatArtifact) => ({
+        header: { ...artifact.header, version: 0 }, rows: artifact.events,
+      }),
     }
     const catalog = createSessionFormatCatalog({
       currentVersion: 1,
       codecs: [codec(0), bad],
+      encodeCurrentArtifact: bad.encodeArtifact,
       migrations: [defineSessionFormatMigration({
         name: '@test/v0-to-v1', fromVersion: 0, toVersion: 1,
         migrateHeader: header => ({ ...header, version: 1 }),
@@ -182,7 +189,7 @@ describe('Session format catalog', () => {
       inheritedEventCount: 0,
       events: [],
     }
-    expect(() => catalog.encodeCurrent(current, { packChunks: false })).toThrow(/non-current header/)
+    expect(() => catalog.encodeCurrent(current)).toThrow(/non-current header/)
   })
 
   it('classifies malformed migrated and direct-current logical headers', () => {
@@ -199,6 +206,7 @@ describe('Session format catalog', () => {
     const catalog = createSessionFormatCatalog({
       currentVersion: 1,
       codecs: [codec(0), codec(1)],
+      encodeCurrentArtifact: artifact => codec(1).encodeArtifact(artifact),
       migrations: [migration],
       restoreCurrent: artifact => artifact,
       restoreCurrentHeader: (header: SessionFormatArtifact['header']) => {

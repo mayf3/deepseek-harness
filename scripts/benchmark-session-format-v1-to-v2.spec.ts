@@ -4,7 +4,7 @@ import {
   SMOKE_DEFAULTS,
   parseOptions,
   percentile,
-} from './acceptance.ts'
+} from './benchmark-session-format-v1-to-v2.ts'
 
 describe('v2 performance acceptance options', () => {
   it('pins the full acceptance and non-gating smoke specifications', () => {

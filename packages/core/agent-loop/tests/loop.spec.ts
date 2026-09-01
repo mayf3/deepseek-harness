@@ -159,6 +159,41 @@ describe('agent loop', () => {
     })
   })
 
+  it('preserves the stream failure when its durable attempt settlement is also rejected', async () => {
+    const streamFailure = new Error('provider transport failed')
+    const settlementFailure = new Error('attempt settlement rejected')
+    const ctx = await harness(new MockAdapter([textResponse('partial')]))
+    const agent = ctx.agentLoop.create(SessionId('double-assistant-failure'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    ctx.on('llm/stream', async function* (_options, next) {
+      for await (const chunk of next()) {
+        yield chunk
+        if (chunk.type === 'text-delta') throw streamFailure
+      }
+    })
+    const append = agent.session.append.bind(agent.session)
+    Object.defineProperty(agent.session, 'append', {
+      configurable: true,
+      value: (...args: Parameters<typeof agent.session.append>): ReturnType<typeof agent.session.append> => {
+        if (args[0] === 'assistant/attempt') throw settlementFailure
+        return Reflect.apply(append, agent.session, args) as ReturnType<typeof agent.session.append>
+      },
+    })
+    const errors: unknown[] = []
+    ctx.on('agent/error', ({ agent: subject, error }) => {
+      if (subject === agent) errors.push(error)
+    })
+
+    send(agent, 'stream this')
+    await waitForIdle(ctx, agent)
+
+    const combined = errors.find((error): error is AggregateError => error instanceof AggregateError)
+    expect(combined?.errors).toEqual([streamFailure, settlementFailure])
+    expect(combined?.cause).toBe(streamFailure)
+  })
+
   it.each([0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
     'rejects invalid AgentOptions.maxTokens %s before publication',
     async (maxTokens) => {

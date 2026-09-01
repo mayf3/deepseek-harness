@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-format-v1-to-v2` converts a complete released-v1 Session into the released-v2 event model. It consumes top-level `assistant/chunk` events, embeds their exact timed stream in the matching `assistant/message`, and records an `assistant/attempt` when a failed, retried, cancelled, or crash-tail attempt produced no surface message. The edge densely remaps surviving events and every declared same-Session sequence reference, while the v2 codec stores one event per row and derives the inherited cut from a tagged `session/end-seed` marker.
+`dsh-session-format-v1-to-v2` converts a complete released-v1 Session into the released-v2 event model. It consumes top-level `assistant/chunk` events, embeds their exact timed stream in the matching `assistant/message`, and records an `assistant/attempt` when a failed, retried, cancelled, or stream-error attempt reached settlement without a surface message. The edge densely remaps surviving events and every declared same-Session sequence reference, while the v2 codec stores one event per row and derives the inherited cut from a tagged `session/end-seed` marker.
 
 ## Table of Contents
 
@@ -42,12 +42,12 @@ A successful v1 `assistant/message` must cite its complete ordered attempt. The 
 
 The migration refuses a reference to a consumed chunk instead of redirecting it to a different semantic event. It remaps declared event provenance, surface replacements, command source events, compaction ranges and lists, and title message lists. A seeded source also refuses an inherited cut that splits an Assistant attempt; the target marks the exact cut with `session/end-seed { inherited: true }`.
 
-The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, and range-encodes only `sourceEventSeqs`. Strict v2 validation rejects unknown event types even when their envelope is ignorable, unexpected members, malformed compact streams, and disagreement between a non-empty stream and its assembled message, usage, or replay state.
+The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, and range-encodes only `sourceEventSeqs`. Strict migration-target validation rejects unknown event types, while current restoration retains installed extensions and unknown events carrying `ignorable: true`. Both paths reject unexpected members, malformed compact streams, and disagreement between a non-empty stream and its assembled message, usage, or replay state.
 
 ### Measure current-read acceptance
 
 ```text
-node --expose-gc --import tsx/esm packages/session/session-format-v1-to-v2/benchmarks/acceptance.ts
+pnpm run benchmark:session-format-v1-to-v2
 ```
 
 The manual acceptance runs three repetitions with 100 warmup pairs and 600 alternating measured pairs per case. It compares the current v2 catalog-dispatch read against a direct-current read of the same backend, id, file, and decoder, and requires every pooled median and p95 regression to stay within 5%. Add `--smoke` only for a short correctness and reporting pass; smoke timing is non-gating and is not an acceptance result.
@@ -68,7 +68,7 @@ The edge first groups v1 chunks by turn, step, terminal finish, and explicit mes
 | [`src/codec.ts`](src/codec.ts) | Released-v2 header, one-event-per-row encoding, provenance ranges, and recoverable prefix decoding |
 | [`src/validation.ts`](src/validation.ts) | Exact v2 header, envelope, payload, stream, relationship, and seed-cut validation |
 | [`src/dispositions.ts`](src/dispositions.ts) | Frozen released-v2 event and payload-member inventory |
-| [`benchmarks/acceptance.ts`](benchmarks/acceptance.ts) | Manual current-read, migration, token-meter, size, and memory acceptance report |
+| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | Repository-only current-read, migration, token-meter, size, and memory acceptance report |
 
 </details>
 

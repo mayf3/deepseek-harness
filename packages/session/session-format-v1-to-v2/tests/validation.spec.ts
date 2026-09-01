@@ -403,9 +403,19 @@ describe('released v2 seed and surface relationships', () => {
 })
 
 describe('released v2 restoration seam', () => {
-  it('returns the same validated artifact and rejects invalid input', () => {
+  it('returns the same validated artifact and preserves safe vocabulary extensions', () => {
     const value = artifact([])
     expect(restoreReleasedV2Artifact(value, new Set(RELEASED_V2_EVENT_TYPES))).toBe(value)
+    const ignorableExtension = artifact([
+      event('external/ignorable', 0, { retained: true }, { ignorable: true }),
+    ])
+    expect(restoreReleasedV2Artifact(ignorableExtension, new Set(RELEASED_V2_EVENT_TYPES)))
+      .toBe(ignorableExtension)
+    const installedExtension = artifact([event('external/installed', 0, { retained: true })])
+    expect(restoreReleasedV2Artifact(
+      installedExtension,
+      new Set([...RELEASED_V2_EVENT_TYPES, 'external/installed']),
+    )).toBe(installedExtension)
     expect(() => restoreReleasedV2Artifact(
       artifact([event('external/unknown', 0, {})]),
       new Set(RELEASED_V2_EVENT_TYPES),

@@ -203,6 +203,7 @@ describe('Session history raw journal', () => {
           activeAttempt: {
             attemptId,
             startedTime: 100,
+            startedAfterSeq: -1,
             turn: 1,
             step: 1,
             nextIndex: 1,
@@ -274,6 +275,7 @@ describe('Session history raw journal', () => {
             activeAttempt: {
               attemptId,
               startedTime: 100,
+              startedAfterSeq: -1,
               turn: 1,
               step: 1,
               nextIndex: 1,
@@ -292,7 +294,7 @@ describe('Session history raw journal', () => {
       ctx.emit('agent/assistant-stream', { agent: replacementAgent, frame: replacement })
       await expect(iterator.next()).resolves.toEqual({
         done: false,
-        value: { type: 'assistant-stream', frame: replacement },
+        value: { type: 'assistant-stream', frame: { ...replacement, startedAfterSeq: -1 } },
       })
     } finally {
       await disposeFollow(ctx, iterator, abort)
@@ -580,7 +582,8 @@ describe('Session history raw journal', () => {
           assistantStream: {
             revision: 1,
             activeAttempt: {
-              attemptId, startedTime: 200, turn: 2, step: 1, nextIndex: 0, stream: [],
+              attemptId, startedTime: 200, startedAfterSeq: -1,
+              turn: 2, step: 1, nextIndex: 0, stream: [],
             },
           },
         },
