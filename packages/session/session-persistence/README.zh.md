@@ -43,7 +43,7 @@ const { meta, inheritedEventCount, events } = await ctx.sessionPersistence.load(
 const listings = await ctx.sessionPersistence.list()       // header-only artifact descriptors
 ```
 
-`append` 只在批次持久后返回，因此成功返回的写入在操作系统崩溃或断电后依然存在。普通 `create(meta, inheritedEventCount)` 保持惰性；`meta.isSeeded: true` 要求单独的精确 cut，unseeded metadata 可以省略它并拒绝非零值。seeded 会话的首个物化批次必须到达完整继承前缀，因此存储绝不公开 cut 超过日志的 metadata。只有当空会话本身必须出现在持久列表中时，生命周期前端才调用 `ensureMaterialized`，且不会虚构事件。`list` 与 `listSnapshots` 只读取独立 header，并为每个 Session 目录中数值最高的规范 generation 返回一个 current、migration-required、unsupported 或 malformed descriptor。`load` 返回不可变的平衡日志并提交任何需要的崩溃恢复。对于已经是当前格式的存储，`inspect` 只在内存中保留合成恢复；受支持的历史检查会先在不改变源文件的情况下于其旁边发布已修复的当前后继 generation。`readFrom` 接受 `SessionLogOffset`，并返回分离的 `SessionEventSuffix`，其中携带该 `fromSeq`、不变的继承 cut，以及 cut 位置或之后的存储事件。会话的版本限定产物目标（`locate`）不经文件系统 I/O 即可解析。
+`append` 只在批次持久后返回，因此成功返回的写入在操作系统崩溃或断电后依然存在。普通 `create(meta, inheritedEventCount)` 保持惰性；`meta.isSeeded: true` 要求单独的精确 cut，unseeded metadata 可以省略它并拒绝非零值。seeded 会话的首个物化批次必须到达完整继承前缀，因此存储绝不公开 cut 超过日志的 metadata。只有当空会话本身必须出现在持久列表中时，生命周期前端才调用 `ensureMaterialized`，且不会虚构事件。`list` 与 `listSnapshots` 只读取独立 header，并为每个 Session 目录中数值最高的规范 generation 返回一个 current、migration-required、unsupported 或 malformed descriptor。descriptor 的可选 `storageId` 来自后端拥有的 location 而非 header，因此 unsupported 或 malformed 产物仍能占用自己的 Session id。`load` 返回不可变的平衡日志并提交任何需要的崩溃恢复。对于已经是当前格式的存储，`inspect` 只在内存中保留合成恢复；受支持的历史检查会先在不改变源文件的情况下于其旁边发布已修复的当前后继 generation。`readFrom` 接受 `SessionLogOffset`，并返回分离的 `SessionEventSuffix`，其中携带该 `fromSeq`、不变的继承 cut，以及 cut 位置或之后的存储事件。会话的版本限定产物目标（`locate`）不经文件系统 I/O 即可解析。
 
 `prepare`、`inspect` 或 `borrowSession` 的取消只停止该观察者等待。可由另一观察者复用的共享冷准备或历史迁移可以继续完成；取消绝不会回滚已经进入持久发布阶段的 generation。分离的 `readFrom` 与 `readRaw` 则会把取消信号传给串行化后端读取。
 

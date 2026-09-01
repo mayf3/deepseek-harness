@@ -23,6 +23,8 @@ export { SessionPersistenceNotFoundError } from './errors.ts'
 /** One current-format artifact whose header is already the latest logical type. */
 export interface CurrentSessionPersistenceListing {
   readonly status: 'current'
+  /** Session id encoded by the backend location, when recoverable without trusting the header. */
+  readonly storageId?: SessionId
   /** Latest logical header decoded without reading event bodies. */
   readonly header: SessionHeader
   /** Physical format version read from the artifact header. */
@@ -36,6 +38,8 @@ export interface CurrentSessionPersistenceListing {
 /** One supported historical artifact that will migrate on its first body read. */
 export interface MigrationRequiredSessionPersistenceListing {
   readonly status: 'migration-required'
+  /** Session id encoded by the backend location, when recoverable without trusting the header. */
+  readonly storageId?: SessionId
   /** Latest logical header translated without reading event bodies. */
   readonly header: SessionHeader
   /** Physical historical format version read from the artifact header. */
@@ -49,6 +53,8 @@ export interface MigrationRequiredSessionPersistenceListing {
 /** One intact artifact whose format has no complete migration path in this build. */
 export interface UnsupportedSessionPersistenceListing {
   readonly status: 'unsupported'
+  /** Session id encoded by the backend location, when recoverable without trusting the header. */
+  readonly storageId?: SessionId
   /** Physical version when the minimal header exposes one. */
   readonly storedVersion?: number
   /** Format version this build writes and restores. */
@@ -62,6 +68,8 @@ export interface UnsupportedSessionPersistenceListing {
 /** One artifact whose minimal header is not structurally readable. */
 export interface MalformedSessionPersistenceListing {
   readonly status: 'malformed'
+  /** Session id encoded by the backend location, when recoverable without trusting the header. */
+  readonly storageId?: SessionId
   /** Format version this build writes and restores. */
   readonly targetVersion: number
   /** Stable backend location for operator diagnosis. */

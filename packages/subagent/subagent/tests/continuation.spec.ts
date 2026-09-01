@@ -280,6 +280,33 @@ describe('SubagentRuntime.startContinuable', () => {
     listSnapshots.mockRestore()
   })
 
+  it.each(['unsupported', 'malformed'] as const)(
+    'rejects a reserved identity occupied by an unreadable %s artifact',
+    async (status) => {
+      const { ctx, parent } = await setup([])
+      const reservedId = SessionId(`00000000-0000-4000-8000-${status === 'unsupported' ? '000000000125' : '000000000126'}`)
+      const base = {
+        storageId: reservedId,
+        targetVersion: SESSION_FORMAT_VERSION,
+        location: { kind: 'jsonl', path: `/sessions/${reservedId}/session.jsonl` },
+        reason: `${status} artifact`,
+        revision: SessionPersistenceRevision(`${status}:1`),
+      }
+      const listSnapshots = vi.spyOn(ctx.sessionPersistence, 'listSnapshots').mockResolvedValue([
+        status === 'unsupported'
+          ? { ...base, status, storedVersion: SESSION_FORMAT_VERSION + 1 }
+          : { ...base, status },
+      ])
+
+      await expect(ctx.subagents.startContinuable({
+        ...startSpec(parent),
+        childId: reservedId,
+      })).rejects.toMatchObject({ code: 'DUPLICATE_CHILD' })
+      expect(ctx.agents.get(reservedId)).toBeUndefined()
+      listSnapshots.mockRestore()
+    },
+  )
+
   it('rejects without ids when the provider has no prepareContinuable capability', async () => {
     const { ctx, parent } = await setup([])
     const start = vi.fn(async () => { throw new Error('must not dispatch') })

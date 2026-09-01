@@ -61,12 +61,13 @@ export class SessionPersistenceCorruptionError extends Error {
 }
 
 /**
- * The stored log is intact but this runtime cannot faithfully interpret it:
- * the header carries an unsupported format version, or an event's type is
- * unknown to this build and the event is not marked ignorable. Distinct from
- * {@link SessionPersistenceCorruptionError} — nothing is damaged; the raw log
- * remains readable at {@link location} when the backend keeps one artifact
- * per session.
+ * This runtime cannot faithfully interpret the stored log. The header may
+ * carry an unsupported format version, an event type may be unknown and not
+ * ignorable, or migration validation may refuse malformed historical input.
+ * Unlike {@link SessionPersistenceCorruptionError}, this error leaves the
+ * source artifact unchanged; it does not certify that the artifact is intact.
+ * The raw bytes remain available at {@link location} when the backend keeps
+ * one artifact per session.
  */
 export class SessionFormatUnsupportedError extends Error {
   /**

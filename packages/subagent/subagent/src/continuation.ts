@@ -476,7 +476,7 @@ export class SubagentContinuationManager {
         this.assertChildIdAvailable(childId)
         if (persisted.some(snapshot => (
           snapshot.status === 'current' || snapshot.status === 'migration-required'
-        ) && snapshot.header.id === childId)) {
+        ) ? snapshot.header.id === childId : snapshot.storageId === childId)) {
           throw new SubagentError(`subagent "${childId}" already exists`, 'DUPLICATE_CHILD')
         }
       }

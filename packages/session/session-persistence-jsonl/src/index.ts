@@ -43,7 +43,7 @@ import {
   interruptedTurnClosers,
 } from '@deepseek-ai/dsh-session'
 import {
-  encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, logSuffix,
+  decodeSegment, encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, logSuffix,
   parseGenerationLogFilename, parseHeader, parseHeaderValue, projectDir, scanLog, sessionDir,
   SessionLogScanner, toHeaderLine,
   type JsonlCompression,
@@ -762,6 +762,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       signal?.throwIfAborted()
       for (const dir of await this.listSessionDirs(project, signal)) {
         signal?.throwIfAborted()
+        const decodedStorageId = decodeSegment(basename(dir))
+        const storageIdentity = decodedStorageId === undefined
+          ? {}
+          : { storageId: makeSessionId(decodedStorageId) }
         const selected = await this.resolveGenerationInDirectory(dir, signal)
         if (selected === undefined) continue
         const path = selected.sourcePath
@@ -776,6 +780,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
           if (first === undefined) {
             listing = {
               status: 'malformed',
+              ...storageIdentity,
               targetVersion: sessionFormatCatalog.currentVersion,
               location,
               reason: 'session artifact has no complete independently readable header',
@@ -799,6 +804,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
               await this.assertStoredIdentity(path, selected.sourceVersion, header, undefined, signal)
               listing = {
                 status: 'current',
+                ...storageIdentity,
                 storedVersion: result.storedVersion,
                 targetVersion: result.targetVersion,
                 header,
@@ -809,6 +815,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
               await this.assertStoredIdentity(path, selected.sourceVersion, header, undefined, signal)
               listing = {
                 status: 'migration-required',
+                ...storageIdentity,
                 storedVersion: result.storedVersion,
                 targetVersion: result.targetVersion,
                 header,
@@ -817,6 +824,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
             } else if (result.status === 'unsupported') {
               listing = {
                 status: 'unsupported',
+                ...storageIdentity,
                 storedVersion: result.storedVersion,
                 targetVersion: result.targetVersion,
                 location,
@@ -826,6 +834,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
               const malformed = result as { readonly targetVersion: number; readonly reason: string }
               listing = {
                 status: 'malformed',
+                ...storageIdentity,
                 targetVersion: malformed.targetVersion,
                 location,
                 reason: malformed.reason,
@@ -840,6 +849,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
           else reason = String(error)
           listing = {
             status: 'malformed',
+            ...storageIdentity,
             targetVersion: sessionFormatCatalog.currentVersion,
             location,
             reason,
@@ -859,6 +869,7 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
         const artifact = artifacts[index] as { listing: SessionPersistenceListing; path: string }
         artifact.listing = {
           status: 'malformed',
+          ...artifact.listing.storageId === undefined ? {} : { storageId: artifact.listing.storageId },
           targetVersion: sessionFormatCatalog.currentVersion,
           location: { kind: 'jsonl', path: artifact.path },
           reason: `duplicate JSONL session id "${id}" appears in multiple project directories`,
@@ -1246,7 +1257,16 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     const cached = this.validatedCurrentGenerations.get(id)
     if (cached !== undefined) {
       signal?.throwIfAborted()
-      return cached
+      try {
+        await stat(cached.sourcePath)
+        signal?.throwIfAborted()
+        return cached
+      } catch (error: unknown) {
+        signal?.throwIfAborted()
+        if (!isENOENT(error)) throw error
+        this.validatedCurrentGenerations.delete(id)
+      }
+      signal?.throwIfAborted()
     }
     const matches: ResolvedJsonlGeneration[] = []
     for (const project of await this.listProjectDirs(signal)) {

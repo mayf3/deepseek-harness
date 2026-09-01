@@ -9,7 +9,7 @@ import type { Session, SessionEvent, SessionHeader } from '@deepseek-ai/dsh-sess
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import type { SessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import {
-  encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, parseGenerationLogFilename,
+  decodeSegment, encodeSegment, eventLines, generationLogFilename, generationLogPath, logPath, parseGenerationLogFilename,
   parseHeader, parseHeaderValue, projectDir, projectKey, scanLog, sessionDir,
   SessionLogScanner, toHeaderLine,
 } from '../src/format.ts'
@@ -317,6 +317,16 @@ describe('JsonlSessionPersistence: format helpers', () => {
     expect(() => encodeSegment('')).toThrow(/empty/)
   })
 
+  it('decodeSegment accepts only canonical storage-directory spellings', () => {
+    for (const value of ['plain-ID_1.2', '..', 'a/b', 'a~b', String.fromCharCode(0xD800)]) {
+      expect(decodeSegment(encodeSegment(value))).toBe(value)
+    }
+    expect(decodeSegment('')).toBeUndefined()
+    expect(decodeSegment('~002f')).toBeUndefined()
+    expect(decodeSegment('~BEEGtail')).toBeUndefined()
+    expect(decodeSegment('~bad')).toBeUndefined()
+  })
+
   it('projectKey normalizes project paths into bounded readable names', () => {
     expect(projectKey('/Users/qyj/work/deepseek-harness')).toBe('--Users-qyj-work-deepseek-harness--')
     expect(projectKey('/a/b-c')).toBe(projectKey('/a-b/c'))
@@ -441,7 +451,7 @@ describe('JsonlSessionPersistence: format helpers', () => {
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, `${JSON.stringify({ ...toHeaderLine(m), version: 7 })}\n`)
     const [listing] = await ctx.sessionPersistence.list()
-    expect(listing).toMatchObject({ status: 'unsupported', storedVersion: 7, targetVersion: 1 })
+    expect(listing).toMatchObject({ status: 'unsupported', storageId: m.id, storedVersion: 7, targetVersion: 1 })
     const backend = ctx.sessionPersistence as JsonlSessionPersistence
     await expect(backend.loadStored(m.id)).rejects.toThrow(`(raw log: ${path})`)
     const failure = await ctx.sessionPersistence.load(m.id).then(() => undefined, (error: unknown) => error as Error)
@@ -478,6 +488,17 @@ describe('JsonlSessionPersistence: durability and crash semantics', () => {
     expect((await stat(dir)).isDirectory()).toBe(true)
     expect((await stat(rawLogPath(root, '/work', m.id))).isFile()).toBe(true)
     expect(listedIds(await ctx.sessionPersistence.list())).toContain(m.id)
+  })
+
+  it('invalidates a cached current path removed outside the process', async () => {
+    const m = meta('removed-cached-current', '/work')
+    await ctx.sessionPersistence.create(m)
+    await ctx.sessionPersistence.append(m.id, oneTurnLog())
+    await rm(rawLogPath(root, m.cwd, m.id))
+
+    await expect(ctx.sessionPersistence.load(m.id)).rejects.toMatchObject({
+      name: 'SessionPersistenceNotFoundError',
+    })
   })
 
   it('lists a seeded header without reading an event body', async () => {
@@ -2045,7 +2066,11 @@ describe('JsonlSessionPersistence: edge cases', () => {
 
     const listings = await ctx.sessionPersistence.list()
     expect(listedIds(listings)).toEqual(['real'])
-    expect(listings.filter(listing => listing.status === 'malformed')).toHaveLength(3)
+    expect(listings.filter(listing => listing.status === 'malformed')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ storageId: 'empty' }),
+      expect.objectContaining({ storageId: 'notheader' }),
+      expect.objectContaining({ storageId: 'badjson' }),
+    ]))
   })
 
   it('list reads a header line longer than the 8KB read chunk', async () => {

@@ -3868,7 +3868,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CurrentSessionPersistenceListing',
-    declaration: 'export interface CurrentSessionPersistenceListing {\n    readonly status: \'current\';\n    readonly header: SessionHeader;\n    readonly storedVersion: number;\n    readonly targetVersion: number;\n    readonly location?: SessionLocation;\n}',
+    declaration: 'export interface CurrentSessionPersistenceListing {\n    readonly status: \'current\';\n    readonly storageId?: SessionId;\n    readonly header: SessionHeader;\n    readonly storedVersion: number;\n    readonly targetVersion: number;\n    readonly location?: SessionLocation;\n}',
   },
   {
     name: 'DeepSeekLlmApiExtensionMap',
@@ -4380,7 +4380,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MalformedSessionPersistenceListing',
-    declaration: 'export interface MalformedSessionPersistenceListing {\n    readonly status: \'malformed\';\n    readonly targetVersion: number;\n    readonly location: SessionLocation;\n    readonly reason: string;\n}',
+    declaration: 'export interface MalformedSessionPersistenceListing {\n    readonly status: \'malformed\';\n    readonly storageId?: SessionId;\n    readonly targetVersion: number;\n    readonly location: SessionLocation;\n    readonly reason: string;\n}',
   },
   {
     name: 'ManualCompactAgentContext',
@@ -4480,7 +4480,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'MigrationRequiredSessionPersistenceListing',
-    declaration: 'export interface MigrationRequiredSessionPersistenceListing {\n    readonly status: \'migration-required\';\n    readonly header: SessionHeader;\n    readonly storedVersion: number;\n    readonly targetVersion: number;\n    readonly location?: SessionLocation;\n}',
+    declaration: 'export interface MigrationRequiredSessionPersistenceListing {\n    readonly status: \'migration-required\';\n    readonly storageId?: SessionId;\n    readonly header: SessionHeader;\n    readonly storedVersion: number;\n    readonly targetVersion: number;\n    readonly location?: SessionLocation;\n}',
   },
   {
     name: 'ModelCatalog',
@@ -5964,7 +5964,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'UnsupportedSessionPersistenceListing',
-    declaration: 'export interface UnsupportedSessionPersistenceListing {\n    readonly status: \'unsupported\';\n    readonly storedVersion?: number;\n    readonly targetVersion: number;\n    readonly location: SessionLocation;\n    readonly reason: string;\n}',
+    declaration: 'export interface UnsupportedSessionPersistenceListing {\n    readonly status: \'unsupported\';\n    readonly storageId?: SessionId;\n    readonly storedVersion?: number;\n    readonly targetVersion: number;\n    readonly location: SessionLocation;\n    readonly reason: string;\n}',
   },
   {
     name: 'UpdateTeamTaskRequest',

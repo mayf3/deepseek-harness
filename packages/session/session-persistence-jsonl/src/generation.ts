@@ -550,6 +550,18 @@ async function removeTemporary(
   }
 }
 
+/** Remove a redundant stage after the target has been validated as committed. */
+async function removeCommittedTemporary(
+  path: string,
+  internals: JsonlGenerationInternals,
+): Promise<void> {
+  try {
+    await internals.fs.rm(path)
+  } catch {
+    // The validated target owns the committed bytes; a redundant link cannot turn success into failure.
+  }
+}
+
 async function validatePhysicalCurrent(
   path: string,
   compression: JsonlCompression,
@@ -759,6 +771,10 @@ async function ensureCurrent(
         !published,
         internals,
       )
+      if (staged !== '') {
+        await removeCommittedTemporary(staged, internals)
+        staged = ''
+      }
       return {
         status: 'migrated',
         fromVersion,

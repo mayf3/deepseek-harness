@@ -220,6 +220,30 @@ export function encodeSegment(raw: string): string {
 }
 
 /**
+ * Decode one canonical {@link encodeSegment} result.
+ *
+ * @param encoded - candidate storage-directory segment.
+ * @returns the original string, or `undefined` when the spelling is not canonical.
+ */
+export function decodeSegment(encoded: string): string | undefined {
+  if (encoded.length === 0) return undefined
+  let decoded = ''
+  for (let index = 0; index < encoded.length;) {
+    const character = encoded[index] as string
+    if (character !== '~') {
+      decoded += character
+      index += 1
+      continue
+    }
+    const escape = encoded.slice(index + 1, index + 5)
+    if (!/^[0-9A-F]{4}$/u.test(escape)) return undefined
+    decoded += String.fromCharCode(Number.parseInt(escape, 16))
+    index += 5
+  }
+  return encodeSegment(decoded) === encoded ? decoded : undefined
+}
+
+/**
  * Build the readable directory key for a project path.
  * Filesystem separators and drive separators become `-`; unsafe code units use
  * the same `~XXXX` escape as session ids. The key is bounded for filesystem

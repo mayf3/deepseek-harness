@@ -903,7 +903,7 @@ describe('JSONL immutable generation publication', () => {
     expect(await readFile(request.sourcePath, 'utf8')).toBe(line(header(0)) + line(event0))
   })
 
-  it('keeps an exclusively published target when successful stage cleanup fails', async () => {
+  it('reports success after exclusive publication when redundant stage cleanup fails', async () => {
     const root = await tempRoot()
     const request = options(root)
     const cleanup = new Error('published stage cleanup failed')
@@ -917,7 +917,7 @@ describe('JSONL immutable generation publication', () => {
           await rm(path, { force: true })
         },
       }),
-    })).rejects.toBe(cleanup)
+    })).resolves.toMatchObject({ status: 'migrated', path: request.currentPath })
 
     expect(await readFile(request.currentPath, 'utf8')).toBe(line(header(1)) + line(event0))
   })
