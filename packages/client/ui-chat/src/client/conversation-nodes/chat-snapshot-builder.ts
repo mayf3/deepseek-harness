@@ -1,4 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
+import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {
   ConversationLocation, ConversationTimelineSnapshot, ConversationViewBuilder,
   ConversationViewDefinition,
@@ -6,7 +7,7 @@ import type {
 import type { ChatConversationViewNode, ChatNode } from '../contract/chat-nodes.ts'
 import { isRunningTool } from '../contract/chat-nodes.ts'
 import type {
-  ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot, ChatTurnNavigationIndex, ConversationNode,
+  ChatLocationNodeIndex, ChatNodeSource, ChatNodeStore, ChatSnapshot, ChatTurnNavigationIndex, ConversationNode,
   LegacyConversationSlice, PartialAssistant, RunningToolCall, TurnNavigationItem,
 } from '../contract/snapshot.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
@@ -22,13 +23,44 @@ function sameReferences<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
+class MutableChatNodeSource implements ChatNodeSource {
+  private readonly listeners = new Set<() => void>()
+
+  constructor(
+    private readonly store: MutableChatNodeStore,
+    private readonly key: string,
+  ) {}
+
+  readonly getSnapshot = (): ChatConversationViewNode | undefined => this.store.get(this.key)
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  publish(): void {
+    notifySubscribers(this.listeners, `[ui-chat] node source ${this.key}`)
+  }
+}
+
 class MutableChatNodeStore implements ChatNodeStore {
   private readonly byKey = new Map<string, ChatConversationViewNode>()
+  private readonly sources = new Map<string, MutableChatNodeSource>()
+  private readonly dirtyKeys = new Set<string>()
   private valuesCache: readonly ChatConversationViewNode[] = EMPTY_LIST
   private valuesDirty = false
 
   get(key: string): ChatConversationViewNode | undefined {
     return this.byKey.get(key)
+  }
+
+  source(key: string): ChatNodeSource {
+    let source = this.sources.get(key)
+    if (source === undefined) {
+      source = new MutableChatNodeSource(this, key)
+      this.sources.set(key, source)
+    }
+    return source
   }
 
   values(): readonly ChatConversationViewNode[] {
@@ -40,8 +72,14 @@ class MutableChatNodeStore implements ChatNodeStore {
   }
 
   replace(nodes: readonly ChatConversationViewNode[]): void {
+    const previous = new Map(this.byKey)
     this.byKey.clear()
-    for (const node of nodes) this.byKey.set(node.key, node)
+    for (const node of nodes) {
+      this.byKey.set(node.key, node)
+      if (previous.get(node.key) !== node) this.dirtyKeys.add(node.key)
+      previous.delete(node.key)
+    }
+    for (const key of previous.keys()) this.dirtyKeys.add(key)
     this.valuesCache = [...this.byKey.values()]
     this.valuesDirty = false
   }
@@ -51,9 +89,16 @@ class MutableChatNodeStore implements ChatNodeStore {
     for (const node of nodes) {
       if (this.byKey.get(node.key) === node) continue
       this.byKey.set(node.key, node)
+      this.dirtyKeys.add(node.key)
       changed = true
     }
     if (changed) this.valuesDirty = true
+  }
+
+  publish(): void {
+    const dirty = [...this.dirtyKeys]
+    this.dirtyKeys.clear()
+    for (const key of dirty) this.sources.get(key)?.publish()
   }
 }
 
@@ -652,7 +697,9 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     this.locations.rebuild(this.order, this.store)
     this.navigation.rebuild(input.timeline, this.locations, this.store)
     this.timeline = input.timeline
-    return this.snapshot(input.timeline, this.legacy.replace(nodes, input.timeline))
+    const snapshot = this.snapshot(input.timeline, this.legacy.replace(nodes, input.timeline))
+    this.store.publish()
+    return snapshot
   }
 
   apply(input: {
@@ -685,7 +732,9 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
       this.navigation.touch(turnsOf(contentOnly), this.locations, this.store)
     }
     this.timeline = input.timeline
-    return this.snapshot(input.timeline, this.legacy.apply(upserts, input.timeline))
+    const snapshot = this.snapshot(input.timeline, this.legacy.apply(upserts, input.timeline))
+    this.store.publish()
+    return snapshot
   }
 
   private snapshot(

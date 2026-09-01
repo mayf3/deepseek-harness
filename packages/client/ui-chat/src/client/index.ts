@@ -15,7 +15,7 @@ export type {} from './conversation-nodes/turn-tail.ts'
 
 export type {
   AssistantBlock, AssistantMessageNode, AssistantProvenanceView, AssistantRequestConfig,
-  AssistantTiming, ChatLocationNodeIndex, ChatNodeStore, ChatSnapshot, ChatTurnNavigationIndex,
+  AssistantTiming, ChatLocationNodeIndex, ChatNodeSource, ChatNodeStore, ChatSnapshot, ChatTurnNavigationIndex,
   CommandNode, CompactionSummaryNode, ContextMessageNode, ConversationNode,
   LegacyConversationSlice, ModelRetryNode, PartialAssistant, RunningToolCall,
   SteeringMessageNode, ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode,

@@ -162,6 +162,7 @@ describe('Chat apply wiring', () => {
     )
     const data = { get: (key: string) => key === 'metric' ? 42 : undefined }
     const turn = { data }
+    const emptySource = { getSnapshot: () => undefined, subscribe: () => () => {} }
 
     snapshot = chatSnapshot({
       nodes: { get: () => ({ location: { kind: 'turn', turn } }), values: () => [] } as never,
@@ -176,7 +177,11 @@ describe('Chat apply wiring', () => {
     })
     expect(useTurnData('metric')).toBeUndefined()
     snapshot = chatSnapshot({
-      nodes: { get: () => undefined, values: () => [] },
+      nodes: {
+        get: () => undefined,
+        source: () => emptySource,
+        values: () => [],
+      },
     })
     expect(useTurnData('metric')).toBeUndefined()
 

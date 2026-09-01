@@ -10,10 +10,21 @@ export type {
   ToolCallBlock, ToolResultNode, TurnErrorNode, TurnMaxTokensNode, UnknownSurfaceNode,
   UserMessageNode,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
+
+/** Per-key observable used by one mounted Chat Node Seat. */
+export interface ChatNodeSource {
+  /** @returns the current Node for this source's stable key. */
+  getSnapshot(): ChatConversationViewNode | undefined
+  /** @param listener - callback for changes to this key. @returns the unsubscribe function. */
+  subscribe(listener: () => void): () => void
+}
+
 /** Stable live per-key reader for Chat nodes. */
 export interface ChatNodeStore {
   /** @param key - stable Conversation Context key. @returns current Node, when visible or hidden. */
   get(key: string): ChatConversationViewNode | undefined
+  /** @param key - stable Conversation Context key. @returns its identity-stable observable source. */
+  source(key: string): ChatNodeSource
   /** @returns all currently materialized Nodes without imposing render order. */
   values(): readonly ChatConversationViewNode[]
 }
@@ -75,12 +86,17 @@ declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
 
 const EMPTY_LIST: readonly never[] = []
 const EMPTY_TIMELINE: ConversationTimelineSnapshot = { turnOrder: EMPTY_LIST, turns: new Map() }
+const EMPTY_NODE_SOURCE: ChatNodeSource = {
+  getSnapshot: () => undefined,
+  subscribe: () => () => {},
+}
 
 /** Empty Chat target used before a view builder is registered. */
 export const EMPTY_CHAT_SNAPSHOT: ChatSnapshot = {
   order: EMPTY_LIST,
   nodes: {
     get: () => undefined,
+    source: () => EMPTY_NODE_SOURCE,
     values: () => EMPTY_LIST,
   },
   locations: {

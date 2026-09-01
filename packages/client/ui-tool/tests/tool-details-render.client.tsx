@@ -50,6 +50,7 @@ export function toolChatSnapshot(
     order: nodes.map(node => node.key),
     nodes: {
       get: key => byKey.get(key),
+      source: key => ({ getSnapshot: () => byKey.get(key), subscribe: () => () => {} }),
       values: () => nodes,
     },
     locations: {

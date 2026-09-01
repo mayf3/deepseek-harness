@@ -1,6 +1,6 @@
 import type {
   AssistantChatData, AssistantMessageNode, ChatConversationViewNode, ChatSnapshot, ConversationNode,
-  ChatLocationNodeIndex, ChatNodeStore, CompactionSummaryNode, FinalAssistantChatData,
+  ChatLocationNodeIndex, ChatNodeSource, ChatNodeStore, CompactionSummaryNode, FinalAssistantChatData,
   LegacyConversationSlice, PartialAssistant, RunningToolCall, ToolCallBlock, TurnNavigationItem,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {
@@ -63,12 +63,43 @@ function toolCallName(call: ToolCallBlock): string | null {
   return 'name' in call ? call.name : call.call?.name ?? null
 }
 
+class FixtureNodeSource implements ChatNodeSource {
+  private readonly listeners = new Set<() => void>()
+
+  constructor(
+    private readonly store: FixtureNodeStore,
+    private readonly key: string,
+  ) {}
+
+  readonly getSnapshot = (): ChatConversationViewNode | undefined => this.store.get(this.key)
+
+  readonly subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  publish(): void {
+    for (const listener of [...this.listeners]) listener()
+  }
+}
+
 class FixtureNodeStore implements ChatNodeStore {
   private byKey = new Map<string, ChatConversationViewNode>()
+  private readonly sources = new Map<string, FixtureNodeSource>()
+  private readonly dirtyKeys = new Set<string>()
   private list: readonly ChatConversationViewNode[] = EMPTY
 
   get(key: string): ChatConversationViewNode | undefined {
     return this.byKey.get(key)
+  }
+
+  source(key: string): ChatNodeSource {
+    let source = this.sources.get(key)
+    if (source === undefined) {
+      source = new FixtureNodeSource(this, key)
+      this.sources.set(key, source)
+    }
+    return source
   }
 
   values(): readonly ChatConversationViewNode[] {
@@ -76,22 +107,33 @@ class FixtureNodeStore implements ChatNodeStore {
   }
 
   replace(candidates: readonly ChatConversationViewNode[]): void {
+    const previous = this.byKey
     const next = new Map<string, ChatConversationViewNode>()
     const list = candidates.map((candidate) => {
-      const previous = this.byKey.get(candidate.key)
-      const node = previous !== undefined
-        && previous.kind === candidate.kind
-        && previous.anchorSeq === candidate.anchorSeq
-        && sameFixtureLocation(previous.location, candidate.location)
-        && previous.visibility === candidate.visibility
-        && nodeSource(previous) === nodeSource(candidate)
-        ? previous
+      const existing = previous.get(candidate.key)
+      const node = existing !== undefined
+        && existing.kind === candidate.kind
+        && existing.anchorSeq === candidate.anchorSeq
+        && sameFixtureLocation(existing.location, candidate.location)
+        && existing.visibility === candidate.visibility
+        && nodeSource(existing) === nodeSource(candidate)
+        ? existing
         : candidate
       next.set(node.key, node)
       return node
     })
     this.byKey = next
     this.list = sameValues(this.list, list) ? this.list : list
+    const keys = new Set([...previous.keys(), ...next.keys()])
+    for (const key of keys) {
+      if (previous.get(key) !== next.get(key)) this.dirtyKeys.add(key)
+    }
+  }
+
+  publish(): void {
+    const dirty = [...this.dirtyKeys]
+    this.dirtyKeys.clear()
+    for (const key of dirty) this.sources.get(key)?.publish()
   }
 }
 
@@ -420,6 +462,7 @@ export function chatSnapshotFixture(input: {
     && derived.every((item, index) => sameTurnNavigationItem(kept[index], item))
     ? kept
     : derived
+  store.publish()
   return {
     order,
     nodes: store,

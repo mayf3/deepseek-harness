@@ -1,8 +1,8 @@
-import { memo, useCallback, useMemo } from 'react'
+import { memo, useCallback, useMemo, useSyncExternalStore } from 'react'
 import { JsonBlock } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ChatNodeOwnerProps, ChatViewSlotProps } from '../contract/slots.ts'
 import type { ChatNode } from '../contract/chat-nodes.ts'
-import type { ChatNodeStore } from '../contract/snapshot.ts'
+import type { ChatNodeSource, ChatNodeStore } from '../contract/snapshot.ts'
 import {
   decodeTurnProcess, TURN_PROCESS_INDEPENDENT_KINDS, turnProcessGeneration,
   type TurnProcessSpec,
@@ -13,6 +13,7 @@ import css from './ChatView.module.css'
 
 interface ChatNodeSeatProps extends ChatNodeOwnerProps {
   readonly nodeKey: string
+  readonly nodeSource: ChatNodeSource
   readonly historyIncomplete: boolean
   readonly compactTranscript: boolean
   readonly useChat: ChatViewSlotProps['useChat']
@@ -78,11 +79,11 @@ function turnProcessLayout(
 
 /** Subscribe, apply Turn-process visibility, and dispatch one stable Context key. */
 export const ChatNodeSeat = memo(function ChatNodeSeat({
-  nodeKey, historyIncomplete, compactTranscript,
+  nodeKey, nodeSource, historyIncomplete, compactTranscript,
   selectedCallId, cwd, openFile, inspectCall, forkAt,
   renderMessageImages, fileMentions, useChat, useStore, actions, renderSlot, t,
 }: ChatNodeSeatProps) {
-  const node = useChat(snapshot => snapshot.nodes.get(nodeKey))
+  const node = useSyncExternalStore(nodeSource.subscribe, nodeSource.getSnapshot)
   const processSignature = useChat((snapshot) => {
     const current = snapshot.nodes.get(nodeKey)
     const location = current?.location
