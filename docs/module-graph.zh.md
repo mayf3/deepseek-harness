@@ -298,6 +298,7 @@ flowchart TD
     pkg_session_title_all_prompts_llm["session-title-all-prompts-llm"]
     pkg_session_title_first_prompt_llm["session-title-first-prompt-llm"]
     pkg_session_title_llm["session-title-llm"]
+    pkg_session_turn_outline["session-turn-outline"]
   end
   subgraph group_settings["packages/settings"]
     pkg_settings["settings"]
@@ -463,6 +464,9 @@ flowchart TD
   pkg_session_stats --> pkg_llm
   pkg_session_stats --> pkg_session
   pkg_session_stats --> pkg_session_projection
+  pkg_session_turn_outline --> pkg_llm
+  pkg_session_turn_outline --> pkg_session
+  pkg_session_turn_outline --> pkg_session_projection
   pkg_settings_file --> pkg_atomic_write
   pkg_settings_file --> pkg_home_paths
   pkg_settings_file --> pkg_settings
@@ -1271,6 +1275,7 @@ flowchart TD
 | [`session-persistence-jsonl`](../packages/session/session-persistence-jsonl) | `session` | [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence) |
 | [`session-projection-cache`](../packages/session/session-projection-cache) | `session` | [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection), [`storage-domain`](../packages/storage/storage-domain) |
 | [`session-stats`](../packages/session/session-stats) | `session` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
+| [`session-turn-outline`](../packages/session/session-turn-outline) | `session` | [`llm`](../packages/llm/llm), [`session`](../packages/core/session), [`session-projection`](../packages/session/session-projection) |
 | [`settings-file`](../packages/settings/settings-file) | `settings` | [`atomic-write`](../packages/util/atomic-write), [`home-paths`](../packages/util/home-paths), [`settings`](../packages/settings/settings) |
 | [`shell`](../packages/shell/shell) | `shell` | [`sandbox`](../packages/sandbox/sandbox), [`settings`](../packages/settings/settings), [`subprocess`](../packages/subprocess/subprocess) |
 | [`workspace`](../packages/workspace/workspace) | `workspace` | [`invariants`](../packages/runtime-diagnostics/invariants), [`session`](../packages/core/session), [`session-persistence`](../packages/session/session-persistence), [`storage`](../packages/storage/storage), [`storage-domain`](../packages/storage/storage-domain), [`typert-protocol`](../packages/typert/protocol) |
