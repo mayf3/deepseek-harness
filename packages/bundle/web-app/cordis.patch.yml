@@ -95,10 +95,6 @@
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'
 
-    # Live-activity roster and per-activity output observation over Typert Remote.
-    - id: activity-controller
-      name: '@deepseek-ai/dsh-api-activity-controller'
-
     - id: cordis-host-runner
       name: '@deepseek-ai/dsh-cordis-host-runner'
 
@@ -258,10 +254,10 @@
       name: '@deepseek-ai/dsh-client-ui-reference'
 
 
-    # Live activities: the session-header roster with on-demand streaming
-    # output panels over the activity feed.
-    - id: ui-activity
-      name: '@deepseek-ai/dsh-client-ui-activity'
+    # Background jobs: the session-header roster with on-demand streaming
+    # record panels over the session job-output service.
+    - id: ui-jobs
+      name: '@deepseek-ai/dsh-client-ui-jobs'
 
     # Read-only active Schedule catalog. The shipped Web graph resolves the
     # client package but leaves it disabled; the explicit Schedule overlay

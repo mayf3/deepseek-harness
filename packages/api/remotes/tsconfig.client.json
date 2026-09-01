@@ -67,9 +67,6 @@
       "path": "../session-controller/tsconfig.client.json"
     },
     {
-      "path": "../activity-controller/tsconfig.client.json"
-    },
-    {
       "path": "../settings-controller"
     },
     {

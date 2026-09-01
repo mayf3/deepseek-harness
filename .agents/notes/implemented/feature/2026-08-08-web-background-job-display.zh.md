@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Update：本文推迟的输出阶段现已作为 `ctx.jobs` 上的逐 job 观测 record 交付——见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
+
 [English](2026-08-08-web-background-job-display.md) | 中文
 
 ## 问题

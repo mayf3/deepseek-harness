@@ -82,68 +82,6 @@ export interface TypeApiEntry {
 /** Every harness `ctx.<key>` service, sorted by key. */
 export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
-    key: 'activities',
-    summary: 'Abstract streaming-output registry.',
-    description: 'Abstract streaming-output registry. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.activities` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Observation never consumes. Any number of readers hold their own absolute byte offsets; a read changes no cursor and no producer state, so the model-facing paths (`ctx.jobs.read()`, tool results) are unaffected.\n- Records outlive producer fibers. Owner disposal ends still-open records and removes them; service disposal ends and clears everything. Neither awaits a producer — the registry owns no execution resource.\n- Retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement trims retention to the settled cap.\n- Listener delivery is owner-relative: a listener registered from an unscoped context — a host composition\'s own carrier — sees every owner, while one registered under an agent composition\'s scope sees exactly the agents composed under it. Every listener is contained.',
-    methods: [
-      {
-        signature: 'abstract open(spec: ActivityOpen): ActivityHandle',
-        description: 'Validate the spec, attach owner cleanup, and atomically register one activity. A rejection leaves no id; after return the producer owns the handle and the visible set has changed.',
-        parameters: [{ name: 'spec', description: 'activity identity, owner, and correlation.' }],
-        returns: 'the producer face of the registered activity.',
-      },
-      {
-        signature: 'abstract list(caller?: Agent): ActivitySnapshot[]',
-        description: 'List caller-owned and unowned activities in registration order without exposing another session\'s labels or output.',
-        parameters: [{ name: 'caller', description: 'reading agent; a non-agent caller sees only unowned activities.' }],
-        returns: 'fresh snapshots.',
-      },
-      {
-        signature: 'abstract get(id: ActivityId, caller?: Agent): ActivitySnapshot',
-        description: 'Return a fresh snapshot. Throws for an unknown or foreign activity.',
-        parameters: [{ name: 'id', description: 'activity to look up.' }, { name: 'caller', description: 'reading agent checked against the owner.' }],
-        returns: 'a fresh snapshot.',
-      },
-      {
-        signature: 'abstract read(id: ActivityId, from: number, caller?: Agent): ActivityRead',
-        description: 'Read retained output from an absolute byte offset without consuming it. Resume by passing a previous read\'s `next`; a foreign offset inside a retained chunk returns that whole chunk (its `at` may precede `from`). Throws for an unknown or foreign activity or a negative or non-integer offset.',
-        parameters: [{ name: 'id', description: 'activity to read.' }, { name: 'from', description: 'absolute byte offset to read from (0 for the retained head).' }, { name: 'caller', description: 'reading agent checked against the owner.' }],
-        returns: 'retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.',
-      },
-      {
-        signature: 'abstract onActivitiesChanged(listener: ActivitiesChangedListener): () => void',
-        description: 'Register an effect-scoped observer of visible-set changes: opening, detail updates, settlement, owner-disposal removal, and the emptying that service disposal commits — so an observer re-reads rather than accumulating deltas. Listeners are contained and never awaited.',
-        parameters: [{ name: 'listener', description: 'receives the owner whose visible set changed, or `undefined` when an unowned activity changed and every caller\'s set did.' }],
-        returns: 'disposer that unregisters the listener.',
-      },
-      {
-        signature: 'abstract onOutput(listener: ActivityOutputListener): () => void',
-        description: 'Register an effect-scoped observer of stream advancement — one signal per committed append and one at settlement, carrying only the activity id. A consumer schedules a read from its own cursor; the registry never pushes payloads. Listeners are contained and never awaited.',
-        parameters: [{ name: 'listener', description: 'receives the id whose stream advanced.' }],
-        returns: 'disposer that unregisters the listener.',
-      },
-    ],
-  },
-  {
-    key: 'activityController',
-    summary: 'Host service backing the generated `ctx.remote.activity` namespace.',
-    description: 'Host service backing the generated `ctx.remote.activity` namespace.',
-    methods: [
-      {
-        signature: '@Remote({ mode: \'stream\' }) control(signal: AbortSignal): AsyncIterable<ActivityControlFrame>',
-        description: 'Stream a complete roster baseline followed by whole-bucket replacements.',
-        parameters: [{ name: 'signal', description: 'generation cancellation.' }],
-        returns: 'baseline followed by per-owner roster replacement frames.',
-      },
-      {
-        signature: '@Remote({ mode: \'stream\' }) observe(request: ActivityObserveRequest, signal: AbortSignal): AsyncIterable<ActivityObserveFrame>',
-        description: 'Stream one activity\'s retained output from an absolute byte offset, then its terminal status once settled and drained. Non-consuming: the model-facing cursors never observe these reads.',
-        parameters: [{ name: 'request', description: 'target activity and optional resume offset.' }, { name: 'signal', description: 'generation cancellation.' }],
-        returns: 'anchor, coalesced output frames, and the terminal status.',
-      },
-    ],
-  },
-  {
     key: 'agentDefaultModel',
     summary: 'Owns the default model selection independently of any Host or transport.',
     description: 'Owns the default model selection independently of any Host or transport. The composition entry remains usable without a settings provider; when one is mounted, its user layer is read live.',
@@ -1098,7 +1036,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'jobs',
     summary: 'Abstract background job registry.',
-    description: 'Abstract background job registry. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.jobs` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Teardown cancellation also marks the record reported, because a record its owner is being destroyed for has no reader left.\n- Owned-job access is fenced by the owner\'s session id. Ids are predictable, so authorization — not secrecy — is the boundary.\n- Settlement is first-wins: one terminal record, released waiters, and one round of contained listener notification, even against a late producer outcome. Completion is announced last, after the record is committed and every other observer of the settlement has seen it, because a reporter may open a model turn synchronously.\n- start refuses work while no attached job controller serves the spec\'s owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and completion-listener delivery — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition\'s scope serve exactly the agents composed under it.',
+    description: 'Abstract background job registry. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.jobs` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Teardown cancellation also marks the record reported, because a record its owner is being destroyed for has no reader left.\n- Owned-job access is fenced by the owner\'s session id. Ids are predictable, so authorization — not secrecy — is the boundary.\n- Settlement is first-wins: one terminal record, released waiters, and one round of contained listener notification, even against a late producer outcome. Completion is announced last, after the record is committed and every other observer of the settlement has seen it, because a reporter may open a model turn synchronously.\n- start refuses work while no attached job controller serves the spec\'s owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and completion-listener delivery — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition\'s scope serve exactly the agents composed under it.\n- Record observation never consumes. Any number of readRecord readers hold their own absolute byte offsets; a record read changes no cursor and no notice state, so the model-facing surfaces (the consuming read, completion notices) are unaffected.\n- Record retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement — the producer outcome, a kill, or teardown — trims retention to the settled cap and ends the stream; the record has no separate lifecycle.',
     methods: [
       {
         signature: 'abstract start(spec: JobStart): JobId',
@@ -1146,6 +1084,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: 'abstract onJobsChanged(listener: JobsChangedListener): () => void',
         description: '/** Register an effect-scoped observer of visible-set changes. It fires after every commit that changes what list returns for that owner — registration, every stopping transition (including the one teardown performs before it awaits a slow producer), settlement, owner-disposal removal, and the emptying that service disposal commits — so an observer re-reads rather than accumulating deltas.\n\nDelivery is owner-relative on the same terms as onJobDone: an observer registered from an unscoped context — a host composition\'s own carrier — sees every owner, while one registered under an agent composition\'s scope sees exactly the agents composed under it.\n\nThis is not a superset of onJobDone: that one delivers the terminal record under first-wins semantics a job controller couples to notice delivery, while this one carries no delivery meaning and marks nothing reported. Listeners are contained and never awaited.',
         parameters: [{ name: 'listener', description: 'receives the owner whose visible set changed, or `undefined` when an unowned job changed and every caller\'s set did.' }],
+        returns: 'disposer that unregisters the listener.',
+      },
+      {
+        signature: 'abstract readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead',
+        description: 'Read retained record output from an absolute byte offset without consuming it. Resume by passing a previous read\'s `next`; a foreign offset inside a retained chunk returns that whole chunk (its `at` may precede `from`). Never marks the job reported. Throws for an unknown or foreign job, a job without a JobStart.record declaration, or a negative or non-integer offset.',
+        parameters: [{ name: 'id', description: 'job to read.' }, { name: 'from', description: 'absolute byte offset to read from (0 for the retained head).' }, { name: 'caller', description: 'reading agent checked against the owner.' }],
+        returns: 'retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.',
+      },
+      {
+        signature: 'abstract onOutput(listener: JobOutputListener): () => void',
+        description: 'Register an effect-scoped observer of record advancement — one signal per committed append and one at settlement, carrying only the job id. A consumer schedules a readRecord from its own cursor; the registry never pushes payloads. Delivery is owner-relative on the same terms as onJobsChanged. Listeners are contained and never awaited.',
+        parameters: [{ name: 'listener', description: 'receives the id whose record advanced.' }],
         returns: 'disposer that unregisters the listener.',
       },
       {
@@ -1504,6 +1454,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Stream a complete live-control baseline followed by replacement frames.',
         parameters: [{ name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'one complete baseline followed by live replacement frames.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) observeJob(request: SessionObserveJobRequest, signal: AbortSignal): AsyncIterable<SessionObserveJobFrame>',
+        description: 'Stream one job\'s retained record output from an absolute byte offset, then its terminal status once settled and drained. Non-consuming: the model-facing cursor and notice state never observe these reads. The request\'s session resolves the fenced-read caller; the registry rejects a job the session does not own, a job without a record, or an unknown job.',
+        parameters: [{ name: 'request', description: 'target job, owning session, and optional resume offset.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
+        returns: 'anchor, coalesced output frames, and the terminal status.',
       },
     ],
   },
@@ -3474,94 +3430,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
-    name: 'ActivitiesChangedListener',
-    declaration: 'export type ActivitiesChangedListener = (owner: Agent | undefined) => void;',
-  },
-  {
-    name: 'ActivityAppendOptions',
-    declaration: 'export interface ActivityAppendOptions {\n    channel?: ActivityChannel;\n    gapBefore?: true;\n}',
-  },
-  {
-    name: 'ActivityChannel',
-    declaration: 'export type ActivityChannel = \'stdout\' | \'stderr\';',
-  },
-  {
-    name: 'ActivityControlFrame',
-    declaration: 'export type ActivityControlFrame = {\n    readonly type: \'baseline\';\n    readonly activities: readonly ActivityRow[];\n} | {\n    readonly type: \'rows\';\n    readonly sessionId?: SessionId;\n    readonly activities: readonly ActivityRow[];\n};',
-  },
-  {
-    name: 'ActivityCorrelation',
-    declaration: 'export interface ActivityCorrelation {\n    callId?: ToolCallId;\n    jobId?: JobId;\n}',
-  },
-  {
-    name: 'ActivityHandle',
-    declaration: 'export interface ActivityHandle {\n    readonly id: ActivityId;\n    append(text: string, options?: ActivityAppendOptions): void;\n    updateDetail(detail: string): void;\n    end(outcome: ActivityOutcome): void;\n}',
-  },
-  {
-    name: 'ActivityId',
-    declaration: 'export type ActivityId = Branded<\'ActivityId\'>;',
-  },
-  {
-    name: 'ActivityKind',
-    declaration: 'export type ActivityKind = ActivityKindMap[keyof ActivityKindMap];',
-  },
-  {
-    name: 'ActivityKindMap',
-    declaration: 'export interface ActivityKindMap {\n    bash: \'bash\';\n}',
-  },
-  {
-    name: 'ActivityObserveFrame',
-    declaration: 'export type ActivityObserveFrame = {\n    readonly type: \'opened\';\n    readonly activityId: ActivityId;\n    readonly from: number;\n    readonly earliest: number;\n    readonly total: number;\n    readonly status: ActivityRowStatus;\n    readonly detail?: string;\n} | {\n    readonly type: \'output\';\n    readonly chunks: readonly ActivityWireChunk[];\n    readonly next: number;\n    readonly lossy?: true;\n} | {\n    readonly type: \'status\';\n    readonly status: ActivityRowStatus;\n    readonly detail?: string;\n    readonly finishedAt?: number;\n};',
-  },
-  {
-    name: 'ActivityObserveRequest',
-    declaration: 'export interface ActivityObserveRequest {\n    readonly activityId: ActivityId;\n    readonly from?: number;\n}',
-  },
-  {
-    name: 'ActivityOpen',
-    declaration: 'export interface ActivityOpen {\n    kind: ActivityKind;\n    label: string;\n    owner?: Agent;\n    correlation?: ActivityCorrelation;\n}',
-  },
-  {
-    name: 'ActivityOutcome',
-    declaration: 'export interface ActivityOutcome {\n    status: \'completed\' | \'failed\' | \'killed\';\n    detail?: string;\n}',
-  },
-  {
-    name: 'ActivityOutputChunk',
-    declaration: 'export interface ActivityOutputChunk {\n    at: number;\n    text: string;\n    channel?: ActivityChannel;\n    gapBefore?: true;\n}',
-  },
-  {
-    name: 'ActivityOutputListener',
-    declaration: 'export type ActivityOutputListener = (id: ActivityId) => void;',
-  },
-  {
-    name: 'ActivityRead',
-    declaration: 'export interface ActivityRead {\n    chunks: readonly ActivityOutputChunk[];\n    next: number;\n    lossy: boolean;\n}',
-  },
-  {
-    name: 'ActivityRow',
-    declaration: 'export interface ActivityRow {\n    readonly id: ActivityId;\n    readonly kind: string;\n    readonly label: string;\n    readonly sessionId?: SessionId;\n    readonly correlation?: ActivityRowCorrelation;\n    readonly status: ActivityRowStatus;\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly outputTotal: number;\n}',
-  },
-  {
-    name: 'ActivityRowCorrelation',
-    declaration: 'export interface ActivityRowCorrelation {\n    readonly callId?: ToolCallId;\n    readonly jobId?: JobId;\n}',
-  },
-  {
-    name: 'ActivityRowStatus',
-    declaration: 'export type ActivityRowStatus = \'running\' | \'completed\' | \'failed\' | \'killed\';',
-  },
-  {
-    name: 'ActivitySnapshot',
-    declaration: 'export interface ActivitySnapshot {\n    id: ActivityId;\n    kind: ActivityKind;\n    label: string;\n    ownerSession?: SessionId;\n    correlation?: ActivityCorrelation;\n    status: ActivityStatus;\n    detail?: string;\n    startedAt: number;\n    finishedAt?: number;\n    outputTotal: number;\n    outputEarliest: number;\n}',
-  },
-  {
-    name: 'ActivityStatus',
-    declaration: 'export type ActivityStatus = \'running\' | \'completed\' | \'failed\' | \'killed\';',
-  },
-  {
-    name: 'ActivityWireChunk',
-    declaration: 'export interface ActivityWireChunk {\n    readonly at: number;\n    readonly text: string;\n    readonly channel?: string;\n    readonly gapBefore?: true;\n}',
-  },
-  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -4350,6 +4218,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface InvokeRemoteRequest {\n    readonly namespace: string;\n    readonly method: string;\n    readonly args: Readonly<Record<string, unknown>>;\n    readonly signal?: AbortSignal;\n}',
   },
   {
+    name: 'JobAppendOptions',
+    declaration: 'export interface JobAppendOptions {\n    channel?: JobChannel;\n    gapBefore?: true;\n}',
+  },
+  {
+    name: 'JobChannel',
+    declaration: 'export type JobChannel = \'stdout\' | \'stderr\';',
+  },
+  {
     name: 'JobDoneListener',
     declaration: 'export type JobDoneListener = (snapshot: JobSnapshot, owner: Agent | undefined) => void | PromiseLike<void>;',
   },
@@ -4374,8 +4250,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobOutcome {\n    status: \'completed\' | \'killed\' | \'failed\';\n    detail?: string;\n    output?: string;\n}',
   },
   {
+    name: 'JobOutputListener',
+    declaration: 'export type JobOutputListener = (id: JobId) => void;',
+  },
+  {
     name: 'JobRead',
     declaration: 'export interface JobRead {\n    text: string;\n    snapshot: JobSnapshot;\n}',
+  },
+  {
+    name: 'JobRecordChunk',
+    declaration: 'export interface JobRecordChunk {\n    at: number;\n    text: string;\n    channel?: JobChannel;\n    gapBefore?: true;\n}',
+  },
+  {
+    name: 'JobRecordRead',
+    declaration: 'export interface JobRecordRead {\n    chunks: readonly JobRecordChunk[];\n    next: number;\n    lossy: boolean;\n}',
   },
   {
     name: 'JobsChangedListener',
@@ -4383,11 +4271,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'JobSnapshot',
-    declaration: 'export interface JobSnapshot {\n    id: JobId;\n    kind: JobKind;\n    label: string;\n    outputLimitBytes?: number;\n    ownerSession?: SessionId;\n    status: JobStatus;\n    detail?: string;\n    startedAt: number;\n    finishedAt?: number;\n    reported: boolean;\n}',
+    declaration: 'export interface JobSnapshot {\n    id: JobId;\n    kind: JobKind;\n    label: string;\n    outputLimitBytes?: number;\n    ownerSession?: SessionId;\n    status: JobStatus;\n    detail?: string;\n    startedAt: number;\n    finishedAt?: number;\n    reported: boolean;\n    outputTotal?: number;\n    outputEarliest?: number;\n}',
   },
   {
     name: 'JobStart',
-    declaration: 'export interface JobStart {\n    kind: JobKind;\n    label: string;\n    outputLimitBytes?: number;\n    owner?: Agent;\n    run(): JobHooks;\n}',
+    declaration: 'export interface JobStart {\n    kind: JobKind;\n    label: string;\n    outputLimitBytes?: number;\n    owner?: Agent;\n    record?: true;\n    run(job: RunningJob): JobHooks;\n}',
   },
   {
     name: 'JobStatus',
@@ -4878,6 +4766,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
   },
   {
+    name: 'RunningJob',
+    declaration: 'export interface RunningJob {\n    readonly id: JobId;\n    append(text: string, options?: JobAppendOptions): void;\n    updateDetail(detail: string): void;\n}',
+  },
+  {
     name: 'SandboxEnforcement',
     declaration: 'export type SandboxEnforcement = \'full\' | \'partial\';',
   },
@@ -5103,7 +4995,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionJob',
-    declaration: 'export interface SessionJob {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly status: \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n}',
+    declaration: 'export interface SessionJob {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly status: \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly outputTotal?: number;\n}',
+  },
+  {
+    name: 'SessionJobWireChunk',
+    declaration: 'export interface SessionJobWireChunk {\n    readonly at: number;\n    readonly text: string;\n    readonly channel?: string;\n    readonly gapBefore?: true;\n}',
   },
   {
     name: 'SessionLineageNode',
@@ -5136,6 +5032,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionObservationOptions',
     declaration: 'export interface SessionObservationOptions {\n    readonly signal?: AbortSignal;\n    readonly projectionMode?: \'all\' | \'none\';\n}',
+  },
+  {
+    name: 'SessionObserveJobFrame',
+    declaration: 'export type SessionObserveJobFrame = {\n    readonly type: \'opened\';\n    readonly jobId: JobId;\n    readonly from: number;\n    readonly earliest: number;\n    readonly total: number;\n    readonly status: SessionJob[\'status\'];\n    readonly detail?: string;\n} | {\n    readonly type: \'output\';\n    readonly chunks: readonly SessionJobWireChunk[];\n    readonly next: number;\n    readonly lossy?: true;\n} | {\n    readonly type: \'status\';\n    readonly status: SessionJob[\'status\'];\n    readonly detail?: string;\n    readonly finishedAt?: number;\n};',
+  },
+  {
+    name: 'SessionObserveJobRequest',
+    declaration: 'export interface SessionObserveJobRequest {\n    readonly sessionId?: SessionId;\n    readonly jobId: JobId;\n    readonly from?: number;\n}',
   },
   {
     name: 'SessionOpenWorkspacePathRequest',

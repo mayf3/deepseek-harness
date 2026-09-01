@@ -176,6 +176,8 @@ Implementations must honor these semantics:
 - Owned-job access is fenced by the owner's session id. Ids are predictable, so authorization — not secrecy — is the boundary.
 - Settlement is first-wins: one terminal record, released waiters, and one round of contained listener notification, even against a late producer outcome. Completion is announced last, after the record is committed and every other observer of the settlement has seen it, because a reporter may open a model turn synchronously.
 - start refuses work while no attached job controller serves the spec's owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and completion-listener delivery — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition's scope serve exactly the agents composed under it.
+- Record observation never consumes. Any number of readRecord readers hold their own absolute byte offsets; a record read changes no cursor and no notice state, so the model-facing surfaces (the consuming read, completion notices) are unaffected.
+- Record retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement — the producer outcome, a kill, or teardown — trims retention to the settled cap and ends the stream; the record has no separate lifecycle.
 
 ```ts cordis-catalog
 /**
@@ -273,6 +275,31 @@ abstract onJobDone(listener: JobDoneListener): () => void
  * @returns disposer that unregisters the listener.
  */
 abstract onJobsChanged(listener: JobsChangedListener): () => void
+
+/**
+ * Read retained record output from an absolute byte offset without consuming
+ * it. Resume by passing a previous read's `next`; a foreign offset inside a
+ * retained chunk returns that whole chunk (its `at` may precede `from`).
+ * Never marks the job reported. Throws for an unknown or foreign job, a job
+ * without a {@link JobStart.record} declaration, or a negative or
+ * non-integer offset.
+ * @param id - job to read.
+ * @param from - absolute byte offset to read from (0 for the retained head).
+ * @param caller - reading agent checked against the owner.
+ * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
+ */
+abstract readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead
+
+/**
+ * Register an effect-scoped observer of record advancement — one signal per
+ * committed append and one at settlement, carrying only the job id. A
+ * consumer schedules a {@link readRecord} from its own cursor; the registry
+ * never pushes payloads. Delivery is owner-relative on the same terms as
+ * {@link onJobsChanged}. Listeners are contained and never awaited.
+ * @param listener - receives the id whose record advanced.
+ * @returns disposer that unregisters the listener.
+ */
+abstract onOutput(listener: JobOutputListener): () => void
 
 /**
  * Attach an effect-scoped controller that can read and stop jobs. It serves the
