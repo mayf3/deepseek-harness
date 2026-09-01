@@ -183,7 +183,7 @@ function usableProbeKey(raw: string): string {
 /** Host-owned profile inputs that a configuration draft deliberately omits. */
 export interface StoredModelDiscoveryProfile {
   /** Deployment headers configured on the named route. */
-  readonly headers?: Readonly<Record<string, string>>
+  readonly headers: Readonly<Record<string, string>> | undefined
   /** Resolve the named route's credential only when the draft carries none. */
   readonly resolveApiKey: () => Promise<string | undefined>
 }

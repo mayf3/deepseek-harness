@@ -248,7 +248,7 @@ export function apply(ctx: Context, config: Config): void {
     const profile = profiles().get(provider)
     if (profile === undefined) return undefined
     return {
-      headers: { ...profile.headers },
+      headers: profile.headers,
       resolveApiKey: () => resolveApiKey(provider, profile),
     }
   }
