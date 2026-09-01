@@ -166,6 +166,15 @@ describe('Web snapshot generation filenames', () => {
       .resolves.toBe(join(root, 'session.jsonl'))
   })
 
+  it('selects a committed sibling when the requested older generation is absent', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
+    roots.push(root)
+    await writeFile(join(root, 'session.v1.jsonl'), '')
+
+    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+      .resolves.toBe(join(root, 'session.v1.jsonl'))
+  })
+
   it('records beside an older generation and preserves the parent or child role', () => {
     const fixtures = join('/', 'fixtures')
     expect(recordedSessionFixturePath(join(fixtures, 'session.jsonl'), 1))

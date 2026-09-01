@@ -16,7 +16,7 @@ Session 格式 v0 已随 alpha 版本发布，因此结构化 writer 变更不�
 
 每条迁移边都会冻结严格的源与目标语义，其目标物理 codec 则保持词汇中立，使普通事件增长可以留在同一格式版本内。目录通过已安装的 peer `@deepseek-ai/dsh-session` 及其当前 `KNOWN_SESSION_EVENT_TYPES` 还原最终代，避免冻结的历史迁移边反过来成为当前词汇 owner。
 
-每个事件正文操作都经过持久化协调器的逐 Session 串行链，并在当前值离开前完成 provider 拥有的 ensure-current 工作。JSONL 会基于同一个物理快照融合最高 generation 解析、分类或迁移与当前格式解码；fallback 后端保留分离的 `ensureCurrent` 与当前读取钩子。六个公开读取是 prepare、load、inspect、borrowSession、readFrom 与 readRaw；冷 append 接管使用同一正文路径。仅 header 的 list 与 listSnapshots 从不迁移：它们重新扫描每个 Session 目录，并为数值最高的规范 generation 返回一个 descriptor，因此未来、不支持或 malformed 的最高文件会保持可见，而不会静默 fallback。
+每个事件正文操作都经过持久化协调器的逐 Session 串行链，并在当前值离开前完成 provider 拥有的 ensure-current 工作。JSONL 会基于同一个物理快照融合最高 generation 解析、分类或迁移与当前格式解码；fallback 后端保留分离的 `ensureCurrent` 与当前读取钩子。六个公开读取是 prepare、load、inspect、borrowSession、readFrom 与 readRaw；冷 append 接管使用同一正文路径。仅 header 的 list 与 listSnapshots 从不迁移：它们重新扫描每个 Session 目录，并为数值最高的规范 generation 返回一个 descriptor，因此未来、不支持或 malformed 的最高文件会保持可见，而不会静默 fallback。当后端无需信任 header 就能从 location 恢复 Session id 时，descriptor 会携带该 `storageId`；因此显式 identity 预留会拒绝已经占用该 id 的不可读产物。
 
 对于 `prepare`、`inspect` 与 `borrowSession`，取消属于观察调用，而不属于共享准备或迁移。被取消的观察者会停止等待，而已经开始的工作可以为另一检查者或后续恢复继续完成；持久发布绝不会为了满足观察者取消而回滚。分离的 `readFrom` 与 `readRaw` 操作则会把取消传入其串行化后端读取。
 
@@ -24,7 +24,7 @@ Session 格式 v0 已随 alpha 版本发布，因此结构化 writer 变更不�
 
 规范文件名编码物理格式 generation：v0 是 `session.jsonl` 或 `session.jsonl.zstd`；每个正 generation 都是小写 `session.vN.jsonl` 或 `session.vN.jsonl.zstd`。发布绝不重命名、替换或删除已提交 generation 路径。目标已经存在时，只有它是普通当前格式文件且字节与预期完全相同时才接受；其他目标都会拒绝。低 generation 为 operator 检查或显式复制而保留，但普通 runtime 操作选择数值最高的规范名称，绝不把保留的前任当作自动 fallback、restore 或 downgrade 支持。
 
-当前格式快速路径从一个稳定源快照分类 header，不调用历史 converter，不写 generation，并把该快照交给当前格式解码，而不再次读取文件。后端会在单 writer 假设下缓存已校验的当前选择，供同一实例后续打开使用，而列表会有意重新扫描。多条迁移边保持原 generation 不变，并只发布最终目标；中间版本只存在于内存。同一进程内的操作会串行化，源 fingerprint 重新检查会在内容变化时重启完整尝试。跨进程 writer 隔离不在此保证内。
+当前格式快速路径从一个稳定源快照分类 header，不调用历史 converter，不写 generation，并把该快照交给当前格式解码，而不再次读取文件。后端会在单 writer 假设下缓存已校验的当前选择，供同一实例后续打开使用，而列表会有意重新扫描；如果选定文件消失，后端会让缓存失效并重新解析目录。多条迁移边保持原 generation 不变，并只发布最终目标；中间版本只存在于内存。同一进程内的操作会串行化，源 fingerprint 重新检查会在内容变化时重启完整尝试。跨进程 writer 隔离不在此保证内。
 
 第一条迁移边 `@deepseek-ai/dsh-session-format-v0-to-v1` 有意保持恒等形态：除版本和 v0 已接纳的有限历史归一化外，它保留逻辑 header、事件、序号、引用、时间戳、payload 与已配置的压缩选择。精确的 `session.jsonl[.zstd]` 源保持字节与 inode 相同，当前 writer 则编码新的 `session.v1.jsonl[.zstd]` 后继。这样可在出现改变基数的格式前先验证完整发布生命周期。
 
@@ -40,7 +40,7 @@ JSONL 发布在 POSIX 上使用硬链接创建与目录同步，在 Windows 上�
 
 ## 验证
 
-发布验证针对 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下 152 个带版本、来自持久化或投影的 `session*.jsonl` fixture 运行了已提交 Session 格式语料门禁。fixture 专用的缺失信封与 request-header token 会先被实体化，再进入真实静态 catalog；其中 150 个通过当前格式 restore 或历史迁移得到当前 v1 视图。Released-v0 replay 输入保持无后缀，而新鲜 v1 writer 输出对 parent 使用 `session.v1.jsonl`、对 child 使用 `session.<ordinal>.v1.jsonl`；较旧角色 generation 保留在选定最高文件旁边。两个精确 alpha 拒绝分别是 `snapshots/session/agent-instructions/session.jsonl`（投影出的 compaction checkpoint 没有匹配 start）与 `snapshots/web/schedule-catalog/session.jsonl`（title 来源与其 citation 矛盾）。持续运行的门禁会动态发现语料，并拒绝封闭 manifest 之外的任何失败；独立组装式 JSONL 测试负责精确物理字节迁移。
+发布验证针对 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下 152 个带版本、来自持久化或投影的 `session*.jsonl` fixture 运行了已提交 Session 格式语料门禁。fixture 专用的缺失信封与 request-header token 会先被实体化，再进入真实静态 catalog；其中 150 个通过当前格式 restore 或历史迁移得到当前 v1 视图。Released-v0 replay 输入保持无后缀，而新鲜 v1 writer 输出对 parent 使用 `session.v1.jsonl`、对 child 使用 `session.<ordinal>.v1.jsonl`。Record 与 refresh 会为仍由新运行产生的每个 role 保留旧 generation，并删除新运行不再产生的 child role 的全部 generation。两个精确 alpha 拒绝分别是 `snapshots/session/agent-instructions/session.jsonl`（投影出的 compaction checkpoint 没有匹配 start）与 `snapshots/web/schedule-catalog/session.jsonl`（title 来源与其 citation 矛盾）。持续运行的门禁会动态发现语料，并拒绝封闭 manifest 之外的任何失败；独立组装式 JSONL 测试负责精确物理字节迁移。
 
 当前 head 性能证据来自 3 次独立运行，每个 case 含 100 次 warmup 与 600 个 alternating sample；pooled 1,800-sample marginal estimator 把不可变 resolver 与同一 commit 下禁用 dispatch 的 baseline 比较。Hot median/p95 delta 分别为 raw small `-1.864%/-1.109%`、raw 100-turn `-0.711%/-0.445%`、Zstandard small `-0.880%/-5.025%`、Zstandard 100-turn `-0.301%/-2.090%`，全部满足 5% regression ceiling。Cold enabled-path median/p95 cost 分别为 raw small `220.125/294.708 µs`、raw 100-turn `580.625/730.834 µs`、Zstandard small `248.042/960.083 µs`、Zstandard 100-turn `636.291/1421.208 µs`。重复 hot body read 执行 0 次目录扫描；两次 listing 调用执行 2 次扫描。
 

@@ -47,7 +47,6 @@ import {
   normalizeSessionSnapshots,
   scrubRequestHeaders,
   scrubSessionSnapshot,
-  sessionFixtureFiles,
   sessionFixtureName,
   stabilizeFixtureMessageIds,
   type NormalizeContext,
@@ -153,12 +152,12 @@ async function ownsReplayFixture(replayFixture: string | undefined): Promise<boo
 export async function selectedSessionFixture(path: string): Promise<string> {
   const requested = parseSessionFixtureName(basename(path))
   if (requested === undefined) return path
-  // An override-only scenario deliberately has no projected parent log. Keep
-  // the absent source path so the replay adapter can use its replacement
-  // script without asking the fixture-role inventory to invent a parent.
-  if (!existsSync(path)) return path
-  const selected = sessionFixtureFiles(await readdir(dirname(path)))
-    .find(candidate => candidate.index === requested.index)
+  const selected = (await readdir(dirname(path)))
+    .map(parseSessionFixtureName)
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate?.index === requested.index)
+    .sort((left, right) => right.version - left.version)[0]
+  // An override-only scenario deliberately has no projected parent role. Keep
+  // the absent source only when no committed generation exists for that role.
   return selected === undefined ? path : join(dirname(path), selected.name)
 }
 
