@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
-import AgentRegistry from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import { SessionHistoryController } from '@deepseek-ai/dsh-api-session-controller/src/history.ts'
 import { subagentIdentityProjectionDefinition } from '@deepseek-ai/dsh-subagent/src/projection.ts'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
@@ -46,6 +46,10 @@ function promptRequest(
     ...payload,
     requestId: `cold-${String(nextRequestId++)}` as SessionRequestId,
   }
+}
+
+function inboxFor(session: Session): Inbox {
+  return new Inbox(session, { inserted: () => {}, discarded: () => {}, claimed: () => {} })
 }
 
 function header(id: string, createdAt: number, extra: Partial<SessionHeader> = {}): SessionHeader {
@@ -697,7 +701,9 @@ describe('subagent ownership fence', () => {
       meta: { cwd: '/proj', parentSession: sid('session-source'), seedLength: 1 },
     })
     const followup = vi.fn()
-    const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
+    const agent = {
+      id: session.id, session, inbox: inboxFor(session), status: 'idle', ctx, followup,
+    } as unknown as Agent
     ctx.agents.register(agent)
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
@@ -716,7 +722,9 @@ describe('subagent ownership fence', () => {
     await ctx.plugin(AgentRegistry)
     const session = ctx.sessions.create(sid('session-browser-zone'), { meta: { cwd: '/proj' } })
     const followup = vi.fn()
-    const agent = { id: session.id, session, status: 'idle', ctx, followup } as unknown as Agent
+    const agent = {
+      id: session.id, session, inbox: inboxFor(session), status: 'idle', ctx, followup,
+    } as unknown as Agent
     ctx.agents.register(agent)
     const remote = createSessionTestRemote(ctx, {
       defaultModelSelection: () => ({ provider: 'p', model: 'm' }),
@@ -832,6 +840,7 @@ describe('sessions.prompt synchronous rejection', () => {
     ctx.agents.register({
       id: session.id,
       session,
+      inbox: inboxFor(session),
       status: 'idle',
       ctx,
       followup: () => { throw new Error('agent "session-throwing" lifecycle disposed') },

@@ -45,6 +45,127 @@ function histResponse(events: SessionEvent[], hasMore = false) {
   return Promise.resolve(ok(historyValue(events, hasMore)))
 }
 
+describe('Session file upload', () => {
+  it('uses the background body carrier, reports progress, and validates its receipt', async () => {
+    const progress = vi.fn()
+    const post = vi.fn(async (request: {
+      path: string
+      body: Blob
+      headers?: Readonly<Record<string, string>>
+      signal?: AbortSignal
+      onProgress?: (progress: { loaded: number; total?: number }) => void
+    }) => {
+      request.onProgress?.({ loaded: 2, total: 4 })
+      return {
+        status: 200,
+        body: JSON.stringify({
+          ok: true,
+          value: {
+            receiptId: 'receipt-1',
+            file: { attachmentId: 'file-1', name: 'notes & refs.pdf', bytes: 4 },
+          },
+        }),
+      }
+    })
+    const { api, session } = makeSession(undefined, { backgroundUploads: { post } })
+    const abort = new AbortController()
+    const file = new Blob([Uint8Array.of(1, 2, 3, 4)])
+
+    await expect(session.uploadFile(file, 'notes & refs.pdf', abort.signal, progress)).resolves.toEqual({
+      ok: true,
+      value: {
+        receiptId: 'receipt-1',
+        file: { attachmentId: 'file-1', name: 'notes & refs.pdf', bytes: 4 },
+      },
+    })
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({
+      path: '/api/session/uploadFileBinary?sessionId=fk-s1&name=notes+%26+refs.pdf',
+      body: file,
+      headers: { 'content-type': 'application/octet-stream' },
+      signal: abort.signal,
+    }))
+    expect(progress).toHaveBeenCalledWith({ loaded: 2, total: 4 })
+    expect(api.callsOf('session.uploadFile')).toEqual([])
+  })
+
+  it('preserves a background business failure and supports unnamed files without observers', async () => {
+    const post = vi.fn((_request: { readonly body: Blob }) => Promise.resolve({
+      status: 200,
+      body: JSON.stringify({
+        ok: false,
+        error: { code: 'session/attachment-invalid', message: 'denied', details: { reason: 'NOPE' } },
+      }),
+    }))
+    const { session } = makeSession(undefined, { backgroundUploads: { post } })
+    await expect(session.uploadFile(new Blob([]))).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'session/attachment-invalid', message: 'denied', details: { reason: 'NOPE' } },
+    })
+    const request = post.mock.calls[0]?.[0]
+    expect(request).toMatchObject({
+      path: '/api/session/uploadFileBinary?sessionId=fk-s1',
+      headers: { 'content-type': 'application/octet-stream' },
+    })
+    expect(request?.body).toBeInstanceOf(Blob)
+  })
+
+  it('keeps byte and Blob fallback uploads on the generated Remote carrier', async () => {
+    const { api, session } = makeSession()
+    await expect(session.uploadFile(Uint8Array.of(0, 0, 0), 'bytes.bin')).resolves.toMatchObject({ ok: true })
+    await expect(session.uploadFile(new Blob([Uint8Array.of(1)]))).resolves.toMatchObject({ ok: true })
+    expect(api.callsOf('session.uploadFile')).toEqual([
+      { sessionId: SID, data: 'AAAA', name: 'bytes.bin' },
+      { sessionId: SID, data: 'AQ==' },
+    ])
+  })
+
+  it('folds non-200 and malformed background responses into transport failures', async () => {
+    const bodies: unknown[] = [
+      null,
+      { ok: 'yes' },
+      { ok: false, error: null },
+      { ok: false, error: { code: 1, message: 'x', details: {} } },
+      { ok: false, error: { code: 'x', message: 1, details: {} } },
+      { ok: false, error: { code: 'x', message: 'x', details: null } },
+      { ok: true, value: null },
+      { ok: true, value: { receiptId: 1, file: {} } },
+      { ok: true, value: { receiptId: 'r', file: null } },
+      { ok: true, value: { receiptId: 'r', file: { attachmentId: 1, name: 'x', bytes: 1 } } },
+      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 1, bytes: 1 } } },
+      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: '1' } } },
+      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: 1.5 } } },
+      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: -1 } } },
+    ]
+    for (const body of bodies) {
+      const { session } = makeSession(undefined, {
+        backgroundUploads: { post: () => Promise.resolve({ status: 200, body: JSON.stringify(body) }) },
+      })
+      await expect(session.uploadFile(new Blob([])))
+        .rejects.toThrow(/file upload transport returned an invalid/)
+    }
+    const { session } = makeSession(undefined, {
+      backgroundUploads: { post: () => Promise.resolve({ status: 503, body: 'unavailable' }) },
+    })
+    await expect(session.uploadFile(new Blob([])))
+      .rejects.toThrow('file upload transport failed with HTTP 503')
+  })
+
+  it('refuses a direct file upload for a continuable subagent before either carrier runs', async () => {
+    const post = vi.fn()
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api), {
+      address: { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable' },
+      backgroundUploads: { post },
+    })
+    await expect(session.uploadFile(new Blob([]))).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'subagent/attachment-invalid', details: { reason: 'SUBAGENT_FILE_UNSUPPORTED' } },
+    })
+    expect(post).not.toHaveBeenCalled()
+    expect(api.callsOf('session.uploadFile')).toEqual([])
+  })
+})
+
 describe('Session open', () => {
   it('keeps a bare Session blank until an authoritative lifecycle signal arrives', () => {
     const { session } = makeSession()
@@ -496,6 +617,29 @@ describe('prompt and cancel errors', () => {
     expect(session.getSnapshot().promptError).toMatchObject({
       op: 'stop', error: { code: 'subagent/unauthorized' },
     })
+  })
+
+  it('rejects staged files instead of dropping them from subagent continuations', async () => {
+    const api = new FakeApiClient()
+    const session = new Session(SID, fakeRemote(api), {
+      address: { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable' },
+      parentAvailable: true,
+    })
+    await session.open()
+
+    const prompted = await session.prompt([
+      { type: 'file', receiptId: 'receipt' as never },
+      { type: 'text', text: '继续' },
+    ], 'queue')
+
+    expect(prompted).toMatchObject({
+      ok: false,
+      error: {
+        code: 'subagent/attachment-invalid',
+        details: { reason: 'SUBAGENT_FILE_UNSUPPORTED' },
+      },
+    })
+    expect(api.callsOf('subagents.prompt')).toEqual([])
   })
 
   it('sends a one-shot address to the Host under the continuable marker', async () => {

@@ -65,6 +65,7 @@ async function mount(initialGeneration?: ConnectionGeneration): Promise<Bench> {
     registerGenerationSource: () => () => {},
     start: () => ({ stop: () => {} }),
   }
+  ctx.reflect.provide('connection', connection)
   ctx.reflect.provide('remote', {
     ...remote,
     $stream: <Item>(options: RemoteStreamOptions<Item>) => (

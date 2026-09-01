@@ -100,6 +100,15 @@ function stubWorker(): {
   check('204 resolves with a null body', (await response).body, null)
 }
 
+// Blob bodies remain Blob-backed across the page-to-Host Worker handoff.
+{
+  const { worker, sent } = stubWorker()
+  const tunnel = new WorkerTunnel(worker)
+  const body = new Blob(['large'])
+  void tunnel.fetch('/upload', { method: 'POST', body })
+  check('a Blob request body stays opaque', (sent[0] as unknown as { body: unknown }).body, body)
+}
+
 // A streamed reply reassembles in order and closes.
 {
   const { worker, deliver } = stubWorker()

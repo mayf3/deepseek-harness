@@ -8,6 +8,7 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import SessionController from '../src/index.ts'
 import type { ApiSessionAgentController } from '../src/agent.ts'
+import type { SessionRequestId } from '../src/types.ts'
 import { createSessionTestController, testSessionPersistence } from './test-remote.ts'
 
 const defaults = {
@@ -38,6 +39,21 @@ describe('SessionController facade', () => {
       inspect,
     }) as never)
     const controller = createSessionTestController(ctx, defaults)
+    const uploadRequest = { sessionId, data: 'AAAA', name: 'notes.txt' }
+    const uploadValue = {
+      receiptId: 'receipt-1' as never,
+      file: {
+        attachmentId: `sha256:${'ab'.repeat(32)}` as never,
+        name: 'notes.txt',
+        bytes: 3,
+      },
+    }
+    const uploadFile = vi.spyOn((controller as unknown as {
+      commands: { uploadFile(request: typeof uploadRequest): Promise<typeof uploadValue> }
+    }).commands, 'uploadFile').mockResolvedValue(uploadValue)
+    await expect(controller.uploadFile(uploadRequest, new AbortController().signal))
+      .resolves.toBe(uploadValue)
+    expect(uploadFile).toHaveBeenCalledWith(uploadRequest)
     const status = vi.fn()
     const failure = vi.fn()
     const activity = vi.fn()
@@ -60,6 +76,9 @@ describe('SessionController facade', () => {
       (controller as unknown as { agents: ApiSessionAgentController }).agents,
       'consumeSelection',
     )
+    const retireObservedPrompt = vi.spyOn((controller as unknown as {
+      commands: { retireObservedPrompt(sessionId: SessionId, requestId: SessionRequestId): void }
+    }).commands, 'retireObservedPrompt')
 
     await expect(controller.resolveAgent(sessionId)).resolves.toEqual({ agent })
     await expect(controller.inspect(sessionId)).resolves.toEqual({ meta: header, events })
@@ -70,9 +89,14 @@ describe('SessionController facade', () => {
       content: [{ type: 'text', text: 'hello' }],
       source: { kind: 'user' },
     }), { surfaceOp: 'append' })
+    session.append('user/message', createUserMessage({
+      content: [{ type: 'text', text: 'browser prompt' }],
+      source: { kind: 'user', rpcId: 'controller-rpc' as never },
+    }), { surfaceOp: 'append' })
     expect(status).toHaveBeenCalledWith(sessionId, true)
     expect(failure).toHaveBeenCalledWith(sessionId, expect.stringContaining('fixture failure'))
     expect(activity).toHaveBeenCalledWith(sessionId, expect.any(Number))
+    expect(retireObservedPrompt).toHaveBeenCalledWith(sessionId, 'controller-rpc')
     session.append('request/header', {
       header: { config: { provider: 'fixture', model: 'fixture-model' } },
       reason: 'initial',
@@ -95,7 +119,7 @@ describe('SessionController facade', () => {
     }, abort.signal)[Symbol.asyncIterator]()
     await expect(iterator.next()).resolves.toMatchObject({
       done: false,
-      value: { type: 'snapshot', cursor: 1 },
+      value: { type: 'snapshot', cursor: 2 },
     })
     abort.abort()
     await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })

@@ -148,7 +148,18 @@ const INSTALL_ANCHOR = join(REPO_ROOT, 'apps/cli/package.json')
 const REPLAY_PROVIDERS = [{
   id: 'deepseek-official',
   name: 'DeepSeek',
-  models: [{ id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 }],
+  models: [
+    { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: 128_000 },
+    {
+      id: 'deepseek-v4-flash-vision-exp',
+      name: 'DeepSeek-V4-Flash-Vision-Exp',
+      contextWindow: 1_000_000,
+      inputModalities: ['text', 'image'] as const,
+      defaultMaxTokens: 256_000,
+      reasoningEfforts: ['off', 'low', 'high', 'max'],
+      defaultReasoningEffort: 'high',
+    },
+  ],
 }]
 
 /**
@@ -768,6 +779,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
             options.replayFixture,
             mode,
             `http://${browserHost}:${port}`,
+            harnessHome,
           )
         } catch (error) {
           failures.push(error)
@@ -829,10 +841,13 @@ function normalizeWebSessionVolatiles(log: string): string {
   }).join('\n')
 }
 
-function stableSessionFixture(session: Session, existing: string, workspaceCwd: string): string {
+function stableSessionFixture(session: Session, existing: string, harnessHome: string): string {
+  const sessionCwd = session.header.cwd
+  if (sessionCwd === undefined) throw new Error('session harvest has no cwd')
   const fresh = scrubSessionSnapshot(normalizeWebSessionVolatiles(rawSessionLog(session)))
     .split(session.id).join('{{sessionId}}')
-    .split(workspaceCwd).join('{{cwd}}')
+    .split(sessionCwd).join('{{cwd}}')
+    .split(harnessHome).join('{{harnessHome}}')
   const stable = redactSessionSnapshotIds(stabilizeFixtureMessageIds([fresh], [existing]))[0]
   if (stable === undefined) throw new Error('session harvest produced no stabilized fixture')
   return stable
@@ -843,6 +858,7 @@ async function assertReplaySession(
   fixturePath: string,
   mode: WebSnapshotMode,
   webUrl: string,
+  harnessHome: string,
 ): Promise<void> {
   let expected = await readFile(fixturePath, 'utf8')
   const userPrompts = fixtureUserPrompts(expected)
@@ -861,7 +877,7 @@ async function assertReplaySession(
   if (sessionCwd === undefined) throw new Error(`${fixturePath}: replayed session has no cwd`)
   const actual = rawSessionLog(session)
   if (mode === 'refresh') {
-    expected = stableSessionFixture(session, expected, sessionCwd)
+    expected = stableSessionFixture(session, expected, harnessHome)
     await writeFile(fixturePath, expected)
   }
   const expectedHeader = JSON.parse(expected.split('\n').find(line => line.trim() !== '') ?? '{}') as {
@@ -873,8 +889,11 @@ async function assertReplaySession(
     sessionIds: typeof expectedHeader.id === 'string' ? [expectedHeader.id] : [],
     cwd: typeof expectedHeader.cwd === 'string' ? expectedHeader.cwd : '\0no-cwd\0',
   }
-  expect(normalizeSessionSnapshots([normalizeWebSessionVolatiles(actual)], actualContext)[0], `${fixturePath}: persisted replay`)
-    .toBe(normalizeSessionSnapshots([normalizeWebSessionVolatiles(expected)], expectedContext)[0])
+  const actualSnapshot = normalizeSessionSnapshots([normalizeWebSessionVolatiles(actual)], actualContext)[0]
+    ?.split(harnessHome).join('{{harnessHome}}')
+  const expectedSnapshot = normalizeSessionSnapshots([normalizeWebSessionVolatiles(expected)], expectedContext)[0]
+    ?.split(harnessHome).join('{{harnessHome}}')
+  expect(actualSnapshot, `${fixturePath}: persisted replay`).toBe(expectedSnapshot)
 
   const fixtureDir = dirname(fixturePath)
   const manifestPath = join(fixtureDir, 'snapshot.yml')
@@ -898,8 +917,8 @@ async function assertReplaySession(
 
 /**
  * Record-mode fixture write-back: harvest the live session, scrub request
- * headers to {{system}}/{{tools}}, tokenize the run-local cwd, redact opaque
- * identities with typed relationship-preserving tokens, and write the fixture.
+ * headers to {{system}}/{{tools}}, tokenize the run-local cwd and Harness Home,
+ * redact opaque identities with typed relationship-preserving tokens, and write the fixture.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
  * @param fixturePath - the committed session.jsonl target.
@@ -908,7 +927,7 @@ export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId,
   const agent = scaffold.ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
   const existing = existsSync(fixturePath) ? await readFile(fixturePath, 'utf8') : ''
-  await writeFile(fixturePath, stableSessionFixture(agent.session, existing, scaffold.workspaceCwd))
+  await writeFile(fixturePath, stableSessionFixture(agent.session, existing, scaffold.harnessHome))
 }
 
 /**
@@ -955,8 +974,8 @@ export function fixtureIdentity(
  */
 /**
  * Realize a recorded seed fixture against one scaffold: substitute the
- * `{{sessionId}}`/`{{cwd}}` placeholders and rewrite the recorded cwd to the
- * scaffold's workspace. Idempotent, so a caller may realize early (e.g. to
+ * `{{sessionId}}`/`{{cwd}}`/`{{harnessHome}}` placeholders and rewrite the
+ * recorded cwd to the scaffold's workspace. Idempotent, so a caller may realize early (e.g. to
  * price content exactly as the host will fold it) and still pass the result
  * through {@link seedSession}.
  * @param scaffold - the booted scaffold whose workspace the seed targets.
@@ -971,6 +990,7 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
     .replace(/\{\{session:([2-9]\d*)\}\}/g, (_token, ordinal: string) => `${id}-child-${ordinal}`)
     .replace(/\{\{(message|approval|workflow|command|rpc|retry|id):([1-9]\d*)\}\}/g, (_token, kind: string, ordinal: string) =>
       fixtureIdentity(kind as 'message' | 'approval' | 'workflow' | 'command' | 'rpc' | 'retry' | 'id', Number(ordinal)))
+    .split('{{harnessHome}}').join(scaffold.harnessHome)
     .split('{{cwd}}').join(scaffold.workspaceCwd)
   const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
   return fixtureCwd === undefined
