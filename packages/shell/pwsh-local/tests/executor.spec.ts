@@ -13,7 +13,7 @@ import { mkdirSync, mkdtempSync, realpathSync, symlinkSync, writeFileSync } from
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { spawnSync } from 'node:child_process'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PwshLocalExecutor, ENCODING_PREAMBLE, candidatePwshPaths, resolvePwshPath } from '@deepseek-ai/dsh-pwsh-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
@@ -453,6 +453,19 @@ describe.skipIf(!hasPwsh)('PwshLocalExecutor.start (background process handles)'
     // done resolves (never rejects) even though the process never ran.
     await expect(proc.done).resolves.toBeUndefined()
     expect(proc.status).toBe('killed')
+    expect(proc.readOutput().delta).toContain('spawn failed:')
+  })
+
+  it('a SYNCHRONOUS spawn throw is contained, and the observed readers serve empty streams', async () => {
+    const { ctx, bash } = await setup()
+    vi.spyOn(ctx.subprocess, 'spawn').mockImplementation(() => { throw new Error('sync spawn boom') })
+    const proc = start(bash, bash.resolve({ command: 'Write-Output never' }))
+    await expect(proc.done).resolves.toBeUndefined()
+    expect(proc.status).toBe('killed')
+    // The never-spawned process substitutes empty non-consuming readers, so a
+    // record pump reads a clean empty stream instead of throwing.
+    expect(proc.observed?.stdout?.readFrom(0)).toEqual({ text: '', lossy: false, nextOffset: 0 })
+    expect(proc.observed?.stderr?.readFrom(0)).toEqual({ text: '', lossy: false, nextOffset: 0 })
     expect(proc.readOutput().delta).toContain('spawn failed:')
   })
 })

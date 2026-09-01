@@ -265,7 +265,10 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       .rejects.toThrow('sync-emfile')
   }, 30_000)
 
-  it('a SYNCHRONOUS spawn rejection in start() follows the same attribution split', async () => {
+  it('a SYNCHRONOUS spawn rejection in start() is contained into the settled handle with the same attribution split', async () => {
+    // execute() never throws: facts install before any settlement can run, so
+    // a sync spawn throw surfaces exactly like the async one — through the
+    // killed handle and the foreground projection's attribution.
     const attributable = Object.assign(new Error('sync-enoent-start'), { code: 'ENOENT', syscall: 'spawn node', path: 'node' })
     const { executor: closed } = await setup(() => ({
       argv: ['node', '--', 'pwsh'],
@@ -273,13 +276,17 @@ describe.skipIf(!pwshAvailable())('SandboxPwshExecutor', () => {
       denialSignatures: [],
       runnerFailureRules: [{ fatalSignatures: ['fake-runner: '] }],
     }), throwingSubprocessRuntime(attributable))
-    expect(() => start(closed, closed.resolve({ command: 'echo never', sandboxPolicy: RO })))
-      .toThrow(SandboxUnavailableError)
+    const contained = start(closed, closed.resolve({ command: 'echo never', sandboxPolicy: RO }))
+    await contained.done
+    expect(contained.status).toBe('killed')
+    await expect(contained.result()).rejects.toThrow(SandboxUnavailableError)
 
     const foreign = Object.assign(new Error('sync-emfile-start'), { code: 'EMFILE', syscall: 'spawn', path: 'node' })
     const { executor: passthroughError } = await setup(undefined, throwingSubprocessRuntime(foreign))
-    expect(() => start(passthroughError, passthroughError.resolve({ command: 'echo never', sandboxPolicy: RO })))
-      .toThrow('sync-emfile-start')
+    const passed = start(passthroughError, passthroughError.resolve({ command: 'echo never', sandboxPolicy: RO }))
+    await passed.done
+    expect(passed.status).toBe('killed')
+    await expect(passed.result()).rejects.toThrow('sync-emfile-start')
   }, 30_000)
 
   it('a runner that REFUSES at runtime (fatal signature, nonzero exit) fails closed too', async () => {
