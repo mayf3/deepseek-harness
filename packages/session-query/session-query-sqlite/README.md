@@ -97,7 +97,7 @@ The design history lives in the [SQLite FTS5 session search note](../../../.agen
 | [`src/index.ts`](src/index.ts) | Service: config, openAt lifecycle, serialized reconciliation, query execution, cursors |
 | [`src/query.ts`](src/query.ts) | Request normalization, parameterized predicates, snippets, predicate and binding budgets |
 | [`src/schema.ts`](src/schema.ts) | Database schema, application-id ownership, in-place reset, owner-only file creation |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion (no runtime invariant; boundaries are validated per serialized query) |
+| — | No runtime invariant companion is published; reconciliation, cursor generations, and derived-index ownership are validated at each serialized query boundary. |
 
 ### Index lifecycle
 
@@ -120,7 +120,7 @@ Read these pages when the package-level contract is not enough. They move from t
 - [dsh-session-query](../session-query/README.md) — the service definition: exact reads, filters, and traces this backend inherits.
 - [dsh-tool-session-query](../tool-session-query/README.md) — the model-facing consumer that calls these search methods.
 - [SQLite FTS5 session search](../../../.agents/notes/implemented/feature/2026-07-10-sqlite-session-query-provider.md) — search semantics, reconciliation, and the tokenizer decision.
-- [SQLite session persistence](../../../packages/session/session-persistence-sqlite/README.md) — the sibling persistence backend; never point this package's `path` at its database.
+- [JSONL session persistence](../../session/session-persistence-jsonl/README.md) — the authoritative Session store this disposable index observes; keep its root separate from this package's database path.
 
 -----
 
