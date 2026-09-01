@@ -125,16 +125,16 @@ The Assembler does not use State reference equality to decide publication or pro
 | Return value | Behavior |
 |---|---|
 | `immediate` | Request a notification and flush in the current microtask |
-| `animation-frame` | Coalesce high-frequency updates into materialization on the next frame |
+| `animation-frame` | Coalesce high-frequency updates into materialization after two browser animation frames |
 | `none` | Do not schedule a flush for this Match; retain its State and dirty marker |
 
 Omitting `publication()` means `immediate`. Assistant token deltas and packed runs use `animation-frame`, invisible Inbox Contexts use `none`, and finals, dependency replays, and Location boundaries publish the latest result through an immediate path.
 
-Every live delta within a frame still executes `update()`, while one historical packed run executes one batch `update()`. Only `buildViewNode()`, View Builder work, and React snapshot notification are coalesced; no fragments are lost.
+Every live delta during the two-frame interval still executes `update()`, while one historical packed run executes one batch `update()`. Location-data publication, `buildViewNode()`, View Builder work, and React snapshot notification are coalesced; no fragments are lost. An immediate publication cancels a pending frame interval and flushes the latest State without delay.
 
 #### `buildLocationData(context, scope)`
 
-`buildLocationData()` lets a Definition publish a read-only value derived from its State onto an engine-owned Step or Turn without exposing another business's mutable State. The Assembler always materializes `step` before `turn`, so Turn-level aggregation can read Step data updated in the same flush; it calls `buildViewNode()` only after all Location data is ready.
+`buildLocationData()` lets a Definition publish a read-only value derived from its State onto an engine-owned Step or Turn without exposing another business's mutable State. The Assembler passes the preceding publication back to its owner, which returns that exact value when its business data is unchanged. The Assembler always materializes `step` before `turn`, so Turn-level aggregation can read Step data updated in the same flush; it calls `buildViewNode()` only after all Location data is ready.
 
 A Definition receives the `step` and `turn` scopes separately and may return one value or `null` in either phase. A value must identify the exact turn/step coordinates and use the Definition's `kind` as its key. The Assembler owns replacement and removal and rejects another Context that claims the same Location key.
 
@@ -390,6 +390,8 @@ History-path tests cover complete replace, non-overlapping prepend, complete-ran
 
 **Let a Location-data consumer read the provider's Context State directly.** Rejected: the consumer would depend on another business's mutable internal shape and could not express which Turn/Step owns the value. Declaration-merged data maps expose only the provider-selected read-only value and engine-owned coordinates.
 
+**Cache every Definition's Location data by State identity.** Rejected because a Definition may mutate and return the same State object, and its Location data may also depend on Match Locations or values published by another Definition. Each Definition instead decides whether its business value changed and returns the preceding publication unchanged when it did not.
+
 **Add generic `end()`, prepared, or window-reset lifecycles.** Rejected: businesses have different completion conditions, and a pagination gap is not a business lifecycle. Business Events update State, Location close triggers replay/build, and Reader dependencies own pagination invalidation.
 
 **Reuse one Event Definition across Chat and Trajectory by branching in `buildViewNode(target)`.** Rejected: the views require different business State and intermediate records, so a shared Definition would make each package carry the other's conditions and payloads. Separate target-owned Definitions keep those choices local while sharing the Assembler's ingestion and lifecycle contracts.
@@ -412,7 +414,7 @@ Initial tail, older prepend, and live append share one set of Context invariants
 
 Append does not scan historical Contexts; prepend replays only Contexts whose Matches, Locations, or Reader answers actually changed. A structural Chat change may still recompute visible order and indexes, but does not rerun unrelated business folds or replace unchanged Node identity.
 
-Separating State updates from publication cadence folds every live Assistant delta and each historical packed run while materializing at most once per animation frame. Step or Turn close and final Events can immediately publish the latest State.
+Separating State updates from publication cadence folds every live Assistant delta and each historical packed run while materializing at most once per two animation frames. The Assistant view reads the same projection that the preceding Step Location phase installed. Turn Process returns its existing open data and Node for continuing Assistant chunks without deriving or encoding them again, and Turn Tail defers its complete-Match scan until `turn/end`. Step or Turn close and final Events immediately publish the latest State.
 
 An inactive target retains Definition State and a target Context index but no builder, materialized Nodes, or snapshot. The mounted built-in or third-party View activates its own target through normal subscription; previously opened targets continue receiving incremental updates.
 

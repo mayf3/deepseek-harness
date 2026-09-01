@@ -1,6 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   createScope, MutableSessionEventSource,
@@ -16,6 +16,8 @@ import type {
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 
 const SESSION_ID = 'resident' as SessionId
+
+afterEach(() => { vi.unstubAllGlobals() })
 
 function sessionSnapshot(): SessionSnapshot {
   return {
@@ -136,6 +138,99 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
+  it('publishes frame-paced updates after two animation frames and lets immediate updates preempt them', async () => {
+    let nextFrame = 0
+    const frames = new Map<number, FrameRequestCallback>()
+    const requestFrame = vi.fn((callback: FrameRequestCallback) => {
+      nextFrame++
+      frames.set(nextFrame, callback)
+      return nextFrame
+    })
+    const cancelFrame = vi.fn((frame: number) => { frames.delete(frame) })
+    vi.stubGlobal('requestAnimationFrame', requestFrame)
+    vi.stubGlobal('cancelAnimationFrame', cancelFrame)
+    const { uiConversation, binding, events, views } = await bootRegistries()
+    const definition: ConversationNodeDefinition<number> = {
+      kind: 'frame-probe',
+      target: 'chat',
+      match: event => event.type === 'turn/start'
+        ? { id: String(event.data.turn), role: 'start' }
+        : event.type === 'assistant/chunk' || event.type === 'assistant/message'
+          ? { id: String(event.data.turn), role: 'update' }
+          : null,
+      start: () => 0,
+      update: context => context.state + 1,
+      publication: match => match.event.type === 'assistant/chunk' ? 'animation-frame' : 'immediate',
+      buildViewNode: context => ({
+        key: context.key,
+        kind: 'frame-probe',
+        id: context.id,
+        target: 'chat',
+        data: context.state,
+      }),
+    }
+    events.register(definition)
+    views.register(viewDefinition('chat'))
+    await Promise.resolve()
+    const conversation = uiConversation.binding(binding)
+    conversation.activate('chat')
+    const listener = vi.fn()
+    const unsubscribe = conversation.snapshot.subscribe(listener)
+    const source = binding.eventSource as MutableSessionEventSource
+    const append = (event: SessionEvent): void => {
+      source.append({ type: 'event', event })
+    }
+
+    append({ seq: 1, time: 1, type: 'turn/start', data: { turn: 1 } })
+    listener.mockClear()
+    append({
+      seq: 2,
+      time: 2,
+      type: 'assistant/chunk',
+      data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'a' } },
+    })
+    append({
+      seq: 3,
+      time: 3,
+      type: 'assistant/chunk',
+      data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'b' } },
+    })
+    expect(requestFrame).toHaveBeenCalledOnce()
+    expect(listener).not.toHaveBeenCalled()
+
+    const first = frames.get(1)
+    if (first === undefined) throw new Error('first animation frame was not scheduled')
+    frames.delete(1)
+    first(0)
+    expect(requestFrame).toHaveBeenCalledTimes(2)
+    expect(listener).not.toHaveBeenCalled()
+
+    const second = frames.get(2)
+    if (second === undefined) throw new Error('second animation frame was not scheduled')
+    frames.delete(2)
+    second(16)
+    expect(listener).toHaveBeenCalledOnce()
+
+    append({
+      seq: 4,
+      time: 4,
+      type: 'assistant/chunk',
+      data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'c' } },
+    })
+    append({
+      seq: 5,
+      time: 5,
+      type: 'assistant/message',
+      data: { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [] } },
+    } as SessionEvent)
+    expect(cancelFrame).toHaveBeenCalledWith(3)
+    expect(frames).toHaveLength(0)
+    expect(listener).toHaveBeenCalledTimes(2)
+
+    unsubscribe()
+    await binding.ctx.fiber.dispose()
+  })
+
   it('rejects duplicate Event Definitions and disposes an ordinary registration once', async () => {
     const { events } = await bootRegistries()
     const definition = eventDefinition('message')

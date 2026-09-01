@@ -158,7 +158,7 @@ export interface ConversationContextReader {
   previous<State>(kind: string): ConversationPreviousContext<State> | undefined
 }
 
-/** Requested cadence for materializing updated business State into view Nodes. */
+/** Requested cadence; `animation-frame` materializes after two browser animation frames. */
 export type ConversationPublication = 'none' | 'animation-frame' | 'immediate'
 
 /** Engine-owned Location data publication phase. */
