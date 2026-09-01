@@ -7,22 +7,25 @@
  * must stub); implementation-internal entry points (history staging, wire-frame
  * dispatch) stay on the class, invisible out here.
  */
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
-import type { PendingSubmissionImage, SessionSnapshot } from './snapshot.ts'
+import type { FileUploadReceiptId, PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
+import type { PendingSubmissionAttachment, SessionSnapshot } from './snapshot.ts'
 
 /**
  * Why a local submission echo left the snapshot: `observed` when its durable
  * `user/message` event or host queue occurrence arrived (with the admitted
- * image references in prompt order), `failed` when the prompt was rejected,
+ * attachment references in prompt order), `failed` when the prompt was rejected,
  * threw, or was aborted before acceptance.
  */
 export type PendingSubmissionRetirement =
-  | { readonly reason: 'observed'; readonly attachments: readonly ImageAttachmentRef[] }
+  | {
+    readonly reason: 'observed'
+    readonly attachments: readonly (ImageAttachmentRef | FileAttachmentRef)[]
+  }
   | { readonly reason: 'failed' }
 
 /** Input registering one local submission echo ahead of its prompt call. */
@@ -31,8 +34,8 @@ export interface BeginSubmissionInput {
   readonly mode: 'queue' | 'steer'
   /** Prompt text exactly as the upcoming prompt will send it. */
   readonly text: string
-  /** Ordered image previews matching the upcoming prompt's image parts. */
-  readonly images: readonly PendingSubmissionImage[]
+  /** Ordered image previews and durable file metadata matching the upcoming prompt attachments. */
+  readonly attachments: readonly PendingSubmissionAttachment[]
   /** Settlement callback fired exactly once when the echo retires. */
   readonly onRetire?: (retirement: PendingSubmissionRetirement) => void
 }
@@ -86,6 +89,21 @@ export interface ISession {
     signal?: AbortSignal,
     requestId?: SessionRequestId,
   ): Promise<RemoteResult<{ accepted: true }>>
+  /**
+   * Persist one browser file verbatim and stage it for a later prompt on this
+   * session. The returned opaque receipt is what a prompt file part cites.
+   * @param data - browser Blob or exact file bytes.
+   * @param name - optional display name; the host sanitizes the stored leaf name.
+   * @param signal - optional cancellation for the active upload.
+   * @param onProgress - optional byte-progress observer for background Blob uploads.
+   * @returns the staged-upload receipt and durable file reference, or the business error.
+   */
+  uploadFile(
+    data: Blob | Uint8Array,
+    name?: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: { readonly loaded: number; readonly total?: number }) => void,
+  ): Promise<RemoteResult<{ receiptId: FileUploadReceiptId; file: FileAttachmentRef }>>
   /**
    * Resolve one durable image referenced by this session.
    * @param attachmentId - opaque id found in the folded session log.

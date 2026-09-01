@@ -119,10 +119,11 @@ async function localizeSourceMap(source: string, bundleUrl: string, fetch: Tunne
   }
 }
 
-/** Normalize a RequestInit body to a transferable ArrayBuffer. */
-function toBodyBuffer(body: RequestInit['body']): ArrayBuffer | undefined {
+/** Keep opaque Blobs clone-cheap; normalize text and typed arrays to transferable bytes. */
+function toTunnelBody(body: RequestInit['body']): ArrayBuffer | Blob | undefined {
   if (body === undefined || body === null) return undefined
   if (typeof body === 'string') return encoder.encode(body).buffer
+  if (body instanceof Blob) return body
   if (body instanceof ArrayBuffer) return body
   if (ArrayBuffer.isView(body)) {
     return body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength)
@@ -205,7 +206,7 @@ export class WorkerTunnel {
       headers: Object.fromEntries(new Headers(init?.headers).entries()),
       ...(init?.body === undefined || init.body === null
         ? {}
-        : { body: toBodyBuffer(init.body) }),
+        : { body: toTunnelBody(init.body) }),
     }
     const response = new Promise<Response>((resolve, reject) => {
       this.unary.set(id, { resolve, reject })

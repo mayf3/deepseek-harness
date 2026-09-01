@@ -1,8 +1,11 @@
 // Sessions remain resident after creation so their open Remote sources keep running off-screen.
 
 import type { Context } from '@deepseek-ai/cordis'
-import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import type {
+  BackgroundUploadProgress, BackgroundUploadTransport,
+} from '@deepseek-ai/dsh-client-connection/client'
+import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -15,7 +18,9 @@ import type {
   SessionControlFrame,
   SessionQueuedItem,
   SessionRequestId,
+  SessionUploadFileValue,
 } from '../../types.ts'
+import { SESSION_FILE_UPLOAD_PATH } from '../../file-upload-path.ts'
 import type {
   BeginSubmissionInput, PendingSubmissionRetirement, SessionFace, SubmissionHandle,
 } from '../contract/session.ts'
@@ -28,6 +33,7 @@ import type {
 } from '../contract/events.ts'
 import { Notifier } from './notifier.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionRemotes } from './remotes.ts'
 import { ProjectionValueStore } from './projection-store.ts'
@@ -62,6 +68,8 @@ export interface SessionOptions {
    * private store (bare object-layer construction).
    */
   projections?: ProjectionValueStore
+  /** Physical large-body carrier supplied by the active browser Connection. */
+  backgroundUploads?: BackgroundUploadTransport
 }
 
 /**
@@ -196,7 +204,7 @@ export class Session implements SessionFace {
         : 'transcript',
       time: Date.now(),
       text: input.text,
-      images: input.images,
+      attachments: input.attachments,
     }]
     this.submissionSettlements.set(requestId, { onRetire: input.onRetire, retiring: false })
     // The blank → engaging edge flips here, ahead of prompt(): the composer
@@ -208,7 +216,7 @@ export class Session implements SessionFace {
 
   /**
    * Send (queue/steer passed through 1:1); failures land in the snapshot's promptError.
-   * @param content - text plus browser-owned temporary image uploads.
+   * @param content - text, browser-owned temporary image uploads, and staged-file receipts.
    * @param mode - queue appends after the current turn; steer interrupts it.
    * @param signal - optional caller cancellation for the complete admission round-trip.
    * @param requestId - identity from {@link beginSubmission}; a failed identified prompt retires its echo.
@@ -238,13 +246,25 @@ export class Session implements SessionFace {
         content,
         clientTimeZone,
       }, signal)
+    } else if (content.some(part => part.type === 'file')) {
+      result = {
+        ok: false,
+        error: new RemoteError(
+          'subagent/attachment-invalid',
+          'subagent continuation does not accept files',
+          { reason: 'SUBAGENT_FILE_UNSUPPORTED' },
+        ),
+      }
     } else {
+      // The preceding branch rejects file parts before the narrower subagent
+      // wire type is used; this array is not filtered or reordered.
+      const routedContent = content as Exclude<PromptContentPart, { readonly type: 'file' }>[]
       const routed = await this.remote.subagents.prompt({
         requestId: randomUUID() as SessionRequestId,
         parentSessionId: this.address.parentSessionId,
         childSessionId: this.address.childSessionId,
         mode: 'continuable',
-        content,
+        content: routedContent,
         clientTimeZone: resolvedClientTimeZone(),
       }, signal)
       result = routed.ok ? { ok: true, value: { accepted: true } } : routed
@@ -269,6 +289,52 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
     }
     return result
+  }
+
+  /**
+   * Persist one browser file verbatim and stage it for a later prompt on this
+   * session (ordinary sessions only; subagent conversations refuse).
+   * @param data - exact file bytes.
+   * @param name - optional display name; the host sanitizes the stored leaf name.
+   * @returns the staged-upload receipt and durable file reference, or the business error.
+   */
+  async uploadFile(
+    data: Blob | Uint8Array,
+    name?: string,
+    signal?: AbortSignal,
+    onProgress?: (progress: BackgroundUploadProgress) => void,
+  ): Promise<RemoteResult<SessionUploadFileValue>> {
+    if (this.address !== undefined) {
+      return {
+        ok: false,
+        error: new RemoteError(
+          'subagent/attachment-invalid',
+          'subagent conversations do not accept file uploads',
+          { reason: 'SUBAGENT_FILE_UNSUPPORTED' },
+        ),
+      }
+    }
+    if (data instanceof Blob && this.options.backgroundUploads !== undefined) {
+      const query = new URLSearchParams({ sessionId: this.sessionId })
+      if (name !== undefined) query.set('name', name)
+      const response = await this.options.backgroundUploads.post({
+        path: `${SESSION_FILE_UPLOAD_PATH}?${query.toString()}`,
+        body: data,
+        headers: { 'content-type': 'application/octet-stream' },
+        ...(signal === undefined ? {} : { signal }),
+        ...(onProgress === undefined ? {} : { onProgress }),
+      })
+      if (response.status !== 200) {
+        throw new Error(`file upload transport failed with HTTP ${String(response.status)}`)
+      }
+      return parseFileUploadResult(response.body)
+    }
+    const bytes = data instanceof Uint8Array ? data : new Uint8Array(await data.arrayBuffer())
+    return this.remote.session.uploadFile({
+      sessionId: this.sessionId,
+      data: bytesToBase64(bytes),
+      ...(name === undefined ? {} : { name }),
+    }, signal)
   }
 
   /**
@@ -657,7 +723,7 @@ export class Session implements SessionFace {
     const data = event.data as { readonly source?: unknown; readonly content?: unknown } | undefined
     const source = data?.source as { readonly kind?: unknown; readonly rpcId?: unknown } | undefined
     if (source?.kind !== 'user' || typeof source.rpcId !== 'string') return
-    this.scheduleObservedRetirement(source.rpcId as SessionRequestId, imageRefsIn(data?.content))
+    this.scheduleObservedRetirement(source.rpcId as SessionRequestId, attachmentRefsIn(data?.content))
   }
 
   /** Retire echoes whose prompts landed in the host inbox instead of the log (running-turn submissions). */
@@ -665,7 +731,7 @@ export class Session implements SessionFace {
     if (this.submissionSettlements.size === 0) return
     for (const item of items) {
       if (item.rpcId !== undefined) {
-        this.scheduleObservedRetirement(item.rpcId, imageRefsIn(item.message.content))
+        this.scheduleObservedRetirement(item.rpcId, attachmentRefsIn(item.message.content))
       }
     }
   }
@@ -678,7 +744,7 @@ export class Session implements SessionFace {
    */
   private scheduleObservedRetirement(
     requestId: SessionRequestId,
-    attachments: readonly ImageAttachmentRef[],
+    attachments: readonly (ImageAttachmentRef | FileAttachmentRef)[],
   ): void {
     const settlement = this.submissionSettlements.get(requestId)
     if (settlement === undefined || settlement.retiring) return
@@ -750,21 +816,62 @@ export class Session implements SessionFace {
   }
 }
 
+function parseFileUploadResult(body: string): RemoteResult<SessionUploadFileValue> {
+  const value = JSON.parse(body) as unknown
+  if (!isRecord(value) || typeof value.ok !== 'boolean') {
+    throw new TypeError('file upload transport returned an invalid result')
+  }
+  if (!value.ok) {
+    const error = value.error
+    if (!isRecord(error) || typeof error.code !== 'string'
+      || typeof error.message !== 'string' || !isRecord(error.details)) {
+      throw new TypeError('file upload transport returned an invalid failure')
+    }
+    return {
+      ok: false,
+      error: new RemoteError(error.code as never, error.message, error.details as never),
+    }
+  }
+  const result = value.value
+  const file = isRecord(result) ? result.file : undefined
+  if (!isRecord(result) || typeof result.receiptId !== 'string' || !isRecord(file)
+    || typeof file.attachmentId !== 'string' || typeof file.name !== 'string'
+    || typeof file.bytes !== 'number' || !Number.isSafeInteger(file.bytes) || file.bytes < 0) {
+    throw new TypeError('file upload transport returned an invalid receipt')
+  }
+  return {
+    ok: true,
+    value: {
+      receiptId: result.receiptId as SessionUploadFileValue['receiptId'],
+      file: {
+        attachmentId: file.attachmentId as SessionUploadFileValue['file']['attachmentId'],
+        name: file.name,
+        bytes: file.bytes,
+      },
+    },
+  }
+}
+
+function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /** Run one callback on the next animation frame, or a macrotask where no frame clock exists. */
 function scheduleFrame(fn: () => void): void {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => { fn() })
   else setTimeout(fn, 0)
 }
 
-/** Image attachment references in one structurally-read content block list, in block order. */
-function imageRefsIn(content: unknown): readonly ImageAttachmentRef[] {
+/** Attachment references in one structurally-read content block list, in block order. */
+function attachmentRefsIn(content: unknown): readonly (ImageAttachmentRef | FileAttachmentRef)[] {
   if (!Array.isArray(content)) return []
-  const refs: ImageAttachmentRef[] = []
+  const refs: Array<ImageAttachmentRef | FileAttachmentRef> = []
   for (const block of content) {
     if (typeof block !== 'object' || block === null) continue
     const candidate = block as { readonly type?: unknown; readonly attachment?: unknown }
-    if (candidate.type === 'image' && typeof candidate.attachment === 'object' && candidate.attachment !== null) {
-      refs.push(candidate.attachment as ImageAttachmentRef)
+    if ((candidate.type === 'image' || candidate.type === 'file')
+      && typeof candidate.attachment === 'object' && candidate.attachment !== null) {
+      refs.push(candidate.attachment as ImageAttachmentRef | FileAttachmentRef)
     }
   }
   return refs

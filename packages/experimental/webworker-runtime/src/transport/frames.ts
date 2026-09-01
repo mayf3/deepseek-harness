@@ -14,7 +14,7 @@ export interface TunnelRequestFrame {
   readonly method: string
   readonly url: string
   readonly headers: Readonly<Record<string, string>>
-  readonly body?: ArrayBuffer | undefined
+  readonly body?: ArrayBuffer | Blob | undefined
 }
 
 /** Open one Gateway Remote stream over the worker-local carrier. */
@@ -171,8 +171,8 @@ export function parseInboundFrame(data: unknown): TunnelInboundFrame {
     if (typeof value === 'string') headers[key.toLowerCase()] = value
   }
   const body = frame.body
-  if (body !== undefined && !(body instanceof ArrayBuffer)) {
-    throw new Error(`webworker tunnel: request ${String(id)} body must be an ArrayBuffer`)
+  if (body !== undefined && !(body instanceof ArrayBuffer) && !(body instanceof Blob)) {
+    throw new Error(`webworker tunnel: request ${String(id)} body must be an ArrayBuffer or Blob`)
   }
   return { t: 'req', id, method: frame.method, url: frame.url, headers, body }
 }

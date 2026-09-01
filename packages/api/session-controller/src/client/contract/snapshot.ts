@@ -1,5 +1,6 @@
 /** Session-owned observable state excluding Conversation target data. */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
@@ -30,6 +31,11 @@ export interface PendingSubmissionImage {
   readonly height?: number
 }
 
+/** One attachment displayed by a local submission echo, in prompt order. */
+export type PendingSubmissionAttachment =
+  | ({ readonly type: 'image' } & PendingSubmissionImage)
+  | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
+
 /** Client surface selected when a local submission begins. */
 export type PendingSubmissionPlacement = 'transcript' | 'queued' | 'steering'
 
@@ -48,8 +54,8 @@ export interface PendingSubmission {
   readonly time: number
   /** Prompt text exactly as it will be sent (one text block). */
   readonly text: string
-  /** Ordered image previews matching the prompt's image parts. */
-  readonly images: readonly PendingSubmissionImage[]
+  /** Ordered image previews and durable file metadata matching the prompt attachments. */
+  readonly attachments: readonly PendingSubmissionAttachment[]
 }
 
 /** History-open lifecycle of a Session event window. */

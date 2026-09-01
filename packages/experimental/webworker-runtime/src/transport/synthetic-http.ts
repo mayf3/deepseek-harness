@@ -66,7 +66,15 @@ export function createSyntheticExchange(frame: TunnelRequestFrame, sink: Respons
     headers: frame.headers,
     destroy: (): void => { aborted = true },
     async *[Symbol.asyncIterator](): AsyncGenerator<Uint8Array> {
-      if (frame.body === undefined || frame.body.byteLength === 0) return
+      if (frame.body === undefined) return
+      if (frame.body instanceof Blob) {
+        for await (const chunk of frame.body.stream()) {
+          if (aborted) return
+          if (chunk.byteLength > 0) yield chunk
+        }
+        return
+      }
+      if (aborted || frame.body.byteLength === 0) return
       yield new Uint8Array(frame.body)
     },
   }
@@ -133,6 +141,7 @@ export function createSyntheticExchange(frame: TunnelRequestFrame, sink: Respons
       if (finished) return
       aborted = true
       finished = true
+      emit('aborted')
       emit('close')
     },
   }

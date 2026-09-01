@@ -25,6 +25,7 @@ import { Notifier } from './notifier.ts'
 import { ProjectionValueStore } from './projection-store.ts'
 import { Session } from './session.ts'
 import type { SessionRemotes } from './remotes.ts'
+import type { BackgroundUploadTransport } from '@deepseek-ai/dsh-client-connection/client'
 
 /**
  * List arrival lifecycle, orthogonal to the pull-activity `state` axis:
@@ -149,6 +150,7 @@ export class SessionManager {
     private readonly remote: SessionRemotes,
     restoredSelection?: SessionId,
     restoredAddress?: SubagentAddress,
+    private readonly backgroundUploads?: BackgroundUploadTransport,
   ) {
     this.selected = restoredSelection
     if (restoredAddress !== undefined) this.addresses.set(restoredAddress.childSessionId, restoredAddress)
@@ -328,6 +330,7 @@ export class SessionManager {
         this.recordMutation({ kind: 'engaged', sessionId: engaged.sessionId })
       },
       projections: this.projectionStore(sessionId),
+      ...(this.backgroundUploads === undefined ? {} : { backgroundUploads: this.backgroundUploads }),
     })
   }
 
