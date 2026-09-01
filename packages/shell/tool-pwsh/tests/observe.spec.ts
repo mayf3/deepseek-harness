@@ -275,6 +275,56 @@ describe('foreground timeout promotion (pwsh)', () => {
     await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
   })
 
+  it('promotes under the calling agent and stops the promoted job through the registry kill', async () => {
+    const { ctx, pwsh } = await setup()
+    const owner = {
+      id: SessionId('pwsh-promote-owner'),
+      session: { id: SessionId('pwsh-promote-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    let killed = false
+    let resolveDone: () => void = () => {}
+    const proc = {
+      status: 'running',
+      exitCode: null,
+      signal: null,
+      done: new Promise<void>((resolve) => { resolveDone = resolve }),
+      readOutput: () => ({ delta: '', lossy: false }),
+      kill: () => {
+        killed = true
+        proc.status = 'killed'
+        proc.signal = 'SIGTERM'
+        resolveDone()
+        return true
+      },
+      promotion: Promise.resolve({ accepted: false, accept() { this.accepted = true }, decline() {} }),
+      result: () => Promise.reject(new Error('result projection unused after promotion')),
+    } as unknown as ShellExecution & { status: string; signal: string | null }
+    pwsh.foregroundHandler = () => proc
+
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('pwsh-observe-promote-owned'),
+      name: 'pwsh',
+      arguments: { command: 'Get-Slow', description: 'test command', timeoutMs: 250 },
+      agent: owner,
+    })
+    expect((result.content[0] as { text: string }).text).toContain('moved to background job')
+    const job = ctx.jobs.list(owner)[0]
+    expect(job).toBeDefined()
+    expect(job!.ownerSession).toBe(owner.id)
+
+    expect(ctx.jobs.kill(job!.id, owner, { reason: 'test cleanup' })).toBe('requested')
+    await until(() => killed ? true : undefined)
+    const settled = await until(() => {
+      const snapshot = ctx.jobs.get(job!.id, owner)
+      return snapshot.status === 'killed' ? snapshot : undefined
+    })
+    expect(settled.detail).toBe('signal: SIGTERM; test cleanup')
+  })
+
   it('declines the offer and reports the timeout when no job controller serves the owner', async () => {
     // The same composition minus dsh-tool-jobs: the registry exists, so the
     // deadline still offers, but admission refuses and the tool falls back.

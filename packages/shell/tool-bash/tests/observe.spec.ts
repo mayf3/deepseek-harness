@@ -217,6 +217,31 @@ describe('foreground timeout promotion', () => {
     await until(() => ctx.jobs.get(job!.id).status === 'killed' ? true : undefined)
   })
 
+  it('promotes under the calling agent so the job is fenced to its session', async () => {
+    const ctx = await setup()
+    const owner = {
+      id: SessionId('promote-owner'),
+      session: { id: SessionId('promote-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    const result = await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('observe-promote-owned'),
+      name: 'bash',
+      arguments: { command: 'printf "held\\n"; sleep 30', description: 'test command', timeoutMs: 250 },
+      agent: owner,
+    })
+    expect(text(result)).toContain('moved to background job')
+    const job = ctx.jobs.list(owner)[0]
+    expect(job).toBeDefined()
+    expect(job!.ownerSession).toBe(owner.id)
+    expect(() => ctx.jobs.readRecord(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(ctx.jobs.kill(job!.id, owner, { reason: 'test cleanup' })).toBe('requested')
+    await until(() => ctx.jobs.get(job!.id, owner).status === 'killed' ? true : undefined)
+  })
+
   it('falls back to the timeout kill when the job admission refuses the promotion', async () => {
     const ctx = await setup()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
