@@ -74,7 +74,11 @@ function derivePresentation(
 export class ChatTurnProcessProjector {
   private presentations = new Map<number, ChatTurnProcessPresentation>()
 
-  /** @param node - current Chat Node. @returns its Turn's process presentation, when present. */
+  /**
+   * Read the retained process presentation for a Node's Turn.
+   * @param node - Current Chat Node.
+   * @returns The Turn's process presentation, when present.
+   */
   get(node: ChatNode | undefined): ChatTurnProcessPresentation | undefined {
     const turn = nodeTurn(node)
     return turn === undefined ? undefined : this.presentations.get(turn)

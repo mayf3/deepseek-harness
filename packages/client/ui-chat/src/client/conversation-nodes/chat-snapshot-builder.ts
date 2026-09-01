@@ -38,6 +38,7 @@ function cachedSource<Key, Source>(
   return source
 }
 
+/* jscpd:ignore-start -- Chat Node sources keep publication state inside the keyed Chat store. */
 class MutableChatSource<Value> {
   private readonly listeners = new Set<() => void>()
   private published: Value
@@ -63,6 +64,7 @@ class MutableChatSource<Value> {
     notifySubscribers(this.listeners, this.label)
   }
 }
+/* jscpd:ignore-end */
 
 class MutableChatNodeStore implements ChatNodeStore {
   private readonly byKey = new Map<string, ChatConversationViewNode>()
