@@ -1818,7 +1818,7 @@ describe('ChatView', () => {
     expect(view.queryByText(/首 token|tok\/s/)).toBeNull()
   })
 
-  it('user rows and turn tails both gate the whole actions row by recency', () => {
+  it('keeps only the latest turn tail actions permanently visible', () => {
     const h = makeHarness({
       nodes: [
         user(1, 'hi'),
@@ -1833,15 +1833,11 @@ describe('ChatView', () => {
       turnEnds: new Map([[1, 3], [2, 6]]),
     })
     const view = render(<h.ChatView {...h.props} />)
-    // The last user-authored row and the latest turn's tail stay shown;
-    // every earlier row of either kind reveals on hover.
     const tails = view.container.querySelectorAll('[data-turn-tail]')
     expect(new Map([...tails].map(tail => [
       tail.getAttribute('data-turn-tail'), tail.getAttribute('data-actions-reveal'),
     ]))).toEqual(new Map([['1', 'hover'], ['2', 'always']]))
-    const userRows = [...view.container.querySelectorAll('[data-actions-reveal]')]
-      .filter(row => row.getAttribute('data-turn-tail') === null)
-    expect(userRows.map(row => row.getAttribute('data-actions-reveal'))).toEqual(['hover', 'always'])
+    expect(view.container.querySelectorAll('[data-chat-flow-kind="user"]')).toHaveLength(2)
   })
 
   it('the run-time label is withheld when the turn start is outside the window', () => {
