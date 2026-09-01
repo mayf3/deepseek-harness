@@ -12,7 +12,7 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as SubagentSpawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
 import * as SubagentFork from '@deepseek-ai/dsh-subagent-fork-in-process'
-import type { GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, GenerateOptions, MessageId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { ToolCallId, createUserMessage, LlmAdapter, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
@@ -138,7 +138,7 @@ function queuePrompt(
   ctx: Context,
   parent: Agent,
   childId: SessionId,
-  content: ReturnType<typeof message>,
+  content: ContentBlock[],
   signal: AbortSignal = testSignal,
 ) {
   const manager = (ctx.subagents as unknown as {
@@ -146,7 +146,7 @@ function queuePrompt(
       queuePrompt(
         parent: Agent,
         childId: SessionId,
-        content: ReturnType<typeof message>,
+        content: ContentBlock[],
         source: { kind: 'user' },
         signal: AbortSignal,
       ): Promise<string>
@@ -1895,7 +1895,7 @@ describe('continuable adjacent-Agent delivery', () => {
     await vi.waitFor(() => {
       expect(adapter.requests.filter(request => request.sessionId === parent.id)).toHaveLength(1)
     })
-    const delivered = parent.session.events.flatMap(event => event.type === 'user/message'
+    const delivered = parent.session.snapshotEvents().flatMap(event => event.type === 'user/message'
       && event.data.source.kind === 'agent-message' ? [event.data] : [])[0]
     expect(delivered?.id).toBe(messageId)
     expect(delivered?.source).toMatchObject({
