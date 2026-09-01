@@ -1299,6 +1299,32 @@ describe('TrajectoryView state', () => {
     expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('102')
   })
 
+  it('keeps a replacement window bounded when its predecessor tail is absent', () => {
+    const nodes = (start: number): LegacyConversationSlice['nodes'] => Array.from(
+      { length: 100 },
+      (_, index) => ({
+        kind: 'user' as const,
+        seq: start + index,
+        time: start + index,
+        content: [],
+        source: null,
+      }),
+    )
+    const trajectory = createSnapshotStore(historySnapshot(nodes(1)))
+    render(
+      <TrajectoryView
+        {...standaloneProps([])}
+        {...standaloneHistory(historySnapshot([]))}
+        {...standaloneDuration()}
+        useTrajectory={bindSnapshotSelector(trajectory)}
+      />,
+    )
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('51')
+
+    act(() => { trajectory.set(historySnapshot(nodes(201))) })
+    expect(screen.getByRole('table').getAttribute('aria-rowcount')).toBe('51')
+  })
+
   it('keeps resident request numbering and cumulative usage outside the layout page', async () => {
     vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600)
     Object.defineProperty(HTMLElement.prototype, 'scrollTo', {

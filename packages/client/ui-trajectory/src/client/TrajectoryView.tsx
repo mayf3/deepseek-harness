@@ -160,13 +160,18 @@ export function TrajectoryView({
   const [historyTailSeq, setHistoryTailSeq] = useState(latestNodeSeq)
   const [historyNodeLimit, setHistoryNodeLimit] = useState(HISTORY_PAGE_NODES)
   const fixedTailSeq = historyTailSeq ?? latestNodeSeq
-  const historyEndIndex = fixedTailSeq === undefined
-    ? 0
-    : completeInspection.eventNodes.findLastIndex(node => node.seq <= fixedTailSeq) + 1
+  const historyTailIndex = fixedTailSeq === undefined
+    ? -1
+    : completeInspection.eventNodes.findLastIndex(node => node.seq <= fixedTailSeq)
+  const historyEndIndex = historyTailIndex < 0 && latestNodeSeq !== undefined
+    ? completeInspection.eventNodes.length
+    : historyTailIndex + 1
   const historyStartIndex = Math.max(0, historyEndIndex - historyNodeLimit)
   useEffect(() => {
-    if (historyTailSeq === undefined && latestNodeSeq !== undefined) setHistoryTailSeq(latestNodeSeq)
-  }, [historyTailSeq, latestNodeSeq])
+    if (latestNodeSeq !== undefined && (historyTailSeq === undefined || historyTailIndex < 0)) {
+      setHistoryTailSeq(latestNodeSeq)
+    }
+  }, [historyTailIndex, historyTailSeq, latestNodeSeq])
   const inspection = useMemo<TrajectorySnapshot>(() => {
     if (historyStartIndex === 0) return completeInspection
     const eventNodes = completeInspection.eventNodes.slice(historyStartIndex)
