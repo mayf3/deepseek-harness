@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Node's built-in `fetch` ignores `HTTP_PROXY` and `HTTPS_PROXY`, so a harness behind a proxy would connect directly no matter what the user exported — the LLM request, every web search, MCP over HTTP, telemetry, and the sandbox SDK alike. This package resolves one proxy policy from the launcher's environment snapshot and installs it as undici's global dispatcher, which is exactly what `fetch` resolves. Ordinary call sites therefore need no change and no import: they write `fetch()` and are proxied. The package also owns the three places a global dispatcher cannot reach — a caller that needs its own agent options, a worker thread with its own `globalThis`, and a spawned child Node — and gives each one a single supported way through.
+Node's built-in `fetch` ignores `HTTP_PROXY` and `HTTPS_PROXY`, so a harness behind a proxy would connect directly no matter what the user exported — the LLM request, every web search, MCP over HTTP, telemetry, and the sandbox SDK alike. This package resolves one proxy policy from the launcher's environment snapshot and installs it as undici's global dispatcher, which is exactly what `fetch` resolves. Ordinary call sites therefore need no change and no import: they write `fetch()` and are proxied. Four functions cover everything the global dispatcher cannot reach on its own — install the policy, ask where one request goes, hand the policy to a spawned child, and strip it for a replay.
 
 ## Table of Contents
 
@@ -33,12 +33,17 @@ Plain `fetch()` is proxied, and so is any SDK that reaches `globalThis.fetch` �
 
 | You are writing | Use |
 |---|---|
-| A call needing its own agent options (pool size, timeouts, a DNS lookup) | `createDispatcher(url, options)` |
-| An SDK that takes a `node:http` agent | `createNodeHttpAgent(protocol, options)` |
-| An SDK that takes a proxy URL of its own | `proxyUrlFor(url)` |
-| A spawn whose environment you build yourself | apply `childProxyEnv()` to it (`undefined` means remove) |
+| A plain request, or an SDK that reaches `globalThis.fetch` | nothing — the global dispatcher already routes it |
+| A call that must branch on whether this request is proxied | `proxyRouteFor(url)` |
+| An SDK that takes a proxy URL of its own | `proxyRouteFor(url)`, and pass `route.proxy` |
+| A spawn whose environment you build yourself | apply `proxyEnvironmentForChild()` to it (`undefined` means remove) |
+| A harness that must reach its own fixture server | apply `clearedProxyEnv()` to the spawn |
 
-Constructing `new Agent(...)` and passing it as `dispatcher` overrides the global one and silently bypasses the proxy. `verify-no-bare-dispatcher` rejects that outside this package; a line that must genuinely ignore the proxy says so with a `proxy-exempt:` comment.
+`proxyRouteFor` answers with the transport that answer assumed, not just the answer: its proxied arm carries the dispatcher already routing by this policy. A caller that read the policy and then built its own transport could have an unmount land between the two and send the request somewhere its branch never cleared.
+
+An SDK that builds its own transport reaches none of this. The two this repository ships that did — the OTLP exporter and the E2B SDK — were changed to a transport that does: the exporter now posts through `fetch`, and E2B is handed `route.proxy`.
+
+Constructing `new Agent(...)` and passing it as `dispatcher` overrides the global one and silently bypasses the proxy. `verify-no-bare-dispatcher` rejects that outside this package. One call site legitimately owns its transport — `web-fetch-http` pins a request to addresses it validated, which is per-request state a process-wide dispatcher cannot hold — and says so with a `proxy-exempt:` comment on the line.
 
 That gate cannot see inside an SDK, so every outbound call site in the repository also carries an `egress.spec.ts` that drives its real code path through a fake proxy and asserts the proxy saw the request. A new call site adds one. It is the only thing that catches an SDK changing transports underneath us — which is exactly how the OTLP and E2B gaps were found.
 
@@ -68,8 +73,8 @@ A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable stri
 | File | Holds |
 |---|---|
 | `src/policy.ts` | Resolution, bypass matching, and redaction. Imports no transport, so it stays loadable where undici is absent. |
-| `src/install.ts` | The global dispatcher, the active-policy record, `createDispatcher`, and `childProxyEnv`. Imports undici dynamically. |
-| `src/index.ts` | The package face: six functions and the types they use. |
+| `src/install.ts` | The global dispatcher, the active-policy record, the route, and the child environment. Imports undici dynamically. |
+| `src/index.ts` | The package face: four functions and one type. |
 
 ### Bypass matching
 
@@ -103,7 +108,7 @@ These limits define when the package is a poor fit. They are current package con
 
 - **No SOCKS, PAC, or operating-system proxy detection** — only `http(s)://` proxy URLs from the environment. A macOS or Windows system-proxy setting is not read, so a user who only toggled it in a proxy application must still export the variables; a SOCKS URL is reported and that scheme stays direct rather than borrowing another scheme's proxy.
 - **No custom certificate authority** — a TLS-intercepting corporate proxy needs `NODE_EXTRA_CA_CERTS` set on the process before launch, which this package neither sets nor validates.
-- **A separate Node context honors the policy only on a new enough runtime** — a spawned child reads it through Node's `NODE_USE_ENV_PROXY` (22.21+, 24+), and the OTLP exporter's agent through Node's `proxyEnv` option (22.21+, **24.5+**). The engines range admits 22.19, 22.20, and 24.0–24.4, where those two paths stay direct. Such a context also matches bypass entries with Node's own `NO_PROXY` rules, which differ from this package's in their separators and IPv4-range support.
+- **A spawned child honors the policy only on a new enough runtime** — it reads the published environment through Node's `NODE_USE_ENV_PROXY` (22.21+, 24+), and the engines range admits 22.19 and 22.20, where such a child stays direct. A child also matches bypass entries with Node's own `NO_PROXY` rules, which differ from this package's in their separators and IPv4-range support. Nothing in this process depends on a Node version: every in-process request reaches the global dispatcher.
 - **A worker that executes model-authored code gets no proxy at all** — neither the `code-runtime` worker nor the `workflow` worker receives proxy configuration, so their own requests go direct. A proxy URL may carry `user:password`, and both run scripts the model wrote.
 - **The regression gate sees source, not dependencies** — `verify-no-bare-dispatcher` parses `packages/*/*/src` and `apps/*/src`; tests, scripts, and the internals of a third-party SDK are outside it. That is why every outbound call site also carries an `egress.spec.ts`.
 

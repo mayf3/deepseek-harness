@@ -36,7 +36,7 @@ describe('bare dispatcher check', () => {
   })
 
   it('accepts the sanctioned factory', () => {
-    expect(reasons('      const dispatcher = await createDispatcher(url, options)')).toEqual([])
+    expect(reasons('      const route = proxyRouteFor(url)')).toEqual([])
   })
 
   it('rejects the shorthand form a line-wise regex misses', () => {

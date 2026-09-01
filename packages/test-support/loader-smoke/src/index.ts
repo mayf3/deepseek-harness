@@ -11,7 +11,7 @@
  * @module @deepseek-ai/dsh-loader-smoke
  */
 
-import { PROXY_ENV_NAMES } from '@deepseek-ai/dsh-http-proxy'
+import { clearedProxyEnv } from '@deepseek-ai/dsh-http-proxy'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -30,14 +30,6 @@ export const LOADER_SMOKE_TEST_TIMEOUT_MS = DEFAULT_PROCESS_TIMEOUT_MS + 15_000
 
 /** Which artifact an example bin is booted from: unbuilt `src` via tsx, or built `lib` via plain Node. */
 export type ExampleMode = 'src' | 'lib'
-
-/**
- * Proxy names cleared from every smoke child.
- * @returns an environment overlay removing each name that carries proxy configuration.
- */
-function clearedProxyEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, undefined]))
-}
 
 /** Environment variable selecting the mode; CI sets it to `lib`, dev leaves it unset (`src`). */
 export const EXAMPLE_MODE_ENV = 'DSH_EXAMPLE_MODE'

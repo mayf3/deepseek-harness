@@ -1,7 +1,7 @@
-import { createServer, type Server } from 'node:http'
+import http, { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 
 let seen: string[] = []
 let proxy: Server
@@ -21,12 +21,13 @@ beforeAll(async () => {
 })
 afterAll(async () => { await new Promise<void>((r) => { proxy.close(() => { r() }) }) })
 
-function policy(): ProxyPolicy {
-  return { httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy: '', source: 'env' }
+/** The launch environment of a user who exported one proxy for both schemes. */
+function proxyEnv(): { get(name: string): { value: string } | undefined } {
+  return { get: name => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
 }
 async function observe(run: () => Promise<unknown>): Promise<string[]> {
   seen = []
-  const dispose = await installGlobalProxy(policy())
+  const dispose = await installProxyFromEnvironment(proxyEnv(), () => undefined)
   try { await run().catch(() => undefined) } finally { await dispose() }
   return seen
 }
@@ -65,61 +66,24 @@ async function exportThroughBackend(host: string, exporter: Record<string, unkno
 }
 
 
-/**
- * Whether this runtime's `http.Agent` honors `proxyEnv`, which is how the OTLP exporter reaches a
- * proxy. Added in Node 24.5 and backported to 22.21; the engines range admits 22.19, 22.20, and
- * 24.0–24.4, where telemetry stays direct.
- */
-function supportsAgentProxyEnv(): boolean {
-  const [major = 0, minor = 0] = process.versions.node.split('.').map(Number)
-  return (major === 24 && minor >= 5) || major > 24 || (major === 22 && minor >= 21)
-}
-
 describe('session-telemetry-otel egress', () => {
   it('exports through the proxy', async () => {
     const observed = (await observe(() => exportThroughBackend('otel-proxied.invalid'))).join('|')
-    // An older runtime ignores the unknown `proxyEnv` option and keeps telemetry direct — the
-    // documented seam, asserted rather than left to chance.
-    if (supportsAgentProxyEnv()) expect(observed).toContain('otel-proxied.invalid')
-    else expect(observed).toBe('')
+    // No runtime gate: the exporter posts through `fetch`, which resolves undici's global
+    // dispatcher on every Node this repository supports. The SDK's own `node:http` transport would
+    // have needed `http.Agent`'s `proxyEnv`, which arrived in 22.21 and 24.5 — inside the engines
+    // range, so telemetry would have stayed direct on 22.19, 22.20, and 24.0–24.4.
+    expect(observed).toContain('otel-proxied.invalid')
   })
 
-  it('reaches no proxy without the agent this package supplies — the gap it closes', async () => {
-    const observed = await observe(() => exportThroughBackend('otel-direct.invalid', {
-      httpAgentOptions: async (protocol: string) => {
-        const core = protocol === 'https:' ? await import('node:https') : await import('node:http')
-        return new core.Agent({ keepAlive: false })
-      },
+  it('reaches no proxy over node:http — the transport this exporter no longer uses', async () => {
+    const observed = await observe(() => new Promise<void>((resolve) => {
+      // The mechanism behind the case above, asserted rather than described: a global dispatcher is
+      // undici's, and `node:http` never consults it. An exporter built on the SDK's Node transport
+      // would take this path and leave telemetry direct however the proxy is configured.
+      http.get('http://otel-direct.invalid/v1/logs', (response) => { response.resume(); resolve() })
+        .on('error', () => { resolve() })
     }))
-    // The SDK's own default agent is this shape. Restoring it must fail loudly here rather than
-    // silently un-proxying telemetry on an upgrade. A per-test host keeps a late-arriving export
-    // from an earlier case out of this assertion.
     expect(observed.join('|')).not.toContain('otel-direct.invalid')
-  })
-})
-
-describe('session-telemetry-otel exporter passthrough', () => {
-  it('lets a composition keep its own agent factory, which then owns the routing', async () => {
-    let called = 0
-    await observe(() => exportThroughBackend('otel-passthrough.invalid', {
-      httpAgentOptions: async () => {
-        called++
-        const core = await import('node:http')
-        return new core.Agent({ keepAlive: false })
-      },
-    }))
-    // The exporter option is documented as verbatim passthrough: a composition that supplies its own
-    // factory owns the transport, and this package's default must step aside.
-    expect(called).toBeGreaterThan(0)
-  })
-
-  it('honors exporter.keepAlive on the agent this package supplies', async () => {
-    const { createNodeHttpAgent } = await import('@deepseek-ai/dsh-http-proxy')
-    const agent = await createNodeHttpAgent('http:', { keepAlive: false })
-    try {
-      expect((agent as unknown as { options: { keepAlive?: boolean } }).options.keepAlive).toBe(false)
-    } finally {
-      agent.destroy()
-    }
   })
 })

@@ -35,16 +35,8 @@ import {
   type AgentUnderTest,
   type LaunchedAcpTestAgent,
 } from './launcher.ts'
-import { PROXY_ENV_NAMES } from '@deepseek-ai/dsh-http-proxy'
+import { clearedProxyEnv } from '@deepseek-ai/dsh-http-proxy'
 import { captureWorkspaceSnapshot, type WorkspaceSnapshotEntry } from './workspace.ts'
-
-/**
- * Proxy names removed from every replayed child.
- * @returns an environment overlay removing each name that carries proxy configuration.
- */
-function clearedProxyEnv(): NodeJS.ProcessEnv {
-  return Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, undefined]))
-}
 
 export type { AgentUnderTest } from './launcher.ts'
 

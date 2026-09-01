@@ -9,8 +9,8 @@
 import { lookup as systemLookup } from 'node:dns/promises'
 import type { LookupAddress, LookupOptions } from 'node:dns'
 import { isIP } from 'node:net'
-import type { Agent, Response } from 'undici'
-import { createDispatcher, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import type { Dispatcher, Response } from 'undici'
+
 import ipaddr from 'ipaddr.js'
 import { WebError } from '@deepseek-ai/dsh-web'
 
@@ -174,80 +174,35 @@ export function isNonPublicIpLiteral(hostname: string): boolean {
 }
 
 /**
- * Fetch through an Undici agent whose lookup callback returns only the already
- * validated address set. The URL hostname remains intact for HTTP Host and TLS SNI.
+ * Fetch through an agent whose lookup callback returns only the already validated address set. The
+ * URL hostname remains intact for HTTP Host and TLS SNI.
  *
- * @param url - validated HTTP(S) URL.
+ * The agent is this request's own because the address set is: pinning is how this package refuses a
+ * DNS answer that changes between validation and connection, and it may not apply process-wide —
+ * an operator-configured MCP server or model endpoint on loopback is a supported destination, and
+ * only the URLs this tool fetches are the model's to choose.
+ *
+ * @param url - validated HTTP(S) URL the policy does not route through a proxy.
  * @param addresses - public addresses returned by {@link resolvePublicAddresses}.
  * @param headers - request headers.
  * @param signal - request and body-read cancellation signal.
- * @param policy - the proxy policy the caller already branched on; omitted, the active one is read.
- * @returns a response plus the dispatcher disposer its consumer must call.
+ * @returns a response plus the disposer its consumer must call.
  */
 export async function requestPinned(
   url: URL,
   addresses: readonly PublicAddress[],
   headers: Record<string, string>,
   signal: AbortSignal,
-  policy?: ProxyPolicy,
 ): Promise<PinnedResponse> {
-  return await requestWith(url, headers, signal, {
-    autoSelectFamily: true,
-    connect: { lookup: createPinnedLookup(addresses) },
-  }, policy)
-}
-
-/**
- * Fetch through the active proxy, letting it resolve the origin.
- *
- * No address set is pinned because none exists to pin: the proxy performs the lookup, and a
- * connection pinned to a locally resolved address would reach the origin directly and defeat the
- * proxy. Configuring a proxy therefore delegates destination selection to it; the URL-level policy
- * in `policy.ts` still applies to every hop.
- *
- * @param url - validated HTTP(S) URL the active policy routes through a proxy.
- * @param headers - request headers.
- * @param signal - request and body-read cancellation signal.
- * @param policy - the proxy policy the caller branched on; passing it keeps this hop on the route
- *   that decision assumed even if the policy is replaced while the request is in flight.
- * @returns a response plus the dispatcher disposer its consumer must call.
- */
-export async function requestProxied(
-  url: URL,
-  headers: Record<string, string>,
-  signal: AbortSignal,
-  policy?: ProxyPolicy,
-): Promise<PinnedResponse> {
-  return await requestWith(url, headers, signal, {}, policy)
-}
-
-/**
- * Issue one request on a policy-aware dispatcher the caller then owns.
- *
- * The dispatcher comes from `dsh-http-proxy` rather than a bare `new Agent`, which would bypass the
- * global dispatcher and with it the proxy — the defect this package had before proxy support existed.
- *
- * @param url - validated HTTP(S) URL.
- * @param headers - request headers.
- * @param signal - request and body-read cancellation signal.
- * @param options - agent options applied to whichever agent the policy selects.
- * @param policy - the policy to route by, defaulting to the active one.
- * @returns a response plus the dispatcher disposer its consumer must call.
- */
-async function requestWith(
-  url: URL,
-  headers: Record<string, string>,
-  signal: AbortSignal,
-  options: Agent.Options,
-  policy?: ProxyPolicy,
-): Promise<PinnedResponse> {
-  // Keep the Node-only transport out of browser-worker startup. The preview
-  // can load the provider and fail loud at its DNS stub without evaluating
-  // Undici; a real request on Node resolves this maintained dependency here.
-  const { fetch } = await import('undici')
-  const dispatcher = await createDispatcher(url, options, policy)
+  // Keep the Node-only transport out of browser-worker startup. The preview can load the provider
+  // and fail loud at its DNS stub without evaluating Undici; a real request resolves it here.
+  const { Agent, fetch } = await import('undici')
+  // Reached only where `proxyRouteFor` reported no proxy for this URL, and the pinned lookup this
+  // agent carries is per-request state the process-wide dispatcher cannot hold.
+  // proxy-exempt: pinning one request's validated addresses, on a URL the policy routes directly.
+  const dispatcher = new Agent({ autoSelectFamily: true, connect: { lookup: createPinnedLookup(addresses) } })
   try {
-    // proxy-exempt: the dispatcher is createDispatcher's, which already applied the active policy.
+    // proxy-exempt: the agent above, whose lifetime is this one request.
     const response = await fetch(url, { method: 'GET', redirect: 'manual', headers, signal, dispatcher })
     return { response, close: async () => { await dispatcher.close() } }
   } catch (error: unknown) {
@@ -256,11 +211,38 @@ async function requestWith(
   }
 }
 
+/**
+ * Fetch through the dispatcher the proxy policy already installed, letting the proxy resolve the
+ * origin.
+ *
+ * No address set is pinned because none exists to pin: the proxy performs the lookup, and a
+ * connection pinned to a locally resolved address would reach the origin directly and defeat the
+ * proxy. The dispatcher is the process-wide one, so hops share its connection pool and no caller
+ * closes it.
+ *
+ * @param dispatcher - the route's dispatcher, from `proxyRouteFor`.
+ * @param url - validated HTTP(S) URL the policy routes through a proxy.
+ * @param headers - request headers.
+ * @param signal - request and body-read cancellation signal.
+ * @returns a response plus a disposer that releases nothing, so both paths close alike.
+ */
+export async function requestVia(
+  dispatcher: Dispatcher,
+  url: URL,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+): Promise<PinnedResponse> {
+  const { fetch } = await import('undici')
+  // proxy-exempt: the dispatcher is the installed policy's own, handed over by `proxyRouteFor`.
+  const response = await fetch(url, { method: 'GET', redirect: 'manual', headers, signal, dispatcher })
+  return { response, close: () => Promise.resolve() }
+}
+
 /** Production network operations kept as an object so provider tests can replace resolution only. */
 export const publicHttpNetwork = {
   resolve: resolvePublicAddresses,
   request: requestPinned,
-  requestProxied,
+  requestVia,
 }
 
 type LookupCallback = (

@@ -30,7 +30,7 @@ import {
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
-import { installGlobalProxy, resolveProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { provideCmdline, type AppReady } from '@deepseek-ai/dsh-cmdline'
 import { createProcessShutdown, type ProcessShutdown } from './process-shutdown.ts'
@@ -212,11 +212,10 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
   // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
   // work, which the NODE_USE_ENV_PROXY flag cannot do because Node samples the environment at start.
-  const { policy: proxyPolicy, diagnostics } = resolveProxyPolicy(options.environment)
-  // A proxy variable may have been exported for other tools, so a value this harness cannot use is
-  // reported and skipped rather than being allowed to stop the agent from starting.
-  for (const diagnostic of diagnostics) process.stderr.write(`${NAME}: ${diagnostic.message}\n`)
-  const disposeProxy = await installGlobalProxy(proxyPolicy)
+  const disposeProxy = await installProxyFromEnvironment(
+    options.environment,
+    (message) => { process.stderr.write(`${NAME}: ${message}\n`) },
+  )
 
   const composed = await composeProfile(options.profile, options.patchFiles)
   const app: { current?: Context } = {}

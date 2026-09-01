@@ -7,7 +7,10 @@
  * — the exact defect `web-fetch-http` carried before proxy support existed, where its DNS-pinning
  * agent silently bypassed every proxy.
  *
- * `createDispatcher()` from that package is the sanctioned way to get agent options AND the policy.
+ * `proxyRouteFor(url)` from that package is the sanctioned way to ask where one request goes and to
+ * get the transport that answer assumed. A call site that genuinely owns its transport — because it
+ * carries per-request state the process-wide dispatcher cannot, as `web-fetch-http`'s address
+ * pinning does — says so with the marker below.
  *
  * Discovery is syntax-aware, as `scripts/AGENTS.md` requires: a line-wise regex misses the
  * `{ dispatcher }` shorthand and a `new Alias(...)` whose import renamed `Agent`, and both bypass the
@@ -215,7 +218,7 @@ function main(): void {
     console.error(`  ${relative('.', violation.file)}:${String(violation.line)} ${violation.what}`)
     console.error(`    ${violation.text}`)
   }
-  console.error('\nUse `createDispatcher(url, options)` from @deepseek-ai/dsh-http-proxy, or annotate the line')
+  console.error('\nUse `proxyRouteFor(url)` from @deepseek-ai/dsh-http-proxy, or annotate the line')
   console.error(`with a \`${ALLOW_MARKER} <reason>\` comment when the request must genuinely ignore the proxy.`)
   process.exit(1)
 }

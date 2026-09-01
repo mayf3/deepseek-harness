@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 
 let seen: string[] = []
 let proxy: Server
@@ -21,12 +21,13 @@ beforeAll(async () => {
 })
 afterAll(async () => { await new Promise<void>((r) => { proxy.close(() => { r() }) }) })
 
-function policy(): ProxyPolicy {
-  return { httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy: '', source: 'env' }
+/** The launch environment of a user who exported one proxy for both schemes. */
+function proxyEnv(): { get(name: string): { value: string } | undefined } {
+  return { get: name => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
 }
 async function observe(run: () => Promise<unknown>): Promise<string[]> {
   seen = []
-  const dispose = await installGlobalProxy(policy())
+  const dispose = await installProxyFromEnvironment(proxyEnv(), () => undefined)
   try { await run().catch(() => undefined) } finally { await dispose() }
   return seen
 }

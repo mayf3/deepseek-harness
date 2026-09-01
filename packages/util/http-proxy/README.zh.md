@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代理后面运行的 Harness 无论用户导出了什么都会直连——LLM（大语言模型）请求、每次 web 搜索、走 HTTP 的 MCP、遥测与沙箱 SDK 一概如此。本包从启动器的环境快照解析出一份代理策略，并把它装成 undici 的全局 dispatcher，而这正是 `fetch` 解析的对象。因此普通调用点无需改动、也无需引入本包：写 `fetch()` 就已经走代理。本包还负责全局 dispatcher 覆盖不到的三处——需要自定义 agent 选项的调用方、拥有独立 `globalThis` 的 worker 线程、以及派生出的子 Node 进程——并为每一处给出唯一受支持的走法。
+Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代理后面运行的 Harness 无论用户导出了什么都会直连——LLM（大语言模型）请求、每次 web 搜索、走 HTTP 的 MCP、遥测与沙箱 SDK 一概如此。本包从启动器的环境快照解析出一份代理策略，并把它装成 undici 的全局 dispatcher，而这正是 `fetch` 解析的对象。因此普通调用点无需改动、也无需引入本包：写 `fetch()` 就已经走代理。全局 dispatcher 自身够不到的场合由四个函数覆盖——安装策略、询问某个请求怎么发、把策略交给派生的子进程、以及为重放清掉它。
 
 ## 目录
 
@@ -29,16 +29,21 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代�
 
 ### 编写新的出站调用
 
-普通 `fetch()` 已经走代理，任何最终落到 `globalThis.fetch` 的 SDK 也一样——MCP HTTP 传输与 pi-ai 提供方栈都是如此。但自建传输的 SDK **不会**，而本仓库随附的 SDK 里就有两个属于此类：OTLP 导出器通过 `node:http` 投递，E2B SDK 自建 undici dispatcher。不要对任何 SDK 想当然，去查。
+普通 `fetch()` 已经走代理，任何最终落到 `globalThis.fetch` 的 SDK 也一样——MCP HTTP 传输与 pi-ai 提供方栈都是如此。不要对任何 SDK 想当然，去查。
 
 | 你要写的东西 | 使用 |
 |---|---|
-| 需要自定义 agent 选项的调用（连接池、超时、DNS 查询） | `createDispatcher(url, options)` |
-| 接受 `node:http` agent 的 SDK | `createNodeHttpAgent(protocol, options)` |
-| 接受自有代理 URL 的 SDK | `proxyUrlFor(url)` |
-| 由你自己构造环境的派生进程 | 把 `childProxyEnv()` 应用到它上面（`undefined` 表示删除） |
+| 普通请求，或最终落到 `globalThis.fetch` 的 SDK | 什么都不用——全局 dispatcher 已经在路由它 |
+| 需要按“这次请求是否走代理”分支的调用 | `proxyRouteFor(url)` |
+| 接受自有代理 URL 的 SDK | `proxyRouteFor(url)`，把 `route.proxy` 传进去 |
+| 由你自己构造环境的派生进程 | 把 `proxyEnvironmentForChild()` 应用到它上面（`undefined` 表示删除） |
+| 必须连到自带 fixture 服务器的测试框架 | 把 `clearedProxyEnv()` 应用到该派生进程 |
 
-构造 `new Agent(...)` 再作为 `dispatcher` 传入会覆盖全局 dispatcher，从而静默绕开代理。`verify-no-bare-dispatcher` 会在本包之外拒绝该写法；确实必须忽略代理的行用 `proxy-exempt:` 注释说明理由。
+`proxyRouteFor` 给出的不只是答案，还有该答案所假定的传输：走代理的那一支携带着此刻正按该策略路由的 dispatcher。若调用方先读策略、再自建传输，卸载就可能落在两次读取之间，把请求发往其分支从未放行的去处。
+
+自建传输的 SDK 接触不到上述任何一条。本仓库随附的两个此类 SDK 都已改到能被覆盖的传输上：OTLP 导出器改为通过 `fetch` 投递，E2B 则接收 `route.proxy`。
+
+构造 `new Agent(...)` 再作为 `dispatcher` 传入会覆盖全局 dispatcher，从而静默绕开代理。`verify-no-bare-dispatcher` 会在本包之外拒绝该写法。有一处调用点确实自有传输——`web-fetch-http` 会把请求钉在它已校验过的地址上，而这是进程级 dispatcher 无法承载的单次请求状态——它在该行用 `proxy-exempt:` 注释说明。
 
 该门禁看不进 SDK 内部，因此仓库中每一个出网点都另有一份 `egress.spec.ts`：它驱动该点的真实代码路径穿过一个假代理，并断言代理确实收到了请求。新增出网点就补一份。它是唯一能发现 SDK 在我们脚下更换传输的手段——OTLP 与 E2B 这两个漏洞正是这样被发现的。
 
@@ -68,8 +73,8 @@ loopback 始终被绕过——`localhost`、整个 `127.0.0.0/8` 段、`::1`、`
 | 文件 | 承载 |
 |---|---|
 | `src/policy.ts` | 解析、绕过匹配与脱敏。不引入任何传输实现，因此在没有 undici 的环境中仍可加载。 |
-| `src/install.ts` | 全局 dispatcher、生效策略记录、`createDispatcher` 与 `childProxyEnv`。动态引入 undici。 |
-| `src/index.ts` | 本包的对外面：六个函数及其使用的类型。 |
+| `src/install.ts` | 全局 dispatcher、生效策略记录、路由与子进程环境。动态引入 undici。 |
+| `src/index.ts` | 本包的对外面：四个函数与一个类型。 |
 
 ### 绕过匹配
 
@@ -103,7 +108,7 @@ loopback 始终被绕过——`localhost`、整个 `127.0.0.0/8` 段、`::1`、`
 
 - **不支持 SOCKS、PAC 或操作系统代理探测**——只接受来自环境的 `http(s)://` 代理 URL。不会读取 macOS 或 Windows 的系统代理设置，因此仅在代理软件里拨了开关的用户仍须导出环境变量；SOCKS URL 会被报告，且该协议保持直连，不会借用另一协议的代理。
 - **不支持自定义证书颁发机构**——做 TLS 拦截的企业代理需要在启动前为进程设置 `NODE_EXTRA_CA_CERTS`，本包既不设置也不校验它。
-- **独立的 Node 上下文只在足够新的运行时上遵循策略**——派生的子进程通过 Node 的 `NODE_USE_ENV_PROXY` 读取（22.21+、24+），OTLP 导出器的 agent 则通过 Node 的 `proxyEnv` 选项（22.21+、**24.5+**）。engines 范围允许 22.19、22.20 与 24.0–24.4，在这些版本上这两条路径保持直连。此类上下文还会按 Node 自己的 `NO_PROXY` 规则匹配绕过条目，其分隔符与 IPv4 区间处理与本包不同。
+- **派生的子进程只在足够新的运行时上遵循策略**——它通过 Node 的 `NODE_USE_ENV_PROXY` 读取已发布的环境（22.21+、24+），而 engines 范围允许 22.19 与 22.20，在这两个版本上这样的子进程保持直连。子进程还会按 Node 自己的 `NO_PROXY` 规则匹配绕过条目，其分隔符与 IPv4 区间处理与本包不同。本进程内不依赖任何 Node 版本：每一次进程内请求都会落到全局 dispatcher。
 - **执行模型编写代码的 worker 完全不获得代理**——`code-runtime` worker 与 `workflow` worker 都不接收代理配置，它们自身的请求直连。代理 URL 可能携带 `user:password`，而两者运行的都是模型写的脚本。
 - **防回归门禁只看源码，看不到依赖内部**——`verify-no-bare-dispatcher` 解析 `packages/*/*/src` 与 `apps/*/src`；测试、脚本以及第三方 SDK 的内部都在其之外。这正是每个出网点还各配一份 `egress.spec.ts` 的原因。
 

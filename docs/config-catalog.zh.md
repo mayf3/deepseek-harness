@@ -1969,11 +1969,15 @@ export interface Config {
   mode?: SessionTelemetryMode
   /**
    * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
-   * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
-   * `compression`, `keepAlive`, …), owned and documented by the SDK. `url`
-   * is the one field this package requires and validates itself.
+   * `OTLPExporterConfigBase` shape (`headers`, `timeoutMillis`,
+   * `concurrencyLimit`, …), owned and documented by the SDK. `url` is the
+   * one field this package requires and validates itself.
+   *
+   * The transport is the SDK's `fetch` one, so the three options that exist
+   * only for its `node:http` transport — `compression`, `keepAlive`, and
+   * `httpAgentOptions` — are refused at load rather than ignored.
    */
-  exporter?: OTLPExporterNodeConfigBase & {
+  exporter?: OTLPExporterConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
   }
@@ -1994,9 +1998,9 @@ export enum SessionTelemetryMode {
 }
 ```
 
-依赖：`BatchLogRecordProcessorOptions`（`@opentelemetry/sdk-logs`）· `OTLPExporterNodeConfigBase`（`@opentelemetry/otlp-exporter-base`）
+依赖：`BatchLogRecordProcessorOptions`（`@opentelemetry/sdk-logs`）· `OTLPExporterConfigBase`（`@opentelemetry/otlp-exporter-base`）
 
-来源：[`packages/session/session-telemetry-otel/src/index.ts:91`](../packages/session/session-telemetry-otel/src/index.ts)
+来源：[`packages/session/session-telemetry-otel/src/index.ts:94`](../packages/session/session-telemetry-otel/src/index.ts)
 
 <a id="deepseek-aidsh-session-title"></a>
 

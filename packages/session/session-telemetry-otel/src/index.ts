@@ -31,9 +31,11 @@ import {
   LoggerProvider,
   type BatchLogRecordProcessorOptions,
 } from '@opentelemetry/sdk-logs'
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http'
-import { createNodeHttpAgent } from '@deepseek-ai/dsh-http-proxy'
-import type { OTLPExporterNodeConfigBase } from '@opentelemetry/otlp-exporter-base'
+import { OTLPExporterBase } from '@opentelemetry/otlp-exporter-base'
+import { createLegacyOtlpBrowserExportDelegate } from '@opentelemetry/otlp-exporter-base/browser-http'
+import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
+import type { OTLPExporterConfigBase } from '@opentelemetry/otlp-exporter-base'
+import type { ReadableLogRecord } from '@opentelemetry/sdk-logs'
 import { SeverityNumber, type AnyValue, type Logger } from '@opentelemetry/api-logs'
 import { resourceFromAttributes } from '@opentelemetry/resources'
 
@@ -94,11 +96,15 @@ export interface Config {
   mode?: SessionTelemetryMode
   /**
    * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
-   * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
-   * `compression`, `keepAlive`, …), owned and documented by the SDK. `url`
-   * is the one field this package requires and validates itself.
+   * `OTLPExporterConfigBase` shape (`headers`, `timeoutMillis`,
+   * `concurrencyLimit`, …), owned and documented by the SDK. `url` is the
+   * one field this package requires and validates itself.
+   *
+   * The transport is the SDK's `fetch` one, so the three options that exist
+   * only for its `node:http` transport — `compression`, `keepAlive`, and
+   * `httpAgentOptions` — are refused at load rather than ignored.
    */
-  exporter?: OTLPExporterNodeConfigBase & {
+  exporter?: OTLPExporterConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
   }
@@ -131,6 +137,12 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MILLIS = 3_000
 // Node clamps larger timer delays to one millisecond. This is a runtime
 // protocol limit, not a deployment default.
 const MAX_TIMER_DELAY_MILLIS = 2_147_483_647
+
+/**
+ * Exporter options the SDK defines only for its `node:http` transport. They reach the `fetch`
+ * transport this package uses, which silently ignores every one of them.
+ */
+const NODE_TRANSPORT_ONLY_EXPORTER_OPTIONS = ['compression', 'keepAlive', 'httpAgentOptions'] as const
 
 /** Severity mapping from the Service Definition's three-level vocabulary to OTel severity numbers. */
 const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumber; severityText: string }> = {
@@ -168,7 +180,8 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
       return
     }
 
-    const url = config.exporter?.url
+    const exporter = config.exporter ?? {}
+    const url = exporter.url
     if (url === undefined || url.length === 0) {
       throw new Error('session-telemetry-otel: exporter.url is required (the full OTLP logs endpoint)')
     }
@@ -181,6 +194,13 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     }
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error(`session-telemetry-otel: exporter.url must be http(s), got ${parsed.protocol}`)
+    }
+    // Options that exist only for the SDK's `node:http` transport, which this package no longer
+    // uses. The exporter would accept and ignore each one, so a deployment that asked for gzip
+    // would quietly send uncompressed batches; refusing at load is what makes the change visible.
+    const nodeOnly = NODE_TRANSPORT_ONLY_EXPORTER_OPTIONS.filter(name => name in exporter)
+    if (nodeOnly.length > 0) {
+      throw new Error(`session-telemetry-otel: exporter.${nodeOnly.join(', exporter.')} not supported: telemetry is exported through fetch so a configured proxy carries it, and the node:http transport those options belong to would need an http.Agent this package no longer builds`)
     }
     // The one processor field checked beyond the SDK's own validation: the
     // SDK accepts a non-positive batch size, but its shutdown drain then
@@ -214,16 +234,28 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
           // (service.name/version); the transport-level user-agent is the
           // SDK's own, per the axiom.
           //
-          // The one added default is the agent. On Node this exporter posts through `node:http`,
-          // which undici's global dispatcher does not reach, so telemetry would be the one egress
-          // that ignores a configured proxy. A composition supplying its own `httpAgentOptions`
-          // keeps it; one supplying only `keepAlive` still decides it, because the SDK stops
-          // interpreting that field the moment an agent factory is present.
-          exporter: new OTLPLogExporter({
-            httpAgentOptions: (protocol: string) =>
-              createNodeHttpAgent(protocol, { keepAlive: config.exporter?.keepAlive ?? true }),
-            ...config.exporter,
-          }),
+          // The delegate is the SDK's `fetch` one rather than its Node `node:http` one. Both are
+          // published entry points of the same package; the `fetch` transport reaches undici's
+          // global dispatcher, so a configured proxy carries telemetry with no proxy-aware code
+          // here and with no Node-version floor. The Node transport would need an `http.Agent`,
+          // and Node only learned to route one from the environment in 22.21 and 24.5.
+          //
+          // What that costs: `compression` is a Node-transport option and has no effect here.
+          //
+          // The delegate is deprecated in favour of `createOtlpFetchExportDelegate`, which the SDK
+          // exports from no public subpath at 0.220 — this legacy wrapper is the only supported way
+          // to reach it, and does nothing but call it. Composing the public
+          // `createOtlpNetworkExportDelegate` instead would mean owning the fetch transport and its
+          // retry wrapper, both SDK-internal.
+          exporter: new OTLPExporterBase<ReadableLogRecord[]>(
+            // oxlint-disable-next-line typescript/no-deprecated -- the SDK exports its replacement from no public subpath at 0.220.
+            createLegacyOtlpBrowserExportDelegate(
+              exporter,
+              JsonLogsSerializer,
+              'v1/logs',
+              { 'Content-Type': 'application/json' },
+            ),
+          ),
         }),
       ],
     })

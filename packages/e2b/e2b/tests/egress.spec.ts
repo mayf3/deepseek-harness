@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 
 let seen: string[] = []
 let proxy: Server
@@ -21,12 +21,13 @@ beforeAll(async () => {
 })
 afterAll(async () => { await new Promise<void>((r) => { proxy.close(() => { r() }) }) })
 
-function policy(): ProxyPolicy {
-  return { httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy: '', source: 'env' }
+/** The launch environment of a user who exported one proxy for both schemes. */
+function proxyEnv(): { get(name: string): { value: string } | undefined } {
+  return { get: name => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
 }
 async function observe(run: () => Promise<unknown>): Promise<string[]> {
   seen = []
-  const dispose = await installGlobalProxy(policy())
+  const dispose = await installProxyFromEnvironment(proxyEnv(), () => undefined)
   try { await run().catch(() => undefined) } finally { await dispose() }
   return seen
 }
@@ -57,13 +58,18 @@ describe('e2b control-plane URL', () => {
 
   it('keeps the loopback debug plane direct instead of sending its API key to a proxy', async () => {
     const { e2bApiUrl } = await import('../src/api-url.ts')
-    const { proxyForUrl, resolveProxyPolicy } = await import('@deepseek-ai/dsh-http-proxy')
+    const { proxyRouteFor } = await import('@deepseek-ai/dsh-http-proxy')
     const { createLaunchEnvironmentSnapshot } = await import('@deepseek-ai/dsh-launch-environment')
-    // A resolved policy — the shape a real launch installs — always bypasses loopback.
-    const { policy: resolved } = resolveProxyPolicy(
+    // A real launch installs from the environment, and the resolved policy always bypasses loopback.
+    const dispose = await installProxyFromEnvironment(
       createLaunchEnvironmentSnapshot([{ source: 'process', values: { HTTP_PROXY: proxyUrl } }]),
+      () => undefined,
     )
-    expect(proxyForUrl(resolved, new URL(e2bApiUrl({ E2B_DEBUG: 'true' })))).toBeUndefined()
-    expect(proxyForUrl(resolved, new URL(e2bApiUrl({})))).toBe(proxyUrl)
+    try {
+      expect(proxyRouteFor(new URL(e2bApiUrl({ E2B_DEBUG: 'true' })))).toEqual({ proxied: false })
+      expect(proxyRouteFor(new URL(e2bApiUrl({})))).toMatchObject({ proxied: true, proxy: proxyUrl })
+    } finally {
+      await dispose()
+    }
   })
 })

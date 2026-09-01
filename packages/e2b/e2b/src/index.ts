@@ -9,7 +9,7 @@ import { posix } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { FileType, Sandbox, SandboxNotFoundError } from 'e2b'
-import { proxyUrlFor } from '@deepseek-ai/dsh-http-proxy'
+import { proxyRouteFor } from '@deepseek-ai/dsh-http-proxy'
 import { e2bApiUrl } from './api-url.ts'
 
 export {
@@ -156,13 +156,13 @@ export class E2BRuntime extends Service {
     // URL instead and reads no environment of its own. The decision is made against the URL the SDK
     // will really call, so a bypass entry naming that host is honored and a loopback debug plane
     // stays direct.
-    const proxy = proxyUrlFor(new URL(e2bApiUrl()))
+    const route = proxyRouteFor(new URL(e2bApiUrl()))
     const sandbox = await Sandbox.create({
       apiKey: this.config.apiKey,
       timeoutMs: this.config.timeoutMs,
       secure: true,
       lifecycle: { onTimeout: 'kill' },
-      ...proxy === undefined ? {} : { proxy },
+      ...route.proxied ? { proxy: route.proxy } : {},
     })
     try {
       await sandbox.files.makeDir(this.cwd)

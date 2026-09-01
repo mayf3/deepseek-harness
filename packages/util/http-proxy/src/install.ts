@@ -1,15 +1,21 @@
 /**
- * Proxy installation: the transport half of this package. It owns undici's global dispatcher, the
- * process-wide record of which policy is active, and the dispatcher factory every other package uses
- * instead of constructing a bare agent.
+ * Proxy installation: the transport half of this package. It owns undici's global dispatcher and the
+ * process-wide record of which policy is active.
  *
  * `undici` is imported dynamically so the pure {@link ProxyPolicy} half stays loadable where no Node
  * transport exists, matching how `dsh-web-fetch-http` defers its own transport import.
  * @module @deepseek-ai/dsh-http-proxy/install
  */
 
-import type { Agent, Dispatcher, Pool } from 'undici'
-import { DIRECT_POLICY, POLICY_ENV_NAMES, proxyForUrl, type ProxyPolicy } from './policy.ts'
+import type { Dispatcher, Pool } from 'undici'
+import {
+  POLICY_ENV_NAMES,
+  PROXY_ENV_NAMES,
+  proxyForUrl,
+  resolveProxyPolicy,
+  type EnvLookup,
+  type ProxyPolicy,
+} from './policy.ts'
 
 
 /** The active policy, or `undefined` until one is installed. Process-wide, like the dispatcher it tracks. */
@@ -22,21 +28,42 @@ let active: ProxyPolicy | undefined
  * would otherwise record the outer policy's published values as if the user had written them, and
  * hand every child a normalization the user never asked for.
  *
- * {@link childProxyEnv} keeps a value the user set rather than the one this process resolved from
+ * {@link proxyEnvironmentForChild} keeps a value the user set rather than the one this process resolved from
  * it, so a SOCKS proxy `curl` can use is not replaced by an HTTP proxy named for another scheme.
  */
 let inheritedProxyEnv: Readonly<Record<string, string | undefined>> | undefined
 
+/** The dispatcher installed with {@link active}, so a route can hand back the one already routing. */
+let installed: Dispatcher | undefined
+
 /**
- * The policy governing this process's outbound requests.
+ * How this process must send one request.
  *
- * A caller that branches on the answer must hold this value and pass it back to
- * {@link createDispatcher}: reading it twice lets an install or disposal land between the two reads.
- *
- * @returns the installed policy, or the direct one when {@link installGlobalProxy} has not run.
+ * A caller that branches on the answer needs the transport that answer assumed, or an install or
+ * disposal landing between the two would send the request somewhere the branch did not clear. The
+ * proxied arm therefore carries the dispatcher already routing by this policy: it is process-wide
+ * and long-lived, so a caller uses it and never closes it. Disposal closes that dispatcher rather
+ * than destroying it, so a request already dispatched when a policy is unmounted still finishes.
  */
-export function currentProxyPolicy(): ProxyPolicy {
-  return active ?? DIRECT_POLICY
+export type ProxyRoute =
+  | { readonly proxied: true; readonly proxy: string; readonly dispatcher: Dispatcher }
+  | { readonly proxied: false }
+
+/** A route that sends nothing through a proxy, shared because it carries no per-request state. */
+const DIRECT_ROUTE: ProxyRoute = { proxied: false }
+
+/**
+ * Decide how to send one request, and hand back the transport that decision assumed.
+ *
+ * @param url - the request URL.
+ * @returns the proxied route with its proxy URL and dispatcher, or the direct route.
+ */
+export function proxyRouteFor(url: URL): ProxyRoute {
+  const policy = active
+  const dispatcher = installed
+  if (policy === undefined || dispatcher === undefined) return DIRECT_ROUTE
+  const proxy = proxyForUrl(policy, url)
+  return proxy === undefined ? DIRECT_ROUTE : { proxied: true, proxy, dispatcher }
 }
 
 /**
@@ -117,7 +144,7 @@ async function createPolicyDispatcher(policy: ProxyPolicy): Promise<Dispatcher> 
  * @param policy - the resolved policy to install.
  * @returns a disposer restoring the previous dispatcher, policy, and environment, then closing the agent.
  */
-export async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<void>> {
+async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<void>> {
   const previousPolicy = active
   if (policy.source === 'none') {
     // A direct policy mounted over an installed one must actually stop proxying. Recording the policy
@@ -131,97 +158,39 @@ export async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Pro
         return Promise.resolve()
       }
     }
+    const previousInstalled = installed
     const undici = await import('undici')
     const previous = undici.getGlobalDispatcher()
     const direct = new undici.Agent()
     undici.setGlobalDispatcher(direct)
     active = policy
+    installed = undefined
     return async () => {
       undici.setGlobalDispatcher(previous)
       active = previousPolicy
+      installed = previousInstalled
       await direct.close()
     }
   }
   const restoreEnv = applyPolicyEnv(policy)
   const { getGlobalDispatcher, setGlobalDispatcher } = await import('undici')
   const previousDispatcher = getGlobalDispatcher()
+  const previousInstalled = installed
   const agent = await createPolicyDispatcher(policy)
   setGlobalDispatcher(agent)
   active = policy
+  installed = agent
   return async () => {
     setGlobalDispatcher(previousDispatcher)
     active = previousPolicy
+    installed = previousInstalled
     restoreEnv()
     await agent.close()
   }
 }
 
-/**
- * Build a dispatcher for one request URL that honors the active policy.
- *
- * Use this wherever a call site needs its own agent options — connection limits, timeouts, a custom
- * DNS lookup. Constructing `new Agent(...)` directly and passing it as `dispatcher` silently bypasses
- * the global one and therefore the proxy, which is the defect this function exists to prevent.
- * `verify-no-bare-dispatcher` enforces that outside this package.
- *
- * @param url - the request URL, which decides whether the policy proxies or bypasses it.
- * @param options - agent options; applied to whichever agent the policy selects. On the proxied path
- *   `connect` governs the connection to the PROXY, not to the origin, so a lookup meant to pin an
- *   origin address belongs only on a URL the policy bypasses.
- * @param policy - the policy to route by, defaulting to the active one. A caller that already
- *   branched on {@link proxyForUrl} MUST pass the same policy object it branched on: reading the
- *   active policy again would let a mount or disposal between the two reads return a direct agent
- *   for a URL the caller cleared as proxied, dropping the address checks that branch skipped.
- * @returns a dispatcher the caller owns and must close once the response body is consumed.
- */
-export async function createDispatcher(
-  url: URL,
-  options: Agent.Options = {},
-  policy: ProxyPolicy = active ?? DIRECT_POLICY,
-): Promise<Dispatcher> {
-  const undici = await import('undici')
-  const proxy = proxyForUrl(policy, url)
-  if (proxy === undefined) return new undici.Agent(options)
-  return new undici.ProxyAgent({ ...options, uri: proxy })
-}
 
-/**
- * Build a `node:http` or `node:https` Agent that honors the active policy.
- *
- * The global dispatcher reaches undici, and therefore `fetch`, but not `node:http`. An SDK that
- * issues requests through the core modules — the OTLP exporter is the one this repository ships —
- * accepts an agent instead, and this is the agent to give it.
- *
- * Node's own `proxyEnv` option does the routing, reading the names {@link installGlobalProxy}
- * published. It reaches Node 22.21+ and 24.5+; an older runtime ignores the unknown option and
- * connects directly, the same seam a spawned child Node has.
- *
- * @param protocol - the target's protocol, `https:` selecting the TLS agent.
- * @param options - agent options merged under the proxy routing.
- * @returns an agent the caller passes to the SDK that needs one.
- */
-export async function createNodeHttpAgent(
-  protocol: string,
-  options: Readonly<Record<string, unknown>> = {},
-): Promise<import('node:http').Agent> {
-  const core = protocol === 'https:' ? await import('node:https') : await import('node:http')
-  const proxied = active !== undefined && active.source !== 'none'
-  // `proxyEnv` postdates the @types/node this workspace pins, so the option is applied through a
-  // widened record rather than the typed constructor overload.
-  const agentOptions = { ...options, ...proxied ? { proxyEnv: process.env } : {} }
-  return new core.Agent(agentOptions as ConstructorParameters<typeof core.Agent>[0])
-}
 
-/**
- * The proxy this URL is reached through, for an SDK that takes a proxy URL of its own rather than a
- * dispatcher or an agent. `undefined` means the SDK should connect directly.
- *
- * @param url - the endpoint the SDK will call.
- * @returns the proxy URL to hand the SDK, or `undefined` for a direct connection.
- */
-export function proxyUrlFor(url: URL): string | undefined {
-  return proxyForUrl(active ?? DIRECT_POLICY, url)
-}
 
 /**
  * The proxy environment a spawned child needs.
@@ -251,7 +220,7 @@ export function proxyUrlFor(url: URL): string | undefined {
  * @returns names to apply to the child environment, where `undefined` means remove, or an empty
  *   object when no proxy is active.
  */
-export function childProxyEnv(): Readonly<Record<string, string | undefined>> {
+export function proxyEnvironmentForChild(): Readonly<Record<string, string | undefined>> {
   const policy = active
   const inherited = inheritedProxyEnv
   if (policy === undefined || policy.source === 'none' || inherited === undefined) return {}
@@ -264,4 +233,40 @@ export function childProxyEnv(): Readonly<Record<string, string | undefined>> {
     for (const name of names) overlay[name] = named ? inherited[name] : resolved
   }
   return overlay
+}
+
+/**
+ * Resolve this process's proxy policy from `env` and install it.
+ *
+ * Resolution, reporting, and installation are one operation because no caller needs them apart: the
+ * launcher does all three in sequence before the first plugin mounts, and a policy resolved but not
+ * installed routes nothing.
+ *
+ * A value the environment supplies but this package cannot use is reported and skipped rather than
+ * thrown: the variable may have been exported for another tool, and a proxy the harness cannot use
+ * must not stop the agent from starting.
+ *
+ * @param env - the launch environment, whose own layering already prefers real variables over `.env` files.
+ * @param report - receives one message per rejected value, in the order the values were considered.
+ * @returns a disposer restoring the previous dispatcher, policy, and environment.
+ */
+export async function installProxyFromEnvironment(
+  env: EnvLookup,
+  report: (message: string) => void,
+): Promise<() => Promise<void>> {
+  const { policy, diagnostics } = resolveProxyPolicy(env)
+  for (const diagnostic of diagnostics) report(diagnostic.message)
+  return await installGlobalProxy(policy)
+}
+
+/**
+ * The environment overlay that removes every proxy name from a spawned child.
+ *
+ * A harness that replays a recorded session must reach its own fixture server, not the proxy a
+ * developer or a CI runner exported; `undefined` is how a spawn removes a name it inherits.
+ *
+ * @returns one entry per proxy name, each `undefined`.
+ */
+export function clearedProxyEnv(): Record<string, undefined> {
+  return Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, undefined]))
 }

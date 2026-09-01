@@ -2,11 +2,7 @@ import { createServer, type Server } from 'node:http'
 import { spawn } from 'node:child_process'
 import type { AddressInfo } from 'node:net'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import {
-  PROXY_ENV_NAMES,
-  installGlobalProxy,
-  resolveProxyPolicy,
-} from '@deepseek-ai/dsh-http-proxy'
+import { clearedProxyEnv, installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { scrubbedParentEnv } from '../src/index.ts'
 
@@ -49,8 +45,9 @@ afterAll(async () => {
 
 beforeEach(() => {
   seen = []
-  saved = Object.fromEntries(PROXY_ENV_NAMES.map(name => [name, process.env[name]]))
-  for (const name of PROXY_ENV_NAMES) Reflect.deleteProperty(process.env, name)
+  const names = Object.keys(clearedProxyEnv())
+  saved = Object.fromEntries(names.map(name => [name, process.env[name]]))
+  for (const name of names) Reflect.deleteProperty(process.env, name)
 })
 
 afterEach(() => {
@@ -78,10 +75,10 @@ describe('child process egress', () => {
   it('a child Node honors the proxy the user exported', async () => {
     // The user's own export is what a child inherits, so the scenario starts from one.
     process.env.HTTP_PROXY = proxyUrl
-    const { policy } = resolveProxyPolicy(
+    const dispose = await installProxyFromEnvironment(
       createLaunchEnvironmentSnapshot([{ source: 'process', values: { HTTP_PROXY: proxyUrl } }]),
+      () => undefined,
     )
-    const dispose = await installGlobalProxy(policy)
     let childEnv: Record<string, string> = {}
     try {
       childEnv = scrubbedParentEnv()
@@ -99,10 +96,10 @@ describe('child process egress', () => {
 
   it('a child Node reaches a proxy the user gave only as ALL_PROXY', async () => {
     process.env.ALL_PROXY = proxyUrl
-    const { policy } = resolveProxyPolicy(
+    const dispose = await installProxyFromEnvironment(
       createLaunchEnvironmentSnapshot([{ source: 'process', values: { ALL_PROXY: proxyUrl } }]),
+      () => undefined,
     )
-    const dispose = await installGlobalProxy(policy)
     let childEnv: Record<string, string> = {}
     try {
       childEnv = scrubbedParentEnv()
@@ -122,21 +119,22 @@ describe('child process egress', () => {
     // A SOCKS proxy this package refuses but `curl` uses, alongside an HTTP proxy it accepts.
     process.env.HTTP_PROXY = proxyUrl
     process.env.https_proxy = 'socks5://127.0.0.1:1080'
-    const { policy } = resolveProxyPolicy(
+    const dispose = await installProxyFromEnvironment(
       createLaunchEnvironmentSnapshot([{
         source: 'process',
         values: { HTTP_PROXY: proxyUrl, https_proxy: 'socks5://127.0.0.1:1080' },
       }]),
+      () => undefined,
     )
-    const dispose = await installGlobalProxy(policy)
     try {
       const child = scrubbedParentEnv()
       // The user named `https:`, so their value survives in the casing they wrote it, even though
       // this process refused it and routes that scheme directly.
       expect(child.https_proxy).toBe('socks5://127.0.0.1:1080')
       expect(child.HTTPS_PROXY).toBeUndefined()
-      // The bypass list is always the resolved one; it only ever adds the loopback entries.
-      expect(child.NO_PROXY).toBe(policy.noProxy)
+      // The bypass list is always the resolved one; the user set none, so it is the loopback
+      // entries alone — without them the child sends its own localhost traffic to the proxy.
+      expect(child.NO_PROXY).toBe('localhost,127.0.0.1,::1,[::1]')
     } finally {
       await dispose()
     }
@@ -144,10 +142,10 @@ describe('child process egress', () => {
 
   it('gives a child the same routing as its parent for a scheme the user never named', async () => {
     process.env.HTTP_PROXY = proxyUrl
-    const { policy } = resolveProxyPolicy(
+    const dispose = await installProxyFromEnvironment(
       createLaunchEnvironmentSnapshot([{ source: 'process', values: { HTTP_PROXY: proxyUrl } }]),
+      () => undefined,
     )
-    const dispose = await installGlobalProxy(policy)
     try {
       // This process routes `https:` through the HTTP proxy, matching undici. A child that did not
       // see the name would diverge from its parent; `curl`, which performs no such fallback of its

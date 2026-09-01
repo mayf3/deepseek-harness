@@ -9,7 +9,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import { childProxyEnv } from '@deepseek-ai/dsh-http-proxy'
+import { proxyEnvironmentForChild } from '@deepseek-ai/dsh-http-proxy'
 import { DSH_ENV_PREFIX } from './types.ts'
 import type { SubprocessHandle, SubprocessSpawnSpec } from './types.ts'
 import type { SubprocessTerminalHandle, SubprocessTerminalSpawnSpec } from './types.ts'
@@ -70,7 +70,7 @@ export function scrubbedParentEnv(): Record<string, string> {
   // stdio server or subagent CLI would connect directly while its parent proxies. The same overlay
   // restores each proxy name to what the user exported, undoing this process's own normalization —
   // `undefined` removes a name the user never set.
-  for (const [name, value] of Object.entries(childProxyEnv())) {
+  for (const [name, value] of Object.entries(proxyEnvironmentForChild())) {
     if (value === undefined) Reflect.deleteProperty(env, name)
     else env[name] = value
   }

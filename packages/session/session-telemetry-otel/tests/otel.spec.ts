@@ -237,22 +237,35 @@ describe('OpenTelemetrySessionBackend wire', () => {
     const { url, captures } = await mockCollector()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    // `compression` is a documented SDK exporter option; the advertised
-    // verbatim passthrough must hand it (and every other field) to the
-    // exporter rather than silently rebuilding url/headers only.
+    // `headers` is a documented SDK exporter option this package neither reads nor rebuilds; the
+    // advertised verbatim passthrough must hand it (and every other field) to the exporter rather
+    // than silently rebuilding url only.
     const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FULL,
-      exporter: { url, compression: 'gzip' },
-    } as Config)
-    const session = ctx.sessions.create(SessionId('gzip'), { meta: {} })
+      exporter: { url, headers: { 'x-probe': 'passthrough' } },
+    })
+    const session = ctx.sessions.create(SessionId('passthrough'), { meta: {} })
     session.append('turn/start', { turn: 1 })
     await fiber.dispose()
 
     expect(captures.length).toBeGreaterThan(0)
-    expect(captures[0]!.headers['content-encoding']).toBe('gzip')
+    expect(captures[0]!.headers['x-probe']).toBe('passthrough')
     const types = allRecords(captures).flatMap(({ record }) =>
       record.attributes?.flatMap(a => a.key === 'event.type' ? [a.value.stringValue] : []) ?? [])
     expect(types).toContain('turn/start')
+  })
+
+  it('refuses an exporter option that belongs to the node:http transport', async () => {
+    const { url } = await mockCollector()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    // Telemetry goes through `fetch` so a configured proxy carries it, and that transport ignores
+    // `compression`. Accepting the option would send uncompressed batches while the configuration
+    // said gzip; the deployment has to see the trade rather than pay it silently.
+    await expect(ctx.plugin(OpenTelemetrySessionBackend, {
+      mode: SessionTelemetryMode.FULL,
+      exporter: { url, compression: 'gzip' },
+    } as unknown as Config)).rejects.toThrow(/exporter\.compression not supported/)
   })
 
   it('maps warn severity from record policy and leaves the seam flush hint unimplemented', async () => {

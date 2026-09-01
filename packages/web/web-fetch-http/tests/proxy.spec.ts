@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { installGlobalProxy, type ProxyPolicy } from '@deepseek-ai/dsh-http-proxy'
+import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
 import { HttpFetchProvider } from '@deepseek-ai/dsh-web-fetch-http'
 import type { HttpFetchLimits } from '@deepseek-ai/dsh-web-fetch-http'
 import { isNonPublicIpLiteral, publicHttpNetwork } from '../src/network.ts'
@@ -62,15 +62,19 @@ afterEach(async () => {
   ])
 })
 
-/** A policy proxying everything, since a resolved policy always bypasses the loopback used here. */
-function policy(noProxy = ''): ProxyPolicy {
-  return { httpProxy: proxyUrl, httpsProxy: proxyUrl, noProxy, source: 'env' }
+/**
+ * Install the policy of a user who exported one proxy for both schemes; the fixture disposes it
+ * after every case.
+ */
+async function installProxy(): Promise<() => Promise<void>> {
+  const env = { get: (name: string) => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
+  return await installProxyFromEnvironment(env, () => undefined)
 }
 
 describe('fetching through a proxy', () => {
   it('tunnels the request and never resolves a public address for it', async () => {
     const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
-    disposeProxy = await installGlobalProxy(policy())
+    disposeProxy = await installProxy()
 
     const result = await new HttpFetchProvider(limits).fetch({ url: proxyTarget })
 
@@ -81,10 +85,12 @@ describe('fetching through a proxy', () => {
     expect(resolve).not.toHaveBeenCalled()
   })
 
-  it('keeps resolving and pinning a hop the bypass list covers', async () => {
+  it('keeps resolving and pinning a hop the policy does not proxy', async () => {
     const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
       .mockResolvedValue([{ address: '127.0.0.1', family: 4 }])
-    disposeProxy = await installGlobalProxy(policy('127.0.0.1'))
+    // No bypass entry needed: a resolved policy never routes loopback through a proxy, which is
+    // exactly the case this asserts still resolves and pins.
+    disposeProxy = await installProxy()
 
     const result = await new HttpFetchProvider(limits).fetch({ url: originUrl })
 
@@ -107,7 +113,7 @@ describe('fetching through a proxy', () => {
     'refuses %s instead of letting the proxy reach it for us',
     async (host) => {
       const resolve = vi.spyOn(publicHttpNetwork, 'resolve')
-      disposeProxy = await installGlobalProxy(policy())
+      disposeProxy = await installProxy()
 
       // The proxied path exists because a proxy resolves the origin; a literal needs no resolution,
       // so taking it would spend the address checks for nothing and hand a proxy on this machine
@@ -137,14 +143,14 @@ describe('fetching through a proxy', () => {
       response.writeHead(302, { location: 'http://elsewhere.example/next' })
       response.end()
     })
-    disposeProxy = await installGlobalProxy(policy())
+    disposeProxy = await installProxy()
 
     await expect(new HttpFetchProvider(limits).fetch({ url: proxyTarget }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_REDIRECT_BLOCKED' }))
   })
 
   it('still refuses a URL the transport policy rejects before any hop', async () => {
-    disposeProxy = await installGlobalProxy(policy())
+    disposeProxy = await installProxy()
 
     await expect(new HttpFetchProvider(limits).fetch({ url: 'ftp://example.com/x' }))
       .rejects.toThrow(expect.objectContaining({ code: 'WEB_INVALID_URL' }))
