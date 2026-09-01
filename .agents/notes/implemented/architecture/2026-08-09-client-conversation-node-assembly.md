@@ -315,21 +315,21 @@ The shell synchronously resolves the persisted selection when a Session binding 
 
 Ordinary prepend and append flushes call `apply({ upserts, timeline })` only for active targets. Complete window replacement and Registry rebuild call `replace()` only for active targets. Unsubscription does not remove a target, so returning to an opened View does not rebuild it.
 
-[`ChatSnapshotBuilder`](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) maintains `order`, a keyed `nodes` store, the turn/step `locations` index, `timeline`, and the `legacy` slice used by StatsLine and mirrored into top-level public compatibility fields.
+[`ChatSnapshotBuilder`](../../../../packages/client/ui-chat/src/client/conversation-nodes/chat-snapshot-builder.ts) maintains `order`, a keyed `nodes` store with identity-stable Node and Turn-process sources, the turn/step `locations` index, `timeline`, and the `legacy` slice used by StatsLine and mirrored into top-level public compatibility fields.
 
-Only a new key or a change to `anchorSeq`, visibility, or Location identity makes a Chat update structural. An ordinary content change does not rebuild `order`; the keyed Node store replaces only that key's value.
+Only a new key or a change to `anchorSeq`, visibility, or Location identity makes a Chat update structural. An ordinary content change does not rebuild `order`; the keyed Node store replaces that key's value and publishes only its source. The Turn-process projector recalculates cross-Node presentation only for a Turn whose structure, specification, or status changed, then publishes only that Turn's process sources.
 
 For a structural change, the Builder computes visible order from current store values and reuses unchanged index arrays by reference. Prepend may add earlier history keys, append may add a key at the tail or its business anchor, and ordering never renames existing keys.
 
-[`ChatView`](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) only traverses `order`. Each [`ChatNodeSeat`](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) remains in the same parent list under its Context key and dispatches the `'conversation.chat.node'` keyed slot by `node.kind`.
+[`ChatView`](../../../../packages/client/ui-chat/src/client/chat/ChatView.tsx) only traverses `order` and resolves the two stable sources for each key. Each [`ChatNodeSeat`](../../../../packages/client/ui-chat/src/client/chat/ChatNodeSeat.tsx) remains in the same parent list under its Context key, subscribes only to its Node and Turn-process sources, and dispatches the `'conversation.chat.node'` keyed slot by `node.kind`.
 
 [`ChatNodeDataMap`](../../../../packages/client/ui-chat/src/client/contract/chat-nodes.ts) is a declaration-merged renderer payload registry. Each business module registers its own Definition and keyed renderer; `registerConversationNodes()` and `registerChatNodeRenderers()` only assemble those independent contributions and do not interpret business through a closed union or central switch. Built-ins live in `ui-chat`, and this type and registration boundary allows a business to move into an independent package without changing the Chat dispatcher.
 
-The Chat entry in `conversation.view` registers `ChatNodeTurnDataInjected` once when it declares the `conversation.chat.node` child slot. `ChatNodeSeat` passes only the stable Node key as `hookContext`; the Slot renderer combines that key with `useSession` from the official standard props to construct `useTurnData(businessKey)`. Every keyed Chat renderer therefore reads strongly typed, read-only data from its own Node's Turn, and the Assistant renderer has no special injection authority.
+The Chat entry in `conversation.view` registers `ChatNodeTurnDataInjected` once when it declares the `conversation.chat.node` child slot. `ChatNodeSeat` passes the Node's stable Turn data store as `hookContext`; the Slot renderer binds `useTurnData(businessKey)` directly to that store. Every keyed Chat renderer therefore reads strongly typed, read-only data from its own Node's Turn, and the Assistant renderer has no special injection authority.
 
-Slot-level contextual Hooks and entry-owned `inject.hooks` remain independent paths. The latter continues to bind only registration-owned Observables. The former caches definitions by stable slot-inject-face identity and binds its factory and Hook per stable render occurrence. The selector inside `useTurnData()` returns only the current Node's `turn.data.get(key)`, so selector equality filters unrelated Session publications.
+Slot-level contextual Hooks and entry-owned `inject.hooks` remain independent paths. The latter continues to bind only registration-owned Observables. The former caches definitions by stable slot-inject-face identity and binds its factory and Hook per stable render occurrence. `useTurnData()` subscribes to `turn.data.source(key)`, so another Location-data key or Session snapshot publication does not notify it.
 
-The standard `useSession` remains available to every session-scoped slot renderer. `useTurnData()` narrows the common read path rather than acting as a permission sandbox. Whole-window statistics or arbitrary object indexes may still read the Session snapshot explicitly, but they are not modeled as current-Node Turn data.
+The standard `useSession` remains available to every session-scoped slot renderer, although `ChatNodeSeat` needs neither it nor aggregate `useChat`. `useTurnData()` narrows the common read path rather than acting as a permission sandbox. Whole-window statistics or arbitrary object indexes may still read the Session snapshot explicitly, but they are not modeled as current-Node Turn data.
 
 Assistant streaming to final and Tool running to settled stay in one Seat while updating its data and necessary ordering properties. Settlement therefore does not reset component-local State through a parent move.
 
@@ -418,7 +418,7 @@ Separating State updates from publication cadence folds every live Assistant del
 
 An inactive target retains Definition State and a target Context index but no builder, materialized Nodes, or snapshot. The mounted built-in or third-party View activates its own target through normal subscription; previously opened targets continue receiving incremental updates.
 
-Steps and Turns are stable homes for cross-business aggregates. Turn Tail and Deliverables derive their values without renderer scans of global Nodes; slot-level `useTurnData()` narrows common reads to the current Node's Turn and uses selector equality to isolate unrelated updates.
+Steps and Turns are stable homes for cross-business aggregates. Turn Tail and Deliverables derive their values without renderer scans of global Nodes; slot-level `useTurnData()` narrows common reads to the current Node's Turn, and keyed Location sources isolate unrelated updates.
 
 Inbox Context retention grows with splice count and claimed message count rather than their cumulative prefixes. This removes duplicate state growth but does not deduplicate message content in durable Session events or bound the loaded event window.
 

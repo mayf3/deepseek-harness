@@ -100,7 +100,7 @@ Trajectory Definition 与 Builder 测试固定 Assistant streaming 与 interrupt
 
 Trajectory 业务组装的成本随变化页面或 keyed Context 增长，不再从完整原始 Event 窗口重新开始。target 自有 Definition 可以独立于 Chat 演进，同时继续共享一份 Session 窗口和一套生命周期规则。steering 会在实际所属 Step 位置成为一等 Trajectory record，不需要向 Session 增加 steering 专属状态。
 
-首次激活后，保留的 stage-oriented Builder 仍会执行与已物化 Trajectory contribution 数量成正比的工作，并可能在发布时排序。激活前，target 保留 Context State 和一个 target 索引，但不保留 Builder、已物化 Node 或 snapshot。每次挂载 Trajectory 视图时，React layout、timeline 与搜索数据都锚定在当前尾部的 50 个 target Node；实时 append 会扩展该窗口，现有更早历史操作则先扩展其前缀，再请求下一个 Session 页面。请求编号与累计用量仍从完整的驻留 snapshot 派生。输入 layout 变化时，搜索索引仍会执行一次轻量线性签名检查。
+首次激活后，保留的 stage-oriented Builder 仍会执行与已物化 Trajectory contribution 数量成正比的工作，并可能在发布时排序。激活前，target 保留 Context State 和一个 target 索引，但不保留 Builder、已物化 Node 或 snapshot。每次挂载 Trajectory 视图时，React layout、timeline 与搜索数据都锚定在当前尾部的 50 个 target Node；实时 append 会扩展该窗口，现有更早历史操作则先扩展其前缀，再请求下一个 Session 页面。如果 replacement window 不再包含先前的尾锚，同一次 render 会以替换窗口的最新 Node 为边界，并把该节点采纳为后续 append 的新锚。请求编号与累计用量仍从完整的驻留 snapshot 派生。输入 layout 变化时，搜索索引仍会执行一次轻量线性签名检查。
 
 Definition 作者必须提供稳定的协议标识。缺少必要 ID 的旧 Event 可能不会出现在受影响的 Trajectory 业务视图中；与合并无关记录或让历史加载失败相比，这是更安全的退化方式。要求完整展示的生产方必须记录该标识。
 
