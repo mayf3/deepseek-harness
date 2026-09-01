@@ -608,7 +608,7 @@ describe.skipIf(MODE === 'record')('web e2e: active Schedule catalog', () => {
     scaffold = await launchWebScaffold({
       extraOverlayPath: OVERLAY,
     })
-    await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard', CATALOG_FIXTURE)
+    await seedSession(scaffold, fixture, CATALOG_SESSION_ID, 'standard')
     const workspace = await scaffold.ctx.workspaceRegistry.create(scaffold.workspaceCwd)
     await workspace.attachSession(CATALOG_SESSION_ID)
 

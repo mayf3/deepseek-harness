@@ -208,16 +208,6 @@ export function parseSessionLog(text: string): SessionEvent[] {
   return parseSessionFixture(text).events
 }
 
-/**
- * Parse one fixture for replay through the same format catalog as ordinary parsing.
- * @param text - raw persisted or projected Session JSONL.
- * @param _sourcePath - selected fixture path; parsing never varies by this value.
- * @returns source events for replay-only test adapters.
- */
-export function parseSessionLogForReplay(text: string, _sourcePath: string): SessionEvent[] {
-  return parseSessionFixture(text).events
-}
-
 /** Parse, complete, decode, and migrate one projected snapshot artifact without writing its source. */
 function parseSessionFixture(text: string): ParsedSessionFixture {
   const parsed: FixtureJsonLine[] = []
@@ -321,13 +311,9 @@ export function migrateSessionSnapshotFixture(text: string): string {
 /**
  * Prepare one fixture for expected-output comparison through strict format validation.
  * @param text - one complete Session fixture.
- * @param _sourcePath - selected fixture path, when known; comparison never varies by this value.
  * @returns current-generation comparison JSONL without modifying the source file.
  */
-export function prepareSessionSnapshotFixtureForComparison(
-  text: string,
-  _sourcePath?: string,
-): string {
+export function prepareSessionSnapshotFixtureForComparison(text: string): string {
   const parsed = parseSessionFixture(text)
   return encodeCurrentSessionSnapshotFixture(text, parsed)
 }

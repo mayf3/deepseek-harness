@@ -1,6 +1,6 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
@@ -32,7 +32,6 @@ import {
   name,
   parseSessionHeader,
   parseSessionLog,
-  parseSessionLogForReplay,
   prepareSessionEventNotificationsForComparison,
   prepareSessionSnapshotFixtureForComparison,
   resolveScriptedEntry,
@@ -389,11 +388,6 @@ describe('parseSessionLog', () => {
     expect(parseSessionLog(sessionJsonl(events))).toEqual(events)
   })
 
-  it('keeps replay parsing strict when a source path is supplied', () => {
-    const events: SessionEvent[] = [{ type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }]
-    expect(parseSessionLogForReplay(sessionJsonl(events), '/fixtures/session.v2.jsonl')).toEqual(events)
-  })
-
   it('ignores blank lines', () => {
     const header = JSON.stringify({ type: 'session', version: 0, id: 's1', createdAt: 0 })
     const ev: SessionEvent = { type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }
@@ -689,7 +683,7 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
     expect(prepared.endsWith('\n')).toBe(false)
   })
 
-  it('does not let a source path change Session format validation', () => {
+  it('applies current Session format validation before comparison', () => {
     const source = [
       JSON.stringify({
         type: 'session',
@@ -717,9 +711,7 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
         data: { title: 'Active schedule catalog', messageSeqs: [1], source: { kind: 'user' } },
       }),
     ].join('\n')
-    const sourcePath = resolve(import.meta.dirname, '../../../../snapshots/web/schedule-catalog/session.v2.jsonl')
-
-    expect(() => prepareSessionSnapshotFixtureForComparison(source, sourcePath))
+    expect(() => prepareSessionSnapshotFixtureForComparison(source))
       .toThrow(/session\/title 2 messageSeqs must be empty exactly for a user title/)
   })
 })

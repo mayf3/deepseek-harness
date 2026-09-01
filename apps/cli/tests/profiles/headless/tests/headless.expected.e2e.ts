@@ -71,7 +71,7 @@ async function expectSessionSnapshot(
 ): Promise<void> {
   const [normalizedActual] = normalizeSessionSnapshots([actual], context)
   const expected = await readFile(expectedPath, 'utf8')
-  const [normalizedExpected] = normalizeSessionSnapshots([expected], context, { sourcePaths: [expectedPath] })
+  const [normalizedExpected] = normalizeSessionSnapshots([expected], context)
   expect(parseJsonl(normalizedActual ?? '')).toEqual(parseJsonl(normalizedExpected ?? ''))
 }
 

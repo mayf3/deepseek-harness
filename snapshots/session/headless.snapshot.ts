@@ -197,7 +197,6 @@ async function primaryFixtureFile(dir: string): Promise<string> {
 async function writeSessionFixtures(
   scenario: HeadlessScenario,
   actualLogs: readonly SessionLog[],
-  existingFiles: readonly string[],
   existing: readonly string[],
   ctx: NormalizeContext,
 ): Promise<string[]> {
@@ -213,11 +212,7 @@ async function writeSessionFixtures(
     const stable = tokenizeSessionFixtureCwd(mode === 'refresh'
       ? stabilizeRefreshLog(log.content, prior[index] as string, replacements, ctx)
       : log.content)
-    const sourceFile = existingFiles[index]
-    return scrubSessionSnapshot(prepareSessionSnapshotFixtureForComparison(
-      stable,
-      sourceFile === undefined ? undefined : join(scenario.dir, sourceFile),
-    ))
+    return scrubSessionSnapshot(prepareSessionSnapshotFixtureForComparison(stable))
   })
   const output = redactSessionSnapshotIds(stabilizeFixtureMessageIds(fresh, prior))
   await Promise.all(output.map((content, index) => writeFile(join(scenario.dir, names[index] as string), content)))
@@ -728,7 +723,6 @@ describe('headless recorded-session snapshots', () => {
       const baseComposition = compositionOwners.get('default')
       if (baseComposition === undefined) throw new Error('headless corpus has no default composition')
       let fixtureFiles = sessionFixtureNames(await readdir(scenario.dir))
-      const replayFixtureFiles = [...fixtureFiles]
       const replaying = mode !== 'record'
       const compositionPatch = join(composition.dir, replaying ? 'cordis.snapshot.yml' : 'cordis.yml')
       const patchSources = [
@@ -814,7 +808,6 @@ describe('headless recorded-session snapshots', () => {
         fixtures = await writeSessionFixtures(
           scenario,
           actualLogs,
-          replayFixtureFiles,
           fixtures,
           contextOf(actualLogs.map(log => log.content)),
         )
@@ -829,14 +822,8 @@ describe('headless recorded-session snapshots', () => {
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
       const fixtureContext = contextOf(fixtures)
-      const actualSourcePaths = replayFixtureFiles.map(file => join(scenario.dir, file))
-      const expectedSourcePaths = fixtureFiles.map(file => join(scenario.dir, file))
-      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext, {
-        sourcePaths: actualSourcePaths,
-      })
-      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext, {
-        sourcePaths: expectedSourcePaths,
-      })
+      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
+      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
       }

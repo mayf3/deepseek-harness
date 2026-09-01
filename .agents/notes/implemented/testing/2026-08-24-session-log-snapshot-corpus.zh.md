@@ -18,6 +18,8 @@ Status: implemented
 
 录制会话仍是主要输入和预期输出。来自用户的消息驱动所选公开接口，录制的 assistant chunk 驱动确定性模型回放，规范化后的持久化结果必须等于 fixture。父会话和子会话共享同一类型化脱敏映射。提交的 fixture 使用保留关系的身份 token，并将请求 system prompt 和工具 schema 替换为 token；每个不同 header 类仍保留一个显式 sidecar 所有者。
 
+Fixture 解码与比较只取决于选定 JSONL 内容；文件名标识 inventory role，但不是 parser 输入。replay、seed、record、refresh 与规范化比较路径都使用同一个严格静态 catalog 校验。
+
 每个 parent 或 child 角色都使用 `session[.<ordinal>][.vN].jsonl`；v0 省略版本，且每个文件名都与其 header 一致。回放、录制与刷新按角色选择数值最高的 generation。大多数 owner 省略 `sessionFormat` 并跟随当前 writer；受限的历史 owner 会声明精确版本与封闭 coverage 名称。v2 语料保留选定 v0 角色，覆盖多跳、打包行、重试／失败与随附 profile，并保留选定 v1 角色覆盖相邻结构 edge。录制与刷新绝不改写显式保留的历史 fixture、重命名已提交 generation 或通过自动清理删除 generation。受审阅的源树整理只有在同角色存在已验证的当前后继后才移除前代。语料策略要求选定当前角色始终占多数，并将选定历史角色上限设为十个；更低的前代 generation 可以保留在选定当前后继旁。
 
 场景拥有的 HTTP fixture 将会话中录制的稳定 authority 与传输 listener 分离。每个 fixture 在回环地址上绑定端口 `0`，由操作系统以一次原子操作分配并绑定端口，再将录制的 URL 或 endpoint 通过真实 provider 映射到该 listener。任何进程全局传输拦截只匹配录制 endpoint，由 fixture fiber 拥有，并在关闭 listener 前恢复。

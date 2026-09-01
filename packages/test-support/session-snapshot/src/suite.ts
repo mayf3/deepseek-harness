@@ -1367,11 +1367,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
             sessionIds: fixtureContexts.flatMap(context => context.sessionIds),
             cwd: (fixtureContexts[0] as NormalizeContext).cwd,
           }
-          const sourcePaths = fixtureFiles.map(file => join(dir, file))
-          const actualSnapshots = normalizeSessionSnapshots(harvested, ctx, { sourcePaths })
-          const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureCtx, {
-            sourcePaths,
-          })
+          const actualSnapshots = normalizeSessionSnapshots(harvested, ctx)
+          const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureCtx)
           for (const [index, actual] of actualSnapshots.entries()) {
             expect(actual, `${fixtureFiles[index]} mismatch`).toEqual(expectedSnapshots[index])
           }

@@ -107,7 +107,6 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
     const selectedBaseFixture = await selectedSessionFixture(BASE_FIXTURE)
     const baseFixture = prepareSessionSnapshotFixtureForComparison(
       await readFile(selectedBaseFixture, 'utf8'),
-      selectedBaseFixture,
     )
     sidecarRoot = await mkdtemp(join(tmpdir(), 'dsh-web-subagent-'))
     const childFixturePath = join(sidecarRoot, 'child.jsonl')
