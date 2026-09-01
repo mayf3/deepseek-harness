@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import type { EnvLookup } from '../src/policy.ts'
 import {
   bypassesProxy,
   isLoopbackHost,
@@ -8,15 +8,27 @@ import {
   DIRECT_POLICY,
 } from '../src/policy.ts'
 
+/** Windows folds environment names, so a case distinction cannot be expressed there at all. */
+const FOLDS_ENV_CASE = process.platform === 'win32'
+
 const PROXY = 'http://127.0.0.1:7897'
 const OTHER = 'http://127.0.0.1:8080'
 
-function env(values: Record<string, string>): ReturnType<typeof createLaunchEnvironmentSnapshot> {
-  return createLaunchEnvironmentSnapshot([{ source: 'process', values }])
+/**
+ * The environment resolution reads. Windows folds names case-insensitively, and the launcher's own
+ * snapshot does the same, so this stand-in folds too — otherwise a case-distinction case would
+ * assert POSIX behaviour on a platform that cannot have it.
+ */
+function env(values: Record<string, string>): EnvLookup {
+  const folded = FOLDS_ENV_CASE
+    ? Object.fromEntries(Object.entries(values).map(([name, value]) => [name.toUpperCase(), value]))
+    : values
+  return { get: (name) => {
+    const value = folded[FOLDS_ENV_CASE ? name.toUpperCase() : name]
+    return value === undefined ? undefined : { value }
+  } }
 }
 
-/** Windows folds environment names, so a case distinction cannot be expressed there at all. */
-const FOLDS_ENV_CASE = process.platform === 'win32'
 
 describe('loopback routing', () => {
   const proxied = { httpProxy: PROXY, httpsProxy: PROXY, noProxy: '', source: 'env' } as const
