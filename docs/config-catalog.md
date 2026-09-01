@@ -3083,7 +3083,7 @@ export interface Config {
 export type ApprovalPolicy = 'ask' | 'never'
 ```
 
-Source: [`packages/interaction/user-approval/src/index.ts:142`](../packages/interaction/user-approval/src/index.ts)
+Source: [`packages/interaction/user-approval/src/index.ts:126`](../packages/interaction/user-approval/src/index.ts)
 
 <a id="deepseek-aidsh-web"></a>
 
