@@ -19,18 +19,9 @@ describe('dsh-sdk-app bundle', () => {
     const patches = yaml.load(
       readFileSync(resolve(root, manifest.dsh!.bundle!.patch!), 'utf8'),
       { schema: entryListSchema },
-    ) as Array<{
-      id?: string
-      config?: Record<string, unknown>
-      disabled?: boolean
-      insert?: Array<{ id?: string; inject?: string[]; name?: string }>
-    }>
+    ) as Array<{ id?: string; disabled?: boolean; insert?: Array<{ id?: string; inject?: string[]; name?: string }> }>
     expect(patches.find(patch => patch.id === 'hmr')).toBeUndefined()
     expect(patches.find(patch => patch.id === 'session-title-llm')).toMatchObject({ disabled: true })
-    expect(patches.find(patch => patch.id === 'tool-web')?.config).toEqual({
-      fetch: true,
-      searchTimeoutMs: 60_000,
-    })
     const rows = patches.flatMap(patch => patch.insert ?? [])
     expect(rows.find(row => row.id === 'sdk-app-startup')?.name).toBe('@deepseek-ai/dsh-sdk-app')
     expect(rows.find(row => row.id === 'sdk-jsonrpc-server')?.inject).toEqual(['sdkAppStartup', 'loader'])

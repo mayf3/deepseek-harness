@@ -14,11 +14,6 @@
     # Keep the same temporary process-wide PTC mode opt-in as the Web surface.
     mode: !!js process.env.DSH_TOOLS_MODE
 
-- id: tool-web
-  config:
-    fetch: true
-    searchTimeoutMs: 60000
-
 - insert:
     # PTC mode is a core execution capability, not a Web component.
     - id: code-runtime
