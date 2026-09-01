@@ -439,6 +439,7 @@ function makeHarness(
 function readerScroll(element: HTMLElement, top: number): void {
   element.scrollTop = top
   fireEvent.scroll(element)
+  fireEvent(element, new Event('scrollend'))
 }
 
 function turnProcessControl(container: HTMLElement): HTMLButtonElement | null {
@@ -2315,6 +2316,7 @@ describe('ChatView', () => {
     // lands exactly on the ledger's floor min, so it is not reader input.
     metrics.setLayout(800, 700)
     fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
     expect(scroller.scrollTop).toBe(500)
     expect(view.queryByLabelText('回到底部')).toBeNull()
     expect(h.chatScroll.read()).toBeNull()
@@ -2337,6 +2339,7 @@ describe('ChatView', () => {
     // baseline sampled from already-moved raw geometry.
     scroller.scrollTop = 500
     fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
     expect(view.getByLabelText('回到底部')).toBeTruthy()
   })
 
@@ -2359,6 +2362,7 @@ describe('ChatView', () => {
     Object.defineProperty(scroller, 'clientHeight', { value: 300, writable: true })
     scroller.scrollTop = 700
     fireEvent.scroll(scroller)
+    fireEvent(scroller, new Event('scrollend'))
     Object.defineProperty(scroller, 'scrollHeight', { value: 1_200, writable: true })
     act(() => { notify?.() })
     expect(scroller.scrollTop).toBe(1_200)
