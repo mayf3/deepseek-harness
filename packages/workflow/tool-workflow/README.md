@@ -68,7 +68,7 @@ The consumer owns the model-facing schema, the `tool:<toolName>` system-prompt g
 
 For a root transport execution (`exec.parent` absent), the tool projects the run into the calling Agent's Session with four log-only events: run-start after `start()` returns, member starts and endings filtered by `run.id`, then run-end only after the result is available and disposal reaches quiescence. Nested transport calls execute normally but write no record. The first failed Session append disables later recording for that run with one warning, leaving either no record or a legal continuous prefix without changing the tool result or cleanup. The package invariant rejects duplicate starts, unpaired members, terminal events with open members, and updates after run-end on both cold load and live append, while accepting missing terminal suffixes.
 
-Beside the durable record, each recorded top-level run is mirrored best-effort into the optional `ctx.activities` registry as a `workflow` activity: the otherwise-unconsumed `workflow/phase` and `workflow/log` events plus member lifecycle lines stream into it, so the Web client shows the run's live narration the session log deliberately does not carry per line. Without the registry, or on any mirror failure, the run is unaffected.
+The engine's `workflow/phase` and `workflow/log` events have no per-line durable or observer surface from this tool: the session log deliberately records run and member lifecycle only, and the Web transcript derives from those records.
 
 ### Render intent
 
@@ -80,7 +80,6 @@ Decided up front per the [render-intent Agent Note](../../../.agents/notes/imple
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, run lifecycle, recorder wiring |
 | [`src/types.ts`](src/types.ts) | The four log-only record event payloads and their `SessionEventMap` declaration |
-| [`src/activity.ts`](src/activity.ts) | Best-effort activity mirror for top-level runs |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: durable workflow-record protocol validation |
 
 </details>

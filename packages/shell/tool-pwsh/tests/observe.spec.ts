@@ -8,7 +8,6 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import LocalActivityRegistry from '@deepseek-ai/dsh-activity-local'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
@@ -81,10 +80,9 @@ async function setup() {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
-  await ctx.plugin(LocalActivityRegistry)
   await ctx.plugin(BashEnvPlugin)
   await ctx.plugin(FakePwsh)
-  await ctx.plugin(ToolPwsh, { activityPollMs: 5 })
+  await ctx.plugin(ToolPwsh, { recordPollMs: 5 })
   return { ctx, pwsh: ctx.shell as FakePwsh }
 }
 
@@ -108,8 +106,8 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
   throw new Error('condition not reached before timeout')
 }
 
-describe('background pwsh observation', () => {
-  it('mirrors observed streams with channels and settles with the mapped outcome', async () => {
+describe('background pwsh record', () => {
+  it('streams observed channels into the job record and settles with the mapped outcome', async () => {
     const { ctx, pwsh } = await setup()
     const stdout = { text: '' }
     const stderr = { text: '' }
@@ -118,29 +116,32 @@ describe('background pwsh observation', () => {
 
     await call(ctx, { command: 'Get-Progress', description: 'test command', run_in_background: true })
     const job = ctx.jobs.list()[0]
-    const row = await until(() => ctx.activities.list().find(item => item.correlation?.jobId === job!.id))
-    expect(row.kind).toBe('pwsh')
+    expect(job).toBeDefined()
+    expect(job!.kind).toBe('pwsh')
+    expect(job!.outputTotal).toBe(0)
 
     stdout.text = 'progress-line\n'
     stderr.text = 'warn-line\n'
     await until(() => {
-      const chunks = ctx.activities.read(row.id, 0).chunks
+      const chunks = ctx.jobs.readRecord(job!.id, 0).chunks
       return chunks.some(chunk => chunk.text.includes('progress-line'))
         && chunks.some(chunk => chunk.text.includes('warn-line'))
         ? true
         : undefined
     })
-    const chunks = ctx.activities.read(row.id, 0).chunks
+    const chunks = ctx.jobs.readRecord(job!.id, 0).chunks
     expect(chunks.find(chunk => chunk.text.includes('progress-line'))?.channel).toBe('stdout')
     expect(chunks.find(chunk => chunk.text.includes('warn-line'))?.channel).toBe('stderr')
 
     scripted.finish()
-    await until(() => ctx.activities.get(row.id).status === 'completed' ? true : undefined)
-    expect(ctx.activities.get(row.id).detail).toBe('exit code: 0')
+    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
+    expect(ctx.jobs.get(job!.id).detail).toBe('exit code: 0')
   })
 
-  it('a pump failure waits for process settlement before mapping the outcome', async () => {
+  it('a pump failure warns and never fakes a terminal state onto the running job', async () => {
     const { ctx, pwsh } = await setup()
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
     let resolveDone: () => void = () => {}
     const done = new Promise<void>((resolve) => { resolveDone = resolve })
     const proc: ShellProcess = {
@@ -157,70 +158,36 @@ describe('background pwsh observation', () => {
     }
     pwsh.backgroundHandler = () => proc
     await call(ctx, { command: 'Get-Broken', description: 'test command', run_in_background: true })
-    const row = await until(() => ctx.activities.list()[0])
-    // The pump rejected on its first poll; the still-running process must not
-    // be mapped to a terminal state until it actually settles.
+    const job = ctx.jobs.list()[0]
+    await until(() => warn.mock.calls.some(args => String(args[0]).includes('record observation pump')) ? true : undefined)
+    // The pump already failed; the job must wait for real settlement rather
+    // than freezing a fake terminal state onto the running process.
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(ctx.activities.list()[0]?.status).toBe('running')
+    expect(ctx.jobs.get(job!.id).status).toBe('running')
     proc.status = 'completed'
     proc.exitCode = 0
     resolveDone()
-    await until(() => ctx.activities.list()[0]?.status !== 'running' ? true : undefined)
-    expect(ctx.activities.list()[0]).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
-    expect(String(row.id)).toContain('pwsh')
+    await until(() => ctx.jobs.get(job!.id).status !== 'running' ? true : undefined)
+    expect(ctx.jobs.get(job!.id)).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
   })
 
-  it('a throwing end() is swallowed by the settlement-mapping catch', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks)
-    await ctx.plugin({
-      name: 'end-throwing-activities-probe',
-      apply(child: Context) {
-        child.provide('activities', {
-          open: () => ({
-            id: 'pwsh-1',
-            append() {},
-            updateDetail() {},
-            end() { throw new Error('end boom') },
-          }),
-        })
-      },
-    })
-    await ctx.plugin(BashEnvPlugin)
-    await ctx.plugin(FakePwsh)
-    await ctx.plugin(ToolPwsh, { activityPollMs: 5 })
-    const pwsh = ctx.shell as FakePwsh
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
-    const handle = observableProcess({ stdout: { text: '' }, stderr: { text: '' } })
-    pwsh.backgroundHandler = () => handle.proc
-    await call(ctx, { command: 'Get-Doom', description: 'test command', run_in_background: true })
-    handle.finish()
-    await until(() => warn.mock.calls.some(args => String(args[0]).includes('activity settlement mapping')) ? true : undefined)
-  })
-
-  it('a backend without observed readers still yields a status-only process', async () => {
+  it('a backend without observed readers still yields a status-only record', async () => {
     const { ctx, pwsh } = await setup()
     const scripted = observableProcess()
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Start-Job', description: 'test command', run_in_background: true })
     const job = ctx.jobs.list()[0]
-    const row = await until(() => ctx.activities.list().find(item => item.correlation?.jobId === job!.id))
-    expect(ctx.activities.read(row.id, 0).chunks).toEqual([])
+    expect(ctx.jobs.readRecord(job!.id, 0).chunks).toEqual([])
 
     scripted.finish()
-    await until(() => ctx.activities.get(row.id).status === 'completed' ? true : undefined)
-    expect(ctx.activities.get(row.id).outputTotal).toBe(0)
+    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
+    expect(ctx.jobs.get(job!.id).outputTotal).toBe(0)
   })
 })
 
-describe('owned and degraded observation (pwsh)', () => {
-  it('mirrors an owned background run under the owning session', async () => {
+describe('owned background record (pwsh)', () => {
+  it('keeps an owned background run record under the owning session', async () => {
     const { ctx, pwsh } = await setup()
     const owner = {
       id: SessionId('pwsh-observe-owner'),
@@ -240,40 +207,10 @@ describe('owned and degraded observation (pwsh)', () => {
     })
     const job = ctx.jobs.list(owner)[0]
     expect(job).toBeDefined()
-    const row = await until(() => ctx.activities.list(owner).find(item => item.correlation?.jobId === job!.id))
-    expect(row.ownerSession).toBe(owner.id)
+    expect(job!.ownerSession).toBe(owner.id)
+    expect(() => ctx.jobs.readRecord(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(ctx.jobs.readRecord(job!.id, 0, owner).chunks).toEqual([])
     scripted.finish()
     await until(() => ctx.jobs.get(job!.id, owner).status === 'completed' ? true : undefined)
-  })
-
-  it('swallows a throwing observation registry and keeps the job alive', async () => {
-    // The FakePwsh composition with a synchronously throwing open(): the
-    // failure lands in the outer observation catch and the job runs on.
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks)
-    await ctx.plugin({
-      name: 'broken-activities-probe',
-      apply(child: Context) {
-        child.provide('activities', { open() { throw new Error('observation boom') } })
-      },
-    })
-    await ctx.plugin(BashEnvPlugin)
-    await ctx.plugin(FakePwsh)
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
-    await ctx.plugin(ToolPwsh, { activityPollMs: 5 })
-    const pwsh = ctx.shell as FakePwsh
-    const scripted = observableProcess()
-    pwsh.backgroundHandler = () => scripted.proc
-    await call(ctx, { command: 'Get-Slow', description: 'test command', run_in_background: true })
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('activity observation unavailable'))
-    const job = ctx.jobs.list()[0]
-    expect(job?.status).toBe('running')
-    scripted.finish()
-    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
   })
 })
