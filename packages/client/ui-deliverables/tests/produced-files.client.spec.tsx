@@ -382,6 +382,9 @@ describe('produced-file Turn data', () => {
     value.append(call(4, 'second', 'edit', {
       file_path: 'second.txt', old_string: 'before', new_string: 'after',
     }))
+    value.flush()
+    expect(deliverablesOf(value)).toBe(first)
+
     value.append(result(5, 'second'))
     value.flush()
     expect(producedForClosing(deliverablesOf(value))).toEqual(['first.txt', 'second.txt'])
