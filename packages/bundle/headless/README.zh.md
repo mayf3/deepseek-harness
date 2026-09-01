@@ -9,7 +9,7 @@ kind: "package-bundle"
 
 ## 概述
 
-`dsh-headless` 从命令行运行一个 dsh 任务并打印最终答案，然后退出——没有 GUI、没有服务器、没有浏览器。输入 `dsh --profile headless "run the tests"`，agent（智能体）会以与其他表层相同的模型、工具与安全默认值完成该任务。它非常适合脚本、CI 与一次性任务：进程不打开任何端口，也不会留下任何后台运行的东西。退出码告诉你结果——任务完成时为 0，中止或出错时为 1。主要边界：每次调用只运行一个任务，没有交互式后续。
+`dsh-headless` 从命令行运行一个 dsh 任务并打印最终答案，然后退出——没有 GUI、没有服务器、没有浏览器。输入 `dsh --profile headless "run the tests"`，agent（智能体）会以与其他表层相同的模型、工具与安全默认值完成该任务。该 profile 会在 base 的 `web_search` 之外启用 `web_fetch`；抓取无需逐次审批，base HTTP 提供方会拒绝非公开目的地址。它非常适合脚本、CI 与一次性任务：进程不打开任何端口，也不会留下任何后台运行的东西。退出码告诉你结果——任务完成时为 0，中止或出错时为 1。主要边界：每次调用只运行一个任务，没有交互式后续。
 
 ## 目录
 
@@ -65,7 +65,7 @@ runner 等待整个应用结算（`ctx.get('loader')?.await()`），确保已组
 
 ### 叠加在 base 之上的 patch 表层
 
-patch 叠加在 `dsh-base` 之上：继承投影缓存，在基础 `system-prompt` 行上设置编码 persona，保留与 Web 表层相同的临时进程级 PTC mode 开关（`DSH_TOOLS_MODE`），禁用共享的 HMR 行，把 PTC mode 的 worker 作为核心执行能力插入，并挂载启动提供方与 runner。缓存为每个已持久化的一次性会话写入检查点，供后续消费方使用；其持久性屏障会在发布缓存行前 flush 所覆盖的日志前缀，因此可能拆分原本会合并的 JSONL 行。启动提供方（[`src/startup.ts`](src/startup.ts)）注入 `ctx.cmdlineArgs`（[`dsh-cmdline`](../../boot/cmdline/README.zh.md)），读取位置参数、打印应用自己的 `--help`，并提供 `headlessStartup`；runner 注入该服务，再从惰性配置中读取任务。
+patch 叠加在 `dsh-base` 之上：继承投影缓存，在基础 `system-prompt` 行上设置编码 persona，在基础 `tool-web` 行上启用抓取，保留与 Web 表层相同的临时进程级 PTC mode 开关（`DSH_TOOLS_MODE`），禁用共享的 HMR 行，把 PTC mode 的 worker 作为核心执行能力插入，并挂载启动提供方与 runner。缓存为每个已持久化的一次性会话写入检查点，供后续消费方使用；其持久性屏障会在发布缓存行前 flush 所覆盖的日志前缀，因此可能拆分原本会合并的 JSONL 行。启动提供方（[`src/startup.ts`](src/startup.ts)）注入 `ctx.cmdlineArgs`（[`dsh-cmdline`](../../boot/cmdline/README.zh.md)），读取位置参数、打印应用自己的 `--help`，并提供 `headlessStartup`；runner 注入该服务，再从惰性配置中读取任务。
 
 ### 退出映射
 
@@ -79,6 +79,7 @@ patch 叠加在 `dsh-base` 之上：继承投影缓存，在基础 `system-promp
 | [`src/startup.ts`](src/startup.ts) | `headless-startup` 提供方：任务位置参数与 `--help` |
 | [`cordis.patch.yml`](cordis.patch.yml) | 叠加在 `dsh-base` 之上的一次性 patch |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：无运行时不变式；可观察约定是进程级的 |
+| [`tests/bundle.spec.ts`](tests/bundle.spec.ts) | 已交付 patch 的抓取覆盖配置 |
 | [`tests/headless.spec.ts`](tests/headless.spec.ts) | 运行流程、汇总、flush 与退出映射 |
 | [`tests/startup.spec.ts`](tests/startup.spec.ts) | 在真实 Loader 树上的命令行解析 |
 
@@ -106,7 +107,7 @@ patch 叠加在 `dsh-base` 之上：继承投影缓存，在基础 `system-promp
 <a id="model-experience"></a>
 ## 模型体验
 
-无，因为 runner 把任务作为普通用户消息提交，提示词与工具由组合出的 base 与 headless 行提供。
+无，因为 runner 把任务作为普通用户消息提交；bundle 层的 `web_fetch` 暴露方式已在上文说明。
 
 #### KV Cache 影响
 

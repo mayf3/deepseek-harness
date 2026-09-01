@@ -4,9 +4,6 @@ profile: sdk
 composition: subagent-durability-failure
 recording: authored
 header:
-  class: sdk-subagent-durability-failure
-  pin: true
-  systemPromptSource: max-tokens-continue
-  toolSchemasSource: max-tokens-continue
+  class: subagent-durability-failure
   childSystemPrompts: [1]
   childToolSchemas: [1]

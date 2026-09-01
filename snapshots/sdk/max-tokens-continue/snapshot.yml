@@ -4,5 +4,4 @@ profile: sdk
 composition: default
 recording: authored
 header:
-  class: sdk-default
-  pin: true
+  class: default

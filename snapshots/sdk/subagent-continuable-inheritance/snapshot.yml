@@ -6,7 +6,7 @@ recording: authored
 header:
   class: subagent-continuable-inheritance
   pin: true
-  systemPromptSource: sdk/max-tokens-continue
-  toolSchemasSource: sdk/max-tokens-continue
+  systemPromptSource: session/text-turn
+  toolSchemasSource: session/text-turn
   childSystemPrompts: [1]
   childToolSchemas: [1]
