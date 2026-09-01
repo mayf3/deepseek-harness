@@ -262,8 +262,13 @@ export function apply(ctx: Context): void {
         state.competingQueued = false
         const attempt = state.attempt
         const goal = currentGoal(state)
-        if ((attempt?.phase === 'queued' || attempt?.phase === 'claimed' || attempt?.cancelled)
-          && goal?.phase === 'active' && goal.activation === 'armed') {
+        // Fence the pause to the exact dropped attempt's ref. A resume bumps
+        // the revision, so a host pause followed by an immediate resume (before
+        // the aborted turn converges to idle) must not re-pause the resumed goal.
+        if (attempt !== undefined
+          && (attempt.phase === 'queued' || attempt.phase === 'claimed' || attempt.cancelled)
+          && goal !== undefined && goal.phase === 'active' && goal.activation === 'armed'
+          && attempt.goalId === goal.id && attempt.revision === goal.revision) {
           state.attempt = undefined
           try {
             ctx.goals.pause(agent, goalRef(goal))
