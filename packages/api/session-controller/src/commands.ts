@@ -4,12 +4,13 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { AttachmentError, admitPromptContent } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError, admitEncodedFile, admitPromptContent } from '@deepseek-ai/dsh-attachment'
+import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
+import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { MessageSource } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
@@ -35,6 +36,7 @@ import type {
   SessionCreateValue,
   SessionForkRequest,
   SessionForkValue,
+  FileUploadReceiptId,
   SessionPromptRequest,
   SessionPromptValue,
   SessionRenameRequest,
@@ -43,6 +45,9 @@ import type {
   SessionSelectModelValue,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
+  SessionUploadFileRequest,
+  SessionUploadFileValue,
+  SessionRequestId,
 } from './types.ts'
 
 interface SessionReadState {
@@ -51,8 +56,21 @@ interface SessionReadState {
   readonly events: readonly SessionEvent[]
 }
 
+interface StagedFileUpload {
+  readonly file: FileAttachmentRef
+  /** Prompt that accepted this receipt; absent until successful admission. */
+  requestId?: SessionRequestId
+}
+
 /** Implements Session business commands delegated by the Session Controller Remote service. */
 export class SessionCommandController {
+  /**
+   * Staged file uploads awaiting a prompt, keyed by Session. Entries are the
+   * prompt-time authority for file references: a prompt may only cite a file
+   * previously uploaded for the same Session in this process.
+   */
+  private readonly stagedFiles = new Map<SessionId, Map<FileUploadReceiptId, StagedFileUpload>>()
+
   /**
    * @param ctx - Host context carrying Agent, model, attachment, title, and Workspace services.
    * @param agents - sole owner of create, resume, and Session-local model selection.
@@ -62,7 +80,115 @@ export class SessionCommandController {
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
-  ) {}
+  ) {
+    ctx.inject(['commands'], (commandCtx) => {
+      const resolve: CommandFileReceiptResolver = (agent, receiptId) =>
+        this.resolveStagedFile(agent.id, receiptId as FileUploadReceiptId)
+      commandCtx.effect(
+        () => commandCtx.commands.registerFileReceiptResolver(resolve),
+        'session-controller: command file receipt resolver',
+      )
+    })
+  }
+
+  /**
+   * Persist one browser file upload verbatim and stage it for later prompts.
+   * @param request - Session identity, base64 payload, and optional display name.
+   * @returns an opaque per-upload receipt and the durable file reference.
+   */
+  async uploadFile(request: SessionUploadFileRequest): Promise<SessionUploadFileValue> {
+    const agent = await this.resolveAgent(request.sessionId)
+    return this.commitFileUpload(agent, async () => admitEncodedFile(this.ctx.attachments, {
+      data: request.data,
+      ...(request.name === undefined ? {} : { name: request.name }),
+    }))
+  }
+
+  /**
+   * Persist raw upload chunks without collecting the complete file in memory.
+   * @param request - Session identity, ordered exact bytes, cancellation, and optional display name.
+   * @returns an opaque per-upload receipt and the durable file reference.
+   */
+  async uploadFileStream(request: {
+    readonly sessionId: SessionId
+    readonly data: AsyncIterable<Uint8Array>
+    readonly signal?: AbortSignal
+    readonly name?: string
+  }): Promise<SessionUploadFileValue> {
+    const agent = await this.resolveAgent(request.sessionId)
+    return this.commitFileUpload(agent, async () => this.ctx.attachments.saveFileStream({
+      data: request.data,
+      ...(request.signal === undefined ? {} : { signal: request.signal }),
+      ...(request.name === undefined ? {} : { name: request.name }),
+    }))
+  }
+
+  private async commitFileUpload(
+    agent: Agent,
+    save: () => Promise<FileAttachmentRef>,
+  ): Promise<SessionUploadFileValue> {
+    let file: FileAttachmentRef
+    try {
+      file = await save()
+    } catch (error) {
+      if (error instanceof AttachmentError) {
+        throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
+      }
+      throw new RemoteError(
+        'gateway/internal',
+        `failed to store file upload: ${String(error)}`,
+        {},
+        { cause: error },
+      )
+    }
+    if (this.ctx.agents.get(agent.id) !== agent) {
+      throw new RemoteError(
+        'session/not-found',
+        `session "${agent.id}" was disposed before its file upload completed`,
+        { sessionId: agent.id },
+      )
+    }
+    let staged = this.stagedFiles.get(agent.id)
+    if (staged === undefined) {
+      staged = new Map()
+      this.stagedFiles.set(agent.id, staged)
+    }
+    const receiptId = randomUUID() as FileUploadReceiptId
+    staged.set(receiptId, { file })
+    return { receiptId, file }
+  }
+
+  /**
+   * Resolve one staged upload for the same Session without exposing the receipt table.
+   * @param sessionId - receiving Session identity.
+   * @param receiptId - Host-minted upload receipt.
+   * @returns the durable file reference, or `undefined` when the receipt is absent or belongs elsewhere.
+   */
+  resolveStagedFile(sessionId: SessionId, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined {
+    return this.stagedFiles.get(sessionId)?.get(receiptId)?.file
+  }
+
+  /**
+   * Retire file receipts only after their accepted prompt becomes observable.
+   * @param sessionId - Session whose log emitted the prompt.
+   * @param requestId - browser prompt identity echoed by the event.
+   */
+  retireObservedPrompt(sessionId: SessionId, requestId: SessionRequestId): void {
+    const staged = this.stagedFiles.get(sessionId)
+    if (staged === undefined) return
+    for (const [receiptId, upload] of staged) {
+      if (upload.requestId === requestId) staged.delete(receiptId)
+    }
+    if (staged.size === 0) this.stagedFiles.delete(sessionId)
+  }
+
+  /**
+   * Drop one Session's staged uploads (the stored objects remain durable).
+   * @param sessionId - Session leaving the live registry.
+   */
+  releaseStagedFiles(sessionId: SessionId): void {
+    this.stagedFiles.delete(sessionId)
+  }
 
   /**
    * Create or idempotently adopt one ordinary Session.
@@ -292,6 +418,7 @@ export class SessionCommandController {
       )
     }
     const agent = await this.resolveAgent(request.sessionId)
+    if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const selection = this.agents.selectionFor(agent).current
     if (!routeServed(this.ctx, selection.provider)) {
       throw new RemoteError(
@@ -319,10 +446,42 @@ export class SessionCommandController {
             )
           }
         }
-        const content = await admitPromptContent(this.ctx.attachments, request.content)
-        const message: UserMessage = createUserMessage({ content, source })
-        if (request.mode === 'steer') agent.steer(message)
-        else agent.followup(message)
+        const staged = this.stagedFiles.get(request.sessionId)
+        const durable = await durablePromptContent(
+          this.ctx,
+          request.content,
+          receiptId => staged?.get(receiptId)?.file,
+        )
+        const message: UserMessage = createUserMessage({ content: durable.content, source })
+        if (this.ctx.agents.get(agent.id) !== agent) {
+          throw new RemoteError(
+            'session/not-found',
+            `session "${agent.id}" was disposed during prompt admission`,
+            { sessionId: agent.id },
+          )
+        }
+        const bound = durable.receiptIds.map((receiptId) => {
+          const upload = staged?.get(receiptId)
+          if (upload === undefined) {
+            throw new RemoteError(
+              'session/attachment-invalid',
+              'File was not uploaded for this session.',
+              { reason: 'FILE_NOT_STAGED' },
+            )
+          }
+          return { upload, previous: upload.requestId }
+        })
+        for (const { upload } of bound) upload.requestId = request.requestId
+        try {
+          if (request.mode === 'steer') agent.steer(message)
+          else agent.followup(message)
+        } catch (error) {
+          for (const { upload, previous } of bound) {
+            if (previous === undefined) delete upload.requestId
+            else upload.requestId = previous
+          }
+          throw error
+        }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
         if (error instanceof AttachmentError) {
@@ -416,6 +575,12 @@ export class SessionCommandController {
       }))
     } else {
       agent.inbox.remove(request.itemId)
+      if (request.action.kind === 'remove') {
+        const source = message.source
+        if (source.kind === 'user' && 'rpcId' in source) {
+          this.retireObservedPrompt(request.sessionId, source.rpcId)
+        }
+      }
       if (request.action.kind === 'steer') agent.steer(message)
     }
     return { accepted: true }
@@ -492,6 +657,51 @@ export class SessionCommandController {
   }
 }
 
+async function durablePromptContent(
+  ctx: Context,
+  content: readonly SessionPromptRequest['content'][number][],
+  stagedFile: (receiptId: FileUploadReceiptId) => FileAttachmentRef | undefined,
+): Promise<{ readonly content: ContentBlock[]; readonly receiptIds: readonly FileUploadReceiptId[] }> {
+  const files = new Map<FileUploadReceiptId, FileAttachmentRef>()
+  for (const part of content) {
+    if (part.type !== 'file' || files.has(part.receiptId)) continue
+    const file = stagedFile(part.receiptId)
+    if (file === undefined) {
+      throw new RemoteError(
+        'session/attachment-invalid',
+        'File was not uploaded for this session.',
+        { reason: 'FILE_NOT_STAGED' },
+      )
+    }
+    files.set(part.receiptId, file)
+  }
+  type NonFilePart = Exclude<SessionPromptRequest['content'][number], { readonly type: 'file' }>
+  const admitted = await admitPromptContent(
+    ctx.attachments,
+    content.filter((part): part is NonFilePart => part.type !== 'file'),
+  )
+  let next = 0
+  const durable = content.map((part) => {
+    if (part.type === 'file') {
+      return { type: 'file' as const, attachment: files.get(part.receiptId) as FileAttachmentRef }
+    }
+    return admitted[next++] as ContentBlock
+  })
+  return { content: durable, receiptIds: [...files.keys()] }
+}
+
+function hasPromptRequest(agent: Agent, requestId: SessionRequestId): boolean {
+  const matches = (message: UserMessage): boolean => {
+    const source = message.source
+    return source.kind === 'user' && 'rpcId' in source && source.rpcId === requestId
+  }
+  if (agent.inbox.nextTurn.some(matches) || agent.inbox.nextStep.some(matches)) return true
+  return agent.session.snapshotEvents().some((event) => {
+    if (event.type !== 'user/message') return false
+    const source = event.data.source
+    return source.kind === 'user' && 'rpcId' in source && source.rpcId === requestId
+  })
+}
 function imageBlockIn(
   content: unknown,
   match: (ref: ImageAttachmentRef) => boolean,

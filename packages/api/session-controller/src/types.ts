@@ -1,7 +1,7 @@
 /** Browser-safe request, result, and lifecycle vocabulary for the Session Remote service. */
 
 import type {
-  AttachmentIdType, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
+  AttachmentIdType, FileAttachmentRef, ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType,
 } from '@deepseek-ai/dsh-attachment'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -68,7 +68,11 @@ export interface SessionProjectionBaseline {
 export type SessionProjectionValues = Partial<SessionProjectionMap>
   & Readonly<Record<string, SessionProjectionValue>>
 
-/** Browser-submitted prompt content; the Host promotes image bytes to durable references. */
+/**
+ * Browser-submitted prompt content; the Host promotes image bytes to durable
+ * references. File parts carry the opaque receipt returned by a preceding
+ * `uploadFile` call on the same Session.
+ */
 export type PromptContentPart =
   | { readonly type: 'text'; readonly text: string }
   | {
@@ -77,6 +81,7 @@ export type PromptContentPart =
     readonly data: string
     readonly name?: string
   }
+  | { readonly type: 'file'; readonly receiptId: FileUploadReceiptId }
 
 /** Complete model selection for one Session. */
 export interface ModelSelection {
@@ -313,6 +318,22 @@ export interface SessionPromptValue {
   readonly accepted: true
 }
 
+/** One base64 file upload staged for a later prompt on the same Session. */
+export interface SessionUploadFileRequest {
+  readonly sessionId: SessionId
+  /** Canonical base64 encoding of the exact file bytes. */
+  readonly data: string
+  /** Optional display name; the Host sanitizes it into the stored leaf name. */
+  readonly name?: string
+}
+
+/** Durable receipt for one staged file upload. */
+export interface SessionUploadFileValue {
+  /** Per-upload authority consumed by a later prompt on the same Session. */
+  readonly receiptId: FileUploadReceiptId
+  readonly file: FileAttachmentRef
+}
+
 /** Durable image read request. */
 export interface SessionAttachmentRequest {
   readonly sessionId: SessionId
@@ -360,6 +381,9 @@ export interface SessionOpenWorkspacePathValue {
 
 /** Client-minted prompt identity used to reconcile optimistic and durable messages. */
 export type SessionRequestId = Branded<'session-request-id'>
+
+/** Host-minted authority for one staged file upload on one Session. */
+export type FileUploadReceiptId = Branded<'file-upload-receipt-id'>
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
