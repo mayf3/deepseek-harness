@@ -484,6 +484,74 @@ describe('Session history raw journal', () => {
     }
   })
 
+  it('delivers a baseline-framed chunk whose durable event lands after the opening snapshot', async () => {
+    const { ctx } = await harness()
+    const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })
+    const agent = { id: session.id, session, status: 'running', ctx } as Agent
+    const history = new SessionHistoryController(ctx, (observation) => { observation[Symbol.dispose]() })
+    const attemptId = LlmAttemptId('opening-durable-cut-attempt')
+    ctx.emit('agent/assistant-stream', {
+      agent,
+      frame: {
+        type: 'start', attemptId, revision: 1, startedTime: 100,
+        turn: 1, step: 1,
+      },
+    })
+    const observationCaptured = Promise.withResolvers<undefined>()
+    const releaseObservation = Promise.withResolvers<undefined>()
+    const originalObserve = ctx.sessionQuery.observeSession.bind(ctx.sessionQuery)
+    const observe = vi.spyOn(ctx.sessionQuery, 'observeSession').mockImplementation(async (sessionId, options) => {
+      const observation = await originalObserve(sessionId, options)
+      observationCaptured.resolve(undefined)
+      await releaseObservation.promise
+      return observation
+    })
+    const abort = new AbortController()
+    const iterator = history.follow({
+      address: { kind: 'session', sessionId: session.id },
+      assistantStream: true,
+    }, abort.signal)[Symbol.asyncIterator]()
+
+    try {
+      const opening = iterator.next()
+      await observationCaptured.promise
+      const chunk = session.append('assistant/chunk', {
+        turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'cut-safe' },
+      })
+      ctx.emit('agent/assistant-stream', {
+        agent,
+        frame: {
+          type: 'chunk', attemptId, revision: 2, index: 0,
+          chunk: chunk.data.chunk, legacyChunkSeq: chunk.seq,
+        },
+      })
+      const after = session.append('turn/start', { turn: 2 })
+      releaseObservation.resolve(undefined)
+
+      await expect(opening).resolves.toMatchObject({
+        done: false,
+        value: {
+          type: 'snapshot',
+          records: [],
+          assistantStream: {
+            revision: 2,
+            attempts: [{ attemptId, legacyChunkSeqs: [chunk.seq] }],
+          },
+        },
+      })
+      await expect(iterator.next()).resolves.toEqual({
+        done: false, value: { type: 'event', event: chunk },
+      })
+      await expect(iterator.next()).resolves.toEqual({
+        done: false, value: { type: 'event', event: after },
+      })
+    } finally {
+      releaseObservation.resolve(undefined)
+      observe.mockRestore()
+      await disposeFollow(ctx, iterator, abort)
+    }
+  })
+
   it('does not release an old-lifecycle frame after the opening baseline resets to revision one', async () => {
     const { ctx } = await harness()
     const session = ctx.sessions.create(undefined, { meta: { cwd: '/workspace' } })

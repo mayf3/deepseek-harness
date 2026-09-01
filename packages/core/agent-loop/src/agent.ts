@@ -372,10 +372,12 @@ export class ReactLoopAgent implements Agent {
         step,
         (frame) => { this.dispatch.emit('agent/assistant-stream', { frame }) },
       )
+      let liveStarted = false
       try {
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
         live.start()
+        liveStarted = true
         for await (const chunk of stream) {
           signal.throwIfAborted()
           const legacyChunkSeq = this.session.append('assistant/chunk', { turn, step, chunk }).seq
@@ -400,7 +402,7 @@ export class ReactLoopAgent implements Agent {
             }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
           }
         }
-        live.end('aborted')
+        if (liveStarted) live.end('aborted')
         throw error
       }
       const finish = assembler.finish

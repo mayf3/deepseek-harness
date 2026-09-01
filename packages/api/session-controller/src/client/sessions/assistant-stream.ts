@@ -65,14 +65,7 @@ export class ClientAssistantStream {
         })
       }
     }
-    const visible = entries.filter((entry) => {
-      if (entry.type !== 'event' || entry.event.type !== 'assistant/message'
-        || entry.event.surfaceOp !== 'append') return true
-      const attempt = this.attemptForSettlement(entry.event)
-      if (attempt === undefined) return true
-      this.pendingMessages.set(positionKey(attempt.turn, attempt.step), entry)
-      return false
-    })
+    const visible = entries
     this.publishedSeqs = new Set(visible.map(entry => entry.event.seq))
     return visible
   }
@@ -87,6 +80,7 @@ export class ClientAssistantStream {
     if (event.type === 'assistant/chunk') {
       const attempt = this.attemptFor(event.data.turn, event.data.step)
       if (attempt === undefined) return this.publish(entry)
+      if (attempt.legacyChunkSeqs.has(event.seq)) return this.publish(entry)
       this.pendingChunks.set(event.seq, entry)
       return undefined
     }
@@ -154,18 +148,6 @@ export class ClientAssistantStream {
   private attemptFor(turn: number, step: number): ActiveAttempt | undefined {
     return [...this.attempts.values()].find(attempt => (
       attempt.turn === turn && attempt.step === step
-    ))
-  }
-
-  private attemptForSettlement(
-    event: Extract<SessionLiveEventEntry['event'], { type: 'assistant/message' }>,
-  ): ActiveAttempt | undefined {
-    const sourceEventSeqs = event.sourceEventSeqs
-    if (sourceEventSeqs === undefined) return undefined
-    return [...this.attempts.values()].find(attempt => (
-      attempt.turn === event.data.turn
-      && attempt.step === event.data.step
-      && sameSeqs([...attempt.legacyChunkSeqs], sourceEventSeqs)
     ))
   }
 

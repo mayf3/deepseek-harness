@@ -271,6 +271,40 @@ describe('scope tree', () => {
     expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0, 1])
   })
 
+  it('publishes a baseline-framed chunk when its durable event follows the opening cut', async () => {
+    const b = bench()
+    const attemptId = LlmAttemptId('opening-cut-attempt')
+    const chunk = {
+      type: 'event' as const,
+      event: {
+        type: 'assistant/chunk', seq: 0, time: 1,
+        data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'late durable' } },
+      },
+    }
+    b.api.onHistory = () => Promise.resolve(ok({ records: [], hasMore: false }))
+    b.api.followCursor = -1
+    b.api.assistantStreamBaseline = {
+      revision: 2,
+      attempts: [{
+        attemptId, startedTime: 1, turn: 1, step: 1,
+        chunks: [chunk.event.data.chunk], legacyChunkSeqs: [0],
+      }],
+    }
+    await feedList(b, [{ id: 's1' }])
+    b.svc.open(sid('s1'))
+    const binding = b.svc.binding(sid('s1'))
+    if (binding === undefined) throw new Error('expected Session binding')
+    await vi.waitFor(() => {
+      expect(binding.session.getSnapshot().openState).toBe('open')
+    })
+
+    await b.api.pushFollow(sid('s1'), chunk)
+    await vi.waitFor(() => {
+      expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0])
+    })
+    expect(b.api.followStarts.filter(id => id === sid('s1'))).toHaveLength(1)
+  })
+
   it('stages a reconnect-tail assistant settlement behind its exact active attempt', async () => {
     const b = bench()
     const attemptId = LlmAttemptId('reconnect-settlement-attempt')
@@ -325,7 +359,7 @@ describe('scope tree', () => {
       },
     }
     b.api.onHistory = () => Promise.resolve(ok({
-      records: [priorChunk, priorMessage, currentChunk, currentMessage] as never[],
+      records: [priorChunk, priorMessage, currentChunk] as never[],
       hasMore: false,
     }))
     b.api.assistantStreamBaseline = {
@@ -351,6 +385,10 @@ describe('scope tree', () => {
     expect(binding.eventSource.getSnapshot().entries.at(1)?.event).toBe(priorMessage.event)
     expect(binding.eventSource.getSnapshot().entries.at(-1)?.event).toBe(currentChunk.event)
 
+    await b.api.pushFollow(sid('s1'), currentMessage)
+    await Promise.resolve()
+    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0, 1, 2])
+
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
@@ -366,7 +404,7 @@ describe('scope tree', () => {
     })
   })
 
-  it('rebaselines a reconnect settlement whose end index skips the active tail', async () => {
+  it('replaces an invalid settlement with the authoritative post-end baseline', async () => {
     const b = bench()
     const attemptId = LlmAttemptId('reconnect-end-index-attempt')
     const chunk = {
@@ -394,8 +432,9 @@ describe('scope tree', () => {
         surfaceOp: 'append' as const,
       },
     }
+    let records = [chunk] as never[]
     b.api.onHistory = () => Promise.resolve(ok({
-      records: [chunk, message] as never[],
+      records,
       hasMore: false,
     }))
     b.api.assistantStreamBaseline = {
@@ -417,6 +456,11 @@ describe('scope tree', () => {
       expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0])
     })
 
+    await b.api.pushFollow(sid('s1'), message)
+    await Promise.resolve()
+    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0])
+    records = [chunk, message] as never[]
+    b.api.assistantStreamBaseline = { revision: 3, attempts: [] }
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
@@ -426,17 +470,6 @@ describe('scope tree', () => {
     })
     await vi.waitFor(() => {
       expect(b.api.followStarts.filter(id => id === sid('s1'))).toHaveLength(2)
-    })
-    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0])
-
-    await b.api.pushFollow(sid('s1'), {
-      type: 'assistant-stream',
-      frame: {
-        type: 'end', attemptId, revision: 3, index: 1,
-        outcome: 'committed', legacyChunkSeqs: [0],
-      },
-    })
-    await vi.waitFor(() => {
       expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.seq)).toEqual([0, 1])
     })
   })

@@ -647,6 +647,9 @@ export class Session implements SessionFace {
     projections?: ProjectionsBaseline,
     assistantStream?: SessionAssistantStreamBaseline,
   ): void {
+    // A durable gap-repair page has no assistant baseline. Clearing transient
+    // attempts makes a held notification reopen follow once for an atomic
+    // page/baseline pair instead of applying it to an unrelated repair cut.
     const visible = this.assistantStream.replace(entries, assistantStream)
     this.baseSeq = SessionLogOffset(visible[0]?.event.seq ?? 0)
     this.hasMore = hasMore

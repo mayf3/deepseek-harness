@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage, ToolCallId, LlmError, ReasoningEffortId, StreamChunk } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, TurnEndReason } from '@deepseek-ai/dsh-session'
@@ -95,6 +95,35 @@ describe('agent loop', () => {
       expect(committedAfterMessage).toBe(true)
       expect(end.legacyChunkSeqs).toEqual(durableChunks.map(event => event.seq))
     }
+  })
+
+  it('does not emit an end frame when prepared dispatch throws before start', async () => {
+    const ctx = await harness(new MockAdapter([]))
+    const agent = ctx.agentLoop.create(SessionId('assistant-dispatch-throw'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject === agent) frames.push(frame)
+    })
+    const prepareCall = ctx.llm.prepareCall.bind(ctx.llm)
+    vi.spyOn(ctx.llm, 'prepareCall').mockImplementation(async (config, signal) => {
+      const prepared = await prepareCall(config, signal)
+      return {
+        ...prepared,
+        stream: () => { throw new Error('dispatch failed before start') },
+      }
+    })
+
+    send(agent, 'fail before streaming')
+    await waitForIdle(ctx, agent)
+
+    expect(frames).toEqual([])
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end',
+      data: { reason: { kind: 'error' } },
+    })
   })
 
   it.each([0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1])(
