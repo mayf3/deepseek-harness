@@ -54,6 +54,7 @@ function startRecordJob(ctx: Context, options: { label?: string; owner?: Agent; 
   return {
     id,
     append: (text: string, opts?: Parameters<RunningJob['append']>[1]) => { face.append(text, opts) },
+    updateDetail: (detail: string) => { face.updateDetail(detail) },
     settle: async (outcome: JobOutcome) => {
       settle(outcome)
       await new Promise(resolve => setTimeout(resolve, 0))
@@ -224,6 +225,31 @@ describe('observeJobRecord', () => {
     await job.settle({ status: 'completed' })
   })
 
+  it('anchors with the live detail and takes the fast wait path for a wake that lands mid-yield', async () => {
+    const ctx = await harness()
+    const job = startRecordJob(ctx)
+    job.updateDetail('3/10')
+    const abort = new AbortController()
+    const iterator = observeJobRecord(ctx.jobs, { jobId: job.id }, { ...OBSERVE, caller: undefined }, abort.signal)[Symbol.asyncIterator]()
+
+    const anchor = await iterator.next()
+    expect(anchor.value).toMatchObject({ type: 'opened', detail: '3/10' })
+    // Both chunks land while the generator is suspended on a yield, so each
+    // wake precedes the loop's wait(): draining the first chunk must pass
+    // through the already-woken fast path to read the second.
+    job.append('woken')
+    const first = await iterator.next()
+    expect(first.value).toMatchObject({ type: 'output' })
+    job.append('again')
+    const second = await iterator.next()
+    expect(second.value).toMatchObject({ type: 'output' })
+    const pending = iterator.next()
+    await job.settle({ status: 'completed' })
+    const status = await pending
+    expect(status.value).toMatchObject({ type: 'status', status: 'completed' })
+    expect((await iterator.next()).done).toBe(true)
+  })
+
   it('ignores output signals for other jobs while waiting', async () => {
     const ctx = await harness()
     const watched = startRecordJob(ctx, { label: 'watched' })
@@ -290,6 +316,26 @@ describe('SessionController.observeJob', () => {
     const abort = new AbortController()
     const frames = await collect<SessionObserveJobFrame>(
       controller.observeJob({ sessionId: session.id, jobId: job.id }, abort.signal),
+      3,
+      abort,
+    )
+    expect(frames.map(frame => frame.type)).toEqual(['opened', 'output', 'status'])
+  })
+
+  it('observes an unowned job without a request session', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(LocalJobRegistry)
+    ctx.jobs.attachController('observe-job-test')
+    const controller = createSessionTestController(ctx, defaults)
+    const job = startRecordJob(ctx, { label: 'unowned run' })
+    job.append('open access')
+    await job.settle({ status: 'completed' })
+
+    const abort = new AbortController()
+    const frames = await collect<SessionObserveJobFrame>(
+      controller.observeJob({ jobId: job.id }, abort.signal),
       3,
       abort,
     )
