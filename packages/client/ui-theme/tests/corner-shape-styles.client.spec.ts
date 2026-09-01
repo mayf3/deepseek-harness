@@ -59,22 +59,33 @@ describe('corner-shape.css smoothing', () => {
   })
 })
 
+/**
+ * Full-round rules missing the `corner-shape: round` pairing.
+ * @param css - stylesheet text.
+ * @returns the offending selectors, in source order.
+ */
+function unpairedFullRound(css: string): string[] {
+  return parseRules(css)
+    .filter(rule => rule.declarations
+      .some(([property, value]) => property === 'border-radius' && isFullRound(value)))
+    .filter(rule => !rule.declarations
+      .some(([property, value]) => property === 'corner-shape' && value === 'round'))
+    .map(rule => rule.selectors.join(', '))
+}
+
 describe('full-round radii keep circular corners', () => {
+  it('rejects a full-round radius without the pairing', () => {
+    expect(unpairedFullRound('.a { border-radius: 50%; }')).toEqual(['.a'])
+    expect(unpairedFullRound('.a { border-radius: 999px; }')).toEqual(['.a'])
+    expect(unpairedFullRound('.a { border-radius: 50%; corner-shape: round; }')).toEqual([])
+  })
+
   it('pairs corner-shape: round with every full-round border-radius under packages/', () => {
     // The universal superellipse reaches every element, so each circle and
     // pill states its own arc back; a new one without the pairing regresses
     // silently on supporting engines only, which no jsdom test renders.
-    const unpaired: string[] = []
-    for (const file of packageStylesheets()) {
-      for (const rule of parseRules(readFileSync(file, 'utf8'))) {
-        const fullRound = rule.declarations
-          .some(([property, value]) => property === 'border-radius' && isFullRound(value))
-        if (!fullRound) continue
-        const paired = rule.declarations
-          .some(([property, value]) => property === 'corner-shape' && value === 'round')
-        if (!paired) unpaired.push(`${file} ${rule.selectors.join(', ')}`)
-      }
-    }
+    const unpaired = packageStylesheets().flatMap(file =>
+      unpairedFullRound(readFileSync(file, 'utf8')).map(selectors => `${file} ${selectors}`))
     expect(unpaired).toEqual([])
   })
 })
