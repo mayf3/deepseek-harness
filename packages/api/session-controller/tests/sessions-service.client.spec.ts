@@ -251,7 +251,7 @@ describe('scope tree', () => {
     ))).toEqual(['a', 'b'])
   })
 
-  it('stages a reconnect-tail assistant settlement behind its exact active attempt', async () => {
+  it('stages a post-opening assistant settlement behind its exact active attempt', async () => {
     const b = bench()
     const attemptId = LlmAttemptId('reconnect-settlement-attempt')
     const priorMessage = {
@@ -291,7 +291,7 @@ describe('scope tree', () => {
       },
     }
     b.api.onHistory = () => Promise.resolve(ok({
-      records: [priorMessage, currentMessage] as never[],
+      records: [priorMessage] as never[],
       hasMore: false,
     }))
     b.api.assistantStreamBaseline = {
@@ -318,6 +318,11 @@ describe('scope tree', () => {
       .toEqual(['assistant/message', 'assistant/live-chunk'])
     expect(binding.eventSource.getSnapshot().entries[0]?.event).toBe(priorMessage.event)
 
+    await b.api.pushFollow(sid('s1'), currentMessage)
+    await Promise.resolve()
+    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
+      .toEqual(['assistant/message', 'assistant/live-chunk'])
+
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
@@ -334,9 +339,13 @@ describe('scope tree', () => {
     })
   })
 
-  it('rebaselines a reconnect settlement whose end index skips the active tail', async () => {
+  it('replaces an invalid settlement with the authoritative post-end baseline', async () => {
     const b = bench()
     const attemptId = LlmAttemptId('reconnect-end-index-attempt')
+    const prior = {
+      type: 'event' as const,
+      event: { type: 'turn/start', seq: 0, time: 19, data: { turn: 1 } },
+    }
     const message = {
       type: 'event' as const,
       event: {
@@ -355,8 +364,9 @@ describe('scope tree', () => {
         surfaceOp: 'append' as const,
       },
     }
+    let records = [prior] as never[]
     b.api.onHistory = () => Promise.resolve(ok({
-      records: [message] as never[],
+      records,
       hasMore: false,
     }))
     b.api.assistantStreamBaseline = {
@@ -377,10 +387,16 @@ describe('scope tree', () => {
     if (binding === undefined) throw new Error('expected Session binding')
     await vi.waitFor(() => {
       expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
-        .toEqual(['assistant/live-chunk'])
+        .toEqual(['turn/start', 'assistant/live-chunk'])
     })
     const openingRevision = binding.eventSource.getSnapshot().revision
 
+    await b.api.pushFollow(sid('s1'), message)
+    await Promise.resolve()
+    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
+      .toEqual(['turn/start', 'assistant/live-chunk'])
+    records = [prior, message] as never[]
+    b.api.assistantStreamBaseline = { revision: 3 }
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
@@ -392,9 +408,9 @@ describe('scope tree', () => {
       expect(b.api.followStarts.filter(id => id === sid('s1'))).toHaveLength(2)
       expect(b.api.activeFollows(sid('s1'))).toBe(1)
       expect(binding.eventSource.getSnapshot().revision).toBeGreaterThan(openingRevision)
+      expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
+        .toEqual(['turn/start', 'assistant/message'])
     })
-    expect(binding.eventSource.getSnapshot().entries.map(entry => entry.event.type))
-      .toEqual(['assistant/live-chunk'])
   })
 
   it('retains a Host-addressed scope until the first Session baseline owns pruning', async () => {

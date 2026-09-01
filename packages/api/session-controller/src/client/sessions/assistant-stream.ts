@@ -44,7 +44,7 @@ export class ClientAssistantStream {
    * Replace the durable Web window and adopt an optional reconnect baseline.
    * @param entries - durable entries in the replacement window.
    * @param baseline - compact prefix for an Assistant attempt that is still live.
-   * @returns immediately visible durable and reconstructed transient entries, with an active settlement withheld.
+   * @returns immediately visible durable entries plus reconstructed transient chunks.
    */
   replace(
     entries: readonly SessionEventLikeEntry[],
@@ -63,14 +63,7 @@ export class ClientAssistantStream {
         nextIndex: opening.nextIndex,
       }
     }
-    const pending = opening === undefined
-      ? undefined
-      : entries.findLast(entry => entry.type === 'event'
-        && this.attemptForSettlement(entry.event) !== undefined)
-    if (pending?.type === 'event') this.pending.set(pending.event.seq, pending)
-    const visible: SessionEventLikeEntry[] = pending === undefined
-      ? [...entries]
-      : entries.filter(entry => entry !== pending)
+    const visible: SessionEventLikeEntry[] = [...entries]
     this.publishedSeqs = new Set(visible.map(entry => entry.event.seq))
     this.durableCursor = visible.reduce((cursor, entry) => Math.max(cursor, entry.event.seq), -1)
     if (opening !== undefined) {

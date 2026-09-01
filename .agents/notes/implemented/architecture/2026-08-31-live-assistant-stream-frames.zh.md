@@ -10,7 +10,7 @@ v2 Session log 通过一个 `assistant/message` 或 `assistant/attempt` settleme
 
 ## 决定
 
-`dsh-agent-loop` 为每次模型 attempt 发出作用域内的 `agent/assistant-stream` frame。`start`、`chunk` 和 `end` 带有带品牌的进程本地 `LlmAttemptId`；每个 frame 都会推进一次 Session 本地 revision。start frame 会把壁钟时间捕获为安全整数 `startedTime`，chunk index 从零开始密集递增，chunk 时间戳会被紧凑 stream 复用，`end.index` 等于下一个 chunk 位置。loop 会在 committed end frame 命名事件与 seq 前追加最终 `assistant/message` 或 `assistant/attempt`；abandoned end 不命名持久事件。已认证 Session-follow 接受显式 Web opt-in，以缓存的活跃 attempt 紧凑 baseline 打开，并在一个 FIFO 中携带持久事件和无 cursor frame。每个 follower 会随 opening baseline 捕获本地到达序号，并丢弃该 cut 及之前的 buffered frame；replacement Agent 的 frame revision 可以从一重新开始，因此 revision 不定义 opening cut。opening 位于持久 settlement 与对应 end frame 之间时，会重建活跃的 Client-only `assistant/live-chunk` update，只暂存由该 attempt 的 `startedTime`、Turn 与 Step 所有的 settlement，并在匹配的 end index、type 与 seq 到达后释放；同一 Turn 和 Step 中更早的 retry 仍保持可见。revision、密集 index 或 settlement 缺口会重新打开 follow 并替换 baseline。TypeScript 和 Python SDK 协议不公开这些 frame。持久 settlement 仍是 replay 与模型历史的真源；其表示由 [v2 stream 决策](2026-09-01-v2-embedded-assistant-streams.zh.md)负责。
+`dsh-agent-loop` 为每次模型 attempt 发出作用域内的 `agent/assistant-stream` frame。`start`、`chunk` 和 `end` 带有带品牌的进程本地 `LlmAttemptId`；每个 frame 都会推进一次 Session 本地 revision。start frame 会把壁钟时间捕获为安全整数 `startedTime`，chunk index 从零开始密集递增，chunk 时间戳会被紧凑 stream 复用，`end.index` 等于下一个 chunk 位置。loop 会先取得 stream 并执行最终取消检查，再发出 `start`；这些步骤失败时不发出任何 frame。loop 会在 committed end frame 命名事件与 seq 前追加最终 `assistant/message` 或 `assistant/attempt`；abandoned end 不命名持久事件。已认证 Session-follow 接受显式 Web opt-in，以缓存的活跃 attempt 紧凑 baseline 打开，并在一个 FIFO 中携带持久事件和无 cursor frame。每个 follower 会随 opening baseline 捕获本地到达序号，并丢弃该 cut 及之前的 buffered frame；replacement Agent 的 frame revision 可以从一重新开始，因此 revision 不定义 opening cut。活跃 opening 之后到达的 settlement 只有在其 seq 晚于 `startedAfterSeq` 且 Turn 与 Step 匹配时才属于该 attempt；它会保持暂存，直到匹配的 end index、type 与 seq 到达，而同一 Turn 和 Step 中更早的 retry 仍保持可见。revision、密集 index 或 settlement 缺口会重新打开 follow 并替换 baseline。TypeScript 和 Python SDK 协议不公开这些 frame。持久 settlement 仍是 replay 与模型历史的真源；其表示由 [v2 stream 决策](2026-09-01-v2-embedded-assistant-streams.zh.md)负责。
 
 ## 曾考虑的替代方案
 
@@ -21,4 +21,4 @@ v2 Session log 通过一个 `assistant/message` 或 `assistant/attempt` settleme
 
 ## 影响
 
-Web client 可以在 attempt settlement 前渲染内存 chunk，同时保留一份持久 v2 历史。进程重启后没有活跃 Assistant frame；重连只能恢复当前进程持有的 baseline，冷 replay 则展开持久 settlement。无 cursor 通知绝不推进 journal cursor，在持久缺口修复期间观察到的通知会等待 replacement page。frame 声明保持 agent 作用域，因此监听器只观察所属 Agent，除非它显式全局注册。
+Web client 可以在 attempt settlement 前渲染内存 chunk，同时保留一份持久 v2 历史。进程重启后没有活跃 Assistant frame；重连只能恢复当前进程持有的 baseline，冷 replay 则展开持久 settlement。无 cursor 通知绝不推进 journal cursor，在持久缺口修复期间观察到的通知会等待 replacement page。该 page 不携带 Assistant baseline，因此 Client 会清空瞬态 attempt，并让 held notification 重新打开 follow 一次，以取得配对的 page 与 baseline。frame 声明保持 agent 作用域，因此监听器只观察所属 Agent，除非它显式全局注册。
