@@ -303,6 +303,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
         })
         published = true
       }
+      this.locationIndex.publishData()
       this.replacePending = false
       this.dirty.clear()
       this.dirtyByTarget.clear()
@@ -326,6 +327,7 @@ export class ConversationNodeAssembler implements ConversationViewSnapshotStore 
       })
       published = true
     }
+    this.locationIndex.publishData()
     this.dirty.clear()
     this.dirtyByTarget.clear()
     this.timelineDirty = false

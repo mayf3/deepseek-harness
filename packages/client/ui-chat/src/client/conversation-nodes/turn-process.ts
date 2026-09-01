@@ -9,8 +9,7 @@ import type {} from '@deepseek-ai/dsh-tools/types'
 import { hasAssistantReplyContent } from '../contract/assistant-content.ts'
 import type { AssistantChatData, ChatNode, FinalAssistantChatData } from '../contract/chat-nodes.ts'
 import {
-  decodeTurnProcess, encodeTurnProcess, isSubagentDelegationTool,
-  type TurnProcessSignature, type TurnProcessSpec,
+  isSubagentDelegationTool, sameTurnProcessSpec, type TurnProcessSpec,
 } from '../contract/turn-process.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
 import { toAssistantBlocks } from './event-projection.ts'
@@ -24,8 +23,8 @@ declare module '../contract/chat-nodes.ts' {
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
   interface ConversationTurnDataMap {
-    /** Encoded process range and finalized answer boundary for this Turn. */
-    'turn-process': TurnProcessSignature
+    /** Process range and finalized answer boundary for this Turn. */
+    'turn-process': TurnProcessSpec
   }
 }
 
@@ -277,22 +276,21 @@ export const turnProcessDefinition: ConversationNodeDefinition<TurnProcessState>
       && latestStep?.status !== 'closed') return previous
     const spec = processSpec(state, turn)
     if (spec === null) return null
-    const value = encodeTurnProcess(spec)
     if (previous?.kind === 'turn'
       && previous.turn === spec.turn
       && previous.key === 'turn-process'
-      && previous.value === value) return previous
+      && sameTurnProcessSpec(previous.value, spec)) return previous
     return {
       kind: 'turn',
       turn: turn.turn,
       key: 'turn-process',
-      value,
+      value: spec,
     }
   },
   buildViewNode: (context) => {
     const turn = turnLocation(context)
-    const signature = turn?.data.get('turn-process')
-    if (turn === undefined || signature === undefined) return null
+    const data = turn?.data.get('turn-process')
+    if (turn === undefined || data === undefined) return null
     const current = context.current.get('chat') as ChatNode | null | undefined
     const state = context.state
     if (current?.kind === 'turn-process'
@@ -305,7 +303,6 @@ export const turnProcessDefinition: ConversationNodeDefinition<TurnProcessState>
       && turn.status !== 'closed'
       && turn.steps.at(-1)?.status !== 'closed'
       && current.location === (context.start?.location ?? context.matches[0]?.location)) return current
-    const data = decodeTurnProcess(signature)
     return chatNode(
       context,
       'turn-process',

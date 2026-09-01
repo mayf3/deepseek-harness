@@ -16,7 +16,6 @@ import {
 import { isChunkRow, packChunkRuns, type ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
 import { hasAssistantReplyContent } from '../src/client/contract/assistant-content.ts'
-import { decodeTurnProcess } from '../src/client/contract/turn-process.ts'
 import { assistantDefinition } from '../src/client/conversation-nodes/assistant.ts'
 import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
 import { commandDefinition } from '../src/client/conversation-nodes/command.ts'
@@ -257,10 +256,7 @@ describe('built-in conversation node Definitions', () => {
         chunk: { type: 'tool-call-delta', index: 2, id: 'call-1', name: 'read', argumentsDelta: '{}' },
       }),
     ])
-    const process = () => {
-      const signature = snapshot(value).timeline.turns.get(1)?.data.get('turn-process')
-      return signature === undefined ? undefined : decodeTurnProcess(signature)
-    }
+    const process = () => snapshot(value).timeline.turns.get(1)?.data.get('turn-process')
     expect(process()).toMatchObject({ processStartSeq: 4, answerAnchorSeq: null, answerStep: null })
     expect(node(snapshot(value), 'turn-process')?.data).toMatchObject({ answerAnchorSeq: null })
 
@@ -323,8 +319,8 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(26, 'turn/end', { turn: 2, reason: { kind: 'interrupted' } }),
     ])
-    const recoveredSignature = snapshot(recovered).timeline.turns.get(2)?.data.get('turn-process')
-    expect(recoveredSignature === undefined ? undefined : decodeTurnProcess(recoveredSignature))
+    const recoveredProcess = snapshot(recovered).timeline.turns.get(2)?.data.get('turn-process')
+    expect(recoveredProcess)
       .toMatchObject({ answerStep: 2, answerAnchorSeq: 25.1 })
 
     const partialWindow = assembler([
@@ -333,8 +329,8 @@ describe('built-in conversation node Definitions', () => {
       }),
       at(31, 'step/end', { turn: 3, step: 4 }),
     ], true)
-    const partialSignature = snapshot(partialWindow).timeline.turns.get(3)?.data.get('turn-process')
-    expect(partialSignature === undefined ? undefined : decodeTurnProcess(partialSignature))
+    const partialProcess = snapshot(partialWindow).timeline.turns.get(3)?.data.get('turn-process')
+    expect(partialProcess)
       .toMatchObject({ processStartSeq: 30.1, answerAnchorSeq: 30.1, answerStep: 4 })
   })
 
@@ -365,8 +361,8 @@ describe('built-in conversation node Definitions', () => {
       at(11, 'step/end', { turn: 1, step: 2 }),
       at(12, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
     ])
-    const signature = snapshot(value).timeline.turns.get(1)?.data.get('turn-process')
-    expect(signature === undefined ? undefined : decodeTurnProcess(signature)).toMatchObject({
+    const process = snapshot(value).timeline.turns.get(1)?.data.get('turn-process')
+    expect(process).toMatchObject({
       messageCount: 1,
       toolCallCount: 1,
       subagentCount: 1,
@@ -592,10 +588,15 @@ describe('built-in conversation node Definitions', () => {
       }),
     ])
     const read = () => {
-      const signature = snapshot(value).timeline.turns.get(4)?.data.get('turn-process')
-      if (signature === undefined) throw new Error('turn-process signature is unavailable')
-      return decodeTurnProcess(signature)
+      const process = snapshot(value).timeline.turns.get(4)?.data.get('turn-process')
+      if (process === undefined) throw new Error('turn-process data is unavailable')
+      return process
     }
+    const streamingNode = node(snapshot(value), 'assistant-step')
+    if (streamingNode === undefined) throw new Error('streaming Assistant node is unavailable')
+    const processSource = snapshot(value).nodes.processSource(streamingNode.key)
+    let processNotifications = 0
+    processSource.subscribe(() => { processNotifications++ })
     const streaming = read()
     value.append(at(44, 'assistant/message', {
       turn: 4, step: 1, message: assistantMessage('settled-4', 'answer'),
@@ -606,6 +607,8 @@ describe('built-in conversation node Definitions', () => {
     expect(streaming).toMatchObject({ answerAnchorSeq: null, answerStep: null })
     expect(settled.answerAnchorSeq).toBe(44)
     expect(settled.answerStep).toBe(1)
+    expect(processNotifications).toBe(1)
+    expect(processSource.getSnapshot()?.spec.answerAnchorSeq).toBe(44)
   })
 
   it('reuses the open Turn-process projection across continuing Assistant chunks', () => {
@@ -618,8 +621,13 @@ describe('built-in conversation node Definitions', () => {
     ])
     const before = snapshot(value)
     const processNode = node(before, 'turn-process')
-    const processSignature = before.timeline.turns.get(1)?.data.get('turn-process')
+    const processData = before.timeline.turns.get(1)?.data.get('turn-process')
     const assistantNode = node(before, 'assistant-step')
+    if (assistantNode === undefined) throw new Error('Assistant node is unavailable')
+    const processSource = before.nodes.processSource(assistantNode.key)
+    const processPresentation = processSource.getSnapshot()
+    let processNotifications = 0
+    processSource.subscribe(() => { processNotifications++ })
 
     value.append(at(4, 'assistant/chunk', {
       turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: ' second' },
@@ -627,9 +635,49 @@ describe('built-in conversation node Definitions', () => {
     value.flush()
 
     const after = snapshot(value)
-    expect(after.timeline.turns.get(1)?.data.get('turn-process')).toBe(processSignature)
+    expect(after.timeline.turns.get(1)?.data.get('turn-process')).toBe(processData)
     expect(node(after, 'turn-process')).toBe(processNode)
     expect(node(after, 'assistant-step')).not.toBe(assistantNode)
+    expect(processSource.getSnapshot()).toBe(processPresentation)
+    expect(processNotifications).toBe(0)
+  })
+
+  it('notifies process sources only for Nodes in the changed Turn', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'assistant/message', {
+        turn: 1, step: 1, message: assistantMessage('answer-1', 'first answer'),
+      }, { surfaceOp: 'append' }),
+      at(4, 'step/end', { turn: 1, step: 1 }),
+      at(5, 'turn/end', { turn: 1, reason: { kind: 'completed' } }),
+      at(6, 'turn/start', { turn: 2 }),
+      at(7, 'step/start', { turn: 2, step: 1 }),
+      at(8, 'assistant/chunk', {
+        turn: 2, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'thinking' },
+      }),
+    ])
+    const assistants = snapshot(value).nodes.values()
+      .filter((candidate): candidate is ChatConversationViewNode & { data: AssistantChatData } => (
+        candidate.kind === 'assistant-step'
+      ))
+    const first = assistants.find(candidate => candidate.data.turn === 1)
+    const second = assistants.find(candidate => candidate.data.turn === 2)
+    if (first === undefined || second === undefined) throw new Error('Assistant fixtures are unavailable')
+    let firstNotifications = 0
+    let secondNotifications = 0
+    snapshot(value).nodes.processSource(first.key).subscribe(() => { firstNotifications++ })
+    snapshot(value).nodes.processSource(second.key).subscribe(() => { secondNotifications++ })
+
+    value.append(at(9, 'assistant/message', {
+      turn: 2, step: 1, message: assistantMessage('answer-2', 'second answer'),
+    }, { surfaceOp: 'append' }))
+    value.append(at(10, 'step/end', { turn: 2, step: 1 }))
+    value.append(at(11, 'turn/end', { turn: 2, reason: { kind: 'completed' } }))
+    value.flush()
+
+    expect(firstNotifications).toBe(0)
+    expect(secondNotifications).toBe(1)
   })
 
   it('anchors a streamed non-text answer from its block start', () => {
@@ -643,11 +691,11 @@ describe('built-in conversation node Definitions', () => {
     const current = snapshot(value)
     const process = node(current, 'turn-process')
     const answer = node(current, 'assistant-step')
-    const signature = current.timeline.turns.get(5)?.data.get('turn-process')
+    const processData = current.timeline.turns.get(5)?.data.get('turn-process')
 
     expect(process?.anchorSeq).toBe(51.9)
     expect(answer?.anchorSeq).toBe(52)
-    expect(signature === undefined ? undefined : decodeTurnProcess(signature))
+    expect(processData)
       .toMatchObject({ answerAnchorSeq: null, answerStep: null })
   })
 

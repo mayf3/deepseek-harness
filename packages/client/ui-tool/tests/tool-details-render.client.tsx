@@ -51,6 +51,7 @@ export function toolChatSnapshot(
     nodes: {
       get: key => byKey.get(key),
       source: key => ({ getSnapshot: () => byKey.get(key), subscribe: () => () => {} }),
+      processSource: () => ({ getSnapshot: () => undefined, subscribe: () => () => {} }),
       values: () => nodes,
     },
     locations: {

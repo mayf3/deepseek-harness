@@ -13,6 +13,9 @@ import type {
 import type {
   SessionListState, SessionSnapshot,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  ConversationLocationDataStore, ConversationTurnDataMap,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionPendingInteractionSnapshot } from '@deepseek-ai/dsh-client-ui-session/client'
@@ -23,6 +26,7 @@ import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts
 import { createChatStore } from '../src/client/stores.ts'
 import { ChatView } from '../src/client/chat/ChatView.tsx'
 import { ChatNodeSeat } from '../src/client/chat/ChatNodeSeat.tsx'
+import { useTurnDataValue } from '../src/client/chat/use-turn-data.ts'
 import { zh } from '../src/client/locale.ts'
 import { AssistantNodeView } from '../src/client/chat/AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from '../src/client/chat/CommandNodeView.tsx'
@@ -35,7 +39,7 @@ import { TurnProcessNodeView } from '../src/client/chat/TurnProcessNodeView.tsx'
 import { SystemPromptNodeView } from '../src/client/chat/SystemPromptRow.tsx'
 import { formatRunDuration } from '../src/client/chat/message-chrome.ts'
 import { ChatSnapshotBuilder } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
-import { encodeTurnProcess } from '../src/client/contract/turn-process.ts'
+import type { TurnProcessSpec } from '../src/client/contract/turn-process.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
 afterEach(() => {
@@ -259,13 +263,9 @@ function makeHarness(
     if (nodeSlotOverride !== undefined) return nodeSlotOverride(key as never, owner as never, opts as never)
     if (key !== 'conversation.chat.node') return opts?.fallback ?? null
     const nodeOwner = owner as RoutedChatNodeOwner
-    const nodeKey = opts?.hookContext as string | undefined
-    const useTurnData: UseChatNodeTurnData = dataKey => props.useChat((snapshot) => {
-      const location = nodeKey === undefined ? undefined : snapshot.nodes.get(nodeKey)?.location
-      return location?.kind === 'turn' || location?.kind === 'step'
-        ? location.turn.data.get(dataKey)
-        : undefined
-    })
+    const turnData = opts?.hookContext as
+      ConversationLocationDataStore<ConversationTurnDataMap> | undefined
+    const useTurnData: UseChatNodeTurnData = dataKey => useTurnDataValue(turnData, dataKey)
     const nodeProps = <Kind extends ChatNode['kind']>(): ChatNodeViewProps<Kind> => (
       { ...props, ...nodeOwner, useTurnData } as unknown as ChatNodeViewProps<Kind>
     )
@@ -1635,10 +1635,11 @@ describe('ChatView', () => {
       || (process.location.kind !== 'turn' && process.location.kind !== 'step')
       || process.data.answerAnchorSeq === null) throw new Error('fixture lacks a completed Turn process')
     const turnData = process.location.turn.data as typeof process.location.turn.data & {
-      set(key: 'turn-process', value: ReturnType<typeof encodeTurnProcess>): void
+      set(key: 'turn-process', value: TurnProcessSpec): void
+      publish(): void
     }
     const partialSpec = { ...process.data, processStartSeq: process.data.answerAnchorSeq }
-    turnData.set('turn-process', encodeTurnProcess(partialSpec))
+    turnData.set('turn-process', partialSpec)
     const partialProcess = { ...process, data: partialSpec }
     const builder = new ChatSnapshotBuilder()
     const partial = builder.replace({
@@ -1651,7 +1652,7 @@ describe('ChatView', () => {
 
     const beforeKeys = partial.locations.getTurn(1)
     const completeSpec = { ...partialSpec, processStartSeq: 2 }
-    turnData.set('turn-process', encodeTurnProcess(completeSpec))
+    turnData.set('turn-process', completeSpec)
     const complete = builder.apply({
       upserts: [{ ...partialProcess, data: completeSpec }],
       timeline: source.timeline,
@@ -1663,7 +1664,10 @@ describe('ChatView', () => {
       'user', 'turn-process', 'context', 'assistant-step', 'assistant-step', 'turn-tail',
     ])
 
-    act(() => { h.set({ chat: complete, hasMore: false }) })
+    act(() => {
+      turnData.publish()
+      h.set({ chat: complete, hasMore: false })
+    })
     expect(turnProcessControl(view.container)?.getAttribute('aria-expanded')).toBe('false')
   })
 

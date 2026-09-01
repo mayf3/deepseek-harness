@@ -745,11 +745,10 @@ export function ChatView({
           {order.map(nodeKey => (
             <ChatNodeSeat
               key={nodeKey}
-              nodeKey={nodeKey}
               nodeSource={nodeStore.source(nodeKey)}
+              processSource={nodeStore.processSource(nodeKey)}
               historyIncomplete={hasMore}
               compactTranscript={compactTranscript}
-              useChat={useChat}
               useStore={useStore}
               actions={actions}
               selectedCallId={selectedCallId}

@@ -6,7 +6,10 @@ import type { ChunkRowEvent } from '@deepseek-ai/dsh-api-session-controller/type
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
-import { ConversationNodeAssembler as RuntimeConversationNodeAssembler } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import {
+  ConversationLocationIndex,
+  ConversationNodeAssembler as RuntimeConversationNodeAssembler,
+} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {
   ConversationMatch, ConversationNodeContext,
   ConversationNodeDefinition, ConversationViewDefinition, ConversationViewNode,
@@ -162,6 +165,54 @@ function fallbackDefinition(start: () => string): ConversationNodeDefinition<str
 }
 
 describe('ConversationNodeAssembler', () => {
+  it('publishes Location data through stable per-key sources', () => {
+    const index = new ConversationLocationIndex()
+    const turnStart = at(1, 'turn/start', { turn: 1 })
+    const stepStart = at(2, 'step/start', { turn: 1, step: 1 })
+    index.rebuild([input(turnStart), input(stepStart)])
+    const location = index.locationOf(stepStart)
+    if (location.kind !== 'step') throw new Error('scope probe requires a Step Location')
+    const source = location.step.data.source('scope-probe')
+    const listener = vi.fn()
+    source.subscribe(listener)
+    const initial = { value: 1 }
+
+    expect(location.step.data.source('scope-probe')).toBe(source)
+    expect(source.getSnapshot()).toBeUndefined()
+    expect(index.replaceData([{
+      owner: 'scope-probe:1:1',
+      data: { kind: 'step', turn: 1, step: 1, key: 'scope-probe', value: initial },
+    }])).toBe(true)
+    expect(source.getSnapshot()).toBe(initial)
+    expect(listener).not.toHaveBeenCalled()
+
+    index.publishData()
+    expect(listener).toHaveBeenCalledOnce()
+    listener.mockClear()
+
+    index.replaceData([])
+    index.replaceData([{
+      owner: 'scope-probe:1:1',
+      data: { kind: 'step', turn: 1, step: 1, key: 'scope-probe', value: initial },
+    }])
+    index.publishData()
+    expect(listener).not.toHaveBeenCalled()
+
+    const changed = { value: 2 }
+    index.replaceData([{
+      owner: 'scope-probe:1:1',
+      data: { kind: 'step', turn: 1, step: 1, key: 'scope-probe', value: changed },
+    }])
+    index.publishData()
+    expect(source.getSnapshot()).toBe(changed)
+    expect(listener).toHaveBeenCalledOnce()
+
+    index.replaceData([])
+    index.publishData()
+    expect(source.getSnapshot()).toBeUndefined()
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
   it('reports a replacement only when an active target has a registered builder', () => {
     const assembler = new RuntimeConversationNodeAssembler(
       new TestEventDefinitions([]),

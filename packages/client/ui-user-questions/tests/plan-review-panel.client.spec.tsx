@@ -67,7 +67,12 @@ const emptyKeys: readonly string[] = []
 const emptyNodeSource = { getSnapshot: () => undefined, subscribe: () => () => {} }
 const chatState: ChatState = {
   order: emptyKeys,
-  nodes: { get: () => undefined, source: () => emptyNodeSource, values: () => [] },
+  nodes: {
+    get: () => undefined,
+    source: () => emptyNodeSource,
+    processSource: () => emptyNodeSource,
+    values: () => [],
+  },
   locations: { getTurn: () => emptyKeys, getStep: () => emptyKeys },
   navigation: { items: () => [] },
   timeline: { turnOrder: [], turns: new Map() },
