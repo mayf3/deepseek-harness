@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
@@ -181,16 +182,16 @@ describe('Conversation registries', () => {
       source.append({ type: 'event', event })
     }
 
-    append({ seq: 1, time: 1, type: 'turn/start', data: { turn: 1 } })
+    append({ seq: SessionSeq(1), time: 1, type: 'turn/start', data: { turn: 1 } })
     listener.mockClear()
     append({
-      seq: 2,
+      seq: SessionSeq(2),
       time: 2,
       type: 'assistant/chunk',
       data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'a' } },
     })
     append({
-      seq: 3,
+      seq: SessionSeq(3),
       time: 3,
       type: 'assistant/chunk',
       data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'b' } },
@@ -219,13 +220,13 @@ describe('Conversation registries', () => {
     expect(listener).toHaveBeenCalledOnce()
 
     append({
-      seq: 4,
+      seq: SessionSeq(4),
       time: 4,
       type: 'assistant/chunk',
       data: { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'c' } },
     })
     append({
-      seq: 5,
+      seq: SessionSeq(5),
       time: 5,
       type: 'assistant/message',
       data: { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [] } },

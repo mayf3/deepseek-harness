@@ -167,8 +167,8 @@ function fallbackDefinition(start: () => string): ConversationNodeDefinition<str
 describe('ConversationNodeAssembler', () => {
   it('publishes Location data through stable per-key sources', () => {
     const index = new ConversationLocationIndex()
-    const turnStart = at(1, 'turn/start', { turn: 1 })
-    const stepStart = at(2, 'step/start', { turn: 1, step: 1 })
+    const turnStart = at(SessionSeq(1), 'turn/start', { turn: 1 })
+    const stepStart = at(SessionSeq(2), 'step/start', { turn: 1, step: 1 })
     index.rebuild([input(turnStart), input(stepStart)])
     const location = index.locationOf(stepStart)
     if (location.kind !== 'step') throw new Error('scope probe requires a Step Location')
@@ -1088,16 +1088,16 @@ describe('ConversationNodeAssembler', () => {
       new TestViewDefinitions([testView(apply)]),
     )
     assembler.replaceWindow([
-      input(at(1, 'turn/start', { turn: 1 })),
-      input(at(2, 'step/start', { turn: 1, step: 1 })),
+      input(at(SessionSeq(1), 'turn/start', { turn: 1 })),
+      input(at(SessionSeq(2), 'step/start', { turn: 1, step: 1 })),
     ], false)
     assembler.flush()
 
-    assembler.append(input(at(3, 'scope-probe/update', { turn: 1, step: 1, changed: false })))
+    assembler.append(input(at(SessionSeq(3), 'scope-probe/update', { turn: 1, step: 1, changed: false })))
     expect(assembler.flush()).toBe(false)
     expect(apply).not.toHaveBeenCalled()
 
-    assembler.append(input(at(4, 'scope-probe/update', { turn: 1, step: 1, changed: true })))
+    assembler.append(input(at(SessionSeq(4), 'scope-probe/update', { turn: 1, step: 1, changed: true })))
     expect(assembler.flush()).toBe(true)
     expect(apply).toHaveBeenCalledOnce()
   })
