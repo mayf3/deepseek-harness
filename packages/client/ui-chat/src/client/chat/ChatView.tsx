@@ -1,7 +1,7 @@
 // An enclosing `[data-conversation-scroll]` owns scrolling when present;
 // otherwise this view owns it. Each row subscribes to one stable node key.
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react'
 import type {
   ConversationTimelineSnapshot, RenderMessageImages,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -198,6 +198,16 @@ function TurnStatus({ startTime, t }: {
     </div>
   )
 }
+
+type ChatNodeListProps = Omit<ComponentProps<typeof ChatNodeSeat>, 'nodeKey'> & {
+  readonly order: readonly string[]
+}
+
+const ChatNodeList = memo(function ChatNodeList({ order, ...seatProps }: ChatNodeListProps) {
+  return order.map(nodeKey => (
+    <ChatNodeSeat key={nodeKey} nodeKey={nodeKey} {...seatProps} />
+  ))
+})
 
 /**
  * The chat view slot entry: pure component over the composed props; each
@@ -743,27 +753,24 @@ export function ChatView({
               </button>
             </div>
           )}
-          {order.map(nodeKey => (
-            <ChatNodeSeat
-              key={nodeKey}
-              nodeKey={nodeKey}
-              useChatNode={useChatNode}
-              useChatNodeProcess={useChatNodeProcess}
-              historyIncomplete={hasMore}
-              compactTranscript={compactTranscript}
-              useStore={useStore}
-              actions={actions}
-              selectedCallId={selectedCallId}
-              cwd={cwd}
-              openFile={requestOpenFile}
-              inspectCall={inspectCall}
-              forkAt={forkAt}
-              renderMessageImages={renderMessageImages}
-              fileMentions={fileMentions}
-              renderSlot={renderSlot}
-              t={t}
-            />
-          ))}
+          <ChatNodeList
+            order={order}
+            useChatNode={useChatNode}
+            useChatNodeProcess={useChatNodeProcess}
+            historyIncomplete={hasMore}
+            compactTranscript={compactTranscript}
+            useStore={useStore}
+            actions={actions}
+            selectedCallId={selectedCallId}
+            cwd={cwd}
+            openFile={requestOpenFile}
+            inspectCall={inspectCall}
+            forkAt={forkAt}
+            renderMessageImages={renderMessageImages}
+            fileMentions={fileMentions}
+            renderSlot={renderSlot}
+            t={t}
+          />
           {/* No pending placeholders: questions (ui-user-questions) and approvals
               (ApprovalPanel) both take over the composer, so a flow card would
               double-render the same wait. */}
