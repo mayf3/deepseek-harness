@@ -6,7 +6,7 @@ Status: implemented
 
 ## Problem
 
-Web 客户端的高层级表面——菜单、浮层、对话框、面板、悬浮按钮、输入框——原先都把真 `border: 1px solid <中性 token>` 与 `--dsw-shadow-lv2`/`lv3` 投影配对。border 占布局（每侧 1px，且在 `<button>` 上是对 UA 默认边框的替换）；浅色主题下多数浮层实际没有描边（`--dsw-alias-border-inverted` 在浅色下是透明的），靠 `lv3` 里模糊的 1px 环冒充；输入框则披着一大片柔和的 `lv2` 投影，读起来更像污渍而非悬浮表面。解包的 ChatGPT 桌面端（Codex）UI 改用单个 `box-shadow` 列表绘制 elevation：0.5px 发丝描边加两层极淡柔光（`--elevation-stroke`/`--elevation-sidebar`/`--elevation-prominent`），表面本身 `border: 0`。
+Web 客户端的高层级表面——菜单、浮层、对话框、面板、悬浮按钮、输入框——原先都把真 `border: 1px solid <中性 token>` 与 `--dsw-shadow-lv2`/`lv3` 投影配对。border 占布局（每侧 1px，且在 `<button>` 上是对 UA 默认边框的替换）；浅色主题下多数浮层实际没有描边（`--dsw-alias-border-inverted` 在浅色下是透明的），靠 `lv3` 里模糊的 1px 环冒充；输入框则披着一大片柔和的 `lv2` 投影，读起来更像污渍而非悬浮表面。当前桌面聊天 UI 改用单个 `box-shadow` 列表绘制 elevation：0.5px 发丝描边加两层极淡柔光，表面本身 `border: 0`。
 
 ## Decision
 
@@ -16,7 +16,7 @@ Web 客户端的高层级表面——菜单、浮层、对话框、面板、悬�
 - `--dsw-elevation-stroke: 0 0 0 0.5px var(--dsw-elevation-stroke-color)`——单独的描边，供只要轮廓的行内卡片独立使用（插件清单卡片）。
 - `--dsw-elevation-panel` / `--dsw-elevation-prominent`——描边加两层极淡柔光（3px 方向光 + 16/20px 辉光，黑 2–5%），panel 用于小型悬浮部件与卡片，prominent 用于浮层，soft——更大模糊、更低透明度——用于输入框。
 
-被转换的表面设 `border: 0` 加一个 elevation 投影：所有 `--dsw-shadow-lv3` 浮层（Menu、Modal、弹出选择、模型选择、用量/上下文浮层、反馈操作条、日程/任务浮层、子代理谱系、设置面板、cordis 面板、实验性 team 面板）取 prominent；lv2 表面（回到底部按钮、回合预览卡、附件栏箭头、问题 composer、轨迹 tooltip）取 panel。输入框卡片取 soft 档并重绑 l2 描边，其 workspace-trigger 态把描边色设为 `transparent`，替代原先的 `border-color: transparent`。深色主题无需投影覆盖：柔光在深色下几乎不可见，分离由描边承担，与 Codex 相同。
+被转换的表面设 `border: 0` 加一个 elevation 投影：所有 `--dsw-shadow-lv3` 浮层（Menu、Modal、弹出选择、模型选择、用量/上下文浮层、反馈操作条、日程/任务浮层、子代理谱系、设置面板、cordis 面板、实验性 team 面板）取 prominent；lv2 表面（回到底部按钮、回合预览卡、附件栏箭头、问题 composer、轨迹 tooltip）取 panel。输入框卡片取 soft 档并重绑 l2 描边，其 workspace-trigger 态把描边色设为 `transparent`，替代原先的 `border-color: transparent`。深色主题无需投影覆盖：柔光在深色下几乎不可见，分离由描边承担。
 
 `packages/client/ui-theme/tests/elevation-styles.client.spec.ts` 钉住 token 组成并扫描 `packages/` 下全部样式表：lv/elevation `box-shadow` 与 `--dsw-alias-border-*` border 配对的规则即失败；中性 `--dsw-alias-border-*` token 上的每个 `solid` border 必须为 `0.5px` 宽。有意保留：Toast 与 HoverCard（反色填充，跟随主题的描边色在其上无意义）、ImageLightbox（裸图片）、warn 描边的审批/计划面板——状态色 border 保持真 border，扫描放行。
 
@@ -24,9 +24,9 @@ Web 客户端的高层级表面——菜单、浮层、对话框、面板、悬�
 
 ## Alternatives considered
 
-**保留 1px 真 border、只调柔投影。** 留下占布局的 border、浅色主题 `border-inverted` 浮层的描边缺口，以及两者并存处的双轮廓；描边入投影正是产生 Codex 式锐利边缘的形式。
+**保留 1px 真 border、只调柔投影。** 留下占布局的 border、浅色主题 `border-inverted` 浮层的描边缺口，以及两者并存处的双轮廓；描边入投影正是产生锐利发丝边缘的形式。
 
-**用 1px 而非 0.5px 描边。** Codex 的 elevation 描边是 0.5px；2x 屏渲染为一物理像素，1x 屏混合得更浅，正是发丝线意图。1px 读起来就是原来的 border。
+**用 1px 而非 0.5px 描边。** 0.5px 在 2x 屏渲染为一物理像素，1x 屏混合得更浅，正是发丝线意图。1px 读起来就是原来的 border。
 
 **平面部件的发丝线也用 box-shadow 描边画。** 按钮与输入框在 hover/focus 时切换 `border-color`，多处还配 box-shadow 焦点环；把描边挪进 `box-shadow`（单一属性）会与焦点环冲突并重写全部状态规则，而 `0.5px solid` 保留整套状态逻辑，只改粗细。
 

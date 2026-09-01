@@ -6,25 +6,25 @@ English | [中文](2026-09-01-web-superellipse-corner-smoothing.zh.md)
 
 ## Problem
 
-Every rounded surface in the web client — cards, composer, buttons, popovers — draws its corners as plain circular arcs, which read as visibly harder than the smooth (squircle-like) corners current desktop chat UIs ship. An unpacked-`app.asar` survey of the ChatGPT desktop app's Codex UI found the smoothness comes from CSS `corner-shape: superellipse(1.5)` applied behind an `@supports` guard to every rounded-corner utility class except full-round (`rounded-full`), not from larger radii or masking tricks. This client has no utility classes: `border-radius` values are px literals spread across CSS Modules in every client package, so there is no single class list to attach the property to, and full-round shapes (`border-radius: 50%` circles, 999px pills) must keep circular arcs — a superellipse deforms a circle into a squircle, so a border-drawn spinner would visibly wobble, and it squares off capsule ends.
+Every rounded surface in the web client — cards, composer, buttons, popovers — draws its corners as plain circular arcs, which read as visibly harder than the smooth (squircle-like) corners current desktop chat UIs ship. That smoothness comes from CSS `corner-shape: superellipse(1.5)` applied behind an `@supports` guard, not from larger radii or masking tricks; utility-class implementations attach it to every rounded-corner class except full-round. This client has no utility classes: `border-radius` values are px literals spread across CSS Modules in every client package, so there is no single class list to attach the property to, and full-round shapes (`border-radius: 50%` circles, 999px pills) must keep circular arcs — a superellipse deforms a circle into a squircle, so a border-drawn spinner would visibly wobble, and it squares off capsule ends.
 
 ## Decision
 
-`packages/client/ui-theme/src/styles/corner-shape.css` is a global sheet mounted by ui-theme's client entry (after `base.css`). Inside `@supports (corner-shape: superellipse(1.5))` it defines `--dsw-corner-shape: superellipse(1.5)` on `:root` and applies `corner-shape: var(--dsw-corner-shape)` through `*, *::before, *::after` — `corner-shape` does not inherit, so the universal selector is the mechanism that reaches every rounded surface without a utility-class system. Engines without `corner-shape` keep circular corners because both declarations live inside the guard. `superellipse(1.5)` sits between `round` (`superellipse(1)`) and `squircle` (`superellipse(2)`), matching the Codex UI's value.
+`packages/client/ui-theme/src/styles/corner-shape.css` is a global sheet mounted by ui-theme's client entry (after `base.css`). Inside `@supports (corner-shape: superellipse(1.5))` it defines `--dsw-corner-shape: superellipse(1.5)` on `:root` and applies `corner-shape: var(--dsw-corner-shape)` through `*, *::before, *::after` — `corner-shape` does not inherit, so the universal selector is the mechanism that reaches every rounded surface without a utility-class system. Engines without `corner-shape` keep circular corners because both declarations live inside the guard. `superellipse(1.5)` sits between `round` (`superellipse(1)`) and `squircle` (`superellipse(2)`), matching the smoothing current desktop chat UIs ship.
 
 Full-round shapes opt back out at their declaration: every `border-radius` of `50%`, `100%`, or a pill radius (≥ 99px) pairs `corner-shape: round` in the same rule of its owning component sheet. The pairing is enforced by `packages/client/ui-theme/tests/corner-shape-styles.client.spec.ts`, which scans every stylesheet under `packages/` (the shared scan helpers live in `tests/stylesheet-scan.ts`, extracted from the scrollbar spec); the same spec pins the guard and the universal application in `corner-shape.css`. Component-local radius indirections (`--dsl-*-radius`) all hold values far below the pill threshold, so the lexical scan covers current usage.
 
-The Codex UI also multiplies its radius tokens by 1.25 alongside the shape change; this client has no radius tokens (px literals per component), so radii are unchanged and only the corner curvature moves.
+Token-based implementations pair the shape change with a 1.25× radius scale; this client has no radius tokens (px literals per component), so radii are unchanged and only the corner curvature moves.
 
 ## Alternatives considered
 
-**A radius token system first, then per-token application (the literal Codex structure).** Faithful, but converting ~130 px-literal radii across every client package into tokens is a large refactor serving no other current need; the universal selector reaches the same surfaces with one rule.
+**A radius token system first, then per-token application.** Faithful, but converting ~130 px-literal radii across every client package into tokens is a large refactor serving no other current need; the universal selector reaches the same surfaces with one rule.
 
-**Applying superellipse to full-round shapes too (no opt-outs).** Fewer declarations, but spinners built from `border-radius: 50%` borders wobble when the rotating shape is not a circle, and capsule ends square off; the Codex UI equally excludes `rounded-full` from `corner-shape`.
+**Applying superellipse to full-round shapes too (no opt-outs).** Fewer declarations, but spinners built from `border-radius: 50%` borders wobble when the rotating shape is not a circle, and capsule ends square off.
 
 **Subtree opt-out via `--dsw-corner-shape: round` instead of per-declaration `corner-shape: round`.** The custom property inherits, so a pill's rounded descendants would silently lose smoothing; the explicit per-rule declaration keeps the opt-out exactly as wide as the full-round shape and is what the pairing spec can check.
 
-**Scaling radii by 1.25 like Codex.** Requires the token system above; the curvature change alone already delivers the smoothness, and radii stay as designed.
+**Scaling radii by 1.25 alongside the curvature change.** Requires the token system above; the curvature change alone already delivers the smoothness, and radii stay as designed.
 
 ## Consequences
 
