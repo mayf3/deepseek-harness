@@ -13,6 +13,7 @@
  */
 
 import { createRequire } from 'node:module'
+import { gzipSync } from 'node:zlib'
 import z from '@deepseek-ai/schemastery'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-command-feedback'
@@ -34,6 +35,7 @@ import {
 import { OTLPExporterBase } from '@opentelemetry/otlp-exporter-base'
 import { createLegacyOtlpBrowserExportDelegate } from '@opentelemetry/otlp-exporter-base/browser-http'
 import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
+import type { ISerializer } from '@opentelemetry/otlp-transformer'
 import type { OTLPExporterConfigBase } from '@opentelemetry/otlp-exporter-base'
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs'
 import { SeverityNumber, type AnyValue, type Logger } from '@opentelemetry/api-logs'
@@ -100,13 +102,16 @@ export interface Config {
    * `concurrencyLimit`, …), owned and documented by the SDK. `url` is the
    * one field this package requires and validates itself.
    *
-   * The transport is the SDK's `fetch` one, so the three options that exist
-   * only for its `node:http` transport — `compression`, `keepAlive`, and
-   * `httpAgentOptions` — are refused at load rather than ignored.
+   * The transport is the SDK's `fetch` one, so `keepAlive` and
+   * `httpAgentOptions` — which configure its `node:http` transport — are
+   * refused at load rather than ignored. `compression` is honored by this
+   * package instead of by that transport.
    */
   exporter?: OTLPExporterConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
+    /** Request body compression, applied by this package rather than by the SDK transport. @default 'none' */
+    compression?: SupportedCompression
   }
   /**
    * Passed verbatim to `BatchLogRecordProcessor` (minus the exporter slot,
@@ -142,7 +147,45 @@ const MAX_TIMER_DELAY_MILLIS = 2_147_483_647
  * Exporter options the SDK defines only for its `node:http` transport. They reach the `fetch`
  * transport this package uses, which silently ignores every one of them.
  */
-const NODE_TRANSPORT_ONLY_EXPORTER_OPTIONS = ['compression', 'keepAlive', 'httpAgentOptions'] as const
+const NODE_TRANSPORT_ONLY_EXPORTER_OPTIONS = ['keepAlive', 'httpAgentOptions'] as const
+
+/** The one encoding {@link gzipSerializer} applies, spelled as the OTLP `Content-Encoding` spells it. */
+const GZIP = 'gzip'
+
+/**
+ * Request body encodings this package applies. Narrower than the SDK's `CompressionAlgorithm`,
+ * which also spells `deflate`: the `fetch` transport offers no seam to apply that one.
+ */
+export type SupportedCompression = 'gzip' | 'none'
+
+/** {@link SupportedCompression} as values, for the load-time check on a configuration typed `any`. */
+const SUPPORTED_COMPRESSION: readonly string[] = [GZIP, 'none'] satisfies SupportedCompression[]
+
+/**
+ * Wrap a serializer so every batch it produces is gzipped.
+ *
+ * The SDK compresses in its `node:http` transport, which the `fetch` transport this package uses
+ * does not have; serialization is the one seam before the body reaches that transport. The shipped
+ * profile enables gzip, and a realistic batch measures over six times smaller with it, so dropping
+ * compression to gain proxy support would trade one deployment's problem for every deployment's.
+ *
+ * `gzipSync` runs on the export path, but a batch is bounded by `maxExportBatchSize` and exports are
+ * already off the request path — the batch processor schedules them.
+ *
+ * @param serializer - the SDK serializer producing the uncompressed request body.
+ * @returns a serializer producing the gzipped body, deserializing responses unchanged.
+ */
+function gzipSerializer<Request, Response>(serializer: ISerializer<Request, Response>): ISerializer<Request, Response> {
+  return {
+    ...serializer,
+    serializeRequest: (request) => {
+      const serialized = serializer.serializeRequest(request)
+      // The SDK returns nothing for a batch it could not serialize. Gzipping that would post an
+      // empty frame the collector accepts as a valid, empty export.
+      return serialized === undefined ? undefined : gzipSync(serialized)
+    },
+  }
+}
 
 /** Severity mapping from the Service Definition's three-level vocabulary to OTel severity numbers. */
 const SEVERITY: Record<SessionTelemetrySeverity, { severityNumber: SeverityNumber; severityText: string }> = {
@@ -195,12 +238,19 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
       throw new Error(`session-telemetry-otel: exporter.url must be http(s), got ${parsed.protocol}`)
     }
-    // Options that exist only for the SDK's `node:http` transport, which this package no longer
-    // uses. The exporter would accept and ignore each one, so a deployment that asked for gzip
-    // would quietly send uncompressed batches; refusing at load is what makes the change visible.
+    // `keepAlive` and `httpAgentOptions` configure the SDK's `node:http` transport, which this
+    // package does not use — the `fetch` transport is what reaches a configured proxy. The exporter
+    // would accept and ignore them, so a deployment would believe it had tuned a connection it had
+    // not. `compression` is the third such option and is honored instead of refused, below.
     const nodeOnly = NODE_TRANSPORT_ONLY_EXPORTER_OPTIONS.filter(name => name in exporter)
     if (nodeOnly.length > 0) {
-      throw new Error(`session-telemetry-otel: exporter.${nodeOnly.join(', exporter.')} not supported: telemetry is exported through fetch so a configured proxy carries it, and the node:http transport those options belong to would need an http.Agent this package no longer builds`)
+      throw new Error(`session-telemetry-otel: exporter.${nodeOnly.join(', exporter.')} not supported: telemetry is exported through fetch, whose connections Node owns; ${nodeOnly.length === 1 ? 'that option belongs' : 'those options belong'} to the node:http transport this package no longer builds an agent for`)
+    }
+    // Compared as strings because that is what arrives: the schema validates this object as `any`,
+    // so a cordis.yml may name any algorithm, including one the SDK's enum does not spell.
+    const compression: string = exporter.compression ?? 'none'
+    if (!SUPPORTED_COMPRESSION.includes(compression)) {
+      throw new Error(`session-telemetry-otel: exporter.compression must be one of ${SUPPORTED_COMPRESSION.map(value => JSON.stringify(value)).join(', ')}, got ${JSON.stringify(compression)}`)
     }
     // The one processor field checked beyond the SDK's own validation: the
     // SDK accepts a non-positive batch size, but its shutdown drain then
@@ -251,9 +301,12 @@ export class OpenTelemetrySessionBackend extends SessionTelemetryBackend {
             // oxlint-disable-next-line typescript/no-deprecated -- the SDK exports its replacement from no public subpath at 0.220.
             createLegacyOtlpBrowserExportDelegate(
               exporter,
-              JsonLogsSerializer,
+              compression === GZIP ? gzipSerializer(JsonLogsSerializer) : JsonLogsSerializer,
               'v1/logs',
-              { 'Content-Type': 'application/json' },
+              {
+                'Content-Type': 'application/json',
+                ...compression === GZIP ? { 'Content-Encoding': GZIP } : {},
+              },
             ),
           ),
         }),

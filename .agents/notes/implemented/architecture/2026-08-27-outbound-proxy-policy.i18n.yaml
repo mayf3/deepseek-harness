@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-27-outbound-proxy-policy.md
-2026-08-27-outbound-proxy-policy.md: 88bfe542d322d2caee5f5e220ed211e0169fa614
-2026-08-27-outbound-proxy-policy.zh.md: f5afee9de40e2032cfd4eda3bc9bfb1c627e71aa
+2026-08-27-outbound-proxy-policy.md: 9c58dfd00d9b6c0b4438ad3dd4da58d8706f718f
+2026-08-27-outbound-proxy-policy.zh.md: 1aabc716c1bdf348229b260c4d8580fb4edc8637

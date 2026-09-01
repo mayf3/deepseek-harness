@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gunzipSync } from 'node:zlib'
+import { JsonLogsSerializer } from '@opentelemetry/otlp-transformer'
 import { Context } from '@deepseek-ai/cordis'
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
@@ -255,17 +256,91 @@ describe('OpenTelemetrySessionBackend wire', () => {
     expect(types).toContain('turn/start')
   })
 
+  it('gzips the batch when the shipped profile asks for it', async () => {
+    const { url, captures } = await mockCollector()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    // The shipped `base` bundle sets this, and a realistic batch is over six times smaller with it.
+    // The SDK compresses in its `node:http` transport, which the `fetch` transport used here does
+    // not have, so this package gzips at the serializer and declares the encoding itself.
+    const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
+      mode: SessionTelemetryMode.FULL,
+      exporter: { url, compression: 'gzip' },
+    })
+    const session = ctx.sessions.create(SessionId('gzip'), { meta: {} })
+    session.append('turn/start', { turn: 1 })
+    await fiber.dispose()
+
+    expect(captures.length).toBeGreaterThan(0)
+    expect(captures[0]!.headers['content-encoding']).toBe('gzip')
+    // The collector gunzips the body it received, so the header is not merely asserted alongside a
+    // plaintext payload the encoding would have misdescribed.
+    const types = allRecords(captures).flatMap(({ record }) =>
+      record.attributes?.flatMap(a => a.key === 'event.type' ? [a.value.stringValue] : []) ?? [])
+    expect(types).toContain('turn/start')
+  })
+
+  it('sends the batch uncompressed when no compression is configured', async () => {
+    const { url, captures } = await mockCollector()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(OpenTelemetrySessionBackend, { mode: SessionTelemetryMode.FULL, exporter: { url } })
+    ctx.sessions.create(SessionId('plain'), { meta: {} }).append('turn/start', { turn: 1 })
+    await fiber.dispose()
+
+    expect(captures.length).toBeGreaterThan(0)
+    expect(captures[0]!.headers['content-encoding']).toBeUndefined()
+  })
+
+  it('sends nothing when the SDK cannot serialize the batch, rather than an empty gzip frame', async () => {
+    const { url, captures } = await mockCollector()
+    const serialize = vi.spyOn(JsonLogsSerializer, 'serializeRequest').mockReturnValue(undefined)
+    try {
+      const ctx = new Context()
+      await ctx.plugin(SessionStore)
+      const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
+        mode: SessionTelemetryMode.FULL,
+        exporter: { url, compression: 'gzip' },
+      })
+      ctx.sessions.create(SessionId('unserializable'), { meta: {} }).append('turn/start', { turn: 1 })
+      await fiber.dispose()
+      expect(serialize).toHaveBeenCalled()
+      expect(captures).toEqual([])
+    } finally {
+      serialize.mockRestore()
+    }
+  })
+
+  it('names every node:http option a configuration set, not just the first', async () => {
+    const { url } = await mockCollector()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await expect(ctx.plugin(OpenTelemetrySessionBackend, {
+      mode: SessionTelemetryMode.FULL,
+      exporter: { url, keepAlive: true, httpAgentOptions: {} },
+    } as unknown as Config)).rejects.toThrow(/exporter\.keepAlive, exporter\.httpAgentOptions not supported/)
+  })
+
   it('refuses an exporter option that belongs to the node:http transport', async () => {
     const { url } = await mockCollector()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
-    // Telemetry goes through `fetch` so a configured proxy carries it, and that transport ignores
-    // `compression`. Accepting the option would send uncompressed batches while the configuration
-    // said gzip; the deployment has to see the trade rather than pay it silently.
+    // `keepAlive` tunes a `node:http` connection pool this package no longer builds. Accepting it
+    // would let a deployment believe it had tuned a connection that does not exist.
     await expect(ctx.plugin(OpenTelemetrySessionBackend, {
       mode: SessionTelemetryMode.FULL,
-      exporter: { url, compression: 'gzip' },
-    } as unknown as Config)).rejects.toThrow(/exporter\.compression not supported/)
+      exporter: { url, keepAlive: true },
+    } as unknown as Config)).rejects.toThrow(/exporter\.keepAlive not supported/)
+  })
+
+  it('refuses a compression algorithm it cannot apply', async () => {
+    const { url } = await mockCollector()
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await expect(ctx.plugin(OpenTelemetrySessionBackend, {
+      mode: SessionTelemetryMode.FULL,
+      exporter: { url, compression: 'deflate' },
+    } as unknown as Config)).rejects.toThrow(/exporter\.compression must be one of "gzip", "none"/)
   })
 
   it('maps warn severity from record policy and leaves the seam flush hint unimplemented', async () => {

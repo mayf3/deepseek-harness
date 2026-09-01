@@ -50,7 +50,9 @@ URL 层策略未受影响：仅 `http(s)`、禁止内嵌凭据、长度上限与
 
 导出器改为用 `OTLPExporterBase` 组合 `createLegacyOtlpBrowserExportDelegate`——同一个 SDK 包的公开入口，也是通过 `fetch` 投递的那一个。E2B 则接收 `proxyRouteFor` 给出的 `route.proxy`，与 `web-fetch-http` 调的是同一个函数。
 
-把导出器换到 `fetch` 的代价是 `compression`：gzip 属于该 SDK 的 Node 传输，实测一批真实规模的 OTLP 数据启用后体积只有 1/6.4。目前没有任何随附配置启用它，而在企业代理网络里，不遵循代理的遥测干脆发不出去，因此路由优先。导出器本会静默忽略的选项，现在由插件在加载期拒绝——`exporter.compression`、`exporter.keepAlive` 与 `exporter.httpAgentOptions` 会带着原因抛错，任何部署都不会在看不见的情况下承担这个差价。换来的是 Node 版本下限消失：`http.Agent` 的 `proxyEnv` 需要 22.21 或 24.5，而这落在 engines 范围之内，因此遥测过去在 22.19、22.20 与 24.0–24.4 上一直是直连。
+`fetch` 传输没有压缩能力，而随附的 `base` bundle 启用了 gzip——实测一批真实规模的 OTLP 数据启用后体积只有 1/6.4。为了拿到代理支持而丢掉它，等于用每个部署的代价去换一个部署的问题；第一版正是这么做的：它在加载期拒绝 `exporter.compression`，结果凡是启动随附 bundle 的测试全部失败。改为由本包在 serializer 处 gzip——那是请求体抵达传输前的唯一接缝——并自行声明 `Content-Encoding`。`keepAlive` 与 `httpAgentOptions` 没有这样的接缝，它们配置的是 `fetch` 不暴露的连接池，因此这两个仍在加载期拒绝，而不是被接受后忽略。
+
+换来的是 Node 版本下限消失：`http.Agent` 的 `proxyEnv` 需要 22.21 或 24.5，而这落在 engines 范围之内，因此遥测过去在 22.19、22.20 与 24.0–24.4 上一直是直连。
 
 **每个出网点都配一份出网测试，因为读代码不够。** 各所属包中的 `egress.spec.ts` 驱动该点的真实代码路径，目标是无法解析的 `.invalid` 主机，穿过一个假代理，并断言代理确实收到了请求。九份测试覆盖搜索后端、pi-ai 发现、走 HTTP 的 MCP、遥测、E2B、派生的子 Node 与 worker 线程。下面那条门禁看不进依赖内部；这些能，它们把「某个 SDK 换了传输」从静默回归变成失败的测试。
 
