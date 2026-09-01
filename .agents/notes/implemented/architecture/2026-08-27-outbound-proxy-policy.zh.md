@@ -24,7 +24,7 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`。开发者运�
 
 那次修订一并引入的插件也随之删除。它让某个组合可以把策略写进 `cordis.yml`，但没有任何随附 bundle 挂载它，因此启动器那条路径是唯一可达的——而它的 `Config` 是那条配置分支唯一的供给方，别处无从到达。
 
-**四个函数——收敛的是调用方，而不是让本包为每个 SDK 各加一个导出。** 早先一版导出六个：dispatcher 工厂、`node:http` agent 工厂、代理 URL 查询、策略访问器、安装器与子进程环境构造器。每一个都为某个 SDK 的传输而存在，而这正是一个传输策略包退化成「别的包的约束目录」的过程。Review 问能不能反过来让调用方收敛；能，而且每删掉一个导出都带走了一整种写法。导出器改用 SDK 的 `fetch` delegate，`node:http` agent 工厂随之退场。`web-fetch-http` 在带注释的豁免下自建 pin agent，dispatcher 工厂随之退场。E2B 读 `route.proxy`，代理 URL 查询随之退场。
+**四个函数——收敛的是调用方，而不是让本包为每个 SDK 各加一个导出。** 早先一版导出六个：dispatcher 工厂、`node:http` agent 工厂、代理 URL 查询、策略访问器、安装器与子进程环境构造器。每一个都为某个 SDK 的传输而存在，而这正是一个传输策略包退化成「别的包的约束目录」的过程。Review 问能不能反过来让调用方收敛；能，而且每删掉一个导出都带走了一整种写法。遥测不再被路由，`node:http` agent 工厂随之退场。`web-fetch-http` 在带注释的豁免下自建 pin agent，dispatcher 工厂随之退场。E2B 读 `route.proxy`，代理 URL 查询随之退场。
 
 剩下的是 `installProxyFromEnvironment`、`proxyRouteFor`、`proxyEnvironmentForChild` 与 `clearedProxyEnv`——按「调用方需要策略的方式」各一个，而不是按 SDK 各一个。安装吸收了解析与诊断上报，因为没有调用方需要把它们分开：解析出来却不安装的策略什么也路由不了。
 
@@ -46,15 +46,13 @@ URL 层策略未受影响：仅 `http(s)`、禁止内嵌凭据、长度上限与
 
 这接受了一处已记录的接缝。此类上下文按 Node 自己的规则匹配绕过条目，其分隔符与 IPv4 区间支持与本包不同，且该标志仅存在于 Node 22.21+ 与 24+。
 
-**有两个 SDK 并不落到 `globalThis.fetch`，而读代码给出的答案是相反的。** 审计最初把 OTLP 导出器与 E2B SDK 判为已覆盖，依据是在 `@opentelemetry/otlp-exporter-base` 里 grep 到了 `globalThis.fetch`。那处命中属于**浏览器**传输；在 Node 上 delegate 选择的是 `http-exporter-transport`，它通过 `node:http` 投递——那里全局 dispatcher 触及不到。E2B 又是另一种形态：它自建 undici `Agent`／`ProxyAgent`，并接受一个自己从不从环境读取的 `proxy` URL。两者都实测为直连，而修复方式不是给本包各加一个导出，而是把调用点搬到 dispatcher 本就覆盖的传输上。
+**有两个 SDK 并不落到 `globalThis.fetch`，而读代码给出的答案是相反的。** 审计最初把 OTLP 导出器与 E2B SDK 判为已覆盖，依据是在 `@opentelemetry/otlp-exporter-base` 里 grep 到了 `globalThis.fetch`。那处命中属于**浏览器**传输；在 Node 上 delegate 选择的是 `http-exporter-transport`，它通过 `node:http` 投递——那里全局 dispatcher 触及不到。E2B 又是另一种形态：它自建 undici `Agent`／`ProxyAgent`，并接受一个自己从不从环境读取的 `proxy` URL。两者都实测为直连。E2B 接收 `proxyRouteFor` 给出的 `route.proxy`，与 `web-fetch-http` 调的是同一个函数。遥测则被有意保留为直连，而这个排除项才是更值得说的一半。
 
-导出器改为用 `OTLPExporterBase` 组合 `createLegacyOtlpBrowserExportDelegate`——同一个 SDK 包的公开入口，也是通过 `fetch` 投递的那一个。E2B 则接收 `proxyRouteFor` 给出的 `route.proxy`，与 `web-fetch-http` 调的是同一个函数。
+**遥测的直连是有意为之。** 要让它走代理只有两条路，代价都超过这条通道本身的价值。`http.Agent` 通过 `proxyEnv` 读取环境，而该选项自 Node 22.21 与 24.5 才有——落在 engines 范围之内，因此 22.19、22.20 与 24.0–24.4 无论如何仍是直连，而代理包还得为一条只在部分运行时生效的路径保留 `createNodeHttpAgent` 导出。改用 SDK 的 `fetch` delegate 替换传输可以覆盖所有运行时，但该 delegate 没有压缩能力，而随附的 `base` bundle 启用了 gzip：实测一批真实规模的 OTLP 数据启用后体积只有 1/6.4。曾有一版转而在加载期拒绝 `exporter.compression`，结果凡是启动随附 bundle 的测试全部失败；另一版在 serializer 处 gzip 确实能跑通，但代价是把传输层代码塞进了遥测插件。
 
-`fetch` 传输没有压缩能力，而随附的 `base` bundle 启用了 gzip——实测一批真实规模的 OTLP 数据启用后体积只有 1/6.4。为了拿到代理支持而丢掉它，等于用每个部署的代价去换一个部署的问题；第一版正是这么做的：它在加载期拒绝 `exporter.compression`，结果凡是启动随附 bundle 的测试全部失败。改为由本包在 serializer 处 gzip——那是请求体抵达传输前的唯一接缝——并自行声明 `Content-Encoding`。`keepAlive` 与 `httpAgentOptions` 没有这样的接缝，它们配置的是 `fetch` 不暴露的连接池，因此这两个仍在加载期拒绝，而不是被接受后忽略。
+与之相比，遥测是唯一一条丢失了对用户毫无代价的出网通道：没有任何工具、模型请求或会话依赖它，而连不上的导出本就被静默丢弃。处在强制代理后的用户，只是停留在本次改动之前的状态，而不是被弄坏。`egress.spec.ts` 现在断言这一排除——若某次 SDK 升级把导出器挪到 `fetch` 上，遥测就会开始静默走代理，而该用例正是让这件事暴露出来的东西。
 
-换来的是 Node 版本下限消失：`http.Agent` 的 `proxyEnv` 需要 22.21 或 24.5，而这落在 engines 范围之内，因此遥测过去在 22.19、22.20 与 24.0–24.4 上一直是直连。
-
-**每个出网点都配一份出网测试，因为读代码不够。** 各所属包中的 `egress.spec.ts` 驱动该点的真实代码路径，目标是无法解析的 `.invalid` 主机，穿过一个假代理，并断言代理确实收到了请求。九份测试覆盖搜索后端、pi-ai 发现、走 HTTP 的 MCP、遥测、E2B、派生的子 Node 与 worker 线程。下面那条门禁看不进依赖内部；这些能，它们把「某个 SDK 换了传输」从静默回归变成失败的测试。
+**每个出网点都配一份出网测试，因为读代码不够。** 各所属包中的 `egress.spec.ts` 驱动该点的真实代码路径，目标是无法解析的 `.invalid` 主机，穿过一个假代理，并断言代理确实收到了请求。九份测试覆盖搜索后端、pi-ai 发现、走 HTTP 的 MCP、E2B、派生的子 Node、worker 线程，以及遥测的排除。下面那条门禁看不进依赖内部；这些能，它们把「某个 SDK 换了传输」从静默回归变成失败的测试。
 
 **用门禁防止该缺陷复现。** `verify-no-bare-dispatcher` 解析 TypeScript AST——`scripts/AGENTS.md` 要求 source-ownership 门禁使用语法感知发现，而逐行正则漏掉了本仓库已在使用的 `{ dispatcher }` 简写，以及重命名导入后的 `new Alias(...)`。它在所属包之外拒绝 undici agent 构造与显式 `dispatcher` 选项。`proxyRouteFor(url)` 是受支持的替代；唯一一处确实自有传输的调用点——`web-fetch-http`，它把请求钉在已校验的地址上——用 `proxy-exempt:` 注释说明。这条规则之所以存在，是因为 `web-fetch-http` 里原本那行 `new Agent` 在写下时完全合理——那时根本还没有代理这回事，也没有任何机制会拦下它。
 
@@ -94,6 +92,6 @@ userland undici 能触及 Node 内置的 `fetch`，依赖于两者都会写入 l
 
 `verify-no-bare-dispatcher.spec.ts` 证明该门禁能拒掉本包所要修复的那种写法、接受 `proxyRouteFor`、接受带注释的豁免，并在当前代码树上通过。
 
-出网测试为遥测保留了负向用例——在同一份已安装策略下发一个 `node:http` 请求，触及不到代理——因此改回 SDK 的 Node 传输无法悄悄把遥测变回直连。其正向用例不再按运行时分支，因为在所有受支持的 Node 上 `fetch` 都会落到 dispatcher。另有一组一致性测试，对文档所述 `NO_PROXY` 词汇中的每种形态，把 `proxyForUrl` 的判断与真实 `fetch` 的实际去向相互核对；由于 dispatcher 正是按同一谓词路由，它现在能抓住的是 `bypassesProxy` 对某种形态的读法与词汇文档不一致，以及未来任何重新引入第二个匹配器的 dispatcher。
+出网测试以负向形式承载遥测这一项：随附后端在已安装策略下执行导出，而假代理什么也没收到——这个有意的排除因此是被断言的，而不只是被记录的。另有一组一致性测试，对文档所述 `NO_PROXY` 词汇中的每种形态，把 `proxyForUrl` 的判断与真实 `fetch` 的实际去向相互核对；由于 dispatcher 正是按同一谓词路由，它现在能抓住的是 `bypassesProxy` 对某种形态的读法与词汇文档不一致，以及未来任何重新引入第二个匹配器的 dispatcher。
 
 无录制会话快照变更：本次改动不影响任何模型可见输入或产品用户可见的 transcript 输出。

@@ -1967,20 +1967,13 @@ export interface Config {
   mode?: SessionTelemetryMode
   /**
    * Passed verbatim to the SDK's OTLP/HTTP log exporter — the complete
-   * `OTLPExporterConfigBase` shape (`headers`, `timeoutMillis`,
-   * `concurrencyLimit`, …), owned and documented by the SDK. `url` is the
-   * one field this package requires and validates itself.
-   *
-   * The transport is the SDK's `fetch` one, so `keepAlive` and
-   * `httpAgentOptions` — which configure its `node:http` transport — are
-   * refused at load rather than ignored. `compression` is honored by this
-   * package instead of by that transport.
+   * `OTLPExporterNodeConfigBase` shape (`headers`, `timeoutMillis`,
+   * `compression`, `keepAlive`, …), owned and documented by the SDK. `url`
+   * is the one field this package requires and validates itself.
    */
-  exporter?: OTLPExporterConfigBase & {
+  exporter?: OTLPExporterNodeConfigBase & {
     /** Full logs endpoint (e.g. `https://collector.example.com/v1/logs`). Required outside `DISABLED`; validated at load. */
     url?: string
-    /** Request body compression, applied by this package rather than by the SDK transport. @default 'none' */
-    compression?: SupportedCompression
   }
   /**
    * Passed verbatim to `BatchLogRecordProcessor` (minus the exporter slot,
@@ -1997,17 +1990,11 @@ export enum SessionTelemetryMode {
   FEEDBACK_ONLY = 'FEEDBACK_ONLY',
   DISABLED = 'DISABLED',
 }
-
-/**
- * Request body encodings this package applies. Narrower than the SDK's `CompressionAlgorithm`,
- * which also spells `deflate`: the `fetch` transport offers no seam to apply that one.
- */
-export type SupportedCompression = 'gzip' | 'none'
 ```
 
-Depends on: `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterConfigBase` (`@opentelemetry/otlp-exporter-base`)
+Depends on: `BatchLogRecordProcessorOptions` (`@opentelemetry/sdk-logs`) · `OTLPExporterNodeConfigBase` (`@opentelemetry/otlp-exporter-base`)
 
-Source: [`packages/session/session-telemetry-otel/src/index.ts:96`](../packages/session/session-telemetry-otel/src/index.ts)
+Source: [`packages/session/session-telemetry-otel/src/index.ts:91`](../packages/session/session-telemetry-otel/src/index.ts)
 
 <a id="deepseek-aidsh-session-title"></a>
 

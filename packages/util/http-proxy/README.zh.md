@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代理后面运行的 Harness 无论用户导出了什么都会直连——LLM（大语言模型）请求、每次 web 搜索、走 HTTP 的 MCP、遥测与沙箱 SDK 一概如此。本包从启动器的环境快照解析出一份代理策略，并把它装成 undici 的全局 dispatcher，而这正是 `fetch` 解析的对象。因此普通调用点无需改动、也无需引入本包：写 `fetch()` 就已经走代理。全局 dispatcher 自身够不到的场合由四个函数覆盖——安装策略、询问某个请求怎么发、把策略交给派生的子进程、以及为重放清掉它。
+Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代理后面运行的 Harness 无论用户导出了什么都会直连——LLM（大语言模型）请求、每次 web 搜索、走 HTTP 的 MCP 与沙箱 SDK 一概如此。本包从启动器的环境快照解析出一份代理策略，并把它装成 undici 的全局 dispatcher，而这正是 `fetch` 解析的对象。因此普通调用点无需改动、也无需引入本包：写 `fetch()` 就已经走代理。全局 dispatcher 自身够不到的场合由四个函数覆盖——安装策略、询问某个请求怎么发、把策略交给派生的子进程、以及为重放清掉它。
 
 ## 目录
 
@@ -41,11 +41,11 @@ Node 内置的 `fetch` 会忽略 `HTTP_PROXY` 与 `HTTPS_PROXY`，因此在代�
 
 `proxyRouteFor` 给出的不只是答案，还有该答案所假定的传输：走代理的那一支携带着此刻正按该策略路由的 dispatcher。若调用方先读策略、再自建传输，卸载就可能落在两次读取之间，把请求发往其分支从未放行的去处。
 
-自建传输的 SDK 接触不到上述任何一条。本仓库随附的两个此类 SDK 都已改到能被覆盖的传输上：OTLP 导出器改为通过 `fetch` 投递，E2B 则接收 `route.proxy`。
+自建传输的 SDK 接触不到上述任何一条，而本仓库随附的 SDK 里有两个如此。E2B 接受自有代理 URL，现在接收 `route.proxy`。OTLP 遥测导出器通过 `node:http` 投递，被有意保留为直连——见下方限制一节。
 
 构造 `new Agent(...)` 再作为 `dispatcher` 传入会覆盖全局 dispatcher，从而静默绕开代理。`verify-no-bare-dispatcher` 会在本包之外拒绝该写法。有一处调用点确实自有传输——`web-fetch-http` 会把请求钉在它已校验过的地址上，而这是进程级 dispatcher 无法承载的单次请求状态——它在该行用 `proxy-exempt:` 注释说明。
 
-该门禁看不进 SDK 内部，因此仓库中每一个出网点都另有一份 `egress.spec.ts`：它驱动该点的真实代码路径穿过一个假代理，并断言代理确实收到了请求。新增出网点就补一份。它是唯一能发现 SDK 在我们脚下更换传输的手段——OTLP 与 E2B 这两个漏洞正是这样被发现的。
+该门禁看不进 SDK 内部，因此仓库中每一个出网点都另有一份 `egress.spec.ts`：它驱动该点的真实代码路径穿过一个假代理，并断言代理确实收到了请求——遥测那份则断言代理什么也没收到。新增出网点就补一份。它是唯一能双向发现 SDK 在我们脚下更换传输的手段：OTLP 与 E2B 这两个漏洞正是这样被发现的，而某次升级若开始静默地把遥测送去代理，也由它拦下。
 
 ### 策略读取哪些值
 
@@ -109,6 +109,7 @@ loopback 始终被绕过——`localhost`、整个 `127.0.0.0/8` 段、`::1`、`
 - **不支持 SOCKS、PAC 或操作系统代理探测**——只接受来自环境的 `http(s)://` 代理 URL。不会读取 macOS 或 Windows 的系统代理设置，因此仅在代理软件里拨了开关的用户仍须导出环境变量；SOCKS URL 会被报告，且该协议保持直连，不会借用另一协议的代理。
 - **不支持自定义证书颁发机构**——做 TLS 拦截的企业代理需要在启动前为进程设置 `NODE_EXTRA_CA_CERTS`，本包既不设置也不校验它。
 - **派生的子进程只在足够新的运行时上遵循策略**——它通过 Node 的 `NODE_USE_ENV_PROXY` 读取已发布的环境（22.21+、24+），而 engines 范围允许 22.19 与 22.20，在这两个版本上这样的子进程保持直连。子进程还会按 Node 自己的 `NO_PROXY` 规则匹配绕过条目，其分隔符与 IPv4 区间处理与本包不同。本进程内不依赖任何 Node 版本：每一次进程内请求都会落到全局 dispatcher。
+- **遥测按设计直连**——OTLP 导出器通过 `node:http` 投递，全局 dispatcher 触及不到。要让它走代理，要么依赖 `http.Agent` 的 `proxyEnv`，而该选项晚于本项目支持的最低 Node 版本；要么改用 SDK 的 `fetch` 传输，但它没有压缩能力，而随附配置启用了 gzip。遥测是唯一一条丢失了对用户毫无代价的通道，因此维持原状；`DSH_TELEMETRY_MODE=DISABLED` 可关闭它。
 - **执行模型编写代码的 worker 完全不获得代理**——`code-runtime` worker 与 `workflow` worker 都不接收代理配置，它们自身的请求直连。代理 URL 可能携带 `user:password`，而两者运行的都是模型写的脚本。
 - **防回归门禁只看源码，看不到依赖内部**——`verify-no-bare-dispatcher` 解析 `packages/*/*/src` 与 `apps/*/src`；测试、脚本以及第三方 SDK 的内部都在其之外。这正是每个出网点还各配一份 `egress.spec.ts` 的原因。
 

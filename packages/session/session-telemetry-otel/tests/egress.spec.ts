@@ -1,7 +1,13 @@
-import http, { createServer, type Server } from 'node:http'
+import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
+import { Context } from '@deepseek-ai/cordis'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import OpenTelemetrySessionBackend, { SessionTelemetryMode } from '../src/index.ts'
 
 let seen: string[] = []
 let proxy: Server
@@ -21,23 +27,6 @@ beforeAll(async () => {
 })
 afterAll(async () => { await new Promise<void>((r) => { proxy.close(() => { r() }) }) })
 
-/** The launch environment of a user who exported one proxy for both schemes. */
-function proxyEnv(): { get(name: string): { value: string } | undefined } {
-  return { get: name => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
-}
-async function observe(run: () => Promise<unknown>): Promise<string[]> {
-  seen = []
-  const dispose = await installProxyFromEnvironment(proxyEnv(), () => undefined)
-  try { await run().catch(() => undefined) } finally { await dispose() }
-  return seen
-}
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Context } from '@deepseek-ai/cordis'
-import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import OpenTelemetrySessionBackend, { SessionTelemetryMode } from '../src/index.ts'
-
 let home: string
 let previousHome: string | undefined
 beforeAll(() => {
@@ -51,13 +40,18 @@ afterAll(() => {
   rmSync(home, { recursive: true, force: true })
 })
 
+/** The launch environment of a user who exported one proxy for both schemes. */
+function proxyEnv(): { get(name: string): { value: string } | undefined } {
+  return { get: name => (name === 'HTTP_PROXY' || name === 'HTTPS_PROXY' ? { value: proxyUrl } : undefined) }
+}
+
 /** Mount the shipping backend against an unresolvable collector and let it try to export. */
-async function exportThroughBackend(host: string, exporter: Record<string, unknown> = {}): Promise<void> {
+async function exportThroughBackend(host: string): Promise<void> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   const fiber = await ctx.plugin(OpenTelemetrySessionBackend, {
     mode: SessionTelemetryMode.FULL,
-    exporter: { url: `http://${host}/v1/logs`, ...exporter },
+    exporter: { url: `http://${host}/v1/logs` },
   })
   const session = ctx.sessions.create(SessionId('egress'), { meta: { cwd: '/tmp/e' } })
   session.append('turn/start', { turn: 1 })
@@ -65,25 +59,24 @@ async function exportThroughBackend(host: string, exporter: Record<string, unkno
   await fiber.dispose()
 }
 
-
 describe('session-telemetry-otel egress', () => {
-  it('exports through the proxy', async () => {
-    const observed = (await observe(() => exportThroughBackend('otel-proxied.invalid'))).join('|')
-    // No runtime gate: the exporter posts through `fetch`, which resolves undici's global
-    // dispatcher on every Node this repository supports. The SDK's own `node:http` transport would
-    // have needed `http.Agent`'s `proxyEnv`, which arrived in 22.21 and 24.5 — inside the engines
-    // range, so telemetry would have stayed direct on 22.19, 22.20, and 24.0–24.4.
-    expect(observed).toContain('otel-proxied.invalid')
-  })
-
-  it('reaches no proxy over node:http — the transport this exporter no longer uses', async () => {
-    const observed = await observe(() => new Promise<void>((resolve) => {
-      // The mechanism behind the case above, asserted rather than described: a global dispatcher is
-      // undici's, and `node:http` never consults it. An exporter built on the SDK's Node transport
-      // would take this path and leave telemetry direct however the proxy is configured.
-      http.get('http://otel-direct.invalid/v1/logs', (response) => { response.resume(); resolve() })
-        .on('error', () => { resolve() })
-    }))
-    expect(observed.join('|')).not.toContain('otel-direct.invalid')
+  it('exports directly, ignoring a configured proxy', async () => {
+    seen = []
+    const dispose = await installProxyFromEnvironment(proxyEnv(), () => undefined)
+    try {
+      await exportThroughBackend('otel-direct.invalid').catch(() => undefined)
+    } finally {
+      await dispose()
+    }
+    // Telemetry is the one outbound path this repository deliberately leaves direct. The SDK's OTLP
+    // exporter posts through `node:http`, which no global dispatcher reaches, and routing it would
+    // mean either an `http.Agent` whose `proxyEnv` option arrives after this project's lowest
+    // supported Node, or replacing the transport and reimplementing the compression the shipped
+    // profile enables. Neither is worth it for a channel whose loss costs the user nothing.
+    //
+    // This case exists so that stays a decision: an SDK upgrade that moved the exporter onto
+    // `fetch` would start routing telemetry through a proxy silently, and this assertion is what
+    // makes that visible instead.
+    expect(seen).toEqual([])
   })
 })
