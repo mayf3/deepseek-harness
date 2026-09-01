@@ -119,6 +119,37 @@ function node(value: ChatSnapshot, kind: string): ChatConversationViewNode | und
   return value.nodes.values().find(candidate => candidate.kind === kind)
 }
 
+function comparableSnapshot(value: ChatSnapshot) {
+  const nodes = value.nodes.values()
+  return {
+    order: value.order,
+    nodes: nodes.map(candidate => ({
+      ...candidate,
+      location: candidate.location.kind === 'step'
+        ? {
+          kind: 'step',
+          turn: candidate.location.turn.turn,
+          turnStatus: candidate.location.turn.status,
+          step: candidate.location.step.step,
+          stepStatus: candidate.location.step.status,
+        }
+        : candidate.location.kind === 'turn'
+          ? {
+            kind: 'turn',
+            turn: candidate.location.turn.turn,
+            turnStatus: candidate.location.turn.status,
+          }
+          : { kind: candidate.location.kind },
+    })),
+    processes: nodes.map(candidate => [
+      candidate.key,
+      value.nodes.processSource(candidate.key).getSnapshot(),
+    ]),
+    navigation: value.navigation.items(),
+    legacy: value.legacy,
+  }
+}
+
 function textMessage(id: string, text: string) {
   return {
     id,
@@ -904,7 +935,7 @@ describe('built-in conversation node Definitions', () => {
     expect(packedHistory.filter(input => input.event.type.startsWith('chunkrow/'))).toHaveLength(3)
     const packed = assembler(packedHistory)
 
-    expect(snapshot(packed)).toEqual(snapshot(scalar))
+    expect(comparableSnapshot(snapshot(packed))).toEqual(comparableSnapshot(snapshot(scalar)))
     const running = node(snapshot(packed), 'assistant-step')
     expect(running).toMatchObject({ anchorSeq: 6 })
     expect(running?.data).toMatchObject({
@@ -921,7 +952,7 @@ describe('built-in conversation node Definitions', () => {
       value.append(at(14, 'turn/end', { turn: 1, reason: { kind: 'completed' } }))
       value.flush()
     }
-    expect(snapshot(packed)).toEqual(snapshot(scalar))
+    expect(comparableSnapshot(snapshot(packed))).toEqual(comparableSnapshot(snapshot(scalar)))
     expect(node(snapshot(packed), 'turn-tail')?.anchorSeq).toBe(12.2)
 
     const partialHistory = [
@@ -931,7 +962,7 @@ describe('built-in conversation node Definitions', () => {
     ]
     const partialScalar = snapshot(assembler(partialHistory, true))
     const partialPacked = snapshot(assembler(packedInputs(partialHistory), true))
-    expect(partialPacked).toEqual(partialScalar)
+    expect(comparableSnapshot(partialPacked)).toEqual(comparableSnapshot(partialScalar))
     expect(node(partialPacked, 'assistant-step')?.data).toMatchObject({ status: 'interrupted' })
     expect(node(partialPacked, 'turn-tail')?.anchorSeq).toBe(12.2)
 
@@ -967,7 +998,7 @@ describe('built-in conversation node Definitions', () => {
     ]
     const finalizedScalar = snapshot(assembler(finalizedHistory))
     const finalizedPacked = snapshot(assembler(packedInputs(finalizedHistory)))
-    expect(finalizedPacked).toEqual(finalizedScalar)
+    expect(comparableSnapshot(finalizedPacked)).toEqual(comparableSnapshot(finalizedScalar))
     const finalNode = (node(finalizedPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(finalNode?.timing?.firstTokenTime).toBe(1_999)
 
@@ -989,7 +1020,7 @@ describe('built-in conversation node Definitions', () => {
     ]
     const namedToolScalar = snapshot(assembler(namedToolHistory))
     const namedToolPacked = snapshot(assembler(packedInputs(namedToolHistory)))
-    expect(namedToolPacked).toEqual(namedToolScalar)
+    expect(comparableSnapshot(namedToolPacked)).toEqual(comparableSnapshot(namedToolScalar))
     const namedTool = (node(namedToolPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(namedTool?.timing?.firstTokenTime).toBe(4_000)
   })
