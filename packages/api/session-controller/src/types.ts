@@ -469,6 +469,12 @@ export interface SessionJob {
   readonly detail?: string
   readonly startedAt: number
   readonly finishedAt?: number
+  /**
+   * Total UTF-8 bytes the job's observation record holds so far. Present
+   * exactly when the job declared a record — the row is observable through
+   * `session.observeJob`.
+   */
+  readonly outputTotal?: number
 }
 
 /** Complete live control baseline emitted once per control stream generation. */
@@ -492,6 +498,63 @@ export type SessionControlFrame =
   | { readonly type: 'queue'; readonly sessionId: SessionId; readonly items: readonly SessionQueuedItem[] }
   | { readonly type: 'jobs'; readonly sessionId: SessionId; readonly jobs: readonly SessionJob[] }
   | ({ readonly type: 'projection' } & SessionProjectionUpdate)
+
+/** Opens one observation stream over a job's retained record output. */
+export interface SessionObserveJobRequest {
+  /** Owning session used for the fenced read; omitted for an unowned job. */
+  readonly sessionId?: SessionId
+  readonly jobId: JobId
+  /**
+   * Absolute byte offset to resume from — a previous frame's `next`. Omitted
+   * starts at the oldest retained byte.
+   */
+  readonly from?: number
+}
+
+/** One retained record chunk on the wire. `channel` widens to string like `kind`. */
+export interface SessionJobWireChunk {
+  /** Absolute offset of the chunk's first byte. */
+  readonly at: number
+  readonly text: string
+  readonly channel?: string
+  /** Bytes immediately before this chunk were lost at the producer or to retention. */
+  readonly gapBefore?: true
+}
+
+/**
+ * Job observation stream frames: one `opened` anchor, then coalesced `output`
+ * batches, then — once the job has settled and its retained record is
+ * drained — one terminal `status`, after which the stream closes normally.
+ * Status rides the same stream as output so settlement can never race a
+ * still-open output channel.
+ */
+export type SessionObserveJobFrame =
+  | {
+    readonly type: 'opened'
+    readonly jobId: JobId
+    /** Offset the first `output` frame continues from. */
+    readonly from: number
+    /** Oldest retained byte at open time; `from < earliest` means the head is gone. */
+    readonly earliest: number
+    /** Total bytes produced at open time. */
+    readonly total: number
+    readonly status: SessionJob['status']
+    readonly detail?: string
+  }
+  | {
+    readonly type: 'output'
+    readonly chunks: readonly SessionJobWireChunk[]
+    /** Offset to resume from after this frame. */
+    readonly next: number
+    /** Bytes between the requested offset and `chunks` were already evicted. */
+    readonly lossy?: true
+  }
+  | {
+    readonly type: 'status'
+    readonly status: SessionJob['status']
+    readonly detail?: string
+    readonly finishedAt?: number
+  }
 
 declare module '@deepseek-ai/cordis' {
   interface Events {

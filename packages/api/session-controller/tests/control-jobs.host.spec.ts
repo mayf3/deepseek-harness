@@ -162,6 +162,25 @@ describe('Session control jobs updates', () => {
     ])
   })
 
+  it('carries outputTotal exactly for record-declaring jobs', async () => {
+    const { ctx, agent, control } = await harness(true)
+    const abort = new AbortController()
+    const collected = collectJobs(control.control(abort.signal), 1, abort)
+    ctx.jobs.start({
+      kind: 'bash',
+      label: 'observable run',
+      owner: agent,
+      record: true,
+      run: (job) => {
+        job.append('hi')
+        return { cancel: () => {}, done: new Promise<never>(() => {}) }
+      },
+    })
+
+    const [frame] = await collected
+    expect(frame?.jobs[0]?.outputTotal).toBe(2)
+  })
+
   it('fans an unowned change out to every attached session', async () => {
     const { ctx, control } = await harness(true)
     const second = ctx.sessions.create()
