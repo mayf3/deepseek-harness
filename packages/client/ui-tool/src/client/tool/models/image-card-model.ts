@@ -29,7 +29,9 @@ export interface ImageCardModel {
 }
 
 /**
- * The persisted `presentationMeta` this card reads: the authored path only.
+ * The persisted `presentationMeta` this card reads: the resolved display path only
+ * (the value `read_image` persisted from its target's display path, not the
+ * author-typed `file_path` argument).
  *
  * Root calls persist it; a nested call (a read_image dispatched from inside
  * run_code) settles without `meta`, so the card falls back to the call's own

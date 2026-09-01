@@ -243,8 +243,8 @@ describe('read_image happy path', () => {
     expect(result.content).toHaveLength(2)
     const image = result.content[1] as { type: string; attachment: ImageAttachmentRef }
     expect(image.type).toBe('image')
-    // GIFs do not pass through unchanged: normalization re-encodes this
-    // transparent 1x1 GIF as WebP while keeping the source file name.
+    // Normalization re-encodes this transparent 1x1 GIF as WebP: the bytes do
+    // not pass through unchanged, only the source file name survives.
     expect(image.attachment.mediaType).toBe('image/webp')
     expect(image.attachment.width).toBe(1)
     expect(image.attachment.height).toBe(1)

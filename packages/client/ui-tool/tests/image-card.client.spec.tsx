@@ -46,7 +46,6 @@ const sampleImage = {
   name: 'card.png',
 }
 
-/** The persisted presentationMeta payload. */
 /** The persisted presentationMeta payload: the path only. */
 const imageMeta = (over?: Record<string, unknown>) => ({ path: 'shots/card.png', ...over })
 

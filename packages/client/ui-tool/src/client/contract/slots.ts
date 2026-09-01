@@ -32,7 +32,10 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * loader it received in its owner, and the attachment plugin fills the
      * gallery. Composing no attachment presentation plugin renders nothing,
      * which is why the image card keeps its own envelope text beside the
-     * gallery.
+     * gallery. A child slot is declared by exactly one entry: registering a
+     * second toolview that declares the same child throws at load, so a
+     * future image-bearing tool must reuse this entry or own a distinct
+     * slot.
      */
     'tool.call.images': { kind: 'single'; scope: 'session'; owner: ToolImagesOwnerProps }
   }
