@@ -23,7 +23,7 @@ interface JobKindMap {
 
 ## 生产方约定
 
-`JobStart` 声明身份和启动器。运行时会在调用 `run()` 前完成预检，随后提交注册，不再执行可能失败的步骤。生产方拥有执行资源；运行时拥有身份、访问权限和生命周期状态。
+`JobStart` 声明身份和启动器。运行时会在完成预检后携带该 job 的生产者面调用 `run()`，随后提交注册，不再执行可能失败的步骤。生产方拥有执行资源；运行时拥有身份、访问权限和生命周期状态。
 
 ```ts type-equiv
 /**
@@ -38,7 +38,9 @@ interface JobStart {
   label: string
   /**
    * Optional UTF-8 byte cap for each complete model-facing completion notice or
-   * output read, including controller status metadata.
+   * output read, including controller status metadata. Independent of record
+   * retention: it bounds the consuming model surface, never
+   * {@link JobRegistry.readRecord}.
    */
   outputLimitBytes?: number
   /**
@@ -49,11 +51,22 @@ interface JobStart {
    */
   owner?: Agent
   /**
-   * Start the work after preflight and synchronously return its hooks. Called
-   * once; a throw leaves nothing registered, and the producer must clean up any
-   * partially started resources.
+   * Declares an observable output record beside the model-facing surfaces:
+   * {@link RunningJob.append} retains chunks in a bounded ring that any number
+   * of observers read at absolute byte offsets through
+   * {@link JobRegistry.readRecord}, and snapshots carry
+   * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
+   * Without the declaration `append` logs and drops.
    */
-  run(): JobHooks
+  record?: true
+  /**
+   * Start the work after preflight and synchronously return its hooks. Called
+   * once with the job's producer face; a throw leaves nothing registered (the
+   * spent ordinal is skipped), and the producer must clean up any partially
+   * started resources.
+   * @param job - the issued id plus the record append and live-detail writers.
+   */
+  run(job: RunningJob): JobHooks
 }
 ```
 
@@ -71,13 +84,16 @@ interface JobHooks {
    * Resolves after the producer releases its resources, not merely when work
    * finishes. Must not reject; the runtime converts a rejection to `failed`.
    * If teardown cancellation throws, the runtime may force-fail only the
-   * registry record without claiming that the work stopped.
+   * registry record without claiming that the work stopped. Settlement also
+   * ends the record: fold any record-filling pump into this promise so the
+   * final drain lands before the registry trims and closes the stream.
    */
   done: Promise<JobOutcome>
   /**
    * Consume output produced since the previous call. The producer formats
    * truncation and spill notices. Absence marks a final-output-only job; each
-   * job has one consuming cursor.
+   * job has one consuming cursor. Independent of the record: this is the
+   * model-facing projection, {@link JobRegistry.readRecord} the observer one.
    */
   readOutput?(): string
 }
@@ -92,6 +108,70 @@ interface JobOutcome {
   detail?: string
   /** Final output for jobs without `readOutput`; stream jobs leave it unset. */
   output?: string
+}
+```
+
+## 观测 record
+
+声明 `record: true` 的生产方通过 starter 收到的 `RunningJob` 面把原始输出流入按 job 划分的有界环形缓冲；任意数量的观察者通过 `readRecord` 按绝对字节偏移读取保留块，不触碰消耗型的模型游标与通知状态。job 结算即封流并把保留量裁剪到结算上限——record 没有独立生命周期。`pumpJobOutput` 以有界节奏把生产方的偏移读取器（subprocess 的 `readFrom` 家族）复制进 record。
+
+```ts type-equiv
+/**
+ * Producer face of one registered job, handed to {@link JobStart.run} and
+ * valid for the job's whole life. All methods are synchronous. Writes staged
+ * inside the starter call are retained and become visible with the
+ * registration commit; after settlement — the producer's own outcome, a kill,
+ * or a registry-forced teardown end — both methods log and drop instead of
+ * throwing, so a producer's trailing flush cannot break its own teardown path.
+ */
+interface RunningJob {
+  /** The registry-issued id (`<kind>-N`). */
+  readonly id: JobId
+  /**
+   * Append one record chunk. Offsets advance by the chunk's UTF-8 byte
+   * length; an empty chunk is dropped without waking observers. Without a
+   * {@link JobStart.record} declaration the chunk is logged and dropped.
+   * @param text - the chunk text, exactly as produced.
+   * @param options - stream label and gap marker.
+   */
+  append(text: string, options?: JobAppendOptions): void
+  /**
+   * Replace the snapshot's status detail with a live progress line (`3/10`).
+   * Works for every job, with or without a record.
+   * @param detail - the new detail line.
+   */
+  updateDetail(detail: string): void
+}
+```
+
+```ts type-equiv
+/** One retained record chunk returned by {@link JobRegistry.readRecord}. */
+interface JobRecordChunk {
+  /** Absolute offset of the chunk's first byte. */
+  at: number
+  /** Chunk text exactly as appended (possibly tail-trimmed by retention). */
+  text: string
+  /** Stream label, when the producer supplied one. */
+  channel?: JobChannel
+  /** Producer-reported loss immediately before this chunk. */
+  gapBefore?: true
+}
+```
+
+```ts type-equiv
+/** Result of one non-consuming {@link JobRegistry.readRecord}. */
+interface JobRecordRead {
+  /** Retained chunks overlapping `[from, total)`, in offset order. */
+  chunks: readonly JobRecordChunk[]
+  /**
+   * Offset to resume from — the record's current `outputTotal`. Always a
+   * chunk boundary: appends land whole and trimming only advances chunk
+   * starts, and consumers concatenate `chunks` under that assumption, so a
+   * provider serving partial chunks would silently duplicate text.
+   */
+  next: number
+  /** True when `from` fell below the oldest retained byte, so bytes are missing before `chunks`. */
+  lossy: boolean
 }
 ```
 
@@ -121,7 +201,10 @@ interface JobSnapshot {
   ownerSession?: SessionId
   /** Current lifecycle state. */
   status: JobStatus
-  /** Kind-specific status detail, present once the producer supplied one (usually terminal). */
+  /**
+   * Kind-specific status detail: live progress while the producer updates it
+   * through {@link RunningJob.updateDetail}, the terminal detail once settled.
+   */
   detail?: string
   /** Epoch ms when the job was registered. */
   startedAt: number
@@ -135,6 +218,17 @@ interface JobSnapshot {
    * otherwise spend a model request per teardown layer.
    */
   reported: boolean
+  /**
+   * Total UTF-8 bytes ever appended to the record — the offset the next chunk
+   * starts at. Present exactly when the job declared {@link JobStart.record}.
+   */
+  outputTotal?: number
+  /**
+   * Offset of the oldest retained record byte. Greater than zero exactly when
+   * retention dropped the head; a reader starting below it gets a lossy read.
+   * Present exactly when the job declared {@link JobStart.record}.
+   */
+  outputEarliest?: number
 }
 ```
 
@@ -154,7 +248,7 @@ interface JobRead {
 
 ## 服务行为
 
-抽象的 [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition 规定原子 `start`、限定调用方作用域的 `get` 和 `list`、`read`、`kill`、有界 `wait`、故障隔离的 `onJobDone` 与 `onJobsChanged` 监听器，以及 `attachController`；[`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) 是其进程局部 Service Provider。授权会比较拥有者会话；拥有者清理与准入会使用确切的已注册 `Agent` 实例。本地 Service Provider 的 `maxConcurrentJobsPerOwner` 配置必须是正的安全整数，默认值为 `10`；它按确切 owner 统计 `running` 与 `stopping` 记录，所有无 owner 任务共享一个服务级桶，并在生产方终止结算后释放容量。Service Definition 约定见 [`dsh-jobs`](../../packages/jobs/jobs/README.zh.md)，注册表生命周期与准入策略见 [`dsh-jobs-local`](../../packages/jobs/jobs-local/README.zh.md)，面向模型的 Consumer 见 [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.zh.md)。
+抽象的 [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition 规定了原子化的 `start`、按调用方划定的 `get` 与 `list`、`read`、非消耗的 `readRecord`、`kill`、有界的 `wait`、故障隔离的 `onJobDone`、`onJobsChanged` 与 `onOutput` 监听器，以及 `attachController`；[`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) 是进程本地的 Service Provider。授权比较 owner 会话；owner 清理与准入使用注册在案的确切 `Agent` 实例。本地 provider 的正安全整数配置 `maxConcurrentJobsPerOwner` 默认 `10`，按确切 owner 统计 `running` 加 `stopping` 记录，无主任务共享一个桶；生产方终态结算释放容量，`retainBytes`（默认 262144）与 `settledRetainBytes`（默认 16384）约束每个已声明 record 的运行期与结算后保留量。参见 [`dsh-jobs`](../../packages/jobs/jobs/README.zh.md)（Service Definition 契约）、[`dsh-jobs-local`](../../packages/jobs/jobs-local/README.zh.md)（注册表生命周期与准入策略）与 [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.zh.md)（模型侧 Consumer）。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 

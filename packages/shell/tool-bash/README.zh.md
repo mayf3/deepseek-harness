@@ -55,7 +55,7 @@ kind: "package-reference"
 
 ### 后台运行长时间命令
 
-传入 `run_in_background: true` 会立即返回 job id，不应用超时；命令继续运行，agent 同时处理其他事情。agent 用 `job_output` 读取输出（除非 `wait: true`，否则非阻塞）、用 `job_list` 列出任务、用 `job_kill` 停止任务；完成的任务会在会话内通知拥有它的 agent。后台支持需要挂载通用任务运行时（`dsh-jobs-local`）及其控制工具（`dsh-tool-jobs`）。加载了可选的 `ctx.activities` 注册表时，已提交的后台运行还会被尽力镜像进去：一个与调用和 job 关联的 `bash` activity 以 `activityPollMs`（默认 150）的节奏泵送句柄的非消费 `observed` 读取器，使 Web 客户端在不触碰 job 游标的情况下流式看到实时输出；任何观察失败都被记录并吞掉。
+传入 `run_in_background: true` 会立即返回 job id，不应用超时；命令继续运行，agent 同时处理其他事情。agent 用 `job_output` 读取输出（除非 `wait: true`，否则非阻塞）、用 `job_list` 列出任务、用 `job_kill` 停止任务；完成的任务会在会话内通知拥有它的 agent。后台支持需要挂载通用任务运行时（`dsh-jobs-local`）及其控制工具（`dsh-tool-jobs`）。后台 job 声明观测 record：运行的非消费 `observed` 读取器以 `recordPollMs`（默认 150）的节奏泵入其中，使 Web 客户端在不触碰 job 消耗游标的情况下流式看到实时输出；泵失败会被记录并吞掉，job 继续运行。
 
 ### 沙箱执行与升权
 

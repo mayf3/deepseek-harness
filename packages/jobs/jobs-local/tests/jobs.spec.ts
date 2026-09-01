@@ -200,7 +200,7 @@ describe('LocalJobRegistry.start', () => {
     for (const job of live) ctx.jobs.start(job.spec)
 
     const blocked = producer()
-    const run = vi.fn(() => blocked.spec.run())
+    const run = vi.fn((job: RunningJob) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('background job limit reached for this owner (limit: 10)')
     expect(run).not.toHaveBeenCalled()
@@ -213,7 +213,7 @@ describe('LocalJobRegistry.start', () => {
     expect(ctx.jobs.start(first.spec)).toBe('bash-1')
 
     const blocked = producer()
-    const run = vi.fn(() => blocked.spec.run())
+    const run = vi.fn((job: RunningJob) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('use job_kill to stop an unneeded job, wait for it to finish, then retry')
     expect(run).not.toHaveBeenCalled()
@@ -658,7 +658,7 @@ describe('LocalJobRegistry owner isolation', () => {
     ctx.jobs.start(current.spec) // Attach the current owner's cleanup first.
 
     const stale = producer({ owner: staleOwner })
-    const staleRun = vi.fn(() => stale.spec.run())
+    const staleRun = vi.fn((job: RunningJob) => stale.spec.run(job))
     expect(() => ctx.jobs.start({ ...stale.spec, run: staleRun }))
       .toThrow('is not the registered agent instance')
     expect(staleRun).not.toHaveBeenCalled()

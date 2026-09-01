@@ -22,7 +22,7 @@ The one activity without a job was the foreground workflow mirror. Everything el
 - **`ui-activity` returns to its upstream name `ui-jobs`** and renders one roster: `jobsBySession` rows, expandable exactly when `outputTotal` is present. The two-roster join is deleted.
 - **Foreground workflow loses its live panel deliberately.** `tool-workflow`'s activity mirror is removed; a foreground run surfaces through its recorded run/member lifecycle events only, and the per-line `workflow/phase` / `workflow/log` narration has no observer until workflow gains `run_in_background` and registers a record job. Jobs stay a pure background registry — no `foreground` mode bit, no model-invisible rows, no run-less rows.
 
-## Rejected
+## Alternatives considered
 
 - **A `foreground: true` job mode** to keep the foreground workflow panel: it needs two coupled enforcement points (reported-at-birth and a `job_list` filter) whose divergence double-delivers or leaks rows to the model, for one edge feature replaceable by `run_in_background`.
 - **Serving model reads from the record** (deleting `readOutput`): model reads are producer-formatted (truncation and spill notices, sandbox markers) and consuming; the record is raw, channel-labeled, and non-consuming. Unifying them moves producer-specific formatting into the registry or noise into the observer stream.

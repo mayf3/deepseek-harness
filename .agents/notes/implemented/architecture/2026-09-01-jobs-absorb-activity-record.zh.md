@@ -22,7 +22,7 @@ Status: implemented
 - **`ui-activity` 改回上游名字 `ui-jobs`**，渲染单一名册：`jobsBySession` 行，恰在 `outputTotal` 存在时可展开。双名册 join 被删除。
 - **前台 workflow 有意失去实时面板。** `tool-workflow` 的 activity 镜像被移除；前台 run 只通过已记录的 run/member 生命周期事件呈现，逐行的 `workflow/phase` / `workflow/log` 叙述在 workflow 获得 `run_in_background` 并登记 record job 之前没有观察者。jobs 保持纯后台注册表——没有 `foreground` 模式位、没有模型不可见行、没有无 run 行。
 
-## 已否决
+## 曾考虑的替代方案
 
 - **`foreground: true` job 模式**以保留前台 workflow 面板：它需要两个耦合的执行点（出生即 reported 与 `job_list` 过滤），两者一旦分叉就会双投递或向模型泄漏行，而它换来的只是一个可被 `run_in_background` 替代的边缘特性。
 - **用 record 服务模型读取**（删除 `readOutput`）：模型读取是生产者格式化的（截断与 spill 提示、sandbox 标记）且消耗型；record 是原始、带 channel 标签、非消耗的。统一二者要么把生产者特有格式化搬进注册表，要么把噪声混入观察者流。
