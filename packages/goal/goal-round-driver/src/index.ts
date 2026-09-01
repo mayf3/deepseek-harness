@@ -275,9 +275,16 @@ export function apply(ctx: Context): void {
         requestDrive(state)
       }
     })
-    ctx.on('goal/changed', ({ agent }) => {
+    ctx.on('goal/changed', ({ agent, change }) => {
       const state = stateFor(agent)
       state.needsCheckpoint = true
+      // A host-initiated pause stops goal execution: abort the live turn so the
+      // model cannot keep acting or resume in the same turn. A model-initiated
+      // pause (update_goal inside its own turn) finishes normally.
+      if (change.operation === 'pause' && agent.status === 'running'
+        && ctx.agents.currentInitiator() !== agent) {
+        agent.cancel({ kind: 'user' }, { keepInbox: true })
+      }
       requestDrive(state)
     })
 
