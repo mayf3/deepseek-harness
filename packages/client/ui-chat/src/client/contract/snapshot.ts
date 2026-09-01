@@ -15,17 +15,17 @@ export type {
 /** Per-key observable used by one mounted Chat Node Seat. */
 export interface ChatNodeSource {
   /** @returns the current Node for this source's stable key. */
-  getSnapshot(): ChatConversationViewNode | undefined
+  readonly getSnapshot: () => ChatConversationViewNode | undefined
   /** @param listener - callback for changes to this key. @returns the unsubscribe function. */
-  subscribe(listener: () => void): () => void
+  readonly subscribe: (listener: () => void) => () => void
 }
 
 /** Per-key observable for the Turn-process presentation surrounding one Chat Node. */
 export interface ChatNodeProcessSource {
   /** @returns the current presentation, or absence outside a projected Turn process. */
-  getSnapshot(): ChatTurnProcessPresentation | undefined
+  readonly getSnapshot: () => ChatTurnProcessPresentation | undefined
   /** @param listener - callback for presentation changes. @returns the unsubscribe function. */
-  subscribe(listener: () => void): () => void
+  readonly subscribe: (listener: () => void) => () => void
 }
 
 /** Stable live per-key reader for Chat nodes. */

@@ -24,7 +24,7 @@ function userNode(index: number, text = `message ${String(index)}`): ChatConvers
       content: [{ type: 'text', text }],
       source: null,
     },
-  } as ChatConversationViewNode
+  }
 }
 
 describe('Chat Node keyed sources', () => {

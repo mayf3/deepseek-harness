@@ -16,9 +16,9 @@ export interface ConversationStepDataMap {}
 /** Observable value for one independently owned Location-data key. */
 export interface ConversationLocationDataSource<Value> {
   /** @returns the current value. */
-  getSnapshot(): Value
+  readonly getSnapshot: () => Value
   /** @param listener - callback for value changes. @returns the unsubscribe function. */
-  subscribe(listener: () => void): () => void
+  readonly subscribe: (listener: () => void) => () => void
 }
 
 /** Stable keyed reader for independently owned Location business values. */
@@ -47,30 +47,35 @@ interface ConversationLocationDataValue {
   readonly value: unknown
 }
 
-type RegisteredTurnData = {
-  [Key in keyof ConversationTurnDataMap & string]: {
+type RegisteredTurnData<DataMap extends object> = {
+  [Key in Extract<keyof DataMap, string>]: {
     readonly kind: 'turn'
     readonly turn: number
     readonly key: Key
-    readonly value: ConversationTurnDataMap[Key]
+    readonly value: DataMap[Key]
   }
-}[keyof ConversationTurnDataMap & string]
+}[Extract<keyof DataMap, string>]
 
-type RegisteredStepData = {
-  [Key in keyof ConversationStepDataMap & string]: {
+type RegisteredStepData<DataMap extends object> = {
+  [Key in Extract<keyof DataMap, string>]: {
     readonly kind: 'step'
     readonly turn: number
     readonly step: number
     readonly key: Key
-    readonly value: ConversationStepDataMap[Key]
+    readonly value: DataMap[Key]
   }
-}[keyof ConversationStepDataMap & string]
+}[Extract<keyof DataMap, string>]
+
+type ConversationLocationDataOf<TurnData extends object, StepData extends object> =
+  [keyof TurnData | keyof StepData] extends [never]
+    ? ConversationLocationDataValue
+    : RegisteredTurnData<TurnData> | RegisteredStepData<StepData>
 
 /** One Definition-owned value attached to an Engine-owned Turn or Step. */
-export type ConversationLocationData =
-  [keyof ConversationTurnDataMap | keyof ConversationStepDataMap] extends [never]
-    ? ConversationLocationDataValue
-    : RegisteredTurnData | RegisteredStepData
+export type ConversationLocationData = ConversationLocationDataOf<
+  ConversationTurnDataMap,
+  ConversationStepDataMap
+>
 
 /** Immutable resolved boundary for one Agent step. */
 export interface StepLocation {
