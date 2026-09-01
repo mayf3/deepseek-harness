@@ -672,6 +672,8 @@ describe('web e2e: long Chat scroll contract', () => {
           { timeout: 15_000 },
         ).toBeGreaterThan(chunksBeforeRelease + 5)
         await nextPaint(world.page)
+        // The loop appends tool/result before starting the next model request;
+        // these synchronous Host listeners therefore observe it before later chunks.
         expect(world.events.some(event => event.type === 'tool/result')).toBe(true)
         expect(Math.abs((await flowTop(world.page, awayAnchor.key)) - awayAnchor.top))
           .toBeLessThanOrEqual(GEOMETRY_TOLERANCE)

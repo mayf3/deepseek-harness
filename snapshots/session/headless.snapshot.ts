@@ -375,7 +375,8 @@ function stderrFromSession(log: string): string {
     }
     if (!started) continue
     const data = record.data as JsonObject | undefined
-    if (record.type === 'assistant/message' && Array.isArray(data?.stream)) {
+    if ((record.type === 'assistant/message' || record.type === 'assistant/attempt')
+      && Array.isArray(data?.stream)) {
       for (const entry of data.stream) {
         if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
           throw new Error('headless snapshot embedded stream has an invalid entry')
@@ -681,24 +682,27 @@ describe('headless recorded-session snapshots', () => {
     ].join('\n'))
   })
 
-  it('reconstructs reasoning stderr from embedded current Assistant streams', () => {
-    const log = [
-      { type: 'turn/start', data: { turn: 1 } },
-      {
-        type: 'assistant/message',
-        data: {
-          stream: [
-            { type: 'chunk', chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
-            { type: 'reasoning-chunks', texts: ['first', ' thought'] },
-            { type: 'chunk', chunk: { type: 'block-start', index: 1, blockType: 'text' } },
-          ],
+  it.each(['assistant/message', 'assistant/attempt'] as const)(
+    'reconstructs reasoning stderr from embedded current %s streams',
+    (eventType) => {
+      const log = [
+        { type: 'turn/start', data: { turn: 1 } },
+        {
+          type: eventType,
+          data: {
+            stream: [
+              { type: 'chunk', chunk: { type: 'block-start', index: 0, blockType: 'reasoning' } },
+              { type: 'reasoning-chunks', texts: ['first', ' thought'] },
+              { type: 'chunk', chunk: { type: 'block-start', index: 1, blockType: 'text' } },
+            ],
+          },
         },
-      },
-      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
-    ].map(record => JSON.stringify(record)).join('\n')
+        { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+      ].map(record => JSON.stringify(record)).join('\n')
 
-    expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\n')
-  })
+      expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\n')
+    },
+  )
 
   for (const scenario of scenarios) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
