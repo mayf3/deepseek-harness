@@ -31,6 +31,45 @@ export interface ImageAttachmentRef {
   }
 }
 
+/**
+ * Durable, serializable reference to one verbatim stored file. Files are
+ * stored byte-for-byte with no normalization; `attachmentId` is the sha256
+ * digest of exactly those bytes.
+ */
+export interface FileAttachmentRef {
+  /** Opaque content-addressed storage identifier; never a filesystem path or bearer URL. */
+  attachmentId: AttachmentId
+  /** Sanitized display filename, also the stored object's leaf name. */
+  name: string
+  /** Exact byte length. */
+  bytes: number
+}
+
+/** Base64-encoded file upload accompanying one wire request. */
+export interface EncodedFileAttachment {
+  /** Canonical base64 encoding of the file bytes. */
+  data: string
+  /** Optional display name; it is never interpreted as a path. */
+  name?: string
+}
+
+/** Request to durably commit one file verbatim. */
+export interface SaveFileAttachment {
+  data: Uint8Array
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string
+}
+
+/** Request to durably commit one file from bounded byte chunks. */
+export interface SaveFileStreamAttachment {
+  /** Exact file bytes in order; providers must not retain the complete sequence in memory. */
+  data: AsyncIterable<Uint8Array>
+  /** Optional cancellation for source reads and storage writes. */
+  signal?: AbortSignal
+  /** Optional browser/provider display name; it is never interpreted as a path. */
+  name?: string
+}
+
 /** Deployment-resolved limits used by upload admission and request buffering. */
 export interface ImageAttachmentLimits {
   maxImageBytes: number

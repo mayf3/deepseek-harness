@@ -3,10 +3,13 @@
 import { Context, Service } from '@deepseek-ai/cordis'
 import { AttachmentError } from './error.ts'
 import type {
+  FileAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   RequestImageAttachment,
+  SaveFileAttachment,
+  SaveFileStreamAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from './types.ts'
@@ -14,18 +17,22 @@ import type {
 export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
-export { admitEncodedImages, admitPromptContent } from './admission.ts'
+export { admitEncodedFile, admitEncodedImages, admitPromptContent } from './admission.ts'
 export { requestImageDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,
   AdmittedPromptContentPart,
+  EncodedFileAttachment,
   EncodedImageAttachment,
+  FileAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
   ImageMediaType,
   PromptContentPart,
   RequestImageAttachment,
+  SaveFileAttachment,
+  SaveFileStreamAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
 } from './types.ts'
@@ -117,6 +124,68 @@ export abstract class AttachmentStore extends Service {
    * @throws an AttachmentError when the durable reference is invalid.
    */
   imageHostPath(ref: ImageAttachmentRef): string | undefined {
+    void ref
+    return undefined
+  }
+
+  /**
+   * Durably commit one file byte-for-byte before its owning session event is
+   * appended. Files carry no admission limits: any byte content and length is
+   * accepted, and the stored object is the exact submitted bytes. Backends
+   * without verbatim file storage keep this default rejection.
+   * @param input - exact bytes and optional display name.
+   * @returns the durable content-addressed file reference.
+   */
+  saveFile(input: SaveFileAttachment): Promise<FileAttachmentRef> {
+    void input
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot store verbatim files.',
+      'ATTACHMENT_FILES_UNSUPPORTED',
+    ))
+  }
+
+  /**
+   * Durably commit one file byte-for-byte from bounded chunks. Providers must
+   * apply backpressure and must not collect the complete file in memory.
+   * Backends without streamed verbatim storage keep this default rejection.
+   * @param input - ordered exact bytes, optional cancellation, and display name.
+   * @returns the durable content-addressed file reference.
+   */
+  saveFileStream(input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
+    void input
+    return Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot stream verbatim files.',
+      'ATTACHMENT_FILES_UNSUPPORTED',
+    ))
+  }
+
+  /**
+   * Read and verify one verbatim stored file as bounded chunks. Providers must
+   * not collect the complete file in memory. Backends without verbatim file
+   * reads keep this default rejection.
+   * @param ref - durable reference from the session log.
+   * @param signal - optional cancellation for backend reads and verification work.
+   * @returns exact file bytes in order; integrity failures reject the iteration.
+   */
+  async *readFileStream(
+    ref: FileAttachmentRef,
+    signal?: AbortSignal,
+  ): AsyncIterable<Uint8Array> {
+    signal?.throwIfAborted()
+    void ref
+    await Promise.reject(new AttachmentError(
+      'The mounted attachment provider cannot read verbatim files.',
+      'ATTACHMENT_FILES_UNSUPPORTED',
+    ))
+  }
+
+  /**
+   * Locate the verbatim stored file object in the harness host filesystem.
+   * @param ref - durable file reference.
+   * @returns an absolute host path, or undefined when this backend is not host-file-backed.
+   * @throws an AttachmentError when the durable reference is invalid.
+   */
+  fileHostPath(ref: FileAttachmentRef): string | undefined {
     void ref
     return undefined
   }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import { admitEncodedImages, admitPromptContent } from '@deepseek-ai/dsh-attachment'
+import { admitEncodedFile, admitEncodedImages, admitPromptContent } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment/types'
 
 const PNG = 'AAAA' // canonical base64, 3 bytes
@@ -62,6 +62,44 @@ describe('admitEncodedImages', () => {
     const refused = Object.assign(new Error('Image batch exceeds the configured image-count limit.'), { code: 'TOO_MANY_IMAGES' })
     mocks.saveImages.mockRejectedValueOnce(refused)
     await expect(admitEncodedImages(store, [{ mediaType: 'image/png', data: PNG }])).rejects.toBe(refused)
+  })
+})
+
+describe('admitEncodedFile', () => {
+  /** Delegation double: records the exact saveFile input and answers a fixed ref. */
+  function fileStoreOf() {
+    const store = {
+      saveFile: vi.fn((input: { data: Uint8Array; name?: string }) => Promise.resolve({
+        attachmentId: 'file-1' as never,
+        name: input.name ?? 'file',
+        bytes: input.data.byteLength,
+      })),
+    }
+    return { store: store as unknown as AttachmentStore, mocks: store }
+  }
+
+  it('decodes canonical base64 and delegates verbatim commit to saveFile', async () => {
+    const { store, mocks } = fileStoreOf()
+    const ref = await admitEncodedFile(store, { data: 'AAAA', name: 'blob.bin' })
+    expect(mocks.saveFile).toHaveBeenCalledTimes(1)
+    const input = mocks.saveFile.mock.calls[0]?.[0] as { data: Uint8Array; name?: string }
+    expect([input.name, input.data.byteLength]).toEqual(['blob.bin', 3])
+    expect(ref.bytes).toBe(3)
+  })
+
+  it('accepts an empty payload as a zero-byte file and omits an absent name', async () => {
+    const { store, mocks } = fileStoreOf()
+    const ref = await admitEncodedFile(store, { data: '' })
+    const input = mocks.saveFile.mock.calls[0]?.[0] as object
+    expect('name' in input).toBe(false)
+    expect(ref.bytes).toBe(0)
+  })
+
+  it('rejects non-canonical base64 without touching the store', async () => {
+    const { store, mocks } = fileStoreOf()
+    await expect(admitEncodedFile(store, { data: 'not base64!!' }))
+      .rejects.toMatchObject({ code: 'INVALID_FILE_BASE64' })
+    expect(mocks.saveFile).not.toHaveBeenCalled()
   })
 })
 

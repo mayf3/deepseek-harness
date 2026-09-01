@@ -147,10 +147,33 @@ describe('AttachmentStore.readImageRequest', () => {
     expect(() => store.readImageRequest(ref, { maxPixels: 1, maxBytes: 1 }, controller.signal)).toThrow(reason)
   })
 
-  it('exposes no provider-owned host path by default', async () => {
+  it('rejects generic-file storage and exposes no provider-owned host path by default', async () => {
     const store = new RecordingStore(new Context())
     const ref = await store.saveImage(image(1))
     expect(store.imageHostPath(ref)).toBeUndefined()
+    await expect(store.saveFile({ data: Uint8Array.of(1), name: 'notes.txt' }))
+      .rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
+    await expect(store.saveFileStream({
+      data: (async function* (): AsyncIterable<Uint8Array> { yield Uint8Array.of(1) })(),
+      name: 'notes.txt',
+    })).rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
+    const fileRef = {
+      attachmentId: AttachmentId(`sha256:${'ab'.repeat(32)}`),
+      name: 'notes.txt',
+      bytes: 1,
+    }
+    expect(store.fileHostPath(fileRef)).toBeUndefined()
+    const read = async (signal?: AbortSignal): Promise<void> => {
+      for await (const chunk of store.readFileStream(fileRef, signal)) {
+        void chunk
+        throw new Error('unsupported store yielded a chunk')
+      }
+    }
+    await expect(read()).rejects.toMatchObject({ code: 'ATTACHMENT_FILES_UNSUPPORTED' })
+    const controller = new AbortController()
+    const reason = new Error('cancel unsupported file read')
+    controller.abort(reason)
+    await expect(read(controller.signal)).rejects.toBe(reason)
   })
 })
 
