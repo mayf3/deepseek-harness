@@ -29,6 +29,8 @@ kind: "package-reference"
 
 Client adapter 提供 `SessionEventStream`，即绑定到一个普通 Session 或 direct subagent address 的 Gateway `RemoteJournalStream`。它在读取首个 page 前打开 follow，只发布连续的 `replace`、`prepend` 和 `append` 变更，并通过 tail page 修复重连或 seq 缺口。普通 record 覆盖 `[event.seq, event.seq]`，packed row 覆盖 `[event.seq, event.seq + memberCount - 1]`。业务、persistence 或无法恢复的连续性错误会终止 stream，只有物理载体断开才触发自动恢复。`SessionControlStream` 是 Gateway `RemoteSnapshotStream`；每代都以完整的进程本地 baseline 开始，因此重连会替换 queue、jobs 和 projection 状态，而不会把瞬态值当作 durable event。
 
+`SessionJob` 行恰在该 job 声明了观测 record 时携带 `outputTotal`，`session.observeJob` 从绝对字节偏移流式发送该 record——一个 `opened` 锚帧、聚合的 `output` 帧、最后一个终态 `status` 帧——围栏读取者由请求的 session 解析。record 读取是非消耗的：模型侧游标与完成通知状态永远观察不到它们。Client adapter 提供 `ctx.jobOutput`：按 job 引用计数的观测服务，任务列表 UI 渲染其累积视图；同一 job 的观察者共享一条流，重连时从模型游标续读。
+
 Session 对象还承载本地提交回显：`session.beginSubmission` 在调用方序列化与 prompt 之前，同步把一条回显写入 `SessionSnapshot.pendingSubmissions`，会话 UI 因此能在点击提交的当帧显示消息。Session 根据当前运行状态与请求的投递模式推导每条回显的 `transcript`、`queued` 或 `steering` 位置，并在序列化期间保留该位置。prompt 的 `requestId` 是关联标识：Host 把它回显为 durable user source 的 `rpcId`，queue occurrence 也把它投影为 `SessionQueuedItem.rpcId`。回显在观察到其 durable event 或 queue occurrence 后延迟一个动画帧退休，该延迟保证替代内容就绪前回显仍可渲染；带标识的 prompt 失败或被放弃时立即退休，销毁时按 failed 退休；每次退休恰好触发一次注册的 `onRetire` 回调。回显只存在于 Client 内存；刷新与重连只从 durable event 重建会话。
 
 -----
@@ -40,6 +42,8 @@ Session 对象还承载本地提交回显：`session.beginSubmission` 在调用�
 |---|---:|---|
 | `coldBlankProbeMaxBytes` | `1,024` | 可进行空白状态验证的冷 Session 工件最大物理大小；`0` 禁用探测 |
 | `nativeOpen` | 平台探测 | 是否能把 Session 工作区路径交给原生桌面打开器 |
+| `observeFlushMs` | `100` | 新 record 输出到一次 job 观测读取之间的聚合窗口，毫秒 |
+| `observeMaxFrameBytes` | `65,536` | 每个 job 观测输出帧的软字节预算；更大的单块整块发送 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-session-controller)是所有受支持字段及其 JSDoc 的完整来源。
 

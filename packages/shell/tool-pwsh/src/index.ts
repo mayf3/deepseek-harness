@@ -32,22 +32,15 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
-import type {} from '@deepseek-ai/dsh-activity'
 import { processOutcome } from './background.ts'
-import { observeBackgroundActivity } from './observe.ts'
+import { observeProcessRecord } from './observe.ts'
 import { renderPwshProcessRead, renderPwshPromoted, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
 declare module '@deepseek-ai/dsh-jobs' {
   interface JobKindMap {
-    pwsh: 'pwsh'
-  }
-}
-
-declare module '@deepseek-ai/dsh-activity' {
-  interface ActivityKindMap {
     pwsh: 'pwsh'
   }
 }
@@ -60,8 +53,8 @@ export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
-  /** Poll cadence for mirroring background output into `ctx.activities`, in milliseconds (default 150). */
-  activityPollMs?: number
+  /** Poll cadence for copying background output into the job record, in milliseconds (default 150). */
+  recordPollMs?: number
   /**
    * Move a foreground command that reaches its timeout into the background as
    * a job instead of killing it (default true). Requires background execution:
@@ -74,7 +67,7 @@ export interface Config {
 /** Runtime configuration schema for the pwsh tool plugin. */
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
-  activityPollMs: z.number()
+  recordPollMs: z.number()
     .step(1)
     .min(1)
     .max(Number.MAX_SAFE_INTEGER)
@@ -225,7 +218,7 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
-  const activityPollMs = config.activityPollMs ?? 150
+  const recordPollMs = config.recordPollMs ?? 150
   // Promotion needs the whole background surface: the job tools to collect and
   // stop the promoted work, and the registry itself at execution time.
   const promoteOnTimeout = (config.promoteOnTimeout ?? true) && backgroundEnabled
@@ -429,32 +422,23 @@ export function apply(ctx: Context, config: Config = {}): void {
           error.name = 'AbortError'
           throw error
         }
-        // Task preflight finishes before the starter can spawn a process.
-        let started: ShellProcess | undefined
         const id = jobs.start({
           kind: 'pwsh',
           label: args.command,
           ...exec.agent ? { owner: exec.agent } : {},
-          run: () => {
+          record: true,
+          run: (job) => {
             const proc = ctx.shell.execute(ctx.shell.resolve({ ...request, onExpiry: 'none' }))
-            started = proc
+            // The pump's final drain is folded into `done` so the record holds
+            // its last bytes before settlement trims and closes it.
+            const observed = observeProcessRecord(ctx, job, proc, recordPollMs)
             return {
               cancel: () => void proc.kill(),
-              done: proc.done.then(() => processOutcome(proc)),
+              done: observed.then(() => proc.done).then(() => processOutcome(proc)),
               readOutput: () => renderPwshProcessRead(proc.readOutput(), proc.sandbox, escalationModes),
             }
           },
         })
-        // The starter ran synchronously inside the committed start; mirror the
-        // spawned process into the optional observation registry.
-        if (started !== undefined) {
-          observeBackgroundActivity(ctx, started, {
-            kind: 'pwsh',
-            label: args.command,
-            ...exec.agent ? { owner: exec.agent } : {},
-            correlation: { callId: exec.callId, jobId: id },
-          }, activityPollMs, processOutcome)
-        }
         return { kind: 'background' as const, jobId: id }
       }
       // Promotion needs a live registry at execution time; without one the
@@ -477,11 +461,17 @@ export function apply(ctx: Context, config: Config = {}): void {
               kind: 'pwsh',
               label: args.command,
               ...exec.agent ? { owner: exec.agent } : {},
-              run: () => ({
-                cancel: () => void foreground.kill(),
-                done: foreground.done.then(() => processOutcome(foreground)),
-                readOutput: () => renderPwshProcessRead(foreground.readOutput(), foreground.sandbox, escalationModes),
-              }),
+              record: true,
+              run: (job) => {
+                // The pump's final drain is folded into `done` so the record
+                // holds its last bytes before settlement trims and closes it.
+                const observed = observeProcessRecord(ctx, job, foreground, recordPollMs)
+                return {
+                  cancel: () => void foreground.kill(),
+                  done: observed.then(() => foreground.done).then(() => processOutcome(foreground)),
+                  readOutput: () => renderPwshProcessRead(foreground.readOutput(), foreground.sandbox, escalationModes),
+                }
+              },
             })
           } catch (error) {
             // Admission or controller preflight refused the promotion: fall
@@ -490,12 +480,6 @@ export function apply(ctx: Context, config: Config = {}): void {
           }
           if (promoted !== undefined) {
             offer.accept()
-            observeBackgroundActivity(ctx, foreground, {
-              kind: 'pwsh',
-              label: args.command,
-              ...exec.agent ? { owner: exec.agent } : {},
-              correlation: { callId: exec.callId, jobId: promoted },
-            }, activityPollMs, processOutcome)
             // One consuming read seeds the result with the output so far; the
             // job's cursor continues exactly after it, no repeat and no gap.
             return {

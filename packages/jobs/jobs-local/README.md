@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-jobs-local` runs background jobs inside the harness process: work keeps running while the agent moves on, and the owning agent can read, wait on, list, and cancel it, with completion delivered as an in-session notice when `dsh-tool-jobs` is also mounted. It implements the `dsh-jobs` contract with in-memory records handed out as fresh snapshots, never live state. A per-owner concurrency limit (default 10) bounds how many jobs one agent can have running or stopping at once; jobs die with the harness process and are not durable across restarts.
+`dsh-jobs-local` runs background jobs inside the harness process: work keeps running while the agent moves on, and the owning agent can read, wait on, list, and cancel it, with completion delivered as an in-session notice when `dsh-tool-jobs` is also mounted. It implements the `dsh-jobs` contract with in-memory records handed out as fresh snapshots, never live state. A per-owner concurrency limit (default 10) bounds how many jobs one agent can have running or stopping at once, and a job that declares a record keeps a bounded in-memory output ring (256 KiB live, trimmed to 16 KiB at settlement by default) that observers read at absolute offsets; jobs die with the harness process and are not durable across restarts.
 
 ## Table of Contents
 
@@ -42,8 +42,10 @@ Loading the plugin registers `ctx.jobs`; `maxConcurrentJobsPerOwner` is optional
 | Field | Default | Meaning |
 |---|---|---|
 | `maxConcurrentJobsPerOwner` | `10` | Maximum `running` plus `stopping` jobs per exact owner, or in the shared unowned bucket |
+| `retainBytes` | `262144` | Live record retention per job, in UTF-8 bytes |
+| `settledRetainBytes` | `16384` | Record retention kept after a job settles, in UTF-8 bytes |
 
-The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-jobs-local) is the exhaustive source for the accepted field.
+The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-jobs-local) is the exhaustive source for the accepted fields.
 
 ### What each owner gets
 
@@ -69,7 +71,8 @@ This section explains the design decisions behind the registry and points at the
 
 ### Design philosophy
 
-- **In-memory records, fresh snapshots.** `LocalJobRegistry` keeps one `TrackedTask` per job and projects a new read-only snapshot per call; callers never receive live state.
+- **In-memory records, fresh snapshots.** `LocalJobRegistry` keeps one `TrackedTask` per job — lifecycle state plus the optional record ring — and projects a new read-only snapshot or chunk copy per call; callers never receive live state.
+- **Retention is bounded per record.** Appends past the live cap drop the oldest retained chunks (a single oversized chunk keeps its UTF-8-safe tail); a reader below the retained window gets a lossy read, never an error, and settlement trims to the settled cap.
 - **Owner-relative layers, one process-wide registry.** Controllers, completion listeners, and change observers are filed into the scope that registered them (`ScopedLayers`), and reads union the global layer with the owner's scope chain — so one preset's job controls never hold `start()` open for an agent whose own composition loads none, and a settlement reaches only the listeners its owner's composition registered.
 - **Preflight before start.** `start()` checks controller service, spec validity, live ownership, and capacity before invoking the producer, so a rejection leaves no job id or execution resource; registration commits without a later failable step.
 - **First-wins settlement, completion last.** The earliest terminal outcome records once, releases waiters, and notifies listeners once with per-listener containment; completion is announced after the record is committed and the visible-set change published, because a reporter may open a model turn synchronously.
@@ -84,11 +87,11 @@ This section explains the design decisions behind the registry and points at the
 
 ### Scope layers
 
-`attachController`, `onJobDone`, and `onJobsChanged` register into the calling context's scope layer. The controller question (`servesOwner`) and listener delivery (`listenersFor`, `changedFor`) walk the same chain: global layer first, then each scoped layer along the owner's chain. Registrations are anonymous tokens so duplicate labels stay independently disposable.
+`attachController`, `onJobDone`, `onJobsChanged`, and `onOutput` register into the calling context's scope layer. The controller question (`servesOwner`) and listener delivery (`listenersFor`, `changedFor`, `outputFor`) walk the same chain: global layer first, then each scoped layer along the owner's chain. Registrations are anonymous tokens so duplicate labels stay independently disposable.
 
 ### Admission and settlement
 
-`activeTaskCount` counts authoritative records per exact owner or in the shared unowned bucket. `settle` marks a job reported when waiters are pending, resolves every waiter, records the terminal snapshot, announces the visible-set change, then notifies completion listeners. Pending waits mark the job reported before listeners run so completion reporters do not duplicate notices; a teardown cancel marks it for the same reason — nothing will read a notice addressed to an owner being destroyed.
+`activeTaskCount` counts authoritative records per exact owner or in the shared unowned bucket. `settle` marks a job reported when waiters are pending, trims a declared record to the settled cap, resolves every waiter, records the terminal snapshot, announces the visible-set change and the record's final output signal, then notifies completion listeners. Pending waits mark the job reported before listeners run so completion reporters do not duplicate notices; a teardown cancel marks it for the same reason — nothing will read a notice addressed to an owner being destroyed.
 
 ### Teardown
 

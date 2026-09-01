@@ -1,0 +1,13 @@
+- list "Background jobs":
+  - listitem:
+    - button "Finished 1" [expanded]:
+      - img
+      - text: Finished 1
+    - button "Clear"
+  - listitem:
+    - button "Hide live output of printf 'streamed-%s\\n' marker-line; sleep 45" [expanded]:
+      - text: "bash printf 'streamed-%s\\n' marker-line; sleep 45 signal: SIGTERM; web e2e cancellation {{duration}}"
+      - img
+    - text: $ printf 'streamed-%s\n' marker-line; sleep 45
+    - button "Copy"
+    - text: streamed-marker-line

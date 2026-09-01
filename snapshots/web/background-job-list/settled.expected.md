@@ -1,4 +1,4 @@
-- list "Tasks":
+- list "Background jobs":
   - listitem:
     - button "Finished 1" [expanded]:
       - img

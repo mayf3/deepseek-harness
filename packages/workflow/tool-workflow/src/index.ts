@@ -24,7 +24,6 @@ import type {
   ToolWorkflowAgentEndData, ToolWorkflowAgentStartData,
   ToolWorkflowRunEndData, ToolWorkflowRunStartData,
 } from './types.ts'
-import { createWorkflowActivityMirror } from './activity.ts'
 
 export const name = 'tool-workflow'
 export const inject = ['tools', 'workflowEngine', 'systemPrompt']
@@ -207,7 +206,6 @@ export function apply(ctx: Context, config: Config): void {
   // fields; the assertion records that resolution, not a hidden fallback.
   const { toolName, maxResultChars } = config as ResolvedConfig
   const recorder = createWorkflowRecorder(ctx)
-  const mirror = createWorkflowActivityMirror(ctx)
   // Usage policy ships with the tool (the master convention: tool guidance
   // lives in tool plugins as prompt sections, not in the deployment persona).
   ctx.systemPrompt.section({
@@ -294,7 +292,6 @@ export function apply(ctx: Context, config: Config): void {
       // worker messages, after start() returns and this run record is active.
       if (recordsRun) {
         recorder.start(parent.session, run)
-        mirror.start(run, parent)
       }
 
       // Bridge the tool's abort signal to the run: if the parent step is aborted while the
@@ -327,12 +324,10 @@ export function apply(ctx: Context, config: Config): void {
             /* v8 ignore next -- WorkflowRun.result never rejects by contract, so result is assigned before finally. */
             if (result === undefined) throw new Error('workflow run settled without a result')
             recorder.finish(run.id, result.stopReason)
-            mirror.finish(run.id, result.stopReason)
           }
         } finally {
           if (recordsRun) {
             recorder.abandon(run.id)
-            mirror.abandon(run.id)
           }
         }
       }

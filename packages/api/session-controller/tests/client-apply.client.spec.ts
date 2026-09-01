@@ -106,6 +106,18 @@ async function flush(): Promise<void> {
 }
 
 describe('Session Controller Client apply', () => {
+  it('installs ctx.jobOutput over the captured session namespace', async () => {
+    const bench = await mount()
+    expect(bench.ctx.jobOutput).toBeDefined()
+    // The fake observeJob never yields; opening and releasing must leave no
+    // view and no error behind.
+    const stop = bench.ctx.jobOutput.observe(sid('session-1'), 'bash-1' as never)
+    await flush()
+    stop()
+    await flush()
+    expect(bench.ctx.jobOutput.state.getSnapshot().observed).toEqual({})
+  })
+
   it('routes Session Remote Events and connection generations into the object layer', async () => {
     const connected = vi.spyOn(ClientSessions.prototype, 'handleConnected')
     const error = vi.spyOn(ClientSessions.prototype, 'handleSessionError')

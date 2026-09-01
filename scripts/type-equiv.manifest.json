@@ -1017,6 +1017,21 @@
       "source": "packages/jobs/jobs/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/jobs.md",
+      "symbol": "RunningJob",
+      "source": "packages/jobs/jobs/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/jobs.md",
+      "symbol": "JobRecordChunk",
+      "source": "packages/jobs/jobs/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/jobs.md",
+      "symbol": "JobRecordRead",
+      "source": "packages/jobs/jobs/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/terminal.md",
       "symbol": "TerminalWaitReason",
       "source": "packages/terminal/terminal/src/types.ts"

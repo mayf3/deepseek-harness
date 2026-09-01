@@ -3,26 +3,27 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
+import type { JobId, RunningJob } from '@deepseek-ai/dsh-jobs'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
-import LocalActivityRegistry from '@deepseek-ai/dsh-activity-local'
-import type { ActivitySnapshot } from '@deepseek-ai/dsh-activity'
+import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
+import { observeProcessRecord } from '../src/observe.ts'
 import { renderPromoted } from '../src/render.ts'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 
 const testToolSignal = new AbortController().signal
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-observe-spec-'))
 
-/** Job harness plus the observation registry, with a fast pump for tests. */
+/** Job harness with a fast record pump for tests. */
 async function setup() {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
@@ -30,12 +31,11 @@ async function setup() {
   await ctx.plugin(AgentRegistry)
   await ctx.plugin(LocalJobRegistry)
   await ctx.plugin(ToolTasks)
-  await ctx.plugin(LocalActivityRegistry)
   await ctx.plugin(LocalSubprocessRuntime)
   ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
   await ctx.plugin(BashEnvPlugin)
   await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
-  await ctx.plugin(ToolBash, { activityPollMs: 25 })
+  await ctx.plugin(ToolBash, { recordPollMs: 25 })
   return ctx
 }
 
@@ -63,12 +63,12 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
   throw new Error('condition not reached before timeout')
 }
 
-function retainedText(ctx: Context, id: ActivitySnapshot['id']): string {
-  return ctx.activities.read(id, 0).chunks.map(chunk => chunk.text).join('')
+function retainedText(ctx: Context, id: JobId, caller?: Agent): string {
+  return ctx.jobs.readRecord(id, 0, caller).chunks.map(chunk => chunk.text).join('')
 }
 
-describe('background bash observation', () => {
-  it('mirrors a background run into ctx.activities with correlation, live output, and settlement', async () => {
+describe('background bash record', () => {
+  it('streams a background run into the job record with live output and settlement', async () => {
     const ctx = await setup()
     const ack = await call(ctx, {
       command: 'printf "line-1\\n"; sleep 0.4; printf "line-2\\n"',
@@ -78,21 +78,16 @@ describe('background bash observation', () => {
     expect(text(ack)).toContain('started background job')
     const job = ctx.jobs.list()[0]
     expect(job).toBeDefined()
+    expect(job!.outputTotal).toBeDefined()
 
-    const snapshot = await until(() =>
-      ctx.activities.list().find(row => row.correlation?.jobId === job!.id))
-    expect(snapshot.kind).toBe('bash')
-    expect(snapshot.label).toContain('printf')
-    expect(String(snapshot.correlation?.callId)).toMatch(/^observe-call-/)
+    // Live output appears in the record while the command is still running.
+    await until(() => retainedText(ctx, job!.id).includes('line-1') ? true : undefined)
+    expect(ctx.jobs.get(job!.id).status).toBe('running')
 
-    // Live output appears while the command is still running.
-    await until(() => retainedText(ctx, snapshot.id).includes('line-1') ? true : undefined)
-    expect(ctx.activities.get(snapshot.id).status).toBe('running')
-
-    // Settlement carries the mapped bash outcome and the trailing output.
-    await until(() => ctx.activities.get(snapshot.id).status === 'completed' ? true : undefined)
-    expect(ctx.activities.get(snapshot.id).detail).toBe('exit code: 0')
-    expect(retainedText(ctx, snapshot.id)).toContain('line-2')
+    // Settlement ends the record with the job; the trailing bytes are drained first.
+    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
+    expect(ctx.jobs.get(job!.id).detail).toBe('exit code: 0')
+    expect(retainedText(ctx, job!.id)).toContain('line-2')
 
     // The model-facing consuming cursor still delivers everything: observation stole nothing.
     const collected = await until(() => {
@@ -102,15 +97,13 @@ describe('background bash observation', () => {
     expect(collected).toContain('line-2')
   })
 
-  it('a killed background job settles its mirrored process as killed', async () => {
+  it('a killed background job ends its record with the killed settlement', async () => {
     const ctx = await setup()
     await call(ctx, { command: 'sleep 60', description: 'test command', run_in_background: true })
     const job = ctx.jobs.list()[0]
-    const snapshot = await until(() =>
-      ctx.activities.list().find(row => row.correlation?.jobId === job!.id))
     ctx.jobs.kill(job!.id, undefined, { reason: 'test cleanup' })
-    await until(() => ctx.activities.get(snapshot.id).status === 'killed' ? true : undefined)
-    expect(ctx.activities.get(snapshot.id).detail).toMatch(/signal|killed before exit/)
+    await until(() => ctx.jobs.get(job!.id).status === 'killed' ? true : undefined)
+    expect(ctx.jobs.get(job!.id).detail).toMatch(/signal|killed before exit/)
   })
 
   it('labels stderr chunks with their channel', async () => {
@@ -121,153 +114,79 @@ describe('background bash observation', () => {
       run_in_background: true,
     })
     const job = ctx.jobs.list()[0]
-    const snapshot = await until(() =>
-      ctx.activities.list().find(row => row.correlation?.jobId === job!.id))
-    await until(() => ctx.activities.get(snapshot.id).status === 'completed' ? true : undefined)
-    const chunks = ctx.activities.read(snapshot.id, 0).chunks
+    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
+    const chunks = ctx.jobs.readRecord(job!.id, 0).chunks
     expect(chunks.find(chunk => chunk.text.includes('out-line'))?.channel).toBe('stdout')
     expect(chunks.find(chunk => chunk.text.includes('err-line'))?.channel).toBe('stderr')
   })
+})
 
-  it('a registry whose handle rejects appends degrades to a warning and still settles', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks)
-    const ended: unknown[] = []
-    await ctx.plugin({
-      name: 'appending-broken-activities-probe',
-      apply(child: Context) {
-        child.provide('activities', {
-          open: () => ({
-            id: 'bash-1',
-            append() { throw new Error('append boom') },
-            updateDetail() {},
-            end(outcome: unknown) { ended.push(outcome) },
-          }),
-        })
+describe('observeProcessRecord', () => {
+  /** A RunningJob face recording appends for pump assertions. */
+  function recordingJob(): { job: RunningJob; appends: string[] } {
+    const appends: string[] = []
+    return {
+      job: {
+        id: 'bash-1' as JobId,
+        append(chunk) { appends.push(chunk) },
+        updateDetail() {},
       },
-    })
-    await ctx.plugin(LocalSubprocessRuntime)
-    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
-    await ctx.plugin(BashEnvPlugin)
-    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
-    await ctx.plugin(ToolBash, { activityPollMs: 25 })
-    await call(ctx, { command: 'echo tolerated', description: 'test command', run_in_background: true })
-    await until(() => ended.length > 0 ? true : undefined)
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('activity observation pump'))
-    expect(ended[0]).toMatchObject({ status: 'completed' })
+      appends,
+    }
+  }
+
+  it('degrades to no observation when the backend exposes no offset readers', async () => {
+    const ctx = new Context()
+    const { job, appends } = recordingJob()
+    const proc = { done: Promise.resolve() } as unknown as ShellProcess
+    await observeProcessRecord(ctx, job, proc, 25)
+    expect(appends).toEqual([])
   })
 
-  it('a pump failure waits for process settlement before mapping the outcome', async () => {
+  it('contains a pump failure with a warning; the job path is unaffected', async () => {
     const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks)
-    const ended: unknown[] = []
-    await ctx.plugin({
-      name: 'early-failing-activities-probe',
-      apply(child: Context) {
-        child.provide('activities', {
-          open: () => ({
-            id: 'bash-1',
-            append() { throw new Error('append boom') },
-            updateDetail() {},
-            end(outcome: unknown) { ended.push(outcome) },
-          }),
-        })
-      },
-    })
-    await ctx.plugin(LocalSubprocessRuntime)
-    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
-    await ctx.plugin(BashEnvPlugin)
-    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
     const warn = vi.fn()
     ctx.logger.warn = warn as never
-    await ctx.plugin(ToolBash, { activityPollMs: 25 })
-    // One early line makes the first pump poll append (and fail) while the
-    // process still has most of its sleep ahead.
-    await call(ctx, { command: 'printf "early\\n"; sleep 0.7', description: 'test command', run_in_background: true })
-    await until(() => warn.mock.calls.some(args => String(args[0]).includes('activity observation pump')) ? true : undefined)
-    // The pump already failed; the outcome must wait for real settlement
-    // rather than freezing a fake terminal state onto the running process.
-    expect(ended).toHaveLength(0)
-    await until(() => ended.length > 0 ? true : undefined)
-    expect(ended[0]).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
+    const { job } = recordingJob()
+    const proc = {
+      done: new Promise<void>((resolve) => { setTimeout(resolve, 10) }),
+      observed: {
+        stdout: { readFrom() { throw new Error('reader boom') } },
+      },
+    } as unknown as ShellProcess
+    await observeProcessRecord(ctx, job, proc, 5)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('record observation pump for bash-1 failed'))
   })
+})
 
-  it('a throwing end() is swallowed by the settlement-mapping catch', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks)
-    await ctx.plugin({
-      name: 'end-throwing-activities-probe',
-      apply(child: Context) {
-        child.provide('activities', {
-          open: () => ({
-            id: 'bash-1',
-            append() {},
-            updateDetail() {},
-            end() { throw new Error('end boom') },
-          }),
-        })
-      },
+describe('owned background record', () => {
+  it('fences an owned background run record under the owning session', async () => {
+    const ctx = await setup()
+    const owner = {
+      id: SessionId('observe-owner'),
+      session: { id: SessionId('observe-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('observe-owned-1'),
+      name: 'bash',
+      arguments: { command: 'echo owned', description: 'test command', run_in_background: true },
+      agent: owner,
     })
-    await ctx.plugin(LocalSubprocessRuntime)
-    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
-    await ctx.plugin(BashEnvPlugin)
-    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
-    await ctx.plugin(ToolBash, { activityPollMs: 25 })
-    await call(ctx, { command: 'echo settled', description: 'test command', run_in_background: true })
-    await until(() => warn.mock.calls.some(args => String(args[0]).includes('activity settlement mapping')) ? true : undefined)
-  })
-
-  it('a throwing observation registry never breaks the background call', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SystemPrompt)
-    await ctx.plugin(ToolRuntime)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    await ctx.plugin(ToolTasks)
-    await ctx.plugin({
-      name: 'broken-activities-probe',
-      apply(child: Context) {
-        child.provide('activities', { open() { throw new Error('observation boom') } })
-      },
-    })
-    await ctx.plugin(LocalSubprocessRuntime)
-    ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
-    await ctx.plugin(BashEnvPlugin)
-    await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
-    await ctx.plugin(ToolBash, { activityPollMs: 25 })
-    const ack = await call(ctx, { command: 'echo resilient', description: 'test command', run_in_background: true })
-    expect(text(ack)).toContain('started background job')
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('activity observation unavailable'))
-    // The job itself still completes and reads normally.
-    const job = ctx.jobs.list()[0]
-    const read = await until(() => {
-      const value = ctx.jobs.read(job!.id)
-      return value.text.includes('resilient') ? value : undefined
-    })
-    expect(read.snapshot.status).toBe('completed')
+    const job = ctx.jobs.list(owner)[0]
+    expect(job).toBeDefined()
+    expect(job!.ownerSession).toBe(owner.id)
+    await until(() => ctx.jobs.get(job!.id, owner).status === 'completed' ? true : undefined)
+    expect(() => retainedText(ctx, job!.id)).toThrow(/belongs to another session/)
+    await until(() => retainedText(ctx, job!.id, owner).includes('owned') ? true : undefined)
   })
 })
 
 describe('foreground timeout promotion', () => {
-  it('moves a timed-out foreground command into a job with its output so far, mirrored as an activity', async () => {
+  it('moves a timed-out foreground command into a record job with its output so far', async () => {
     const ctx = await setup()
     const result = await call(ctx, {
       command: 'printf "early-output\\n"; sleep 30',
@@ -285,10 +204,11 @@ describe('foreground timeout promotion', () => {
     const job = ctx.jobs.list()[0]
     expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
 
-    // The activity mirror carries the tool-call correlation like any background run.
-    const snapshot = await until(() =>
-      ctx.activities.list().find(row => row.correlation?.jobId === job!.id))
-    expect(snapshot.kind).toBe('bash')
+    // The promoted job declares a record like any background run, and the
+    // record keeps the whole stream — including the pre-promotion line the
+    // consuming cursor already delivered.
+    expect(job!.outputTotal).toBeDefined()
+    await until(() => retainedText(ctx, job!.id).includes('early-output') ? true : undefined)
 
     // The job's consuming cursor continues after the promoted result's output:
     // no repeat of the early line, and the job stays killable.
@@ -366,31 +286,5 @@ describe('renderPromoted', () => {
       .toContain('partial\n[still running after 250ms; moved to background job bash-7]')
     expect(renderPromoted({ jobId: 'bash-7', timeoutMs: 250, output: 'line\n' }))
       .toContain('line\n[still running after 250ms')
-  })
-})
-
-describe('owned background observation', () => {
-  it('mirrors an owned background run under the owning session', async () => {
-    const ctx = await setup()
-    const owner = {
-      id: SessionId('observe-owner'),
-      session: { id: SessionId('observe-owner'), header: { cwd: process.cwd() } },
-      status: 'idle',
-      ctx,
-    } as unknown as Agent
-    ctx.agents.register(owner)
-    await ctx.tools.execute({
-      signal: testToolSignal,
-      callId: ToolCallId('observe-owned-1'),
-      name: 'bash',
-      arguments: { command: 'sleep 0.3', description: 'test command', run_in_background: true },
-      agent: owner,
-    })
-    const job = ctx.jobs.list(owner)[0]
-    expect(job).toBeDefined()
-    const row = await until(() => ctx.activities.list(owner).find(item => item.correlation?.jobId === job!.id))
-    expect(row.ownerSession).toBe(owner.id)
-    ctx.jobs.kill(job!.id, owner, { reason: 'test cleanup' })
-    await until(() => ctx.jobs.get(job!.id, owner).status === 'killed' ? true : undefined)
   })
 })

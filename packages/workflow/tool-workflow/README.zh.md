@@ -68,7 +68,7 @@ kind: "package-reference"
 
 对于根 transport 执行（`exec.parent` 缺省），工具会用四个 log-only 事件把运行投影到调用 Agent 的 Session：`start()` 返回后写 run-start，只记录 `run.id` 匹配的成员开始与结束，并且只在结果可用且 dispose 完全停稳后写 run-end。嵌套 transport 调用照常执行，但不写任何记录。任一次 Session append 首次失败后，本运行会停止后续记录并只告警一次，留下空记录或合法连续前缀，同时不改变工具结果和清理。包 invariant 会在冷加载与实时追加时拒绝重复 start、未配对成员、仍有开放成员的终点与 run-end 后更新，同时允许缺失终态后缀的连续前缀。
 
-在持久记录之外，每个被记录的顶层运行还会被尽力镜像进可选的 `ctx.activities` 注册表，作为一个 `workflow` activity：原本无人消费的 `workflow/phase` 与 `workflow/log` 事件加上成员生命周期行流入其中，使 Web 客户端看到会话日志刻意不逐行携带的实时叙述。没有注册表、或镜像出现任何失败时，运行本身不受影响。
+引擎的 `workflow/phase` 与 `workflow/log` 事件在本工具没有逐行的持久或观察面：会话日志刻意只记录 run 与成员生命周期，Web transcript 由这些记录派生。
 
 ### 渲染意图
 
@@ -80,7 +80,6 @@ kind: "package-reference"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：工具注册、运行生命周期、记录器接线 |
 | [`src/types.ts`](src/types.ts) | 四个 log-only 记录事件 payload 及其 `SessionEventMap` 声明 |
-| [`src/activity.ts`](src/activity.ts) | 顶层运行的尽力 activity 镜像 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：持久工作流记录协议校验 |
 
 </details>

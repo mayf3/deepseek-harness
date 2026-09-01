@@ -56,7 +56,7 @@ The tool executes `bash -c <command>` and returns the combined output. Commands 
 
 ### Running long commands in the background
 
-Passing `run_in_background: true` returns a job id immediately and no timeout applies; the command keeps running while the agent works on something else. The agent reads its output with `job_output` (non-blocking unless `wait: true`), lists jobs with `job_list`, and stops it with `job_kill`; a finished job notifies the owning agent in-session. Background support needs the generic job runtime (`dsh-jobs-local`) and its control tools (`dsh-tool-jobs`) mounted. When the optional `ctx.activities` registry is loaded, the committed background run is also mirrored into it best-effort: a `bash` activity correlated to the call and job pumps the handle's non-consuming `observed` readers at `activityPollMs` (default 150), so the Web client streams live output without touching the job's cursor; any observation failure is logged and swallowed.
+Passing `run_in_background: true` returns a job id immediately and no timeout applies; the command keeps running while the agent works on something else. The agent reads its output with `job_output` (non-blocking unless `wait: true`), lists jobs with `job_list`, and stops it with `job_kill`; a finished job notifies the owning agent in-session. Background support needs the generic job runtime (`dsh-jobs-local`) and its control tools (`dsh-tool-jobs`) mounted. The background job declares an observation record: the run's non-consuming `observed` readers are pumped into it at `recordPollMs` (default 150), so the Web client streams live output without touching the job's consuming cursor; a pump failure is logged and swallowed while the job runs on.
 
 ### Timeout promotion
 

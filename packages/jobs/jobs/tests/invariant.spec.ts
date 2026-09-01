@@ -62,6 +62,7 @@ describe('job-registry invariants', () => {
     const owner = { id: SessionId('owner') } as Agent
     expect(() => { notify({ ...BASE, id: JobId('subagent-2'), kind: 'subagent', ownerSession: owner.id }, owner) })
       .not.toThrow()
+    expect(() => { notify({ ...BASE, outputTotal: 8, outputEarliest: 4 }) }).not.toThrow()
   })
 
   it.each([
@@ -76,6 +77,12 @@ describe('job-registry invariants', () => {
     [{ ...BASE, finishedAt: 9 }, undefined, /no earlier than startedAt/],
     [{ ...BASE, finishedAt: 20.5 }, undefined, /no earlier than startedAt/],
     [{ ...BASE, ownerSession: SessionId('recorded') }, { id: SessionId('actual') } as Agent, /does not match its completion owner/],
+    [{ ...BASE, outputTotal: 8 }, undefined, /record offsets must be present together/],
+    [{ ...BASE, outputEarliest: 0 }, undefined, /record offsets must be present together/],
+    [{ ...BASE, outputTotal: 8, outputEarliest: 9 }, undefined, /0 <= outputEarliest <= outputTotal/],
+    [{ ...BASE, outputTotal: 8.5, outputEarliest: 0 }, undefined, /0 <= outputEarliest <= outputTotal/],
+    [{ ...BASE, outputTotal: 8, outputEarliest: 0.5 }, undefined, /0 <= outputEarliest <= outputTotal/],
+    [{ ...BASE, outputTotal: 8, outputEarliest: -1 }, undefined, /0 <= outputEarliest <= outputTotal/],
   ] as const)('rejects an incoherent registry snapshot', async (snapshot, owner, message) => {
     const notify = await setup()
     expect(() => { notify(snapshot, owner) }).toThrow(message)

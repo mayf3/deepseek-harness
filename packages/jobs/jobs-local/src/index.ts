@@ -1,7 +1,8 @@
 /**
  * Process-local provider for the background-job capability seam
- * (`ctx.jobs`). It keeps every record in memory and hands out fresh
- * snapshots, never live state.
+ * (`ctx.jobs`). It keeps every record — lifecycle state plus the optional
+ * bounded output ring — in memory and hands out fresh snapshots and chunk
+ * copies, never live state.
  *
  * Registrations outlive producer and controller fibers. Agent or service
  * disposal cancels live work and awaits compliant producers; a throwing
@@ -17,8 +18,9 @@ import type { ScopeLayer } from '@deepseek-ai/dsh-scope'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobDoneListener, JobKillOptions, JobKind, JobOutcome, JobRead, JobSnapshot, JobStart, JobStatus,
-  JobsChangedListener,
+  JobAppendOptions, JobChannel, JobDoneListener, JobKillOptions, JobKind, JobOutcome,
+  JobOutputListener, JobRead, JobRecordChunk, JobRecordRead, JobSnapshot, JobStart, JobStatus,
+  JobsChangedListener, RunningJob,
 } from '@deepseek-ai/dsh-jobs'
 
 /** Timeout code that distinguishes a bounded wait from caller cancellation. */
@@ -27,6 +29,12 @@ export const TASK_WAIT_TIMEOUT = 'TASK_WAIT_TIMEOUT'
 /** Default maximum number of active jobs in one exact-owner bucket. */
 const DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER = 10
 
+/** Default live record retention per job, in UTF-8 bytes. */
+const DEFAULT_RETAIN_BYTES = 256 * 1024
+
+/** Default record retention kept after settlement, in UTF-8 bytes. */
+const DEFAULT_SETTLED_RETAIN_BYTES = 16 * 1024
+
 /** Configuration for the process-local job registry. */
 export interface Config {
   /**
@@ -34,6 +42,45 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
+  /** Live record retention per job in UTF-8 bytes; omission defaults to 262144. */
+  retainBytes?: number
+  /** Record retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384. */
+  settledRetainBytes?: number
+}
+
+/** One retained record ring entry; `bytes` caches the chunk's UTF-8 length. */
+interface RingChunk {
+  at: number
+  text: string
+  bytes: number
+  channel?: JobChannel
+  gapBefore?: true
+}
+
+/** The bounded output ring behind one job's declared record. */
+interface RecordState {
+  /** Retained chunks in offset order; offsets stay absolute across eviction. */
+  chunks: RingChunk[]
+  /** Sum of the retained chunks' byte lengths. */
+  retainedBytes: number
+  /** Total UTF-8 bytes ever appended. */
+  total: number
+  /** Offset of the oldest retained byte (equals {@link total} when nothing is retained). */
+  earliest: number
+}
+
+/**
+ * Producer-written state shared between the {@link RunningJob} face and the
+ * registered record: the starter call writes through it before the commit,
+ * the same object serves the job for its whole life afterwards.
+ */
+interface ProducerState {
+  /** Bounded output ring; undefined when the spec declared no record. */
+  record: RecordState | undefined
+  /** Live progress detail until settlement replaces it with the terminal one. */
+  detail: string | undefined
+  /** The committed registry record; undefined exactly during the starter call. */
+  job: TrackedTask | undefined
 }
 
 /** The registry's mutable per-job record (never handed out — see {@link LocalJobRegistry.snapshot}). */
@@ -47,7 +94,8 @@ interface TrackedTask {
   cancel: (reason?: string) => void
   readOutput: (() => string) | undefined
   status: JobStatus
-  detail: string | undefined
+  /** Producer-shared record ring and detail line. */
+  state: ProducerState
   output: string | undefined
   startedAt: number
   finishedAt: number | undefined
@@ -70,18 +118,38 @@ function isTerminal(status: JobStatus): boolean {
 }
 
 /**
+ * The UTF-8-safe tail of `text` no longer than `maxBytes`: the byte cut
+ * advances past continuation bytes so the surviving text never starts inside
+ * a code point.
+ * @param text - the oversized chunk text.
+ * @param maxBytes - positive byte budget for the surviving tail.
+ * @returns the surviving tail and its exact byte length.
+ */
+function utf8Tail(text: string, maxBytes: number): { text: string; bytes: number } {
+  const raw = Buffer.from(text, 'utf8')
+  let start = raw.length - maxBytes
+  // The loop bound proves the index is in range; the assertion only
+  // discharges noUncheckedIndexedAccess.
+  while (start < raw.length && ((raw[start] as number) & 0xC0) === 0x80) start += 1
+  const tail = raw.subarray(start)
+  return { text: tail.toString('utf8'), bytes: tail.length }
+}
+
+/**
  * One scope's contributions: the job controllers attached from it and the
- * completion listeners registered there. Both tables are anonymous because a
- * contribution is identified by its own disposer, never by a name a second
- * registrant could shadow.
+ * completion, change, and record-output listeners registered there. All
+ * tables are anonymous because a contribution is identified by its own
+ * disposer, never by a name a second registrant could shadow.
  */
 class JobLayer implements ScopeLayer {
   readonly controllers = new AnonymousEntries<symbol>()
   readonly listeners = new AnonymousEntries<JobDoneListener>()
   readonly changed = new AnonymousEntries<JobsChangedListener>()
+  readonly output = new AnonymousEntries<JobOutputListener>()
 
   isEmpty(): boolean {
     return this.controllers.isEmpty() && this.listeners.isEmpty() && this.changed.isEmpty()
+      && this.output.isEmpty()
   }
 }
 
@@ -97,10 +165,24 @@ export class LocalJobRegistry extends JobRegistry {
       .min(1)
       .max(Number.MAX_SAFE_INTEGER)
       .default(DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER),
+    retainBytes: z.number()
+      .step(1)
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_RETAIN_BYTES),
+    settledRetainBytes: z.number()
+      .step(1)
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_SETTLED_RETAIN_BYTES),
   })
 
   /** Schemastery-defaulted active-job limit. */
   private readonly maxConcurrentJobsPerOwner: number
+  /** Schemastery-defaulted live record retention cap. */
+  private readonly retainBytes: number
+  /** Schemastery-defaulted settled record retention cap. */
+  private readonly settledRetainBytes: number
   private store = new Map<JobId, TrackedTask>()
   private counters = new Map<string, number>()
   /**
@@ -124,8 +206,10 @@ export class LocalJobRegistry extends JobRegistry {
 
   constructor(ctx: Context, config: Config) {
     super(ctx)
-    // Schemastery validates and fills the default before constructing the service.
+    // Schemastery validates and fills the defaults before constructing the service.
     this.maxConcurrentJobsPerOwner = (config as Required<Config>).maxConcurrentJobsPerOwner
+    this.retainBytes = (config as Required<Config>).retainBytes
+    this.settledRetainBytes = (config as Required<Config>).settledRetainBytes
     this.selfCtx = ctx
     ctx.effect(() => () => this.disposeAll(), 'jobs teardown')
   }
@@ -149,10 +233,23 @@ export class LocalJobRegistry extends JobRegistry {
       )
     }
 
-    const hooks = spec.run()
+    // The id is issued before the starter runs so the producer face can carry
+    // it; a throwing starter still leaves nothing registered — its ordinal is
+    // simply skipped.
     const count = (this.counters.get(spec.kind) ?? 0) + 1
     this.counters.set(spec.kind, count)
     const id = JobId(`${spec.kind}-${count}`)
+    const state: ProducerState = {
+      record: spec.record === true ? { chunks: [], retainedBytes: 0, total: 0, earliest: 0 } : undefined,
+      detail: undefined,
+      job: undefined,
+    }
+    const handle: RunningJob = {
+      id,
+      append: (text, options) => { this.appendRecord(id, state, text, options) },
+      updateDetail: (detail) => { this.updateDetail(state, detail) },
+    }
+    const hooks = spec.run(handle)
 
     let markSettled!: () => void
     const settled = new Promise<void>((resolve) => { markSettled = resolve })
@@ -165,7 +262,7 @@ export class LocalJobRegistry extends JobRegistry {
       cancel: hooks.cancel.bind(hooks),
       readOutput: hooks.readOutput?.bind(hooks),
       status: 'running',
-      detail: undefined,
+      state,
       output: undefined,
       startedAt: Date.now(),
       finishedAt: undefined,
@@ -176,6 +273,10 @@ export class LocalJobRegistry extends JobRegistry {
       waiters: 0,
       waitResolvers: new Set(),
     }
+    // Binding the shared producer state is the commit: writes staged inside
+    // the starter are already in `state`, and every later handle call reaches
+    // the registered record for its terminal checks and observer signals.
+    state.job = job
     this.store.set(id, job)
 
     void hooks.done.then(
@@ -303,6 +404,37 @@ export class LocalJobRegistry extends JobRegistry {
     )
   }
 
+  readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead {
+    const job = this.expect(id)
+    this.assertAccess(job, caller)
+    if (!Number.isSafeInteger(from) || from < 0) {
+      throw new Error(`invalid record read offset: expected a non-negative safe integer, got ${JSON.stringify(from)}`)
+    }
+    const record = job.state.record
+    if (record === undefined) {
+      throw new Error(`job ${job.id} declared no output record`)
+    }
+    const chunks: JobRecordChunk[] = []
+    for (const chunk of record.chunks) {
+      if (chunk.at + chunk.bytes <= from) continue
+      chunks.push({
+        at: chunk.at,
+        text: chunk.text,
+        ...chunk.channel !== undefined ? { channel: chunk.channel } : {},
+        ...chunk.gapBefore !== undefined ? { gapBefore: chunk.gapBefore } : {},
+      })
+    }
+    return { chunks, next: record.total, lossy: from < record.earliest }
+  }
+
+  onOutput(listener: JobOutputListener): () => void {
+    return this.layers.effect(
+      this.ctx,
+      layer => layer.output.append(listener),
+      { label: 'jobs.onOutput()' },
+    )
+  }
+
   attachController(name: string): () => void {
     // One token per call keeps duplicate labels independently disposable.
     const token = Symbol(name)
@@ -371,6 +503,7 @@ export class LocalJobRegistry extends JobRegistry {
   /** Project a fresh read-only snapshot from the mutable record. */
   private snapshot(job: TrackedTask): JobSnapshot {
     const ownerSession = job.owner?.id
+    const record = job.state.record
     return {
       id: job.id,
       kind: job.kind,
@@ -378,10 +511,11 @@ export class LocalJobRegistry extends JobRegistry {
       ...job.outputLimitBytes !== undefined ? { outputLimitBytes: job.outputLimitBytes } : {},
       ...ownerSession !== undefined ? { ownerSession } : {},
       status: job.status,
-      ...job.detail !== undefined ? { detail: job.detail } : {},
+      ...job.state.detail !== undefined ? { detail: job.state.detail } : {},
       startedAt: job.startedAt,
       ...job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {},
       reported: job.reported,
+      ...record !== undefined ? { outputTotal: record.total, outputEarliest: record.earliest } : {},
     }
   }
 
@@ -414,6 +548,95 @@ export class LocalJobRegistry extends JobRegistry {
     }
   }
 
+  /** The record-output observers that own `owner`'s stream signals, resolved like {@link changedFor}. */
+  private *outputFor(owner?: Agent): IterableIterator<JobOutputListener> {
+    yield* this.layers.global.output.values()
+    const scope = owner === undefined ? undefined : scopeOf(owner.ctx)
+    for (const layer of this.layers.chainLayers(scope)) yield* layer.output.values()
+  }
+
+  /** Announce that one job's record advanced (append or settlement), with per-listener containment. */
+  private notifyOutput(job: TrackedTask): void {
+    for (const listener of this.outputFor(job.owner)) {
+      try {
+        listener(job.id)
+      } catch (error: unknown) {
+        this.selfCtx.logger.warn(`jobs: onOutput listener threw: ${String(error)}`)
+      }
+    }
+  }
+
+  /**
+   * Append one chunk through a producer face. A chunk against a settled job or
+   * without a record declaration is logged and dropped; an empty chunk is
+   * dropped silently. A chunk staged inside the starter call is retained and
+   * signals no observer — the registration commit publishes it.
+   */
+  private appendRecord(id: JobId, state: ProducerState, text: string, options?: JobAppendOptions): void {
+    const job = state.job
+    if (job !== undefined && isTerminal(job.status)) {
+      this.selfCtx.logger.warn(`jobs: append to settled job ${job.id} dropped`)
+      return
+    }
+    const record = state.record
+    if (record === undefined) {
+      this.selfCtx.logger.warn(`jobs: append to job ${id} without a record declaration dropped`)
+      return
+    }
+    if (text.length === 0) return
+    const bytes = Buffer.byteLength(text, 'utf8')
+    record.chunks.push({
+      at: record.total,
+      text,
+      bytes,
+      ...options?.channel !== undefined ? { channel: options.channel } : {},
+      ...options?.gapBefore !== undefined ? { gapBefore: options.gapBefore } : {},
+    })
+    record.total += bytes
+    record.retainedBytes += bytes
+    this.trimRecord(record, this.retainBytes)
+    if (job !== undefined) this.notifyOutput(job)
+  }
+
+  /**
+   * Replace the live detail line through a producer face; a write against a
+   * settled job is logged and dropped. A write staged inside the starter call
+   * seeds the registered snapshot and signals no observer.
+   */
+  private updateDetail(state: ProducerState, detail: string): void {
+    const job = state.job
+    if (job !== undefined && isTerminal(job.status)) {
+      this.selfCtx.logger.warn(`jobs: detail update on settled job ${job.id} dropped`)
+      return
+    }
+    state.detail = detail
+    if (job !== undefined) this.notifyChanged(job.owner)
+  }
+
+  /**
+   * Drop retained head chunks until the ring fits `cap`; a single oversized
+   * chunk keeps only its UTF-8-safe tail with a `gapBefore` marker. Offsets
+   * stay absolute: `earliest` advances over everything dropped.
+   */
+  private trimRecord(record: RecordState, cap: number): void {
+    while (record.retainedBytes > cap && record.chunks.length > 1) {
+      const dropped = record.chunks.shift()
+      /* v8 ignore next -- the length guard proves shift() returns a chunk; the check only satisfies noUncheckedIndexedAccess. */
+      if (dropped === undefined) break
+      record.retainedBytes -= dropped.bytes
+    }
+    const single = record.chunks.length === 1 ? record.chunks[0] : undefined
+    if (single !== undefined && single.bytes > cap) {
+      const tail = utf8Tail(single.text, cap)
+      single.at += single.bytes - tail.bytes
+      single.text = tail.text
+      single.bytes = tail.bytes
+      single.gapBefore = true
+      record.retainedBytes = tail.bytes
+    }
+    record.earliest = record.chunks[0]?.at ?? record.total
+  }
+
   /**
    * Record the first terminal outcome, release waiters, then announce
    * completion. First-wins preserves a teardown force-failure against late
@@ -429,18 +652,31 @@ export class LocalJobRegistry extends JobRegistry {
     // producer facts first (`signal: SIGTERM; cancelled by the user`). A job
     // that outran its kill request (settled `completed`/`failed`) keeps the
     // producer detail alone — the reason describes a kill that never landed.
-    job.detail = outcome.status === 'killed' && job.killReason !== undefined
-      ? (outcome.detail !== undefined ? `${outcome.detail}; ${job.killReason}` : job.killReason)
-      : outcome.detail
+    // Without any terminal detail the last live progress line stays, still
+    // describing what the job was doing.
+    if (outcome.status === 'killed' && job.killReason !== undefined) {
+      job.state.detail = outcome.detail !== undefined
+        ? `${outcome.detail}; ${job.killReason}`
+        : job.killReason
+    } else if (outcome.detail !== undefined) {
+      job.state.detail = outcome.detail
+    }
     job.output = outcome.output
     job.finishedAt = Date.now()
     if (job.waiters > 0) job.reported = true
+    // Settlement ends the record: trim to the settled cap before any observer
+    // reads the terminal snapshot.
+    const record = job.state.record
+    if (record !== undefined) this.trimRecord(record, this.settledRetainBytes)
     const snapshot = this.snapshot(job)
     const waitResolvers = [...job.waitResolvers]
     job.waitResolvers.clear()
     for (const resolveWait of waitResolvers) resolveWait()
     job.markSettled()
     this.notifyChanged(job.owner)
+    // The record stream ends with settlement; the signal follows the committed
+    // visible-set change and precedes completion listeners, which stay last.
+    if (record !== undefined) this.notifyOutput(job)
     if (this.listenersClosed) return
     for (const listener of this.listenersFor(job.owner)) {
       try {

@@ -6,7 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobHooks, JobKind, JobOutcome, JobSnapshot, JobStart } from '@deepseek-ai/dsh-jobs'
+import type { JobHooks, JobKind, JobOutcome, JobSnapshot, JobStart, RunningJob } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry, { type Config as JobsConfig } from '@deepseek-ai/dsh-jobs-local'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -55,25 +55,39 @@ async function disposeAgentScope(agent: Agent): Promise<void> {
   await dispose()
 }
 
-/** A controllable producer start-spec: settle its `done` on demand, record cancels. */
+/** A controllable producer start-spec: settle its `done` on demand, record cancels, expose the job face. */
 function producer(overrides: Partial<Omit<JobStart, 'run'> & JobHooks> = {}) {
   let settle!: (outcome: JobOutcome) => void
   let reject!: (error: unknown) => void
   const cancels: (string | undefined)[] = []
-  const { kind = 'bash', label = 'sleep 60', owner, outputLimitBytes, ...hookOverrides } = overrides
+  const { kind = 'bash', label = 'sleep 60', owner, outputLimitBytes, record, ...hookOverrides } = overrides
   const hooks: JobHooks = {
     cancel(reason) { cancels.push(reason) },
     done: new Promise<JobOutcome>((res, rej) => { settle = res; reject = rej }),
     ...hookOverrides,
   }
+  let started: RunningJob | undefined
   const spec: JobStart = {
     kind,
     label,
     ...owner !== undefined ? { owner } : {},
     ...outputLimitBytes !== undefined ? { outputLimitBytes } : {},
-    run: () => hooks,
+    ...record !== undefined ? { record } : {},
+    run: (job) => {
+      started = job
+      return hooks
+    },
   }
-  return { spec, settle, reject, cancels }
+  return {
+    spec,
+    settle,
+    reject,
+    cancels,
+    job(): RunningJob {
+      if (started === undefined) throw new Error('producer not started')
+      return started
+    },
+  }
 }
 
 async function harness(config: JobsConfig = {}) {
@@ -186,7 +200,7 @@ describe('LocalJobRegistry.start', () => {
     for (const job of live) ctx.jobs.start(job.spec)
 
     const blocked = producer()
-    const run = vi.fn(() => blocked.spec.run())
+    const run = vi.fn((job: RunningJob) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('background job limit reached for this owner (limit: 10)')
     expect(run).not.toHaveBeenCalled()
@@ -199,7 +213,7 @@ describe('LocalJobRegistry.start', () => {
     expect(ctx.jobs.start(first.spec)).toBe('bash-1')
 
     const blocked = producer()
-    const run = vi.fn(() => blocked.spec.run())
+    const run = vi.fn((job: RunningJob) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('use job_kill to stop an unneeded job, wait for it to finish, then retry')
     expect(run).not.toHaveBeenCalled()
@@ -717,7 +731,7 @@ describe('LocalJobRegistry owner isolation', () => {
     ctx.jobs.start(current.spec) // Attach the current owner's cleanup first.
 
     const stale = producer({ owner: staleOwner })
-    const staleRun = vi.fn(() => stale.spec.run())
+    const staleRun = vi.fn((job: RunningJob) => stale.spec.run(job))
     expect(() => ctx.jobs.start({ ...stale.spec, run: staleRun }))
       .toThrow('is not the registered agent instance')
     expect(staleRun).not.toHaveBeenCalled()
@@ -1206,5 +1220,310 @@ describe('LocalJobRegistry teardown change notifications', () => {
     await fiber.dispose()
     // stopping (teardown cancel), settlement, then the final empty set.
     expect(seen).toEqual([undefined, undefined, undefined])
+  })
+})
+
+describe('LocalJobRegistry record', () => {
+  it('appends advance absolute offsets; record reads are non-consuming and never mark reported', async () => {
+    const ctx = await harness()
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('hello ')
+    p.job().append('world', { channel: 'stderr' })
+    const first = ctx.jobs.readRecord(id, 0)
+    expect(first.lossy).toBe(false)
+    expect(first.next).toBe(11)
+    expect(first.chunks).toEqual([
+      { at: 0, text: 'hello ' },
+      { at: 6, text: 'world', channel: 'stderr' },
+    ])
+    // A second identical read proves nothing was consumed.
+    expect(ctx.jobs.readRecord(id, 0)).toEqual(first)
+    // Resuming from `next` yields nothing until more output arrives.
+    expect(ctx.jobs.readRecord(id, first.next).chunks).toEqual([])
+    p.job().append('!')
+    expect(ctx.jobs.readRecord(id, first.next).chunks).toEqual([{ at: 11, text: '!' }])
+    const snapshot = ctx.jobs.get(id)
+    expect(snapshot.outputTotal).toBe(12)
+    expect(snapshot.outputEarliest).toBe(0)
+    // The observer surface owns no notice state: even a terminal record read
+    // leaves the completion notice due.
+    p.settle({ status: 'completed' })
+    await tick()
+    ctx.jobs.readRecord(id, 0)
+    expect(ctx.jobs.get(id).reported).toBe(false)
+  })
+
+  it('staged starter writes surface at the registration commit without observer signals', async () => {
+    const ctx = await harness()
+    const outputSignals: string[] = []
+    ctx.jobs.onOutput((id) => { outputSignals.push(String(id)) })
+    const changes: number[] = []
+    ctx.jobs.onJobsChanged(() => { changes.push(1) })
+    let settle!: (outcome: JobOutcome) => void
+    const id = ctx.jobs.start({
+      kind: 'bash',
+      label: 'staged writes',
+      record: true,
+      run: (job) => {
+        job.append('early ', { channel: 'stdout' })
+        job.updateDetail('booting')
+        return {
+          cancel() {},
+          done: new Promise<JobOutcome>((resolve) => { settle = resolve }),
+        }
+      },
+    })
+    // Only the registration commit announced anything.
+    expect(outputSignals).toEqual([])
+    expect(changes).toEqual([1])
+    const snapshot = ctx.jobs.get(id)
+    expect(snapshot.detail).toBe('booting')
+    expect(snapshot.outputTotal).toBe(6)
+    expect(ctx.jobs.readRecord(id, 0).chunks).toEqual([{ at: 0, text: 'early ', channel: 'stdout' }])
+    settle({ status: 'completed' })
+    await tick()
+  })
+
+  it('drops an empty append without waking observers', async () => {
+    const ctx = await harness()
+    const signals: string[] = []
+    ctx.jobs.onOutput((id) => { signals.push(String(id)) })
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('')
+    expect(signals).toEqual([])
+    expect(ctx.jobs.get(id).outputTotal).toBe(0)
+  })
+
+  it('logs and drops an append without a record declaration; updateDetail still works', async () => {
+    const ctx = await harness()
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('nowhere to land')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`append to job ${id} without a record declaration dropped`))
+    expect(() => ctx.jobs.readRecord(id, 0)).toThrow(`job ${id} declared no output record`)
+    const snapshot = ctx.jobs.get(id)
+    expect(snapshot.outputTotal).toBeUndefined()
+    expect(snapshot.outputEarliest).toBeUndefined()
+    p.job().updateDetail('7/10 items')
+    expect(ctx.jobs.get(id).detail).toBe('7/10 items')
+  })
+
+  it('rejects a negative or fractional record read offset', async () => {
+    const ctx = await harness()
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    expect(() => ctx.jobs.readRecord(id, -1)).toThrow(/invalid record read offset/)
+    expect(() => ctx.jobs.readRecord(id, 0.5)).toThrow(/invalid record read offset/)
+    expect(() => ctx.jobs.readRecord(JobId('bash-99'), 0)).toThrow(/unknown job/)
+  })
+
+  it('fences record reads to the owning session', async () => {
+    const ctx = await harness()
+    const alice = stubAgent(ctx, 'alice')
+    const bob = stubAgent(ctx, 'bob')
+    ctx.agents.register(alice)
+    ctx.agents.register(bob)
+    const p = producer({ owner: alice, record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('secret')
+    expect(() => ctx.jobs.readRecord(id, 0, bob)).toThrow(/belongs to another session/)
+    expect(() => ctx.jobs.readRecord(id, 0)).toThrow(/belongs to another session/)
+    expect(ctx.jobs.readRecord(id, 0, alice).chunks[0]?.text).toBe('secret')
+  })
+
+  it('evicts whole head chunks past the live cap and flags stale readers lossy', async () => {
+    const ctx = await harness({ retainBytes: 8 })
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('aaaa')
+    p.job().append('bbbb')
+    p.job().append('cccc')
+    const read = ctx.jobs.readRecord(id, 0)
+    expect(read.lossy).toBe(true)
+    expect(read.chunks).toEqual([{ at: 4, text: 'bbbb' }, { at: 8, text: 'cccc' }])
+    expect(read.next).toBe(12)
+    const snapshot = ctx.jobs.get(id)
+    expect(snapshot.outputEarliest).toBe(4)
+    expect(snapshot.outputTotal).toBe(12)
+    // A reader at the retained boundary is not lossy.
+    expect(ctx.jobs.readRecord(id, 4).lossy).toBe(false)
+  })
+
+  it('keeps only the UTF-8-safe tail of a single oversized chunk', async () => {
+    const ctx = await harness({ retainBytes: 5 })
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    // '你好' is six UTF-8 bytes; a five-byte budget must not split the second code point.
+    p.job().append('你好')
+    const read = ctx.jobs.readRecord(id, 0)
+    expect(read.lossy).toBe(true)
+    expect(read.chunks).toEqual([{ at: 3, text: '好', gapBefore: true }])
+    const snapshot = ctx.jobs.get(id)
+    expect(snapshot.outputEarliest).toBe(3)
+    expect(snapshot.outputTotal).toBe(6)
+  })
+
+  it('an exhausted byte budget leaves an empty gap-marked tail at the total offset', async () => {
+    const ctx = await harness({ retainBytes: 1 })
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    // Every byte of '好' from the cut is a continuation byte, so no code point survives.
+    p.job().append('好')
+    const read = ctx.jobs.readRecord(id, 0)
+    expect(read.lossy).toBe(true)
+    expect(read.chunks).toEqual([{ at: 3, text: '', gapBefore: true }])
+    expect(ctx.jobs.get(id).outputEarliest).toBe(3)
+  })
+
+  it('returns the whole overlapped chunk for a foreign mid-chunk offset', async () => {
+    const ctx = await harness()
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('abcdef')
+    const read = ctx.jobs.readRecord(id, 3)
+    expect(read.chunks).toEqual([{ at: 0, text: 'abcdef' }])
+    expect(read.lossy).toBe(false)
+  })
+
+  it('preserves a producer-reported gap marker through reads', async () => {
+    const ctx = await harness()
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('tail after drop', { gapBefore: true, channel: 'stdout' })
+    expect(ctx.jobs.readRecord(id, 0).chunks).toEqual([
+      { at: 0, text: 'tail after drop', channel: 'stdout', gapBefore: true },
+    ])
+  })
+
+  it('settlement trims to the settled cap, signals once more, and drops later writes', async () => {
+    const ctx = await harness({ retainBytes: 1024, settledRetainBytes: 4 })
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    const signals: string[] = []
+    ctx.jobs.onOutput((id) => { signals.push(String(id)) })
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('abcdefgh')
+    p.settle({ status: 'completed', detail: 'exit code: 0' })
+    await tick()
+    expect(signals).toEqual([String(id), String(id)])
+    const snapshot = ctx.jobs.get(id)
+    expect(snapshot).toMatchObject({ status: 'completed', detail: 'exit code: 0', outputTotal: 8, outputEarliest: 4 })
+    const read = ctx.jobs.readRecord(id, 0)
+    expect(read.lossy).toBe(true)
+    expect(read.chunks).toEqual([{ at: 4, text: 'efgh', gapBefore: true }])
+    // The stream ended with the settlement: a trailing flush cannot break teardown.
+    p.job().append('late')
+    p.job().updateDetail('late detail')
+    expect(warn.mock.calls.map(call => String(call[0]))).toEqual([
+      expect.stringContaining('append to settled job'),
+      expect.stringContaining('detail update on settled job'),
+    ])
+    expect(signals).toHaveLength(2)
+    expect(ctx.jobs.get(id).detail).toBe('exit code: 0')
+  })
+
+  it('a terminal outcome without detail keeps the last progress line', async () => {
+    const ctx = await harness()
+    const changes: number[] = []
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    ctx.jobs.onJobsChanged(() => { changes.push(1) })
+    p.job().updateDetail('3/10 agents done')
+    expect(changes).toHaveLength(1)
+    expect(ctx.jobs.get(id).detail).toBe('3/10 agents done')
+    p.settle({ status: 'completed' })
+    await tick()
+    expect(ctx.jobs.get(id)).toMatchObject({ status: 'completed', detail: '3/10 agents done' })
+  })
+
+  it('a teardown-forced settlement also ends the record', async () => {
+    const ctx = await harness()
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    const owner = stubAgent(ctx, 'owner')
+    ctx.agents.register(owner)
+    const p = producer({ owner, record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('partial')
+    const disposal = disposeAgentScope(owner)
+    p.settle({ status: 'killed' })
+    await disposal
+    expect(() => ctx.jobs.readRecord(id, 0, owner)).toThrow(/unknown job/)
+    // The producer face outlives the row; its trailing flush is dropped, not thrown.
+    p.job().append('late')
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('append to settled job'))
+  })
+
+  it('delivers onOutput to the global layer and to the owning scope only', async () => {
+    const ctx = await harness()
+    const mount = createScope(ctx, {})
+    const otherMount = createScope(ctx, {})
+    const alice = stubAgent(ctx, 'alice', scopeOf(mount.ctx))
+    const bob = stubAgent(ctx, 'bob', scopeOf(otherMount.ctx))
+    ctx.agents.register(alice)
+    ctx.agents.register(bob)
+    const globalSignals: string[] = []
+    ctx.jobs.onOutput((id) => { globalSignals.push(String(id)) })
+    const scopedSignals: string[] = []
+    await mount.ctx.plugin({
+      inject: ['jobs'],
+      apply(scopedCtx: Context) {
+        scopedCtx.jobs.onOutput((id) => { scopedSignals.push(String(id)) })
+      },
+    })
+    const pa = producer({ owner: alice, record: true })
+    const aliceId = ctx.jobs.start(pa.spec)
+    const pb = producer({ owner: bob, record: true })
+    ctx.jobs.start(pb.spec)
+    pa.job().append('for alice observers')
+    pb.job().append('for bob observers')
+    expect(globalSignals).toHaveLength(2)
+    expect(scopedSignals).toEqual([String(aliceId)])
+  })
+
+  it('contains a throwing onOutput listener without breaking the append commit', async () => {
+    const ctx = await harness()
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    ctx.jobs.onOutput(() => { throw new Error('output boom') })
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('x')
+    expect(ctx.jobs.get(id).outputTotal).toBe(1)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('onOutput listener threw'))
+  })
+
+  it('unregisters onOutput listeners with their registering fiber (HMR safety)', async () => {
+    const ctx = await harness()
+    const signals: string[] = []
+    const fiber = ctx.plugin({
+      inject: ['jobs'],
+      apply(pluginCtx: Context) {
+        pluginCtx.jobs.onOutput((id) => { signals.push(String(id)) })
+      },
+    })
+    await fiber
+    const p = producer({ record: true })
+    ctx.jobs.start(p.spec)
+    p.job().append('a')
+    expect(signals).toHaveLength(1)
+    await fiber.dispose()
+    p.job().append('b')
+    expect(signals).toHaveLength(1)
+  })
+
+  it('hands out fresh record snapshots, never live registry state', async () => {
+    const ctx = await harness()
+    const p = producer({ record: true })
+    const id = ctx.jobs.start(p.spec)
+    const before = ctx.jobs.get(id)
+    p.job().append('grow')
+    expect(before.outputTotal).toBe(0)
+    expect(ctx.jobs.get(id).outputTotal).toBe(4)
   })
 })

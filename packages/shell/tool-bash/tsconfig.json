@@ -49,9 +49,6 @@
     },
     {
       "path": "../../sandbox/sandbox-policy"
-    },
-    {
-      "path": "../../activity/activity"
     }
   ]
 }

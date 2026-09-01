@@ -1,31 +1,43 @@
 /**
  * The background-job Service Definition (`ctx.jobs`). It owns the contract for
- * job ids, session-scoped access, lifecycle state, completion listeners, and
- * owner cleanup while producers retain their execution resources. The
- * process-local registry lives in `@deepseek-ai/dsh-jobs-local`.
+ * job ids, session-scoped access, lifecycle state, completion listeners,
+ * owner cleanup, and the optional per-job observation record — an append-only
+ * bounded output stream any number of independent observers read at absolute
+ * byte offsets, invisible to the model-facing consuming cursor — while
+ * producers retain their execution resources. The process-local registry
+ * lives in `@deepseek-ai/dsh-jobs-local`.
  * @module @deepseek-ai/dsh-jobs
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {
-  JobDoneListener, JobId, JobKillOptions, JobRead, JobSnapshot, JobStart, JobsChangedListener,
+  JobDoneListener, JobId, JobKillOptions, JobOutputListener, JobRead, JobRecordRead, JobSnapshot,
+  JobStart, JobsChangedListener,
 } from './types.ts'
 
 export { JobId } from './types.ts'
 export type {
+  JobAppendOptions,
+  JobChannel,
   JobDoneListener,
   JobHooks,
   JobKillOptions,
   JobKind,
   JobKindMap,
   JobOutcome,
+  JobOutputListener,
   JobRead,
+  JobRecordChunk,
+  JobRecordRead,
   JobSnapshot,
   JobStart,
   JobStatus,
   JobsChangedListener,
+  RunningJob,
 } from './types.ts'
+export { pumpJobOutput } from './pump.ts'
+export type { JobPumpOptions, JobPumpRead, JobPumpSource } from './pump.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -59,6 +71,15 @@ declare module '@deepseek-ai/cordis' {
  *   than process-wide: registrations made from an unscoped context serve
  *   every owner, and registrations made under an agent composition's scope
  *   serve exactly the agents composed under it.
+ * - Record observation never consumes. Any number of {@link readRecord}
+ *   readers hold their own absolute byte offsets; a record read changes no
+ *   cursor and no notice state, so the model-facing surfaces (the consuming
+ *   {@link read}, completion notices) are unaffected.
+ * - Record retention is bounded. Appends past the live cap drop the oldest
+ *   retained bytes; a reader below the retained window gets a lossy read,
+ *   never an error. Settlement — the producer outcome, a kill, or teardown —
+ *   trims retention to the settled cap and ends the stream; the record has no
+ *   separate lifecycle.
  */
 export abstract class JobRegistry extends Service {
   constructor(ctx: Context) {
@@ -169,6 +190,31 @@ export abstract class JobRegistry extends Service {
    * @returns disposer that unregisters the listener.
    */
   abstract onJobsChanged(listener: JobsChangedListener): () => void
+
+  /**
+   * Read retained record output from an absolute byte offset without consuming
+   * it. Resume by passing a previous read's `next`; a foreign offset inside a
+   * retained chunk returns that whole chunk (its `at` may precede `from`).
+   * Never marks the job reported. Throws for an unknown or foreign job, a job
+   * without a {@link JobStart.record} declaration, or a negative or
+   * non-integer offset.
+   * @param id - job to read.
+   * @param from - absolute byte offset to read from (0 for the retained head).
+   * @param caller - reading agent checked against the owner.
+   * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
+   */
+  abstract readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead
+
+  /**
+   * Register an effect-scoped observer of record advancement — one signal per
+   * committed append and one at settlement, carrying only the job id. A
+   * consumer schedules a {@link readRecord} from its own cursor; the registry
+   * never pushes payloads. Delivery is owner-relative on the same terms as
+   * {@link onJobsChanged}. Listeners are contained and never awaited.
+   * @param listener - receives the id whose record advanced.
+   * @returns disposer that unregisters the listener.
+   */
+  abstract onOutput(listener: JobOutputListener): () => void
 
   /**
    * Attach an effect-scoped controller that can read and stop jobs. It serves the

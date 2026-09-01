@@ -40,6 +40,15 @@ function validateSnapshot(snapshot: JobSnapshot, owner: Agent | undefined, fail:
   if (snapshot.ownerSession !== expectedOwner) {
     fail(`job ${JSON.stringify(id)} ownerSession does not match its completion owner`)
   }
+
+  const { outputTotal, outputEarliest } = snapshot
+  if ((outputTotal !== undefined) !== (outputEarliest !== undefined)) {
+    fail(`job ${JSON.stringify(id)} record offsets must be present together`)
+  } else if (outputTotal !== undefined && outputEarliest !== undefined
+    && (!Number.isSafeInteger(outputTotal) || !Number.isSafeInteger(outputEarliest)
+      || outputEarliest < 0 || outputEarliest > outputTotal)) {
+    fail(`job ${JSON.stringify(id)} record offsets must satisfy 0 <= outputEarliest <= outputTotal`)
+  }
 }
 
 /** Install checks over current unowned records and every terminal snapshot. */
