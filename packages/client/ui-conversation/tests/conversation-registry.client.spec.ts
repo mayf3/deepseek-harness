@@ -138,7 +138,7 @@ async function bootRegistries(): Promise<{
 }
 
 describe('Conversation registries', () => {
-  it('publishes frame-paced updates after two animation frames and lets immediate updates preempt them', async () => {
+  it('publishes frame-paced updates after three animation frames and lets immediate updates preempt them', async () => {
     let nextFrame = 0
     const frames = new Map<number, FrameRequestCallback>()
     const requestFrame = vi.fn((callback: FrameRequestCallback) => {
@@ -209,6 +209,13 @@ describe('Conversation registries', () => {
     if (second === undefined) throw new Error('second animation frame was not scheduled')
     frames.delete(2)
     second(16)
+    expect(requestFrame).toHaveBeenCalledTimes(3)
+    expect(listener).not.toHaveBeenCalled()
+
+    const third = frames.get(3)
+    if (third === undefined) throw new Error('third animation frame was not scheduled')
+    frames.delete(3)
+    third(32)
     expect(listener).toHaveBeenCalledOnce()
 
     append({
@@ -223,7 +230,7 @@ describe('Conversation registries', () => {
       type: 'assistant/message',
       data: { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [] } },
     } as SessionEvent)
-    expect(cancelFrame).toHaveBeenCalledWith(3)
+    expect(cancelFrame).toHaveBeenCalledWith(4)
     expect(frames).toHaveLength(0)
     expect(listener).toHaveBeenCalledTimes(2)
 

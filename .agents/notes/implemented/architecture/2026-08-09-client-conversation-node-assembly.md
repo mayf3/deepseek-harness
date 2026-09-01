@@ -125,12 +125,12 @@ The Assembler does not use State reference equality to decide publication or pro
 | Return value | Behavior |
 |---|---|
 | `immediate` | Request a notification and flush in the current microtask |
-| `animation-frame` | Coalesce high-frequency updates into materialization after two browser animation frames |
+| `animation-frame` | Coalesce high-frequency updates into materialization after three browser animation frames |
 | `none` | Do not schedule a flush for this Match; retain its State and dirty marker |
 
 Omitting `publication()` means `immediate`. Assistant token deltas and packed runs use `animation-frame`, invisible Inbox Contexts use `none`, and finals, dependency replays, and Location boundaries publish the latest result through an immediate path.
 
-Every live delta during the two-frame interval still executes `update()`, while one historical packed run executes one batch `update()`. Location-data publication, `buildViewNode()`, View Builder work, and React snapshot notification are coalesced; no fragments are lost. An immediate publication cancels a pending frame interval and flushes the latest State without delay.
+Every live delta during the three-frame interval still executes `update()`, while one historical packed run executes one batch `update()`. Location-data publication, `buildViewNode()`, View Builder work, and React snapshot notification are coalesced; no fragments are lost. An immediate publication cancels a pending frame interval and flushes the latest State without delay.
 
 #### `buildLocationData(context, scope)`
 
@@ -414,7 +414,7 @@ Initial tail, older prepend, and live append share one set of Context invariants
 
 Append does not scan historical Contexts; prepend replays only Contexts whose Matches, Locations, or Reader answers actually changed. A structural Chat change may still recompute visible order and indexes, but does not rerun unrelated business folds or replace unchanged Node identity.
 
-Separating State updates from publication cadence folds every live Assistant delta and each historical packed run while materializing at most once per two animation frames. The Assistant view reads the same projection that the preceding Step Location phase installed. Turn Process returns its existing open data and Node for continuing Assistant chunks without deriving or encoding them again, and Turn Tail defers its complete-Match scan until `turn/end`. Step or Turn close and final Events immediately publish the latest State.
+Separating State updates from publication cadence folds every live Assistant delta and each historical packed run while materializing at most once per three animation frames. The Assistant view reads the same projection that the preceding Step Location phase installed. Turn Process returns its existing open data and Node for continuing Assistant chunks without deriving or encoding them again, and Turn Tail defers its complete-Match scan until `turn/end`. Step or Turn close and final Events immediately publish the latest State.
 
 An inactive target retains Definition State and a target Context index but no builder, materialized Nodes, or snapshot. The mounted built-in or third-party View activates its own target through normal subscription; previously opened targets continue receiving incremental updates.
 

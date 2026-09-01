@@ -125,12 +125,12 @@ Assembler 不以 State 引用相等判断是否需要发布或传播。每次成
 | 返回值 | 行为 |
 |---|---|
 | `immediate` | 请求当前 microtask 通知与 flush |
-| `animation-frame` | 跨过两个浏览器 animation frame 后，把多条高频更新合并为一次 materialization |
+| `animation-frame` | 跨过三个浏览器 animation frame 后，把多条高频更新合并为一次 materialization |
 | `none` | 本 Match 不主动安排 flush，State 和 dirty 标记仍被保留 |
 
 省略 `publication()` 等于 `immediate`。Assistant token delta 与 packed run 使用 `animation-frame`，不可见 Inbox Context 使用 `none`，final、依赖 replay 和 Location 边界会以 immediate 路径发布最新结果。
 
-两帧间隔内的每条 live delta 仍执行 `update()`，一个历史 packed run 则执行一次 batch `update()`；Location-data publication、`buildViewNode()`、View Builder 与 React snapshot 通知会合并执行，不会丢失 fragment。immediate publication 会取消等待中的帧间隔，并立即发布最新 State。
+三帧间隔内的每条 live delta 仍执行 `update()`，一个历史 packed run 则执行一次 batch `update()`；Location-data publication、`buildViewNode()`、View Builder 与 React snapshot 通知会合并执行，不会丢失 fragment。immediate publication 会取消等待中的帧间隔，并立即发布最新 State。
 
 #### `buildLocationData(context, scope)`
 
@@ -414,7 +414,7 @@ Host 业务 package 把自己的持久 Event 成员 declaration-merge 到 `@deep
 
 Append 不扫描历史 Context；prepend 只 replay Match、Location 或 Reader 答案真正受影响的 Context。Chat 结构变化仍可能重算 visible order 和索引，但不会重跑无关业务 fold 或替换未变化 Node identity。
 
-State update 与 publication cadence 分离后，Assistant 的每条 live delta 与每个历史 packed run 都会被 fold，同时每两个 animation frame 最多 materialize 一次。Assistant view 读取前置 Step Location 阶段刚写入的同一 projection。Turn Process 对持续 Assistant chunk 直接返回已有 open data 和 Node，不再重复派生或编码；Turn Tail 到 `turn/end` 才执行完整 Match 扫描。Step/Turn close 与 final Event 会立即发布最新 State。
+State update 与 publication cadence 分离后，Assistant 的每条 live delta 与每个历史 packed run 都会被 fold，同时每三个 animation frame 最多 materialize 一次。Assistant view 读取前置 Step Location 阶段刚写入的同一 projection。Turn Process 对持续 Assistant chunk 直接返回已有 open data 和 Node，不再重复派生或编码；Turn Tail 到 `turn/end` 才执行完整 Match 扫描。Step/Turn close 与 final Event 会立即发布最新 State。
 
 inactive target 会保留 Definition State 和 target Context 索引，但不保留 builder、已物化 Node 或 snapshot。已挂载的内建或第三方 View 通过正常订阅激活自己的 target；已经打开的 target 则继续接收增量更新。
 
