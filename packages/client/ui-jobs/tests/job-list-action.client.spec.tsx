@@ -195,7 +195,7 @@ describe('JobListAction rows', () => {
     const labels = within(screen.getByRole('list', { name: zh['list.aria'] }))
       .getAllByRole('listitem')
       .map(item => item.querySelector('[title]')?.getAttribute('title'))
-      .filter(title => title !== undefined && !title.startsWith('已运行') && !title.startsWith('耗时'))
+      .filter((title): title is string => title != null && !title.startsWith('已运行') && !title.startsWith('耗时'))
     expect(labels).toEqual([
       'live-2', 'live-1', 'settled-d', 'settled-a', 'settled-c', 'settled-b', 'settled-e',
     ])

@@ -312,7 +312,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:77`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:79`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -965,7 +965,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/jobs/jobs-local/src/index.ts:38`](../packages/jobs/jobs-local/src/index.ts)
+Source: [`packages/jobs/jobs-local/src/index.ts:39`](../packages/jobs/jobs-local/src/index.ts)
 
 <a id="deepseek-aidsh-llm-deepseek"></a>
 
@@ -2688,6 +2688,13 @@ export interface Config {
   enableRunInBackground?: boolean
   /** Poll cadence for copying background output into the job record, in milliseconds (default 150). */
   recordPollMs?: number
+  /**
+   * Move a foreground command that reaches its timeout into the background as
+   * a job instead of killing it (default true). Requires background execution:
+   * it is inert when `enableRunInBackground` is false or the composition has
+   * no job registry, and every promotion failure falls back to the timeout kill.
+   */
+  promoteOnTimeout?: boolean
 }
 ```
 
@@ -2855,6 +2862,13 @@ export interface Config {
   enableRunInBackground?: boolean
   /** Poll cadence for copying background output into the job record, in milliseconds (default 150). */
   recordPollMs?: number
+  /**
+   * Move a foreground command that reaches its timeout into the background as
+   * a job instead of killing it (default true). Requires background execution:
+   * it is inert when `enableRunInBackground` is false or the composition has
+   * no job registry, and every promotion failure falls back to the timeout kill.
+   */
+  promoteOnTimeout?: boolean
 }
 ```
 
