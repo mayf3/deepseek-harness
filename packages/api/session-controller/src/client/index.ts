@@ -92,7 +92,14 @@ export const inject = [
 export function apply(ctx: Context): void {
   const remotes = ctx.remote as unknown as SessionRemotes
   const sessions = new ClientSessions(ctx, remotes)
-  new ClientJobOutput(ctx, remotes, new ClientJobOutputModel())
+  // Resolve the session namespace to a concrete value while this plugin's
+  // context is current: observation (re)opens run on caller stacks (a React
+  // event, a carrier retry) whose dynamic context has not declared
+  // `remote.session`, and a property access there fails the inject check.
+  new ClientJobOutput(ctx, {
+    $stream: options => remotes.$stream(options),
+    session: remotes.session,
+  }, new ClientJobOutputModel())
   ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
   ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
   ctx.remote.$on('api-session/status', (sessionId, running) => {

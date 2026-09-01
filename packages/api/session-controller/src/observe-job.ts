@@ -1,7 +1,7 @@
 /** Per-job record observation generations: anchor, coalesced output, terminal status. */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { JobId } from '@deepseek-ai/dsh-jobs'
+import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobRegistry, JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type { SessionJobWireChunk, SessionObserveJobFrame, SessionObserveJobRequest } from './types.ts'
 
@@ -99,7 +99,9 @@ export async function* observeJobRecord(
     throw new Error(`invalid observe offset: expected a non-negative safe integer, got ${JSON.stringify(request.from)}`)
   }
   signal.throwIfAborted()
-  const id = JobId(String(request.jobId))
+  // The brand is nominal typing only; the wire boundary stamps it here rather
+  // than value-importing the optional registry package's constructor.
+  const id = String(request.jobId) as JobId
   const waiter = new OutputWaiter()
   // Subscribe before the first read so an append between the anchor read and
   // the wait cannot be missed.

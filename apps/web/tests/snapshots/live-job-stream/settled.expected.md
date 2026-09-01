@@ -1,4 +1,4 @@
-- list "Tasks":
+- list "Background jobs":
   - listitem:
     - button "Hide live output of printf 'streamed-%s\\n' marker-line; sleep 45" [expanded]:
       - text: "bash printf 'streamed-%s\\n' marker-line; sleep 45 signal: SIGTERM {{duration}}"

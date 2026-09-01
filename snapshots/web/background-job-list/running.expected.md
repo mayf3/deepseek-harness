@@ -1,4 +1,4 @@
-- list "Tasks":
+- list "Background jobs":
   - listitem:
     - button "Show live output of sleep 45":
       - text: sleep 45 {{duration}} bash running
