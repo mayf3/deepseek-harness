@@ -215,9 +215,13 @@ export function imageCardModel(
   const { file_path: filePath } = call.args
   if (typeof filePath !== 'string' || filePath.trim() === '') return null
   // The label path: root calls persist it in presentationMeta; a nested call
-  // persists none, so its own file_path argument fills the label.
+  // (dispatched from inside run_code) persists none, so its own file_path
+  // argument fills the label. A root call with missing or malformed meta
+  // declines — malformed tool data falls back to the generic card, which shows
+  // the flattened content rather than an author-typed path.
   const metaPath = imageMeta(block.meta)?.path
-  const path = metaPath ?? filePath
+  const path = metaPath ?? (block.parentCallId !== undefined ? filePath : null)
+  if (path === null) return null
   // The card renders only text and image blocks; a block of any other type must
   // not be silently hidden, so the whole card declines to the generic form.
   if (!fullyRendered(block.content)) return null

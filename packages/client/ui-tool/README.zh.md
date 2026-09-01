@@ -39,7 +39,7 @@ ctx.slots.inject('tool.call.toolview', () =>
   }, BusinessToolRow))
 ```
 
-owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`、可选 `cwd` 与 `home`、会话授权的 `loadImage` loader（供结果携带持久图像的视图使用），以及普通的 `openFile`/`inspect` 回调。Code Dispatch block 保留事件的 `parentCallId`；root Session call 没有该字段，因此 descendant 无需另一项 placement 标志即可保持 generic 压平形态。路径摘要先相对 Session cwd 缩短，再把剩余的 POSIX Host home 写成 `~`；`filePath` 与 Host 打开仍使用作者给出的文件系统路径。注册项会收到常规 Session slot runtime share，但不会收到 React node 或 runtime service。
+owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`、可选 `cwd` 与 `home`、会话授权的 `loadImage` loader（供结果携带持久图像的视图使用），以及普通的 `openFile`/`inspect` 回调。Code Dispatch block 保留事件的 `parentCallId`；root Session call 没有该字段，因此 descendant 走同一条按 key 分发——注册过视图的调用（如 `read_image`）在嵌套处也渲染其卡片，未注册的 descendant 保持 generic 压平形式。路径摘要先相对 Session cwd 缩短，再把剩余的 POSIX Host home 写成 `~`；`filePath` 与 Host 打开仍使用作者给出的文件系统路径。注册项会收到常规 Session slot runtime share，但不会收到 React node 或 runtime service。
 
 ### 内置视图
 
@@ -62,9 +62,8 @@ owner 载荷为 `ToolCallOwnerProps`：`callId`、`toolName`、冻结的 `block`
 ### 详情与卡片
 
 
-本包通过 `ToolDetails` 填充 `conversation.details.tool`。行 renderer 与 Details renderer 分别为 terminal、read、diff、search 和 web 卡片复用同一个纯 card model。这些 model 校验原始调用参数、结果内容、失败状态、持久 metadata、Code Dispatch `parentCallId` 与 Session 路径事实。Generic row 保留原始 `argsRaw` 引用，只在展开期间格式化 input body；结构化卡片跳过 generic body 格式化。不受支持或格式错误的输入使用压平的工具结果文本。各类卡片的上限与 fallback 规则仍由对应的 [terminal](../../../.agents/notes/implemented/feature/2026-07-28-web-terminal-card.zh.md)、[diff](../../../.agents/notes/implemented/feature/2026-07-30-web-diff-card.zh.md)、[read](../../../.agents/notes/implemented/feature/2026-07-30-web-read-card-frontend.zh.md)、[search](../../../.agents/notes/implemented/feature/2026-07-30-web-search-card.zh.md)、[web](../../../.agents/notes/implemented/feature/2026-07-30-web-result-card-frontend.zh.md) 与 [question](../../../.agents/notes/implemented/feature/2026-07-29-ask-question-web-presentation.zh.md) 笔记负责。
 本包通过 `ToolDetails` 填充 `conversation.details.tool`。行 renderer 与 Details renderer 分别为 terminal、read、diff、search 和 web 卡片复用同一个纯 card model；image 卡片仅属于行，因为其图库经由工具自有 `tool.call.images` 槽位渲染，而 details 面板不声明该槽位。这些 model 校验原始调用参数、结果内容、失败状态、持久 metadata、Code Dispatch `parentCallId` 与 Session 路径事实。不受支持或格式错误的输入使用压平的工具结果文本。各类卡片的上限与 fallback 规则仍由对应的 [terminal](../../../.agents/notes/implemented/feature/2026-07-28-web-terminal-card.zh.md)、[diff](../../../.agents/notes/implemented/feature/2026-07-30-web-diff-card.zh.md)、[read](../../../.agents/notes/implemented/feature/2026-07-30-web-read-card-frontend.zh.md)、[image](../../../.agents/notes/implemented/feature/2026-08-20-tool-card-image-results.zh.md)、[search](../../../.agents/notes/implemented/feature/2026-07-30-web-search-card.zh.md)、[web](../../../.agents/notes/implemented/feature/2026-07-30-web-result-card-frontend.zh.md) 与 [question](../../../.agents/notes/implemented/feature/2026-07-29-ask-question-web-presentation.zh.md) 笔记负责。
-/details>
+</details>
 
 -----
 

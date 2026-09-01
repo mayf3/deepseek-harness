@@ -192,17 +192,19 @@ describe('imageCardModel', () => {
     }
   })
 
-  it('falls back to the call argument when metadata is malformed, instead of throwing', () => {
+  it('declines a root call with missing or malformed metadata, and falls back for a nested one', () => {
     // Metadata arrives unvalidated on replay, so an obsolete or hand-edited log
-    // must never crash the tool message. A call whose meta does not match still
-    // carries a usable file_path argument, which fills the label; only a call
-    // with no usable argument declines (covered by the call-head case below).
+    // must never crash the tool message. A ROOT call whose meta does not match
+    // declines to the generic card — malformed tool data must not render a
+    // card labeled with the author-typed path. Only a nested call (which
+    // persists no meta by design) falls back to its own file_path argument.
     for (const meta of [undefined, null, 'meta', [{ path: 'a.png' }], {}, { path: '' }, { path: 7 }]) {
       expect(() => imageCardModel(settled({ meta }))).not.toThrow()
-      const card = imageCardModel(settled({ meta }))
-      expect(card).not.toBeNull()
-      expect(card?.label).toBe('shots/card.png')
+      expect(imageCardModel(settled({ meta }))).toBeNull()
     }
+    const nested = imageCardModel(settled({ parentCallId: 'parent', meta: undefined }))
+    expect(nested).not.toBeNull()
+    expect(nested?.label).toBe('shots/card.png')
   })
 
   it('declines a malformed attachment reference in the content', () => {
