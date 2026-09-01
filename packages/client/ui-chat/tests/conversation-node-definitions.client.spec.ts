@@ -608,6 +608,30 @@ describe('built-in conversation node Definitions', () => {
     expect(settled.answerStep).toBe(1)
   })
 
+  it('reuses the open Turn-process projection across continuing Assistant chunks', () => {
+    const value = assembler([
+      at(1, 'turn/start', { turn: 1 }),
+      at(2, 'step/start', { turn: 1, step: 1 }),
+      at(3, 'assistant/chunk', {
+        turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: 'first' },
+      }),
+    ])
+    const before = snapshot(value)
+    const processNode = node(before, 'turn-process')
+    const processSignature = before.timeline.turns.get(1)?.data.get('turn-process')
+    const assistantNode = node(before, 'assistant-step')
+
+    value.append(at(4, 'assistant/chunk', {
+      turn: 1, step: 1, chunk: { type: 'reasoning-delta', index: 0, text: ' second' },
+    }))
+    value.flush()
+
+    const after = snapshot(value)
+    expect(after.timeline.turns.get(1)?.data.get('turn-process')).toBe(processSignature)
+    expect(node(after, 'turn-process')).toBe(processNode)
+    expect(node(after, 'assistant-step')).not.toBe(assistantNode)
+  })
+
   it('anchors a streamed non-text answer from its block start', () => {
     const value = assembler([
       at(50, 'turn/start', { turn: 5 }),
@@ -640,6 +664,9 @@ describe('built-in conversation node Definitions', () => {
     const runningSnapshot = snapshot(value)
     const running = node(runningSnapshot, 'assistant-step')
     expect(running?.data).toMatchObject({ status: 'running', blocks: [{ kind: 'text', text: 'streaming' }] })
+    expect(running?.location.kind === 'step'
+      ? running.location.step.data.get('assistant-step')
+      : undefined).toBe(running?.data)
     const order = runningSnapshot.order
 
     value.append(at(4, 'assistant/message', {
@@ -654,6 +681,9 @@ describe('built-in conversation node Definitions', () => {
     expect(settled?.key).toBe(running?.key)
     expect(settledSnapshot.order).toBe(order)
     expect(settled?.data).toMatchObject({ status: 'settled', blocks: [{ kind: 'text', text: 'settled' }] })
+    expect(settled?.location.kind === 'step'
+      ? settled.location.step.data.get('assistant-step')
+      : undefined).toBe(settled?.data)
 
     const interruptedValue = assembler([
       at(10, 'turn/start', { turn: 2 }),
