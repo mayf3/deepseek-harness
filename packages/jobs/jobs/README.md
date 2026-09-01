@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-jobs` lets tools run long work as background jobs: the work gets a stable `<kind>-N` id, keeps running while the agent moves on, and the owning agent can read its output, wait for it with a timeout, or request cancellation at any time. Jobs belong to the agent session that started them, so one agent's work is never visible to another, and completion reaches the owner as an in-session notice rather than by polling. This package ships the contract only: the process-local registry lives in `dsh-jobs-local`, and the model-facing controls and completion notices live in `dsh-tool-jobs`. Load an implementation to get background jobs; without one, `ctx.jobs` does not exist and `start()` cannot run.
+`dsh-jobs` lets tools run long work as background jobs: the work gets a stable `<kind>-N` id, keeps running while the agent moves on, and the owning agent can read its output, wait for it with a timeout, or request cancellation at any time. Jobs belong to the agent session that started them, so one agent's work is never visible to another, and completion reaches the owner as an in-session notice rather than by polling. A producer can also declare a per-job observation record: an append-only bounded output stream that any number of observers (the Web client) read at absolute byte offsets without touching the model-facing consuming cursor. This package ships the contract only: the process-local registry lives in `dsh-jobs-local`, and the model-facing controls and completion notices live in `dsh-tool-jobs`. Load an implementation to get background jobs; without one, `ctx.jobs` does not exist and `start()` cannot run.
 
 ## Table of Contents
 
@@ -30,6 +30,8 @@ Use this package when you are composing a background-job capability or writing a
 ### What a background job gives you
 
 A producer registers work with a kind and a one-line label; the registry returns a `<kind>-N` id such as `bash-1`. Anyone who owns the job can read output, list jobs, wait up to a timeout for settlement, and request cancellation — each call returns a fresh snapshot of the job's status, from `running` and `stopping` to the terminal `completed`, `killed`, or `failed`. When a job settles, the owning agent is notified through the completion listener that `dsh-tool-jobs` turns into an in-session notice, so no polling is needed. A producer may attach an optional byte cap so each complete model-facing output read or completion notice stays bounded.
+
+A producer that declares `record: true` additionally streams raw output into the job's bounded record through the `RunningJob` face its starter receives: observers read retained chunks at absolute byte offsets and get signaled on advancement, the settlement that ends the job also ends the stream, and `updateDetail` publishes a live progress line into every snapshot. The record is invisible to the model: reads consume nothing and never touch notice state.
 
 ### The ownership boundary
 
@@ -75,13 +77,14 @@ This section explains the design decisions behind the contract and points at the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: the abstract `JobRegistry` service and its contract |
-| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobKindMap`, `JobStart`, `JobHooks`, `JobSnapshot`, listener types |
+| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobKindMap`, `JobStart`, `JobHooks`, `RunningJob`, `JobSnapshot`, listener types |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: validates snapshot identity, status, timestamps, and owner fields |
+| [`src/pump.ts`](src/pump.ts) | `pumpJobOutput`: poll pump copying producer offset-readers into a job record |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: validates snapshot identity, status, timestamps, owner, and record-offset fields |
 
 ### Service operations
 
-Every operation is a thin projection over the registered jobs: `get` and `list` return non-consuming snapshots, `read` advances the single stream cursor, `kill` invokes producer cancellation before changing status, `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; listeners observe terminal records and visible-set changes at owner granularity, and `attachController` scopes controller availability to its effect lifetime. Exact signatures and behavior live in the JSDoc on [`src/index.ts`](src/index.ts) and the generated [`ctx.jobs` cordis surface](../../../docs/subsystems/jobs.md).
+Every operation is a thin projection over the registered jobs: `get` and `list` return non-consuming snapshots, `read` advances the single stream cursor, `readRecord` reads retained record chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status, `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; listeners observe terminal records, visible-set changes, and record advancement at owner granularity, and `attachController` scopes controller availability to its effect lifetime. Exact signatures and behavior live in the JSDoc on [`src/index.ts`](src/index.ts) and the generated [`ctx.jobs` cordis surface](../../../docs/subsystems/jobs.md).
 
 </details>
 
@@ -118,7 +121,7 @@ No direct invalidation; the named consumers own any request-prefix changes.
 These limits define when the contract is a poor fit. They are current package constraints, not a task backlog.
 
 - **The contract is in-process** — `JobStart.run()` passes callbacks and exact `Agent` objects; a durable or cross-process backend must reshape identity, restart, ownership, and observation semantics before it can implement this seam.
-- **Stream output has one consuming cursor** — the model owns it; independent observers use the non-consuming [`dsh-activity`](../../activity/activity/README.md) plane the producers mirror into instead.
+- **Stream output has one consuming cursor** — the model owns it; independent observers read the job's declared record through the non-consuming `readRecord` instead.
 - **Foreground work cannot be promoted** — producers choose foreground or background before starting.
 
 <a id="dev-note"></a>
