@@ -62,7 +62,7 @@ import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
-import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
+import { installLlmReplay, parseSessionLog, parseSessionLogForReplay } from '@deepseek-ai/dsh-llm-replay'
 import {
   packChunkRuns,
   SESSION_FORMAT_VERSION,
@@ -671,7 +671,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       if (headerType !== 'session') {
         throw new Error('replayProvidersOnly fixture must open with a session header row')
       }
-      const recorded = parseSessionLog(fixtureText)
+      const recorded = parseSessionLogForReplay(fixtureText, options.replayFixture)
       const hasModelCall = recorded.some(event => (
         event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
       ))
@@ -994,9 +994,10 @@ export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, i
 /**
  * Parse a committed web seed fixture through the replay reader.
  * @param fixtureText - session JSONL fixture contents.
+ * @param fixturePath - exact source path for the closed replay-only alpha-refusal policy.
  * @returns the original header line, parsed header, and logical events.
  */
-export function parseSeedFixture(fixtureText: string): {
+export function parseSeedFixture(fixtureText: string, fixturePath?: string): {
   headerLine: string
   header: Record<string, unknown>
   events: SessionEvent[]
@@ -1005,7 +1006,10 @@ export function parseSeedFixture(fixtureText: string): {
   if (headerLine === undefined) throw new Error('seed fixture has no session header')
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
-  return { headerLine, header, events: parseSessionLog(fixtureText) }
+  const events = fixturePath === undefined
+    ? parseSessionLog(fixtureText)
+    : parseSessionLogForReplay(fixtureText, fixturePath)
+  return { headerLine, header, events }
 }
 
 /**
@@ -1030,8 +1034,9 @@ export async function seedSession(
   fixtureText: string,
   id: string,
   agentPreset?: string,
+  fixturePath?: string,
 ): Promise<SessionId> {
-  const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id))
+  const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id), fixturePath)
   const events = decoded.events
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!

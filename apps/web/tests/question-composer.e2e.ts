@@ -107,7 +107,6 @@ function cancelledFixture(fixture: string): string {
     message.content[0].isError = true
     data.error = {
       name: 'UserQuestionError',
-      message: 'the user cancelled ask_user_question',
       code: 'ASK_CANCELLED',
     }
     replaced = true
