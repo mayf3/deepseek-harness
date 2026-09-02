@@ -86,7 +86,7 @@ describe('PermissionCatalogDirectory', () => {
     first.resolve({ ok: true, value: FIRST })
     await first.promise
     await Promise.resolve()
-    expect(directory.store.getSnapshot()).toEqual({ value: SECOND, status: 'ready', error: null })
+    expect(directory.store.getSnapshot()).toEqual({ value: SECOND, error: null })
     directory.dispose()
   })
 
@@ -114,10 +114,9 @@ describe('PermissionCatalogDirectory', () => {
 
     response = 'rpc-failure'
     remote.emit('permission-presets/catalog-changed', [])
-    await vi.waitFor(() => { expect(directory.store.getSnapshot().status).toBe('error') })
+    await vi.waitFor(() => { expect(directory.store.getSnapshot().error).not.toBeNull() })
     expect(directory.store.getSnapshot()).toEqual({
       value: FIRST,
-      status: 'error',
       error: 'catalog/unavailable: catalog unavailable',
     })
 
@@ -175,16 +174,16 @@ describe('PermissionCatalogDirectory', () => {
     const directory = new PermissionCatalogDirectory(ctx)
 
     generation.set(undefined)
-    expect(directory.store.getSnapshot()).toEqual({ value: null, status: 'idle', error: null })
+    expect(directory.store.getSnapshot()).toEqual({ value: null, error: null })
     directory.refresh()
     await expect(directory.load()).rejects.toThrow(/no active Host connection/)
     oldRead.reject(new Error('old Host failed'))
     await expect(oldRead.promise).rejects.toThrow('old Host failed')
     await Promise.resolve()
-    expect(directory.store.getSnapshot()).toEqual({ value: null, status: 'idle', error: null })
+    expect(directory.store.getSnapshot()).toEqual({ value: null, error: null })
 
     generation.set(2)
-    expect(directory.store.getSnapshot()).toEqual({ value: null, status: 'loading', error: null })
+    expect(directory.store.getSnapshot()).toEqual({ value: null, error: null })
     newRead.resolve({ ok: true, value: SECOND })
     await expect(directory.load()).resolves.toEqual(SECOND)
     expect(calls).toBe(2)

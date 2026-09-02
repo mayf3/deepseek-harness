@@ -395,6 +395,28 @@ function reviewUserText(snapshot: ReviewSnapshot): string {
   ].join('\n\n')
 }
 
+/** Count members in the raw top-level JSON object. */
+function topLevelMemberCount(text: string): number {
+  const syntax = text.replace(/"(?:\\.|[^"\\])*"/gs, '')
+  let depth = 0
+  let count = 0
+  for (const char of syntax) {
+    switch (char) {
+      case '{':
+      case '[':
+        depth += 1
+        break
+      case '}':
+      case ']':
+        depth -= 1
+        break
+      case ':':
+        if (depth === 1) count += 1
+    }
+  }
+  return count
+}
+
 /** Parse the only three accepted reviewer JSON objects. */
 function parseDecision(text: string): AutoReviewDecision {
   const value: unknown = JSON.parse(text)
@@ -403,6 +425,9 @@ function parseDecision(text: string): AutoReviewDecision {
   }
   const record = value as Record<string, unknown>
   const keys = Object.keys(record)
+  if (topLevelMemberCount(text) !== keys.length) {
+    throw new Error('auto-review: reviewer output repeats a JSON member')
+  }
   if (record['decision'] === 'allow' && keys.length === 1) return { decision: 'allow' }
   if (record['decision'] === 'deny' && keys.length === 1) return { decision: 'deny' }
   if (record['decision'] === 'deny'

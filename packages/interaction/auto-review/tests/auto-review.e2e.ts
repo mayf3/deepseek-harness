@@ -336,6 +336,22 @@ function reviewerRequest(options: GenerateOptions): boolean {
     && source.plugin === 'dsh-auto-review'
 }
 
+function topLevelMemberCount(text: string): number {
+  const syntax = text.replace(/"(?:\\.|[^"\\])*"/gs, '')
+  let depth = 0
+  let count = 0
+  for (const char of syntax) {
+    if (char === '{' || char === '[') {
+      depth += 1
+    } else if (char === '}' || char === ']') {
+      depth -= 1
+    } else if (char === ':' && depth === 1) {
+      count += 1
+    }
+  }
+  return count
+}
+
 function decisionFromText(text: string | undefined, textBlocks: number): Decision | 'invalid' {
   if (text === undefined || textBlocks !== 1) return 'invalid'
   try {
@@ -343,6 +359,7 @@ function decisionFromText(text: string | undefined, textBlocks: number): Decisio
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return 'invalid'
     const record = parsed as Record<string, unknown>
     const keys = Object.keys(record)
+    if (topLevelMemberCount(text) !== keys.length) return 'invalid'
     if (record.decision === 'allow' && keys.length === 1) return 'allow'
     if (record.decision === 'deny' && keys.length === 1) return 'deny'
     if (record.decision === 'deny' && keys.length === 2

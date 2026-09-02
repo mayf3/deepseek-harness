@@ -5,12 +5,10 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { PermissionCatalog } from '@deepseek-ai/dsh-permission-presets/client'
 
-/** Observable lifecycle of the current Host generation's complete catalog. */
+/** Observable value and latest read error for the current Host generation. */
 export interface PermissionCatalogState {
   /** Last complete catalog for this generation, or null before one succeeds. */
   value: PermissionCatalog | null
-  /** Current read lifecycle; error may coexist with a retained complete value. */
-  status: 'idle' | 'loading' | 'ready' | 'error'
   /** Current-generation read failure text, when present. */
   error: string | null
 }
@@ -20,7 +18,6 @@ export class PermissionCatalogDirectory {
   /** Complete snapshot consumed by both the slash popup and composer seat. */
   readonly store: SnapshotStore<PermissionCatalogState> = createSnapshotStore({
     value: null,
-    status: 'idle',
     error: null,
   })
 
@@ -104,7 +101,7 @@ export class PermissionCatalogDirectory {
     this.generationId = generationId
     ++this.epoch
     this.pending = undefined
-    this.store.set({ value: null, status: 'idle', error: null })
+    this.store.set({ value: null, error: null })
     if (generationId !== undefined) this.startRead(generationId)
   }
 
@@ -112,18 +109,17 @@ export class PermissionCatalogDirectory {
   private startRead(generationId: number): void {
     const epoch = ++this.epoch
     const retained = this.store.getSnapshot().value
-    this.store.set({ value: retained, status: 'loading', error: null })
+    this.store.set({ value: retained, error: null })
     const operation = this.ctx.remote.permissionPresets.catalog()
       .then((result) => {
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         if (!this.accepts(epoch, generationId)) return
-        this.store.set({ value: result.value, status: 'ready', error: null })
+        this.store.set({ value: result.value, error: null })
       })
       .catch((error: unknown) => {
         if (!this.accepts(epoch, generationId)) return
         this.store.set({
           value: this.store.getSnapshot().value,
-          status: 'error',
           error: error instanceof Error ? error.message : String(error),
         })
       })

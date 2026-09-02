@@ -46,7 +46,7 @@ interface Config {
 
 ## 固定的当前会话 Auto 注册
 
-Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`。本服务固定 `auto` 身份、`danger-full-access` 加 `never` 的组合，以及客户端 label 与 description；调用方不能通过通用 contribution API 发布其他预设。Auto 排列在配置预设之后，绝不会进入 `permission.defaultPreset` 设置 schema，并在 effect dispose 时消失。同步 `admit` 回调会在 Auto 选择修改 Session 前，以及存储的 Auto Session 发布前运行，因此 integration 缺失或正在关闭时不会改写持久身份。
+Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`。本服务固定 `auto` 身份以及 `danger-full-access` 加 `never` 的组合；shipped 客户端的 locale 字典拥有 Auto 的 label 与 description，而配置预设的展示信息仍归 Host 所有。调用方不能通过通用 contribution API 发布其他预设。Auto 排列在配置预设之后，绝不会进入 `permission.defaultPreset` 设置 schema，并在 effect dispose 时消失。同步 `admit` 回调会在 Auto 选择修改 Session 前，以及存储的 Auto Session 发布前运行，因此 integration 缺失或正在关闭时不会改写持久身份。
 
 注册或移除 Auto 会发出无 payload 的 `permission-presets/catalog-changed` 通知。进程级消费方先订阅，再调用 `catalog()`；每次收到通知后重新读取完整的可选目录。`permissions` Session 投影只包含 `currentValue`，因此目录变化不会追加 Session 事件、发布 Session 投影帧或改变 Session 序列。
 

@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-shipped Web 应用把 `Auto review` 作为第四个完整的当前会话权限模式。它的持久身份是 `permission/preset:auto`，执行旋钮精确等于 `danger-full-access` 加审批策略 `never`。[`@deepseek-ai/dsh-auto-review`](../../../../packages/interaction/auto-review/README.zh.md)拥有额外授权行为；[`dsh-permission-presets`](../../../../packages/interaction/permission-presets/README.zh.md)拥有固定 Auto 身份、组合、展示、`registerAuto(admit)` 钩子、规范预设写入路径，以及在选择或恢复时以拒绝方式关闭的准入。它不暴露通用预设 contribution API。
+shipped Web 应用把 `Auto review` 作为第四个完整的当前会话权限模式。它的持久身份是 `permission/preset:auto`，执行旋钮精确等于 `danger-full-access` 加审批策略 `never`。[`@deepseek-ai/dsh-auto-review`](../../../../packages/interaction/auto-review/README.zh.md)拥有额外授权行为；[`dsh-permission-presets`](../../../../packages/interaction/permission-presets/README.zh.md)拥有固定 Auto 身份、组合、`registerAuto(admit)` 钩子、规范预设写入路径，以及在选择或恢复时以拒绝方式关闭的准入。shipped Web 客户端的 locale 字典拥有固定的 Auto label 与 description。权限服务不暴露通用预设 contribution API。
 
 Auto 是实验功能，因为 LLM 决定具有概率性。获准调用会立刻以完整宿主访问权限开始，之后没有人工确认。因此，reviewer 可能放行本应拒绝的动作或拒绝有效动作，而且每次审查都会增加提供方延迟与 token 用量。
 

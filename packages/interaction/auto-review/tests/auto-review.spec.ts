@@ -597,6 +597,8 @@ describe('native review request', () => {
       decisionChunks('{"decision":"allow","reason":"not allowed"}'),
       decisionChunks('{"decision":"deny","reason":1}'),
       decisionChunks('{"decision":"deny","extra":true}'),
+      decisionChunks('{"decision":"deny","extra":[{"nested":true}]}'),
+      decisionChunks('{"decision":"deny","decision":"allow"}'),
       decisionChunks('not json'),
       [
         { type: 'block-start', index: 0, blockType: 'reasoning' },
@@ -696,7 +698,7 @@ describe('native review request', () => {
 
 describe('PTC and bypass semantics', () => {
   it('reviews one started inner call from its logged schema and preserves the raw deny reason', async () => {
-    const rawReason = '  exact scope was not authorized\nretry with a narrower target  '
+    const rawReason = '  exact "scope" was not authorized\nretry with a narrower target  '
     const { ctx, adapter } = await harness([
       decisionChunks(JSON.stringify({ decision: 'deny', reason: rawReason })),
     ])

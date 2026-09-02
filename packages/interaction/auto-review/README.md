@@ -37,7 +37,9 @@ The shipped Web bundle mounts the integration as one ordinary Cordis row after t
   name: '@deepseek-ai/dsh-auto-review'
 ```
 
-The plugin calls the permission service's fixed `registerAuto(admit)` hook for its effect lifetime. The permission service owns the reserved identity, Full access knob bundle, and presentation; users can select Auto for the current session through the Web picker or `/permission auto`, and it never enters `permission.defaultPreset` choices.
+The plugin calls the permission service's fixed `registerAuto(admit)` hook for its effect lifetime. The permission service owns the reserved identity and Full access knob bundle, while the shipped Web client locale dictionaries own the fixed Auto label and description. Users can select Auto for the current session through the Web picker or `/permission auto`, and it never enters `permission.defaultPreset` choices.
+
+No runtime invariant companion is published because the root plugin's single effect owns authorization and teardown, leaving no independent observation that can diverge from that lifecycle.
 
 ### Review and failure behavior
 
@@ -75,7 +77,6 @@ Publication and teardown are fail-closed. A persisted Auto session cannot publis
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Fixed Auto registration, five-section request, strict decision parser, pre-execute listener, and teardown |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion for this stateless integration |
 | [`tests/auto-review.spec.ts`](tests/auto-review.spec.ts) | Logged-input, decision, cancellation, native/PTC, restore, and disposal behavior |
 | [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | Opt-in 22-call real-model certification across eight semantic pairs, both execution paths, and all shipped models |
 

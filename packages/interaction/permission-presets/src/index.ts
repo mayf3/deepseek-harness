@@ -78,12 +78,10 @@ export const CUSTOM_PRESET = 'custom'
 /** Canonical identity of the experimental per-call review preset. */
 export const AUTO_PRESET = 'auto'
 
-/** Fixed execution bundle and current-session presentation owned by this service. */
+/** Fixed execution bundle for the live Auto integration. */
 const AUTO_PRESET_SPEC: PresetSpec = {
   sandbox: 'danger-full-access',
   approval: 'never',
-  name: 'Auto review',
-  description: 'Run without a sandbox after an experimental same-model review of every tool call.',
 }
 
 /** Settings namespace carrying the default for future sessions. */

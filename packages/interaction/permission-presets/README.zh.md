@@ -57,7 +57,7 @@ kind: "package-reference"
 
 ### 用户看到什么
 
-客户端从进程级目录渲染可选条目：先按表顺序列出配置预设，再在 Auto integration 存活时列出 Auto。客户端把这份快照与 Session 当前值合并；不匹配的 `custom` 值可以标记当前控件，但绝不会成为可选目录行。Auto 的身份、Full access 旋钮组合、label 与 description 固定在本服务内部，而不是由通用 contribution API 提供。调用方可以从 `custom` 切换出去，但不能通过此服务选中或持久化一个具名 custom 预设。
+客户端从进程级目录渲染可选条目：先按表顺序列出配置预设，再在 Auto integration 存活时列出 Auto。客户端把这份快照与 Session 当前值合并；不匹配的 `custom` 值可以标记当前控件，但绝不会成为可选目录行。Auto 的身份与 Full access 旋钮组合固定在本服务内部。shipped 客户端的 locale 字典拥有 Auto 的 label 与 description，而配置预设保留 Host 提供的展示信息。调用方不能通过通用 contribution API 发布其他预设；他们可以从 `custom` 切换出去，但不能通过此服务选中或持久化一个具名 custom 预设。
 
 ### 会话默认值
 

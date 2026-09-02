@@ -37,7 +37,9 @@ shipped Web 组合包会在基础权限、Session、LLM 与 Tool 服务可用后
   name: '@deepseek-ai/dsh-auto-review'
 ```
 
-插件会在自身 effect 生命周期内调用权限服务固定的 `registerAuto(admit)` 钩子。权限服务拥有保留身份、Full access 旋钮组合与展示信息；用户可以通过 Web 选择器或 `/permission auto` 为当前会话选择 Auto，而它绝不会进入 `permission.defaultPreset` 的候选项。
+插件会在自身 effect 生命周期内调用权限服务固定的 `registerAuto(admit)` 钩子。权限服务拥有保留身份与 Full access 旋钮组合，而 shipped Web 客户端的 locale 字典拥有固定的 Auto label 与 description。用户可以通过 Web 选择器或 `/permission auto` 为当前会话选择 Auto，而它绝不会进入 `permission.defaultPreset` 的候选项。
+
+本包不发布 runtime invariant 伴生插件，因为根插件的单个 effect 共同拥有授权与资源释放，不存在会与该生命周期发生分歧的独立观测。
 
 ### 审查与故障行为
 
@@ -75,7 +77,6 @@ Auto 拒绝使用固定模型可见消息，其中会指明被拒绝的工具并
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 固定 Auto 注册、五分区请求、严格决定解析器、pre-execute 监听器与资源释放 |
-| [`src/invariant.ts`](src/invariant.ts) | 这一无状态集成的不变式伴生插件 |
 | [`tests/auto-review.spec.ts`](tests/auto-review.spec.ts) | 日志输入、决定、取消、原生／PTC、恢复与资源释放行为 |
 | [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | 显式启用的 22-call 真实模型认证，覆盖八组语义配对、两条执行路径与全部 shipped 模型 |
 

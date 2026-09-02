@@ -40,7 +40,6 @@ function setup(options: {
   })
   const catalog = createSnapshotStore<PermissionCatalogState>({
     value: options.catalog === undefined ? CATALOG : options.catalog,
-    status: 'ready',
     error: null,
   })
   const useProjection = (_key: string, selector?: (value: unknown) => unknown) =>
@@ -170,7 +169,7 @@ describe('PermissionSelect', () => {
     cleanup()
     const vanished = setup()
     fireEvent.click(trigger())
-    act(() => { vanished.catalog.set({ value: null, status: 'idle', error: null }) })
+    act(() => { vanished.catalog.set({ value: null, error: null }) })
     expect(vanished.view.container.innerHTML).toBe('')
 
     cleanup()

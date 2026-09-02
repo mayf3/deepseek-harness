@@ -57,7 +57,7 @@ Switching to Auto first runs its synchronous admission check; every preset switc
 
 ### What users see
 
-Clients render selectable entries from the process catalog: configured presets in table order followed by Auto while its integration is live. They join that snapshot with the Session's current value; an unmatched `custom` value may label the current control but never appears as a selectable catalog row. Auto's identity, Full access knob bundle, label, and description are fixed inside this service rather than supplied by a generic contribution API. Callers can switch away from `custom` but cannot select or persist a named custom preset through this service.
+Clients render selectable entries from the process catalog: configured presets in table order followed by Auto while its integration is live. They join that snapshot with the Session's current value; an unmatched `custom` value may label the current control but never appears as a selectable catalog row. Auto's identity and Full access knob bundle are fixed inside this service. The shipped client locale dictionaries own Auto's label and description, while configured presets retain Host-supplied presentation. Callers cannot publish another preset through a generic contribution API, and they can switch away from `custom` but cannot select or persist a named custom preset through this service.
 
 ### Session defaults
 

@@ -117,13 +117,11 @@ describe('PermissionPresetService', () => {
     const fiber = await mountAuto(ctx)
     expect(ctx.permissionPresets.names).toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
     expect(ctx.permissionPresets.resolve(AUTO_PRESET)).toEqual({
-      sandbox: 'danger-full-access', approval: 'never', name: 'Auto review',
-      description: 'Run without a sandbox after an experimental same-model review of every tool call.',
+      sandbox: 'danger-full-access', approval: 'never',
     })
     expect(ctx.permissionPresets.optionOf(AUTO_PRESET)).toEqual({
       value: AUTO_PRESET,
-      name: 'Auto review',
-      description: 'Run without a sandbox after an experimental same-model review of every tool call.',
+      name: AUTO_PRESET,
     })
 
     await fiber.dispose()
