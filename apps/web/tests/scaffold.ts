@@ -812,7 +812,7 @@ function rawSessionLog(session: Session): string {
       ...header.parentSession === undefined ? {} : { parentSession: header.parentSession },
       ...header.isSeeded ? { seedLength: Number(session.inheritedEventCount) } : {},
       ...header.origin === undefined ? {} : { origin: header.origin },
-      ...header.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth },
+      delegationDepth: header.delegationDepth ?? 0,
       ...header.agentPreset === undefined ? {} : { agentPreset: header.agentPreset },
     }),
     ...packChunkRuns(session.snapshotEvents()).map(record => JSON.stringify(record)),

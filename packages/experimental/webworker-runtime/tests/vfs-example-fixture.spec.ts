@@ -74,7 +74,7 @@ describe('WebWorker preview VFS example', () => {
         }>
       }
     }
-    expect(cache.unit).toEqual({ name: 'session_projcache', version: 6 })
+    expect(cache.unit).toEqual({ name: 'session_projcache', version: 7 })
     expect(cache.tables.sessions[VFS_EXAMPLE_SESSION_IDS.main]).toMatchObject({
       identity: {
         formatVersion: SESSION_FORMAT_VERSION,
