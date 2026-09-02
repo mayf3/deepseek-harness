@@ -28,6 +28,8 @@ JSONL provider 在 `open` 为已存储 Session 返回句柄前完成 ensure-curr
 
 第一条迁移边 `@deepseek-ai/dsh-session-format-v0-to-v1` 有意保持恒等形态：除版本和 v0 已接纳的有限历史归一化外，它保留逻辑 header、事件、序号、引用、时间戳、payload 与已配置的压缩选择。精确的 `session.jsonl[.zstd]` 源保持字节与 inode 相同，当前 writer 则编码新的 `session.v1.jsonl[.zstd]` 后继。这样可在出现改变基数的格式前先验证完整发布生命周期。
 
+投影缓存记录把自己的折叠结果绑定到 Session header 的 `formatVersion`。`session_projcache` v7 reader 可以在结构上载入前代 domain 记录，但缺少格式代的记录不能播种当前 Session；权威日志会重新折叠它，下一次检查点写入完整的当前 identity。这样，任何在有界规范化或基数变化边之前产生的缓存行都不能绕过该迁移。
+
 ## 后果
 
 较新 build 读取事件正文时可能持久增加一个更高 generation。精确旧 generation 仍然可用，但 runtime 此后选择最高规范文件名；保留不承诺旧 build 能安全 downgrade，也不保证新 build 在后继损坏时 fallback。只读文件系统会报告可操作的迁移失败，而不会返回与磁盘不一致的内存当前视图。
