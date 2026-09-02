@@ -416,6 +416,34 @@ describe('SubagentModelSelectionConfig', () => {
     await withoutAgent.fiber.dispose()
   })
 
+  it('requires the Session registry when a child inherits its parent policy', async () => {
+    const ctx = new Context()
+    try {
+      await ctx.plugin(SubagentModelSelectionConfig)
+      await ctx.plugin(SessionProjectionRegistry)
+      await ctx.plugin(SubagentRuntime)
+      const childId = SessionId('child-without-session-registry')
+      const child = Session.create(childId, undefined, {
+        version: 0,
+        id: childId,
+        createdAt: 1,
+        isSeeded: false,
+        origin: 'subagent',
+        parentSession: SessionId('missing-parent'),
+      })
+
+      expect(() => {
+        tool.apply(ctx, {
+          provider: 'missing',
+          modelSelectionSettings: true,
+          maxDepth: 'provider-managed',
+        }, child)
+      }).toThrow('child model-selection inheritance requires the Session registry')
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('checks model-selectable definitions without rejecting a policy-only preset', async () => {
     const ctx = await boot()
     await ctx.plugin(InvariantRegistry, { enabled: true })
