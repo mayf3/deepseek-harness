@@ -800,18 +800,6 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
  * @returns one complete baseline followed by live replacement frames.
  */
 @Remote({ mode: 'stream' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>
-
-/**
- * Stream one job's retained record output from an absolute byte offset,
- * then its terminal status once settled and drained. Non-consuming: the
- * model-facing cursor and notice state never observe these reads. The
- * request's session resolves the fenced-read caller; the registry rejects a
- * job the session does not own, a job without a record, or an unknown job.
- * @param request - target job, owning session, and optional resume offset.
- * @param signal - cancellation owned by the Remote stream carrier.
- * @returns anchor, coalesced output frames, and the terminal status.
- */
-@Remote({ mode: 'stream' }) observeJob(request: SessionObserveJobRequest, signal: AbortSignal): AsyncIterable<SessionObserveJobFrame>
 ```
 
 Types: [SessionId](core.md) · [SessionInspection](persistence.md) · [SessionSearchRequest](session-query.md)

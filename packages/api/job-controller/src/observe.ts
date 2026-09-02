@@ -3,7 +3,7 @@
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JobRegistry, JobSnapshot } from '@deepseek-ai/dsh-jobs'
-import type { SessionJobWireChunk, SessionObserveJobFrame, SessionObserveJobRequest } from './types.ts'
+import type { JobObserveFrame, JobObserveRequest, JobWireChunk } from './types.ts'
 
 /** Cadence and framing bounds for one observation generation. */
 export interface ObserveJobOptions {
@@ -91,16 +91,16 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
  */
 export async function* observeJobRecord(
   registry: JobRegistry,
-  request: SessionObserveJobRequest,
+  request: JobObserveRequest,
   options: ObserveJobOptions,
   signal: AbortSignal,
-): AsyncIterable<SessionObserveJobFrame> {
+): AsyncIterable<JobObserveFrame> {
   if (request.from !== undefined && (!Number.isSafeInteger(request.from) || request.from < 0)) {
     throw new Error(`invalid observe offset: expected a non-negative safe integer, got ${JSON.stringify(request.from)}`)
   }
   signal.throwIfAborted()
   // The brand is nominal typing only; the wire boundary stamps it here rather
-  // than value-importing the optional registry package's constructor.
+  // than value-importing the registry package's constructor.
   const id = String(request.jobId) as JobId
   const waiter = new OutputWaiter()
   // Subscribe before the first read so an append between the anchor read and
@@ -153,12 +153,12 @@ export async function* observeJobRecord(
 
 /** Split one read into frames along the soft per-frame byte budget. */
 function* outputFrames(
-  chunks: readonly SessionJobWireChunk[],
+  chunks: readonly JobWireChunk[],
   next: number,
   lossy: boolean,
   maxFrameBytes: number,
-): Iterable<SessionObserveJobFrame> {
-  let batch: SessionJobWireChunk[] = []
+): Iterable<JobObserveFrame> {
+  let batch: JobWireChunk[] = []
   let batchBytes = 0
   let flaggedLossy = lossy
   for (const chunk of chunks) {

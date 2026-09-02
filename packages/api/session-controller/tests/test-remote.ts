@@ -40,8 +40,6 @@ import type {
   SessionFollowRequest,
   SessionListRequest,
   SessionListValue,
-  SessionObserveJobFrame,
-  SessionObserveJobRequest,
   SessionOpenWorkspacePathRequest,
   SessionOpenWorkspacePathValue,
   SessionPage,
@@ -79,7 +77,6 @@ export interface TestSessionRemote {
   page(request: SessionPageRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPage>>
   follow(request: SessionFollowRequest, signal?: AbortSignal): AsyncIterable<SessionFollowFrame>
   control(signal?: AbortSignal): AsyncIterable<SessionControlFrame>
-  observeJob(request: SessionObserveJobRequest, signal?: AbortSignal): AsyncIterable<SessionObserveJobFrame>
 }
 
 /** Dependencies and policy supplied by a Session Controller unit harness. */
@@ -332,6 +329,5 @@ export function createSessionTestRemote(
     ),
     follow: (request, signal = new AbortController().signal) => direct.follow(request, signal),
     control: (signal = new AbortController().signal) => direct.control(signal),
-    observeJob: (request, signal = new AbortController().signal) => direct.observeJob(request, signal),
   }
 }

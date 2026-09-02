@@ -91,6 +91,11 @@
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'
 
+    # One background job's observation record streamed over Typert Remote;
+    # the roster rides the session control stream above.
+    - id: job-controller
+      name: '@deepseek-ai/dsh-api-job-controller'
+
     # Configuration-surface reads and writes over Typert Remote. Each method
     # reports an actionable error when its settings-domain provider is absent.
     - id: settings-controller

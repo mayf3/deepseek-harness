@@ -108,6 +108,7 @@ flowchart TD
   end
   subgraph group_api["packages/api"]
     pkg_api_gateway["api-gateway"]
+    pkg_api_job_controller["api-job-controller"]
     pkg_api_remotes["api-remotes"]
     pkg_api_session_controller["api-session-controller"]
     pkg_api_settings_controller["api-settings-controller"]
@@ -1153,6 +1154,7 @@ flowchart TD
 | [`deepseek-llm-api-extensions`](../packages/llm/deepseek-llm-api-extensions) | `llm` | — |
 | [`llm`](../packages/llm/llm) | `llm` | — |
 | [`api-gateway`](../packages/api/gateway) | `api` | — |
+| [`api-job-controller`](../packages/api/job-controller) | `api` | — |
 | [`cmdline`](../packages/boot/cmdline) | `boot` | — |
 | [`acp-app`](../packages/bundle/acp-app) | `bundle` | — |
 | [`base`](../packages/bundle/base) | `bundle` | — |

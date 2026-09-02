@@ -6,10 +6,11 @@ import { JobId } from '@deepseek-ai/dsh-jobs'
 import type { JobOutcome, RunningJob } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
-import { observeJobRecord } from '../src/observe-job.ts'
-import type { ObserveJobOptions } from '../src/observe-job.ts'
-import type { SessionObserveJobFrame } from '../src/types.ts'
-import { createSessionTestController } from './test-remote.ts'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+import { JobController } from '../src/index.ts'
+import { observeJobRecord } from '../src/observe.ts'
+import type { ObserveJobOptions } from '../src/observe.ts'
+import type { JobObserveFrame } from '../src/types.ts'
 
 async function harness() {
   const ctx = new Context()
@@ -88,7 +89,7 @@ const OBSERVE: Omit<ObserveJobOptions, 'caller'> = { flushMs: 5, maxFrameBytes: 
 describe('observeJobRecord', () => {
   function observed(ctx: Context, request: { jobId: JobId; from?: number }, caller?: Agent) {
     const abort = new AbortController()
-    const frames: SessionObserveJobFrame[] = []
+    const frames: JobObserveFrame[] = []
     const stream = observeJobRecord(ctx.jobs, request, { ...OBSERVE, caller }, abort.signal)
     const done = (async () => {
       for await (const frame of stream) frames.push(frame)
@@ -142,7 +143,7 @@ describe('observeJobRecord', () => {
     job.append('y'.repeat(30))
     await job.settle({ status: 'completed' })
     const abort = new AbortController()
-    const frames = await collect<SessionObserveJobFrame>(
+    const frames = await collect<JobObserveFrame>(
       observeJobRecord(ctx.jobs, { jobId: job.id }, {
         flushMs: 5,
         maxFrameBytes: 30,
@@ -165,7 +166,7 @@ describe('observeJobRecord', () => {
     job.append('c'.repeat(40))
     await job.settle({ status: 'completed' })
     const abort = new AbortController()
-    const frames = await collect<SessionObserveJobFrame>(
+    const frames = await collect<JobObserveFrame>(
       observeJobRecord(ctx.jobs, { jobId: job.id, from: 0 }, {
         flushMs: 5,
         maxFrameBytes: 40,
@@ -278,28 +279,30 @@ describe('observeJobRecord', () => {
   })
 })
 
-describe('SessionController.observeJob', () => {
-  const defaults = {
-    defaultModelSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
-    cwd: '/tmp',
-  }
-
-  it('refuses observation without a job registry', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
-    const controller = createSessionTestController(ctx, defaults)
-    expect(() => controller.observeJob({ jobId: JobId('bash-1') }, new AbortController().signal))
-      .toThrow(/job observation unavailable/)
-  })
-
-  it('resolves the fenced-read caller from the request session', async () => {
+describe('JobController.observe', () => {
+  async function controllerHarness() {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(TypertRegistry)
     ctx.jobs.attachController('observe-job-test')
-    const controller = createSessionTestController(ctx, defaults)
+    await ctx.plugin(JobController, {})
+    return ctx
+  }
+
+  it('waits for the job registry instead of serving without one', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    await ctx.plugin(AgentRegistry)
+    await ctx.plugin(TypertRegistry)
+    ctx.plugin(JobController, {})
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(ctx.get('jobController')).toBeUndefined()
+  })
+
+  it('resolves the fenced-read caller from the request session', async () => {
+    const ctx = await controllerHarness()
     const session = ctx.sessions.create(SessionId('observing-session'))
     const owner = {
       id: session.id,
@@ -314,8 +317,8 @@ describe('SessionController.observeJob', () => {
     await job.settle({ status: 'completed' })
 
     const abort = new AbortController()
-    const frames = await collect<SessionObserveJobFrame>(
-      controller.observeJob({ sessionId: session.id, jobId: job.id }, abort.signal),
+    const frames = await collect<JobObserveFrame>(
+      ctx.jobController.observe({ sessionId: session.id, jobId: job.id }, abort.signal),
       3,
       abort,
     )
@@ -323,19 +326,14 @@ describe('SessionController.observeJob', () => {
   })
 
   it('observes an unowned job without a request session', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
-    ctx.jobs.attachController('observe-job-test')
-    const controller = createSessionTestController(ctx, defaults)
+    const ctx = await controllerHarness()
     const job = startRecordJob(ctx, { label: 'unowned run' })
     job.append('open access')
     await job.settle({ status: 'completed' })
 
     const abort = new AbortController()
-    const frames = await collect<SessionObserveJobFrame>(
-      controller.observeJob({ jobId: job.id }, abort.signal),
+    const frames = await collect<JobObserveFrame>(
+      ctx.jobController.observe({ jobId: job.id }, abort.signal),
       3,
       abort,
     )

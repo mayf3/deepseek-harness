@@ -2,7 +2,6 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-jobs'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
@@ -17,7 +16,6 @@ import {
 import { SessionCommandController } from './commands.ts'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
-import { observeJobRecord } from './observe-job.ts'
 import { SessionFileReferences } from './file-references.ts'
 import {
   ApiSessionList,
@@ -42,8 +40,6 @@ import type {
   SessionForkValue,
   SessionListRequest,
   SessionListValue,
-  SessionObserveJobFrame,
-  SessionObserveJobRequest,
   SessionOpenWorkspacePathRequest,
   SessionOpenWorkspacePathValue,
   SessionPage,
@@ -72,12 +68,6 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Default coalescing window between job-observation reads, in milliseconds. */
-const DEFAULT_OBSERVE_FLUSH_MS = 100
-
-/** Default soft byte budget per job-observation output frame. */
-const DEFAULT_OBSERVE_MAX_FRAME_BYTES = 64 * 1024
-
 /** Session Controller deployment policy. */
 export interface Config {
   /** Maximum stat-reported event count eligible for one full cold projection observation; `0` disables the event-count gate. */
@@ -86,10 +76,6 @@ export interface Config {
   readonly coldBlankProbeMaxBytes?: number
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
-  /** Coalescing window after new record output before a job-observation read, in milliseconds (default 100). */
-  readonly observeFlushMs?: number
-  /** Soft byte budget per job-observation output frame (default 65536); one larger chunk ships whole. */
-  readonly observeMaxFrameBytes?: number
 }
 
 /** Host integrations replaceable by direct unit tests. */
@@ -118,8 +104,6 @@ export class SessionController extends TypertRemoteService {
     coldBlankProbeMaxEvents: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_EVENTS),
     coldBlankProbeMaxBytes: z.natural().default(DEFAULT_COLD_BLANK_PROBE_MAX_BYTES),
     nativeOpen: z.boolean(),
-    observeFlushMs: z.natural().min(1).default(DEFAULT_OBSERVE_FLUSH_MS),
-    observeMaxFrameBytes: z.natural().min(1).default(DEFAULT_OBSERVE_MAX_FRAME_BYTES),
   })
 
   private readonly agents: ApiSessionAgentController
@@ -130,8 +114,6 @@ export class SessionController extends TypertRemoteService {
   private readonly openPath: (path: string, signal: AbortSignal) => Promise<void>
   private readonly canOpenPath: () => boolean
   private readonly promotions = new Set<Promise<void>>()
-  private readonly observeFlushMs: number
-  private readonly observeMaxFrameBytes: number
 
   /**
    * @param ctx - Host context containing the Session capability assembly.
@@ -157,8 +139,6 @@ export class SessionController extends TypertRemoteService {
     this.openPath = internals.openPath ?? openNativePath
     this.canOpenPath = internals.canOpenPath
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
-    this.observeFlushMs = config.observeFlushMs ?? DEFAULT_OBSERVE_FLUSH_MS
-    this.observeMaxFrameBytes = config.observeMaxFrameBytes ?? DEFAULT_OBSERVE_MAX_FRAME_BYTES
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionSkillCatalog)
 
@@ -419,29 +399,6 @@ export class SessionController extends TypertRemoteService {
     return this.controlState.control(signal)
   }
 
-  /**
-   * Stream one job's retained record output from an absolute byte offset,
-   * then its terminal status once settled and drained. Non-consuming: the
-   * model-facing cursor and notice state never observe these reads. The
-   * request's session resolves the fenced-read caller; the registry rejects a
-   * job the session does not own, a job without a record, or an unknown job.
-   * @param request - target job, owning session, and optional resume offset.
-   * @param signal - cancellation owned by the Remote stream carrier.
-   * @returns anchor, coalesced output frames, and the terminal status.
-   */
-  @Remote({ mode: 'stream' })
-  observeJob(request: SessionObserveJobRequest, signal: AbortSignal): AsyncIterable<SessionObserveJobFrame> {
-    const registry = this.ctx.get('jobs')
-    if (registry === undefined) {
-      throw new Error('job observation unavailable: no job registry is loaded (load @deepseek-ai/dsh-jobs-local)')
-    }
-    const caller = request.sessionId === undefined ? undefined : this.ctx.agents.get(request.sessionId)
-    return observeJobRecord(registry, request, {
-      flushMs: this.observeFlushMs,
-      maxFrameBytes: this.observeMaxFrameBytes,
-      caller,
-    }, signal)
-  }
 
 }
 

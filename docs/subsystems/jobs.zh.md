@@ -113,7 +113,7 @@ interface JobOutcome {
 
 ## 观测 record
 
-声明 `record: true` 的生产方通过 starter 收到的 `RunningJob` 面把原始输出流入按 job 划分的有界环形缓冲；任意数量的观察者通过 `readRecord` 按绝对字节偏移读取保留块，不触碰消耗型的模型游标与通知状态。job 结算即封流并把保留量裁剪到结算上限——record 没有独立生命周期。`pumpJobOutput` 以有界节奏把生产方的偏移读取器（subprocess 的 `readFrom` 家族）复制进 record。
+声明 `record: true` 的生产方通过 starter 收到的 `RunningJob` 面把原始输出流入按 job 划分的有界环形缓冲；任意数量的观察者通过 `readRecord` 按绝对字节偏移读取保留块，不触碰消耗型的模型游标与通知状态。job 结算即封流并把保留量裁剪到结算上限——record 没有独立生命周期。`pumpJobOutput` 以有界节奏把生产方的偏移读取器（subprocess 的 `readFrom` 家族）复制进 record。浏览器经 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.observe` 读取 record，其帧类型列在下方该控制器的 Cordis API 一节。
 
 ```ts type-equiv
 /**
@@ -257,6 +257,28 @@ interface JobRead {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxjobcontroller--jobcontroller"></a>
+
+### `ctx.jobController` — `JobController`
+
+Host service backing the generated `ctx.remote.job` namespace.
+
+```ts cordis-catalog
+/**
+ * Stream one job's retained record output from an absolute byte offset,
+ * then its terminal status once settled and drained. Non-consuming: the
+ * model-facing cursor and notice state never observe these reads. The
+ * request's session resolves the fenced-read caller; the registry rejects a
+ * job the session does not own, a job without a record, or an unknown job.
+ * @param request - target job, owning session, and optional resume offset.
+ * @param signal - cancellation owned by the Remote stream carrier.
+ * @returns anchor, coalesced output frames, and the terminal status.
+ */
+@Remote({ mode: 'stream' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>
+```
+
+Source: [`packages/api/job-controller/src/index.ts`](../../packages/api/job-controller/src/index.ts)
 
 <a id="ctxjobs--jobregistry-abstract-seam"></a>
 

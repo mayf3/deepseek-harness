@@ -3,7 +3,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent/types'
 import { createSessionControlStream } from './transport.ts'
-import { ClientJobOutput, ClientJobOutputModel } from './job-output.ts'
 import { ClientSessions } from './sessions/service.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
 import type {} from '../remote-events.ts'
@@ -24,8 +23,6 @@ export type {
 } from './transport.ts'
 export { createScope, scopeOf } from './scope.ts'
 export type { AgentContext, AgentScopeHandle } from './scope.ts'
-export { ClientJobOutput, ClientJobOutputModel } from './job-output.ts'
-export type { IJobOutput, JobOutputSnapshot, JobOutputSource, ObservedJob } from './job-output.ts'
 export { SessionCreateError, SessionForkError } from './sessions/service.ts'
 export type { SessionBinding, SessionListState, SessionSummary } from './sessions/service.ts'
 export type {
@@ -92,14 +89,6 @@ export const inject = [
 export function apply(ctx: Context): void {
   const remotes = ctx.remote as unknown as SessionRemotes
   const sessions = new ClientSessions(ctx, remotes)
-  // Resolve the session namespace to a concrete value while this plugin's
-  // context is current: observation (re)opens run on caller stacks (a React
-  // event, a carrier retry) whose dynamic context has not declared
-  // `remote.session`, and a property access there fails the inject check.
-  new ClientJobOutput(ctx, {
-    $stream: options => remotes.$stream(options),
-    session: remotes.session,
-  }, new ClientJobOutputModel())
   ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
   ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
   ctx.remote.$on('api-session/status', (sessionId, running) => {

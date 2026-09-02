@@ -8,6 +8,7 @@
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { JobListAction } from './JobListAction.tsx'
 import type { JobListInjected } from './JobListAction.tsx'
+import type {} from '@deepseek-ai/dsh-api-job-controller/client'
 import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'

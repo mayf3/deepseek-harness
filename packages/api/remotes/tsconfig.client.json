@@ -22,7 +22,6 @@
     },
     {
       "path": "../../credentials/credentials"
-
     },
     {
       "path": "../../context/file-reference"
@@ -62,6 +61,9 @@
     },
     {
       "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../job-controller/tsconfig.client.json"
     },
     {
       "path": "../session-controller/tsconfig.client.json"

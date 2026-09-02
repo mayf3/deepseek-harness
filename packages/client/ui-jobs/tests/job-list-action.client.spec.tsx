@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { JobOutputSnapshot, ObservedJob } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { JobOutputSnapshot, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { JobListAction, type JobListActionProps } from '../src/client/JobListAction.tsx'
