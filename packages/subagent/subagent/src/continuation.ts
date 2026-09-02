@@ -134,7 +134,15 @@ export interface SubagentSendMessageOptions {
 
 /** Inputs shared by model steering and the human Queue adapter. */
 type ChildDeliveryOptions =
-  | { readonly delivery: 'steer'; readonly source?: MessageSource; readonly signal: AbortSignal }
+  | {
+    readonly delivery: 'steer'
+    /**
+     * A provided host source is preserved on the user message; omission attributes
+     * an adjacent-Agent message to the parent.
+     */
+    readonly source?: MessageSource
+    readonly signal: AbortSignal
+  }
   | { readonly delivery: 'queue'; readonly source: MessageSource; readonly signal: AbortSignal }
 
 /**

@@ -178,12 +178,12 @@ for (const backend of backends) {
       await Promise.resolve()
 
       activeRoot.session.append('team/member', {
-        version: 1,
+        version: 2,
         teamId: TeamId(activeRoot.id),
         member: provisioning(childId, 'recoverable'),
       })
       failedRoot.session.append('team/member', {
-        version: 1,
+        version: 2,
         teamId: TeamId(failedRoot.id),
         member: provisioning(SessionId(`${backend.name}-missing`), 'missing'),
       })
@@ -248,7 +248,7 @@ for (const backend of backends) {
       await Promise.resolve()
       await Promise.resolve()
       root.session.append('team/member', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         member: provisioning(childId, 'pending-worker'),
       })
@@ -295,8 +295,8 @@ for (const backend of backends) {
         signal: SIGNAL,
       })
       await vi.waitFor(() => { expect(first.ctx.agents.get(started.member.id)).toBeUndefined() }, { timeout: 5_000 })
-      vi.spyOn(first.ctx.sessionPersistence, 'inspect')
-        .mockRejectedValueOnce(new Error('temporary target inspection failure'))
+      vi.spyOn(first.ctx.sessionPersistence, 'open')
+        .mockRejectedValueOnce(new Error('temporary target read failure'))
       const queued = await first.ctx.agentTeams.sendMessage(firstLead, {
         target: 'mail-worker',
         content: [{ type: 'text', text: 'durable retry context' }],
@@ -376,7 +376,7 @@ for (const backend of backends) {
         content: [{ type: 'text', text: 'already recorded before acknowledgement' }],
       }
       firstLead.session.append('team/message/queued', {
-        version: 1,
+        version: 2,
         teamId: TeamId(rootId),
         message: queued,
       })
@@ -428,17 +428,17 @@ for (const backend of backends) {
         content: [{ type: 'text', text: 'already durable in target inbox' }],
       }
       root.session.append('team/member', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         member: provisioned,
       })
       root.session.append('team/member', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         member: active,
       })
       root.session.append('team/message/queued', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         message: queued,
       })

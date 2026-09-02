@@ -26,7 +26,6 @@ import type {
 /** Owns every process-local state transition for the durable Team mailbox. */
 export class TeamMailbox {
   private readonly dispatchTails = new Map<SessionId, Promise<void>>()
-  private readonly activeDispatches = new Map<SessionId, TeamMessageSnapshot>()
   private readonly inFlightMessages = new Set<TeamMessageId>()
   private readonly inFlightDispatches = new Set<Promise<unknown>>()
 
@@ -139,7 +138,7 @@ export class TeamMailbox {
         throw new TeamError(`team message exceeds ${this.maxMessageBytes} bytes`, 'TEAM_MESSAGE_TOO_LARGE')
       }
       await this.journal.appendAndFlush(root, 'team/message/queued', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         message: queued,
       })
@@ -187,12 +186,7 @@ export class TeamMailbox {
     message: TeamMessageSnapshot,
     signal: AbortSignal,
   ): Promise<boolean> {
-    const active = this.activeDispatches.get(message.targetId)
-    const live = message.targetId === root.id ? root : this.ctx.agents.get(message.targetId)
-    if (active !== undefined && live !== undefined && this.messagePrecedes(root, message.id, active.id)) {
-      return await this.dispatchOnce(root, message, signal)
-    }
-    return await this.serializeDispatch(message, () => this.dispatchOnce(root, message, signal))
+    return await this.serializeDispatch(message, () => this.dispatchThrough(root, message, signal))
   }
 
   /** Serialize delivery admission for one durable target in queued order. */
@@ -202,16 +196,8 @@ export class TeamMailbox {
   ): Promise<boolean> {
     const targetId = message.targetId
     const prior = this.dispatchTails.get(targetId) ?? Promise.resolve()
-    const dispatch = async (): Promise<boolean> => {
-      this.activeDispatches.set(targetId, message)
-      try {
-        return await operation()
-      } finally {
-        this.activeDispatches.delete(targetId)
-      }
-    }
     /* v8 ignore next -- dispatch tails absorb rejection, so the recovery callback is a fail-safe backstop. */
-    const run = prior.then(dispatch, dispatch)
+    const run = prior.then(operation, operation)
     /* v8 ignore next -- dispatchOnce contains delivery failures and serializeDispatch itself does not throw. */
     const tail = run.then(() => undefined, () => undefined)
     this.dispatchTails.set(targetId, tail)
@@ -220,6 +206,29 @@ export class TeamMailbox {
     } finally {
       if (this.dispatchTails.get(targetId) === tail) this.dispatchTails.delete(targetId)
     }
+  }
+
+  /** Deliver every pending target message through `message` in durable queue order. */
+  private async dispatchThrough(
+    root: Agent,
+    message: TeamMessageSnapshot,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const state = this.journal.state(root)
+    const pending = state.messages.filter(candidate =>
+      candidate.targetId === message.targetId && !state.delivered.includes(candidate.id))
+    const requested = pending.findIndex(candidate => candidate.id === message.id)
+    if (requested < 0) return state.delivered.includes(message.id)
+    for (const candidate of pending.slice(0, requested + 1)) {
+      const ownsInFlight = !this.inFlightMessages.has(candidate.id)
+      if (ownsInFlight) this.inFlightMessages.add(candidate.id)
+      try {
+        if (!await this.dispatchOnce(root, candidate, signal)) return false
+      } finally {
+        if (ownsInFlight) this.inFlightMessages.delete(candidate.id)
+      }
+    }
+    return true
   }
 
   /** Attempt one queued delivery after target-local ordering admits it. */
@@ -260,12 +269,6 @@ export class TeamMailbox {
     }
   }
 
-  /** Whether `left` was durably queued before `right` in one Lead log. */
-  private messagePrecedes(root: Agent, left: TeamMessageId, right: TeamMessageId): boolean {
-    const ids = this.journal.state(root).messages.map(message => message.id)
-    return ids.indexOf(left) < ids.indexOf(right)
-  }
-
   /** Flush one live target receipt before the Lead records its delivered edge. */
   private async checkpointDelivered(
     root: Agent,
@@ -286,7 +289,7 @@ export class TeamMailbox {
       const queued = state.messages.find(message => message.id === messageId)
       if (queued === undefined || queued.targetId !== targetId) return
       await this.journal.appendAndFlush(root, 'team/message/delivered', {
-        version: 1,
+        version: 2,
         teamId: TeamId(root.id),
         messageId,
         targetId,
