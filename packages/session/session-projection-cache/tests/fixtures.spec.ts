@@ -162,6 +162,13 @@ describe('archived version recovery', () => {
       SessionLogOffset(0),
       ['title'],
     )).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(
+      headerFor(SessionId(sid), record.identity),
+      SessionLogOffset(0),
+    )).toEqual({
+      asOfSeq: record.rows.title?.seq,
+      values: { title: record.rows.title?.val },
+    })
 
     // The one-time bootstrap materialized a current-version document.
     const migrated = JSON.parse(
@@ -189,10 +196,59 @@ describe('archived version recovery', () => {
         SessionLogOffset(0),
         ['title'],
       )).toBeUndefined()
+      expect(cache.cachedPredecessorTitle(
+        headerFor(id, doc.record.identity),
+        SessionLogOffset(0),
+      )).toEqual({
+        asOfSeq: doc.record.rows.title?.seq,
+        values: { title: doc.record.rows.title?.val },
+      })
 
       await assertRewrite(ctx, root, id)
     })
   }
+
+  it('serves an explicitly older format title but never a current or newer one through the predecessor path', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-fx-'))
+    const sessionsDir = join(root, projectionCacheDomainSpec.name, 'sessions')
+    await mkdir(sessionsDir, { recursive: true })
+    const write = async (id: string, formatVersion: number, rowVersion = 1): Promise<void> => {
+      await writeFile(join(sessionsDir, `${id}.json`), JSON.stringify({
+        version: projectionCacheDomainSpec.version,
+        record: {
+          identity: {
+            formatVersion,
+            createdAt: 10,
+            cwd: '/work',
+            isSeeded: false,
+            inheritedEventCount: 0,
+          },
+          rows: { title: { ver: rowVersion, seq: 2, val: `${id} title` } },
+        },
+      }))
+    }
+    await write('older', SESSION_FORMAT_VERSION - 1)
+    await write('current', SESSION_FORMAT_VERSION)
+    await write('newer', SESSION_FORMAT_VERSION + 1)
+    await write('stale-title', SESSION_FORMAT_VERSION - 1, 2)
+
+    const { cache } = await harness(root)
+    const listed = (id: string): SessionHeader => ({
+      version: SESSION_FORMAT_VERSION,
+      id: SessionId(id),
+      createdAt: 10,
+      cwd: '/work',
+      isSeeded: false,
+    })
+    expect(cache.cachedPredecessorTitle(listed('older'), SessionLogOffset(0))).toEqual({
+      asOfSeq: 2,
+      values: { title: 'older title' },
+    })
+    expect(cache.cachedPredecessorTitle(listed('current'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('newer'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('stale-title'), SessionLogOffset(0))).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(listed('missing'), SessionLogOffset(0))).toBeUndefined()
+  })
 
   it('refuses a lineage-less archive for a seeded caller (identity mismatch, cold rebuild)', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-projcache-fx-'))
@@ -202,6 +258,7 @@ describe('archived version recovery', () => {
     const { cache } = await harness(root)
     const seeded = { ...headerFor(id, doc.record.identity), isSeeded: true }
     expect(cache.cachedSnapshot(seeded, SessionLogOffset(2), ['title'])).toBeUndefined()
+    expect(cache.cachedPredecessorTitle(seeded, SessionLogOffset(2))).toBeUndefined()
   })
 
   it('backs up and skips a record that fails schema validation instead of failing the boot', async () => {
