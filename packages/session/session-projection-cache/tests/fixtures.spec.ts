@@ -1,12 +1,14 @@
 /**
  * Cross-version recovery over archived on-disk artifacts. `fixtures/` holds
- * real `session_projcache` media produced by released builds through their
- * web apps (see scripts/releasefix): the v3 whole-unit file, a v4 per-record
- * document, a current v5 document, and the v5-stamped lineage-less document
- * that the formerly unguarded legacy bootstrap wrote over v3 records. Each
- * must recover through the real storage stack — the domain opens and the
- * listing read serves the archived title — and a record that fails schema
- * validation anyway is backed up and skipped instead of failing the boot.
+ * real `session_projcache` media, each produced by driving the named release
+ * through its own web app (session created over RPC, real model turns, a
+ * rename): the v3 whole-unit file (published 0.1.1-rc.2), a v4 per-record
+ * document (published 0.1.2-alpha.3), a current v5 document, and the
+ * v5-stamped lineage-less document reproducing byte-for-byte what the
+ * formerly unguarded legacy bootstrap wrote over v3 records. Each must
+ * recover through the real storage stack — the domain opens and the listing
+ * read serves the archived title — and a record that fails schema validation
+ * anyway is backed up and skipped instead of failing the boot.
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'

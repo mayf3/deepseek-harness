@@ -81,7 +81,7 @@ export type CheckpointRecord = z.infer<typeof checkpointRecord>
  * their cached listing projections instead of dropping every title until
  * each session is reopened; the per-record version map lives in the
  * read-compat Agent Note
- * (.agents/notes/proposed/architecture/2026-09-02-projcache-cross-version-read-compat.md).
+ * (.agents/notes/implemented/architecture/2026-09-02-projcache-cross-version-read-compat.md).
  * The per-row `ver` guard and the identity match still discard anything the
  * current fold semantics cannot vouch for.
  *

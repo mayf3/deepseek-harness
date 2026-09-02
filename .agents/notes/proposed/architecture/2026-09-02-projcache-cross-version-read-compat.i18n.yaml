@@ -1,6 +1,0 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
-#   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-02-projcache-cross-version-read-compat.md
-2026-09-02-projcache-cross-version-read-compat.md: 9bd0cd9049ed9c9d4180f54d55f10f9b0f555dfc
-2026-09-02-projcache-cross-version-read-compat.zh.md: 4682c5fe4732b21649214ee98f25d478c9bfcb18
