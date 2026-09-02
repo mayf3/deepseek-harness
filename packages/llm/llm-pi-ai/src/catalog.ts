@@ -28,7 +28,6 @@ import type {
   Provider,
   ThinkingLevelMap,
 } from '@earendil-works/pi-ai'
-import { anthropicApiRoot } from './endpoint.ts'
 
 /**
  * Pricing for a model the installed catalog does not describe. The harness
@@ -856,11 +855,10 @@ export function resolveRouteModels(request: RouteCatalogRequest): RouteCatalog {
       invalid(provider, `model "${entry.id}" needs an api; the installed catalog does not describe it, so set the`
         + ' route\'s api to the wire protocol its endpoint speaks')
     }
-    const configuredBaseUrl = request.baseURL ?? base?.baseUrl ?? providerBaseUrl
-    if (configuredBaseUrl === undefined) {
+    const baseUrl = request.baseURL ?? base?.baseUrl ?? providerBaseUrl
+    if (baseUrl === undefined) {
       invalid(provider, `model "${entry.id}" needs a baseURL; the installed catalog does not describe this route`)
     }
-    const baseUrl = api === 'anthropic-messages' ? anthropicApiRoot(configuredBaseUrl) : configuredBaseUrl
     // Capacities fall back to the route's own defaults, so a model listing that
     // discloses nothing but ids still yields a serviceable route. The fallback
     // is a guess by construction, which is why it is a configurable route field

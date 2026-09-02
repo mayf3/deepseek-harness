@@ -95,39 +95,6 @@ describe('hand-declared providers', () => {
     expect(server.headers[0]?.authorization).toBe('Bearer test-key')
   })
 
-  it.each([
-    ['', '/v1/messages'],
-    ['/v1', '/v1/messages'],
-    ['/tenant/v1', '/tenant/v1/messages'],
-  ])('routes an Anthropic base ending in %s without duplicating its API version', async (suffix, path) => {
-    const server = await mockServer([{
-      status: 400,
-      body: JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', message: 'stop' } }),
-    }])
-    const ctx = await harness({
-      providers: {
-        'acme-anthropic': {
-          apiKeyEnv: KEY_ENV,
-          api: 'anthropic-messages',
-          baseURL: `${server.url}${suffix}`,
-          models: [{ id: 'claude-test', contextWindow: 200_000, maxTokens: 4096 }],
-        },
-      },
-    })
-
-    const result = await assemble(ctx, {
-      provider: 'acme-anthropic',
-      model: 'claude-test',
-      messages: [createUserMessage({
-        content: [{ type: 'text', text: 'hi' }],
-        source: { kind: 'plugin', plugin: 'test' },
-      })],
-    })
-
-    expect(result.finish.kind).toBe('error')
-    expect(server.paths).toEqual([path])
-  })
-
   it('lists and resolves the declared models rather than a catalog', async () => {
     const server = await mockServer([])
     const ctx = await harness(gateway(`${server.url}/v1`))

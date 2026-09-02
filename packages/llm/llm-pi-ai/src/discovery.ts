@@ -26,7 +26,6 @@ import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai
 import type { LlmDiscoveredModel, LlmModelDiscoveryOperation } from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { catalogModels } from './catalog.ts'
-import { anthropicApiRoot } from './endpoint.ts'
 
 /**
  * Protocols whose model listing this module can read. OpenAI protocols use
@@ -46,7 +45,7 @@ const LISTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
 /** Stable API version required by Anthropic's model-listing endpoint. */
 const ANTHROPIC_VERSION = '2023-06-01'
 
-/** Largest model-list page accepted by Anthropic's public endpoint. */
+/** Largest model-list page accepted by Anthropic's public endpoint; discovery reads one page and does not follow `has_more`. */
 const ANTHROPIC_MODEL_LIMIT = 1000
 
 /**
@@ -99,15 +98,21 @@ function label(...candidates: readonly unknown[]): string | undefined {
 }
 
 /**
- * Join the endpoint base with the listing path. The base is treated as a
- * prefix rather than a URL to resolve against, so a deployment path such as
- * `https://gateway.example/openai/v1` keeps its segments instead of losing
- * them to `URL` resolution.
+ * Join the endpoint base with the protocol's listing path. The base is
+ * treated as a prefix rather than a URL to resolve against, so a deployment
+ * path such as `https://gateway.example/openai/v1` keeps its segments instead
+ * of losing them to `URL` resolution. OpenAI protocols list at
+ * `{baseURL}/models`. Anthropic lists at `{root}/v1/models`, where the root is
+ * the base without trailing slashes and without one trailing `/v1` segment:
+ * gateway documentation publishes both spellings of the same root. Only this
+ * listing URL normalizes that segment; model requests receive the configured
+ * `baseURL` unchanged.
  */
 function listingUrl(baseURL: string, api: string): string {
   const base = baseURL.replace(/\/+$/, '')
   if (api !== 'anthropic-messages') return `${base}/models`
-  return `${anthropicApiRoot(base)}/v1/models?limit=${String(ANTHROPIC_MODEL_LIMIT)}`
+  const root = base.endsWith('/v1') ? base.slice(0, -3) : base
+  return `${root}/v1/models?limit=${String(ANTHROPIC_MODEL_LIMIT)}`
 }
 
 /**
