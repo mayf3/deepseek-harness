@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format-catalog'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import LlmRuntime, {
@@ -31,14 +30,12 @@ import {
   loadSessionScripts,
   migrateSessionSnapshotFixture,
   name,
-  parseSessionLogForReplay,
   parseSessionHeader,
   parseSessionLog,
   prepareSessionEventNotificationsForComparison,
   prepareSessionSnapshotFixtureForComparison,
   resolveScriptedEntry,
 } from '../src/index.ts'
-import { ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES } from '../src/alpha-refusal-fixtures.ts'
 
 declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types' {
   interface DeepSeekLlmApiExtensionMap {
@@ -386,27 +383,6 @@ describe('parseSessionLog', () => {
       .toThrow('session snapshot line 2 contains invalid JSON')
   })
 
-  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
-    'keeps pathless parsing strict for $repoRelativePath',
-    (fixture) => {
-      const source = readFileSync(fixture.path, 'utf8')
-
-      expect(() => parseSessionLog(source)).toThrow(SessionFormatUnsupportedMigrationError)
-    },
-  )
-
-  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
-    'permits replay extraction only for the exact allowlisted path $repoRelativePath',
-    (fixture) => {
-      const source = readFileSync(fixture.path, 'utf8')
-      const lookalike = resolve(dir, fixture.repoRelativePath)
-
-      expect(parseSessionLogForReplay(source, fixture.path).length).toBeGreaterThan(0)
-      expect(() => parseSessionLogForReplay(source, lookalike))
-        .toThrow(SessionFormatUnsupportedMigrationError)
-    },
-  )
-
   it('skips the header line and parses each event', () => {
     const events: SessionEvent[] = [{ type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }]
     expect(parseSessionLog(sessionJsonl(events))).toEqual(events)
@@ -707,37 +683,14 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
     expect(prepared.endsWith('\n')).toBe(false)
   })
 
-  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
-    'structurally prepares the exact alpha refusal $repoRelativePath without changing its source',
-    (fixture) => {
-      const source = readFileSync(fixture.path, 'utf8')
+  it('migrates a valid v0 fixture through both adjacent edges', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../../snapshots/web/schedule-catalog/session.jsonl'), 'utf8')
 
-      const prepared = prepareSessionSnapshotFixtureForComparison(source, fixture.path)
-      expect(JSON.parse(source.split('\n')[0]!)).toMatchObject({ version: 0 })
-      expect(JSON.parse(prepared.split('\n')[0]!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
-      expect(prepared).not.toContain('"type":"assistant/chunk"')
-      expect(readFileSync(fixture.path, 'utf8')).toBe(source)
-      if (fixture.repoRelativePath.includes('agent-instructions')) {
-        expect(prepared).toContain('"plugin":"alpha-comparison-compact"')
-        expect(prepared).toContain('"stream":')
-      } else {
-        expect(prepared).toContain('"source":{"kind":"fallback"}')
-      }
-    },
-  )
+    const prepared = prepareSessionSnapshotFixtureForComparison(source)
 
-  it('repairs the paired current agent-instructions result through the same closed source identity', () => {
-    const fixture = ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES[0]!
-    const source = readFileSync(fixture.path, 'utf8')
-    const prepared = prepareSessionSnapshotFixtureForComparison(source, fixture.path)
-    const invalidCurrent = prepared.replace(
-      '"plugin":"alpha-comparison-compact"',
-      '"plugin":"compact","compactionId":"workspace-context-fixture"',
-    )
-
-    expect(prepareSessionSnapshotFixtureForComparison(invalidCurrent, fixture.path)).toBe(prepared)
-    expect(() => prepareSessionSnapshotFixtureForComparison(invalidCurrent, resolve(dir, fixture.repoRelativePath)))
-      .toThrow(/compaction checkpoint.*has no matching compaction\/start/)
+    expect(JSON.parse(source.split('\n')[0]!)).toMatchObject({ version: 0 })
+    expect(JSON.parse(prepared.split('\n')[0]!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
+    expect(parseSessionLog(prepared)).toEqual(parseSessionLog(source))
   })
 })
 

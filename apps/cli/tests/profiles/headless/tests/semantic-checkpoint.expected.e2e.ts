@@ -32,8 +32,8 @@ async function expectSession(actual: string, expectedPath: string): Promise<void
   const parse = (content: string): Record<string, unknown>[] => content.split('\n')
     .filter(line => line.trim().length > 0)
     .map(line => JSON.parse(line) as Record<string, unknown>)
-  expect(normalizeSessionSnapshots([actual], fixtureContext(actual), { sourcePaths: [expectedPath] }).map(parse))
-    .toEqual(normalizeSessionSnapshots([expected], fixtureContext(expected), { sourcePaths: [expectedPath] }).map(parse))
+  expect(normalizeSessionSnapshots([actual], fixtureContext(actual)).map(parse))
+    .toEqual(normalizeSessionSnapshots([expected], fixtureContext(expected)).map(parse))
 }
 
 async function seedInterruptedSession(root: string, cwd: string): Promise<string> {

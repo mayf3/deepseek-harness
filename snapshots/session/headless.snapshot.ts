@@ -790,13 +790,8 @@ describe('headless recorded-session snapshots', () => {
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
       const actualContext = contextOf(actualLogs.map(log => log.content))
       const fixtureContext = contextOf(fixtures)
-      const sourcePaths = fixtureFiles.map(file => join(scenario.dir, file))
-      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext, {
-        sourcePaths,
-      })
-      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext, {
-        sourcePaths,
-      })
+      const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
+      const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
       }

@@ -104,12 +104,6 @@ export interface NormalizeOptions {
   identityMode?: 'legacy' | 'preserve'
 }
 
-/** Multi-Session comparison controls, including optional committed source identities. */
-export interface NormalizeSessionSnapshotsOptions extends Omit<NormalizeOptions, 'identityMode'> {
-  /** Primary-first source paths; exact alpha-refusal fixtures receive replay-only comparison policy. */
-  sourcePaths?: readonly (string | undefined)[]
-}
-
 /** Return every known spelling of the generated cwd, most specific first. */
 function cwdSpellings(ctx: NormalizeContext): string[] {
   const spellings = [...new Set([ctx.cwd, ...ctx.cwdAliases ?? []])]
@@ -439,21 +433,17 @@ export function normalizeSessionSnapshot(
 export function normalizeSessionSnapshots(
   rawLogs: readonly string[],
   ctx: NormalizeContext,
-  options: NormalizeSessionSnapshotsOptions = {},
+  options: Omit<NormalizeOptions, 'identityMode'> = {},
 ): string[] {
-  const { sourcePaths, ...normalizeOptions } = options
-  if (sourcePaths !== undefined && sourcePaths.length !== rawLogs.length) {
-    throw new Error('Session snapshot source path count must match its log count')
-  }
-  const currentLogs = rawLogs.map((log, index) => hasSessionFormatVersion(log)
-    ? prepareSessionSnapshotFixtureForComparison(log, sourcePaths?.[index])
+  const currentLogs = rawLogs.map(log => hasSessionFormatVersion(log)
+    ? prepareSessionSnapshotFixtureForComparison(log)
     : log)
   const comparableLogs = currentLogs.map(normalizeSessionFormatProvenance)
   return redactSessionSnapshotIds(comparableLogs).map(log => projectSessionSnapshot(
     scrubSessionSnapshot(normalizeSessionLog(
       log,
       { ...ctx, sessionIds: [] },
-      { ...normalizeOptions, identityMode: 'preserve' },
+      { ...options, identityMode: 'preserve' },
     )),
   ))
 }

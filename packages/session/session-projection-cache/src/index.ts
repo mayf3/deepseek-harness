@@ -164,8 +164,10 @@ export class SessionProjectionCache extends Service {
    * strict {@link cachedSnapshot} / hydration paths continue to reject them.
    * @param meta - authoritative listed Session header.
    * @param inheritedEventCount - exact inherited cut completing the lifecycle identity.
-   * @returns a title-only checkpoint view, or `undefined` when the record is
-   *   current, newer, unrelated, missing, or incompatible with the title unit.
+   * @returns a title-only checkpoint view with `asOfSeq: -1`, or `undefined`
+   *   when the record is current, newer, unrelated, missing, or incompatible
+   *   with the title unit. The sentinel avoids reusing a sequence that a
+   *   cardinality-changing Session migration may have remapped.
    */
   cachedPredecessorTitle(
     meta: SessionHeader,
@@ -174,7 +176,8 @@ export class SessionProjectionCache extends Service {
     const expected = identityOf(meta, inheritedEventCount)
     const record = this.requireTable().get(meta.id)
     if (record === undefined || !predecessorIdentityMatches(record.identity, expected)) return undefined
-    return this.viewRecord(record, [PREDECESSOR_TITLE_KEY])
+    const title = this.viewRecord(record, [PREDECESSOR_TITLE_KEY])
+    return title === undefined ? undefined : { ...title, asOfSeq: -1 }
   }
 
   /** View selected wire rows and bind them to their lowest served watermark. */

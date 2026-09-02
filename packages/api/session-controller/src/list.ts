@@ -145,8 +145,6 @@ export class ApiSessionList {
 
   private summarizeCold(header: SessionHeader): SessionSummary {
     const projections = this.projectionsFor(header, undefined)
-    const raced = this.ctx.sessions.get(header.id)
-    if (raced !== undefined) return this.summaryFor(raced)
     const metadata = projections?.values.sessionListMetadata
     return {
       sessionId: header.id,

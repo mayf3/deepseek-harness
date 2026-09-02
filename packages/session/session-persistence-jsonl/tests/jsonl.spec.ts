@@ -439,8 +439,24 @@ describe('JsonlSessionPersistence: stored-format refusals', () => {
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, '42\n')
     const failure = await ctx.sessionPersistence.open(id, 'read').then(() => undefined, (error: unknown) => error as Error)
-    expect(failure?.name).not.toBe('SessionFormatUnsupportedError')
+    expect(failure?.name).toBe('SessionPersistenceCorruptionError')
     expect(failure?.message).toContain('first line is not a JSON object')
+    expect(failure?.message).toContain(`(raw log: ${path})`)
+  })
+
+  it.each([
+    ['invalid JSON', 'not json\n', /not valid JSON/],
+    ['missing header newline', '{"type":"session"}', /header-less session log/],
+  ])('classifies a %s current log as corruption with its raw path', async (name, content, reason) => {
+    const id = SessionId(`corrupt-${name.replaceAll(' ', '-')}`)
+    const path = rawLogPath(root, '/work', id)
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, content)
+
+    const failure = await ctx.sessionPersistence.open(id, 'read').then(() => undefined, (error: unknown) => error as Error)
+    expect(failure?.name).toBe('SessionPersistenceCorruptionError')
+    expect(failure?.message).toMatch(reason)
+    expect(failure?.message).toContain(`(raw log: ${path})`)
   })
 
   it('names a foreign-version header by its stringified non-string id', async () => {

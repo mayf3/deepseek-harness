@@ -808,12 +808,8 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
 
       // Persisted transcripts match the committed fixtures.
       const expectedContext = contextOfContents(expectedContents)
-      const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext, {
-        sourcePaths: files,
-      })
-      const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext, {
-        sourcePaths: files,
-      })
+      const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext)
+      const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext)
       expect(actualSnapshots.map(records), `${scenario.name}: sessions`).toEqual(expectedSnapshots.map(records))
       await verifyHeaders(scenario, ordered, actualContext, assertions.dshSdkChild?.agentConfig)
 

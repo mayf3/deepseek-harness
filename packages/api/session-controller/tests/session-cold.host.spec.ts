@@ -90,7 +90,7 @@ describe('sessions.list cold merge', () => {
     ctx.provide('sessionProjectionCache', {
       cachedSnapshot: () => undefined,
       cachedPredecessorTitle: (meta: SessionHeader) => meta.id === sid('legacy-title')
-        ? { asOfSeq: 3, values: { title: 'Cached predecessor title' } }
+        ? { asOfSeq: -1, values: { title: 'Cached predecessor title' } }
         : undefined,
     } as never)
     const remote = createSessionTestRemote(ctx, {
@@ -112,7 +112,7 @@ describe('sessions.list cold merge', () => {
         sessionId: sid('legacy-title'),
         blank: false,
         updatedAt: 100,
-        projections: { asOfSeq: 3, values: { title: 'Cached predecessor title' } },
+        projections: { asOfSeq: -1, values: { title: 'Cached predecessor title' } },
       }),
     ])
     expect(stat).not.toHaveBeenCalled()
@@ -170,51 +170,6 @@ describe('sessions.list cold merge', () => {
     expect(byId['seeded-cold']).toMatchObject({ blank: false, updatedAt: 450 })
     expect(cacheCalls).not.toContain('seeded-cold')
     expect(inspect).not.toHaveBeenCalled()
-  })
-
-  it('prefers a live row attached during cache lookup without folding its seed', async () => {
-    const ctx = new Context()
-    await ctx.plugin(SessionStore)
-    await ctx.plugin(AgentRegistry)
-    const meta = header('attached-during-list', 100)
-    providePersistence(ctx, {
-      list: () => Promise.resolve([meta]),
-    })
-    const cacheLookup = vi.fn(() => {
-      const session = ctx.sessions.create(meta.id, {
-        seed: [
-          { type: 'turn/start', seq: SessionSeq(0), time: 200, data: { turn: 1 } },
-          {
-            type: 'user/message', seq: SessionSeq(1), time: 300,
-            data: createUserMessage({ content: [{ type: 'text', text: 'live' }], source: { kind: 'user' } }),
-            surfaceOp: 'append',
-          },
-        ],
-        meta: {
-          ...meta.cwd === undefined ? {} : { cwd: meta.cwd },
-          createdAt: meta.createdAt,
-        },
-      })
-      ctx.agents.register({ id: session.id, session, status: 'running', ctx } as Agent)
-      return undefined
-    })
-    ctx.provide('sessionProjectionCache', {
-      cachedSnapshot: cacheLookup,
-      cachedPredecessorTitle: () => undefined,
-    } as never)
-    const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
-
-    const response = await remote.list(request({}))
-    if (!response.ok) throw new Error('list failed')
-    expect(response.value.items).toEqual([
-      expect.objectContaining({
-        sessionId: meta.id,
-        blank: false,
-        running: true,
-        updatedAt: 100,
-      }),
-    ])
-    expect(cacheLookup).toHaveBeenCalledOnce()
   })
 
 })

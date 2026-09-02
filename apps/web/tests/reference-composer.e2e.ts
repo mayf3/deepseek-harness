@@ -134,8 +134,8 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
     const targetCreatedAt = Date.now() - 60_000
-    await seedSession(scaffold, sourceSessionFixture(), SOURCE_SESSION_ID, undefined, undefined, { createdAt: targetCreatedAt - 1 })
-    await seedSession(scaffold, targetSessionFixture(), TARGET_SESSION_ID, undefined, undefined, { createdAt: targetCreatedAt })
+    await seedSession(scaffold, sourceSessionFixture(), SOURCE_SESSION_ID, undefined, { createdAt: targetCreatedAt - 1 })
+    await seedSession(scaffold, targetSessionFixture(), TARGET_SESSION_ID, undefined, { createdAt: targetCreatedAt })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)

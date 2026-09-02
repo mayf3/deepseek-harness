@@ -75,7 +75,7 @@ export type AssistantStreamFrame =
   | {
     readonly type: 'start'
     readonly attemptId: LlmAttemptId
-    /** Monotone while this Session remains attached to this process. */
+    /** Monotone within one attached Agent lifecycle; replacement restarts at 1. */
     readonly revision: number
     /** Safe-integer wall-clock time captured when this attempt started. */
     readonly startedTime: number

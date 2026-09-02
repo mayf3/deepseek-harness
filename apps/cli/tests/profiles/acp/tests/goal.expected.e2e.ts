@@ -67,8 +67,8 @@ function normalizeGoalLog(content: string, context: NormalizeContext): string {
 /** Compare one current normalized goal log with its generation-aware committed fixture. */
 async function expectGoalLog(actual: string, expectedPath: string): Promise<void> {
   const expected = await readFile(expectedPath, 'utf8')
-  expect(normalizeSessionSnapshots([actual], fixtureContext(actual), { sourcePaths: [expectedPath] }).map(parseJsonl))
-    .toEqual(normalizeSessionSnapshots([expected], fixtureContext(expected), { sourcePaths: [expectedPath] }).map(parseJsonl))
+  expect(normalizeSessionSnapshots([actual], fixtureContext(actual)).map(parseJsonl))
+    .toEqual(normalizeSessionSnapshots([expected], fixtureContext(expected)).map(parseJsonl))
 }
 
 describe('same-session goal snapshot through the ACP automation driver', () => {

@@ -33,13 +33,6 @@ import type {
 } from '@deepseek-ai/dsh-llm'
 import { LlmAdapter, LlmError, ReasoningEffortId, expandAssistantStream, requestImageHandleText, resolveRetryPolicy } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
-import { alphaSessionFormatRefusalForPath } from './alpha-refusal-fixtures.ts'
-
-export {
-  ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES,
-  alphaSessionFormatRefusalForPath,
-  type AlphaSessionFormatRefusalFixture,
-} from './alpha-refusal-fixtures.ts'
 
 const PACKED_CHUNK_ROW_TYPES = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks'])
 
@@ -215,18 +208,8 @@ export function parseSessionLog(text: string): SessionEvent[] {
   return parseSessionFixture(text).events
 }
 
-/**
- * Parse one source-qualified fixture for replay, admitting only the closed alpha-refusal manifest.
- * @param text - raw persisted or projected Session JSONL.
- * @param sourcePath - exact committed fixture path used to select replay-only policy.
- * @returns source events for replay-only test adapters.
- */
-export function parseSessionLogForReplay(text: string, sourcePath: string): SessionEvent[] {
-  return parseSessionFixture(text, sourcePath).events
-}
-
 /** Parse, complete, decode, and migrate one projected snapshot artifact without writing its source. */
-function parseSessionFixture(text: string, replaySourcePath?: string): ParsedSessionFixture {
+function parseSessionFixture(text: string): ParsedSessionFixture {
   const parsed: FixtureJsonLine[] = []
   for (const [index, line] of text.split(/\r?\n/).entries()) {
     if (line.trim().length === 0) continue
@@ -283,47 +266,23 @@ function parseSessionFixture(text: string, replaySourcePath?: string): ParsedSes
     decoded = sessionFormatCatalog.decodeArtifact(header, rows)
   } catch (error: unknown) {
     const physicalRow = locateUnlabelledPhysicalFailure(error, header, rows)
-    const failure = fixtureFormatError(
+    throw fixtureFormatError(
       error,
       headerLine.lineNumber,
       rowLines,
       eventLines,
       physicalRow,
     )
-    const refusal = replaySourcePath === undefined
-      ? undefined
-      : alphaSessionFormatRefusalForPath(replaySourcePath)
-    if (refusal?.expectedCurrentMessage === failure.message
-      && header['version'] === SESSION_FORMAT_VERSION) {
-      decoded = sessionFormatCatalog.decodeArtifact(
-        header,
-        repairAlphaRefusalEvents(rows, refusal.repoRelativePath),
-      )
-    } else {
-      throw failure
-    }
   }
   try {
     const current = sessionFormatCatalog.migrate(decoded)
     return parsedSessionFixture(current, headerLine.value)
   } catch (error: unknown) {
-    const failure = fixtureFormatError(error, headerLine.lineNumber, rowLines, eventLines)
-    const refusal = replaySourcePath === undefined
-      ? undefined
-      : alphaSessionFormatRefusalForPath(replaySourcePath)
-    if (refusal !== undefined
-      && failure instanceof SessionFormatUnsupportedMigrationError
-      && failure.message === refusal.expectedMessage) {
-      return parsedSessionFixture(
-        migrateAlphaRefusalForComparison(decoded, refusal.repoRelativePath),
-        headerLine.value,
-      )
-    }
-    throw failure
+    throw fixtureFormatError(error, headerLine.lineNumber, rowLines, eventLines)
   }
 }
 
-/** Materialize the common replay view from a migrated artifact or an exact replay-only v0 refusal. */
+/** Materialize the common replay view from a migrated artifact. */
 function parsedSessionFixture(
   artifact: ReturnType<typeof sessionFormatCatalog.decodeArtifact>,
   sourceHeader: Readonly<Record<string, unknown>>,
@@ -338,43 +297,6 @@ function parsedSessionFixture(
   }
 }
 
-/** Structurally migrate one closed invalid-v0 fixture without weakening production validation. */
-function migrateAlphaRefusalForComparison(
-  source: ReturnType<typeof sessionFormatCatalog.decodeArtifact>,
-  repoRelativePath: string,
-): ReturnType<typeof sessionFormatCatalog.migrate> {
-  const repaired = {
-    ...structuredClone(source),
-    events: repairAlphaRefusalEvents(source.events, repoRelativePath),
-  }
-  return sessionFormatCatalog.migrate(repaired)
-}
-
-/** Repair the exact known invalid relationship before test-only migration or comparison. */
-function repairAlphaRefusalEvents<T extends readonly Record<string, unknown>[]>(
-  sourceEvents: T,
-  repoRelativePath: string,
-): T {
-  const events = structuredClone(sourceEvents)
-  if (repoRelativePath === 'snapshots/session/agent-instructions/session.jsonl') {
-    const compact = events.find((event) => {
-      if (event.type !== 'user/message') return false
-      const provenance = (event.data as Record<string, unknown>)['source']
-      return typeof provenance === 'object' && provenance !== null
-        && (provenance as Record<string, unknown>)['plugin'] === 'compact'
-    }) as Record<string, unknown>
-    const provenance = ((compact['data'] as Record<string, unknown>)['source']) as Record<string, unknown>
-    provenance['plugin'] = 'alpha-comparison-compact'
-    delete provenance['compactionId']
-    delete provenance['sourceCommandId']
-  } else {
-    const title = events.find(event => event.type === 'session/title') as Record<string, unknown>
-    const sourceRecord = ((title['data'] as Record<string, unknown>)['source']) as Record<string, unknown>
-    sourceRecord['kind'] = 'fallback'
-  }
-  return events
-}
-
 /**
  * Convert one persisted or projected snapshot fixture to the current physical format in memory.
  * Projected cwd tokens remain tokens so the ordinary snapshot normalizer can compare them with a fresh run.
@@ -387,18 +309,12 @@ export function migrateSessionSnapshotFixture(text: string): string {
 }
 
 /**
- * Prepare one source-qualified fixture for expected-output comparison.
- * Exact alpha refusals receive their source-qualified test repair before migration;
- * production decoding and migration remain strict.
+ * Prepare one fixture for expected-output comparison through strict format validation.
  * @param text - one complete Session fixture.
- * @param sourcePath - exact committed source path, when known.
  * @returns current-generation comparison JSONL without modifying the source file.
  */
-export function prepareSessionSnapshotFixtureForComparison(
-  text: string,
-  sourcePath?: string,
-): string {
-  const parsed = parseSessionFixture(text, sourcePath)
+export function prepareSessionSnapshotFixtureForComparison(text: string): string {
+  const parsed = parseSessionFixture(text)
   return encodeCurrentSessionSnapshotFixture(text, parsed)
 }
 
@@ -1034,7 +950,7 @@ export function loadReplayScript(config: ReplayConfig): ReplayEntry[] {
 /** Read a primary JSONL unless a whole-script sidecar intentionally occupies the same path. */
 function readPrimaryFixture(config: ReplayConfig): ParsedSessionFixture | undefined {
   if (!existsSync(config.file) || config.file === config.overrideFile) return undefined
-  return parseSessionFixture(readFileSync(config.file, 'utf8'), config.file)
+  return parseSessionFixture(readFileSync(config.file, 'utf8'))
 }
 
 /** Resolve an override or derive from one already validated and migrated fixture. */
@@ -1097,7 +1013,7 @@ export function loadSessionScripts(config: ReplayConfig): SessionScript[] {
       throw new Error(`llm-replay: child fixture not found: ${childFile} — re-record the scenario`)
     }
     const text = readFileSync(childFile, 'utf8')
-    const fixture = parseSessionFixture(text, childFile)
+    const fixture = parseSessionFixture(text)
     // Derive the child's script from its own events only — events AT OR after the seed
     // boundary.
     const ownEvents = fixture.events.slice(fixture.inheritedEventCount)

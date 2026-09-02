@@ -17,7 +17,7 @@
  * @module @deepseek-ai/dsh-session-snapshot/suite
  */
 
-import { readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { readFile, readdir, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { isSurfaceEligibleType } from '@deepseek-ai/dsh-session/surface'
@@ -28,7 +28,6 @@ import { redactSessionSnapshotIds } from './identity.ts'
 import { captureExpectedWorkspaceSnapshot } from './workspace.ts'
 import {
   assertSessionFixtureVersion,
-  parseSessionFixtureName,
   sessionFixtureName,
   sessionFixtureNames,
   sessionHeaderVersion,
@@ -1276,12 +1275,6 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
           const outputFixtures = redactSessionSnapshotIds(stabilizeFixtureMessageIds(freshFixtures, existingFixtures))
           await Promise.all(outputFixtures.map((fixture, index) =>
             writeFile(join(dir, outputFixtureFiles[index] as string), fixture)))
-          const retiredFixtures = (await readdir(dir))
-            .map(parseSessionFixtureName)
-            .filter((fixture): fixture is NonNullable<typeof fixture> => (
-              fixture !== undefined && fixture.index >= outputFixtureFiles.length
-            ))
-          await Promise.all(retiredFixtures.map(fixture => rm(join(dir, fixture.name))))
           fixtureFiles = outputFixtureFiles
           if (scenario.pinsHeader === true) {
             const primary = result.sessionLogs[0] as HarvestedLog
@@ -1361,11 +1354,8 @@ export function defineAcpSnapshotSuite(options: SnapshotSuiteOptions): void {
             sessionIds: fixtureContexts.flatMap(context => context.sessionIds),
             cwd: (fixtureContexts[0] as NormalizeContext).cwd,
           }
-          const sourcePaths = fixtureFiles.map(file => join(dir, file))
-          const actualSnapshots = normalizeSessionSnapshots(harvested, ctx, { sourcePaths })
-          const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureCtx, {
-            sourcePaths,
-          })
+          const actualSnapshots = normalizeSessionSnapshots(harvested, ctx)
+          const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureCtx)
           for (const [index, actual] of actualSnapshots.entries()) {
             expect(actual, `${fixtureFiles[index]} mismatch`).toEqual(expectedSnapshots[index])
           }

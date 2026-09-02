@@ -571,7 +571,7 @@ describe('JSONL immutable generation publication', () => {
   it('never overwrites a colliding exclusive stage name', async () => {
     const root = await tempRoot()
     const request = options(root)
-    const collision = join(root, 'session.migration.collision.tmp.jsonl')
+    const collision = join(root, 'session.migration.collision.jsonl.tmp')
     await writeFile(request.sourcePath, line(header(0)) + line(event0))
     await writeFile(collision, 'owned-by-another-attempt\n')
     const randomToken = vi.fn().mockReturnValueOnce('collision').mockReturnValue('stage')
@@ -582,7 +582,7 @@ describe('JSONL immutable generation publication', () => {
     expect(await readFile(collision, 'utf8')).toBe('owned-by-another-attempt\n')
     expect((await readdir(root)).sort()).toEqual([
       'session.jsonl',
-      'session.migration.collision.tmp.jsonl',
+      'session.migration.collision.jsonl.tmp',
       'session.v1.jsonl',
     ])
   })
@@ -697,7 +697,7 @@ describe('JSONL immutable generation publication', () => {
     expect(barrier).toHaveBeenCalledWith('after-publication', 1)
   })
 
-  it('removes an unconfirmed POSIX publication after the directory sync fails, then retries', async () => {
+  it('retains a POSIX publication after the directory sync fails', async () => {
     const root = await tempRoot()
     const request = options(root)
     const directorySyncFailure = new Error('published directory sync failed')
@@ -716,37 +716,9 @@ describe('JSONL immutable generation publication', () => {
       request,
       { platform: 'darwin', fs: { open: openFile } },
     )).rejects.toBe(directorySyncFailure)
-    expect(await readdir(root)).toEqual(['session.jsonl'])
+    expect((await readdir(root)).sort()).toEqual(['session.jsonl', 'session.v1.jsonl'])
 
     await expect(ensureJsonlGenerationCurrent(request)).resolves.toMatchObject({ path: request.currentPath })
-    expect(await readFile(request.currentPath, 'utf8')).toBe(line(header(1)) + line(event0))
-  })
-
-  it('preserves the primary directory-sync failure when publication rollback also fails', async () => {
-    const root = await tempRoot()
-    const request = options(root)
-    const directorySyncFailure = new Error('published directory sync failed')
-    const rollbackFailure = new Error('published target rollback failed')
-    await writeFile(request.sourcePath, line(header(0)) + line(event0))
-    const openFile = async (path: string, flags: string, mode?: number) => {
-      const handle = await open(path, flags, mode)
-      if (path === root && flags === 'r') vi.spyOn(handle, 'sync').mockRejectedValue(directorySyncFailure)
-      return handle
-    }
-
-    const failure = await __jsonlGenerationTest.ensure(request, {
-      platform: 'darwin',
-      fs: {
-        open: openFile,
-        rm: async (path: string) => {
-          if (path === request.currentPath) throw rollbackFailure
-          await rm(path, { force: true })
-        },
-      },
-    }).then(() => undefined, (error: unknown) => error)
-
-    if (!(failure instanceof AggregateError)) throw new Error('expected publication rollback aggregate')
-    expect(failure.errors).toEqual([directorySyncFailure, rollbackFailure, directorySyncFailure])
     expect(await readFile(request.currentPath, 'utf8')).toBe(line(header(1)) + line(event0))
   })
 
@@ -815,7 +787,7 @@ describe('JSONL immutable generation publication', () => {
   it('leaves a crash-style staging file inert', async () => {
     const root = await tempRoot()
     const request = options(root)
-    const crashStage = join(root, 'session.migration.crash.tmp.jsonl')
+    const crashStage = join(root, 'session.migration.crash.jsonl.tmp')
     await writeFile(request.sourcePath, line(header(0)) + line(event0))
     await writeFile(crashStage, line(header(99)))
 

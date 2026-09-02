@@ -112,6 +112,33 @@ describe('released v1 whole-artifact relationships', () => {
     expect(decode(rows).events).toEqual(rows)
   })
 
+  it('keeps the latest request provider across later steps and turns', () => {
+    const rows = [
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'step/start', seq: 1, time: 2, data: { turn: 1, step: 1 } },
+      {
+        type: 'request/header', seq: 2, time: 3,
+        data: { header: { config: { provider: 'mock', model: 'mock' } }, reason: 'initial' },
+      },
+      { type: 'step/end', seq: 3, time: 4, data: { turn: 1, step: 1 } },
+      { type: 'turn/end', seq: 4, time: 5, data: { turn: 1, reason: { kind: 'completed' } } },
+      { type: 'turn/start', seq: 5, time: 6, data: { turn: 2 } },
+      { type: 'step/start', seq: 6, time: 7, data: { turn: 2, step: 1 } },
+      {
+        type: 'llm/retry', seq: 7, time: 8,
+        data: {
+          retryId: 'retry', turn: 2, step: 1, provider: 'mock', mode: 'normal', policyKey: 'default',
+          retry: 1, maxRetries: 2, delayMs: 1, failure: { message: 'retry', code: 'SERVER' },
+        },
+      },
+      { type: 'llm/retry-started', seq: 8, time: 9, data: { retryId: 'retry', turn: 2, step: 1, retry: 1 } },
+      { type: 'step/end', seq: 9, time: 10, data: { turn: 2, step: 1 } },
+      { type: 'turn/end', seq: 10, time: 11, data: { turn: 2, reason: { kind: 'completed' } } },
+    ]
+
+    expect(decode(rows).events).toEqual(rows)
+  })
+
   it('preserves merge-extensible nested union variants and ignorable current events', () => {
     const rows = [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },

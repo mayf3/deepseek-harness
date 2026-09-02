@@ -103,10 +103,7 @@ describe('web e2e: persisted subagent conversation and human continuation', () =
   beforeAll(async () => {
     if (MODE === 'record') throw new Error('subagent conversation is a keyless assembled snapshot')
     const selectedBaseFixture = await selectedSessionFixture(BASE_FIXTURE)
-    const baseFixture = prepareSessionSnapshotFixtureForComparison(
-      await readFile(selectedBaseFixture, 'utf8'),
-      selectedBaseFixture,
-    )
+    const baseFixture = prepareSessionSnapshotFixtureForComparison(await readFile(selectedBaseFixture, 'utf8'))
     sidecarRoot = await mkdtemp(join(tmpdir(), 'dsh-web-subagent-'))
     const childFixturePath = join(sidecarRoot, 'child.jsonl')
     await writeFile(childFixturePath, childFixture(baseFixture, 'recorded-subagent', true))

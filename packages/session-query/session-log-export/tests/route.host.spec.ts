@@ -8,6 +8,7 @@ import { strFromU8, unzipSync } from 'fflate'
 import { describe, expect, it } from 'vitest'
 import {
   Config,
+  SESSION_LOG_FILENAME,
   SESSION_LOG_EXPORT_PATH,
   apply,
   inject,
@@ -68,7 +69,7 @@ describe('Session log export Fetch route', () => {
     expect(response.status).toBe(200)
     expect(response.headers.get('content-type')).toBe('application/zip')
     const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toContain('"id":"session-1"')
+    expect(strFromU8(files[SESSION_LOG_FILENAME] as Uint8Array)).toContain('"id":"session-1"')
 
     const head = await shared.fetch(new Request(
       `http://host${SESSION_LOG_EXPORT_PATH}?sessionId=session-1`, { method: 'HEAD' },

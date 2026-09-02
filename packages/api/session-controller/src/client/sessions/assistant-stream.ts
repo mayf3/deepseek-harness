@@ -101,6 +101,7 @@ export class ClientAssistantStream {
     this.durableCursor = Math.max(this.durableCursor, event.seq)
     this.transientInGap = 0
     if (this.attemptForSettlement(event) !== undefined) {
+      if (this.pending.has(event.seq)) return { type: 'rebaseline' }
       this.pending.set(event.seq, entry)
       return undefined
     }
@@ -115,6 +116,7 @@ export class ClientAssistantStream {
   acceptFrame(frame: SessionAssistantStreamFrame): ClientAssistantStreamResult {
     switch (frame.type) {
       case 'start':
+        if (this.activeAttempt !== undefined || this.pending.size > 0) return { type: 'rebaseline' }
         this.pending.clear()
         this.activeAttempt = {
           attemptId: String(frame.attemptId),
@@ -126,9 +128,11 @@ export class ClientAssistantStream {
         return undefined
       case 'chunk': {
         const attempt = this.activeAttempt
-        if (attempt === undefined
-          || attempt.attemptId !== String(frame.attemptId)
-          || frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
+        // A controller mounted after the Host saw this attempt has no start
+        // frame to reconstruct. Its durable settlement publishes directly;
+        // ignore the transient suffix until the next known start.
+        if (attempt === undefined || attempt.attemptId !== String(frame.attemptId)) return undefined
+        if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         attempt.nextIndex += 1
         this.transientInGap += 1
         return {
@@ -151,10 +155,10 @@ export class ClientAssistantStream {
       }
       case 'end': {
         const attempt = this.activeAttempt
-        this.activeAttempt = undefined
         if (attempt === undefined || attempt.attemptId !== String(frame.attemptId)) {
-          return { type: 'rebaseline' }
+          return undefined
         }
+        this.activeAttempt = undefined
         if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         if (frame.outcome.kind === 'abandoned') {
           return this.pending.size === 0 ? undefined : { type: 'rebaseline' }
@@ -162,9 +166,7 @@ export class ClientAssistantStream {
         if (this.publishedSeqs.has(frame.outcome.seq)) return undefined
         const entry = this.pending.get(frame.outcome.seq)
         if (entry === undefined
-          || entry.event.type !== frame.outcome.eventType
-          || entry.event.data.turn !== attempt.turn
-          || entry.event.data.step !== attempt.step) {
+          || entry.event.type !== frame.outcome.eventType) {
           return { type: 'rebaseline' }
         }
         this.pending.delete(frame.outcome.seq)

@@ -21,6 +21,11 @@ import type { BrowserAuth } from '@deepseek-ai/dsh-client-connection/src/browser
 import * as SessionLogExport from '../src/index.ts'
 
 const sid = (id: string): SessionId => id as SessionId
+const exportLogName = SessionLogExport.SESSION_LOG_FILENAME
+const subagentLogName = (id: string): string => `subagents/${id}/${exportLogName}`
+const generationLogName = (version: number): string => version === 0
+  ? 'session.jsonl'
+  : `session.v${version}.jsonl`
 
 function header(id: string, parentSession?: SessionId): SessionHeader {
   return {
@@ -214,6 +219,10 @@ describe('session export compression config', () => {
 })
 
 describe('serializeSessionLog', () => {
+  it('uses the canonical current-generation export filename', () => {
+    expect(SessionLogExport.SESSION_LOG_FILENAME).toBe(generationLogName(SESSION_FORMAT_VERSION))
+  })
+
   it('writes the physical header line, one line per event, and a trailing newline', () => {
     const stored = log('session-root')
     expect(logText(stored)).toBe(
@@ -288,8 +297,8 @@ describe('session.export download endpoint', () => {
     expect(response.headers.get('content-type')).toBe('application/zip')
     expect(response.headers.get('content-disposition')).toContain('dsh-session-session-root.zip')
     const files = unzipSync(await responseBytes(response))
-    expect(Object.keys(files)).toEqual(['session.jsonl'])
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(logText(stored))
+    expect(Object.keys(files)).toEqual([exportLogName])
+    expect(strFromU8(files[exportLogName] as Uint8Array)).toBe(logText(stored))
   })
 
   it('preflights root preparation through HEAD without streaming a body', async () => {
@@ -335,7 +344,7 @@ describe('session.export download endpoint', () => {
     const storedBytes = await responseBytes(uncompressed)
     const compressedBytes = await responseBytes(compressed)
     expect(compressedBytes.byteLength).toBeLessThan(storedBytes.byteLength)
-    expect(strFromU8(unzipSync(compressedBytes)['session.jsonl'] as Uint8Array)).toBe(logText(stored))
+    expect(strFromU8(unzipSync(compressedBytes)[exportLogName] as Uint8Array)).toBe(logText(stored))
   })
 
   it('includes descendant logs under subagents/<id>/ when requested', async () => {
@@ -353,11 +362,11 @@ describe('session.export download endpoint', () => {
     expect(response.status).toBe(200)
     const files = unzipSync(await responseBytes(response))
     expect(Object.keys(files).sort()).toEqual([
-      'session.jsonl',
-      'subagents/child-a/session.jsonl',
-      'subagents/grandchild-a/session.jsonl',
+      exportLogName,
+      subagentLogName('child-a'),
+      subagentLogName('grandchild-a'),
     ])
-    expect(strFromU8(files['subagents/child-a/session.jsonl'] as Uint8Array))
+    expect(strFromU8(files[subagentLogName('child-a')] as Uint8Array))
       .toBe(logText(child))
   })
 
@@ -390,8 +399,8 @@ describe('session.export download endpoint', () => {
     )
     const files = unzipSync(await responseBytes(response))
     expect(flushed).toEqual([sid('session-root'), sid('child-a')])
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(logText(durable['session-root'] as StoredLog))
-    expect(strFromU8(files['subagents/child-a/session.jsonl'] as Uint8Array)).toBe(logText(durable['child-a'] as StoredLog))
+    expect(strFromU8(files[exportLogName] as Uint8Array)).toBe(logText(durable['session-root'] as StoredLog))
+    expect(strFromU8(files[subagentLogName('child-a')] as Uint8Array)).toBe(logText(durable['child-a'] as StoredLog))
   })
 
   it('reads a cold log without asking the live-session store to flush', async () => {
@@ -409,7 +418,7 @@ describe('session.export download endpoint', () => {
     )
     const files = unzipSync(await responseBytes(response))
     expect(flush).not.toHaveBeenCalled()
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(logText(stored))
+    expect(strFromU8(files[exportLogName] as Uint8Array)).toBe(logText(stored))
   })
 
   it('answers 404 for a session the backend does not store', async () => {
@@ -465,7 +474,7 @@ describe('session.export download endpoint', () => {
     // as U+FFFD and the exported log is silently corrupted.
     const content = `${'a'.repeat((1 << 16) - 1)}😀tail`
     const files = await directZipFiles(content)
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(content)
+    expect(strFromU8(files[exportLogName] as Uint8Array)).toBe(content)
   })
 
   it('splits a long log on a plain code-unit boundary without backoff', async () => {
@@ -473,13 +482,13 @@ describe('session.export download endpoint', () => {
     // round trip must still be byte-identical across the multi-chunk push.
     const content = 'z'.repeat((1 << 16) + 4096)
     const files = await directZipFiles(content)
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe(content)
+    expect(strFromU8(files[exportLogName] as Uint8Array)).toBe(content)
   })
 
   it('streams an empty root text as an empty zip entry', async () => {
     const files = await directZipFiles('')
-    expect(Object.keys(files)).toEqual(['session.jsonl'])
-    expect(strFromU8(files['session.jsonl'] as Uint8Array)).toBe('')
+    expect(Object.keys(files)).toEqual([exportLogName])
+    expect(strFromU8(files[exportLogName] as Uint8Array)).toBe('')
   })
 
   it('waits for response pull capacity before reading the next archive entry', async () => {
@@ -529,10 +538,10 @@ describe('session.export download endpoint', () => {
     )
     const files = unzipSync(await responseBytes(response))
     expect(Object.keys(files).sort()).toEqual([
-      'session.jsonl',
-      'subagents/child-a/session.jsonl',
-      'subagents/child-b/session.jsonl',
-      'subagents/shared/session.jsonl',
+      exportLogName,
+      subagentLogName('child-a'),
+      subagentLogName('child-b'),
+      subagentLogName('shared'),
     ])
   })
 
@@ -727,7 +736,7 @@ describe('session.export download endpoint', () => {
     )
     expect(response.status).toBe(200)
     const files = unzipSync(await responseBytes(response))
-    expect(Object.keys(files).sort()).toEqual(['media/img-1.png', 'session.jsonl'])
+    expect(Object.keys(files).sort()).toEqual(['media/img-1.png', exportLogName].sort())
     expect(files['media/img-1.png']).toEqual(storedImage('img-1').data)
   })
 
@@ -741,7 +750,7 @@ describe('session.export download endpoint', () => {
       new Request('http://host/api/session.export?sessionId=session-root'),
     )
     const files = unzipSync(await responseBytes(response))
-    expect(Object.keys(files).sort()).toEqual(['media/nested-1.webp', 'session.jsonl'])
+    expect(Object.keys(files).sort()).toEqual(['media/nested-1.webp', exportLogName].sort())
   })
 
   it('scans wrapped, inserted, and embedded-stream carriers plus non-object content items', async () => {
@@ -777,7 +786,7 @@ describe('session.export download endpoint', () => {
       'media/inserted-1.gif',
       'media/stream-1.png',
       'media/wrapped-1.jpg',
-      'session.jsonl',
+      exportLogName,
     ])
   })
 
@@ -799,14 +808,14 @@ describe('session.export download endpoint', () => {
     const without = await toFetchHandler(api).fetch(
       new Request('http://host/api/session.export?sessionId=session-root'),
     )
-    expect(Object.keys(unzipSync(await responseBytes(without)))).toEqual(['session.jsonl'])
+    expect(Object.keys(unzipSync(await responseBytes(without)))).toEqual([exportLogName])
     const withDescendants = await toFetchHandler(api).fetch(
       new Request('http://host/api/session.export?sessionId=session-root&includeDescendants=true'),
     )
     expect(Object.keys(unzipSync(await responseBytes(withDescendants))).sort()).toEqual([
       'media/child-img.png',
-      'session.jsonl',
-      'subagents/child-a/session.jsonl',
+      exportLogName,
+      subagentLogName('child-a'),
     ])
   })
 

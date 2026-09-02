@@ -64,7 +64,6 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
         }
         openTurn = data['turn']
         openStep = null
-        openStepProvider = undefined
         toolLifecycles.clear()
         nextStep = 1
         break
@@ -84,14 +83,12 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
           throw new SessionFormatError(`${event.type} does not match the open turn and next step`)
         }
         openStep = data['step']
-        openStepProvider = undefined
         break
       case 'step/end':
         requireOpenStep(event, data, openTurn, openStep)
         assertNoUnresolvedTools(toolLifecycles, 'step/end')
         toolLifecycles.clear()
         openStep = null
-        openStepProvider = undefined
         nextStep += 1
         break
       case 'assistant/chunk':

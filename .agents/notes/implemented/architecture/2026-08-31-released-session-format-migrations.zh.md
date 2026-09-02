@@ -42,7 +42,7 @@ JSONL 发布在 POSIX 上使用硬链接创建与目录同步，在 Windows 上�
 
 ## 验证
 
-发布验证针对 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下 152 个带版本、来自持久化或投影的 `session*.jsonl` fixture 运行了已提交 Session 格式语料门禁。fixture 专用的缺失信封与 request-header token 会先被实体化，再进入真实静态 catalog；其中 150 个通过当前格式 restore 或历史迁移得到当前 v1 视图。Released-v0 replay 输入保持无后缀，而新鲜 v1 writer 输出对 parent 使用 `session.v1.jsonl`、对 child 使用 `session.<ordinal>.v1.jsonl`。Record 与 refresh 会为仍由新运行产生的每个 role 保留旧 generation，并删除新运行不再产生的 child role 的全部 generation。两个精确 alpha 拒绝分别是 `snapshots/session/agent-instructions/session.jsonl`（投影出的 compaction checkpoint 没有匹配 start）与 `snapshots/web/schedule-catalog/session.jsonl`（title 来源与其 citation 矛盾）。持续运行的门禁会动态发现语料，并拒绝封闭 manifest 之外的任何失败；独立组装式 JSONL 测试负责精确物理字节迁移。
+发布验证针对 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下每个带版本、来自持久化或投影的 `session*.jsonl` fixture 运行已提交 Session 格式语料门禁。fixture 专用的缺失信封与 request-header token 会先被实体化，再进入真实静态 catalog；每个 fixture 都会通过当前格式 restore 或历史迁移得到当前 v1 视图。Released-v0 replay 输入保持无后缀，而新鲜 v1 writer 输出对 parent 使用 `session.v1.jsonl`、对 child 使用 `session.<ordinal>.v1.jsonl`。Record 与 refresh 会保留每个已完成 generation，包括后续运行不再产生的 child role generation。Malformed 历史 fixture 在来源处修复，不通过依赖路径的 replay 策略准入。持续运行的门禁会动态发现语料，并拒绝每个 restore failure；独立组装式 JSONL 测试负责精确物理字节迁移。
 
 句柄集成验证会一起运行纯格式、catalog、持久化 seam 与 JSONL provider 测试套件：420 个测试覆盖两种编码、不可变发布竞态、仅 header 观察、读写句柄、迁移拒绝、迁移后 append、取消与崩溃尾部行为，并达到逐文件 100% statement、branch、function 与 line coverage。仓库 typecheck 与 lint、含两个已声明 skip 的 113 个无密钥 recorded-session replay，以及 28 个 owner-local expected-output case 也都在合并 master 的 checkpoint 上通过。
 

@@ -427,10 +427,9 @@ export class SessionLogScanner {
   /**
    * Create an event scanner from exactly one newline-terminated header record.
    * @param headerRecord - the complete first JSONL record, including its newline.
-   * @param storage - already-decoded current metadata from the same header bytes.
    */
-  constructor(headerRecord: Buffer, storage?: SessionStorageMetadata) {
-    const parsed = storage ?? parseHeaderRecord(headerRecord)
+  constructor(headerRecord: Buffer) {
+    const parsed = parseHeaderRecord(headerRecord)
     this.meta = parsed.meta
     this.inputBytes = headerRecord.length
     this.committedBytes = headerRecord.length

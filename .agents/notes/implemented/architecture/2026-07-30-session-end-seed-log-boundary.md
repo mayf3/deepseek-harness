@@ -48,7 +48,7 @@ The predicate holds for a bracket *this* session inherited, not as a liveness si
 
 Bought: one boundary, written in one place, correct for all six seeded-start paths — including the fork gap the persistence-layer version could not reach. The persistence packages keep a pure read path. `firstLiveSeq` gains a durable twin rather than a second, competing notion of the same boundary.
 
-Cost: a seeded session's log is one event longer, including an empty resumed log. Seq expectations move with that boundary. Two updates are load-bearing rather than mechanical: telemetry's adoption tests assert the boundary is exported as part of complete canonical-log replay, including when it arrived in a resumed constructor seed, and the property suite's replay invariant is "seed reproduced verbatim, plus one log-only boundary" with idempotence as its own property.
+Cost: a seeded session's log is one event longer, including an empty resumed log. Seq expectations move with that boundary. Two updates are load-bearing rather than mechanical: telemetry's adoption tests assert that capture begins with the current lifecycle's newly appended boundary and excludes the constructor seed, and the property suite's replay invariant is "seed reproduced verbatim, plus one log-only boundary" with idempotence as its own property.
 
 `session/end-seed` joins the on-disk vocabulary. Current v1 requires the validated marker semantics owned by Session; the frozen v0 codec and migration edge own which historical v0 seed layouts remain admissible. The exact inherited cut stays separate from the logical header and is available after a body read.
 
