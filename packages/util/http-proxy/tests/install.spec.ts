@@ -357,6 +357,51 @@ describe('installing over an existing installation', () => {
   })
 })
 
+describe('the environment while a direct policy is layered over a proxied one', () => {
+  it('hands a child the user\'s own values, and the outer normalization again afterwards', async () => {
+    await withCleanProxyEnv(async () => {
+      // The user exported one usable proxy and one this package refuses.
+      process.env.HTTP_PROXY = proxyUrl
+      process.env.https_proxy = 'socks5://127.0.0.1:1080'
+      const outer = await install(env({ HTTP_PROXY: proxyUrl, https_proxy: 'socks5://127.0.0.1:1080' }))
+      try {
+        // The outer install published its policy: the refused scheme is removed in both casings.
+        expect([process.env.HTTPS_PROXY, process.env.https_proxy]).toEqual([undefined, undefined])
+        const off = await install(env({}))
+        try {
+          // A spawned child copies `process.env`, and `proxyEnvironmentForChild()` adds nothing under a
+          // direct policy — so what it copies has to be the user's own environment, not a normalization
+          // no active policy stands behind: the SOCKS value they set for `curl` is theirs again.
+          expect(process.env.HTTP_PROXY).toBe(proxyUrl)
+          expect([process.env.HTTPS_PROXY, process.env.https_proxy]).toContain('socks5://127.0.0.1:1080')
+          expect(proxyEnvironmentForChild()).toEqual({})
+        } finally {
+          await off.dispose()
+        }
+        // Ending the window re-applies what the outer install published.
+        expect([process.env.HTTPS_PROXY, process.env.https_proxy]).toEqual([undefined, undefined])
+        expect(process.env.HTTP_PROXY).toBe(proxyUrl)
+      } finally {
+        await outer.dispose()
+      }
+    })
+  })
+
+  it('touches no environment when the install underneath proxied nothing', async () => {
+    process.env.HTTP_PROXY = 'http://untouched.example'
+    const outer = await install(env({}))
+    const inner = await install(env({}))
+    try {
+      expect(process.env.HTTP_PROXY).toBe('http://untouched.example')
+    } finally {
+      await inner.dispose()
+      await outer.dispose()
+      expect(process.env.HTTP_PROXY).toBe('http://untouched.example')
+      delete process.env.HTTP_PROXY
+    }
+  })
+})
+
 describe('the published environment', () => {
   it('restores every name from one snapshot taken before any write', async () => {
     process.env.http_proxy = 'http://before.example'

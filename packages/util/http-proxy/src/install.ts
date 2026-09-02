@@ -76,28 +76,54 @@ export function proxyRouteFor(url: URL): ProxyRoute {
  * @returns a function restoring every name this call changed.
  */
 function applyPolicyEnv(policy: ProxyPolicy): () => void {
+  const previousInherited = inheritedProxyEnv
+  inheritedProxyEnv = previousInherited ?? snapshotProxyEnv()
+  const published: Record<string, string | undefined> = {}
+  for (const [field, names] of Object.entries(POLICY_ENV_NAMES)) {
+    const value = policy[field as keyof typeof POLICY_ENV_NAMES]
+    for (const name of names) published[name] = value
+  }
+  const restore = writeProxyEnv(published)
+  return () => {
+    restore()
+    inheritedProxyEnv = previousInherited
+  }
+}
+
+/**
+ * Read every proxy name this package publishes, as `process.env` holds it now.
+ *
+ * @returns one entry per name in {@link POLICY_ENV_NAMES}; `undefined` marks an absent name.
+ */
+function snapshotProxyEnv(): Record<string, string | undefined> {
+  const snapshot: Record<string, string | undefined> = {}
+  for (const names of Object.values(POLICY_ENV_NAMES)) {
+    for (const name of names) snapshot[name] = process.env[name]
+  }
+  return snapshot
+}
+
+/**
+ * Set every proxy name to the value `values` holds for it, removing a name whose value is `undefined`.
+ *
+ * @param values - the value each name in {@link POLICY_ENV_NAMES} should hold.
+ * @returns a function restoring every name to what it held before this call.
+ */
+function writeProxyEnv(values: Readonly<Record<string, string | undefined>>): () => void {
   // Snapshot EVERY name before writing any of them. Windows folds environment names case-insensitively,
   // so reading the uppercase spelling after writing the lowercase one would read back the value just
   // written and restore the policy instead of the user's environment.
-  const previous = new Map<string, string | undefined>()
-  for (const names of Object.values(POLICY_ENV_NAMES)) {
-    for (const name of names) previous.set(name, process.env[name])
-  }
-  const previousInherited = inheritedProxyEnv
-  inheritedProxyEnv = previousInherited ?? Object.fromEntries(previous)
-  for (const [field, names] of Object.entries(POLICY_ENV_NAMES)) {
-    const value = policy[field as keyof typeof POLICY_ENV_NAMES]
-    for (const name of names) {
-      if (value === undefined || value === '') Reflect.deleteProperty(process.env, name)
-      else process.env[name] = value
-    }
+  const previous = snapshotProxyEnv()
+  for (const name of Object.keys(previous)) {
+    const value = values[name]
+    if (value === undefined) Reflect.deleteProperty(process.env, name)
+    else process.env[name] = value
   }
   return () => {
-    for (const [name, value] of previous) {
+    for (const [name, value] of Object.entries(previous)) {
       if (value === undefined) Reflect.deleteProperty(process.env, name)
       else process.env[name] = value
     }
-    inheritedProxyEnv = previousInherited
   }
 }
 
@@ -159,6 +185,11 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
       }
     }
     const previousInstalled = installed
+    // The install underneath published its normalized policy into `process.env`, which is what a
+    // spawned child copies. With no policy active there is no normalization to stand behind, so the
+    // user's own values return for the window and the outer install's come back when it ends. An
+    // install underneath that proxied nothing published nothing, and there is nothing to put back.
+    const restoreEnv = inheritedProxyEnv === undefined ? undefined : writeProxyEnv(inheritedProxyEnv)
     const undici = await import('undici')
     const previous = undici.getGlobalDispatcher()
     const direct = new undici.Agent()
@@ -169,6 +200,7 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
       undici.setGlobalDispatcher(previous)
       active = previousPolicy
       installed = previousInstalled
+      restoreEnv?.()
       await direct.close()
     }
   }
