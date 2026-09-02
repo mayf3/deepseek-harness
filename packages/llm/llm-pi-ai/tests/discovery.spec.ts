@@ -146,6 +146,7 @@ describe('draft-provider model discovery', () => {
           'bare-route': {},
           '': { id: 'nested-id', display_name: 'Nested fallback' },
           'malformed-route': null,
+          'primitive-route': 'not a model record',
         },
       }),
     })
@@ -197,7 +198,11 @@ describe('draft-provider model discovery', () => {
       { id: 'claude-sonnet', name: 'Claude Sonnet', contextWindow: 200_000, maxTokens: 64_000 },
     ])
     expect(versionedModels).toEqual(rootModels)
-    expect(server.paths).toEqual(['/v1/models', '/v1/models', '/v1/models'])
+    expect(server.paths).toEqual([
+      '/v1/models?limit=1000',
+      '/v1/models?limit=1000',
+      '/v1/models?limit=1000',
+    ])
     expect(server.headers.map(headers => headers['x-api-key']))
       .toEqual(['anthropic-key', 'anthropic-key', undefined])
     expect(server.headers.map(headers => headers['anthropic-version']))

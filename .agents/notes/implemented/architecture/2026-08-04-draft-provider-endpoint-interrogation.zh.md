@@ -21,7 +21,7 @@ Status: implemented
 - `LlmDiscoveredModel` 除 `id` 外每个字段都可选，因为大多数列表只公布 id。回复是候选而非 catalog：采纳其中一条的界面仍要补上适配器所需的容量。
 - `llm.discoverModels` 把同一份草稿送过协议层。它的 `apiKey` 是可承载机密的第三个、也是最后一个载荷（另两个是 `settings.update`/`mutate` 与 `credentials.set`），且绝不被存储或回显。它确实会像其他承载机密的载荷一样随客户端外发信封同行，`subscribeEnvelopes()` 观察者看得到；把那个抽头脱敏是整个配置面的改动，不该由这一个方法独自决定。Connection 用与完整 Host API 相同的会话认证该方法：它让宿主向调用方选定的 URL 发起 GET 并回报结果，匿名调用者绝不能获得这类探测能力。每一种拒绝都折叠为 `model-discovery-failed`，其消息是适配器自己的文本，details 点名被询问的端点，绝不点名所提供的凭据。
 
-`dsh-llm-pi-ai` 对 `openai-completions` 与 `openai-responses` 使用带 bearer 鉴权的 `GET {baseURL}/models`。`anthropic-messages` 使用带 `x-api-key` 与 `anthropic-version: 2023-06-01` 的原生 `GET /v1/models` 路由；若 `baseURL` 已经以 `/v1` 结尾，就会保留而非重复追加该路径。解析器既读取两种 API 共用的标准 `data` 数组，也读取部分兼容网关提供的富信息 `models` 对象；若存在 `data` 数组则以它为准。数组条目使用自身的 `id`，对象条目则使用属性键作为请求 id，因为嵌套 `id` 可能点名共享的规范模型；只有属性键为空时才回退到嵌套值。显示名称取自 `name`、`display_name` 或 `displayName`，缺失时回退到请求 id。上下文窗口取自 `contextWindow`、`context_window`、`context_length`、Anthropic 的 `max_input_tokens` 或 `limit.context`，最大输出 token 数则取自 `maxOutputTokens`、`max_output_tokens`、`maxTokens`、`max_tokens` 或 `limit.output`。Profile 解析会拒绝 Fetch 无法表示的名称与值，因此格式错误的部署 header 会在询问前以配置错误报告。已配置的 profile headers 最先装入；固定协议 headers、键入或已存的协议凭据以及 Harness attribution 随后分别以大小写不敏感方式赢得相应冲突。Azure 虽有 OpenAI 血统却不在支持范围内——它用 `api-key` header 鉴权并要求 `api-version` 查询参数——Codex 则使用 OAuth；询问二者都会把鉴权失败误报成提供方没有模型。其余协议一律以 `DISCOVERY_UNSUPPORTED` 回答，让界面回退到手工填写，而不是把猜错的响应字段报成一个空提供方。`baseURL` 按前缀而非待解析 URL 处理，因此 `https://gateway.example/openai/v1` 这类部署路径会保留其路径段。回复在四兆字节上限下读取，且上限落在实际收到的字节上——端点是用户自己填的 URL，因此会先看声明的 `content-length` 作为善意提示，但绝不把它当作边界；这与 `dsh-web-fetch` 面对自己的调用方提供 URL 时所用的两段式模式一致。
+`dsh-llm-pi-ai` 会应用[协议特定模型列表发现](2026-09-02-protocol-specific-model-listing-discovery.zh.md)记录的列表路由、认证、URL 归一化、响应格式与元数据规则。Profile 解析会拒绝 Fetch 无法表示的名称与值，因此格式错误的部署 header 会在询问前以配置错误报告。已配置的 profile headers 最先装入；固定协议 headers、键入或已存的协议凭据以及 Harness attribution 随后分别以大小写不敏感方式赢得相应冲突。没有文档化列表约定的协议会以 `DISCOVERY_UNSUPPORTED` 回答，让界面回退到手工填写，而不是把猜错的响应字段报成一个空提供方。`baseURL` 按前缀而非待解析 URL 处理，因此部署路径段会保持不变。回复在四兆字节上限下读取，且上限落在实际收到的字节上——端点是用户自己填的 URL，因此会先看声明的 `content-length` 作为善意提示，但绝不把它当作边界；这与 `dsh-web-fetch` 面对自己的调用方提供 URL 时所用的两段式模式一致。
 
 ### 为什么不用 pi-ai 自己的 refresh 机制
 
@@ -35,9 +35,7 @@ pi-ai 提供了 `createProvider({ fetchModels })` 加上 `Models.refresh()` 与 
 
 **让 Host 读取整个已存 profile，而不是接受草稿。** 对已配置好的提供方来说，不会有机密跨越协议层。但这样一来新增提供方就必须先保存一份不可用的配置，而端点已改却尚未保存的表单会静默地去询问旧地址。草稿仍是端点和协议的权威来源。Host 侧的狭窄例外是只写的已存凭据，以及仍属部署配置、而非 Models 页面字段的 profile headers。
 
-**把 pi-ai 每种协议都当作 OpenAI 列表解析。** Anthropic 虽共用 `data` 信封，却有文档明确规定的原生路由与鉴权 headers，因此这里显式支持它而非靠猜测。Google 的字段集合与 Azure 的请求约定不同，Codex 则使用 OAuth；把任一个当作 OpenAI 都会让猜错的响应与「提供方没有模型」无法区分。不支持的协议会把用户送去手工填写，这仍是既定回退路径。
-
-**只为模型发现发送 OpenAI SDK 的 `User-Agent`。** 这能让某个网关返回标准数组，却会错误标注 Harness 流量，并让发现依赖未文档化的客户端名称分支。同时读取两种已知的 OpenAI 兼容响应格式，可以保留 Harness attribution，并把兼容规则留在响应解析中。
+**询问每一种 pi-ai 协议。** 根据便利的响应相似性选择覆盖范围会显得武断，也会让猜错的响应与「提供方没有模型」无法区分。Anthropic 仅通过其文档化原生列表约定纳入支持，具体由[协议特定扩展](2026-09-02-protocol-specific-model-listing-discovery.zh.md)记录；Google 的字段集合与 Azure 的请求约定不同，Codex 则使用 OAuth。不支持的协议会把用户送去手工填写，这仍是既定回退路径。
 
 **用 `response.text()` 缓冲整个回复再判断长度。** 更简单，但上限会在字节已经到达之后才生效，而端点是用户随手填的任意 URL。
 

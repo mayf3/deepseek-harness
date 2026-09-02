@@ -26,6 +26,7 @@ import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai
 import type { LlmDiscoveredModel, LlmModelDiscoveryOperation } from '@deepseek-ai/dsh-llm'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { catalogModels } from './catalog.ts'
+import { anthropicApiRoot } from './endpoint.ts'
 
 /**
  * Protocols whose model listing this module can read. OpenAI protocols use
@@ -44,6 +45,9 @@ const LISTABLE_PROTOCOLS: ReadonlySet<string> = new Set([
 
 /** Stable API version required by Anthropic's model-listing endpoint. */
 const ANTHROPIC_VERSION = '2023-06-01'
+
+/** Largest model-list page accepted by Anthropic's public endpoint. */
+const ANTHROPIC_MODEL_LIMIT = 1000
 
 /**
  * Endpoint replies larger than this are refused. The endpoint is whatever URL
@@ -102,8 +106,8 @@ function label(...candidates: readonly unknown[]): string | undefined {
  */
 function listingUrl(baseURL: string, api: string): string {
   const base = baseURL.replace(/\/+$/, '')
-  if (api !== 'anthropic-messages' || base.endsWith('/v1')) return `${base}/models`
-  return `${base}/v1/models`
+  if (api !== 'anthropic-messages') return `${base}/models`
+  return `${anthropicApiRoot(base)}/v1/models?limit=${String(ANTHROPIC_MODEL_LIMIT)}`
 }
 
 /**
@@ -150,11 +154,13 @@ async function readBounded(response: Response, url: string): Promise<string> {
 }
 
 /**
- * Read one OpenAI-compatible listing reply. The standard `data` array takes
+ * Read one supported model-listing reply. The standard `data` array takes
  * precedence when both supported formats are present. An enriched `models`
  * map uses each property key as the endpoint-facing id; its nested `id` is
  * only a fallback for an empty key because gateways may put a canonical model
- * identity there instead of the alias they accept on requests.
+ * identity there instead of the alias they accept on requests. Only
+ * object-valued map entries are models; primitive properties are ignored
+ * because they may be directory metadata rather than model records.
  *
  * Entries without a usable id are skipped rather than failing the whole
  * interrogation: a single malformed row should not deny the user the rest of
