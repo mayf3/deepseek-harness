@@ -491,9 +491,8 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     expect(await ctx.sessionPersistence.stat(header.id)).toMatchObject({
       header: { id: header.id, version: SESSION_FORMAT_VERSION },
     })
-    expect(await ctx.sessionPersistence.list()).toEqual([
-      expect.objectContaining({ header: expect.objectContaining({ id: header.id, version: SESSION_FORMAT_VERSION }) }),
-    ])
+    const [listed] = await ctx.sessionPersistence.list()
+    expect(listed?.header).toMatchObject({ id: header.id, version: SESSION_FORMAT_VERSION })
     expect(await readFile(sourcePath)).toEqual(source)
     await expect(stat(currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -539,7 +538,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
 
   it('reports no current generation when ensure-current finds no stored id', async () => {
     const storage = ctx.sessionPersistence as unknown as {
-      ensureCurrentLog(id: SessionId, signal?: AbortSignal): Promise<unknown | undefined>
+      ensureCurrentLog(id: SessionId, signal?: AbortSignal): Promise<unknown>
     }
 
     await expect(storage.ensureCurrentLog(SessionId('missing-generation'))).resolves.toBeUndefined()
@@ -666,10 +665,11 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     await mkdir(dirname(sourcePath), { recursive: true })
     await writeFile(sourcePath, source)
 
-    await expect(ctx.sessionPersistence.open(header.id, 'read')).rejects.toMatchObject({
-      name: 'SessionFormatUnsupportedError',
-      message: expect.stringContaining('unknown historical event type "external/info" at seq 0'),
-    })
+    const failure = await ctx.sessionPersistence.open(header.id, 'read')
+      .then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).name).toBe('SessionFormatUnsupportedError')
+    expect((failure as Error).message).toContain('unknown historical event type "external/info" at seq 0')
     expect(await readFile(sourcePath)).toEqual(source)
     await expect(stat(rawLogPath(root, header.cwd, header.id))).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -683,10 +683,11 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       readStoredLog(path: string, expectedId: SessionId, signal?: AbortSignal): Promise<unknown>
     }
 
-    await expect(storage.readStoredLog(path, header.id)).rejects.toMatchObject({
-      name: 'SessionFormatUnsupportedError',
-      message: expect.stringContaining(`(raw log: ${path})`),
-    })
+    const failure = await storage.readStoredLog(path, header.id)
+      .then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).name).toBe('SessionFormatUnsupportedError')
+    expect((failure as Error).message).toContain(`(raw log: ${path})`)
   })
 
   it('refuses a current Zstandard path without a complete header frame', async () => {
