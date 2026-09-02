@@ -30,8 +30,6 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
-  SessionEditRequest,
-  SessionEditValue,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -324,18 +322,6 @@ export class SessionController extends TypertRemoteService {
   prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
     signal.throwIfAborted()
     return this.commands.prompt(request)
-  }
-
-  /**
-   * Replace the latest current turn-opening user message and rerun from that point.
-   * @param request - target message, optimistic revision, and replacement text.
-   * @param signal - caller cancellation before the replacement is admitted.
-   * @returns acknowledgement after the replacement message commits.
-   */
-  @Remote('edit')
-  edit(request: SessionEditRequest, signal: AbortSignal): Promise<SessionEditValue> {
-    signal.throwIfAborted()
-    return this.commands.edit(request, signal)
   }
 
   /**
