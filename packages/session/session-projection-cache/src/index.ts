@@ -35,6 +35,13 @@ import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import { projectionCacheDomainSpec } from './spec.ts'
 import type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
+/** Complete identity written by the current cache generation. */
+type CurrentCheckpointIdentity = CheckpointIdentity & {
+  formatVersion: number
+  isSeeded: boolean
+  inheritedEventCount: SessionLogOffset
+}
+
 export { checkpointIdentity, checkpointRecord, checkpointRow, projectionCacheDomainSpec } from './spec.ts'
 export type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
@@ -112,7 +119,7 @@ export class SessionProjectionCache extends Service {
    * @param expected - the log identity the caller holds (live or stored header).
    * @returns the identity-matching record, or `undefined` (absent or unrelated).
    */
-  private recordFor(id: SessionId, expected: CheckpointIdentity): CheckpointRecord | undefined {
+  private recordFor(id: SessionId, expected: CurrentCheckpointIdentity): CheckpointRecord | undefined {
     const record = this.requireTable().get(id)
     if (record === undefined) return undefined
     return identityMatches(record.identity, expected) ? record : undefined
@@ -350,7 +357,7 @@ export class SessionProjectionCache extends Service {
 function identityOf(
   header: SessionHeader,
   inheritedEventCount: SessionLogOffset,
-): CheckpointIdentity {
+): CurrentCheckpointIdentity {
   const cut = SessionLogOffset(inheritedEventCount)
   if (!header.isSeeded && cut !== 0) {
     throw new Error('unseeded projection-cache identity inherited event count must be 0')
@@ -364,13 +371,19 @@ function identityOf(
   }
 }
 
-/** Whether a stored record's bound identity names the caller's lifecycle. */
-function identityMatches(stored: CheckpointIdentity, expected: CheckpointIdentity): boolean {
+/**
+ * Whether a stored record's bound identity names the caller's lifecycle.
+ * An absent format generation cannot prove the fold semantics and never
+ * matches. Once the format matches, absent lineage fields (records admitted
+ * via `compatibleVersions` predate them) read as the unseeded lineage: exact
+ * for an unseeded caller, while a seeded caller fails the match.
+ */
+function identityMatches(stored: CheckpointIdentity, expected: CurrentCheckpointIdentity): boolean {
   return stored.formatVersion === expected.formatVersion
     && stored.createdAt === expected.createdAt
     && stored.cwd === expected.cwd
-    && stored.isSeeded === expected.isSeeded
-    && stored.inheritedEventCount === expected.inheritedEventCount
+    && (stored.isSeeded ?? false) === expected.isSeeded
+    && (stored.inheritedEventCount ?? 0) === expected.inheritedEventCount
 }
 
 export default SessionProjectionCache
