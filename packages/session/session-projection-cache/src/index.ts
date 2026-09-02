@@ -42,6 +42,8 @@ type CurrentCheckpointIdentity = CheckpointIdentity & {
   inheritedEventCount: SessionLogOffset
 }
 
+const PREDECESSOR_TITLE_KEY = 'title' as Extract<keyof SessionProjectionMap, string>
+
 export { checkpointIdentity, checkpointRecord, checkpointRow, projectionCacheDomainSpec } from './spec.ts'
 export type { CheckpointIdentity, CheckpointRecord } from './spec.ts'
 
@@ -147,6 +149,39 @@ export class SessionProjectionCache extends Service {
   ): ProjectionSnapshot | undefined {
     const record = this.recordFor(meta.id, identityOf(meta, inheritedEventCount))
     if (record === undefined) return undefined
+    return this.viewRecord(record, keys)
+  }
+
+  /**
+   * Read only a predecessor checkpoint's title as a zero-I/O listing hint.
+   *
+   * The authoritative Session header supplies the lifecycle identity. A cache
+   * checkpoint can lag that log but cannot lead it because writes flush the
+   * log first, so a matching predecessor title is a genuine (possibly stale)
+   * fact from this Session. The registry still requires the current title
+   * projection's row version and schema. No other predecessor projection is
+   * exposed: format normalization can change their current meaning, and the
+   * strict {@link cachedSnapshot} / hydration paths continue to reject them.
+   * @param meta - authoritative listed Session header.
+   * @param inheritedEventCount - exact inherited cut completing the lifecycle identity.
+   * @returns a title-only checkpoint view, or `undefined` when the record is
+   *   current, newer, unrelated, missing, or incompatible with the title unit.
+   */
+  cachedPredecessorTitle(
+    meta: SessionHeader,
+    inheritedEventCount: SessionLogOffset,
+  ): ProjectionSnapshot | undefined {
+    const expected = identityOf(meta, inheritedEventCount)
+    const record = this.requireTable().get(meta.id)
+    if (record === undefined || !predecessorIdentityMatches(record.identity, expected)) return undefined
+    return this.viewRecord(record, [PREDECESSOR_TITLE_KEY])
+  }
+
+  /** View selected wire rows and bind them to their lowest served watermark. */
+  private viewRecord(
+    record: CheckpointRecord,
+    keys?: readonly Extract<keyof SessionProjectionMap, string>[],
+  ): ProjectionSnapshot | undefined {
     const values = this.ctx.sessionProjections.viewCheckpoint(record.rows, keys)
     const servedKeys = Object.keys(values)
     if (servedKeys.length === 0) return undefined
@@ -380,7 +415,25 @@ function identityOf(
  */
 function identityMatches(stored: CheckpointIdentity, expected: CurrentCheckpointIdentity): boolean {
   return stored.formatVersion === expected.formatVersion
-    && stored.createdAt === expected.createdAt
+    && lifecycleIdentityMatches(stored, expected)
+}
+
+/** Match one predecessor cache record to the authoritative listed lifecycle. */
+function predecessorIdentityMatches(
+  stored: CheckpointIdentity,
+  expected: CurrentCheckpointIdentity,
+): boolean {
+  const predecessor = stored.formatVersion === undefined
+    || stored.formatVersion < expected.formatVersion
+  return predecessor && lifecycleIdentityMatches(stored, expected)
+}
+
+/** Match the format-independent fields that distinguish one Session lifecycle. */
+function lifecycleIdentityMatches(
+  stored: CheckpointIdentity,
+  expected: CurrentCheckpointIdentity,
+): boolean {
+  return stored.createdAt === expected.createdAt
     && stored.cwd === expected.cwd
     && (stored.isSeeded ?? false) === expected.isSeeded
     && (stored.inheritedEventCount ?? 0) === expected.inheritedEventCount

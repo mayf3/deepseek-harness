@@ -34,8 +34,6 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
-  SessionEditRequest,
-  SessionEditValue,
   SessionForkRequest,
   SessionForkValue,
   SessionFollowFrame,
@@ -69,7 +67,6 @@ export interface TestSessionRemote {
   rename(request: SessionRenameRequest): Promise<RemoteResult<SessionRenameValue>>
   fork(request: SessionForkRequest): Promise<RemoteResult<SessionForkValue>>
   prompt(request: SessionPromptRequest, signal?: AbortSignal): Promise<RemoteResult<SessionPromptValue>>
-  edit(request: SessionEditRequest, signal?: AbortSignal): Promise<RemoteResult<SessionEditValue>>
   attachment(request: SessionAttachmentRequest): Promise<RemoteResult<SessionAttachmentValue>>
   updateQueue(request: SessionUpdateQueueRequest): Promise<RemoteResult<SessionUpdateQueueValue>>
   cancel(request: SessionCancelRequest): Promise<RemoteResult<SessionCancelValue>>
@@ -86,8 +83,6 @@ export interface TestSessionRemote {
 export interface TestSessionRemoteDefaults {
   readonly defaultModelSelection: () => AgentModelSelection
   readonly cwd: string
-  readonly coldBlankProbeMaxEvents?: number
-  readonly coldBlankProbeMaxBytes?: number
   readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
@@ -144,8 +139,7 @@ function testReadHandle(
 /**
  * Adapt a compact header/inspect persistence double onto the handle-based
  * abstract the production readers consume: `list` snapshots wrap the double's
- * headers, `stat` derives a metadata-less snapshot from the listing (so the
- * cold-blank probe skips unless the double declares its own `stat`), and
+ * headers, `stat` derives a metadata-less snapshot from the listing, and
  * `open` serves immutable read handles over the double's `inspect` result.
  */
 export function testSessionPersistence(
@@ -246,12 +240,6 @@ function installControllers(
     controller = new SessionController(
       ctx,
       {
-        ...defaults.coldBlankProbeMaxEvents === undefined
-          ? {}
-          : { coldBlankProbeMaxEvents: defaults.coldBlankProbeMaxEvents },
-        ...defaults.coldBlankProbeMaxBytes === undefined
-          ? {}
-          : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
         ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
       },
       {
@@ -317,10 +305,6 @@ export function createSessionTestRemote(
     fork: request => remoteResult(() => direct.fork(request)),
     prompt: (request, signal = new AbortController().signal) => remoteResult(
       () => direct.prompt(request, signal),
-      signal,
-    ),
-    edit: (request, signal = new AbortController().signal) => remoteResult(
-      () => direct.edit(request, signal),
       signal,
     ),
     attachment: request => remoteResult(() => direct.attachment(request)),

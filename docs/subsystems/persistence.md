@@ -298,7 +298,7 @@ interface SessionPersistenceSnapshot {
 }
 ```
 
-The optional `eventCount`/`sizeBytes` hints let the session list's cold blank probe bound its work from metadata alone (session-controller config `coldBlankProbeMaxEvents`/`coldBlankProbeMaxBytes`) without opening any log.
+The optional `eventCount`/`sizeBytes` fields remain cheap backend observations for consumers that explicitly need them. Session listing does not use either field to open cold logs: it reads headers plus identity-checked projection-cache hints only, so a cache or Session-format upgrade never turns startup into a body scan.
 
 ## The backend
 

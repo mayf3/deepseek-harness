@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-02-projcache-cross-version-read-compat.md
-2026-09-02-projcache-cross-version-read-compat.md: 7463871852234d5df232f6c426dfbec0543777d5
-2026-09-02-projcache-cross-version-read-compat.zh.md: 663a645cd55a16a26add6edba4e414023f8c622c
+2026-09-02-projcache-cross-version-read-compat.md: 6cb8454ac2f5e9dfd74144aba76d8aecbed09761
+2026-09-02-projcache-cross-version-read-compat.zh.md: 4c541a3968f56d8edd51ad083b4eb21e3e37b059
