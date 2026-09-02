@@ -11,7 +11,7 @@ import type { Session, SessionEvent, SessionHeader, SessionId } from '@deepseek-
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import {
-  createSessionTestRemote, currentSessionListing, installSessionReadTestServices, testSessionPersistence,
+  createSessionTestRemote, installSessionReadTestServices, testSessionPersistence,
 } from './test-remote.ts'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -179,7 +179,7 @@ describe('sessions.fork', () => {
       { type: 'turn/end', seq: SessionSeq(2), time: 3, data: { turn: 1, reason: { kind: 'completed' } } },
     ] satisfies SessionEvent[]
     ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
-      list: () => Promise.resolve([currentSessionListing(header)]),
+      list: () => Promise.resolve([header]),
       inspect: () => Promise.resolve({
         meta: header,
         inheritedEventCount: SessionLogOffset(0),
