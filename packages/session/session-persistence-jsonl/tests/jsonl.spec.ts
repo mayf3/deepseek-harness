@@ -32,6 +32,11 @@ const statFailure = vi.hoisted(() => ({
   error: undefined as Error | undefined,
 }))
 
+const readdirFailure = vi.hoisted(() => ({
+  path: undefined as string | undefined,
+  error: undefined as Error | undefined,
+}))
+
 const readTally = vi.hoisted(() => ({
   /** Physical whole-file reads per path suffix; keyed by session id segment. */
   bySuffix: new Map<string, number>(),
@@ -57,6 +62,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       }
       return actual.readFile(...args)
     }) as typeof actual.readFile,
+    readdir: (async (...args: Parameters<typeof actual.readdir>) => {
+      if (String(args[0]) === readdirFailure.path && readdirFailure.error !== undefined) {
+        throw readdirFailure.error
+      }
+      return actual.readdir(...args)
+    }) as typeof actual.readdir,
   }
 })
 
@@ -157,6 +168,8 @@ afterEach(async () => {
   readTally.enabled = false
   statFailure.path = undefined
   statFailure.error = undefined
+  readdirFailure.path = undefined
+  readdirFailure.error = undefined
   vi.restoreAllMocks()
   for (const d of dirs.splice(0)) await rm(d, { recursive: true, force: true })
 })
@@ -683,6 +696,20 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     await writeFile(highest, 'newer')
 
     await expect(ctx.sessionPersistence.list()).rejects.toThrow(JSON.stringify(highest))
+  })
+
+  it('propagates a non-ENOENT opposite-generation scan failure during materialization', async () => {
+    const header = meta('opposite-generation-scan-failure', '/work')
+    const handle = await ctx.sessionPersistence.create(header)
+    const failure = Object.assign(new Error('opposite-generation scan denied'), { code: 'EACCES' })
+    readdirFailure.path = sessionDir(root, header.cwd, header.id)
+    readdirFailure.error = failure
+
+    try {
+      await expect(handle.flush()).rejects.toBe(failure)
+    } finally {
+      await handle.close()
+    }
   })
 
   it('surfaces a file occupying the targeted Session-directory path', async () => {
