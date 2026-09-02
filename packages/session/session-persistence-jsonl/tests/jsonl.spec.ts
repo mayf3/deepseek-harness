@@ -682,7 +682,7 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
     const highest = generationLogPath(root, header.cwd, header.id, 4, 'zstd')
     await writeFile(highest, 'newer')
 
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(highest)
+    await expect(ctx.sessionPersistence.list()).rejects.toThrow(JSON.stringify(highest))
   })
 
   it('surfaces a file occupying the targeted Session-directory path', async () => {
