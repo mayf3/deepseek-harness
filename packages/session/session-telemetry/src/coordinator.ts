@@ -15,7 +15,13 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Session, SessionEvent, SessionSeq as SessionSeqType, SessionSeqCursor } from '@deepseek-ai/dsh-session'
+import {
+  SessionSeq,
+  type Session,
+  type SessionEvent,
+  type SessionSeq as SessionSeqType,
+  type SessionSeqCursor,
+} from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionTelemetrySink, SessionTelemetryRecord, SessionTelemetrySeverity } from './index.ts'
 
@@ -134,7 +140,8 @@ export class SessionTelemetryCoordinator {
    * @param throughSeq - optional last sequence included in this capture.
    */
   captureSession(session: Session, throughSeq?: SessionSeqType): void {
-    const cursor = handoffCursor.get(session) ?? -1
+    const cursor = handoffCursor.get(session)
+      ?? (session.firstLiveSeq === 0 ? -1 : SessionSeq(session.firstLiveSeq - 1))
     // Containment is PER EVENT: one rejected record is withheld fail-closed
     // while the rest of the historical replay proceeds.
     for (const event of session.snapshotEvents()) {
@@ -147,10 +154,11 @@ export class SessionTelemetryCoordinator {
   }
 
   /**
-   * Adopt a session: replay its log after the same-object handoff cursor, then
-   * rely on the firehose for everything after. A newly constructed Session
-   * object has no cursor, so replay begins at seq 0 and includes constructor
-   * seed history. Re-adopting the same object resumes after its cursor.
+   * Adopt a session: replay this lifecycle's log suffix after the same-object
+   * handoff cursor, then rely on the firehose for everything after. A newly
+   * constructed Session object starts at its constructor boundary, so inherited
+   * or restored seed history is not attributed to this lifecycle. Re-adopting
+   * the same object resumes after its cursor.
    * @param session - the live session to adopt; a second adoption is a no-op.
    */
   private adopt(session: Session): void {

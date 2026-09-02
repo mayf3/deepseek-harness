@@ -808,9 +808,7 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
       // Persisted transcripts match the committed fixtures.
       const expectedContext = contextOfContents(expectedContents)
       const actualSnapshots = normalizeSessionSnapshots(ordered.map(log => log.content), actualContext)
-      const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext, {
-        sourcePaths: files,
-      })
+      const expectedSnapshots = normalizeSessionSnapshots(expectedContents, expectedContext)
       for (const [index, actual] of actualSnapshots.entries()) {
         expect(actual, `${scenario.name}: session ${index}`).toBe(expectedSnapshots[index])
       }

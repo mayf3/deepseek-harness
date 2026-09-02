@@ -287,6 +287,15 @@ describe('released event and payload inventory', () => {
     }
   })
 
+  it('publishes every merge-extensible nested arm as owner-opaque policy', () => {
+    expect(RELEASED_V0_EVENT_DISPOSITIONS['user/message']?.extensionArms)
+      .toEqual(['content[].type', 'source.kind'])
+    expect(RELEASED_V0_EVENT_DISPOSITIONS['assistant/chunk']?.extensionArms)
+      .toContain('chunk.reason.kind')
+    expect(RELEASED_V0_EVENT_DISPOSITIONS['turn/end']?.extensionArms)
+      .toEqual(['reason.kind'])
+  })
+
   it('refuses unknown v0 events even when the envelope marks them ignorable', () => {
     const row = { type: 'plugin/unknown', seq: 0, time: 1, data: {}, ignorable: true }
     expect(() => releasedV0SessionFormatCodec.decodeArtifact(v0Header, [row]))

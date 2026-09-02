@@ -12,7 +12,7 @@ Silently copying such an event can leave stale numeric references after a later 
 
 ## Decision
 
-The alpha v0-to-v1 edge owns a frozen complete released-v0 event and payload inventory. It refuses every unknown historical event type before target staging, including an event marked `ignorable: true`, and refuses unexpected members of known payloads except fields explicitly classified as owner-opaque JSON. The diagnostic names the event type, its sequence number, and the unchanged source generation.
+The alpha v0-to-v1 edge owns a frozen complete released-v0 event and payload inventory. It refuses every unknown historical event type before target staging, including an event marked `ignorable: true`, and refuses unexpected members of known payloads except fields explicitly classified as owner-opaque JSON. Merge-extensible nested discriminants remain part of that explicit policy: unknown content-block types, message-source kinds, assistant finish-reason kinds, and turn-ending reason kinds are preserved as owner-opaque JSON, while known arms receive structural validation. The diagnostic names the event type, its sequence number, and the unchanged source generation.
 
 The rule applies only while crossing a historical format edge. Ordinary current-format reading retains the established envelope behavior: an unknown required event refuses, while an unknown event carrying `ignorable: true` remains readable. New v1 external events therefore keep the existing equal-version extension seam, but they do not become implicitly migratable by a future format edge.
 

@@ -65,7 +65,7 @@ kind: "package-reference"
 
 ### fixture 的工作方式
 
-fixture 是运行一次真实 agent 所产生的一份选定持久化 Session generation 投影，本插件不录制。snapshot harness 会提供数值最高的规范 parent 路径（v0 为 `<scenario>/session.jsonl`，正 generation 为 `<scenario>/session.vN.jsonl`），并在 replay 前校验文件名与 header 一致。fixture 保留 header 与每个事件 payload，但省略正文的 `seq`/`time` envelope（打包行使用 `seq0`/`time0`）。replay 补充连续序号与确定性 timestamp，恢复被 snapshot token 替换的类型化值，拒绝不完整或混合 envelope，通过构建期静态 Session 格式 catalog 解码完整物理产物，并在公开事件或继承 cut 前于内存中迁移历史输入；当前输入直接 restore。仅对投影 v0 header，缺失的 `delegationDepth` 表示 `0`。parser 从不重写或重命名 fixture。runtime persistence 继续写入完整日志。replay 从当前视图的 `assistant/chunk` 事件派生每次模型调用的 chunk 序列，因此已记录 fixture 会 replay 与在线模型产生的相同逻辑流。fixture 的 `request/header` 内容可能 token 化为 `{{system}}`/`{{tools}}`；replay 会物化仅用于校验的值，而派生只读取 chunk、summary 事件与 Session metadata。仓库中的两个精确 v0 fixture 只在 catalog 返回 manifest 固定的 alpha 拒绝后使用来源限定的旧格式提取；无路径解析、复制的相似 fixture 与变化后的拒绝诊断仍保持严格。此例外只影响 replay 与预期输出比较，真实 catalog 与 persistence 继续拒绝这些产物。
+fixture 是运行一次真实 agent 所产生的一份选定持久化 Session generation 投影，本插件不录制。snapshot harness 会提供数值最高的规范 parent 路径（v0 为 `<scenario>/session.jsonl`，正 generation 为 `<scenario>/session.vN.jsonl`），并在 replay 前校验文件名与 header 一致。fixture 保留 header 与每个事件 payload，但省略正文的 `seq`/`time` envelope（打包行使用 `seq0`/`time0`）。replay 补充连续序号与确定性 timestamp，恢复被 snapshot token 替换的类型化值，拒绝不完整或混合 envelope，通过构建期静态 Session 格式 catalog 解码完整物理产物，并在公开事件或继承 cut 前于内存中迁移历史输入；当前输入直接 restore。仅对投影 v0 header，缺失的 `delegationDepth` 表示 `0`。parser 从不重写或重命名 fixture。runtime persistence 继续写入完整日志。replay 从当前视图的 `assistant/chunk` 事件派生每次模型调用的 chunk 序列，因此已记录 fixture 会 replay 与在线模型产生的相同逻辑流。fixture 的 `request/header` 内容可能 token 化为 `{{system}}`/`{{tools}}`；replay 会物化仅用于校验的值，而派生只读取 chunk、summary 事件与 Session metadata。每个已提交且带版本的 fixture 都经过同一条严格 catalog 恢复路径；malformed 历史 fixture 在来源处修复，不获得依赖路径的 replay 策略。
 
 ### 嵌套 agent
 
@@ -97,15 +97,14 @@ parent agent 委托给进程内 subagent 的场景会为每个 Session 记录一
 
 replay 把选定的投影 Session generation 视为 fixture。一个 parser 补全投影 envelope，通过 `sessionFormatCatalog` 校验并迁移完整产物，再以一个结果返回当前 header、继承 cut 与事件列表。`deriveReplayScript` 按 `(turn, step)` 键在每次 `finish` chunk 处切分生成的 `assistant/chunk` 事件，使每次已记录的 `stream()` 调用成为一条 `chunks` entry；没有 `finish` chunk 的 assistant group 是 `stream()` 抛出异常的 fingerprint，必须通过 override sidecar 表达。携带 `llmStreamCall: true` 与完整 `rawOutput` 的 `compaction/summary` 会在该事件位置 replay 为一条规范成功 stream。脚本字符串可以内嵌 `{{fromRequest:<regex>}}`；stream 输出时每个 placeholder 针对 live request 的 string leaf 解析，取该 pattern 的最后一次 match，用其第一个 capture group（无 capture group 时用整个 match）原位替换。
 
-已提交语料测试会发现 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下每个带版本的 `session*.jsonl`。除 manifest 中两项精确拒绝外，每个产物都必须通过真实目录还原为当前视图：`snapshots/session/agent-instructions/session.jsonl` 的投影 compaction checkpoint 没有匹配项，`snapshots/web/schedule-catalog/session.jsonl` 的 title 来源与其 citation 矛盾。共享 manifest 只为相同绝对路径授予仅回放提取，而语料仍断言真实的不受支持迁移类型与诊断。新的或发生变化的拒绝会使测试失败，直到其底层数据规则得到显式处理。
+已提交语料测试会发现 `snapshots/`、`packages/` 与 `scripts/snapshots/python-sdk-single-exe/` 下每个带版本的 `session*.jsonl`。每个产物都必须通过真实 catalog 还原为当前视图。新的拒绝会使语料测试失败，直到 fixture 或 catalog 策略得到显式修正。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 类型、fixture 派生、override 校验、占位符解析、会话绑定、`installLlmReplay` 与插件导出 |
-| [`src/alpha-refusal-fixtures.ts`](src/alpha-refusal-fixtures.ts) | 两项仅回放 alpha 拒绝的封闭来源路径与诊断 manifest |
-| [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | 完整已提交 generation restore burn-in 与封闭 alpha 拒绝 manifest |
+| [`tests/session-format-corpus.spec.ts`](tests/session-format-corpus.spec.ts) | 完整已提交 generation restore burn-in |
 | — | 不发布运行时不变式伴生入口；流语法由 LLM 伴生插件与派生测试检验。 |
 
 ### 绑定与流式流程

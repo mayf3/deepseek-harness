@@ -52,7 +52,6 @@ export {
   type CwdPathMode,
   type NormalizeContext,
   type NormalizeOptions,
-  type NormalizeSessionSnapshotsOptions,
 } from './normalize.ts'
 export {
   parseSnapshotManifest,

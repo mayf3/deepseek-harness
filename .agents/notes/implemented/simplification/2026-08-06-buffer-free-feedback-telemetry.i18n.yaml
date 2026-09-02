@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/simplification/2026-08-06-buffer-free-feedback-telemetry.md
-2026-08-06-buffer-free-feedback-telemetry.md: 387342c8282072d07957054fbb7e879a9874d23b
-2026-08-06-buffer-free-feedback-telemetry.zh.md: b0f5f4eadef35a6a3d59847d13029b98dae68f14
+2026-08-06-buffer-free-feedback-telemetry.md: e407fc7e437c87ca5e04920d0d4320261bc8e1ca
+2026-08-06-buffer-free-feedback-telemetry.zh.md: 09383de8f2ed00a452f6ad1cd7386d2e57856002

@@ -1,6 +1,4 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES } from '@deepseek-ai/dsh-llm-replay'
 import {
   type NormalizeContext,
   extractSnapshotSpillPaths,
@@ -554,16 +552,6 @@ describe('normalizeSessionSnapshot', () => {
     ].join('\n')])
   })
 
-  it('rejects source paths that cannot identify every snapshot', () => {
-    const raw = `${JSON.stringify({ type: 'session', version: 1 })}\n`
-
-    expect(() => normalizeSessionSnapshots(
-      [raw],
-      { sessionIds: [], cwd: '/unused' },
-      { sourcePaths: [] },
-    )).toThrow('Session snapshot source path count must match its log count')
-  })
-
   it('normalizes an already-projected snapshot without a released-format field', () => {
     const raw = `${JSON.stringify({
       type: 'session',
@@ -586,22 +574,6 @@ describe('normalizeSessionSnapshot', () => {
     expect(() => normalizeSessionSnapshots([raw], { sessionIds: [], cwd: '/unused' }))
       .toThrow('session snapshot must start with a session header')
   })
-
-  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
-    'generation-normalizes the exact replay-only refusal $repoRelativePath without rewriting it',
-    (fixture) => {
-      const source = readFileSync(fixture.path, 'utf8')
-
-      const [normalized] = normalizeSessionSnapshots(
-        [source],
-        { sessionIds: [], cwd: '/unused' },
-        { sourcePaths: [fixture.path] },
-      )
-
-      expect(JSON.parse(normalized?.split('\n')[0] as string)).not.toHaveProperty('version')
-      expect(readFileSync(fixture.path, 'utf8')).toBe(source)
-    },
-  )
 
   it('compares migrated and fresh delivery watermarks without changing their raw generation identity', () => {
     const id = '11111111-2222-3333-4444-555555555555'
