@@ -242,5 +242,14 @@ describe('released v0/v1 physical codecs', () => {
     ]
     const far = { ...v0, events: farTimes } as unknown as SessionFormatArtifact
     expect(releasedV0SessionFormatCodec.encodeArtifact(far, { packChunks: true }).rows).toHaveLength(3)
+
+    const ignorable = [
+      { ...chunk(0, 'text-delta', 'a'), ignorable: true },
+      { ...chunk(1, 'text-delta', 'b'), ignorable: true },
+      { ...chunk(2, 'text-delta', 'c'), ignorable: true },
+    ] as SessionFormatEvent[]
+    const ignorableV0 = { ...v0, events: ignorable } as unknown as SessionFormatArtifact
+    expect(releasedV0SessionFormatCodec.encodeArtifact(ignorableV0, { packChunks: true }).rows)
+      .toEqual(ignorable)
   })
 })

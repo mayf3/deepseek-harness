@@ -1,6 +1,6 @@
 /**
  * JSONL durable session-persistence backend. It stores a header and contiguous
- * events in one append-only file per session and serves the handle-based
+ * events in immutable generation files under one directory per session and serves the handle-based
  * `SessionPersistence` API: `create`/`open` return per-session handles, and
  * every read validates the same fail-closed storage contract.
  * @module @deepseek-ai/dsh-session-persistence-jsonl
@@ -144,6 +144,11 @@ function fileRevision(identity: FileRevisionIdentity): PersistenceRevision {
 /** Whether a filesystem error means absence; every non-ENOENT failure must surface. */
 function isENOENT(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'ENOENT'
+}
+
+/** Whether a filesystem-owned failure should retain its original errno and path. */
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return typeof (error as NodeJS.ErrnoException | null)?.code === 'string'
 }
 
 /**
@@ -423,6 +428,7 @@ class JsonlSessionPersistence extends SessionPersistence {
         ...(signal === undefined ? {} : { signal }),
       })
     } catch (error: unknown) {
+      signal?.throwIfAborted()
       if (error instanceof JsonlGenerationNewerVersionError) {
         const reason = sessionFormatVersionRefusal(error.storedId, error.storedVersion)
         throw new SessionFormatUnsupportedError(
@@ -436,7 +442,14 @@ class JsonlSessionPersistence extends SessionPersistence {
           { kind: 'jsonl', path: selected.sourcePath },
         )
       }
-      throw error
+      if (error instanceof SessionFormatUnsupportedError
+        || error instanceof SessionPersistenceCorruptionError
+        || isErrnoException(error)
+        || error instanceof DOMException && error.name === 'AbortError') throw error
+      throw new SessionPersistenceCorruptionError(
+        `session "${id}": stored log is corrupt: ${String(error)} (raw log: ${selected.sourcePath})`,
+        { cause: error },
+      )
     }
   }
 

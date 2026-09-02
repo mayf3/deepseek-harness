@@ -496,7 +496,7 @@ async function writeSyncedTemp(
   internals: JsonlGenerationInternals,
 ): Promise<string> {
   for (;;) {
-    const path = join(dirname(currentPath), `session.migration.${internals.randomToken()}.tmp${suffix}`)
+    const path = join(dirname(currentPath), `session.migration.${internals.randomToken()}${suffix}.tmp`)
     let handle: FileHandle
     try {
       handle = await internals.fs.open(path, 'wx', 0o600)
@@ -611,26 +611,7 @@ async function publishCurrentExclusive(
     /* v8 ignore next -- the filesystem error is already complete. */
     throw error
   }
-  try {
-    await syncDirectory(dirname(currentPath), internals)
-  } catch (publicationFailure: unknown) {
-    const failures: unknown[] = [publicationFailure]
-    try {
-      await internals.fs.rm(currentPath)
-    } catch (rollbackFailure: unknown) {
-      failures.push(rollbackFailure)
-    }
-    try {
-      await syncDirectory(dirname(currentPath), internals)
-    } catch (rollbackFailure: unknown) {
-      failures.push(rollbackFailure)
-    }
-    if (failures.length === 1) throw publicationFailure
-    throw new AggregateError(
-      failures,
-      `failed to roll back unconfirmed JSONL generation publication "${currentPath}"`,
-    )
-  }
+  await syncDirectory(dirname(currentPath), internals)
   return true
 }
 

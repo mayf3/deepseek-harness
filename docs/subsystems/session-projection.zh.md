@@ -149,8 +149,10 @@ cachedSnapshot( meta: SessionHeader, inheritedEventCount: SessionLogOffset, keys
  * strict {@link cachedSnapshot} / hydration paths continue to reject them.
  * @param meta - authoritative listed Session header.
  * @param inheritedEventCount - exact inherited cut completing the lifecycle identity.
- * @returns a title-only checkpoint view, or `undefined` when the record is
- *   current, newer, unrelated, missing, or incompatible with the title unit.
+ * @returns a title-only checkpoint view with `asOfSeq: -1`, or `undefined`
+ *   when the record is current, newer, unrelated, missing, or incompatible
+ *   with the title unit. The sentinel avoids reusing a sequence that a
+ *   cardinality-changing Session migration may have remapped.
  */
 cachedPredecessorTitle( meta: SessionHeader, inheritedEventCount: SessionLogOffset, ): ProjectionSnapshot | undefined
 

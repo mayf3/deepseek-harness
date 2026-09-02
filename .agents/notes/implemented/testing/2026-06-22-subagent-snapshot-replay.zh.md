@@ -25,7 +25,7 @@ Status: implemented
 
 ### 2. 回放按首次调用顺序将活跃会话绑定到录制脚本
 
-嵌套场景录制多个角色：parent 使用 `session[.vN].jsonl`，每个 subagent child 使用 `session.<ordinal>[.vN].jsonl`。V0 省略 `.v0`，正 generation 使用小写 `.vN`，harness 为每个角色选择数值最高的文件。`dsh-llm-replay` 加载这个选定集合，为每个录制 Session 派生一份脚本，并按角色排序（parent 后接连续 child）；持久化发现仍按 header `createdAt` 分配 child ordinal。
+嵌套场景录制多个角色：parent 使用 `session[.vN].jsonl`，每个 subagent child 使用 `session.<ordinal>[.vN].jsonl`。V0 省略 `.v0`，正 generation 使用小写 `.vN`，harness 为每个角色选择数值最高的文件。`dsh-llm-replay` 加载这个选定集合，并为每个录制 Session 派生一份脚本。Primary 脚本始终先绑定；child 脚本按 header `createdAt` 绑定，timestamp 相同时由 recorded id 决胜。持久化发现另外按 `createdAt` 分配 child fixture ordinal。
 
 活跃会话 id 每次运行都是全新随机值，永远不等于录制时的 id，因此活跃会话无法通过 id 相等绑定到脚本。取而代之的是**首次调用顺序**绑定：第一个发起任何模型调用的活跃会话认领第一份有序脚本（即父会话：`createdAt` 最早，且必然最先流式输出，因为它必须先运行一个轮次才能委派），下一个新活跃会话认领下一份脚本，依此类推。此后每个会话独立推进自己的游标。
 

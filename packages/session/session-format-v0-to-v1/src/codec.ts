@@ -336,7 +336,7 @@ function packChunkRuns(events: readonly SessionFormatEvent[]): readonly (Session
 }
 
 function classifyChunk(event: SessionFormatEvent): ChunkKind | undefined {
-  if (event.type !== 'assistant/chunk') return undefined
+  if (event.type !== 'assistant/chunk' || !hasExactKeys(event, ['type', 'seq', 'time', 'data'])) return undefined
   const data = event.data
   if (!isSessionFormatJsonObject(data) || !hasExactKeys(data, ['turn', 'step', 'chunk'])) return undefined
   const chunk = data['chunk']

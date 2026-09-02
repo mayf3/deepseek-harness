@@ -2,7 +2,7 @@ import { createToolResultMessage, createUserMessage } from '@deepseek-ai/dsh-llm
 /**
  * Coordinator semantics against a bare fake backend — the RFC's named unit
  * tier for the seam: adoption (fresh, seeded, re-adoption via the handoff
- * cursor), complete-log replay, deep-copy isolation, turn-latency and
+ * cursor), lifecycle-suffix replay, deep-copy isolation, turn-latency and
  * dispose-ordering pins, failure containment, and the `agent/error` relay.
  */
 
@@ -312,7 +312,7 @@ describe('SessionTelemetryCoordinator on-demand capture', () => {
 })
 
 describe('SessionTelemetryCoordinator adoption', () => {
-  it('replays a new fork object from seq -1, including its inherited prefix', async () => {
+  it('replays a new fork object from its constructor boundary without its inherited prefix', async () => {
     const backend = new FakeBackend()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -331,14 +331,12 @@ describe('SessionTelemetryCoordinator adoption', () => {
     const seqs = backend.ledger().map(r => [r.attributes['session.id'], r.attributes['event.seq']])
     expect(seqs).toEqual(expect.arrayContaining([['seed-parent', 0], ['seed-parent', 1]]))
     expect(seqs.filter(([id]) => id === 'seeded')).toEqual([
-      ['seeded', 0],
-      ['seeded', 1],
       ['seeded', 2],
       ['seeded', 3],
     ])
   })
 
-  it('replays a restored post-migration Session from seq -1 with current-version identity', async () => {
+  it('replays a restored post-migration Session from its constructor boundary', async () => {
     const backend = new FakeBackend()
     const ctx = new Context()
     await ctx.plugin(SessionStore)
@@ -368,14 +366,12 @@ describe('SessionTelemetryCoordinator adoption', () => {
     ctx.sessions.announce(resumed)
     const ofResumed = () => backend.ledger()
       .filter(r => r.attributes['session.id'] === 'resumed')
-    expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([0, 1, 2])
+    expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([2])
     expect(ofResumed().every(r => r.attributes['session.format_version'] === SESSION_FORMAT_VERSION)).toBe(true)
     resumed.append('assistant/chunk', { turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'continuation' } })
     resumed.append('assistant/chunk', { turn: 1, step: 2, chunk: { type: 'text-delta', index: 0, text: 'next step' } })
-    expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([0, 1, 2, 3, 4])
+    expect(ofResumed().map(r => r.attributes['event.seq'])).toEqual([2, 3, 4])
     expect(ofResumed().map(r => (r.body as { chunk?: { text: string } }).chunk?.text)).toEqual([
-      undefined,
-      'first',
       undefined,
       'continuation',
       'next step',

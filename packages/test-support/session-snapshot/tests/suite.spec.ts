@@ -214,12 +214,12 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
 })
 
 describe('defineAcpSnapshotSuite: record inventory write-back', () => {
-  it('creates a missing primary fixture and removes generations for a retired child role', () => {
+  it('creates a missing primary fixture and preserves generations for a retired child role', () => {
     const fixture = readFileSync(join(recordDir, 'rec-pin', 'session.v1.jsonl'), 'utf8')
     expect(fixture).toContain('"type":"session"')
     expect(fixture).toContain('"cwd":"{{cwd}}"')
     if (!BOOTSTRAP) {
-      expect(existsSync(join(recordDir, 'rec-child', 'session.2.jsonl'))).toBe(false)
+      expect(existsSync(join(recordDir, 'rec-child', 'session.2.jsonl'))).toBe(true)
     }
     expect(readFileSync(join(recordDir, 'rec-child', 'tool-schemas.1.expected.json'), 'utf8'))
       .toContain('"name": "t1"')
@@ -537,6 +537,8 @@ describe('Session generation filename helpers', () => {
     expect(() => assertPersistedSessionVersion('session.1.jsonl', v0)).toThrow('not a canonical Session persistence filename')
     expect(() => assertSessionFixtureVersion('session.v1.jsonl', v0))
       .toThrow('filename declares Session format v1, header declares v0')
+    expect(() => assertSessionFixtureVersion('session.v1.jsonl', '{"type":"session"}\n'))
+      .toThrow('a versionless projected Session header is format v0')
     expect(() => assertPersistedSessionVersion('session.jsonl', v1))
       .toThrow('filename declares Session format v0, header declares v1')
   })

@@ -3,9 +3,9 @@
  * sessions' logical session logs plus every referenced media object. Each log
  * is read through a persistence read handle and serialized here as canonical
  * JSONL — one header line, then one line per validated event — so every
- * backend (JSONL, SQLite, future) exports identically. The root log sits at
- * `session.jsonl`; each subagent descendant under
- * `subagents/<id>/session.jsonl`; each image referenced by any included log
+ * backend (JSONL, SQLite, future) exports identically. The root log uses the
+ * current generation's canonical `session[.vN].jsonl` name; each subagent
+ * descendant uses `subagents/<id>/session[.vN].jsonl`; each image referenced by any included log
  * under `media/<attachmentId>.<ext>` (content-addressed, so one archive never
  * duplicates a shared image). No manifest is written — every file is
  * self-describing through its own header line or media type. Before each live
@@ -25,6 +25,7 @@ import { Zip, ZipDeflate } from 'fflate'
 import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionLineageNode, SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, SessionStore } from '@deepseek-ai/dsh-session'
 import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
@@ -92,8 +93,8 @@ export type SessionLogZipEntry =
   | { readonly path: string; readonly content: string }
   | { readonly path: string; readonly data: Uint8Array }
 
-/** The zip base filename for every exported session log. */
-export const SESSION_LOG_FILENAME = 'session.jsonl'
+/** The current generation's canonical base filename for every exported session log. */
+export const SESSION_LOG_FILENAME = `session.v${SESSION_FORMAT_VERSION}.jsonl`
 
 /**
  * Serialize one session's logical log as canonical JSONL text: the header

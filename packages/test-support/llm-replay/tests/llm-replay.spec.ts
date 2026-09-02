@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-import { SessionFormatUnsupportedMigrationError } from '@deepseek-ai/dsh-session-format-catalog'
 import { CompactionId } from '@deepseek-ai/dsh-compaction'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import LlmRuntime, { ToolCallId, createUserMessage, GenerateOptions, LlmAdapter, StreamChunk } from '@deepseek-ai/dsh-llm'
@@ -21,13 +20,11 @@ import {
   loadSessionScripts,
   migrateSessionSnapshotFixture,
   name,
-  parseSessionLogForReplay,
   parseSessionHeader,
   parseSessionLog,
   prepareSessionSnapshotFixtureForComparison,
   resolveScriptedEntry,
 } from '../src/index.ts'
-import { ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES } from '../src/alpha-refusal-fixtures.ts'
 
 declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions/types' {
   interface DeepSeekLlmApiExtensionMap {
@@ -298,27 +295,6 @@ describe('parseSessionLog', () => {
     expect(() => parseSessionLog(`${header}\n{"type":\n`))
       .toThrow('session snapshot line 2 contains invalid JSON')
   })
-
-  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
-    'keeps pathless parsing strict for $repoRelativePath',
-    (fixture) => {
-      const source = readFileSync(fixture.path, 'utf8')
-
-      expect(() => parseSessionLog(source)).toThrow(SessionFormatUnsupportedMigrationError)
-    },
-  )
-
-  it.each(ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES)(
-    'permits replay extraction only for the exact allowlisted path $repoRelativePath',
-    (fixture) => {
-      const source = readFileSync(fixture.path, 'utf8')
-      const lookalike = resolve(dir, fixture.repoRelativePath)
-
-      expect(parseSessionLogForReplay(source, fixture.path).length).toBeGreaterThan(0)
-      expect(() => parseSessionLogForReplay(source, lookalike))
-        .toThrow(SessionFormatUnsupportedMigrationError)
-    },
-  )
 
   it('skips the header line and parses each event', () => {
     const events: SessionEvent[] = [{ type: 'turn/start', seq: SessionSeq(0), time: 0, data: { turn: 1 } }]
@@ -596,17 +572,14 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
     expect(prepared.endsWith('\n')).toBe(false)
   })
 
-  it('rewrites only the physical header generation for an exact alpha refusal', () => {
-    const fixture = ALPHA_SESSION_FORMAT_REFUSAL_FIXTURES[0]!
-    const source = readFileSync(fixture.path, 'utf8')
+  it('migrates a valid v0 fixture instead of relabeling its physical header', () => {
+    const source = readFileSync(resolve(import.meta.dirname, '../../../../snapshots/web/schedule-catalog/session.jsonl'), 'utf8')
 
-    const prepared = prepareSessionSnapshotFixtureForComparison(source, fixture.path)
-    const [sourceHeader, ...sourceBody] = source.split('\n')
-    const [preparedHeader, ...preparedBody] = prepared.split('\n')
+    const prepared = prepareSessionSnapshotFixtureForComparison(source)
 
-    expect(JSON.parse(sourceHeader!)).toMatchObject({ version: 0 })
-    expect(JSON.parse(preparedHeader!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
-    expect(preparedBody).toEqual(sourceBody)
+    expect(JSON.parse(source.split('\n')[0]!)).toMatchObject({ version: 0 })
+    expect(JSON.parse(prepared.split('\n')[0]!)).toMatchObject({ version: SESSION_FORMAT_VERSION })
+    expect(parseSessionLog(prepared)).toEqual(parseSessionLog(source))
   })
 })
 

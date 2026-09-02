@@ -156,7 +156,10 @@ export function assertSessionFixtureVersion(name: string, content: string): numb
     if (projected !== null && typeof projected === 'object' && !Array.isArray(projected)
       && (projected as { type?: unknown }).type === 'session'
       && !Object.hasOwn(projected, 'version')) {
-      return fixture.version
+      if (fixture.version !== 0) {
+        throw new Error(`${name}: a versionless projected Session header is format v0`)
+      }
+      return 0
     }
   }
   const headerVersion = sessionHeaderVersion(content, name)

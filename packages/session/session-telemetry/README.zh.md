@@ -70,15 +70,15 @@ seam 建立在一个边界之上：harness 的职责止于 `emit()`。完整事�
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Service Definition：`SessionTelemetryBackend`/`SessionTelemetrySink` 约定、记录词汇、`session-telemetry/record` waterfall 声明 |
-| [`src/coordinator.ts`](src/coordinator.ts) | 捕获：live 监听器、完整 on-demand 回放、脱敏、handoff 游标、异常隔离 |
+| [`src/coordinator.ts`](src/coordinator.ts) | 捕获：live 监听器、生命周期本地 on-demand 回放、脱敏、handoff 游标、异常隔离 |
 
 ### 捕获流程
 
-live 捕获通过组合方 fiber 的 effect 注册：`session/created` 收养会话并从 handoff 游标起回放其日志；`session/event` 深拷贝、脱敏并交接每个事件，零 I/O；`session/flush` 转发可选的提示并返回 void，使循环所等待的并行任务绝不等待遥测；`session/disposed` 捕获会话的 `shutdown` 标记并退役它；`agent/error` 是唯一的实时总线转发，因为会话事件词汇有意不包含运维错误记录。dispose 会为仍存活的会话捕获 shutdown 标记，然后等待后端的 `shutdown()`。on-demand 捕获只注册 dispose effect，并在请求时读取完整的权威日志请求前缀。每个同步处理器都运行在异常隔离之内，使失败的后端或规则永远不会饿死其他监听器，也永远不会触及 agent loop。
+live 捕获通过组合方 fiber 的 effect 注册：`session/created` 收养会话并从 handoff 游标起回放其生命周期本地日志后缀；`session/event` 深拷贝、脱敏并交接每个事件，零 I/O；`session/flush` 转发可选的提示并返回 void，使循环所等待的并行任务绝不等待遥测；`session/disposed` 捕获会话的 `shutdown` 标记并退役它；`agent/error` 是唯一的实时总线转发，因为会话事件词汇有意不包含运维错误记录。dispose 会为仍存活的会话捕获 shutdown 标记，然后等待后端的 `shutdown()`。on-demand 捕获只注册 dispose effect，并在请求时读取所请求的生命周期本地权威日志前缀。每个同步处理器都运行在异常隔离之内，使失败的后端或规则永远不会饿死其他监听器，也永远不会触及 agent loop。
 
 ### handoff 游标
 
-一个模块作用域的 `WeakMap<Session, seq>` 按 Session 对象记录已交接（而非已投递）的最高 seq。live 捕获在追加时推进它；on-demand 捕获只在交接所请求的前缀时推进它。重新收养同一对象时会从该游标之后继续，且不会重复交接其 ledger 记录。新 Session 对象没有游标，因此捕获从 seq 0 开始，并包含完整的构造 seed；无论该对象表示全新会话、fork、resume 还是已迁移的存储日志，规则都相同。接收端基于 `(session.id, session.format_version, event.seq)` 去重，以吸收这项有意的全日志回放以及 SDK 重试。这个以对象为键的 map 是对「注册即 effect」纪律的一次有意的、有文档说明的窄例外：条目随其 Session 消亡；丢失条目只会触发一次安全的全量回放。
+一个模块作用域的 `WeakMap<Session, seq>` 按 Session 对象记录已交接（而非已投递）的最高 seq。live 捕获在追加时推进它；on-demand 捕获只在交接所请求的前缀时推进它。重新收养同一对象时会从该游标之后继续，且不会重复交接其 ledger 记录。新 Session 对象从 `firstLiveSeq` 之前开始：全新对象从 seq 0 开始，而 fork、resume 或迁移对象会跳过 constructor seed，从本生命周期的 `session/end-seed` 边界开始。这样，继承历史与此前持久化历史不会进入新生命周期的共享动作。接收端基于 `(session.id, session.format_version, event.seq)` 对 SDK 重试去重。这个以对象为键的 map 是对「注册即 effect」纪律的一次有意且有文档说明的窄例外：条目随其 Session 消亡；丢失条目最多只会回放当前生命周期后缀。
 
 </details>
 
