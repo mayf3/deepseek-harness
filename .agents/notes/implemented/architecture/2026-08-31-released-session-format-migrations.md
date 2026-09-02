@@ -28,6 +28,8 @@ The current-format fast path classifies the header from one stable source snapsh
 
 The first edge, `@deepseek-ai/dsh-session-format-v0-to-v1`, is intentionally identity-shaped: aside from the version and bounded historical normalizations already accepted by v0, it preserves logical headers, events, sequence numbers, references, timestamps, payloads, and the configured compression choice. The exact `session.jsonl[.zstd]` source remains byte- and inode-identical, while the current writer encodes the new `session.v1.jsonl[.zstd]` successor. This exercises the complete publication lifecycle before a cardinality-changing format needs it.
 
+Projection-cache records bind their fold to the Session header's `formatVersion`. The `session_projcache` v7 reader may load predecessor domain records structurally, but a record without the format generation cannot seed a current Session; the authoritative log refolds it and the next checkpoint writes the complete current identity. This prevents a cache row produced before a bounded normalizer or cardinality-changing edge from bypassing that migration.
+
 ## Consequences
 
 Reading event bodies with a newer build may durably add a higher generation. The exact old generation remains available, but the runtime thereafter selects the highest canonical filename; retention does not promise that an older build can safely downgrade or that the newer build will fall back when the successor is corrupt. A read-only filesystem reports an actionable migration failure instead of returning an in-memory current view that differs from disk.
