@@ -16,7 +16,7 @@ Priority、影响面、解决代价和日期用于在 `DSH Issue Management` 中
 
 仓库策略从配置的 Project 解析 `Priority` 和 `Start Date`。策略拒绝 Issue 字段投影或错误的数据类型，从 Project item 读取 Priority，并通过 `updateProjectV2ItemFieldValue` 写入 Start Date。组织 Issue 字段仅作为带有 `Legacy ...` 前缀的迁移源保留，仓库工作流不会读取它们。
 
-PR 策略工作流使用仓库 `GITHUB_TOKEN` 读取仓库 Issue 和 PR，并使用仅有组织 Projects 读取权限的 GitHub App token 执行 ProjectV2 查询。生命周期 mutation 继续使用有写权限的 App token。
+PR 策略工作流使用仓库 `GITHUB_TOKEN` 执行 REST Issue 和 PR 读取，并使用仅有仓库 Issues 与组织 Projects 读取权限的 GitHub App token 执行 ProjectV2 查询。生命周期 mutation 继续使用有写权限的 App token。
 
 Issue 生命周期工作流仅在 `pull_request.opened` 时初始化 `Start Date`。工作流读取 PR 的实时正文，保留每个能解析为 Issue 的同仓库引用，把 `created_at` 按配置的 Project 时区转换为日历日期，确保 Issue 是 Project item，并仅在当前 Project 值为空时写入日期。
 
