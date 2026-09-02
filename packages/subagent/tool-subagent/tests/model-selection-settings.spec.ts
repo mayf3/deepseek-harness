@@ -242,6 +242,18 @@ describe('SubagentModelSelectionConfig', () => {
     await ctx.plugin(ToolInvariant)
     const preset = createScope(ctx, { preset: 'standard' })
     const other = createScope(ctx, { preset: 'minimal' })
+    const cleanupGate = Promise.withResolvers<undefined>()
+    const cleanupStarted = Promise.withResolvers<undefined>()
+    const cleanup = { done: false, blockedParent: undefined as Context | undefined }
+    ctx.on('internal/plugin', (fiber) => {
+      if (Object.keys(fiber.inject).sort().join(',') !== 'subagents,systemPrompt,tools') return
+      fiber.ctx.effect(() => async () => {
+        if (fiber.parent !== cleanup.blockedParent) return
+        cleanupStarted.resolve(undefined)
+        await cleanupGate.promise
+        cleanup.done = true
+      }, 'tool-subagent test: delayed preset cleanup')
+    })
     const mounted = await preset.ctx.plugin(tool, {
       provider: 'spawn',
       modelSelectionSettings: true,
@@ -287,11 +299,19 @@ describe('SubagentModelSelectionConfig', () => {
     await expect(ctx.waterfall(ctx as never, 'agent/pre-step', payload, next))
       .resolves.toEqual({ kind: 'enter', messages: [] })
 
-    await mounted.dispose()
+    cleanup.blockedParent = enabled.agent.ctx
+    enabledBinding!.rebind(scopeOf(other.ctx)!)
+    ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
+    await cleanupStarted.promise
+    const unloading = mounted.dispose()
+    setImmediate(() => { cleanupGate.resolve(undefined) })
+    await unloading
+    const cleanupFinishedAtUnload = cleanup.done
+    await enabled.dispose()
+    expect(cleanupFinishedAtUnload).toBe(true)
     expect(selectable(ctx, enabled.agent)).toBe(false)
     expect(selectable(ctx, disabled.agent)).toBe(false)
 
-    await enabled.dispose()
     ctx.emit(scopeTarget({}, scopeOf(preset.ctx)), 'tools/change')
     await disabled.dispose()
     await ctx.fiber.dispose()

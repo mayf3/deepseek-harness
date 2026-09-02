@@ -16,7 +16,7 @@ Agent 的 Cordis Context 拥有注册及其清理。Agent 身份则为某项操�
 
 运行时接口在拥有身份的位置携带 Agent 身份。`AgentSetup` 接收 `(agentCtx, agent)`；Agent 创建与恢复接收显式运行时所属方；作用域事件在 payload 中携带 Agent；Remote 转发校验 `request.agent` 就是 carrier key；Host Typert Context 解析则把协议身份映射到存活 Agent Context，不执行反向扫描。`agent.ctx` 继续拥有注册和生命周期，不暴露反向 Agent 属性。
 
-感知作用域的注册表继续仅使用不透明作用域键判断注册成员关系。tool-subagent 不会分类该键，也不会从 Context 解析 Agent。直接 `AgentSetup` 显式传入尚未发布的 Session，并在发布前通过所给 Context 完成安装。由设置控制的常驻 preset 则保留既有生命周期路径：事件 payload 提供匹配 Agent，其 Session 提供策略目标，其 Context 拥有注册项。
+感知作用域的注册表继续仅使用不透明作用域键判断注册成员关系。tool-subagent 不会分类该键，也不会从 Context 解析 Agent。直接 `AgentSetup` 显式传入尚未发布的 Session，并在发布前通过所给 Context 完成安装。由设置控制的常驻 preset 在读取策略前，会为每个匹配 Agent 预留一个 Cordis 清理 effect：事件 payload 提供 Agent，其 Session 提供策略目标，其 Context 拥有注册项，而 preset effect 会在重设父级或 preset 卸载后等待其清理完成。
 
 `SubagentContinuationManager` 会把确切父级同时传给全新创建与冷恢复。因此，存活的可续跑子级不会出现在 `AgentRegistry.roots()` 中，并且满足 `isOwnedBy(child.id, parent)`。持久化 `parentSession` 元数据不能代替这项关系：没有存活 Agent 拥有 fork 或已恢复会话时，它仍可成为 runtime root。
 
@@ -26,7 +26,7 @@ Agent 的 Cordis Context 拥有注册及其清理。Agent 身份则为某项操�
 
 Agent 创建测试锁定显式的根级与子级归属。continuation 集成测试让一个真实子级保持存活，直到断言其既不属于 `roots()`、又满足 `isOwnedBy()`。现有 Schedule 测试验证仅限根级的注册项不会出现在显式归属的子级中。
 
-Remote 事件测试会在转发作用域 waterfall 前拒绝缺失或不匹配的 Agent。tool-subagent 测试验证 direct setup 会在 Session 发布前完成安装；常驻 preset 测试验证逐 Session 的策略读取、继承，以及 preset 卸载时会移除所有已安装定义。
+Remote 事件测试会在转发作用域 waterfall 前拒绝缺失或不匹配的 Agent。tool-subagent 测试验证 direct setup 会在 Session 发布前完成安装；常驻 preset 测试验证逐 Session 的策略读取、继承，以及 preset 卸载完成前会移除所有已安装定义，包括重设父级时已启动的清理。
 
 ## 考虑过的替代方案
 

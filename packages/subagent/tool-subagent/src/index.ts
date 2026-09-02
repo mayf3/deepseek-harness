@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-tool-subagent
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -657,50 +657,37 @@ export function apply(ctx: Context, config: Config, session?: Session): void {
   const agents = ctx.get('agents')
   /* v8 ignore next -- shipped preset compositions always include the Agent registry. */
   if (agents === undefined) throw new Error('tool-subagent: standing `modelSelectionSettings` requires the Agent registry')
-  const presetInstalls = new Map<Agent, ReturnType<Context['inject']>>()
-  const installing = new WeakSet<Agent>()
-  let stopping = false
+  const presetInstalls = new Map<Agent, () => Promise<void>>()
   const belongsToComposition = (candidate: Agent): boolean =>
     scopeChainOf(scopeOf(candidate.ctx)).includes(compositionScope)
   const installPresetDefinition = (candidate: Agent): void => {
-    if (stopping || presetInstalls.has(candidate) || installing.has(candidate)) return
-    // Reserve before the injected fiber runs: tool registration emits
-    // `tools/change` synchronously, which re-enters the reconciliation below.
-    installing.add(candidate)
-    let fiber: ReturnType<Context['inject']>
+    if (ctx.fiber.uid === null || ctx.fiber.state === FiberState.UNLOADING || presetInstalls.has(candidate)) return
+    let fiber: ReturnType<Context['inject']> | undefined
+    const dispose = ctx.effect(() => async () => {
+      if (fiber !== undefined) await fiber.dispose()
+    }, `tool-subagent: standing-preset definitions for Agent "${candidate.id}"`)
+    // Reserve before policy sampling or injection can re-enter reconciliation.
+    presetInstalls.set(candidate, dispose)
     try {
       const policy = selectForSession(candidate.session)
       fiber = candidate.ctx.inject(['tools', 'subagents', 'systemPrompt'], (runtimeCtx) => {
         install(runtimeCtx, policy)
       })
-    } finally {
-      installing.delete(candidate)
+    } catch (error) {
+      presetInstalls.delete(candidate)
+      void dispose()
+      throw error
     }
-    presetInstalls.set(candidate, fiber)
   }
   const removePresetDefinition = (candidate: Agent): void => {
-    const fiber = presetInstalls.get(candidate)
-    if (fiber === undefined) return
+    const dispose = presetInstalls.get(candidate)
+    if (dispose === undefined) return
     presetInstalls.delete(candidate)
     /* v8 ignore next 3 -- Cordis Fiber disposal contains registration cleanup failures; this is the final diagnostic sink. */
-    void fiber.dispose().catch((error: unknown) => {
+    void dispose().catch((error: unknown) => {
       ctx.logger.warn(`tool-subagent: failed to remove recomposed Agent "${candidate.id}" definitions: ${String(error)}`)
     })
   }
-  ctx.effect(() => async () => {
-    stopping = true
-    const fibers = [...presetInstalls.values()]
-    presetInstalls.clear()
-    const outcomes = await Promise.allSettled(fibers.map(fiber => fiber.dispose()))
-    const failures: unknown[] = []
-    for (const outcome of outcomes) {
-      if (outcome.status === 'rejected') failures.push(outcome.reason as unknown)
-    }
-    if (failures.length === 1) throw failures[0]
-    if (failures.length > 1) {
-      throw new AggregateError(failures, 'tool-subagent: failed to remove standing-preset definitions')
-    }
-  })
   const reconcilePresetDefinitions = (): void => {
     for (const candidate of agents.list()) {
       if (belongsToComposition(candidate)) installPresetDefinition(candidate)
