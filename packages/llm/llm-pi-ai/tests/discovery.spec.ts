@@ -485,14 +485,16 @@ describe('probe key format', () => {
 })
 
 /**
- * Replies recorded from live endpoints on 2026-09-02. Each file keeps the
- * reply's top-level fields and entry objects verbatim; only the entry list is
+ * Replies recorded from live endpoints on 2026-09-02, plus the reply
+ * Anthropic's List Models reference documents. Each file keeps the reply's
+ * top-level fields and entry objects verbatim; only a recorded entry list is
  * cut down to the named entries so the archive stays small.
  */
 const RECORDED_LISTINGS = [
   {
     name: 'OpenRouter GET /api/v1/models',
     file: 'openrouter-2026-09-02.json',
+    api: 'openai-completions',
     models: [
       { id: 'anthropic/claude-fable-5.1', name: 'Anthropic: Claude Fable 5.1', contextWindow: 1_000_000, maxTokens: 128_000 },
       // The router's own aggregate route reports no completion cap.
@@ -503,6 +505,7 @@ const RECORDED_LISTINGS = [
   {
     name: 'the models.dev anthropic provider object',
     file: 'models-dev-anthropic-2026-09-02.json',
+    api: 'openai-completions',
     models: [
       { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', contextWindow: 1_000_000, maxTokens: 128_000 },
       { id: 'claude-fable-5-1', name: 'Claude Fable 5.1', contextWindow: 1_000_000, maxTokens: 128_000 },
@@ -512,21 +515,29 @@ const RECORDED_LISTINGS = [
   {
     name: 'DeepSeek GET /models',
     file: 'deepseek-2026-09-02.json',
+    api: 'openai-completions',
     models: [
       { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
       { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
       { id: 'deepseek-v4-flash-vision-exp', name: 'deepseek-v4-flash-vision-exp' },
     ],
   },
+  {
+    name: "Anthropic's documented GET /v1/models example",
+    file: 'anthropic-reference-example.json',
+    api: 'anthropic-messages',
+    // The reference example fills both capacities with 0, which is not a
+    // usable capacity, so the row carries the name alone.
+    models: [{ id: 'claude-opus-5', name: 'Claude Opus 5' }],
+  },
 ]
 
 describe('recorded provider listings', () => {
-  it.each(RECORDED_LISTINGS)('reads $name as recorded', async ({ file, models }) => {
+  it.each(RECORDED_LISTINGS)('reads $name as recorded', async ({ file, api, models }) => {
     const body = await readFile(new URL(`./fixtures/model-listings/${file}`, import.meta.url), 'utf8')
     const server = await listingServer({ body })
     const ctx = await harness()
 
-    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url, api: 'openai-completions' }))
-      .resolves.toEqual(models)
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url, api })).resolves.toEqual(models)
   })
 })
