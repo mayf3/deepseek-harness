@@ -312,6 +312,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SessionControlFrame: 'session.md',
   SessionCreateRequest: 'session.md',
   SessionCreateValue: 'session.md',
+  SessionEditRequest: 'session.md',
+  SessionEditValue: 'session.md',
   SessionEvent: 'session.md',
   SessionFollowFrame: 'session.md',
   SessionFollowRequest: 'session.md',
@@ -321,6 +323,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   SessionLogOffset: 'session.md',
   SessionSeq: 'session.md',
   SessionSeqCursor: 'session.md',
+  SurfaceIntent: 'session.md',
   OptionalSessionSeq: 'session.md',
   SessionListRequest: 'session.md',
   SessionListValue: 'session.md',
@@ -652,6 +655,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'Promise',
   'Record',
   'Readonly',
+  'ReadonlyMap',
   'Uint8Array',
 ])
 
