@@ -63,6 +63,11 @@ interface ListingLimit {
   output?: unknown
 }
 
+/** Per-route capacities OpenRouter nests under each entry. */
+interface ListingTopProvider {
+  max_completion_tokens?: unknown
+}
+
 /** One entry of a supported `GET /models` reply. */
 interface ListingEntry {
   id?: unknown
@@ -79,6 +84,7 @@ interface ListingEntry {
   max_output_tokens?: unknown
   maxTokens?: unknown
   limit?: ListingLimit | null
+  top_provider?: ListingTopProvider | null
 }
 
 /** A positive integer field of a listing entry, or `undefined` when absent or unusable. */
@@ -211,6 +217,7 @@ function readListing(body: unknown): LlmDiscoveredModel[] {
       entry?.maxTokens,
       entry?.max_tokens,
       entry?.limit?.output,
+      entry?.top_provider?.max_completion_tokens,
     )
     models.push({
       id,

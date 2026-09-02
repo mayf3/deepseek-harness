@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, Server, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -480,5 +481,52 @@ describe('probe key format', () => {
 
     const headers = new Headers(requests[0]?.headers)
     expect(headers.has('authorization')).toBe(false)
+  })
+})
+
+/**
+ * Replies recorded from live endpoints on 2026-09-02. Each file keeps the
+ * reply's top-level fields and entry objects verbatim; only the entry list is
+ * cut down to the named entries so the archive stays small.
+ */
+const RECORDED_LISTINGS = [
+  {
+    name: 'OpenRouter GET /api/v1/models',
+    file: 'openrouter-2026-09-02.json',
+    models: [
+      { id: 'anthropic/claude-fable-5.1', name: 'Anthropic: Claude Fable 5.1', contextWindow: 1_000_000, maxTokens: 128_000 },
+      // The router's own aggregate route reports no completion cap.
+      { id: 'openrouter/auto-beta', name: 'Auto Router (Beta)', contextWindow: 2_000_000 },
+      { id: 'deepseek/deepseek-v4-flash', name: 'DeepSeek: DeepSeek V4 Flash 0423', contextWindow: 1_048_576, maxTokens: 384_000 },
+    ],
+  },
+  {
+    name: 'the models.dev anthropic provider object',
+    file: 'models-dev-anthropic-2026-09-02.json',
+    models: [
+      { id: 'claude-opus-4-7', name: 'Claude Opus 4.7', contextWindow: 1_000_000, maxTokens: 128_000 },
+      { id: 'claude-fable-5-1', name: 'Claude Fable 5.1', contextWindow: 1_000_000, maxTokens: 128_000 },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5 (latest)', contextWindow: 200_000, maxTokens: 64_000 },
+    ],
+  },
+  {
+    name: 'DeepSeek GET /models',
+    file: 'deepseek-2026-09-02.json',
+    models: [
+      { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
+      { id: 'deepseek-v4-pro', name: 'deepseek-v4-pro' },
+      { id: 'deepseek-v4-flash-vision-exp', name: 'deepseek-v4-flash-vision-exp' },
+    ],
+  },
+]
+
+describe('recorded provider listings', () => {
+  it.each(RECORDED_LISTINGS)('reads $name as recorded', async ({ file, models }) => {
+    const body = await readFile(new URL(`./fixtures/model-listings/${file}`, import.meta.url), 'utf8')
+    const server = await listingServer({ body })
+    const ctx = await harness()
+
+    await expect(ctx.llm.discoverModels('llm-pi-ai', { baseURL: server.url, api: 'openai-completions' }))
+      .resolves.toEqual(models)
   })
 })
