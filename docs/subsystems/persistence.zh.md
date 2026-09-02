@@ -299,7 +299,7 @@ interface SessionPersistenceSnapshot {
 }
 ```
 
-可选的 `eventCount`/`sizeBytes` 提示让会话列表的冷空白探测（cold blank probe）仅凭元数据即可限定其工作量（session-controller 配置 `coldBlankProbeMaxEvents`/`coldBlankProbeMaxBytes`），而无需打开任何日志。
+可选的 `eventCount`/`sizeBytes` 字段仍是供明确需要它们的 consumer 使用的低成本 backend observation。Session 列表不借助这两个字段打开冷日志，只读取 header 与经过 identity 校验的 projection cache hint，因此 cache 或 Session format 升级不会把启动变成 body scan。
 
 ## 后端
 
