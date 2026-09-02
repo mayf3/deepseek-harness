@@ -454,64 +454,10 @@ export function normalizeSessionSnapshots(
  * @returns the same records without delivery or captured-source generation qualifiers.
  */
 export function normalizeSessionFormatProvenance(rawLog: string): string {
-  const lines = rawLog.split('\n')
-  const records = lines.map(line => line.trim().length === 0
-    ? undefined
-    : JSON.parse(line) as Record<string, unknown>)
-  const inertEndSeeds = records.flatMap((record) => {
-    if (record?.type !== 'session/end-seed' || record.data === null
-      || typeof record.data !== 'object' || Array.isArray(record.data)
-      || (record.data as Record<string, unknown>).inherited === true) return []
-    return typeof record.seq === 'number' ? [record.seq] : []
-  }).sort((left, right) => left - right)
-  const remapSeq = (value: unknown): unknown => {
-    if (typeof value !== 'number' || !Number.isSafeInteger(value)) return value
-    if (inertEndSeeds.includes(value)) {
-      throw new Error(`Session snapshot comparison reference targets inert end-seed ${String(value)}`)
-    }
-    return value - inertEndSeeds.filter(seq => seq < value).length
-  }
-  const remapList = (value: unknown): unknown => Array.isArray(value) ? value.map(remapSeq) : value
-
-  return records.flatMap((record, index) => {
-    if (record === undefined) return [lines[index] as string]
-    if (record.type === 'session/end-seed' && record.data !== null
-      && typeof record.data === 'object' && !Array.isArray(record.data)
-      && (record.data as Record<string, unknown>).inherited !== true) return []
+  return rawLog.split('\n').map((line) => {
+    if (line.trim().length === 0) return line
+    const record = JSON.parse(line) as Record<string, unknown>
     let changed = normalizeCapturedFormatProvenance(record)
-    const recordSeq = record.seq
-    if (typeof recordSeq === 'number' && inertEndSeeds.some(seq => seq < recordSeq)) {
-      record.seq = remapSeq(recordSeq)
-      changed = true
-    }
-    if (Array.isArray(record.sourceEventSeqs)) {
-      record.sourceEventSeqs = remapList(record.sourceEventSeqs)
-      changed = true
-    }
-    if (record.surfaceOp !== null && typeof record.surfaceOp === 'object' && !Array.isArray(record.surfaceOp)) {
-      const operation = record.surfaceOp as Record<string, unknown>
-      record.surfaceOp = { ...operation, start: remapSeq(operation.start), end: remapSeq(operation.end) }
-      changed = true
-    }
-    if (record.data !== null && typeof record.data === 'object' && !Array.isArray(record.data)) {
-      const data = record.data as Record<string, unknown>
-      if (Object.hasOwn(data, 'sourceEventSeq')) {
-        record.data = { ...data, sourceEventSeq: remapSeq(data.sourceEventSeq) }
-        changed = true
-      } else if (Array.isArray(data.messageSeqs)) {
-        record.data = { ...data, messageSeqs: remapList(data.messageSeqs) }
-        changed = true
-      } else if (data.shadowedRange !== null && typeof data.shadowedRange === 'object'
-        && !Array.isArray(data.shadowedRange)) {
-        const range = data.shadowedRange as Record<string, unknown>
-        record.data = {
-          ...data,
-          shadowedRange: { ...range, start: remapSeq(range.start), end: remapSeq(range.end) },
-          shadowedSeqs: remapList(data.shadowedSeqs),
-        }
-        changed = true
-      }
-    }
     if (record.type === 'session' && Object.hasOwn(record, 'version')) {
       delete record.version
       changed = true
@@ -519,14 +465,13 @@ export function normalizeSessionFormatProvenance(rawLog: string): string {
     if (record.type === 'session-log-deepseek/delivery-accepted'
       && record.data !== null && typeof record.data === 'object' && !Array.isArray(record.data)) {
       const data = { ...record.data as Record<string, unknown> }
-      if (Object.hasOwn(data, 'sessionFormatVersion') || Object.hasOwn(data, 'throughSeq')) {
+      if (Object.hasOwn(data, 'sessionFormatVersion')) {
         delete data.sessionFormatVersion
-        delete data.throughSeq
         record.data = data
         changed = true
       }
     }
-    return [changed ? JSON.stringify(record) : lines[index] as string]
+    return changed ? JSON.stringify(record) : line
   }).join('\n')
 }
 

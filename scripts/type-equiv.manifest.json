@@ -1913,6 +1913,11 @@
     },
     {
       "doc": "docs/subsystems/core.md",
+      "symbol": "AssistantStreamFrame",
+      "source": "packages/core/agent/src/runtime-types.ts"
+    },
+    {
+      "doc": "docs/subsystems/core.md",
       "symbol": "AgentOptions",
       "source": "packages/core/agent/src/runtime-types.ts"
     },

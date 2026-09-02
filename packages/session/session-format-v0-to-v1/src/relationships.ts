@@ -27,11 +27,21 @@ interface ToolLifecycle {
   state: 'advertised' | 'started'
 }
 
+/** Relationship roles added by a later format while reusing the released validator. */
+export interface ReleasedRelationshipExtensions {
+  /** Event types that must occur inside the current open step. */
+  readonly stepEvents?: ReadonlySet<string>
+}
+
 /**
  * Validate cross-event relationships required to construct one current Session safely.
  * @param artifact - complete normalized v0 or exact current v1 artifact.
+ * @param extensions - later-generation event roles interpreted by the calling format owner.
  */
-export function assertReleasedArtifactRelationships(artifact: SessionFormatArtifact): void {
+export function assertReleasedArtifactRelationships(
+  artifact: SessionFormatArtifact,
+  extensions: ReleasedRelationshipExtensions = {},
+): void {
   let openTurn: number | null = null
   let openStep: number | null = null
   let openStepProvider: string | undefined
@@ -48,13 +58,17 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
   const commandRuns = new Set<string>()
 
   for (const event of artifact.events) {
-    if (RELEASED_V0_EVENT_DISPOSITIONS[event.type] === undefined
-      && event.type !== 'assistant/attempt') continue
+    const extensionStepEvent = extensions.stepEvents?.has(event.type) === true
+    if (RELEASED_V0_EVENT_DISPOSITIONS[event.type] === undefined && !extensionStepEvent) continue
     const data = releasedV0Record(event.data, `${event.type} ${event.seq} data`)
     if (SURFACE_TYPES.has(event.type)) surface = applySurface(surface, event)
     if ((event.type === 'turn/start' || event.type === 'turn/end')
       && openCompaction !== undefined && !staleCompactionStarts.has(openCompaction.startSeq)) {
       throw new SessionFormatError(`${event.type} crosses an open compaction`)
+    }
+    if (extensionStepEvent) {
+      requireOpenStep(event, data, openTurn, openStep)
+      continue
     }
 
     switch (event.type) {
@@ -64,7 +78,6 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
         }
         openTurn = data['turn']
         openStep = null
-        openStepProvider = undefined
         toolLifecycles.clear()
         nextStep = 1
         break
@@ -84,18 +97,15 @@ export function assertReleasedArtifactRelationships(artifact: SessionFormatArtif
           throw new SessionFormatError(`${event.type} does not match the open turn and next step`)
         }
         openStep = data['step']
-        openStepProvider = undefined
         break
       case 'step/end':
         requireOpenStep(event, data, openTurn, openStep)
         assertNoUnresolvedTools(toolLifecycles, 'step/end')
         toolLifecycles.clear()
         openStep = null
-        openStepProvider = undefined
         nextStep += 1
         break
       case 'assistant/chunk':
-      case 'assistant/attempt':
         requireOpenStep(event, data, openTurn, openStep)
         break
       case 'assistant/message': {

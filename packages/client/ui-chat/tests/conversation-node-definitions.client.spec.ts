@@ -11,6 +11,8 @@ import {
   type ConversationViewDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import { AssistantStreamAccumulator } from '@deepseek-ai/dsh-llm/assistant-stream'
+import type { StreamChunk } from '@deepseek-ai/dsh-llm'
 import { hasAssistantReplyContent } from '../src/client/contract/assistant-content.ts'
 import { assistantDefinition } from '../src/client/conversation-nodes/assistant.ts'
 import { chatViewDefinition } from '../src/client/conversation-nodes/chat-snapshot-builder.ts'
@@ -84,7 +86,64 @@ function at(
 }
 
 function packedInputs(entries: readonly SessionLiveEventEntry[]): SessionEventLikeEntry[] {
-  return [...entries]
+  const output: SessionEventLikeEntry[] = []
+  let active: {
+    readonly turn: number
+    readonly step: number
+    readonly stream: AssistantStreamAccumulator
+    last: SessionLiveEventEntry
+  } | undefined
+  const flush = (): void => {
+    if (active === undefined) return
+    output.push(at(active.last.event.seq, 'assistant/attempt', {
+      turn: active.turn,
+      step: active.step,
+      stream: active.stream.snapshot(),
+    }, { time: active.last.event.time }))
+    active = undefined
+  }
+  for (const entry of entries) {
+    const event = entry.event as unknown as {
+      readonly type: string
+      readonly time: number
+      readonly data: { readonly turn?: number; readonly step?: number; readonly chunk?: StreamChunk }
+    }
+    if (event.type === 'assistant/live-chunk'
+      && event.data.turn !== undefined
+      && event.data.step !== undefined
+      && event.data.chunk !== undefined) {
+      if (active !== undefined && (active.turn !== event.data.turn || active.step !== event.data.step)) flush()
+      const current = active ?? {
+        turn: event.data.turn,
+        step: event.data.step,
+        stream: new AssistantStreamAccumulator(),
+        last: entry,
+      }
+      active = current
+      current.stream.push({ time: event.time, chunk: event.data.chunk })
+      current.last = entry
+      continue
+    }
+    const current = active
+    if (event.type === 'assistant/message'
+      && current !== undefined
+      && current.turn === event.data.turn
+      && current.step === event.data.step) {
+      output.push({
+        ...entry,
+        event: {
+          ...entry.event,
+          data: { ...entry.event.data, stream: current.stream.snapshot() },
+        } as SessionEvent,
+      })
+      active = undefined
+      continue
+    }
+    flush()
+    output.push(entry)
+  }
+  flush()
+  return output
 }
 
 function assembler(entries: readonly SessionEventLikeEntry[] = [], hasMore = false): ConversationNodeAssembler {
@@ -133,6 +192,24 @@ function comparableSnapshot(value: ChatSnapshot) {
     navigation: value.navigation.items(),
     legacy: value.legacy,
   }
+}
+
+function withoutEmbeddedSequenceAnchors(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(withoutEmbeddedSequenceAnchors)
+  if (value instanceof Map) {
+    return new Map([...value].map(([key, entry]) => [key, withoutEmbeddedSequenceAnchors(entry)]))
+  }
+  if (typeof value !== 'object' || value === null) return value
+  return Object.fromEntries(Object.entries(value).map(([key, entry]) => [
+    key,
+    key === 'anchorSeq' || key === 'controlAnchorSeq' || key === 'processStartSeq'
+      ? '<representation-owned-seq>'
+      : withoutEmbeddedSequenceAnchors(entry),
+  ]))
+}
+
+function comparableEmbeddedSnapshot(value: ChatSnapshot): unknown {
+  return withoutEmbeddedSequenceAnchors(comparableSnapshot(value))
 }
 
 function textMessage(id: string, text: string) {
@@ -877,7 +954,7 @@ describe('built-in conversation node Definitions', () => {
     })
   })
 
-  it('folds packed Assistant runs to the same Chat and Turn Tail state as scalar deltas', () => {
+  it('folds packed Assistant runs to the same Chat content and Turn Tail state as scalar deltas', () => {
     const runningHistory = [
       at(1, 'turn/start', { turn: 1 }),
       at(2, 'step/start', { turn: 1, step: 1 }),
@@ -917,12 +994,16 @@ describe('built-in conversation node Definitions', () => {
     ]
     const scalar = assembler(runningHistory)
     const packedHistory = packedInputs(runningHistory)
-    expect(packedHistory.filter(input => input.event.type.startsWith('chunkrow/'))).toHaveLength(0)
+    expect(packedHistory).toHaveLength(3)
+    const runningAttempt = packedHistory.at(-1)?.event
+    expect(runningAttempt?.type).toBe('assistant/attempt')
+    if (runningAttempt?.type !== 'assistant/attempt') throw new Error('expected packed running attempt')
+    expect(runningAttempt.data.stream.length).toBeGreaterThan(0)
     const packed = assembler(packedHistory)
 
-    expect(comparableSnapshot(snapshot(packed))).toEqual(comparableSnapshot(snapshot(scalar)))
+    expect(comparableEmbeddedSnapshot(snapshot(packed))).toEqual(comparableEmbeddedSnapshot(snapshot(scalar)))
     const running = node(snapshot(packed), 'assistant-step')
-    expect(running).toMatchObject({ anchorSeq: 6 })
+    expect(running).toMatchObject({ anchorSeq: 12 })
     expect(running?.data).toMatchObject({
       time: 1_004,
       blocks: [
@@ -937,7 +1018,7 @@ describe('built-in conversation node Definitions', () => {
       value.append(at(14, 'turn/end', { turn: 1, reason: { kind: 'completed' } }))
       value.flush()
     }
-    expect(comparableSnapshot(snapshot(packed))).toEqual(comparableSnapshot(snapshot(scalar)))
+    expect(comparableEmbeddedSnapshot(snapshot(packed))).toEqual(comparableEmbeddedSnapshot(snapshot(scalar)))
     expect(node(snapshot(packed), 'turn-tail')?.anchorSeq).toBe(12.2)
 
     const partialHistory = [
@@ -947,7 +1028,7 @@ describe('built-in conversation node Definitions', () => {
     ]
     const partialScalar = snapshot(assembler(partialHistory, true))
     const partialPacked = snapshot(assembler(packedInputs(partialHistory), true))
-    expect(comparableSnapshot(partialPacked)).toEqual(comparableSnapshot(partialScalar))
+    expect(comparableEmbeddedSnapshot(partialPacked)).toEqual(comparableEmbeddedSnapshot(partialScalar))
     expect(node(partialPacked, 'assistant-step')?.data).toMatchObject({ status: 'interrupted' })
     expect(node(partialPacked, 'turn-tail')?.anchorSeq).toBe(12.2)
 
@@ -982,8 +1063,13 @@ describe('built-in conversation node Definitions', () => {
       }, { surfaceOp: 'append' }),
     ]
     const finalizedScalar = snapshot(assembler(finalizedHistory))
-    const finalizedPacked = snapshot(assembler(packedInputs(finalizedHistory)))
-    expect(comparableSnapshot(finalizedPacked)).toEqual(comparableSnapshot(finalizedScalar))
+    const finalizedInputs = packedInputs(finalizedHistory)
+    expect(finalizedInputs.filter(input => input.event.type === 'assistant/attempt')).toHaveLength(1)
+    const finalizedMessage = finalizedInputs.find(input => input.event.type === 'assistant/message')?.event
+    if (finalizedMessage?.type !== 'assistant/message') throw new Error('expected packed final message')
+    expect(finalizedMessage.data.stream.length).toBeGreaterThan(0)
+    const finalizedPacked = snapshot(assembler(finalizedInputs))
+    expect(comparableEmbeddedSnapshot(finalizedPacked)).toEqual(comparableEmbeddedSnapshot(finalizedScalar))
     const finalNode = (node(finalizedPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(finalNode?.timing?.firstTokenTime).toBe(1_999)
 
@@ -1004,8 +1090,12 @@ describe('built-in conversation node Definitions', () => {
       }, { surfaceOp: 'append' }),
     ]
     const namedToolScalar = snapshot(assembler(namedToolHistory))
-    const namedToolPacked = snapshot(assembler(packedInputs(namedToolHistory)))
-    expect(comparableSnapshot(namedToolPacked)).toEqual(comparableSnapshot(namedToolScalar))
+    const namedToolInputs = packedInputs(namedToolHistory)
+    const namedToolMessage = namedToolInputs.find(input => input.event.type === 'assistant/message')?.event
+    if (namedToolMessage?.type !== 'assistant/message') throw new Error('expected packed named-tool message')
+    expect(namedToolMessage.data.stream.length).toBeGreaterThan(0)
+    const namedToolPacked = snapshot(assembler(namedToolInputs))
+    expect(comparableEmbeddedSnapshot(namedToolPacked)).toEqual(comparableEmbeddedSnapshot(namedToolScalar))
     const namedTool = (node(namedToolPacked, 'assistant-step')?.data as AssistantChatData).finalNode
     expect(namedTool?.timing?.firstTokenTime).toBe(4_000)
   })

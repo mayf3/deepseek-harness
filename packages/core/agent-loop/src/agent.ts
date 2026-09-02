@@ -422,57 +422,62 @@ export class ReactLoopAgent implements Agent {
         }
         throw error
       }
-      const finish = live.finish
-      if (finish.kind === 'error' || finish.kind === 'aborted') {
+      try {
+        const finish = live.finish
+        if (finish.kind === 'error' || finish.kind === 'aborted') {
+          live.settle(
+            'assistant/attempt',
+            () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
+          )
+          const action = await this.dispatch.waterfall(
+            'agent/request-error', {
+              turn,
+              step,
+              provider: request.provider,
+              failure: finish.failure,
+              retryPolicy: preparedCall?.retryPolicy,
+              signal,
+            },
+            () => Promise.resolve<RequestErrorAction>(undefined),
+          )
+          signal.throwIfAborted()
+          if (action?.kind !== 'retry') {
+            throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
+          }
+          continue
+        }
+
+        const message = createAssistantMessage({
+          content: live.blocks(),
+          source: {
+            provider: request.provider,
+            model: request.model,
+            ...live.replayState !== undefined ? { replayState: live.replayState } : {},
+          },
+        })
         live.settle(
-          'assistant/attempt',
-          () => this.session.append('assistant/attempt', { turn, step, stream: live.stream }).seq,
-        )
-        const action = await this.dispatch.waterfall(
-          'agent/request-error', {
+          'assistant/message',
+          () => this.session.append('assistant/message', {
             turn,
             step,
-            provider: request.provider,
-            failure: finish.failure,
-            retryPolicy: preparedCall?.retryPolicy,
-            signal,
-          },
-          () => Promise.resolve<RequestErrorAction>(undefined),
+            message,
+            ...live.usage === undefined ? {} : { usage: live.usage },
+            stream: live.stream,
+          }, { surfaceOp: 'append' }).seq,
         )
-        signal.throwIfAborted()
-        if (action?.kind !== 'retry') {
-          throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
-        }
-        continue
+        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+
+        const toolCalls = message.content.filter(block => block.type === 'tool-call')
+        if (toolCalls.length === 0) return { kind: 'completed' }
+        const { concluded } = await executeToolCalls(
+          this.loopCtx, turn, step, toolCalls, signal,
+          context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+        )
+        return concluded ? { kind: 'completed' } : null
+      } catch (error: unknown) {
+        if (!live.ended) live.abandon()
+        throw error
       }
-
-      const message = createAssistantMessage({
-        content: live.blocks(),
-        source: {
-          provider: request.provider,
-          model: request.model,
-          ...live.replayState !== undefined ? { replayState: live.replayState } : {},
-        },
-      })
-      live.settle(
-        'assistant/message',
-        () => this.session.append('assistant/message', {
-          turn,
-          step,
-          message,
-          ...live.usage === undefined ? {} : { usage: live.usage },
-          stream: live.stream,
-        }, { surfaceOp: 'append' }).seq,
-      )
-      if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
-
-      const toolCalls = message.content.filter(block => block.type === 'tool-call')
-      if (toolCalls.length === 0) return { kind: 'completed' }
-      const { concluded } = await executeToolCalls(
-        this.loopCtx, turn, step, toolCalls, signal,
-        context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
-      )
-      return concluded ? { kind: 'completed' } : null
     }
   }
 

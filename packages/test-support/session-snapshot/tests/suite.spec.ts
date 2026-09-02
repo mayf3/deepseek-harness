@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -214,12 +214,12 @@ describe('defineAcpSnapshotSuite: refresh write-back', () => {
 })
 
 describe('defineAcpSnapshotSuite: record inventory write-back', () => {
-  it('creates a missing primary fixture and removes generations for a retired child role', () => {
+  it('creates a missing primary fixture and preserves generations for a retired child role', () => {
     const fixture = readFileSync(join(recordDir, 'rec-pin', 'session.v2.jsonl'), 'utf8')
     expect(fixture).toContain('"type":"session"')
     expect(fixture).toContain('"cwd":"{{cwd}}"')
     if (!BOOTSTRAP) {
-      expect(existsSync(join(recordDir, 'rec-child', 'session.2.jsonl'))).toBe(false)
+      expect(readFileSync(join(recordDir, 'rec-child', 'session.2.jsonl'), 'utf8')).toBe(retiredChildFixture)
     }
     expect(readFileSync(join(recordDir, 'rec-child', 'tool-schemas.1.expected.json'), 'utf8'))
       .toContain('"name": "t1"')

@@ -750,7 +750,7 @@ describe('normalizeSessionSnapshot', () => {
       .split('\n')
       .map(line => JSON.parse(line) as Record<string, unknown>) ?? []
 
-    expect(delivery?.data).toEqual({ otherVersion: 8 })
+    expect(delivery?.data).toEqual({ throughSeq: 21, otherVersion: 8 })
     expect(captured?.data).toMatchObject({
       source: {
         references: [
@@ -792,89 +792,6 @@ describe('normalizeSessionSnapshot', () => {
     const normalized = normalizeSessionFormatProvenance(lookalike).split('\n')
     expect(JSON.parse(normalized[0] as string)).not.toHaveProperty('version')
     expect(normalized[1]).toBe(lookalike.split('\n')[1])
-  })
-
-  it('removes an inert end-seed and densely remaps declared references for comparison', () => {
-    const raw = [
-      { type: 'session', version: 2, id: 's', createdAt: 0, isSeeded: false, delegationDepth: 0 },
-      { type: 'feedback/record', seq: 0, time: 0, data: { text: 'before' } },
-      { type: 'session/end-seed', seq: 1, time: 0, data: {} },
-      { type: 'session/title', seq: 2, time: 0, data: { title: 'title', messageSeqs: [0, 2] } },
-      { type: 'command/done', seq: 3, time: 0, data: { sourceEventSeq: 2 } },
-      {
-        type: 'user/message',
-        seq: 4,
-        time: 0,
-        data: {},
-        sourceEventSeqs: [0, 2],
-        surfaceOp: { op: 'replace', start: 0, end: 2 },
-      },
-    ].map(record => JSON.stringify(record)).join('\n')
-
-    const records = normalizeSessionFormatProvenance(raw).split('\n')
-      .map(line => JSON.parse(line) as Record<string, unknown>)
-
-    expect(records.map(record => record.type)).not.toContain('session/end-seed')
-    expect(records[2]).toMatchObject({ seq: 1, data: { messageSeqs: [0, 1] } })
-    expect(records[3]).toMatchObject({ seq: 2, data: { sourceEventSeq: 1 } })
-    expect(records[4]).toMatchObject({
-      seq: 3,
-      sourceEventSeqs: [0, 1],
-      surfaceOp: { start: 0, end: 1 },
-    })
-  })
-
-  it('remaps multiple inert markers, compaction provenance, and opaque reference values', () => {
-    const raw = [
-      { type: 'session', version: 2 },
-      { type: 'session/end-seed', seq: 1, data: {} },
-      { type: 'session/end-seed', seq: 3, data: {} },
-      {
-        type: 'compaction/end',
-        seq: 5,
-        data: {
-          shadowedRange: { start: 0, end: 5 },
-          shadowedSeqs: 'opaque',
-        },
-      },
-      {
-        type: 'session-log-deepseek/delivery-accepted',
-        seq: 6,
-        data: { retained: true },
-      },
-      {
-        type: 'custom/event',
-        seq: 7,
-        sourceEventSeqs: ['opaque', 1.5, 5],
-        ignorable: true,
-      },
-      { type: 'session/end-seed', data: {} },
-    ].map(record => JSON.stringify(record)).join('\n')
-
-    const records = normalizeSessionFormatProvenance(raw).split('\n')
-      .map(line => JSON.parse(line) as Record<string, unknown>)
-
-    expect(records).toHaveLength(4)
-    expect(records[1]).toMatchObject({
-      seq: 3,
-      data: {
-        shadowedRange: { start: 0, end: 3 },
-        shadowedSeqs: 'opaque',
-      },
-    })
-    expect(records[2]).toMatchObject({ seq: 4, data: { retained: true } })
-    expect(records[3]).toMatchObject({ seq: 5, sourceEventSeqs: ['opaque', 1.5, 3] })
-  })
-
-  it('rejects a declared reference to an inert end-seed', () => {
-    const raw = [
-      { type: 'session', version: 2 },
-      { type: 'session/end-seed', seq: 1, data: {} },
-      { type: 'command/done', seq: 2, data: { sourceEventSeq: 1 } },
-    ].map(record => JSON.stringify(record)).join('\n')
-
-    expect(() => normalizeSessionFormatProvenance(raw))
-      .toThrow('Session snapshot comparison reference targets inert end-seed 1')
   })
 
   it('projects persisted provenance ranges back to logical seq arrays', () => {

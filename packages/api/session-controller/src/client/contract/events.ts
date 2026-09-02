@@ -26,6 +26,11 @@ export type SessionEventLikeEntry =
 
 /** Scalar live entry accepted by append-only Client paths. */
 export type SessionLiveEventEntry = Extract<SessionEventLikeEntry, { readonly type: 'event' }>
+/** Durable Assistant event that atomically supersedes one attempt's transient rows. */
+export interface SessionAssistantSettlementEntry {
+  readonly type: 'event'
+  readonly event: SessionEvent<'assistant/message'> | SessionEvent<'assistant/attempt'>
+}
 /** Client-only Assistant frame admitted outside durable cursor algebra. */
 export type SessionTransientEventEntry = Extract<SessionEventLikeEntry, { readonly type: 'transient' }>
 
@@ -94,6 +99,11 @@ export type SessionEventChange =
   | { readonly kind: 'replace'; readonly entries: readonly SessionEventLikeEntry[] }
   | { readonly kind: 'prepend'; readonly entries: readonly SessionEventLikeEntry[] }
   | { readonly kind: 'append'; readonly entries: readonly SessionEventLikeEntry[] }
+  | {
+    readonly kind: 'settle-assistant'
+    readonly attemptId: LlmAttemptId
+    readonly entry?: SessionAssistantSettlementEntry
+  }
 
 /** Current contiguous event window and its latest synchronous delta. */
 export interface SessionEventWindow {
@@ -168,13 +178,21 @@ export class MutableSessionEventSource implements SessionEventSource {
    * @param attemptId - process-local attempt whose live rows are now redundant.
    * @param entry - durable settlement committed for that attempt.
    */
-  settleAssistant(attemptId: string, entry: SessionLiveEventEntry): void {
+  settleAssistant(attemptId: LlmAttemptId, entry?: SessionAssistantSettlementEntry): void {
     const entries = materialize(this.window).filter(candidate => (
-      candidate.type !== 'transient' || String(candidate.event.data.attemptId) !== attemptId
+      candidate.type !== 'transient' || candidate.event.data.attemptId !== attemptId
     ))
-    entries.push(entry)
+    if (entry !== undefined) {
+      const index = entries.findIndex(candidate => candidate.event.seq > entry.event.seq)
+      if (index < 0) entries.push(entry)
+      else entries.splice(index, 0, entry)
+    }
     this.window = leaf(entries)
-    this.publish(this.snapshot.hasMore, { kind: 'replace', entries })
+    this.publish(this.snapshot.hasMore, {
+      kind: 'settle-assistant',
+      attemptId,
+      ...(entry === undefined ? {} : { entry }),
+    })
   }
 
   private publish(

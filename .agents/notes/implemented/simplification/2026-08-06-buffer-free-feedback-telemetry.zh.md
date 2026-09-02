@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决策
 
-遥测 coordinator 提供 `live` 与 `on-demand` capture。按需 capture 不注册 Session、flush 或 operational-event listener，也不保留 record 副本。`captureSession(session, throughSeq?)` 从同一对象 handoff cursor 之后读取规范 Session log，直至可选的包含式序号 boundary，按序 deep-copy 每个 event、运行当前 `session-telemetry/record` waterfall，并为每个 event 向 backend 交接一条 record，其中包括每个带完整嵌入式 stream 的 `assistant/message` 或 `assistant/attempt`。新 Session 对象没有 WeakMap entry，因此逻辑 cursor 为 `-1`，capture 从 seq 0 开始。
+遥测 coordinator 提供 `live` 与 `on-demand` capture。按需 capture 不注册 Session、flush 或 operational-event listener，也不保留 record 副本。`captureSession(session, throughSeq?)` 从同一对象 handoff cursor 之后读取规范 Session log，直至可选的包含式序号 boundary，按序 deep-copy 每个 event、运行当前 `session-telemetry/record` waterfall，并为每个 event 向 backend 交接一条 record，其中包括生命周期本地的每个带完整嵌入式 stream 的 `assistant/message` 或 `assistant/attempt`。新 Session 对象没有 WeakMap entry，因此逻辑 cursor 位于 `firstLiveSeq` 之前：全新对象为 `-1`，fork、resume 或迁移对象则为 constructor seed 的最后一个序号。
 
-`FEEDBACK_ONLY` 以 `feedback/record` 事件的序列号调用该方法。`session/event` 监听器运行时，追加已经提交，因此回放包含该反馈事件，且无法包含后续后缀。以对象为键的 handoff 游标可区分后续回放，无需另一个待处理记录索引：同一对象上的重复反馈只释放后缀，而新的 resume 或迁移对象上的首次反馈会释放其完整当前权威前缀。
+`FEEDBACK_ONLY` 以 `feedback/record` 事件的序列号调用该方法。`session/event` 监听器运行时，追加已经提交，因此回放包含该反馈事件，且无法包含后续后缀。以对象为键的 handoff 游标可区分后续回放，无需另一个待处理记录索引：同一对象上的重复反馈只释放后缀，而新的 resume 或迁移对象上的首次反馈只释放本生命周期边界及其后缀。
 
 按需捕获只读取权威日志，因此不会发出 `agent-error` 或 `shutdown` 运维记录。脱敏在反馈时而非追加时求值。[反馈模式决策](../feature/2026-08-05-feedback-gated-session-telemetry.zh.md)规定公开的共享行为；本记录规定其无缓冲实现。
 
@@ -26,4 +26,4 @@ Status: implemented
 
 ## 后果
 
-没有反馈的会话不会消耗随事件数量增长的遥测自有内存；权威会话日志仍是反馈前的唯一副本。反馈处理会在后端非阻塞入队前同步执行深拷贝与脱敏，因此其开销随未释放前缀增长，并包含每条 chunk 事件。反馈前的脱敏策略变更会影响该次回放；反馈前发生崩溃时不会上传任何内容，除非后续恢复出新的 Session 对象并由反馈释放其日志。每个新对象首次捕获时从 seq 0 开始；同一对象上的后续反馈只处理 handoff 游标之后的事件。接收端基于 `(session.id, session.format_version, event.seq)` 对新对象回放去重。
+没有反馈的会话不会消耗随事件数量增长的遥测自有内存；权威会话日志仍是反馈前的唯一副本。反馈处理会在后端非阻塞入队前同步执行深拷贝与脱敏，因此其开销随未释放的生命周期本地前缀增长，并包含该后缀中的每个嵌入式 Assistant stream。反馈前的脱敏策略变更会影响该次回放；反馈前发生崩溃时不会上传任何内容。每个新对象首次捕获时从 constructor boundary 开始；同一对象上的后续反馈只处理 handoff 游标之后的事件。接收端基于 `(session.id, session.format_version, event.seq)` 对重复的生命周期本地行去重。

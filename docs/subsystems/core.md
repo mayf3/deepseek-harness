@@ -152,6 +152,46 @@ interface Agent {
 type AgentStatus = 'idle' | 'running'
 ```
 
+```ts type-equiv
+/** One process-local live assistant streaming publication. */
+type AssistantStreamFrame =
+  | {
+    readonly type: 'start'
+    readonly attemptId: LlmAttemptId
+    /** Monotone within one attached Agent lifecycle; replacement restarts at 1. */
+    readonly revision: number
+    /** Safe-integer wall-clock time captured when this attempt started. */
+    readonly startedTime: number
+    readonly turn: number
+    readonly step: number
+  }
+  | {
+    readonly type: 'chunk'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    /** Dense zero-based position within the attempt. */
+    readonly index: number
+    /** Safe-integer timestamp reused by the durable embedded stream. */
+    readonly time: number
+    readonly chunk: StreamChunk
+  }
+  | {
+    readonly type: 'end'
+    readonly attemptId: LlmAttemptId
+    readonly revision: number
+    /** Number of chunk frames emitted by this attempt. */
+    readonly index: number
+    /** Durable settlement committed before this notification, or live abandonment without one. */
+    readonly outcome:
+      | {
+        readonly kind: 'committed'
+        readonly eventType: 'assistant/message' | 'assistant/attempt'
+        readonly seq: SessionSeq
+      }
+      | { readonly kind: 'abandoned' }
+  }
+```
+
 `running` describes the driver-wide drain interval and may span consecutive queued turns; it does not prove a turn is still open. Disposal removes the agent from the registry and emits `agent/disposed`; it is not a terminal status value. `followup()` returns no handle: its `MessageId` identifies durable inbox insertion, claim, and discard facts, not a later assistant output or turn ending. `whenIdle()` observes the whole agent, so callers may call a receipt-to-idle interval a run only when they explicitly own that interval ([decision](../../.agents/notes/implemented/architecture/2026-07-30-followup-enqueue-and-owned-runs.md)).
 
 ```ts type-equiv

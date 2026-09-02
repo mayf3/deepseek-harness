@@ -51,12 +51,12 @@ export function ProviderRequestId(id: string): ProviderRequestId {
   return brandString<ProviderRequestId>(id)
 }
 
-/** Process-local identity of one loop-owned model streaming attempt. */
+/** Identity of one model streaming attempt, unique within one Agent lifecycle. */
 export type LlmAttemptId = Branded<'LlmAttemptId'>
 
 /**
  * Brand one loop-owned streaming attempt identifier.
- * @param id - the opaque process-local identifier.
+ * @param id - the opaque Agent-lifecycle-local identifier.
  * @returns the same string with the attempt-id brand.
  */
 export function LlmAttemptId(id: string): LlmAttemptId {

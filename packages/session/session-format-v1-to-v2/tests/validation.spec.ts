@@ -416,6 +416,9 @@ describe('released v2 restoration seam', () => {
       installedExtension,
       new Set([...RELEASED_V2_EVENT_TYPES, 'external/installed']),
     )).toBe(installedExtension)
+    const extendedPayload = artifact([event('turn/start', 0, { turn: 1, postReleaseMember: true })])
+    expect(restoreReleasedV2Artifact(extendedPayload, new Set(RELEASED_V2_EVENT_TYPES)))
+      .toBe(extendedPayload)
     expect(() => restoreReleasedV2Artifact(
       artifact([event('external/unknown', 0, {})]),
       new Set(RELEASED_V2_EVENT_TYPES),

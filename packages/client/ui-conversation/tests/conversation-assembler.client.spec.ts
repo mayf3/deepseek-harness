@@ -509,6 +509,74 @@ describe('ConversationNodeAssembler', () => {
     ))).toHaveLength(1)
   })
 
+  it('settles one Assistant attempt without replacing unrelated Contexts', () => {
+    interface State { readonly events: readonly string[] }
+    const definition: ConversationNodeDefinition<State> = {
+      kind: 'assistant-settlement',
+      target: 'test',
+      match: (event) => {
+        if (event.type === 'step/start') {
+          return { id: `${String(event.data.turn)}:${String(event.data.step)}`, role: 'start' }
+        }
+        if (event.type === 'assistant/live-chunk'
+          || event.type === 'assistant/message'
+          || event.type === 'assistant/attempt'
+          || event.type === 'llm/retry') {
+          return { id: `${String(event.data.turn)}:${String(event.data.step)}`, role: 'update' }
+        }
+        return null
+      },
+      start: () => ({ events: [] }),
+      update: (context, match) => ({
+        events: [...context.state.events, match.event.type],
+      }),
+      buildViewNode: context => context.state === undefined
+        ? null
+        : node(context, context.state.events),
+    }
+    const apply = vi.fn()
+    const assembler = new ConversationNodeAssembler(
+      new TestEventDefinitions([definition]),
+      new TestViewDefinitions([testView(apply)]),
+    )
+    const firstStart = input(at(SessionSeq(10), 'step/start', { turn: 2, step: 3 }))
+    const secondStart = input(at(SessionSeq(11), 'step/start', { turn: 2, step: 4 }))
+    const delta = transientChunk(11.5, 2, 3, { type: 'text-delta', index: 0, text: 'abc' })
+    const later = input(at(SessionSeq(13), 'llm/retry', { turn: 2, step: 3 }))
+    assembler.replaceWindow([firstStart, secondStart, delta, later], false)
+    assembler.flush()
+    const before = [...testSnapshot(assembler)?.nodes.values() ?? []]
+    const unaffected = before.find(candidate => candidate.id === '2:4')
+    expect(unaffected).toBeDefined()
+    apply.mockClear()
+    const settlementEvent = at(SessionSeq(12), 'assistant/message', {
+      turn: 2,
+      step: 3,
+      message: { role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
+      stream: [],
+    })
+    if (settlementEvent.type !== 'assistant/message') throw new Error('expected Assistant settlement')
+    const settlement = { type: 'event' as const, event: settlementEvent }
+
+    expect(assembler.settleAssistant(LlmAttemptId('test-attempt'), settlement)).toBe('immediate')
+    assembler.flush()
+
+    const after = [...testSnapshot(assembler)?.nodes.values() ?? []]
+    expect(after.find(candidate => candidate.id === '2:3')?.data)
+      .toEqual(['assistant/message', 'llm/retry'])
+    expect(after.find(candidate => candidate.id === '2:4')).toBe(unaffected)
+    expect(apply).toHaveBeenCalledOnce()
+    expect(apply.mock.calls[0]?.[0]).toHaveLength(1)
+
+    assembler.append(transientChunk(13.5, 2, 3, { type: 'reasoning-delta', index: 0, text: 'x' }))
+    assembler.flush()
+    expect(assembler.settleAssistant(LlmAttemptId('test-attempt'))).toBe('immediate')
+    assembler.flush()
+    expect([...testSnapshot(assembler)?.nodes.values() ?? []]
+      .find(candidate => candidate.id === '2:3')?.data)
+      .toEqual(['assistant/message', 'llm/retry'])
+  })
+
   it('replays one pending transient Match after prepend supplies its durable start', () => {
     const starts = vi.fn(() => ({ batches: 0, status: 'unresolved' }))
     const updates = vi.fn((

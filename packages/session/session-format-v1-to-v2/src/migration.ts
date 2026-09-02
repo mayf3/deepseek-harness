@@ -147,6 +147,8 @@ function collectAttemptGroups(events: readonly SessionFormatEvent[]): readonly A
       continue
     }
     if (sources.length === 0) {
+      // Released v1 uses an explicit empty list to state that this message
+      // owns no preceding chunks; an absent list cannot make that claim.
       groups.push({ turn, step, chunks: [], terminal: true, messageSeq: event.seq })
       continue
     }

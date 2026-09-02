@@ -384,6 +384,7 @@ function stderrFromSession(log: string): string {
         const streamRecord = entry as JsonObject
         consume(streamRecord.type, streamRecord)
       }
+      close()
       continue
     }
     consume(record.type, data)
@@ -703,6 +704,28 @@ describe('headless recorded-session snapshots', () => {
       expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\n')
     },
   )
+
+  it('closes reasoning between embedded Assistant settlements', () => {
+    const log = [
+      { type: 'turn/start', data: { turn: 1 } },
+      {
+        type: 'assistant/attempt',
+        data: { stream: [{ type: 'reasoning-chunks', texts: ['first', ' thought'] }] },
+      },
+      {
+        type: 'assistant/message',
+        data: {
+          stream: [
+            { type: 'chunk', chunk: { type: 'reasoning-delta', index: 0, text: 'second' } },
+            { type: 'chunk', chunk: { type: 'finish', reason: { kind: 'stop' } } },
+          ],
+        },
+      },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ].map(record => JSON.stringify(record)).join('\n')
+
+    expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\ndsh: reasoning:\nsecond\n')
+  })
 
   for (const scenario of scenarios) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'

@@ -35,7 +35,7 @@ export interface DeepSeekSessionLogWireEvent {
 
 /** Versioned incremental session-log field carried by an official DeepSeek request. */
 export interface DeepSeekSessionLogExtension {
-  readonly version: 1
+  readonly version: 2
   /** Session format generation represented by this suffix. */
   readonly sessionFormatVersion: number
   readonly session: DeepSeekSessionLogWireHeader

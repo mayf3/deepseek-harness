@@ -78,7 +78,7 @@
 ```json
 {
   "dsh_session_log": {
-    "version": 1,
+    "version": 2,
     "sessionFormatVersion": 2,
     "session": {
       "version": 2,
@@ -104,7 +104,7 @@
 
 | 成员 | 类型 | 含义 |
 |---|---|---|
-| `version` | `1` | `dsh_session_log` 的 schema 版本 |
+| `version` | `2` | `dsh_session_log` 的 schema 版本 |
 | `sessionFormatVersion` | 非负整数 | 该后缀所表示的 Session 格式 generation |
 | `session` | 对象 | 当前 Session header 的不可变协议投影 |
 | `afterSeq` | 整数 | 本次请求前记录为已接受的最大序号，或 `-1` |
@@ -115,7 +115,7 @@
 
 ### Session 协议 header
 
-`session` 成员投影 `Session.header`，既不是完整的运行时 Session，也不是 header 对象本身。它复制当前 header 事实，包括必需的 `isSeeded` 谱系位；精确的 `Session.inheritedEventCount` 不属于该请求字段。外层 `dsh_session_log.version` 选择本扩展 schema，`session.version` 则选择逻辑 Session 格式；两个版本值相互独立演进。
+`session` 成员投影 `Session.header`，既不是完整的运行时 Session，也不是 header 对象本身。它复制当前 header 事实，包括必需的 `isSeeded` 谱系位；精确的 `Session.inheritedEventCount` 不属于该请求字段。外层 `dsh_session_log.version` 选择本扩展 schema，`session.version` 则选择逻辑 Session 格式。即使嵌入的逻辑格式同时变化，只要 Session header 投影变化，扩展 schema 也必须升版。
 
 | 成员 | 出现条件 | 含义 |
 |---|---|---|

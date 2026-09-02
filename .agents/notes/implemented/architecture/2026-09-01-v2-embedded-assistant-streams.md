@@ -27,7 +27,7 @@ The current v2 validator requires the embedded stream to reproduce a non-empty `
 
 `agent/assistant-stream` publishes process-local start, transient chunk, and end frames. The loop appends the complete `assistant/message` or `assistant/attempt` before a committed end frame names its type and sequence. An abandoned end has no settlement.
 
-The Web follow adapter opts into these process-local frames and adds the last durable sequence observed at each start. It presents chunks as Client-only `assistant/live-chunk` updates between durable cursors, stages only a later matching settlement until the committed end, replaces that attempt's transient rows with the settlement, and reopens follow on a revision gap. A reconnect baseline carries the active attempt's durable start cursor and compact prefix. Paged history, replay, telemetry, token accounting, and cold UI assembly read the durable embedded stream rather than the live frames.
+The Web follow adapter opts into these process-local frames and adds the last durable sequence observed at each start. It presents chunks as Client-only `assistant/live-chunk` updates between durable cursors, stages only a later matching settlement until the committed end, and reopens follow on a revision gap. A committed end publishes a named settlement delta that removes the attempt's transient matches, adds the durable entry, and replays only affected Conversation Contexts; an abandoned end publishes the same delta without an entry. A reconnect baseline carries the active attempt's durable start cursor and compact prefix. Paged history, replay, telemetry, token accounting, and cold UI assembly read the durable embedded stream rather than the live frames.
 
 ### Released v1 to v2 migration
 
@@ -35,7 +35,11 @@ The adjacent migration validates the complete frozen v1 artifact, groups chunks 
 
 The edge remaps the finite declared reference inventory: envelope provenance, surface replacement endpoints, command source events, compaction ranges and shadowed lists, and title message lists. A reference to a consumed chunk refuses migration; it is never redirected to a settlement with different meaning. The edge also refuses an inherited cut that splits an attempt.
 
-The v2 physical header requires `isSeeded` and stores no numeric cut. A seeded artifact marks its exact cut with `session/end-seed { inherited: true }`; decoding derives the cut from the last tagged marker. The v2 codec writes one durable event per physical row and range-encodes only `sourceEventSeqs`. Frozen v0 and v1 codecs retain packed-row decoding for their immutable historical generations.
+The v2 physical header requires `isSeeded` and stores no numeric cut. A seeded artifact marks its exact cut with `session/end-seed { inherited: true }`; decoding derives the cut from the last tagged marker. The v2 codec writes one durable event per physical row, range-encodes only `sourceEventSeqs`, and validates physical envelopes without freezing ordinary event vocabulary or payload additions. The v1-to-v2 target validator separately freezes the released-v2 inventory, while current restoration uses the installed Session vocabulary. Frozen v0 and v1 codecs retain packed-row decoding for their immutable historical generations.
+
+A fresh subagent child's constructor seed is exactly the inherited parent prefix. `Session` appends the tagged cut marker, then subagent setup appends the child-owned descriptor and delegated policies. The former descriptor-seed helper is removed, so a descriptor is never counted as inherited and cold resume replays the persisted child-owned setup. Historical snapshot fixtures that placed an untagged marker after the descriptor are corrected at their source; current comparison keeps marker count and sequence references visible.
+
+The `dsh_session_log` request extension increments its outer schema to version 2 because its Session header projection replaces `seedLength` with required `isSeeded`. Its `sessionFormatVersion` member continues to identify the embedded logical Session generation.
 
 Generation selection and publication follow the [released Session migration decision](2026-08-31-released-session-format-migrations.md): the source path, bytes, and inode remain unchanged, only the final version-named successor is published, and retained predecessors provide neither fallback nor downgrade support.
 
@@ -43,7 +47,7 @@ Generation selection and publication follow the [released Session migration deci
 
 The compact-stream tests pin exact accumulation and expansion for text, reasoning, tool arguments, raw chunks, timestamp gaps, malformed records, and detached snapshots. The v1-to-v2 tests cover successful and failed attempts, interleaving, dense sequence and reference remapping, seed-cut insertion and split refusal, strict source and target validation, one-row v2 encoding, provenance ranges, raw and Zstandard publication, and no-write current reads.
 
-The manual performance acceptance compares current v2 catalog dispatch with a direct-current read of the same physical input across three runs, 100 warmup pairs, and 600 measured pairs. It requires every pooled median and p95 regression to remain within 5%; the accepted run's worst p95 regression was 3.150%. `--smoke` reports a non-gating diagnostic sample.
+The manual performance acceptance measures static catalog-routing overhead against direct released-v2 restoration of the same already parsed physical rows across three runs, 100 warmup pairs, and 600 measured pairs. It does not compare v1 with v2 or time backend I/O. Every pooled median and p95 regression must remain within 5%; the accepted run's worst p95 regression was 3.150%. `--smoke` reports a non-gating diagnostic sample.
 
 Agent-loop tests pin durable-before-end ordering, interrupted visible prefixes, failed and retry attempts, abandonment, usage, and replay metadata. Session Controller and Conversation tests pin live transient display, reconnect baselines, committed settlement release, history replay, Chat and Trajectory parity, while TypeScript and Python SDK snapshots pin the external event representation.
 

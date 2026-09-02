@@ -19,11 +19,15 @@ export class AssistantStreamAttempt {
   private readonly accumulator = new AssistantStreamAccumulator()
   private readonly assembler = new BlockAssembler()
   private index = 0
-  /** Process-local attempt identity. */
+  private terminal = false
+  /** Attempt identity unique within this Agent lifecycle. */
   readonly attemptId: LlmAttemptId
 
+  /** Whether this started attempt has emitted its terminal frame. */
+  get ended(): boolean { return this.terminal }
+
   /**
-   * @param sessionId - identity embedded only in the process-local attempt id.
+   * @param sessionId - identity embedded only in the Agent-lifecycle-local attempt id.
    * @param attempt - attached-Session-local attempt counter.
    * @param nextRevision - allocates the next emitted frame revision.
    * @param turn - durable turn owning the request.
@@ -80,9 +84,10 @@ export class AssistantStreamAttempt {
     try {
       seq = append()
     } catch (error: unknown) {
-      this.abandoned()
+      this.abandon()
       throw error
     }
+    this.terminal = true
     this.emit({
       type: 'end',
       attemptId: this.attemptId,
@@ -93,7 +98,8 @@ export class AssistantStreamAttempt {
   }
 
   /** Publish abandonment when no durable attempt event can be committed. */
-  private abandoned(): void {
+  abandon(): void {
+    this.terminal = true
     this.emit({
       type: 'end',
       attemptId: this.attemptId,

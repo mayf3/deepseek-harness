@@ -82,6 +82,7 @@ describe('incremental DeepSeek session-log upload', () => {
     const first = await ctx.deepseekLlmApiExtensions.prepare({ body: body(), signal: SIGNAL, sessionId: session.id })
     const firstPayload = first.fields.dsh_session_log
     expect(firstPayload).toMatchObject({
+      version: 2,
       sessionFormatVersion: SESSION_FORMAT_VERSION,
       afterSeq: -1,
       throughSeq: 1,

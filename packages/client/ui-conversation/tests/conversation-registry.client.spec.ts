@@ -1,8 +1,8 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
-import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
-import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createAssistantMessage, LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   createScope, MutableSessionEventSource,
@@ -237,12 +237,24 @@ describe('Conversation registries', () => {
         turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'c' },
       },
     })
-    append({
-      seq: SessionSeq(5),
-      time: 5,
-      type: 'assistant/message',
-      data: { turn: 1, step: 1, message: { id: 'a1', role: 'assistant', content: [] }, stream: [] },
-    } as SessionEvent)
+    source.settleAssistant(LlmAttemptId('frame-probe'), {
+      type: 'event',
+      event: {
+        seq: SessionSeq(5),
+        time: 5,
+        type: 'assistant/message',
+        data: {
+          turn: 1,
+          step: 1,
+          message: createAssistantMessage({
+            content: [],
+            source: { provider: 'test', model: 'test' },
+          }),
+          stream: [],
+        },
+        surfaceOp: 'append',
+      },
+    })
     expect(cancelFrame).toHaveBeenCalledWith(4)
     expect(frames).toHaveLength(0)
     expect(listener).toHaveBeenCalledTimes(2)

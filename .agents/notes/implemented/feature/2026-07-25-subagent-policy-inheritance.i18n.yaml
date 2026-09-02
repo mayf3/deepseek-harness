@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/feature/2026-07-25-subagent-policy-inheritance.md
-2026-07-25-subagent-policy-inheritance.md: 3fa8df405d9705a2bf145f1182e18fc0f7586b25
-2026-07-25-subagent-policy-inheritance.zh.md: 94c19d22db050441a6ce48fb507ccc428dbbe91e
+2026-07-25-subagent-policy-inheritance.md: c98a2536bdf736eea20aa5d5a9a5f1952d8d29d1
+2026-07-25-subagent-policy-inheritance.zh.md: 1cbfad43b3c7f6def6ad9df04647e5c624e698ea

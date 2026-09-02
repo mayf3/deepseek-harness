@@ -4,6 +4,8 @@ export interface ReleasedV0PayloadDisposition {
   readonly optional: readonly string[]
   /** JSON members whose nested representation is intentionally owner-opaque. */
   readonly opaque: readonly string[]
+  /** Nested discriminant paths whose unknown arms remain owner-opaque JSON. */
+  readonly extensionArms: readonly string[]
 }
 
 /**
@@ -11,17 +13,20 @@ export interface ReleasedV0PayloadDisposition {
  * @param required - members that must be present.
  * @param optional - additional admitted members.
  * @param opaque - members retained as lossless JSON without nested semantic inspection.
+ * @param extensionArms - nested discriminant paths that admit owner-defined variants.
  * @returns the detached frozen disposition.
  */
 export function defineReleasedPayloadDisposition(
   required: readonly string[],
   optional: readonly string[] = [],
   opaque: readonly string[] = [],
+  extensionArms: readonly string[] = [],
 ): ReleasedV0PayloadDisposition {
   return Object.freeze({
     required: Object.freeze([...required]),
     optional: Object.freeze([...optional]),
     opaque: Object.freeze([...opaque]),
+    extensionArms: Object.freeze([...extensionArms]),
   })
 }
 
@@ -29,17 +34,34 @@ const disposition = defineReleasedPayloadDisposition
 
 /**
  * Frozen released-v0 event and payload-member inventory.
- * Every listed member is preserved by the identity edge; members in `opaque`
- * remain lossless JSON but receive no nested Session-sequence interpretation.
+ * Every listed member is preserved by the identity edge. Members in `opaque`
+ * remain lossless JSON without nested Session-sequence interpretation. Paths
+ * in `extensionArms` validate known variants and preserve unknown variants as
+ * owner-opaque JSON, matching the merge-extensible runtime vocabulary.
  */
 export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0PayloadDisposition>> = Object.freeze({
   'agent-preset/selected': disposition(['agentPreset']),
-  'agent/inbox/spliced': disposition(['target', 'start', 'inserted'], ['removedCount', 'outcome']),
+  'agent/inbox/spliced': disposition(
+    ['target', 'start', 'inserted'],
+    ['removedCount', 'outcome'],
+    [],
+    ['inserted[].content[].type', 'inserted[].source.kind'],
+  ),
   'approval/asked': disposition(['id', 'toolName'], ['callId', 'reason']),
   'approval/decided': disposition(['id', 'outcome']),
   'approval/policy': disposition(['policy'], ['source']),
-  'assistant/chunk': disposition(['turn', 'step', 'chunk']),
-  'assistant/message': disposition(['turn', 'step', 'message'], ['usage', 'interrupted']),
+  'assistant/chunk': disposition(
+    ['turn', 'step', 'chunk'],
+    [],
+    [],
+    ['chunk.blockType', 'chunk.block.type', 'chunk.reason.kind'],
+  ),
+  'assistant/message': disposition(
+    ['turn', 'step', 'message'],
+    ['usage', 'interrupted'],
+    [],
+    ['message.content[].type'],
+  ),
   'command/done': disposition(['commandId', 'kind'], ['text', 'sourceEventSeq']),
   'command/run': disposition(['commandId', 'name', 'source'], ['args']),
   'compaction/end': disposition(['compactionId', 'turn'], ['sourceCommandId', 'error']),
@@ -48,6 +70,8 @@ export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0P
   'compaction/summary': disposition(
     ['compactionId', 'summary', 'shadowedRange', 'shadowedSeqs', 'shadowedTokenCount', 'provider', 'model'],
     ['sourceCommandId', 'maxTokens', 'usage', 'rawOutput', 'llmStreamCall'],
+    [],
+    ['summary[].type', 'rawOutput[].type'],
   ),
   'feedback/record': disposition(['text']),
   'goal/change': disposition(
@@ -78,6 +102,9 @@ export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0P
   'session/title': disposition(['title', 'messageSeqs', 'source']),
   'session/title-llm-request': disposition(
     ['titleProvider', 'messageSeqs', 'route', 'system', 'messages', 'maxTokens'],
+    [],
+    [],
+    ['messages[].content[].type', 'messages[].source.kind'],
   ),
   'step/end': disposition(['turn', 'step']),
   'step/start': disposition(['turn', 'step']),
@@ -88,7 +115,12 @@ export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0P
   'subagent/model-selection-policy': disposition(['allowedModels']),
   'team/member': disposition(['version', 'teamId', 'member']),
   'team/message/delivered': disposition(['version', 'teamId', 'messageId', 'targetId']),
-  'team/message/queued': disposition(['version', 'teamId', 'message']),
+  'team/message/queued': disposition(
+    ['version', 'teamId', 'message'],
+    [],
+    [],
+    ['message.content[].type'],
+  ),
   'team/task': disposition(['version', 'teamId', 'task']),
   'todo/write': disposition(['todos']),
   'tool-workflow/agent-end': disposition(['runId', 'seq', 'outcome']),
@@ -100,16 +132,27 @@ export const RELEASED_V0_EVENT_DISPOSITIONS: Readonly<Record<string, ReleasedV0P
     ['rootCallId', 'parentCallId', 'subCallId', 'name', 'arguments', 'isError', 'content'],
     [],
     ['arguments'],
+    ['content[].type'],
   ),
   'tool/code-dispatch-start': disposition(
     ['rootCallId', 'parentCallId', 'subCallId', 'name', 'arguments'],
     [],
     ['arguments'],
   ),
-  'tool/result': disposition(['turn', 'step', 'message'], ['error', 'meta'], ['meta']),
-  'turn/end': disposition(['turn', 'reason']),
+  'tool/result': disposition(
+    ['turn', 'step', 'message'],
+    ['error', 'meta'],
+    ['meta'],
+    ['message.content[].content[].type'],
+  ),
+  'turn/end': disposition(['turn', 'reason'], [], [], ['reason.kind']),
   'turn/start': disposition(['turn']),
-  'user/message': disposition(['role', 'id', 'content', 'source']),
+  'user/message': disposition(
+    ['role', 'id', 'content', 'source'],
+    [],
+    [],
+    ['content[].type', 'source.kind'],
+  ),
   'web/deepseek-search-llm-request': disposition(['endpoint', 'apiVersion', 'body']),
 })
 

@@ -130,6 +130,65 @@ describe('agent loop', () => {
     expect(agent.session.snapshotEvents().some(event => event.type === 'assistant/message')).toBe(false)
   })
 
+  it('abandons a started live attempt when final block assembly fails', async () => {
+    const chunks: StreamChunk[] = [
+      { type: 'block-start', index: 0, blockType: 'external-block' } as unknown as StreamChunk,
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]
+    const ctx = await harness(new MockAdapter([chunks]))
+    const agent = await ctx.agentLoop.create(SessionId('assistant-assembly-failure'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject === agent) frames.push(frame)
+    })
+
+    send(agent, 'produce an incomplete external block')
+    await waitForIdle(ctx, agent)
+
+    expect(frames.map(frame => frame.revision)).toEqual([1, 2, 3, 4])
+    expect(frames.at(-1)).toMatchObject({
+      type: 'end',
+      index: 2,
+      outcome: { kind: 'abandoned' },
+    })
+    expect(agent.session.snapshotEvents().some(event => (
+      event.type === 'assistant/message' || event.type === 'assistant/attempt'
+    ))).toBe(false)
+    expect(agent.session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'turn/end',
+      data: { reason: { kind: 'error' } },
+    })
+  })
+
+  it('settles a failed attempt before retrying with a new dense attempt', async () => {
+    const failed: StreamChunk[] = [
+      { type: 'usage', usage: { inputTokens: 1, outputTokens: 0 } },
+      { type: 'finish', reason: { kind: 'error', failure: { message: 'retry', code: 'SERVER' } } },
+    ]
+    const ctx = await harness(new MockAdapter([failed, textResponse('recovered')]))
+    const agent = await ctx.agentLoop.create(SessionId('assistant-retry-attempt'), {
+      provider: 'mock',
+      model: 'mock',
+    })
+    const frames: AssistantStreamFrame[] = []
+    ctx.on('agent/assistant-stream', ({ agent: subject, frame }) => {
+      if (subject === agent) frames.push(frame)
+    })
+    ctx.on('agent/request-error', async () => ({ kind: 'retry' as const }))
+
+    send(agent, 'retry once')
+    await waitForIdle(ctx, agent)
+
+    expect(frames.map(frame => frame.revision)).toEqual(frames.map((_frame, index) => index + 1))
+    expect(frames.filter(frame => frame.type === 'start')).toHaveLength(2)
+    expect(frames.filter(frame => frame.type === 'end').map(frame => (
+      frame.outcome.kind === 'committed' ? frame.outcome.eventType : frame.outcome.kind
+    ))).toEqual(['assistant/attempt', 'assistant/message'])
+  })
+
   it('does not emit an end frame when prepared dispatch throws before start', async () => {
     const ctx = await harness(new MockAdapter([]))
     const agent = await ctx.agentLoop.create(SessionId('assistant-dispatch-throw'), {
