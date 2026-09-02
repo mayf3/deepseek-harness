@@ -719,7 +719,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       if (headerType !== 'session') {
         throw new Error('replayProvidersOnly fixture must open with a session header row')
       }
-      const recorded = parseSessionLog(fixtureText)
+      const recorded = parseSessionLogForReplay(fixtureText, options.replayFixture)
       const hasModelCall = recorded.some(event => (
         event.type === 'assistant/message' || event.type === 'assistant/attempt'
           || event.type === 'request/header' || event.type === 'tool/call'
