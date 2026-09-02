@@ -90,3 +90,5 @@ General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` S
 无。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。command 与 slot contribution 的生命周期由 HMR 测试覆盖；浏览器侧 Settings controller 不持有 Host 事件或跨插件可变状态。

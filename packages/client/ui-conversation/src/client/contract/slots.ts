@@ -128,11 +128,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Floating entries rendered inside the resident composer card. */
     'conversation.input.overlay': { kind: 'list'; scope: 'session' }
     /** Ambient entries below the composer card. */
-    'conversation.composer.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
+    'conversation.composer.dock': { kind: 'list'; scope: 'session' }
     /** Compact controls at the left of the composer tool row. */
-    'conversation.input.left': { kind: 'list'; scope: 'session'; owner: InputZone }
+    'conversation.input.left': { kind: 'list'; scope: 'session' }
     /** Compact controls before the composer submit action. */
-    'conversation.input.right': { kind: 'list'; scope: 'session'; owner: InputZone }
+    'conversation.input.right': { kind: 'list'; scope: 'session' }
     /** Resident composer body, including the no-Session inert state. */
     'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe'; owner: ComposerBarOwnerProps }
     /** Optional draft-image rail and drop target. */
@@ -257,14 +257,6 @@ export interface ComposerBarOwnerProps {
   placeholder?: string
   /** Optional content rendered above the composer surface. */
   accessory?: ReactNode
-  /** Floating overlay content rendered inside the composer card. */
-  overlay?: ReactNode
-  /** Left-side input controls. */
-  leftItems?: ReactNode
-  /** Right-side input controls. */
-  rightItems?: ReactNode
-  /** Ambient content below the card. */
-  footer?: ReactNode
 }
 
 /** Package-private operations injected into the resident composer bar. */
@@ -297,10 +289,11 @@ export interface InputControlOwnerProps {
 export type ComposerBarProps =
   PropsRuntime<'conversation.composer.bar'>
   & PropsRenderSlots<
-    | 'conversation.input.attachments'
+    | 'conversation.input.attachments' | 'conversation.input.overlay'
     | 'conversation.input.permission'
-    | 'conversation.input.plan'
-    | 'conversation.input.model'
+    | 'conversation.input.left' | 'conversation.input.plan'
+    | 'conversation.input.right' | 'conversation.input.model'
+    | 'conversation.composer.dock'
   >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>
@@ -329,9 +322,7 @@ export type ConversationSlotProps =
   & PropsRenderSlots<
     | 'conversation.session' | 'conversation.session.header'
     | 'conversation.composer' | 'conversation.composer.bar'
-    | 'conversation.input.overlay'
-    | 'conversation.input.dock' | 'conversation.composer.dock'
-    | 'conversation.input.left' | 'conversation.input.right'
+    | 'conversation.input.dock'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
     | 'conversation.hero.agentPreset'

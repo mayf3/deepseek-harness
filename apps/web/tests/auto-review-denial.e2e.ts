@@ -1,6 +1,6 @@
-// Web e2e scenario: a cold, pre-message-identity recording renders the
-// structured Auto-review denial without replaying a reviewer or model call.
-// The real persistence upgrader, shipped Web composition, permission
+// Web e2e scenario: a cold recording renders the structured Auto-review
+// denial without replaying a reviewer or model call.
+// The real persistence reader, shipped Web composition, permission
 // projection, conversation assembler, and generic Tool row all participate.
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -34,15 +34,21 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
     })
     const result = rows.find(row => row.type === 'tool/result')
     expect(result?.data).toMatchObject({
-      callId: 'auto-review-denied-call',
-      isError: true,
+      message: {
+        source: { kind: 'tool', callId: 'auto-review-denied-call' },
+        content: [{
+          type: 'tool-result',
+          toolCallId: 'auto-review-denied-call',
+          isError: true,
+        }],
+      },
       error: {
         name: 'AutoReviewDeniedError',
         code: 'AUTO_REVIEW_DENIED',
         reason: 'raw\r\nreason',
       },
     })
-    expect(result?.data).not.toHaveProperty('message')
+    expect(result?.data).not.toHaveProperty('callId')
 
     scaffold = await launchWebScaffold({})
     await seedSession(scaffold, fixture, SEED_ID)

@@ -247,7 +247,7 @@ function ptcAction(
  */
 function snapshotAutoReview(agent: Agent, exec: ToolExecution): ReviewSnapshot {
   const { session } = agent
-  const events = session.events
+  const events = session.snapshotEvents()
   const nodes = [...session.surface.nodes]
   const header = session.requestHeader()
   if (header === undefined || header.config.provider.length === 0 || header.config.model.length === 0) {

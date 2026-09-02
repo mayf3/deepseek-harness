@@ -13,8 +13,8 @@ import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepse
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
 import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
-// Empty type imports carry the tools/sandboxPolicy/approval Context merges.
-import type {} from '@deepseek-ai/dsh-tools'
+// These imports carry the tools/sandboxPolicy/approval Context merges.
+import { RUN_CODE_NAME } from '@deepseek-ai/dsh-tools'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-permission-presets'
@@ -290,6 +290,24 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
   }
 }, 120_000)
 
+it('ships PTC with run_code but without the general workflow SDK binding', async () => {
+  scaffold = await launchWebScaffold({ deepSeekMissingCredential: true })
+  const ctx = scaffold.ctx
+  const handle = await ctx.agents.create({
+    sessionId: SessionId('shipped-ptc-composition'),
+    setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'ptc').then(() => undefined),
+  })
+  try {
+    const assembly = await ctx.systemPrompt.assemble({ scope: handle.agent })
+    expect(assembly.tools.map(tool => tool.name)).toEqual([RUN_CODE_NAME])
+    const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text ?? ''
+    expect(sdk).toContain('  ralph: {')
+    expect(sdk).not.toContain('  workflow: {')
+  } finally {
+    await handle.dispose()
+  }
+}, 120_000)
+
 it('lets a preset producer reach the background-job registry', async () => {
   scaffold = await launchWebScaffold()
   const ctx = scaffold.ctx
@@ -412,14 +430,15 @@ it('routes one browser-authored Auto request through the same model before a rea
   expect(finalModelInput).toContain('Auto review rejected tool \\"write\\"; its body was not executed')
   expect(finalModelInput).not.toContain('direct user authorized inspection only')
 
-  const prompt = agent.session.events.find((event): event is Extract<SessionEvent, { type: 'user/message' }> => (
+  const events = agent.session.snapshotEvents()
+  const prompt = events.find((event): event is Extract<SessionEvent, { type: 'user/message' }> => (
     event.type === 'user/message'
       && event.data.source.kind === 'user'
       && 'rpcId' in event.data.source
       && event.data.source.rpcId === requestId
   ))
   expect(prompt).toBeDefined()
-  const result = agent.session.events.find((event): event is Extract<SessionEvent, { type: 'tool/result' }> => (
+  const result = events.find((event): event is Extract<SessionEvent, { type: 'tool/result' }> => (
     event.type === 'tool/result'
       && event.data.message.content.some(block => block.toolCallId === AUTO_CALL_ID)
   ))
@@ -431,7 +450,7 @@ it('routes one browser-authored Auto request through the same model before a rea
   const durableModelResult = JSON.stringify(result?.data.message)
   expect(durableModelResult).toContain('Auto review rejected tool \\"write\\"; its body was not executed')
   expect(durableModelResult).not.toContain('direct user authorized inspection only')
-  expect(agent.session.events.some(event => (
+  expect(events.some(event => (
     event.type === 'assistant/message'
       && JSON.stringify(event.data.message).includes(AUTO_FINAL_TEXT)
   ))).toBe(true)

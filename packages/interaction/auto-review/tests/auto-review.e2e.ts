@@ -606,12 +606,12 @@ async function runAction(
   prompt: string,
   caseId: string,
 ): Promise<CertificationCase> {
-  const before = agent.session.events.length
+  const before = agent.session.seq
   orchestrator.beginReview(caseId, model)
   agent.followup(directUserMessage(prompt, caseId))
   await agent.whenIdle()
   const review = orchestrator.endReview(caseId)
-  const outcome = verifyExecution(agent.session.events.slice(before), pair, path)
+  const outcome = verifyExecution(agent.session.snapshotEvents(before), pair, path)
   expect(outcome.actualDecision).toBe(expected)
   expect(review.decision).toBe(expected)
   const expectedEffect = expected === 'deny' ? 'unchanged' : pair.allowEffect

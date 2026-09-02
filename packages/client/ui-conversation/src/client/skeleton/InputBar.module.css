@@ -40,13 +40,14 @@
   width: 100%;
   max-width: var(--dsh-composer-card-max-width);
   padding-top: 10px;
-  /* Input stroke: black/0.10 light, white/0.06 dark (figma darkmode note says
-     the input border is one notch weaker than buttons) — exactly the
-     l2-darkmode-thin pair. Fill: the input surface token (elevated in dark). */
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  /* Input stroke: the light neutral (l2, one step above the menus' l1),
+     drawn as the elevation hairline so it costs no layout; the shadow is the
+     soft elevation tier. Fill: the input surface token (elevated in dark). */
+  border: 0;
+  --dsw-elevation-stroke-color: var(--dsw-alias-border-l2);
   border-radius: 22px;
   background: var(--dsw-specific-input-major);
-  box-shadow: var(--dsw-shadow-lv2);
+  box-shadow: var(--dsw-elevation-soft);
   /* The draft text follows the Settings font-size preference (the textarea,
      mirror, and backdrop all inherit from here, so the three layers stay in
      step); the line height keeps the default 10px leading via the shared px
@@ -69,7 +70,7 @@
    by an SVG dash ring (stroke-width 2 centered on the box edge = 1px visible
    inside), which keeps the 22px radius and both themes. */
 .cardWorkspaceTrigger {
-  border-color: transparent;
+  --dsw-elevation-stroke-color: transparent;
   cursor: pointer;
 }
 
@@ -103,12 +104,12 @@
   padding: 10px 12px 0;
 }
 
-/* Floating overlay anchor (menu / popupSelect shell): include the card's 1px
-   border so an edge-to-edge overlay is equal to the visible card width and
-   bottom: 100% lands on its outer top edge. Closed entries render null. */
+/* Floating overlay anchor (menu / popupSelect shell): the card's elevation
+   stroke does not consume layout, so edge-to-edge overlays use the card's
+   exact box and bottom: 100% lands on its top edge. Closed entries render null. */
 .overlayAnchor {
   position: absolute;
-  inset: -1px -1px auto;
+  inset: 0 0 auto;
   height: 0;
 }
 
@@ -142,6 +143,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-state-business-primary);
   animation: input-pending 1s ease-in-out infinite alternate;
 }
@@ -267,6 +269,7 @@
   height: 28px;
   border: none;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-specific-selector);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
@@ -324,6 +327,7 @@
   height: 34px;
   border: none;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-button-info-fill);
   /* Static white, not the foreground token: the arrow stays white on the blue
      fill in both themes (design 34:10465). */

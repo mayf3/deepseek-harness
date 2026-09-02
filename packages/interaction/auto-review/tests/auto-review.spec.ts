@@ -1080,7 +1080,7 @@ describe('cancellation and integration teardown', () => {
 
     const disposal = auto.dispose()
     await until(() => adapter.requests[0]?.signal?.aborted === true)
-    expect(session.events.slice(-2).map(event => event.type)).toEqual([
+    expect(session.snapshotEvents().slice(-2).map(event => event.type)).toEqual([
       'permission/preset', 'sandbox/mode',
     ])
     expect(ctx.permissionPresets.current(session)).not.toBe(AUTO_PRESET)
