@@ -1,5 +1,5 @@
 import {
-  type SessionEventLike, type SessionEventLikeEntry,
+  type AssistantLiveChunkEvent, type SessionEventLike, type SessionEventLikeEntry,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
@@ -522,6 +522,38 @@ export class ConversationLocationIndex {
       ...turn === undefined || step === undefined ? {} : { step },
     })
     if (turn !== undefined) this.indexTurnSeq(turn, event.seq)
+    this.locations.set(event.seq, this.resolve(event.seq))
+  }
+
+  /**
+   * Remove indexed Assistant transients without rebuilding the Turn/Step timeline.
+   * @param events - transient events retired by one Assistant settlement.
+   */
+  removeAssistantTransients(events: readonly AssistantLiveChunkEvent[]): void {
+    for (const event of events) {
+      const turn = this.coordinates.get(event.seq)?.turn
+      if (turn !== undefined) {
+        const seqs = this.seqsByTurn.get(turn)
+        seqs?.delete(event.seq)
+        if (seqs?.size === 0) this.seqsByTurn.delete(turn)
+      }
+      this.coordinates.delete(event.seq)
+      this.locations.delete(event.seq)
+    }
+  }
+
+  /**
+   * Index one durable Assistant settlement inserted before an already visible tail.
+   * @param event - message or attempt settlement with explicit Turn and Step coordinates.
+   */
+  insertAssistantSettlement(
+    event: SessionEvent<'assistant/message'> | SessionEvent<'assistant/attempt'>,
+  ): void {
+    this.coordinates.set(event.seq, {
+      turn: event.data.turn,
+      step: event.data.step,
+    })
+    this.indexTurnSeq(event.data.turn, event.seq)
     this.locations.set(event.seq, this.resolve(event.seq))
   }
 

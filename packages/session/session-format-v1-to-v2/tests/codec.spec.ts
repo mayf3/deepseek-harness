@@ -126,10 +126,12 @@ describe('releasedV2SessionFormatCodec rows', () => {
     expect(releasedV2SessionFormatCodec.decodeArtifact(encoded.header, encoded.rows)).toStrictEqual(source)
   })
 
-  it('round-trips an unknown ignorable event for current-build restoration', () => {
-    const source = artifact([{
-      type: 'external/ignorable', seq: 0, time: 1, data: { retained: true }, ignorable: true,
-    }])
+  it('keeps the v2 physical codec vocabulary-neutral for current growth and a future source freeze', () => {
+    const source = artifact([
+      { type: 'external/required', seq: 0, time: 1, data: { retained: true } },
+      { type: 'external/ignorable', seq: 1, time: 2, data: { retained: true }, ignorable: true },
+      { type: 'turn/start', seq: 2, time: 3, data: { turn: 1, postReleaseMember: true } },
+    ])
 
     const encoded = releasedV2SessionFormatCodec.encodeArtifact(source)
 

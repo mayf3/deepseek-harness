@@ -1,6 +1,6 @@
 /** Lossless compact representation of one model-stream attempt. */
 
-import { deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
+import { assertNever, deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import type { ToolCallId } from './brand.ts'
 import type { StreamChunk } from './types.ts'
 
@@ -113,14 +113,16 @@ export class AssistantStreamAccumulator {
       }
       case 'tool-call-delta': {
         safeIndex(chunk.index, chunk.type)
-        if (typeof chunk.id !== 'string' || chunk.id.length === 0) {
-          throw new TypeError('tool-call-delta id must be a non-empty string')
-        }
-        if (Object.hasOwn(chunk, 'name') && (typeof chunk.name !== 'string' || chunk.name.length === 0)) {
-          throw new TypeError('tool-call-delta name must be a non-empty string')
+        if (typeof chunk.id !== 'string') throw new TypeError('tool-call-delta id must be a string')
+        if (Object.hasOwn(chunk, 'name') && typeof chunk.name !== 'string') {
+          throw new TypeError('tool-call-delta name must be a string')
         }
         if (typeof chunk.argumentsDelta !== 'string') {
           throw new TypeError('tool-call-delta argumentsDelta must be a string')
+        }
+        if (chunk.id.length === 0 || chunk.name === '') {
+          this.records.push({ type: 'chunk', time, chunk })
+          return timed
         }
         const gap = previous?.type === 'tool-call-chunks' ? safeGap(previous.lastTime, time) : undefined
         const sameName = previous?.type === 'tool-call-chunks'
@@ -148,10 +150,15 @@ export class AssistantStreamAccumulator {
         }
         return timed
       }
-      default:
+      case 'block-start':
+      case 'block-end':
+      case 'usage':
+      case 'finish':
         this.records.push({ type: 'chunk', time, chunk })
+        return timed
+      default:
+        return assertNever(chunk, 'AssistantStreamAccumulator.push')
     }
-    return timed
   }
 
   /**

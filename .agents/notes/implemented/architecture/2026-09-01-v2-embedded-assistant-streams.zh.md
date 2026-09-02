@@ -27,7 +27,7 @@ Session format v2 没有顶层 `assistant/chunk` 事件。每个模型 attempt �
 
 `agent/assistant-stream` 发布进程本地 start、瞬态 chunk 与 end frame。loop 会在 committed end frame 命名其类型和序号前追加完整的 `assistant/message` 或 `assistant/attempt`。abandoned end 没有 settlement。
 
-Web follow adapter 显式选择接收这些进程本地 frame，并为每个 start 补充当时观察到的最后一个持久序号。它把 chunk 呈现为持久 cursor 之间的 Client-only `assistant/live-chunk` update，只暂存 start 之后匹配的 settlement，在 committed end 到达时用 settlement 替换该 attempt 的瞬态 row，并在 revision 缺口时重新打开 follow。重连 baseline 携带活跃 attempt 的持久起始 cursor 与紧凑前缀。分页历史、replay、遥测、token 记账与冷 UI 组装读取持久嵌入式 stream，而不是 live frame。
+Web follow adapter 显式选择接收这些进程本地 frame，并为每个 start 补充当时观察到的最后一个持久序号。它把 chunk 呈现为持久 cursor 之间的 Client-only `assistant/live-chunk` update，只暂存 start 之后匹配的 settlement，并在 revision 缺口时重新打开 follow。committed end 会发布具名 settlement delta，删除该 attempt 的 transient match、加入持久 entry，并只重放受影响的 Conversation Context；abandoned end 会发布不含 entry 的同类 delta。重连 baseline 携带活跃 attempt 的持久起始 cursor 与紧凑前缀。分页历史、replay、遥测、token 记账与冷 UI 组装读取持久嵌入式 stream，而不是 live frame。
 
 ### 已发布 v1 到 v2 迁移
 
@@ -35,7 +35,11 @@ Web follow adapter 显式选择接收这些进程本地 frame，并为每个 sta
 
 该迁移边会重映射有限的已声明引用清单：信封 provenance、surface replacement 端点、command source event、compaction range 与 shadowed list，以及 title message list。指向被消费 chunk 的引用会使迁移失败；它绝不会被重定向到含义不同的 settlement。该迁移边也会拒绝切开 attempt 的继承切点。
 
-v2 物理 header 要求 `isSeeded`，且不存储数值切点。带 seed 的产物用 `session/end-seed { inherited: true }` 标记其精确切点；解码从最后一个 tagged marker 推导切点。v2 编解码器为每个持久事件写一条物理行，并且只对 `sourceEventSeqs` 做范围编码。冻结的 v0 与 v1 编解码器继续为不可变历史 generation 解码 packed row。
+v2 物理 header 要求 `isSeeded`，且不存储数值切点。带 seed 的产物用 `session/end-seed { inherited: true }` 标记其精确切点；解码从最后一个 tagged marker 推导切点。v2 编解码器为每个持久事件写一条物理行，只对 `sourceEventSeqs` 做范围编码，并在不冻结普通事件词汇或 payload 新增项的前提下校验物理 envelope。v1-to-v2 target validator 会另行冻结 released-v2 清单，current restoration 则使用 installed Session 词汇。冻结的 v0 与 v1 编解码器继续为不可变历史 generation 解码 packed row。
+
+新建 subagent 子项的 constructor seed 与继承的父项前缀完全相同。`Session` 会追加 tagged cut marker，随后 subagent setup 再追加子项持有的 descriptor 与 delegated policy。原 descriptor-seed helper 会被删除，因此 descriptor 绝不会计入继承内容，cold resume 则重放已经持久化的子项 setup。曾把 untagged marker 放在 descriptor 后面的历史 snapshot fixture 会在源处修正；当前比较仍会暴露 marker 数量与序号引用。
+
+`dsh_session_log` request extension 会把外层 schema 升至版本 2，因为它的 Session header 投影会用必需的 `isSeeded` 取代 `seedLength`。其中的 `sessionFormatVersion` 成员仍用于标识嵌入的逻辑 Session generation。
 
 Generation 选择与发布遵循[已发布 Session 迁移决策](2026-08-31-released-session-format-migrations.zh.md)：源路径、字节与 inode 保持不变，只发布最终具名版本 successor；保留 predecessor 不提供 fallback 或 downgrade 支持。
 
@@ -43,7 +47,7 @@ Generation 选择与发布遵循[已发布 Session 迁移决策](2026-08-31-rele
 
 紧凑 stream 测试固定 text、reasoning、tool argument、raw chunk、时间戳间隔、格式错误 record 与分离 snapshot 的精确累积和展开。v1 到 v2 测试覆盖成功与失败 attempt、交错、密集序号与引用重映射、seed 切点插入与切分拒绝、严格源与目标校验、每行一个事件的 v2 编码、provenance range、原始与 Zstandard 发布，以及无写入的当前读取。
 
-手工 performance acceptance 会在三轮、100 组 warmup pair 与 600 组 measured pair 下，把当前 v2 catalog dispatch 与同一物理输入的 direct-current 读取比较。它要求每个 pooled median 与 p95 regression 保持在 5% 以内；已接受运行的最差 p95 regression 为 3.150%。`--smoke` 报告不参与 gate 的诊断 sample。
+手工 performance acceptance 会在三轮、100 组 warmup pair 与 600 组 measured pair 下，针对同一批已经解析的物理 row，把静态 catalog routing 与直接 released-v2 restoration 比较；它不比较 v1 与 v2，也不计入 backend I/O。每个 pooled median 与 p95 regression 都必须保持在 5% 以内；已接受运行的最差 p95 regression 为 3.150%。`--smoke` 报告不参与 gate 的诊断 sample。
 
 Agent-loop 测试固定先持久后 end 的顺序、中断的可见前缀、失败与重试 attempt、abandonment、usage 与 replay metadata。Session Controller 与 Conversation 测试固定实时瞬态显示、重连 baseline、committed settlement 发布、历史回放以及 Chat 与 Trajectory 一致性；TypeScript 与 Python SDK snapshot 固定外部事件表示。
 

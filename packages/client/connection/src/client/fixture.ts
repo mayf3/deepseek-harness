@@ -26,6 +26,7 @@ import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-atta
 import type {
   SessionEvent,
   SessionId,
+  SessionSeqCursor,
 } from '@deepseek-ai/dsh-session/types'
 import { SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
@@ -166,13 +167,14 @@ interface FixtureAssistantStreamBaseline {
   }
 }
 
-type FixtureAssistantStreamFrame =
+/** Assistant frame emitted by the standalone fixture; tests pin it to the controller wire type. */
+export type FixtureAssistantStreamFrame =
   | {
     readonly type: 'start'
     readonly attemptId: ReturnType<typeof LlmAttemptId>
     readonly revision: number
     readonly startedTime: number
-    readonly startedAfterSeq: number
+    readonly startedAfterSeq: SessionSeqCursor
     readonly turn: number
     readonly step: number
   }
@@ -182,14 +184,19 @@ type FixtureAssistantStreamFrame =
     readonly revision: number
     readonly index: number
     readonly time: number
-    readonly chunk: StreamChunk
+    readonly chunk: JsonValue
   }
   | {
     readonly type: 'end'
     readonly attemptId: ReturnType<typeof LlmAttemptId>
     readonly revision: number
+    readonly index: number
     readonly outcome:
-      | { readonly kind: 'committed'; readonly eventType: 'assistant/message' | 'assistant/attempt'; readonly seq: number }
+      | {
+        readonly kind: 'committed'
+        readonly eventType: 'assistant/message' | 'assistant/attempt'
+        readonly seq: number
+      }
       | { readonly kind: 'abandoned' }
   }
 
@@ -2081,7 +2088,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   const beginAssistant = (sessionId: SessionId, turn: number, step: number): FixtureAttemptState => {
     const attemptId = LlmAttemptId(`${sessionId}:fixture:${String(nextAssistantRevision(sessionId))}`)
     const startedTime = Date.now()
-    const startedAfterSeq = logOf(sessionId).length - 1
+    const lastSeq = logOf(sessionId).length - 1
+    const startedAfterSeq = lastSeq < 0 ? -1 : SessionSeq(lastSeq)
     const attempt = {
       attemptId, startedTime, startedAfterSeq, turn, step,
       stream: new AssistantStreamAccumulator(), index: 0,
@@ -2099,7 +2107,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     const timed = attempt.stream.push({ time: Date.now(), chunk })
     emitAssistant(sessionId, {
       type: 'chunk', attemptId: attempt.attemptId, revision: nextAssistantRevision(sessionId),
-      index: attempt.index++, time: timed.time, chunk: timed.chunk,
+      index: attempt.index++, time: timed.time, chunk: timed.chunk as unknown as JsonValue,
     })
   }
   const commitAssistant = (sessionId: SessionId, event: SessionEvent): void => {
@@ -2108,6 +2116,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     activeAttempts.delete(sessionId)
     emitAssistant(sessionId, {
       type: 'end', attemptId: attempt.attemptId, revision: nextAssistantRevision(sessionId),
+      index: attempt.index,
       outcome: {
         kind: 'committed',
         eventType: event.type === 'assistant/message' ? 'assistant/message' : 'assistant/attempt',

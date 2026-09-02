@@ -42,15 +42,15 @@ A successful v1 `assistant/message` must cite its complete ordered attempt. The 
 
 The migration refuses a reference to a consumed chunk instead of redirecting it to a different semantic event. It remaps declared event provenance, surface replacements, command source events, compaction ranges and lists, and title message lists. A seeded source also refuses an inherited cut that splits an Assistant attempt; the target marks the exact cut with `session/end-seed { inherited: true }`.
 
-The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, and range-encodes only `sourceEventSeqs`. Strict migration-target validation rejects unknown event types, while current restoration retains installed extensions and unknown events carrying `ignorable: true`. Both paths reject unexpected members, malformed compact streams, and disagreement between a non-empty stream and its assembled message, usage, or replay state.
+The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, range-encodes only `sourceEventSeqs`, and remains neutral to ordinary event vocabulary and payload growth. Strict migration-target validation freezes the released-v2 inventory and rejects unknown types or members. Current restoration instead admits event types known to the installed Session package plus unknown events carrying `ignorable: true`, then delegates payload and stream semantics to the installed current restorer. All paths retain strict header, event-envelope, sequence, and inherited-cut validation.
 
-### Measure current-read acceptance
+### Measure catalog-dispatch overhead
 
 ```text
 pnpm run benchmark:session-format-v1-to-v2
 ```
 
-The manual acceptance runs three repetitions with 100 warmup pairs and 600 alternating measured pairs per case. It compares the current v2 catalog-dispatch read against a direct-current read of the same backend, id, file, and decoder, and requires every pooled median and p95 regression to stay within 5%. Add `--smoke` only for a short correctness and reporting pass; smoke timing is non-gating and is not an acceptance result.
+The manual acceptance runs three repetitions with 100 warmup pairs and 600 alternating measured pairs per case. It measures static catalog-routing overhead against direct released-v2 restoration of the same already parsed physical rows, requiring every pooled median and p95 regression to stay within 5%. It neither compares v1 with v2 nor times backend I/O; representation sizes and absolute migration/replay costs are reported separately without a speedup claim. Add `--smoke` only for a short correctness and reporting pass; smoke timing is non-gating and is not an acceptance result.
 
 -----
 
@@ -66,9 +66,9 @@ The edge first groups v1 chunks by turn, step, terminal finish, and explicit mes
 |---|---|
 | [`src/migration.ts`](src/migration.ts) | Attempt grouping, settlement substitution, dense sequence mapping, and reference rewriting |
 | [`src/codec.ts`](src/codec.ts) | Released-v2 header, one-event-per-row encoding, provenance ranges, and recoverable prefix decoding |
-| [`src/validation.ts`](src/validation.ts) | Exact v2 header, envelope, payload, stream, relationship, and seed-cut validation |
+| [`src/validation.ts`](src/validation.ts) | Physical v2 envelope/cut validation, exact migration-target policy, and vocabulary-neutral current restoration |
 | [`src/dispositions.ts`](src/dispositions.ts) | Frozen released-v2 event and payload-member inventory |
-| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | Repository-only current-read, migration, token-meter, size, and memory acceptance report |
+| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | Repository-only catalog-dispatch, migration, token-meter, size, and memory acceptance report |
 
 </details>
 

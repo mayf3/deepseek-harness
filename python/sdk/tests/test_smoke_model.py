@@ -164,7 +164,38 @@ def test_snapshot_comparison_expands_embedded_assistant_streams() -> None:
         "surfaceOp": "append",
     }]
 
-    assert normalize(actual) == normalize(expected)
+    assert normalize(actual, 2) == normalize(expected, 1)
+
+    tool_result = {
+        "type": "tool/result",
+        "data": {"turn": 1, "step": 1},
+        "sourceEventSeqs": [4],
+    }
+    assert normalize(tool_result, 1)["sourceEventSeqs"] == [4]
+    assert normalize(tool_result, 2)["sourceEventSeqs"] == [4]
+
+
+def test_snapshot_stream_expands_reasoning_and_tool_call_records() -> None:
+    expand = SMOKE["expand_snapshot_stream_member"]
+
+    assert expand({
+        "type": "reasoning-chunks", "time0": 0, "index": 1,
+        "dt": [], "texts": ["think"],
+    }) == [{"type": "reasoning-delta", "index": 1, "text": "think"}]
+    assert expand({
+        "type": "tool-call-chunks", "time0": 0, "index": 2,
+        "id": "call-1", "name": "read", "dt": [1], "args": ["{", "}"],
+    }) == [
+        {"type": "tool-call-delta", "index": 2, "id": "call-1", "name": "read", "argumentsDelta": "{"},
+        {"type": "tool-call-delta", "index": 2, "id": "call-1", "name": "read", "argumentsDelta": "}"},
+    ]
+
+
+def test_snapshot_file_builder_order_is_checked_outside_update_mode(tmp_path: Path) -> None:
+    compare = SMOKE["compare_snapshot_files"]
+
+    with pytest.raises(AssertionError, match="snapshot builder produced"):
+        compare({}, False, tmp_path, ("result.json",))
 
 
 def test_snapshot_comparison_expands_sdk_wrapped_attempts() -> None:

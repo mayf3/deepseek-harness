@@ -20,7 +20,7 @@ Session log 在发布后必须能升级格式，而最先发布的运行时决�
 
 ## 影响
 
-v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、JSONL 和 BFF 线上 schema 接受。V1 添加静态相邻 catalog、恒等 v0-to-v1 迁移边、仅 header descriptor、精确代际 JSONL 发布与[已发布 Session 格式](2026-08-31-released-session-format-migrations.zh.md)定义的当前专用恢复。第一方 writer 不通过 `Session.append` 设置 `ignorable`，而一个仓库外插件仍依赖该字段；同版本保留由[外部插件保留决策](2026-08-30-retain-ignorable-external-session-events.zh.md)定义，更严格的历史规则由 [alpha 迁移拒绝决策](2026-08-31-alpha-historical-unknown-event-refusal.zh.md)定义。未知类型守卫仍只在读取侧生效，因为 append 时的词汇拒绝会中断活跃 Session 的持久化。JSONL 会在当前 header 或事件解析前从最小原始 header 分类外来版本，因此结构完全不同的未来格式会报告升级方向而不是"损坏"。
+v0（0812 发布）交付的内容：分方向的拒绝并带原始日志路径；基于生成的已知词汇清单（`KNOWN_SESSION_EVENT_TYPES`，由 `gen-persistence-catalog` 从所有 `SessionEventMap` 声明合并生成，`verify-persistence-catalog` 保证新鲜）的未知事件守卫；`ignorable` 信封字段被种子校验、JSONL 和 BFF 线上 schema 接受。V1 添加静态相邻 catalog、恒等 v0-to-v1 迁移边、仅 header descriptor、精确代际 JSONL 发布与[已发布 Session 格式](2026-08-31-released-session-format-migrations.zh.md)定义的当前专用恢复。V2 让物理 codec 对普通事件词汇与 payload 新增项保持中立：相邻迁移边冻结 released source 与 target 清单，同版本恢复则应用已安装的 known-event set 与当前 payload 语义。第一方 writer 不通过 `Session.append` 设置 `ignorable`，而一个仓库外插件仍依赖该字段；同版本保留由[外部插件保留决策](2026-08-30-retain-ignorable-external-session-events.zh.md)定义，更严格的历史规则由 [alpha 迁移拒绝决策](2026-08-31-alpha-historical-unknown-event-refusal.zh.md)定义。未知类型守卫仍只在读取侧生效，因为 append 时的词汇拒绝会中断活跃 Session 的持久化。JSONL 会在当前 header 或事件解析前从最小原始 header 分类外来版本，因此结构完全不同的未来格式会报告升级方向而不是"损坏"。
 
 ## 曾考虑的替代方案
 

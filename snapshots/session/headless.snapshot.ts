@@ -340,26 +340,19 @@ function stderrFromSession(log: string): string {
     open = false
     endsWithNewline = true
   }
-  for (const record of records(log)) {
-    if (record.type === 'turn/start') {
-      close()
-      started = true
-      continue
-    }
-    if (!started) continue
-    const data = record.data as JsonObject | undefined
-    if (record.type === 'reasoning-chunks') {
+  const consume = (type: unknown, data: JsonObject | undefined): void => {
+    if (type === 'reasoning-chunks') {
       if (!Array.isArray(data?.texts) || data.texts.some(text => typeof text !== 'string')) {
         throw new Error('headless snapshot reasoning chunks have invalid text')
       }
       for (const text of data.texts as string[]) appendReasoning(text)
-      continue
+      return
     }
-    if (record.type === 'text-chunks' || record.type === 'tool-call-chunks') {
+    if (type === 'text-chunks' || type === 'tool-call-chunks') {
       close()
-      continue
+      return
     }
-    if (record.type !== 'assistant/chunk') continue
+    if (type !== 'assistant/chunk' && type !== 'chunk') return
     const chunk = data?.chunk as JsonObject | undefined
     switch (chunk?.type) {
       case 'reasoning-delta':
@@ -382,6 +375,28 @@ function stderrFromSession(log: string): string {
         close()
         break
     }
+  }
+  for (const record of records(log)) {
+    if (record.type === 'turn/start') {
+      close()
+      started = true
+      continue
+    }
+    if (!started) continue
+    const data = record.data as JsonObject | undefined
+    if ((record.type === 'assistant/message' || record.type === 'assistant/attempt')
+      && Array.isArray(data?.stream)) {
+      for (const entry of data.stream) {
+        if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+          throw new Error('headless snapshot embedded stream has an invalid entry')
+        }
+        const streamRecord = entry as JsonObject
+        consume(streamRecord.type, streamRecord)
+      }
+      close()
+      continue
+    }
+    consume(record.type, data)
   }
   close()
   const reason = turnReasonFromSession(log)
@@ -672,6 +687,28 @@ describe('headless recorded-session snapshots', () => {
       'third',
       '',
     ].join('\n'))
+  })
+
+  it('reconstructs reasoning stderr from embedded message and attempt streams', () => {
+    const log = [
+      { type: 'turn/start', data: { turn: 1 } },
+      {
+        type: 'assistant/attempt',
+        data: { stream: [{ type: 'reasoning-chunks', texts: ['first', ' thought'] }] },
+      },
+      {
+        type: 'assistant/message',
+        data: {
+          stream: [
+            { type: 'chunk', chunk: { type: 'reasoning-delta', index: 0, text: 'second' } },
+            { type: 'chunk', chunk: { type: 'finish', reason: { kind: 'stop' } } },
+          ],
+        },
+      },
+      { type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } } },
+    ].map(record => JSON.stringify(record)).join('\n')
+
+    expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\ndsh: reasoning:\nsecond\n')
   })
 
   for (const scenario of scenarios) {

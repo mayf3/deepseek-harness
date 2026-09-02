@@ -131,7 +131,7 @@ describe('AssistantStreamAccumulator', () => {
     ])
   })
 
-  it('rejects unsafe admission before mutating the accumulator', () => {
+  it('rejects unsafe values while preserving JSON-safe empty adapter identities', () => {
     const accumulator = new AssistantStreamAccumulator()
     expect(() => accumulator.push({
       time: 0.5,
@@ -149,23 +149,40 @@ describe('AssistantStreamAccumulator', () => {
       time: 1,
       chunk: { type: 'text-delta', index: 0, text: 1 } as never,
     })).toThrow(/text must be a string/)
-    expect(() => accumulator.push({
+    expect(accumulator.push({
       time: 1,
       chunk: { type: 'tool-call-delta', index: 0, id: ToolCallId(''), argumentsDelta: '{}' },
-    })).toThrow(/id/)
-    expect(() => accumulator.push({
+    }).chunk).toMatchObject({ id: '' })
+    expect(accumulator.push({
       time: 1,
       chunk: {
         type: 'tool-call-delta', index: 0, id: ToolCallId('call'), name: '', argumentsDelta: '{}',
       },
-    })).toThrow(/name/)
+    }).chunk).toMatchObject({ name: '' })
     expect(() => accumulator.push({
       time: 1,
       chunk: {
         type: 'tool-call-delta', index: 0, id: ToolCallId('call'), argumentsDelta: 1,
       } as never,
     })).toThrow(/argumentsDelta must be a string/)
-    expect(accumulator.snapshot()).toStrictEqual([])
+    expect(() => accumulator.push({
+      time: 1,
+      chunk: { type: 'future' } as never,
+    })).toThrow(/unreachable variant in AssistantStreamAccumulator\.push/)
+    expect(accumulator.snapshot()).toStrictEqual([
+      {
+        type: 'chunk', time: 1,
+        chunk: { type: 'tool-call-delta', index: 0, id: '', argumentsDelta: '{}' },
+      },
+      {
+        type: 'chunk', time: 1,
+        chunk: { type: 'tool-call-delta', index: 0, id: 'call', name: '', argumentsDelta: '{}' },
+      },
+    ])
+    expect(expandAssistantStream(accumulator.snapshot()).map(member => member.chunk)).toStrictEqual([
+      { type: 'tool-call-delta', index: 0, id: '', argumentsDelta: '{}' },
+      { type: 'tool-call-delta', index: 0, id: 'call', name: '', argumentsDelta: '{}' },
+    ])
   })
 
   it.each([

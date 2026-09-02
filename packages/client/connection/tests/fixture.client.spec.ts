@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type {
   RpcRequest,
   RpcResponse,
@@ -11,14 +11,16 @@ import { RpcId } from '../src/client/api.ts'
 import {
   createFixtureConnectionRpc,
   createFixtureFaces,
+  type FixtureAssistantStreamFrame,
   type FixtureOptions,
 } from '../src/client/fixture.ts'
 import type {
   ClientConnectionRpc, ConnectionRpcResult,
 } from '../src/rpc.ts'
 import type { DirectoryListing } from '@deepseek-ai/dsh-host-directory-picker/types'
-import type { ModelCatalog } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-session-controller/types'
+import type {
+  ModelCatalog, ModelSelection, SessionAssistantStreamFrame,
+} from '@deepseek-ai/dsh-api-session-controller/types'
 
 const sid = (id: string): SessionId => id as SessionId
 type WorkspaceId = string & { readonly __fixtureWorkspaceId: 'WorkspaceId' }
@@ -52,32 +54,13 @@ function historyEvents(records: readonly FixtureHistoryRecord[]): SessionEvent[]
   return records.map(record => record.event)
 }
 
-type FixtureAssistantStreamFrame =
-  | {
-    readonly type: 'start'
-    readonly attemptId: string
-    readonly revision: number
-    readonly startedTime: number
-    readonly startedAfterSeq: number
-    readonly turn: number
-    readonly step: number
-  }
-  | {
-    readonly type: 'chunk'
-    readonly attemptId: string
-    readonly revision: number
-    readonly index: number
-    readonly time: number
-    readonly chunk: StreamChunk
-  }
-  | {
-    readonly type: 'end'
-    readonly attemptId: string
-    readonly revision: number
-    readonly outcome:
-      | { readonly kind: 'committed'; readonly eventType: 'assistant/message' | 'assistant/attempt'; readonly seq: number }
-      | { readonly kind: 'abandoned' }
-  }
+function isReasoningDeltaChunk(
+  value: unknown,
+): value is Extract<StreamChunk, { readonly type: 'reasoning-delta' }> {
+  if (typeof value !== 'object' || value === null) return false
+  const record = value as { readonly type?: unknown; readonly text?: unknown }
+  return record.type === 'reasoning-delta' && typeof record.text === 'string'
+}
 
 type FixtureFollowFrame =
   | {
@@ -616,6 +599,10 @@ async function readWorkspaceBaseline(
 }
 
 describe('createFixtureApi', () => {
+  it('keeps its Assistant frame vocabulary identical to the controller wire', () => {
+    expectTypeOf<FixtureAssistantStreamFrame>().toEqualTypeOf<SessionAssistantStreamFrame>()
+  })
+
   it('serves the session list sorted by updatedAt desc and echoes rpcIds on every unary', async () => {
     const api = createFixtureApi()
     const request = req({})
@@ -907,9 +894,14 @@ describe('createFixtureApi', () => {
     expect(types).toContain('user/message')
     expect(types).toContain('assistant/message')
     expect(assistantFrames.some(frame => frame.type === 'chunk')).toBe(true)
-    expect(assistantFrames.some(frame => frame.type === 'end'
+    const committed = assistantFrames.find(frame => frame.type === 'end'
       && frame.outcome.kind === 'committed'
-      && frame.outcome.eventType === 'assistant/message')).toBe(true)
+      && frame.outcome.eventType === 'assistant/message')
+    expect(committed).toMatchObject({
+      type: 'end',
+      index: assistantFrames.filter(frame => frame.type === 'chunk'
+        && frame.attemptId === committed?.attemptId).length,
+    })
     expect(types.at(-1)).toBe('turn/end')
     // Capacity is durable log state, not a transient frame: the prompt path
     // records request/context and the projection carries it to the client.
@@ -1603,7 +1595,7 @@ describe('createFixtureApi', () => {
       const streamed = collectValues(api.sessionRemote.follow(sid('fx-alpha'), abort.signal), abort, frames => frames.some(frame => (
         frame.type === 'assistant-stream'
         && frame.frame.type === 'chunk'
-        && frame.frame.chunk.type === 'reasoning-delta'
+        && isReasoningDeltaChunk(frame.frame.chunk)
         && frame.frame.chunk.text.includes('REASONING_STRESS_COMPLETE')
       )))
       const marker = hooks.startReasoningChunkStorm('fx-alpha', 3, 2, 16)
@@ -1622,7 +1614,7 @@ describe('createFixtureApi', () => {
       const deltas = frames.flatMap(frame => (
         frame.type === 'assistant-stream'
         && frame.frame.type === 'chunk'
-        && frame.frame.chunk.type === 'reasoning-delta'
+        && isReasoningDeltaChunk(frame.frame.chunk)
           ? [frame.frame.chunk.text]
           : []
       ))

@@ -13,13 +13,10 @@ import type {
   SessionFormatJsonObject,
   SessionFormatJsonValue,
 } from '@deepseek-ai/dsh-session-format'
-import { RELEASED_V2_EVENT_TYPES } from './dispositions.ts'
-import { assertReleasedV2Header, restoreReleasedV2Artifact } from './validation.ts'
+import { assertReleasedV2Header, assertReleasedV2PhysicalArtifact } from './validation.ts'
 
 const HEADER_REQUIRED = ['type', 'version', 'id', 'createdAt', 'isSeeded', 'delegationDepth'] as const
 const HEADER_OPTIONAL = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
-const RELEASED_V2_EVENT_TYPE_SET = new Set(RELEASED_V2_EVENT_TYPES)
-
 /** Frozen physical JSON codec for released v2. */
 export const releasedV2SessionFormatCodec = Object.freeze({
   version: 2,
@@ -110,7 +107,7 @@ function decodeArtifact(
   }
   const inheritedEventCount = deriveInheritedEventCount(header, events)
   const artifact = snapshotSessionFormatArtifact({ header, inheritedEventCount, events }, 'released v2 artifact')
-  restoreReleasedV2Artifact(artifact, RELEASED_V2_EVENT_TYPE_SET)
+  assertReleasedV2PhysicalArtifact(artifact)
   return artifact
 }
 
@@ -142,7 +139,7 @@ function deriveInheritedEventCount(header: SessionFormatHeader, events: readonly
 }
 
 function encodeArtifact(artifact: SessionFormatArtifact): EncodedSessionFormatArtifact {
-  restoreReleasedV2Artifact(artifact, RELEASED_V2_EVENT_TYPE_SET)
+  assertReleasedV2PhysicalArtifact(artifact)
   const header = artifact.header
   const physicalHeader = snapshotSessionFormatJson({
     type: 'session',

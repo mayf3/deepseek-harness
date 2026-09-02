@@ -674,6 +674,11 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
       return
     }
+    if (result?.type === 'abandonment') {
+      this.eventSource.settleAssistant(result.attemptId)
+      this.notifier.markDirty()
+      return
+    }
     if (result?.type === 'publish' && this.appendLive(result.entry)) {
       this.notifier.markDirty()
     } else if (result?.type === 'transient') {

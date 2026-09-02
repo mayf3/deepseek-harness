@@ -6,14 +6,16 @@ import type {
 } from '../../types.ts'
 import { expandAssistantStream } from '@deepseek-ai/dsh-llm/assistant-stream'
 import type { AssistantStreamRecord } from '@deepseek-ai/dsh-llm/assistant-stream'
+import type { LlmAttemptId } from '@deepseek-ai/dsh-llm/brand'
 import type {
+  SessionAssistantSettlementEntry,
   SessionEventLikeEntry,
   SessionLiveEventEntry,
   SessionTransientEventEntry,
 } from '../contract/events.ts'
 
 interface ActiveAttempt {
-  readonly attemptId: string
+  readonly attemptId: LlmAttemptId
   readonly startedAfterSeq: number
   readonly turn: number
   readonly step: number
@@ -25,9 +27,10 @@ export type ClientAssistantStreamResult =
   | { readonly type: 'publish'; readonly entry: SessionLiveEventEntry }
   | {
     readonly type: 'settlement'
-    readonly attemptId: string
-    readonly entry: SessionLiveEventEntry
+    readonly attemptId: LlmAttemptId
+    readonly entry: SessionAssistantSettlementEntry
   }
+  | { readonly type: 'abandonment'; readonly attemptId: LlmAttemptId }
   | { readonly type: 'transient'; readonly entry: SessionTransientEventEntry }
   | { readonly type: 'rebaseline' }
   | undefined
@@ -35,7 +38,7 @@ export type ClientAssistantStreamResult =
 /** Keeps transient Assistant presentation behind one settlement-aware interface. */
 export class ClientAssistantStream {
   private activeAttempt: ActiveAttempt | undefined
-  private readonly pending = new Map<number, SessionLiveEventEntry>()
+  private readonly pending = new Map<number, SessionAssistantSettlementEntry>()
   private publishedSeqs = new Set<number>()
   private durableCursor = -1
   private transientInGap = 0
@@ -56,7 +59,7 @@ export class ClientAssistantStream {
     const opening = baseline?.activeAttempt
     if (opening !== undefined) {
       this.activeAttempt = {
-        attemptId: String(opening.attemptId),
+        attemptId: opening.attemptId,
         startedAfterSeq: opening.startedAfterSeq,
         turn: opening.turn,
         step: opening.step,
@@ -100,9 +103,10 @@ export class ClientAssistantStream {
     const event = entry.event
     this.durableCursor = Math.max(this.durableCursor, event.seq)
     this.transientInGap = 0
-    if (this.attemptForSettlement(event) !== undefined) {
+    const settlement = assistantSettlementEntry(entry)
+    if (settlement !== undefined && this.attemptForSettlement(settlement.event) !== undefined) {
       if (this.pending.has(event.seq)) return { type: 'rebaseline' }
-      this.pending.set(event.seq, entry)
+      this.pending.set(event.seq, settlement)
       return undefined
     }
     return this.publish(entry)
@@ -119,7 +123,7 @@ export class ClientAssistantStream {
         if (this.activeAttempt !== undefined || this.pending.size > 0) return { type: 'rebaseline' }
         this.pending.clear()
         this.activeAttempt = {
-          attemptId: String(frame.attemptId),
+          attemptId: frame.attemptId,
           startedAfterSeq: frame.startedAfterSeq,
           turn: frame.turn,
           step: frame.step,
@@ -131,7 +135,7 @@ export class ClientAssistantStream {
         // A controller mounted after the Host saw this attempt has no start
         // frame to reconstruct. Its durable settlement publishes directly;
         // ignore the transient suffix until the next known start.
-        if (attempt === undefined || attempt.attemptId !== String(frame.attemptId)) return undefined
+        if (attempt === undefined || attempt.attemptId !== frame.attemptId) return undefined
         if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         attempt.nextIndex += 1
         this.transientInGap += 1
@@ -155,13 +159,15 @@ export class ClientAssistantStream {
       }
       case 'end': {
         const attempt = this.activeAttempt
-        if (attempt === undefined || attempt.attemptId !== String(frame.attemptId)) {
+        if (attempt === undefined || attempt.attemptId !== frame.attemptId) {
           return undefined
         }
         this.activeAttempt = undefined
         if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         if (frame.outcome.kind === 'abandoned') {
-          return this.pending.size === 0 ? undefined : { type: 'rebaseline' }
+          return this.pending.size === 0
+            ? { type: 'abandonment', attemptId: attempt.attemptId }
+            : { type: 'rebaseline' }
         }
         if (this.publishedSeqs.has(frame.outcome.seq)) return undefined
         const entry = this.pending.get(frame.outcome.seq)
@@ -177,11 +183,10 @@ export class ClientAssistantStream {
   }
 
   private attemptForSettlement(
-    event: SessionLiveEventEntry['event'],
+    event: SessionAssistantSettlementEntry['event'],
   ): ActiveAttempt | undefined {
     const attempt = this.activeAttempt
     if (attempt === undefined
-      || (event.type !== 'assistant/message' && event.type !== 'assistant/attempt')
       || (event.type === 'assistant/message' && event.surfaceOp !== 'append')
       || event.seq <= attempt.startedAfterSeq
       || attempt.turn !== event.data.turn
@@ -193,4 +198,12 @@ export class ClientAssistantStream {
     this.publishedSeqs.add(entry.event.seq)
     return { type: 'publish', entry }
   }
+}
+
+function assistantSettlementEntry(
+  entry: SessionLiveEventEntry,
+): SessionAssistantSettlementEntry | undefined {
+  return entry.event.type === 'assistant/message' || entry.event.type === 'assistant/attempt'
+    ? entry as SessionAssistantSettlementEntry
+    : undefined
 }

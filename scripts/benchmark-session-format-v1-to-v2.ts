@@ -183,7 +183,7 @@ export function parseOptions(argv: readonly string[]): BenchmarkOptions {
   return { ...values, smoke, help }
 }
 
-/** Calculate the same discrete percentile used by the PR3 acceptance measurement. */
+/** Calculate the discrete percentile used by the acceptance measurement. */
 export function percentile(values: readonly number[], fraction: number): number {
   if (values.length === 0) throw new Error('percentile requires at least one sample')
   if (!Number.isFinite(fraction) || fraction < 0 || fraction > 1) {
@@ -210,7 +210,7 @@ async function main(): Promise<void> {
     const cases = await materializeCurrentReadCases(root, fixtures)
     await validateFixtureReads(cases)
 
-    console.log('Session format v2 performance acceptance')
+    console.log('Session format v2 catalog-dispatch overhead acceptance')
     console.log(
       'Direct-current/no-dispatch baseline: the released-v2 codec restores the same parsed physical rows. '
       + 'The candidate routes those rows through the static format catalog; public handles validate each file once.',
@@ -226,7 +226,7 @@ async function main(): Promise<void> {
     console.log('')
 
     let accepted = true
-    console.log('Current v2 physical decode and restoration (pooled hot samples)')
+    console.log('Released-v2 restoration dispatch overhead (pooled hot samples)')
     for (const benchmarkCase of cases) {
       const result = runPairedCurrentRead(benchmarkCase, options)
       accepted &&= result.passed
@@ -263,10 +263,10 @@ async function main(): Promise<void> {
       console.log('SMOKE COMPLETE (non-acceptance timing sample)')
     } else if (accepted) {
       console.log('')
-      console.log('PASS: every pooled current-read median and p95 regression is within the 5% ceiling.')
+      console.log('PASS: every pooled catalog-dispatch median and p95 regression is within the 5% ceiling.')
     } else {
       console.error('')
-      console.error('FAIL: at least one pooled current-read median or p95 regression exceeds the 5% ceiling.')
+      console.error('FAIL: at least one pooled catalog-dispatch median or p95 regression exceeds the 5% ceiling.')
       process.exitCode = 1
     }
   } finally {

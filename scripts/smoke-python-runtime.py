@@ -114,7 +114,7 @@ ADVANCED_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "advanced"
 )
 ADVANCED_SNAPSHOT_FILENAMES = (
-    "result.json", "session.v1.jsonl", "session.1.v1.jsonl", "session.2.v1.jsonl",
+    "result.json", "session.v2.jsonl", "session.1.v2.jsonl", "session.2.v2.jsonl",
 )
 MINIMAL_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "minimal"
@@ -126,7 +126,7 @@ RESTART_SNAPSHOT_DIRECTORY = (
     Path(__file__).resolve().parent / "snapshots" / "python-sdk-single-exe" / "restart"
 )
 RESTART_SNAPSHOT_FILENAMES = (
-    "result.json", "requests.json", "session.1.v1.jsonl", "session.2.v1.jsonl",
+    "result.json", "requests.json", "session.1.v2.jsonl", "session.2.v2.jsonl",
 )
 MCP_SERVER_SCRIPT = """\
 import json
@@ -1888,7 +1888,7 @@ def expand_snapshot_stream_member(member: object) -> list[dict[str, object]]:
         return [chunk]
     packed_kinds = {
         "text-chunks": ("texts", "text-delta", "text"),
-        "reasoning-chunks": ("reasoning", "reasoning-delta", "reasoning"),
+        "reasoning-chunks": ("texts", "reasoning-delta", "text"),
         "tool-call-chunks": ("args", "tool-call-delta", "argumentsDelta"),
     }
     packed = packed_kinds.get(member_type)
@@ -1958,11 +1958,14 @@ def expand_snapshot_assistant_event(value: object) -> list[object]:
     return expanded
 
 
-def normalize_session_format_comparison(value: object) -> object:
+def normalize_session_format_comparison(
+    value: object,
+    source_session_version: int | None = None,
+) -> object:
     """Canonicalize only generation provenance that differs across immutable Session files."""
     if isinstance(value, list):
         return [
-            normalize_session_format_comparison(expanded)
+            normalize_session_format_comparison(expanded, source_session_version)
             for item in value
             for expanded in expand_snapshot_assistant_event(item)
         ]
@@ -1970,7 +1973,7 @@ def normalize_session_format_comparison(value: object) -> object:
         return value
 
     normalized = {
-        key: normalize_session_format_comparison(item)
+        key: normalize_session_format_comparison(item, source_session_version)
         for key, item in value.items()
     }
     if normalized.get("type") == "session" and "version" in normalized:
@@ -1988,6 +1991,7 @@ def normalize_session_format_comparison(value: object) -> object:
     if isinstance(normalized.get("type"), str) and "data" in normalized:
         normalized.pop("seq", None)
         normalized.pop("time", None)
+    if source_session_version == 1 and normalized.get("type") == "assistant/message":
         normalized.pop("sourceEventSeqs", None)
     if normalized.get("type") == "session-log-deepseek/delivery-accepted":
         data = normalized.get("data")
@@ -2008,11 +2012,15 @@ def normalize_session_format_comparison(value: object) -> object:
 def normalize_snapshot_comparison_text(name: str, content: str) -> str:
     """Normalize Session generation provenance only while comparing committed expected outputs."""
     if name.startswith("session") and name.endswith(".jsonl"):
+        parsed = [json.loads(line) for line in content.splitlines() if line]
+        header = parsed[0] if parsed else None
+        source_version = header.get("version") if isinstance(header, dict) else None
+        if not isinstance(source_version, int):
+            raise AssertionError(f"{name}: snapshot Session header has no integer format version")
         records = [
-            normalize_session_format_comparison(expanded)
-            for line in content.splitlines()
-            if line
-            for expanded in expand_snapshot_assistant_event(json.loads(line))
+            normalize_session_format_comparison(expanded, source_version)
+            for record in parsed
+            for expanded in expand_snapshot_assistant_event(record)
         ]
         return render_jsonl(records)
     if name.endswith(".json"):
@@ -2032,7 +2040,7 @@ def compare_snapshot_files(
 ) -> None:
     """Write or exactly compare one scenario's expected snapshot files."""
     scenario = directory.name
-    if update and tuple(files) != filenames:
+    if tuple(files) != filenames:
         raise AssertionError(f"{scenario} snapshot builder produced {tuple(files)}, expected {filenames}")
     if update:
         directory.mkdir(parents=True, exist_ok=True)

@@ -335,7 +335,7 @@ describe('scope tree', () => {
         .toEqual(['assistant/message', 'assistant/message'])
     })
     expect(binding.eventSource.getSnapshot().change).toEqual({
-      kind: 'replace', entries: [priorMessage, currentMessage],
+      kind: 'settle-assistant', attemptId: String(attemptId), entry: currentMessage,
     })
   })
 

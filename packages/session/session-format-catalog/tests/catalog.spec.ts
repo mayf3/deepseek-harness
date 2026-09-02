@@ -35,17 +35,19 @@ describe('first-party Session format catalog', () => {
     })
   })
 
-  it('restores exact current payloads while retaining explicitly ignorable extensions', () => {
+  it('restores the installed current vocabulary without freezing ordinary payload additions', () => {
     const header = {
       type: 'session', version: 2, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
     }
-    expect(() => sessionFormatCatalog.decodeArtifact(header, [{
+    const extended = sessionFormatCatalog.decodeArtifact(header, [{
       type: 'turn/start', seq: 0, time: 1, data: { turn: 1, postReleaseMember: true },
-    }])).toThrow(/unexpected field postReleaseMember/)
+    }])
+    expect(sessionFormatCatalog.migrate(extended).events).toEqual(extended.events)
 
-    expect(() => sessionFormatCatalog.decodeArtifact(header, [{
+    const unknownRequired = sessionFormatCatalog.decodeArtifact(header, [{
       type: 'ordinary/not-installed', seq: 0, time: 1, data: 'future',
-    }])).toThrow(/unknown event type/)
+    }])
+    expect(() => sessionFormatCatalog.migrate(unknownRequired)).toThrow(/unknown event type/)
 
     const extension = sessionFormatCatalog.decodeArtifact(header, [{
       type: 'ordinary/external', seq: 0, time: 1, data: null, ignorable: true,

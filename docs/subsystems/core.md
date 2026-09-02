@@ -171,9 +171,9 @@ type AssistantStreamFrame =
     readonly revision: number
     /** Dense zero-based position within the attempt. */
     readonly index: number
+    /** Safe-integer timestamp reused by the durable embedded stream. */
+    readonly time: number
     readonly chunk: StreamChunk
-    /** Matching durable v1 `assistant/chunk` record for duplicate suppression. */
-    readonly legacyChunkSeq: SessionSeq
   }
   | {
     readonly type: 'end'
@@ -181,10 +181,14 @@ type AssistantStreamFrame =
     readonly revision: number
     /** Number of chunk frames emitted by this attempt. */
     readonly index: number
-    /** `committed` follows its durable message; `aborted` has no such requirement. */
-    readonly outcome: 'committed' | 'aborted'
-    /** Every durable v1 chunk represented by this attempt. */
-    readonly legacyChunkSeqs: readonly SessionSeq[]
+    /** Durable settlement committed before this notification, or live abandonment without one. */
+    readonly outcome:
+      | {
+        readonly kind: 'committed'
+        readonly eventType: 'assistant/message' | 'assistant/attempt'
+        readonly seq: SessionSeq
+      }
+      | { readonly kind: 'abandoned' }
   }
 ```
 

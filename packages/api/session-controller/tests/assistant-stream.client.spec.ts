@@ -112,14 +112,12 @@ describe('ClientAssistantStream', () => {
     const visible = stream.replace([durable], baseline(1))
 
     expect(visible[0]).toBe(durable)
-    expect(visible.slice(1)).toEqual([expect.objectContaining({
-      type: 'transient',
-      event: expect.objectContaining({
-        type: 'assistant/live-chunk',
-        seq: 4.5,
-        time: 20,
-      }),
-    })])
+    expect(visible).toHaveLength(2)
+    const reconstructed = visible[1]
+    if (reconstructed?.type !== 'transient') throw new Error('expected reconstructed transient chunk')
+    expect(reconstructed.event.type).toBe('assistant/live-chunk')
+    expect(reconstructed.event.seq).toBe(4.5)
+    expect(reconstructed.event.time).toBe(20)
 
     expect(stream.replace([], baseline(3))).toHaveLength(2)
     expect(stream.replace([])).toEqual([])
@@ -183,7 +181,10 @@ describe('ClientAssistantStream', () => {
 
   it('settles abandonment only when no durable settlement remains pending', () => {
     const empty = opened()
-    expect(empty.acceptFrame(end(0, { kind: 'abandoned' }))).toBeUndefined()
+    expect(empty.acceptFrame(end(0, { kind: 'abandoned' }))).toEqual({
+      type: 'abandonment',
+      attemptId: String(ATTEMPT),
+    })
 
     const pending = opened()
     expect(pending.acceptDurable(attemptEvent(2))).toBeUndefined()

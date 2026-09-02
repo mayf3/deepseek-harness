@@ -42,15 +42,15 @@ const migratedV2 = sessionFormatV1ToV2.migrate(decodedV1)
 
 如果引用指向被消费的 chunk，迁移会失败，而不会把它重定向到语义不同的事件。它会重映射已声明的事件 provenance、surface replacement、command source event、compaction range 与 list，以及 title message list。带 seed 的源若让继承切点切开一个 Assistant attempt，也会迁移失败；目标会用 `session/end-seed { inherited: true }` 标出精确切点。
 
-v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从最后一个 inherited end-seed marker 推导切点，每行写入一个事件，并且只对 `sourceEventSeqs` 做范围编码。严格的迁移目标校验会拒绝未知事件类型；当前恢复则保留已安装的扩展，以及携带 `ignorable: true` 的未知事件。两条路径都会拒绝意外成员、格式错误的紧凑 stream，以及非空 stream 与组装后的 message、usage 或 replay state 之间的不一致。
+v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从最后一个 inherited end-seed marker 推导切点，每行写入一个事件，只对 `sourceEventSeqs` 做范围编码，并对普通事件词汇与 payload 扩展保持中立。严格的迁移目标校验会冻结 released-v2 清单并拒绝未知 type 或 member。当前恢复则准入 installed Session package 已知的事件 type，以及携带 `ignorable: true` 的未知事件，再把 payload 与 stream 语义交给 installed current restorer。所有路径仍严格校验 header、event envelope、sequence 与 inherited cut。
 
-### 测量当前读取验收
+### 测量 catalog dispatch 开销
 
 ```text
 pnpm run benchmark:session-format-v1-to-v2
 ```
 
-手工 acceptance 会运行三轮，每个 case 使用 100 组 warmup pair 与 600 组交替测量 pair。它把当前 v2 catalog-dispatch 读取与相同 backend、id、file 和 decoder 的 direct-current 读取比较，并要求每个 pooled median 与 p95 regression 都保持在 5% 以内。只在需要较短的正确性与报告检查时添加 `--smoke`；smoke timing 不参与 gate，也不是 acceptance 结果。
+手工 acceptance 会运行三轮，每个 case 使用 100 组 warmup pair 与 600 组交替测量 pair。它针对同一批已经解析的物理 row，把静态 catalog routing 与直接 released-v2 restoration 比较，并要求每个 pooled median 与 p95 regression 都保持在 5% 以内。它既不比较 v1 与 v2，也不计入 backend I/O；representation size 与 migration／replay 绝对成本会单独报告，且不声称加速。只在需要较短的正确性与报告检查时添加 `--smoke`；smoke timing 不参与 gate，也不是 acceptance 结果。
 
 -----
 
@@ -66,9 +66,9 @@ pnpm run benchmark:session-format-v1-to-v2
 |---|---|
 | [`src/migration.ts`](src/migration.ts) | Attempt 分组、settlement 替换、密集序号映射与引用重写 |
 | [`src/codec.ts`](src/codec.ts) | 已发布 v2 header、每行一个事件的编码、provenance 范围与可恢复前缀解码 |
-| [`src/validation.ts`](src/validation.ts) | 精确的 v2 header、信封、payload、stream、关系与 seed 切点校验 |
+| [`src/validation.ts`](src/validation.ts) | v2 物理 envelope／cut 校验、精确 migration-target 策略与 vocabulary-neutral current restoration |
 | [`src/dispositions.ts`](src/dispositions.ts) | 冻结的已发布 v2 事件与 payload 成员清单 |
-| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | 仅用于仓库的 current-read、migration、token-meter、size 与 memory acceptance report |
+| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | 仅用于仓库的 catalog-dispatch、migration、token-meter、size 与 memory acceptance report |
 
 </details>
 

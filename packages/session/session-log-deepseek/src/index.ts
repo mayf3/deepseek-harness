@@ -147,7 +147,7 @@ export function apply(ctx: Context, config: Config): void {
       if (throughSeq === undefined) return undefined
       const suffix = session.snapshotEvents(SessionLogOffset(afterSeq + 1))
       const value: DeepSeekSessionLogExtension = {
-        version: 1,
+        version: 2,
         sessionFormatVersion: session.header.version,
         session: wireHeader(session),
         afterSeq: Number(afterSeq),

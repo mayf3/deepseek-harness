@@ -78,7 +78,7 @@ An enabled inventory with no qualifying entries sends `packages: []`; disabling 
 ```json
 {
   "dsh_session_log": {
-    "version": 1,
+    "version": 2,
     "sessionFormatVersion": 2,
     "session": {
       "version": 2,
@@ -104,7 +104,7 @@ An enabled inventory with no qualifying entries sends `packages: []`; disabling 
 
 | Member | Type | Meaning |
 |---|---|---|
-| `version` | `1` | Schema version for `dsh_session_log` |
+| `version` | `2` | Schema version for `dsh_session_log` |
 | `sessionFormatVersion` | non-negative integer | Session format generation represented by this suffix |
 | `session` | object | Immutable wire projection of the current Session header |
 | `afterSeq` | integer | Greatest sequence recorded as accepted before this request, or `-1` |
@@ -115,7 +115,7 @@ The first upload uses `afterSeq: -1` and carries the complete current log. Each 
 
 ### Wire Session header
 
-The `session` member projects `Session.header`, not a complete runtime Session or the header object itself. It copies the current header facts, including the required `isSeeded` lineage bit; the exact `Session.inheritedEventCount` is not part of this request field. The outer `dsh_session_log.version` selects this extension schema, while `session.version` selects the logical Session format; the two version values evolve independently.
+The `session` member projects `Session.header`, not a complete runtime Session or the header object itself. It copies the current header facts, including the required `isSeeded` lineage bit; the exact `Session.inheritedEventCount` is not part of this request field. The outer `dsh_session_log.version` selects this extension schema, while `session.version` selects the logical Session format. Changing the Session header projection requires an extension-schema bump even when the embedded logical format also changes.
 
 | Member | Presence | Meaning |
 |---|---|---|
