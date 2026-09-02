@@ -86,8 +86,6 @@ export interface TestSessionRemote {
 export interface TestSessionRemoteDefaults {
   readonly defaultModelSelection: () => AgentModelSelection
   readonly cwd: string
-  readonly coldBlankProbeMaxEvents?: number
-  readonly coldBlankProbeMaxBytes?: number
   readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
   readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>
@@ -144,8 +142,7 @@ function testReadHandle(
 /**
  * Adapt a compact header/inspect persistence double onto the handle-based
  * abstract the production readers consume: `list` snapshots wrap the double's
- * headers, `stat` derives a metadata-less snapshot from the listing (so the
- * cold-blank probe skips unless the double declares its own `stat`), and
+ * headers, `stat` derives a metadata-less snapshot from the listing, and
  * `open` serves immutable read handles over the double's `inspect` result.
  */
 export function testSessionPersistence(
@@ -246,12 +243,6 @@ function installControllers(
     controller = new SessionController(
       ctx,
       {
-        ...defaults.coldBlankProbeMaxEvents === undefined
-          ? {}
-          : { coldBlankProbeMaxEvents: defaults.coldBlankProbeMaxEvents },
-        ...defaults.coldBlankProbeMaxBytes === undefined
-          ? {}
-          : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },
         ...defaults.nativeOpen === undefined ? {} : { nativeOpen: defaults.nativeOpen },
       },
       {
