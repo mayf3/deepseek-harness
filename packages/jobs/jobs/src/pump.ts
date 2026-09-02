@@ -17,7 +17,19 @@ export interface JobPumpRead {
   lossy: boolean
 }
 
-/** One producer-owned stream the pump copies into a job record. */
+/**
+ * One producer-owned stream the pump copies into a job record.
+ *
+ * The source is a pull-by-offset snapshot reader, not a Node.js `Readable`,
+ * because the substrate it reads (the subprocess `readFrom` family) is a
+ * retained ring that several readers share: the model-facing consuming
+ * cursor, the foreground result collector, and this record pump each hold
+ * their own absolute offset and read without disturbing the others. A
+ * `Readable` is single-consumer and consuming, so wrapping the ring in one
+ * would need a tee per reader and could not express `lossy` — the reader's
+ * offset having slid out of the retained window — which the record turns
+ * into a visible `gapBefore` instead of a silent splice.
+ */
 export interface JobPumpSource {
   /** Stream label attached to every chunk this source yields. */
   channel?: JobChannel

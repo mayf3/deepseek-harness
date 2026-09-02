@@ -2,8 +2,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { ClientJobOutput, ClientJobOutputModel } from '../src/client/job-output.ts'
-import type { SessionObserveJobFrame } from '../src/types.ts'
+import { ClientJobOutputModel } from '../src/client/model.ts'
+import { ClientJobOutput } from '../src/client/service.ts'
+import type { JobObserveFrame } from '../src/types.ts'
 
 const ID = 'bash-1' as JobId
 
@@ -152,12 +153,12 @@ class FakeStream {
   deferDispose = false
   private disposeRelease: (() => void) | undefined
   private disposePending: Promise<void> | undefined
-  private readonly frames: SessionObserveJobFrame[] = []
+  private readonly frames: JobObserveFrame[] = []
   private waiter: (() => void) | undefined
   private failure: Error | undefined
   readonly accepts: number[] = []
 
-  push(frame: SessionObserveJobFrame): void {
+  push(frame: JobObserveFrame): void {
     this.frames.push(frame)
     this.waiter?.()
   }
@@ -218,8 +219,8 @@ function bench() {
       streams.push({ options, stream })
       return stream
     },
-    session: {
-      observeJob: (request: unknown) => {
+    job: {
+      observe: (request: unknown) => {
         observeCalls.push(request)
         return { [Symbol.asyncIterator]: async function* () { /* never yields */ } }
       },

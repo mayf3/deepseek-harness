@@ -35,7 +35,7 @@ session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJo
 
 ### 展开的面板
 
-展开可观察的行会从 `ctx.jobOutput` 打开该 job 的 record 观测流，注入内嵌终端面板。面板复制的是命令（不是输出），命令与输出行完整换行，输出在固定高度内滚动而非折叠，且不绘制自己的运行状态点——上方的行承载状态。保留缺口与流中断在面板上方渲染为提示。
+展开可观察的行会从 `ctx.jobOutput`（由 `dsh-api-job-controller` 安装）打开该 job 的 record 观测流，注入内嵌终端面板。面板复制的是命令（不是输出），命令与输出行完整换行，输出在固定高度内滚动而非折叠，且不绘制自己的运行状态点——上方的行承载状态。保留缺口与流中断在面板上方渲染为提示。
 
 -----
 
@@ -60,7 +60,8 @@ session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJo
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`dsh-api-session-controller`](../../api/session-controller/README.zh.md) —— 面板背后的 `jobsBySession` 镜像与 `session.observeJob` 流。
+- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 面板背后的 `job.observe` 流与 `ctx.jobOutput` 服务。
+- [`dsh-api-session-controller`](../../api/session-controller/README.zh.md) —— 行所来自的 `jobsBySession` 名册镜像。
 - [`dsh-jobs`](../../jobs/jobs/README.zh.md) —— 拥有 record 语义的注册表契约。
 - [`dsh-client-ui-primitives`](../ui-primitives/README.zh.md) —— 面板所配置的 `TerminalBlock` 表面。
 

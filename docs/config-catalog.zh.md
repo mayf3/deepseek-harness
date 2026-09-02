@@ -201,6 +201,26 @@ export interface Config {
 
 来源：[`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/index.ts)
 
+<a id="deepseek-aidsh-api-job-controller"></a>
+
+## `@deepseek-ai/dsh-api-job-controller`
+
+需要：`agents` · `jobs` · `typert`
+
+```ts config-catalog
+/** Job Controller deployment policy. */
+export interface Config {
+  /** Coalescing window after new record output before an observation read, in milliseconds (default 100). */
+  readonly observeFlushMs?: number
+  /** Soft byte budget per observation output frame (default 65536); one larger chunk ships whole. */
+  readonly observeMaxFrameBytes?: number
+}
+```
+
+来源：[`packages/api/job-controller/src/index.ts:33`](../packages/api/job-controller/src/index.ts)
+
+<a id="deepseek-aidsh-api-session-controller"></a>
+
 <a id="deepseek-aidsh-api-session-controller"></a>
 
 ## `@deepseek-ai/dsh-api-session-controller`
@@ -216,14 +236,10 @@ export interface Config {
   readonly coldBlankProbeMaxBytes?: number
   /** Override platform desktop-opener detection. */
   readonly nativeOpen?: boolean
-  /** Coalescing window after new record output before a job-observation read, in milliseconds (default 100). */
-  readonly observeFlushMs?: number
-  /** Soft byte budget per job-observation output frame (default 65536); one larger chunk ships whole. */
-  readonly observeMaxFrameBytes?: number
 }
 ```
 
-来源：[`packages/api/session-controller/src/index.ts:84`](../packages/api/session-controller/src/index.ts)
+来源：[`packages/api/session-controller/src/index.ts:74`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 

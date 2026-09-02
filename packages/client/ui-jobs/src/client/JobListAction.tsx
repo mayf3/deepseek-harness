@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import type { JobOutputSnapshot, ObservedJob } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { JobOutputSnapshot, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {

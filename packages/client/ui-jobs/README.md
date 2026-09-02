@@ -35,7 +35,7 @@ Running job rows also carry a two-press stop control: the first press arms it, t
 
 ### The expanded panel
 
-Expanding an observable row opens that job's record observation stream from `ctx.jobOutput` into an embedded terminal panel. The panel copies the command (not the output), wraps commands and output lines in full, scrolls its output inside a fixed height instead of folding, and draws no run-state dot of its own — the row above carries the state. Retention gaps and stream failures render as notices above the panel.
+Expanding an observable row opens that job's record observation stream from `ctx.jobOutput` (installed by `dsh-api-job-controller`) into an embedded terminal panel. The panel copies the command (not the output), wraps commands and output lines in full, scrolls its output inside a fixed height instead of folding, and draws no run-state dot of its own — the row above carries the state. Retention gaps and stream failures render as notices above the panel.
 
 -----
 
@@ -60,7 +60,8 @@ One slot entry in the header actions band (after the preset label, before the su
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-api-session-controller`](../../api/session-controller/README.md) — the `jobsBySession` mirror and the `session.observeJob` stream behind the panel.
+- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.observe` stream and the `ctx.jobOutput` service behind the panel.
+- [`dsh-api-session-controller`](../../api/session-controller/README.md) — the `jobsBySession` roster mirror the rows come from.
 - [`dsh-jobs`](../../jobs/jobs/README.md) — the registry contract that owns the record semantics.
 - [`dsh-client-ui-primitives`](../ui-primitives/README.md) — the `TerminalBlock` surface the panel configures.
 

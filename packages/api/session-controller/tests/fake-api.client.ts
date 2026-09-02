@@ -10,7 +10,7 @@ import type {
 import type {
   SessionAddress,
   SessionControlBaseline,
-  SessionControlFrame, SessionObserveJobFrame,
+  SessionControlFrame,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionPage,
@@ -237,9 +237,6 @@ export class FakeApiClient {
         page: request => this.page(request),
         follow: (request, signal) => this.openFollow(request, signal),
         control: signal => this.openControl(signal),
-        // Job-record observation never yields here; the stream consumer is
-        // exercised directly by job-output.client.spec.
-        observeJob: () => (async function* (): AsyncGenerator<SessionObserveJobFrame> {})(),
       },
       subagents: {
         list: parentSessionId => this.record(

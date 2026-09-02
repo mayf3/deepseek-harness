@@ -113,7 +113,7 @@ interface JobOutcome {
 
 ## Observation record
 
-A producer that declares `record: true` streams raw output into a bounded per-job ring through the `RunningJob` face its starter receives; any number of observers read retained chunks at absolute byte offsets through `readRecord` without touching the consuming model cursor or notice state. Job settlement ends the stream and trims retention to the settled cap — the record has no separate lifecycle. `pumpJobOutput` copies producer offset-readers (the subprocess `readFrom` family) into the record at a bounded cadence.
+A producer that declares `record: true` streams raw output into a bounded per-job ring through the `RunningJob` face its starter receives; any number of observers read retained chunks at absolute byte offsets through `readRecord` without touching the consuming model cursor or notice state. Job settlement ends the stream and trims retention to the settled cap — the record has no separate lifecycle. `pumpJobOutput` copies producer offset-readers (the subprocess `readFrom` family) into the record at a bounded cadence. Browsers reach the record through `job.observe`, the Remote stream of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
 
 ```ts type-equiv
 /**
@@ -257,6 +257,28 @@ The abstract [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Defi
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxjobcontroller--jobcontroller"></a>
+
+### `ctx.jobController` — `JobController`
+
+Host service backing the generated `ctx.remote.job` namespace.
+
+```ts cordis-catalog
+/**
+ * Stream one job's retained record output from an absolute byte offset,
+ * then its terminal status once settled and drained. Non-consuming: the
+ * model-facing cursor and notice state never observe these reads. The
+ * request's session resolves the fenced-read caller; the registry rejects a
+ * job the session does not own, a job without a record, or an unknown job.
+ * @param request - target job, owning session, and optional resume offset.
+ * @param signal - cancellation owned by the Remote stream carrier.
+ * @returns anchor, coalesced output frames, and the terminal status.
+ */
+@Remote({ mode: 'stream' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>
+```
+
+Source: [`packages/api/job-controller/src/index.ts`](../../packages/api/job-controller/src/index.ts)
 
 <a id="ctxjobs--jobregistry-abstract-seam"></a>
 
