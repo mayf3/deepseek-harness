@@ -40,16 +40,16 @@ function completedTailFixture(raw: string): string {
   const kept = decoded.events.filter(event => event.seq < 101).map((event) => {
     if (event.type === 'assistant/message' && event.seq === 64) {
       const data = event.data as unknown as { message?: { content?: unknown[] } }
-      const content = data.message?.content
-      if (!Array.isArray(content)) throw new Error('borrowed step-one assistant message has no content')
+      const message = data.message
+      const content = message?.content
+      if (message === undefined || !Array.isArray(content)) {
+        throw new Error('borrowed step-one assistant message has no content')
+      }
       return {
         ...event,
         data: {
           ...data,
-          message: {
-            ...data.message,
-            content: [...content.slice(0, 1), { type: 'text', text: MID_TURN_TEXT }, ...content.slice(1)],
-          },
+          message: { ...message, content: [...content.slice(0, 1), { type: 'text', text: MID_TURN_TEXT }, ...content.slice(1)] },
         },
       }
     }
@@ -65,10 +65,10 @@ function completedTailFixture(raw: string): string {
   const tail = [
     at({ type: 'step/end', data: { turn: 1, step: 2 } }),
     at({ type: 'turn/end', data: { turn: 1, reason: { kind: 'aborted' } } }),
-    at({ type: 'turn/start', data: { turn: 2, trigger: { kind: 'message', source: { kind: 'user', rpcId: '{{rpcId}}' } } } }),
-    at({ type: 'user/message', data: { content: [{ type: 'text', text: SECOND_PROMPT }], source: { kind: 'user', rpcId: '{{rpcId}}' } }, surfaceOp: 'append' }),
+    at({ type: 'turn/start', data: { turn: 2 } }),
+    at({ type: 'user/message', data: { id: '00000000-0000-4000-9000-000000000201', role: 'user', content: [{ type: 'text', text: SECOND_PROMPT }], source: { kind: 'user', rpcId: '{{rpcId}}' } }, surfaceOp: 'append' }),
     at({ type: 'step/start', data: { turn: 2, step: 1 } }),
-    at({ type: 'assistant/message', data: { turn: 2, step: 1, content: [{ type: 'text', text: 'DONE' }], provenance: { provider: 'deepseek-official', model: 'deepseek-v4-flash' } }, sourceEventSeqs: [], surfaceOp: 'append' }),
+    at({ type: 'assistant/message', data: { turn: 2, step: 1, message: { id: '00000000-0000-4000-9000-000000000202', role: 'assistant', content: [{ type: 'text', text: 'DONE' }], source: { kind: 'model', provider: 'deepseek-official', model: 'deepseek-v4-flash' } } }, sourceEventSeqs: [], surfaceOp: 'append' }),
     at({ type: 'step/end', data: { turn: 2, step: 1 } }),
     at({ type: 'turn/end', data: { turn: 2, reason: { kind: 'completed' } } }),
   ]
@@ -167,7 +167,7 @@ describe('web e2e: message IconActions and clocks on settled history', () => {
     if (rowBox === null) throw new Error('fork source row has no layout box')
     const actionButton = sourceRow.locator('button[aria-label^="Session actions for "]')
     await sourceRow.hover({ position: { x: rowBox.width - 16, y: rowBox.height / 2 } })
-    await expect.poll(() => actionButton.isVisible(), { timeout: 10_000 }).toBe(true)
+    await expect.poll(() => actionButton.isVisible(), { timeout: 2_000 }).toBe(true)
     const buttonBox = await actionButton.boundingBox()
     if (buttonBox === null) throw new Error('fork source row action has no layout box')
     await page.mouse.click(buttonBox.x + buttonBox.width / 2, buttonBox.y + buttonBox.height / 2)

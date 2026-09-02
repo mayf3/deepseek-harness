@@ -16,7 +16,6 @@ import type {
   SurfaceEvent,
 } from '@deepseek-ai/dsh-session'
 import type { SessionTitleSnapshot } from '@deepseek-ai/dsh-session-title'
-import type { SessionLocation } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionSearchCursor } from './cursor.ts'
 
 export type { SessionSearchCursor } from './cursor.ts'
@@ -28,11 +27,9 @@ export type SessionEventSurface = 'current' | 'shadowed' | 'log-only'
 export interface SessionRecord {
   /** Cloned session header selected from the live-preferred corpus. */
   header: SessionHeader
-  /** Exact listed artifact location, when persistence exposes one. */
-  location?: SessionLocation
   /** Whether the id currently exists in `ctx.sessions`. */
   live: boolean
-  /** Whether the active persistence backend currently materializes the id. */
+  /** Whether the active persistence backend currently lists the id, including a created-but-unmaterialized session it already observes. */
   persisted: boolean
 }
 
@@ -54,7 +51,7 @@ export interface SessionLogSnapshot {
   session: SessionHeader
   /** Exact number of fork-inherited events in the observed log. */
   inheritedEventCount: SessionLogOffset
-  /** Cloned contiguous raw events after persistence repair and replay validation. */
+  /** Cloned contiguous raw events after in-memory interrupted-turn balancing and replay validation. */
   events: SessionEvent[]
 }
 

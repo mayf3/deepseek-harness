@@ -1,6 +1,7 @@
 # Agent Note: Shared persistence write coordinator
 
 Status: implemented
+Archived: 2026-08-31
 
 English | [中文](2026-06-18-shared-persistence-write-coordinator.zh.md)
 
@@ -24,14 +25,15 @@ The coordinator retires a session from `session/disposed`: it waits for the cont
 
 ### The hook interface (`PersistenceBackend<TornMarker>`)
 
-Six required durable primitives plus optional format-fusion, seek, empty-materialization, artifact, and lifecycle hooks form the only boundary between the coordinator and storage:
+Five required members plus optional empty-materialization and lifecycle hooks form the only boundary between the coordinator and storage:
 
-- `name` labels an aggregate disposal failure; `loadStored(id)` reads one already-current detached prefix; and `readStoredRevision(id)` returns its cheap source identity. The coordinator asserts ids and rejects a stored/live cwd mismatch before repair or state publication.
-- `ensureCurrent?(id)` lets a backend publish any supported historical generation's current successor before a current read. `loadCurrentStored?(id)` fuses that operation with prefix decoding over one stable selected-generation snapshot; otherwise the coordinator calls `ensureCurrent` and `loadStored` in order. The same split exists for raw artifacts through `readCurrentRawStored?` and `readRawStored?`.
-- `loadStoredFrom?(id, fromSeq)` is an optional seek-capable current suffix read. Sequential backends omit it and reuse the full current prefix.
-- `appendBatch(meta, events, isMaterialized)` durably appends a contiguous batch and atomically performs lazy first materialization. `materializeHeader?(meta)` explicitly persists an empty resumable Session for lifecycle frontends such as [standard ACP automation controls](../feature/2026-08-22-standard-acp-automation-controls.md).
-- `commitRepair(meta, tornMarker, closers)` makes crash repair durable by truncating the torn tail when present and appending closers when present. It need not be atomic: JSONL legitimately truncates then appends in two synced steps. Preparation and load commit truncation plus synthetic closers; live adoption commits truncation only.
-- `list()` returns one header-only descriptor for every stored artifact; `locate?()` resolves a backend-owned artifact without I/O; and `close?()` releases backend resources after the coordinator's quiescence drain.
+- `name` — backend label for the dispose-failure `AggregateError`.
+- `loadStored(id)` — read one stored prefix by id across every storage scope. Preparation, logical load/inspection, physical suffix reads, live adoption, and the create-collision probe share this lookup. The coordinator asserts the returned id and rejects a stored/live cwd mismatch before repair or state publication.
+- `appendBatch(meta, events, isMaterialized)` — durably append a contiguous batch, lazily materializing the session ATOMICALLY when not yet materialized. Ordinary creation therefore cannot leave an abandoned materialized-but-empty session.
+- `materializeHeader?(meta)` — explicitly persist a header-only session for `SessionPersistence.ensureMaterialized(session)`. This is reserved for a lifecycle frontend that treats an empty session itself as a resumable durable resource; [standard ACP automation controls](../feature/2026-08-22-standard-acp-automation-controls.md) are the first consumer. Backends that support that lifecycle implement the hook; lazy creation remains the default.
+- `commitRepair(meta, tornMarker, closers)` — make a crash repair durable: truncate the torn tail (iff `tornMarker !== undefined`) and append `closers`. **NOT required to be atomic** — JSONL legitimately truncates then appends in two fsync'd steps. Used by `prepare`/`load` (truncate + synthetic closers) and live adoption (truncate only, `closers = []`).
+- `list()` — list all stored metadata.
+- `close?()` — optional lifecycle teardown for a provider with owned resources; JSONL omits it. The dispose effect awaits it after the quiescence drain so a close failure never masks a drain error.
 
 ### The opaque torn marker
 
@@ -39,13 +41,13 @@ The single design choice that keeps the seam clean: the crash-repair "where is t
 
 ## Testing
 
-The shared `runPersistenceContract` proves that already-current JSONL `inspect` balances an interrupted logical view without changing storage or revisions before `prepare` or `load` commits recovery; a supported historical inspection first publishes its migrated and repaired current successor beside the unchanged source. `runCoordinatorContract` (`tests/coordinator-contract.ts`) covers adoption, HMR, collision, Session and provider disposal drains, and crash-tail repair through an in-memory reference and JSONL. `persistence.spec.ts`, `preparations.spec.ts`, and `write-behind.spec.ts` cover preparation reuse and reservation, bounded prepared-state eviction, fixed-window follow-up batches, live-controller cleanup, same-id chain-tail races, failed-batch retry, and close ordering. JSONL specs retain storage mechanics and the through-coordinator torn-tail case that exercises the opaque-marker branch.
+The shared `runPersistenceContract` proves that JSONL `inspect` balances an interrupted logical view without changing storage or revisions before `prepare` or `load` commits recovery. `runCoordinatorContract` (`tests/coordinator-contract.ts`) covers adoption, HMR, collision, Session and provider disposal drains, and crash-tail repair through an in-memory reference and JSONL. `persistence.spec.ts`, `preparations.spec.ts`, and `write-behind.spec.ts` cover preparation reuse and reservation, bounded prepared-state eviction, fixed-window follow-up batches, live-controller cleanup, same-id chain-tail races, failed-batch retry, and close ordering. JSONL specs retain storage mechanics and the through-coordinator torn-tail case that exercises the opaque-marker branch.
 
 ## Alternatives considered
 
 - **A base class the backends extend** — rejected for composition: a backend exposes only the hooks, cannot reach the coordinator's private orchestration state, and a third-party backend may still implement the abstract service directly without the coordinator at all.
-- **Put historical formats in the coordinator or require two physical reads** — rejected because format framing, highest-generation selection, immutable successor publication, and stable-source decoding belong to the backend. Optional fused current reads preserve one coordinator lifecycle while letting JSONL classify or migrate and decode one exact snapshot; the ordinary hooks remain the fallback for other backends.
+- **A wider hook API** — each candidate hook folds away: there is no scope-specific live lookup because `loadStored` plus the coordinator's cwd check preserves the collision boundary, no storage-locator generic because validated JSONL metadata reproduces its path, no separate `materialize` hook because the first batch must commit atomically with materialization, no separate create-collision probe because it is `loadStored(id) !== undefined`, and no coordinator pass-through for `list()` because listing needs none of the orchestration.
 
 ## Consequences
 
-The coordinator adds one indirection, an opaque torn marker, detached Session-retirement tasks, and bounded prepared Session state, but centralizes correctness-heavy orchestration for the JSONL provider and future implementations. Session disposal remains an observe-only event, so the Session owner does not await persistence retirement; the coordinator contains failures, preserves pending events in the live controller, and makes provider teardown the quiescence boundary. Its hooks stay tied to current consumers: identity, adoption, collision checks, preparation, and immutable inspection share the serialized current-prefix path; materialization stays atomic inside `appendBatch`; and listing bypasses stateful orchestration. For already-current input, read models use `inspect` rather than `load`, so observing an open turn does not commit interruption closers; historical input first publishes a separate migrated and repaired successor. The [Session preparation decision](2026-08-05-session-preparation.md) owns reuse, reservation, and publication. A new provider implements storage primitives rather than copying the bounded write lifecycle.
+The coordinator adds one indirection, an opaque torn marker, detached Session-retirement tasks, and bounded prepared Session state, but centralizes correctness-heavy orchestration for the JSONL provider and future implementations. Session disposal remains an observe-only event, so the Session owner does not await persistence retirement; the coordinator contains failures, preserves pending events in the live controller, and makes provider teardown the quiescence boundary. Its hook surface stays narrow: identity, adoption, collision checks, preparation, and immutable inspection reuse `loadStored`; materialization stays atomic inside `appendBatch`; and listing bypasses the coordinator. Read models use `inspect` rather than `load`, so observing a persisted open turn does not commit interruption closers; the [Session preparation decision](2026-08-05-session-preparation.md) owns reuse, reservation, and publication. A new provider implements storage primitives rather than copy the bounded write lifecycle.

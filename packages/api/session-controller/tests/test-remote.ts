@@ -1,16 +1,20 @@
 /** Test-only direct Remote face over the Session Controller's internal controllers. */
 
+import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { SESSION_FORMAT_VERSION, SessionLogOffset } from '@deepseek-ai/dsh-session'
-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import {
-  SessionPersistenceCorruptionError,
   SessionPersistenceNotFoundError,
   SessionPersistenceRevision,
-  type BorrowedSessionSource,
-  type CurrentSessionPersistenceListing,
-  type SessionInspection,
+  SessionReadOnlyError,
+  type SessionAccess,
+  type SessionHandle,
+  type SessionHandleReadOptions,
+  type SessionPersistenceListOptions,
+  type SessionPersistenceOpenOptions,
+  type SessionPersistenceSnapshot,
+  type SessionPersistenceStatOptions,
 } from '@deepseek-ai/dsh-session-persistence'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
@@ -79,6 +83,7 @@ export interface TestSessionRemote {
 export interface TestSessionRemoteDefaults {
   readonly defaultModelSelection: () => AgentModelSelection
   readonly cwd: string
+  readonly coldBlankProbeMaxEvents?: number
   readonly coldBlankProbeMaxBytes?: number
   readonly nativeOpen?: boolean
   readonly saveDefaultModelSelection?: (selection: AgentModelSelection) => void | Promise<void>
@@ -88,75 +93,100 @@ export interface TestSessionRemoteDefaults {
 
 const installed = new WeakMap<Context, SessionController>()
 
+/** Compact header-and-events point read a persistence double declares per session. */
+interface TestSessionInspection {
+  readonly meta: SessionHeader
+  readonly events: readonly SessionEvent[]
+}
+
 type LegacyTestPersistence = Record<string, unknown> & {
+  readonly list?: (signal?: AbortSignal) => Promise<readonly SessionHeader[]>
   readonly inspect?: (
     sessionId: SessionId,
     signal?: AbortSignal,
-  ) => Promise<SessionInspection | undefined>
-  readonly borrowSession?: (
+  ) => Promise<TestSessionInspection | undefined>
+  readonly stat?: (
     sessionId: SessionId,
-    signal?: AbortSignal,
-  ) => Promise<BorrowedSessionSource>
+    options?: SessionPersistenceStatOptions,
+  ) => Promise<SessionPersistenceSnapshot | undefined>
+  readonly open?: (
+    sessionId: SessionId,
+    access: SessionAccess,
+    options?: SessionPersistenceOpenOptions,
+  ) => Promise<SessionHandle>
+}
+
+/** One immutable read handle over a double's inspected header and events. */
+function testReadHandle(
+  sessionId: SessionId,
+  inspection: TestSessionInspection,
+): SessionHandle {
+  const events = Object.freeze([...inspection.events])
+  return {
+    id: sessionId,
+    header: inspection.meta,
+    inheritedEventCount: SessionLogOffset(0),
+    access: 'read',
+    read: (offset = 0, length?: number, options?: SessionHandleReadOptions) => {
+      options?.signal?.throwIfAborted()
+      return Promise.resolve(events.slice(offset, length === undefined ? undefined : offset + length))
+    },
+    append: () => Promise.reject(new SessionReadOnlyError(sessionId, 'append')),
+    flush: () => Promise.reject(new SessionReadOnlyError(sessionId, 'flush')),
+    close: () => Promise.resolve(),
+    [Symbol.asyncDispose]: () => Promise.resolve(),
+  }
 }
 
 /**
- * Describe one current logical header through the persistence listing contract.
- * @param header - current logical header exposed by the test backend.
- * @returns one current-format header-only listing descriptor.
+ * Adapt a compact header/inspect persistence double onto the handle-based
+ * abstract the production readers consume: `list` snapshots wrap the double's
+ * headers, `stat` derives a metadata-less snapshot from the listing (so the
+ * cold-blank probe skips unless the double declares its own `stat`), and
+ * `open` serves immutable read handles over the double's `inspect` result.
  */
-export function currentSessionListing(header: SessionHeader): CurrentSessionPersistenceListing {
-  return {
-    status: 'current',
-    header,
-    storedVersion: SESSION_FORMAT_VERSION,
-    targetVersion: SESSION_FORMAT_VERSION,
-  }
-}
-
-/** Add the preparation-backed point-read contract to compact persistence doubles. */
 export function testSessionPersistence(
-  ctx: Context,
+  _ctx: Context,
   persistence: LegacyTestPersistence,
-): LegacyTestPersistence {
-  if (persistence.borrowSession !== undefined) return persistence
-  return {
+): Record<string, unknown> {
+  const listHeaders = async (signal?: AbortSignal): Promise<readonly SessionHeader[]> =>
+    await persistence.list?.(signal) ?? []
+  const adapted: Record<string, unknown> = {
     ...persistence,
-    borrowSession: async (sessionId, signal) => {
-      signal?.throwIfAborted()
-      const inspection = await persistence.inspect?.(sessionId, signal)
-      signal?.throwIfAborted()
-      if (inspection === undefined) throw new SessionPersistenceNotFoundError(sessionId)
-      try {
-        const inheritedEventCount = (inspection as Partial<SessionInspection>).inheritedEventCount
-        if (inspection.meta.isSeeded && inheritedEventCount === undefined) {
-          throw new Error('seeded test persistence must provide inheritedEventCount')
-        }
-        const cut = SessionLogOffset(inheritedEventCount ?? 0)
-        const preparedSession = ctx.sessions.prepare(inspection.meta.id, {
-          seed: [...inspection.events],
-          meta: inspection.meta,
-          inheritedEventCount: cut,
-          seedSource: 'persistence',
-        })
-        return {
-          source: 'prepared',
-          inspection: {
-            meta: preparedSession.header,
-            inheritedEventCount: preparedSession.inheritedEventCount,
-            events: Object.freeze([...inspection.events]),
-          },
-          revision: SessionPersistenceRevision(`test:${sessionId}:${String(preparedSession.seq)}`),
-          preparedSession,
-          [Symbol.dispose]: () => {},
-        }
-      } catch (error: unknown) {
-        throw new SessionPersistenceCorruptionError(
-          `test session "${sessionId}" failed validation: ${String(error)}`,
-          { cause: error },
-        )
-      }
-    },
+    list: async (options?: SessionPersistenceListOptions) =>
+      (await listHeaders(options?.signal)).map(header => ({
+        header,
+        revision: SessionPersistenceRevision(`test:${header.id}:list`),
+      })),
   }
+  if (persistence.stat === undefined) {
+    adapted.stat = async (
+      sessionId: SessionId,
+      options?: SessionPersistenceStatOptions,
+    ): Promise<SessionPersistenceSnapshot | undefined> => {
+      options?.signal?.throwIfAborted()
+      const header = (await listHeaders(options?.signal)).find(listed => listed.id === sessionId)
+      return header === undefined
+        ? undefined
+        : { header, revision: SessionPersistenceRevision(`test:${sessionId}:stat`) }
+    }
+  }
+  if (persistence.open === undefined) {
+    adapted.open = async (
+      sessionId: SessionId,
+      access: SessionAccess,
+      options?: SessionPersistenceOpenOptions,
+    ): Promise<SessionHandle> => {
+      options?.signal?.throwIfAborted()
+      if (access !== 'read') {
+        throw new Error(`test persistence double only serves read handles (requested "${access}")`)
+      }
+      const inspection = await persistence.inspect?.(sessionId, options?.signal)
+      if (inspection === undefined) throw new SessionPersistenceNotFoundError(sessionId)
+      return testReadHandle(sessionId, inspection)
+    }
+  }
+  return adapted
 }
 
 /** Concrete point-read query used by Session Controller tests that do not exercise search. */
@@ -213,6 +243,9 @@ function installControllers(
     controller = new SessionController(
       ctx,
       {
+        ...defaults.coldBlankProbeMaxEvents === undefined
+          ? {}
+          : { coldBlankProbeMaxEvents: defaults.coldBlankProbeMaxEvents },
         ...defaults.coldBlankProbeMaxBytes === undefined
           ? {}
           : { coldBlankProbeMaxBytes: defaults.coldBlankProbeMaxBytes },

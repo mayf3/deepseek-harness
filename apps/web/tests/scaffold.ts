@@ -42,12 +42,10 @@ import {
   normalizedSystemPrompts,
   normalizedToolSchemas,
   parseSnapshotManifest,
-  parseSessionFixtureName,
   redactSessionSnapshotIds,
   normalizeSessionSnapshots,
   scrubRequestHeaders,
   scrubSessionSnapshot,
-  sessionFixtureName,
   stabilizeFixtureMessageIds,
   type NormalizeContext,
 } from '@deepseek-ai/dsh-session-snapshot'
@@ -64,17 +62,11 @@ import type {
   LlmModelInfo, LlmProviderInfo, LlmResolvedModelInfo, RetryPolicyConfig, StreamChunk,
 } from '@deepseek-ai/dsh-llm'
 import type { ReplayHandle } from '@deepseek-ai/dsh-llm-replay'
+import { installLlmReplay, parseSessionLog } from '@deepseek-ai/dsh-llm-replay'
 import {
-  installLlmReplay,
-  parseSessionLog,
-  parseSessionLogForReplay,
-} from '@deepseek-ai/dsh-llm-replay'
-import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
-import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
-import SessionStore, {
+  packChunkRuns,
   SESSION_FORMAT_VERSION,
   SessionId,
-  SessionSeq,
   type Session,
   type SessionEvent,
   type SessionHeader,
@@ -135,42 +127,11 @@ export async function assertFinalWorkspaceSnapshot(scenarioDir: string, workspac
 }
 
 async function ownsReplayFixture(replayFixture: string | undefined): Promise<boolean> {
-  if (replayFixture === undefined) return false
-  const fixture = parseSessionFixtureName(basename(replayFixture))
-  if (fixture === undefined || fixture.index !== 0) return false
+  if (replayFixture === undefined || basename(replayFixture) !== 'session.jsonl') return false
   const manifestPath = join(dirname(replayFixture), 'snapshot.yml')
   if (!existsSync(manifestPath)) return false
   const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
   return manifest.session === undefined
-}
-
-/**
- * Resolve one requested fixture role to its highest committed generation.
- * @param path - any generation path for the requested parent or child role.
- * @returns the highest canonical sibling generation, or the input for non-Session files.
- */
-export async function selectedSessionFixture(path: string): Promise<string> {
-  const requested = parseSessionFixtureName(basename(path))
-  if (requested === undefined) return path
-  const selected = (await readdir(dirname(path)))
-    .map(parseSessionFixtureName)
-    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate?.index === requested.index)
-    .sort((left, right) => right.version - left.version)[0]
-  // An override-only scenario deliberately has no projected parent role. Keep
-  // the absent source only when no committed generation exists for that role.
-  return selected === undefined ? path : join(dirname(path), selected.name)
-}
-
-/**
- * Return the current-writer target without replacing the requested older fixture.
- * @param path - any canonical fixture generation for one role.
- * @param version - generation emitted by the current writer.
- * @returns the canonical sibling path for that role and generation.
- */
-export function recordedSessionFixturePath(path: string, version: number): string {
-  const fixture = parseSessionFixtureName(basename(path))
-  if (fixture === undefined) throw new Error(`record harvest: invalid Session fixture path ${path}`)
-  return join(dirname(path), sessionFixtureName(fixture.index, version))
 }
 
 /** The shipped composition under test: the dsh-base and dsh-web-app bundle patches over the empty profile root. */
@@ -402,13 +363,7 @@ async function cleanupScaffoldWorld(ctx: Context, workspaceCwd: string, persiste
 export async function launchWebScaffold(options: LaunchOptions = {}): Promise<WebScaffold> {
   requireDist()
   const mode = webSnapshotMode()
-  const replayFixture = options.replayFixture === undefined
-    ? undefined
-    : await selectedSessionFixture(options.replayFixture)
-  const replayChildFixtures = options.replayChildFixtures === undefined
-    ? undefined
-    : await Promise.all(options.replayChildFixtures.map(selectedSessionFixture))
-  const compareReplaySession = options.compareReplaySession ?? await ownsReplayFixture(replayFixture)
+  const compareReplaySession = options.compareReplaySession ?? await ownsReplayFixture(options.replayFixture)
   const browserHost = options.remoteAuthority ?? '127.0.0.1'
   if (mode === 'record') {
     // Both owning vitest configs (web unconditionally, snapshot in record
@@ -695,10 +650,10 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // replay fixture and never streams. The direct install, unlike the plugin
     // row, returns the ReplayHandle for the teardown consumption check.
     if (options.replayProvidersOnly) {
-      if (replayFixture === undefined) {
+      if (options.replayFixture === undefined) {
         throw new Error('replayProvidersOnly requires replayFixture (its file supplies the header)')
       }
-      const fixtureText = readFileSync(replayFixture, 'utf8')
+      const fixtureText = readFileSync(options.replayFixture, 'utf8')
       // The consumption check is skipped for this mode, so no script source
       // may carry callable entries: reject override/child sources outright
       // and any call-bearing fixture.
@@ -716,7 +671,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       if (headerType !== 'session') {
         throw new Error('replayProvidersOnly fixture must open with a session header row')
       }
-      const recorded = parseSessionLogForReplay(fixtureText, replayFixture)
+      const recorded = parseSessionLog(fixtureText)
       const hasModelCall = recorded.some(event => (
         event.type === 'assistant/chunk' || event.type === 'request/header' || event.type === 'tool/call'
       ))
@@ -724,15 +679,15 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         throw new Error('replayProvidersOnly fixture must record no model calls')
       }
     }
-    if (mode !== 'record' && replayFixture !== undefined) {
+    if (mode !== 'record' && options.replayFixture !== undefined) {
       replayHandle = installLlmReplay(ctx, {
-        file: replayFixture,
+        file: options.replayFixture,
         providers: replayProviders(options.replayContextWindow).map(provider => ({
           ...provider,
           ...(options.replayRetryPolicy === undefined ? {} : { retryPolicy: options.replayRetryPolicy }),
         })),
         ...(options.replayOverride === undefined ? {} : { overrideFile: options.replayOverride }),
-        ...(replayChildFixtures === undefined ? {} : { childFiles: replayChildFixtures }),
+        ...(options.replayChildFixtures === undefined ? {} : { childFiles: options.replayChildFixtures }),
         ...(options.paceMs === undefined ? {} : { paceMs: options.paceMs }),
       })
     } else if (mode !== 'record' && options.deepSeekMissingCredential !== true) {
@@ -804,13 +759,13 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     async close(): Promise<void> {
       const failures: unknown[] = []
       if (mode !== 'record'
-        && replayFixture !== undefined
+        && options.replayFixture !== undefined
         && options.replayProvidersOnly !== true
         && compareReplaySession) {
         try {
           await assertReplaySession(
             [...observedSessions.values()],
-            replayFixture,
+            options.replayFixture,
             mode,
             `http://${browserHost}:${port}`,
           )
@@ -846,99 +801,39 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
  * in-memory record-mode harvest, so the on-disk zstd default never matters.
  */
 function rawSessionLog(session: Session): string {
-  const encoded = sessionFormatCatalog.encodeCurrent({
-    header: {
-      ...session.header,
-      delegationDepth: session.header.delegationDepth ?? 0,
-    },
-    inheritedEventCount: session.inheritedEventCount,
-    // Session validates durable payloads as JSON; its closed event unions do
-    // not carry the index signature used by the format package's JSON types.
-    events: session.snapshotEvents() as unknown as readonly SessionFormatEvent[],
-  }, { packChunks: true })
+  const header = session.header
   return [
-    JSON.stringify(encoded.header),
-    ...encoded.rows.map(record => JSON.stringify(record)),
+    JSON.stringify({
+      type: 'session',
+      version: header.version,
+      id: header.id,
+      createdAt: header.createdAt,
+      ...header.cwd === undefined ? {} : { cwd: header.cwd },
+      ...header.parentSession === undefined ? {} : { parentSession: header.parentSession },
+      ...header.isSeeded ? { seedLength: Number(session.inheritedEventCount) } : {},
+      ...header.origin === undefined ? {} : { origin: header.origin },
+      ...header.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth },
+      ...header.agentPreset === undefined ? {} : { agentPreset: header.agentPreset },
+    }),
+    ...packChunkRuns(session.snapshotEvents()).map(record => JSON.stringify(record)),
     '',
   ].join('\n')
 }
 
-function mapJsonStringValues(value: unknown, map: (value: string) => string): unknown {
-  if (typeof value === 'string') return map(value)
-  if (Array.isArray(value)) return value.map(item => mapJsonStringValues(item, map))
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-      key,
-      mapJsonStringValues(item, map),
-    ]))
-  }
-  return value
-}
-
-const WEB_PATH_TEXT_BOUNDARY_RE = /[\s<>'"`()\[\]{},;:!?=]/
-const WEB_FILE_URI_PATH_PREFIX_RE = /(?:^|[^a-z0-9+.-])file:\/\/\/?$/i
-
-function isWebCwdMatch(value: string, start: number, length: number): boolean {
-  const before = value[start - 1]
-  const after = value[start + length]
-  const afterPunctuation = value[start + length + 1]
-  const startsAtBoundary = before === undefined
-    || WEB_PATH_TEXT_BOUNDARY_RE.test(before)
-    || WEB_FILE_URI_PATH_PREFIX_RE.test(value.slice(0, start))
-  const endsAtBoundary = after === undefined
-    || after === '/'
-    || after === '\\'
-    || WEB_PATH_TEXT_BOUNDARY_RE.test(after)
-    || after === '.' && (afterPunctuation === undefined || WEB_PATH_TEXT_BOUNDARY_RE.test(afterPunctuation))
-  return startsAtBoundary && endsAtBoundary
-}
-
-function replaceWebCwd(value: string, cwd: string): string {
-  let cursor = 0
-  let normalized = ''
-  while (cursor < value.length) {
-    const match = value.indexOf(cwd, cursor)
-    if (match < 0) return normalized + value.slice(cursor)
-    const end = match + cwd.length
-    if (isWebCwdMatch(value, match, cwd.length)) {
-      normalized += value.slice(cursor, match) + '{{cwd}}'
-      cursor = end
-    } else {
-      normalized += value.slice(cursor, end)
-      cursor = end
+function normalizeWebSessionVolatiles(log: string): string {
+  const normalizeValue = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      return value.replace(/Anonymous user: [^.]+(?=\. Session sharing)/g, 'Anonymous user: {{anonymousUserId}}')
     }
+    if (Array.isArray(value)) return value.map(normalizeValue)
+    if (value !== null && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizeValue(item)]))
+    }
+    return value
   }
-  return normalized
-}
-
-/**
- * Normalize Web-only volatile strings while preserving JSON structure and row framing.
- * @param log - Raw Session JSONL.
- * @param workspaceCwd - Optional scaffold parent used before a live Session selects its cwd.
- * @returns Compact JSONL with run-local strings tokenized.
- */
-export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string): string {
-  const headerLine = log.split(/\r?\n/).find(line => line.trim().length > 0)
-  const header = headerLine === undefined ? undefined : JSON.parse(headerLine) as { cwd?: unknown }
-  const sessionCwd = typeof header?.cwd === 'string' && header.cwd.length > 0 ? header.cwd : undefined
-  const cwdSpellings = [...new Set([sessionCwd ?? workspaceCwd]
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .flatMap((value) => {
-      const forward = value.replaceAll('\\', '/')
-      const native = /^[A-Za-z]:[\\/]/.test(value) ? forward.replaceAll('/', '\\') : value
-      return [value, value.replaceAll('\\', '\\\\'), forward, native]
-    }))].sort((left, right) => right.length - left.length)
   return log.split(/\r?\n/).map((line) => {
     if (line.trim() === '') return line
-    const record = mapJsonStringValues(JSON.parse(line), (value) => {
-      let normalized = value
-        .replace(/Anonymous user: [^.]+(?=\. Session sharing)/g, 'Anonymous user: {{anonymousUserId}}')
-      for (const cwd of cwdSpellings) normalized = replaceWebCwd(normalized, cwd)
-      return normalized
-    }) as {
-      type?: unknown
-      data?: { endpoint?: unknown }
-    }
+    const record = normalizeValue(JSON.parse(line)) as { type?: unknown; data?: { endpoint?: unknown } }
     if (record.type === 'web/deepseek-search-llm-request' && typeof record.data?.endpoint === 'string') {
       record.data.endpoint = '{{webSearchEndpoint}}'
     }
@@ -947,8 +842,9 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
 }
 
 function stableSessionFixture(session: Session, existing: string, workspaceCwd: string): string {
-  const fresh = scrubSessionSnapshot(normalizeWebSessionVolatiles(rawSessionLog(session), workspaceCwd))
+  const fresh = scrubSessionSnapshot(normalizeWebSessionVolatiles(rawSessionLog(session)))
     .split(session.id).join('{{sessionId}}')
+    .split(workspaceCwd).join('{{cwd}}')
   const stable = redactSessionSnapshotIds(stabilizeFixtureMessageIds([fresh], [existing]))[0]
   if (stable === undefined) throw new Error('session harvest produced no stabilized fixture')
   return stable
@@ -961,7 +857,7 @@ async function assertReplaySession(
   webUrl: string,
 ): Promise<void> {
   let expected = await readFile(fixturePath, 'utf8')
-  const userPrompts = fixtureUserPrompts(expected, fixturePath)
+  const userPrompts = fixtureUserPrompts(expected)
   const candidates = sessions.filter((session) => {
     if (session.header.parentSession !== undefined) return false
     const actual = session.snapshotEvents().flatMap((event) => {
@@ -990,9 +886,7 @@ async function assertReplaySession(
     cwd: typeof expectedHeader.cwd === 'string' ? expectedHeader.cwd : '\0no-cwd\0',
   }
   expect(normalizeSessionSnapshots([normalizeWebSessionVolatiles(actual)], actualContext)[0], `${fixturePath}: persisted replay`)
-    .toBe(normalizeSessionSnapshots([normalizeWebSessionVolatiles(expected)], expectedContext, {
-      sourcePaths: [fixturePath],
-    })[0])
+    .toBe(normalizeSessionSnapshots([normalizeWebSessionVolatiles(expected)], expectedContext)[0])
 
   const fixtureDir = dirname(fixturePath)
   const manifestPath = join(fixtureDir, 'snapshot.yml')
@@ -1020,29 +914,23 @@ async function assertReplaySession(
  * identities with typed relationship-preserving tokens, and write the fixture.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
- * @param fixturePath - any committed generation for the fixture role.
+ * @param fixturePath - the committed session.jsonl target.
  */
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
   const agent = scaffold.ctx.agents.get(sessionId)
   if (agent === undefined) throw new Error(`record harvest: no live agent for ${sessionId}`)
-  const target = recordedSessionFixturePath(fixturePath, agent.session.header.version)
-  const existingPath = existsSync(target) ? target : fixturePath
-  const existing = existsSync(existingPath) ? await readFile(existingPath, 'utf8') : ''
-  await writeFile(target, stableSessionFixture(agent.session, existing, scaffold.workspaceCwd))
+  const existing = existsSync(fixturePath) ? await readFile(fixturePath, 'utf8') : ''
+  await writeFile(fixturePath, stableSessionFixture(agent.session, existing, scaffold.workspaceCwd))
 }
 
 /**
  * The user prompts recorded in a fixture, in order — the single source tying
  * spec drive steps to recorded reality so script and fixture cannot drift.
  * @param fixtureText - raw session.jsonl contents.
- * @param fixturePath - exact source path for the closed replay-only refusal policy.
  * @returns the recorded user prompt texts.
  */
-export function fixtureUserPrompts(fixtureText: string, fixturePath?: string): string[] {
-  const events = fixturePath === undefined
-    ? parseSessionLog(fixtureText)
-    : parseSessionLogForReplay(fixtureText, fixturePath)
-  return events.flatMap((event) => {
+export function fixtureUserPrompts(fixtureText: string): string[] {
+  return parseSessionLog(fixtureText).flatMap((event) => {
     if (event.type !== 'user/message' || event.data.source.kind !== 'user') return []
     const text = event.data.content.filter(block => block.type === 'text').map(block => block.text).join('')
     return text.length > 0 ? [text] : []
@@ -1061,6 +949,24 @@ export function fixtureIdentity(
 }
 
 /**
+ * Seed a recorded session fixture into the scaffold's persistence root
+ * through the REAL backend API (throwaway Context + JSONL plugin, a
+ * create-handle/append/close write — the semantic-checkpoint precedent),
+ * never raw file writes: no
+ * knowledge of bucket hashing, filename encoding, or compression, and
+ * malformed session events fail loud at seed time. The fixture's tokenized identity
+ * ({{sessionId}}/{{cwd}}) is realized for this world before parsing. Event
+ * times are materialized from event order against the fixture header's
+ * creation time, or the seeded creation time when normalization replaced the
+ * header value with zero.
+ * @param scaffold - the target scaffold.
+ * @param fixtureText - raw recorded session.jsonl contents.
+ * @param id - the seeded session id (stable for deterministic goldens).
+ * @param agentPreset - the preset the recorded session was composed from,
+ *   for scenarios asserting what a resumed session reports running.
+ * @returns the seeded id.
+ */
+/**
  * Realize a recorded seed fixture against one scaffold: substitute the
  * `{{sessionId}}`/`{{cwd}}` placeholders and rewrite the recorded cwd to the
  * scaffold's workspace. Idempotent, so a caller may realize early (e.g. to
@@ -1072,35 +978,25 @@ export function fixtureIdentity(
  * @returns the realized fixture text.
  */
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
-  const headerLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
-  if (headerLine === undefined) return fixtureText
-  const fixtureCwd = (JSON.parse(headerLine) as { cwd?: unknown }).cwd
-  return fixtureText.split(/\r?\n/).map((line) => {
-    if (line.trim() === '') return line
-    const realized = mapJsonStringValues(JSON.parse(line), (value) => {
-      let result = typeof fixtureCwd === 'string'
-        ? value.split(fixtureCwd).join(scaffold.workspaceCwd)
-        : value
-      result = result
-        .split('{{sessionId}}').join(id)
-        .split('{{session:1}}').join(id)
-        .replace(/\{\{session:([2-9]\d*)\}\}/g, (_token, ordinal: string) => `${id}-child-${ordinal}`)
-        .replace(/\{\{(message|approval|workflow|command|rpc|retry|id):([1-9]\d*)\}\}/g, (_token, kind: string, ordinal: string) =>
-          fixtureIdentity(kind as 'message' | 'approval' | 'workflow' | 'command' | 'rpc' | 'retry' | 'id', Number(ordinal)))
-        .split('{{cwd}}').join(scaffold.workspaceCwd)
-      return result
-    })
-    return JSON.stringify(realized)
-  }).join('\n')
+  const realized = fixtureText
+    .split('{{sessionId}}').join(id)
+    .split('{{session:1}}').join(id)
+    .replace(/\{\{session:([2-9]\d*)\}\}/g, (_token, ordinal: string) => `${id}-child-${ordinal}`)
+    .replace(/\{\{(message|approval|workflow|command|rpc|retry|id):([1-9]\d*)\}\}/g, (_token, kind: string, ordinal: string) =>
+      fixtureIdentity(kind as 'message' | 'approval' | 'workflow' | 'command' | 'rpc' | 'retry' | 'id', Number(ordinal)))
+    .split('{{cwd}}').join(scaffold.workspaceCwd)
+  const fixtureCwd = (JSON.parse(realized.split('\n', 1)[0]!) as { cwd?: string }).cwd
+  return fixtureCwd === undefined
+    ? realized
+    : realized.split(fixtureCwd).join(scaffold.workspaceCwd)
 }
 
 /**
  * Parse a committed web seed fixture through the replay reader.
  * @param fixtureText - session JSONL fixture contents.
- * @param fixturePath - exact source path for the closed replay-only refusal policy.
  * @returns the original header line, parsed header, and logical events.
  */
-export function parseSeedFixture(fixtureText: string, fixturePath?: string): {
+export function parseSeedFixture(fixtureText: string): {
   headerLine: string
   header: Record<string, unknown>
   events: SessionEvent[]
@@ -1109,10 +1005,7 @@ export function parseSeedFixture(fixtureText: string, fixturePath?: string): {
   if (headerLine === undefined) throw new Error('seed fixture has no session header')
   const header = JSON.parse(headerLine) as Record<string, unknown>
   if (header.type !== 'session') throw new Error('seed fixture must start with a session header')
-  const events = fixturePath === undefined
-    ? parseSessionLog(fixtureText)
-    : parseSessionLogForReplay(fixtureText, fixturePath)
-  return { headerLine, header, events }
+  return { headerLine, header, events: parseSessionLog(fixtureText) }
 }
 
 /**
@@ -1132,25 +1025,13 @@ export function renderSeedFixture(
   ].join('\n')
 }
 
-/**
- * Seed a recorded session fixture into the scaffold's persistence root
- * through the real Session and JSONL APIs. The source identity is consulted
- * only for the two closed replay-only alpha refusals.
- * @param scaffold - the target scaffold.
- * @param fixtureText - raw recorded session.jsonl contents.
- * @param id - the seeded session id.
- * @param agentPreset - preset recorded by scenarios that assert resumed composition.
- * @param fixturePath - exact source path for replay-only refusal policy.
- * @returns the seeded id.
- */
 export async function seedSession(
   scaffold: WebScaffold,
   fixtureText: string,
   id: string,
   agentPreset?: string,
-  fixturePath?: string,
 ): Promise<SessionId> {
-  const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id), fixturePath)
+  const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id))
   const events = decoded.events
   if (events.length === 0) throw new Error('seed fixture has no events')
   const last = events[events.length - 1]!
@@ -1161,8 +1042,8 @@ export async function seedSession(
     version: SESSION_FORMAT_VERSION,
     id: SessionId(id),
     createdAt: Date.now() - 60_000,
-    cwd: scaffold.workspaceCwd,
     isSeeded: false,
+    cwd: scaffold.workspaceCwd,
     delegationDepth: 0,
     ...agentPreset === undefined ? {} : { agentPreset },
   }
@@ -1176,29 +1057,6 @@ export async function seedSession(
   return meta.id
 }
 
-/** Seed one materialized cold Session whose log has no turn/start event. */
-export async function seedBlankSession(
-  scaffold: WebScaffold,
-  id: string,
-  cwd: string,
-): Promise<SessionId> {
-  const meta: SessionHeader = {
-    version: SESSION_FORMAT_VERSION,
-    id: SessionId(id),
-    createdAt: Date.now() - 60_000,
-    cwd,
-    isSeeded: false,
-    delegationDepth: 0,
-  }
-  await persistSeedSession(scaffold, meta, [{
-    type: 'session/end-seed',
-    seq: SessionSeq(0),
-    time: meta.createdAt,
-    data: {},
-  }])
-  return meta.id
-}
-
 /** Materialize one detached Session fixture through the shipped JSONL provider. */
 async function persistSeedSession(
   scaffold: WebScaffold,
@@ -1207,14 +1065,32 @@ async function persistSeedSession(
 ): Promise<void> {
   const seeder = new Context()
   try {
-    await seeder.plugin(SessionStore)
     // Same root as the booted tree with the plugin's own default compression,
     // so the host's directory-scan list() sees one consistent encoding.
     await seeder.plugin(JsonlSessionPersistence, { root: scaffold.persistenceRoot })
-    await seeder.sessionPersistence.create(meta)
-    await seeder.sessionPersistence.append(meta.id, events)
+    const handle = await seeder.sessionPersistence.create(meta)
+    await handle.append(events)
+    await handle.close()
   } finally {
     await seeder.fiber.dispose()
+  }
+}
+
+/**
+ * Read one stored session's physical event log through a throwaway read
+ * handle. The physical log carries no synthetic closers: a resumed session
+ * shows the closers the loop appended durably, and a never-resumed
+ * interrupted log stays interrupted.
+ * @param scaffold - the booted scaffold whose persistence holds the session.
+ * @param id - the stored session to read.
+ * @returns the stored events.
+ */
+export async function readPersistedEvents(scaffold: WebScaffold, id: SessionId): Promise<readonly SessionEvent[]> {
+  const handle = await scaffold.ctx.sessionPersistence.open(id, 'read')
+  try {
+    return await handle.read()
+  } finally {
+    await handle.close()
   }
 }
 
@@ -1241,18 +1117,12 @@ async function persistSeedSession(
 const ARIA_AGE =
   /(?:now|\d+min|\d+h|\d+d|\d+mo|\d+y|刚刚|\d+分钟|\d+小时|\d+天|\d+个月|\d+年)(?=")/g
 
-export function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): string {
+function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): string {
   // The session heading renders the workspace's basename, not the full
-  // path. Browser-visible paths may use URL slashes even when the Host cwd is
-  // native Windows, while serialized text doubles each backslash. Normalize
-  // every complete spelling longest-first before the basename.
-  const escapedCwd = workspaceCwd.replaceAll('\\', '\\\\')
-  const slashCwd = workspaceCwd.replaceAll('\\', '/')
-  const base = basename(slashCwd)
+  // path, so both spellings must collapse to the token.
+  const base = workspaceCwd.split('/').pop()!
   return (age ? snapshot.replace(ARIA_AGE, '{{age}}') : snapshot)
-    .split(escapedCwd).join('{{cwd}}')
     .split(workspaceCwd).join('{{cwd}}')
-    .split(slashCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
     // The optional space in `\d+m ?\d+s` covers both minute spellings: the
@@ -1384,19 +1254,15 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
   const entries = (await readdir(dir)).sort()
   const ownsManifest = entries.includes('snapshot.yml')
   const artifacts = entries.filter(name => name !== 'snapshot.yml')
-  const roleInventory = (names: readonly string[]): string[] => [...new Set(names.map((name) => {
-    const fixture = parseSessionFixtureName(name)
-    return fixture === undefined ? name : sessionFixtureName(fixture.index, 0)
-  }))].sort()
-  expect(roleInventory(artifacts)).toEqual(roleInventory(expected))
+  expect(artifacts).toEqual([...expected].sort())
   if (ownsManifest) {
     const manifestPath = join(dir, 'snapshot.yml')
     const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
     expect(manifest.profile).toBe('web')
     if (manifest.session === undefined) {
       expect(
-        artifacts.some(name => parseSessionFixtureName(name)?.index === 0),
-        `${dir}: session owner must carry a canonical parent Session fixture`,
+        artifacts.includes('session.jsonl'),
+        `${dir}: session owner must carry session.jsonl`,
       ).toBe(true)
     } else {
       expect(existsSync(resolve(dir, manifest.session.source)), `${dir}: session source`).toBe(true)
