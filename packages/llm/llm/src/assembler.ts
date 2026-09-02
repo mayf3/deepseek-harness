@@ -110,11 +110,6 @@ export class BlockAssembler {
     switch (partial.blockType) {
       case 'text': return { type: 'text', text: partial.text }
       case 'reasoning': return { type: 'reasoning', text: partial.text }
-      // TODO: the delta-only fallback still invents an empty name for a tool
-      // call that never carried one. No shipped adapter reaches it — the
-      // DeepSeek translator refuses such a response outright (see
-      // .agents/notes/implemented/architecture/2026-09-01-streamed-tool-call-identity.md)
-      // — but a future delta-only adapter would assemble an undispatchable call.
       case 'tool-call': return {
         type: 'tool-call',
         id: partial.toolCallId ?? brandString<ToolCallId>(`call-${index}`),

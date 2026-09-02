@@ -9,7 +9,7 @@
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { EMPTY_RESPONSE_CODE, LlmError, MALFORMED_TOOL_CALL_CODE } from '@deepseek-ai/dsh-llm'
+import { EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import { DONE } from './sse.ts'
 import type { WireChunk, WireUsage } from './types.ts'
@@ -86,28 +86,16 @@ function acceptIdentity(current: string | undefined, incoming: unknown): string 
   return typeof incoming === 'string' && incoming.length > 0 ? incoming : current
 }
 
-/** The identity field a streamed tool call never received. */
-interface Unidentified {
-  unidentified: 'id' | 'name'
-}
-
-/**
- * Assemble the final ContentBlock for one open block.
- * @param block - the block to close.
- * @returns the assembled block, or which identity field a tool call is missing.
- *   A tool call without both fields cannot be dispatched, and its result cannot
- *   be paired back to the provider, so the caller rejects the whole response
- *   rather than closing the block.
- */
-function closeBlock(block: OpenBlock): ContentBlock | Unidentified {
+/** Assemble the final ContentBlock for one open block. */
+function closeBlock(block: OpenBlock): ContentBlock {
   switch (block.kind) {
     case 'text': return { type: 'text', text: block.text }
     case 'reasoning': return { type: 'reasoning', text: block.text }
-    case 'tool-call': {
-      const { callId, name } = block
-      if (callId === undefined) return { unidentified: 'id' }
-      if (name === undefined) return { unidentified: 'name' }
-      return { type: 'tool-call', id: brandString<ToolCallId>(callId), name, arguments: block.text }
+    case 'tool-call': return {
+      type: 'tool-call',
+      id: brandString<ToolCallId>(block.callId ?? ''),
+      name: block.name ?? '',
+      arguments: block.text,
     }
   }
 }
@@ -118,9 +106,7 @@ function closeBlock(block: OpenBlock): ContentBlock | Unidentified {
  * @param payloads - SSE data payloads from {@link parseSse}, `[DONE]`-terminated.
  * @returns deltas as they arrive; `block-end`s, `usage`, and `finish` are all deferred to the `[DONE]` sentinel.
  *   A `stop` (or absent) finish with no opened blocks is a degenerate provider completion and maps to an
- *   `EMPTY_RESPONSE` error finish instead of a successful empty message. A tool call left without an `id` or
- *   `name` is unusable, so the response ends in a `MALFORMED_TOOL_CALL` error finish, after any usage and
- *   without a `block-end` for any block.
+ *   `EMPTY_RESPONSE` error finish instead of a successful empty message.
  */
 export async function* translate(payloads: AsyncIterable<string>): AsyncGenerator<StreamChunk> {
   let nextIndex = 0
@@ -139,29 +125,9 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
 
   for await (const payload of payloads) {
     if (payload === DONE) {
-      const ends: StreamChunk[] = []
       for (const block of order) {
-        const closed = closeBlock(block)
-        if ('unidentified' in closed) {
-          // A rejected response commits no assistant message, tool call, or
-          // tool result; the streamed chunks before it stay in the log, so the
-          // usage the attempt already burned is reported before the failure.
-          if (pendingUsage) yield { type: 'usage', usage: pendingUsage }
-          yield {
-            type: 'finish',
-            reason: {
-              kind: 'error',
-              failure: {
-                message: `model streamed a tool call with no ${closed.unidentified}`,
-                code: MALFORMED_TOOL_CALL_CODE,
-              },
-            },
-          }
-          return
-        }
-        ends.push({ type: 'block-end', index: block.index, block: closed })
+        yield { type: 'block-end', index: block.index, block: closeBlock(block) }
       }
-      yield* ends
       if (pendingUsage) yield { type: 'usage', usage: pendingUsage }
       const reason = pendingFinish ?? { kind: 'stop' as const }
       yield {
@@ -219,9 +185,6 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
         block.name = acceptIdentity(block.name, call.function?.name)
         const fragment = call.function?.arguments ?? ''
         block.text += fragment
-        // An in-flight delta may precede the call's id. The empty stand-in never
-        // reaches a ContentBlock: `[DONE]` either has the identity by then or
-        // refuses the whole response before closing the block.
         yield {
           type: 'tool-call-delta',
           index: block.index,
