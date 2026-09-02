@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-session-persistence-jsonl` stores each Session in canonical version-named JSONL generations whose ordinary writes append to the current file — checksummed Zstandard frames by default, raw newline-delimited lines when compression is disabled. Released v0 uses `session.jsonl[.zstd]`; positive versions use lowercase `session.vN.jsonl[.zstd]`. Migration publishes a previously absent successor beside the unchanged source and never renames, replaces, or deletes a committed generation path. The backend serves the same logical `SessionEvent` stream as any persistence backend, so physical naming, compression, historical decoding, migration, and crash recovery remain storage details. Choose it when consumers need per-session artifacts on disk: `locate(meta)` returns the version-qualified target, and raw generations are line-readable with `compression: 'none'`. A root directory is the one required configuration; durability, lazy materialization, and interrupted-turn recovery come with the backend.
+`dsh-session-persistence-jsonl` stores each session in a current append-only JSONL log and retains immutable historical format generations — checksummed Zstandard frames by default, raw newline-delimited lines when compression is disabled. It serves the current logical `SessionEvent` stream through persistence handles, so format migration, compression, historical decoding, and crash recovery remain storage-internal details. Choose it when consumers need a per-session file on disk; the logs are readable as plain lines when `compression: 'none'` is selected. A root directory is the one required configuration; durability, lazy materialization, released-v0/v1 migration, and torn-tail crash recovery come with the backend.
 
 ## Table of Contents
 
@@ -46,14 +46,14 @@ Choose this backend when consumers benefit from one artifact per session — nav
 |---|---|---|
 | `root` | required | Root directory for all session files |
 | `compression` | `'zstd'` | Physical encoding: `'zstd'` checksummed frames, or `'none'` newline-delimited UTF-8 text |
-| `preparedSessionCacheSize` | `5` | Cold session preparations retained for resume reuse |
-| `writeBatchMaxDelayMs` | `200` | Fixed live-event coalescing window, in milliseconds |
+
+Live-event write batching is not configuration: the batching window is the seam's internal scheduling policy inside each write handle.
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-session-persistence-jsonl) is the exhaustive source for every accepted field and its JSDoc.
 
 ### On-disk layout
 
-Each Session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename. Current v2 stores one physical row per durable event; the frozen v0 and v1 readers also understand their historical packed Assistant-delta rows. The format catalog translates every supported historical header and event representation before the persistence coordinator receives current logical values. Current storage records use the lossless provenance representation described below:
+Each session gets a session-owned directory under a readable project directory. Every canonical generation starts with a physical header whose version equals its filename. Current v2 stores one physical row per durable event; the frozen v0 and v1 readers also understand their historical packed Assistant-delta rows. V2 stores `isSeeded` in the header and derives the inherited cut from the last tagged `session/end-seed` marker, while historical codecs translate their numeric `seedLength`. The format catalog completes that translation before a handle exposes current logical values. Current storage records use the lossless provenance representation described below:
 
 ```text
 <root>/
@@ -67,15 +67,15 @@ Each Session gets a session-owned directory under a readable project directory. 
       session.v2.jsonl           # released v2, raw root; later versions use vN
 ```
 
-Session ids are injectively escaped to one safe path segment before use (no traversal, no collision). The normalized cwd keeps the project directory readable for navigation; cwd strings that normalize alike share a project directory while session ids still select distinct session directories. `locate(meta)` performs no filesystem I/O and returns `{ kind: 'jsonl', path }` for `meta.version`: suffixless for v0 and `.vN` for every positive version. Listing instead reports the exact highest generation it found on disk.
+Session ids are injectively escaped to one safe path segment before use (no traversal, no collision). The normalized cwd keeps the project directory readable for navigation; cwd strings that normalize alike share a project directory while session ids still select distinct session directories. Runtime operations select the numerically highest canonical generation, and format-refusal diagnostics name that absolute path so an operator can find the raw log a build refused to interpret.
 
 ### Durability and crash semantics
 
-A Session is materialized lazily: `create(meta)` writes nothing, and the first `append` writes and `fsync`s the encoded header and first batch through no-overwrite publication at the current version's canonical filename. A created-but-never-appended Session therefore leaves nothing on disk unless a lifecycle consumer calls `ensureMaterialized`, which publishes one header frame without an event. Flushed current-generation events append lines or compressed frames; a caught write or sync failure rolls that file back to its prior length without replacing its path or inode. A body read of a supported historical generation reads one stable exact source, decodes its recoverable prefix, composes all required edges and current interrupted-turn repair in memory, writes and validates only the final target in a same-directory temporary file, rechecks the source fingerprint, then publishes the previously absent target without overwrite and syncs the namespace. POSIX links the temporary inode to the target; Windows moves the temporary file with write-through and no replacement. If another writer already published the target, the backend accepts it only when it is a regular current-format file with exactly the expected bytes. The source path, bytes, and inode remain unchanged, intermediate versions never reach disk, and the committed target is reopened through the current reader before a Session is constructed.
+A session is materialized lazily: `create(header)` writes nothing and returns the owned write handle, and the handle's first `append` writes and `fsync`s the encoded header and first batch through a no-overwrite publish — so a created-but-never-appended session leaves nothing on disk unless its owner calls `handle.flush()`, which publishes one header frame without an event. Each subsequent batch appends lines or one compressed frame and `fsync`s before the append resolves; a caught write or sync failure rolls the file back to its prior length. Committed events are never rewritten. After a crash, the stored log keeps its interrupted final turn — every record in the committed prefix survives, and the resuming reader appends synthetic closers through its write handle. A torn tail — an incomplete final line, or a torn final frame — is never returned to a reader and is discarded whole, truncated durably before the write handle's first new append, because its own append never resolved and nothing in it was acknowledged durable; checksum, decompression, or structural failure in the committed prefix rejects as corruption.
 
 ### Reading the logs
 
-`inspect(id)` returns an immutable balanced view with its exact inherited cut; it does not commit crash recovery for an already-current generation. `readFrom(id, fromOffset)` accepts a `SessionLogOffset`, returns stored events at or past that offset, and retains the same cut beside the suffix; sequential media like JSONL parse the whole selected generation and skip forward. On its first cold body open, the backend scans the Session directory, selects the numerically highest canonical filename, refuses it when its version is newer than the build, or publishes the final current successor for a supported older version. A validated current selection is cached for later opens in the same backend instance under the one-writer assumption; `list` and `listSnapshots` always rescan and report the directory's highest generation. `readRaw` returns that selected generation and preserves its logical basename in `filename` (`session.jsonl` for v0 or `session.vN.jsonl` for v1+; `.zstd` is omitted because `content` is decoded). Retained lower generations are never automatic fallback, restore, or downgrade inputs. With `compression: 'none'`, every generation is newline-delimited text an external reader can consume directly; compressed generations require Zstandard decoding.
+`open(id, 'read'|'write')` selects the highest canonical generation and publishes a current successor beside a supported historical source before returning the handle; the source remains byte-identical. The handle's `read(offset?, length?)` then serves validated contiguous slices, never a torn tail. A torn final Zstandard frame is partially decoded: complete JSONL records already flushed into it are recovered into the logical log, and the write handle's first mutation truncates current-generation torn bytes and durably rewrites the recovered records ahead of its own batch. A write open primes the handle with the validated stored prefix, and a bounded revision-keyed memo lets an immediate observe-to-resume handoff reuse that parse. `stat(id)` and `list()` select and translate only the highest generation header without reading event rows or publishing migration output; snapshots carry `sizeBytes` and a best-effort stat-derived revision for the selected file. With `compression: 'none'`, the log is newline-delimited text an external reader can consume directly; the compressed default must be read through the backend.
 
 -----
 
@@ -89,21 +89,22 @@ This section explains the physical encoding and write path; the observable contr
 
 ### Design concept
 
-The backend is a thin storage layer over the shared [PersistenceCoordinator](../session-persistence/README.md#understand-the-implementation): it loads stored records, appends batches, commits repairs, and delegates lifecycle orchestration to the coordinator. Its fused body-read hook carries one stable physical snapshot across generation classification or migration and current decoding, so the selected file is not read twice. After a current generation is validated, the backend caches its path for later same-process body opens; header listing deliberately bypasses that cache. Physical identity remains a file revision: device, inode, size, and nanosecond timestamps identify one generation and change after append or repair, which is what `listSnapshots` and retained-preparation validation use.
+The backend owns its complete storage runtime (`src/storage.ts`): `JsonlSessionHandle` carries the per-handle mutation chain, the routed live-event buffer with its fixed batching window and single-flight drain, monotonic reads, and idempotent close; a tracker holds the in-process single-writer claims, the open-handle set teardown sweeps, and the created-but-unmaterialized pending sessions the backend's own session listeners route into. The package deliberately exposes only its default plugin export plus configuration types — the concrete class is not a named export, so consumers couple to `ctx.sessionPersistence`, and the shared seam suites (`runPersistenceContract`/`runLiveWritePathContract`) pin its observable behavior. Its change token is a best-effort file revision: device, inode, size, and nanosecond timestamps identify one log for `stat`/`list` and for the stable-read loop that retries a read torn by a concurrent append.
 
 ### Physical encoding
 
-The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). Current v2 writes one event per row; `sourceEventSeqs` uses a lossless storage representation in which consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. `compression: 'none'` keeps the same storage-form logical lines without frame compression. The configured suffix selects framing once; generation migration operates on decoded JSON values and uses the same publication algorithm for raw and compressed files. A root belongs to one encoding: startup discovery and targeted lookup reject the opposite suffix, and there is no compression migration, mixed-root fallback, or dual write. Frozen v0 and v1 codecs retain their packed-row decoders solely for historical generations.
+The default artifact is a standard concatenation of independent [Zstandard frames](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md): one checksummed frame containing only the header line, then one checksummed frame per durable append batch, using Node's built-in Zstandard API at its default compression level (no level knob). Current v2 writes one event per row; `sourceEventSeqs` uses a lossless storage representation in which consecutive runs of at least three sequence numbers become `[start, end]` pairs, any other list stays verbatim, and reading expands the exact in-memory array. Listing reads and validates only the header frame. `compression: 'none'` keeps the same storage-form logical lines without frame compression. A root belongs to one encoding: startup discovery and targeted lookup reject generations with the other suffix; format migration preserves the configured encoding, while compression conversion, mixed-root fallback, and dual write remain unsupported. Frozen v0 and v1 codecs retain their packed-row decoders solely for historical generations.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, backend class, coordinator wiring |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, the backend service class, and file storage primitives |
+| [`src/storage.ts`](src/storage.ts) | The JSONL handle, routed live-event buffer, in-process writer bookkeeping, listeners, teardown |
 | [`src/format.ts`](src/format.ts) | Log path derivation, header encoding, and current record scanning |
-| [`src/generation.ts`](src/generation.ts) | Exact source reads, final-target staging, source recheck, and exclusive successor publication |
+| [`src/generation.ts`](src/generation.ts) | Stable generation reads, format-adapter invocation, exclusive successor publication, committed reopen |
 | [`src/zstd.ts`](src/zstd.ts) | Zstandard frame compression, decoding, and frame scanning |
-| [`src/win32.ts`](src/win32.ts) | Windows write-through no-overwrite file and directory publication |
+| [`src/win32.ts`](src/win32.ts) | Windows write-through publish and directory creation |
 | — | No runtime invariant companion is published; persistence correctness requires backend round-trip and crash-tail tests; this package exposes no continuously observable in-process relation. |
 
 </details>
@@ -117,9 +118,9 @@ Read these pages when the package-level contract is not enough. They move from t
 
 - [Session persistence subsystem](../../../docs/subsystems/persistence.md) — backend-neutral service semantics and provider relationships.
 - [Session persistence seam](../session-persistence/README.md) — the service contract this backend implements.
-- [Released Session migrations](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) — adjacent-chain, immutable naming, and exclusive publication guarantees.
 - [Project-session directory decision](../../../.agents/notes/implemented/architecture/2026-07-24-project-session-directories.md) — the layout tradeoff behind project and session directories.
 - [Zstandard JSONL session logs](../../../.agents/notes/implemented/architecture/2026-07-19-zstandard-jsonl-session-logs.md) — the checksummed-frame encoding rationale.
+- [Released Session format migrations](../../../.agents/notes/implemented/architecture/2026-08-31-released-session-format-migrations.md) — immutable generations, adjacent migration edges, and publication rules.
 
 -----
 
@@ -147,13 +148,12 @@ JSONL storage does not mutate live request prefixes. A resumed loop can reuse pr
 
 These limits define when this backend is a poor fit or needs special operational care. They are current package constraints, not a task backlog.
 
-- **Only the configured encoding loads** — supported older Session formats migrate within that encoding; changing compression still requires a separate or fresh root.
+- **Format migration preserves the configured encoding and supports only the catalogued chain** — this build migrates released v0 or v1 to current v2; changing compression requires a separate root, and retained predecessors do not provide automatic fallback or downgrade support.
 - **The flat-file storage layout does not load** — use a separate root or move pre-release artifacts into the project/session directory layout before loading.
 - **Compressed files are not directly line-readable** — use the backend to load them, or select `compression: 'none'` before writing a fresh root when external line readers are required.
-- **Nothing deletes session generations** — every canonical generation accumulates under `root` until removed externally; the seam has no deletion API and never falls back from the numerically highest filename to an older one.
-- **Retention is not downgrade support** — predecessor files preserve exact evidence and permit explicit operator copying or inspection, but this build does not restore them automatically and makes no promise that an older binary can safely reopen a directory after a successor exists.
-- **One live writer per session** — append, repair, and migration are coordinated only inside the owning backend instance; cross-process writer fencing requires a future per-session lock.
-- **Publication requires no-overwrite filesystem primitives** — POSIX first materialization and successor publication use `link()` plus parent-directory `fsync`; Windows uses write-through moves that refuse an existing destination. Temporary stages may move or unlink, but committed generation paths do not.
+- **Nothing deletes session files** — logs accumulate under `root` until removed externally; the seam has no deletion API.
+- **One live writer per session, in-process only** — the write-handle claim excludes a second writer inside the owning backend instance; another instance or process must not write the same session until that handle closes (the durable cross-process lease is the seam's planned next layer).
+- **POSIX materialization requires hard-link support** — first append uses `link()` so same-id races fail instead of overwriting a committed log; Windows uses write-through rename without replacement.
 
 <a id="dev-note"></a>
 ### Dev Note

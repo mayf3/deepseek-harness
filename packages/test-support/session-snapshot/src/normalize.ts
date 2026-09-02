@@ -323,9 +323,9 @@ export function normalizeStdout(
 
 /**
  * Normalize a session JSONL log into a stable expected output: the header line's
- * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed, ordinary
- * event `time`, packed-row `time0`, and goal-change lifecycle clock values are
- * zeroed, and all volatile strings are scrubbed. Projected inputs remain
+ * volatile fields (`createdAt`, `id`, `cwd`) are zeroed/scrubbed; event,
+ * historical packed-row, embedded Assistant-stream, and goal lifecycle clocks
+ * are zeroed; and all volatile strings are scrubbed. Projected inputs remain
  * projected. Packed `data.dt` gaps are normalized even when the projected row
  * omits its `time0` anchor.
  * Output is JSONL in the same shape as the input — one compact record per
@@ -391,7 +391,7 @@ export function normalizeSessionLog(
  * Canonicalize projected v2 body records. Compact streams are nested event data,
  * so persistence flush boundaries cannot change the row layout.
  */
-function repackSessionSnapshot(rawLog: string): string {
+function projectSessionSnapshot(rawLog: string): string {
   const lines = rawLog.split('\n').filter(line => line.trim().length > 0)
   const header = lines.shift() as string
 
@@ -407,8 +407,8 @@ function repackSessionSnapshot(rawLog: string): string {
 /**
  * Normalize and project persisted session JSONL for a committed fixture.
  * This composes ordinary log normalization with request-header scrubbing and
- * persistence-envelope projection, then packs the logical event stream into a
- * canonical layout independent of persistence flush boundaries.
+ * persistence-envelope projection, then writes the v2 logical event stream as
+ * one record per event, independent of persistence flush boundaries.
  *
  * @param rawLog - persisted or already-projected session JSONL.
  * @param ctx - the run's volatile values to scrub.
@@ -420,7 +420,7 @@ export function normalizeSessionSnapshot(
   ctx: NormalizeContext,
   options: NormalizeOptions = {},
 ): string {
-  return repackSessionSnapshot(scrubSessionSnapshot(normalizeSessionLog(rawLog, ctx, options)))
+  return projectSessionSnapshot(scrubSessionSnapshot(normalizeSessionLog(rawLog, ctx, options)))
 }
 
 /**
@@ -439,7 +439,7 @@ export function normalizeSessionSnapshots(
     ? prepareSessionSnapshotFixtureForComparison(log)
     : log)
   const comparableLogs = currentLogs.map(normalizeSessionFormatProvenance)
-  return redactSessionSnapshotIds(comparableLogs).map(log => repackSessionSnapshot(
+  return redactSessionSnapshotIds(comparableLogs).map(log => projectSessionSnapshot(
     scrubSessionSnapshot(normalizeSessionLog(
       log,
       { ...ctx, sessionIds: [] },

@@ -94,7 +94,12 @@ const HEADER_REQUIRED_KEYS = ['type', 'version', 'id', 'createdAt', 'isSeeded', 
 const HEADER_OPTIONAL_KEYS = ['cwd', 'parentSession', 'origin', 'agentPreset'] as const
 const HEADER_KEYS = new Set<string>([...HEADER_REQUIRED_KEYS, ...HEADER_OPTIONAL_KEYS])
 
-function assertNoRetiredHeaderFields(value: unknown): void {
+/**
+ * Refuse policy fields that never belong to a released Session header.
+ * @param value - parsed physical header candidate.
+ * @returns nothing after successful validation.
+ */
+export function assertNoRetiredHeaderFields(value: unknown): void {
   if (typeof value !== 'object' || value === null) return
   if (Object.hasOwn(value, 'sandboxMode') || Object.hasOwn(value, 'approvalPolicy')) {
     throw new Error('session header uses retired policy baseline fields')
@@ -211,30 +216,6 @@ export function encodeSegment(raw: string): string {
     }
   }
   return out
-}
-
-/**
- * Decode one canonical {@link encodeSegment} result.
- *
- * @param encoded - candidate storage-directory segment.
- * @returns the original string, or `undefined` when the spelling is not canonical.
- */
-export function decodeSegment(encoded: string): string | undefined {
-  if (encoded.length === 0) return undefined
-  let decoded = ''
-  for (let index = 0; index < encoded.length;) {
-    const character = encoded[index] as string
-    if (character !== '~') {
-      decoded += character
-      index += 1
-      continue
-    }
-    const escape = encoded.slice(index + 1, index + 5)
-    if (!/^[0-9A-F]{4}$/u.test(escape)) return undefined
-    decoded += String.fromCharCode(Number.parseInt(escape, 16))
-    index += 5
-  }
-  return encodeSegment(decoded) === encoded ? decoded : undefined
 }
 
 /**
@@ -565,32 +546,4 @@ export function scanLog(buffer: Buffer): SessionLogScan {
   const scanner = new SessionLogScanner(buffer.subarray(0, headerEnd + 1))
   scanner.write(buffer.subarray(headerEnd + 1))
   return scanner.finish()
-}
-
-/**
- * Parse just the header line of a log into logical metadata plus its exact
- * inherited cut, or `undefined` if it is missing/not a header.
- * @param firstLine - the first line of a log file (without its trailing newline).
- * @returns parsed storage metadata, or `undefined` for a malformed header.
- */
-export function parseHeader(firstLine: string): SessionStorageMetadata | undefined {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(firstLine)
-  } catch {
-    return undefined
-  }
-  return parseHeaderValue(parsed)
-}
-
-/**
- * Translate one already-parsed current physical header without parsing its JSON twice.
- * @param value - parsed first JSONL record.
- * @returns current storage metadata, or `undefined` for a malformed header.
- */
-export function parseHeaderValue(value: unknown): SessionStorageMetadata | undefined {
-  refuseForeignFormatVersion(value)
-  assertNoRetiredHeaderFields(value)
-  if (!isHeaderLine(value)) return undefined
-  return fromHeaderLine(value)
 }

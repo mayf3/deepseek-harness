@@ -1,4 +1,4 @@
-{"type":"session","version":2,"id":"{{session:1}}","createdAt":1788240622920,"cwd":"{{cwd}}","isSeeded":false,"delegationDepth":0,"agentPreset":"standard"}
+{"type":"session","version":2,"id":"{{session:1}}","createdAt":1788240622920,"cwd":"{{cwd}}","isSeeded":false,"delegationDepth":0,"agentPreset":"ptc"}
 {"type":"permission/preset","data":{"preset":"workspace-write"}}
 {"type":"sandbox/mode","data":{"mode":"workspace-write"}}
 {"type":"approval/policy","data":{"policy":"ask"}}

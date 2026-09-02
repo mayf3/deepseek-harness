@@ -8,7 +8,7 @@
 
 ## 逻辑记录
 
-`SessionRecord` 由全语料库列表返回。它除了克隆的、优先取自 live 源的 header 外，还单独公开各源的可用性；listing 提供位置时，它也携带精确选定的持久 generation location。`SessionEventRecord` 是轻量的原始日志投影；分类使用与模型历史推导相同的 `foldSurface()` 状态转换。
+`SessionRecord` 由全语料库列表返回。它除了克隆的、优先取自 live 源的 header 外，还单独公开各源的可用性。`SessionEventRecord` 是轻量的原始日志投影；分类使用与模型历史推导相同的 `foldSurface()` 状态转换。
 
 ```ts type-equiv
 /** Whether an event is current model context, replaced context, or raw-log-only. */
@@ -20,11 +20,9 @@ type SessionEventSurface = 'current' | 'shadowed' | 'log-only'
 interface SessionRecord {
   /** Cloned session header selected from the live-preferred corpus. */
   header: SessionHeader
-  /** Exact listed artifact location, when persistence exposes one. */
-  location?: SessionLocation
   /** Whether the id currently exists in `ctx.sessions`. */
   live: boolean
-  /** Whether the active persistence backend currently materializes the id. */
+  /** Whether the active persistence backend currently lists the id, including a created-but-unmaterialized session it already observes. */
   persisted: boolean
 }
 ```
@@ -38,7 +36,7 @@ interface SessionLogSnapshot {
   session: SessionHeader
   /** Exact number of fork-inherited events in the observed log. */
   inheritedEventCount: SessionLogOffset
-  /** Cloned contiguous raw events after persistence repair and replay validation. */
+  /** Cloned contiguous raw events after in-memory interrupted-turn balancing and replay validation. */
   events: SessionEvent[]
 }
 ```

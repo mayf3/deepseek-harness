@@ -136,8 +136,8 @@ export interface CreateSessionOptions {
   /** Initial replay or fork history supplied at construction. */
   readonly seed?: readonly SessionEvent[]
   /**
-   * Exact fork-inherited prefix length when `meta.isSeeded` is true. A
-   * In v2 the constructor seed is exactly this inherited prefix; the constructor
+   * Exact fork-inherited prefix length when `meta.isSeeded` is true. In v2 the
+   * constructor seed is exactly this inherited prefix; the constructor
    * appends the child-owned tagged marker at the cut.
    */
   readonly inheritedEventCount?: SessionLogOffset
@@ -204,8 +204,10 @@ export interface TurnEndReasonMap {
   /** At least one step reached its output-token ceiling, even if a plugin continued the turn. */
   'max-tokens': { kind: 'max-tokens' }
   /**
-   * A persistence backend closed a crash-orphaned turn on reload. The loop never
-   * emits this marker, and the events recorded before the crash remain intact.
+   * A crash-orphaned turn was closed after the fact: agent-loop resume appends
+   * this closer for a stored log whose last turn never ended, and session-query
+   * synthesizes it on cold reads. The loop never emits this marker live, and
+   * the events recorded before the crash remain intact.
    */
   interrupted: { kind: 'interrupted' }
 }

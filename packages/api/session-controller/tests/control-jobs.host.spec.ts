@@ -9,7 +9,6 @@ import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { describe, expect, it } from 'vitest'
 import { SessionControlController } from '../src/control.ts'
 import type { SessionControlFrame } from '../src/types.ts'
-import { currentSessionListing } from './test-remote.ts'
 
 type BaselineFrame = Extract<SessionControlFrame, { type: 'baseline' }>
 type JobFrame = Extract<SessionControlFrame, { type: 'jobs' }>
@@ -182,13 +181,7 @@ describe('Session control jobs updates', () => {
     const coldId = SessionId('session-cold-tasks')
     let loaded = false
     ctx.provide('sessionPersistence', {
-      list: async () => [currentSessionListing({
-        version: SESSION_FORMAT_VERSION,
-        id: coldId,
-        createdAt: 5,
-        cwd: '/tmp',
-        isSeeded: false,
-      })],
+      list: async () => [{ version: SESSION_FORMAT_VERSION, id: coldId, createdAt: 5, cwd: '/tmp' }],
       locate: () => undefined,
       load: () => { loaded = true; throw new Error('job projection must not load a cold log') },
     } as never)

@@ -1,17 +1,11 @@
 /** Live/persisted logical-corpus resolution for session-query. */
 
 import type { Context, Fiber } from '@deepseek-ai/cordis'
-import type {
-  Session,
-  SessionEvent,
-  SessionHeader,
-  SessionId,
-  SessionLogOffset,
-} from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionHeader, SessionId , SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type SessionPersistence from '@deepseek-ai/dsh-session-persistence'
-import type { ReadableSessionPersistenceListing } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionRecord } from './types.ts'
 import { SessionQueryError } from './config.ts'
+import { readColdSessionLog, type ColdSessionLog } from './cold-read.ts'
 import { assertSessionHeadersCompatible } from './sources.ts'
 
 /** Detached source selected for one exact read. */
@@ -28,8 +22,6 @@ export interface LogicalSession {
 export interface LogicalSessionSource {
   /** Header selected with `events`; callers must clone retained output. */
   readonly header: SessionHeader
-  /** Exact fork-inherited event count paired with {@link header}. */
-  readonly inheritedEventCount: SessionLogOffset
   /** Raw events selected with `header`; valid only for the projection call. */
   readonly events: readonly SessionEvent[]
 }
@@ -46,7 +38,7 @@ export class SessionCorpus {
 
   constructor(
     private readonly _ctx: Context,
-    private readonly _persistedInspectConcurrency: number,
+    private readonly _persistedReadConcurrency: number,
   ) {
     this._optionalPersistenceFiber = _ctx.inject(['sessionPersistence'], (childCtx: Context) => {
       const service = childCtx.sessionPersistence
@@ -72,20 +64,14 @@ export class SessionCorpus {
     const persisted = persistence === undefined ? [] : await listPersisted(persistence, signal)
     signal?.throwIfAborted()
     const records = new Map<SessionId, SessionRecord>()
-    for (const listing of persisted) {
-      records.set(listing.header.id, {
-        header: structuredClone(listing.header),
-        ...listing.location === undefined ? {} : { location: structuredClone(listing.location) },
-        live: false,
-        persisted: true,
-      })
+    for (const header of persisted) {
+      records.set(header.id, { header: structuredClone(header), live: false, persisted: true })
     }
     for (const session of this._ctx.sessions.list()) {
       const durable = records.get(session.id)
       if (durable !== undefined) assertSessionHeadersCompatible(session.header, durable.header)
       records.set(session.id, {
         header: structuredClone(session.header),
-        ...durable?.location === undefined ? {} : { location: structuredClone(durable.location) },
         live: true,
         persisted: durable !== undefined,
       })
@@ -112,8 +98,7 @@ export class SessionCorpus {
     }
     const persistence = this._persistence
     if (persistence === undefined) throw notFound(sessionId)
-    const listed = (await listPersisted(persistence, signal))
-      .find(listing => listing.header.id === sessionId)
+    const listed = (await listPersisted(persistence, signal)).find(header => header.id === sessionId)
     signal?.throwIfAborted()
     if (listed === undefined) throw notFound(sessionId)
     const loaded = await inspectPersisted(persistence, sessionId, signal)
@@ -124,9 +109,9 @@ export class SessionCorpus {
       signal?.throwIfAborted()
       return snapshot
     }
-    assertSessionHeadersCompatible(loaded.meta, listed.header)
+    assertSessionHeadersCompatible(loaded.header, listed)
     const snapshot = {
-      header: structuredClone(loaded.meta),
+      header: structuredClone(loaded.header),
       inheritedEventCount: loaded.inheritedEventCount,
       events: loaded.events.map(event => structuredClone(event)),
     }
@@ -171,7 +156,7 @@ export class SessionCorpus {
       return orderedResults(ids, resolved)
     }
 
-    let persisted: ReadableSessionPersistenceListing[]
+    let persisted: SessionHeader[]
     try {
       persisted = await listPersisted(persistence, signal)
       signal?.throwIfAborted()
@@ -182,7 +167,7 @@ export class SessionCorpus {
       }
       return orderedResults(ids, resolved)
     }
-    const persistedById = new Map(persisted.map(listing => [listing.header.id, listing]))
+    const persistedById = new Map(persisted.map(header => [header.id, header]))
     const resolvePersisted = async (sessionId: SessionId): Promise<void> => {
       const listed = persistedById.get(sessionId)
       if (listed === undefined) {
@@ -201,10 +186,9 @@ export class SessionCorpus {
           resolved.set(sessionId, projectSource(sessionId, sourceLive(attached), project, signal))
           return
         }
-        assertSessionHeadersCompatible(loaded.meta, listed.header)
+        assertSessionHeadersCompatible(loaded.header, listed)
         resolved.set(sessionId, projectSource(sessionId, {
-          header: loaded.meta,
-          inheritedEventCount: loaded.inheritedEventCount,
+          header: loaded.header,
           events: loaded.events,
         }, project, signal))
       } catch (error: unknown) {
@@ -222,7 +206,7 @@ export class SessionCorpus {
         await resolvePersisted(unresolved[index] as SessionId)
       }
     }
-    const workerCount = Math.min(this._persistedInspectConcurrency, unresolved.length)
+    const workerCount = Math.min(this._persistedReadConcurrency, unresolved.length)
     const settlements = await Promise.allSettled(
       Array.from({ length: workerCount }, () => worker()),
     )
@@ -259,11 +243,7 @@ function projectSource<Value>(
 }
 
 function sourceLive(session: Session): LogicalSessionSource {
-  return {
-    header: session.header,
-    inheritedEventCount: session.inheritedEventCount,
-    events: session.snapshotEvents(),
-  }
+  return { header: session.header, events: session.snapshotEvents() }
 }
 
 function orderedResults<Value>(
@@ -276,12 +256,10 @@ function orderedResults<Value>(
 async function listPersisted(
   persistence: SessionPersistence,
   signal?: AbortSignal,
-): Promise<ReadableSessionPersistenceListing[]> {
+): Promise<SessionHeader[]> {
   try {
-    return (await persistence.list(signal))
-      .flatMap(listing => listing.status === 'current' || listing.status === 'migration-required'
-        ? [listing]
-        : [])
+    const snapshots = await persistence.list(signal === undefined ? undefined : { signal })
+    return snapshots.map(snapshot => snapshot.header)
   } catch (error: unknown) {
     if (signal?.aborted) signal.throwIfAborted()
     throw new SessionQueryError(
@@ -296,9 +274,9 @@ async function inspectPersisted(
   persistence: SessionPersistence,
   sessionId: SessionId,
   signal?: AbortSignal,
-): Promise<Awaited<ReturnType<SessionPersistence['inspect']>>> {
+): Promise<ColdSessionLog> {
   try {
-    return await persistence.inspect(sessionId, signal)
+    return await readColdSessionLog(persistence, sessionId, signal)
   } catch (error: unknown) {
     if (signal?.aborted) signal.throwIfAborted()
     if (error instanceof Error && error.name === 'SessionPersistenceCorruptionError') {
@@ -309,7 +287,7 @@ async function inspectPersisted(
       )
     }
     throw new SessionQueryError(
-      `failed to inspect session "${sessionId}": ${errorMessage(error)}`,
+      `failed to read stored session "${sessionId}": ${errorMessage(error)}`,
       'SESSION_QUERY_PERSISTENCE_FAILED',
       { cause: error },
     )

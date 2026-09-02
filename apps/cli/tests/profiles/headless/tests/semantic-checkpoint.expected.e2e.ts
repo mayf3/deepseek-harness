@@ -10,8 +10,9 @@ import {
 } from '@deepseek-ai/dsh-session-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { createUserMessage, ToolCallId , createMessage } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
+import { SessionSeq, SESSION_FORMAT_VERSION, SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { logPath } from '../../../../../../packages/session/session-persistence-jsonl/src/format.ts'
 import { describe, expect, it } from 'vitest'
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'expected/semantic-checkpoint')
@@ -37,14 +38,13 @@ async function expectSession(actual: string, expectedPath: string): Promise<void
 
 async function seedInterruptedSession(root: string, cwd: string): Promise<string> {
   const ctx = new Context()
-  await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   const meta: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
     id: sessionId,
     createdAt: 1,
-    cwd,
     isSeeded: false,
+    cwd,
     delegationDepth: 0,
   }
   const events: SessionEvent[] = [
@@ -86,11 +86,10 @@ async function seedInterruptedSession(root: string, cwd: string): Promise<string
     },
   ]
   try {
-    await ctx.sessionPersistence.create(meta)
-    await ctx.sessionPersistence.append(sessionId, events)
-    const location = ctx.sessionPersistence.locate(meta)
-    if (location === undefined) throw new Error('JSONL backend did not locate the seeded session')
-    return location.path
+    const handle = await ctx.sessionPersistence.create(meta)
+    await handle.append(events)
+    await handle.close()
+    return logPath(root, meta.cwd, meta.id, 'none')
   } finally {
     await ctx.fiber.dispose()
   }

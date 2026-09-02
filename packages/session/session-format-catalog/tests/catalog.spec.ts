@@ -35,7 +35,7 @@ describe('first-party Session format catalog', () => {
     })
   })
 
-  it('restores only the exact frozen current vocabulary and payloads', () => {
+  it('restores exact current payloads while retaining explicitly ignorable extensions', () => {
     const header = {
       type: 'session', version: 2, id: 'current-growth', createdAt: 1, isSeeded: false, delegationDepth: 0,
     }
@@ -47,8 +47,11 @@ describe('first-party Session format catalog', () => {
       type: 'ordinary/not-installed', seq: 0, time: 1, data: 'future',
     }])).toThrow(/unknown event type/)
 
-    expect(() => sessionFormatCatalog.decodeArtifact(header, [{
+    const extension = sessionFormatCatalog.decodeArtifact(header, [{
       type: 'ordinary/external', seq: 0, time: 1, data: null, ignorable: true,
-    }])).toThrow(/unknown event type/)
+    }])
+    expect(sessionFormatCatalog.migrate(extension).events).toEqual([{
+      type: 'ordinary/external', seq: 0, time: 1, data: null, ignorable: true,
+    }])
   })
 })

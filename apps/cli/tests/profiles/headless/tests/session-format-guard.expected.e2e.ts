@@ -1,8 +1,7 @@
 /**
- * Assembled-app regressions for Session-format lifecycle behavior: a physical
- * v0 log migrates through the real Loader composition, remains byte-for-byte
- * intact beside v2, and accepts the next append through v2; a future format or unknown
- * required current event refuses with the direction and raw log path.
+ * Assembled-app regressions for Session-format lifecycle behavior: released v0
+ * migrates before resume without changing its source, while a future format or
+ * unknown required event fails loud through the real Loader composition.
  * @module session-format-guard-snapshot
  */
 
@@ -11,7 +10,7 @@ import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
-import SessionStore, {
+import {
   SESSION_FORMAT_VERSION,
   SessionId,
   SessionSeq,
@@ -19,7 +18,11 @@ import SessionStore, {
   type SessionHeader,
 } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { generationLogFilename } from '@deepseek-ai/dsh-session-persistence-jsonl/src/format.ts'
+import {
+  generationLogFilename,
+  generationLogPath,
+  logPath,
+} from '../../../../../../packages/session/session-persistence-jsonl/src/format.ts'
 import { describe, expect, it } from 'vitest'
 
 const fixtureDir = join(dirname(fileURLToPath(import.meta.url)), 'expected/workspace-context-resume/offline-edit')
@@ -30,10 +33,19 @@ const tsconfigPath = fileURLToPath(new URL('../../../../../../tsconfig.json', im
 // The resumed-agent fixture in the shared config resumes exactly this id.
 const sessionId = SessionId('workspace-context-resume')
 
-/** Stage one physical raw JSONL session without passing through the current writer. */
+/** Persist one session with the given header version and events, returning its log path. */
 async function seedSession(root: string, cwd: string, version: number, events: SessionEvent[]): Promise<string> {
+  if (version !== SESSION_FORMAT_VERSION) {
+    const path = generationLogPath(root, cwd, sessionId, version, 'none')
+    await mkdir(dirname(path), { recursive: true })
+    await writeFile(path, [
+      JSON.stringify({ type: 'session', version, id: sessionId, createdAt: 1, cwd, delegationDepth: 0 }),
+      ...events.map(event => JSON.stringify(event)),
+      '',
+    ].join('\n'))
+    return path
+  }
   const ctx = new Context()
-  await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   const meta: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
@@ -43,20 +55,10 @@ async function seedSession(root: string, cwd: string, version: number, events: S
     isSeeded: false,
   }
   try {
-    const location = ctx.sessionPersistence.locate(meta)
-    if (location === undefined) throw new Error('JSONL backend did not locate the seeded session')
-    const content = [
-      {
-        type: 'session', version, id: sessionId, createdAt: 1, cwd,
-        ...(version >= 2 ? { isSeeded: false } : {}),
-        delegationDepth: 0,
-      },
-      ...events,
-    ].map(record => JSON.stringify(record)).join('\n') + '\n'
-    const path = join(dirname(location.path), generationLogFilename(version, 'none'))
-    await mkdir(dirname(path), { recursive: true })
-    await writeFile(path, content)
-    return path
+    const handle = await ctx.sessionPersistence.create(meta)
+    await handle.append(events)
+    await handle.close()
+    return logPath(root, meta.cwd, meta.id, 'none')
   } finally {
     await ctx.fiber.dispose()
   }
@@ -70,12 +72,12 @@ function closedTurn(): SessionEvent[] {
 }
 
 describe('session format guard through the assembled app', () => {
-  it('migrates a raw v0 log before resume, preserves exact source bytes, and appends only to v2', async () => {
-    let v0Path = ''
-    let v0 = ''
-    let v0Identity: { readonly dev: bigint; readonly ino: bigint } | undefined
+  it('migrates v0 before resume, preserves its source, and appends only to the current generation', async () => {
+    let sourcePath = ''
+    let source = Buffer.alloc(0)
+    let sourceIdentity: { readonly dev: bigint; readonly ino: bigint } | undefined
     await runLoaderSmoke({
-      label: 'v0 identity migration before resume',
+      label: 'v0 migration before resume',
       tempDirPrefix: 'dsh-format-migrate-v0-',
       binScript,
       libBinScript: binScript,
@@ -84,24 +86,28 @@ describe('session format guard through the assembled app', () => {
       tsconfigPath,
       env: { DSH_SNAPSHOT_FILE: replayFixture },
       prepare: async (runCwd) => {
-        v0Path = await seedSession(join(runCwd, '.sessions'), runCwd, 0, closedTurn())
-        v0 = await readFile(v0Path, 'utf8')
-        const identity = await stat(v0Path, { bigint: true })
-        v0Identity = { dev: identity.dev, ino: identity.ino }
+        sourcePath = await seedSession(join(runCwd, '.sessions'), runCwd, 0, closedTurn())
+        source = await readFile(sourcePath)
+        const identity = await stat(sourcePath, { bigint: true })
+        sourceIdentity = { dev: identity.dev, ino: identity.ino }
       },
       inspect: async () => {
-        const v1Path = join(dirname(v0Path), generationLogFilename(SESSION_FORMAT_VERSION, 'none'))
-        const current = await readFile(v1Path, 'utf8')
-        const sourceIdentity = await stat(v0Path, { bigint: true })
-        const currentIdentity = await stat(v1Path, { bigint: true })
-        expect(await readFile(v0Path, 'utf8')).toBe(v0)
-        expect({ dev: sourceIdentity.dev, ino: sourceIdentity.ino }).toEqual(v0Identity)
-        expect({ dev: currentIdentity.dev, ino: currentIdentity.ino }).not.toEqual(v0Identity)
-        expect((JSON.parse(current.split('\n')[0] as string) as { version: number }).version)
-          .toBe(SESSION_FORMAT_VERSION)
-        expect(current).not.toBe(v0)
+        const currentPath = join(
+          dirname(sourcePath),
+          generationLogFilename(SESSION_FORMAT_VERSION, 'none'),
+        )
+        const current = await readFile(currentPath, 'utf8')
+        const sourceAfter = await stat(sourcePath, { bigint: true })
+        const currentIdentity = await stat(currentPath, { bigint: true })
+        expect(await readFile(sourcePath)).toEqual(source)
+        expect({ dev: sourceAfter.dev, ino: sourceAfter.ino }).toEqual(sourceIdentity)
+        expect({ dev: currentIdentity.dev, ino: currentIdentity.ino }).not.toEqual(sourceIdentity)
+        expect(JSON.parse(current.split('\n')[0] as string)).toMatchObject({
+          version: SESSION_FORMAT_VERSION,
+        })
         expect(current.trimEnd().split('\n').length).toBeGreaterThan(closedTurn().length + 1)
-        expect((await readdir(dirname(v0Path))).sort()).toEqual(['session.jsonl', 'session.v2.jsonl'])
+        expect((await readdir(dirname(sourcePath))).sort())
+          .toEqual(['session.jsonl', generationLogFilename(SESSION_FORMAT_VERSION, 'none')])
       },
     })
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)

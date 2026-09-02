@@ -544,6 +544,30 @@ describe('JSONL immutable generation publication', () => {
     expect((await readdir(root)).every(name => !name.includes('.tmp'))).toBe(true)
   })
 
+  it('surfaces stage cleanup failure when a changed source discards an attempt', async () => {
+    const root = await tempRoot()
+    const request = options(root)
+    const first = Buffer.from(line(header(0)) + line(event0))
+    const second = Buffer.from(line(header(0)) + line(event0) + line(event1))
+    await writeFile(request.sourcePath, first)
+    const cleanup = new Error('discarded stage cleanup failed')
+    const barrier = async (phase: string, attempt: number) => {
+      if (phase === 'before-source-check' && attempt === 1) await writeFile(request.sourcePath, second)
+    }
+
+    await expect(__jsonlGenerationTest.ensure(request, {
+      barrier,
+      fs: {
+        rm: async (path: string) => {
+          if (path.includes('.tmp')) throw cleanup
+          await rm(path, { force: true })
+        },
+      },
+    })).rejects.toBe(cleanup)
+    expect(await readFile(request.sourcePath)).toEqual(second)
+    await expect(readFile(request.currentPath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
   it('never overwrites a colliding exclusive stage name', async () => {
     const root = await tempRoot()
     const request = options(root)

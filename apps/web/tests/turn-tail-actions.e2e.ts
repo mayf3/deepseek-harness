@@ -139,6 +139,9 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
       () => page.getByRole('status').filter({ hasText: 'Deep diving...' }).isVisible(),
       { timeout: 10_000 },
     ).toBe(true)
+    await page.locator('[data-streaming="true"]')
+      .getByText('partial', { exact: true })
+      .waitFor({ timeout: 10_000 })
     // Only the user bubble owns a footer (clock + copy; user bubbles carry no
     // branch action): the narration is not the answer yet.
     const copyButtons = page.getByRole('button', { name: 'Copy' })
@@ -197,8 +200,11 @@ describe('web e2e: assistant IconActions wait for the turn to end', () => {
     await timeTrigger.click()
     const timeDialog = page.getByRole('dialog', { name: 'Turn time and speed' })
     expect(await timeDialog.count()).toBe(1)
-    expect(await timeDialog.getByText(/tok\/s/).count()).toBe(1)
-    expect(await timeDialog.getByText('Time to first token (TTFT)', { exact: true }).count()).toBe(1)
+    await expect.poll(() => timeDialog.getByText(/tok\/s/).count(), { timeout: 10_000 }).toBe(1)
+    await expect.poll(
+      () => timeDialog.getByText('Time to first token (TTFT)', { exact: true }).count(),
+      { timeout: 10_000 },
+    ).toBe(1)
     await page.keyboard.press('Escape')
     await trigger.click()
 

@@ -233,6 +233,55 @@ describe('Session', () => {
     } as unknown as SessionEvent
     expect(() => Session.fromRestore(id, [mismatchedMessage], header, SessionLogOffset(0)))
       .toThrow(/disagrees with its embedded stream/)
+
+    const mismatchedUsage = {
+      type: 'assistant/message',
+      seq: 0,
+      time: 1,
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'usage-message',
+          role: 'assistant',
+          content: [],
+          source: { kind: 'model', provider: 'mock', model: 'mock' },
+        },
+        stream: [{
+          type: 'chunk', time: 1,
+          chunk: { type: 'usage', usage: { inputTokens: 3, outputTokens: 2 } },
+        }],
+        usage: { inputTokens: 4, outputTokens: 2 },
+      },
+      surfaceOp: 'append',
+    } as unknown as SessionEvent
+    expect(() => Session.fromRestore(id, [mismatchedUsage], header, SessionLogOffset(0)))
+      .toThrow(/usage disagrees with its embedded stream/)
+
+    const mismatchedReplayState = {
+      type: 'assistant/message',
+      seq: 0,
+      time: 1,
+      data: {
+        turn: 1,
+        step: 1,
+        message: {
+          id: 'replay-state-message',
+          role: 'assistant',
+          content: [],
+          source: {
+            kind: 'model', provider: 'mock', model: 'mock', replayState: { response: { id: 'stored' } },
+          },
+        },
+        stream: [{
+          type: 'chunk', time: 1,
+          chunk: { type: 'finish', reason: { kind: 'stop' }, replayState: { response: { id: 'streamed' } } },
+        }],
+      },
+      surfaceOp: 'append',
+    } as unknown as SessionEvent
+    expect(() => Session.fromRestore(id, [mismatchedReplayState], header, SessionLogOffset(0)))
+      .toThrow(/replay state disagrees with its embedded stream/)
   })
 
   it('rejects historical or malformed request-header lifecycle markers on seed/load', () => {
