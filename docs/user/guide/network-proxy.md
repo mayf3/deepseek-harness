@@ -11,7 +11,7 @@ export HTTPS_PROXY=http://127.0.0.1:7890
 export HTTP_PROXY=http://127.0.0.1:7890
 ```
 
-Put both lines in your shell profile so every `dsh` invocation inherits them. DSH also reads a `.env` file in the launch directory and in `$DSH_HOME`, so a proxy that should apply to one project can live there instead; a real environment variable always wins over a file.
+Put both lines in your shell profile so every `dsh` invocation inherits them, or in `$DSH_HOME/.env` (`~/.dsh/.env` by default) next to your API key; an exported variable always wins over that file. A project's own `.env` cannot set them: it arrives with `git clone`, and DSH refuses to start rather than let a repository decide where your traffic goes.
 
 A proxy that needs credentials takes them in the URL: `http://user:password@proxy.example:8080`. DSH never prints the URL back: a diagnostic names the variable it rejected, so neither the username nor the password appears anywhere.
 
