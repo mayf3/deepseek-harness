@@ -14,7 +14,7 @@
   height: 64px;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
   border-radius: 16px;
   background: var(--dsw-alias-interactive-bg-hover);
   cursor: zoom-in;
@@ -39,6 +39,7 @@
   padding: 0;
   border: none;
   border-radius: 50%;
+  corner-shape: round;
   background: var(--dsw-alias-button-contrast-fill);
   color: var(--dsw-alias-label-primary-inverted);
   cursor: pointer;
