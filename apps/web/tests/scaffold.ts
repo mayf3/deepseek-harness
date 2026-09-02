@@ -1227,6 +1227,7 @@ export async function seedSession(
   id: string,
   agentPreset?: string,
   fixturePath?: string,
+  options: { readonly createdAt?: number } = {},
 ): Promise<SessionId> {
   const decoded = parseSeedFixture(realizeSeedFixture(scaffold, fixtureText, id), fixturePath)
   const events = decoded.events
@@ -1235,10 +1236,11 @@ export async function seedSession(
   // An open final turn would be mutated by resume's crash repair on first
   // open; a committed seed must be a closed recording.
   if (last.type !== 'turn/end') throw new Error(`seed fixture must end in turn/end, got ${last.type}`)
+  const createdAt = options.createdAt ?? Date.now() - 60_000
   const meta: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
     id: SessionId(id),
-    createdAt: Date.now() - 60_000,
+    createdAt,
     isSeeded: false,
     cwd: scaffold.workspaceCwd,
     delegationDepth: 0,
@@ -1248,7 +1250,7 @@ export async function seedSession(
   if (typeof fixtureCreatedAt !== 'number') {
     throw new Error('seed fixture requires a numeric createdAt header')
   }
-  const timeAnchor = fixtureCreatedAt === 0 ? meta.createdAt : fixtureCreatedAt
+  const timeAnchor = fixtureCreatedAt === 0 ? createdAt : fixtureCreatedAt
   let nextTime = timeAnchor
   const materializedEvents: SessionEvent[] = events.map((event) => {
     const time = nextTime
