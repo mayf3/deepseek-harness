@@ -171,6 +171,18 @@ function acceptProxyUrl(
 }
 
 /**
+ * Whether a proxy URL is one this package accepts: parseable, with an `http:` or `https:` scheme.
+ * The same test {@link acceptProxyUrl} applies, without its diagnostics.
+ *
+ * @param value - the proxy URL as an environment variable holds it.
+ * @returns true when the URL would be accepted.
+ */
+export function isSupportedProxyUrl(value: string): boolean {
+  const parsed = URL.parse(value)
+  return parsed !== null && SUPPORTED_PROTOCOLS.has(parsed.protocol)
+}
+
+/**
  * Resolve one scheme's proxy from its own slot, then the fallbacks — but only when the scheme's own
  * slot was empty. A rejected slot keeps that scheme direct, so the diagnostic and the route agree.
  *

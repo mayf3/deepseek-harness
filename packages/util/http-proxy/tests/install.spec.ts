@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, beforeAll, afterAll, describe, expect, it } from 'vitest'
@@ -278,7 +279,9 @@ describe('proxyEnvironmentForChild', () => {
         // cannot route it.
         expect(child.no_proxy).toBe('example.com,localhost,127.0.0.1,::1,[::1]')
         expect(child.NO_PROXY).toBe('example.com,localhost,127.0.0.1,::1,[::1]')
-        expect(child.NODE_USE_ENV_PROXY).toBe('1')
+        // The SOCKS value kept for `curl` is one Node would refuse at startup, so the flag that makes
+        // Node read it is withheld and a child Node connects directly rather than failing to start.
+        expect(child.NODE_USE_ENV_PROXY).toBeUndefined()
       } finally {
         await dispose()
       }
@@ -297,11 +300,39 @@ describe('proxyEnvironmentForChild', () => {
         expect(child.http_proxy).toBe(proxyUrl)
         expect(child.HTTPS_PROXY).toBe(proxyUrl)
         expect(child.https_proxy).toBe(proxyUrl)
+        expect(child.NODE_USE_ENV_PROXY).toBe('1')
       } finally {
         await dispose()
       }
     })
   })
+
+  it.each(['socks4://127.0.0.1:1080', 'ftp://p:1', 'not a url'])(
+    'withholds NODE_USE_ENV_PROXY when the child receives %s, so a child Node still starts',
+    async (refused) => {
+      await withCleanProxyEnv(async () => {
+        process.env.HTTP_PROXY = proxyUrl
+        process.env.HTTPS_PROXY = refused
+        const { dispose } = await install(env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: refused }))
+        try {
+          const child = proxyEnvironmentForChild()
+          // The value is still handed over — `curl` may read it — but Node, which parses these two
+          // names before running anything under the flag, must not be told to.
+          expect(child.HTTPS_PROXY).toBe(refused)
+          expect(child.HTTP_PROXY).toBe(proxyUrl)
+          expect(child).not.toHaveProperty('NODE_USE_ENV_PROXY')
+          // Proved on a real child rather than inferred: the same environment with the flag present
+          // exits before the program runs, on every Node this repository supports.
+          const childEnv: Record<string, string> = { PATH: process.env.PATH ?? '' }
+          for (const [name, value] of Object.entries(child)) if (value !== undefined) childEnv[name] = value
+          const run = spawnSync(process.execPath, ['-e', 'process.stdout.write("started")'], { env: childEnv, encoding: 'utf8' })
+          expect({ status: run.status, stdout: run.stdout }).toEqual({ status: 0, stdout: 'started' })
+        } finally {
+          await dispose()
+        }
+      })
+    },
+  )
 
   it('keeps the outermost install\'s record of what the user exported across a nested one', async () => {
     await withCleanProxyEnv(async () => {

@@ -9,6 +9,7 @@
 
 import type { Dispatcher, Pool } from 'undici'
 import {
+  isSupportedProxyUrl,
   POLICY_ENV_NAMES,
   PROXY_ENV_NAMES,
   proxyForUrl,
@@ -246,6 +247,12 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
  * their separators and IPv4-range support. Non-Node children (curl, git, pnpm) ignore the flag and
  * read the variables themselves.
  *
+ * The flag is withheld when a proxy value the child receives is one this package refused. Node
+ * parses `HTTP_PROXY` and `HTTPS_PROXY` under that flag before running the program, and exits on a
+ * scheme other than `http:` or `https:` — so a SOCKS value kept for `curl` would stop every Node
+ * child from starting. Without the flag such a child connects directly, as this process already
+ * reported for that scheme, and `curl` still reads the value it was kept for.
+ *
  * A worker thread is deliberately NOT served here — see the workflow engine, which runs
  * model-authored scripts and must not receive a proxy URL that may carry credentials.
  *
@@ -263,6 +270,10 @@ export function proxyEnvironmentForChild(): Readonly<Record<string, string | und
     // user wrote, in the casing they wrote it, rather than a value derived for this process.
     const named = field !== 'noProxy' && names.some(name => inherited[name] !== undefined)
     for (const name of names) overlay[name] = named ? inherited[name] : resolved
+  }
+  const parsedByNode = [...POLICY_ENV_NAMES.httpProxy, ...POLICY_ENV_NAMES.httpsProxy]
+  if (parsedByNode.some(name => overlay[name] !== undefined && !isSupportedProxyUrl(overlay[name]))) {
+    delete overlay.NODE_USE_ENV_PROXY
   }
   return overlay
 }

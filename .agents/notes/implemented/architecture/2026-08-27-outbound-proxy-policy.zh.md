@@ -44,6 +44,8 @@ URL 层策略未受影响：仅 `http(s)`、禁止内嵌凭据、长度上限与
 
 **派生的子进程通过环境获得策略；执行模型代码的 worker 什么也不获得。** `proxyEnvironmentForChild()` 并入 `scrubbedParentEnv()`——每个 spawner 本就共享的那一个函数。workflow worker **不**接收它：它执行的是模型编写的脚本体，而代理 URL 可能携带 `user:password`。这与 code runtime 保持的隔离相同，也是 `docs/defensive-patterns.md` 的要求，因此 workflow 自身的请求直连。
 
+子进程拿到的是用户自己的值，而这恰恰曾把它弄坏。Node 在 `NODE_USE_ENV_PROXY` 下会在运行程序之前先解析 `HTTP_PROXY` 与 `HTTPS_PROXY`，遇到 `http:`/`https:` 之外的协议直接退出；于是一个为 `curl` 保留的 `socks4://` 会让每个 Node 子进程——MCP server、subagent CLI、`npm`——在第一行之前就终结，而本进程此前只报告过该协议保持直连。在 Node 24.17 上实测：`socks4://`、`ftp://` 与畸形值均以 1 退出；`socks5://` 恰好在该版本被接受。现在只要子进程收到的某个值是本包拒绝过的，就扣下该标志，这样的子进程直连，`curl` 仍读到为它保留的值。若改为把解析后的值交给子进程，Node 固然能继续走代理，代价却是悄悄改写用户为另一工具设置的值。
+
 这接受了一处已记录的接缝。此类上下文按 Node 自己的规则匹配绕过条目，其分隔符与 IPv4 区间支持与本包不同，且该标志仅存在于 Node 22.21+ 与 24+。
 
 **有两个 SDK 并不落到 `globalThis.fetch`，而读代码给出的答案是相反的。** 审计最初把 OTLP 导出器与 E2B SDK 判为已覆盖，依据是在 `@opentelemetry/otlp-exporter-base` 里 grep 到了 `globalThis.fetch`。那处命中属于**浏览器**传输；在 Node 上 delegate 选择的是 `http-exporter-transport`，它通过 `node:http` 投递——那里全局 dispatcher 触及不到。E2B 又是另一种形态：它自建 undici `Agent`／`ProxyAgent`，并接受一个自己从不从环境读取的 `proxy` URL。两者都实测为直连。E2B 接收 `proxyRouteFor` 给出的 `route.proxy`，与 `web-fetch-http` 调的是同一个函数。遥测则被有意保留为直连，而这个排除项才是更值得说的一半。
