@@ -143,8 +143,9 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
       for (const block of order) {
         const closed = closeBlock(block)
         if ('unidentified' in closed) {
-          // Nothing durable is written for a rejected response, so the usage
-          // the attempt already burned is still reported before the failure.
+          // A rejected response commits no assistant message, tool call, or
+          // tool result; the streamed chunks before it stay in the log, so the
+          // usage the attempt already burned is reported before the failure.
           if (pendingUsage) yield { type: 'usage', usage: pendingUsage }
           yield {
             type: 'finish',

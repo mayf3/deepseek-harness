@@ -16,7 +16,7 @@ The empty identity outlived the turn. `appendToolCall` and `appendToolResult` wr
 
 A tool call still lacking `id` or `name` when the stream reaches `[DONE]` is not closed. The translator reports any pending usage, then ends the response with an error finish carrying the new `MALFORMED_TOOL_CALL` code, and emits no `block-end` at all. `closeBlock` returns which field is missing instead of substituting an empty string, so no path can assemble an unidentified tool call.
 
-`MALFORMED_TOOL_CALL` joins the default retryable codes described in [bounded LLM request recovery](2026-06-21-bounded-llm-request-recovery.md). The failure must arrive as an error `finish` rather than a thrown `LlmError`: the agent loop derives `agent/request-error` — the only extension point `dsh-llm-retry` listens on — from `BlockAssembler.finish`, and rethrows whatever the stream throws straight out of the turn. A thrown failure ends the turn with no retry whatever the policy says.
+`MALFORMED_TOOL_CALL` joins the default retryable codes described in [bounded LLM request recovery](2026-06-21-bounded-llm-request-recovery.md); retry reaches the attempt either way, because `LlmRuntime.adapterStream` normalizes a thrown `LlmError` into the same error `finish` the loop routes to `agent/request-error`. The refusal is yielded rather than thrown so the attempt's already-billed usage still reaches the loop before the failure, and so the refusal follows the same chunk protocol as the `EMPTY_RESPONSE` case beside it.
 
 ## Alternatives considered
 

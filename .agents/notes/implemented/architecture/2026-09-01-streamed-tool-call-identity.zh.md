@@ -16,7 +16,7 @@ DeepSeek SSE 翻译器对每个携带该字段的工具调用分片都直接赋�
 
 流到达 `[DONE]` 时仍缺少 `id` 或 `name` 的工具调用不会被闭合。翻译器先报告待发的用量，再以携带新增 `MALFORMED_TOOL_CALL` code 的错误 finish 结束响应，并且完全不发出 `block-end`。`closeBlock` 返回缺失的是哪个字段，而不是替换成空串，因此没有任何路径能组装出无身份的工具调用。
 
-`MALFORMED_TOOL_CALL` 加入[有界 LLM 请求恢复](2026-06-21-bounded-llm-request-recovery.zh.md)所述的默认可重试 code 集。该失败必须以错误 `finish` 而非抛出的 `LlmError` 抵达：agent 循环从 `BlockAssembler.finish` 派生 `agent/request-error`——`dsh-llm-retry` 唯一监听的扩展点——并把流抛出的任何东西直接重抛出本轮。抛出的失败无论策略如何都会终结本轮且不重试。
+`MALFORMED_TOOL_CALL` 加入[有界 LLM 请求恢复](2026-06-21-bounded-llm-request-recovery.zh.md)所述的默认可重试 code 集；两种投递方式都能让重试覆盖该尝试，因为 `LlmRuntime.adapterStream` 会把抛出的 `LlmError` 归一化为同一个错误 `finish`，再由循环路由到 `agent/request-error`。这里以 yield 而非抛出给出拒绝，是为了让该尝试已计费的用量仍先抵达循环，并让拒绝与紧邻的 `EMPTY_RESPONSE` 走同一套 chunk 协议。
 
 ## 考虑过的替代方案
 
