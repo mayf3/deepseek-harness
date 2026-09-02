@@ -218,6 +218,9 @@ export async function* translate(payloads: AsyncIterable<string>): AsyncGenerato
         block.name = acceptIdentity(block.name, call.function?.name)
         const fragment = call.function?.arguments ?? ''
         block.text += fragment
+        // An in-flight delta may precede the call's id. The empty stand-in never
+        // reaches a ContentBlock: `[DONE]` either has the identity by then or
+        // refuses the whole response before closing the block.
         yield {
           type: 'tool-call-delta',
           index: block.index,

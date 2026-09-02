@@ -43,8 +43,10 @@ export const EMPTY_RESPONSE_CODE = 'EMPTY_RESPONSE'
  * identified: its `id` or `name` was absent or empty by the end of the stream.
  * Such a call cannot be dispatched, and its result cannot be paired back to the
  * provider on the next request, so adapters classify it as this failure instead
- * of emitting a tool call the loop would reject as unknown. Nothing durable is
- * written for the attempt, so retry policy treats it as safe to repeat.
+ * of emitting a tool call the loop would reject as unknown. No assistant
+ * message or tool result is written for the attempt — only the streamed
+ * `assistant/chunk` events it already produced — so retry policy treats it as
+ * safe to repeat.
  */
 export const MALFORMED_TOOL_CALL_CODE = 'MALFORMED_TOOL_CALL'
 

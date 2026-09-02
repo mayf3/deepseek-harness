@@ -359,6 +359,24 @@ describe('translate: defensive tool-call branches', () => {
     expect(chunks[1]).toEqual({ type: 'tool-call-delta', index: 0, id: 'c', name: 'f', argumentsDelta: '' })
   })
 
+  it('suppresses the block-end of an already closable block when a later tool call has no identity', async () => {
+    const chunks = await collect(translate(feed(
+      firstChunk,
+      { choices: [{ delta: { content: 'Checking.' } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{}' } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      DONE,
+    )))
+    expect(chunks.some(chunk => chunk.type === 'block-end')).toBe(false)
+    expect(chunks.at(-1)).toEqual({
+      type: 'finish',
+      reason: {
+        kind: 'error',
+        failure: { message: 'model streamed a tool call with no id', code: MALFORMED_TOOL_CALL_CODE },
+      },
+    })
+  })
+
   it('rejects a stream whose tool call never carries a name', async () => {
     const chunks = await collect(translate(feed(
       firstChunk,
