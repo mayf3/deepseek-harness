@@ -16,13 +16,15 @@ Priority、影响面、解决代价和日期用于在 `DSH Issue Management` 中
 
 仓库策略从配置的 Project 解析 `Priority` 和 `Start Date`。策略拒绝 Issue 字段投影或错误的数据类型，从 Project item 读取 Priority，并通过 `updateProjectV2ItemFieldValue` 写入 Start Date。组织 Issue 字段仅作为带有 `Legacy ...` 前缀的迁移源保留，仓库工作流不会读取它们。
 
+PR 策略工作流使用仓库 `GITHUB_TOKEN` 读取仓库 Issue 和 PR，并使用仅有组织 Projects 读取权限的 GitHub App token 执行 ProjectV2 查询。生命周期 mutation 继续使用有写权限的 App token。
+
 Issue 生命周期工作流仅在 `pull_request.opened` 时初始化 `Start Date`。工作流读取 PR 的实时正文，保留每个能解析为 Issue 的同仓库引用，把 `created_at` 按配置的 Project 时区转换为日历日期，确保 Issue 是 Project item，并仅在当前 Project 值为空时写入日期。
 
 [组织字段实现](../../archived/process/2026-08-31-pr-opened-issue-start-dates.md)记录了已被取代的跨 Project 所有权决策及其事件时机依据。由事件直接指定的 Status 转换仍由[生命周期决策](2026-08-10-event-directed-pr-review-status.zh.md)负责。
 
 ## 验证
 
-[Issue 管理测试](../../../../.github/issue-management/policy.test.mjs)要求 Priority 和 Start Date 使用 Project custom field，覆盖上海时区日期边界、仅 opened 分派、空值写入、已有值保留和 Project item 缺失，并固定 `updateProjectV2ItemFieldValue`。删除组织字段前必须逐项比较所有旧字段值与 Project 值，包括已归档的 Project item。
+[Issue 管理测试](../../../../.github/issue-management/policy.test.mjs)要求 Priority 和 Start Date 使用 Project custom field，证明仓库读取与 Project 读取使用不同凭据，覆盖上海时区日期边界、仅 opened 分派、空值写入、已有值保留和 Project item 缺失，并固定 `updateProjectV2ItemFieldValue`。工作流测试固定 Project token 的只读权限。删除组织字段前必须逐项比较所有旧字段值与 Project 值，包括已归档的 Project item。
 
 ## 考虑过的替代方案
 

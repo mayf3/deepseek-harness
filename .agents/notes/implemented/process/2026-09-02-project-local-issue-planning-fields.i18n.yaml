@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-02-project-local-issue-planning-fields.md
-2026-09-02-project-local-issue-planning-fields.md: 97689de4e64d60e40ba479b89f20dff1f557ec21
-2026-09-02-project-local-issue-planning-fields.zh.md: 4d815af1789324f82394d4d26b638c50f2031ec4
+2026-09-02-project-local-issue-planning-fields.md: efd0383c9701f9f4caf797d9bf1544b225e5f71c
+2026-09-02-project-local-issue-planning-fields.zh.md: 3c22a506743621ac3204342575fac90d81ee8a37

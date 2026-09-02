@@ -34,7 +34,13 @@ const projectGraphqlData = ({
       title: 'DSH Issue Management',
       fields: {
         nodes: [
-          { id: 'status-field-id', name: 'Status', dataType: 'SINGLE_SELECT', options: [] },
+          {
+            id: 'status-field-id',
+            name: 'Status',
+            dataType: 'SINGLE_SELECT',
+            isIssueField: false,
+            options: [],
+          },
           ...(priorityField
             ? [
                 {
@@ -285,16 +291,25 @@ test('initializes every referenced Issue only for a PR opened event', async () =
 })
 
 test('reads Priority and Status from Project custom fields', async (t) => {
-  const previousToken = process.env.GH_TOKEN
-  process.env.GH_TOKEN = 'test-token'
+  const previousGhToken = process.env.GH_TOKEN
+  const previousGithubToken = process.env.GITHUB_TOKEN
+  const previousProjectToken = process.env.PROJECT_TOKEN
+  delete process.env.GH_TOKEN
+  process.env.GITHUB_TOKEN = 'repository-token'
+  process.env.PROJECT_TOKEN = 'project-token'
   t.after(() => {
-    if (previousToken === undefined) delete process.env.GH_TOKEN
-    else process.env.GH_TOKEN = previousToken
+    if (previousGhToken === undefined) delete process.env.GH_TOKEN
+    else process.env.GH_TOKEN = previousGhToken
+    if (previousGithubToken === undefined) delete process.env.GITHUB_TOKEN
+    else process.env.GITHUB_TOKEN = previousGithubToken
+    if (previousProjectToken === undefined) delete process.env.PROJECT_TOKEN
+    else process.env.PROJECT_TOKEN = previousProjectToken
   })
   const urls = []
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     urls.push(url)
     if (url.endsWith('/issues/42')) {
+      assert.equal(options.headers.Authorization, 'Bearer repository-token')
       return Response.json({
         node_id: 'issue-id',
         title: 'Project metadata',
@@ -307,7 +322,7 @@ test('reads Priority and Status from Project custom fields', async (t) => {
       })
     }
     assert.equal(url, 'https://api.github.com/graphql')
-    assert.equal(options.headers.Authorization, 'Bearer test-token')
+    assert.equal(options.headers.Authorization, 'Bearer project-token')
     return Response.json({ data: projectGraphqlData({ priority: 'P1' }) })
   })
 

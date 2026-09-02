@@ -16,13 +16,15 @@ The `DSH Issue Management` Project owns `Priority`, `Severity`, `Cost`, `Start D
 
 Repository policy resolves `Priority` and `Start Date` from the configured Project. It rejects an Issue-backed field or the wrong data type, reads Priority from the Project item, and writes Start Date through `updateProjectV2ItemFieldValue`. Organization Issue fields are retained only as `Legacy ...` migration sources and are not read by repository workflows.
 
+The pull-request policy workflow uses the repository `GITHUB_TOKEN` for repository Issue and pull-request reads, and a GitHub App token restricted to organization Projects read access for ProjectV2 queries. Lifecycle mutations continue to use the write-capable App token.
+
 The Issue lifecycle workflow initializes `Start Date` only for `pull_request.opened`. It reads the pull request's live body, retains every same-repository reference that resolves to an Issue, converts `created_at` to a calendar date in the configured Project time zone, ensures the Issue is a Project item, and writes the date only when the current Project value is empty.
 
 The [organization-field implementation](../../archived/process/2026-08-31-pr-opened-issue-start-dates.md) records the superseded cross-Project ownership decision and its event-timing rationale. Event-directed Status transitions remain owned by [the lifecycle decision](2026-08-10-event-directed-pr-review-status.md).
 
 ## Verification
 
-[Issue-management tests](../../../../.github/issue-management/policy.test.mjs) require Project custom fields for Priority and Start Date, cover the Shanghai date boundary, opened-only dispatch, empty-value writes, existing-value preservation, and missing Project items, and pin `updateProjectV2ItemFieldValue`. Removing an organization field requires comparing every legacy value with its Project value, including archived Project items.
+[Issue-management tests](../../../../.github/issue-management/policy.test.mjs) require Project custom fields for Priority and Start Date, prove repository and Project reads use separate credentials, cover the Shanghai date boundary, opened-only dispatch, empty-value writes, existing-value preservation, and missing Project items, and pin `updateProjectV2ItemFieldValue`. Workflow tests pin the Project token's read-only permission. Removing an organization field requires comparing every legacy value with its Project value, including archived Project items.
 
 ## Alternatives considered
 

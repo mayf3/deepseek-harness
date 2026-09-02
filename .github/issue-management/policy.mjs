@@ -418,6 +418,10 @@ function token() {
   return value
 }
 
+function projectToken() {
+  return process.env.PROJECT_TOKEN || token()
+}
+
 async function api(path, options = {}) {
   const response = await fetch(`${process.env.GITHUB_API_URL ?? 'https://api.github.com'}${path}`, {
     ...options,
@@ -442,7 +446,10 @@ async function graphql(query, variables) {
   const result = await api('/graphql', {
     method: 'POST',
     body: JSON.stringify({ query, variables }),
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      Authorization: `Bearer ${projectToken()}`,
+      'Content-Type': 'application/json',
+    },
   })
   if (result.errors?.length) throw new Error(result.errors.map((error) => error.message).join('; '))
   return result.data
