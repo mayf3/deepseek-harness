@@ -17,7 +17,7 @@
  */
 
 import { deriveEventMessage } from '@deepseek-ai/dsh-session'
-import type { SurfaceEvent } from '@deepseek-ai/dsh-session'
+import type { SessionSeq, SurfaceEvent } from '@deepseek-ai/dsh-session'
 import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { estimateMessage, estimateStructuralBlock } from './estimate.ts'
@@ -27,7 +27,7 @@ type FileAttachmentRef = Extract<ContentBlock, { type: 'file' }>['attachment']
 /** One priced surface node with the image occurrences route pricing replaces. */
 export interface MeterSurfaceNode {
   /** Durable sequence number of the surface event. */
-  readonly seq: number
+  readonly seq: SessionSeq
   /** Fixed-heuristic price of the node's exact message. */
   readonly heuristicTokens: number
   /** Structural JSON price replaced when the routed request projects images. */
@@ -77,7 +77,7 @@ function collectProjectedAttachments(
 }
 
 /** Build one priced node from a surface event's derived message. */
-function analyzeNode(seq: number, message: Message | null): MeterSurfaceNode {
+function analyzeNode(seq: SessionSeq, message: Message | null): MeterSurfaceNode {
   if (message === null) {
     return {
       seq,
