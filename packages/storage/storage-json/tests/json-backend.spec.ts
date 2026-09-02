@@ -4,10 +4,8 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Storage, { storageBackendServiceKey } from '@deepseek-ai/dsh-storage'
-import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import { runKvBackendContract } from '../../storage/tests/contract.ts'
 import { Config, JsonStorageBackend, apply } from '../src/index.ts'
-import * as InvariantCompanion from '../src/invariant.ts'
 
 const roots: string[] = []
 
@@ -198,15 +196,6 @@ describe('json backend specifics', () => {
     await expect(unit.putRecord('t', 'x', {})).rejects.toMatchObject({ code: 'closed' })
   })
 
-  it('registers the invariant companion and disposes cleanly', async () => {
-    const ctx = new Context()
-    await ctx.plugin(InvariantRegistry)
-    const fiber = await ctx.plugin(InvariantCompanion)
-    // Disposal releases the reservation: a fresh mount succeeds.
-    await fiber.dispose()
-    await ctx.plugin(InvariantCompanion)
-  })
-
   it('close drains in-flight writes and blocks in-flight opens', async () => {
     const root = await freshRoot()
     const backend = new JsonStorageBackend(root)
@@ -340,10 +329,10 @@ describe('per-record layout', () => {
 
   it('bootstraps an empty per-record tree from a legacy whole-unit file and preserves it', async () => {
     const root = await freshRoot()
-    // A legacy single-layout file for the same unit (any older version);
-    // the extra table is not declared and must be skipped.
+    // A legacy single-layout file for the same unit and version; the extra
+    // table is not declared and must be skipped.
     const legacy = JSON.stringify({
-      unit: { name: 'recs', version: 3 },
+      unit: { name: 'recs', version: descriptor.version },
       global: null,
       tables: { t: { old1: { v: 1 }, old2: { v: 2 } }, undeclared: { k: { v: 0 } } },
     })
@@ -358,10 +347,26 @@ describe('per-record layout', () => {
     await backend.close()
   })
 
+  it('leaves an older-version legacy whole-unit file unconverted', async () => {
+    const root = await freshRoot()
+    const legacy = JSON.stringify({
+      unit: { name: 'recs', version: descriptor.version - 1 },
+      global: null,
+      tables: { t: { old: { v: 1 } } },
+    })
+    await writeFile(join(root, 'recs.json'), legacy, 'utf8')
+    const backend = new JsonStorageBackend(root)
+    const unit = await backend.kv.open(descriptor)
+    expect(await unit.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await expect(readFile(recordPath(root, 'old'), 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(join(root, 'recs.json'), 'utf8')).resolves.toBe(legacy)
+    await backend.close()
+  })
+
   it('ignores the legacy whole-unit file when any new document path exists', async () => {
     const root = await freshRoot()
     const legacy = JSON.stringify({
-      unit: { name: 'recs', version: 1 },
+      unit: { name: 'recs', version: descriptor.version },
       global: null,
       tables: { t: { old: { v: 1 } } },
     })
@@ -411,11 +416,25 @@ describe('per-record layout', () => {
     await backend4.close()
 
     const root5 = await freshRoot()
-    await writeFile(join(root5, 'recs.json'), JSON.stringify({ unit: { name: 'recs' }, tables: 'not an object' }), 'utf8')
+    await writeFile(
+      join(root5, 'recs.json'),
+      JSON.stringify({ unit: { name: 'recs', version: descriptor.version }, tables: 'not an object' }),
+      'utf8',
+    )
     const backend5 = new JsonStorageBackend(root5)
     const unit5 = await backend5.kv.open(descriptor)
     expect(await unit5.loadAll()).toEqual({ tables: { t: {} }, global: null })
     await expect(readFile(join(root5, 'recs.json'), 'utf8')).resolves.toContain('not an object')
     await backend5.close()
+
+    await writeFile(
+      join(root5, 'recs.json'),
+      JSON.stringify({ unit: { name: 'recs', version: descriptor.version }, tables: null }),
+      'utf8',
+    )
+    const backend6 = new JsonStorageBackend(root5)
+    const unit6 = await backend6.kv.open(descriptor)
+    expect(await unit6.loadAll()).toEqual({ tables: { t: {} }, global: null })
+    await backend6.close()
   })
 })

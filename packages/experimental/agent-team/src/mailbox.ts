@@ -2,14 +2,17 @@
 
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { queueHostSubagentPrompt } from '@deepseek-ai/dsh-subagent/internal'
 import { errorMessage, TeamError } from './error.ts'
 import type { TeamJournal } from './journal.ts'
 import type { TeamRuntimeLifecycle } from './lifecycle.ts'
+import { readPersistedSession } from './persisted.ts'
 import type { TeamRoster } from './roster.ts'
 import { resolveActiveMember } from './roster.ts'
 import { messageAccepted } from './session-message.ts'
@@ -68,7 +71,7 @@ export class TeamMailbox {
     if (this.lifecycle.disposed || event.type !== 'user/message' || event.data.source.kind !== 'team-message') return
     const source = event.data.source
     const acknowledgement = Promise.resolve().then(async () => {
-      const root = this.ctx.agents.get(SessionId(source.teamId))
+      const root = this.ctx.agents.get(brandString<SessionId>(source.teamId))
       if (root !== undefined) await this.checkpointDelivered(root, session, source.messageId)
     }).catch((error: unknown) => {
       this.ctx.logger.warn(`Team message "${source.messageId}" acknowledgement failed: ${errorMessage(error)}`)
@@ -260,7 +263,7 @@ export class TeamMailbox {
           return true
         }
       }
-      await this.ctx.subagents.followup(root, message.targetId, content, { source, signal })
+      await queueHostSubagentPrompt(this.ctx.subagents, root, message.targetId, content, source, signal)
       return target === undefined
         ? true
         : await this.checkpointDelivered(root, target.session, message.id)
@@ -306,7 +309,7 @@ export class TeamMailbox {
 
   /** Whether a target Session already contains the durable message identity. */
   private targetRecorded(session: Session, messageId: TeamMessageId): boolean {
-    const suffix = session.events.slice(session.header.seedLength ?? 0)
+    const suffix = session.snapshotEvents(session.inheritedEventCount)
     return messageAccepted(suffix, message => message.source.kind === 'team-message'
       && message.source.messageId === messageId)
   }
@@ -319,19 +322,19 @@ export class TeamMailbox {
     ]
   }
 
-  /** Inspect an inactive target before cold resume; uncertainty keeps the mailbox queued. */
+  /** Read an inactive target's durable log before cold resume; uncertainty keeps the mailbox queued. */
   private async persistedTargetRecorded(
     targetId: SessionId,
     messageId: TeamMessageId,
     signal: AbortSignal,
   ): Promise<boolean | undefined> {
     try {
-      const stored = await this.ctx.sessionPersistence.inspect(targetId, signal)
-      const suffix = stored.events.slice(stored.meta.seedLength ?? 0)
+      const stored = await readPersistedSession(this.ctx.sessionPersistence, targetId, signal)
+      const suffix = stored.events.slice(stored.inheritedEventCount)
       return messageAccepted(suffix, message => message.source.kind === 'team-message'
         && message.source.messageId === messageId)
     } catch (error: unknown) {
-      this.ctx.logger.warn(`cannot inspect Team message target "${targetId}": ${errorMessage(error)}`)
+      this.ctx.logger.warn(`cannot read Team message target "${targetId}": ${errorMessage(error)}`)
       return undefined
     }
   }
