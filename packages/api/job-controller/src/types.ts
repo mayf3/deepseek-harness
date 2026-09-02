@@ -29,6 +29,25 @@ export interface JobObserveRequest {
   readonly from?: number
 }
 
+/** Human-initiated cancellation of one background job visible to a session. */
+export interface JobKillRequest {
+  /** Session whose task list carries the job; resolves the live agent for the fenced lookup. */
+  readonly sessionId: SessionId
+  readonly jobId: JobId
+}
+
+/** Receipt after the registry accepted the human kill request. */
+export interface JobKillValue {
+  readonly outcome: 'requested' | 'already-finished'
+}
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** The session's task list no longer carries a killable row under that id. */
+    'job/not-found': { readonly sessionId: SessionId; readonly jobId: JobId }
+  }
+}
+
 /** One retained record chunk on the wire. `channel` widens to string like a job's `kind`. */
 export interface JobWireChunk {
   /** Absolute offset of the chunk's first byte. */

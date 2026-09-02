@@ -6,9 +6,9 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SessionStore from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { describe, expect, it } from 'vitest'
-import type { ApiSessionAgentController } from '../src/agent.ts'
-import { SessionCommandController } from '../src/commands.ts'
+import { JobController } from '../src/index.ts'
 
 function producer(label = 'sleep 60') {
   let settle!: (outcome: JobOutcome) => void
@@ -24,20 +24,7 @@ function producer(label = 'sleep 60') {
   return { spec, cancels, settle: (outcome: JobOutcome) => { settle(outcome) } }
 }
 
-async function harness(withRegistry = true): Promise<{
-  ctx: Context
-  session: Session
-  agent: Agent
-  commands: SessionCommandController
-}> {
-  const ctx = new Context()
-  await ctx.plugin(SessionStore)
-  await ctx.plugin(AgentRegistry)
-  if (withRegistry) {
-    await ctx.plugin(LocalJobRegistry)
-    ctx.jobs.attachController('kill-job-test')
-  }
-  const session = ctx.sessions.create()
+function registerAgent(ctx: Context, session: Session): Agent {
   const agent = {
     id: session.id,
     session,
@@ -46,10 +33,25 @@ async function harness(withRegistry = true): Promise<{
     ctx,
   } as Agent
   ctx.agents.register(agent)
-  // killJob touches only the registry and the live-agent lookup, so the
-  // resolver-owning agents controller stays out of these commands.
-  const commands = new SessionCommandController(ctx, {} as ApiSessionAgentController, process.cwd())
-  return { ctx, session, agent, commands }
+  return agent
+}
+
+async function harness(): Promise<{
+  ctx: Context
+  session: Session
+  agent: Agent
+  controller: JobController
+}> {
+  const ctx = new Context()
+  await ctx.plugin(SessionStore)
+  await ctx.plugin(AgentRegistry)
+  await ctx.plugin(LocalJobRegistry)
+  ctx.jobs.attachController('kill-test')
+  await ctx.plugin(TypertRegistry)
+  await ctx.plugin(JobController, {})
+  const session = ctx.sessions.create()
+  const agent = registerAgent(ctx, session)
+  return { ctx, session, agent, controller: ctx.jobController }
 }
 
 function failureCode(run: () => unknown): string {
@@ -63,64 +65,58 @@ function failureCode(run: () => unknown): string {
   throw new Error('expected a RemoteError failure')
 }
 
-describe('session.killJob', () => {
+describe('JobController.kill', () => {
   it('kills an owned running job without claiming the terminal report', async () => {
-    const { ctx, session, agent, commands } = await harness()
+    const { ctx, session, agent, controller } = await harness()
     const task = producer('pnpm run watch')
     const id = ctx.jobs.start({ ...task.spec, owner: agent })
 
-    expect(commands.killJob({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'requested' })
+    expect(controller.kill({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'requested' })
     expect(task.cancels).toEqual(['cancelled by the user'])
     // The unclaimed report is the whole point: the completion notice stays due.
     expect(ctx.jobs.get(id, agent)).toMatchObject({ status: 'stopping', reported: false })
   })
 
   it('reports an already-finished job instead of failing', async () => {
-    const { ctx, session, agent, commands } = await harness()
+    const { ctx, session, agent, controller } = await harness()
     const task = producer()
     const id = ctx.jobs.start({ ...task.spec, owner: agent })
     task.settle({ status: 'completed', detail: 'exit code: 0' })
     await new Promise(resolve => setTimeout(resolve, 0))
 
-    expect(commands.killJob({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'already-finished' })
+    expect(controller.kill({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'already-finished' })
     expect(ctx.jobs.get(id, agent).reported).toBe(false)
   })
 
   it('kills an unowned job from a session without a live agent', async () => {
-    const { ctx, commands } = await harness()
+    const { ctx, controller } = await harness()
     const task = producer('unowned work')
     const id = ctx.jobs.start(task.spec)
     const cold = ctx.sessions.create()
 
-    expect(commands.killJob({ sessionId: cold.id, jobId: id })).toEqual({ outcome: 'requested' })
+    expect(controller.kill({ sessionId: cold.id, jobId: id })).toEqual({ outcome: 'requested' })
   })
 
-  it('rejects an unknown job id as job-not-found', async () => {
-    const { session, commands } = await harness()
-    expect(failureCode(() => commands.killJob({ sessionId: session.id, jobId: 'bash-99' as JobId })))
-      .toBe('session/job-not-found')
+  it('rejects an unknown job id as job/not-found', async () => {
+    const { session, controller } = await harness()
+    expect(failureCode(() => controller.kill({ sessionId: session.id, jobId: 'bash-99' as JobId })))
+      .toBe('job/not-found')
   })
 
-  it('rejects a foreign session\'s job as job-not-found', async () => {
-    const { ctx, agent, commands } = await harness()
+  it('rejects a foreign session\'s job as job/not-found', async () => {
+    const { ctx, agent, controller } = await harness()
     const task = producer()
     const id = ctx.jobs.start({ ...task.spec, owner: agent })
     // The other session has no live agent, so the owned job is out of reach.
     const other = ctx.sessions.create()
 
-    expect(failureCode(() => commands.killJob({ sessionId: other.id, jobId: id })))
-      .toBe('session/job-not-found')
+    expect(failureCode(() => controller.kill({ sessionId: other.id, jobId: id })))
+      .toBe('job/not-found')
     expect(ctx.jobs.get(id, agent).status).toBe('running')
   })
 
-  it('rejects when the composition has no job registry', async () => {
-    const { session, commands } = await harness(false)
-    expect(failureCode(() => commands.killJob({ sessionId: session.id, jobId: 'bash-1' as JobId })))
-      .toBe('session/jobs-unavailable')
-  })
-
-  it('propagates a producer cancel throw instead of masking it as job-not-found', async () => {
-    const { ctx, session, agent, commands } = await harness()
+  it('propagates a producer cancel throw instead of masking it as job/not-found', async () => {
+    const { ctx, session, agent, controller } = await harness()
     const id = ctx.jobs.start({
       kind: 'bash',
       label: 'flaky cancel',
@@ -131,26 +127,19 @@ describe('session.killJob', () => {
       }),
     })
     // The registry contract: a producer throw propagates with job state
-    // unchanged — the command must not rewrite it into a lookup failure.
-    expect(() => commands.killJob({ sessionId: session.id, jobId: id })).toThrow('cancel boom')
+    // unchanged — the Remote must not rewrite it into a lookup failure.
+    expect(() => controller.kill({ sessionId: session.id, jobId: id })).toThrow('cancel boom')
     expect(ctx.jobs.get(id, agent)).toMatchObject({ status: 'running', reported: false })
   })
 
   it('rejects a subagent-owned live session with the ownership fence', async () => {
-    const { ctx, commands } = await harness()
+    const { ctx, controller } = await harness()
     const child = ctx.sessions.create(undefined, { meta: { origin: 'subagent' } })
-    const childAgent = {
-      id: child.id,
-      session: child,
-      inbox: new Inbox(child, { inserted: () => {}, discarded: () => {}, claimed: () => {} }),
-      status: 'idle',
-      ctx,
-    } as Agent
-    ctx.agents.register(childAgent)
+    const childAgent = registerAgent(ctx, child)
     const task = producer('child work')
     const id = ctx.jobs.start({ ...task.spec, owner: childAgent })
 
-    expect(failureCode(() => commands.killJob({ sessionId: child.id, jobId: id })))
+    expect(failureCode(() => controller.kill({ sessionId: child.id, jobId: id })))
       .toBe('session/agent-busy')
     expect(ctx.jobs.get(id, childAgent).status).toBe('running')
   })

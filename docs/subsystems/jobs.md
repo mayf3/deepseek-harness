@@ -276,6 +276,16 @@ Host service backing the generated `ctx.remote.job` namespace.
  * @returns anchor, coalesced output frames, and the terminal status.
  */
 @Remote({ mode: 'stream' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>
+
+/**
+ * Kill one background job on a human's behalf, leaving the terminal report
+ * unclaimed so the owning agent still receives the completion notice. The
+ * request's session resolves the live agent for the fenced lookup, and the
+ * subagent ownership fence applies exactly as it does to `session.cancel`.
+ * @param request - Session whose task list carries the job, and the job id.
+ * @returns the registry's admission of the kill request.
+ */
+@Remote('kill') kill(request: JobKillRequest): JobKillValue
 ```
 
 Source: [`packages/api/job-controller/src/index.ts`](../../packages/api/job-controller/src/index.ts)

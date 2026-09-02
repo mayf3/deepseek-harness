@@ -1044,6 +1044,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'request', description: 'target job, owning session, and optional resume offset.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'anchor, coalesced output frames, and the terminal status.',
       },
+      {
+        signature: '@Remote(\'kill\') kill(request: JobKillRequest): JobKillValue',
+        description: 'Kill one background job on a human\'s behalf, leaving the terminal report unclaimed so the owning agent still receives the completion notice. The request\'s session resolves the live agent for the fenced lookup, and the subagent ownership fence applies exactly as it does to `session.cancel`.',
+        parameters: [{ name: 'request', description: 'Session whose task list carries the job, and the job id.' }],
+        returns: 'the registry\'s admission of the kill request.',
+      },
     ],
   },
   {
@@ -1449,12 +1455,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Cancel one active Agent turn without dropping its pending inbox.',
         parameters: [{ name: 'request', description: 'Session whose active Agent turn is cancelled.' }],
         returns: 'acknowledgement that cancellation was requested.',
-      },
-      {
-        signature: '@Remote(\'killJob\') killJob(request: SessionKillJobRequest): SessionKillJobValue',
-        description: 'Kill one background job on a human\'s behalf, leaving the terminal report unclaimed so the owning agent still receives the completion notice.',
-        parameters: [{ name: 'request', description: 'Session whose task list carries the job, and the job id.' }],
-        returns: 'the registry\'s admission of the kill request.',
       },
       {
         signature: '@Remote(\'page\') page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage>',
@@ -4194,6 +4194,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface JobKillOptions {\n    reason?: string;\n    reported?: boolean;\n}',
   },
   {
+    name: 'JobKillRequest',
+    declaration: 'export interface JobKillRequest {\n    readonly sessionId: SessionId;\n    readonly jobId: JobId;\n}',
+  },
+  {
+    name: 'JobKillValue',
+    declaration: 'export interface JobKillValue {\n    readonly outcome: \'requested\' | \'already-finished\';\n}',
+  },
+  {
     name: 'JobKind',
     declaration: 'export type JobKind = JobKindMap[keyof JobKindMap];',
   },
@@ -4992,14 +5000,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionJob',
     declaration: 'export interface SessionJob {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly status: \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly outputTotal?: number;\n}',
-  },
-  {
-    name: 'SessionKillJobRequest',
-    declaration: 'export interface SessionKillJobRequest {\n    readonly sessionId: SessionId;\n    readonly jobId: JobId;\n}',
-  },
-  {
-    name: 'SessionKillJobValue',
-    declaration: 'export interface SessionKillJobValue {\n    readonly outcome: \'requested\' | \'already-finished\';\n}',
   },
   {
     name: 'SessionLineageNode',

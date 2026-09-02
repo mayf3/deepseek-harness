@@ -16,7 +16,7 @@ export { ClientJobOutputModel } from './model.ts'
 export type { JobOutputSnapshot, JobOutputSource, ObservedJob } from './model.ts'
 export { ClientJobOutput } from './service.ts'
 export type { IJobOutput, JobObserveRemote, JobRemote } from './service.ts'
-export type { JobObserveFrame, JobObserveRequest, JobObserveStatus, JobWireChunk } from '../types.ts'
+export type { JobKillRequest, JobKillValue, JobObserveFrame, JobObserveRequest, JobObserveStatus, JobWireChunk } from '../types.ts'
 
 /** Required Client Remote services. */
 export const inject = ['remote', 'remote.job']

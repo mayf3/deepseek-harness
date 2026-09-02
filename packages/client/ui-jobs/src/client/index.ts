@@ -1,11 +1,12 @@
 /**
  * Background-job plugin, browser half: contributes one session-header action
  * that renders this session's jobs. Job rows arrive through the
- * `jobsBySession` list mirror; per-row observation streams arrive through the
- * `jobOutput` client service. This plugin holds no transport state of its
- * own.
+ * `jobsBySession` list mirror; per-row observation streams and the human kill
+ * go through the `jobOutput` client service. This plugin holds no transport
+ * state of its own.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import { JobListAction } from './JobListAction.tsx'
 import type { JobListInjected } from './JobListAction.tsx'
 import type {} from '@deepseek-ai/dsh-api-job-controller/client'
@@ -24,8 +25,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { JobListActionProps, JobListInjected } from './JobListAction.tsx'
 
-/** Required services: session state, job observation, the slot registry, and dictionaries. */
-export const inject = ['sessions', 'jobOutput', 'slots', 'locale']
+/** Required services: the job observation/kill service, the slot registry, and dictionaries. */
+export const inject = ['jobOutput', 'slots', 'locale']
 
 /**
  * Client plugin body: register the dictionaries and the header action.
@@ -44,13 +45,9 @@ export function apply(ctx: ClientContext): void {
       inject: (): JobListInjected => ({
         hooks: { jobOutput: ctx.jobOutput.state },
         observe: (sessionId, id) => ctx.jobOutput.observe(sessionId, id),
-        killJob: async (sessionId, jobId) => {
-          // The binding exists for every session whose header renders this
-          // control; the guard covers a row pressed while its scope prunes.
-          const session = ctx.sessions.binding(sessionId)?.session
-          if (session === undefined) return false
-          return (await session.killJob(jobId)).ok
-        },
+        // The brand is nominal typing only; the row key is the registry id the
+        // jobs frames delivered, so the wire boundary stamps it back here.
+        killJob: async (sessionId, jobId) => (await ctx.jobOutput.kill(sessionId, jobId as JobId)).ok,
       }),
     }, JobListAction),
   )

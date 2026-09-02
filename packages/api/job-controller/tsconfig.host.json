@@ -11,11 +11,26 @@
     "src/types.ts"
   ],
   "references": [
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
-    { "path": "../../core/agent" },
-    { "path": "../../core/session" },
-    { "path": "../../jobs/jobs" },
-    { "path": "../../typert/protocol" }
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../jobs/jobs"
+    },
+    {
+      "path": "../../typert/protocol"
+    }
   ]
 }

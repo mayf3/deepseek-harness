@@ -1,15 +1,17 @@
 /**
  * The `ctx.jobOutput` client service: reference-counted per-job observation
  * streams over `job.observe`, so overlapping viewers of one job share one
- * stream and resume from the model's cursor across reconnects.
+ * stream and resume from the model's cursor across reconnects, plus the
+ * human kill passthrough over `job.kill`.
  * @module @deepseek-ai/dsh-api-job-controller/client/service
  */
 
 import { Service, type Context } from '@deepseek-ai/cordis'
 import { RemoteStreamCarrierError, type ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
+import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { JobObserveFrame, JobObserveRequest } from '../types.ts'
+import type { JobKillRequest, JobKillValue, JobObserveFrame, JobObserveRequest } from '../types.ts'
 import type { ClientJobOutputModel, JobOutputSource } from './model.ts'
 
 /** The generated `job` namespace face the observation runner drives. */
@@ -21,6 +23,12 @@ export interface JobRemote {
    * @returns the frame sequence of one generation.
    */
   observe(request: JobObserveRequest, signal?: AbortSignal): AsyncIterable<JobObserveFrame>
+  /**
+   * Kill one job on the human's behalf.
+   * @param request - the session whose list carries the job, and the job id.
+   * @returns the registry's admission, or the business/transport failure.
+   */
+  kill(request: JobKillRequest): Promise<RemoteResult<JobKillValue>>
 }
 
 /** Remote faces the observation runner drives: the Gateway stream factory and the `job` namespace. */
@@ -41,6 +49,15 @@ export interface IJobOutput {
    * @returns stop function releasing this observer's reference.
    */
   observe(sessionId: SessionId | undefined, id: JobId): () => void
+  /**
+   * Kill one background job from a session's task list. Pure RPC passthrough:
+   * row state converges through the jobs control frames, and the caller (the
+   * task-list control) owns error presentation.
+   * @param sessionId - session whose task list carries the job.
+   * @param id - the job row's registry id.
+   * @returns the registry's admission, or the business/transport failure.
+   */
+  kill(sessionId: SessionId, id: JobId): Promise<RemoteResult<JobKillValue>>
 }
 
 /** One reference-counted observation stream. */
@@ -82,6 +99,10 @@ export class ClientJobOutput extends Service implements IJobOutput {
         void entry.dispose()
       }
     }, 'job-controller.client.observations')
+  }
+
+  kill(sessionId: SessionId, id: JobId): Promise<RemoteResult<JobKillValue>> {
+    return this.remote.job.kill({ sessionId, jobId: id })
   }
 
   observe(sessionId: SessionId | undefined, id: JobId): () => void {

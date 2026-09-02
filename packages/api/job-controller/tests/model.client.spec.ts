@@ -213,6 +213,7 @@ function bench() {
   const model = new ClientJobOutputModel()
   const streams: { options: { open: (signal: AbortSignal) => unknown }; stream: FakeStream }[] = []
   const observeCalls: unknown[] = []
+  const killCalls: unknown[] = []
   const remote = {
     $stream: (options: { open: (signal: AbortSignal) => unknown }) => {
       const stream = new FakeStream()
@@ -224,15 +225,25 @@ function bench() {
         observeCalls.push(request)
         return { [Symbol.asyncIterator]: async function* () { /* never yields */ } }
       },
+      kill: async (request: unknown) => {
+        killCalls.push(request)
+        return { ok: false as const, error: { code: 'job/not-found', message: 'gone' } }
+      },
     },
   }
   const output = new ClientJobOutput(ctx, remote as never, model)
-  return { ctx, model, output, streams, observeCalls }
+  return { ctx, model, output, streams, observeCalls, killCalls }
 }
 
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0))
 
 describe('ClientJobOutput observation streams', () => {
+  it('forwards a kill to the job namespace and returns the Remote verdict', async () => {
+    const { output, killCalls } = bench()
+    await expect(output.kill('session-1' as never, ID)).resolves.toMatchObject({ ok: false })
+    expect(killCalls).toEqual([{ sessionId: 'session-1', jobId: ID }])
+  })
+
   it('feeds anchor, output, and terminal frames into the model, then closes', async () => {
     const { model, output, streams } = bench()
     output.observe(undefined, ID)

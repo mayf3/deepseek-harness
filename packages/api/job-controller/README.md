@@ -1,5 +1,5 @@
 ---
-description: "Host and Client job observation: stream one background job's output record to the browser without touching the model's consuming cursor."
+description: "Host and Client job control: stream one background job's output record to the browser without touching the model's consuming cursor, and stop a job on a human's behalf."
 kind: "package-reference"
 ---
 # Job Controller
@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-api-job-controller` owns the Host `ctx.jobController` service and the generated Client `ctx.remote.job` namespace. Its one Remote stream, `job.observe`, delivers a record-declaring job's retained output from an absolute byte offset; the Client half installs `ctx.jobOutput`, the reference-counted per-job observation service whose accumulated views the session-header job list renders. The roster itself is not here: `SessionJob` rows still ride the session control stream owned by [`dsh-api-session-controller`](../session-controller/README.md), and a row's `outputTotal` says whether this controller has anything to stream for it.
+`@deepseek-ai/dsh-api-job-controller` owns the Host `ctx.jobController` service and the generated Client `ctx.remote.job` namespace. Its Remote stream `job.observe` delivers a record-declaring job's retained output from an absolute byte offset, and its `job.kill` Remote stops one job on a human's behalf; the Client half installs `ctx.jobOutput`, the reference-counted per-job observation and kill service whose accumulated views the session-header job list renders. The roster itself is not here: `SessionJob` rows still ride the session control stream owned by [`dsh-api-session-controller`](../session-controller/README.md), and a row's `outputTotal` says whether this controller has anything to stream for it.
 
 ## Table of Contents
 
@@ -24,7 +24,9 @@ English | [中文](README.zh.md)
 
 The Host controller requires the live Agent registry and the job registry (`dsh-jobs-local` in the shipped compositions) and fails to load without them. `job.observe({ sessionId?, jobId, from? })` resolves the fenced-read caller from the request's session — an unowned job needs no session — and yields one `opened` anchor, coalesced `output` frames, then one terminal `status` once the job has settled and its record is drained, after which the stream closes normally. Record reads are non-consuming: the model-facing `job_output` cursor and completion-notice state never observe them. A job the session does not own, a job without a record, or an unknown job rejects the stream. Reconnecting callers resume by passing the last frame's `next` as `from`; a `from` below the oldest retained byte gets a `lossy` first frame instead of an error.
 
-The Client entry provides `ClientJobOutput` (`ctx.jobOutput`) over `ClientJobOutputModel`. `observe(sessionId, jobId)` opens one Gateway stream per job however many viewers expand it, keeps a bounded render tail per job with `gapBefore` marking eviction or resume gaps, records the terminal status or a stream failure on the view, and drops the view after the last viewer releases. The plugin resolves the Gateway stream factory and the `job` namespace while its own context is current, because observation (re)opens run on caller stacks that have not declared `remote.job`.
+`job.kill({ sessionId, jobId })` cancels one job with the reason `cancelled by the user` and leaves the terminal report unclaimed, so the owning agent's completion notice stays due; it answers `{ outcome: 'requested' }` or `{ outcome: 'already-finished' }`, rejects an unknown or foreign job with `job/not-found`, and applies the Session Controller's subagent ownership fence (`session/agent-busy`) to a subagent-owned live session.
+
+The Client entry provides `ClientJobOutput` (`ctx.jobOutput`) over `ClientJobOutputModel`. `kill(sessionId, jobId)` forwards to `job.kill` and returns the Remote result for the caller's admission verdict. `observe(sessionId, jobId)` opens one Gateway stream per job however many viewers expand it, keeps a bounded render tail per job with `gapBefore` marking eviction or resume gaps, records the terminal status or a stream failure on the view, and drops the view after the last viewer releases. The plugin resolves the Gateway stream factory and the `job` namespace while its own context is current, because observation (re)opens run on caller stacks that have not declared `remote.job`.
 
 ### Config
 

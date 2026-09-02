@@ -4,7 +4,6 @@ import type { Context } from '@deepseek-ai/cordis'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { AttachmentIdType, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
-import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import { SessionLogOffset, SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { SessionEventStream } from '../transport.ts'
@@ -324,19 +323,6 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
     }
     return result
-  }
-
-  /**
-   * Kill one background job from this session's task list. Pure RPC passthrough:
-   * row state converges through the jobs control frames, and the caller (the
-   * task-list control) owns error presentation, so no snapshot state changes here.
-   * @param jobId - the job row's registry id.
-   * @returns the registry's admission of the kill request.
-   */
-  async killJob(jobId: string): Promise<RemoteResult<{ outcome: 'requested' | 'already-finished' }>> {
-    // The brand is nominal typing only; a client program stamps it at the
-    // wire boundary rather than value-importing the host-side constructor.
-    return this.remote.session.killJob({ sessionId: this.sessionId, jobId: jobId as JobId })
   }
 
   /**

@@ -23,7 +23,7 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
 const observed: [string | undefined, string][] = []
 
 /** Job ids the stubbed bound session was asked to kill, and its scripted result. */
-const kills: string[] = []
+const kills: [string, string][] = []
 let killResult: { ok: boolean } = { ok: true }
 
 /** Boot the browser half over a real slot tree that declares the header list. */
@@ -36,16 +36,15 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
-  ctx.provide('sessions', {
-    binding: (id: string) => id === 'sess-live'
-      ? { session: { killJob: async (jobId: string) => { kills.push(jobId); return killResult } } }
-      : undefined,
-  } as never)
   ctx.provide('jobOutput', {
     state: { getSnapshot: () => ({ observed: {} }), subscribe: () => () => {} },
     observe: (sessionId: string | undefined, id: string) => {
       observed.push([sessionId, id])
       return () => {}
+    },
+    kill: async (sessionId: string, jobId: string) => {
+      kills.push([sessionId, jobId])
+      return killResult
     },
   } as never)
   // The locale plugin binds a settings scope, which reads the connection handle
@@ -65,7 +64,7 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
 
 describe('ui-jobs browser half', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['sessions', 'jobOutput', 'slots', 'locale'])
+    expect(inject).toEqual(['jobOutput', 'slots', 'locale'])
   })
 
   it('exposes the output source and observation control through the inject face', async () => {
@@ -85,15 +84,13 @@ describe('ui-jobs browser half', () => {
     expect(observed).toEqual([['session', 'bash-1']])
     stopper()
 
-    // The kill control routes through the bound session and reports admission…
+    // The kill control routes through the job service with the row's session
+    // and reports the admission verdict.
     killResult = { ok: true }
     await expect(face.killJob('sess-live', 'bash-3')).resolves.toBe(true)
-    expect(kills).toEqual(['bash-3'])
     killResult = { ok: false }
     await expect(face.killJob('sess-live', 'bash-4')).resolves.toBe(false)
-    // …and degrades to a plain failure when the session's scope is gone.
-    await expect(face.killJob('sess-gone', 'bash-5')).resolves.toBe(false)
-    expect(kills).toEqual(['bash-3', 'bash-4'])
+    expect(kills).toEqual([['sess-live', 'bash-3'], ['sess-live', 'bash-4']])
   })
 
   it('registers the header action, and fiber teardown removes it (HMR safety)', async () => {
