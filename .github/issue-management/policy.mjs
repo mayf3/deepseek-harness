@@ -484,7 +484,13 @@ async function projectContext(number, includeStatusActor = false, includeStartDa
           title
           fields(first: 50) {
             nodes {
-              ... on ProjectV2Field { id name dataType }
+              ... on ProjectV2Field {
+                id
+                name
+                dataType
+                isIssueField
+                issueField { ... on IssueFieldDate { id } }
+              }
               ... on ProjectV2SingleSelectField { id name dataType options { id name } }
             }
           }
@@ -512,7 +518,9 @@ async function projectContext(number, includeStatusActor = false, includeStartDa
               }
               startDateValue: fieldValueByName(name: $startDateField)
                 @include(if: $includeStartDate) {
-                ... on ProjectV2ItemFieldDateValue { date }
+                ... on ProjectV2ItemIssueFieldValue {
+                  issueFieldValue { ... on IssueFieldDateValue { value } }
+                }
               }
             }
           }
@@ -543,6 +551,9 @@ async function projectContext(number, includeStatusActor = false, includeStartDa
   }
   if (startDateField && startDateField.dataType !== 'DATE') {
     throw new Error(`Project ${config.startDateField} 字段必须为 Date`)
+  }
+  if (startDateField && (!startDateField.isIssueField || !startDateField.issueField?.id)) {
+    throw new Error(`Project ${config.startDateField} 字段必须为 Issue Date 字段`)
   }
   const item = issue.projectItems.nodes.find((candidate) => candidate.project.id === project.id)
   const latestStatusEvent = issue.timelineItems?.nodes
@@ -582,27 +593,24 @@ async function ensureProjectItem(number, includeStartDate = false) {
 }
 
 /**
- * Initialize one Issue's Project Start date when it is empty.
+ * Initialize one Issue's organization Start date when it is empty.
  * @param {number} number Same-repository Issue number.
  * @param {string} date Date in YYYY-MM-DD form.
- * @returns {Promise<void>} Resolves after the conditional Project update.
+ * @returns {Promise<void>} Resolves after the conditional Issue-field update.
  */
 export async function initializeIssueStartDate(number, date) {
   const context = await ensureProjectItem(number, true)
-  if (context.item.startDateValue?.date) return
+  if (context.item.startDateValue?.issueFieldValue?.value) return
   await graphql(
-    `mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $date: Date!) {
-      updateProjectV2ItemFieldValue(input: {
-        projectId: $projectId,
-        itemId: $itemId,
-        fieldId: $fieldId,
-        value: {date: $date}
-      }) { projectV2Item { id } }
+    `mutation($issueId: ID!, $fieldId: ID!, $date: String!) {
+      updateIssueFieldValue(input: {
+        issueId: $issueId,
+        issueField: {fieldId: $fieldId, dateValue: $date}
+      }) { issue { id } }
     }`,
     {
-      projectId: context.project.id,
-      itemId: context.item.id,
-      fieldId: context.startDateField.id,
+      issueId: context.issue.id,
+      fieldId: context.startDateField.issueField.id,
       date,
     },
   )
