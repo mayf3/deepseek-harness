@@ -204,9 +204,10 @@ export interface Scenario {
 
 /**
  * Whether a scenario's run test is skipped for this mode and host: record mode
- * skips authored (non-`recorded`) scenarios, {@link Scenario.posixOnly}
- * scenarios skip on Windows, and {@link Scenario.pwshOnly} scenarios skip
- * when the caller's `hasPwsh` probe is false.
+ * skips authored (non-`recorded`) scenarios and explicit historical Session
+ * generations, {@link Scenario.posixOnly} scenarios skip on Windows, and
+ * {@link Scenario.pwshOnly} scenarios skip when the caller's `hasPwsh` probe
+ * is false.
  *
  * @param scenario The scenario whose run test is being registered.
  * @param recording Whether the suite runs in record mode.

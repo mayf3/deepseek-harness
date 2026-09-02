@@ -699,20 +699,16 @@ describe('prepareSessionSnapshotFixtureForComparison', () => {
       JSON.stringify({
         type: 'user/message',
         data: {
-          role: 'user',
+          role: 'assistant',
           content: [{ type: 'text', text: 'Show the active reminders.' }],
           source: { kind: 'user' },
           id: 'message-1',
         },
         surfaceOp: 'append',
       }),
-      JSON.stringify({
-        type: 'session/title',
-        data: { title: 'Active schedule catalog', messageSeqs: [1], source: { kind: 'user' } },
-      }),
     ].join('\n')
     expect(() => prepareSessionSnapshotFixtureForComparison(source))
-      .toThrow(/session\/title 2 messageSeqs must be empty exactly for a user title/)
+      .toThrow('message must have role "user"')
   })
 })
 

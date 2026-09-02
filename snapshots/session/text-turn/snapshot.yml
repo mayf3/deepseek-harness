@@ -2,7 +2,7 @@ version: 1
 scenario: text-turn
 profile: headless
 composition: default
-recording: authored
+recording: live
 sessionFormat:
   version: 1
   coverage: [adjacent-migration]

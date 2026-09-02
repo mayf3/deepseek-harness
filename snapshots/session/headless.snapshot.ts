@@ -1,9 +1,9 @@
 /** Recorded-session replay through the shipped headless `dsh` profile. */
 
-import { cp, copyFile, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
+import { cp, copyFile, mkdir, mkdtemp, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { homedir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
@@ -216,7 +216,20 @@ async function writeSessionFixtures(
   })
   const output = redactSessionSnapshotIds(stabilizeFixtureMessageIds(fresh, prior))
   await Promise.all(output.map((content, index) => writeFile(join(scenario.dir, names[index] as string), content)))
+  return output
+}
 
+/**
+ * Write prompt and tool-schema sidecars independently of Session-generation retention.
+ * @param scenario - scenario and sidecar ownership metadata.
+ * @param actualLogs - current run's primary-first Session logs.
+ * @param ctx - volatile run values used by header normalization.
+ */
+async function writeHeaderSidecars(
+  scenario: HeadlessScenario,
+  actualLogs: readonly SessionLog[],
+  ctx: NormalizeContext,
+): Promise<void> {
   if (scenario.manifest.header.pin === true) {
     const primary = actualLogs[0]
     if (primary === undefined) throw new Error(`${scenario.name}: write-back has no primary session`)
@@ -255,7 +268,6 @@ async function writeSessionFixtures(
       formatToolSchemasSnapshot(schemas[0] as unknown[], schemas.slice(1)),
     )
   }
-  return output
 }
 
 function taskFromSession(log: string): string | undefined {
@@ -727,6 +739,63 @@ describe('headless recorded-session snapshots', () => {
     expect(stderrFromSession(log)).toBe('dsh: reasoning:\nfirst thought\ndsh: reasoning:\nsecond\n')
   })
 
+  it('writes header sidecars without replacing a retained Session generation', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dsh-headless-sidecars-'))
+    try {
+      const scenario: HeadlessScenario = {
+        name: 'retained-pin',
+        dir: directory,
+        manifest: {
+          version: 1,
+          scenario: 'retained-pin',
+          profile: 'headless',
+          composition: 'default',
+          recording: 'live',
+          header: { class: 'default', pin: true },
+          sessionFormat: { version: 1, coverage: ['adjacent-migration'] },
+        },
+      }
+      const header = {
+        type: 'session', version: 2, id: 'sidecar-session', createdAt: 1,
+        cwd: '/tmp/sidecar-session', isSeeded: false, delegationDepth: 0,
+      }
+      const content = [
+        header,
+        { type: 'turn/start', seq: 0, time: 2, data: { turn: 1 } },
+        {
+          type: 'request/header',
+          seq: 1,
+          time: 3,
+          data: {
+            header: {
+              config: { provider: 'test', model: 'test' },
+              system: 'fresh system prompt',
+              tools: [{ name: 'fresh_tool', description: 'fresh schema', parameters: {} }],
+            },
+            reason: 'initial',
+          },
+        },
+      ].map(record => JSON.stringify(record)).join('\n')
+      const retained = '{"type":"session","version":1}\n'
+      await writeFile(join(directory, 'session.v1.jsonl'), retained)
+
+      await writeHeaderSidecars(
+        scenario,
+        [{ content, header }],
+        { sessionIds: ['sidecar-session'], cwd: '/tmp/sidecar-session' },
+      )
+
+      expect(await readFile(join(directory, 'system-prompt.expected.md'), 'utf8'))
+        .toBe('fresh system prompt\n')
+      expect(await readFile(join(directory, 'tool-schemas.expected.json'), 'utf8'))
+        .toContain('"name": "fresh_tool"')
+      expect(await readFile(join(directory, 'session.v1.jsonl'), 'utf8')).toBe(retained)
+      expect(await readdir(directory)).not.toContain('session.v2.jsonl')
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
+
   for (const scenario of scenarios) {
     const skipped = scenario.manifest.platform === 'posix' && process.platform === 'win32'
       || scenario.manifest.platform === 'pwsh' && !hasPwsh
@@ -830,24 +899,25 @@ describe('headless recorded-session snapshots', () => {
       const stderrLog = mode === 'replay' ? primaryFixture : actualLogs[0]?.content
       if (stderrLog === undefined) throw new Error(`${scenario.name}: stderr projection has no primary session`)
       const expectedStderr = stderrFromSession(stderrLog)
+      const actualContext = contextOf(actualLogs.map(log => log.content))
 
       if (writesCurrentSessionFixtures(scenario.manifest, mode)) {
         fixtures = await writeSessionFixtures(
           scenario,
           actualLogs,
           fixtures,
-          contextOf(actualLogs.map(log => log.content)),
+          actualContext,
         )
         fixtureFiles = actualLogs.map((log, index) => sessionFixtureName(
           index,
           sessionHeaderVersion(log.content, `harvested Session ${index}`),
         ))
       }
+      if (mode !== 'replay') await writeHeaderSidecars(scenario, actualLogs, actualContext)
 
       expect(result.stdout).toBe(`${finalTextFromSession(fixtures[0] as string)}\n`)
       expect(result.stderr).toBe(expectedStderr)
       expect(actualLogs, `${scenario.name}: persisted session count`).toHaveLength(fixtures.length)
-      const actualContext = contextOf(actualLogs.map(log => log.content))
       const fixtureContext = contextOf(fixtures)
       const actualSnapshots = normalizeSessionSnapshots(actualLogs.map(log => log.content), actualContext)
       const expectedSnapshots = normalizeSessionSnapshots(fixtures, fixtureContext)

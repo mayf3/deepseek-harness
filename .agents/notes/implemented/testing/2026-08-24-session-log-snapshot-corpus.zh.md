@@ -22,7 +22,7 @@ Fixture 解码与比较只取决于选定 JSONL 内容；文件名标识 invento
 
 Headless stderr 重建会同时展开 `assistant/message` 与仅写入日志的 `assistant/attempt` settlement 中嵌入的 reasoning，因此失败或重试尝试的 reasoning 仍属于进程输出投影。
 
-每个 parent 或 child 角色都使用 `session[.<ordinal>][.vN].jsonl`；v0 省略版本，且每个文件名都与其 header 一致。回放、录制与刷新按角色选择数值最高的 generation。大多数 owner 省略 `sessionFormat` 并跟随当前 writer；受限的历史 owner 会声明精确版本与封闭 coverage 名称。v2 语料保留选定 v0 角色，覆盖多跳、打包行、重试／失败与随附 profile，并保留选定 v1 角色覆盖相邻结构 edge。录制与刷新绝不改写显式保留的历史 fixture、重命名已提交 generation 或通过自动清理删除 generation。受审阅的源树整理只有在同角色存在已验证的当前后继后才移除前代。语料策略要求选定当前角色始终占多数，并将选定历史角色上限设为十个；更低的前代 generation 可以保留在选定当前后继旁。
+每个 parent 或 child 角色都使用 `session[.<ordinal>][.vN].jsonl`；v0 省略版本，且每个文件名都与其 header 一致。回放、录制与刷新按角色选择数值最高的 generation。大多数 owner 省略 `sessionFormat` 并跟随当前 writer；受限的历史 owner 会声明精确版本与封闭 coverage 名称。v2 语料保留选定 v0 角色，覆盖多跳、打包行、重试／失败与随附 profile，并保留选定 v1 角色覆盖相邻结构 edge。录制与刷新绝不改写显式保留的历史 fixture、重命名已提交 generation 或通过自动清理删除 generation。保留 Session generation 不会冻结非 Session 预期输出：refresh 仍会根据当前 run 写入 owner 持有的 system-prompt 与 tool-schema sidecar。受审阅的源树整理只有在同角色存在已验证的当前后继后才移除前代。语料策略要求选定当前角色始终占多数，并将选定历史角色上限设为十个；更低的前代 generation 可以保留在选定当前后继旁。
 
 场景拥有的 HTTP fixture 将会话中录制的稳定 authority 与传输 listener 分离。每个 fixture 在回环地址上绑定端口 `0`，由操作系统以一次原子操作分配并绑定端口，再将录制的 URL 或 endpoint 通过真实 provider 映射到该 listener。任何进程全局传输拦截只匹配录制 endpoint，由 fixture fiber 拥有，并在关闭 listener 前恢复。
 
