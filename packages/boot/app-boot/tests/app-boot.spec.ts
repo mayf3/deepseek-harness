@@ -157,19 +157,22 @@ describe('loadLayeredEnv', () => {
   it('accepts the proxy names from the Harness-home .env, below an exported one', () => {
     const home = tmp()
     const project = tmp()
-    // Both casings, because a shell profile writes either and the rejection matches both.
-    writeFileSync(join(home, '.env'), 'HTTP_PROXY=http://from-home:8080\nhttps_proxy=http://from-home-lower:8080\nNO_PROXY=example.com\n')
+    // Both casings, because a shell profile writes either and the rejection matches both. Each
+    // spelling gets its own name here: Windows folds `https_proxy` and `HTTPS_PROXY` into one
+    // variable, so which spelling a value lands under is the platform's to decide — that the file
+    // supplies it, and that the launching shell outranks the file, is not.
+    writeFileSync(join(home, '.env'), 'HTTP_PROXY=http://from-home:8080\nno_proxy=example.com\nHTTPS_PROXY=http://from-home:8443\n')
     clear(); clearProxy()
     vi.stubEnv('DSH_HOME', home)
     vi.stubEnv('HTTPS_PROXY', 'http://exported:8080')
     try {
       const snapshot = loadLayeredEnv(NAME, project, vi.fn())
       expect(snapshot.get('HTTP_PROXY')).toEqual({ value: 'http://from-home:8080', source: 'user-env', path: join(home, '.env') })
-      expect(snapshot.get('https_proxy')).toEqual({ value: 'http://from-home-lower:8080', source: 'user-env', path: join(home, '.env') })
-      expect(snapshot.get('NO_PROXY')?.value).toBe('example.com')
-      // The launching shell still outranks the file.
+      expect(snapshot.get('no_proxy')).toEqual({ value: 'example.com', source: 'user-env', path: join(home, '.env') })
+      // The launching shell still outranks the file for the same variable.
       expect(snapshot.get('HTTPS_PROXY')).toEqual({ value: 'http://exported:8080', source: 'process' })
       expect(process.env.HTTP_PROXY).toBe('http://from-home:8080')
+      expect(process.env.HTTPS_PROXY).toBe('http://exported:8080')
     } finally {
       clear(); clearProxy()
       vi.unstubAllEnvs()
