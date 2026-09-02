@@ -133,8 +133,9 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
-    await seedSession(scaffold, sourceSessionFixture(), SOURCE_SESSION_ID)
-    await seedSession(scaffold, targetSessionFixture(), TARGET_SESSION_ID)
+    const targetCreatedAt = Date.now() - 60_000
+    await seedSession(scaffold, sourceSessionFixture(), SOURCE_SESSION_ID, undefined, { createdAt: targetCreatedAt - 1 })
+    await seedSession(scaffold, targetSessionFixture(), TARGET_SESSION_ID, undefined, { createdAt: targetCreatedAt })
     browser = await chromium.launch()
     page = await newEnglishPage(browser)
     tripwire = watchConsole(page)
@@ -377,7 +378,11 @@ describe.skipIf(MODE === 'record')('web e2e: file and session references through
     const group = page.getByRole('treeitem', { name: /Ungrouped/ })
     await group.waitFor({ timeout: 15_000 })
     if (await group.getAttribute('aria-expanded') !== 'true') await group.click()
-    const target = page.getByRole('treeitem', { name: /Reference order target/ })
+    // Both logs were written behind the running Host and have no cache rows, so
+    // cold listing uses their shared Workspace fallback. Explicit creation
+    // times keep the target first without opening either body for a title.
+    const groupSection = group.locator('xpath=ancestor::*[contains(@class, "groupSection")][1]')
+    const target = groupSection.locator('[role="treeitem"]').nth(1)
     await target.waitFor({ timeout: 15_000 })
     await target.click()
     await page.getByRole('button', { name: /^Session recall\s*Research notes$/ }).waitFor({ timeout: 15_000 })

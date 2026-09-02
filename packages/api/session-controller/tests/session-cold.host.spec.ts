@@ -172,42 +172,39 @@ describe('sessions.list cold merge', () => {
     expect(inspect).not.toHaveBeenCalled()
   })
 
-  it('prefers a live row attached during the query without folding its seed', async () => {
+  it('prefers a live row attached during cache lookup without folding its seed', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
     const meta = header('attached-during-list', 100)
-    const started = Promise.withResolvers<undefined>()
-    const release = Promise.withResolvers<undefined>()
     providePersistence(ctx, {
-      list: async () => {
-        started.resolve(undefined)
-        await release.promise
-        return [meta]
-      },
+      list: () => Promise.resolve([meta]),
     })
+    const cacheLookup = vi.fn(() => {
+      const session = ctx.sessions.create(meta.id, {
+        seed: [
+          { type: 'turn/start', seq: SessionSeq(0), time: 200, data: { turn: 1 } },
+          {
+            type: 'user/message', seq: SessionSeq(1), time: 300,
+            data: createUserMessage({ content: [{ type: 'text', text: 'live' }], source: { kind: 'user' } }),
+            surfaceOp: 'append',
+          },
+        ],
+        meta: {
+          ...meta.cwd === undefined ? {} : { cwd: meta.cwd },
+          createdAt: meta.createdAt,
+        },
+      })
+      ctx.agents.register({ id: session.id, session, status: 'running', ctx } as Agent)
+      return undefined
+    })
+    ctx.provide('sessionProjectionCache', {
+      cachedSnapshot: cacheLookup,
+      cachedPredecessorTitle: () => undefined,
+    } as never)
     const remote = createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
-    const listing = remote.list(request({}))
-    await started.promise
-    const session = ctx.sessions.create(meta.id, {
-      seed: [
-        { type: 'turn/start', seq: SessionSeq(0), time: 200, data: { turn: 1 } },
-        {
-          type: 'user/message', seq: SessionSeq(1), time: 300,
-          data: createUserMessage({ content: [{ type: 'text', text: 'live' }], source: { kind: 'user' } }),
-          surfaceOp: 'append',
-        },
-      ],
-      meta: {
-        ...meta.cwd === undefined ? {} : { cwd: meta.cwd },
-        createdAt: meta.createdAt,
-      },
-    })
-    ctx.agents.register({ id: session.id, session, status: 'running', ctx } as Agent)
-    release.resolve(undefined)
-
-    const response = await listing
+    const response = await remote.list(request({}))
     if (!response.ok) throw new Error('list failed')
     expect(response.value.items).toEqual([
       expect.objectContaining({
@@ -217,6 +214,7 @@ describe('sessions.list cold merge', () => {
         updatedAt: 100,
       }),
     ])
+    expect(cacheLookup).toHaveBeenCalledOnce()
   })
 
 })
