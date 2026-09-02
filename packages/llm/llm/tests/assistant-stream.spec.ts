@@ -147,6 +147,10 @@ describe('AssistantStreamAccumulator', () => {
     })).toThrow(/index/)
     expect(() => accumulator.push({
       time: 1,
+      chunk: { type: 'text-delta', index: 0, text: 1 } as never,
+    })).toThrow(/text must be a string/)
+    expect(() => accumulator.push({
+      time: 1,
       chunk: { type: 'tool-call-delta', index: 0, id: ToolCallId(''), argumentsDelta: '{}' },
     })).toThrow(/id/)
     expect(() => accumulator.push({
@@ -155,6 +159,12 @@ describe('AssistantStreamAccumulator', () => {
         type: 'tool-call-delta', index: 0, id: ToolCallId('call'), name: '', argumentsDelta: '{}',
       },
     })).toThrow(/name/)
+    expect(() => accumulator.push({
+      time: 1,
+      chunk: {
+        type: 'tool-call-delta', index: 0, id: ToolCallId('call'), argumentsDelta: 1,
+      } as never,
+    })).toThrow(/argumentsDelta must be a string/)
     expect(accumulator.snapshot()).toStrictEqual([])
   })
 

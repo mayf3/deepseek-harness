@@ -15,7 +15,7 @@ import {
 } from '@deepseek-ai/dsh-session-snapshot'
 import { LOADER_SMOKE_TEST_TIMEOUT_MS, runLoaderSmoke } from '@deepseek-ai/dsh-loader-smoke'
 import { createUserMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
-import SessionStore, { SESSION_FORMAT_VERSION, SessionId, SessionSeq, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
+import { SessionSeq, SESSION_FORMAT_VERSION, SessionId, type SessionEvent, type SessionHeader } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { describe, expect, it } from 'vitest'
 
@@ -44,14 +44,13 @@ async function expectSession(actual: string, expectedPath: string): Promise<void
 /** Seed a completed parent turn with its read-only policy and current LLM selection. */
 async function seedReadOnlyParent(root: string, cwd: string): Promise<void> {
   const ctx = new Context()
-  await ctx.plugin(SessionStore)
   await ctx.plugin(JsonlSessionPersistence, { root, compression: 'none' })
   const meta: SessionHeader = {
     version: SESSION_FORMAT_VERSION,
     id: sessionId,
     createdAt: 1,
-    cwd,
     isSeeded: false,
+    cwd,
     delegationDepth: 0,
   }
   const events: SessionEvent[] = [
@@ -76,8 +75,9 @@ async function seedReadOnlyParent(root: string, cwd: string): Promise<void> {
     { type: 'turn/end', seq: SessionSeq(4), time: 14, data: { turn: 1, reason: { kind: 'completed' } } },
   ]
   try {
-    await ctx.sessionPersistence.create(meta)
-    await ctx.sessionPersistence.append(sessionId, events)
+    const handle = await ctx.sessionPersistence.create(meta)
+    await handle.append(events)
+    await handle.close()
   } finally {
     await ctx.fiber.dispose()
   }
@@ -125,7 +125,7 @@ describe('parent-only override inheritance snapshot', () => {
         )
         expect(childRecords[1]).toMatchObject({
           type: 'sandbox/mode',
-          seq: 0,
+          seq: SessionSeq(0),
           data: { mode: 'read-only', source: 'delegation' },
         })
 

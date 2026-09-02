@@ -16,7 +16,8 @@ import { dirname, join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
-import SessionStore, {
+import {
+  KNOWN_SESSION_EVENT_TYPES,
   Session,
   SessionId,
   SessionLogOffset,
@@ -26,6 +27,7 @@ import type {
   SessionHeader,
   SessionId as SessionIdType,
 } from '@deepseek-ai/dsh-session'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import {
   snapshotSessionFormatArtifact,
 } from '@deepseek-ai/dsh-session-format'
@@ -42,8 +44,12 @@ import {
 import {
   assertReleasedV2Artifact,
   releasedV2SessionFormatCodec,
+  restoreReleasedV2Artifact,
   sessionFormatV1ToV2,
 } from '../packages/session/session-format-v1-to-v2/src/index.ts'
+import {
+  sessionFormatCatalog,
+} from '../packages/session/session-format-catalog/src/generated.ts'
 import {
   validateInstalledCurrentSessionArtifact,
 } from '../packages/session/session-format-catalog/src/current.ts'
@@ -109,6 +115,7 @@ interface CurrentReadCase {
   readonly root: string
   readonly id: SessionIdType
   readonly compression: JsonlCompression
+  readonly physical: PhysicalInput
   readonly expected: SessionFormatArtifact
 }
 
@@ -125,7 +132,7 @@ interface PairedResult {
   readonly passed: boolean
 }
 
-type StoredRead = Awaited<ReturnType<JsonlSessionPersistence['loadStored']>>
+type StoredRead = SessionFormatArtifact
 
 interface EventExtras {
   readonly surfaceOp?: SessionFormatEvent['surfaceOp']
@@ -205,8 +212,8 @@ async function main(): Promise<void> {
 
     console.log('Session format v2 performance acceptance')
     console.log(
-      'Direct-current/no-dispatch baseline: JSONL loadStored on the same backend, id, file, and decoder. '
-      + 'The candidate is loadCurrentStored with current-generation/catalog dispatch enabled.',
+      'Direct-current/no-dispatch baseline: the released-v2 codec restores the same parsed physical rows. '
+      + 'The candidate routes those rows through the static format catalog; public handles validate each file once.',
     )
     console.log(
       `Sampling: ${options.runs} run(s), ${options.warmups} warmup pair(s), `
@@ -219,9 +226,9 @@ async function main(): Promise<void> {
     console.log('')
 
     let accepted = true
-    console.log('Current v2 physical reads (pooled hot samples)')
+    console.log('Current v2 physical decode and restoration (pooled hot samples)')
     for (const benchmarkCase of cases) {
-      const result = await runPairedCurrentRead(benchmarkCase, options)
+      const result = runPairedCurrentRead(benchmarkCase, options)
       accepted &&= result.passed
       printPairedResult(benchmarkCase.label, result)
     }
@@ -470,6 +477,9 @@ async function materializeCurrentReadCases(
         root: caseRoot,
         id,
         compression,
+        physical: compression === 'none'
+          ? parseRaw(fixture.v2Physical.raw)
+          : parseZstd(fixture.v2Physical.zstd),
         expected: fixture.v2,
       })
     }
@@ -481,10 +491,17 @@ async function validateFixtureReads(cases: readonly CurrentReadCase[]): Promise<
   for (const benchmarkCase of cases) {
     const mounted = await mountBackend(benchmarkCase)
     try {
-      const direct = requireStored(await mounted.backend.loadStored(benchmarkCase.id))
-      const catalog = requireStored(await mounted.backend.loadCurrentStored(benchmarkCase.id))
-      deepStrictEqual(direct.meta, benchmarkCase.expected.header)
-      deepStrictEqual(direct.events, benchmarkCase.expected.events)
+      const handle = await mounted.persistence.open(benchmarkCase.id, 'read')
+      try {
+        deepStrictEqual(handle.header, benchmarkCase.expected.header)
+        deepStrictEqual(handle.inheritedEventCount, benchmarkCase.expected.inheritedEventCount)
+        deepStrictEqual(await handle.read(), benchmarkCase.expected.events)
+      } finally {
+        await handle.close()
+      }
+      const direct = directCurrentRead(benchmarkCase)
+      const catalog = catalogCurrentRead(benchmarkCase)
+      deepStrictEqual(direct, benchmarkCase.expected)
       deepStrictEqual(catalog, direct)
     } finally {
       await mounted.dispose()
@@ -493,25 +510,39 @@ async function validateFixtureReads(cases: readonly CurrentReadCase[]): Promise<
 }
 
 async function mountBackend(benchmarkCase: CurrentReadCase): Promise<{
-  readonly backend: JsonlSessionPersistence
+  readonly persistence: SessionPersistence
   readonly dispose: () => Promise<void>
 }> {
   const context = new Context()
-  await context.plugin(SessionStore)
   await context.plugin(JsonlSessionPersistence, {
     root: benchmarkCase.root,
     compression: benchmarkCase.compression,
-    preparedSessionCacheSize: 1,
   })
   return {
-    backend: context.sessionPersistence as JsonlSessionPersistence,
+    persistence: context.sessionPersistence,
     dispose: async () => context.fiber.dispose(),
   }
 }
 
-function requireStored(value: StoredRead): Exclude<StoredRead, undefined> {
-  if (value === undefined) throw new Error('benchmark current artifact disappeared')
-  return value
+function directCurrentRead(benchmarkCase: CurrentReadCase): StoredRead {
+  const decoded = snapshotSessionFormatArtifact(
+    releasedV2SessionFormatCodec.decodeArtifact(
+      benchmarkCase.physical.header,
+      benchmarkCase.physical.rows,
+    ),
+    'direct released-v2 decoded artifact',
+  )
+  const source = snapshotSessionFormatArtifact(decoded, 'direct released-v2 source')
+  const restored = restoreReleasedV2Artifact(source, KNOWN_SESSION_EVENT_TYPES)
+  validateInstalledCurrentSessionArtifact(restored)
+  return snapshotSessionFormatArtifact(restored, 'direct current Session restoration')
+}
+
+function catalogCurrentRead(benchmarkCase: CurrentReadCase): StoredRead {
+  return sessionFormatCatalog.migrate(sessionFormatCatalog.decodeArtifact(
+    benchmarkCase.physical.header,
+    benchmarkCase.physical.rows,
+  ))
 }
 
 function parseRaw(bytes: Buffer): PhysicalInput {
@@ -541,55 +572,42 @@ function physicalArguments(input: PhysicalInput): [unknown, readonly unknown[]] 
   return [input.header, input.rows]
 }
 
-async function runPairedCurrentRead(
+function runPairedCurrentRead(
   benchmarkCase: CurrentReadCase,
   options: BenchmarkOptions,
-): Promise<PairedResult> {
+): PairedResult {
   const pooledDirect: number[] = []
   const pooledCatalog: number[] = []
   for (let run = 0; run < options.runs; run += 1) {
-    const mounted = await mountBackend(benchmarkCase)
-    try {
-      forceGc()
-      for (let warmup = 0; warmup < options.warmups; warmup += 1) {
-        if ((warmup + run) % 2 === 0) {
-          consumeStored(requireStored(await mounted.backend.loadStored(benchmarkCase.id)))
-          consumeStored(requireStored(await mounted.backend.loadCurrentStored(benchmarkCase.id)))
-        } else {
-          consumeStored(requireStored(await mounted.backend.loadCurrentStored(benchmarkCase.id)))
-          consumeStored(requireStored(await mounted.backend.loadStored(benchmarkCase.id)))
-        }
+    forceGc()
+    for (let warmup = 0; warmup < options.warmups; warmup += 1) {
+      if ((warmup + run) % 2 === 0) {
+        consumeStored(directCurrentRead(benchmarkCase))
+        consumeStored(catalogCurrentRead(benchmarkCase))
+      } else {
+        consumeStored(catalogCurrentRead(benchmarkCase))
+        consumeStored(directCurrentRead(benchmarkCase))
       }
-      const direct: number[] = []
-      const catalog: number[] = []
-      for (let sample = 0; sample < options.samples; sample += 1) {
-        if ((sample + run) % 2 === 0) {
-          direct.push(await timedUsAsync(async () => {
-            consumeStored(requireStored(await mounted.backend.loadStored(benchmarkCase.id)))
-          }))
-          catalog.push(await timedUsAsync(async () => {
-            consumeStored(requireStored(await mounted.backend.loadCurrentStored(benchmarkCase.id)))
-          }))
-        } else {
-          catalog.push(await timedUsAsync(async () => {
-            consumeStored(requireStored(await mounted.backend.loadCurrentStored(benchmarkCase.id)))
-          }))
-          direct.push(await timedUsAsync(async () => {
-            consumeStored(requireStored(await mounted.backend.loadStored(benchmarkCase.id)))
-          }))
-        }
-      }
-      pooledDirect.push(...direct)
-      pooledCatalog.push(...catalog)
-      const directRun = distribution(direct)
-      const catalogRun = distribution(catalog)
-      console.log(
-        `  ${benchmarkCase.label} run ${run + 1}: direct ${formatDistribution(directRun)}; `
-        + `catalog ${formatDistribution(catalogRun)}`,
-      )
-    } finally {
-      await mounted.dispose()
     }
+    const direct: number[] = []
+    const catalog: number[] = []
+    for (let sample = 0; sample < options.samples; sample += 1) {
+      if ((sample + run) % 2 === 0) {
+        direct.push(timedUs(() => { consumeStored(directCurrentRead(benchmarkCase)) }))
+        catalog.push(timedUs(() => { consumeStored(catalogCurrentRead(benchmarkCase)) }))
+      } else {
+        catalog.push(timedUs(() => { consumeStored(catalogCurrentRead(benchmarkCase)) }))
+        direct.push(timedUs(() => { consumeStored(directCurrentRead(benchmarkCase)) }))
+      }
+    }
+    pooledDirect.push(...direct)
+    pooledCatalog.push(...catalog)
+    const directRun = distribution(direct)
+    const catalogRun = distribution(catalog)
+    console.log(
+      `  ${benchmarkCase.label} run ${run + 1}: direct ${formatDistribution(directRun)}; `
+      + `catalog ${formatDistribution(catalogRun)}`,
+    )
   }
 
   const direct = distribution(pooledDirect)
@@ -626,18 +644,12 @@ function timedUs(operation: () => void): number {
   return (performance.now() - started) * 1_000
 }
 
-async function timedUsAsync(operation: () => Promise<void>): Promise<number> {
-  const started = performance.now()
-  await operation()
-  return (performance.now() - started) * 1_000
-}
-
 function consumeArtifact(artifact: SessionFormatArtifact): void {
   resultSink = (resultSink + artifact.events.length + artifact.header.version) | 0
 }
 
-function consumeStored(stored: Exclude<StoredRead, undefined>): void {
-  resultSink = (resultSink + stored.events.length + stored.meta.version) | 0
+function consumeStored(stored: StoredRead): void {
+  resultSink = (resultSink + stored.events.length + stored.header.version) | 0
 }
 
 function consumeMeasurement(measurement: ReturnType<TokenMeter['measure']>): void {
@@ -699,15 +711,8 @@ async function reportMemory(
   }
   for (const fixture of fixtures) {
     const rawCase = cases.find(candidate => candidate.label === `raw ${fixture.name}`) as CurrentReadCase
-    const mounted = await mountBackend(rawCase)
-    let direct: number
-    let catalog: number
-    try {
-      direct = await retainedHeap(async () => requireStored(await mounted.backend.loadStored(rawCase.id)))
-      catalog = await retainedHeap(async () => requireStored(await mounted.backend.loadCurrentStored(rawCase.id)))
-    } finally {
-      await mounted.dispose()
-    }
+    const direct = await retainedHeap(() => directCurrentRead(rawCase))
+    const catalog = await retainedHeap(() => catalogCurrentRead(rawCase))
     const migration = await retainedHeap(() => sessionFormatV1ToV2.migrate(fixture.v1))
     const session = restoredSession(fixture.v2)
     const tokenMeter = await retainedHeap(() => measureWithFreshTokenMeter(session))

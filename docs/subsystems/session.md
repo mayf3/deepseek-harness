@@ -618,8 +618,10 @@ interface TurnEndReasonMap {
   /** At least one step reached its output-token ceiling, even if a plugin continued the turn. */
   'max-tokens': { kind: 'max-tokens' }
   /**
-   * A persistence backend closed a crash-orphaned turn on reload. The loop never
-   * emits this marker, and the events recorded before the crash remain intact.
+   * A crash-orphaned turn was closed after the fact: agent-loop resume appends
+   * this closer for a stored log whose last turn never ended, and session-query
+   * synthesizes it on cold reads. The loop never emits this marker live, and
+   * the events recorded before the crash remain intact.
    */
   interrupted: { kind: 'interrupted' }
 }
@@ -653,7 +655,7 @@ The hook bridges' `hook/invoked` / `hook/result` pairs (from `@deepseek-ai/dsh-h
 
 ## Durability contract
 
-What a persistence backend relies on: the durable log persists every event losslessly, and every Assistant attempt is one `assistant/message` or `assistant/attempt` whose embedded compact stream preserves the original timed chunks. `seq` stays contiguous across these settlements and all interleaved events. A backend may choose its own storage framing for an event batch as long as `load` returns the exact appended events; current JSONL v2 writes one row per event (see [persistence.md](persistence.md)). All `event.data` must be JSON-serializable; `Session.append` enforces this at the source (throwing on non-serializable data), so a bad event never enters the log and `session.snapshotEvents()` always equals what a backend can persist. Adding an event type that carries non-serializable data, corrupts core execution nesting, or violates its owner's declared relation is a breaking change to the on-disk format.
+What a persistence backend relies on: the durable log persists every event losslessly, and every Assistant attempt is one `assistant/message` or `assistant/attempt` whose embedded compact stream preserves the original timed chunks. `seq` stays contiguous across these settlements and all interleaved events. A backend may choose its own storage framing for an event batch as long as a handle's `read()` returns the exact appended events; current JSONL v2 writes one row per event (see [persistence.md](persistence.md)). All `event.data` must be JSON-serializable; `Session.append` enforces this at the source (throwing on non-serializable data), so a bad event never enters the log and `session.snapshotEvents()` always equals what a backend can persist. Adding an event type that carries non-serializable data, corrupts core execution nesting, or violates its owner's declared relation is a breaking change to the on-disk format.
 
 The backends that consume this contract are on [persistence.md](persistence.md).
 
@@ -821,7 +823,7 @@ Source: [`packages/api/session-controller/src/index.ts`](../../packages/api/sess
 
 In-memory session store (`ctx.sessions`).
 
-Persistence is intentionally not implemented here — persistence plugins subscribe to `session/event` and flush on `session/flush` / dispose.
+Persistence is intentionally not implemented here — the agent lifecycle attaches a session-log writer to each published session's write handle; a session published outside that lifecycle persists nothing.
 
 ```ts cordis-catalog
 /**

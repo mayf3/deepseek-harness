@@ -9,7 +9,7 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import { describe, expect, it, vi } from 'vitest'
 import { ApiSessionAgentController } from '../src/agent.ts'
 import { SessionCommandController } from '../src/commands.ts'
-import { currentSessionListing, installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
+import { installSessionReadTestServices, testSessionPersistence } from './test-remote.ts'
 
 async function commandHarness(): Promise<{
   ctx: Context
@@ -150,7 +150,7 @@ async function persistedController(
     isSeeded: false,
   }
   ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
-    list: () => Promise.resolve([currentSessionListing(meta)]),
+    list: () => Promise.resolve([meta]),
     inspect: () => Promise.resolve({
       meta,
       inheritedEventCount: SessionLogOffset(0),

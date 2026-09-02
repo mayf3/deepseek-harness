@@ -43,9 +43,9 @@ import {
   normalizedSystemPrompts,
   normalizedToolSchemas,
   parseSnapshotManifest,
-  parseSessionFixtureName,
   redactSessionSnapshotIds,
   normalizeSessionSnapshots,
+  parseSessionFixtureName,
   scrubRequestHeaders,
   scrubSessionSnapshot,
   sessionFixtureFiles,
@@ -75,10 +75,9 @@ import {
 } from '@deepseek-ai/dsh-llm-replay'
 import type { SessionFormatEvent } from '@deepseek-ai/dsh-session-format'
 import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
-import SessionStore, {
+import {
   SESSION_FORMAT_VERSION,
   SessionId,
-  SessionSeq,
   type Session,
   type SessionEvent,
   type SessionHeader,
@@ -139,9 +138,7 @@ export async function assertFinalWorkspaceSnapshot(scenarioDir: string, workspac
 }
 
 async function ownsReplayFixture(replayFixture: string | undefined): Promise<boolean> {
-  if (replayFixture === undefined) return false
-  const fixture = parseSessionFixtureName(basename(replayFixture))
-  if (fixture === undefined || fixture.index !== 0) return false
+  if (replayFixture === undefined || basename(replayFixture) !== 'session.jsonl') return false
   const manifestPath = join(dirname(replayFixture), 'snapshot.yml')
   if (!existsSync(manifestPath)) return false
   const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
@@ -708,7 +705,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       // The consumption check is skipped for this mode, so no script source
       // may carry callable entries: reject override/child sources outright
       // and any call-bearing fixture.
-      if (options.replayOverride !== undefined || options.replayChildFixtures !== undefined) {
+      if (options.replayOverride !== undefined || replayChildFixtures !== undefined) {
         throw new Error('replayProvidersOnly cannot combine with replayOverride or replayChildFixtures')
       }
       // A fixture without a session header row must not mount the catalog
@@ -722,7 +719,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       if (headerType !== 'session') {
         throw new Error('replayProvidersOnly fixture must open with a session header row')
       }
-      const recorded = parseSessionLogForReplay(fixtureText, replayFixture)
+      const recorded = parseSessionLog(fixtureText)
       const hasModelCall = recorded.some(event => (
         event.type === 'assistant/message' || event.type === 'assistant/attempt'
           || event.type === 'request/header' || event.type === 'tool/call'
@@ -920,9 +917,9 @@ function replaceWebCwd(value: string, cwd: string): string {
 
 /**
  * Normalize Web-only volatile strings while preserving JSON structure and row framing.
- * @param log - Raw Session JSONL.
- * @param workspaceCwd - Optional scaffold parent used before a live Session selects its cwd.
- * @returns Compact JSONL with run-local strings tokenized.
+ * @param log - raw Session JSONL.
+ * @param workspaceCwd - optional scaffold parent used before a live Session selects its cwd.
+ * @returns compact JSONL with run-local strings tokenized.
  */
 export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string): string {
   const headerLine = log.split(/\r?\n/).find(line => line.trim().length > 0)
@@ -942,10 +939,7 @@ export function normalizeWebSessionVolatiles(log: string, workspaceCwd?: string)
         .replace(/Anonymous user: [^.]+(?=\. Session sharing)/g, 'Anonymous user: {{anonymousUserId}}')
       for (const cwd of cwdSpellings) normalized = replaceWebCwd(normalized, cwd)
       return normalized
-    }) as {
-      type?: unknown
-      data?: { endpoint?: unknown }
-    }
+    }) as { type?: unknown; data?: { endpoint?: unknown } }
     if (record.type === 'web/deepseek-search-llm-request' && typeof record.data?.endpoint === 'string') {
       record.data.endpoint = '{{webSearchEndpoint}}'
     }
@@ -1045,7 +1039,7 @@ async function assertReplaySession(
  * A manifest-retained historical generation makes the write-back a no-op.
  * @param scaffold - the record-mode scaffold.
  * @param sessionId - the driven session.
- * @param fixturePath - any committed generation for the fixture role.
+ * @param fixturePath - the committed session.jsonl target.
  */
 export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId, fixturePath: string): Promise<void> {
   const agent = scaffold.ctx.agents.get(sessionId)
@@ -1063,7 +1057,6 @@ export async function recordFixture(scaffold: WebScaffold, sessionId: SessionId,
  * The user prompts recorded in a fixture, in order — the single source tying
  * spec drive steps to recorded reality so script and fixture cannot drift.
  * @param fixtureText - raw session.jsonl contents.
- * @param fixturePath - exact source path for the closed replay-only refusal policy.
  * @returns the recorded user prompt texts.
  */
 export function fixtureUserPrompts(fixtureText: string, fixturePath?: string): string[] {
@@ -1100,9 +1093,10 @@ export function fixtureIdentity(
  * @returns the realized fixture text.
  */
 export function realizeSeedFixture(scaffold: WebScaffold, fixtureText: string, id: string): string {
-  const headerLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
-  if (headerLine === undefined) return fixtureText
-  const fixtureCwd = (JSON.parse(headerLine) as { cwd?: unknown }).cwd
+  const firstLine = fixtureText.split(/\r?\n/).find(line => line.trim().length > 0)
+  const fixtureCwd = firstLine === undefined
+    ? undefined
+    : (JSON.parse(firstLine) as { cwd?: unknown }).cwd
   return fixtureText.split(/\r?\n/).map((line) => {
     if (line.trim() === '') return line
     const realized = mapJsonStringValues(JSON.parse(line), (value) => {
@@ -1245,8 +1239,8 @@ export async function seedSession(
     version: SESSION_FORMAT_VERSION,
     id: SessionId(id),
     createdAt: Date.now() - 60_000,
-    cwd: scaffold.workspaceCwd,
     isSeeded: false,
+    cwd: scaffold.workspaceCwd,
     delegationDepth: 0,
     ...agentPreset === undefined ? {} : { agentPreset },
   }
@@ -1285,29 +1279,6 @@ export async function seedSession(
   return meta.id
 }
 
-/** Seed one materialized cold Session whose log has no turn/start event. */
-export async function seedBlankSession(
-  scaffold: WebScaffold,
-  id: string,
-  cwd: string,
-): Promise<SessionId> {
-  const meta: SessionHeader = {
-    version: SESSION_FORMAT_VERSION,
-    id: SessionId(id),
-    createdAt: Date.now() - 60_000,
-    cwd,
-    isSeeded: false,
-    delegationDepth: 0,
-  }
-  await persistSeedSession(scaffold, meta, [{
-    type: 'session/end-seed',
-    seq: SessionSeq(0),
-    time: meta.createdAt,
-    data: {},
-  }])
-  return meta.id
-}
-
 /** Materialize one detached Session fixture through the shipped JSONL provider. */
 async function persistSeedSession(
   scaffold: WebScaffold,
@@ -1316,14 +1287,32 @@ async function persistSeedSession(
 ): Promise<void> {
   const seeder = new Context()
   try {
-    await seeder.plugin(SessionStore)
     // Same root as the booted tree with the plugin's own default compression,
     // so the host's directory-scan list() sees one consistent encoding.
     await seeder.plugin(JsonlSessionPersistence, { root: scaffold.persistenceRoot })
-    await seeder.sessionPersistence.create(meta)
-    await seeder.sessionPersistence.append(meta.id, events)
+    const handle = await seeder.sessionPersistence.create(meta)
+    await handle.append(events)
+    await handle.close()
   } finally {
     await seeder.fiber.dispose()
+  }
+}
+
+/**
+ * Read one stored session's physical event log through a throwaway read
+ * handle. The physical log carries no synthetic closers: a resumed session
+ * shows the closers the loop appended durably, and a never-resumed
+ * interrupted log stays interrupted.
+ * @param scaffold - the booted scaffold whose persistence holds the session.
+ * @param id - the stored session to read.
+ * @returns the stored events.
+ */
+export async function readPersistedEvents(scaffold: WebScaffold, id: SessionId): Promise<readonly SessionEvent[]> {
+  const handle = await scaffold.ctx.sessionPersistence.open(id, 'read')
+  try {
+    return await handle.read()
+  } finally {
+    await handle.close()
   }
 }
 
@@ -1350,18 +1339,12 @@ async function persistSeedSession(
 const ARIA_AGE =
   /(?:now|\d+min|\d+h|\d+d|\d+mo|\d+y|刚刚|\d+分钟|\d+小时|\d+天|\d+个月|\d+年)(?=")/g
 
-export function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): string {
+function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): string {
   // The session heading renders the workspace's basename, not the full
-  // path. Browser-visible paths may use URL slashes even when the Host cwd is
-  // native Windows, while serialized text doubles each backslash. Normalize
-  // every complete spelling longest-first before the basename.
-  const escapedCwd = workspaceCwd.replaceAll('\\', '\\\\')
-  const slashCwd = workspaceCwd.replaceAll('\\', '/')
-  const base = basename(slashCwd)
+  // path, so both spellings must collapse to the token.
+  const base = workspaceCwd.split('/').pop()!
   return (age ? snapshot.replace(ARIA_AGE, '{{age}}') : snapshot)
-    .split(escapedCwd).join('{{cwd}}')
     .split(workspaceCwd).join('{{cwd}}')
-    .split(slashCwd).join('{{cwd}}')
     .split(base).join('{{workspace}}')
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, '{{uuid}}')
     // The optional space in `\d+m ?\d+s` covers both minute spellings: the
@@ -1493,19 +1476,15 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
   const entries = (await readdir(dir)).sort()
   const ownsManifest = entries.includes('snapshot.yml')
   const artifacts = entries.filter(name => name !== 'snapshot.yml')
-  const roleInventory = (names: readonly string[]): string[] => [...new Set(names.map((name) => {
-    const fixture = parseSessionFixtureName(name)
-    return fixture === undefined ? name : sessionFixtureName(fixture.index, 0)
-  }))].sort()
-  expect(roleInventory(artifacts)).toEqual(roleInventory(expected))
+  expect(artifacts).toEqual([...expected].sort())
   if (ownsManifest) {
     const manifestPath = join(dir, 'snapshot.yml')
     const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
     expect(manifest.profile).toBe('web')
     if (manifest.session === undefined) {
       expect(
-        artifacts.some(name => parseSessionFixtureName(name)?.index === 0),
-        `${dir}: session owner must carry a canonical parent Session fixture`,
+        artifacts.includes('session.jsonl'),
+        `${dir}: session owner must carry session.jsonl`,
       ).toBe(true)
     } else {
       expect(existsSync(resolve(dir, manifest.session.source)), `${dir}: session source`).toBe(true)

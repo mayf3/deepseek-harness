@@ -450,7 +450,7 @@ describe('SessionProjectionCache listing read', () => {
     const path = recordPath(root, SessionId('all-stale'))
     await mkdir(dirname(path), { recursive: true })
     await writeFile(path, JSON.stringify({
-      version: projectionCacheDomainSpec.version + 1,
+      version: projectionCacheDomainSpec.version - 1,
       record: {
         identity: {
           formatVersion: SESSION_FORMAT_VERSION,

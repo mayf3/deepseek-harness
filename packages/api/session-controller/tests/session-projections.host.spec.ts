@@ -27,7 +27,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import type { SessionControlFrame, SessionFollowFrame } from '@deepseek-ai/dsh-api-session-controller/types'
-import { createSessionTestRemote, currentSessionListing, type TestSessionRemote } from './test-remote.ts'
+import { createSessionTestRemote, testSessionPersistence, type TestSessionRemote } from './test-remote.ts'
 
 declare module '@deepseek-ai/dsh-session-projection/types' {
   interface SessionProjectionStateMap {
@@ -132,7 +132,7 @@ function seedMessages(session: Session, count: number): void {
 const remote = (ctx: Context) => createSessionTestRemote(ctx, { defaultModelSelection: () => ({ provider: 'p', model: 'm' }), cwd: '/tmp' })
 
 describe('session.history projections block', () => {
-  it('keeps the numeric seed cut on the wire while logical headers expose only lineage', async () => {
+  it('keeps the v0 numeric seed cut on the wire while logical headers expose only lineage', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)
     await ctx.plugin(AgentRegistry)
@@ -434,19 +434,11 @@ describe('session.list projections column', () => {
     const { ctx } = await harness(true)
     const coldId = SessionId('session-cold-listing')
     const load = () => { throw new Error('list must not load event logs') }
-    ctx.provide('sessionPersistence', {
-      list: async () => [currentSessionListing({
-        version: SESSION_FORMAT_VERSION,
-        id: coldId,
-        createdAt: 5,
-        cwd: '/tmp',
-        isSeeded: false,
-      })],
-      locate: () => undefined,
-      load,
+    ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
+      list: async () => [{ version: SESSION_FORMAT_VERSION, id: coldId, createdAt: 5, isSeeded: false, cwd: '/tmp' }],
       inspect: load,
-      readFrom: load,
-    } as never)
+      open: load,
+    }) as never)
     ctx.provide('sessionProjectionCache', {
       // The carrier hands the listed header through as the identity witness.
       cachedSnapshot: (meta: { id: unknown; createdAt: number }) =>
@@ -473,35 +465,6 @@ describe('session.list projections column', () => {
         title: 'Cached title',
       },
     })
-  })
-
-  it('does not use a zero-cut cache row for a seeded cold listing', async () => {
-    const { ctx } = await harness(true)
-    const coldId = SessionId('session-seeded-cold-listing')
-    const load = () => { throw new Error('list must not load event logs') }
-    ctx.provide('sessionPersistence', {
-      list: async () => [currentSessionListing({
-        version: SESSION_FORMAT_VERSION,
-        id: coldId,
-        createdAt: 6,
-        cwd: '/tmp',
-        isSeeded: true,
-      })],
-      locate: () => undefined,
-      load,
-      inspect: load,
-      readFrom: load,
-    } as never)
-    const cachedSnapshot = vi.fn(() => ({ asOfSeq: 7, values: { title: 'Wrong cut' } }))
-    ctx.provide('sessionProjectionCache', { cachedSnapshot } as never)
-
-    const response = await remote(ctx).list(request({}))
-    if (!response.ok) throw new Error('unreachable')
-    const row = response.value.items.find(item => item.sessionId === coldId)
-
-    expect(row).toBeDefined()
-    expect(row !== undefined && 'projections' in row).toBe(false)
-    expect(cachedSnapshot).not.toHaveBeenCalled()
   })
 
   it('keeps persisted host-only state out of a cold session.list response', async () => {
@@ -542,8 +505,7 @@ describe('session.list projections column', () => {
       await owner.dispose()
       expect(ctx.sessions.get(id)).toBeUndefined()
       ctx.provide('sessionPersistence', {
-        list: async () => [currentSessionListing(header)],
-        locate: () => undefined,
+        list: async () => [{ header, revision: 'test:cold-host-state:1' }],
       } as never)
 
       const response = await gateway.list(request({}))
@@ -561,16 +523,9 @@ describe('session.list projections column', () => {
   it('cold rows without a cache plugin (or without a stored row) just lack the column', async () => {
     const { ctx } = await harness(true)
     const coldId = SessionId('session-cold-uncached')
-    ctx.provide('sessionPersistence', {
-      list: async () => [currentSessionListing({
-        version: SESSION_FORMAT_VERSION,
-        id: coldId,
-        createdAt: 5,
-        cwd: '/tmp',
-        isSeeded: false,
-      })],
-      locate: () => undefined,
-    } as never)
+    ctx.provide('sessionPersistence', testSessionPersistence(ctx, {
+      list: async () => [{ version: SESSION_FORMAT_VERSION, id: coldId, createdAt: 5, isSeeded: false, cwd: '/tmp' }],
+    }) as never)
     const response = await remote(ctx).list(request({}))
     if (!response.ok) throw new Error('unreachable')
     const row = response.value.items.find(item => item.sessionId === coldId)

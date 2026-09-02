@@ -8,7 +8,7 @@ Source: [`packages/session-query/session-query/src/types.ts`](../../packages/ses
 
 ## Logical records
 
-`SessionRecord` is returned by the cross-corpus list. It exposes source availability independently from the cloned live-preferred header and carries the exact selected persisted-generation location when listing provides one. `SessionEventRecord` is a lightweight raw-log projection; classification uses the same `foldSurface()` transitions as model-history derivation.
+`SessionRecord` is returned by the cross-corpus list. It exposes source availability independently from the cloned live-preferred header. `SessionEventRecord` is a lightweight raw-log projection; classification uses the same `foldSurface()` transitions as model-history derivation.
 
 ```ts type-equiv
 /** Whether an event is current model context, replaced context, or raw-log-only. */
@@ -20,11 +20,9 @@ type SessionEventSurface = 'current' | 'shadowed' | 'log-only'
 interface SessionRecord {
   /** Cloned session header selected from the live-preferred corpus. */
   header: SessionHeader
-  /** Exact listed artifact location, when persistence exposes one. */
-  location?: SessionLocation
   /** Whether the id currently exists in `ctx.sessions`. */
   live: boolean
-  /** Whether the active persistence backend currently materializes the id. */
+  /** Whether the active persistence backend currently lists the id, including a created-but-unmaterialized session it already observes. */
   persisted: boolean
 }
 ```
@@ -38,7 +36,7 @@ interface SessionLogSnapshot {
   session: SessionHeader
   /** Exact number of fork-inherited events in the observed log. */
   inheritedEventCount: SessionLogOffset
-  /** Cloned contiguous raw events after persistence repair and replay validation. */
+  /** Cloned contiguous raw events after in-memory interrupted-turn balancing and replay validation. */
   events: SessionEvent[]
 }
 ```
