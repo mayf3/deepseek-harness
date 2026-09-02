@@ -104,7 +104,7 @@ detach 闭包捕获其确切注册表条目。它仅在映射仍指向该注册�
 
 创建准备一个新 Session。恢复加载并验证持久化的 Session，然后准备相同的活跃会话标识。两条路径随后构建作用域、agent 和 driver，并调用相同的 setup/发布算法。
 
-工厂存储具体的 trace 目标，但通过调用方绑定的 Cordis trace 调用它们。运行时子 Agent 的创建方显式传入父 Agent，AgentRegistry 再将其与调用方 Context 分开转交。这既保留了依赖来源和两种所有权事实，又不堆叠 trace 代理，也不把领域对象附着到 Context。作用域 Remote 事件适配器同样从 request 接收 Agent，校验它就是 carrier key，再直接投影其 Context 与 wire identity。系统不会通过作用域索引从 Context 重建 Agent。[显式运行时身份决策](2026-08-31-explicit-agent-runtime-identity.zh.md)拥有这项分离原则及由此确定的可续跑子级归属规则。
+工厂存储具体的 trace 目标，但通过调用方绑定的 Cordis trace 调用它们。运行时子 Agent 的创建方在 create 或 resume options 中设置 `parentAgent`，AgentRegistry 转交这些 options，不从调用方 Context 推导父级。这既保留了依赖来源和两种所有权事实，又不堆叠 trace 代理，也不把领域对象附着到 Context。作用域 Remote 事件适配器同样从 request 接收 Agent，校验它就是 carrier key，再直接投影其 Context 与 wire identity。系统不会通过作用域索引从 Context 重建 Agent。[显式运行时身份决策](2026-08-31-explicit-agent-runtime-identity.zh.md)拥有这项分离原则及由此确定的可续跑子级归属规则。
 
 ### Setup 是私有世界内的可信组合
 

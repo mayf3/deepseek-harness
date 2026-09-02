@@ -1202,19 +1202,21 @@ export class SubagentContinuationManager {
     const handle: AgentHandle = create === undefined
       ? await this.ownerCtx.agents.resume({
         resumeSessionId: childId,
+        parentAgent: parent,
         agentOptions: inputs.agentOptions,
         signal: inputs.signal,
         setup,
-      }, parent)
+      })
       : await this.ownerCtx.agents.create({
         sessionId: childId,
+        parentAgent: parent,
         meta: create.meta,
         seed: create.seed,
         inheritedEventCount: create.inheritedEventCount,
         agentOptions: inputs.agentOptions,
         signal: inputs.signal,
         setup,
-      }, parent)
+      })
 
     const activation: Activation = {
       childId,

@@ -14,11 +14,11 @@ Agent 的 Cordis Context 拥有注册及其清理。Agent 身份则为某项操�
 
 ## 决策
 
-运行时接口在拥有身份的位置携带 Agent 身份。`AgentSetup` 接收 `(agentCtx, agent)`；Agent 创建与恢复接收显式运行时所属方；作用域事件在 payload 中携带 Agent；Remote 转发校验 `request.agent` 就是 carrier key；Host Typert Context 解析则把协议身份映射到存活 Agent Context，不执行反向扫描。`agent.ctx` 继续拥有注册和生命周期，不暴露反向 Agent 属性。
+运行时接口在拥有身份的位置携带 Agent 身份。`AgentSetup` 接收 `(agentCtx, agent)`；创建与恢复 Agent 的 options 通过 `parentAgent` 标识运行时子级；作用域事件在 payload 中携带 Agent；Remote 转发校验 `request.agent` 就是 carrier key；Host Typert Context 解析则把协议身份映射到存活 Agent Context，不执行反向扫描。`agent.ctx` 继续拥有注册和生命周期，不暴露反向 Agent 属性。
 
 感知作用域的注册表继续仅使用不透明作用域键判断注册成员关系。tool-subagent 不会分类该键，也不会从 Context 解析 Agent。直接 `AgentSetup` 显式传入尚未发布的 Session，并在发布前通过所给 Context 完成安装。由设置控制的常驻 preset 在读取策略前，会为每个匹配 Agent 预留一个 Cordis 清理 effect：事件 payload 提供 Agent，其 Session 提供策略目标，其 Context 拥有注册项，而 preset effect 会在重设父级或 preset 卸载后等待其清理完成。
 
-`SubagentContinuationManager` 会把确切父级同时传给全新创建与冷恢复。因此，存活的可续跑子级不会出现在 `AgentRegistry.roots()` 中，并且满足 `isOwnedBy(child.id, parent)`。持久化 `parentSession` 元数据不能代替这项关系：没有存活 Agent 拥有 fork 或已恢复会话时，它仍可成为 runtime root。
+`SubagentContinuationManager` 会把确切父级放进全新创建与冷恢复的 options。因此，存活的可续跑子级不会出现在 `AgentRegistry.roots()` 中，并且满足 `isOwnedBy(child.id, parent)`。持久化 `parentSession` 元数据不能代替这项关系：没有存活 Agent 拥有 fork 或已恢复会话时，它仍可成为 runtime root。
 
 [Agent 注册作用域决策](2026-07-08-agent-scope-contexts.zh.md)、其[运行时设计](2026-07-12-agent-scope-runtime-design.zh.md)和[发起方作用域决策](2026-07-15-agent-initiator-scope.zh.md)继续拥有各自独立的注册、生命周期及私有调用链理由。本决策只取代其中描述的反向 Context 关联和隐式运行时所属方推导。
 
@@ -32,7 +32,7 @@ Remote 事件测试会在转发作用域 waterfall 前拒绝缺失或不匹配�
 
 **保留 `Context.agent`。** 反向 accessor 会让注册所有权看起来等同于操作身份，还要求每个 Context 派生、适配器和测试替身保留一项与 Cordis 服务选择或 effect 清理无关的关联。
 
-**从调用方 Context 推断运行时归属。** 私有管理器 Context、Agent Context 和常驻 preset Context 都能调用同一个工厂。因此，Context 祖先关系无法说明由哪个存活 Agent 拥有结果；创建方必须传入它已经知道的所属方。
+**从调用方 Context 推断运行时归属。** 私有管理器 Context、Agent Context 和常驻 preset Context 都能调用同一个工厂。因此，Context 祖先关系无法说明由哪个存活 Agent 拥有结果；创建方必须把它已知的父级放进请求 options。
 
 **分类 Agent 作用域键。** 不透明作用域键表达路由成员关系，而不是领域身份。分类该键会让 Agent 成为组合中心，也仍会把插件的 effect 所有者与策略所需的 Session 耦合起来。
 
@@ -42,6 +42,6 @@ Remote 事件测试会在转发作用域 waterfall 前拒绝缺失或不匹配�
 
 ## 后果
 
-生命周期、事件、服务和传输签名会携带更多显式 Agent 参数，但每个边界都会声明自身使用的身份，TypeScript 也会检查两侧。Context 可以继续复用于依赖访问与 effect 所有权，而不会成为另一种领域对象定位器。
+生命周期 options、事件、服务请求和传输请求会携带显式 Agent 身份，因此每项操作都会声明自身使用的身份，TypeScript 也会检查两侧。Context 可以继续复用于依赖访问与 effect 所有权，而不会成为另一种领域对象定位器。
 
 可续跑子级与一次性进程内子级使用同一种运行时父级关系。仅限根级的消费方会排除这些子级，父级 teardown 可以依据唯一的存活归属图推理，而持久化谱系仍可描述历史，不必承担进程内生命周期语义。

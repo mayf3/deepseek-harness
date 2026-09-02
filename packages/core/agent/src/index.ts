@@ -63,6 +63,8 @@ export type AgentSetup = (
 export interface CreateAgentOptions {
   /** The live agent/session identity. */
   readonly sessionId: SessionId
+  /** Live parent Agent for runtime ownership; omit for a root Agent. */
+  readonly parentAgent?: Agent
   /**
    * Session creation metadata: validated absolute `cwd`, `parentSession`
    * fork lineage, the `isSeeded` fork marker, the coarse `origin`
@@ -124,6 +126,8 @@ export interface CreateAgentOptions {
 export interface ResumeAgentOptions {
   /** The persisted session id to load and use as the live agent/session identity. */
   readonly resumeSessionId: SessionId
+  /** Live parent Agent for runtime ownership; omit for a root Agent. */
+  readonly parentAgent?: Agent
   /** Per-agent options (model, …). */
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal for persistence load/setup; detached before return. */
@@ -181,11 +185,10 @@ export interface AgentFactory {
    * transaction and resulting lifecycle to that owner; it must not infer
    * ownership from the factory object's registration context.
    * @param ownerCtx - caller-bound context that owns the transaction and live handle.
-   * @param options - agent/session identity, configuration, and optional setup.
-   * @param owner - explicitly supplied live runtime owner, or undefined for a root owner.
+   * @param options - agent/session identity, configuration, optional live parent, and setup.
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
-  createAgent(ownerCtx: Context, options: CreateAgentOptions, owner: Agent | undefined): Promise<AgentHandle>
+  createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>
   /**
    * Resume an agent on a persisted session. Async because it opens the
    * persisted session for write, reads and repairs the log, publishes it, and
@@ -194,11 +197,10 @@ export interface AgentFactory {
    * Publication follows the same setup-commit and ordered boundary as
    * {@link createAgent}.
    * @param ownerCtx - caller-bound context that owns load, setup, and the live handle.
-   * @param options - persisted identity, configuration, and optional setup.
-   * @param owner - explicitly supplied live runtime owner, or undefined for a root owner.
+   * @param options - persisted identity, configuration, optional live parent, and setup.
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
-  resume(ownerCtx: Context, options: ResumeAgentOptions, owner: Agent | undefined): Promise<AgentHandle>
+  resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
 }
 
 /** Thrown when create/resume is called before an agent factory is registered. */
@@ -381,11 +383,10 @@ export class AgentRegistry extends Service {
    * agent): this constructs the agent and its session. Rejects if no factory is
    * registered or creation/setup fails. The resolved {@link AgentHandle} lets
    * the owner tear down exactly this agent.
-   * @param options - shared identity, session seed/metadata, and agent options.
-   * @param owner - explicit live runtime owner, or undefined for a root Agent.
+   * @param options - shared identity, optional live parent, session seed/metadata, and agent options.
    * @returns the handle after setup, rollback-covered publication, and loop start complete.
    */
-  async create(options: CreateAgentOptions, owner?: Agent): Promise<AgentHandle> {
+  async create(options: CreateAgentOptions): Promise<AgentHandle> {
     const ownerCtx = this.ctx
     // Re-trace a Service-backed factory through the accessing context
     // explicitly. This preserves AgentLoop's dependency origin while binding
@@ -394,23 +395,22 @@ export class AgentRegistry extends Service {
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options, owner])
+    return Reflect.apply(target.createAgent, receiver, [ownerCtx, options])
   }
 
   /**
    * Load a persisted session and resume an agent on it through the registered
    * factory. Rejects if no factory is registered; the factory rejects if
    * session persistence is not configured or persistence/setup fails.
-   * @param options - persisted identity, configuration, and optional setup.
-   * @param owner - explicit live runtime owner, or undefined for a root Agent.
+   * @param options - persisted identity, optional live parent, configuration, and setup.
    * @returns the handle after setup, rollback-covered publication, and loop start complete.
    */
-  async resume(options: ResumeAgentOptions, owner?: Agent): Promise<AgentHandle> {
+  async resume(options: ResumeAgentOptions): Promise<AgentHandle> {
     const ownerCtx = this.ctx
     const { target } = this.requireFactory()
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
-    return Reflect.apply(target.resume, receiver, [ownerCtx, options, owner])
+    return Reflect.apply(target.resume, receiver, [ownerCtx, options])
   }
 
   /**
@@ -420,9 +420,9 @@ export class AgentRegistry extends Service {
    * (`scopeTarget(agent, agent)`): the subject is the agent in hand, so the
    * emits are scope-filtered regardless of which context invoked `register`
    * (calling through `agent.ctx` scopes EFFECTS; dispatch scoping always
-   * requires passing the carrier). Returns the disposer.
+   * requires passing the carrier). The entry is a runtime root; factory-backed
+   * creation uses `options.parentAgent` for child ownership. Returns the disposer.
    * @param agent - the already-constructed agent to record in the store.
-   * @param owner - explicit live runtime owner, or undefined for a root Agent.
    * @returns the EXACT Cordis effect disposer (single-shot; a repeat call
    *   returns undefined without awaiting an in-flight teardown). Exact
    *   identity is load-bearing: a composite (generator) effect that owns a
@@ -432,9 +432,9 @@ export class AgentRegistry extends Service {
    *   owner unload, unregistering the agent (and emitting `agent/disposed`)
    *   while its final turn is still draining.
    */
-  register(agent: Agent, owner?: Agent): () => void {
+  register(agent: Agent): () => void {
     const dispose = this.ctx.effect(function* (this: AgentRegistry) {
-      yield this.enter(agent, owner)
+      yield this.enter(agent, undefined)
       this.announce(agent)
     }.bind(this), 'agents.register()')
     // oxlint-disable-next-line typescript/no-misused-promises -- synchronous cleanup; direct return preserves disposer identity

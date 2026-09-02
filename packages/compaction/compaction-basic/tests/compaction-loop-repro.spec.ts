@@ -339,7 +339,7 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
             provider: 'unconfigured-agent-fallback',
             model: 'unconfigured-agent-fallback',
           },
-        }, undefined)
+        })
 
         agent.followup(createUserMessage({ content: [{ type: 'text', text: 'continue from history' }], source: { kind: 'user' } }))
         await agent.whenIdle()
@@ -413,7 +413,7 @@ describe('context-overflow recovery across the real loop and compaction-basic', 
         sessionId: SessionId('alternating-recovery'),
         seed: overflowHistorySeed(),
         agentOptions: { provider: 'mock', model: 'mock' },
-      }, undefined)
+      })
       agent.followup(createUserMessage({ content: [{ type: 'text', text: 'continue from history' }], source: { kind: 'user' } }))
       await agent.whenIdle()
 

@@ -359,16 +359,16 @@ describe('explicit cancellation contract', () => {
 describe('AgentRegistry factory seam', () => {
   function stubFactory() {
     const calls: {
-      create: Array<{ ownerCtx: Context; options: CreateAgentOptions; owner: Agent | undefined }>
-      resume: Array<{ ownerCtx: Context; options: ResumeAgentOptions; owner: Agent | undefined }>
+      create: Array<{ ownerCtx: Context; options: CreateAgentOptions }>
+      resume: Array<{ ownerCtx: Context; options: ResumeAgentOptions }>
     } = { create: [], resume: [] }
     const factory: AgentFactory = {
-      async createAgent(ownerCtx, options, owner) {
-        calls.create.push({ ownerCtx, options, owner })
+      async createAgent(ownerCtx, options) {
+        calls.create.push({ ownerCtx, options })
         return { agent: stubAgent(options.sessionId), dispose: () => Promise.resolve() }
       },
-      async resume(ownerCtx, options, owner) {
-        calls.resume.push({ ownerCtx, options, owner })
+      async resume(ownerCtx, options) {
+        calls.resume.push({ ownerCtx, options })
         return { agent: stubAgent(options.resumeSessionId), dispose: () => Promise.resolve() }
       },
     }
@@ -390,11 +390,11 @@ describe('AgentRegistry factory seam', () => {
     }, { inject: ['agents'] }))
     expect(calls.create[0]?.ownerCtx.fiber).toBe(callerFiber)
     expect(calls.resume[0]?.ownerCtx.fiber).toBe(callerFiber)
-    expect(calls.create[0]?.owner).toBeUndefined()
-    expect(calls.resume[0]?.owner).toBeUndefined()
+    expect(calls.create[0]?.options.parentAgent).toBeUndefined()
+    expect(calls.resume[0]?.options.parentAgent).toBeUndefined()
   })
 
-  it('passes the explicit runtime owner separately from the caller context', async () => {
+  it('keeps the runtime parent in options separately from the caller context', async () => {
     const ctx = new Context()
     await ctx.plugin(AgentRegistry)
     const { factory, calls } = stubFactory()
@@ -402,9 +402,9 @@ describe('AgentRegistry factory seam', () => {
     const parent = stubAgent('parent')
     const unregister = ctx.agents.register(parent)
 
-    await ctx.agents.create({ sessionId: SessionId('child') }, parent)
+    await ctx.agents.create({ sessionId: SessionId('child'), parentAgent: parent })
 
-    expect(calls.create[0]?.owner).toBe(parent)
+    expect(calls.create[0]?.options.parentAgent).toBe(parent)
     unregister()
   })
 

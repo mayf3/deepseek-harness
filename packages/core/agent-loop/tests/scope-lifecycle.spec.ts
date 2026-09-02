@@ -158,7 +158,8 @@ describe('agent scope lifecycle', () => {
     const child = await root.agent.ctx.agents.create({
       sessionId: SessionId('runtime-child'),
       agentOptions: { model: 'mock' },
-    }, root.agent)
+      parentAgent: root.agent,
+    })
 
     expect(ctx.agents.list()).toEqual([root.agent, child.agent])
     expect(ctx.agents.roots()).toEqual([root.agent])
@@ -586,7 +587,7 @@ describe('agent scope lifecycle', () => {
 
     await expect(loop.createAgent(ctx, {
       sessionId: SessionId('factory-inactive-s'),
-    }, undefined)).rejects.toThrow(/agent loop is not active|inactive context/)
+    })).rejects.toThrow(/agent loop is not active|inactive context/)
     await ctx.fiber.dispose()
   })
 
