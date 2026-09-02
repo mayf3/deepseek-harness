@@ -1,8 +1,8 @@
 /**
  * The `permissions` projection unit and the `/permission` command: mounting
- * the permission service beside the projection registry serves the whole
- * select (table options + effective current value, `custom` appended exactly
- * while derived) folded from permission events over the composition defaults;
+ * the permission service beside the projection registry serves only the
+ * effective current value folded from permission events over the composition
+ * defaults; the process-level Remote catalog owns selectable options;
  * the command child registers `/permission` whose handler switches
  * through `permission.set` (bare invocation reports, unknown names error).
  * The service requires the projection registry, omits the command without its
@@ -53,11 +53,11 @@ async function mountAuto(ctx: Context) {
 }
 
 describe('permissions projection unit', () => {
-  it('serves the pinned new-session default select', async () => {
+  it('serves only the pinned new-session current value', async () => {
     const { ctx, session } = await harness()
     const value = ctx.sessionProjections.snapshot(session).values.permissions
-    expect(value).toMatchObject({ currentValue: 'workspace-write' })
-    expect(value?.options.map(option => option.value)).toEqual(['workspace-write', 'danger-full-access'])
+    expect(value).toEqual({ currentValue: 'workspace-write' })
+    expect(value).not.toHaveProperty('options')
   })
 
   it('folds the knob events and notifies the change feed per knob append', async () => {
@@ -74,50 +74,58 @@ describe('permissions projection unit', () => {
     expect(changes).toHaveLength(3)
   })
 
-  it('appends custom as a current-only option when the knobs match no preset', async () => {
+  it('projects custom as a current value when the knobs match no preset', async () => {
     const { ctx, session } = await harness()
     session.append('sandbox/mode', { mode: 'read-only' })
     const value = ctx.sessionProjections.snapshot(session).values.permissions
-    expect(value?.currentValue).toBe('custom')
-    expect(value?.options.at(-1)).toMatchObject({ value: 'custom', name: 'Custom' })
+    expect(value).toEqual({ currentValue: 'custom' })
   })
 
-  it('projects Auto only for its integration effect lifetime', async () => {
+  it('publishes Auto only through the process catalog and never changes Session seq or projection', async () => {
     const { ctx, session } = await harness()
-    const fiber = await mountAuto(ctx)
-    expect(ctx.sessionProjections.snapshot(session).values.permissions?.options.map(option => option.value))
-      .toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
-    await fiber.dispose()
-    expect(ctx.sessionProjections.snapshot(session).values.permissions?.options.map(option => option.value))
+    const beforeSeq = session.seq
+    const beforeProjection = ctx.sessionProjections.snapshot(session)
+    const notifications: number[] = []
+    ctx.on('permission-presets/catalog-changed', () => { notifications.push(notifications.length + 1) })
+
+    expect(ctx.permissionPresets.catalog().options.map(option => option.value))
       .toEqual(['workspace-write', 'danger-full-access'])
+    const fiber = await mountAuto(ctx)
+    expect(ctx.permissionPresets.catalog().options.map(option => option.value))
+      .toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
+    expect(session.seq).toBe(beforeSeq)
+    expect(ctx.sessionProjections.snapshot(session)).toEqual(beforeProjection)
+
+    await fiber.dispose()
+    expect(ctx.permissionPresets.catalog().options.map(option => option.value))
+      .toEqual(['workspace-write', 'danger-full-access'])
+    expect(session.seq).toBe(beforeSeq)
+    expect(ctx.sessionProjections.snapshot(session)).toEqual(beforeProjection)
+
+    const reinstalled = await mountAuto(ctx)
+    expect(ctx.permissionPresets.catalog().options.map(option => option.value))
+      .toEqual(['workspace-write', 'danger-full-access', AUTO_PRESET])
+    expect(notifications).toEqual([1, 2, 3])
+    await reinstalled.dispose()
+    expect(notifications).toEqual([1, 2, 3, 4])
   })
 
-  it('republishes the fixed Auto option on registration and removal without Session events', async () => {
-    const { ctx, session } = await harness()
-    const before = session.events.length
-    const changes: Array<{ options: string[]; seq: number; publication: string }> = []
-    ctx.sessionProjections.onChanged((_session, key, value, seq, publication) => {
-      if (key !== 'permissions') return
-      const select = value as { options: Array<{ value: string }> }
-      changes.push({ options: select.options.map(option => option.value), seq, publication })
-    })
+  it('contains synchronous and asynchronous catalog notification failures', async () => {
+    const { ctx } = await harness()
+    const warned = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => undefined)
+    ctx.on('permission-presets/catalog-changed', () => { throw new Error('sync observer failed') })
+    ctx.on('permission-presets/catalog-changed', () => { throw 'sync non-error failed' })
+    // oxlint-disable-next-line typescript/no-misused-promises -- the runtime intentionally contains thenable listeners.
+    ctx.on('permission-presets/catalog-changed', () => Promise.reject(new Error('async observer failed')))
+    // oxlint-disable-next-line typescript/no-misused-promises -- the runtime intentionally contains thenable listeners.
+    ctx.on('permission-presets/catalog-changed', async () => { throw 'async non-error failed' })
 
     const fiber = await mountAuto(ctx)
+    await vi.waitFor(() => { expect(warned).toHaveBeenCalledTimes(4) })
+    expect(warned).toHaveBeenCalledWith('permission: catalog-changed listener failed: sync non-error failed')
+    expect(warned).toHaveBeenCalledWith('permission: catalog-changed listener failed: async non-error failed')
+    expect(ctx.permissionPresets.names).toContain(AUTO_PRESET)
     await fiber.dispose()
-
-    expect(session.events).toHaveLength(before)
-    expect(changes).toEqual([
-      {
-        options: ['workspace-write', 'danger-full-access', AUTO_PRESET],
-        seq: session.seq - 1,
-        publication: 'republish',
-      },
-      {
-        options: ['workspace-write', 'danger-full-access'],
-        seq: session.seq - 1,
-        publication: 'republish',
-      },
-    ])
   })
 
   it('has no permissions key without the service, and drops it on unload (HMR safety)', async () => {

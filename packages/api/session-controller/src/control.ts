@@ -24,14 +24,13 @@ export class SessionControlController {
   /** @param ctx - Host context carrying live Agent, projection, and jobs services. */
   constructor(private readonly ctx: Context) {
     ctx.on('session/event', (session, event) => { this.onSessionEvent(session, event) })
-    ctx.sessionProjections.onChanged((session, key, value, seq, publication) => {
+    ctx.sessionProjections.onChanged((session, key, value, seq) => {
       this.broadcast({
         type: 'projection',
         sessionId: session.id,
         key,
         value: value as JsonValue,
         seq,
-        ...publication === 'republish' ? { republish: true as const } : {},
       })
     })
     ctx.inject(['jobs'], (jobsCtx) => {

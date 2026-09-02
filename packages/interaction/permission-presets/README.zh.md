@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-permission-presets` 为部署提供一个面向用户的 Permissions 选择器，把两个独立的执行旋钮——沙箱模式与审批策略——捆绑为具名预设。选择预设会同时应用沙箱模式与审批策略，而每个旋钮各自保留自己的值，因此沙箱执行、审批、提示词叙述与回放都读取各自的设置。配置表提供未来会话默认值；Auto review integration 可以通过 `registerAuto(admit)` 为当前会话发布唯一固定、生命周期受 effect 限定的 `auto` 选项。不匹配任何可用预设的旋钮组合会读回推导出的 `custom`，客户端可以显示它，但不能选择它。该服务还拥有 `permission` 设置命名空间，要求存在 `permissions` Session 投影，并可选贡献 `/permission` 命令；强制执行仍由沙箱、审批或 Auto integration 拥有。
+`dsh-permission-presets` 为部署提供一个面向用户的 Permissions 选择器，把两个独立的执行旋钮——沙箱模式与审批策略——捆绑为具名预设。选择预设会同时应用沙箱模式与审批策略，而每个旋钮各自保留自己的值，因此沙箱执行、审批、提示词叙述与回放都读取各自的设置。配置表提供未来会话默认值；Auto review integration 可以通过 `registerAuto(admit)` 为当前会话发布唯一固定、生命周期受 effect 限定的 `auto` 选项。进程级目录报告可选条目，而 `permissions` Session 投影只报告当前值。不匹配任何可用预设的旋钮组合会读回推导出的 `custom`，客户端可以显示它，但不能选择它。该服务还拥有 `permission` 设置命名空间，并可选贡献 `/permission` 命令；强制执行仍由沙箱、审批或 Auto integration 拥有。
 
 ## 目录
 
@@ -57,7 +57,7 @@ kind: "package-reference"
 
 ### 用户看到什么
 
-客户端渲染选择器：先按表顺序列出配置预设，再在 Auto integration 存活时列出 Auto，并在当前值为 `custom` 时将其附加在末尾。Auto 的身份、Full access 旋钮组合、label 与 description 固定在本服务内部，而不是由通用 contribution API 提供。`custom` 仅供显示——调用方可以从不匹配的旋钮组合切换出去，但不能通过此服务选中或持久化一个具名 custom 预设。
+客户端从进程级目录渲染可选条目：先按表顺序列出配置预设，再在 Auto integration 存活时列出 Auto。客户端把这份快照与 Session 当前值合并；不匹配的 `custom` 值可以标记当前控件，但绝不会成为可选目录行。Auto 的身份、Full access 旋钮组合、label 与 description 固定在本服务内部，而不是由通用 contribution API 提供。调用方可以从 `custom` 切换出去，但不能通过此服务选中或持久化一个具名 custom 预设。
 
 ### 会话默认值
 
@@ -71,14 +71,14 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-可观察行为已在[使用本包](#use-this-package)中说明；本节解释写入路径、由投影支持的读取侧与可选命令。
+可观察行为已在[使用本包](#use-this-package)中说明；本节解释写入路径、进程级目录、由投影支持的当前值与可选命令。
 
 ### 源码地图
 
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `PermissionPresetService`：配置表、固定 Auto 注册、写入路径、设置命名空间、会话固定、子功能 |
-| [`src/types.ts`](src/types.ts) | `permissions` 投影键声明与选择器载荷类型 |
+| [`src/types.ts`](src/types.ts) | 进程级目录、目录变化事件与 `permissions` 当前选择类型 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验配置预设名称；Auto 恢复在发布前另行检查 |
 
 ### 写入路径
@@ -93,9 +93,9 @@ kind: "package-reference"
 
 挂载时会固定所有存活与未来的会话：真正全新的会话获得配置默认预设与两个旋钮事实，而 seed 会话或部分初始化的会话保留其有效旋钮值，只补充缺失的持久事实。投影自有的 seed 标记让该判断与旋钮值共用同一份增量状态。存储的 `auto` 身份在 Auto integration 缺失或拒绝准入时无法发布；服务既不会改写它，也不会静默推导为 Full access。
 
-### 投影与可选命令
+### 目录、投影与可选命令
 
-该服务要求 `ctx.sessionProjections`，并在激活时注册 `permissions` 投影。注册或移除 Auto 会在当前水位为每个 live Session 显式重新发布该 wire 视图，而且不会追加 Session 事件，因此已连接客户端会立即看到选项出现或消失。`/permission` 命令仅在组合了 `ctx.commands` 注册表时注册。派生当前预设或固定初始选择的调用会在投影 key 缺失时显式失败。
+该服务要求 `ctx.sessionProjections`，并注册一个只含 `currentValue` 的 `permissions` 投影。进程级 `catalog()` Remote 返回一份完整的可选快照。注册或移除 Auto 会发出无 payload 的 `permission-presets/catalog-changed` 通知，因此客户端先订阅再重新读取目录；该过程不会追加 Session 事件、发布 Session 投影帧或改变 Session 序列。`/permission` 命令仅在组合了 `ctx.commands` 注册表时注册。派生当前预设或固定初始选择的调用会在投影 key 缺失时显式失败。
 
 </details>
 
@@ -106,7 +106,7 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从预设词汇逐步进入执行旋钮与设计依据。
 
-- [权限预设子系统参考](../../../docs/subsystems/permission-presets.zh.md)——预设表、选择器载荷与 `ctx.permissionPresets` 的 cordis 接口面。
+- [权限预设子系统参考](../../../docs/subsystems/permission-presets.zh.md)——预设表、进程级目录、当前选择与 `ctx.permissionPresets` Cordis API。
 - [沙箱切换设计 Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.zh.md)——沙箱模式与审批策略如何组合与切换。
 - [审批子系统参考](../../../docs/subsystems/approval.zh.md)——此服务捆绑的审批策略旋钮。
 - [交互组映射](../README.zh.md)——相邻的命令、审批与问答包。
@@ -131,7 +131,7 @@ kind: "package-reference"
 
 - **只组合两个机制级旋钮**：预设选择沙箱模式和审批策略；固定 Auto integration 可以增加准入行为，但 agent（智能体）／profile 选择不属于 `PresetSpec`。
 - **`custom` 只能推导得出**：调用方可以从不匹配的旋钮组合切换出去，但无法通过此服务选中或持久化一个名为 custom 的预设。
-- **预设表是进程级配置**：配置在插件生命周期内固定；更改可用预设必须重新加载插件。
+- **配置预设表在插件生命周期内固定**：只有固定的 Auto contribution 可以在不重新加载本服务的情况下改变实时进程目录。
 - **Auto 不能成为默认值**：它只在 integration effect 存活期间存在，并且有意不进入 `permission` 设置 schema。
 - **已存储的默认值必须保留在 preset 表中**：移除被引用的 preset 会导致权限设置注册失败，直到更新或重置 `settings.yaml` 中的 `permission` 分节。
 

@@ -461,6 +461,11 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
       const runOver = (): boolean => runController.signal.aborted
 
       const binding = (schema: ToolSchema): CodeBindingFunction => async (rawArgs: unknown): Promise<JsonValue> => {
+        // Keep the schema captured when this run's SDK bindings were built:
+        // it is the exact contract the model-authored program called against,
+        // analogous to a native call's request-header schema. Dispatch still
+        // follows the registry's established same-name HMR re-resolution, but
+        // the durable action snapshot must not consult that mutable live view.
         const { name, description, parameters } = schema
         if (runOver()) {
           throw new Error(`run_code run is over (${String(runController.signal.reason)}); ${name} not dispatched`)
@@ -502,7 +507,6 @@ export function createRunCodeTool(registry: ToolRuntime, options: RunCodeBridgeO
               // untouched.
               const logged = await shapeDispatchLog({
                 exec, agent, subCallId, name, isError: result.isError,
-                ...result.error?.info === undefined ? {} : { error: result.error.info },
                 // The registry deep-froze this projection at result
                 // finalization; append snapshots the final copy again, so
                 // the log stays detached.

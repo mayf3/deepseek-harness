@@ -56,10 +56,9 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
   // Execution failures and persistent-shell results have no terminal card.
   // Keep their recorded args and complete output reachable through the generic
   // body; background acknowledgements and malformed calls remain collapsed.
-  const output = model.output
   const genericBody = terminal === null
     && (model.state === 'error' || isSettledPersistentShellCall(block))
-    && (model.bodyRaw !== null || output !== null)
+    && (model.bodyRaw !== null || model.output !== null)
   const expandable = terminal !== null || genericBody
   const open = expanded && expandable
   const body = useMemo(
@@ -128,14 +127,14 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
                     <span className={css.ioText}>{body}</span>
                   </div>
                 )}
-                {body !== null && output !== null && (
+                {body !== null && model.output !== null && (
                   <span className={css.ioDivider} aria-hidden />
                 )}
-                {output !== null && (
+                {model.output !== null && (
                   <div className={css.ioSection}>
                     <span className={css.ioLabel}>{t('row.output')}</span>
                     <span className={css.ioText} data-error={state === 'error' || undefined}>
-                      {output}
+                      {model.output}
                     </span>
                   </div>
                 )}

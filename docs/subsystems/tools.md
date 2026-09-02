@@ -275,8 +275,6 @@ interface PtcDispatchLog {
   readonly name: string
   /** Whether the sub-call settled as an error. */
   readonly isError: boolean
-  /** Structured failure identity and optional user-facing detail. */
-  readonly error?: ToolErrorInfo
   /** The sub-call's complete model-facing content (the settle event's default payload). */
   readonly content: ContentBlock[]
 }
@@ -390,13 +388,16 @@ Each interception waterfall returns a typed **Decision** (the idiom shared with 
 ```ts type-equiv
 /**
  * Pre-dispatch decision. `allow` runs the call; `deny` materializes its
- * model-facing reason and optional structured error identity; `ask` runs only
- * after an approval service returns `allowed-once` and otherwise denies. Input
- * rewriting is excluded because arguments are already logged and presented.
+ * model-facing reason and optional structured error identity; `cancel` selects
+ * the canonical cancellation result without presenting a policy denial; `ask`
+ * runs only after an approval service returns `allowed-once` and otherwise
+ * denies. Input rewriting is excluded because arguments are already logged and
+ * presented.
  */
 type PreToolDecision =
   | { kind: 'allow' }
   | { kind: 'deny'; reason: string; info?: ToolErrorInfo }
+  | { kind: 'cancel' }
   | { kind: 'ask'; reason?: string }
 ```
 
@@ -663,11 +664,12 @@ Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index
 
 #### `tools/pre-execute` — waterfall
 
-Allow, deny, or ask before dispatch. `next()` delegates to allow; missing approval support turns `ask` into denial. Async gates must observe `exec.signal`; the registry rechecks cancellation after they settle but never abandons their promise. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.
+Allow, deny, cancel, or ask before dispatch. `next()` delegates to allow; `cancel` selects the canonical pre-dispatch cancellation result, and missing approval support turns `ask` into denial. Async gates must observe `exec.signal`; the registry rechecks cancellation after they settle but never abandons their promise. Scope-filtered dispatch (`@deepseek-ai/dsh-scope`): agent-scoped listeners receive only that agent's calls.
 
 ```ts cordis-catalog
 /**
- * Allow, deny, or ask before dispatch. `next()` delegates to allow; missing
+ * Allow, deny, cancel, or ask before dispatch. `next()` delegates to allow;
+ * `cancel` selects the canonical pre-dispatch cancellation result, and missing
  * approval support turns `ask` into denial. Async gates must observe
  * `exec.signal`; the registry rechecks cancellation after they settle but
  * never abandons their promise.

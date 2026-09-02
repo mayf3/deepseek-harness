@@ -103,11 +103,12 @@
   padding: 10px 12px 0;
 }
 
-/* Floating overlay anchor (menu / popupSelect shell): entries position
-   themselves against the card (bottom: 100% + gap); closed entries render null. */
+/* Floating overlay anchor (menu / popupSelect shell): include the card's 1px
+   border so an edge-to-edge overlay is equal to the visible card width and
+   bottom: 100% lands on its outer top edge. Closed entries render null. */
 .overlayAnchor {
   position: absolute;
-  inset: 0 0 auto;
+  inset: -1px -1px auto;
   height: 0;
 }
 

@@ -14,6 +14,7 @@ English | [中文](README.zh.md)
 ## Table of Contents
 
 - [Use this package](#use-this-package)
+- [Run the real-model certification](#run-the-real-model-certification)
 - [Understand the implementation](#understand-the-implementation)
 - [Further Exploration](#further-exploration)
 - [Model Experience](#model-experience)
@@ -40,9 +41,20 @@ The plugin calls the permission service's fixed `registerAuto(admit)` hook for i
 
 ### Review and failure behavior
 
-The reviewer uses the latest logged provider/model route and receives five sections: the fixed `REVIEW_POLICY`, the Session working directory, current project instructions, filtered history, and the pending action. The request does not set the main Session's `sessionId`, and its project-instruction and history entries omit event `seq` coordinates. Direct-user messages, compaction checkpoints, and current project instructions may authorize an action. Other user-role messages and historical calls are evidence only; assistant text, reasoning, and tool results are absent.
+The reviewer uses the latest logged provider/model route and receives five sections: the fixed `REVIEW_POLICY`, the Session working directory, current project instructions, filtered history, and the pending action. The request does not set the main Session's `sessionId`, and its project-instruction and history entries omit event `seq` coordinates. Only text in a current-surface message with source kind `user` and its own durable `rpcId` may authorize an action. Compaction checkpoints, current project instructions, parent-authored child prompts, other user-role messages, and historical calls are evidence only; assistant text, reasoning, and tool results are absent.
 
-The decision protocol accepts only `{"decision":"allow"}`, `{"decision":"deny"}`, or `{"decision":"deny","reason":"..."}`. Missing or inconsistent logged facts, provider failure, context overflow, malformed output, and any other review failure deny the call before its body. Caller cancellation keeps the ordinary Tool cancellation result instead of becoming an Auto denial.
+The decision protocol accepts only `{"decision":"allow"}`, `{"decision":"deny"}`, or `{"decision":"deny","reason":"..."}`. Missing or inconsistent logged facts, provider failure, context overflow, malformed output, and any other review failure deny the call before its body. Caller cancellation follows ordinary Tool settlement priority: cancellation after a late allow becomes the canonical pre-dispatch cancellation, while a deny or technical failure that has already settled remains an Auto denial.
+
+<a id="run-the-real-model-certification"></a>
+### Run the real-model certification
+
+Set `DEEPSEEK_API_KEY`, then run the focused opt-in suite from the repository root:
+
+```sh
+DSH_AUTO_REVIEW_CERTIFICATION=1 pnpm exec vitest run --config vitest.e2e.config.ts packages/interaction/auto-review/tests/auto-review.e2e.ts
+```
+
+The suite skips unless `DSH_AUTO_REVIEW_CERTIFICATION=1`, even when credentials exist. Opting in without `DEEPSEEK_API_KEY` fails with an explicit configuration error. A successful run performs exactly 22 zero-retry reviewer calls and writes the redacted report outside the repository; set `DSH_AUTO_REVIEW_CERTIFICATION_REPORT` to choose that external path.
 
 -----
 
@@ -54,7 +66,7 @@ The decision protocol accepts only `{"decision":"allow"}`, `{"decision":"deny"}`
 
 The plugin prepends one `tools/pre-execute` listener. It rebuilds each native action from the visible `tool/call` plus the latest request-header schema, and each PTC inner action from its `tool/code-dispatch-start` snapshot. The current action appears only in `PENDING_ACTION`; only already-started historical calls remain in filtered history.
 
-An Auto denial uses the same model-facing text as a human rejection. Its `AutoReviewDeniedError` / `AUTO_REVIEW_DENIED` identity and optional raw reason travel through the ordinary native or PTC structured-error fields. The Web tree recognizes that identity before keyed Tool-view dispatch and renders the generic denial card, so a specialized or external Tool view cannot hide the verdict. The presentation normalizes the reason only when it renders the card.
+An Auto denial uses a fixed model-facing message that names the rejected tool and states that its body was not executed. Its `AutoReviewDeniedError` / `AUTO_REVIEW_DENIED` identity and optional raw reason travel through the ordinary native or PTC structured-error fields. The Web tree recognizes that identity before keyed Tool-view dispatch and renders the generic denial card, so a specialized or external Tool view cannot hide the verdict. The presentation normalizes the reason only when it renders the card.
 
 Publication and teardown are fail-closed. A persisted Auto session cannot publish without the live Auto registration. Before changing any preset during disposal, the plugin captures the exact Session object identities that are retiring from Auto. The listener checks that set before derived permission state, so a partial migration that has already appended `permission/preset` or `sandbox/mode` still cannot reopen Tool execution. The plugin closes new admission, switches the captured sessions to Read Only through the normal preset writer, and then aborts and awaits in-flight reviews. If every migration succeeds, teardown removes the listener and Auto registration; if any migration fails, Cordis reports the cleanup error while retaining both in their closed state, so later calls from retiring sessions stay denied and new Auto selections fail.
 
@@ -65,7 +77,7 @@ Publication and teardown are fail-closed. A persisted Auto session cannot publis
 | [`src/index.ts`](src/index.ts) | Fixed Auto registration, five-section request, strict decision parser, pre-execute listener, and teardown |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion for this stateless integration |
 | [`tests/auto-review.spec.ts`](tests/auto-review.spec.ts) | Logged-input, decision, cancellation, native/PTC, restore, and disposal behavior |
-| [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | Eight real-model deny/allow pairs using sixteen independent reviewer calls |
+| [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | Opt-in 22-call real-model certification across eight semantic pairs, both execution paths, and all shipped models |
 
 </details>
 
@@ -88,7 +100,7 @@ Publication and teardown are fail-closed. A persisted Auto session cannot publis
 
 #### What the model sees
 
-The reviewer receives the package-owned fixed policy and one user message containing `ENVIRONMENT`, `PROJECT_INSTRUCTIONS`, `FILTERED_HISTORY`, and `PENDING_ACTION`. The main agent receives no Auto-specific prompt, allow event, identity, or reviewer reason; a denied call has the ordinary human-rejection error text.
+The reviewer receives the package-owned fixed policy and one user message containing `ENVIRONMENT`, `PROJECT_INSTRUCTIONS`, `FILTERED_HISTORY`, and `PENDING_ACTION`. The main agent receives no Auto-specific prompt, allow event, structured error identity, or reviewer reason; through ordinary Tool failure behavior, a denied call exposes only the fixed message that the named tool was rejected by Auto review and its body was not executed.
 
 #### Token effect
 

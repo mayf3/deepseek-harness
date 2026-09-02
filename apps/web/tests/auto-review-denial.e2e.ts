@@ -15,7 +15,8 @@ import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './supp
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial', import.meta.url))
 const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/session.jsonl', import.meta.url))
-const UI_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/ui.expected.md', import.meta.url))
+const COLLAPSED_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/collapsed.expected.md', import.meta.url))
+const EXPANDED_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/expanded.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'auto-review-denial-web-e2e'
 
@@ -80,6 +81,10 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
     await expect.poll(() => access.getAttribute('aria-label'), { timeout: 10_000 })
       .toBe('Access mode, current: Auto review EXP')
 
+    const collapsed = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+      .split(SEED_ID).join('{{seededId}}')
+    await compareOrRefreshGolden(COLLAPSED_EXPECTED, collapsed, MODE)
+
     await row.click()
     await expect.poll(() => row.getAttribute('aria-expanded')).toBe('true')
     expect(await call.getByText('IN', { exact: true }).count()).toBe(0)
@@ -88,14 +93,16 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
     expect(await call.getByText('Tool execution rejected by user', { exact: true }).count()).toBe(0)
     expect(await call.getByText('hidden-input', { exact: false }).count()).toBe(0)
 
-    const snapshot = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
+    const expanded = (await captureStableAria(page, '[class*="centerCol"]', scaffold.workspaceCwd))
       .split(SEED_ID).join('{{seededId}}')
-    await compareOrRefreshGolden(UI_EXPECTED, snapshot, MODE)
+    await compareOrRefreshGolden(EXPANDED_EXPECTED, expanded, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
   }, 60_000)
 
   it('keeps its snapshot inventory closed', async () => {
-    await assertFixtureInventory(SNAPSHOT_DIR, ['session.jsonl', 'ui.expected.md'])
+    await assertFixtureInventory(SNAPSHOT_DIR, [
+      'collapsed.expected.md', 'expanded.expected.md', 'session.jsonl',
+    ])
   })
 })

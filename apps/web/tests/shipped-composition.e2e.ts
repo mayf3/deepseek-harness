@@ -1,16 +1,17 @@
 // Boots the shipped Web composition over the built dist this lane already uses
-// and asserts what that composition produces: the model-visible tool catalog
-// and file-reference guidance plus its HTTP, retry, sandbox, and approval defaults.
-// No browser and no model call — these are composition facts, and the browser
-// scenarios in this lane cover the surface itself.
+// and asserts its catalog, defaults, Loader lifecycle, and one complete Auto
+// producer-to-tool path. Browser scenarios in this lane own visual behavior.
+import { randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it } from 'vitest'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { LlmAdapter, ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmResolvedModelInfo, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { canonicalPath, writableRoots } from '@deepseek-ai/dsh-sandbox'
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { composeEntries, loadOverlayPatches } from '@deepseek-ai/dsh-app-boot'
 // Empty type imports carry the tools/sandboxPolicy/approval Context merges.
 import type {} from '@deepseek-ai/dsh-tools'
@@ -28,6 +29,88 @@ const FILE_REFERENCE_PROMPT = fileURLToPath(new URL(
 ))
 const BASE_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/base/cordis.patch.yml')
 const HEADLESS_PATCH_PATH = join(REPO_ROOT, 'packages/bundle/headless/cordis.patch.yml')
+const AUTO_PROVIDER = 'shipped-auto-review-test'
+const AUTO_MODEL = 'same-route'
+const AUTO_CALL_ID = ToolCallId('shipped-auto-review-denied-write')
+const AUTO_RAW_REASON = '  direct user authorized inspection only\nwrite scope was not authorized  '
+const AUTO_FINAL_TEXT = 'SHIPPED_AUTO_REVIEW_DENIAL_OBSERVED'
+
+type RpcResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
+
+/** POST one generated Remote unary through the authenticated Web carrier. */
+async function remote<T>(
+  target: WebScaffold,
+  endpoint: string,
+  args: Readonly<Record<string, unknown>>,
+): Promise<T> {
+  const response = await target.hostFetch(`/api/${endpoint}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      type: 'client-request',
+      rpcId: `shipped-auto-${endpoint}-${randomUUID()}`,
+      method: endpoint,
+      payload: { args },
+    }),
+  })
+  if (!response.ok) throw new Error(`${endpoint} failed over HTTP ${response.status}: ${await response.text()}`)
+  const result = (await response.json() as { result: RpcResult<T> }).result
+  if (!result.ok) throw new Error(`${endpoint} failed: ${result.error.code}: ${result.error.message}`)
+  return result.value
+}
+
+/** One text completion in the provider-neutral stream vocabulary. */
+function textChunks(text: string): StreamChunk[] {
+  return [
+    { type: 'block-start', index: 0, blockType: 'text' },
+    { type: 'text-delta', index: 0, text },
+    { type: 'block-end', index: 0, block: { type: 'text', text } },
+    { type: 'usage', usage: { inputTokens: 16, outputTokens: 8 } },
+    { type: 'finish', reason: { kind: 'stop' } },
+  ]
+}
+
+/** Scripted same-route main model and reviewer for the shipped Auto pipeline. */
+class ShippedAutoAdapter extends LlmAdapter {
+  readonly requests: GenerateOptions[] = []
+
+  constructor(private readonly targetPath: string) {
+    super()
+  }
+
+  override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+    return Promise.resolve({ provider, id: model, name: model, contextWindow: 128_000 })
+  }
+
+  override async *stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    this.requests.push(options)
+    const source = options.messages[0]?.source
+    if (source?.kind === 'plugin' && source.plugin === 'dsh-auto-review') {
+      yield* textChunks(JSON.stringify({ decision: 'deny', reason: AUTO_RAW_REASON }))
+      return
+    }
+    if (options.messages.some(message => message.content.some(block => block.type === 'tool-result'))) {
+      yield* textChunks(AUTO_FINAL_TEXT)
+      return
+    }
+    const args = JSON.stringify({ file_path: this.targetPath, content: 'MUST_NOT_BE_WRITTEN\n' })
+    yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+    yield {
+      type: 'tool-call-delta',
+      index: 0,
+      id: AUTO_CALL_ID,
+      name: 'write',
+      argumentsDelta: args,
+    }
+    yield {
+      type: 'block-end',
+      index: 0,
+      block: { type: 'tool-call', id: AUTO_CALL_ID, name: 'write', arguments: args },
+    }
+    yield { type: 'usage', usage: { inputTokens: 32, outputTokens: 12 } }
+    yield { type: 'finish', reason: { kind: 'tool-calls' } }
+  }
+}
 
 /**
  * The catalog the shipped Web composition puts in front of the model, minus the
@@ -263,6 +346,176 @@ it('lets a preset producer reach the background-job registry', async () => {
     expect(collected.content).toEqual([
       { type: 'text', text: expect.stringContaining('SHIPPED_BACKGROUND_OK') as unknown as string },
     ])
+  } finally {
+    await handle.dispose()
+  }
+}, 120_000)
+
+it('routes one browser-authored Auto request through the same model before a real tool body', async () => {
+  scaffold = await launchWebScaffold()
+  const ctx = scaffold.ctx
+  const targetPath = join(scaffold.workspaceCwd, 'auto-review-must-not-write.txt')
+  const adapter = new ShippedAutoAdapter(targetPath)
+  ctx.effect(
+    () => ctx.llm.registerAdapter([AUTO_PROVIDER], adapter),
+    'shipped Auto review same-route adapter',
+  )
+
+  const created = await remote<{ sessionId: string }>(scaffold, 'session/create', {
+    request: { cwd: scaffold.workspaceCwd },
+  })
+  const sessionId = SessionId(created.sessionId)
+  await remote(scaffold, 'session/selectModel', {
+    request: { sessionId, provider: AUTO_PROVIDER, model: AUTO_MODEL },
+  })
+  const switched = await remote<{ result: { kind: string; text?: string } }>(
+    scaffold,
+    'commands/execute',
+    { agentId: sessionId, line: '/permission auto', images: [] },
+  )
+  expect(switched.result).toEqual({ kind: 'success', text: 'preset auto' })
+
+  const agent = ctx.agents.get(sessionId)
+  if (agent === undefined) throw new Error('shipped Auto session was not published')
+  expect(ctx.permissionPresets.current(agent.session)).toBe('auto')
+
+  const requestId = `shipped-auto-direct-user-${randomUUID()}`
+  const settled = scaffold.whenTurnSettled()
+  await remote<{ accepted: true }>(scaffold, 'session/prompt', {
+    request: {
+      requestId,
+      sessionId,
+      mode: 'queue',
+      content: [{ type: 'text', text: 'Inspect this workspace only. Do not modify any file.' }],
+    },
+  })
+  expect(await settled).toBe(sessionId)
+  await agent.whenIdle()
+
+  expect(adapter.requests).toHaveLength(3)
+  expect(adapter.requests.map(({ provider, model }) => ({ provider, model }))).toEqual([
+    { provider: AUTO_PROVIDER, model: AUTO_MODEL },
+    { provider: AUTO_PROVIDER, model: AUTO_MODEL },
+    { provider: AUTO_PROVIDER, model: AUTO_MODEL },
+  ])
+  const [firstMain, reviewer, finalMain] = adapter.requests
+  expect(firstMain?.tools?.some(schema => schema.name === 'write')).toBe(true)
+  expect(reviewer?.system).toContain('You are the final authorization reviewer for exactly one pending tool call.')
+  const reviewInput = reviewer?.messages.flatMap(message => message.content)
+    .filter(block => block.type === 'text')
+    .map(block => block.text)
+    .join('') ?? ''
+  expect(reviewInput).toContain('PENDING_ACTION')
+  expect(reviewInput).toContain(requestId)
+  expect(reviewInput).toContain(targetPath)
+  const finalModelInput = JSON.stringify(finalMain?.messages)
+  expect(finalModelInput).toContain('Auto review rejected tool \\"write\\"; its body was not executed')
+  expect(finalModelInput).not.toContain('direct user authorized inspection only')
+
+  const prompt = agent.session.events.find((event): event is Extract<SessionEvent, { type: 'user/message' }> => (
+    event.type === 'user/message'
+      && event.data.source.kind === 'user'
+      && 'rpcId' in event.data.source
+      && event.data.source.rpcId === requestId
+  ))
+  expect(prompt).toBeDefined()
+  const result = agent.session.events.find((event): event is Extract<SessionEvent, { type: 'tool/result' }> => (
+    event.type === 'tool/result'
+      && event.data.message.content.some(block => block.toolCallId === AUTO_CALL_ID)
+  ))
+  expect(result?.data.error).toEqual({
+    name: 'AutoReviewDeniedError',
+    code: 'AUTO_REVIEW_DENIED',
+    reason: AUTO_RAW_REASON,
+  })
+  const durableModelResult = JSON.stringify(result?.data.message)
+  expect(durableModelResult).toContain('Auto review rejected tool \\"write\\"; its body was not executed')
+  expect(durableModelResult).not.toContain('direct user authorized inspection only')
+  expect(agent.session.events.some(event => (
+    event.type === 'assistant/message'
+      && JSON.stringify(event.data.message).includes(AUTO_FINAL_TEXT)
+  ))).toBe(true)
+  await expect(readFile(targetPath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+}, 120_000)
+
+it('rolls back a failed shipped Auto initialization before publishing or intercepting tools', async () => {
+  scaffold = await launchWebScaffold()
+  const ctx = scaffold.ctx
+  const autoEntry = [...ctx.loader.entries()].find(entry => entry.options.id === 'auto-review')
+  if (autoEntry === undefined) throw new Error('shipped Auto review Loader entry is missing')
+
+  await autoEntry.update({ disabled: true })
+  await ctx.loader.await()
+  expect(ctx.permissionPresets.names).not.toContain('auto')
+
+  // This unsupported same-process contribution occupies the reserved preset
+  // only to force the shipped integration's registration to roll back. It is
+  // not an Auto reviewer or a supported host composition.
+  const stopUnsupportedConflict = ctx.permissionPresets.registerAuto(() => {})
+  try {
+    await expect(
+      autoEntry.update({ disabled: false }).then(() => ctx.loader.await()),
+    ).rejects.toThrow('preset "auto" is already registered')
+
+    const handle = await ctx.agents.create({
+      sessionId: SessionId('shipped-auto-init-rollback'),
+      meta: { cwd: scaffold.workspaceCwd },
+      setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
+    })
+    try {
+      ctx.permissionPresets.set(handle.agent.session, 'auto')
+      const targetPath = join(scaffold.workspaceCwd, 'auto-init-rollback.txt')
+      // The successful write is a rollback sentinel: this unsupported
+      // contribution performs no review, so success proves the failed shipped
+      // integration left no pre-execute listener behind. It is not supported
+      // Auto execution behavior.
+      const result = await ctx.tools.execute({
+        signal: new AbortController().signal,
+        callId: ToolCallId('shipped-auto-init-rollback-write'),
+        name: 'write',
+        arguments: { file_path: targetPath, content: 'INITIALIZATION_ROLLED_BACK\n' },
+        agent: handle.agent,
+      })
+      expect(result.isError).toBe(false)
+      expect(await readFile(targetPath, 'utf8')).toBe('INITIALIZATION_ROLLED_BACK\n')
+    } finally {
+      await handle.dispose()
+    }
+  } finally {
+    await stopUnsupportedConflict()
+    await autoEntry.update({ disabled: true })
+    await ctx.loader.await()
+  }
+
+  expect(ctx.permissionPresets.names).not.toContain('auto')
+  await autoEntry.update({ disabled: false })
+  await ctx.loader.await()
+  expect(ctx.permissionPresets.names).toContain('auto')
+}, 120_000)
+
+it('withdraws Auto on shipped Loader unload and does not restore migrated live sessions', async () => {
+  scaffold = await launchWebScaffold()
+  const ctx = scaffold.ctx
+  const autoEntry = [...ctx.loader.entries()].find(entry => entry.options.id === 'auto-review')
+  if (autoEntry === undefined) throw new Error('shipped Auto review Loader entry is missing')
+  const handle = await ctx.agents.create({
+    sessionId: SessionId('shipped-auto-hot-plug'),
+    meta: { cwd: scaffold.workspaceCwd },
+    setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
+  })
+  try {
+    ctx.permissionPresets.set(handle.agent.session, 'auto')
+    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('auto')
+
+    await autoEntry.update({ disabled: true })
+    await ctx.loader.await()
+    expect(ctx.permissionPresets.names).not.toContain('auto')
+    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('read-only')
+
+    await autoEntry.update({ disabled: false })
+    await ctx.loader.await()
+    expect(ctx.permissionPresets.names).toContain('auto')
+    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('read-only')
   } finally {
     await handle.dispose()
   }

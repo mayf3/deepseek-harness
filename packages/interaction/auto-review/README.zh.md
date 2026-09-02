@@ -14,6 +14,7 @@ kind: "package-reference"
 ## 目录
 
 - [使用本包](#use-this-package)
+- [运行真实模型认证](#run-the-real-model-certification)
 - [理解实现](#understand-the-implementation)
 - [进一步探索](#further-exploration)
 - [模型体验](#model-experience)
@@ -40,9 +41,20 @@ shipped Web 组合包会在基础权限、Session、LLM 与 Tool 服务可用后
 
 ### 审查与故障行为
 
-reviewer 使用最新记录的提供方／模型路由，并接收五个分区：固定的 `REVIEW_POLICY`、Session 工作目录、当前项目指令、过滤后的历史以及待审动作。请求不会设置主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。direct-user 消息、压缩检查点与当前项目指令可以授权动作。其他 user-role 消息和历史调用仅作为证据；assistant 文本、推理与工具结果不会进入请求。
+reviewer 使用最新记录的提供方／模型路由，并接收五个分区：固定的 `REVIEW_POLICY`、Session 工作目录、当前项目指令、过滤后的历史以及待审动作。请求不会设置主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。只有当前 surface 中 source kind 为 `user` 且拥有自身持久 `rpcId` 的消息文本可以授权动作。压缩检查点、当前项目指令、父 agent 编写的 child prompt、其他 user-role 消息与历史调用仅作为证据；assistant 文本、推理与工具结果不会进入请求。
 
-决定协议只接受 `{"decision":"allow"}`、`{"decision":"deny"}` 或 `{"decision":"deny","reason":"..."}`。日志事实缺失或不一致、提供方故障、上下文超限、非法输出以及其他任何审查故障都会在工具主体前拒绝调用。调用方取消沿用普通 Tool 取消结果，不会转换为 Auto 拒绝。
+决定协议只接受 `{"decision":"allow"}`、`{"decision":"deny"}` 或 `{"decision":"deny","reason":"..."}`。日志事实缺失或不一致、提供方故障、上下文超限、非法输出以及其他任何审查故障都会在工具主体前拒绝调用。调用方取消沿用普通 Tool 的结算优先级：late allow 后的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。
+
+<a id="run-the-real-model-certification"></a>
+### 运行真实模型认证
+
+设置 `DEEPSEEK_API_KEY` 后，从仓库根目录运行以下聚焦的显式启用测试：
+
+```sh
+DSH_AUTO_REVIEW_CERTIFICATION=1 pnpm exec vitest run --config vitest.e2e.config.ts packages/interaction/auto-review/tests/auto-review.e2e.ts
+```
+
+即使已有凭据，未设置 `DSH_AUTO_REVIEW_CERTIFICATION=1` 时该套件也会跳过。显式启用但缺少 `DEEPSEEK_API_KEY` 时，测试会以明确的配置错误失败。成功运行会以零重试方式精确执行 22 次 reviewer 调用，并把脱敏报告写到仓库外；可以用 `DSH_AUTO_REVIEW_CERTIFICATION_REPORT` 选择该外部路径。
 
 -----
 
@@ -54,7 +66,7 @@ reviewer 使用最新记录的提供方／模型路由，并接收五个分区�
 
 插件以前置方式注册一个 `tools/pre-execute` 监听器。它从可见的 `tool/call` 与最新 request-header schema 重建每个原生动作，并从对应的 `tool/code-dispatch-start` 快照重建每个 PTC inner action。当前动作只出现在 `PENDING_ACTION` 中；过滤历史只保留已经开始的历史调用。
 
-Auto 拒绝使用与人工拒绝相同的模型可见文本。其 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 身份与可选 raw reason 通过普通原生或 PTC 结构化错误字段传播。Web 树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此专用或外部 Tool 视图都不能遮住拒绝结论。展示层只在渲染工具卡时归一化原因。
+Auto 拒绝使用固定模型可见消息，其中会指明被拒绝的工具并说明其主体未执行。其 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 身份与可选 raw reason 通过普通原生或 PTC 结构化错误字段传播。Web 树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此专用或外部 Tool 视图都不能遮住拒绝结论。展示层只在渲染工具卡时归一化原因。
 
 发布与资源释放都以拒绝方式关闭。持久 Auto 会话在 live Auto 注册缺失时不能发布。资源释放在修改任何预设前，会先捕获所有正在退出 Auto 的精确 Session 对象身份。监听器会先检查该集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放 Tool 执行。插件随后关闭新准入，通过普通预设写入器把这些已捕获会话切换到 Read Only，再中止并等待在途审查。如果全部迁移成功，资源释放会移除监听器与 Auto 注册；如果任一迁移失败，Cordis 会报告清理错误并让两者保留在已关闭状态，使退役会话的后续调用继续被拒绝、新的 Auto 选择继续失败。
 
@@ -65,7 +77,7 @@ Auto 拒绝使用与人工拒绝相同的模型可见文本。其 `AutoReviewDen
 | [`src/index.ts`](src/index.ts) | 固定 Auto 注册、五分区请求、严格决定解析器、pre-execute 监听器与资源释放 |
 | [`src/invariant.ts`](src/invariant.ts) | 这一无状态集成的不变式伴生插件 |
 | [`tests/auto-review.spec.ts`](tests/auto-review.spec.ts) | 日志输入、决定、取消、原生／PTC、恢复与资源释放行为 |
-| [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | 八组真实模型拒绝／允许配对，共十六次独立 reviewer 调用 |
+| [`tests/auto-review.e2e.ts`](tests/auto-review.e2e.ts) | 显式启用的 22-call 真实模型认证，覆盖八组语义配对、两条执行路径与全部 shipped 模型 |
 
 </details>
 
@@ -88,7 +100,7 @@ Auto 拒绝使用与人工拒绝相同的模型可见文本。其 `AutoReviewDen
 
 #### 模型看到什么
 
-reviewer 接收本包拥有的固定策略，以及一条包含 `ENVIRONMENT`、`PROJECT_INSTRUCTIONS`、`FILTERED_HISTORY` 和 `PENDING_ACTION` 的 user 消息。主 agent 不会收到 Auto 专用提示词、允许事件、身份或 reviewer 原因；被拒绝的调用使用普通人工拒绝错误文本。
+reviewer 接收本包拥有的固定策略，以及一条包含 `ENVIRONMENT`、`PROJECT_INSTRUCTIONS`、`FILTERED_HISTORY` 和 `PENDING_ACTION` 的 user 消息。主 agent 不会收到 Auto 专用提示词、允许事件、结构化错误身份或 reviewer 原因；被拒绝的调用只会收到固定消息，说明具名工具被 Auto review 拒绝且其主体未执行。
 
 #### Token 影响
 

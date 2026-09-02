@@ -48,18 +48,18 @@ The service requires a confining `ctx.shell` executor and `ctx.approval`, and mi
 
 The Auto integration calls `registerAuto(admit)` for its effect lifetime. This service fixes the `auto` identity, its `danger-full-access` plus `never` bundle, and its client label and description; callers cannot publish another preset through a generic contribution API. Auto appears after configured presets, never enters the `permission.defaultPreset` settings schema, and disappears when the effect is disposed. The synchronous `admit` callback runs before Auto selection mutates the Session and before a stored Auto Session publishes, so a missing or closing integration does not rewrite the durable identity.
 
-Registering or removing Auto explicitly republishes the complete `permissions` wire view for every live Session at its current projection watermark without appending a Session event. Session Controller marks that frame as a republish, so an equal-sequence client row is replaced while ordinary frames and history baselines remain strict higher-sequence-wins.
+Registering or removing Auto emits the payload-free `permission-presets/catalog-changed` notification. Process consumers subscribe before calling `catalog()`, then re-read the complete selectable catalog after each notification. The `permissions` Session projection contains only `currentValue`, so catalog changes append no Session event, publish no Session projection frame, and leave the Session sequence unchanged.
 
 ## Current preset and the derived `custom`
 
 `current(session)` derives the effective preset from the required `permissions` projection. The unit folds the session's sandbox mode, approval policy, and recorded selection; values absent within that state fall back to the executor's configured mode and the approval service config, then `ask`. A missing projection key fails explicitly. The service prefers a still-matching selection, then the first matching configured entry, then live Auto when its fixed bundle matches, and otherwise returns `CUSTOM_PRESET` (`'custom'`). `custom` is derived-only: clients may display it as the current value, but it is never a switch target or an event payload.
 
-`names` lists configured presets in declaration order followed by Auto while its integration is live. `optionOf(name)` builds the option a client renders for an available key (label falls back to the key) or for `custom`, and throws for any other name.
+`names` lists configured presets in declaration order followed by Auto while its integration is live. `catalog()` returns those selectable entries as one process-level snapshot. `optionOf(name)` builds an available entry (its label falls back to the key) or the derived `custom` presentation, and throws for any other name. Clients join the catalog with the Session projection; `custom` may label the current value but never becomes a catalog entry.
 
 ```ts type-equiv
-/** The select-option shape a presentation layer advertises for one preset (or for the derived `custom` state). */
+/** One selectable process-level permission preset. */
 interface PresetOption {
-  /** Stable option value: the table key, or `custom`. */
+  /** Stable option value: a configured preset key or the live `auto` contribution. */
   value: string
   /** The display label. */
   name: string
@@ -90,6 +90,12 @@ Owns the deployment's configured permission presets, the fixed Auto integration 
 
 ```ts cordis-catalog
 /**
+ * Read the complete process-level catalog exposed to current-session UI.
+ * @returns every currently selectable preset in contribution order.
+ */
+@Remote('catalog') catalog(): PermissionCatalog
+
+/**
  * Publish the fixed current-session Auto preset for the calling
  * integration's effect lifetime.
  * @param admit - synchronous gate run before live Auto selection or restore.
@@ -106,15 +112,6 @@ registerAuto(admit: () => void): () => Promise<void>
  * @returns the effective preset name, or `custom` when nothing matches.
  */
 current(session: Session): string
-
-/**
- * Build the whole select value for one folded knob state: configured options
- * in declaration order, Auto while live, and
- * `custom` appended exactly while derived.
- * @param state - the folded knob overrides.
- * @returns the `permissions` projection payload.
- */
-selectFor(state: KnobState): PermissionSelect
 
 /**
  * Resolve an available preset's knob bundle.
@@ -145,4 +142,25 @@ set(session: Session, name: string): void
 Types: [Session](session.md)
 
 Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
+
+<a id="permission-presets-events"></a>
+
+### `permission-presets/*` events
+
+<a id="permission-presetscatalog-changed--emit"></a>
+
+#### `permission-presets/catalog-changed` — emit
+
+The selectable process catalog changed. Payload-free by design: consumers subscribe first, then re-read the complete catalog.
+
+```ts cordis-catalog
+/**
+ * The selectable process catalog changed. Payload-free by design:
+ * consumers subscribe first, then re-read the complete catalog.
+ * @mode emit
+ */
+'permission-presets/catalog-changed'(): void
+```
+
+Source: [`packages/interaction/permission-presets/src/types.ts`](../../packages/interaction/permission-presets/src/types.ts)
 <!-- END GENERATED cordis-surface -->

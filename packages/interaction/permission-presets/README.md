@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-permission-presets` gives a deployment one user-facing Permissions selector that bundles two independent enforcement knobs — the sandbox mode and the approval policy — into named presets. Selecting a preset applies the sandbox mode and approval policy together, while each knob keeps its own value, so sandbox execution, approval, prompt narration, and replay each read their own setting. The configured table supplies future-session defaults; the Auto review integration may publish one fixed effect-scoped `auto` option for current sessions through `registerAuto(admit)`. A knob combination matching no available preset reads back as the derived `custom`, which clients may display but never select. The service also owns the `permission` settings namespace, requires the `permissions` Session projection, and optionally contributes the `/permission` command, while enforcement remains with the sandbox, approval, or Auto integration.
+`dsh-permission-presets` gives a deployment one user-facing Permissions selector that bundles two independent enforcement knobs — the sandbox mode and the approval policy — into named presets. Selecting a preset applies the sandbox mode and approval policy together, while each knob keeps its own value, so sandbox execution, approval, prompt narration, and replay each read their own setting. The configured table supplies future-session defaults; the Auto review integration may publish one fixed effect-scoped `auto` option for current sessions through `registerAuto(admit)`. A process-level catalog reports selectable entries, while the `permissions` Session projection reports only the current value. A knob combination matching no available preset reads back as the derived `custom`, which clients may display but never select. The service also owns the `permission` settings namespace and optionally contributes the `/permission` command, while enforcement remains with the sandbox, approval, or Auto integration.
 
 ## Table of Contents
 
@@ -57,7 +57,7 @@ Switching to Auto first runs its synchronous admission check; every preset switc
 
 ### What users see
 
-Clients render the select with configured presets in table order followed by Auto while its integration is live, plus `custom` shown exactly while it is current. Auto's identity, Full access knob bundle, label, and description are fixed inside this service rather than supplied by a generic contribution API. `custom` is display-only — callers can switch away from an unmatched knob combination but cannot select or persist a named custom preset through this service.
+Clients render selectable entries from the process catalog: configured presets in table order followed by Auto while its integration is live. They join that snapshot with the Session's current value; an unmatched `custom` value may label the current control but never appears as a selectable catalog row. Auto's identity, Full access knob bundle, label, and description are fixed inside this service rather than supplied by a generic contribution API. Callers can switch away from `custom` but cannot select or persist a named custom preset through this service.
 
 ### Session defaults
 
@@ -71,14 +71,14 @@ The `permission` settings namespace holds `defaultPreset` for future sessions an
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The observable behavior is covered in [Use this package](#use-this-package); this section explains the write path, the projection-backed read side, and the optional command.
+The observable behavior is covered in [Use this package](#use-this-package); this section explains the write path, the process catalog, the projection-backed current value, and the optional command.
 
 ### Source map
 
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | `PermissionPresetService`: configured table, fixed Auto registration, write path, settings namespace, session pinning, children |
-| [`src/types.ts`](src/types.ts) | `permissions` projection-key declaration and select payload types |
+| [`src/types.ts`](src/types.ts) | Process catalog, catalog-change event, and `permissions` current-selection types |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion validating configured preset names; Auto restore is checked before publication |
 
 ### Write path
@@ -93,9 +93,9 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 Mounting pins every live and future session: a genuinely fresh session gains the configured default preset and both knob facts, while seeded or partially initialized sessions keep their effective knob values and gain only missing durable facts. The projection-owned seed marker makes this decision from the same incremental state as the knob values. A stored `auto` identity fails publication when the Auto integration is absent or rejects admission; the service neither rewrites it nor silently derives Full access.
 
-### Projection and optional command
+### Catalog, projection, and optional command
 
-The service requires `ctx.sessionProjections` and registers the `permissions` projection during activation. Registering or removing Auto explicitly republishes that wire view for every live Session at the current watermark without appending a Session event, so connected clients see the option appear or disappear immediately. The `/permission` command registers only when a `ctx.commands` registry is composed. Calls that derive the current preset or pin an initial selection fail explicitly when the projection key is absent.
+The service requires `ctx.sessionProjections` and registers a `permissions` projection containing only `currentValue`. Its process-level `catalog()` Remote returns one complete selectable snapshot. Registering or removing Auto emits the payload-free `permission-presets/catalog-changed` notification, so clients subscribe first and then re-read the catalog without appending a Session event, publishing a Session projection frame, or changing Session sequence. The `/permission` command registers only when a `ctx.commands` registry is composed. Calls that derive the current preset or pin an initial selection fail explicitly when the projection key is absent.
 
 </details>
 
@@ -106,7 +106,7 @@ The service requires `ctx.sessionProjections` and registers the `permissions` pr
 
 Read these pages when the package-level contract is not enough. They move from the preset vocabulary to the enforcement knobs and the design rationale.
 
-- [Permission presets subsystem reference](../../../docs/subsystems/permission-presets.md) — the preset table, the select payload, and the `ctx.permissionPresets` cordis surface.
+- [Permission presets subsystem reference](../../../docs/subsystems/permission-presets.md) — the preset table, process catalog, current selection, and `ctx.permissionPresets` Cordis API.
 - [Sandbox switching design Agent Note](../../../.agents/notes/implemented/feature/2026-07-06-sandbox.md) — how sandbox mode and approval policy compose and switch.
 - [Approval subsystem reference](../../../docs/subsystems/approval.md) — the approval policy knob this service bundles.
 - [Interaction group map](../README.md) — adjacent command, approval, and question packages.
@@ -131,7 +131,7 @@ These limits define what the preset service does not offer. They are current pac
 
 - **Only two mechanism knobs are bundled** — presets select sandbox mode and approval policy; the fixed Auto integration adds admission behavior, but an agent/profile choice is not part of `PresetSpec`.
 - **`custom` is derived-only** — callers can switch away from an unmatched knob combination but cannot target or persist a named custom preset through this service.
-- **The preset table is process-level** — configuration is fixed for the plugin lifetime; changing available presets requires reloading the plugin.
+- **The configured preset table is fixed for the plugin lifetime** — only the fixed Auto contribution can change the live process catalog without reloading this service.
 - **Auto cannot become a default** — it exists only while its integration effect is live and is intentionally absent from the `permission` settings schema.
 - **Stored defaults must remain in the preset table** — removing the referenced preset makes Permission settings registration fail until the `permission` section in `settings.yaml` is updated or reset.
 

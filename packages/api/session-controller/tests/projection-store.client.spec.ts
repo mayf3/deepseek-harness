@@ -1,11 +1,11 @@
 /**
  * Projection value store (push model; session-projection subsystem page:
  * docs/subsystems/session-projection.md): the single
- * higher-seq-wins rule for ordinary frames and history baselines, explicit
- * equal-seq republishing, authoritative control baselines, capability absence
- * as undefined, and the Session/manager wiring (tail-page seeding,
- * control-stream projection routing pre- and post-instantiation, the list
- * rows' title projection).
+ * higher-seq-wins rule on both paths (a stale baseline cannot overwrite a
+ * newer push frame; a replayed frame cannot regress), capability absence as
+ * undefined, generation truncation, and the Session/manager wiring (tail-page
+ * seeding, control-stream projection routing pre- and post-instantiation, the
+ * list rows' title projection).
  */
 import { describe, expect, it } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
@@ -42,22 +42,9 @@ describe('Session projection value semantics', () => {
     expect(store.get('test/marks')).toEqual({ marks: ['a', 'b'] })
   })
 
-  it('allows only an explicit republish frame to replace an equal-seq row', () => {
-    const store = new ProjectionValueStore()
-    store.apply('test/marks', { marks: ['first'] }, 9)
-    store.apply('test/marks', { marks: ['ordinary-equal'] }, 9)
-    expect(store.get('test/marks')).toEqual({ marks: ['first'] })
-    store.apply('test/marks', { marks: ['republished'] }, 9, true)
-    expect(store.get('test/marks')).toEqual({ marks: ['republished'] })
-  })
-
   it('a stale baseline can neither overwrite nor clear a newer frame; a fresh one reseeds and clears', () => {
     const store = new ProjectionValueStore()
     store.apply('test/marks', { marks: ['frame-20'] }, 20)
-    store.seed({ asOfSeq: 20, values: { 'test/marks': { marks: ['baseline-equal'] } } })
-    expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
-    store.seed({ asOfSeq: 20, values: {} })
-    expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
     // Stale cut: carried key loses to the newer frame; omitted key survives.
     store.seed({ asOfSeq: 10, values: { 'test/marks': { marks: ['baseline-10'] } } })
     expect(store.get('test/marks')).toEqual({ marks: ['frame-20'] })
@@ -71,12 +58,12 @@ describe('Session projection value semantics', () => {
     expect(store.get('test/marks')).toBeUndefined()
   })
 
-  it('a control baseline authoritatively replaces equal rows and clears omitted rows', () => {
+  it('truncate drops rows past the durable baseline and keeps the rest', () => {
     const store = new ProjectionValueStore()
-    store.apply('test/marks', { marks: ['old'] }, 10)
+    store.apply('test/marks', { marks: ['durable'] }, 5)
     store.apply('other', 'phantom', 50)
-    store.seedControl({ asOfSeq: 10, values: { 'test/marks': { marks: ['baseline'] } } })
-    expect(store.get('test/marks')).toEqual({ marks: ['baseline'] })
+    store.truncate(10)
+    expect(store.get('test/marks')).toEqual({ marks: ['durable'] })
     expect(store.get('other')).toBeUndefined()
   })
 
@@ -165,15 +152,6 @@ describe('manager frame routing', () => {
       type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['later'] }, seq: 9,
     })
     expect(session.projections.get('test/marks')).toEqual({ marks: ['later'] })
-    manager.handleControlFrame({
-      type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['ordinary-equal'] }, seq: 9,
-    })
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['later'] })
-    manager.handleControlFrame({
-      type: 'projection', sessionId: sid('s1'), key: 'test/marks', value: { marks: ['republished'] }, seq: 9,
-      republish: true,
-    })
-    expect(session.projections.get('test/marks')).toEqual({ marks: ['republished'] })
   })
 
   it('projects the title key into list rows and truncates phantom rows on the control baseline', async () => {

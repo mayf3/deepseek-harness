@@ -55,15 +55,12 @@ const definition = {
 
 ### 注册与读取
 
-`register(definition)` 安装单元；注册是挂在调用方 fiber 上的 effect，因此卸载领域即移除其 key。其可调用 disposer 还为客户端可见单元提供 `republish(session)`，用于 `wire.view` 依赖折叠后 Session 状态之外的进程本地数据时重新发布。重新发布只会在 cell 的当前水位重新计算这个已注册 wire 视图，不会追加 Session 事件。载体用 `snapshot(session)` 对每个客户端可见单元读取一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` 是所有值共同反映到的最后一个事件的 seq——并用 `onChanged(listener)` 订阅发布。`stateOf(session, key)` 读取一个单元的主机状态，不计算无关视图。
+`register(definition)` 安装单元；注册是挂在调用方 fiber 上的 effect，因此卸载领域即移除其 key。载体用 `snapshot(session)` 对每个客户端可见单元读取一致的同步切面——`{ asOfSeq, values }`，其中 `asOfSeq` 是所有值共同反映到的最后一个事件的 seq——并用 `onChanged(listener)` 订阅逐变更通知。`stateOf(session, key)` 读取一个单元的主机状态，不计算无关视图。
 
 ```text
-const registration = ctx.sessionProjections.register(definition)
+const dispose = ctx.sessionProjections.register(definition)
 const { asOfSeq, values } = ctx.sessionProjections.snapshot(session)
-registration.republish(session)
 ```
-
-载体只有在序列更高时才接受普通变更帧与历史 baseline。带显式标记的重新发布可以替换同序列值，而替换 control stream baseline 在同序列具有权威性，并会清除被省略的 key。
 
 ### 持久检查点
 
@@ -93,7 +90,7 @@ registration.republish(session)
 
 ### 驱动与检查点流程
 
-一个已提交事件按注册顺序驱动每个已注册单元；原始 view 通过 `Object.is` 判定为变化的客户端可见单元会发布经 schema 校验的视图、致因 seq 与发布种类 `change`。live drive 保留前后两个原始 view；snapshot 与冷读仍是彼此独立的完整读取。显式 `republish(session)` 会更新当前原始 view 缓存，并在现有 cell 水位发布种类 `republish`，既不驱动 `apply`，也不追加事件。`checkpoint(session)` 为持久缓存返回每个单元一份独立的 `(key → {ver, seq, val})` 行；`restoreFloor` 把尾部读取锚定在最低可用水位之前一个事件处，使缩短的日志可被检出；`restore` 把持久行在存储后缀上重新折叠，丢弃任何 `ver` 不匹配或声称越过存储末尾的行。
+一个已提交事件按注册顺序驱动每个已注册单元；原始 view 通过 `Object.is` 判定为变化的客户端可见单元会以经 schema 校验的视图与致因 seq 通知变更流。live drive 保留前后两个原始 view；snapshot 与冷读仍是彼此独立的完整读取。`checkpoint(session)` 为持久缓存返回每个单元一份独立的 `(key → {ver, seq, val})` 行；`restoreFloor` 把尾部读取锚定在最低可用水位之前一个事件处，使缩短的日志可被检出；`restore` 把持久行在存储后缀上重新折叠，丢弃任何 `ver` 不匹配或声称越过存储末尾的行。
 
 </details>
 

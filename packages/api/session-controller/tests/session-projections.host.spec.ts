@@ -579,30 +579,4 @@ describe('Session control projection frames', () => {
     const tail = await opening(proxy, session.id)
     expect(tail.projections.asOfSeq).toBe(pushes.at(-1)?.seq)
   })
-
-  it('marks only explicit same-watermark republishes on the control stream', async () => {
-    const { ctx, session } = await harness(true)
-    let suffix = 'before'
-    const definition = lastUserUnit()
-    definition.wire.view = state => state === null ? null : { text: `${state.text}:${suffix}` }
-    const registration = ctx.sessionProjections.register(definition)
-    seedMessages(session, 1)
-    const proxy = remote(ctx)
-    await new Promise(resolve => setTimeout(resolve, 0))
-    const abort = new AbortController()
-    const collected = collect(proxy.control(abort.signal), 1, abort)
-
-    suffix = 'after'
-    registration.republish(session)
-
-    const frames = await collected
-    expect(frames.filter(frame => frame.type === 'projection')).toEqual([{
-      type: 'projection',
-      sessionId: session.id,
-      key: 'test/last-user',
-      value: { text: 'm0:after' },
-      seq: session.seq - 1,
-      republish: true,
-    }])
-  })
 })

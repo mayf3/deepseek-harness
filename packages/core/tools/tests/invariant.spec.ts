@@ -228,7 +228,6 @@ describe('tool-pipeline invariants', () => {
       parentCallId: ToolCallId('parent'),
       subCallId: ToolCallId('child'),
       name: 'echo',
-      ...dispatchSchema,
       arguments: {},
       isError: false,
       content: [{ type: 'text', text: 'ok' }],

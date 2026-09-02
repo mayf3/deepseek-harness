@@ -1,5 +1,8 @@
 /** `settings.permission` namespace dictionaries (the Permission row's copy). */
 
+/** Locale namespace shared by both current-session permission pickers. */
+export const PERMISSION_ACCESS_NS = 'permission.access'
+
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'title': '权限',
@@ -37,6 +40,8 @@ export const en = {
 
 /** Simplified Chinese dictionary for the current-session popup gate. */
 export const accessZh = {
+  'mode': '访问模式，当前：{name}',
+  'close': '关闭',
   'preset.readOnly': '仅可查看',
   'preset.workspaceWrite': '工作区内修改',
   'preset.fullAccess': '完全权限',
@@ -59,6 +64,8 @@ export type PermissionAccessKey = keyof typeof accessZh
 
 /** English dictionary for the current-session popup gate. */
 export const accessEn = {
+  'mode': 'Access mode, current: {name}',
+  'close': 'Close',
   'preset.readOnly': 'Read Only',
   'preset.workspaceWrite': 'Workspace Write',
   'preset.fullAccess': 'Full access',

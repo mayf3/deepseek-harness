@@ -26,19 +26,19 @@ Auto 插件以前置方式注册一个 `tools/pre-execute` 监听器，并为每
 
 reviewer 使用最新记录在 `request/header` 中的提供方与模型。其不可变请求包含五个分区：固定 `REVIEW_POLICY`；只含 Session `cwd` 的 `ENVIRONMENT`；当前 `PROJECT_INSTRUCTIONS`；`FILTERED_HISTORY`；以及精确的 `PENDING_ACTION`。生成的 LLM 请求不携带主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。原生动作使用匹配的已记录 `tool/call` 与最新已记录工具 schema。PTC 动作使用匹配的 `tool/code-dispatch-start`；该事件会在策略前快照 inner tool 的名称、描述、参数 schema 与规范化参数。事实缺失、含糊或不一致时会拒绝调用，而不会查询 live 注册表。
 
-direct-user 消息、压缩检查点与当前 `agent-instructions` 可以授权。其他 user-role 内容以及历史原生或 PTC 调用只能作为证据。请求排除 assistant 文本、推理、工具结果、Git 状态、环境变量、平台 metadata 与 shell 方言。如果过滤后的请求仍超出模型上下文、提供方失败，或输出不是恰好一个受支持的 `allow` 或 `deny` JSON 对象，调用会被拒绝。
+只有当前 surface 中 source kind 为 `user` 且拥有自身持久 `rpcId` 的消息文本可以授权。压缩检查点、当前 `agent-instructions`、父 agent 编写的 child prompt、其他 user-role 内容以及历史原生或 PTC 调用只能作为证据。请求排除 assistant 文本、推理、工具结果、Git 状态、环境变量、平台 metadata 与 shell 方言。如果过滤后的请求仍超出模型上下文、提供方失败，或输出不是恰好一个受支持的 `allow` 或 `deny` JSON 对象，调用会被拒绝。
 
 ## 结果与生命周期
 
-Auto 拒绝使用与人工拒绝相同的模型可见错误文本。Tool 结果另行携带 `AutoReviewDeniedError`、`AUTO_REVIEW_DENIED` 与 reviewer 提供的可选 raw string reason。原生 `tool/result` 与 PTC `tool/code-dispatch` 事件为回放和两套 SDK 保留相同的结构化 `error` 字段。Web 工具树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此内置、skill 与外部 Cordis-like 视图都不能遮住拒绝；折叠状态显示 Auto review，展开后的 OUT 行会 trim 原因、折叠换行，并在没有可显示原因时使用本地化 fallback 文案。主 agent 与 PTC 程序绝不会收到 reviewer 原因或 Auto 身份。
+Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工具并说明其主体未执行。Tool 结果另行携带 `AutoReviewDeniedError`、`AUTO_REVIEW_DENIED` 与 reviewer 提供的可选 raw string reason。原生 `tool/result` 与 PTC `tool/code-dispatch` 事件为回放和两套 SDK 保留相同的结构化 `error` 字段。Web 工具树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此内置、skill 与外部 Cordis-like 视图都不能遮住拒绝；折叠状态显示 Auto review，展开后的 OUT 行会 trim 原因、折叠换行，并在没有可显示原因时使用本地化 fallback 文案。主 agent 与 PTC 程序通过普通 Tool 失败行为收到固定的 Auto 拒绝文本，但绝不会收到 reviewer 原因或结构化 Auto 错误身份。
 
-调用方取消沿用普通 Tool 取消结果。被拒绝的 PTC inner call 保留既有 `ToolCallError` 与程序 `catch` 行为，因此被处理的拒绝不会转成外层 `run_code` 失败。允许决定不产生事件、原因或持久 grant。
+调用方取消沿用普通 Tool 的结算优先级：late allow 后观察到的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。被拒绝的 PTC inner call 保留既有 `ToolCallError` 与程序 `catch` 行为，因此被处理的拒绝不会转成外层 `run_code` 失败。允许决定不产生事件、原因或持久 grant。
 
 发布与资源释放均以拒绝方式关闭。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入该 Session 时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 会先关闭新的 Auto 选择与审查准入，并在改变任何预设前捕获正在退出 Auto 的精确 Session 对象身份。监听器会先检查该退役集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放执行。integration 随后通过普通预设写入器把这些会话切换到 Read Only，中止并等待在途审查，最后才移除监听器与 Auto 注册。若有 Session 无法迁移，integration 仍会中止并排空审查，但会保留两项已关闭的注册，使新的 Auto 选择失败，并让退役会话的调用被拒绝，而不是留下未经审查的执行窗口。
 
 ## 验证
 
-单元与集成测试固定五个请求分区、reviewer Session 身份与历史坐标的缺席、授权来源标签、原生与 PTC 动作重建、一次审查基数、审查先于工具主体、严格输出解析、技术故障拒绝、调用方取消、恢复失败与部分迁移时的资源释放顺序。Tool 与客户端套件固定结构化错误传播，以及通用拒绝相对内置、skill 和 Cordis-like keyed 视图的优先级。TypeScript 与 Python SDK fixture 固定原生和 PTC 投影事件中的 `name`、`code` 与 `reason`。真实 DeepSeek e2e runner 以恰好十六次独立 reviewer 调用执行八组配对场景，覆盖读写范围、删除、force push、生产变更、携带 credential 的外部消息、安全控制、检查点授权、项目指令授权与历史调用伪装；工具主体均为无副作用 sentinel。
+单元与集成测试固定五个请求分区、reviewer Session 身份与历史坐标的缺席、仅 direct-user 可授权的来源标签、原生与 PTC 动作重建、一次审查基数、审查先于工具主体、严格输出解析、技术故障拒绝、调用方取消、恢复失败、部分迁移时的资源释放顺序，以及 out-of-process child 的父级委派边界。Tool 与客户端套件固定结构化错误传播，以及通用拒绝相对内置、skill 和 Cordis-like keyed 视图的优先级。TypeScript 与 Python SDK fixture 固定原生和 PTC 投影事件中的 `name`、`code` 与 `reason`。显式启用的真实 DeepSeek 认证以零重试方式精确执行 22 次 reviewer 调用：Flash 运行八组拒绝／允许语义配对并为其中一组追加第二执行路径，Pro 与 Vision 各运行同一组安全配对。这些 case 使用 shipped read、write 与 bash 工具操作隔离的本地文件、本地 bare Git remote、loopback HTTP sink 与权限 fixture；每次拒绝证明没有副作用，每次允许证明精确副作用。
 
 ## 考虑过的替代方案
 
@@ -56,7 +56,7 @@ Auto 拒绝使用与人工拒绝相同的模型可见错误文本。Tool 结果�
 
 ## 后果
 
-用户获得一个当前会话选项，可以在没有沙箱或重复人工提示的情况下批准普通工作，同时仍针对已记录授权检查每项实际调用。主 agent 的提示词、工具 schema、Full access 叙述与拒绝文本保持不变，原生与 PTC 路径共用一个结构化拒绝身份。代价是每项实际调用都会增加一次模型请求，存在概率性的误放行与误拒绝，错误放行后没有额外保护，而且支持边界有意限于 shipped Web。严格的日志输入规则还会在必需历史或 schema 事实不可用时拒绝调用，即使 live 进程状态可以猜测该动作。
+用户获得一个当前会话选项，可以在没有沙箱或重复人工提示的情况下批准普通工作，同时仍针对已记录授权检查每项实际调用。主 agent 的提示词、工具 schema 与 Full access 叙述保持不变；拒绝只会增加固定 Auto 消息，原生与 PTC 路径共用一个结构化拒绝身份。代价是每项实际调用都会增加一次模型请求，存在概率性的误放行与误拒绝，错误放行后没有额外保护，而且支持边界有意限于 shipped Web。严格的日志输入规则还会在必需历史或 schema 事实不可用时拒绝调用，即使 live 进程状态可以猜测该动作。
 
 ## 相关资料
 

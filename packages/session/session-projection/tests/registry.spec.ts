@@ -2,10 +2,9 @@
  * SessionProjectionRegistry unit drive: eager apply on committed events with
  * lazy cell build (registration after events, session after registration),
  * the Object.is no-change gates (same state or raw view reference ⇒ zero
- * change-feed work), explicit same-watermark wire republishing, snapshot
- * consistency (asOfSeq = last event seq; values from the watermark cache),
- * duplicate-key rejection, stateVersion validation, and effect-tied removal
- * of registrations and change listeners (HMR safety).
+ * change-feed work), snapshot consistency (asOfSeq = last event seq; values
+ * from the watermark cache), duplicate-key rejection, stateVersion validation,
+ * and effect-tied removal of registrations and change listeners (HMR safety).
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -176,58 +175,14 @@ describe('SessionProjectionRegistry drive', () => {
   it('notifies onChanged with the validated view and the causing seq, and skips same-reference applies', async () => {
     const { ctx, session } = await harness()
     ctx.sessionProjections.register(marksUnit())
-    const seen: { key: string; value: unknown; seq: number; sessionId: string; publication: string }[] = []
-    ctx.sessionProjections.onChanged((changedSession, key, value, seq, publication) => {
-      seen.push({ key, value, seq, sessionId: String(changedSession.id), publication })
+    const seen: { key: string; value: unknown; seq: number; sessionId: string }[] = []
+    ctx.sessionProjections.onChanged((changedSession, key, value, seq) => {
+      seen.push({ key, value, seq, sessionId: String(changedSession.id) })
     })
     const event = mark(session, ['a'])
     // Non-matching event: apply returns the same reference — no notification.
     session.append('turn/start', { turn: 1 })
-    expect(seen).toEqual([{
-      key: 'test/marks', value: { marks: ['a'] }, seq: event.seq,
-      sessionId: String(session.id), publication: 'change',
-    }])
-  })
-
-  it('republishes one registration wire view at its current watermark without a Session event', async () => {
-    const { ctx, session } = await harness()
-    let suffix = 'before'
-    const definition = marksUnit()
-    definition.wire.view = state => ({ marks: [...(state?.marks ?? []), suffix] })
-    const registration = ctx.sessionProjections.register(definition)
-    mark(session, ['logged'])
-    const eventCount = session.events.length
-    const seen: { value: unknown; seq: number; publication: string }[] = []
-    ctx.sessionProjections.onChanged((_changedSession, _key, value, seq, publication) => {
-      seen.push({ value, seq, publication })
-    })
-
-    suffix = 'after'
-    registration.republish(session)
-
-    expect(session.events).toHaveLength(eventCount)
-    expect(seen).toEqual([{
-      value: { marks: ['logged', 'after'] },
-      seq: session.seq - 1,
-      publication: 'republish',
-    }])
-  })
-
-  it('uses a republished raw view as the identity baseline for the next event', async () => {
-    const { ctx, session } = await harness()
-    let current: MarksView = { marks: ['before'] }
-    const registration = ctx.sessionProjections.register(stableViewUnit(() => current))
-    const publications: string[] = []
-    ctx.sessionProjections.onChanged((_changedSession, key, _value, _seq, publication) => {
-      if (key === 'test/stable-view') publications.push(publication)
-    })
-
-    session.append('turn/start', { turn: 1 })
-    current = { marks: ['after'] }
-    registration.republish(session)
-    session.append('turn/start', { turn: 2 })
-
-    expect(publications).toEqual(['change', 'republish'])
+    expect(seen).toEqual([{ key: 'test/marks', value: { marks: ['a'] }, seq: event.seq, sessionId: String(session.id) }])
   })
 
   it('does not compute a view while no change listener exists', async () => {

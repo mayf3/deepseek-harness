@@ -48,18 +48,18 @@ interface Config {
 
 Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`。本服务固定 `auto` 身份、`danger-full-access` 加 `never` 的组合，以及客户端 label 与 description；调用方不能通过通用 contribution API 发布其他预设。Auto 排列在配置预设之后，绝不会进入 `permission.defaultPreset` 设置 schema，并在 effect dispose 时消失。同步 `admit` 回调会在 Auto 选择修改 Session 前，以及存储的 Auto Session 发布前运行，因此 integration 缺失或正在关闭时不会改写持久身份。
 
-注册或移除 Auto 会在每个 live Session 的当前投影水位显式重新发布完整 `permissions` wire 视图，而且不会追加 Session 事件。Session Controller 会把该帧标记为重新发布，因此客户端的同序列行会被替换，而普通帧与历史 baseline 仍严格采用更高序列胜出规则。
+注册或移除 Auto 会发出无 payload 的 `permission-presets/catalog-changed` 通知。进程级消费方先订阅，再调用 `catalog()`；每次收到通知后重新读取完整的可选目录。`permissions` Session 投影只包含 `currentValue`，因此目录变化不会追加 Session 事件、发布 Session 投影帧或改变 Session 序列。
 
 ## 当前预设与派生的 `custom`
 
 `current(session)` 从必需的 `permissions` 投影派生实际生效的预设。该单元折叠会话的沙箱模式、审批策略和已记录选择；状态内部的缺失值回退到执行器配置的模式与审批服务配置，最后回退到 `ask`。投影 key 缺失时会显式失败。服务优先取仍然匹配的选择，其次取第一个匹配的配置条目，再取固定组合匹配时的 live Auto，否则返回 `CUSTOM_PRESET`（`'custom'`）。`custom` 只是派生值：客户端可以把它显示为当前值，但它绝不是切换目标，也绝不出现在事件 payload 中。
 
-`names` 先按声明顺序列出配置预设，再在 Auto integration 存活时列出 Auto。`optionOf(name)` 为可用 key（label 回退为该 key）或 `custom` 构建客户端渲染的选项，传入其他任何名称都会抛出异常。
+`names` 先按声明顺序列出配置预设，再在 Auto integration 存活时列出 Auto。`catalog()` 把这些可选条目作为一份进程级快照返回。`optionOf(name)` 为可用条目（label 回退为该 key）或派生的 `custom` 展示构建选项，传入其他任何名称都会抛出异常。客户端把目录与 Session 投影合并；`custom` 可以标记当前值，但绝不会成为目录条目。
 
 ```ts type-equiv
-/** The select-option shape a presentation layer advertises for one preset (or for the derived `custom` state). */
+/** One selectable process-level permission preset. */
 interface PresetOption {
-  /** Stable option value: the table key, or `custom`. */
+  /** Stable option value: a configured preset key or the live `auto` contribution. */
   value: string
   /** The display label. */
   name: string
@@ -90,6 +90,12 @@ Owns the deployment's configured permission presets, the fixed Auto integration 
 
 ```ts cordis-catalog
 /**
+ * Read the complete process-level catalog exposed to current-session UI.
+ * @returns every currently selectable preset in contribution order.
+ */
+@Remote('catalog') catalog(): PermissionCatalog
+
+/**
  * Publish the fixed current-session Auto preset for the calling
  * integration's effect lifetime.
  * @param admit - synchronous gate run before live Auto selection or restore.
@@ -106,15 +112,6 @@ registerAuto(admit: () => void): () => Promise<void>
  * @returns the effective preset name, or `custom` when nothing matches.
  */
 current(session: Session): string
-
-/**
- * Build the whole select value for one folded knob state: configured options
- * in declaration order, Auto while live, and
- * `custom` appended exactly while derived.
- * @param state - the folded knob overrides.
- * @returns the `permissions` projection payload.
- */
-selectFor(state: KnobState): PermissionSelect
 
 /**
  * Resolve an available preset's knob bundle.
@@ -145,4 +142,25 @@ set(session: Session, name: string): void
 Types: [Session](session.zh.md)
 
 Source: [`packages/interaction/permission-presets/src/index.ts`](../../packages/interaction/permission-presets/src/index.ts)
+
+<a id="permission-presets-events"></a>
+
+### `permission-presets/*` events
+
+<a id="permission-presetscatalog-changed--emit"></a>
+
+#### `permission-presets/catalog-changed` — emit
+
+The selectable process catalog changed. Payload-free by design: consumers subscribe first, then re-read the complete catalog.
+
+```ts cordis-catalog
+/**
+ * The selectable process catalog changed. Payload-free by design:
+ * consumers subscribe first, then re-read the complete catalog.
+ * @mode emit
+ */
+'permission-presets/catalog-changed'(): void
+```
+
+Source: [`packages/interaction/permission-presets/src/types.ts`](../../packages/interaction/permission-presets/src/types.ts)
 <!-- END GENERATED cordis-surface -->

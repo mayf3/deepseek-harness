@@ -1,15 +1,23 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
-import type { PermissionSelect as PermissionSelectValue } from '@deepseek-ai/dsh-permission-presets/client'
 import { IconChevronDownOutline14, Menu, RiskConfirmation } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ComposerBarProps } from '../contract/slots.ts'
-import { en } from '../locales.ts'
+import type {
+  HostObservable, InjectFace, PropsLocale, PropsRuntime,
+} from '@deepseek-ai/dsh-client-ui-slots'
+import type { PresetOption } from '@deepseek-ai/dsh-permission-presets/client'
+// Type-only: pulls the conversation-owned permission slot declaration and
+// the standard session projection hook into this package's Client face.
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { PermissionCatalogState } from './catalog.ts'
+import { PERMISSION_ACCESS_NS } from './locales.ts'
+import {
+  AUTO_REVIEW_PRESET as AUTO_REVIEW,
+  displayPermissionPreset,
+  FULL_ACCESS_PRESET as FULL_ACCESS,
+} from './presentation.ts'
 import css from './PermissionSelect.module.css'
-
-const FULL_ACCESS = 'danger-full-access'
-const AUTO_REVIEW = 'auto'
 
 /* Shield glyphs (design set 1556): check = read-only, pencil = workspace
    write, exclamation = full access. currentColor so the trigger and menu
@@ -47,108 +55,97 @@ function permissionGlyph(value: string): ReactNode | undefined {
   return permissionGlyphs.get(value)
 }
 
-/**
- * Display transform: built-in machine names render as locale product labels;
- * non-kebab host-configured names pass through.
- */
-function displayName(name: string): string {
-  if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) return name
-  return name.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')
-}
-
-const BUILT_IN_PERMISSION_NAMES = new Map<string, string>([
-  ['read-only', en['access.preset.readOnly']],
-  ['workspace-write', en['access.preset.workspaceWrite']],
-  [FULL_ACCESS, en['access.preset.fullAccess']],
-])
-
 function permissionLabel(
   value: string,
   name: string,
-  t: ComposerBarProps['t'],
+  t: PermissionSelectProps['t'],
 ): string {
-  if (value === AUTO_REVIEW) return t('access.autoLabel')
-  const builtInName = BUILT_IN_PERMISSION_NAMES.get(value)
-  if (builtInName !== undefined && (name === value || name === builtInName)) {
-    if (value === 'read-only') return t('access.preset.readOnly')
-    if (value === 'workspace-write') return t('access.preset.workspaceWrite')
-    if (value === FULL_ACCESS) return t('access.preset.fullAccess')
-  }
-  return displayName(name)
+  if (value === AUTO_REVIEW) return t('auto.label')
+  return displayPermissionPreset(value, name, key => t(key))
 }
 
-function optionBadge(value: string, t: ComposerBarProps['t']): string | undefined {
-  return value === AUTO_REVIEW ? t('access.experimentalBadge') : undefined
+function optionBadge(value: string, t: PermissionSelectProps['t']): string | undefined {
+  return value === AUTO_REVIEW ? t('auto.badge') : undefined
 }
 
 /** Resolve locale-owned copy for the shipped Auto option; preserve host copy for other presets. */
 function optionDescription(
-  option: PermissionSelectValue['options'][number],
-  t: ComposerBarProps['t'],
+  option: PresetOption,
+  t: PermissionSelectProps['t'],
 ): string | undefined {
-  return option.value === AUTO_REVIEW ? t('access.autoDescription') : option.description
+  return option.value === AUTO_REVIEW ? t('auto.description') : option.description
 }
 
-export interface PermissionSelectProps {
-  value: PermissionSelectValue | undefined
-  locked: boolean
-  command: (line: string) => Promise<boolean>
-  /** The owning bar's locale seat, passed down as a plain prop. */
-  t: ComposerBarProps['t']
+/** Business face injected by the permission package's slot registration. */
+export interface PermissionSelectInjected {
+  hooks: {
+    /** One process catalog shared with the slash popup. */
+    permissionCatalog: HostObservable<PermissionCatalogState>
+  }
+  /** Submit one current-session preset through the existing command writer. */
+  select: (preset: string) => Promise<boolean>
 }
 
-export function PermissionSelect({ value, locked, command, t }: PermissionSelectProps) {
+/** Complete props derived from the conversation slot, injected hooks, and locale. */
+export type PermissionSelectProps =
+  PropsRuntime<'conversation.input.permission'>
+  & InjectFace<PermissionSelectInjected>
+  & PropsLocale<typeof PERMISSION_ACCESS_NS>
+
+export function PermissionSelect({
+  locked, select, usePermissionCatalog, useProjection, t,
+}: PermissionSelectProps) {
+  const selection = useProjection('permissions')
+  const catalog = usePermissionCatalog(state => state.value)
   const [pick, setPick] = useState<string | null>(null)
   const [open, setOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<string | null>(null)
   const [acknowledged, setAcknowledged] = useState(false)
 
   useEffect(() => {
-    if (!locked && value !== undefined) return
+    if (!locked && selection !== undefined && catalog !== null) return
     setOpen(false)
     setAcknowledged(false)
     setConfirmation(null)
-  }, [locked, value])
+  }, [catalog, locked, selection])
 
-  if (value === undefined) return null
+  if (selection === undefined || catalog === null) return null
 
-  const currentValue = pick ?? value.currentValue
-  const current = value.options.find(option => option.value === currentValue)
+  const currentValue = pick ?? selection.currentValue
+  const current = catalog.options.find(option => option.value === currentValue)
   const currentLabel = current === undefined
     ? permissionLabel(currentValue, currentValue, t)
     : permissionLabel(current.value, current.name, t)
   const busy = pick !== null || confirmation !== null
 
-  const items: MenuEntry[] = value.options
-    .filter(o => o.value !== 'custom')
-    .map((option) => {
-      const icon = permissionGlyph(option.value)
-      const label = permissionLabel(option.value, option.name, t)
-      const badge = optionBadge(option.value, t)
-      return {
-        id: option.value,
-        label: badge === undefined
-          ? label
-          : (
-            <span className={css.optionLabel} aria-label={`${label} ${badge}`}>
-              <span className={css.optionLabelText}>{label}</span>
-              <sup className={css.badge}>{badge}</sup>
-            </span>
-          ),
-        ...icon === undefined ? {} : { icon },
-      }
-    })
+  const items: MenuEntry[] = catalog.options.map((option) => {
+    const icon = permissionGlyph(option.value)
+    const label = permissionLabel(option.value, option.name, t)
+    const badge = optionBadge(option.value, t)
+    return {
+      id: option.value,
+      label: badge === undefined
+        ? label
+        : (
+          <span className={css.optionLabel} aria-label={`${label} ${badge}`}>
+            <span className={css.optionLabelText}>{label}</span>
+            <sup className={css.badge}>{badge}</sup>
+          </span>
+        ),
+      ...icon === undefined ? {} : { icon },
+    }
+  })
 
   const submit = (id: string): void => {
     setPick(id)
-    void command(`/permission ${id}`)
+    void select(id)
       .catch(() => false)
       .then(() => { setPick(null) })
   }
 
   const choose = (id: string): void => {
     setOpen(false)
-    if (id === value.currentValue) return
+    if (id === selection.currentValue) return
     if (id === FULL_ACCESS || id === AUTO_REVIEW) {
       setAcknowledged(false)
       setConfirmation(id)
@@ -162,32 +159,30 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
     setConfirmation(null)
   }
 
-  const confirmSelection = (): void => {
-    if (locked || !acknowledged || confirmation === null) return
-    const id = confirmation
+  const confirmSelection = (id: string): void => {
     closeConfirmation()
     submit(id)
   }
 
   const confirmationTitle = confirmation === AUTO_REVIEW
-    ? t('access.autoConfirm.title')
-    : t('access.confirm.title')
+    ? t('auto.confirm.title')
+    : t('confirm.title')
   const confirmationDescription = confirmation === AUTO_REVIEW
-    ? t('access.autoConfirm.description')
-    : t('access.confirm.description')
+    ? t('auto.confirm.description')
+    : t('confirm.description')
   const confirmationAcknowledge = confirmation === AUTO_REVIEW
-    ? t('access.autoConfirm.acknowledge')
-    : t('access.confirm.acknowledge')
+    ? t('auto.confirm.acknowledge')
+    : t('confirm.acknowledge')
   const confirmationEnable = confirmation === AUTO_REVIEW
-    ? t('access.autoConfirm.enable')
-    : t('access.confirm.enable')
+    ? t('auto.confirm.enable')
+    : t('confirm.enable')
   const currentBadge = optionBadge(currentValue, t)
   const currentAccessibleLabel = currentBadge === undefined ? currentLabel : `${currentLabel} ${currentBadge}`
 
   return (
     <>
       <Menu
-        className={css.menu ?? ''}
+        className={css.menu as string}
         open={open}
         items={items}
         selectedId={currentValue}
@@ -198,7 +193,7 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
           <button
             type="button"
             className={css.trigger}
-            aria-label={t('input.accessMode', { name: currentAccessibleLabel })}
+            aria-label={t('mode', { name: currentAccessibleLabel })}
             title={current === undefined ? undefined : optionDescription(current, t)}
             disabled={locked || busy}
             onClick={() => { setOpen(!open) }}
@@ -216,20 +211,22 @@ export function PermissionSelect({ value, locked, command, t }: PermissionSelect
           </button>
         }
       />
-      <RiskConfirmation
-        open={confirmation !== null}
-        title={confirmationTitle}
-        description={confirmationDescription}
-        acknowledgeLabel={confirmationAcknowledge}
-        cancelLabel={t('access.confirm.cancel')}
-        closeLabel={t('close')}
-        confirmLabel={confirmationEnable}
-        acknowledged={acknowledged}
-        disabled={locked}
-        onAcknowledgedChange={setAcknowledged}
-        onCancel={closeConfirmation}
-        onConfirm={confirmSelection}
-      />
+      {confirmation !== null && (
+        <RiskConfirmation
+          open
+          title={confirmationTitle}
+          description={confirmationDescription}
+          acknowledgeLabel={confirmationAcknowledge}
+          cancelLabel={t('confirm.cancel')}
+          closeLabel={t('close')}
+          confirmLabel={confirmationEnable}
+          acknowledged={acknowledged}
+          disabled={locked}
+          onAcknowledgedChange={setAcknowledged}
+          onCancel={closeConfirmation}
+          onConfirm={() => { confirmSelection(confirmation) }}
+        />
+      )}
     </>
   )
 }

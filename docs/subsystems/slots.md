@@ -147,6 +147,7 @@ root
 │  ├─ conversation.composer.bar
 │  │  ├─ conversation.input.attachments
 │  │  ├─ conversation.input.plan
+│  │  ├─ conversation.input.permission
 │  │  └─ conversation.input.model
 │  ├─ conversation.input.overlay
 │  ├─ conversation.input.dock

@@ -3,12 +3,10 @@
  * session-projection subsystem page, docs/subsystems/session-projection.md):
  * the host is the only computation site; the client holds finished
  * whole values per key — `key → { value, seq }` — seeded by a follow opening
- * baseline and updated by Session Controller `projection` frames. Ordinary
- * frames and history baselines use **higher seq wins**; an explicit republish
- * frame and a replacement control baseline may replace an equal-seq row. No
- * client-side domain folding exists: a domain ships projection support with
- * zero client code. Per-key bare observable faces feed `useProjection`
- * (ui-renderer binds them).
+ * baseline and updated by Session Controller `projection` frames,
+ * under the single rule **higher seq wins**. No client-side domain folding
+ * exists: a domain ships projection support with zero client code. Per-key
+ * bare observable faces feed `useProjection` (ui-renderer binds them).
  */
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
@@ -67,11 +65,9 @@ interface Channel {
 
 /**
  * One session's projection values. Framework semantics, uniform across every
- * key: a history baseline seeds rows at its cut, a push frame updates one row,
- * and in both ordinary paths a lower-or-equal seq loses — a replayed frame
- * cannot regress a value, and a stale history baseline cannot overwrite a
- * newer frame. Explicit republish frames and replacement control baselines
- * are authoritative at an equal sequence. A key the store has
+ * key: a baseline seeds rows at its cut, a push frame updates one row, and in
+ * both paths a lower-or-equal seq loses — a replayed frame cannot regress a
+ * value, a stale baseline cannot overwrite a newer frame. A key the store has
  * never seen reads `undefined` (capability absent). Faces are identity-stable
  * per key (create-on-demand, cached) so the React side binds each exactly
  * once; the store-level channel (`subscribeAny`) serves coarse consumers (the
@@ -133,11 +129,10 @@ export class ProjectionValueStore {
    * @param key - projection key.
    * @param value - whole value computed by the host unit.
    * @param seq - the unit's watermark at emission.
-   * @param republish - whether this frame explicitly replaces an equal-seq row.
    */
-  apply(key: string, value: unknown, seq: number, republish = false): void {
+  apply(key: string, value: unknown, seq: number): void {
     const row = this.rows.get(key)
-    if (row !== undefined && (seq < row.seq || (seq === row.seq && !republish))) return
+    if (row !== undefined && seq <= row.seq) return // higher seq wins; replays and stale frames drop
     this.rows.set(key, { value, seq })
     this.changed(key)
   }
@@ -146,8 +141,8 @@ export class ProjectionValueStore {
    * Seed from a history tail page's projections block: every carried key
    * lands under the same seq rule as frames; a key the block omits is
    * capability-absent as of the cut — its row clears unless a newer frame
-   * already reached or superseded the cut (a stale or equal-cut history
-   * baseline can neither overwrite nor clear existing values).
+   * already superseded the cut (a stale baseline can neither overwrite nor
+   * clear newer values).
    * @param baseline - the response's projections block.
    */
   seed(baseline: ProjectionsBaseline): void {
@@ -157,28 +152,23 @@ export class ProjectionValueStore {
     for (const key of Object.keys(values)) this.apply(key, values[key], baseline.asOfSeq)
     for (const [key, row] of this.rows) {
       if (Object.hasOwn(values, key)) continue
-      if (row.seq >= baseline.asOfSeq) continue
+      if (row.seq > baseline.asOfSeq) continue
       this.rows.delete(key)
       this.changed(key)
     }
   }
 
   /**
-   * Replace this Session's rows from a new control-stream generation. The
-   * baseline is authoritative even at an equal sequence, and rows beyond its
-   * cut describe process state the Host lost before persisting it, so every
-   * omitted row is cleared and every carried row is installed at the cut.
-   * @param baseline - complete control-stream projection baseline.
+   * Drop rows beyond a replacement control baseline. Such rows describe
+   * process state the Host lost before persisting it and would otherwise
+   * outrank recomputed lower-seq values forever. The caller seeds the new
+   * baseline immediately afterward.
+   * @param lastSeq - highest durable sequence reflected by the baseline.
    */
-  seedControl(baseline: ProjectionsBaseline): void {
-    const values = baseline.values as Record<string, unknown>
-    for (const key of [...this.rows.keys()]) {
-      if (Object.hasOwn(values, key)) continue
+  truncate(lastSeq: number): void {
+    for (const [key, row] of this.rows) {
+      if (row.seq <= lastSeq) continue
       this.rows.delete(key)
-      this.changed(key)
-    }
-    for (const [key, value] of Object.entries(values)) {
-      this.rows.set(key, { value, seq: baseline.asOfSeq })
       this.changed(key)
     }
   }

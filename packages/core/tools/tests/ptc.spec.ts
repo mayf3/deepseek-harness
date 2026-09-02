@@ -1056,6 +1056,69 @@ describe('the run_code dispatch bridge', () => {
     })
   })
 
+  it('an uncaught tools/pre-execute deny fails the program without changing the inner error identity', async () => {
+    const { ctx, runtime } = await setup({ mode: 'ptc' })
+    const calls = registerEcho(ctx)
+    ctx.on('tools/pre-execute', (exec, next) => {
+      if (exec.name === 'echo') {
+        return Promise.resolve({
+          kind: 'deny' as const,
+          reason: 'not on my watch',
+          info: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'exact denial' },
+        })
+      }
+      return next()
+    })
+    const { agent, events } = fakeAgent()
+    runtime.behavior = async (request) => {
+      await request.bindings[0]!.functions.echo!({ value: 'x' })
+      return { logs: [], value: 'unreachable' }
+    }
+
+    const result = await runCode(ctx, 'await tools.echo({ value: "x" })', { agent })
+
+    expect(result.isError).toBe(true)
+    const modelContent = result.content[0]
+    expect(modelContent?.type).toBe('text')
+    expect(modelContent?.type === 'text' ? modelContent.text : '').toContain('not on my watch')
+    expect(result.isError && result.error.info?.code).not.toBe('AUTO_REVIEW_DENIED')
+    expect(calls).toEqual([])
+    const settle = events.find(event => event.type === 'tool/code-dispatch')
+    expect(settle?.data).toMatchObject({
+      name: 'echo',
+      isError: true,
+      error: { name: 'AutoReviewDeniedError', code: 'AUTO_REVIEW_DENIED', reason: 'exact denial' },
+    })
+  })
+
+  it('maps a PTC pre-execute cancellation to the canonical binding rejection', async () => {
+    const { ctx, runtime } = await setup({ mode: 'ptc' })
+    const calls = registerEcho(ctx)
+    ctx.on('tools/pre-execute', (exec, next) =>
+      exec.name === 'echo' ? Promise.resolve({ kind: 'cancel' as const }) : next())
+    const { agent, events } = fakeAgent()
+    runtime.behavior = async (request) => {
+      try {
+        await request.bindings[0]!.functions.echo!({ value: 'x' })
+        return { logs: [], value: 'unreachable' }
+      } catch (error: unknown) {
+        return { logs: [], value: error instanceof Error ? error.message : String(error) }
+      }
+    }
+
+    const result = await runCode(ctx, 'program', { agent })
+
+    expect(result.isError).toBe(false)
+    expect(result.content[0]).toEqual({ type: 'text', text: 'tool call aborted before dispatch' })
+    expect(calls).toEqual([])
+    const settle = events.find(event => event.type === 'tool/code-dispatch')
+    expect(settle?.data).toMatchObject({
+      name: 'echo',
+      isError: true,
+      error: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH },
+    })
+  })
+
   it('rejects a binding argument that is not lossless JSON, dispatching nothing', async () => {
     const { ctx, runtime } = await setup({ mode: 'ptc' })
     const calls = registerEcho(ctx)

@@ -484,8 +484,6 @@ export interface SessionProjectionUpdate {
   readonly key: string
   readonly value: JsonValue
   readonly seq: number
-  /** Present only when the Host intentionally republishes a changed wire view at the same watermark. */
-  readonly republish?: true
 }
 
 /** Host-wide live state stream. Each generation starts with exactly one baseline. */

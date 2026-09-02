@@ -1139,6 +1139,32 @@ describe('ToolRuntime', () => {
     expect(dispatched).toBe(0)
   })
 
+  it('maps an explicit pre-execute cancellation to the canonical before-dispatch result', async () => {
+    const ctx = await setup()
+    let dispatched = 0
+    ctx.tools.register({
+      ...echoTool,
+      name: 'cancelled-by-policy',
+      async execute() { dispatched += 1; return [] },
+    })
+    ctx.on('tools/pre-execute', async () => ({ kind: 'cancel' }))
+
+    await expect(ctx.tools.execute({
+      callId: ToolCallId('cancelled-by-policy'),
+      name: 'cancelled-by-policy',
+      arguments: {},
+      signal: new AbortController().signal,
+    })).resolves.toEqual({
+      content: [{ type: 'text', text: 'Error: tool call aborted before dispatch' }],
+      isError: true,
+      error: {
+        message: 'tool call aborted before dispatch',
+        info: { name: 'AbortError', code: TOOL_ABORTED_BEFORE_DISPATCH },
+      },
+    })
+    expect(dispatched).toBe(0)
+  })
+
   it('preserves a pre-execute denial that settles after cancellation', async () => {
     const ctx = await setup()
     let dispatched = 0

@@ -6,15 +6,16 @@
  * intent when two presets share a bundle. The Auto review integration may
  * publish one fixed, current-session-only preset with a synchronous admission
  * check; settings defaults remain limited to the configured table. The read
- * side ships as the `permissions` session projection; the write side ships as
- * the `/permission` command.
+ * side exposes a process catalog plus the current-value-only `permissions`
+ * Session projection; the write side ships as the `/permission` command.
  *
  * @module dsh-permission-presets
  */
 
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { SANDBOX_MODES, setSandboxMode } from '@deepseek-ai/dsh-sandbox-policy'
@@ -27,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 // Type-only: resolves the required projection service and optional settings/command children.
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type {} from '@deepseek-ai/dsh-commands'
-import type { PermissionSelect, PresetOption } from './types.ts'
+import type { PermissionCatalog, PermissionSelection, PresetOption } from './types.ts'
 
 export type * from './types.ts'
 
@@ -174,7 +175,7 @@ export interface Config {
  * `ctx.approval`; unmatched knob values are reported as
  * {@link CUSTOM_PRESET}, not an error.
  */
-export class PermissionPresetService extends Service {
+export class PermissionPresetService extends TypertRemoteService {
   // Inline schema call: the config catalog walks `static Config` statically.
   static Config: z<Config> = z.object({
     presets: z.dict(z.object({
@@ -199,7 +200,6 @@ export class PermissionPresetService extends Service {
 
   private readonly presets: Record<string, PresetSpec>
   private autoAdmit: (() => void) | undefined
-  private readonly permissionsRegistration: (() => void) & { republish(session: Session): void }
   private defaultSettings: () => PermissionSettings
 
   constructor(ctx: Context, config: Config) {
@@ -242,25 +242,16 @@ export class PermissionPresetService extends Service {
       })
     })
 
-    // zod `.optional()` types the key `string | undefined` while the domain
-    // says `description?: string`; on the JSON wire the two serialize
-    // identically (absent), so the cast records exactly that
-    // exactOptionalPropertyTypes widening (the Wire<T> precedent).
-    const selectSchema = zod.object({
-      options: zod.array(zod.object({
-        value: zod.string().min(1),
-        name: zod.string().min(1),
-        description: zod.string().optional(),
-      })),
+    const selectionSchema = zod.object({
       currentValue: zod.string().min(1),
-    }) as unknown as zod.ZodType<PermissionSelect>
-    this.permissionsRegistration = ctx.sessionProjections.register({
+    }) as zod.ZodType<PermissionSelection>
+    ctx.sessionProjections.register({
       key: 'permissions',
       stateVersion: 2,
       stateSchema: permissionStateSchema,
       init: () => ({ ...EMPTY_KNOBS, seeded: false }),
       apply: applyPermissionEvent,
-      wire: { viewSchema: selectSchema, view: state => this.selectFor(state) },
+      wire: { viewSchema: selectionSchema, view: state => ({ currentValue: this.derive(state) }) },
     })
     ctx.on('session/created', (session) => {
       this.pinInitialPermission(session)
@@ -288,7 +279,7 @@ export class PermissionPresetService extends Service {
           if (!this.names.includes(name)) {
             return { kind: 'error', text: `unknown preset "${name}" (available: ${this.names.join(', ')})` }
           }
-          this.apply(agent.session, name, (policy) =>{  this.ctx.approval.setPolicy(agent, policy) })
+          this.apply(agent.session, name, (policy) => { this.ctx.approval.setPolicy(agent, policy) })
           return { kind: 'success', text: `preset ${name}` }
         },
       })
@@ -305,6 +296,15 @@ export class PermissionPresetService extends Service {
   }
 
   /**
+   * Read the complete process-level catalog exposed to current-session UI.
+   * @returns every currently selectable preset in contribution order.
+   */
+  @Remote('catalog')
+  catalog(): PermissionCatalog {
+    return { options: this.names.map(name => this.optionOf(name)) }
+  }
+
+  /**
    * Publish the fixed current-session Auto preset for the calling
    * integration's effect lifetime.
    * @param admit - synchronous gate run before live Auto selection or restore.
@@ -314,10 +314,10 @@ export class PermissionPresetService extends Service {
     return this.ctx.effect(() => {
       if (this.autoAdmit !== undefined) throw new Error('permission: preset "auto" is already registered')
       this.autoAdmit = admit
-      this.republishPermissions()
+      this.emitCatalogChanged()
       return () => {
         this.autoAdmit = undefined
-        this.republishPermissions()
+        this.emitCatalogChanged()
       }
     }, 'permissionPresets.registerAuto()')
   }
@@ -366,24 +366,6 @@ export class PermissionPresetService extends Service {
   }
 
   /**
-   * Build the whole select value for one folded knob state: configured options
-   * in declaration order, Auto while live, and
-   * `custom` appended exactly while derived.
-   * @param state - the folded knob overrides.
-   * @returns the `permissions` projection payload.
-   */
-  selectFor(state: KnobState): PermissionSelect {
-    const currentValue = this.derive(state)
-    return {
-      options: [
-        ...this.names.map(name => this.optionOf(name)),
-        ...currentValue === CUSTOM_PRESET ? [this.optionOf(CUSTOM_PRESET)] : [],
-      ],
-      currentValue,
-    }
-  }
-
-  /**
    * Resolve an available preset's knob bundle.
    * @param name - the preset name to resolve.
    * @returns the configured bundle.
@@ -419,7 +401,7 @@ export class PermissionPresetService extends Service {
    * @param name - the preset to switch to; unknown names throw.
    */
   set(session: Session, name: string): void {
-    this.apply(session, name, (policy) =>{  setApprovalPolicy(session, policy) })
+    this.apply(session, name, (policy) => { setApprovalPolicy(session, policy) })
   }
 
   /** Apply one preset with the caller-selected live or initialization policy writer. */
@@ -476,9 +458,20 @@ export class PermissionPresetService extends Service {
     }
   }
 
-  /** Republish the dynamic permissions wire view for every live Session. */
-  private republishPermissions(): void {
-    for (const session of this.ctx.sessions.list()) this.permissionsRegistration.republish(session)
+  /** Publish a non-vetoing payload-free catalog invalidation. */
+  private emitCatalogChanged(): void {
+    for (const listener of this.ctx.events.dispatch('emit', ['permission-presets/catalog-changed']) as Array<() => unknown>) {
+      try {
+        const returned = listener()
+        if (returned != null && typeof (returned as PromiseLike<unknown>).then === 'function') {
+          void Promise.resolve(returned as PromiseLike<unknown>).catch((error: unknown) => {
+            this.ctx.logger.warn(`permission: catalog-changed listener failed: ${error instanceof Error ? error.message : String(error)}`)
+          })
+        }
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`permission: catalog-changed listener failed: ${error instanceof Error ? error.message : String(error)}`)
+      }
+    }
   }
 
   /** Resolve one configured or currently live fixed preset without throwing. */
