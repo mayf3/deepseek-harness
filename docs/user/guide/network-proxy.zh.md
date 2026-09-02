@@ -13,7 +13,7 @@ export HTTP_PROXY=http://127.0.0.1:7890
 
 把这两行写进 shell 配置，这样每次调用 `dsh` 都会继承它们。DSH 还会读取启动目录与 `$DSH_HOME` 下的 `.env` 文件，因此只对某个项目生效的代理可以写在那里；真实环境变量始终优先于文件。
 
-需要凭据的代理把凭据写在 URL 里：`http://user:password@proxy.example:8080`。DSH 绝不会回显密码——诊断信息中出现的代理会显示用户名并掩去其余部分。
+需要凭据的代理把凭据写在 URL 里：`http://user:password@proxy.example:8080`。DSH 绝不会回显这个 URL：诊断只点名被拒绝的变量，因此用户名和密码都不会出现在任何地方。
 
 ## 为什么浏览器走代理、终端却不走
 
@@ -37,7 +37,7 @@ DSH 不读取操作系统的代理设置。请导出环境变量，或使用 TUN
 export NO_PROXY=internal.example.com,.corp.example.com,registry.local
 ```
 
-一个条目可匹配精确主机、`.suffix` 或 `*.suffix` 域名、可选的 `:port`，或用 `*` 匹配全部。
+一个条目写的是主机名，它连同其下所有子域名一起匹配：`NO_PROXY=example.com` 也会让 `api.example.com` 直连。前缀 `.` 或 `*.` 可以写，含义相同。条目可带 `:port`，`*` 则放行全部。
 
 **CIDR 网段不生效。** 操作系统的绕过列表常含 `10.0.0.0/8` 或 `192.168.0.0/16` 这类条目；把它们复制进 `NO_PROXY` 不会有任何效果。请改用主机名或域名后缀。
 

@@ -24,8 +24,8 @@ let active: ProxyPolicy | undefined
 /**
  * The proxy environment as the user exported it, or `undefined` when no policy is installed.
  *
- * Owned by the OUTERMOST install: a nested one — the plugin mounted over the launcher's policy —
- * would otherwise record the outer policy's published values as if the user had written them, and
+ * Owned by the OUTERMOST install: one layered over the launcher's would otherwise record the outer
+ * policy's published values as if the user had written them, and
  * hand every child a normalization the user never asked for.
  *
  * {@link proxyEnvironmentForChild} keeps a value the user set rather than the one this process resolved from
@@ -201,9 +201,9 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
  * not swapped for the HTTP one this package fell back to for that scheme.
  *
  * A scheme the user named in neither casing carries the resolved value instead of being removed.
- * Without that the child's routing silently diverges from its parent's: `NODE_USE_ENV_PROXY` reads
- * neither `ALL_PROXY` nor a proxy that came from `cordis.yml`, so the child would connect directly
- * while the parent proxies.
+ * Without that the child's routing silently diverges from its parent's: `NODE_USE_ENV_PROXY` does
+ * not read `ALL_PROXY`, so a child of a parent that resolved its proxy from that name would connect
+ * directly while the parent proxies.
  *
  * The bypass list is always the resolved one. It only ever adds the loopback entries to what
  * the user wrote, so nothing is lost, and the child stops sending its own localhost traffic to a

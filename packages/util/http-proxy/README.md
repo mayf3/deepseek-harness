@@ -72,13 +72,13 @@ A proxy value the package cannot use — a SOCKS or PAC URL, an unparseable stri
 
 | File | Holds |
 |---|---|
-| `src/policy.ts` | Resolution, bypass matching, and redaction. Imports no transport, so it stays loadable where undici is absent. |
+| `src/policy.ts` | Resolution and bypass matching; a diagnostic names the variable, never its value. Imports no transport, so it stays loadable where undici is absent. |
 | `src/install.ts` | The global dispatcher, the active-policy record, the route, and the child environment. Imports undici dynamically. |
 | `src/index.ts` | The package face: four functions and one type. |
 
 ### Bypass matching
 
-An entry matches an exact host, a `.suffix` or `*.suffix` domain, an optional `:port`, or `*` for everything. A bracketed or bare IPv6 literal matches either way — a bare `::1` is *not* read as host `:` port `1`, which is how undici's own matcher fails and why the resolved list carries both `::1` and `[::1]`. CIDR is not matched: an operating system's bypass list often carries `10.0.0.0/8`, which has to be rewritten as suffixes.
+An entry names a host and matches it together with every subdomain under it: `NO_PROXY=example.com` also bypasses `api.example.com`. A leading `.` or `*.` is accepted and means the same thing. An entry may carry a `:port`, and `*` bypasses everything. A bracketed or bare IPv6 literal matches either way — a bare `::1` is *not* read as host `:` port `1`, which is how undici's own matcher fails and why the resolved list carries both `::1` and `[::1]`. CIDR is not matched: an operating system's bypass list often carries `10.0.0.0/8`, which has to be rewritten as suffixes.
 
 -----
 

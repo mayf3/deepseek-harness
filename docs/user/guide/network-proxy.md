@@ -13,7 +13,7 @@ export HTTP_PROXY=http://127.0.0.1:7890
 
 Put both lines in your shell profile so every `dsh` invocation inherits them. DSH also reads a `.env` file in the launch directory and in `$DSH_HOME`, so a proxy that should apply to one project can live there instead; a real environment variable always wins over a file.
 
-A proxy that needs credentials takes them in the URL: `http://user:password@proxy.example:8080`. DSH never prints the password back — a proxy it reports in a diagnostic shows the username and masks the rest.
+A proxy that needs credentials takes them in the URL: `http://user:password@proxy.example:8080`. DSH never prints the URL back: a diagnostic names the variable it rejected, so neither the username nor the password appears anywhere.
 
 ## Why your browser is proxied but your terminal is not
 
@@ -37,7 +37,7 @@ DSH does not read the operating system's proxy settings. Export the variables, o
 export NO_PROXY=internal.example.com,.corp.example.com,registry.local
 ```
 
-An entry matches an exact host, a `.suffix` or `*.suffix` domain, an optional `:port`, or `*` for everything.
+An entry names a host and matches it together with every subdomain under it: `NO_PROXY=example.com` also sends `api.example.com` direct. A leading `.` or `*.` is accepted and means the same thing. An entry may carry a `:port`, and `*` bypasses everything.
 
 **CIDR ranges do not work.** An operating system bypass list often contains entries like `10.0.0.0/8` or `192.168.0.0/16`; copying those into `NO_PROXY` has no effect. Use host names or domain suffixes instead.
 

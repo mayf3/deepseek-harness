@@ -36,7 +36,7 @@ This keeps `proxyForUrl()` and the dispatcher answering from one set of values. 
 
 **Resolution supplies what neither Node nor undici does.** `ALL_PROXY` backs both schemes; a blank value counts as unset, because undici's `??` chain lets an empty lowercase name shadow a populated uppercase one; loopback is always bypassed, since the Web UI, the Connection transport, and every local test server would otherwise route through the proxy and loop. The bypass list carries `::1` *and* `[::1]`: undici's own matcher reads a bare `::1` as host `:` port `1` and never exempts it.
 
-**Rejection is loud or quiet by where the value came from, and never reroutes the refused scheme.** A slot the user filled and this package refused keeps that scheme direct rather than falling through to `ALL_PROXY` or the HTTP proxy, so the diagnostic and the route agree. A SOCKS URL, an unparseable string, or an unsupported scheme *from the environment* is reported on stderr and skipped — that variable may have been exported for other tools, and a typo in it must not stop the agent from starting. The same value through the plugin's `Config` throws at load, because that is the harness's own configuration surface, where `AGENTS.md` requires misconfiguration to fail loud.
+**Rejection is quiet, and never reroutes the refused scheme.** A slot the user filled and this package refused keeps that scheme direct rather than falling through to `ALL_PROXY` or the HTTP proxy, so the diagnostic and the route agree. A SOCKS URL, an unparseable string, or an unsupported scheme is reported on stderr and skipped — the variable may have been exported for other tools, and a typo in it must not stop the agent from starting. The environment is the only source, so no configuration surface exists where `AGENTS.md`'s fail-loud rule would apply instead.
 
 **Through a proxy, `web_fetch` stops resolving and pinning.** The provider validates a public address set and pins the connection to it. Through a proxy there is nothing to pin — the proxy performs the origin's DNS — and a pinned direct connection would bypass the proxy entirely. So a proxied hop skips resolution, and configuring a proxy is a statement that the proxy is trusted with destination selection. A hop the policy bypasses, which includes every loopback and every `NO_PROXY` entry, takes the resolved-and-pinned path unchanged. Kimi Code and Claude Code reached this same conclusion independently.
 
@@ -74,7 +74,7 @@ Weighed against that, telemetry is the one outbound channel whose loss costs the
 
 ## Consequences
 
-A user who exports `HTTPS_PROXY`, or writes it into a `.env` layer, is proxied everywhere the harness makes a request, with no flag and no configuration. Compositions that want the policy in `cordis.yml` mount the plugin; it is in no shipped bundle, so the default path installs exactly once.
+A user who exports `HTTPS_PROXY`, or writes it into a `.env` layer, is proxied everywhere the harness makes a request, with no flag and no configuration. The launcher installs it exactly once, before the first plugin mounts.
 
 Because the operating system's settings are not read, the user-facing documentation is now load-bearing rather than supplementary: a user who only toggled "system proxy" in a proxy application gets nothing and no diagnostic. `docs/user/guide/network-proxy.md` therefore states which variables to export and why a browser is proxied when a terminal is not — the three-mechanism confusion is the single most common report, and it is not specific to this harness.
 
@@ -82,7 +82,7 @@ Because the operating system's settings are not read, the user-facing documentat
 
 Reaching Node's built-in `fetch` from a userland undici depends on both writing the legacy `Symbol.for('undici.globalDispatcher.1')` slot. That is an implicit cross-version coupling rather than a contract — corepack#834 records it breaking — so `tests/install.spec.ts` drives a real request through a loopback proxy. A version bump that breaks the coupling fails there instead of in the field.
 
-The suite is hermetic against the developer's own environment: `plugin.spec.ts` saves and clears all eight proxy names in both casings. It has to. An exported lowercase `all_proxy` decided a test's outcome during development, because resolution reads lowercase first.
+The suite is hermetic against the developer's own environment: every Vitest configuration runs `scripts/test-proxy-environment.ts`, which clears all eight proxy names in both casings before any test, and `install.spec.ts` restores the machine's values around each case that sets its own. It has to. An exported lowercase `all_proxy` decided a test's outcome during development, because resolution reads lowercase first.
 
 ## Testing
 

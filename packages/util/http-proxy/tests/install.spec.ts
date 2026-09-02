@@ -215,8 +215,8 @@ describe('proxyRouteFor', () => {
     // very agent the branch described, so no second read can put the two on different routes.
     expect(route.dispatcher).toBe(getGlobalDispatcher())
     const undici = await import('undici')
-    // Unmounting the plugin under an in-flight request is what a hot reload does. The shared
-    // dispatcher is closed, not destroyed, so the hop that already left finishes.
+    // Disposing the install while a request is in flight: the shared dispatcher is closed, not
+    // destroyed, so the hop that already left finishes.
     const inFlight = undici.fetch(proxyTarget, { dispatcher: route.dispatcher })
     await dispose()
     await expect((await inFlight).text()).resolves.toBe('VIA-PROXY')
@@ -307,7 +307,7 @@ describe('proxyEnvironmentForChild', () => {
     await withCleanProxyEnv(async () => {
       // The user exported one name, in one casing.
       process.env.HTTP_PROXY = proxyUrl
-      // The launcher installs first; mounting the plugin installs a second policy over it.
+      // The launcher installs first; a second `installProxyFromEnvironment` layers another policy over it.
       const outer = await install(env({ HTTP_PROXY: proxyUrl, HTTPS_PROXY: proxyUrl, NO_PROXY: 'example.com' }))
       try {
         const inner = await install(env({ HTTP_PROXY: nestedUrl, HTTPS_PROXY: nestedUrl }))

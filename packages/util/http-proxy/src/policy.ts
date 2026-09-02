@@ -1,6 +1,6 @@
 /**
  * Proxy policy resolution: the pure, transport-free half of this package. It turns the launch
- * environment plus optional configuration into one {@link ProxyPolicy}, and answers which proxy
+ * environment into one {@link ProxyPolicy}, and answers which proxy
  * (if any) a given URL goes through.
  *
  * Nothing here imports `undici`, so the module stays loadable in the browser-worker runtime that
@@ -82,7 +82,7 @@ export const DIRECT_POLICY: ProxyPolicy = { noProxy: '', source: 'none' }
 export interface ProxyDiagnostic {
   /** `socks` for a SOCKS or PAC URL this package cannot route; `invalid` for anything unparseable. */
   readonly kind: 'socks' | 'invalid'
-  /** Where the rejected value came from: an environment variable name, or `config.<field>`. */
+  /** The environment variable that supplied the rejected value. */
   readonly origin: string
   /** Operator-facing sentence naming the rejection and the way forward. Carries no credential. */
   readonly message: string
@@ -118,7 +118,7 @@ function readEnv(
 }
 
 /**
- * What one environment or configuration slot supplied. A rejected slot is distinct from an absent
+ * What one environment variable supplied. A rejected slot is distinct from an absent
  * one: the user named a proxy for that scheme, so falling back to another scheme's proxy would route
  * the request somewhere they never asked for while the diagnostic said it stayed direct.
  */
@@ -188,7 +188,7 @@ function resolveScheme(own: ProxyCandidate, ...fallbacks: (string | undefined)[]
  * Merge {@link LOOPBACK_NO_PROXY} into a bypass list, preserving the caller's entries and order.
  * A list of `*` already bypasses everything and is returned unchanged.
  *
- * @param noProxy - the bypass list as the environment or configuration supplied it.
+ * @param noProxy - the bypass list as the environment supplied it.
  * @returns the effective bypass list.
  */
 function withLoopback(noProxy: string | undefined): string {
@@ -254,8 +254,10 @@ export function isLoopbackHost(hostname: string): boolean {
 }
 
 /**
- * Decide whether a bypass list exempts one URL. Entries match an exact host, a `.suffix` or
- * `*.suffix` domain, an optional `:port`, or `*` for everything. CIDR notation is not matched —
+ * Decide whether a bypass list exempts one URL. An entry names a host and matches it together with
+ * every subdomain under it — `example.com` also bypasses `api.example.com` — and a leading `.` or
+ * `*.` is accepted as the same thing; an entry may carry a `:port`, and `*` bypasses everything.
+ * CIDR notation is not matched —
  * an operating system's bypass list often carries `10.0.0.0/8`, which must be rewritten as suffixes.
  *
  * @param noProxy - the effective bypass list.
