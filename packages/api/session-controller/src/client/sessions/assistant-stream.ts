@@ -17,6 +17,11 @@ interface ActiveAttempt {
   nextIndex: number
 }
 
+interface PendingAssistantMessage {
+  readonly entry: SessionLiveEventEntry
+  readonly sourceEventSeqs: readonly number[] | undefined
+}
+
 /** One Web publication decision from the assistant stream fold. */
 export type ClientAssistantStreamResult =
   | { readonly type: 'publish'; readonly entry: SessionLiveEventEntry }
@@ -38,7 +43,7 @@ function sameSeqs(left: readonly number[], right: readonly number[]): boolean {
 export class ClientAssistantStream {
   private readonly attempts = new Map<string, ActiveAttempt>()
   private readonly pendingChunks = new Map<number, SessionLiveEventEntry>()
-  private readonly pendingMessages = new Map<string, SessionLiveEventEntry>()
+  private readonly pendingMessages = new Map<string, PendingAssistantMessage>()
   private publishedSeqs = new Set<number>()
 
   /**
@@ -81,6 +86,7 @@ export class ClientAssistantStream {
       const attempt = this.attemptFor(event.data.turn, event.data.step)
       if (attempt === undefined) return this.publish(entry)
       if (attempt.legacyChunkSeqs.has(event.seq)) return this.publish(entry)
+      if (this.pendingChunks.has(event.seq)) return { type: 'rebaseline' }
       this.pendingChunks.set(event.seq, entry)
       return undefined
     }
@@ -88,7 +94,9 @@ export class ClientAssistantStream {
       if (event.surfaceOp !== 'append') return this.publish(entry)
       const attempt = this.attemptFor(event.data.turn, event.data.step)
       if (attempt === undefined) return this.publish(entry)
-      this.pendingMessages.set(positionKey(event.data.turn, event.data.step), entry)
+      const key = positionKey(event.data.turn, event.data.step)
+      if (this.pendingMessages.has(key)) return { type: 'rebaseline' }
+      this.pendingMessages.set(key, { entry, sourceEventSeqs: event.sourceEventSeqs })
       return undefined
     }
     return this.publish(entry)
@@ -112,7 +120,11 @@ export class ClientAssistantStream {
         return undefined
       case 'chunk': {
         const attempt = this.attempts.get(String(frame.attemptId))
-        if (attempt === undefined || frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
+        // A controller mounted after the Host saw this attempt has no start
+        // frame to reconstruct. Its durable events already publish directly;
+        // ignore the transient suffix until the next known attempt.
+        if (attempt === undefined) return undefined
+        if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         attempt.nextIndex += 1
         attempt.legacyChunkSeqs.add(frame.legacyChunkSeq)
         if (this.publishedSeqs.has(frame.legacyChunkSeq)) return undefined
@@ -124,23 +136,22 @@ export class ClientAssistantStream {
       case 'end': {
         const attempt = this.attempts.get(String(frame.attemptId))
         this.attempts.delete(String(frame.attemptId))
-        if (attempt === undefined) return { type: 'rebaseline' }
+        if (attempt === undefined) return undefined
         if (frame.index !== attempt.nextIndex) return { type: 'rebaseline' }
         if (!sameSeqs([...attempt.legacyChunkSeqs], frame.legacyChunkSeqs)) {
           return { type: 'rebaseline' }
         }
         const key = positionKey(attempt.turn, attempt.step)
-        const entry = this.pendingMessages.get(key)
-        if (entry === undefined) {
+        const pending = this.pendingMessages.get(key)
+        if (pending === undefined) {
           return frame.outcome === 'aborted' ? undefined : { type: 'rebaseline' }
         }
-        if (entry.event.type !== 'assistant/message') return { type: 'rebaseline' }
-        const sourceEventSeqs = entry.event.sourceEventSeqs
+        const sourceEventSeqs = pending.sourceEventSeqs
         if (sourceEventSeqs === undefined || !sameSeqs(sourceEventSeqs, frame.legacyChunkSeqs)) {
           return { type: 'rebaseline' }
         }
         this.pendingMessages.delete(key)
-        return this.publish(entry)
+        return this.publish(pending.entry)
       }
     }
   }

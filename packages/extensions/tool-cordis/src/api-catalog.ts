@@ -1435,7 +1435,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         signature: '@Remote({ mode: \'stream\' }) follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame>',
         description: 'Follow one Session log from its opening or resume cursor.',
         parameters: [{ name: 'request', description: 'durable address and last committed sequence already held by the caller.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
-        returns: 'a complete opening snapshot followed by gap-free event frames.',
+        returns: 'a complete opening snapshot followed by gap-free durable event frames and optional cursorless assistant-stream frames.',
       },
       {
         signature: '@Remote({ mode: \'stream\' }) control(signal: AbortSignal): AsyncIterable<SessionControlFrame>',

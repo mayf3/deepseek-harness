@@ -380,80 +380,88 @@ export class ReactLoopAgent implements Agent {
         liveStarted = true
         for await (const chunk of stream) {
           signal.throwIfAborted()
-          const legacyChunkSeq = this.session.append('assistant/chunk', { turn, step, chunk }).seq
-          chunkSeqs.push(legacyChunkSeq)
-          assembler.push(chunk)
-          live.push(chunk, legacyChunkSeq)
+          const durable = this.session.append('assistant/chunk', { turn, step, chunk })
+          chunkSeqs.push(durable.seq)
+          assembler.push(durable.data.chunk)
+          live.push(durable.data.chunk, durable.seq)
         }
         signal.throwIfAborted()
       } catch (error: unknown) {
-        if (signal.aborted) {
-          const content = assembler.interruptedBlocks()
-          if (content.length > 0) {
-            this.session.append('assistant/message', {
-              turn,
-              step,
-              message: createAssistantMessage({
-                content,
-                source: { provider: request.provider, model: request.model },
-              }),
-              interrupted: true,
-              ...assembler.usage === undefined ? {} : { usage: assembler.usage },
-            }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+        try {
+          if (signal.aborted) {
+            const content = assembler.interruptedBlocks()
+            if (content.length > 0) {
+              this.session.append('assistant/message', {
+                turn,
+                step,
+                message: createAssistantMessage({
+                  content,
+                  source: { provider: request.provider, model: request.model },
+                }),
+                interrupted: true,
+                ...assembler.usage === undefined ? {} : { usage: assembler.usage },
+              }, { surfaceOp: 'append', sourceEventSeqs: chunkSeqs })
+            }
           }
+        } finally {
+          if (liveStarted) live.end('aborted')
         }
-        if (liveStarted) live.end('aborted')
         throw error
       }
-      const finish = assembler.finish
-      if (finish.kind === 'error' || finish.kind === 'aborted') {
-        live.end('aborted')
-        const action = await this.dispatch.waterfall(
-          'agent/request-error', {
+      try {
+        const finish = assembler.finish
+        if (finish.kind === 'error' || finish.kind === 'aborted') {
+          live.end('aborted')
+          const action = await this.dispatch.waterfall(
+            'agent/request-error', {
+              turn,
+              step,
+              provider: request.provider,
+              failure: finish.failure,
+              retryPolicy: preparedCall?.retryPolicy,
+              signal,
+            },
+            () => Promise.resolve<RequestErrorAction>(undefined),
+          )
+          signal.throwIfAborted()
+          if (action?.kind !== 'retry') {
+            throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
+          }
+          continue
+        }
+
+        const message = createAssistantMessage({
+          content: assembler.blocks(),
+          source: {
+            provider: request.provider,
+            model: request.model,
+            ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
+          },
+        })
+        this.session.append(
+          'assistant/message',
+          {
             turn,
             step,
-            provider: request.provider,
-            failure: finish.failure,
-            retryPolicy: preparedCall?.retryPolicy,
-            signal,
+            message,
+            ...assembler.usage === undefined ? {} : { usage: assembler.usage },
           },
-          () => Promise.resolve<RequestErrorAction>(undefined),
+          { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
         )
-        signal.throwIfAborted()
-        if (action?.kind !== 'retry') {
-          throw new LlmError(finish.failure.message, finish.failure.code, finish.failure)
-        }
-        continue
+        live.end('committed')
+        if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
+
+        const toolCalls = message.content.filter(block => block.type === 'tool-call')
+        if (toolCalls.length === 0) return { kind: 'completed' }
+        const { concluded } = await executeToolCalls(
+          this.loopCtx, turn, step, toolCalls, signal,
+          context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
+        )
+        return concluded ? { kind: 'completed' } : null
+      } catch (error: unknown) {
+        if (!live.ended) live.end('aborted')
+        throw error
       }
-
-      const message = createAssistantMessage({
-        content: assembler.blocks(),
-        source: {
-          provider: request.provider,
-          model: request.model,
-          ...assembler.replayState !== undefined ? { replayState: assembler.replayState } : {},
-        },
-      })
-      this.session.append(
-        'assistant/message',
-        {
-          turn,
-          step,
-          message,
-          ...assembler.usage === undefined ? {} : { usage: assembler.usage },
-        },
-        { surfaceOp: 'append', sourceEventSeqs: chunkSeqs },
-      )
-      live.end('committed')
-      if (finish.kind === 'max-tokens') return { kind: 'max-tokens' }
-
-      const toolCalls = message.content.filter(block => block.type === 'tool-call')
-      if (toolCalls.length === 0) return { kind: 'completed' }
-      const { concluded } = await executeToolCalls(
-        this.loopCtx, turn, step, toolCalls, signal,
-        context => this.inbox.splice('next-step', this.inbox.nextStep.length, 0, [context]),
-      )
-      return concluded ? { kind: 'completed' } : null
     }
   }
 

@@ -8,8 +8,12 @@ import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session'
 export class AssistantStreamAttempt {
   private readonly legacyChunkSeqs: SessionSeq[] = []
   private index = 0
+  private terminal = false
   /** Process-local attempt identity. */
   readonly attemptId: LlmAttemptId
+
+  /** Whether this started attempt has emitted its terminal frame. */
+  get ended(): boolean { return this.terminal }
 
   /**
    * @param sessionId - identity embedded only in the process-local attempt id.
@@ -55,8 +59,9 @@ export class AssistantStreamAttempt {
     })
   }
 
-  /** Publish terminal settlement after the matching durable assistant message commits. */
+  /** Publish terminal settlement; `committed` follows its durable assistant message. */
   end(outcome: 'committed' | 'aborted'): void {
+    this.terminal = true
     this.emit({
       type: 'end',
       attemptId: this.attemptId,
