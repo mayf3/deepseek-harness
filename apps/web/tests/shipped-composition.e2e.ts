@@ -93,6 +93,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
       "mode": "normal",
       "retryableCodes": [
         "EMPTY_RESPONSE",
+        "MALFORMED_TOOL_CALL",
         "RATE_LIMIT",
         "SERVER",
         "TIMEOUT",
@@ -126,6 +127,7 @@ it('assembles the shipped Web transport, catalog, guidance, and defaults', async
       "mode": "normal",
       "retryableCodes": [
         "EMPTY_RESPONSE",
+        "MALFORMED_TOOL_CALL",
         "RATE_LIMIT",
         "SERVER",
         "TIMEOUT",
