@@ -18,12 +18,16 @@ describe('Web snapshot generation filenames', () => {
   it('selects the highest parent and child generations without counting retained inputs twice', async () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
     roots.push(root)
-    for (const name of [
-      'session.jsonl',
-      'session.v2.jsonl',
-      'session.1.jsonl',
-      'session.1.v1.jsonl',
-    ]) await writeFile(join(root, name), '')
+    for (const [name, version] of [
+      ['session.jsonl', 0],
+      ['session.v2.jsonl', 2],
+      ['session.1.jsonl', 0],
+      ['session.1.v1.jsonl', 1],
+    ] as const) {
+      await writeFile(join(root, name), `${JSON.stringify({
+        type: 'session', version, id: '{{session:1}}', createdAt: 0, delegationDepth: 0,
+      })}\n`)
+    }
 
     await expect(selectedSessionFixture(join(root, 'session.jsonl')))
       .resolves.toBe(join(root, 'session.v2.jsonl'))
@@ -37,8 +41,10 @@ describe('Web snapshot generation filenames', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-web-fixture-generations-'))
     roots.push(root)
 
-    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+    await expect(selectedSessionFixture(join(root, 'session.jsonl'), true))
       .resolves.toBe(join(root, 'session.jsonl'))
+    await expect(selectedSessionFixture(join(root, 'session.jsonl')))
+      .rejects.toThrow('missing parent session fixture')
   })
 
   it('records beside an older generation and preserves the parent or child role', () => {

@@ -1466,15 +1466,19 @@ export async function assertFixtureInventory(dir: string, expected: string[]): P
   const entries = (await readdir(dir)).sort()
   const ownsManifest = entries.includes('snapshot.yml')
   const artifacts = entries.filter(name => name !== 'snapshot.yml')
-  expect(artifacts).toEqual([...expected].sort())
+  const roleInventory = (names: readonly string[]): string[] => [...new Set(names.map((name) => {
+    const fixture = parseSessionFixtureName(name)
+    return fixture === undefined ? name : sessionFixtureName(fixture.index, 0)
+  }))].sort()
+  expect(roleInventory(artifacts)).toEqual(roleInventory(expected))
   if (ownsManifest) {
     const manifestPath = join(dir, 'snapshot.yml')
     const manifest = parseSnapshotManifest(await readFile(manifestPath, 'utf8'), manifestPath)
     expect(manifest.profile).toBe('web')
     if (manifest.session === undefined) {
       expect(
-        artifacts.includes('session.jsonl'),
-        `${dir}: session owner must carry session.jsonl`,
+        artifacts.some(name => parseSessionFixtureName(name)?.index === 0),
+        `${dir}: session owner must carry a canonical parent Session fixture`,
       ).toBe(true)
     } else {
       expect(existsSync(resolve(dir, manifest.session.source)), `${dir}: session source`).toBe(true)
