@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包为 Web GUI 中两种生命周期提供权限预设表面：通用设置中的一行选择之后创建会话所用的默认值，但不会切换当前会话；挂在宿主 `/permission` 命令上的选择器则通过一张扁平的实时预设列表切换当前会话，并标记 active 值。规范内置名称渲染为 locale 所有的产品标签，显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case，仅限当前会话的 `auto` contribution 显示为带 `EXP` badge 的 `Auto review`。通过任一表面选择完全权限，或通过可见选择器选择 Auto review 时，都必须分别显式确认对应风险；已经带参数的 `/permission <preset>` 命令仍直接执行。两个表面通过宿主命令或设置 owner 写入，而当前会话投影仍是选择器与 composer chip 的权威值。
+本包为 Web GUI 中两种生命周期提供权限预设表面：通用设置中的一行选择之后创建会话所用的默认值，但不会切换当前会话；挂在宿主 `/permission` 命令上的选择器则通过一张扁平的实时预设列表切换当前会话，并标记 active 值。规范内置名称渲染为 locale 所有的产品标签，显式 host 标签保持原样，未知 kebab-case 名称渲染为 Title Case，仅限当前会话的 `auto` contribution 显示为带 `EXP` badge 的 `Auto review`。通过任一表面选择完全权限，或通过可见选择器选择 Auto review 时，都必须分别显式确认对应风险；已经带参数的 `/permission <preset>` 命令仍直接执行。两个表面通过宿主命令或设置 owner 写入。进程级 `permissionPresets` 目录拥有可选项，而当前会话投影只拥有 picker 与 composer chip 使用的 active 值。
 
 ## 目录
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` Settings 描述符，并携带描述符 revision 写入一条 `settings.mutate` 路径操作；其 observable 经 slot 系统的 `hooks` compartment 传递，因此 React 钩子绑定归渲染器，推送失效通知会重新获取描述符。该值只在之后创建会话时读取。当前会话表面是挂在宿主 `/permission` 命令上的 popupSelect 装饰（`ctx.commandUi.decorate`）：宿主命令保留斜杠菜单行、带参路径与持久生命周期记账，装饰只把裸调用替换为选择器。选项与 active 标记读取会话的 `permissions` 投影——与 composer chip 渲染的同一份宿主计算 select。Full access 与 Auto review 各自携带本地化的 `confirmation` 载荷；Auto 还携带由共享 popup 外壳渲染的 badge。
+General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` Settings 描述符，并携带描述符 revision 写入一条 `settings.mutate` 路径操作；其 observable 经 slot 系统的 `hooks` compartment 传递，因此 React 钩子绑定归渲染器，推送失效通知会重新获取描述符。该值只在之后创建会话时读取。当前会话表面是挂在宿主 `/permission` 命令上的 popupSelect 装饰（`ctx.commandUi.decorate`）：宿主命令保留斜杠菜单行、带参路径与持久生命周期记账，装饰只把裸调用替换为选择器。一个进程级目录会在首次 Remote 读取前订阅无 payload 的目录通知，只发布当前连接代际中最新的完整成功结果；同代失败保留最后完整值，连接 reset 则先清空。它的公共状态只有 `{ value }`，失败仅供命令式加载内部使用。slash popup 与 composer seat 共用这份目录，而 Session `permissions` 投影只提供 `currentValue`。Full access 与 Auto review 各自携带本地化确认文案；Auto 还携带由共享 popup 外壳渲染的 badge。
 
 </details>
 
@@ -56,7 +56,7 @@ General Settings 行经 `ctx.settingsScope` 读取显式暴露的 `permission` S
 
 - [dsh-permission-presets](../../interaction/permission-presets/README.zh.md)——这些表面写入的宿主侧权限预设策略。
 - [ui-commands](../ui-commands/README.zh.md)——`/permission` 装饰注册进的 popupSelect 外壳。
-- [ui-conversation](../ui-conversation/README.zh.md)——渲染同一份权限投影的 composer chip。
+- [ui-conversation](../ui-conversation/README.zh.md)——把这份共享目录与 Session 当前值合并的 composer seat。
 - [客户端包映射](../README.zh.md)——相邻的浏览器 UI 包。
 
 -----

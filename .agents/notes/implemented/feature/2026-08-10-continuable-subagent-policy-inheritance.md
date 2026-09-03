@@ -14,6 +14,8 @@ The capture/append pair moved from the one-shot driver into the seam's shared ch
 
 `startContinuable` captures before its first await (`prepareContinuable`), the same "a later parent switch belongs to the parent's future" boundary as one-shot. The snapshot travels in `MaterializeInputs.create`, so only fresh materialization appends the events during unpublished setup, after any fork seed. A cold resume passes no `create` inputs and appends nothing: the persisted child log already carries the delegation events, and replaying the log IS the state. The durable child log — not the current Activation, not the resuming parent — owns the child's effective policy, so a parent switch between residency epochs never retroactively changes a durable child.
 
+The Auto reviewer also rebuilds medium-risk task context from facts already owned by that durable child log: the creation prompt after the descriptor boundary, later `agent-message` entries authenticated by `senderSessionId === parentSession`, and durable human messages. Human restrictions outrank parent adjustments, unresolved conflicts fail closed, and high-risk calls remain denied regardless of either instruction source. Cold resume reads those same existing facts; it does not need delegation provenance, a review receipt, parent call metadata, or a new Session version.
+
 ## Alternatives considered
 
 - **A generic child-setup contribution** — rejected: a contribution receives only the child context, so it cannot capture the parent's overrides at the delegation boundary; applying it on cold resume as well as fresh creation would re-append or re-capture; and nothing ties its capture to the start call's synchronous prefix, so the pre-await capture guarantee would be lost.
@@ -24,6 +26,7 @@ The capture/append pair moved from the one-shot driver into the seam's shared ch
 ## Consequences
 
 - Default-bundle background delegation (`backgroundMode: continuable`) now inherits a parent's Auto identity when selected and its explicit sandbox override, and pins the child to `'never'` approvals; compositions without the optional policy services behave unchanged.
+- Every supported native or PTC inner call in that child is still reviewed independently: low is allowed, medium depends on the reconstructed child task and human limits, and high is denied.
 - `dsh-subagent` gains optional peer types on `dsh-permission-presets`, `dsh-sandbox-policy`, and `dsh-user-approval` (the `ctx.get` pattern the one-shot driver used); `dsh-subagent-in-process-driver` drops its policy-service peers and type imports entirely and delegates to the shared helpers.
 - The continuable suite (`packages/subagent/subagent/tests/continuation-inheritance.spec.ts`) pins Auto identity, fresh-start seeding, pre-await capture, default omission, cold-resume snapshot stability, and fork-seed precedence; the ACP snapshot scenario `subagent-continuable-inheritance` pins the child's delegation event and read-only runtime context through the assembled app and fails when the capture is removed.
 - Out-of-process providers (`acp`, `dsh-sdk`, `claude-code`, `codex`) support no continuable children (`prepareContinuable` absent), and their one-shot children keep their own deployment policy (`inheritsParentContext = false`); cross-process policy propagation remains out of scope.

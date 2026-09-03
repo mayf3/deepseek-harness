@@ -18,7 +18,9 @@ interface PtcDispatchIdentity {
 
 /** Payload recorded when one nested PTC mode Tool dispatch starts, including the dispatched schema snapshot. */
 export interface PtcDispatchStartEventData extends PtcDispatchIdentity {
+  /** Description of the dispatched tool captured before policy runs. */
   description: string
+  /** Parameters schema of the dispatched tool captured before policy runs. */
   parameters: Record<string, unknown>
 }
 
@@ -34,9 +36,10 @@ declare module '@deepseek-ai/dsh-session/types' {
     /**
      * One sub-dispatch STARTING inside a `run_code` program: the parent
      * `run_code` call id, the deterministic sub-call id (`<parent>:code:<n>`,
-     * numbered in submission order), and the tool `name` with its
-     * JSON-normalized `arguments` — the exact value dispatched, normalized
-     * BEFORE dispatch, so this append can never fail on payload shape.
+     * numbered in submission order), and the tool `name`, `description`,
+     * `parameters` schema, and JSON-normalized `arguments` — the exact
+     * definition and value dispatched, captured BEFORE policy and normalized
+     * so this append can never fail on payload shape.
      * Appended when the scheduler actually starts the call (not at
      * submission), so a start means the tool body pipeline was entered; a
      * call abandoned in the queue logs nothing. Log-only: `deriveMessages()`

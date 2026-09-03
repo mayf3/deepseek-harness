@@ -126,7 +126,7 @@ resolve(name: string): PresetSpec
  * A missing label falls back to the preset key.
  * @param name - a configured preset key, live `auto`, or `custom`.
  * @returns the option a client renders.
- * @throws when `name` is neither a table key nor `custom`.
+ * @throws when `name` is neither a configured preset, live `auto`, nor `custom`.
  */
 optionOf(name: string): PresetOption
 

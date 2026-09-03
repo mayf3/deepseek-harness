@@ -182,7 +182,6 @@ export function PermissionSelect({
   return (
     <>
       <Menu
-        className={css.menu as string}
         open={open}
         items={items}
         selectedId={currentValue}

@@ -70,8 +70,9 @@ describe('web e2e: Full access confirmation', () => {
     const currentMenuBox = await currentMenu.boundingBox()
     expect(currentTriggerBox).not.toBeNull()
     expect(currentMenuBox).not.toBeNull()
-    expect(Math.abs(currentMenuBox!.width - currentTriggerBox!.width)).toBeLessThan(1)
-    expect(Math.abs(currentMenuBox!.y + currentMenuBox!.height - currentTriggerBox!.y)).toBeLessThan(1)
+    expect(Math.abs(currentMenuBox!.width - 218)).toBeLessThan(1)
+    expect(currentMenuBox!.width).toBeGreaterThan(currentTriggerBox!.width)
+    expect(Math.abs(currentTriggerBox!.y - currentMenuBox!.y - currentMenuBox!.height - 4)).toBeLessThan(1)
 
     await currentMenu.getByRole('menuitem', { name: 'Auto review EXP' }).click()
     const autoDialog = page.getByRole('dialog', { name: '确认启用 Auto review（实验）？' })
@@ -108,8 +109,9 @@ describe('web e2e: Full access confirmation', () => {
     const composerBox = await page.locator('[data-composer-card]').first().boundingBox()
     expect(slashPickerBox).not.toBeNull()
     expect(composerBox).not.toBeNull()
-    expect(Math.abs(slashPickerBox!.width - composerBox!.width)).toBeLessThan(1)
-    expect(Math.abs(slashPickerBox!.y + slashPickerBox!.height - composerBox!.y)).toBeLessThan(1)
+    expect(slashPickerBox!.width).toBeGreaterThanOrEqual(220)
+    expect(composerBox!.width - slashPickerBox!.width).toBeGreaterThan(1)
+    expect(Math.abs(composerBox!.y - slashPickerBox!.y - slashPickerBox!.height - 4)).toBeLessThan(1)
 
     await slashPicker.getByRole('option', { name: 'Auto review EXP' }).click()
     const slashDialog = page.getByRole('dialog', { name: '确认启用 Auto review（实验）？' })

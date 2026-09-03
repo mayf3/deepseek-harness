@@ -884,7 +884,7 @@ Source: [`packages/core/session/src/types.ts:308`](../packages/core/session/src/
 'tool/code-dispatch': PtcDispatchEventData
 ```
 
-Source: [`packages/core/tools/src/types.ts:63`](../packages/core/tools/src/types.ts)
+Source: [`packages/core/tools/src/types.ts:66`](../packages/core/tools/src/types.ts)
 
 <a id="toolcode-dispatch-start--log-only"></a>
 
@@ -894,9 +894,10 @@ Source: [`packages/core/tools/src/types.ts:63`](../packages/core/tools/src/types
 /**
  * One sub-dispatch STARTING inside a `run_code` program: the parent
  * `run_code` call id, the deterministic sub-call id (`<parent>:code:<n>`,
- * numbered in submission order), and the tool `name` with its
- * JSON-normalized `arguments` — the exact value dispatched, normalized
- * BEFORE dispatch, so this append can never fail on payload shape.
+ * numbered in submission order), and the tool `name`, `description`,
+ * `parameters` schema, and JSON-normalized `arguments` — the exact
+ * definition and value dispatched, captured BEFORE policy and normalized
+ * so this append can never fail on payload shape.
  * Appended when the scheduler actually starts the call (not at
  * submission), so a start means the tool body pipeline was entered; a
  * call abandoned in the queue logs nothing. Log-only: `deriveMessages()`
@@ -907,7 +908,7 @@ Source: [`packages/core/tools/src/types.ts:63`](../packages/core/tools/src/types
 'tool/code-dispatch-start': PtcDispatchStartEventData
 ```
 
-Source: [`packages/core/tools/src/types.ts:47`](../packages/core/tools/src/types.ts)
+Source: [`packages/core/tools/src/types.ts:50`](../packages/core/tools/src/types.ts)
 
 <a id="toolresult--surface"></a>
 

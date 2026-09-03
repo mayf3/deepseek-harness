@@ -886,7 +886,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'tool/code-dispatch': PtcDispatchEventData
 ```
 
-来源：[`packages/core/tools/src/types.ts:63`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/tools/src/types.ts:66`](../packages/core/tools/src/types.ts)
 
 <a id="toolcode-dispatch-start--log-only"></a>
 
@@ -896,9 +896,10 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /**
  * One sub-dispatch STARTING inside a `run_code` program: the parent
  * `run_code` call id, the deterministic sub-call id (`<parent>:code:<n>`,
- * numbered in submission order), and the tool `name` with its
- * JSON-normalized `arguments` — the exact value dispatched, normalized
- * BEFORE dispatch, so this append can never fail on payload shape.
+ * numbered in submission order), and the tool `name`, `description`,
+ * `parameters` schema, and JSON-normalized `arguments` — the exact
+ * definition and value dispatched, captured BEFORE policy and normalized
+ * so this append can never fail on payload shape.
  * Appended when the scheduler actually starts the call (not at
  * submission), so a start means the tool body pipeline was entered; a
  * call abandoned in the queue logs nothing. Log-only: `deriveMessages()`
@@ -909,7 +910,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'tool/code-dispatch-start': PtcDispatchStartEventData
 ```
 
-来源：[`packages/core/tools/src/types.ts:47`](../packages/core/tools/src/types.ts)
+来源：[`packages/core/tools/src/types.ts:50`](../packages/core/tools/src/types.ts)
 
 <a id="toolresult--surface"></a>
 

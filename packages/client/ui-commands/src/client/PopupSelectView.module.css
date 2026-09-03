@@ -6,11 +6,9 @@
   /* The overlay anchor is a zero-height strip on the composer card's top
      edge; entries float themselves above it (same rule as MenuView). */
   position: absolute;
-  bottom: 100%;
+  bottom: calc(100% + 4px);
   left: 0;
-  right: 0;
   z-index: 100;
-  box-sizing: border-box;
   padding: 4px;
   display: flex;
   flex-direction: column;

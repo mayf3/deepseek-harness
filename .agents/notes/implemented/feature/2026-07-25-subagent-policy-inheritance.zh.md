@@ -14,6 +14,8 @@ Auto 预设身份以及沙箱与审批覆盖项都是按会话的日志折叠。
 
 继承的 Auto 身份会成为一条 `permission/preset` 事件，捕获的沙箱与审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，并在子 agent 公布时进入遥测，却不改变其谱系 cut。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
 
+Auto review 不会把这条继承的 preset 事件变成授权回执。每次 child 调用仍会重新分类：低风险本地观察直接允许；中风险工作只有在符合 child 既有创建 prompt、来自其直接父级且已核验的后续消息，并且不违反 durable human 限制时才可能允许；高风险工作始终拒绝。`parentSession`、创建 prompt 与既有 `agent-message.senderSessionId` 足以在 one-shot、continuable 与 cold resume 路径中恢复这份上下文；不会新增父 call id、解析后的任务 metadata、delegation provenance、review receipt 或 Session format migration。
+
 普通的会话追加会在发布前校验继承事件，持久化层则在会话公布时捕获完整的未发布日志。因此，任何已物化的子 agent 日志都会在首批数据中存下继承事件；不存在第二套策略存储、schema 字段或查询索引。`source: 'delegation'` 标记让审批叙述能够区分继承与子 agent 侧的用户切换。
 
 ### 被拦住的子 agent 会经历什么
@@ -32,5 +34,6 @@ Auto 预设身份以及沙箱与审批覆盖项都是按会话的日志折叠。
 ## 后果
 
 - spawn、fork 和嵌套的进程内子 agent 会在父级选中 Auto 时保留其身份，保留父级显式的沙箱覆盖项，并被钉定为 `'never'` 审批。聚焦测试套件证明 Auto 身份、真实文件系统拒绝、陈旧 fork 优先级、委派时捕获、实时事件边界、默认值省略与上下文释放。
+- 在 Auto 下，这些 child 仍会为每次调用重新获得 low／medium／high 决定。human 指令在中风险动作上优先于直接父级任务调整，而且两种来源都不能授权高风险动作。
 - 无密钥 headless 快照是组装后应用层面的回归测试：只有父级是 `read-only`，部署默认值是 `workspace-write`；若移除捕获，子 agent 的持久化事件与被拒的磁盘写入这两项检查都会失败。
 - 每次委派最多增加三条仅日志事件。权限预设、沙箱策略与审批这三项服务的可选 peer 类型由 `dsh-subagent` 拥有——其共享辅助函数持有 `ctx.get` 消费；未组合这些服务的组合保持原有行为。进程外子 agent 仍采用自身的部署策略，正在运行的子 agent 不跟随父级后续切换。

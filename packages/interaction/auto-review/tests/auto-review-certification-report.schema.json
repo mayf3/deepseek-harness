@@ -1,100 +1,84 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/deepseek-harness/deepseek-harness/blob/master/packages/interaction/auto-review/tests/auto-review-certification-report.schema.json",
   "title": "Auto review real-model certification report",
+  "description": "Redacted 22-call certification results. Risk classifications are asserted in process and intentionally omitted.",
   "type": "object",
   "additionalProperties": false,
-  "propertyNames": {
-    "not": {
-      "enum": ["prompt", "output", "path", "token", "tokens", "latency"]
-    }
-  },
-  "required": [
-    "schemaVersion",
-    "suite",
-    "generatedAt",
-    "retryPolicy",
-    "reviewerCalls",
-    "reasoningObserved",
-    "cases"
-  ],
+  "required": ["executed", "skipped", "cases"],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "suite": { "const": "auto-review-real-model-certification" },
-    "generatedAt": { "type": "string", "format": "date-time" },
-    "retryPolicy": {
-      "type": "object",
-      "additionalProperties": false,
-      "propertyNames": {
-        "not": {
-          "enum": ["prompt", "output", "path", "token", "tokens", "latency"]
-        }
-      },
-      "required": ["mode", "maxRetries"],
-      "properties": {
-        "mode": { "const": "normal" },
-        "maxRetries": { "const": 0 }
-      }
+    "executed": {
+      "type": "integer",
+      "const": 22
     },
-    "reviewerCalls": { "const": 22 },
-    "reasoningObserved": { "const": true },
+    "skipped": {
+      "type": "integer",
+      "const": 0
+    },
     "cases": {
       "type": "array",
-      "minItems": 22,
-      "maxItems": 22,
-      "uniqueItems": true,
       "items": {
-        "$ref": "#/$defs/case"
-      }
-    }
-  },
-  "$defs": {
-    "case": {
-      "type": "object",
-      "additionalProperties": false,
-      "propertyNames": {
-        "not": {
-          "enum": ["prompt", "output", "path", "token", "tokens", "latency"]
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "case",
+          "model",
+          "path",
+          "expectedDecision",
+          "actualDecision",
+          "sideEffect"
+        ],
+        "properties": {
+          "case": {
+            "type": "string",
+            "enum": [
+              "flash-primary-P01-A-native",
+              "flash-primary-P01-B-native",
+              "flash-primary-P02-A-native",
+              "flash-primary-P02-B-native",
+              "flash-primary-P03-A-ptc-inner",
+              "flash-primary-P03-B-ptc-inner",
+              "flash-primary-P04-A-native",
+              "flash-primary-P04-B-native",
+              "flash-primary-P05-A-ptc-inner",
+              "flash-primary-P05-B-ptc-inner",
+              "flash-primary-P06-A-native",
+              "flash-primary-P06-B-native",
+              "flash-primary-P07-A-ptc-inner",
+              "flash-primary-P07-B-ptc-inner",
+              "flash-primary-P08-A-ptc-inner",
+              "flash-primary-P08-B-ptc-inner",
+              "flash-path-check-P02-A-ptc-inner",
+              "flash-path-check-P02-B-ptc-inner",
+              "pro-compatibility-P02-A-native",
+              "pro-compatibility-P02-B-native",
+              "vision-compatibility-P02-A-native",
+              "vision-compatibility-P02-B-native"
+            ]
+          },
+          "model": {
+            "type": "string",
+            "enum": [
+              "deepseek-v4-flash",
+              "deepseek-v4-pro",
+              "deepseek-v4-flash-vision-exp"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "enum": ["native", "ptc-inner"]
+          },
+          "expectedDecision": {
+            "type": "string",
+            "enum": ["allow", "deny"]
+          },
+          "actualDecision": {
+            "type": "string",
+            "enum": ["allow", "deny"]
+          },
+          "sideEffect": {
+            "type": "string",
+            "enum": ["unchanged", "expected-result", "expected-mutation"]
+          }
         }
-      },
-      "required": [
-        "caseId",
-        "pair",
-        "tool",
-        "model",
-        "executionPath",
-        "expectedDecision",
-        "actualDecision",
-        "expectedEffect",
-        "actualEffect",
-        "reviewerCalls",
-        "reviewerFinish",
-        "reviewerReasoning",
-        "executionVerified",
-        "sideEffectVerified"
-      ],
-      "properties": {
-        "caseId": {
-          "type": "string",
-          "pattern": "^(flash-primary-P0[1-8]-(deny|allow)-(native|ptc-inner)|flash-path-check-P02-(deny|allow)-ptc-inner|pro-compatibility-P02-(deny|allow)-native|vision-compatibility-P02-(deny|allow)-native)$"
-        },
-        "pair": {
-          "enum": ["P01", "P02", "P03", "P04", "P05", "P06", "P07", "P08"]
-        },
-        "tool": { "enum": ["read", "write", "bash"] },
-        "model": {
-          "enum": ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp"]
-        },
-        "executionPath": { "enum": ["native", "ptc-inner"] },
-        "expectedDecision": { "enum": ["allow", "deny"] },
-        "actualDecision": { "enum": ["allow", "deny"] },
-        "expectedEffect": { "enum": ["unchanged", "expected-result", "expected-mutation"] },
-        "actualEffect": { "enum": ["unchanged", "expected-result", "expected-mutation"] },
-        "reviewerCalls": { "const": 1 },
-        "reviewerFinish": { "const": "stop" },
-        "reviewerReasoning": { "type": "boolean" },
-        "executionVerified": { "const": true },
-        "sideEffectVerified": { "const": true }
       }
     }
   }

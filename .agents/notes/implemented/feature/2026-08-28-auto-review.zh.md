@@ -18,7 +18,7 @@ Auto 是实验功能，因为 LLM 决定具有概率性。获准调用会立刻�
 
 composer 当前会话选择器与 `/permission` 斜杠选择器会显示带 `EXP` badge 的 `Auto review`。通过任一可见选择器选中 Auto 时，都需要针对该次选择确认一次；显式提交的 `/permission auto` 命令已经表达同意，不会增加另一项协议步骤。General Settings 永远不会把 Auto 提供为未来会话默认值。
 
-shipped Web 组合是唯一受支持的宿主。Headless 保留既有 Workspace Write 默认值与审批行为。DSH in-process child 会在第一次 await 前快照并追加 Auto 父级的预设身份，因此同一 integration 会审查其调用。ACP、DSH SDK、Codex 与 Claude Code child 在父级委派工具调用通过审查后，仍使用各自的权限系统。
+shipped Web 组合是唯一受支持的宿主。Headless 保留既有 Workspace Write 默认值与审批行为。DSH in-process child 会在第一次 await 前快照并追加 Auto 父级的预设身份，因此同一 integration 会审查其调用。其既有创建 prompt 与经过核验的直接父级 `agent-message` 为中风险动作提供任务上下文；不会新增父 call id、解析后的任务 metadata、review receipt、delegation provenance 或 Session format。ACP、DSH SDK、Codex 与 Claude Code child 在父级委派工具调用通过审查后，仍使用各自的权限系统。
 
 ## 审查请求与决定
 
@@ -26,7 +26,9 @@ Auto 插件以前置方式注册一个 `tools/pre-execute` 监听器，并为每
 
 reviewer 使用最新记录在 `request/header` 中的提供方与模型。其不可变请求包含五个分区：固定 `REVIEW_POLICY`；只含 Session `cwd` 的 `ENVIRONMENT`；当前 `PROJECT_INSTRUCTIONS`；`FILTERED_HISTORY`；以及精确的 `PENDING_ACTION`。生成的 LLM 请求不携带主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。原生动作使用匹配的已记录 `tool/call` 与最新已记录工具 schema。PTC 动作使用匹配的 `tool/code-dispatch-start`；该事件会在策略前快照 inner tool 的名称、描述、参数 schema 与规范化参数。事实缺失、含糊或不一致时会拒绝调用，而不会查询 live 注册表。
 
-只有当前 surface 中 source kind 为 `user` 且拥有自身持久 `rpcId` 的消息文本可以授权。压缩检查点、当前 `agent-instructions`、父 agent 编写的 child prompt、其他 user-role 内容以及历史原生或 PTC 调用只能作为证据。请求排除 assistant 文本、推理、工具结果、Git 状态、环境变量、平台 metadata 与 shell 方言。如果过滤后的请求仍超出模型上下文、提供方失败，或输出不是恰好一个受支持的 `allow` 或 `deny` JSON 对象，调用会被拒绝。
+每个保留项都有固定来源角色。带自身持久 `rpcId` 的 durable human 文本（`source.kind === 'user'`）定义或替换当前任务及明确限制。对于进程内 child，既有创建 prompt 与后续 `senderSessionId` 匹配 `SessionHeader.parentSession` 的 `agent-message` 定义或调整委派任务，但不能覆盖 human 限制。当前 `agent-instructions` 只能约束；压缩 checkpoint 恢复有损语境但不会继承已被压缩文本的指令身份；图片、附件与历史原生或 PTC 调用只提供事实。请求排除 assistant 文本、推理、工具结果、Git 状态、环境变量、平台 metadata 与 shell 方言。
+
+reviewer 首先按待审动作的实际效果分类：本地非敏感且无副作用的观察是 low；边界明确、通常可恢复的本地副作用是 medium；破坏性、外部、敏感、安全、系统或 workspace 外效果是 high。low 必须 allow；medium 仅在当前 human／直接父级任务确实需要且不存在适用冲突时才可 allow；high 即使有精确 human 指令也必须 deny。最终 JSON 只接受满足这些组合的 `risk + decision`，并且只有 deny 可以携带可选字符串 `reason`。如果过滤后的请求超出模型上下文、提供方失败，或响应违反这项封闭协议，调用会被拒绝。
 
 ## 结果与生命周期
 
@@ -38,7 +40,7 @@ Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工�
 
 ## 验证
 
-单元与集成测试固定五个请求分区、reviewer Session 身份与历史坐标的缺席、仅 direct-user 可授权的来源标签、原生与 PTC 动作重建、一次审查基数、审查先于工具主体、严格输出解析、技术故障拒绝、调用方取消、恢复失败、部分迁移时的资源释放顺序，以及 out-of-process child 的父级委派边界。Tool 与客户端套件固定结构化错误传播，以及通用拒绝相对内置、skill 和 Cordis-like keyed 视图的优先级。TypeScript 与 Python SDK fixture 固定原生和 PTC 投影事件中的 `name`、`code` 与 `reason`。显式启用的真实 DeepSeek 认证以零重试方式精确执行 22 次 reviewer 调用：Flash 运行八组拒绝／允许语义配对并为其中一组追加第二执行路径，Pro 与 Vision 各运行同一组安全配对。这些 case 使用 shipped read、write 与 bash 工具操作隔离的本地文件、本地 bare Git remote、loopback HTTP sink 与权限 fixture；每次拒绝证明没有副作用，每次允许证明精确副作用。
+单元与集成测试固定五个请求分区、reviewer Session 身份与历史坐标的缺席、human／直接父级／约束／checkpoint／事实的来源角色与优先级、原生与 PTC 动作重建、一次审查基数、审查先于工具主体、严格 `risk + decision` 解析、技术故障拒绝、调用方取消、恢复失败、部分迁移时的资源释放顺序，以及 out-of-process child 的父级委派边界。Tool 与客户端套件固定结构化错误传播，以及通用拒绝相对内置、skill 和 Cordis-like keyed 视图的优先级。TypeScript 与 Python SDK fixture 固定原生和 PTC 投影事件中的 `name`、`code` 与 `reason`。显式启用的真实 DeepSeek 认证以零重试方式精确执行 22 次 reviewer 调用：Flash 运行 P01 low allow／allow、P02–P04 medium deny／allow 与 P05–P08 high deny／deny；P02 还会走另一条执行路径，Pro 与 Vision 各运行同一组安全 medium 配对。每个 case 都在进程内断言 risk 与 decision，并证明预期结果、精确修改或零副作用。脱敏 artifact 不包含 risk、prompt、reasoning、工具参数、raw output、credential、token 或耗时；测试会在写出前用 committed JSON Schema 校验其中的 case／model／path、预期与实际 decision 以及 side-effect 字段。
 
 ## 考虑过的替代方案
 

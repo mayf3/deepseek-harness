@@ -5,12 +5,10 @@ import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { PermissionCatalog } from '@deepseek-ai/dsh-permission-presets/client'
 
-/** Observable value and latest read error for the current Host generation. */
+/** Observable complete catalog for the current Host generation. */
 export interface PermissionCatalogState {
   /** Last complete catalog for this generation, or null before one succeeds. */
   value: PermissionCatalog | null
-  /** Current-generation read failure text, when present. */
-  error: string | null
 }
 
 /** One latest-result-wins catalog reader for the whole browser process. */
@@ -18,7 +16,6 @@ export class PermissionCatalogDirectory {
   /** Complete snapshot consumed by both the slash popup and composer seat. */
   readonly store: SnapshotStore<PermissionCatalogState> = createSnapshotStore({
     value: null,
-    error: null,
   })
 
   private readonly connection: ConnectionHandle
@@ -28,6 +25,7 @@ export class PermissionCatalogDirectory {
   private initialized = false
   private epoch = 0
   private pending: Promise<void> | undefined
+  private failure = new Error('permission catalog has no complete value')
   private disposed = false
 
   /**
@@ -77,7 +75,7 @@ export class PermissionCatalogDirectory {
       }
       const state = this.store.getSnapshot()
       if (state.value !== null) return state.value
-      throw new Error(state.error as string)
+      throw this.failure
     }
     throw new Error('permission catalog directory is disposed')
   }
@@ -101,27 +99,24 @@ export class PermissionCatalogDirectory {
     this.generationId = generationId
     ++this.epoch
     this.pending = undefined
-    this.store.set({ value: null, error: null })
+    this.failure = new Error('permission catalog has no complete value')
+    this.store.set({ value: null })
     if (generationId !== undefined) this.startRead(generationId)
   }
 
   /** Start one independent read; the newest epoch in the same generation wins. */
   private startRead(generationId: number): void {
     const epoch = ++this.epoch
-    const retained = this.store.getSnapshot().value
-    this.store.set({ value: retained, error: null })
+    this.failure = new Error('permission catalog has no complete value')
     const operation = this.ctx.remote.permissionPresets.catalog()
       .then((result) => {
         if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`)
         if (!this.accepts(epoch, generationId)) return
-        this.store.set({ value: result.value, error: null })
+        this.store.set({ value: result.value })
       })
       .catch((error: unknown) => {
         if (!this.accepts(epoch, generationId)) return
-        this.store.set({
-          value: this.store.getSnapshot().value,
-          error: error instanceof Error ? error.message : String(error),
-        })
+        this.failure = error instanceof Error ? error : new Error(String(error))
       })
       .finally(() => {
         if (this.pending === operation) this.pending = undefined

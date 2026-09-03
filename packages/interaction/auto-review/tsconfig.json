@@ -13,6 +13,7 @@
     { "path": "../../compaction/compaction" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },
+    { "path": "../../subagent/subagent" },
     { "path": "../permission-presets" },
     { "path": "../../core/tools" },
     { "path": "../../util/values" }

@@ -116,6 +116,16 @@ jobs:
         env:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY_EXTERNAL }}
           DEEPSEEK_BASE_URL: https://api.deepseek.com
+          DSH_AUTO_REVIEW_CERTIFICATION: '1'
+          DSH_AUTO_REVIEW_CERTIFICATION_REPORT: ${{ runner.temp }}/auto-review-certification-report.json
           DSH_E2E_MAX_WORKERS: 4
           DSH_EXAMPLE_MODE: lib
         run: pnpm run test:e2e
+
+      - name: Upload Auto review certification report
+        uses: actions/upload-artifact@v7
+        with:
+          name: auto-review-real-model-certification-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/auto-review-certification-report.json
+          if-no-files-found: error
+          retention-days: 14

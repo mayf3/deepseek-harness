@@ -1265,7 +1265,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Build the client option for an available preset or CUSTOM_PRESET. A missing label falls back to the preset key.',
         parameters: [{ name: 'name', description: 'a configured preset key, live `auto`, or `custom`.' }],
         returns: 'the option a client renders.',
-        throws: ['when `name` is neither a table key nor `custom`.'],
+        throws: ['when `name` is neither a configured preset, live `auto`, nor `custom`.'],
       },
       {
         signature: 'set(session: Session, name: string): void',

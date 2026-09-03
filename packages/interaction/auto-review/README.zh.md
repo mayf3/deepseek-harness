@@ -43,9 +43,9 @@ shipped Web 组合包会在基础权限、Session、LLM 与 Tool 服务可用后
 
 ### 审查与故障行为
 
-reviewer 使用最新记录的提供方／模型路由，并接收五个分区：固定的 `REVIEW_POLICY`、Session 工作目录、当前项目指令、过滤后的历史以及待审动作。请求不会设置主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。只有当前 surface 中 source kind 为 `user` 且拥有自身持久 `rpcId` 的消息文本可以授权动作。压缩检查点、当前项目指令、父 agent 编写的 child prompt、其他 user-role 消息与历史调用仅作为证据；assistant 文本、推理与工具结果不会进入请求。
+reviewer 使用最新记录的提供方／模型路由，并接收五个分区：固定的 `REVIEW_POLICY`、Session 工作目录、当前项目指令、过滤后的历史以及待审动作。请求不会设置主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。带自身持久 `rpcId` 的 durable human 文本（`source.kind === 'user'`）定义或替换当前任务及明确限制。对于进程内 child，既有创建 prompt 与后续 `senderSessionId` 匹配 `parentSession` 的 `agent-message` 定义或调整委派任务，但不能覆盖 human 限制。当前 `agent-instructions` 只能约束；压缩 checkpoint 恢复有损语境；图片、附件与历史调用只提供事实。assistant 文本、推理与工具结果不会进入请求。
 
-决定协议只接受 `{"decision":"allow"}`、`{"decision":"deny"}` 或 `{"decision":"deny","reason":"..."}`。日志事实缺失或不一致、提供方故障、上下文超限、非法输出以及其他任何审查故障都会在工具主体前拒绝调用。调用方取消沿用普通 Tool 的结算优先级：late allow 后的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。
+reviewer 按待审动作的实际效果分类，并返回一个封闭的 `risk + decision` 对象：low 必须 allow，medium 可以 allow 或 deny，high 必须 deny；只有 deny 可以携带字符串 reason。日志事实缺失或不一致、提供方故障、上下文超限、非法输出、非法 risk／decision 组合以及其他任何审查故障都会在工具主体前拒绝调用。调用方取消沿用普通 Tool 的结算优先级：late allow 后的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。
 
 <a id="run-the-real-model-certification"></a>
 ### 运行真实模型认证
@@ -56,7 +56,7 @@ reviewer 使用最新记录的提供方／模型路由，并接收五个分区�
 DSH_AUTO_REVIEW_CERTIFICATION=1 pnpm exec vitest run --config vitest.e2e.config.ts packages/interaction/auto-review/tests/auto-review.e2e.ts
 ```
 
-即使已有凭据，未设置 `DSH_AUTO_REVIEW_CERTIFICATION=1` 时该套件也会跳过。显式启用但缺少 `DEEPSEEK_API_KEY` 时，测试会以明确的配置错误失败。成功运行会以零重试方式精确执行 22 次 reviewer 调用，并把脱敏报告写到仓库外；可以用 `DSH_AUTO_REVIEW_CERTIFICATION_REPORT` 选择该外部路径。
+即使已有凭据，未设置 `DSH_AUTO_REVIEW_CERTIFICATION=1` 时该套件也会跳过。显式启用但缺少 `DEEPSEEK_API_KEY` 时，测试会以明确的配置错误失败。成功运行会以零重试方式精确执行 22 次 reviewer 调用：P01 为 low 的 allow／allow，P02–P04 为 medium 的 deny／allow，P05–P08 为 high 的 deny／deny；P02 还会走另一条执行路径，Pro 与 Vision 各运行一次 P02 配对。测试会在进程内同时断言 risk 与 decision，以 committed JSON Schema 校验脱敏报告，并只把 case／model／path、预期与实际 decision 及已验证 side effect 写到仓库外。可以用 `DSH_AUTO_REVIEW_CERTIFICATION_REPORT` 选择该外部路径。
 
 -----
 

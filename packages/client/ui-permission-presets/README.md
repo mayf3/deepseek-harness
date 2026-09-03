@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides permission preset surfaces for two lifetimes in the Web GUI: a General-settings row chooses the default for later sessions without switching the current session, while a picker on the host `/permission` command switches the current session through one flat live preset list with the active value marked. Canonical built-in names render as locale-owned product labels, explicit host labels remain unchanged, unknown kebab-case names render in title case, and the current-session-only `auto` contribution appears as `Auto review` with an `EXP` badge. Choosing full access through either surface or Auto review through a visible picker requires its own explicit risk acknowledgement; an already argued `/permission <preset>` command executes directly. Both surfaces write through the host command or settings owner, while the current-session projection remains authoritative for the picker and composer chip.
+This package provides permission preset surfaces for two lifetimes in the Web GUI: a General-settings row chooses the default for later sessions without switching the current session, while a picker on the host `/permission` command switches the current session through one flat live preset list with the active value marked. Canonical built-in names render as locale-owned product labels, explicit host labels remain unchanged, unknown kebab-case names render in title case, and the current-session-only `auto` contribution appears as `Auto review` with an `EXP` badge. Choosing full access through either surface or Auto review through a visible picker requires its own explicit risk acknowledgement; an already argued `/permission <preset>` command executes directly. Both surfaces write through the host command or settings owner. The process-level `permissionPresets` catalog owns selectable options, while the current-session projection owns only the active value used by the picker and composer chip.
 
 ## Table of Contents
 
@@ -43,7 +43,7 @@ The row derives its options from the host's dynamic `defaultPreset` enum, uses t
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The General row reads the explicitly exposed `permission` Settings descriptor through `ctx.settingsScope` and writes one `settings.mutate` path operation with the descriptor revision; its observable rides the slot system's `hooks` compartment, so the renderer owns React hook binding, and a push invalidation refetches the descriptor. The value is read only when a later session is created. The current-session surface is a popupSelect decoration hung on the host `/permission` command (`ctx.commandUi.decorate`): the host command keeps its slash-menu row, argued path, and durable lifecycle logging, while the decoration replaces only the bare invocation with the picker. Options and the active mark read the session's `permissions` projection — the same host-computed select the composer chip renders. Full access and Auto review each carry a localized `confirmation` payload; Auto also carries the badge rendered by the shared popup shell.
+The General row reads the explicitly exposed `permission` Settings descriptor through `ctx.settingsScope` and writes one `settings.mutate` path operation with the descriptor revision; its observable rides the slot system's `hooks` compartment, so the renderer owns React hook binding, and a push invalidation refetches the descriptor. The value is read only when a later session is created. The current-session surface is a popupSelect decoration hung on the host `/permission` command (`ctx.commandUi.decorate`): the host command keeps its slash-menu row, argued path, and durable lifecycle logging, while the decoration replaces only the bare invocation with the picker. One process-scoped directory subscribes to the payload-free catalog notification before its first Remote read, publishes only the latest complete success for the active connection generation, preserves the last complete value after a same-generation failure, and clears it on connection reset. Its public state is only `{ value }`; failures remain internal to imperative loading. Both the slash popup and composer seat consume that shared catalog, while the Session `permissions` projection supplies only `currentValue`. Full access and Auto review each carry localized confirmation copy; Auto also carries the badge rendered by the shared popup shell.
 
 </details>
 
@@ -56,7 +56,7 @@ Read these pages when the permission surface is not enough. They move from the b
 
 - [dsh-permission-presets](../../interaction/permission-presets/README.md) — the host-side permission preset policy these surfaces write.
 - [ui-commands](../ui-commands/README.md) — the popupSelect shell the `/permission` decoration registers into.
-- [ui-conversation](../ui-conversation/README.md) — the composer chip that renders the same permissions projection.
+- [ui-conversation](../ui-conversation/README.md) — the composer seat that joins this shared catalog with the Session's current value.
 - [Client package map](../README.md) — adjacent browser UI packages.
 
 -----
