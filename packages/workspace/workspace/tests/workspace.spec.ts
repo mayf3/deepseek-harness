@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, join, relative } from 'node:path'
+import { basename, join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
@@ -365,6 +365,7 @@ describe('WorkspaceRegistry create and lookup', () => {
     expect(fullyQualifiedWorkspacePath('C:', 'win32')).toBe(false)
     expect(fullyQualifiedWorkspacePath('C:work', 'win32')).toBe(false)
     expect(fullyQualifiedWorkspacePath('\\work', 'win32')).toBe(false)
+    expect(fullyQualifiedWorkspacePath('.', 'win32')).toBe(false)
     expect(fullyQualifiedWorkspacePath('/', 'linux')).toBe(true)
     expect(fullyQualifiedWorkspacePath('/work', 'darwin')).toBe(true)
     expect(defaultWorkspaceTitle('/', 'linux')).toBe('/')
@@ -424,9 +425,8 @@ describe('WorkspaceRegistry create and lookup', () => {
   })
 
   it('rejects a resolvable relative path instead of adopting it from the Host cwd', async () => {
-    const dir = await makeDir('relative')
     const { registry } = await harness()
-    const fromHostCwd = relative(process.cwd(), dir)
+    const fromHostCwd = '.'
     await expect(registry.create(fromHostCwd)).rejects.toThrow(/fully qualified/)
     await expect(registry.resolveByPath(fromHostCwd)).rejects.toThrow(/fully qualified/)
     expect(registry.list()).toEqual([])
