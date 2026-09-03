@@ -1,6 +1,7 @@
 # Agent Note: Session 搜索结果显露
 
 Status: implemented
+Archived: 2026-09-03
 
 [English](2026-09-03-session-search-result-reveal.md) | 中文
 
