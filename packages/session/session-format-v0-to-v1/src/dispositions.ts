@@ -11,7 +11,6 @@ export interface ReleasedV0PayloadDisposition {
  * @param required - members that must be present.
  * @param optional - additional admitted members.
  * @param opaque - members retained as lossless JSON without nested semantic inspection.
- * @param extensionArms - nested discriminant paths that admit owner-defined variants.
  * @returns the detached frozen disposition.
  */
 export function defineReleasedPayloadDisposition(
