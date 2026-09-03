@@ -17,7 +17,7 @@ import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-a
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import type { JobView, VisibleJobs } from '@deepseek-ai/dsh-jobs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { jobDetail, publicJob, renderModelDelta, statusLine } from './render.ts'
+import { publicJob, renderModelDelta, statusLine } from './render.ts'
 import type { PublicJobSnapshot } from './render.ts'
 
 export { publicJob, renderModelDelta, statusLine } from './render.ts'
@@ -110,12 +110,12 @@ function fitWithSuffix(
  * @returns its kind, label, and status, bounded like every notice summary.
  */
 function completionSummary(job: JobView): string {
-  return boundContextSummary(`${job.kind} ${job.label} ${statusLine({ status: job.status, detail: jobDetail(job) })}`)
+  return boundContextSummary(`${job.kind} ${job.label} ${statusLine(publicJob(job))}`)
 }
 
 function fitCompletionNotice(job: JobView): string {
   const prefix = `background job ${job.id}`
-  const detail = ` (${job.kind}: ${job.label}) finished ${statusLine({ status: job.status, detail: jobDetail(job) })}`
+  const detail = ` (${job.kind}: ${job.label}) finished ${statusLine(publicJob(job))}`
   const action = '\nDone; job_output.'
   const complete = `${prefix}${detail}. Read its output with job_output.`
   const maxBytes = job.outputLimitBytes
