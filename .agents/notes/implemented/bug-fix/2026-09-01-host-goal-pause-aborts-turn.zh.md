@@ -26,4 +26,4 @@ goal round driver 现在会读取每个 `goal/changed` 事件里的 `change`。�
 
 ## 后果
 
-现在 Web 的「暂停目标」会中止正在运行的轮次，模型无法继续行动或在同一轮次里恢复刚被暂停的 goal。暂停后立即 resume 会保留被恢复的 goal 继续运行。模型发起的暂停行为不变。改动局限于 round driver 及其测试；goal 领域、工具授权与持久化格式都不变。
+现在 Web 的「暂停目标」会中止正在运行的轮次，模型无法继续行动或在同一轮次里恢复刚被暂停的 goal。暂停后立即 resume 会保留被恢复的 goal 继续运行。模型发起的暂停行为不变。后续的[用户独占 goal 暂停并暴露实时激活态](2026-09-03-user-owned-goal-pause-activation.zh.md)决策把实时 activation 暴露给 Web 客户端，并把持久 paused 的恢复保留给面向用户的路径；持久 goal 格式不变。

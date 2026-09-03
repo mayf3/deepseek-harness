@@ -2320,6 +2320,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   }
 
   const goalRemotes = {
+    get(id: SessionId): RpcResult<FxGoalView | undefined> {
+      const missing = requireGoalSession(id)
+      if (missing !== undefined) return missing
+      const current = backscanGoal(logOf(id))
+      return { ok: true, value: current === null ? undefined : goalView(current) }
+    },
     create(id: SessionId, request: { objective: string; maxGoalRounds?: number }): RpcResult<{ ref: FxGoalRef }> {
       const missing = requireGoalSession(id)
       if (missing !== undefined) return missing
@@ -3442,6 +3448,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         case 'directoryPicker/list': return Promise.resolve(directoryPickerRemotes.list(args.path))
         case 'directoryPicker/createDirectory':
           return Promise.resolve(directoryPickerRemotes.createDirectory(args.path ?? '', args.name ?? ''))
+        case 'goals/get': return Promise.resolve(goalRemotes.get(sessionId))
         case 'goals/create': return Promise.resolve(goalRemotes.create(sessionId, {
           objective: (request as { objective?: string } | undefined)?.objective as string,
           ...(request as { maxGoalRounds?: number } | undefined)?.maxGoalRounds === undefined

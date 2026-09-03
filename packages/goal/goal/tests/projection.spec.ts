@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
-import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
+import AgentRegistry, { agentEvents, Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, AgentStatus } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { UserMessage } from '@deepseek-ai/dsh-session'
@@ -221,13 +221,17 @@ describe('goal projection unit', () => {
 
   it('fails host goal access when the projection retained a replay failure', async () => {
     const bench = await harness(true)
+    bench.ctx.goals.create(bench.agent, { objective: 'poisoned replay' })
     const failure = 'goal replay failed at session event 0: invalid restored goal stream'
     const state = bench.ctx.sessionProjections.stateOf(bench.session, 'goal')
     expect(state).toBeDefined()
     Object.assign(state!, { failure })
 
+    expect(() => {
+      agentEvents(bench.ctx, bench.agent).emit('agent/session-start', { source: 'resume' })
+    }).not.toThrow()
     expect(() => bench.ctx.goals.get(bench.agent)).toThrow(failure)
-    expect(bench.tailValues().goal).toBeNull()
+    expect(bench.tailValues().goal).toMatchObject({ goal: { objective: 'poisoned replay' } })
   })
 
   it('has no goal key when the goal service is not composed', async () => {

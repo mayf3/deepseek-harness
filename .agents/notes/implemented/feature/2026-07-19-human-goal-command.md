@@ -60,7 +60,7 @@ The producer suite uses the real command registry, goal service, agent registry,
 - TUI and non-Web base compositions expose one Codex-shaped `/goal` command supplied by a removable plugin; Web presets expose it only where they mount the producer.
 - Human status distinguishes durable phase from live activation and reports the exact goal-round cap.
 - Direct pause, resume, clear, creation, and edit consume no model turn while their accepted mutations remain reconstructable from the session log.
-- Restored sessions wait for a human decision; `/goal resume` is the literal command path, while an ordinary prompt in any language may authorize the model tool path.
+- Restored sessions wait for a human decision; `/goal resume` is the literal command path. An ordinary prompt in any language may authorize the model tool path for an active-but-disarmed or blocked goal, while a durable paused goal stays on the direct command path under the [user-owned pause decision](../bug-fix/2026-09-03-user-owned-goal-pause-activation.md).
 - Headless compositions retain one-turn behavior unless they explicitly opt into goals and define their own long-running settlement contract.
 
 ## Known limitations and deferred work

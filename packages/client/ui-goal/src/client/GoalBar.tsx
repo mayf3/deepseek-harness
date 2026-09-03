@@ -9,19 +9,21 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
+import type { GoalActivation, GoalSnapshot } from '@deepseek-ai/dsh-goal/client'
 import {
   IconCheckOutline16, IconCloseOutline16, IconEditOutline16, IconGoalOutline16,
   IconPauseOutline16, IconPlayOutline16, IconTrashOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import type { GoalActionResult, GoalBarActions } from './slots.ts'
+import type { PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
+import type { GoalActionResult, GoalBarActions, GoalBarData } from './slots.ts'
 import type { GoalKey } from './locales.ts'
 import css from './GoalBar.module.css'
 
 export interface GoalBarProps extends GoalBarActions {
   /** Current goal snapshot; undefined = capability absent or loading, null = no goal set. */
   goal: GoalSnapshot | null | undefined
+  /** Process-local continuation activation; absent while the live read is pending. */
+  activation?: GoalActivation
 }
 
 /** Strip label keys per visible phase; complete goals render nothing. */
@@ -31,7 +33,13 @@ const PHASE_LABELS = {
   blocked: 'phase.blocked',
 } as const satisfies Record<string, GoalKey>
 
-export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
+/** Strip label for an active goal using its process-local activation. */
+function activeLabel(activation: GoalActivation | undefined, t: TranslateNS<'goal'>): string {
+  if (activation === 'disarmed') return t('phase.active.disarmed')
+  return t(PHASE_LABELS.active)
+}
+
+export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, t }: GoalBarProps & PropsLocale<'goal'>) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [pending, setPending] = useState(false)
@@ -124,18 +132,26 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
   }
 
   const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
+  const label = goal.phase === 'active' ? activeLabel(activation, t) : t(PHASE_LABELS[goal.phase])
   return (
     <div className={css.dock} data-goal-bar>
       <div className={css.bar} title={title}>
         <span className={css.goalGlyph}><IconGoalOutline16 size={14} /></span>
-        <span className={css.label}>{t(PHASE_LABELS[goal.phase])}</span>
+        <span className={css.label}>{label}</span>
         <span className={css.objective}>{goal.objective}</span>
         {actionError !== null && <span className={css.error} role="alert">{actionError}</span>}
         <div className={css.actions}>
-          {goal.phase === 'active' && (
+          {goal.phase === 'active' && activation === 'armed' && (
             <Tooltip label={t('action.pause')} side="bottom" delayMs={500}>
               <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onPause) }} aria-label={t('action.pause')}>
                 <IconPauseOutline16 size={14} />
+              </button>
+            </Tooltip>
+          )}
+          {goal.phase === 'active' && activation === 'disarmed' && (
+            <Tooltip label={t('action.resume')} side="bottom" delayMs={500}>
+              <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onResume) }} aria-label={t('action.resume')}>
+                <IconPlayOutline16 size={14} />
               </button>
             </Tooltip>
           )}
@@ -169,14 +185,48 @@ export function GoalBar({ goal, onEdit, onPause, onResume, onClear, t }: GoalBar
 }
 
 /** Full props of the dock entry: InputZone owner share + session standard kit + injected verbs + the locale seat. */
-export type GoalDockProps = import('@deepseek-ai/dsh-client-ui-slots').PropsRuntime<'conversation.input.dock'> & GoalBarActions & PropsLocale<'goal'>
+export type GoalDockProps = import('@deepseek-ai/dsh-client-ui-slots').PropsRuntime<'conversation.input.dock'> & GoalBarActions & GoalBarData & PropsLocale<'goal'>
 
-/** Dock adapter: reads the host-computed 'goal' projection (whole value; absent or null renders nothing). */
-export function GoalDock({ useProjection, onEdit, onPause, onResume, onClear, t }: GoalDockProps) {
+/** Dock adapter: overlays process-local activation on the durable goal projection. */
+export function GoalDock({
+  useProjection, useSession, getGoal, subscribeActivation, onEdit, onPause, onResume, onClear, t,
+}: GoalDockProps) {
   const projection = useProjection('goal')
+  const goal = projection === undefined || projection === null ? projection : projection.goal
+  const running = useSession(snapshot => snapshot.running)
+  const goalId = goal?.id
+  const revision = goal?.revision
+  const phase = goal?.phase
+  const [activation, setActivation] = useState<GoalActivation | undefined>()
+
+  useEffect(() => {
+    if (goalId === undefined || phase !== 'active') {
+      setActivation(undefined)
+      return
+    }
+    let alive = true
+    setActivation(undefined)
+    void getGoal().then((result) => {
+      if (!alive || !result.ok) return
+      if (result.value?.id === goalId && result.value.revision === revision) {
+        setActivation(result.value.activation)
+      }
+    })
+    return () => { alive = false }
+  }, [getGoal, goalId, phase, revision, running])
+
+  useEffect(() => subscribeActivation((next) => {
+    if (next === undefined) {
+      setActivation(undefined)
+      return
+    }
+    if (next.id === goalId && next.revision === revision) setActivation(next.activation)
+  }), [goalId, revision, subscribeActivation])
+
   return (
     <GoalBar
-      goal={projection === undefined ? undefined : projection === null ? null : projection.goal}
+      goal={goal}
+      {...activation === undefined ? {} : { activation }}
       onEdit={onEdit}
       onPause={onPause}
       onResume={onResume}

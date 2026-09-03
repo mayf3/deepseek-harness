@@ -26,4 +26,4 @@ The idle handler that pauses a cancelled goal is fenced to the dropped attempt's
 
 ## Consequences
 
-A Web "pause goal" now aborts the running turn, so the model cannot keep acting or resume the just-paused goal in that turn. A pause followed by an immediate resume keeps the resumed goal running. Model-initiated pauses are unchanged. The change is confined to the round driver and its tests; the goal domain, tool authority, and durable formats are unchanged.
+A Web "pause goal" now aborts the running turn, so the model cannot keep acting or resume the just-paused goal in that turn. A pause followed by an immediate resume keeps the resumed goal running. Model-initiated pauses are unchanged. The later [User-owned goal pause exposes live activation](2026-09-03-user-owned-goal-pause-activation.md) decision exposes live activation to Web clients and reserves durable paused resume for the user-facing path; durable goal formats remain unchanged.

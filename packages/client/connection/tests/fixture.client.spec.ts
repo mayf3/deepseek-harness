@@ -1655,6 +1655,9 @@ describe('fixture Connection RPC', () => {
     expect(revision).toBe(1)
     const ref = (at: number) => ({ id: goalId, revision: at })
     expect((await goal('goals/edit', { ref: ref(1), request: { objective: 'ship it v2' } })).ok).toBe(true)
+    expect(await goal('goals/get', {})).toMatchObject({
+      ok: true, value: { objective: 'ship it v2', revision: 2, activation: 'armed' },
+    })
     expect((await goal('goals/pause', { ref: ref(2) })).ok).toBe(true)
     expect((await goal('goals/resume', { ref: ref(3) })).ok).toBe(true)
     // A stale ref loses the CAS check.

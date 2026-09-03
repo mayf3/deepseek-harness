@@ -47,7 +47,7 @@ The driver classifies one closed goal-owned turn as follows:
 | `disposed` or `interrupted` | disarm |
 | plugin-added unknown result | block for inspection |
 
-No abnormal outcome requests an automatic retry. A later human prompt can ask to continue in any language; the model reads the stopped goal and uses the goal tool's resume action, which records a new revision and arms continuation.
+No abnormal outcome requests an automatic retry. A later human prompt can ask to continue in any language; the model reads an active-but-disarmed or blocked goal and uses the goal tool's resume action, which records a new revision and arms continuation. A durable paused goal uses `/goal resume` or the Web control under the [user-owned pause decision](../bug-fix/2026-09-03-user-owned-goal-pause-activation.md).
 
 ### Durability and cancellation contract
 
@@ -78,7 +78,7 @@ The core cancellation test proves notification order and containment: observers 
 - **Add a goal loop inside `dsh-agent-loop`** — rejected because the public queue, prompt, session, cancellation, and status contracts are sufficient, and a concrete-loop branch would privilege one policy.
 - **Use `agent/turn-continuation` to make every round another step** — rejected because a goal round is an outer policy iteration and must have its own durable user prompt, turn boundary, round count, and failure settlement.
 - **Persist a pending reservation** — rejected because a crash cannot prove that queued process memory had reached admission; only the durable `user/message` consumes the round.
-- **Retry provider or persistence errors automatically** — rejected because retry policy spends resources and needs explicit authority; stopped phases plus later human resume are simpler and observable.
+- **Retry provider or persistence errors automatically** — rejected because retry policy spends resources and needs explicit authority; stopped phases plus user-owned paused resume or model blocked/disarmed resume are simpler and observable.
 - **Fork conversation history or spawn a fresh agent for every round** — rejected for this package because the goal is explicitly same-session work. Fresh-agent Ralph execution remains a separate workflow plugin built from subagent and workflow primitives.
 - **Reuse every session turn as the round counter** — rejected because human clarification and unrelated work share the session but not the automatic-work budget.
 
@@ -87,7 +87,7 @@ The core cancellation test proves notification order and containment: observers 
 - Goal continuation remains a removable plugin and the concrete loop gains only a generic observe-before-cancel notification.
 - Replay can reconstruct every admitted round from its exact goal source and prompt; rejected reservations cannot create phantom budget use.
 - Human messages and lifecycle mutations win documented races without corrupting the revision or counter.
-- Resume and fork remain inert until semantic human intent causes the model to record a resume mutation.
+- Resume and fork remain inert until semantic human intent causes a user-facing pause resume or the model records a resume mutation for a blocked or active-but-disarmed goal.
 - Conservative failure mapping can require manual continuation after transient failures, but it never hides an automatic retry.
 
 ## Known limitations and deferred work

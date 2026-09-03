@@ -205,12 +205,15 @@ describe('GoalService creation and replay', () => {
 
   it('disarms live activation on every session-start edge', async () => {
     const { ctx, agent, session } = await harness()
+    const activations: Array<string | undefined> = []
+    ctx.on('goal/activation-changed', ({ goal }) => { activations.push(goal?.activation) })
     let goal = ctx.goals.create(agent, { objective: 'stay stopped after resume' })
     expect(goal.activation).toBe('armed')
     agentEvents(ctx, agent).emit('agent/session-start', { source: 'resume' })
     expect(ctx.goals.get(agent)?.activation).toBe('disarmed')
     goal = ctx.goals.resume(agent, goal)
     expect(goal).toMatchObject({ phase: 'active', activation: 'armed', revision: 2 })
+    expect(activations).toEqual(['armed', 'disarmed', 'armed'])
     expect(() => foldGoal(session.snapshotEvents())).not.toThrow()
   })
 

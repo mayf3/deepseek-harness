@@ -8,6 +8,7 @@
  */
 
 import type { RemoteResult } from '@deepseek-ai/dsh-api-remotes/client'
+import type { GoalActivationChanged, GoalView } from '@deepseek-ai/dsh-goal/client'
 
 /**
  * The one failure the strip reports without a wire call: the session projects
@@ -25,6 +26,23 @@ export interface GoalLocalFailure {
  */
 export type GoalActionResult = RemoteResult<unknown> | GoalLocalFailure
 
+/** Remote read face for the goal's process-local activation. */
+export interface GoalBarData {
+  /**
+   * Read the current live goal view at call time.
+   * @returns the whole Goal view, or `undefined` before the first create and
+   * after a clear tombstone.
+   */
+  getGoal: () => Promise<RemoteResult<GoalView | undefined>>
+  /**
+   * Subscribe to process-local activation edges for the session.
+   * @param listener - receives the exact live goal activation, or `undefined`
+   * when no goal is current.
+   * @returns disposer owned by the caller's component lifetime.
+   */
+  subscribeActivation: (listener: (goal: GoalActivationChanged['goal']) => void) => () => void
+}
+
 /** Injected business face of the GoalBar dock entry: the mutation verbs (function properties: the strip destructures them freely). */
 export interface GoalBarActions {
   /**
@@ -39,3 +57,6 @@ export interface GoalBarActions {
   /** Clear the current goal (tombstone). */
   onClear: () => Promise<GoalActionResult>
 }
+
+/** Injected business face of the GoalBar dock entry. */
+export type GoalBarInjected = GoalBarActions & GoalBarData

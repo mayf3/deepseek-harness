@@ -26,14 +26,14 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 // Type-only: the `goal` SessionProjectionMap key merge (single source, the domain's pure outlet).
 import type { GoalProjection, GoalRef } from '@deepseek-ai/dsh-goal/client'
-import type { GoalActionResult, GoalBarActions } from './slots.ts'
+import type { GoalActionResult, GoalBarInjected } from './slots.ts'
 import { GoalDock } from './GoalBar.tsx'
 import { GoalCommandInputView } from './GoalCommandInputView.tsx'
 import { goalCommandInputDefinition } from './goal-command-input.ts'
 import { en, zh, type GoalKey } from './locales.ts'
 
 export { GoalBar, GoalDock } from './GoalBar.tsx'
-export type { GoalActionResult, GoalBarActions } from './slots.ts'
+export type { GoalActionResult, GoalBarActions, GoalBarData, GoalBarInjected } from './slots.ts'
 export type { GoalKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -83,7 +83,13 @@ export function apply(ctx: ClientContext): void {
     id: 'goal',
     order: 10,
     locale: NS,
-    inject: (sessionId): GoalBarActions => ({
+    inject: (sessionId): GoalBarInjected => ({
+      getGoal: async () => {
+        return await ctx.remote.goals.get(sessionId)
+      },
+      subscribeActivation: listener => ctx.remote.$on('goal/activation-changed', (event) => {
+        if (event.sessionId === sessionId) listener(event.goal)
+      }),
       onEdit: async (objective) => {
         const ref = refOf(sessionId)
         if (ref === undefined) return noCurrentGoal

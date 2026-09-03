@@ -52,6 +52,9 @@ describe('web e2e: goal bar clear convergence', () => {
 
     const bar = page.locator('[data-goal-bar]')
     await bar.waitFor({ timeout: 10_000 })
+    await expect.poll(() => bar.getByRole('button', { name: 'Pause goal' }).count(), {
+      timeout: 10_000,
+    }).toBe(1)
     const snapshot = await captureStableAria(page, '[data-goal-bar]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(ACTIVE_EXPECTED, snapshot, MODE)
 

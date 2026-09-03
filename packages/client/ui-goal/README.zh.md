@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包在 Web GUI 中渲染 goal 表面：composer 上下文堆栈里的一条条带，显示会话的当前目标，并提供编辑、暂停、恢复与清除动作。它从宿主计算的投影读取活目标，把每次变更都经 goal 服务路由，并把拒绝内联呈现。它还把每条持久的 `/goal` 命令运行投影为聊天中的 `Command input` 气泡，让用户或模型输入的 goal 命令出现在文本记录中。goal 创建不归本插件。除 `minimal` 外，随附的 Web preset 都会在其 agent scope 中挂载 `/goal`。
+本包在 Web GUI 中渲染 goal 表面：composer 上下文堆栈里的一条条带，显示会话的当前目标，并提供编辑、暂停、恢复与清除动作。它从宿主计算的投影读取持久 goal，通过实时 goal Remote 刷新进程本地的 `activation`，把每次变更都经 goal 服务路由，并把拒绝内联呈现。它还把每条持久的 `/goal` 命令运行投影为聊天中的 `Command input` 气泡，让用户或模型输入的 goal 命令出现在文本记录中。goal 创建不归本插件。除 `minimal` 外，随附的 Web preset 都会在其 agent scope 中挂载 `/goal`。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-与 `ui-conversation` 及 goal 领域包一起挂载本插件；只要会话存在目标，条带就会作为 composer 上下文堆栈的第二张卡片出现（位于 Todo 之后、Queue 之前）。active 的 goal 提供暂停动作；paused 的提供恢复；编辑重写目标文本；清除移除目标，并在投影追上之前抑制条带。
+与 `ui-conversation` 及 goal 领域包一起挂载本插件；只要会话存在目标，条带就会作为 composer 上下文堆栈的第二张卡片出现（位于 Todo 之后、Queue 之前）。已 armed 的 active goal 提供暂停动作；active-but-disarmed 或 paused 的 goal 提供恢复；编辑重写目标文本；清除移除目标，并在投影追上之前抑制条带。
 
 ### 指令输入气泡
 
@@ -43,7 +43,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-条带是投影模式：活目标经 `useProjection('goal')` 到达（由历史尾页播种、`session/projection` 帧更新），因此插件不持有领域 store、不设刷新链、不挂事件监听。注入面只携带四个变更动词，经 `ctx.remote.goals` 调用；每个动词在调用时从会话当前投影值读取 CAS ref，比较并交换（RPC 的 CAS）就是陈旧性护栏。由于 React 的 pending 渲染无法拦住同一帧内的点击，条带会同步为变更建立 single-flight 防护。指令输入投影是独立的 Conversation Definition，在通用命令结果 Node 之前构建 `command-input` Chat Node；它绝不创建 `user/message` 或模型轮次。
+持久 goal 经 `useProjection('goal')` 到达（由历史尾页播种、`session/projection` 帧更新）。条带通过 `ctx.remote.goals.get` 和 `goal/activation-changed` 叠加并刷新进程本地 activation；它不持有领域 store 或跨插件缓存。注入面通过 `ctx.remote.goals` 携带实时读取与四个变更动词；每个变更在调用时从会话当前投影值读取 CAS ref，比较并交换（RPC 的 CAS）就是陈旧性护栏。由于 React 的 pending 渲染无法拦住同一帧内的点击，条带会同步为变更建立 single-flight 防护。指令输入投影是独立的 Conversation Definition，在通用命令结果 Node 之前构建 `command-input` Chat Node；它绝不创建 `user/message` 或模型轮次。
 
 </details>
 
@@ -76,7 +76,6 @@ kind: "package-reference"
 
 这些限制界定了当前 goal 表面。它们是当前包约束，不是 goal 领域对比或任务积压。
 
-- **只反映持久阶段**——投影省略进程本地的激活状态，因此条带无法区分已激活但未武装的 goal 与已武装的 goal；恢复经 RPC 侧重新武装。不存在宿主实时激活通道。
 - **Host 状态与 preset 无关**——把活跃会话切换到 `minimal` 后，Host 拥有的 goal 仍会保留。`/goal` 与 goal 工具会消失，但该条带仍可编辑、暂停、恢复或清除 goal。
 
 <a id="dev-note"></a>
@@ -89,4 +88,4 @@ kind: "package-reference"
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。插件只注册一个 GoalBar dock，HMR 测试覆盖释放；状态来自 goal projection，本包不持有 store 或跨插件可变状态。
+**运行时不变式：** 不发布伴生入口。插件只注册一个 GoalBar dock，HMR 测试覆盖释放；持久状态来自 goal projection，进程本地 activation 来自选定的 Remote 读取／事件，本包不持有跨插件可变状态。
