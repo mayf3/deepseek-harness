@@ -177,7 +177,7 @@ export class LocalJobRegistry extends JobRegistry {
     this.settledRetainBytes = resolved.settledRetainBytes
     this.pumpPollMs = resolved.pumpPollMs
     this.selfCtx = ctx
-    this.hub = new JobEventHub(this.layers, message => ctx.logger.warn(message))
+    this.hub = new JobEventHub(this.layers, (message) => { ctx.logger.warn(message) })
     ctx.effect(() => () => this.disposeAll(), 'jobs teardown')
   }
 

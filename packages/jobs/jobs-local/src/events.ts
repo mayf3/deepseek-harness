@@ -62,10 +62,12 @@ export class JobEventHub {
     if ('owners' in filter && filter.owners === 'scope') {
       return this.layers.effect(ctx, layer => layer.scoped.append(subscription), { label: 'jobs.events.subscribe()' })
     }
-    return ctx.effect(() => {
+    const dispose = ctx.effect(() => {
       this.unscoped.add(subscription)
       return () => { this.unscoped.delete(subscription) }
     }, 'jobs.events.subscribe()')
+    // oxlint-disable-next-line typescript/no-misused-promises -- exact synchronous disposer preserves Cordis effect identity
+    return dispose
   }
 
   /**

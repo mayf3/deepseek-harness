@@ -62,6 +62,8 @@ export interface JobView {
   readonly label: string
   /** Owning session; absent for an unowned job, which every caller can see. */
   readonly owner?: SessionId
+  /** Producer-owned cap for complete model-facing notices and reads, in UTF-8 bytes. */
+  readonly outputLimitBytes?: number
   /** Current lifecycle state. */
   readonly status: JobStatus
   /** The producer's live progress line (`3/10`, the current phase); cleared at settlement. */

@@ -77,7 +77,7 @@ describe('JobRegistry seam', () => {
     expect(jobs.list()).toHaveLength(1)
     expect(jobs.get(id).status).toBe('running')
     expect(jobs.get(id).owner).toBe(caller)
-    expect(jobs.read(id)).toEqual({ chunks: [], lossy: false, job: expect.objectContaining({ id }) })
+    expect(jobs.read(id)).toEqual({ chunks: [], lossy: false, job: expect.objectContaining({ id }) as unknown })
     expect(jobs.readAt(id, 7)).toEqual({ chunks: [], next: 7, lossy: false })
     expect(jobs.kill(id, { reason: 'seam test' })).toBe('requested')
     await expect(jobs.wait(id, 5)).resolves.toMatchObject({ id })
