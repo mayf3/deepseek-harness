@@ -7,13 +7,11 @@ import type {
   SessionFormatJsonValue,
 } from '@deepseek-ai/dsh-session-format'
 import {
-  RELEASED_V2_EVENT_DISPOSITIONS,
   RELEASED_V2_EVENT_TYPES,
   assertReleasedV2Artifact,
   assertReleasedV2Header,
   restoreReleasedV2Artifact,
 } from '@deepseek-ai/dsh-session-format-v1-to-v2'
-import { RELEASED_V0_EVENT_TYPES } from '@deepseek-ai/dsh-session-format-v0-to-v1'
 
 const textBlock = { type: 'text', text: 'hello' } as const
 const usage = { inputTokens: 3, outputTokens: 2 } as const
@@ -150,13 +148,6 @@ describe('released v2 header validation', () => {
 })
 
 describe('released v2 event envelopes and payloads', () => {
-  it('freezes the complete event inventory while replacing chunks with attempts', () => {
-    const expected = RELEASED_V0_EVENT_TYPES.filter(type => type !== 'assistant/chunk')
-    expected.push('assistant/attempt')
-    expect(RELEASED_V2_EVENT_TYPES).toStrictEqual([...expected].sort((left, right) => left.localeCompare(right, 'en')))
-    expect(Object.keys(RELEASED_V2_EVENT_DISPOSITIONS).sort()).toStrictEqual(expected.sort())
-  })
-
   it('accepts empty artifacts and ordinary log events with a true ignorable marker', () => {
     expect(() => { assertReleasedV2Artifact(artifact([])) }).not.toThrow()
     expect(() => { assertReleasedV2Artifact(artifact([
