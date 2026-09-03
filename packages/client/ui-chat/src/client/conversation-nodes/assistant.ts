@@ -1,12 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ChunkRowEvent } from '@deepseek-ai/dsh-api-session-controller/types'
 import type {
-  ConversationLocation, ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
+  AssistantBlock, AssistantMessageNode, ConversationLocation, ConversationMatch,
+  ConversationNodeContext, ConversationNodeDefinition,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-llm-retry/types'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
 import type { AssistantChatData } from '../contract/chat-nodes.ts'
-import type { AssistantBlock, AssistantMessageNode } from '../contract/snapshot.ts'
 import { CHAT_SYNTHETIC_SEQ_OFFSETS, chatNode } from './common.ts'
 import {
   emptyAssistantBlock, isTokenDelta, toAssistantBlock, toAssistantBlocks,
