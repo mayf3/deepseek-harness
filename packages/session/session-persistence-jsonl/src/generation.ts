@@ -239,6 +239,11 @@ function isEEXIST(error: unknown): boolean {
   return (error as NodeJS.ErrnoException | null)?.code === 'EEXIST'
 }
 
+/** Whether a filesystem-owned failure should retain its original errno and path. */
+function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
+  return typeof (error as NodeJS.ErrnoException | null)?.code === 'string'
+}
+
 function identity(value: JsonlPhysicalIdentity): string {
   return [value.dev, value.ino, value.size, value.mtimeNs, value.ctimeNs].join(':')
 }
@@ -247,15 +252,19 @@ function fingerprint(value: JsonlPhysicalIdentity, bytes: Buffer): string {
   return `${identity(value)}:${createHash('sha256').update(bytes).digest('hex')}`
 }
 
-/** Read exact physical bytes only when the stat identity brackets one stable read. */
+/**
+ * Read one stable revision with a single retry. If an append overlaps both
+ * reads, return the second read's committed pre-read prefix instead of
+ * starving behind a continuous writer.
+ */
 async function readStableSnapshot(
   path: string,
   signal: AbortSignal | undefined,
   fs: GenerationFileSystem,
 ): Promise<StablePhysicalFile> {
-  for (;;) {
-    signal?.throwIfAborted()
-    const before = await fs.stat(path)
+  signal?.throwIfAborted()
+  let before = await fs.stat(path)
+  for (let attempt = 0; ; attempt += 1) {
     const bytes = await fs.readFile(path, signal)
     signal?.throwIfAborted()
     const after = await fs.stat(path)
@@ -263,6 +272,10 @@ async function readStableSnapshot(
       signal?.throwIfAborted()
       return { bytes, identity: after }
     }
+    if (attempt === 1) {
+      return { bytes: bytes.subarray(0, Number(before.size)), identity: before }
+    }
+    before = after
   }
 }
 
@@ -647,10 +660,14 @@ async function reopenExpectedCurrent(
       throw new Error(`target is a ${kind}`)
     }
     const snapshot = await validatePhysicalCurrent(currentPath, compression, format, signal, internals)
-    if (!snapshot.bytes.equals(expectedBytes)) throw new Error('target bytes differ from the migrated generation')
+    if (snapshot.bytes.length < expectedBytes.length
+      || !snapshot.bytes.subarray(0, expectedBytes.length).equals(expectedBytes)) {
+      throw new Error('target bytes do not begin with the migrated generation')
+    }
     return snapshot
   } catch (error: unknown) {
     if (signal?.aborted) signal.throwIfAborted()
+    if (isErrnoException(error)) throw error
     throw new JsonlGenerationTargetConflictError(currentPath, asError(error))
   }
 }

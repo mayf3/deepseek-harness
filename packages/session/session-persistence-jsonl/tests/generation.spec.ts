@@ -169,6 +169,28 @@ describe('JSONL immutable generation publication', () => {
     expect(await readFile(request.sourcePath, 'utf8')).toBe(contents)
   })
 
+  it('bounds current snapshot retries under continuous revision churn', async () => {
+    const root = await tempRoot()
+    const request = options(root, 'none', adapter(), 1)
+    const contents = line(header(1)) + line(event0)
+    await writeFile(request.sourcePath, contents)
+    let revision = 0n
+    const statFile = vi.fn(async (path: string) => {
+      const value = await stat(path, { bigint: true })
+      revision += 1n
+      return { ...value, mtimeNs: value.mtimeNs + revision }
+    })
+    const readChangingFile = vi.fn(async () => Buffer.from(contents + line(event1)))
+
+    const result = await __jsonlGenerationTest.ensure(request, {
+      fs: { stat: statFile, readFile: readChangingFile },
+    })
+
+    expect(result.snapshot.bytes.toString('utf8')).toBe(contents)
+    expect(readChangingFile).toHaveBeenCalledTimes(2)
+    expect(statFile).toHaveBeenCalledTimes(3)
+  })
+
   it('returns a disposable Zstandard body owner on the current fast path', async () => {
     const root = await tempRoot()
     const request = options(root, 'zstd', adapter(), 1)
@@ -603,6 +625,32 @@ describe('JSONL immutable generation publication', () => {
     expect((await readdir(root)).sort()).toEqual(['session.jsonl', 'session.v1.jsonl'])
   })
 
+  it.each(['none', 'zstd'] as const)(
+    'accepts a valid append on a %s target created by another migration',
+    async (compression) => {
+      const root = await tempRoot()
+      const request = options(root, compression)
+      const source = compression === 'zstd'
+        ? await encodeZstd(0, [event0])
+        : Buffer.from(line(header(0)) + line(event0))
+      const expected = compression === 'zstd'
+        ? await encodeZstd(1, [event0])
+        : Buffer.from(line(header(1)) + line(event0))
+      const appended = compression === 'zstd'
+        ? await compressZstdFrame(line(event1))
+        : Buffer.from(line(event1))
+      const winner = Buffer.concat([expected, appended])
+      await writeFile(request.sourcePath, source)
+      await writeFile(request.currentPath, winner)
+
+      const result = await ensureJsonlGenerationCurrent(request)
+
+      expect(result).toMatchObject({ status: 'migrated', path: request.currentPath })
+      expect(result.snapshot.bytes).toEqual(winner)
+      expect(await readFile(request.currentPath)).toEqual(winner)
+    },
+  )
+
   it('accepts an identical regular hardlink target', async () => {
     const root = await tempRoot()
     const request = options(root)
@@ -755,7 +803,7 @@ describe('JSONL immutable generation publication', () => {
     expect((await readdir(root)).every(name => !name.includes('.tmp'))).toBe(true)
   })
 
-  it('reports an absent exclusive-publication winner as a target conflict', async () => {
+  it('preserves ENOENT when an exclusive-publication winner disappears', async () => {
     const root = await tempRoot()
     const request = options(root)
     await writeFile(request.sourcePath, line(header(0)) + line(event0))
@@ -763,7 +811,24 @@ describe('JSONL immutable generation publication', () => {
     await expect(__jsonlGenerationTest.ensure(request, {
       platform: 'darwin',
       fs: posixSimulationFs({ link: async () => { throw fsError('EEXIST') } }),
-    })).rejects.toBeInstanceOf(JsonlGenerationTargetConflictError)
+    })).rejects.toMatchObject({ code: 'ENOENT', path: request.currentPath })
+  })
+
+  it('preserves a filesystem error while reopening a committed target', async () => {
+    const root = await tempRoot()
+    const request = options(root)
+    const failure = fsError('EACCES', 'current target is unreadable')
+    failure.path = request.currentPath
+    await writeFile(request.sourcePath, line(header(0)) + line(event0))
+
+    await expect(__jsonlGenerationTest.ensure(request, {
+      fs: {
+        readFile: async (path, signal) => {
+          if (path === request.currentPath) throw failure
+          return readFile(path, signal === undefined ? undefined : { signal })
+        },
+      },
+    })).rejects.toBe(failure)
   })
 
   it('rethrows the exact abort reason during committed reopen and leaves the target', async () => {

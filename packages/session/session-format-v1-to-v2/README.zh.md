@@ -40,7 +40,7 @@ const migratedV2 = sessionFormatV1ToV2.migrate(decodedV1)
 
 成功的 v1 `assistant/message` 必须引用其完整有序 attempt。迁移会移除这些顶层 chunk 和已停用的 message provenance，在不合并 token 边界的前提下压缩 chunk，并把 stream 存到该 message 上。未被 message 认领的 attempt 会在其最后一个 chunk 的位置变成一个仅日志可见的 `assistant/attempt`。无关的交错事件保持相对顺序。
 
-如果引用指向被消费的 chunk，迁移会失败，而不会把它重定向到语义不同的事件。它会重映射已声明的事件 provenance、surface replacement、command source event、compaction range 与 list，以及 title message list。带 seed 的源若让继承切点切开一个 Assistant attempt，也会迁移失败；目标会用 `session/end-seed { inherited: true }` 标出精确切点。
+如果引用指向被消费的 chunk，迁移会失败，而不会把它重定向到语义不同的事件。它会重映射已声明的事件 provenance、surface replacement、command source event、compaction range 与 list，以及 title message list。已经对模型可见的 `session/title-llm-request.messages` 文本会在源校验后保持逐字节不变，因此目标校验不会重新解释该 prompt 中嵌入的旧序号。带 seed 的源若让继承切点切开一个 Assistant attempt，也会迁移失败；目标会用 `session/end-seed { inherited: true }` 标出精确切点。
 
 v2 物理 header 要求 `isSeeded`，且不存储数值切点。编解码器从最后一个 inherited end-seed marker 推导切点，每行写入一个事件，只对 `sourceEventSeqs` 做范围编码，并对普通事件词汇与 payload 扩展保持中立。严格的迁移目标校验会冻结 released-v2 清单并拒绝未知 type 或 member。当前恢复则准入 installed Session package 已知的事件 type，以及携带 `ignorable: true` 的未知事件，再把 payload 与 stream 语义交给 installed current restorer。所有路径仍严格校验 header、event envelope、sequence 与 inherited cut。
 

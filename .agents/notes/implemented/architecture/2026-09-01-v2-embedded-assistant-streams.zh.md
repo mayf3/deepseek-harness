@@ -33,7 +33,7 @@ Web follow adapter 显式选择接收这些进程本地 frame，并为每个 sta
 
 相邻迁移会校验完整的冻结 v1 产物，按 turn、step、terminal boundary 与精确 message provenance 对 chunk 分组，再为每个 attempt 替换一个 settlement。成功分组的 chunk 移入其 message。未被认领的分组会在最后一个被消费 chunk 的位置变成 `assistant/attempt`。无关的交错事件保持相对顺序，存活事件获得密集 v2 序号。
 
-该迁移边会重映射有限的已声明引用清单：信封 provenance、surface replacement 端点、command source event、compaction range 与 shadowed list，以及 title message list。指向被消费 chunk 的引用会使迁移失败；它绝不会被重定向到含义不同的 settlement。该迁移边也会拒绝切开 attempt 的继承切点。
+该迁移边会重映射有限的已声明引用清单：信封 provenance、surface replacement 端点、command source event、compaction range 与 shadowed list，以及 title message list。经过校验的 `session/title-llm-request` 模型可见文本会在源序号命名空间中保持逐字节不变，而它的 `messageSeqs` 字段会迁移到 v2 命名空间；因此目标校验不会根据重映射后的序号重建该文本。指向被消费 chunk 的引用会使迁移失败；它绝不会被重定向到含义不同的 settlement。该迁移边也会拒绝切开 attempt 的继承切点。
 
 v2 物理 header 要求 `isSeeded`，且不存储数值切点。带 seed 的产物用 `session/end-seed { inherited: true }` 标记其精确切点；解码从最后一个 tagged marker 推导切点。v2 编解码器为每个持久事件写一条物理行，只对 `sourceEventSeqs` 做范围编码，并在不冻结普通事件词汇或 payload 新增项的前提下校验物理 envelope。v1-to-v2 target validator 会另行冻结 released-v2 清单，current restoration 则使用 installed Session 词汇。冻结的 v0 与 v1 编解码器继续为不可变历史 generation 解码 packed row。
 
@@ -45,7 +45,7 @@ Generation 选择与发布遵循[已发布 Session 迁移决策](2026-08-31-rele
 
 ## 验证
 
-紧凑 stream 测试固定 text、reasoning、tool argument、raw chunk、时间戳间隔、格式错误 record 与分离 snapshot 的精确累积和展开。v1 到 v2 测试覆盖成功与失败 attempt、交错、密集序号与引用重映射、seed 切点插入与切分拒绝、严格源与目标校验、每行一个事件的 v2 编码、provenance range、原始与 Zstandard 发布，以及无写入的当前读取。
+紧凑 stream 测试固定 text、reasoning、tool argument、raw chunk、时间戳间隔、格式错误 record 与分离 snapshot 的精确累积和展开。v1 到 v2 测试覆盖成功与失败 attempt、交错、密集序号与引用重映射、源序号 title framing、seed 切点插入与切分拒绝、严格源与目标校验、每行一个事件的 v2 编码、与 backend 兼容的 provenance range、原始与 Zstandard 发布，以及无写入的当前读取。
 
 手工 performance acceptance 会在三轮、100 组 warmup pair 与 600 组 measured pair 下，针对同一批已经解析的物理 row，把静态 catalog routing 与直接 released-v2 restoration 比较；它不比较 v1 与 v2，也不计入 backend I/O。每个 pooled median 与 p95 regression 都必须保持在 5% 以内；已接受运行的最差 p95 regression 为 3.150%。`--smoke` 报告不参与 gate 的诊断 sample。
 
