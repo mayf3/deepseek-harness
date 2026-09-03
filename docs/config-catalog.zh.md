@@ -159,7 +159,7 @@ export interface PresetRoot {
 export type PresetTrust = 'system' | 'user'
 ```
 
-来源：[`packages/preset/agent-presets/src/preset.ts:52`](../packages/preset/agent-presets/src/preset.ts)
+来源：[`packages/preset/agent-presets/src/preset.ts:60`](../packages/preset/agent-presets/src/preset.ts)
 
 <a id="deepseek-aidsh-agent-tool-presentation"></a>
 
@@ -749,6 +749,24 @@ export type Config = LocalConfig
 
 来源：[`packages/fs/fs-sandbox/src/index.ts:45`](../packages/fs/fs-sandbox/src/index.ts)
 
+<a id="deepseek-aidsh-global-tool-mask"></a>
+
+## `@deepseek-ai/dsh-global-tool-mask`
+
+需要：`tools`
+
+```ts config-catalog
+/** Plugin config: the global-tool mask, in `tools.restrict()`'s own vocabulary. */
+export interface Config {
+  /** Global tool names that stay visible; everything else is hidden. Empty means no allow list. */
+  allow: string[]
+  /** Global tool names hidden from this scope. Empty means no deny list. */
+  deny: string[]
+}
+```
+
+来源：[`packages/preset/global-tool-mask/src/index.ts:28`](../packages/preset/global-tool-mask/src/index.ts)
+
 <a id="deepseek-aidsh-goal"></a>
 
 ## `@deepseek-ai/dsh-goal`
@@ -875,6 +893,28 @@ export interface Config {
 ```
 
 来源：[`packages/host/frontend-static/src/index.ts:30`](../packages/host/frontend-static/src/index.ts)
+
+<a id="deepseek-aidsh-host-plugin-manager"></a>
+
+## `@deepseek-ai/dsh-host-plugin-manager`
+
+需要：`loader`
+
+```ts config-catalog
+/** Plugin config: the pnpm command and the bounds on the child processes this service runs. */
+export interface Config {
+  /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
+  pnpmCommand: string
+  /** Bound on one install or remove run, in milliseconds. */
+  installTimeoutMs: number
+  /** Bound on one package probe, in milliseconds. */
+  probeTimeoutMs: number
+  /** How many trailing bytes of an install run's output an install failure reports. */
+  installLogTailBytes: number
+}
+```
+
+来源：[`packages/host/plugin-manager/src/index.ts:96`](../packages/host/plugin-manager/src/index.ts)
 
 <a id="deepseek-aidsh-host-webserver"></a>
 
@@ -3449,6 +3489,7 @@ export interface Config {
 - `@deepseek-ai/dsh-loader-smoke`（[`packages/test-support/loader-smoke/src/index.ts`](../packages/test-support/loader-smoke/src/index.ts)）
 - `@deepseek-ai/dsh-native-command`（[`packages/util/native-command/src/index.ts`](../packages/util/native-command/src/index.ts)）
 - `@deepseek-ai/dsh-output-retention`（[`packages/util/output-retention/src/index.ts`](../packages/util/output-retention/src/index.ts)）
+- `@deepseek-ai/dsh-patch-file`（[`packages/util/patch-file/src/index.ts`](../packages/util/patch-file/src/index.ts)）
 - `@deepseek-ai/dsh-sandbox-windows-acl`（[`packages/sandbox/sandbox-windows-acl/src/index.ts`](../packages/sandbox/sandbox-windows-acl/src/index.ts)）
 - `@deepseek-ai/dsh-scope`（[`packages/core/scope/src/index.ts`](../packages/core/scope/src/index.ts)）
 - `@deepseek-ai/dsh-sdk-client`（[`packages/sdk/client/src/index.ts`](../packages/sdk/client/src/index.ts)）

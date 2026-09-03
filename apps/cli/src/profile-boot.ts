@@ -19,8 +19,8 @@ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
+  bundleLayerPatches,
   composeEntries,
-  composeExternalLayer,
   healProfilesModuleFallback,
   installFailLoud,
   installRuntimeGuards,
@@ -33,7 +33,6 @@ import {
   warnNestedFiberFailures,
   watchUserPatches,
   type Profile,
-  type ProfileLayer,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -147,18 +146,6 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
     ...composed.homePatches,
     ...composed.overlays,
   ]
-}
-
-/**
- * The patches one bundle layer contributes. A built-in layer, or an external
- * layer the profile stages at boot, mounts its patches as written; every other
- * external layer mounts as one contained, id-prefixed group.
- * @param layer - the resolved layer.
- * @returns the layer's patches in application order.
- */
-export function bundleLayerPatches(layer: ProfileLayer): PatchOptions[] {
-  if (layer.trust === 'external' && layer.stage === 'runtime') return composeExternalLayer(layer).patches
-  return layer.patches
 }
 
 /**
@@ -306,6 +293,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     warnNestedFiberFailures(ctx, NAME, (line) => { process.stderr.write(`${line}\n`) })
     await ctx.plugin(ProfileRuntime, {
       profile: composed.profile,
+      installAnchor: INSTALL_ANCHOR,
       loadProfile: () => prepareProfile(options.profile),
       compose: composeFor,
       rootEntry: () => rootIncludeEntry(ctx),

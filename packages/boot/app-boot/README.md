@@ -56,7 +56,7 @@ Profiles with `patchReload: live` watch both user patch files: a valid edit reco
 
 A bundle you installed with `dsh plugin` is an **external** bundle: its rows mount under one contained group named `bundle/<package>`, every row id is prefixed `<package>/<id>`, and a row that fails to start is isolated and recorded instead of stopping the process — the group and its other rows stay up, and the plugin list shows the failure. Template bundles are built in and keep failing loud. A bundle that provides a service built-in rows inject must mount like a built-in one: its author declares `dsh.bundle.stage: boot` in `package.json`, or you set `dsh.profile.stages` in the profile manifest, which wins. Even without that, an isolated failure that leaves a built-in row waiting for a service still stops the boot and names the isolated bundle. Two more profile-manifest fields shape this: `dsh.profile.firstParty` lists installed packages treated as built in (a first-party package linked in during development), and `dependencies` versus `dsh.profile.bundles` distinguishes a package that is merely installed from one whose layer is enabled.
 
-After the tree is up the launcher provides `ctx.profileRuntime`, which holds the booted profile's facts, attributes each row to the layer that inserted it, reads which rows the user patch files disable, and recomposes the tree — the same path the patch watchers take, and the one a runtime bundle enable or install uses. Startup's fail-loud rejection guard is uninstalled once the tree is up: an unhandled rejection after boot is reported and contained, an uncaught exception is reported and exits.
+After the tree is up the launcher provides `ctx.profileRuntime`, which holds the booted profile's facts and the installation anchor, attributes each row to the layer that inserted it, reads which rows the user patch files disable, and recomposes the tree — the same path the patch watchers take, and the one the [plugin manager](../../host/plugin-manager/README.md) uses to enable or retry a bundle; `recordContainedStates` is what such a caller runs afterwards, because the boot audit does not run again. Startup's fail-loud rejection guard is uninstalled once the tree is up: an unhandled rejection after boot is reported and contained, an uncaught exception is reported and exits.
 
 ### Previewing the effective configuration
 
@@ -101,9 +101,9 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard and runtime guards, activation audit, patch parsing, config dump, harness-source section |
-| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with trust and stage, module fallback |
-| [`src/external-bundles.ts`](src/external-bundles.ts) | External layer composition (contained group, id prefixing, patch rewriting) and the manifest operations behind install, enable, and disable |
+| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard and runtime guards, activation audit and `recordContainedStates`, patch-file loading through `dsh-patch-file`, config dump, harness-source section |
+| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with `layerTrust` and stage, module fallback |
+| [`src/external-bundles.ts`](src/external-bundles.ts) | External layer composition (contained group, id prefixing, patch rewriting), `bundleLayerPatches`, and the manifest operations behind install, enable, and disable |
 | [`src/contained-group.ts`](src/contained-group.ts) | The `cordis:contained-group` builtin and the `pluginFailures` registry |
 | [`src/profile-runtime.ts`](src/profile-runtime.ts) | The `profileRuntime` service: profile facts, row provenance, user-disabled rows, recomposition |
 | [`src/probe.ts`](src/probe.ts) | The child-process package probe and its per-profile cache |

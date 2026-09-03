@@ -5,6 +5,12 @@
  * re-reads the roots on every call so a preset authored while the process is
  * running is visible without a restart.
  *
+ * A preset may carry a user patch layer, {@link OVERLAY_FILE}: beside its
+ * composition, or — for a shipped preset — alone in the user root's directory
+ * of the same id. Discovery attaches the layer to the preset that wins the
+ * id, so the mount applies it and the inventory reports it, and judges its
+ * health with the composition's.
+ *
  * Discovery also owns preset HEALTH: a directory whose composition is
  * missing or unloadable is reported as a broken roster row rather than
  * skipped. A skipped directory would still occupy its id on disk — the copy
@@ -27,14 +33,24 @@ import { isBuiltin } from 'node:module'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { load } from 'js-yaml'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
+import { readPatchListFile } from '@deepseek-ai/dsh-patch-file'
 import { readPresetMetadata } from './metadata.ts'
-import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
+import { PRESET_ID, type AgentPreset, type PresetRoot, type PresetTrust } from './preset.ts'
 import { classifyRowSpecifier, type RowSpecifier } from './specifier.ts'
 
 /** The composition file that makes a directory a preset. */
 export const COMPOSITION_FILE = 'agent.cordis.yml'
+
+/**
+ * The user patch layer over a preset's composition: a Loader patch list in
+ * the same format as a profile's `cordis.patch.yml`, applied at every mount.
+ */
+export const OVERLAY_FILE = 'cordis.patch.yml'
+
+/** Diagnostic prefix on overlay parse errors. */
+const BIN_NAME = 'agent-presets'
 
 /**
  * Harness-home directory holding locally authored presets.
@@ -257,6 +273,50 @@ async function compositionProblem(path: string, harnessBase: string): Promise<st
 }
 
 /**
+ * Why the user patch layer at `path` cannot apply, or undefined when it can.
+ * Parsed with the shared patch-list parser, so a layer the profile launcher
+ * would accept is never called broken here; every inserted row is then
+ * shape-checked and resolved the way composition rows are.
+ * @param path - absolute path of the overlay file.
+ * @param harnessBase - base URL a row's package name resolves against.
+ * @returns one human-readable reason, or undefined when the layer is loadable.
+ */
+async function overlayProblem(path: string, harnessBase: string): Promise<string | undefined> {
+  let patches: PatchOptions[] | undefined
+  try {
+    patches = await readPatchListFile(BIN_NAME, path, 'user patch layer')
+  } catch (error) {
+    /* v8 ignore next -- the parser throws Errors for every failure; the fallback keeps a hostile value readable */
+    const full = error instanceof Error ? error.message : String(error)
+    return `the user patch layer ${OVERLAY_FILE} cannot be applied: ${full.replace(/\n[\s\S]*$/, '')}`
+  }
+  // The caller statted this file moments ago; gone in between reads as nothing to apply.
+  if (patches === undefined) return undefined
+  const presetBase = new URL('.', pathToFileURL(path)).href
+  for (const [index, patch] of patches.entries()) {
+    if (patch.insert === undefined) continue
+    const shape = entryListProblem(patch.insert, `user patch layer entry ${String(index + 1)}`)
+    if (shape !== undefined) return shape
+    const unresolvable = await unresolvableRows(patch.insert, presetBase, harnessBase, `user patch layer entry ${String(index + 1)}`)
+    const [first] = unresolvable
+    if (first !== undefined) {
+      return `the user patch layer ${OVERLAY_FILE} inserts ${first.label}, which names a plugin that cannot be resolved: ${first.name}`
+    }
+  }
+  return undefined
+}
+
+/** One user patch layer found alone in a preset slot: a directory with the layer and no composition. */
+interface OverlayRecord {
+  /** The preset id the layer applies to; the directory's name. */
+  readonly id: string
+  /** Absolute path of the layer file. */
+  readonly path: string
+  /** Trust of the root the layer was found under. */
+  readonly trust: PresetTrust
+}
+
+/**
  * Whether `path` names an existing regular file.
  * @param path - absolute path to test.
  * @returns true when the path resolves to a file.
@@ -290,30 +350,11 @@ async function isFile(path: string): Promise<boolean> {
  * @returns the root's presets ordered by id.
  */
 export async function scanRoot(root: PresetRoot, harnessBase: string): Promise<AgentPreset[]> {
-  const dir = resolve(expandHomePath(root.path))
-  let children
-  try {
-    children = await readdir(dir, { withFileTypes: true })
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
-    throw new Error(`agent-presets: cannot read preset root ${dir}: ${String(error)}`, { cause: error })
-  }
-  const found: AgentPreset[] = []
-  for (const child of children) {
-    if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue
-    const directory = join(dir, child.name)
-    const path = join(directory, COMPOSITION_FILE)
-    const broken = await isFile(path)
-      ? await compositionProblem(path, harnessBase)
-      : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
-    // Display text only, and never fatal: a preset with unreadable metadata
-    // still mounts, it just shows its id.
-    const metadata = await readPresetMetadata(directory)
-    found.push({
-      id: child.name, trust: root.trust, path, ...metadata,
-      ...broken === undefined ? {} : { broken },
-    })
-  }
+  return (await scanRootSlots(root, harnessBase)).presets
+}
+
+/** Sort presets by declared order, then id. */
+function sortPresets(found: AgentPreset[]): AgentPreset[] {
   // Declared order first so the shipped set reads by capability; everything
   // else falls back to the id, which keeps authored presets stable.
   return found.sort((left, right) => {
@@ -323,7 +364,61 @@ export async function scanRoot(root: PresetRoot, harnessBase: string): Promise<A
 }
 
 /**
+ * Scan one root for every preset slot: the presets it holds, and the user
+ * patch layers found alone in a directory that holds no composition.
+ * @param root - the directory and the trust its presets inherit.
+ * @param harnessBase - base URL a row's package name resolves against.
+ * @returns the root's presets ordered by id, and its lone overlays.
+ */
+async function scanRootSlots(
+  root: PresetRoot, harnessBase: string,
+): Promise<{ presets: AgentPreset[]; overlays: OverlayRecord[] }> {
+  const dir = resolve(expandHomePath(root.path))
+  let children
+  try {
+    children = await readdir(dir, { withFileTypes: true })
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { presets: [], overlays: [] }
+    throw new Error(`agent-presets: cannot read preset root ${dir}: ${String(error)}`, { cause: error })
+  }
+  const presets: AgentPreset[] = []
+  const overlays: OverlayRecord[] = []
+  for (const child of children) {
+    if (!child.isDirectory() || !PRESET_ID.test(child.name)) continue
+    const directory = join(dir, child.name)
+    const path = join(directory, COMPOSITION_FILE)
+    const overlayPath = join(directory, OVERLAY_FILE)
+    const hasOverlay = await isFile(overlayPath)
+    if (!await isFile(path)) {
+      // A layer alone in the slot is not a preset: it belongs to the preset
+      // of the same id another root supplies, and only fails when none does.
+      if (hasOverlay) {
+        overlays.push({ id: child.name, path: overlayPath, trust: root.trust })
+        continue
+      }
+    }
+    const broken = await isFile(path)
+      ? await compositionProblem(path, harnessBase) ?? (hasOverlay ? await overlayProblem(overlayPath, harnessBase) : undefined)
+      : `the composition file ${COMPOSITION_FILE} is missing — the directory still occupies the id; delete it or restore the file`
+    // Display text only, and never fatal: a preset with unreadable metadata
+    // still mounts, it just shows its id.
+    const metadata = await readPresetMetadata(directory)
+    presets.push({
+      id: child.name, trust: root.trust, path, ...metadata,
+      ...hasOverlay ? { overlayPath } : {},
+      ...broken === undefined ? {} : { broken },
+    })
+  }
+  return { presets: sortPresets(presets), overlays }
+}
+
+/**
  * Scan every root in precedence order.
+ *
+ * A user patch layer found alone in a later root's slot attaches to the
+ * preset that won the id, unless that preset carries a layer of its own; one
+ * whose id no root supplies becomes a broken row, because the directory still
+ * occupies the id and a roster that hid it would leave nothing to delete.
  * @param roots - roots in precedence order; an earlier root wins a duplicate id.
  * @param harnessBase - base URL a row's package name resolves against.
  * @returns every discovered preset, first-root-wins per id.
@@ -333,11 +428,30 @@ export async function discoverPresets(
   harnessBase: string,
 ): Promise<AgentPreset[]> {
   const byId = new Map<string, AgentPreset>()
+  const loneOverlays: OverlayRecord[] = []
   for (const root of roots) {
-    for (const preset of await scanRoot(root, harnessBase)) {
+    const { presets, overlays } = await scanRootSlots(root, harnessBase)
+    for (const preset of presets) {
       if (byId.has(preset.id)) continue
       byId.set(preset.id, preset)
     }
+    loneOverlays.push(...overlays)
+  }
+  for (const overlay of loneOverlays) {
+    const preset = byId.get(overlay.id)
+    if (preset === undefined) {
+      byId.set(overlay.id, {
+        id: overlay.id,
+        trust: overlay.trust,
+        path: join(dirname(overlay.path), COMPOSITION_FILE),
+        overlayPath: overlay.path,
+        broken: `the directory holds a user patch layer ${OVERLAY_FILE} but no root supplies a preset "${overlay.id}" for it to apply to — delete the directory or restore the preset`,
+      })
+      continue
+    }
+    if (preset.overlayPath !== undefined) continue
+    const problem = preset.broken === undefined ? await overlayProblem(overlay.path, harnessBase) : undefined
+    byId.set(preset.id, { ...preset, overlayPath: overlay.path, ...problem === undefined ? {} : { broken: problem } })
   }
   return [...byId.values()]
 }

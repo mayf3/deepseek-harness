@@ -31,6 +31,7 @@ async function harness(
   const compose = vi.fn((current: Profile) => [{ id: `composed-for-${current.layers.length}` }] as PatchOptions[])
   await ctx.plugin(ProfileRuntime, {
     profile: profile(layers),
+    installAnchor: '/install/package.json',
     loadProfile: () => options.reloaded ?? profile(layers),
     compose,
     rootEntry: options.rootEntry ?? (() => undefined),
@@ -43,6 +44,7 @@ describe('ProfileRuntime', () => {
   it('exposes the booted profile\'s facts', async () => {
     const { runtime } = await harness([layer('@deepseek-ai/dsh-base', 'builtin', [])])
     expect(runtime.profileName).toBe('web')
+    expect(runtime.installAnchor).toBe('/install/package.json')
     expect(runtime.dir).toBe('/profiles/web')
     expect(runtime.patchPath).toBe('/profiles/web/cordis.patch.yml')
     expect(runtime.patchReload).toBe('live')

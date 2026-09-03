@@ -74,6 +74,22 @@ agent-presets:
 
 以下情况会拒绝复制：id 不符合 `[a-z0-9][a-z0-9-]*`（id 会成为目录名）、id 已被占用（复制从不覆写）、或来源未知。删除只移除本地创作的 preset；随部署提供的 preset 不可删除。已在被删除 preset 上运行的会话会继续运行。
 
+### 不编辑 preset 也能调整它
+
+每个 preset 都接受一层用户补丁：一个采用 Loader 补丁列表格式的 `cordis.patch.yml`——与 profile 的用户层是同一种文件——用来关掉行、替换某行的 config 或插入行，在每次挂载时施加在组装之上。本地创作的 preset 把它放在 `agent.cordis.yml` 旁边；随附 preset 则单独放在 `<dshHome>/.agent-presets/<id>/cordis.patch.yml`，随附安装保持原样：
+
+```yaml
+- id: tool-web
+  disabled: true
+- insert:
+    - id: hide-fetch
+      name: '@deepseek-ai/dsh-global-tool-mask'
+      config:
+        deny: [web_fetch]
+```
+
+这一层与组装一起判定：无法解析的层、插入了畸形行、或插入了引用无法解析模块的行，都会让 preset 带着该原因变为 broken；没有任何根目录提供其 id 的层会被列为损坏的槽位。在层变化之后创建的会话组合新内容；运行中的会话保持各自的。组合清单报告每一行的 `source`（`preset` 或 `user`），以及被关掉的行是组装还是这一层关掉的。复制会把这一层带到新组装旁边，`removeOverlay` 删除它。[插件管理器](../../host/plugin-manager/README.zh.md) 经 `overlayPathFor` 写入这个文件。
+
 ### 切换会话的 preset
 
 会话只有在尚未产出任何内容——没有消息或工具调用——时才能切换到不同的 preset。此后组装在会话的生命周期内固定，因为在对话中途调换工具会留下新组装无法执行的已记录工具调用。已提交的切换会发出 `tools/change`，因为解析后的工具集在没有注册表编辑的情况下发生了变化。切换也会记入会话日志，因此恢复或 fork 的会话会按它运行的组装重建。
@@ -95,7 +111,7 @@ agent-presets:
 ### 设计理念
 
 - **每个 preset 一份常驻组装。** preset 在进程内只挂载一次，挂到常驻 scope 之下；agent 通过把自己的 scope key 认父到该挂载来加入，因此挂载的注册与监听器覆盖每个已加入的 agent，而不覆盖兄弟 preset 的。
-- **代际以组装文件为键。** 挂载记录组装文件的 stamp（mtime 与大小）；发现 stamp 过期的会话会开启下一个代际，而已加入的会话保持各自运行的那个代际——运行中的会话在文件被修改或删除后继续存活。
+- **代际以组装文件与用户补丁层为键。** 挂载记录组装文件的 stamp（mtime 与大小）以及补丁层文本的摘要；发现 stamp 过期的会话会开启下一个代际，而已加入的会话保持各自运行的那个代际——运行中的会话在文件被修改或删除后继续存活。补丁层被改回某个早先代际组装过的内容时，回到那一代而不是再组装第三个。
 - **preset 文件是输入，绝不是持久化目标。** 被挂载的子树把 `write()` 覆写为空操作，因此 loader 发起的写回绝不会重写共享的 preset 文件。
 - **发现过程拥有健康。** 组装缺失或不可加载的目录是携带原因的 broken 名单行，而不是被跳过——被跳过的目录仍占着它的 id，而任何界面都没有可删的东西。
 
@@ -104,11 +120,11 @@ agent-presets:
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 服务入口：`Config` schema、settings 命名空间、名单 API、常驻挂载协调 |
-| [`src/discovery.ts`](src/discovery.ts) | 文件系统发现：根目录扫描、健康检查、id 校验、排序 |
-| [`src/composition-inventory.ts`](src/composition-inventory.ts) | 面向插件清单表面的压平组合行：文件读取（求值 disabled 门）与挂载读取（携带 fiber 状态） |
+| [`src/discovery.ts`](src/discovery.ts) | 文件系统发现：根目录扫描、用户补丁层附着、健康检查、id 校验、排序 |
+| [`src/composition-inventory.ts`](src/composition-inventory.ts) | 面向插件清单表面的压平组合行：文件读取（求值 disabled 门并施加用户补丁层）与挂载读取（携带 fiber 状态），每行的 `source` 与 `disabledBy` |
 | [`src/preset.ts`](src/preset.ts) | 词汇体系：preset id 规则、`AgentPreset` 与 `PresetRoot`、错误类型 |
-| [`src/mount.ts`](src/mount.ts) | 子树挂载、宿主 base-URL 处理、挂载审计、`write()` 抑制 |
-| [`src/authoring.ts`](src/authoring.ts) | 本地创作 preset 的复制/删除/读取、权限收紧 |
+| [`src/mount.ts`](src/mount.ts) | 以用户补丁层为运行时 patches 的子树挂载、宿主 base-URL 处理、挂载审计、`write()` 抑制 |
+| [`src/authoring.ts`](src/authoring.ts) | 本地创作 preset 的复制/删除/读取、用户补丁层的复制与移除、权限收紧 |
 | [`src/metadata.ts`](src/metadata.ts) | `preset.yml` 展示元数据 |
 | [`src/session.ts`](src/session.ts) | `agent-preset/selected` 事件与 `agentPreset` Session 投影 |
 | [`src/types.ts`](src/types.ts) | client-safe 的线上载荷与 cordis 事件声明 |
@@ -171,7 +187,7 @@ agent-presets:
 
 - **位于可写根目录之外的 preset 可被发现却无法删除**——`remove()` 拒绝任何不在第一个 `user` 根目录下的 preset，因此一个既配置了自有可写根、又保留 `includeUserRoot` 的部署，会列出并挂载 harness home 下的 preset，却对每次删除回答「它不在可写 preset 根目录之下」。只想要自有 preset 的部署应设置 `includeUserRoot: false`。
 - **会话一旦产出任何内容便无法更换 preset**——切换会把空白会话的父作用域重链到另一个常驻挂载，且仅限空白会话：在对话中途调换工具会抽走模型已调用的工具。
-- **代际只以组装文件为键**——stamp 检查只察觉 `agent.cordis.yml` 的变化，察觉不到旁边 skill 文件或资产的编辑；那些编辑要等组装文件本身变动或进程重启才达到新会话。
+- **代际只以组装文件与用户补丁层为键**——stamp 检查只察觉 `agent.cordis.yml` 或 `cordis.patch.yml` 的变化，察觉不到旁边 skill 文件或资产的编辑；那些编辑要等这两个文件之一本身变动或进程重启才达到新会话。
 - **被替代的代际永不回收**——已加入的会话保持其运行所在的代际，而名单没有加入计数可以判断最后一个何时离开，因此整棵子树一直挂到进程结束。代价按代际计而非按会话计，但并非为零：`dsh-skill-filesystem` 默认监听自己的根目录，因此每一轮「编辑后建会话」都会新增一套活的 watcher。
 - **副本从不被实际挂载以校验**——它与来源逐字节相同，因此磁盘上已坏的来源会产出与来源同样损坏的副本；发现过程的健康检查会在下一次读取名单时把两行都标出来，而不是把失败推迟到会话启动。
 - **健康问的是「装没装」，不是「能不能 import」**——发现过程证明组装能以加载器方言解析、由具名行组成，且每一行它能证明会启动的行所引用的包装在 harness 基准之上、或所引用的文件确实存在；它从不 import 任何一个，因此入口文件缺失的包、在 apply 时抛错的插件、以及永远等待某个服务的插件，都仍在第一个会话处失败。`disabled` 是加载器唯一会插值的条目字段，因此在该字段写了表达式的行会被跳过，而不是仅凭文件下判断。

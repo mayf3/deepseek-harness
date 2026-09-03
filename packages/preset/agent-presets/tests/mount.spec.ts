@@ -726,7 +726,7 @@ describe('editing a composition file', () => {
       standing: Map<string, Promise<{
         key: unknown
         scope: unknown
-        stamp: { mtimeMs: number; size: number }
+        stamp: { mtimeMs: number; size: number; overlay: string }
       }>>
       ensureStanding(current: typeof preset): Promise<unknown>
     }
@@ -734,7 +734,7 @@ describe('editing a composition file', () => {
     const stale = await stalePromise
     await writeFile(path, rowFor('afterwards'))
     const { mtimeMs, size } = await stat(path)
-    const newer = { ...stale, stamp: { mtimeMs, size } }
+    const newer = { ...stale, stamp: { mtimeMs, size, overlay: '' } }
     const newerPromise = Promise.resolve(newer)
 
     // `await pending` yields before the guarded delete, letting the winning

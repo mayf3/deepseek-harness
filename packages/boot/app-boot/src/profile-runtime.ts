@@ -38,6 +38,8 @@ export interface RowOrigin {
 export interface ProfileRuntimeOptions {
   /** The profile as booted. */
   profile: Profile
+  /** Absolute path of the dsh app's package.json: the first resolution anchor for profile packages. */
+  installAnchor: string
   /** Re-read the profile from disk, re-resolving its bundle layers. */
   loadProfile: () => Profile
   /** The complete patch stack for a profile: bundle layers, user layers, overlays. */
@@ -75,6 +77,11 @@ export class ProfileRuntime extends Service {
   /** The profile name (`dsh --profile <name>`). */
   get profileName(): string {
     return this.profile.name
+  }
+
+  /** Absolute path of the dsh app's package.json, the anchor profile packages resolve from. */
+  get installAnchor(): string {
+    return this.options.installAnchor
   }
 
   /** Absolute profile directory. */

@@ -87,6 +87,13 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Plugin management over the booted profile: install, enable, disable,
+    # retry, and user-layer rows through the `plugins` Remote. Resolves the
+    # profile runtime per call, so a composition booted without the profile
+    # launcher still starts and answers `plugins/unavailable`.
+    - id: plugin-manager
+      name: '@deepseek-ai/dsh-host-plugin-manager'
+
     # Session commands, cold reads, and live control over Typert Remote.
     - id: session-controller
       name: '@deepseek-ai/dsh-api-session-controller'

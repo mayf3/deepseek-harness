@@ -8,8 +8,23 @@
  * @module @deepseek-ai/dsh-app-boot/contained-group
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import type { Context, Fiber, FiberState } from '@deepseek-ai/cordis'
 import { Group, type Entry, type EntryGroup, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+
+/** Runtime mirror: FiberState is a cross-package const enum. */
+const FIBER_PENDING = 0 as FiberState.PENDING
+
+/**
+ * The diagnostic line for a fiber waiting on services, naming the ones its
+ * context cannot resolve: no plugin error exists for that state.
+ * @param fiber - the pending fiber.
+ * @returns one line, `pending (waiting for service: x)`.
+ */
+export function pendingMessage(fiber: Fiber): string {
+  const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
+  const subject = missing.length === 1 ? 'service' : 'services'
+  return `pending (waiting for ${subject}: ${missing.join(', ') || 'unknown'})`
+}
 
 /** The lifecycle step at which a contained row failed. */
 export type ContainedFailureStage = 'import' | 'apply' | 'inject-pending' | 'unknown'
@@ -101,7 +116,24 @@ export class ContainedGroup extends Group {
   override async create(options: Omit<EntryOptions, 'id'>): Promise<string> {
     try {
       const id = await super.create(options)
-      this.registry()?.clear(id)
+      // A created row is not a mounted row: one waiting for a service resolves
+      // `create` in the pending state, and a later reload re-creates every row
+      // of the group, so the record must follow what the row came to. The
+      // store is keyed by the row id `ensureId` assigned; `id` is tree-wide.
+      const rowId = (options as EntryOptions).id
+      const fiber = this.tree.store[rowId]?.fiber
+      if (fiber !== undefined && fiber.state === FIBER_PENDING) {
+        this.registry()?.record({
+          entryId: id,
+          rowId,
+          moduleName: options.name,
+          groupId: this.groupId(),
+          stage: 'inject-pending',
+          message: pendingMessage(fiber),
+        })
+      } else {
+        this.registry()?.clear(id)
+      }
       return id
     } catch (error) {
       const registry = this.registry()

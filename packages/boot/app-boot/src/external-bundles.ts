@@ -143,6 +143,18 @@ export function composeExternalLayer(layer: ProfileLayer): ComposedExternalLayer
 }
 
 /**
+ * The patches one bundle layer contributes. A built-in layer, or an external
+ * layer the profile stages at boot, mounts its patches as written; every other
+ * external layer mounts as one contained, id-prefixed group.
+ * @param layer - the resolved layer.
+ * @returns the layer's patches in application order.
+ */
+export function bundleLayerPatches(layer: ProfileLayer): PatchOptions[] {
+  if (layer.trust === 'external' && layer.stage === 'runtime') return composeExternalLayer(layer).patches
+  return layer.patches
+}
+
+/**
  * Whether an installed dependency exports a profile patch, i.e. is a bundle.
  * @param binName - the diagnostic prefix used by manifest reads.
  * @param packageName - the dependency's package name.

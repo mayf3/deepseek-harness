@@ -97,6 +97,30 @@ describe('cordis:contained-group', () => {
     expect(registry.get('include:ext/waiting')?.message).toContain('neverReady')
   })
 
+  it('keeps recording a waiting row when a reload re-creates its group', async () => {
+    const ctx = await boot(NAME, stage(`
+- id: bundle/ext
+  name: cordis:contained-group
+  group: true
+  config:
+    - id: ext/waiting
+      name: cordis:pending
+- id: other
+  name: cordis:good
+`), [], prepare)
+    contexts.push(ctx)
+    const registry = ctx.get('pluginFailures') as ContainedFailureRegistry
+    expect(registry.get('include:ext/waiting')?.stage).toBe('inject-pending')
+
+    const root = rootIncludeEntry(ctx)
+    if (root === undefined) throw new Error('no root include')
+    const { patches: _patches, ...config } = root.options.config as { path: string; patches?: unknown }
+    await root.update({ config: { ...config, patches: [{ id: 'other', disabled: true }] } })
+
+    expect(registry.get('include:ext/waiting')).toEqual(expect.objectContaining({ stage: 'inject-pending', rowId: 'ext/waiting' }))
+    expect(registry.get('include:ext/waiting')?.message).toBe('pending (waiting for service: neverReady)')
+  })
+
   it('still fails the boot for a built-in row, and names isolated bundles when a built-in row is left waiting', async () => {
     await expect(boot(NAME, stage(`
 - id: builtin-bad

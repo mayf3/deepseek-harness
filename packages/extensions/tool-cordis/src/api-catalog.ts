@@ -188,6 +188,20 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['when no configured root supplies that id.'],
       },
       {
+        signature: 'async overlayPathFor(id: string): Promise<string>',
+        description: 'Where one preset\'s user patch layer is, or would be written: the layer discovery attached, else the writable root\'s slot of the same id — beside the composition for a locally authored preset, alone in the slot for a shipped one. The file need not exist yet.',
+        parameters: [{ name: 'id', description: 'the preset id.' }],
+        returns: 'the absolute path of the layer file.',
+        throws: ['when the preset is unknown, or it has no layer and the deployment configures no writable root.'],
+      },
+      {
+        signature: 'async removeOverlay(id: string): Promise<boolean>',
+        description: 'Delete one preset\'s user patch layer, so the next generation composes the preset exactly as its root supplies it. Sessions already joined keep the generation they run on.',
+        parameters: [{ name: 'id', description: 'the preset id.' }],
+        returns: 'true when a layer was removed; false when the preset had none.',
+        throws: ['when the preset is unknown or its layer lies outside the writable root.'],
+      },
+      {
         signature: '@Remote(\'read\') async readDocument(agentPreset: string): Promise<AgentPresetDocument>',
         description: 'One preset\'s composition text with the roster row it belongs to.',
         parameters: [{ name: 'agentPreset', description: 'the preset id.' }],
@@ -1284,6 +1298,77 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
+      },
+    ],
+  },
+  {
+    key: 'pluginManager',
+    summary: 'The `pluginManager` service and the `plugins` Remote.',
+    description: 'The `pluginManager` service and the `plugins` Remote.\n\nEvery method that changes the profile reads the manifest afresh and writes it through the app-boot helpers the `dsh plugin` command uses, so the CLI and the manager never disagree on the file. The profile runtime is resolved per call: a composition without it (a test, a launcher other than the profile launcher) still mounts this service, and every call then reports `plugins/unavailable` rather than the service failing to start.',
+    methods: [
+      {
+        signature: '@Remote(\'list\') async list(): Promise<PluginPackageView[]>',
+        description: 'Every package the profile knows: its template and installed bundles, and every other installed dependency.',
+        parameters: [],
+        returns: 'one view per package, bundles first in layer order.',
+      },
+      {
+        signature: '@Remote(\'install\') async install(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult>',
+        description: 'Install a package into the profile with pnpm, probe it, and leave it disabled unless asked otherwise. The run\'s output streams as `plugins/install-log` chunks carrying the returned `jobId`.',
+        parameters: [{ name: 'spec', description: 'what to install, in pnpm\'s own vocabulary: a registry name, a `github:` or git URL, a tarball, or an absolute path.' }, { name: 'options', description: '`enable` puts every newly installed bundle into the layer list at once.' }],
+        returns: 'what the run installed and enabled.',
+        throws: ['{RemoteError} `plugins/install-failed` when pnpm exits non-zero or the run times out, `plugins/enable-failed` when enabling was asked for and the tree rejected the bundle.'],
+      },
+      {
+        signature: '@Remote(\'uninstall\') async uninstall(packageName: string): Promise<void>',
+        description: 'Remove a package from the profile: disable it when enabled, drop every user-layer row that names it, run `pnpm remove`, and forget its probe.',
+        parameters: [{ name: 'packageName', description: 'the installed dependency to remove.' }],
+        throws: ['{RemoteError} `plugins/not-installed`, or `plugins/install-failed` when pnpm exits non-zero.'],
+      },
+      {
+        signature: '@Remote(\'enable\') async enable(packageName: string): Promise<PluginEnableResult>',
+        description: 'Put an installed bundle into the layer list and, on a live profile, recompose the tree with it. A rejected recomposition restores the list and reports the tree\'s reason; the tree that was running keeps running.',
+        parameters: [{ name: 'packageName', description: 'the installed bundle.' }],
+        returns: 'whether the list changed and whether the change is live.',
+        throws: ['{RemoteError} `plugins/not-installed`, `plugins/not-enableable` for a package that declares no bundle or whose probe refused it, or `plugins/enable-failed`.'],
+      },
+      {
+        signature: '@Remote(\'disable\') async disable(packageName: string): Promise<PluginEnableResult>',
+        description: 'Take a bundle out of the layer list and, on a live profile, recompose the tree without it.',
+        parameters: [{ name: 'packageName', description: 'the enabled bundle.' }],
+        returns: 'whether the list changed and whether the change is live.',
+        throws: ['{RemoteError} `gateway/bad-request` for a template bundle, which is not a dependency.'],
+      },
+      {
+        signature: '@Remote(\'retry\') async retry(packageName: string): Promise<PluginEnableResult>',
+        description: 'Compose an enabled bundle again from scratch: its group leaves the tree and returns, so rows that failed at boot get another start.',
+        parameters: [{ name: 'packageName', description: 'the enabled bundle.' }],
+        returns: 'the enable outcome of the second step.',
+        throws: ['{RemoteError} `gateway/bad-request` when the bundle is not enabled, or the enable failures.'],
+      },
+      {
+        signature: '@Remote(\'addRow\') async addRow( packageName: string, target: PluginRowTarget, options?: { module?: string; id?: string; config?: JsonValue }, ): Promise<PluginRowAddition>',
+        description: 'Add a row naming one of the package\'s modules to a user layer: the profile\'s global `cordis.patch.yml`, or an agent preset\'s.',
+        parameters: [{ name: 'packageName', description: 'the installed package.' }, { name: 'target', description: 'which layer.' }, { name: 'options', description: '`module` selects a declared `dsh.plugins[]` name (default `.`), `id` overrides the derived row id, `config` overrides the declared default.' }],
+        returns: 'where the row landed.',
+        throws: ['{RemoteError} `plugins/not-installed`, `plugins/not-enableable` when the module is not one the probe found addable, `plugins/row-conflict`, or `plugins/unavailable` for a preset target without a roster.'],
+      },
+      {
+        signature: '@Remote(\'removeRow\') async removeRow(target: PluginRowTarget, rowId: string): Promise<void>',
+        description: 'Remove a row a user layer inserted.',
+        parameters: [{ name: 'target', description: 'which layer.' }, { name: 'rowId', description: 'the inserted row\'s id.' }],
+        throws: ['{RemoteError} `gateway/bad-request` when the layer inserts no such row.'],
+      },
+      {
+        signature: '@Remote(\'setRowDisabled\') async setRowDisabled(target: PluginRowTarget, rowId: string, disabled: boolean): Promise<void>',
+        description: 'Switch one row off or on in a user layer. Deny-only: `true` writes `disabled: true` for the row, `false` removes that key, so a bundle\'s own `!!js` gate is restored rather than overridden.',
+        parameters: [{ name: 'target', description: 'which layer.' }, { name: 'rowId', description: 'the row\'s id as the composition declares it.' }, { name: 'disabled', description: 'whether the layer should switch the row off.' }],
+      },
+      {
+        signature: '@Remote(\'dependents\') async dependents(packageName: string): Promise<PluginDependents>',
+        description: 'What disabling or removing a package would strand: services its rows provide that rows outside it inject, and user-layer rows naming its modules.',
+        parameters: [{ name: 'packageName', description: 'the package.' }],
+        returns: 'the dependents.',
       },
     ],
   },
@@ -3168,6 +3253,22 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'plugins/changed',
+    mode: 'emit',
+    signature: '\'plugins/changed\'(change: { readonly reason: PluginChangeReason; readonly packageName?: string }): void',
+    summary: 'The manager changed what is installed, enabled, or composed.',
+    description: 'The manager changed what is installed, enabled, or composed.',
+    parameters: [{ name: 'change', description: 'why, and which package when one is concerned.' }],
+  },
+  {
+    name: 'plugins/install-log',
+    mode: 'emit',
+    signature: '\'plugins/install-log\'(chunk: PluginInstallLogChunk): void',
+    summary: 'One chunk of an install run\'s output, in order; the last chunk carries the exit code.',
+    description: 'One chunk of an install run\'s output, in order; the last chunk carries the exit code.',
+    parameters: [{ name: 'chunk', description: 'the chunk.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -3421,7 +3522,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPreset',
-    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
+    declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly overlayPath?: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
   },
   {
     name: 'AgentPresetComposition',
@@ -3429,7 +3530,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentPresetCompositionRow',
-    declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n}',
+    declaration: 'export interface AgentPresetCompositionRow {\n    readonly entryId: string | null;\n    readonly moduleName: string;\n    readonly enabled: CompositionRowEnablement;\n    readonly condition?: string;\n    readonly fiberState?: FiberState;\n    readonly source: CompositionRowSource;\n    readonly disabledBy?: CompositionRowDisabledBy;\n}',
   },
   {
     name: 'AgentPresetDirectoryOpenValue',
@@ -3704,8 +3805,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CompactionTrigger = \'pressure\' | \'context-overflow\';',
   },
   {
+    name: 'CompositionRowDisabledBy',
+    declaration: 'export type CompositionRowDisabledBy = \'composition\' | \'user\';',
+  },
+  {
     name: 'CompositionRowEnablement',
     declaration: 'export type CompositionRowEnablement = boolean | \'conditional\';',
+  },
+  {
+    name: 'CompositionRowSource',
+    declaration: 'export type CompositionRowSource = \'preset\' | \'user\';',
   },
   {
     name: 'ConfinedArgv',
@@ -4522,6 +4631,74 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
+  },
+  {
+    name: 'PluginChangeReason',
+    declaration: 'export type PluginChangeReason = \'install\' | \'uninstall\' | \'enable\' | \'disable\' | \'retry\' | \'row\';',
+  },
+  {
+    name: 'PluginDependents',
+    declaration: 'export interface PluginDependents {\n    readonly services: readonly PluginServiceDependent[];\n    readonly references: readonly PluginRowReference[];\n}',
+  },
+  {
+    name: 'PluginEnableResult',
+    declaration: 'export interface PluginEnableResult {\n    readonly changed: boolean;\n    readonly effect: \'live\' | \'restart\';\n}',
+  },
+  {
+    name: 'PluginInstallLogChunk',
+    declaration: 'export interface PluginInstallLogChunk {\n    readonly jobId: string;\n    readonly spec: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
+  },
+  {
+    name: 'PluginInstallResult',
+    declaration: 'export interface PluginInstallResult {\n    readonly installed: readonly string[];\n    readonly enabled: readonly string[];\n    readonly installedOnly: readonly string[];\n    readonly plain: readonly string[];\n    readonly jobId: string;\n}',
+  },
+  {
+    name: 'PluginPackageAddableView',
+    declaration: 'export interface PluginPackageAddableView {\n    readonly moduleName: string;\n    readonly declaredName: string;\n    readonly title?: string;\n    readonly config?: JsonValue;\n    readonly ok: boolean;\n    readonly error?: string;\n    readonly configSchema?: JsonValue;\n}',
+  },
+  {
+    name: 'PluginPackageKind',
+    declaration: 'export type PluginPackageKind = \'bundle\' | \'plugin\' | \'library\';',
+  },
+  {
+    name: 'PluginPackageRowView',
+    declaration: 'export interface PluginPackageRowView {\n    readonly entryId: string;\n    readonly originalId?: string;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly disabledBy?: \'user\' | \'composition\';\n    readonly phase: PluginRowPhase;\n    readonly failure?: {\n        readonly stage: string;\n        readonly message: string;\n    };\n}',
+  },
+  {
+    name: 'PluginPackageStage',
+    declaration: 'export type PluginPackageStage = \'boot\' | \'runtime\';',
+  },
+  {
+    name: 'PluginPackageStatus',
+    declaration: 'export type PluginPackageStatus = \'running\' | \'partial\' | \'failed\' | \'disabled\' | \'not-enableable\' | \'restart-required\' | \'plain\';',
+  },
+  {
+    name: 'PluginPackageTrust',
+    declaration: 'export type PluginPackageTrust = \'builtin\' | \'external\';',
+  },
+  {
+    name: 'PluginPackageView',
+    declaration: 'export interface PluginPackageView {\n    readonly name: string;\n    readonly version?: string;\n    readonly title?: string;\n    readonly description?: string;\n    readonly kind: PluginPackageKind;\n    readonly trust: PluginPackageTrust;\n    readonly stage: PluginPackageStage;\n    readonly installed: boolean;\n    readonly enabled: boolean;\n    readonly status: PluginPackageStatus;\n    readonly reason?: string;\n    readonly enginesDsh?: string;\n    readonly cordisSameCopy: boolean | null;\n    readonly rows: readonly PluginPackageRowView[];\n    readonly overrides: readonly string[];\n    readonly addable: readonly PluginPackageAddableView[];\n    readonly probedAt?: string;\n    readonly liveReload: boolean;\n}',
+  },
+  {
+    name: 'PluginRowAddition',
+    declaration: 'export interface PluginRowAddition {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly file: string;\n}',
+  },
+  {
+    name: 'PluginRowPhase',
+    declaration: 'export type PluginRowPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
+  },
+  {
+    name: 'PluginRowReference',
+    declaration: 'export interface PluginRowReference {\n    readonly target: PluginRowTarget;\n    readonly rowId: string;\n    readonly moduleName: string;\n}',
+  },
+  {
+    name: 'PluginRowTarget',
+    declaration: 'export type PluginRowTarget = {\n    readonly kind: \'global\';\n} | {\n    readonly kind: \'preset\';\n    readonly preset: string;\n};',
+  },
+  {
+    name: 'PluginServiceDependent',
+    declaration: 'export interface PluginServiceDependent {\n    readonly service: string;\n    readonly providedBy: string;\n    readonly injectedBy: readonly string[];\n}',
   },
   {
     name: 'PostToolDecision',

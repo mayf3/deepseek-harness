@@ -104,20 +104,21 @@ describe('fileComposition', () => {
 
     expect(await fileComposition(path, refuseExpression)).toEqual({
       rows: [
-        { entryId: 'alpha', moduleName: 'pkg-alpha', enabled: true },
-        { entryId: null, moduleName: 'pkg-anonymous', enabled: true },
-        { entryId: 'off', moduleName: 'pkg-off', enabled: false },
+        { entryId: 'alpha', moduleName: 'pkg-alpha', enabled: true, source: 'preset' },
+        { entryId: null, moduleName: 'pkg-anonymous', enabled: true, source: 'preset' },
+        { entryId: 'off', moduleName: 'pkg-off', enabled: false, source: 'preset', disabledBy: 'composition' },
         {
           entryId: 'cond',
           moduleName: 'pkg-cond',
           enabled: 'conditional',
+          source: 'preset',
           condition: 'process.platform === \'win32\'',
         },
-        { entryId: 'child', moduleName: 'pkg-child', enabled: true },
-        { entryId: 'child-off', moduleName: 'pkg-child-off', enabled: false },
-        { entryId: 'buried', moduleName: 'pkg-buried', enabled: false },
-        { entryId: 'maybe', moduleName: 'pkg-maybe', enabled: 'conditional' },
-        { entryId: 'certainly-off', moduleName: 'pkg-certainly-off', enabled: false },
+        { entryId: 'child', moduleName: 'pkg-child', enabled: true, source: 'preset' },
+        { entryId: 'child-off', moduleName: 'pkg-child-off', enabled: false, source: 'preset', disabledBy: 'composition' },
+        { entryId: 'buried', moduleName: 'pkg-buried', enabled: false, source: 'preset', disabledBy: 'composition' },
+        { entryId: 'maybe', moduleName: 'pkg-maybe', enabled: 'conditional', source: 'preset' },
+        { entryId: 'certainly-off', moduleName: 'pkg-certainly-off', enabled: false, source: 'preset', disabledBy: 'composition' },
       ],
     })
   })
@@ -136,8 +137,8 @@ describe('fileComposition', () => {
 
     expect(await fileComposition(path, evaluateExpression)).toEqual({
       rows: [
-        { entryId: 'off', moduleName: 'pkg-off', enabled: false, condition: '1 === 1' },
-        { entryId: 'on', moduleName: 'pkg-on', enabled: true, condition: '1 === 2' },
+        { entryId: 'off', moduleName: 'pkg-off', enabled: false, condition: '1 === 1', source: 'preset', disabledBy: 'composition' },
+        { entryId: 'on', moduleName: 'pkg-on', enabled: true, condition: '1 === 2', source: 'preset' },
       ],
     })
   })
@@ -185,13 +186,14 @@ describe('mountedCompositionRows', () => {
     const byId = new Map(rows.map(row => [row.entryId, row]))
     expect(rows).toHaveLength(3)
     expect(byId.get(activeId)).toEqual(
-      { entryId: activeId, moduleName: 'cordis:active', enabled: true, fiberState: FiberState.ACTIVE })
+      { entryId: activeId, moduleName: 'cordis:active', enabled: true, fiberState: FiberState.ACTIVE, source: 'preset' })
     expect(byId.get(disabledId)).toEqual(
-      { entryId: disabledId, moduleName: 'cordis:active', enabled: false })
+      { entryId: disabledId, moduleName: 'cordis:active', enabled: false, source: 'preset', disabledBy: 'composition' })
     expect(byId.get(evaluatedId)).toEqual({
       entryId: evaluatedId,
       moduleName: 'cordis:active',
       enabled: true,
+      source: 'preset',
       condition: 'false',
       fiberState: FiberState.ACTIVE,
     })
@@ -224,15 +226,15 @@ describe('AgentPresets.compositionInventory', () => {
         id: 'minimal',
         trust: 'system',
         isDefault: true,
-        rows: [{ entryId: 'beta', moduleName: '../../plugins/contribute.js', enabled: true }],
+        rows: [{ entryId: 'beta', moduleName: '../../plugins/contribute.js', enabled: true, source: 'preset' }],
       },
       {
         id: 'standard',
         trust: 'system',
         isDefault: false,
         rows: [
-          { entryId: 'alpha', moduleName: '../../plugins/contribute.js', enabled: true },
-          { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false },
+          { entryId: 'alpha', moduleName: '../../plugins/contribute.js', enabled: true, source: 'preset' },
+          { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false, source: 'preset', disabledBy: 'composition' },
         ],
       },
       {
@@ -241,15 +243,16 @@ describe('AgentPresets.compositionInventory', () => {
         name: '我的模式',
         isDefault: false,
         rows: [
-          { entryId: 'prompt', moduleName: '@deepseek-ai/dsh-system-prompt', enabled: true },
+          { entryId: 'prompt', moduleName: '@deepseek-ai/dsh-system-prompt', enabled: true, source: 'preset' },
           // The platform-gate shape: the service evaluates it with the
           // Loader's own scope, so the file answer matches a mount's.
-          { entryId: 'gated', moduleName: '@deepseek-ai/dsh-system-prompt', enabled: false, condition: '1 === 1' },
+          { entryId: 'gated', moduleName: '@deepseek-ai/dsh-system-prompt', enabled: false, condition: '1 === 1', source: 'preset', disabledBy: 'composition' },
           // An expression the evaluator refuses stays a mount's decision.
           {
             entryId: 'undecidable',
             moduleName: '@deepseek-ai/dsh-system-prompt',
             enabled: 'conditional',
+            source: 'preset',
             condition: 'nothing.here',
           },
         ],
@@ -279,9 +282,10 @@ describe('AgentPresets.compositionInventory', () => {
         entryId: 'alpha',
         moduleName: '../../plugins/contribute.js',
         enabled: true,
+        source: 'preset',
         fiberState: FiberState.ACTIVE,
       },
-      { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false },
+      { entryId: 'alpha-extra', moduleName: '../../plugins/contribute.js', enabled: false, source: 'preset', disabledBy: 'composition' },
     ])
   })
 
@@ -311,7 +315,7 @@ describe('AgentPresets.compositionInventory', () => {
     expect(volatile).toMatchObject({ id: 'volatile', trust: 'user', isDefault: true })
     expect(volatile?.broken).toBeUndefined()
     expect(volatile?.rows).toEqual([
-      { entryId: 'only', moduleName: plugin, enabled: true, fiberState: FiberState.ACTIVE },
+      { entryId: 'only', moduleName: plugin, enabled: true, fiberState: FiberState.ACTIVE, source: 'preset' },
     ])
   })
 

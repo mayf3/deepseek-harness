@@ -6,15 +6,18 @@
  * boot answers from its composition file, with `!!js` disabled expressions
  * evaluated through the caller-supplied Loader evaluator so the file answer
  * matches the decision a mount on this host would make. A row whose
- * expression the evaluator refuses stays `'conditional'`.
+ * expression the evaluator refuses stays `'conditional'`. Either way the
+ * preset's user patch layer is accounted for: a row the layer inserted reads
+ * `source: 'user'`, and a row it switched off with a literal `disabled: true`
+ * reads `disabledBy: 'user'`.
  * @module @deepseek-ai/dsh-agent-presets/composition-inventory
  */
 
 import { readFile } from 'node:fs/promises'
 import { load } from 'js-yaml'
 import type { FiberState } from '@deepseek-ai/cordis'
-import { isJsExpr, type EntryTree } from '@deepseek-ai/cordis-plugin-loader'
-import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { isJsExpr, type EntryOptions, type EntryTree } from '@deepseek-ai/cordis-plugin-loader'
+import { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { entryListProblem } from './discovery.ts'
 import type { PresetTrust } from './preset.ts'
 
@@ -32,6 +35,12 @@ export type CompositionRowEnablement = boolean | 'conditional'
  */
 export type DisabledExpressionEvaluator = (expression: string) => unknown
 
+/** Who put a row into a preset's composition: its file, or the user patch layer over it. */
+export type CompositionRowSource = 'preset' | 'user'
+
+/** Why a row is off: the composition's own gate, or the user patch layer's literal `disabled: true`. */
+export type CompositionRowDisabledBy = 'composition' | 'user'
+
 /** One plugin row a preset composition names. */
 export interface AgentPresetCompositionRow {
   /**
@@ -47,7 +56,45 @@ export interface AgentPresetCompositionRow {
   readonly condition?: string
   /** Root-fiber state, present only when read from a live mount. */
   readonly fiberState?: FiberState
+  /** Whether the composition file or the user patch layer supplied the row. */
+  readonly source: CompositionRowSource
+  /** Present exactly when `enabled` is false. */
+  readonly disabledBy?: CompositionRowDisabledBy
 }
+
+/** What a user patch layer decided about a composition's rows, by row id. */
+export interface OverlayFacts {
+  /** Ids of rows the layer inserted, including rows inside inserted groups. */
+  readonly inserted: ReadonlySet<string>
+  /** Ids of rows the layer switched off with a literal `disabled: true`. */
+  readonly disabled: ReadonlySet<string>
+}
+
+/**
+ * Read one user patch layer's decisions by row id. A `!!js` gate in the layer
+ * is a condition, not a user decision, and is left to the composition.
+ * @param patches - the layer's patch list, parsed; empty when the preset has none.
+ * @returns the inserted and user-disabled row ids.
+ */
+export function overlayFacts(patches: readonly PatchOptions[]): OverlayFacts {
+  const inserted = new Set<string>()
+  const disabled = new Set<string>()
+  const visit = (row: EntryOptions): void => {
+    if (typeof row.id === 'string') inserted.add(row.id)
+    if (row.group && Array.isArray(row.config)) (row.config as EntryOptions[]).forEach(visit)
+  }
+  for (const patch of patches) {
+    if (patch.insert !== undefined) {
+      patch.insert.forEach(visit)
+      continue
+    }
+    if (typeof patch.id === 'string' && patch.disabled === true) disabled.add(patch.id)
+  }
+  return { inserted, disabled }
+}
+
+/** The empty layer: nothing inserted, nothing switched off. */
+const NO_OVERLAY: OverlayFacts = { inserted: new Set(), disabled: new Set() }
 
 /** One preset's roster identity beside its composition rows. */
 export interface AgentPresetComposition {
@@ -129,21 +176,35 @@ function flattenRows(
   rows: readonly unknown[],
   outerDisabled: boolean | 'conditional',
   evaluateExpression: DisabledExpressionEvaluator,
+  overlay: OverlayFacts,
   found: AgentPresetCompositionRow[],
 ): void {
   for (const value of rows) {
     const row = value as RawRow
     const disabled = combineDisabled(outerDisabled, disabledContribution(row.disabled, evaluateExpression))
     if (row.group === true) {
-      flattenRows(row.config as readonly unknown[], disabled, evaluateExpression, found)
+      flattenRows(row.config as readonly unknown[], disabled, evaluateExpression, overlay, found)
       continue
     }
+    const id = typeof row.id === 'string' && row.id !== '' ? row.id : null
     found.push({
-      entryId: typeof row.id === 'string' && row.id !== '' ? row.id : null,
+      entryId: id,
       moduleName: row.name,
       enabled: disabled === true ? false : disabled === 'conditional' ? 'conditional' : true,
       ...isJsExpr(row.disabled) ? { condition: row.disabled.__jsExpr } : {},
+      ...rowProvenance(id, disabled === true, overlay),
     })
+  }
+}
+
+/** The `source` and `disabledBy` fields of one row, from the layer's decisions. */
+function rowProvenance(
+  id: string | null, disabled: boolean, overlay: OverlayFacts,
+): Pick<AgentPresetCompositionRow, 'source' | 'disabledBy'> {
+  const userRow = id !== null && overlay.inserted.has(id)
+  return {
+    source: userRow ? 'user' : 'preset',
+    ...disabled ? { disabledBy: id !== null && overlay.disabled.has(id) ? 'user' as const : 'composition' as const } : {},
   }
 }
 
@@ -151,17 +212,20 @@ function flattenRows(
  * Plugin rows of one composition file, for a preset with no live mount.
  *
  * Parsed with the Loader's own dialect ({@link entryListSchema}), so the rows
- * reported are the rows a mount would start from. A file that stopped reading
- * as a composition — discovery judged the preset healthy moments earlier, so
- * only an edit racing this read gets here — answers as broken with the raced
- * reason rather than dropping the rows silently.
+ * reported are the rows a mount would start from, with the user patch layer
+ * applied through the include's own patch algorithm. A file that stopped
+ * reading as a composition — discovery judged the preset healthy moments
+ * earlier, so only an edit racing this read gets here — answers as broken
+ * with the raced reason rather than dropping the rows silently.
  * @param path - absolute path of the composition file.
  * @param evaluateExpression - the Loader-context evaluator for `!!js` nodes.
+ * @param overlay - the preset's user patch layer, parsed; empty when it has none.
  * @returns flattened rows in composition order, or why they cannot be read.
  */
 export async function fileComposition(
   path: string,
   evaluateExpression: DisabledExpressionEvaluator,
+  overlay: readonly PatchOptions[] = [],
 ): Promise<{ rows: AgentPresetCompositionRow[] } | { broken: string }> {
   let rows: unknown
   try {
@@ -172,17 +236,22 @@ export async function fileComposition(
   }
   const problem = entryListProblem(rows)
   if (problem !== undefined) return { broken: problem }
+  // Silent: a patch that matches no row is the Loader's warning at mount
+  // time, not an inventory failure.
+  const composed = applyEntryPatches(rows as EntryOptions[], [...overlay], () => {})
   const found: AgentPresetCompositionRow[] = []
-  flattenRows(rows as readonly unknown[], false, evaluateExpression, found)
+  flattenRows(composed, false, evaluateExpression, overlay.length === 0 ? NO_OVERLAY : overlayFacts(overlay), found)
   return { rows: found }
 }
 
 /**
  * Plugin rows of one live standing composition, in Loader-entry order.
  * @param tree - the standing mount's entry tree.
+ * @param overlay - the preset's user patch layer, parsed; empty when it has none.
  * @returns rows with the Loader's evaluated enablement and root-fiber states.
  */
-export function mountedCompositionRows(tree: EntryTree): AgentPresetCompositionRow[] {
+export function mountedCompositionRows(tree: EntryTree, overlay: readonly PatchOptions[] = []): AgentPresetCompositionRow[] {
+  const facts = overlay.length === 0 ? NO_OVERLAY : overlayFacts(overlay)
   const found: AgentPresetCompositionRow[] = []
   for (const entry of tree.entries()) {
     if (entry.options.group) continue
@@ -192,6 +261,9 @@ export function mountedCompositionRows(tree: EntryTree): AgentPresetCompositionR
       enabled: !entry.disabled,
       ...isJsExpr(entry.options.disabled) ? { condition: entry.options.disabled.__jsExpr } : {},
       ...entry.fiber === undefined ? {} : { fiberState: entry.fiber.state },
+      // Provenance and user patches address rows by the id the composition
+      // declares; the tree-wide `entry.id` carries the include's prefix.
+      ...rowProvenance(entry.options.id, entry.disabled, facts),
     })
   }
   return found

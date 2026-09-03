@@ -52,6 +52,9 @@
       "path": "../../util/home-paths"
     },
     {
+      "path": "../../util/patch-file"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     }
   ]

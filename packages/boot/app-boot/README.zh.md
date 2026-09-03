@@ -56,7 +56,7 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 用 `dsh plugin` 安装的组合包是**外部**组合包：它的行挂在一个名为 `bundle/<package>` 的受控组下，每个行 id 都加上 `<package>/<id>` 前缀，启动失败的行被隔离并记录而不是让进程停下——组和它的其他行继续运行，插件列表显示失败。模板组合包是内置的，仍然明确失败。若某个组合包提供内置行注入的服务，它必须像内置行一样挂载：作者在 `package.json` 里声明 `dsh.bundle.stage: boot`，或者你在 profile manifest 里设置 `dsh.profile.stages`，后者优先。即使没有这些声明，隔离的失败若让某个内置行停在等待服务的状态，启动仍会失败并点名那个被隔离的组合包。profile manifest 还有两个相关字段：`dsh.profile.firstParty` 列出按内置处理的已安装包（开发期 link 进来的一方包），`dependencies` 与 `dsh.profile.bundles` 的区别则把"只是装了"的包和"层已启用"的包分开。
 
-树起来之后 launcher 提供 `ctx.profileRuntime`：它持有已启动 profile 的事实，把每一行归属到插入它的层，读取用户 patch 文件停用了哪些行，并重新组合整棵树——patch 监视器走的正是这条路，运行时启用或安装组合包也走它。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告并兜住，未捕获的异常会被报告并退出。
+树起来之后 launcher 提供 `ctx.profileRuntime`：它持有已启动 profile 的事实与安装锚点，把每一行归属到插入它的层，读取用户 patch 文件停用了哪些行，并重新组合整棵树——patch 监视器走的正是这条路，[插件管理器](../../host/plugin-manager/README.zh.md) 启用或重试组合包也走它；这样的调用方之后会运行 `recordContainedStates`，因为启动审计不会再跑一次。启动期的 fail-loud rejection 守卫在树起来后卸载：启动后未处理的 rejection 会被报告并兜住，未捕获的异常会被报告并退出。
 
 ### 预览生效配置
 
@@ -101,9 +101,9 @@ profile 是同一套 dsh 安装提供不同应用界面的方式：`web`、`head
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、fail-loud 守卫与运行时守卫、激活审计、patch 解析、配置 dump、harness 源码段落 |
-| [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、带 trust 与 stage 的组合包解析、模块后备机制 |
-| [`src/external-bundles.ts`](src/external-bundles.ts) | 外部层组合（受控组、id 前缀、patch 改写）与安装、启用、停用背后的 manifest 操作 |
+| [`src/index.ts`](src/index.ts) | 启动 helper：配置解析、环境加载、fail-loud 守卫与运行时守卫、激活审计与 `recordContainedStates`、经 `dsh-patch-file` 加载 patch 文件、配置 dump、harness 源码段落 |
+| [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、带 `layerTrust` 与 stage 的组合包解析、模块后备机制 |
+| [`src/external-bundles.ts`](src/external-bundles.ts) | 外部层组合（受控组、id 前缀、patch 改写）、`bundleLayerPatches`，与安装、启用、停用背后的 manifest 操作 |
 | [`src/contained-group.ts`](src/contained-group.ts) | `cordis:contained-group` builtin 与 `pluginFailures` 注册表 |
 | [`src/profile-runtime.ts`](src/profile-runtime.ts) | `profileRuntime` 服务：profile 事实、行来源、用户停用的行、重新组合 |
 | [`src/probe.ts`](src/probe.ts) | 子进程包探针及其按 profile 的缓存 |

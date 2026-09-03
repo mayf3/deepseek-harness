@@ -742,6 +742,21 @@ export function writeProfileManifest(dir: string, manifest: ProfileManifest): vo
 }
 
 /**
+ * Who supplied one bundle of a profile. Provenance, not the package name,
+ * decides: a template bundle is never a dependency, and everything pnpm
+ * added is out-of-tree — a fork that kept a first-party name still lands in
+ * `dependencies` — unless the profile lists it under `dsh.profile.firstParty`.
+ * @param manifest - the profile manifest.
+ * @param packageName - the bundle's package name.
+ * @returns `external` for an installed third-party bundle, else `builtin`.
+ */
+export function layerTrust(manifest: ProfileManifest, packageName: string): BundleTrust {
+  const installed = packageName in (manifest.dependencies ?? {})
+  const firstParty = manifest.dsh?.profile?.firstParty ?? []
+  return installed && !firstParty.includes(packageName) ? 'external' : 'builtin'
+}
+
+/**
  * Validate one bundle stage value read from a manifest; an unknown value is a
  * misconfiguration and fails at load.
  */
@@ -872,8 +887,6 @@ export function loadProfile(
     )
   }
   const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
-  const dependencies = new Set(Object.keys(manifest.dependencies ?? {}))
-  const firstParty = new Set(manifest.dsh?.profile?.firstParty ?? [])
   const stages = manifest.dsh?.profile?.stages ?? {}
   const layers = bundles.map((packageName): ProfileLayer => {
     const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
@@ -883,10 +896,7 @@ export function loadProfile(
       throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
     }
     const patchPath = join(packageDir, declared)
-    // Provenance, not the package name, decides trust: a template bundle is
-    // never a dependency, and everything pnpm added is out-of-tree — a fork
-    // that kept a first-party name still lands in `dependencies`.
-    const trust: BundleTrust = dependencies.has(packageName) && !firstParty.has(packageName) ? 'external' : 'builtin'
+    const trust = layerTrust(manifest, packageName)
     const stage = readBundleStage(binName, packageName, stages[packageName] ?? bundleManifest.dsh?.bundle?.stage)
     return {
       packageName,

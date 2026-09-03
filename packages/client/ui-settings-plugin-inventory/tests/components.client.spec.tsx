@@ -305,7 +305,7 @@ describe('PluginInventorySettingsTab', () => {
         id: 'solo',
         trust: 'user',
         isDefault: false,
-        rows: [{ entryId: 'one', moduleName: '@fixture/one', enabled: true, fiberPhase: null }],
+        rows: [{ entryId: 'one', moduleName: '@fixture/one', enabled: true, fiberPhase: null, source: 'preset' }],
       }],
     })
 

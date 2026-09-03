@@ -106,6 +106,8 @@ flowchart LR
   svc_planMode["ctx.planMode<br/>Plan collaboration state"]
   pkg_agent_presets["agent-presets"]
   svc_agentPresets["ctx.agentPresets<br/>Per-session agent composition"]
+  pkg_host_plugin_manager["host-plugin-manager"]
+  svc_pluginManager["ctx.pluginManager<br/>Plugin management over the booted profile"]
   pkg_app_boot["app-boot"]
   svc_profileRuntime["ctx.profileRuntime<br/>Booted profile facts and recomposition"]
   pkg_host_plugin_inventory["host-plugin-inventory"]
@@ -264,6 +266,7 @@ flowchart LR
   pkg_host_directory_picker --> svc_directoryPicker
   pkg_host_directory_picker_browse --> svc_directoryPicker
   pkg_host_directory_picker_native --> svc_directoryPicker
+  pkg_host_plugin_manager --> svc_pluginManager
   pkg_host_webserver --> svc_webServer
   pkg_inspector --> svc_inspector
   pkg_invariants --> svc_invariants
@@ -381,6 +384,7 @@ flowchart LR
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
   svc_profileRuntime --> pkg_host_plugin_inventory
+  svc_profileRuntime --> pkg_host_plugin_manager
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
@@ -505,7 +509,8 @@ flowchart LR
 | `ctx.userQuestions` | `seam` | [`user-questions`](../packages/interaction/user-questions) | - | [`tool-ask-user`](../packages/interaction/tool-ask-user) | - | UI front ends provide the active human-answer provider; tool-ask-user pauses a tool call on the provider-neutral ask() promise. |
 | `ctx.planMode` | `core` | [`plan-mode`](../packages/plan/plan-mode) | - | - | - | Folds logged plan/mode state, flushes user selections at turn boundaries, renders deployment-owned guidance, registers /plan, and keeps the plan-exit schema stable across transitions. |
 | `ctx.agentPresets` | `core` | [`agent-presets`](../packages/preset/agent-presets) | - | - | - | Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm. |
-| `ctx.profileRuntime` | `core` | [`app-boot`](../packages/boot/app-boot) | - | [`host-plugin-inventory`](../packages/host/plugin-inventory) | - | Provided by the profile launcher after boot: the composed bundle layers with their trust and stage, each row's inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share. |
+| `ctx.pluginManager` | `core` | [`host-plugin-manager`](../packages/host/plugin-manager) | - | - | - | Installs, enables, disables, retries, and removes bundles through pnpm and the profile runtime, edits rows in the profile's or a preset's user layer, and folds manifest, probe, and tree facts into one view per package for the plugins Remote. |
+| `ctx.profileRuntime` | `core` | [`app-boot`](../packages/boot/app-boot) | - | [`host-plugin-inventory`](../packages/host/plugin-inventory), [`host-plugin-manager`](../packages/host/plugin-manager) | - | Provided by the profile launcher after boot: the composed bundle layers with their trust and stage, each row's inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share. |
 | `ctx.commands` | `core` | [`commands`](../packages/interaction/commands) | - | - | - | Plugins register direct human commands without sending invocations to the model. |
 | `ctx.sessionProjections` | `core` | [`session-projection`](../packages/session/session-projection) | - | [`api-session-controller`](../packages/api/session-controller), [`tool-todo`](../packages/todo/tool-todo), [`session-title`](../packages/session/session-title) | - | Domains register state-driven fold units; the eager drive keeps per-session watermark states and the Session controller serves baselines and pushes changed values. |
 | `ctx.sessionProjectionCache` | `core` | [`session-projection-cache`](../packages/session/session-projection-cache) | - | [`api-session-controller`](../packages/api/session-controller), [`session-query`](../packages/session-query/session-query), [`session-reference`](../packages/context/session-reference), [`subagent`](../packages/subagent/subagent) | - | Durably checkpoints projection unit states per session (throttled + turn/end/detach mandatory points) and serves the cold-read ladder: cache row + persistence tail replay, so listings never load full logs. |

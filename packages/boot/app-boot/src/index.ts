@@ -14,12 +14,14 @@ import * as yaml from 'js-yaml'
 import { Context, type FiberState } from '@deepseek-ai/cordis'
 import Loader, { type Entry, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import Include, { applyEntryPatches, entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import { parsePatchList } from '@deepseek-ai/dsh-patch-file'
 import Group from '@deepseek-ai/cordis-plugin-group'
 import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import type {} from '@deepseek-ai/dsh-system-prompt'
-import { ContainedGroup, ensurePluginFailures, isContainedEntry } from './contained-group.ts'
+import {
+  pendingMessage, ContainedGroup, ensurePluginFailures, isContainedEntry } from './contained-group.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -29,6 +31,7 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export {
+  layerTrust,
   composeEntries,
   DEFAULT_PROFILE_BUNDLES,
   DEFAULT_PROFILE_PATCH_RELOAD,
@@ -59,6 +62,7 @@ export {
   type ContainedFailure, type ContainedFailureStage,
 } from './contained-group.ts'
 export {
+  bundleLayerPatches,
   BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
   exportsBundlePatch, externalRowId, isJsDisabled, reconcileInstalledBundles,
   type BundleReconciliation, type ComposedExternalLayer, type ExternalRowOrigin,
@@ -239,13 +243,6 @@ export function loadLayeredEnv(
 
 const bootstrapIncludes = new WeakMap<Context, Entry>()
 
-// The include's YAML dialect (`!!js` scalars become expression nodes the
-// Loader interpolates against each entry's injection-ready context), imported
-// from the include itself so patch parsing and config dumping can never drift
-// from what the include mounts. User patch layers share it so they may
-// reference `process.env`.
-const userPatchesSchema = entryListSchema
-
 /** Options for live user patch-layer reconciliation. */
 export interface UserPatchWatchOptions {
   /** Diagnostic prefix used by {@link loadOptionalPatches}. */
@@ -342,51 +339,6 @@ export function loadOverlayPatches(binName: string, file: string): PatchOptions[
     throw new Error(`${binName}: failed to read overlay ${file}: ${String(error)}`)
   }
   return parsePatchList(binName, file, content, 'overlay')
-}
-
-/** Resolve relative plugin paths in one patch file's `insert` rows without changing assertion names. */
-function anchorInsertedPluginNames(patches: PatchOptions[], file: string): PatchOptions[] {
-  const base = dirname(resolve(file))
-  const visit = (entry: EntryOptions): void => {
-    if (typeof entry.name === 'string' && (entry.name.startsWith('./') || entry.name.startsWith('../'))) {
-      entry.name = pathToFileURL(resolve(base, entry.name)).href
-    }
-    if (entry.group && Array.isArray(entry.config)) entry.config.forEach(visit)
-  }
-  for (const patch of patches) patch.insert?.forEach(visit)
-  return patches
-}
-/**
- * Parse one loader patch list: a top-level YAML array of
- * `@deepseek-ai/cordis-plugin-include` `PatchOptions` (id-targeted config overrides and
- * `insert` lists, `!!js` expressions allowed). Every invalid field or value throws,
- * because a patch file that cannot be applied at all is a misconfiguration; a
- * single patch whose target row is absent stays a per-entry Loader warning, so
- * one overlay shared across surfaces does not have to match every tree.
- * @param binName - the diagnostic prefix on the thrown error.
- * @param file - the source path, quoted in errors.
- * @param content - the file's text.
- * @param label - what to call this list in errors (`patches`, `overlay`).
- * @returns the parsed patch list.
- */
-function parsePatchList(
-  binName: string, file: string, content: string, label: string,
-): PatchOptions[] {
-  let parsed: unknown
-  try {
-    parsed = yaml.load(content, { schema: userPatchesSchema })
-  } catch (error) {
-    throw new Error(`${binName}: failed to parse ${label} ${file}: ${String(error)}`)
-  }
-  if (!Array.isArray(parsed)) {
-    throw new Error(`${binName}: ${label} ${file} must be a top-level YAML array of loader patch entries`)
-  }
-  parsed.forEach((entry, index) => {
-    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
-      throw new Error(`${binName}: ${label} entry ${index + 1} in ${file} must be a mapping (a loader patch entry)`)
-    }
-  })
-  return anchorInsertedPluginNames(parsed as PatchOptions[], file)
 }
 
 /** One overlay patch list with the source label printed in dump comments. */
@@ -802,6 +754,50 @@ function owningGroupId(entry: Entry): string {
  */
 export async function assertEntriesActivated(ctx: Context, binName: string): Promise<void> {
   assertEntriesLoaded(ctx, binName)
+  const { failures, builtinPending } = await auditEntries(ctx)
+  const registry = ctx.get('pluginFailures')
+  if (failures.length > 0) {
+    const noun = failures.length === 1 ? 'entry' : 'entries'
+    // A contained failure is only harmless while nothing built-in depends on
+    // it: a built-in row left waiting for a service names the isolated
+    // bundles, because one of them is the likely missing provider.
+    const isolated = builtinPending ? registry?.list() ?? [] : []
+    const hint = isolated.length === 0
+      ? ''
+      : `\n${binName}: isolated bundle failure(s) may be the missing provider — `
+        + `check ${[...new Set(isolated.map(failure => failure.groupId))].join(', ')} `
+        + 'or mark that bundle `dsh.bundle.stage: boot` so it fails loud'
+    throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join('\n')}${hint}`)
+  }
+}
+
+/**
+ * Record the state of every contained row after a runtime recomposition —
+ * a bundle enabled or retried while the tree runs — the way the boot audit
+ * records it: an active row clears its record, a failed or waiting row is
+ * recorded. Built-in rows are left to the caller's own policy; nothing here
+ * throws.
+ * @param ctx - the context whose Loader entries to walk.
+ * @returns the diagnostics the boot audit would have raised for built-in rows.
+ */
+export async function recordContainedStates(ctx: Context): Promise<string[]> {
+  return (await auditEntries(ctx)).failures
+}
+
+/** What one walk of the Loader entries found beyond the contained records it wrote. */
+interface EntryAudit {
+  /** One line per built-in entry that failed or is not active. */
+  failures: string[]
+  /** Whether a built-in entry is waiting for a service. */
+  builtinPending: boolean
+}
+
+/**
+ * Walk every enabled entry: clear or record contained rows, collect built-in
+ * diagnostics, and pass built-in rejections through the process checkpoint
+ * so the fail-loud handler does not exit over a rejection the audit reports.
+ */
+async function auditEntries(ctx: Context): Promise<EntryAudit> {
   const failures: string[] = []
   const rejectionReasons: unknown[] = []
   const registry = ctx.get('pluginFailures')
@@ -832,9 +828,7 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
       continue
     }
     if (state === FIBER_PENDING) {
-      const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
-      const subject = missing.length === 1 ? 'service' : 'services'
-      const line = `pending (waiting for ${subject}: ${missing.join(', ') || 'unknown'})`
+      const line = pendingMessage(fiber)
       if (contained) {
         registry?.record({
           entryId: entry.id, rowId: entry.options.id, moduleName: entry.options.name,
@@ -848,22 +842,10 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
       failures.push(`${entry.options.name}: fiber state ${String(state)}`)
     }
   }
-  if (failures.length > 0) {
-    if (rejectionReasons.length > 0) {
-      await observeLoaderRejectionCheckpoint(rejectionReasons)
-    }
-    const noun = failures.length === 1 ? 'entry' : 'entries'
-    // A contained failure is only harmless while nothing built-in depends on
-    // it: a built-in row left waiting for a service names the isolated
-    // bundles, because one of them is the likely missing provider.
-    const isolated = builtinPending ? registry?.list() ?? [] : []
-    const hint = isolated.length === 0
-      ? ''
-      : `\n${binName}: isolated bundle failure(s) may be the missing provider — `
-        + `check ${[...new Set(isolated.map(failure => failure.groupId))].join(', ')} `
-        + 'or mark that bundle `dsh.bundle.stage: boot` so it fails loud'
-    throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join('\n')}${hint}`)
+  if (rejectionReasons.length > 0) {
+    await observeLoaderRejectionCheckpoint(rejectionReasons)
   }
+  return { failures, builtinPending }
 }
 
 /**

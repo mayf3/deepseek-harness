@@ -20,6 +20,7 @@ import { Include } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryTree } from '@deepseek-ai/cordis-plugin-loader'
 import { scopeOf, scopeParentOf, type ScopeKey } from '@deepseek-ai/dsh-scope'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { readPatchListFile } from '@deepseek-ai/dsh-patch-file'
 import type { AgentPreset } from './preset.ts'
 import { classifyRowSpecifier } from './specifier.ts'
 
@@ -368,12 +369,19 @@ function mountDetail(error: unknown): string {
 /**
  * Mount `preset` under `agentCtx` and return only once every row is usable.
  *
+ * The preset's user patch layer, when it has one, is read here and handed to
+ * the include as its runtime patches, so the layer is applied over the
+ * composition with the Loader's own patch semantics — a `disabled: true`
+ * switches a row off, a `config` replaces the row's, an `insert` adds rows —
+ * and re-read at every mount, which is what makes a generation follow the
+ * layer file.
+ *
  * The subtree is owned by `agentCtx`'s fiber, so it unwinds with the agent and
  * the caller receives no disposer. A rejection leaves nothing mounted.
  * @param agentCtx - the agent's scope context, from the agent factory's `setup`.
  * @param preset - the resolved preset to compose the agent from.
- * @throws when `agentCtx` carries no scope, a row is unusable, or a row
- * published a service into the root realm.
+ * @throws when `agentCtx` carries no scope, the user patch layer cannot be
+ * read, a row is unusable, or a row published a service into the root realm.
  */
 export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promise<void> {
   const scope = scopeOf(agentCtx)
@@ -383,7 +391,13 @@ export async function mountPreset(agentCtx: Context, preset: AgentPreset): Promi
       + 'its registrations would apply to every agent in the process',
     )
   }
-  const config: Include.Config = { path: pathToFileURL(preset.path).href }
+  const patches = preset.overlayPath === undefined
+    ? undefined
+    : await readPatchListFile('agent-presets', preset.overlayPath, 'user patch layer')
+  const config: Include.Config = {
+    path: pathToFileURL(preset.path).href,
+    ...patches === undefined ? {} : { patches },
+  }
   // Captured before the subtree exists: the standing scope context still
   // carries the host composition's base, which is inside the installed
   // harness and is therefore where a row's package name has to resolve from.

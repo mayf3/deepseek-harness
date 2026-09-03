@@ -33,6 +33,9 @@
       "path": "../../preset/agent-presets"
     },
     {
+      "path": "../../host/plugin-manager"
+    },
+    {
       "path": "../../extensions/cordis-host-runner"
     },
     {

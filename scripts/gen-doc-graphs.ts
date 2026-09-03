@@ -378,11 +378,18 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm.',
   },
   {
+    key: 'pluginManager',
+    pkg: 'host-plugin-manager',
+    title: 'Plugin management over the booted profile',
+    mode: 'core',
+    note: 'Installs, enables, disables, retries, and removes bundles through pnpm and the profile runtime, edits rows in the profile\'s or a preset\'s user layer, and folds manifest, probe, and tree facts into one view per package for the plugins Remote.',
+  },
+  {
     key: 'profileRuntime',
     pkg: 'app-boot',
     title: 'Booted profile facts and recomposition',
     mode: 'core',
-    consumers: ['host-plugin-inventory'],
+    consumers: ['host-plugin-inventory', 'host-plugin-manager'],
     note: 'Provided by the profile launcher after boot: the composed bundle layers with their trust and stage, each row\'s inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share.',
   },
   {

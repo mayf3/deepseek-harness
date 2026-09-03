@@ -73,6 +73,10 @@ export interface AgentPresetPluginRow {
   readonly condition?: string
   /** Root-fiber phase when the composition is live; null otherwise. */
   readonly fiberPhase: PluginFiberPhase
+  /** Whether the preset's composition file or its user patch layer supplied the row. */
+  readonly source: 'preset' | 'user'
+  /** Present exactly when `enabled` is false: the composition's own gate, or the user patch layer. */
+  readonly disabledBy?: PluginDisabledBy
 }
 
 /** One agent preset's identity and flattened composition in the inventory. */
