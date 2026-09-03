@@ -287,13 +287,24 @@ describe('released event and payload inventory', () => {
     }
   })
 
-  it('publishes every merge-extensible nested arm as owner-opaque policy', () => {
-    expect(RELEASED_V0_EVENT_DISPOSITIONS['user/message']?.extensionArms)
-      .toEqual(['content[].type', 'source.kind'])
-    expect(RELEASED_V0_EVENT_DISPOSITIONS['assistant/chunk']?.extensionArms)
-      .toContain('chunk.reason.kind')
-    expect(RELEASED_V0_EVENT_DISPOSITIONS['turn/end']?.extensionArms)
-      .toEqual(['reason.kind'])
+  it.each([
+    ['user/message content block', 'user/message', {
+      ...userMessage,
+      content: [{ type: 'future-block', private: { preserved: true } }],
+    }],
+    ['user/message source', 'user/message', {
+      ...userMessage,
+      source: { kind: 'future-source', private: { preserved: true } },
+    }],
+    ['assistant finish reason', 'assistant/chunk', {
+      turn: 1, step: 0,
+      chunk: { type: 'finish', reason: { kind: 'future-reason', private: { preserved: true } } },
+    }],
+    ['turn/end reason', 'turn/end', {
+      turn: 1, reason: { kind: 'future-reason', private: { preserved: true } },
+    }],
+  ] as const)('preserves an unknown merge-extensible %s arm', (_name, type, data) => {
+    expect(() => { assertPayload(type, data) }).not.toThrow()
   })
 
   it('refuses unknown v0 events even when the envelope marks them ignorable', () => {
