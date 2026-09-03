@@ -2599,7 +2599,7 @@ export interface Config {
 }
 ```
 
-来源：[`packages/core/system-prompt/src/index.ts:242`](../packages/core/system-prompt/src/index.ts)
+来源：[`packages/core/system-prompt/src/index.ts:243`](../packages/core/system-prompt/src/index.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 
@@ -3084,6 +3084,26 @@ export interface Config {
 ```
 
 来源：[`packages/todo/tool-todo/src/index.ts:29`](../packages/todo/tool-todo/src/index.ts)
+
+<a id="deepseek-aidsh-tool-visualizer"></a>
+
+## `@deepseek-ai/dsh-tool-visualizer`
+
+需要：`agents`
+
+```ts config-catalog
+/** Deployment-varying limits for the Visualizer extension. */
+export interface Config {
+  /** Maximum UTF-8 bytes accepted for one widget source argument. At most 131072. */
+  maxWidgetBytes?: number
+  /** Maximum UTF-8 bytes accepted for one complete labelled widget follow-up. At most 4096. */
+  maxPromptBytes?: number
+  /** Per-Agent widget follow-ups admitted during one rolling minute. Defaults to 4. */
+  maxPromptsPerMinutePerAgent?: number
+}
+```
+
+来源：[`packages/visualizer/tool-visualizer/src/types.ts:2`](../packages/visualizer/tool-visualizer/src/types.ts)
 
 <a id="deepseek-aidsh-tool-web"></a>
 

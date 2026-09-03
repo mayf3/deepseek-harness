@@ -573,6 +573,32 @@ Types: [ScopeKey](scope.md)
 
 Source: [`packages/core/tools/src/index.ts`](../../packages/core/tools/src/index.ts)
 
+<a id="ctxvisualizer--visualizerservice"></a>
+
+### `ctx.visualizer` — `VisualizerService`
+
+One Host service owns every authority-bearing part of the Visualizer extension.
+
+```ts cordis-catalog
+/**
+ * Install the model-facing Visualizer contribution in the caller's preset scope.
+ * @param modelCtx - Preset-scoped context that owns the prompt and tool effects.
+ */
+installModelSurface(modelCtx: Context): void
+
+/**
+ * Queue a widget-authored message after Host-side authorization and rate limiting.
+ * @param agent - Exact live Agent resolved from the Remote session scope.
+ * @param request - Follow-up for one successful interactive widget call.
+ * @returns Receipt confirming that the follow-up was queued.
+ */
+@Remote('sendPrompt') remoteSendPrompt(agent: Agent, request: WidgetPromptRequest): WidgetPromptResult
+```
+
+Types: [Agent](core.md)
+
+Source: [`packages/visualizer/tool-visualizer/src/index.ts`](../../packages/visualizer/tool-visualizer/src/index.ts)
+
 <a id="tools-events"></a>
 
 ### `tools/*` events

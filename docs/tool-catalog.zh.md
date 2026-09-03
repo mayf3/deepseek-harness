@@ -42,6 +42,7 @@
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`、`job_list`、`job_output` | `ctx.tools`、`ctx.jobs`、`ctx.systemPrompt` | `tool/call`、`tool/result`、`user/message via agent.inject() for background completion notices` | - | 与任务种类无关的后台任务控制器：后台 bash 命令、PTY 发送和 subagent 都通过相同的 3 个工具读取、列出和终止。加载该插件会挂接控制器，从而启用生产方的 `ctx.jobs.start()`。 |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`、`list_agents`、`send_message`、`spawn_teammate`、`team_task_create`、`team_task_get`、`team_task_list`、`team_task_update`、`wait_agent` | `ctx.tools`、`ctx.systemPrompt`、`ctx.agentTeams`、`an exact live Team member Agent` | `tool/call`、`team/member`、`team/message/queued`、`team/message/delivered`、`team/task`、`tool/result` | - | 这 9 个工具限定于隐式 Team Lead 与持久 teammate 作用域。随产品发布的 dsh-base bundle 默认禁用该包；文档中的 Agent Teams profile patch 会启用它，并禁用旧 continuable child 的同名控制工具。 |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
+| `@deepseek-ai/dsh-tool-visualizer` | `show_widget`、`widget_guidelines` | `ctx.visualizer`、`ctx.tools`、`ctx.systemPrompt` | `tool/call`、`tool/result`、经 `agent.followup()` 写入获授权 widget follow-up 的 `user/message` | - | standard 与 cordis preset 始终挂载可恢复的模型 wrapper；它只在权威 service 存在时贡献提示词和工具，并跟随权威后续撤销或再次出现。Minimal 与 PTC 不挂载；PTC 的嵌套 code-dispatch 调用缺少 follow-up bridge 所需的普通 show_widget call/result 身份。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
 
@@ -2084,6 +2085,69 @@ lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，�
 来源：[`packages/todo/tool-todo/src/index.ts`](../packages/todo/tool-todo/src/index.ts)
 
 todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。
+
+<a id="deepseek-aidsh-tool-visualizer"></a>
+
+## `@deepseek-ai/dsh-tool-visualizer`
+
+### `show_widget`
+
+从对话内容或已完成的工具结果渲染一个临时内联图形或交互组件。以 <svg 开头的源码使用 SVG，其余源码使用 HTML。在本次调用中传入一份小而完整的源码；Host 会在调用后进行校验并渲染。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short user-facing title in the user's language."
+    },
+    "widget_code": {
+      "type": "string",
+      "description": "For HTML: one fragment. Put any inline <style> first, content next (semantic HTML, inline <svg>, <canvas> using 2D or WebGL, or native controls), and any inline <script> last. For SVG: raw SVG beginning with <svg>, with a viewBox that declares its aspect ratio. External resources are blocked; inline everything."
+    }
+  },
+  "required": [
+    "title",
+    "widget_code"
+  ]
+}
+```
+
+来源：[`packages/visualizer/tool-visualizer/src/tools.ts`](../packages/visualizer/tool-visualizer/src/tools.ts)
+
+### `widget_guidelines`
+
+加载与请求匹配的 widget 构造指导。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "modules": {
+      "type": "array",
+      "description": "Choose every module that fits the requested result. diagram: a fixed view of nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: an adjustable calculation, simulation, or animated demonstration. mockup: a product surface shown to explain one interaction.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "diagram",
+          "mockup",
+          "interactive",
+          "chart",
+          "illustration"
+        ]
+      }
+    }
+  },
+  "required": [
+    "modules"
+  ]
+}
+```
+
+来源：[`packages/visualizer/tool-visualizer/src/tools.ts`](../packages/visualizer/tool-visualizer/src/tools.ts)
+
+只有权威 service 存在时，standard 与 cordis preset 才会挂载本包的完整模型 contribution。Minimal 与 PTC 不挂载；PTC 的嵌套 code-dispatch 调用缺少 follow-up bridge 所需的普通 show_widget call/result 身份。
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 

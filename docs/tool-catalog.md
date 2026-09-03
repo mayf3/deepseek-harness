@@ -38,6 +38,7 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-jobs` | `job_kill`, `job_list`, `job_output` | `ctx.tools`, `ctx.jobs`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.inject() for background completion notices` | - | The kind-agnostic background-job controller: background bash commands, PTY sends, and subagents are read, listed, and killed through the same three tools. Loading the plugin attaches the controller that arms producers' `ctx.jobs.start()`. |
 | `@deepseek-ai/dsh-experimental-tool-agent-team` | `interrupt_agent`, `list_agents`, `send_message`, `spawn_teammate`, `team_task_create`, `team_task_get`, `team_task_list`, `team_task_update`, `wait_agent` | `ctx.tools`, `ctx.systemPrompt`, `ctx.agentTeams`, `an exact live Team member Agent` | `tool/call`, `team/member`, `team/message/queued`, `team/message/delivered`, `team/task`, `tool/result` | - | All nine tools are scoped to implicit Team Leads and durable teammates. The shipped dsh-base bundle keeps the package disabled; the documented Agent Teams profile patch enables it while disabling the legacy continuable-child control names. |
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`, `owning Agent session` | `tool/call`, `todo/write`, `tool/result` | - | todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task. |
+| `@deepseek-ai/dsh-tool-visualizer` | `show_widget`, `widget_guidelines` | `ctx.visualizer`, `ctx.tools`, `ctx.systemPrompt` | `tool/call`, `tool/result`, `user/message via agent.followup() for authorized widget follow-ups` | - | The standard and cordis presets always mount a recoverable model wrapper, which contributes prompt and tools only while the authority service exists and follows later authority withdrawal or reappearance. Minimal and PTC omit it; PTC nested code-dispatch calls lack the ordinary show_widget call/result identity required by the follow-up bridge. |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
 
@@ -2077,6 +2078,69 @@ Record and update a structured task list for the current work. Send the ENTIRE l
 Source: [`packages/todo/tool-todo/src/index.ts`](../packages/todo/tool-todo/src/index.ts)
 
 todo_write is session-owned state; UIs render the latest todo/write event as a checklist. `allowParallelInProgress` is required with no default, so the catalog states its choice: `true`, whose description invites several `in_progress` items. A deployment choosing `false` receives the same tool with a description asking for exactly one active task.
+
+<a id="deepseek-aidsh-tool-visualizer"></a>
+
+## `@deepseek-ai/dsh-tool-visualizer`
+
+### `show_widget`
+
+Render one temporary inline graphic or interactive widget from conversation content or completed tool results. Source beginning with <svg uses SVG; anything else uses HTML. Pass one small, complete source in this call; the host validates and renders it afterward.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Short user-facing title in the user's language."
+    },
+    "widget_code": {
+      "type": "string",
+      "description": "For HTML: one fragment. Put any inline <style> first, content next (semantic HTML, inline <svg>, <canvas> using 2D or WebGL, or native controls), and any inline <script> last. For SVG: raw SVG beginning with <svg>, with a viewBox that declares its aspect ratio. External resources are blocked; inline everything."
+    }
+  },
+  "required": [
+    "title",
+    "widget_code"
+  ]
+}
+```
+
+Source: [`packages/visualizer/tool-visualizer/src/tools.ts`](../packages/visualizer/tool-visualizer/src/tools.ts)
+
+### `widget_guidelines`
+
+Load request-matched construction guidance for a widget response.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "modules": {
+      "type": "array",
+      "description": "Choose every module that fits the requested result. diagram: a fixed view of nodes and relationships. chart: quantitative data. illustration: a scene or image. interactive: an adjustable calculation, simulation, or animated demonstration. mockup: a product surface shown to explain one interaction.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "diagram",
+          "mockup",
+          "interactive",
+          "chart",
+          "illustration"
+        ]
+      }
+    }
+  },
+  "required": [
+    "modules"
+  ]
+}
+```
+
+Source: [`packages/visualizer/tool-visualizer/src/tools.ts`](../packages/visualizer/tool-visualizer/src/tools.ts)
+
+The standard and cordis presets always mount a recoverable model wrapper, which contributes prompt and tools only while the authority service exists and follows later authority withdrawal or reappearance. Minimal and PTC omit it; PTC nested code-dispatch calls lack the ordinary show_widget call/result identity required by the follow-up bridge.
 
 <a id="deepseek-aidsh-tool-workflow"></a>
 

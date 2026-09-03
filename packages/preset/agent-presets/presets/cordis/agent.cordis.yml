@@ -239,6 +239,11 @@
     fetch: true
     searchTimeoutMs: 60000
 
+# This always-mounted wrapper owns the inherited model surface and activates its
+# prompt and tools whenever the deployment Host's Visualizer authority is present.
+- id: tool-visualizer-model
+  name: '@deepseek-ai/dsh-tool-visualizer/model'
+
 # ── self-modification ───────────────────────────────────────────────────────
 
 # Read the live runtime, mount a temporary plugin, unmount it. The toolset is a
