@@ -11,7 +11,6 @@ type ChunkFrame = Extract<AssistantStreamFrame, { type: 'chunk' }>
 
 interface MutableAttempt {
   readonly attemptId: SessionAssistantStreamAttempt['attemptId']
-  readonly startedTime: number
   readonly turn: number
   readonly step: number
   readonly chunks: ChunkFrame[]
@@ -50,7 +49,6 @@ export class SessionAssistantStreamAccumulator {
       case 'start':
         this.attempts.set(String(frame.attemptId), {
           attemptId: frame.attemptId,
-          startedTime: frame.startedTime,
           turn: frame.turn,
           step: frame.step,
           chunks: [],
@@ -84,7 +82,6 @@ export class SessionAssistantStreamAccumulator {
       revision: this.revision,
       attempts: [...this.attempts.values()].map(attempt => ({
         attemptId: attempt.attemptId,
-        startedTime: attempt.startedTime,
         turn: attempt.turn,
         step: attempt.step,
         chunks: attempt.chunks.map(frame => frame.chunk as JsonValue),

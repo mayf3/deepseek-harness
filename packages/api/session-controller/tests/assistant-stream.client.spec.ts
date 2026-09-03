@@ -54,7 +54,7 @@ function message(
 }
 
 function start(attemptId = ATTEMPT): SessionAssistantStreamFrame {
-  return { type: 'start', attemptId, revision: 1, startedTime: 1, turn: 1, step: 1 }
+  return { type: 'start', attemptId, revision: 1, turn: 1, step: 1 }
 }
 
 function chunkFrame(
@@ -87,7 +87,7 @@ function baseline(
 ): SessionAssistantStreamBaseline {
   return {
     revision: chunks.length + 1,
-    attempts: [{ attemptId: ATTEMPT, startedTime: 1, turn: 1, step: 1, chunks, legacyChunkSeqs }],
+    attempts: [{ attemptId: ATTEMPT, turn: 1, step: 1, chunks, legacyChunkSeqs }],
   }
 }
 

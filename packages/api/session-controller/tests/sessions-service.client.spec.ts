@@ -177,7 +177,7 @@ describe('scope tree', () => {
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 1,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -241,7 +241,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 2,
       attempts: [{
-        attemptId, startedTime: 1, turn: 1, step: 1,
+        attemptId, turn: 1, step: 1,
         chunks: [first.event.data.chunk], legacyChunkSeqs: [0],
       }],
     }
@@ -257,7 +257,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 3,
       attempts: [{
-        attemptId, startedTime: 1, turn: 1, step: 1,
+        attemptId, turn: 1, step: 1,
         chunks: [first.event.data.chunk, second.event.data.chunk],
         legacyChunkSeqs: [0, 1],
       }],
@@ -286,7 +286,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 2,
       attempts: [{
-        attemptId, startedTime: 1, turn: 1, step: 1,
+        attemptId, turn: 1, step: 1,
         chunks: [chunk.event.data.chunk], legacyChunkSeqs: [0],
       }],
     }
@@ -366,7 +366,6 @@ describe('scope tree', () => {
       revision: 2,
       attempts: [{
         attemptId,
-        startedTime: 20,
         turn: 1,
         step: 1,
         chunks: [currentChunk.event.data.chunk],
@@ -441,7 +440,6 @@ describe('scope tree', () => {
       revision: 2,
       attempts: [{
         attemptId,
-        startedTime: 20,
         turn: 1,
         step: 1,
         chunks: [chunk.event.data.chunk],

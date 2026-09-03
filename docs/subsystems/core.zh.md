@@ -164,8 +164,6 @@ type AssistantStreamFrame =
     readonly attemptId: LlmAttemptId
     /** Monotone within one attached Agent lifecycle; replacement restarts at 1. */
     readonly revision: number
-    /** Safe-integer wall-clock time captured when this attempt started. */
-    readonly startedTime: number
     readonly turn: number
     readonly step: number
   }

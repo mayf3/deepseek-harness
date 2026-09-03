@@ -453,8 +453,6 @@ export interface SessionFollowRequest {
 /** One active assistant attempt in a reconnect opening snapshot. */
 export interface SessionAssistantStreamAttempt {
   readonly attemptId: LlmAttemptId
-  /** Safe-integer wall-clock time copied from the attempt's start frame. */
-  readonly startedTime: number
   readonly turn: number
   readonly step: number
   readonly chunks: readonly JsonValue[]
@@ -474,7 +472,6 @@ export type SessionAssistantStreamFrame =
     readonly type: 'start'
     readonly attemptId: LlmAttemptId
     readonly revision: number
-    readonly startedTime: number
     readonly turn: number
     readonly step: number
   }

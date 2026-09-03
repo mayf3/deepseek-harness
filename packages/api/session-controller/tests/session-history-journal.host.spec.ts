@@ -123,7 +123,7 @@ describe('Session history raw journal', () => {
       ctx.emit('agent/assistant-stream', { agent, frame })
     }
     emit({
-      type: 'start', attemptId, revision: 1, startedTime: 100,
+      type: 'start', attemptId, revision: 1,
       turn: 1, step: 1,
     })
     const firstChunk = session.append('assistant/chunk', {
@@ -147,7 +147,6 @@ describe('Session history raw journal', () => {
           revision: 2,
           attempts: [{
             attemptId,
-            startedTime: 100,
             turn: 1,
             step: 1,
             chunks: [firstChunk.data.chunk],
@@ -197,7 +196,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 100,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -226,7 +225,6 @@ describe('Session history raw journal', () => {
             revision: 2,
             attempts: [{
               attemptId,
-              startedTime: 100,
               turn: 1,
               step: 1,
               chunks: [oldChunk.data.chunk],
@@ -239,7 +237,7 @@ describe('Session history raw journal', () => {
       ctx.emit('agent/disposed', { agent })
       const replacementAgent = { id: session.id, session, status: 'running', ctx } as Agent
       const replacement: AssistantStreamFrame = {
-        type: 'start', attemptId, revision: 1, startedTime: 200,
+        type: 'start', attemptId, revision: 1,
         turn: 2, step: 1,
       }
       ctx.emit('agent/assistant-stream', { agent: replacementAgent, frame: replacement })
@@ -261,7 +259,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 100,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -303,7 +301,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 100,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -345,7 +343,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 100,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -421,7 +419,7 @@ describe('Session history raw journal', () => {
         agent: otherAgent,
         frame: {
           type: 'start', attemptId: LlmAttemptId('other-session-attempt'),
-          revision: 1, startedTime: 100, turn: 1, step: 1,
+          revision: 1, turn: 1, step: 1,
         },
       })
       const targetEvent = target.append('turn/start', { turn: 1 })
@@ -458,7 +456,7 @@ describe('Session history raw journal', () => {
       await observationStarted.promise
       const frame: AssistantStreamFrame = {
         type: 'start', attemptId: LlmAttemptId('opening-cut-attempt'),
-        revision: 1, startedTime: 100, turn: 1, step: 1,
+        revision: 1, turn: 1, step: 1,
       }
       ctx.emit('agent/assistant-stream', { agent, frame })
       releaseObservation.resolve(undefined)
@@ -493,7 +491,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 100,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -561,7 +559,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 100,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })
@@ -595,7 +593,7 @@ describe('Session history raw journal', () => {
       ctx.emit('agent/assistant-stream', {
         agent,
         frame: {
-          type: 'start', attemptId, revision: 1, startedTime: 200,
+          type: 'start', attemptId, revision: 1,
           turn: 2, step: 1,
         },
       })
@@ -606,7 +604,7 @@ describe('Session history raw journal', () => {
           type: 'snapshot',
           assistantStream: {
             revision: 1,
-            attempts: [{ attemptId, startedTime: 200, turn: 2, step: 1, chunks: [] }],
+            attempts: [{ attemptId, turn: 2, step: 1, chunks: [] }],
           },
         },
       })
@@ -641,7 +639,7 @@ describe('Session history raw journal', () => {
     ctx.emit('agent/assistant-stream', {
       agent,
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 200,
+        type: 'start', attemptId, revision: 1,
         turn: 1, step: 1,
       },
     })

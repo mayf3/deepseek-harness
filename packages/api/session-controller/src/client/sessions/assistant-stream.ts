@@ -10,7 +10,6 @@ import type {
 } from '../contract/events.ts'
 
 interface ActiveAttempt {
-  readonly startedTime: number
   readonly turn: number
   readonly step: number
   readonly legacyChunkSeqs: Set<number>
@@ -62,7 +61,6 @@ export class ClientAssistantStream {
     if (baseline !== undefined) {
       for (const attempt of baseline.attempts) {
         this.attempts.set(String(attempt.attemptId), {
-          startedTime: attempt.startedTime,
           turn: attempt.turn,
           step: attempt.step,
           legacyChunkSeqs: new Set(attempt.legacyChunkSeqs),
@@ -111,7 +109,6 @@ export class ClientAssistantStream {
     switch (frame.type) {
       case 'start':
         this.attempts.set(String(frame.attemptId), {
-          startedTime: frame.startedTime,
           turn: frame.turn,
           step: frame.step,
           legacyChunkSeqs: new Set(),

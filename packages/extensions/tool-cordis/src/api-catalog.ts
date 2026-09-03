@@ -3512,7 +3512,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AssistantStreamFrame',
-    declaration: 'export type AssistantStreamFrame = {\n    readonly type: \'start\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly startedTime: number;\n    readonly turn: number;\n    readonly step: number;\n} | {\n    readonly type: \'chunk\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly chunk: StreamChunk;\n    readonly legacyChunkSeq: SessionSeq;\n} | {\n    readonly type: \'end\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly outcome: \'committed\' | \'aborted\';\n    readonly legacyChunkSeqs: readonly SessionSeq[];\n};',
+    declaration: 'export type AssistantStreamFrame = {\n    readonly type: \'start\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly turn: number;\n    readonly step: number;\n} | {\n    readonly type: \'chunk\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly chunk: StreamChunk;\n    readonly legacyChunkSeq: SessionSeq;\n} | {\n    readonly type: \'end\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly outcome: \'committed\' | \'aborted\';\n    readonly legacyChunkSeqs: readonly SessionSeq[];\n};',
   },
   {
     name: 'AttachmentId',
@@ -4784,7 +4784,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionAssistantStreamAttempt',
-    declaration: 'export interface SessionAssistantStreamAttempt {\n    readonly attemptId: LlmAttemptId;\n    readonly startedTime: number;\n    readonly turn: number;\n    readonly step: number;\n    readonly chunks: readonly JsonValue[];\n    readonly legacyChunkSeqs: readonly number[];\n}',
+    declaration: 'export interface SessionAssistantStreamAttempt {\n    readonly attemptId: LlmAttemptId;\n    readonly turn: number;\n    readonly step: number;\n    readonly chunks: readonly JsonValue[];\n    readonly legacyChunkSeqs: readonly number[];\n}',
   },
   {
     name: 'SessionAssistantStreamBaseline',
@@ -4792,7 +4792,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionAssistantStreamFrame',
-    declaration: 'export type SessionAssistantStreamFrame = {\n    readonly type: \'start\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly startedTime: number;\n    readonly turn: number;\n    readonly step: number;\n} | {\n    readonly type: \'chunk\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly chunk: JsonValue;\n    readonly legacyChunkSeq: number;\n} | {\n    readonly type: \'end\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly outcome: \'committed\' | \'aborted\';\n    readonly legacyChunkSeqs: readonly number[];\n};',
+    declaration: 'export type SessionAssistantStreamFrame = {\n    readonly type: \'start\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly turn: number;\n    readonly step: number;\n} | {\n    readonly type: \'chunk\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly chunk: JsonValue;\n    readonly legacyChunkSeq: number;\n} | {\n    readonly type: \'end\';\n    readonly attemptId: LlmAttemptId;\n    readonly revision: number;\n    readonly index: number;\n    readonly outcome: \'committed\' | \'aborted\';\n    readonly legacyChunkSeqs: readonly number[];\n};',
   },
   {
     name: 'SessionAttachmentRequest',

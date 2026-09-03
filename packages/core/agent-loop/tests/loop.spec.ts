@@ -79,8 +79,6 @@ describe('agent loop', () => {
     expect(frames.at(0)?.type).toBe('start')
     const start = frames.at(0)
     if (start?.type === 'start') {
-      expect(typeof start.startedTime).toBe('number')
-      expect(Number.isSafeInteger(start.startedTime)).toBe(true)
     }
     expect(frames.at(-1)?.type).toBe('end')
     expect(frames.map(frame => frame.revision)).toEqual(

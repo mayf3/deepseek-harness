@@ -40,7 +40,6 @@ export class AssistantStreamAttempt {
       type: 'start',
       attemptId: this.attemptId,
       revision: this.nextRevision(),
-      startedTime: Date.now(),
       turn: this.turn,
       step: this.step,
     })
