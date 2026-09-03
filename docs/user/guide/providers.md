@@ -34,8 +34,18 @@ The reply opens a searchable picker rather than writing anything. Search matches
 
 A built-in provider is answered from the installed catalog without a network request, even when its base URL points at a gateway. To see what a gateway actually serves under a built-in provider's protocol, fetch through a custom provider with the same base URL, or enter the gateway's ids by hand.
 
+## Select a model
+
+Configured providers appear in the model picker. Selecting a model also makes it the default for new sessions. A session that has already sent a request retains the model recorded in its own log.
+
+If a saved default names a provider that was deleted, the composer displays **Select model** and blocks input until another model is selected.
+
+## Advanced configuration
+
+The generated [plugin configuration catalog](../../config-catalog.md) lists every supported field and default for every plugin; [`dsh-llm-pi-ai`](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) is the provider section this page configures. The [`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.md) and [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.md) references own direct `settings.yaml` configuration, catalog resolution, reasoning controls, credentials, and adapter errors.
+
 ::: tip The form is deliberately small
-The Models page exposes only what a route needs to exist: the API key, display name, base URL, API protocol, and for each model its id, display name, context window, and max output tokens. Every other field — reasoning effort levels, image input, request-compatibility switches, headers, timeouts, retry policy — is set in `$DSH_HOME/settings.yaml`, the same document the page writes. Open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need, and the [generated configuration reference](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) lists them all.
+The Models page exposes only what a route needs to exist: the API key, display name, base URL, API protocol, and for each model its id, display name, context window, and max output tokens. Every other field — reasoning effort levels, image input, request-compatibility switches, headers, timeouts, retry policy — is set in `$DSH_HOME/settings.yaml`, the same document the page writes. Open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need.
 :::
 
 ### Image input
@@ -167,12 +177,6 @@ Each switch belongs to the protocols that declare it, so a switch valid on one `
 
 Every switch, its accepted values, and the protocols that take it are listed under `PiAiCompatProfile` in the [generated `dsh-llm-pi-ai` configuration reference](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) — which is derived from the source, so it cannot fall behind what the adapter accepts.
 
-## Select a model
-
-Configured providers appear in the model picker. Selecting a model also makes it the default for new sessions. A session that has already sent a request retains the model recorded in its own log.
-
-If a saved default names a provider that was deleted, the composer displays **Select model** and blocks input until another model is selected.
-
 ## Troubleshooting
 
 - **`MISSING_CREDENTIAL`** — Store the provider key through the Models page or supply the referenced environment variable.
@@ -186,7 +190,3 @@ If a saved default names a provider that was deleted, the composer displays **Se
 - **A compat switch is refused as having no value** — A key written with nothing after the colon. Give it a value, or remove the key to keep the installed catalog's.
 - **An image is refused before sending** — The model declares no image modality. Give a custom provider's model `input: [text, image]`; on DeepSeek's own route, select `deepseek-v4-flash-vision-exp`, the model that declares images.
 - **The provider rejects a request carrying an image** — The model declares images its endpoint does not actually serve. Remove `image` from whichever list granted it — the model's `input`, or the route's `defaultInput` — then start a new session: the attached image stays in the session log, so the same request repeats until the session moves off it.
-
-## Advanced configuration
-
-The generated [plugin configuration catalog](../../config-catalog.md) lists every supported field and default for every plugin; [`dsh-llm-pi-ai`](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) is the provider section this page configures. The [`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.md) and [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.md) references own direct `settings.yaml` configuration, catalog resolution, reasoning controls, credentials, and adapter errors.
