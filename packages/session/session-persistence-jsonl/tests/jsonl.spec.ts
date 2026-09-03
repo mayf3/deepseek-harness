@@ -821,6 +821,18 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       .rejects.toThrow(/released v0 physical header lacks required member "type"/)
   })
 
+  it('surfaces source-read storage faults and aborts unwrapped during migration', async () => {
+    const header = meta('source-read-fault', '/work')
+    const sourcePath = historicalLogPath(root, header.cwd, header.id)
+    await mkdir(dirname(sourcePath), { recursive: true })
+    await writeFile(sourcePath, `${JSON.stringify(releasedV0Header(header))}\n`)
+    statFailure.path = sourcePath
+    statFailure.error = Object.assign(new Error('EACCES: denied'), { code: 'EACCES' })
+    await expect(ctx.sessionPersistence.open(header.id, 'read')).rejects.toMatchObject({ code: 'EACCES' })
+    statFailure.error = new DOMException('source read aborted', 'AbortError')
+    await expect(ctx.sessionPersistence.open(header.id, 'read')).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('selects the highest opposite-encoding generation for its refusal', async () => {
     const header = meta('opposite-generations', '/work')
     const dir = sessionDir(root, header.cwd, header.id)
