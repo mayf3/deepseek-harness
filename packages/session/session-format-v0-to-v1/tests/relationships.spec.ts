@@ -112,19 +112,32 @@ describe('released v1 whole-artifact relationships', () => {
     expect(decode(rows).events).toEqual(rows)
   })
 
-  it('accepts a surface-position range whose sequence values descend', () => {
+  it('accepts a compaction surface span whose sequence values descend', () => {
     const rows = [
-      { type: 'user/message', seq: 0, time: 1, data: user('zero'), surfaceOp: 'append' },
-      { type: 'user/message', seq: 1, time: 2, data: user('one'), surfaceOp: 'append' },
-      { type: 'user/message', seq: 2, time: 3, data: user('two'), surfaceOp: 'append' },
+      { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
+      { type: 'user/message', seq: 1, time: 2, data: user('zero'), surfaceOp: 'append' },
+      { type: 'user/message', seq: 2, time: 3, data: user('one'), surfaceOp: 'append' },
+      { type: 'user/message', seq: 3, time: 4, data: user('two'), surfaceOp: 'append' },
       {
-        type: 'user/message', seq: 3, time: 4, data: user('first replacement'),
-        sourceEventSeqs: [0, 1], surfaceOp: { op: 'replace', start: 0, end: 1 },
+        type: 'user/message', seq: 4, time: 5, data: user('prior checkpoint'),
+        sourceEventSeqs: [1, 2], surfaceOp: { op: 'replace', start: 1, end: 2 },
+      },
+      { type: 'compaction/start', seq: 5, time: 6, data: { compactionId: 'c', turn: 1 } },
+      {
+        type: 'compaction/summary', seq: 6, time: 7,
+        data: {
+          compactionId: 'c', summary: [{ type: 'text', text: 'summary' }],
+          shadowedRange: { start: 4, end: 3 }, shadowedSeqs: [4, 3], shadowedTokenCount: 2,
+          provider: 'p', model: 'm',
+        },
       },
       {
-        type: 'user/message', seq: 4, time: 5, data: user('second replacement'),
-        sourceEventSeqs: [3, 2], surfaceOp: { op: 'replace', start: 3, end: 2 },
+        type: 'user/message', seq: 7, time: 8,
+        data: user('checkpoint', { kind: 'plugin', plugin: 'compact', compactionId: 'c' }),
+        sourceEventSeqs: [5, 6, 4, 3], surfaceOp: { op: 'replace', start: 4, end: 3 },
       },
+      { type: 'compaction/end', seq: 8, time: 9, data: { compactionId: 'c', turn: 1 } },
+      { type: 'turn/end', seq: 9, time: 10, data: { turn: 1, reason: { kind: 'completed' } } },
     ]
 
     expect(decode(rows).events).toEqual(rows)
