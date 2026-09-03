@@ -112,6 +112,24 @@ describe('released v1 whole-artifact relationships', () => {
     expect(decode(rows).events).toEqual(rows)
   })
 
+  it('accepts a surface-position range whose sequence values descend', () => {
+    const rows = [
+      { type: 'user/message', seq: 0, time: 1, data: user('zero'), surfaceOp: 'append' },
+      { type: 'user/message', seq: 1, time: 2, data: user('one'), surfaceOp: 'append' },
+      { type: 'user/message', seq: 2, time: 3, data: user('two'), surfaceOp: 'append' },
+      {
+        type: 'user/message', seq: 3, time: 4, data: user('first replacement'),
+        sourceEventSeqs: [0, 1], surfaceOp: { op: 'replace', start: 0, end: 1 },
+      },
+      {
+        type: 'user/message', seq: 4, time: 5, data: user('second replacement'),
+        sourceEventSeqs: [3, 2], surfaceOp: { op: 'replace', start: 3, end: 2 },
+      },
+    ]
+
+    expect(decode(rows).events).toEqual(rows)
+  })
+
   it('keeps the latest request provider across later steps and turns', () => {
     const rows = [
       { type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } },
