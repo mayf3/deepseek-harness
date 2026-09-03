@@ -19,7 +19,7 @@ Retrofit removal of every `dsh-*` temp dir a spec file creates, at the owning te
 
 ## Verification
 
-- Targeted local runs of every changed unit spec passed (the 35 changed `*.spec.ts` files, exercised in grouped runs), including the suites that exercise the changed product source; the two changed web `*.e2e.ts` files run under the web e2e lane.
+- Targeted local runs of every changed unit spec passed (the 37 changed `*.spec.ts` files, exercised in grouped runs), including the suites that exercise the changed product source; the two changed web `*.e2e.ts` files run under the web e2e lane.
 - CI runs the changed specs on the Linux and Windows coverage lanes; after a full green run, the fixed files' residue templates (observed at up to ~5,000 dirs per two hours each, e.g. `dsh-profile-`, `dsh-app-boot-`, `dsh-presets-*`, `dsh-upload-index-`) should no longer appear in fresh `/tmp` residue on the CI host.
 
 ## Alternatives considered
