@@ -1,9 +1,8 @@
-/** Package-owned background-job snapshot invariants. @module @deepseek-ai/dsh-jobs/invariant */
+/** Package-owned background-job projection invariants. @module @deepseek-ai/dsh-jobs/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
-import type { JobSnapshot } from './types.ts'
+import type { JobView } from './types.ts'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-jobs'
 const TERMINAL_STATUSES = new Set(['completed', 'killed', 'failed'])
@@ -13,48 +12,44 @@ export const name = 'jobs-invariant'
 /** Service required before the companion can reserve package ownership. */
 export const inject = ['invariants']
 
-/** Validate the cross-field relationships in one registry snapshot. */
-function validateSnapshot(snapshot: JobSnapshot, owner: Agent | undefined, fail: InvariantFailure): void {
-  const id = String(snapshot.id)
-  const prefix = `${snapshot.kind}-`
+/** Validate the cross-field relationships in one registry projection. */
+function validateView(job: JobView, fail: InvariantFailure): void {
+  const id = String(job.id)
+  const prefix = `${job.kind}-`
   const ordinal = Number(id.slice(prefix.length))
-  if (snapshot.kind.length === 0 || !id.startsWith(prefix)
+  if (job.kind.length === 0 || !id.startsWith(prefix)
     || !Number.isSafeInteger(ordinal) || ordinal < 1) {
-    fail(`job snapshot id ${JSON.stringify(id)} must be ${JSON.stringify(prefix)} followed by a positive ordinal`)
+    fail(`job view id ${JSON.stringify(id)} must be ${JSON.stringify(prefix)} followed by a positive ordinal`)
   }
-  if (snapshot.label.length === 0) fail(`job ${JSON.stringify(id)} label must be non-empty`)
-  if (!Number.isSafeInteger(snapshot.startedAt) || snapshot.startedAt < 0) {
+  if (job.label.length === 0) fail(`job ${JSON.stringify(id)} label must be non-empty`)
+  if (!Number.isSafeInteger(job.startedAt) || job.startedAt < 0) {
     fail(`job ${JSON.stringify(id)} startedAt must be a non-negative epoch integer`)
   }
 
-  const terminal = TERMINAL_STATUSES.has(snapshot.status)
-  if (terminal !== (snapshot.finishedAt !== undefined)) {
+  const terminal = TERMINAL_STATUSES.has(job.status)
+  if (terminal !== (job.finishedAt !== undefined)) {
     fail(`job ${JSON.stringify(id)} finishedAt must be present exactly for a terminal status`)
   }
-  if (snapshot.finishedAt !== undefined
-    && (!Number.isSafeInteger(snapshot.finishedAt) || snapshot.finishedAt < snapshot.startedAt)) {
+  if (job.finishedAt !== undefined
+    && (!Number.isSafeInteger(job.finishedAt) || job.finishedAt < job.startedAt)) {
     fail(`job ${JSON.stringify(id)} finishedAt must be an epoch integer no earlier than startedAt`)
   }
-
-  const expectedOwner = owner?.id
-  if (snapshot.ownerSession !== expectedOwner) {
-    fail(`job ${JSON.stringify(id)} ownerSession does not match its completion owner`)
+  if (terminal && job.progress !== undefined) {
+    fail(`job ${JSON.stringify(id)} progress must be cleared once settled`)
   }
 
-  const { outputTotal, outputEarliest } = snapshot
-  if ((outputTotal !== undefined) !== (outputEarliest !== undefined)) {
-    fail(`job ${JSON.stringify(id)} record offsets must be present together`)
-  } else if (outputTotal !== undefined && outputEarliest !== undefined
-    && (!Number.isSafeInteger(outputTotal) || !Number.isSafeInteger(outputEarliest)
-      || outputEarliest < 0 || outputEarliest > outputTotal)) {
-    fail(`job ${JSON.stringify(id)} record offsets must satisfy 0 <= outputEarliest <= outputTotal`)
+  const { total, earliest } = job.output
+  if (!Number.isSafeInteger(total) || !Number.isSafeInteger(earliest) || earliest < 0 || earliest > total) {
+    fail(`job ${JSON.stringify(id)} output offsets must satisfy 0 <= earliest <= total`)
   }
 }
 
-/** Install checks over current unowned records and every terminal snapshot. */
+/** Install checks over the current unowned projections and every settlement. */
 const install: InvariantInstaller = Object.assign((ctx: Context, fail: InvariantFailure) => {
-  for (const snapshot of ctx.jobs.list()) validateSnapshot(snapshot, undefined, fail)
-  ctx.jobs.onJobDone((snapshot, owner) => { validateSnapshot(snapshot, owner, fail) })
+  for (const job of ctx.jobs.visibleTo().list()) validateView(job, fail)
+  ctx.jobs.events.subscribe({ owners: 'all' }, (event) => {
+    if (event.type === 'settled') validateView(event.job, fail)
+  })
 }, { inject: ['jobs'] })
 
 /**
