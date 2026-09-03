@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-python-sdk-windows-x64-runtime.md
-2026-08-23-python-sdk-windows-x64-runtime.md: 106a20838b1ad30b6470daf3a9651cd5df58e5c2
-2026-08-23-python-sdk-windows-x64-runtime.zh.md: 48e0d1ff5075644ef1674a3ada346d9583d70924
+2026-08-23-python-sdk-windows-x64-runtime.md: 4d306152445b69cf199a449033201b529b46a11f
+2026-08-23-python-sdk-windows-x64-runtime.zh.md: f0828ca2eb2f15b2b30226d37940cccf8d75e083
