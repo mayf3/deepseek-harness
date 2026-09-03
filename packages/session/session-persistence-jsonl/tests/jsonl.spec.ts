@@ -623,6 +623,45 @@ describe('JsonlSessionPersistence: immutable format generations', () => {
       .toEqual(['session.jsonl', 'session.v2.jsonl'])
   })
 
+  it('migrates released-v0 retry, repeated-compaction, provenance, and late-title shapes', async () => {
+    const id = SessionId('released-v0-real-shapes')
+    const sourcePath = historicalLogPath(root, '/work', id)
+    const currentPath = rawLogPath(root, '/work', id)
+    const source = await readFile(resolve(
+      'packages/session/session-persistence-jsonl/tests/fixtures/released-v0-real-shapes.jsonl',
+    ))
+    await mkdir(dirname(sourcePath), { recursive: true })
+    await writeFile(sourcePath, source)
+
+    const restored = await readAll(ctx.sessionPersistence, id)
+
+    expect(restored.meta).toMatchObject({ id, version: SESSION_FORMAT_VERSION, cwd: '/work' })
+    expect(restored.events.find(event => event.type === 'llm/retry'))
+      .toMatchObject({ data: { delayMs: 1.5 } })
+    expect(restored.events.find(event => event.type === 'compaction/summary')).toMatchObject({
+      data: {
+        shadowedRange: { start: 11, end: 4 },
+        shadowedSeqs: [11, 2, 3, 4],
+      },
+    })
+    const titleRequest = restored.events.find(event => event.type === 'session/title-llm-request')
+    expect(titleRequest?.data.messageSeqs).toEqual([16])
+    const titleBlock = titleRequest?.data.messages[0]?.content[0]
+    expect(titleBlock).toMatchObject({ type: 'text' })
+    if (titleBlock?.type !== 'text') throw new Error('fixture title request lacks its text block')
+    expect(titleBlock.text).toContain('{"seq":21,"text":"late"}')
+    const currentRows = (await readFile(currentPath, 'utf8')).trimEnd().split('\n')
+      .map(line => JSON.parse(line) as Record<string, unknown>)
+    expect(currentRows.find(row => row['type'] === 'user/message'
+      && (row['data'] as { source?: { plugin?: string } }).source?.plugin === 'compact'))
+      .toMatchObject({
+        seq: 14,
+        sourceEventSeqs: [12, 13, 11, 2, 3, 4],
+        surfaceOp: { op: 'replace', start: 11, end: 4 },
+      })
+    expect(await readFile(sourcePath)).toEqual(source)
+  })
+
   it('publishes v2 beside an unchanged physical v1 source with packed chunk rows', async () => {
     const header = meta('released-v1-read', '/work')
     const sourcePath = generationLogPath(root, header.cwd, header.id, 1, 'none')
