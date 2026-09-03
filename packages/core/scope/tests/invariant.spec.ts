@@ -57,8 +57,7 @@ describe('scoped-dispatch invariants', () => {
       'agent/assistant-stream': [{
         agent,
         frame: {
-          type: 'start', attemptId: 'attempt-1' as never, revision: 1,
-          startedTime: 1, turn: 1, step: 1,
+          type: 'start', attemptId: 'attempt-1' as never, revision: 1, turn: 1, step: 1,
         },
       }],
       'agent/request-error': [

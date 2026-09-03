@@ -10,14 +10,12 @@ describe('SessionAssistantStreamAccumulator', () => {
     expect(accumulator.snapshot()).toBe(empty)
 
     accumulator.accept({
-      type: 'start', attemptId: LlmAttemptId('stale'), revision: 2,
-      startedTime: 1, turn: 1, step: 1,
+      type: 'start', attemptId: LlmAttemptId('stale'), revision: 2, turn: 1, step: 1,
     }, -1)
     expect(accumulator.snapshot()).toEqual({ revision: 2 })
 
     accumulator.accept({
-      type: 'start', attemptId: LlmAttemptId('current'), revision: 1,
-      startedTime: 2, turn: 2, step: 3,
+      type: 'start', attemptId: LlmAttemptId('current'), revision: 1, turn: 2, step: 3,
     }, SessionSeq(5))
     expect(accumulator.snapshot()).toMatchObject({
       revision: 1,
@@ -33,8 +31,7 @@ describe('SessionAssistantStreamAccumulator', () => {
     expect(accumulator.snapshot()).toEqual({ revision: 2 })
 
     accumulator.accept({
-      type: 'start', attemptId: LlmAttemptId('settled'), revision: 3,
-      startedTime: 3, turn: 2, step: 4,
+      type: 'start', attemptId: LlmAttemptId('settled'), revision: 3, turn: 2, step: 4,
     }, SessionSeq(8))
     accumulator.accept({
       type: 'chunk', attemptId: LlmAttemptId('settled'), revision: 4, index: 0,

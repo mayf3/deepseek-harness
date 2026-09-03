@@ -1,3 +1,4 @@
+import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { SessionFormatError } from '@deepseek-ai/dsh-session-format'
 import type { SessionFormatArtifact, SessionFormatEvent, SessionFormatJsonValue } from '@deepseek-ai/dsh-session-format'
 import { releasedV0Record } from './validation-helpers.ts'
@@ -190,7 +191,7 @@ export function assertReleasedArtifactRelationships(
           const start = ptcStarts.get(child)
           if (start === undefined || start.settled) throw new SessionFormatError('tool/code-dispatch has no unique start')
           if (start.root !== root || start.parent !== parent || start.name !== data['name']
-            || !sameJson(start.arguments, data['arguments'] as SessionFormatJsonValue)) {
+            || !deepEqualJson(start.arguments, data['arguments'])) {
             throw new SessionFormatError('tool/code-dispatch does not match its start')
           }
           start.settled = true
@@ -336,23 +337,6 @@ function assertRetryChain(
     (candidate.data as Record<string, SessionFormatJsonValue>)['retryId'] === data['retryId'])) {
     throw new SessionFormatError(`llm/retry reuses retryId ${JSON.stringify(data['retryId'])} across policy chains`)
   }
-}
-
-function sameJson(left: SessionFormatJsonValue, right: SessionFormatJsonValue): boolean {
-  if (left === right) return true
-  if (Array.isArray(left) || Array.isArray(right)) {
-    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false
-    const leftArray = left as readonly SessionFormatJsonValue[]
-    const rightArray = right as readonly SessionFormatJsonValue[]
-    return leftArray.every((value, index) => sameJson(value, rightArray[index] as SessionFormatJsonValue))
-  }
-  if (typeof left !== 'object' || left === null || typeof right !== 'object' || right === null) return false
-  const leftKeys = Object.keys(left)
-  const leftRecord = left as Record<string, SessionFormatJsonValue>
-  const rightRecord = right as Record<string, SessionFormatJsonValue>
-  return leftKeys.length === Object.keys(right).length
-    && leftKeys.every(key => Object.hasOwn(right, key)
-      && sameJson(leftRecord[key] as SessionFormatJsonValue, rightRecord[key] as SessionFormatJsonValue))
 }
 
 function requireOpenStep(
