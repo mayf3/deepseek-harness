@@ -223,7 +223,7 @@ export class FileUploads extends TypertRemoteService {
   private observeSessionEvent(session: Session, event: SessionEvent): void {
     if (event.type !== 'user/message' || event.data.source.kind !== 'user'
       || !('rpcId' in event.data.source)) return
-    this.retire(session, event.data.source.rpcId)
+    if (typeof event.data.source.rpcId === 'string') this.retire(session, event.data.source.rpcId)
   }
 
   private retire(session: Session, requestId: string): void {

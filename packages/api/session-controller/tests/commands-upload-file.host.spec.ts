@@ -294,6 +294,14 @@ describe('Session file uploads', () => {
       new AbortController().signal,
     )
     await first.controller.prompt(promptRequest([{ type: 'file', receiptId: observed.receiptId }]))
+    first.ctx.emit('session/event', first.agent.session, {
+      type: 'user/message',
+      data: createUserMessage({
+        content: [{ type: 'text', text: 'extension event' }],
+        source: { kind: 'user', rpcId: 1 } as never,
+      }),
+    } as never)
+    expect(first.uploads.resolve(first.agent, observed.receiptId)).toEqual(observed.file)
     first.agent.session.append('user/message', createUserMessage({
       content: [{ type: 'text', text: 'observed' }],
       source: { kind: 'user', rpcId: 'req-1' as SessionRequestId },
