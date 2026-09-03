@@ -120,10 +120,23 @@ async function quiesceFiber(fiber: Fiber): Promise<void> {
 /** Shared no-op plugin used as the backing scope fiber. */
 function scope(): void {}
 
+/**
+ * The stable name of each named scope key. A name is what a process-external
+ * record — a settings document section, a log line — can refer to a scope by,
+ * where the key object itself cannot travel.
+ */
+const scopeIds = new WeakMap<ScopeKey, string>()
+
 /** Options accepted by {@link createScope}. */
 export interface CreateScopeOptions {
   /** Enclosing scope bound via {@link bindScopeParent} before the scope is usable; the binding stays internal. */
   parent?: ScopeKey
+  /**
+   * Stable name for the scope, such as `preset/standard`. Named scopes are
+   * addressable by consumers that keep per-scope state outside the process
+   * ({@link scopeIdOf}); an unnamed scope is addressable by its key alone.
+   */
+  id?: string
 }
 
 /**
@@ -136,6 +149,10 @@ export interface CreateScopeOptions {
  */
 export function createScope(ctx: Context, key: ScopeKey, options?: CreateScopeOptions): Scope {
   if (options?.parent !== undefined) bindScopeParent(key, options.parent)
+  if (options?.id !== undefined) {
+    if (options.id.length === 0) throw new Error('dsh-scope: a scope id must not be empty')
+    scopeIds.set(key, options.id)
+  }
   const fiber = ctx.plugin(scope)
   const scoped: Context = fiber.ctx.extend({ [kScope]: key })
   let disposing: Promise<void> | undefined
@@ -153,6 +170,31 @@ export function createScope(ctx: Context, key: ScopeKey, options?: CreateScopeOp
  */
 export function scopeOf(ctx: Context): ScopeKey | undefined {
   return (ctx as Context & { [kScope]?: ScopeKey })[kScope]
+}
+
+/**
+ * The name of one scope key, when {@link createScope} gave it one.
+ * @param key - the scope key to name.
+ * @returns the id, or `undefined` for an unnamed key.
+ */
+export function scopeIdOfKey(key: ScopeKey): string | undefined {
+  return scopeIds.get(key)
+}
+
+/**
+ * The nearest named scope a context belongs to: its own scope when that is
+ * named, else the nearest named ancestor along the parent chain
+ * ({@link bindScopeParent}). An agent's context therefore resolves to the
+ * preset it joined, which is the name per-scope state is kept under.
+ * @param ctx - context to inspect.
+ * @returns the nearest named scope's id, or `undefined` when none of the chain is named.
+ */
+export function scopeIdOf(ctx: Context): string | undefined {
+  for (const key of scopeChainOf(scopeOf(ctx))) {
+    const id = scopeIds.get(key)
+    if (id !== undefined) return id
+  }
+  return undefined
 }
 
 /**

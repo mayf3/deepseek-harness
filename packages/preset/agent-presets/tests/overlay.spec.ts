@@ -340,3 +340,17 @@ describe('authoring', () => {
     await expect(ctx.agentPresets.removeOverlay('standard')).rejects.toMatchObject({ code: 'agent-preset/read-only' })
   })
 })
+
+describe('the standing scope', () => {
+  it('is named after the preset, so plugins it mounts register settings under preset/<id>', async () => {
+    const { scopeIdOf } = await import('@deepseek-ai/dsh-scope')
+    const { presetScopeId } = await import('@deepseek-ai/dsh-agent-presets')
+    const root = await userRoot()
+    const ctx = await harness(rosterOver(root))
+
+    const agent = await agentOn(ctx, 'sess-named-scope', 'standard')
+
+    expect(presetScopeId('standard')).toBe('preset/standard')
+    expect(scopeIdOf(agent.ctx)).toBe('preset/standard')
+  })
+})

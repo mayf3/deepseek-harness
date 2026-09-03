@@ -5,14 +5,14 @@
  * packages.
  */
 
-import { SettingsProvider, type SettingsNamespace } from '../src/index.ts'
+import { SettingsProvider, type SettingsNamespace, type SettingsScopeId } from '../src/index.ts'
 
 /** In-memory provider exposing the protected provider hooks to tests. */
 export class MemorySettings extends SettingsProvider {
   /** Raw document the provider "storage" currently holds. */
   doc: Record<string, unknown>
-  /** Every persist() call observed, in order. */
-  persisted: Array<{ ns: SettingsNamespace; section: Record<string, unknown> }> = []
+  /** Every persist() call observed, in order; `scope` is present only for a scoped section. */
+  persisted: Array<{ ns: SettingsNamespace; section: Record<string, unknown>; scope?: SettingsScopeId }> = []
   /** When false, update() must reject before reaching persist(). */
   writableFlag: boolean
 
@@ -38,12 +38,17 @@ export class MemorySettings extends SettingsProvider {
     return Promise.resolve(structuredClone(this.doc))
   }
 
-  protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+  protected async persist(ns: SettingsNamespace, section: Record<string, unknown>, scope: SettingsScopeId | undefined): Promise<void> {
     if (this.persistDelayMs > 0) {
       await new Promise(resolve => setTimeout(resolve, this.persistDelayMs))
     }
-    this.persisted.push({ ns, section: structuredClone(section) })
-    this.doc[ns] = structuredClone(section)
+    this.persisted.push({ ns, section: structuredClone(section), ...scope === undefined ? {} : { scope } })
+    if (scope === undefined) {
+      this.doc[ns] = structuredClone(section)
+      return
+    }
+    const scopes = (this.doc['scopes'] ??= {}) as Record<string, Record<string, unknown>>
+    ;(scopes[scope] ??= {})[ns] = structuredClone(section)
   }
 
   /** Simulate an external storage change reaching the provider. */

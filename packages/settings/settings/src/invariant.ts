@@ -21,14 +21,14 @@ export const inject = ['invariants']
  * seam's own equality predicate.
  */
 const install: InvariantInstaller = (ctx: Context, fail: InvariantFailure) => {
-  ctx.on('settings/updated', (ns, next, prev) => {
+  ctx.on('settings/updated', (ns, next, prev, _source, scope) => {
     const settings = ctx.get('settings')
     if (settings === undefined) {
       fail(`settings/updated for "${ns}" emitted without a live settings service`)
     }
-    const current = settings.get(ns)
+    const current = settings.get(ns, scope)
     if (current === undefined) {
-      fail(`settings/updated for "${ns}" emitted while the namespace is unregistered`)
+      fail(`settings/updated for "${ns}" (scope ${String(scope)}) emitted while the namespace is unregistered there`)
     }
     if (!deepEqualJson(current, next)) {
       fail(`settings/updated for "${ns}" does not match the authoritative resolved value`)

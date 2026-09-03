@@ -17,7 +17,7 @@ type SettingsNamespace = Branded<'SettingsNamespace'>
 
 ## 注册
 
-注册把 schemastery schema 绑定到调用方插件 fiber 上的 namespace——dispose（资源释放）该 fiber 即移除 namespace 及其观察者。options 携带组合层、owner 的生效时机，以及一个可选的、用于校验 schema 表达不了的约束的钩子。
+注册把 schemastery schema 绑定到调用方插件 fiber 上的 namespace——dispose（资源释放）该 fiber 即移除 namespace 及其观察者。options 携带组合层、owner 的生效时机，以及一个可选的、用于校验 schema 表达不了的约束的钩子。namespace 是一种设置的 kind；每次注册是它在调用方最近的具名 `dsh-scope` 作用域（agent preset 的 `preset/<id>`，或全局作用域）下的一个 instance，同一 kind 的每个注册者共享其 schema。instance 按顺序解析 schema 默认值、自己的 `base`、文档的全局分节与其作用域自己的分节。
 
 ```ts type-equiv
 /** Registration options beyond the namespace schema. */
@@ -43,6 +43,9 @@ interface SettingsRegisterOptions<T> {
    * registration there is no last good value yet, so a stored section that
    * already fails rejects the registration itself — again exactly as a schema
    * failure does.
+   *
+   * The check belongs to the namespace kind: the first registrant's check
+   * judges every instance, because every instance is the same plugin.
    * @param value - the resolved section, schema-valid by construction.
    */
   validate?: (value: T) => void
@@ -65,7 +68,7 @@ scope 是面向 owner 的句柄。`update` 把稀疏 patch 只合并进用户分
 ```ts type-equiv
 /** Owner-facing handle for one registered namespace. */
 interface SettingsScope<T> {
-  /** Current resolved value: schema defaults, then `base`, then the user layer. */
+  /** Current resolved value: schema defaults, then `base`, then the user layers. */
   get(): T
   /**
    * Observe committed changes to this namespace's resolved value. Invocations
@@ -78,14 +81,15 @@ interface SettingsScope<T> {
    */
   watch(callback: (next: T, prev: T) => void | Promise<void>): () => void
   /**
-   * Merge a partial patch into this namespace's user layer and persist it.
+   * Merge a partial patch into this registration's user section — the scope's
+   * own section for a scoped registration — and persist it.
    * @param patch - plain-object patch over the user section; JSON-compatible data
    * only (non-JSON values reject with their path before anything persists).
    */
   update(patch: object): Promise<void>
   /**
-   * Replace this namespace's user section wholesale; absent keys re-inherit
-   * the composition `base` and schema defaults (`replace({})` resets all).
+   * Replace this registration's user section wholesale; absent keys re-inherit
+   * the layers below (`replace({})` resets the section).
    * @param section - the complete next user section; JSON-compatible data only,
    * as for {@link update}.
    */
@@ -100,8 +104,18 @@ interface SettingsScope<T> {
 ```ts type-equiv
 /** One registered namespace as surfaced to configuration UIs. */
 interface SettingsDescriptor {
+  // TODO(settings-namespace-vocabulary): Rename `ns` to `namespace` across the
+  // public API, provider contract, implementations, tests, and consumers.
   /** The registered namespace. */
   ns: SettingsNamespace
+  /** The named scope the descriptor resolves under; absent for the global scope. */
+  scope?: SettingsScopeId
+  /**
+   * Whether an owner registered the namespace under this scope. False for a
+   * scope described from the kind alone — a preset no session composed yet —
+   * whose value then carries no composition `base`.
+   */
+  registered: boolean
   /** Serialized schemastery schema (`schema.toJSON()`). */
   schema: unknown
   /** Current resolved value. */
@@ -116,8 +130,15 @@ interface SettingsDescriptor {
   /**
    * Raw user section from the stored document (detached), when one exists and
    * is well-formed; a field's presence here is what marks it user-overridden.
+   * For a scoped descriptor this is the scope's own section, not the global one.
    */
   user?: unknown
+  /**
+   * For a scoped descriptor: the value the scope resolves without its own
+   * user section — defaults, base, and the global section — so a surface can
+   * tell a field the scope overrides from one it inherits.
+   */
+  inherited?: unknown
   /** Owner's declared effect timing. */
   applies: SettingsApplies
   /** Schema-declared secret positions; present only under `redactSecrets`. */
@@ -149,6 +170,12 @@ interface SettingsDescribeOptions {
    * the verbatim default exists for same-process configuration UIs only.
    */
   redactSecrets?: boolean
+  /**
+   * Describe every namespace kind under this named scope instead of the
+   * global scope. A kind with no registration under the scope is described
+   * from the kind alone, `registered: false`.
+   */
+  scope?: string
 }
 ```
 
@@ -191,13 +218,20 @@ prepareDocument(): Promise<string | undefined>
 /**
  * Register a namespace schema and receive its owner scope. The registration
  * is an effect on the calling plugin's fiber: disposing that fiber removes
- * the namespace and its observers. An invalid stored section fails the
+ * the instance and its observers. An invalid stored section fails the
  * registration itself — the earliest point where the schema can judge it.
- * @param ns - unique namespace; duplicate registration fails loud.
+ *
+ * The instance registers under the caller's nearest named scope: a plugin
+ * mounted inside an agent preset resolves that preset's section over the
+ * global one, and two presets mounting the same plugin hold two instances
+ * of one kind. A second registrant of a namespace must carry the same
+ * schema envelope; a different one is a different setting under a taken
+ * name and fails loud.
+ * @param ns - the namespace; a second registration under the same scope fails loud.
  * @param schema - schemastery schema resolving this namespace's value.
  * @param options - composition `base` layer and effect timing.
  * @returns the owner scope for reads, observation, and updates.
- * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier or is reserved.
  */
 register<const Namespace extends string, T>( ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, options?: SettingsRegisterOptions<T>, ): SettingsScope<T>
 
@@ -215,63 +249,78 @@ register<const Namespace extends string, T>( ns: Namespace & SettingsNamespaceIn
 installSection<const Namespace extends string, T>( owner: Context, ns: Namespace & SettingsNamespaceInput<Namespace>, schema: z<T>, entry: T, hooks: SettingsSectionHooks<T>, ): void
 
 /**
- * Describe every registered namespace for configuration surfaces, including
- * the composition `base` and raw user layers so a form can mark which fields
- * the user overrode (presence in `user`) and what a reset returns to.
- * @param options - redaction switch; wire surfaces must redact.
- * @returns one descriptor per registered namespace, in registration order.
+ * Describe every namespace kind for configuration surfaces, under the
+ * global scope or one named scope: the composition `base` and raw user
+ * layers so a form can mark which fields the user overrode (presence in
+ * `user`) and what a reset returns to, and for a scoped read the
+ * `inherited` value the scope's own section is layered over. A kind with
+ * no instance under the requested scope is described from the kind alone.
+ * @param options - redaction switch (wire surfaces must redact) and scope.
+ * @returns one descriptor per namespace kind, in registration order.
+ * @throws {TypeError} when `scope` is not a well-formed scope id.
  */
 describe(options?: SettingsDescribeOptions): SettingsDescriptor[]
 
 /**
- * Read one registered namespace's resolved value.
- * @param ns - the namespace to read.
- * @returns the resolved value, or `undefined` while unregistered.
- * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
+ * Every named scope some namespace is registered under, in first-seen order.
+ * @returns the scope ids.
  */
-get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>): unknown
+scopes(): SettingsScopeId[]
 
 /**
- * Merge a patch into one registered namespace's user layer, validate the
- * resolved candidate, persist through the provider, then commit and emit.
- * A validation failure rejects before anything is persisted. Writes to one
- * namespace are serialized: concurrent updates apply in call order, each
- * merging over the previous write's committed section.
+ * Read one registered namespace's resolved value.
+ * @param ns - the namespace to read.
+ * @param scope - the named scope of the instance; the global instance when omitted.
+ * @returns the resolved value, or `undefined` while unregistered under that scope.
+ * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
+ */
+get<const Namespace extends string>(ns: Namespace & SettingsNamespaceInput<Namespace>, scope?: string): unknown
+
+/**
+ * Merge a patch into one namespace's user section, validate the resolved
+ * candidates, persist through the provider, then commit and emit. A
+ * validation failure rejects before anything is persisted. Writes to one
+ * section are serialized: concurrent updates apply in call order, each
+ * merging over the previous write's committed section. A global write
+ * re-resolves every instance of the kind; a scoped write only that scope's.
  * @param ns - the registered namespace to update.
  * @param patch - plain-object patch over the user section.
  * @param expectedRevision - the descriptor `revision` the caller read; a
- *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ *   section that moved past it rejects with {@link SettingsConflictError}.
+ * @param scope - the named scope whose section to write; the global section when omitted.
  * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-async update<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, patch: object, expectedRevision?: number, ): Promise<void>
+async update<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, patch: object, expectedRevision?: number, scope?: string, ): Promise<void>
 
 /**
- * Replace one registered namespace's user section wholesale, validate,
- * persist, then commit and emit. Keys absent from `section` fall back to the
- * composition `base` and schema defaults — this is the removal/reset path a
- * merge-only patch cannot express (`replace({})` re-inherits everything).
+ * Replace one namespace's user section wholesale, validate, persist, then
+ * commit and emit. Keys absent from `section` fall back to the layers
+ * below — this is the removal/reset path a merge-only patch cannot express
+ * (`replace({})` re-inherits everything).
  * @param ns - the registered namespace to replace.
  * @param section - the complete next user section.
  * @param expectedRevision - the descriptor `revision` the caller read; a
- *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ *   section that moved past it rejects with {@link SettingsConflictError}.
+ * @param scope - the named scope whose section to write; the global section when omitted.
  * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-async replace<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, section: object, expectedRevision?: number, ): Promise<void>
+async replace<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, section: object, expectedRevision?: number, scope?: string, ): Promise<void>
 
 /**
- * Apply path-addressed edits to one registered namespace's user section,
- * validate, persist, then commit and emit. The ops are applied to the
- * section as it stands when the write reaches the front of the queue, so a
- * caller never has to restate fields it did not touch — and, crucially,
- * cannot delete fields it never saw. This is the write path for any caller
- * holding a redacted view; `replace` remains the wholesale reset.
+ * Apply path-addressed edits to one namespace's user section, validate,
+ * persist, then commit and emit. The ops are applied to the section as it
+ * stands when the write reaches the front of the queue, so a caller never
+ * has to restate fields it did not touch — and, crucially, cannot delete
+ * fields it never saw. This is the write path for any caller holding a
+ * redacted view; `replace` remains the wholesale reset.
  * @param ns - the registered namespace to edit.
  * @param ops - ordered path edits; later ops observe earlier ones.
  * @param expectedRevision - the descriptor `revision` the caller read; a
- *   namespace that moved past it rejects with {@link SettingsConflictError}.
+ *   section that moved past it rejects with {@link SettingsConflictError}.
+ * @param scope - the named scope whose section to write; the global section when omitted.
  * @throws {TypeError} when `ns` is not a lowercase hyphenated identifier.
  */
-async mutate<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, ops: readonly SettingsPathOp[], expectedRevision?: number, ): Promise<void>
+async mutate<const Namespace extends string>( ns: Namespace & SettingsNamespaceInput<Namespace>, ops: readonly SettingsPathOp[], expectedRevision?: number, scope?: string, ): Promise<void>
 ```
 
 Source: [`packages/settings/settings/src/index.ts`](../../packages/settings/settings/src/index.ts)
@@ -284,12 +333,15 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
 
 ```ts cordis-catalog
 /**
- * Describe every registered namespace for a configuration page: redacted
- * layered values plus the serialized schema the page renders its form from.
- * @returns provider writability, local-document presence, and one view per namespace.
- * @throws RemoteError when no settings provider is mounted.
+ * Describe every namespace kind for a configuration page: redacted layered
+ * values plus the serialized schema the page renders its form from, under
+ * the global scope or one named scope (an agent preset's `preset/<id>`).
+ * @param scope - the named scope to describe; the global scope when omitted.
+ * @returns provider writability, local-document presence, one view per
+ * namespace kind, and every scope some namespace is registered under.
+ * @throws RemoteError when no settings provider is mounted or the scope id is malformed.
  */
-@Remote describe(): SettingsDescribeValue
+@Remote describe(scope?: string): SettingsDescribeValue
 
 /**
  * Report whether this deployment can open an authored Agent preset directory natively.
@@ -302,20 +354,22 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
  * @param ns - namespace key to write.
  * @param patch - fields to merge into the user section.
  * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
- * @returns the namespace's redacted view after the write.
+ * @param scope - the named scope whose section to write; the global section when omitted.
+ * @returns the namespace's redacted view under that scope after the write.
  * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
  */
-@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+@Remote update( ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined, scope?: string, ): Promise<SettingsNamespaceView>
 
 /**
  * Replace one namespace's stored user section wholesale.
  * @param ns - namespace key to write.
  * @param section - complete replacement user section.
  * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
- * @returns the namespace's redacted view after the write.
+ * @param scope - the named scope whose section to write; the global section when omitted.
+ * @returns the namespace's redacted view under that scope after the write.
  * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
  */
-@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+@Remote replace( ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined, scope?: string, ): Promise<SettingsNamespaceView>
 
 /**
  * Apply path-addressed edits to one namespace's user section, resolved against
@@ -324,10 +378,11 @@ Host service backing the generated `ctx.remote.settings` namespace. Every remote
  * @param ns - namespace key to write.
  * @param ops - the edits to apply, in order.
  * @param expectedRevision - revision the caller read; `undefined` writes unconditionally.
- * @returns the namespace's redacted view after the write.
+ * @param scope - the named scope whose section to write; the global section when omitted.
+ * @returns the namespace's redacted view under that scope after the write.
  * @throws RemoteError when the request is invalid, no provider is mounted, or the provider refuses the write.
  */
-@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, ): Promise<SettingsNamespaceView>
+@Remote async mutate( ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined, scope?: string, ): Promise<SettingsNamespaceView>
 
 /**
  * Materialize the provider-owned settings document and open it in a native text editor.
@@ -368,10 +423,11 @@ One registered namespace's RAW user section changed, whether or not the resolved
  * resolved value, different meaning) and that their held revision is
  * stale. Listener containment matches `settings/updated`.
  * @param ns - the namespace whose stored section changed.
- * @param revision - the namespace's new revision.
+ * @param revision - the section's new revision.
+ * @param scope - the named scope whose section changed; absent for the global section.
  * @mode emit
  */
-'settings/document-updated'(ns: SettingsNamespace, revision: number): void
+'settings/document-updated'(ns: SettingsNamespace, revision: number, scope?: SettingsScopeId): void
 ```
 
 Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)
@@ -396,9 +452,10 @@ Committed change to one registered namespace's resolved value. Emitted after the
  * @param next - the new resolved value.
  * @param prev - the previous resolved value.
  * @param source - whether the change entered through `update()` or the provider.
+ * @param scope - the named scope whose registration changed; absent for the global scope.
  * @mode emit
  */
-'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource): void
+'settings/updated'(ns: SettingsNamespace, next: unknown, prev: unknown, source: SettingsUpdateSource, scope?: SettingsScopeId): void
 ```
 
 Source: [`packages/settings/settings/src/types.ts`](../../packages/settings/settings/src/types.ts)

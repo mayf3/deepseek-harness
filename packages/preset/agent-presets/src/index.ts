@@ -60,6 +60,19 @@ export { overlayFacts } from './composition-inventory.ts'
 /** Settings namespace carrying the user's chosen default preset. */
 export const SETTINGS_NAMESPACE = 'agent-presets'
 
+/** The `dsh-scope` name prefix of a preset's standing scope. */
+export const PRESET_SCOPE_PREFIX = 'preset/'
+
+/**
+ * The named-scope id of one preset's standing composition, under which the
+ * plugins it mounts register their settings.
+ * @param presetId - the preset id.
+ * @returns `preset/<id>`.
+ */
+export function presetScopeId(presetId: string): string {
+  return `${PRESET_SCOPE_PREFIX}${presetId}`
+}
+
 /** Refuse an empty preset id before invoking a domain operation. */
 function validatePresetId(value: string, field: 'agentPreset' | 'from'): void {
   if (value.length === 0) {
@@ -823,7 +836,9 @@ export class AgentPresets extends TypertRemoteService {
         return reused
       }
       const key: ScopeKey = { agentPreset: preset.id }
-      const scope = createScope(this.selfCtx, key)
+      // Named, so a plugin mounted in the preset registers its settings under
+      // `preset/<id>` and per-scope state outside the process can address it.
+      const scope = createScope(this.selfCtx, key, { id: presetScopeId(preset.id) })
       try {
         if (stamp === undefined) {
           const reason = `composition file is unreadable: ${preset.path}`

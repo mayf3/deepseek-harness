@@ -50,7 +50,7 @@ kind: "package-reference"
 
 ### 编辑文档
 
-文档是 namespace 到用户分节的 YAML 或 JSON 映射。用户可以直接编辑：任何变更都会自动生效，删除文件则让所有 namespace 回到默认值与 `base`。存在但非法的文档在启动时使插件加载失败——提供方绝不会静默忽略或覆盖它。运行中不可读或不可解析的编辑只告警并保留最后可用分节，因此手改出错不会拖垮进程。
+文档是 namespace 到用户分节的 YAML 或 JSON 映射，外加一个保留的 `scopes` 映射，存放每个具名 scope 自己的分节——`scopes.preset/standard.skill-filesystem` 就是 `standard` preset 叠加在全局 `skill-filesystem` 分节之上解析的那一段。用户可以直接编辑：任何变更都会自动生效，删除文件则让所有 namespace 回到默认值与 `base`。存在但非法的文档在启动时使插件加载失败——提供方绝不会静默忽略或覆盖它。运行中不可读或不可解析的编辑只告警并保留最后可用分节，因此手改出错不会拖垮进程。
 
 ### 经服务写入
 

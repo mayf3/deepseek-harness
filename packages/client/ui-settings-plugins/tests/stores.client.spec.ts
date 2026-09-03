@@ -1137,7 +1137,7 @@ describe('ConfigurablePluginsTabController', () => {
         writable: true,
         hasDocument: true,
         namespaces: [{
-          ns: 'bash', schema: {}, value: {}, applies: 'live', secrets: [], revision: 1,
+          ns: 'bash', registered: true, schema: {}, value: {}, applies: 'live', secrets: [], revision: 1,
         }],
       },
       error: null,

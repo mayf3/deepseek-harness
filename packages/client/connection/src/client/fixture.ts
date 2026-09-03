@@ -1844,8 +1844,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         value: {
           writable: true,
           hasDocument: true,
+          scopes: [],
           namespaces: [{
             ns: 'llm-deepseek',
+            registered: true,
             schema: {},
             value: { apiKeyEnv: 'DEEPSEEK_API_KEY' },
             applies: 'live',

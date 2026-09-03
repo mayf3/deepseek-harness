@@ -68,11 +68,13 @@ skill 可以是被扫描根目录顶层的目录 bundle `<name>/SKILL.md`，也�
 | `includeDefaultRoots` | `true` | 在 `customSkillDirs` 周围包含项目根与用户根 |
 | `dshHome` | `$DSH_HOME` 或 `~/.dsh` | Harness 配置根目录；扫描其 `skills` 子目录 |
 | `agentsHome` | `$DSH_AGENTS_HOME` 或 `~/.agents` | 为兼容 skill 扫描的共享 agent 配置根目录 |
-| `customSkillDirs` | `[]` | 其他本地 skill 根目录，位于项目根之后、用户根之前 |
+| `customSkillDirs` | `[]` | 其他本地 skill 根目录，位于项目根之后、用户根之前；也是 `skill-filesystem` settings 分节的 base |
 | `watch` | `true` | 监视本地根，并在目录可能变化时使提供方失效 |
 | `bundledSkillDir` | — | 配置后按 rank 600 扫描的内置 skill 根目录 |
 
 其余 `watch*` 字段用于调节 Chokidar 行为——轮询、稳定窗口、间隔、项目上限与符号链接跟随。生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-skill-filesystem)是每个字段的穷尽式真源。
+
+组合了 settings provider 时，`customSkillDirs` 还会以组合值为 base 经 `skill-filesystem` settings namespace 解析：一个人在 settings 文档里给自己的目录添加一个根目录，provider 就用新的根目录重新列出，无需重启。挂在 agent preset 内的行注册在该 preset 的 scope 下，因此 `scopes.preset/<id>.skill-filesystem` 只为该 preset 在全局分节之上添加根目录。没有 settings provider 时只有组合值。
 
 ### 变更检测
 

@@ -94,6 +94,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
   return [
     {
       ns: 'llm-deepseek',
+      registered: true,
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
       value: {
         apiKeyEnv: 'DEEPSEEK_API_KEY',
@@ -110,6 +111,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
     },
     {
       ns: 'llm-plain',
+      registered: true,
       schema: JSON.parse(JSON.stringify(Schema.object({
         profiles: Schema.dict(Schema.object({ note: Schema.string() })),
       }).toJSON())) as JsonValue,
@@ -120,6 +122,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
     },
     {
       ns: 'llm-pi-ai',
+      registered: true,
       schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
       value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
       user: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
@@ -129,6 +132,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
     },
     {
       ns: 'subagent-model-selection',
+      registered: true,
       schema: JSON.parse(JSON.stringify(Schema.object({ enabled: Schema.boolean().default(false) }).toJSON())) as JsonValue,
       value: { enabled: false },
       applies: 'live',
@@ -749,6 +753,7 @@ describe('ModelsSection', () => {
     const stored = { models: [{ id: 'user-only-model', name: 'User Only' }] }
     const overridden: SettingsNamespaceView = {
       ns: 'llm-deepseek',
+      registered: true,
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
       value: { ...stored, defaultContextWindow: 1_000_000 },
       ...base === undefined ? {} : { base },
@@ -981,6 +986,7 @@ describe('ModelsSection', () => {
     const { face } = scriptedFace()
     const bare: SettingsNamespaceView = {
       ns: 'llm-deepseek',
+      registered: true,
       schema: JSON.parse(JSON.stringify(DeepSeekConfig.toJSON())) as JsonValue,
       value: {},
       applies: 'live',
