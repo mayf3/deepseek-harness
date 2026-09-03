@@ -16,11 +16,11 @@ Keys are write-only. The page receives a redacted descriptor after saving, never
 
 Choose **Add provider** and pick a provider dsh ships with, such as Anthropic, OpenAI, Moonshot Kimi, or Zhipu GLM; enter its API key and save. The installed catalog supplies the endpoint, protocol, and model list.
 
-Providers with native authentication need their native credentials instead. Bedrock, Vertex, Azure, and Codex use AWS credentials and a region, an ADC project, an `api-version`, and OAuth respectively; filling only the API-key field does not configure them.
+Providers that sign in with OAuth, such as Codex, are not supported here yet.
 
 ## Add a custom provider
 
-Choose **Add a custom provider** for a company gateway, self-hosted server, or provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model.
+Choose **Add a custom provider** for a company gateway, self-hosted server, or provider absent from the installed catalog. Supply a lowercase Provider ID, base URL, API protocol, credential, and at least one model. The **API protocol** must be the one your gateway speaks, and the form offers three: `openai-completions` for OpenAI Chat Completions, `openai-responses` for the OpenAI Responses API, and `anthropic-messages` for the Anthropic Messages API. A provider speaks one protocol, so a gateway that serves two needs two providers.
 
 ![The custom provider form: Provider ID, display name, base URL, API protocol, and API key](providers-custom-form.png)
 
@@ -28,11 +28,9 @@ The Provider ID is permanent because requests, saved sessions, model defaults, a
 
 ### Discover models
 
-Under **Model catalog**, choose **Fetch available models** to ask the endpoint what it serves. The request goes to the base URL and API protocol currently in the form, with the key typed there or, for a saved provider, the stored one: `openai-completions` and `openai-responses` call `GET /models` with bearer auth, and `anthropic-messages` calls Anthropic's native `GET /v1/models`, whether the base URL is written with or without a trailing `/v1`. The reply may be OpenAI's `data` array or the enriched `models` object some gateways return; either way each candidate arrives with its id and, when the endpoint reports them, a display name, context window, and max output tokens.
+Under **Model catalog**, choose **Fetch available models** to ask the endpoint which models it serves. The request uses the base URL, protocol, and key currently in the form, or a saved provider's stored key, and the reply opens a searchable picker: search, tick the models you want, and choose **Add selected**. Nothing is stored until you save or create the provider.
 
-The reply opens a searchable picker rather than writing anything. Search matches ids and display names, **Select all** adds the visible results, **Deselect all** clears every selection including hidden ones, and **Add selected** copies the chosen candidates into the model list. The provider is not stored until you save or create it, so a fetch is safe to repeat while drafting.
-
-A built-in provider is answered from the installed catalog without a network request, even when its base URL points at a gateway. To see what a gateway actually serves under a built-in provider's protocol, fetch through a custom provider with the same base URL, or enter the gateway's ids by hand.
+Discovery reads the listing formats common gateways publish, but not every endpoint answers in one of them, so treat it as a convenience rather than a guarantee: when it fails or lists nothing, add the model ids by hand and they work just the same. A built-in provider is always answered from the installed catalog, even when its base URL points at a gateway, so fetch through a custom provider to see what the gateway really serves.
 
 ## Select a model
 
