@@ -292,20 +292,10 @@ function parsedSessionFixture(
 }
 
 /**
- * Convert one persisted or projected snapshot fixture to the current physical format in memory.
+ * Convert one persisted or projected snapshot fixture to the current physical format in memory for expected-output comparison.
  * Projected cwd tokens remain tokens so the ordinary snapshot normalizer can compare them with a fresh run.
  * @param text - one complete Session fixture.
  * @returns current-format JSONL with complete event envelopes; the input string and source file remain unchanged.
- */
-export function migrateSessionSnapshotFixture(text: string): string {
-  const parsed = parseSessionFixture(text)
-  return encodeCurrentSessionSnapshotFixture(text, parsed)
-}
-
-/**
- * Prepare one fixture for expected-output comparison through strict format validation.
- * @param text - one complete Session fixture.
- * @returns current-generation comparison JSONL without modifying the source file.
  */
 export function prepareSessionSnapshotFixtureForComparison(text: string): string {
   const parsed = parseSessionFixture(text)

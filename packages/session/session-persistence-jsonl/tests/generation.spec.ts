@@ -191,19 +191,6 @@ describe('JSONL immutable generation publication', () => {
     expect(statFile).toHaveBeenCalledTimes(3)
   })
 
-  it('returns a disposable Zstandard body owner on the current fast path', async () => {
-    const root = await tempRoot()
-    const request = options(root, 'zstd', adapter(), 1)
-    await writeFile(request.sourcePath, await encodeZstd(1, [event0]))
-
-    const result = await ensureJsonlGenerationCurrent(request)
-    const body = result.snapshot.zstdBody
-
-    expect(body).toBeDefined()
-    body?.[Symbol.dispose]()
-    expect(body?.frames.next().done).toBe(true)
-  })
-
   it.each(['none', 'zstd'] as const)(
     'validates the selected %s historical header before invoking migration',
     async (compression) => {

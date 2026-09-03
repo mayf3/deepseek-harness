@@ -36,7 +36,7 @@ const catalog = createSessionFormatCatalog({ currentVersion, codecs, migrations,
 const descriptor = catalog.readHeader(physicalHeader)
 ```
 
-`createSessionFormatCatalog()` accepts one frozen codec per supported version, one migration per adjacent version pair, and current artifact and header restorers. `inspectVersion()` reads only the physical version for directional dispatch. `readHeader()` returns a `current`, `migration-required`, `unsupported`, or `malformed` descriptor without reading events. Each edge validates its target header before the final current-header restorer runs. Body readers call `decodeArtifact()` or `decodeRecoverableArtifact()`, then `migrate()`; writers call `encodeCurrent()` only with a validated current artifact.
+`createSessionFormatCatalog()` accepts one frozen codec per supported version, one migration per adjacent version pair, and current artifact and header restorers. `readHeader()` returns a `current`, `migration-required`, `unsupported`, or `malformed` descriptor without reading events. Each edge validates its target header before the final current-header restorer runs. Body readers call `decodeArtifact()` or `decodeRecoverableArtifact()`, then `migrate()`; writers call `encodeCurrent()` only with a validated current artifact.
 
 The recoverable decoder returns the accepted logical prefix. A codec may drop one malformed or sequence-gapped row and its uncommitted suffix, but a later decoded `turn/end` makes the original issue fatal.
 
