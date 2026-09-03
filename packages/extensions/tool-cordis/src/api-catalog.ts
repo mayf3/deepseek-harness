@@ -918,10 +918,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'durable file reference, or `undefined` for an unknown or foreign receipt.',
       },
       {
-        signature: 'bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): () => void',
-        description: 'Bind receipts to an accepted prompt and return a rollback for delivery failure.',
+        signature: 'bindPrompt( agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string, ): PromptFileBinding',
+        description: 'Bind receipts while one prompt enters an Agent inbox. Disposal restores every prior binding unless the caller commits successful delivery.',
         parameters: [{ name: 'agent', description: 'receiving Agent.' }, { name: 'receiptIds', description: 'distinct staged receipts referenced by the prompt.' }, { name: 'requestId', description: 'prompt identity later observed in queue or history.' }],
-        returns: 'rollback restoring every prior binding.',
+        returns: 'binding kept after commit until queue or history observation retires its receipts.',
       },
       {
         signature: 'retirePrompt(agent: Agent, requestId: string): void',
@@ -4677,6 +4677,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'PromptContextOrderName',
     declaration: 'export type PromptContextOrderName = keyof typeof CONTEXT_ORDERS;',
+  },
+  {
+    name: 'PromptFileBinding',
+    declaration: 'export interface PromptFileBinding extends Disposable {\n    commit(): void;\n}',
   },
   {
     name: 'PromptSection',

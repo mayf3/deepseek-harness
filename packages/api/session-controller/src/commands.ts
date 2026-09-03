@@ -341,14 +341,10 @@ export class SessionCommandController {
             { sessionId: agent.id },
           )
         }
-        const rollback = this.ctx.fileUploads.bindPrompt(agent, durable.receiptIds, request.requestId)
-        try {
-          if (request.mode === 'steer') agent.steer(message)
-          else agent.followup(message)
-        } catch (error) {
-          rollback()
-          throw error
-        }
+        using binding = this.ctx.fileUploads.bindPrompt(agent, durable.receiptIds, request.requestId)
+        if (request.mode === 'steer') agent.steer(message)
+        else agent.followup(message)
+        binding.commit()
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
         if (error instanceof AttachmentError) {

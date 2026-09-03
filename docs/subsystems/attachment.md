@@ -305,13 +305,14 @@ async uploadStream(request: { readonly sessionId: SessionId readonly data: Async
 resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined
 
 /**
- * Bind receipts to an accepted prompt and return a rollback for delivery failure.
+ * Bind receipts while one prompt enters an Agent inbox.
+ * Disposal restores every prior binding unless the caller commits successful delivery.
  * @param agent - receiving Agent.
  * @param receiptIds - distinct staged receipts referenced by the prompt.
  * @param requestId - prompt identity later observed in queue or history.
- * @returns rollback restoring every prior binding.
+ * @returns binding kept after commit until queue or history observation retires its receipts.
  */
-bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): () => void
+bindPrompt( agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string, ): PromptFileBinding
 
 /**
  * Retire every receipt accepted by one removed queue occurrence.

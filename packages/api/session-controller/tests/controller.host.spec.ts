@@ -49,7 +49,7 @@ describe('SessionController facade', () => {
         return () => {}
       },
       resolve: () => undefined,
-      bindPrompt: () => () => {},
+      bindPrompt: () => ({ commit: () => {}, [Symbol.dispose]: () => {} }),
       retirePrompt: () => {},
     } as never)
     const controller = createSessionTestController(ctx, defaults)

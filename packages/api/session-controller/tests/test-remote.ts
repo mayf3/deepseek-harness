@@ -240,7 +240,7 @@ function installControllers(
     ctx.provide('fileUploads', {
       registerAgentResolver: () => () => {},
       resolve: () => undefined,
-      bindPrompt: () => () => {},
+      bindPrompt: () => ({ commit: () => {}, [Symbol.dispose]: () => {} }),
       retirePrompt: () => {},
     } as never)
   }

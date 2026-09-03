@@ -33,12 +33,34 @@ interface StagedFileUpload {
 /** Resolve or resume the ordinary Agent that owns one Session identity. */
 export type AgentResolver = (sessionId: SessionId) => Promise<Agent>
 
+/** Prompt receipt binding that restores its previous owners unless delivery commits it. */
+export interface PromptFileBinding extends Disposable {
+  /** Keep the receipt bindings until queue or history observation retires them. */
+  commit(): void
+}
+
 type FileUploadHttpResult =
   | { readonly ok: true; readonly value: FileUploadValue }
   | {
     readonly ok: false
     readonly error: { readonly code: string; readonly message: string; readonly details: object }
   }
+
+class PromptFileBindingGuard implements PromptFileBinding {
+  private settled = false
+
+  constructor(private readonly rollback: () => void) {}
+
+  commit(): void {
+    this.settled = true
+  }
+
+  [Symbol.dispose](): void {
+    if (this.settled) return
+    this.settled = true
+    this.rollback()
+  }
+}
 
 /** Host service owning upload storage and Agent-scoped staged receipts. */
 export class FileUploads extends TypertRemoteService {
@@ -129,13 +151,18 @@ export class FileUploads extends TypertRemoteService {
   }
 
   /**
-   * Bind receipts to an accepted prompt and return a rollback for delivery failure.
+   * Bind receipts while one prompt enters an Agent inbox.
+   * Disposal restores every prior binding unless the caller commits successful delivery.
    * @param agent - receiving Agent.
    * @param receiptIds - distinct staged receipts referenced by the prompt.
    * @param requestId - prompt identity later observed in queue or history.
-   * @returns rollback restoring every prior binding.
+   * @returns binding kept after commit until queue or history observation retires its receipts.
    */
-  bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): () => void {
+  bindPrompt(
+    agent: Agent,
+    receiptIds: readonly FileUploadReceiptId[],
+    requestId: string,
+  ): PromptFileBinding {
     this.assertAgentScope(agent)
     const staged = this.stagedFiles.get(agent.session)
     const bound = receiptIds.map((receiptId) => {
@@ -144,12 +171,12 @@ export class FileUploads extends TypertRemoteService {
       return { upload, previous: upload.requestId }
     })
     for (const { upload } of bound) upload.requestId = requestId
-    return () => {
+    return new PromptFileBindingGuard(() => {
       for (const { upload, previous } of bound) {
         if (previous === undefined) delete upload.requestId
         else upload.requestId = previous
       }
-    }
+    })
   }
 
   /**
