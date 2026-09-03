@@ -35,6 +35,8 @@ kind: "package-reference"
 
 默认设置适合典型检出：`.git` 标记项目根目录，`AGENTS.md` 与 `CLAUDE.md` 是基础候选，`AGENTS.local.md` 与 `CLAUDE.local.md` 是叠加的本地 overlay。只有 `maxBytes` 必填——它限制完整渲染后的基线，让每个部署显式选择自己的提示词预算。
 
+只有确认项目根标记不存在时，项目根发现才会继续上溯。权限或 I/O 失败会停止发现，并返回 Host 或文件系统提供方的错误，而不会选择祖先项目。
+
 ```yaml
 - name: '@deepseek-ai/dsh-agent-instructions'
   config:
