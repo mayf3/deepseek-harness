@@ -8,7 +8,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { RunningJob } from '@deepseek-ai/dsh-jobs'
+import type { RecordingJob } from '@deepseek-ai/dsh-jobs'
 import type { WorkflowRunId } from '@deepseek-ai/dsh-workflow'
 
 /** Job-record taps for the background runs the tool tracks. */
@@ -19,7 +19,7 @@ export interface WorkflowRecordMirror {
    * @param runId - the started run.
    * @param job - the owning job's producer face.
    */
-  start(runId: WorkflowRunId, job: RunningJob): void
+  start(runId: WorkflowRunId, job: RecordingJob): void
   /**
    * Stop routing a settled or abandoned run. Idempotent.
    * @param runId - the run to drop.
@@ -34,7 +34,7 @@ export interface WorkflowRecordMirror {
  * @returns the mirror taps the tool wires around each background run.
  */
 export function createWorkflowRecordMirror(ctx: Context): WorkflowRecordMirror {
-  const active = new Map<WorkflowRunId, RunningJob>()
+  const active = new Map<WorkflowRunId, RecordingJob>()
 
   ctx.on('workflow/phase', (info, title) => {
     const job = active.get(info.id)

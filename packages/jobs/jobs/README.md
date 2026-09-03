@@ -31,7 +31,7 @@ Use this package when you are composing a background-job capability or writing a
 
 A producer registers work with a kind and a one-line label; the registry returns a `<kind>-N` id such as `bash-1`. Anyone who owns the job can read output, list jobs, wait up to a timeout for settlement, and request cancellation — each call returns a fresh snapshot of the job's status, from `running` and `stopping` to the terminal `completed`, `killed`, or `failed`. When a job settles, the owning agent is notified through the completion listener that `dsh-tool-jobs` turns into an in-session notice, so no polling is needed. A producer may attach an optional byte cap so each complete model-facing output read or completion notice stays bounded.
 
-A producer that declares `record: true` additionally streams raw output into the job's bounded record through the `RunningJob` face its starter receives: observers read retained chunks at absolute byte offsets and get signaled on advancement, the settlement that ends the job also ends the stream, and `updateDetail` publishes a live progress line into every snapshot. The record is invisible to the model: reads consume nothing and never touch notice state.
+A producer that declares `record: true` additionally streams raw output into the job's bounded record through the `RecordingJob` face its starter receives — a start without the declaration receives the plain `RunningJob` face, which has no `append`: observers read retained chunks at absolute byte offsets and get signaled on advancement, the settlement that ends the job also ends the stream, and `updateDetail` publishes a live progress line into every snapshot. The record is invisible to the model: reads consume nothing and never touch notice state.
 
 ### The ownership boundary
 
@@ -77,7 +77,7 @@ This section explains the design decisions behind the contract and points at the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: the abstract `JobRegistry` service and its contract |
-| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobKindMap`, `JobStart`, `JobHooks`, `RunningJob`, `JobSnapshot`, listener types |
+| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobKindMap`, `JobStart`, `JobHooks`, `RunningJob`, `RecordingJob`, `JobSnapshot`, listener types |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
 | [`src/pump.ts`](src/pump.ts) | `pumpJobOutput`: poll pump copying producer offset-readers into a job record |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: validates snapshot identity, status, timestamps, owner, and record-offset fields |

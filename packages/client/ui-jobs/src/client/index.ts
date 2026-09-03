@@ -39,7 +39,8 @@ export function apply(ctx: ClientContext): void {
     () => ctx.slots.register({
       name: 'conversation.session.header.actions',
       id: 'job-list',
-      // After the subagent catalog: session lineage reads before running work.
+      // Between the preset label and the subagent catalog (order 30): running
+      // work reads before the session lineage.
       order: 20,
       locale: NS,
       inject: (): JobListInjected => ({

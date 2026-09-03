@@ -31,7 +31,7 @@ kind: "package-reference"
 
 生产方以 kind 和一行标签注册工作；注册表返回 `<kind>-N` id，例如 `bash-1`。拥有任务的任何一方都可以读取输出、列出任务、带超时等待结算或请求取消——每次调用都返回任务状态的全新快照，从 `running`、`stopping` 到终止态的 `completed`、`killed` 或 `failed`。任务结算时，拥有它的 agent 会通过 `dsh-tool-jobs` 转成会话内通知的完成监听器得到通知，因此无需轮询。生产方还可以附加可选的字节上限，让每次完整的模型侧输出读取或完成通知保持有界。
 
-声明 `record: true` 的生产方还会通过 starter 收到的 `RunningJob` 面把原始输出流入该 job 的有界 record：观察者按绝对字节偏移读取保留块并在推进时收到信号，结束 job 的结算同时封流，`updateDetail` 把实时进度行发布进每个快照。record 对模型不可见：读取不消耗任何东西，也永不触碰通知状态。
+声明 `record: true` 的生产方还会通过 starter 收到的 `RecordingJob` 面（未声明的 start 收到的是没有 `append` 的普通 `RunningJob` 面）把原始输出流入该 job 的有界 record：观察者按绝对字节偏移读取保留块并在推进时收到信号，结束 job 的结算同时封流，`updateDetail` 把实时进度行发布进每个快照。record 对模型不可见：读取不消耗任何东西，也永不触碰通知状态。
 
 ### 归属边界
 
@@ -77,7 +77,7 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `JobRegistry` 服务及其约定 |
-| [`src/types.ts`](src/types.ts) | 共享词汇：`JobKindMap`、`JobStart`、`JobHooks`、`RunningJob`、`JobSnapshot`、监听器类型 |
+| [`src/types.ts`](src/types.ts) | 共享词汇：`JobKindMap`、`JobStart`、`JobHooks`、`RunningJob`、`RecordingJob`、`JobSnapshot`、监听器类型 |
 | [`src/brand.ts`](src/brand.ts) | `JobId` 带类型标记的标识符，无需 agent 依赖即可导入 |
 | [`src/pump.ts`](src/pump.ts) | `pumpJobOutput`：把生产方偏移读取器复制进 job record 的轮询泵 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验快照标识、状态、时间戳、所有者与 record 偏移字段 |

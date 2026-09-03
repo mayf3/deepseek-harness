@@ -1,10 +1,11 @@
-# Agent Note：会话头部单一任务列表——jobs 与 activity 只在 UI 投影层合并
+# Agent Note: 会话头部单一任务列表——jobs 与 activity 只在 UI 投影层合并
 
-状态：implemented
-
-Superseded：本文描述的双名册 join 已随 activity seam 一并移除——job 行现在就是完整名册；见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
+Status: implemented
+Archived: 2026-09-03
 
 [English](2026-08-25-unified-task-list.md) | 中文
+
+Superseded: 本文描述的双名册 join 已随 activity seam 一并移除——job 行现在就是完整名册；见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
 
 ## 问题
 
@@ -44,5 +45,5 @@ Superseded：本文描述的双名册 join 已随 activity seam 一并移除—�
 ## 后果
 
 - 两个 web e2e 场景（`background-job-list`、`live-activity-stream`）现在断言同一个"任务"列表；job 场景的行获得了实时输出面板，这正是 join 端到端生效的证据。
-- live 行上的人工 kill 控件在 [人工任务终止 Note](2026-08-26-human-job-kill.zh.md) 解决 jobs `reported` 契约问题后随即上线。
+- live 行上的人工 kill 控件仍被 job-display note 记录的 jobs `reported` 契约问题阻塞。
 - `job` 词典命名空间随包一起消失；`activity` 拥有合并后的全部文案，包括时长词汇。

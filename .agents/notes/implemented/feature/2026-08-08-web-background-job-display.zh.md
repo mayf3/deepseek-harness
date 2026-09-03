@@ -66,7 +66,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 `onJobDone` 不是它的子集。后者按 first-wins 语义投递终态记录和确切的 owner `Agent`，`dsh-tool-jobs` 把这套语义与 `reported` 绑在一起；`onJobsChanged` 是纯观察，不含任何投递含义，也不把任何东西标为已上报。监听器抛错被包住且从不 await，与 `onJobDone` 一致，每次注册都是调用方 fiber 上的 effect。
 
-服务销毁刻意什么都不通告。每个 `onJobsChanged` 注册都是注册表自身 fiber 上的 effect，等到 teardown 清空 store 时监听器早已消失；观察者通过自己的销毁而不是一份最终空集来得知注册表离开了。
+服务销毁会提交最后一次清空并通告它：注册表取消并等完自己的 job 之后，`onJobsChanged` 对每个可见集被 teardown 清空的 owner 触发一次，因此注册在更长命 fiber 上的监听器看到的是最终空集而不是陈旧名册（注册在注册表自身 fiber 上的监听器此时早已消失）。
 
 ### Session Controller 载体
 
@@ -89,7 +89,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 ### header 入口
 
-`@deepseek-ai/dsh-client-ui-jobs`（后并入 `dsh-client-ui-activity`） 在 `conversation.session.header.actions` 注册一个条目，排在 subagent 目录之后。呈现契约归它自己的 README；值得记在这里的决策是：会话没有任务时控件根本不渲染；活跃角标为零时省略，让只剩历史的会话保留一个安静的入口；终态行保持可见，因为失败任务的 `detail` 是其失败唯一可读之处。
+`@deepseek-ai/dsh-client-ui-jobs` 在 `conversation.session.header.actions` 注册一个条目，排在 preset 标签与 subagent 目录之间（`order: 20`，目录为 30）。呈现契约归它自己的 README；值得记在这里的决策是：会话没有任务时控件根本不渲染；活跃角标为零时省略，让只剩历史的会话保留一个安静的入口；终态行保持可见，因为失败任务的 `detail` 是其失败唯一可读之处。
 
 因此一个运行中的一次性后台 subagent 会同时出现在那里和 subagent 目录里。两者回答不同的问题——目录负责进入子会话的 transcript，而这个列表是中断能力唯一可能附着的句柄——在这里屏蔽 `kind: 'subagent'` 会让中断那一期恰好对这批任务没有入口。
 

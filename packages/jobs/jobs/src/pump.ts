@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { JobChannel, RunningJob } from './types.ts'
+import type { JobChannel, RecordingJob } from './types.ts'
 
 /** One non-consuming offset read from a producer-owned stream. */
 export interface JobPumpRead {
@@ -74,7 +74,7 @@ export interface JobPumpOptions {
  * @returns resolves after the final post-settlement drain.
  */
 export async function pumpJobOutput(
-  job: RunningJob,
+  job: RecordingJob,
   sources: readonly JobPumpSource[],
   options: JobPumpOptions,
 ): Promise<void> {

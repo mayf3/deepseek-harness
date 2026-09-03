@@ -23,42 +23,37 @@ interface JobKindMap {
 
 ## Producer contract
 
-`JobStart` declares identity and a starter. The runtime finishes preflight before calling `run()` with the job's producer face and commits without a later failable step. Producers own execution resources; the runtime owns identity, access, and lifecycle state.
+`JobStart` declares identity and a starter, discriminated by `record`: a `RecordingJobStart` receives the `RecordingJob` face, a `PlainJobStart` the `RunningJob` face without `append`. The runtime finishes preflight before calling `run()` with that face and commits without a later failable step. Producers own execution resources; the runtime owns identity, access, and lifecycle state.
 
 ```ts type-equiv
 /**
- * Producer declaration passed to {@link JobRegistry.start}. The runtime
- * preflights access and cleanup before invoking {@link run}; the producer owns
- * execution resources while the runtime owns identity and lifecycle state.
+ * A start with the model-facing surfaces only. Its producer face carries no
+ * `append`, so output the registry would have nowhere to keep is
+ * unrepresentable rather than dropped.
  */
-interface JobStart {
-  /** Producer kind — also the id prefix (`bash`, `subagent`, …). */
-  kind: JobKind
-  /** One-line model-facing label (the command; the delegation description). */
-  label: string
+interface PlainJobStart extends JobStartBase {
+  record?: undefined
   /**
-   * Optional UTF-8 byte cap for each complete model-facing completion notice or
-   * output read, including controller status metadata. Independent of record
-   * retention: it bounds the consuming model surface, never
-   * {@link JobRegistry.readRecord}.
+   * Start the work after preflight and synchronously return its hooks. Called
+   * once with the job's producer face; a throw leaves nothing registered (the
+   * spent ordinal is skipped), and the producer must clean up any partially
+   * started resources.
+   * @param job - the issued id plus the live-detail writer.
    */
-  outputLimitBytes?: number
-  /**
-   * Owning live agent. Access is fenced by its session id, and agent disposal
-   * cancels and awaits the job. The instance must be the one currently
-   * registered under its agent id. Omitting the owner creates an unowned job,
-   * open to any caller until service disposal.
-   */
-  owner?: Agent
-  /**
-   * Declares an observable output record beside the model-facing surfaces:
-   * {@link RunningJob.append} retains chunks in a bounded ring that any number
-   * of observers read at absolute byte offsets through
-   * {@link JobRegistry.readRecord}, and snapshots carry
-   * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
-   * Without the declaration `append` logs and drops.
-   */
-  record?: true
+  run(job: RunningJob): JobHooks
+}
+```
+
+```ts type-equiv
+/**
+ * A start that declares an observable output record beside the model-facing
+ * surfaces: {@link RecordingJob.append} retains chunks in a bounded ring that
+ * any number of observers read at absolute byte offsets through
+ * {@link JobRegistry.readRecord}, and snapshots carry
+ * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
+ */
+interface RecordingJobStart extends JobStartBase {
+  record: true
   /**
    * Start the work after preflight and synchronously return its hooks. Called
    * once with the job's producer face; a throw leaves nothing registered (the
@@ -66,8 +61,18 @@ interface JobStart {
    * started resources.
    * @param job - the issued id plus the record append and live-detail writers.
    */
-  run(job: RunningJob): JobHooks
+  run(job: RecordingJob): JobHooks
 }
+```
+
+```ts type-equiv
+/**
+ * Producer declaration passed to {@link JobRegistry.start}, discriminated by
+ * `record`. The runtime preflights access and cleanup before invoking `run`;
+ * the producer owns execution resources while the runtime owns identity and
+ * lifecycle state.
+ */
+type JobStart = PlainJobStart | RecordingJobStart
 ```
 
 `JobHooks.done` resolves after the producer releases its resources, not merely when work finishes. Optional `readOutput` distinguishes consuming stream jobs from final-output-only jobs.
@@ -113,34 +118,38 @@ interface JobOutcome {
 
 ## Observation record
 
-A producer that declares `record: true` streams raw output into a bounded per-job ring through the `RunningJob` face its starter receives; any number of observers read retained chunks at absolute byte offsets through `readRecord` without touching the consuming model cursor or notice state. Job settlement ends the stream and trims retention to the settled cap — the record has no separate lifecycle. `pumpJobOutput` copies producer offset-readers (the subprocess `readFrom` family) into the record at a bounded cadence. Browsers reach the record through `job.observe`, the Remote stream of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
+A producer that declares `record: true` streams raw output into a bounded per-job ring through the `RecordingJob` face its starter receives; any number of observers read retained chunks at absolute byte offsets through `readRecord` without touching the consuming model cursor or notice state. Job settlement ends the stream and trims retention to the settled cap — the record has no separate lifecycle. `pumpJobOutput` copies producer offset-readers (the subprocess `readFrom` family) into the record at a bounded cadence. Browsers reach the record through `job.observe`, the Remote stream of [`dsh-api-job-controller`](../../packages/api/job-controller/README.md), whose frames are listed under its Cordis API section below.
 
 ```ts type-equiv
 /**
- * Producer face of one registered job, handed to {@link JobStart.run} and
- * valid for the job's whole life. All methods are synchronous. Writes staged
- * inside the starter call are retained and become visible with the
- * registration commit; after settlement — the producer's own outcome, a kill,
- * or a registry-forced teardown end — both methods log and drop instead of
- * throwing, so a producer's trailing flush cannot break its own teardown path.
+ * Producer face of one registered job, handed to `run` and valid for the
+ * job's whole life. All methods are synchronous. Writes staged inside the
+ * starter call are retained and become visible with the registration commit;
+ * after settlement — the producer's own outcome, a kill, or a registry-forced
+ * teardown end — writes log and drop instead of throwing, so a producer's
+ * trailing flush cannot break its own teardown path.
  */
 interface RunningJob {
   /** The registry-issued id (`<kind>-N`). */
   readonly id: JobId
   /**
+   * Replace the snapshot's status detail with a live progress line (`3/10`).
+   * @param detail - the new detail line.
+   */
+  updateDetail(detail: string): void
+}
+```
+
+```ts type-equiv
+/** Producer face of a {@link RecordingJobStart}: {@link RunningJob} plus the record append. */
+interface RecordingJob extends RunningJob {
+  /**
    * Append one record chunk. Offsets advance by the chunk's UTF-8 byte
-   * length; an empty chunk is dropped without waking observers. Without a
-   * {@link JobStart.record} declaration the chunk is logged and dropped.
+   * length; an empty chunk is dropped without waking observers.
    * @param text - the chunk text, exactly as produced.
    * @param options - stream label and gap marker.
    */
   append(text: string, options?: JobAppendOptions): void
-  /**
-   * Replace the snapshot's status detail with a live progress line (`3/10`).
-   * Works for every job, with or without a record.
-   * @param detail - the new detail line.
-   */
-  updateDetail(detail: string): void
 }
 ```
 
@@ -381,7 +390,6 @@ abstract wait(id: JobId, timeoutMs: number, caller?: Agent, signal?: AbortSignal
  */
 abstract onJobDone(listener: JobDoneListener): () => void
 
-/**
 /**
  * Register an effect-scoped observer of visible-set changes. It fires after
  * every commit that changes what {@link list} returns for that owner —

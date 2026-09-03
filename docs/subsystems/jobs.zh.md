@@ -23,42 +23,37 @@ interface JobKindMap {
 
 ## 生产方约定
 
-`JobStart` 声明身份和启动器。运行时会在完成预检后携带该 job 的生产者面调用 `run()`，随后提交注册，不再执行可能失败的步骤。生产方拥有执行资源；运行时拥有身份、访问权限和生命周期状态。
+`JobStart` 声明身份和启动器，并按 `record` 判别：`RecordingJobStart` 收到 `RecordingJob` 面，`PlainJobStart` 收到没有 `append` 的 `RunningJob` 面。运行时会在完成预检后携带该面调用 `run()`，随后提交注册，不再执行可能失败的步骤。生产方拥有执行资源；运行时拥有身份、访问权限和生命周期状态。
 
 ```ts type-equiv
 /**
- * Producer declaration passed to {@link JobRegistry.start}. The runtime
- * preflights access and cleanup before invoking {@link run}; the producer owns
- * execution resources while the runtime owns identity and lifecycle state.
+ * A start with the model-facing surfaces only. Its producer face carries no
+ * `append`, so output the registry would have nowhere to keep is
+ * unrepresentable rather than dropped.
  */
-interface JobStart {
-  /** Producer kind — also the id prefix (`bash`, `subagent`, …). */
-  kind: JobKind
-  /** One-line model-facing label (the command; the delegation description). */
-  label: string
+interface PlainJobStart extends JobStartBase {
+  record?: undefined
   /**
-   * Optional UTF-8 byte cap for each complete model-facing completion notice or
-   * output read, including controller status metadata. Independent of record
-   * retention: it bounds the consuming model surface, never
-   * {@link JobRegistry.readRecord}.
+   * Start the work after preflight and synchronously return its hooks. Called
+   * once with the job's producer face; a throw leaves nothing registered (the
+   * spent ordinal is skipped), and the producer must clean up any partially
+   * started resources.
+   * @param job - the issued id plus the live-detail writer.
    */
-  outputLimitBytes?: number
-  /**
-   * Owning live agent. Access is fenced by its session id, and agent disposal
-   * cancels and awaits the job. The instance must be the one currently
-   * registered under its agent id. Omitting the owner creates an unowned job,
-   * open to any caller until service disposal.
-   */
-  owner?: Agent
-  /**
-   * Declares an observable output record beside the model-facing surfaces:
-   * {@link RunningJob.append} retains chunks in a bounded ring that any number
-   * of observers read at absolute byte offsets through
-   * {@link JobRegistry.readRecord}, and snapshots carry
-   * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
-   * Without the declaration `append` logs and drops.
-   */
-  record?: true
+  run(job: RunningJob): JobHooks
+}
+```
+
+```ts type-equiv
+/**
+ * A start that declares an observable output record beside the model-facing
+ * surfaces: {@link RecordingJob.append} retains chunks in a bounded ring that
+ * any number of observers read at absolute byte offsets through
+ * {@link JobRegistry.readRecord}, and snapshots carry
+ * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
+ */
+interface RecordingJobStart extends JobStartBase {
+  record: true
   /**
    * Start the work after preflight and synchronously return its hooks. Called
    * once with the job's producer face; a throw leaves nothing registered (the
@@ -66,8 +61,18 @@ interface JobStart {
    * started resources.
    * @param job - the issued id plus the record append and live-detail writers.
    */
-  run(job: RunningJob): JobHooks
+  run(job: RecordingJob): JobHooks
 }
+```
+
+```ts type-equiv
+/**
+ * Producer declaration passed to {@link JobRegistry.start}, discriminated by
+ * `record`. The runtime preflights access and cleanup before invoking `run`;
+ * the producer owns execution resources while the runtime owns identity and
+ * lifecycle state.
+ */
+type JobStart = PlainJobStart | RecordingJobStart
 ```
 
 `JobHooks.done` 会在生产方释放其资源后 resolve，而不是仅在工作完成时 resolve。可选的 `readOutput` 用来区分会消费输出的流式任务和仅有最终输出的任务。
@@ -113,34 +118,38 @@ interface JobOutcome {
 
 ## 观测 record
 
-声明 `record: true` 的生产方通过 starter 收到的 `RunningJob` 面把原始输出流入按 job 划分的有界环形缓冲；任意数量的观察者通过 `readRecord` 按绝对字节偏移读取保留块，不触碰消耗型的模型游标与通知状态。job 结算即封流并把保留量裁剪到结算上限——record 没有独立生命周期。`pumpJobOutput` 以有界节奏把生产方的偏移读取器（subprocess 的 `readFrom` 家族）复制进 record。浏览器经 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.observe` 读取 record，其帧类型列在下方该控制器的 Cordis API 一节。
+声明 `record: true` 的生产方通过 starter 收到的 `RecordingJob` 面把原始输出流入按 job 划分的有界环形缓冲；任意数量的观察者通过 `readRecord` 按绝对字节偏移读取保留块，不触碰消耗型的模型游标与通知状态。job 结算即封流并把保留量裁剪到结算上限——record 没有独立生命周期。`pumpJobOutput` 以有界节奏把生产方的偏移读取器（subprocess 的 `readFrom` 家族）复制进 record。浏览器经 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.observe` 读取 record，其帧类型列在下方该控制器的 Cordis API 一节。
 
 ```ts type-equiv
 /**
- * Producer face of one registered job, handed to {@link JobStart.run} and
- * valid for the job's whole life. All methods are synchronous. Writes staged
- * inside the starter call are retained and become visible with the
- * registration commit; after settlement — the producer's own outcome, a kill,
- * or a registry-forced teardown end — both methods log and drop instead of
- * throwing, so a producer's trailing flush cannot break its own teardown path.
+ * Producer face of one registered job, handed to `run` and valid for the
+ * job's whole life. All methods are synchronous. Writes staged inside the
+ * starter call are retained and become visible with the registration commit;
+ * after settlement — the producer's own outcome, a kill, or a registry-forced
+ * teardown end — writes log and drop instead of throwing, so a producer's
+ * trailing flush cannot break its own teardown path.
  */
 interface RunningJob {
   /** The registry-issued id (`<kind>-N`). */
   readonly id: JobId
   /**
+   * Replace the snapshot's status detail with a live progress line (`3/10`).
+   * @param detail - the new detail line.
+   */
+  updateDetail(detail: string): void
+}
+```
+
+```ts type-equiv
+/** Producer face of a {@link RecordingJobStart}: {@link RunningJob} plus the record append. */
+interface RecordingJob extends RunningJob {
+  /**
    * Append one record chunk. Offsets advance by the chunk's UTF-8 byte
-   * length; an empty chunk is dropped without waking observers. Without a
-   * {@link JobStart.record} declaration the chunk is logged and dropped.
+   * length; an empty chunk is dropped without waking observers.
    * @param text - the chunk text, exactly as produced.
    * @param options - stream label and gap marker.
    */
   append(text: string, options?: JobAppendOptions): void
-  /**
-   * Replace the snapshot's status detail with a live progress line (`3/10`).
-   * Works for every job, with or without a record.
-   * @param detail - the new detail line.
-   */
-  updateDetail(detail: string): void
 }
 ```
 
@@ -381,7 +390,6 @@ abstract wait(id: JobId, timeoutMs: number, caller?: Agent, signal?: AbortSignal
  */
 abstract onJobDone(listener: JobDoneListener): () => void
 
-/**
 /**
  * Register an effect-scoped observer of visible-set changes. It fires after
  * every commit that changes what {@link list} returns for that owner —

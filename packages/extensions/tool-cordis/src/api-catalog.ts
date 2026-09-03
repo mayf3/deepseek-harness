@@ -1101,7 +1101,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'abstract onJobsChanged(listener: JobsChangedListener): () => void',
-        description: '/** Register an effect-scoped observer of visible-set changes. It fires after every commit that changes what list returns for that owner — registration, every stopping transition (including the one teardown performs before it awaits a slow producer), settlement, owner-disposal removal, and the emptying that service disposal commits — so an observer re-reads rather than accumulating deltas.\n\nDelivery is owner-relative on the same terms as onJobDone: an observer registered from an unscoped context — a host composition\'s own carrier — sees every owner, while one registered under an agent composition\'s scope sees exactly the agents composed under it.\n\nThis is not a superset of onJobDone: that one delivers the terminal record under first-wins semantics a job controller couples to notice delivery, while this one carries no delivery meaning and marks nothing reported. Listeners are contained and never awaited.',
+        description: 'Register an effect-scoped observer of visible-set changes. It fires after every commit that changes what list returns for that owner — registration, every stopping transition (including the one teardown performs before it awaits a slow producer), settlement, owner-disposal removal, and the emptying that service disposal commits — so an observer re-reads rather than accumulating deltas.\n\nDelivery is owner-relative on the same terms as onJobDone: an observer registered from an unscoped context — a host composition\'s own carrier — sees every owner, while one registered under an agent composition\'s scope sees exactly the agents composed under it.\n\nThis is not a superset of onJobDone: that one delivers the terminal record under first-wins semantics a job controller couples to notice delivery, while this one carries no delivery meaning and marks nothing reported. Listeners are contained and never awaited.',
         parameters: [{ name: 'listener', description: 'receives the owner whose visible set changed, or `undefined` when an unowned job changed and every caller\'s set did.' }],
         returns: 'disposer that unregisters the listener.',
       },
@@ -4251,7 +4251,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'JobStart',
-    declaration: 'export interface JobStart {\n    kind: JobKind;\n    label: string;\n    outputLimitBytes?: number;\n    owner?: Agent;\n    record?: true;\n    run(job: RunningJob): JobHooks;\n}',
+    declaration: 'export type JobStart = PlainJobStart | RecordingJobStart;',
   },
   {
     name: 'JobStatus',
@@ -4550,6 +4550,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PlainJobStart',
+    declaration: 'export interface PlainJobStart extends JobStartBase {\n    record?: undefined;\n    run(job: RunningJob): JobHooks;\n}',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
@@ -4670,6 +4674,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
   },
   {
+    name: 'RecordingJob',
+    declaration: 'export interface RecordingJob extends RunningJob {\n    append(text: string, options?: JobAppendOptions): void;\n}',
+  },
+  {
+    name: 'RecordingJobStart',
+    declaration: 'export interface RecordingJobStart extends JobStartBase {\n    record: true;\n    run(job: RecordingJob): JobHooks;\n}',
+  },
+  {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
@@ -4751,7 +4763,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'RunningJob',
-    declaration: 'export interface RunningJob {\n    readonly id: JobId;\n    append(text: string, options?: JobAppendOptions): void;\n    updateDetail(detail: string): void;\n}',
+    declaration: 'export interface RunningJob {\n    readonly id: JobId;\n    updateDetail(detail: string): void;\n}',
   },
   {
     name: 'SandboxEnforcement',

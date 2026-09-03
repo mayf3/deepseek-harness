@@ -34,6 +34,9 @@ export type {
   JobStart,
   JobStatus,
   JobsChangedListener,
+  PlainJobStart,
+  RecordingJob,
+  RecordingJobStart,
   RunningJob,
 } from './types.ts'
 export { pumpJobOutput } from './pump.ts'
@@ -167,7 +170,6 @@ export abstract class JobRegistry extends Service {
    */
   abstract onJobDone(listener: JobDoneListener): () => void
 
-  /**
   /**
    * Register an effect-scoped observer of visible-set changes. It fires after
    * every commit that changes what {@link list} returns for that owner —

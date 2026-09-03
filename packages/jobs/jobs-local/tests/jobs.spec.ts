@@ -6,7 +6,7 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { bindScopeParent, createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobHooks, JobKind, JobOutcome, JobSnapshot, JobStart, RunningJob } from '@deepseek-ai/dsh-jobs'
+import type { JobHooks, JobKind, JobOutcome, JobSnapshot, JobStart, RecordingJob } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry, { type Config as JobsConfig } from '@deepseek-ai/dsh-jobs-local'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -66,14 +66,14 @@ function producer(overrides: Partial<Omit<JobStart, 'run'> & JobHooks> = {}) {
     done: new Promise<JobOutcome>((res, rej) => { settle = res; reject = rej }),
     ...hookOverrides,
   }
-  let started: RunningJob | undefined
+  let started: RecordingJob | undefined
   const spec: JobStart = {
     kind,
     label,
     ...owner !== undefined ? { owner } : {},
     ...outputLimitBytes !== undefined ? { outputLimitBytes } : {},
     ...record !== undefined ? { record } : {},
-    run: (job) => {
+    run: (job: RecordingJob) => {
       started = job
       return hooks
     },
@@ -83,7 +83,7 @@ function producer(overrides: Partial<Omit<JobStart, 'run'> & JobHooks> = {}) {
     settle,
     reject,
     cancels,
-    job(): RunningJob {
+    job(): RecordingJob {
       if (started === undefined) throw new Error('producer not started')
       return started
     },
@@ -200,7 +200,7 @@ describe('LocalJobRegistry.start', () => {
     for (const job of live) ctx.jobs.start(job.spec)
 
     const blocked = producer()
-    const run = vi.fn((job: RunningJob) => blocked.spec.run(job))
+    const run = vi.fn((job: RecordingJob) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('background job limit reached for this owner (limit: 10)')
     expect(run).not.toHaveBeenCalled()
@@ -213,7 +213,7 @@ describe('LocalJobRegistry.start', () => {
     expect(ctx.jobs.start(first.spec)).toBe('bash-1')
 
     const blocked = producer()
-    const run = vi.fn((job: RunningJob) => blocked.spec.run(job))
+    const run = vi.fn((job: RecordingJob) => blocked.spec.run(job))
     expect(() => ctx.jobs.start({ ...blocked.spec, run }))
       .toThrow('use job_kill to stop an unneeded job, wait for it to finish, then retry')
     expect(run).not.toHaveBeenCalled()
@@ -731,7 +731,7 @@ describe('LocalJobRegistry owner isolation', () => {
     ctx.jobs.start(current.spec) // Attach the current owner's cleanup first.
 
     const stale = producer({ owner: staleOwner })
-    const staleRun = vi.fn((job: RunningJob) => stale.spec.run(job))
+    const staleRun = vi.fn((job: RecordingJob) => stale.spec.run(job))
     expect(() => ctx.jobs.start({ ...stale.spec, run: staleRun }))
       .toThrow('is not the registered agent instance')
     expect(staleRun).not.toHaveBeenCalled()
@@ -1296,14 +1296,12 @@ describe('LocalJobRegistry record', () => {
     expect(ctx.jobs.get(id).outputTotal).toBe(0)
   })
 
-  it('logs and drops an append without a record declaration; updateDetail still works', async () => {
+  it('hands a start without a record declaration no append; updateDetail still works', async () => {
     const ctx = await harness()
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
     const p = producer()
     const id = ctx.jobs.start(p.spec)
-    p.job().append('nowhere to land')
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`append to job ${id} without a record declaration dropped`))
+    // The plain face is built without the method, not with a dropping stub.
+    expect(p.job()).not.toHaveProperty('append')
     expect(() => ctx.jobs.readRecord(id, 0)).toThrow(`job ${id} declared no output record`)
     const snapshot = ctx.jobs.get(id)
     expect(snapshot.outputTotal).toBeUndefined()

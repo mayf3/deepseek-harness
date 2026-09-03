@@ -19,8 +19,8 @@ import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
   JobAppendOptions, JobChannel, JobDoneListener, JobKillOptions, JobKind, JobOutcome,
-  JobOutputListener, JobRead, JobRecordChunk, JobRecordRead, JobSnapshot, JobStart, JobStatus,
-  JobsChangedListener, RunningJob,
+  JobOutputListener, JobRead, JobRecordChunk, JobRecordRead, JobsChangedListener, JobSnapshot,
+  JobStart, JobStatus, RecordingJob, RunningJob,
 } from '@deepseek-ai/dsh-jobs'
 
 /** Timeout code that distinguishes a bounded wait from caller cancellation. */
@@ -239,17 +239,13 @@ export class LocalJobRegistry extends JobRegistry {
     const count = (this.counters.get(spec.kind) ?? 0) + 1
     this.counters.set(spec.kind, count)
     const id = JobId(`${spec.kind}-${count}`)
-    const state: ProducerState = {
-      record: spec.record === true ? { chunks: [], retainedBytes: 0, total: 0, earliest: 0 } : undefined,
-      detail: undefined,
-      job: undefined,
-    }
-    const handle: RunningJob = {
+    const state: ProducerState = { record: undefined, detail: undefined, job: undefined }
+    const face: RunningJob = {
       id,
-      append: (text, options) => { this.appendRecord(id, state, text, options) },
       updateDetail: (detail) => { this.updateDetail(state, detail) },
     }
-    const hooks = spec.run(handle)
+    // The declaration decides the face: a plain start never receives `append`.
+    const hooks = spec.record === true ? spec.run(this.recordingFace(face, state)) : spec.run(face)
 
     let markSettled!: () => void
     const settled = new Promise<void>((resolve) => { markSettled = resolve })
@@ -566,21 +562,26 @@ export class LocalJobRegistry extends JobRegistry {
     }
   }
 
+  /** Install the job's record and extend the producer face with its append. */
+  private recordingFace(face: RunningJob, state: ProducerState): RecordingJob {
+    const record: RecordState = { chunks: [], retainedBytes: 0, total: 0, earliest: 0 }
+    state.record = record
+    return {
+      ...face,
+      append: (text, options) => { this.appendRecord(state, record, text, options) },
+    }
+  }
+
   /**
-   * Append one chunk through a producer face. A chunk against a settled job or
-   * without a record declaration is logged and dropped; an empty chunk is
-   * dropped silently. A chunk staged inside the starter call is retained and
-   * signals no observer — the registration commit publishes it.
+   * Append one chunk through a recording producer face. A chunk against a
+   * settled job is logged and dropped; an empty chunk is dropped silently. A
+   * chunk staged inside the starter call is retained and signals no observer —
+   * the registration commit publishes it.
    */
-  private appendRecord(id: JobId, state: ProducerState, text: string, options?: JobAppendOptions): void {
+  private appendRecord(state: ProducerState, record: RecordState, text: string, options?: JobAppendOptions): void {
     const job = state.job
     if (job !== undefined && isTerminal(job.status)) {
       this.selfCtx.logger.warn(`jobs: append to settled job ${job.id} dropped`)
-      return
-    }
-    const record = state.record
-    if (record === undefined) {
-      this.selfCtx.logger.warn(`jobs: append to job ${id} without a record declaration dropped`)
       return
     }
     if (text.length === 0) return

@@ -1,10 +1,11 @@
 # Agent Note: One session-header task list — jobs joined with activities in the UI projection only
 
 Status: implemented
-
-Superseded: the two-roster join described here was removed with the activity seam — the job rows are now the whole roster; see [jobs absorb the record](../architecture/2026-09-01-jobs-absorb-activity-record.md).
+Archived: 2026-09-03
 
 English | [中文](2026-08-25-unified-task-list.zh.md)
+
+Superseded: the two-roster join described here was removed with the activity seam — the job rows are now the whole roster; see [jobs absorb the record](../architecture/2026-09-01-jobs-absorb-activity-record.md).
 
 ## Problem
 
@@ -44,5 +45,5 @@ Component suites cover the join (job lifecycle wins, activity supplies the panel
 ## Consequences
 
 - The two web e2e scenarios (`background-job-list`, `live-activity-stream`) now assert one "Tasks" list; the job-list scenario's row gained a live-output panel, which is the join working end to end.
-- The human kill control on live rows shipped later, once [the human job kill note](2026-08-26-human-job-kill.md) resolved the jobs `reported` contract question.
+- A human kill control on live rows is still blocked on the jobs `reported` contract question recorded in the job-display note.
 - The `job` locale namespace is gone with its package; `activity` owns the merged copy including the duration vocabulary.

@@ -3,7 +3,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobOutcome, RunningJob } from '@deepseek-ai/dsh-jobs'
+import type { JobOutcome, RecordingJob } from '@deepseek-ai/dsh-jobs'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
@@ -38,13 +38,13 @@ function registerAgent(ctx: Context, rawId: string): Agent {
 /** Start one record job whose done settles on demand; expose the producer face. */
 function startRecordJob(ctx: Context, options: { label?: string; owner?: Agent; record?: boolean } = {}) {
   let settle!: (outcome: JobOutcome) => void
-  let face!: RunningJob
+  let face!: RecordingJob
   const id = ctx.jobs.start({
     kind: 'bash',
     label: options.label ?? 'echo',
     ...options.owner !== undefined ? { owner: options.owner } : {},
     ...options.record === false ? {} : { record: true },
-    run: (job) => {
+    run: (job: RecordingJob) => {
       face = job
       return {
         cancel() {},
@@ -54,7 +54,7 @@ function startRecordJob(ctx: Context, options: { label?: string; owner?: Agent; 
   })
   return {
     id,
-    append: (text: string, opts?: Parameters<RunningJob['append']>[1]) => { face.append(text, opts) },
+    append: (text: string, opts?: Parameters<RecordingJob['append']>[1]) => { face.append(text, opts) },
     updateDetail: (detail: string) => { face.updateDetail(detail) },
     settle: async (outcome: JobOutcome) => {
       settle(outcome)

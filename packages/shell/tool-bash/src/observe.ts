@@ -15,7 +15,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 import { pumpJobOutput } from '@deepseek-ai/dsh-jobs'
-import type { JobPumpSource, RunningJob } from '@deepseek-ai/dsh-jobs'
+import type { JobPumpSource, RecordingJob } from '@deepseek-ai/dsh-jobs'
 
 /**
  * Pump the process's non-consuming offset readers into the job record until
@@ -31,7 +31,7 @@ import type { JobPumpSource, RunningJob } from '@deepseek-ai/dsh-jobs'
  */
 export function observeProcessRecord(
   ctx: Context,
-  job: RunningJob,
+  job: RecordingJob,
   proc: ShellProcess,
   pollMs: number,
 ): Promise<void> {
