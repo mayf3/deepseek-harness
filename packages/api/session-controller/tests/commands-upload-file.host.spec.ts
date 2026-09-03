@@ -29,6 +29,7 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
   saveFileStream: ReturnType<typeof vi.fn>
   saveImages: ReturnType<typeof vi.fn>
   disposeAgent: () => void
+  uploadRoute: (request: Request) => Promise<Response>
 }> {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
@@ -68,7 +69,15 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
   const saveImages = vi.fn((): Promise<readonly ImageAttachmentRef[]> =>
     Promise.reject(new Error('fixture did not expect image persistence')))
   ctx.provide('attachments', { saveFile, saveFileStream, saveImages } as never)
-  ctx.provide('connection', { fetch: { register: () => async () => {} } } as never)
+  let uploadRoute: ((request: Request) => Promise<Response>) | undefined
+  ctx.provide('connection', {
+    fetch: {
+      register: (route: { readonly fetch: (request: Request) => Promise<Response> }) => {
+        uploadRoute = route.fetch
+        return () => {}
+      },
+    },
+  } as never)
   ctx.provide('llm', {
     listProviders: () => [{ id: 'fixture', name: 'Fixture' }],
     resolveModelInfo: () => Promise.resolve({ provider: 'fixture', id: 'fixture-model', name: 'Fixture' }),
@@ -83,6 +92,7 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
     serializeImageAdmission: <Value>(_agent: Agent, operation: () => Promise<Value>) => operation(),
   } as unknown as ApiSessionAgentController
   const uploads = new FileUploads(ctx)
+  if (uploadRoute === undefined) throw new Error('file upload route was not registered')
   return {
     ctx,
     controller: new SessionCommandController(ctx, agents, '/workspace'),
@@ -93,6 +103,7 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
     saveFileStream,
     saveImages,
     disposeAgent,
+    uploadRoute,
   }
 }
 
@@ -106,6 +117,12 @@ function promptRequest(content: Parameters<SessionCommandController['prompt']>[0
 }
 
 describe('Session file uploads', () => {
+  it('registers an HTTP route bound to the upload service', async () => {
+    const { uploadRoute } = await uploadHarness()
+    await expect(uploadRoute(new Request('http://host/upload')))
+      .resolves.toMatchObject({ status: 405 })
+  })
+
   it('stages one verbatim upload and cites it from a later prompt as a file block', async () => {
     const { ctx, controller, uploads, agent, followup, saveFile } = await uploadHarness()
     const receipt = await uploads.upload(agent, { data: 'AAAA', name: 'notes.pdf' }, new AbortController().signal)
@@ -219,8 +236,19 @@ describe('Session file uploads', () => {
     disposeResolver()
     const replacement = vi.fn(async () => agent)
     const disposeReplacement = uploads.registerAgentResolver(replacement)
+    disposeResolver()
+    expect(() => { uploads.registerAgentResolver(replacement) }).toThrow('already registered')
     expect(disposeReplacement).toBeTypeOf('function')
     disposeReplacement()
+  })
+
+  it('rejects a cold upload when no Agent resolver is registered', async () => {
+    const { uploads, disposeAgent } = await uploadHarness()
+    disposeAgent()
+    await expect(uploads.uploadStream({
+      sessionId: SESSION,
+      data: (async function* (): AsyncIterable<Uint8Array> {})(),
+    })).rejects.toMatchObject({ code: 'session/not-found' })
   })
 
   it('rejects subagent uploads and access outside the receiving Agent scope', async () => {

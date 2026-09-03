@@ -42,6 +42,16 @@ describe('SessionController facade', () => {
       list: () => Promise.resolve([header]),
       inspect,
     }) as never)
+    let uploadResolver: ((sessionId: SessionId) => Promise<Agent>) | undefined
+    ctx.provide('fileUploads', {
+      registerAgentResolver: (resolve: (sessionId: SessionId) => Promise<Agent>) => {
+        uploadResolver = resolve
+        return () => {}
+      },
+      resolve: () => undefined,
+      bindPrompt: () => () => {},
+      retirePrompt: () => {},
+    } as never)
     const controller = createSessionTestController(ctx, defaults)
     const status = vi.fn()
     const failure = vi.fn()
@@ -65,6 +75,17 @@ describe('SessionController facade', () => {
       ctx,
     } as Agent
     ctx.agents.register(agent)
+    const resolveUploadAgent = (id: SessionId): Promise<Agent> => {
+      if (uploadResolver === undefined) throw new Error('file upload resolver was not registered')
+      return uploadResolver(id)
+    }
+    await expect(resolveUploadAgent(sessionId)).resolves.toBe(agent)
+    const activationError = new RemoteError('session/not-found', 'missing upload session', { sessionId })
+    vi.spyOn(
+      (controller as unknown as { agents: ApiSessionAgentController }).agents,
+      'resolveAgent',
+    ).mockResolvedValueOnce({ error: activationError })
+    await expect(resolveUploadAgent(sessionId)).rejects.toBe(activationError)
     const consumeSelection = vi.spyOn(
       (controller as unknown as { agents: ApiSessionAgentController }).agents,
       'consumeSelection',

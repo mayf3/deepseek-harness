@@ -483,10 +483,22 @@ describe('Agent-scoped file upload', () => {
     await fixture.fiber.dispose()
 
     vi.stubGlobal('location', { origin: 'https://preview.test' })
+    ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = {
+      fetch: () => Promise.resolve(new Response(null, { status: 413 })),
+    }
+    const rejected = await scopedService({ sessionId: 's1' })
+    await expect(rejected.service.upload(rejected.owner, new Blob()))
+      .rejects.toThrow('file upload transport failed with HTTP 413')
+    await rejected.fiber.dispose()
+
     const bodies: unknown[] = [
       null,
       { ok: 'yes' },
       { ok: false, error: null },
+      { ok: false, error: { code: 1, message: 'denied', details: {} } },
+      { ok: false, error: { code: 'denied', message: 1, details: {} } },
+      { ok: false, error: { code: 'denied', message: 'denied', details: null } },
+      { ok: true, value: null },
       { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: -1 } } },
     ]
     for (const body of bodies) {
@@ -498,5 +510,22 @@ describe('Agent-scoped file upload', () => {
         .rejects.toThrow(/file upload transport returned an invalid/)
       await malformed.fiber.dispose()
     }
+
+    ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = {
+      fetch: () => Promise.resolve(new Response(JSON.stringify({
+        ok: false,
+        error: { code: 'session/attachment-invalid', message: 'denied', details: { reason: 'NOPE' } },
+      }), { status: 200 })),
+    }
+    const failed = await scopedService({ sessionId: 's1' })
+    await expect(failed.service.upload(failed.owner, new Blob())).resolves.toMatchObject({
+      ok: false,
+      error: {
+        code: 'session/attachment-invalid',
+        message: 'denied',
+        details: { reason: 'NOPE' },
+      },
+    })
+    await failed.fiber.dispose()
   })
 })
