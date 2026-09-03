@@ -40,7 +40,7 @@ interface Workspace {
    */
   readonly path: string
 
-  /** Display title. Defaults to `basename(path)` at create; duplicates are allowed. */
+  /** Display title. Defaults to the final path segment, or a filesystem root's own spelling; duplicates are allowed. */
   readonly title: string
 
   /** ISO-8601 creation instant, stamped at create and never rewritten. */
@@ -250,13 +250,13 @@ Durable workspace registry. Startup waits for `sessionPersistence`, builds one c
 
 ```ts cordis-catalog
 /**
- * Create or reuse a workspace for an existing directory. The path is
- * canonicalized through `fs.realpath`; a nonexistent path rejects with the
- * original error and a non-directory rejects. Repeated calls for the same
- * canonical path return the existing entity without changing its title.
+ * Create or reuse a workspace for an existing directory. The fully qualified
+ * path is canonicalized through `fs.realpath`; a relative, nonexistent, or
+ * non-directory path rejects. Repeated calls for the same canonical path
+ * return the existing entity without changing its title.
  * A newly created workspace is prepended to the durable registry order.
  * Different canonical paths may share a display title.
- * @param path - Existing directory to own, in any path spelling.
+ * @param path - Existing directory to own, in a fully qualified path spelling.
  * @param title - Display title used only when a new record is created.
  * @returns the existing or newly durable workspace.
  */
@@ -309,7 +309,7 @@ archiveSession(sessionId: SessionId): Promise<void>
  * Resolve by canonical directory path without creating or mutating a
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.
- * @param path - Existing directory path in any spelling.
+ * @param path - Existing directory path in a fully qualified spelling.
  * @returns the workspace owning the canonical path, when one exists.
  */
 async resolveByPath(path: string): Promise<Workspace | undefined>
