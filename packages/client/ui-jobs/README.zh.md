@@ -1,5 +1,5 @@
 ---
-description: "会话头部后台任务列表：可展开的流式 record 面板、进行中/已结束分组，以及无 record 任务的静态行。"
+description: "会话头部后台任务列表：可展开的流式输出面板、进行中/已结束分组，以及无保留输出的已结束任务的静态行。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-client-ui-jobs` 把本会话的后台任务放进一个头部控件。每一行都携带 `jobsBySession` 镜像里该 job 的生命周期、跳动时长与模型可见的 `detail`；声明了观测 record 的 job 额外提供可展开的面板，在运行期间流式呈现其真实输出。收起即停流——只有有人在看时输出才流动。进行中的行以跳动时长为主行、kind 与状态为副行；已结束的行折叠在分组标题之后；没有 record 的 job（subagent 委托、PTY 发送）渲染为无展开操作的静态行。
+`dsh-client-ui-jobs` 把本会话的后台任务放进一个头部控件。每一行都携带 `ctx.jobs` 保持最新的名册里该 job 的生命周期、跳动时长与模型可见的进度行或终态 detail；进行中的 job，或结算后仍留有保留输出的 job，额外提供可展开的面板，流式呈现其真实输出。收起即停流——只有有人在看时输出才流动。进行中的行以跳动时长为主行、kind 与状态为副行；已结束的行折叠在分组标题之后；没有保留输出的已结束 job（subagent，其回答已交给模型）渲染为静态行。
 
 ## 目录
 
@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 一 job 一行
 
-session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJob` 行携带生命周期、时长与模型可见的 `detail`，其 `record` 标志恰在 job 声明了 record 时存在——这个标志就是行可展开的依据。不存在需要 join 的第二份名册。
+`ctx.jobs` 镜像的 `job.rows` 流是唯一名册：每个 `JobView` 行携带生命周期、时长、实时 `progress` 行或终态 `detail`，以及其保留字节数——进行中的 job，或留有保留输出的已结束 job，就是行可展开的依据。不存在需要 join 的第二份名册。
 
 ### 展开的面板
 
-展开可观察的行会从 `ctx.jobOutput`（由 `dsh-api-job-controller` 安装）打开该 job 的 record 观测流，注入内嵌终端面板。面板复制的是命令（不是输出），命令与输出行完整换行，输出在固定高度内滚动而非折叠，且不绘制自己的运行状态点——上方的行承载状态。保留缺口与流中断在面板上方渲染为提示。
+展开可观察的行会从 `ctx.jobs`（由 `dsh-api-job-controller` 安装）打开该 job 的输出观测流，注入内嵌终端面板。面板复制的是命令（不是输出），命令与输出行完整换行，输出在固定高度内滚动而非折叠，且不绘制自己的运行状态点——上方的行承载状态。保留缺口与流中断在面板上方渲染为提示。
 
 -----
 
@@ -43,7 +43,7 @@ session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJo
 <details>
 <summary>实现内幕——点击展开</summary>
 
-头部操作带里的一个 slot 条目（preset 标签之后、subagent 目录之前）渲染触发器与弹出层；弹出层通过测量锚点把自己收进视口。所有数据经 `ctx.jobOutput` 与标准 `useSessions` hook 到达——组件不持有任何传输状态。观测跟随可见性：一个 `useEffect` 为展开行的 job 打开流，并在收起、卸载或弹出层关闭时关闭它。
+头部操作带里的一个 slot 条目（preset 标签之后、subagent 目录之前）渲染触发器与弹出层；弹出层通过测量锚点把自己收进视口。所有数据经 `ctx.jobs` 到达——组件不持有任何传输状态。名册跟随挂载：一个 `useEffect` 在控件存活期间保持会话的 `job.rows` 流打开。观测跟随可见性：另一个 `useEffect` 为展开行的 job 打开流，并在收起、卸载或弹出层关闭时关闭它。
 
 | 文件 | 角色 |
 |---|---|
@@ -58,9 +58,8 @@ session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJo
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 面板背后的 `job.observe` 流与 `ctx.jobOutput` 服务。
-- [`dsh-api-session-controller`](../../api/session-controller/README.zh.md) —— 行所来自的 `jobsBySession` 名册镜像。
-- [`dsh-jobs`](../../jobs/jobs/README.zh.md) —— 拥有 record 语义的注册表契约。
+- [`dsh-api-job-controller`](../../api/job-controller/README.zh.md) —— 行与面板背后的 `job.rows`、`job.observe` 流与 `ctx.jobs` 服务。
+- [`dsh-jobs`](../../jobs/jobs/README.zh.md) —— 拥有环与投影语义的注册表契约。
 - [`dsh-client-ui-primitives`](../ui-primitives/README.zh.md) —— 面板所配置的 `TerminalBlock` 表面。
 
 -----
@@ -80,7 +79,7 @@ session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJo
 
 这些限制界定当前包约束，不是任务清单。
 
-- **没有 kill 控件**——取消仍归模型的 `job_kill`；人工 kill 卡在 [web 任务显示 Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-web-background-job-display.zh.md) 记录的 jobs `reported` 契约问题上。
+- **没有 kill 控件**——取消仍归模型的 `job_kill`。
 - **不渲染 channel 标签**——stdout 与 stderr 块拼接为一条流；按 channel 着色是展示层的后续工作。
 
 <a id="dev-note"></a>
@@ -93,4 +92,4 @@ session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJo
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。本包只把 `jobsBySession` mirror 只读投影到一个 header slot，不发出 Cordis 事件，也不持有跨插件可变状态。
+**运行时不变式：** 不发布伴生入口。本包只把 `ctx.jobs` 的名册与视图只读投影到一个 header slot，不发出 Cordis 事件，也不持有跨插件可变状态。

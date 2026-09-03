@@ -1,15 +1,13 @@
 /**
  * Background-job plugin, browser half: contributes one session-header action
- * that renders this session's jobs. Job rows arrive through the
- * `jobsBySession` list mirror; per-row observation streams arrive through the
- * `jobOutput` client service. This plugin holds no transport state of its
- * own.
+ * that renders this session's jobs. Job rows and per-row observation streams
+ * both arrive through the `jobs` client service; this plugin holds no
+ * transport state of its own.
  */
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { JobListAction } from './JobListAction.tsx'
 import type { JobListInjected } from './JobListAction.tsx'
 import type {} from '@deepseek-ai/dsh-api-job-controller/client'
-import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -24,8 +22,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 export type { JobListActionProps, JobListInjected } from './JobListAction.tsx'
 
-/** Required services: session state, job observation, the slot registry, and dictionaries. */
-export const inject = ['sessions', 'jobOutput', 'slots', 'locale']
+/** Required services: the jobs rosters and observations, the slot registry, and dictionaries. */
+export const inject = ['jobs', 'slots', 'locale']
 
 /**
  * Client plugin body: register the dictionaries and the header action.
@@ -43,8 +41,9 @@ export function apply(ctx: ClientContext): void {
       order: 20,
       locale: NS,
       inject: (): JobListInjected => ({
-        hooks: { jobOutput: ctx.jobOutput.state },
-        observe: (sessionId, id) => ctx.jobOutput.observe(sessionId, id),
+        hooks: { jobs: ctx.jobs.state },
+        watchRows: sessionId => ctx.jobs.watchRows(sessionId),
+        observe: (sessionId, id) => ctx.jobs.observe(sessionId, id),
       }),
     }, JobListAction),
   )

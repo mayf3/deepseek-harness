@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import type { JobOutputSnapshot, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
-import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import {
   IconChevronDownOutline14, StateDot, TerminalBlock, useDismissOnOutsidePointer,
@@ -14,17 +13,22 @@ import css from './JobListAction.module.css'
 /** Registration-side business face for the job list. */
 export interface JobListInjected {
   hooks: {
-    /** Client job-output snapshot bound by the renderer as useJobOutput. */
-    jobOutput: {
-      getSnapshot(): JobOutputSnapshot
+    /** Client jobs snapshot (rosters and observations) bound by the renderer as useJobs. */
+    jobs: {
+      getSnapshot(): JobsSnapshot
       subscribe(listener: () => void): () => void
     }
   }
   /**
-   * Start observing one job's live record; returns the stop function.
+   * Keep one session's roster current while the list is mounted; returns the
+   * stop function. Reference-counted by the client service.
+   */
+  watchRows: (sessionId: SessionId) => () => void
+  /**
+   * Start observing one job's live output; returns the stop function.
    * Reference-counted by the client service, so panels can overlap safely.
    */
-  observe: (sessionId: SessionId | undefined, id: SessionJob['id']) => () => void
+  observe: (sessionId: SessionId | undefined, id: JobView['id']) => () => void
 }
 
 /** Full props for the session-header job-list action. */
@@ -34,19 +38,27 @@ export type JobListActionProps =
   & InjectFace<JobListInjected>
 
 /** Stable empty list so a session with no jobs keeps one array identity. */
-const NO_JOBS: readonly SessionJob[] = []
+const NO_JOBS: readonly JobView[] = []
 
 /** Minimum gap kept between the popover and the viewport edges (the Menu primitive's portal margin). */
 const VIEWPORT_MARGIN = 12
 
 
-function isLive(job: SessionJob): boolean {
+function isLive(job: JobView): boolean {
   return job.status === 'running' || job.status === 'stopping'
 }
 
-/** True exactly when the job declared an observation record. */
-function isObservable(job: SessionJob): boolean {
-  return job.record === true
+/**
+ * Whether the row offers an output panel: every live job (its output may
+ * still arrive) and a settled one that left retained output behind.
+ */
+function isObservable(job: JobView): boolean {
+  return isLive(job) || job.output.total > 0
+}
+
+/** The one-line qualifier beside the status: live progress while running, the terminal reason once settled. */
+function jobDetail(job: JobView): string | undefined {
+  return job.progress ?? job.detail
 }
 
 /** Closed-union exhaustiveness fence for the wire status set. */
@@ -59,7 +71,7 @@ function assertNever(value: never): never {
  * Status marker semantics. `stopping` and `killed` share the attention color:
  * both mean the work ended (or is ending) on request rather than on its own.
  */
-function dotState(status: SessionJob['status']): StateDotState {
+function dotState(status: JobView['status']): StateDotState {
   switch (status) {
     case 'running': return 'ongoing'
     case 'stopping': return 'warning'
@@ -71,7 +83,7 @@ function dotState(status: SessionJob['status']): StateDotState {
   }
 }
 
-function statusLabel(status: SessionJob['status'], t: TranslateNS<typeof NS>): string {
+function statusLabel(status: JobView['status'], t: TranslateNS<typeof NS>): string {
   switch (status) {
     case 'running': return t('status.running')
     case 'stopping': return t('status.stopping')
@@ -130,7 +142,7 @@ function terminalLabels(t: TranslateNS<typeof NS>): TerminalBlockLabels {
  * that settled in the same millisecond fall back to start order, so the sort
  * never depends on the host's map iteration.
  */
-function ordered(jobs: readonly SessionJob[]): SessionJob[] {
+function ordered(jobs: readonly JobView[]): JobView[] {
   return [...jobs].sort((left, right) => {
     const liveLeft = isLive(left)
     if (liveLeft !== isLive(right)) return liveLeft ? -1 : 1
@@ -142,7 +154,7 @@ function ordered(jobs: readonly SessionJob[]): SessionJob[] {
 
 /** One job row plus, when observable and expanded, its live output panel. */
 function JobItem({ job, view, expanded, now, onToggle, t }: {
-  job: SessionJob
+  job: JobView
   view: ObservedJob | undefined
   expanded: boolean
   /** Clock sample live rows derive their running duration from. */
@@ -152,6 +164,7 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
 }) {
   const live = isLive(job)
   const status = statusLabel(job.status, t)
+  const detail = jobDetail(job)
   const observable = isObservable(job)
   const labels = useMemo(() => terminalLabels(t), [t])
   const elapsed = live ? now - job.startedAt : (job.finishedAt ?? job.startedAt) - job.startedAt
@@ -175,10 +188,11 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
           </span>
           <span className={css.secondary}>
             <span className={css.kind}>{job.kind}</span>
-            <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
+            <span className={css.status} title={detail ?? status}>{detail ?? status}</span>
           </span>
         </span>
-        {observable ? <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
+        {/* A live row is always observable: its output may still arrive. */}
+        <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} />
       </>
     )
     : (
@@ -186,7 +200,7 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
         <StateDot state={dotState(job.status)} className={css.rowDot} />
         <span className={css.kind}>{job.kind}</span>
         <span className={css.label} title={job.label}>{job.label}</span>
-        <span className={css.status} title={job.detail ?? status}>{job.detail ?? status}</span>
+        <span className={css.status} title={detail ?? status}>{detail ?? status}</span>
         {durationCell}
         {observable ? <IconChevronDownOutline14 className={expanded ? `${css.chevron} ${css.chevronOpen}` : css.chevron} /> : null}
       </>
@@ -206,7 +220,7 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
           </button>
         )
         : (
-          <span className={live ? `${css.row} ${css.rowStatic}` : `${css.row} ${css.rowSettled} ${css.rowStatic}`}>
+          <span className={`${css.row} ${css.rowSettled} ${css.rowStatic}`}>
             {body}
           </span>
         )}
@@ -237,18 +251,19 @@ function JobItem({ job, view, expanded, now, onToggle, t }: {
 }
 
 /**
- * Session-header entry point for this session's background jobs. It renders
- * nothing at all until the session can see at least one job; expanding an
- * observable row (a job that declared a record) starts its observation
- * stream, and collapsing (or closing the popover) stops it — output only
- * flows while someone is watching.
- * @param props - runtime slot currency, the session and job-output snapshot
- *   hooks, the observation control, and the namespace translator.
+ * Session-header entry point for this session's background jobs. Mounting it
+ * keeps the session's roster stream open; it renders nothing at all until the
+ * session can see at least one job. Expanding an observable row (a live job,
+ * or a settled one with retained output) starts its observation stream, and
+ * collapsing (or closing the popover) stops it — output only flows while
+ * someone is watching.
+ * @param props - runtime slot currency, the jobs snapshot hook, the roster
+ *   and observation controls, and the namespace translator.
  * @returns the trigger and its popover list, or null when there is nothing to show.
  */
-export function JobListAction({ sessionId, useSessions, useJobOutput, observe, t }: JobListActionProps) {
-  const jobs = useSessions(state => state.jobsBySession[sessionId]) ?? NO_JOBS
-  const observedViews = useJobOutput(state => state.observed)
+export function JobListAction({ sessionId, useJobs, watchRows, observe, t }: JobListActionProps) {
+  const jobs = useJobs(state => state.rows[sessionId]) ?? NO_JOBS
+  const observedViews = useJobs(state => state.observed)
   const [open, setOpen] = useState(false)
   const [expandedKey, setExpandedKey] = useState<string | undefined>(undefined)
   const [now, setNow] = useState(() => Date.now())
@@ -264,6 +279,10 @@ export function JobListAction({ sessionId, useSessions, useJobOutput, observe, t
   const settledRows = useMemo(() => rows.filter(job => !isLive(job)), [rows])
 
   useDismissOnOutsidePointer(rootRef, open, setOpen)
+
+  // The roster follows the mounted session: one stream while this control
+  // lives, released with it.
+  useEffect(() => watchRows(sessionId), [sessionId, watchRows])
 
   // The clock only runs while an open list is showing something that moves.
   useEffect(() => {
@@ -337,7 +356,7 @@ export function JobListAction({ sessionId, useSessions, useJobOutput, observe, t
     triggerRef.current?.focus()
   }
 
-  const item = (job: SessionJob) => (
+  const item = (job: JobView) => (
     <JobItem
       key={String(job.id)}
       job={job}

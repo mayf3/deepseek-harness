@@ -2,8 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { JobOutputSnapshot, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
-import type { SessionJob } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { JobsSnapshot, JobView, ObservedJob } from '@deepseek-ai/dsh-api-job-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { JobListAction, type JobListActionProps } from '../src/client/JobListAction.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -17,36 +16,35 @@ afterEach(() => {
 const SESSION = 'session' as SessionId
 const t: JobListActionProps['t'] = makeTranslate(zh)
 
-function job(over: Partial<SessionJob> = {}): SessionJob {
+/** A running job with nothing retained yet. */
+function job(over: Partial<JobView> = {}): JobView {
   return {
-    id: 'bash-1' as SessionJob['id'],
+    id: 'bash-1' as JobView['id'],
     kind: 'bash',
     label: 'pnpm run build',
     status: 'running',
     startedAt: 1_700_000_000_000,
+    output: { total: 0, earliest: 0 },
     ...over,
   }
 }
 
-/** A job that declared an observation record, so its row offers a panel. */
-function recordJob(over: Partial<SessionJob> = {}): SessionJob {
-  return job({ record: true, ...over })
+/** A job that left retained output behind, so its row offers a panel even once settled. */
+function outputJob(over: Partial<JobView> = {}): JobView {
+  return job({ output: { total: 12, earliest: 0 }, ...over })
 }
 
 function props(
-  jobs: readonly SessionJob[],
+  jobs: readonly JobView[],
   observe: JobListActionProps['observe'] = () => () => {},
   observed: Readonly<Record<string, ObservedJob>> = {},
+  watchRows: JobListActionProps['watchRows'] = () => () => {},
 ): JobListActionProps {
-  const outputState: JobOutputSnapshot = { observed }
-  function useJobOutput<T>(select: (value: JobOutputSnapshot) => T): T {
-    return select(outputState)
+  const jobsState: JobsSnapshot = { rows: jobs.length > 0 ? { [SESSION]: jobs } : {}, observed }
+  function useJobs<T>(select: (value: JobsSnapshot) => T): T {
+    return select(jobsState)
   }
-  const sessionsState = { jobsBySession: jobs.length > 0 ? { [SESSION]: jobs } : {} }
-  function useSessions<T>(select: (value: typeof sessionsState) => T): T {
-    return select(sessionsState)
-  }
-  return { sessionId: SESSION, useSessions, useJobOutput, observe, t } as unknown as JobListActionProps
+  return { sessionId: SESSION, useJobs, watchRows, observe, t } as unknown as JobListActionProps
 }
 
 function openList(): void {
@@ -59,10 +57,20 @@ describe('JobListAction visibility', () => {
     expect(container.innerHTML).toBe('')
   })
 
+  it('watches the session roster while mounted and releases it on unmount', () => {
+    const stop = vi.fn()
+    const watchRows = vi.fn(() => stop)
+    const { unmount } = render(<JobListAction {...props([], undefined, {}, watchRows)} />)
+    expect(watchRows).toHaveBeenCalledWith(SESSION)
+    expect(stop).not.toHaveBeenCalled()
+    unmount()
+    expect(stop).toHaveBeenCalledTimes(1)
+  })
+
   it('counts live jobs on the trigger', () => {
     render(<JobListAction {...props([
-      recordJob(),
-      job({ id: 'subagent-1' as SessionJob['id'], kind: 'subagent', label: 'explore' }),
+      job(),
+      job({ id: 'subagent-1' as JobView['id'], kind: 'subagent', label: 'explore' }),
     ])} />)
     expect(screen.getByRole('button', { name: '2 个后台任务运行中' })).toBeDefined()
   })
@@ -76,18 +84,24 @@ describe('JobListAction visibility', () => {
 })
 
 describe('JobListAction rows', () => {
-  it('renders a record-less job row without expansion affordances', () => {
+  it('renders a settled job without retained output as a static row', () => {
     render(<JobListAction {...props([
-      job({ id: 'subagent-1' as SessionJob['id'], kind: 'subagent', label: 'explore the repo' }),
+      job({ id: 'subagent-1' as JobView['id'], kind: 'subagent', label: 'explore the repo', status: 'completed', finishedAt: 1_700_000_003_000 }),
     ])} />)
-    expect(screen.getByRole('button', { name: '1 个后台任务运行中' })).toBeDefined()
+    expect(screen.getByRole('button', { name: '1 个后台任务' })).toBeDefined()
     openList()
     expect(screen.getByText('explore the repo')).toBeDefined()
     expect(screen.queryByRole('button', { name: zh['row.expandAria'].replace('{label}', 'explore the repo') })).toBeNull()
   })
 
-  it('shows the live detail line in place of the status word', () => {
-    render(<JobListAction {...props([recordJob({ status: 'stopping', detail: 'winding down' })])} />)
+  it('offers a panel on a live row before any output arrived', () => {
+    render(<JobListAction {...props([job({ label: 'warming up' })])} />)
+    openList()
+    expect(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'warming up') })).toBeDefined()
+  })
+
+  it('shows the live progress line in place of the status word', () => {
+    render(<JobListAction {...props([job({ status: 'stopping', progress: 'winding down' })])} />)
     openList()
     const list = screen.getByRole('list', { name: zh['list.aria'] })
     expect(within(list).getAllByRole('listitem')).toHaveLength(1)
@@ -96,7 +110,7 @@ describe('JobListAction rows', () => {
   })
 
   it('labels each non-empty section and drops the heading of an empty one', () => {
-    const settled = [job({ id: 'bash-2' as SessionJob['id'], status: 'completed', finishedAt: 1_700_000_012_000 })]
+    const settled = [job({ id: 'bash-2' as JobView['id'], status: 'completed', finishedAt: 1_700_000_012_000 })]
     const { rerender } = render(<JobListAction {...props([job(), ...settled])} />)
     openList()
     expect(screen.getByText(zh['section.live'])).toBeDefined()
@@ -111,9 +125,9 @@ describe('JobListAction rows', () => {
     vi.useFakeTimers({ now: 1_700_000_020_000 })
     render(<JobListAction {...props([
       job({ startedAt: 1_700_000_015_000 }),
-      job({ id: 'bash-2' as SessionJob['id'], status: 'completed', startedAt: 1_700_000_000_000, finishedAt: 1_700_000_012_000 }),
-      job({ id: 'bash-3' as SessionJob['id'], status: 'completed', startedAt: 1_699_996_200_000, finishedAt: 1_700_000_000_000 }),
-      job({ id: 'bash-4' as SessionJob['id'], status: 'completed', startedAt: 1_699_999_900_000, finishedAt: 1_699_999_972_000 }),
+      job({ id: 'bash-2' as JobView['id'], status: 'completed', startedAt: 1_700_000_000_000, finishedAt: 1_700_000_012_000 }),
+      job({ id: 'bash-3' as JobView['id'], status: 'completed', startedAt: 1_699_996_200_000, finishedAt: 1_700_000_000_000 }),
+      job({ id: 'bash-4' as JobView['id'], status: 'completed', startedAt: 1_699_999_900_000, finishedAt: 1_699_999_972_000 }),
     ])} />)
     openList()
     expect(screen.getByText('5秒')).toBeDefined()
@@ -124,10 +138,10 @@ describe('JobListAction rows', () => {
     expect(screen.getByText('6秒')).toBeDefined()
   })
 
-  it('lists rows with kind, label, and detail-or-status', () => {
+  it('lists rows with kind, label, and progress, terminal detail, or status', () => {
     render(<JobListAction {...props([
-      recordJob(),
-      recordJob({ id: 'bash-2' as SessionJob['id'], status: 'failed', detail: 'exit code: 3', finishedAt: 1_700_000_002_000 }),
+      job(),
+      outputJob({ id: 'bash-2' as JobView['id'], status: 'failed', detail: 'exit code: 3', finishedAt: 1_700_000_002_000 }),
     ])} />)
     openList()
     const list = screen.getByRole('list', { name: zh['list.aria'] })
@@ -139,9 +153,9 @@ describe('JobListAction rows', () => {
   })
 
   it('orders live rows first by start and settled rows newest-first with tie-breaks', () => {
-    const settled = (id: string, label: string, startedAt: number, finishedAt?: number): SessionJob =>
+    const settled = (id: string, label: string, startedAt: number, finishedAt?: number): JobView =>
       job({
-        id: id as SessionJob['id'],
+        id: id as JobView['id'],
         label,
         status: 'completed',
         startedAt,
@@ -153,8 +167,8 @@ describe('JobListAction rows', () => {
       settled('bash-b', 'settled-b', 90),
       settled('bash-e', 'settled-e', 95, 50),
       settled('bash-d', 'settled-d', 10, 200),
-      job({ id: 'bash-l1' as SessionJob['id'], label: 'live-1', startedAt: 5 }),
-      job({ id: 'bash-l2' as SessionJob['id'], label: 'live-2', startedAt: 3 }),
+      job({ id: 'bash-l1' as JobView['id'], label: 'live-1', startedAt: 5 }),
+      job({ id: 'bash-l2' as JobView['id'], label: 'live-2', startedAt: 3 }),
     ])} />)
     openList()
     const labels = within(screen.getByRole('list', { name: zh['list.aria'] }))
@@ -173,14 +187,13 @@ describe('JobListAction observation', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
     const lines = Array.from({ length: 24 }, (_value, index) => `line ${index + 1}`).join('\n')
     const view: ObservedJob = {
-      jobId: 'bash-1' as SessionJob['id'],
+      jobId: 'bash-1' as JobView['id'],
       text: lines,
       gapBefore: false,
-      status: 'killed',
       streaming: false,
     }
     render(<JobListAction {...props(
-      [recordJob({ status: 'killed', finishedAt: 1_700_000_001_000 })],
+      [outputJob({ status: 'killed', finishedAt: 1_700_000_001_000 })],
       undefined,
       { 'bash-1': view },
     )} />)
@@ -204,7 +217,7 @@ describe('JobListAction observation', () => {
     const originalWidth = window.innerWidth
     Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true, writable: true })
     try {
-      render(<JobListAction {...props([recordJob()])} />)
+      render(<JobListAction {...props([job()])} />)
       openList()
       const menu = screen.getByRole('list', { name: zh['list.aria'] })
       // 700 - 12 - 440 - 344 = -96: the popover moves left to keep the margin.
@@ -225,7 +238,7 @@ describe('JobListAction observation', () => {
     const originalWidth = window.innerWidth
     Object.defineProperty(window, 'innerWidth', { value: 700, configurable: true, writable: true })
     try {
-      render(<JobListAction {...props([recordJob()])} />)
+      render(<JobListAction {...props([job()])} />)
       openList()
       const menu = screen.getByRole('list', { name: zh['list.aria'] })
       // max(12 - 4, min(0, 700 - 12 - 800 - 4)) = 8: clamped at the left margin.
@@ -237,8 +250,8 @@ describe('JobListAction observation', () => {
 
   it('ignores other keys while open and closes once the roster empties', () => {
     const settledPair = [
-      recordJob({ id: 'bash-1' as SessionJob['id'], status: 'completed', finishedAt: 2 }),
-      recordJob({ id: 'bash-2' as SessionJob['id'], status: 'completed', finishedAt: 3 }),
+      outputJob({ id: 'bash-1' as JobView['id'], status: 'completed', finishedAt: 2 }),
+      outputJob({ id: 'bash-2' as JobView['id'], status: 'completed', finishedAt: 3 }),
     ]
     const { rerender } = render(<JobListAction {...props(settledPair)} />)
     expect(screen.getByRole('button', { name: '2 个后台任务' })).toBeDefined()
@@ -255,13 +268,12 @@ describe('JobListAction observation', () => {
     const stop = vi.fn()
     const observe = vi.fn(() => stop)
     const view: ObservedJob = {
-      jobId: 'bash-1' as SessionJob['id'],
+      jobId: 'bash-1' as JobView['id'],
       text: 'compiling…\n',
       gapBefore: false,
-      status: 'running',
       streaming: true,
     }
-    render(<JobListAction {...props([recordJob()], observe, { 'bash-1': view })} />)
+    render(<JobListAction {...props([job()], observe, { 'bash-1': view })} />)
     openList()
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
     expect(observe).toHaveBeenCalledWith(SESSION, 'bash-1')
@@ -271,16 +283,29 @@ describe('JobListAction observation', () => {
     expect(stop).toHaveBeenCalledTimes(1)
   })
 
+  it('renders a running panel with the prompt alone for a live row whose output has not arrived', () => {
+    const view: ObservedJob = {
+      jobId: 'bash-1' as JobView['id'],
+      text: '',
+      gapBefore: false,
+      streaming: true,
+    }
+    const { container } = render(<JobListAction {...props([job()], undefined, { 'bash-1': view })} />)
+    openList()
+    fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
+    expect(container.querySelector('[data-running]')).not.toBeNull()
+    expect(screen.queryByText(zh['terminal.noOutput'])).toBeNull()
+  })
+
   it('surfaces retention gaps and stream failures above the panel', () => {
     const view: ObservedJob = {
-      jobId: 'bash-1' as SessionJob['id'],
+      jobId: 'bash-1' as JobView['id'],
       text: 'tail only',
       gapBefore: true,
-      status: 'running',
       streaming: false,
       error: 'connection lost',
     }
-    render(<JobListAction {...props([recordJob()], undefined, { 'bash-1': view })} />)
+    render(<JobListAction {...props([job()], undefined, { 'bash-1': view })} />)
     openList()
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
     expect(screen.getByText(zh['output.gap'])).toBeDefined()
@@ -289,7 +314,7 @@ describe('JobListAction observation', () => {
 
   it('stops observation when the popover closes via Escape', () => {
     const stop = vi.fn()
-    render(<JobListAction {...props([recordJob()], () => stop)} />)
+    render(<JobListAction {...props([job()], () => stop)} />)
     openList()
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
     fireEvent.keyDown(screen.getByRole('list', { name: zh['list.aria'] }), { key: 'Escape' })
@@ -301,10 +326,10 @@ describe('JobListAction observation', () => {
     const stop = vi.fn()
     // One stable observe identity across renders, as the inject face provides.
     const observe = () => stop
-    const { rerender } = render(<JobListAction {...props([recordJob()], observe)} />)
+    const { rerender } = render(<JobListAction {...props([job()], observe)} />)
     openList()
     fireEvent.click(screen.getByRole('button', { name: zh['row.expandAria'].replace('{label}', 'pnpm run build') }))
-    rerender(<JobListAction {...props([recordJob({ id: 'bash-2' as SessionJob['id'], label: 'other' })], observe)} />)
+    rerender(<JobListAction {...props([job({ id: 'bash-2' as JobView['id'], label: 'other' })], observe)} />)
     expect(stop).toHaveBeenCalledTimes(1)
     expect(screen.queryByRole('button', { name: zh['row.collapseAria'].replace('{label}', 'other') })).toBeNull()
   })

@@ -1,5 +1,5 @@
 // Session-header job list driven by a real background bash run: the job row
-// arrives over the session control stream, expanding it opens the record
+// arrives over the job roster stream, expanding it opens the output
 // observation stream, and the panel shows the process's real output while it
 // is still running. No model call is involved.
 import { readFile, writeFile } from 'node:fs/promises'
@@ -99,11 +99,11 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     if (matched === null) throw new Error(`background bash reported no job id: ${reported}`)
     const jobId = JobId(matched[0])
 
-    // The job row reaches the header over the session control stream.
+    // The job row reaches the header over the job roster stream.
     await trigger.waitFor({ timeout: 15_000 })
     await trigger.click()
 
-    // Expanding the row opens the record observation stream; the panel then renders
+    // Expanding the row opens the output observation stream; the panel then renders
     // the command's real stdout while the process is still running.
     const expand = page.getByRole('button', { name: /Show live output/ })
     await expand.waitFor({ timeout: 10_000 })
@@ -116,7 +116,7 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     expect(tripwire.warnings).toEqual([])
 
     phase = 'settled'
-    expect(scaffold.ctx.jobs.kill(jobId, agent, 'web e2e cancellation')).toBe('requested')
+    expect(scaffold.ctx.jobs.visibleTo(agent.id).kill(jobId, { reason: 'web e2e cancellation' })).toBe('requested')
 
     // Settlement arrives on the observation stream itself, so the open panel
     // flips without any further interaction; the roster trigger follows.

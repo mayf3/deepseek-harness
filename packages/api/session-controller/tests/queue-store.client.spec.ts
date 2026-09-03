@@ -279,7 +279,6 @@ describe('manager buffering of queue snapshots', () => {
       type: 'baseline',
       value: {
         queues: { [SID]: nextQueue },
-        jobs: {},
         projections: {},
       },
     })

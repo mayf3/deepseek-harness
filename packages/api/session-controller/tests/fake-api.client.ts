@@ -155,7 +155,6 @@ export class FakeApiClient {
   followCursor: number | undefined
   controlBaseline: SessionControlBaseline = {
     queues: {},
-    jobs: {},
     projections: {},
   }
   workspaceBaseline: Extract<WorkspaceFollowFrame, { type: 'baseline' }>['value'] = {

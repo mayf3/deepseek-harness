@@ -1,5 +1,5 @@
 ---
-description: "The session-header background-job list: expandable streaming record panels, running/finished sections, and static rows for jobs without a record."
+description: "The session-header background-job list: expandable streaming output panels, running/finished sections, and static rows for settled jobs without retained output."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-jobs` puts this session's background jobs in one header control. Every row carries the job's lifecycle, ticking duration, and model-visible `detail` from the `jobsBySession` mirror; a job that declared an observation record additionally offers an expandable panel that streams its real output while it runs. Collapsing stops the stream, so output only flows while someone is watching. Live rows lead with a ticking duration over a kind-and-status second line; settled rows compact behind a section heading; jobs without a record (subagent delegations, PTY sends) render as static rows with no expansion affordance.
+`dsh-client-ui-jobs` puts this session's background jobs in one header control. Every row carries the job's lifecycle, ticking duration, and the model-visible progress line or terminal detail from the roster `ctx.jobs` keeps current; a live job, or a settled one that left retained output behind, additionally offers an expandable panel that streams its real output. Collapsing stops the stream, so output only flows while someone is watching. Live rows lead with the ticking duration and carry kind and status on a second line; settled rows fold after a section heading; a settled job that retained no output (a subagent, whose answer went to the model) renders as a static row.
 
 ## Table of Contents
 
@@ -29,11 +29,11 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 ### One row per job
 
-The session control stream's `jobsBySession` mirror is the single roster: each `SessionJob` row carries lifecycle, duration, and the model-visible `detail`, and its `record` flag is present exactly when the job declared a record — that flag is what makes a row expandable. There is no second roster to join.
+The `job.rows` stream `ctx.jobs` mirrors is the single roster: each `JobView` row carries lifecycle, duration, the live `progress` line or the terminal `detail`, and its retained byte count — a live job, or a settled one with retained output, is what makes a row expandable. There is no second roster to join.
 
 ### The expanded panel
 
-Expanding an observable row opens that job's record observation stream from `ctx.jobOutput` (installed by `dsh-api-job-controller`) into an embedded terminal panel. The panel copies the command (not the output), wraps commands and output lines in full, scrolls its output inside a fixed height instead of folding, and draws no run-state dot of its own — the row above carries the state. Retention gaps and stream failures render as notices above the panel.
+Expanding an observable row opens that job's output observation stream from `ctx.jobs` (installed by `dsh-api-job-controller`) into an embedded terminal panel. The panel copies the command (not the output), wraps commands and output lines in full, scrolls its output inside a fixed height instead of folding, and draws no run-state dot of its own — the row above carries the state. Retention gaps and stream interruptions render as notices above the panel.
 
 -----
 
@@ -43,7 +43,7 @@ Expanding an observable row opens that job's record observation stream from `ctx
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-One slot entry in the header actions band (after the preset label, before the subagent catalog) renders the trigger and popover; the popover fits itself to the viewport by measuring its anchor. All data arrives through `ctx.jobOutput` and the standard `useSessions` hook — the component holds no transport state. Observation follows visibility: one `useEffect` opens the stream for the expanded row's job and closes it on collapse, unmount, or popover dismissal.
+One slot entry in the header actions band (after the preset label, before the subagent catalog) renders the trigger and popover; the popover fits itself to the viewport by measuring its anchor. All data arrives through `ctx.jobs` — the component holds no transport state. The roster follows the mount: one `useEffect` keeps the session's `job.rows` stream open while the control lives. Observation follows visibility: another `useEffect` opens the stream for the expanded row's job and closes it on collapse, unmount, or popover close.
 
 | File | Role |
 |---|---|
@@ -58,9 +58,8 @@ One slot entry in the header actions band (after the preset label, before the su
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.observe` stream and the `ctx.jobOutput` service behind the panel.
-- [`dsh-api-session-controller`](../../api/session-controller/README.md) — the `jobsBySession` roster mirror the rows come from.
-- [`dsh-jobs`](../../jobs/jobs/README.md) — the registry contract that owns the record semantics.
+- [`dsh-api-job-controller`](../../api/job-controller/README.md) — the `job.rows` and `job.observe` streams and the `ctx.jobs` service behind the rows and the panel.
+- [`dsh-jobs`](../../jobs/jobs/README.md) — the registry contract that owns the ring and projection semantics.
 - [`dsh-client-ui-primitives`](../ui-primitives/README.md) — the `TerminalBlock` surface the panel configures.
 
 -----
@@ -80,7 +79,7 @@ None; the package never assembles or sends provider requests.
 
 These limits define current package constraints, not a task backlog.
 
-- **No kill control** — cancellation stays with the model's `job_kill`; a human kill is blocked on the jobs `reported` contract question recorded in the [web job display Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-web-background-job-display.md).
+- **No kill control** — cancellation stays with the model's `job_kill`.
 - **Channel labels are not rendered** — stdout and stderr chunks concatenate into one stream; per-channel tinting is a presentation follow-up.
 
 <a id="dev-note"></a>
@@ -93,4 +92,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. This package is a read-only projection of the `jobsBySession` mirror onto one header slot entry. It emits no cordis events, owns no cross-plugin mutable state, and its single slot registration proves disposal through the HMR-safety spec.
+**Runtime invariant:** No companion is published. This package is a read-only projection of the `ctx.jobs` rosters and views onto one header slot entry. It emits no cordis events, owns no cross-plugin mutable state, and its single slot registration proves disposal through the HMR-safety spec.
