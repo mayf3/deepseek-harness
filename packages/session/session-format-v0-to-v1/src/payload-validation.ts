@@ -128,7 +128,9 @@ export function assertReleasedPayloadSemantics(event: SessionFormatEvent, versio
       } else if (data['maxRetries'] !== undefined) {
         throw new SessionFormatError(`${label} always mode must omit maxRetries`)
       }
-      if (countValue(data['delayMs'], `${label} delayMs`) > 2_147_483_647) {
+      const delayMs = finiteNumberValue(data['delayMs'], `${label} delayMs`)
+      if (delayMs < 0) throw new SessionFormatError(`${label} delayMs must be non-negative`)
+      if (delayMs > 2_147_483_647) {
         throw new SessionFormatError(`${label} delayMs exceeds the timer range`)
       }
       llmFailureValue(data['failure'], `${label} failure`)
