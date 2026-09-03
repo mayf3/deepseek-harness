@@ -34,7 +34,6 @@ const FIXTURE = createChatScrollFixture({
   turns: 88,
 })
 const MAX_MOUNTED_ROWS = 160
-const MAX_STREAM_SCROLL_CALLS = 8
 const GEOMETRY_TOLERANCE = 2
 const STREAM_MARKER = 'TRAJECTORY_VIRTUAL_STREAM_FINISHED'
 const STREAM_TEXT = Array.from(
@@ -343,7 +342,7 @@ describe('web e2e: Trajectory virtualization over tail-paged history', () => {
         return (window as Window & { __trajectoryScrollCalls?: number })
           .__trajectoryScrollCalls ?? 0
       })
-      expect(streamingScrollCalls).toBeLessThanOrEqual(MAX_STREAM_SCROLL_CALLS)
+      expect(streamingScrollCalls).toBeLessThanOrEqual(5)
       expect(await mountedRows(page)).toBeLessThanOrEqual(MAX_MOUNTED_ROWS)
       expect({
         pageErrors: tripwire.pageErrors,
