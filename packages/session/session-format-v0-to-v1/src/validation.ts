@@ -207,7 +207,7 @@ export function assertReleasedSurfaceMetadata(
   if (replacement['op'] !== 'replace') throw new SessionFormatError(`${type} ${seq} surfaceOp must replace`)
   const start = sessionFormatCount(replacement['start'], `${type} ${seq} surface start`)
   const end = sessionFormatCount(replacement['end'], `${type} ${seq} surface end`)
-  if (start > end || end >= seq) throw new SessionFormatError(`${type} ${seq} has an invalid surface replacement`)
+  if (start >= seq || end >= seq) throw new SessionFormatError(`${type} ${seq} has an invalid surface replacement`)
 }
 
 /**
