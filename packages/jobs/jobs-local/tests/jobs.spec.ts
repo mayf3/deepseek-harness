@@ -1311,6 +1311,23 @@ describe('LocalJobRegistry pull sources', () => {
     expect(jobsOf(ctx).get(id)).toMatchObject({ status: 'completed', output: { total: 4 } })
   })
 
+  it('contains a throwing source: warns once, keeps the job live, and settles on the producer', async () => {
+    const ctx = await harness({ pumpPollMs: 1 })
+    const warn = vi.fn()
+    ctx.logger.warn = warn as never
+    const broken: JobOutputSource = { channel: 'stdout', read() { throw new Error('reader boom') } }
+    const healthy = scriptedSource([{ text: 'ok' }], 'stderr')
+    const p = producer({ output: [broken, healthy] })
+    const id = ctx.jobs.start(p.spec)
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(jobsOf(ctx).get(id).status).toBe('running')
+    expect(jobsOf(ctx).readAt(id, 0).chunks).toEqual([{ at: 0, text: 'ok', channel: 'stderr' }])
+    expect(warn.mock.calls.map(call => String(call[0]))).toEqual([expect.stringContaining(`output source for ${id} failed`)])
+    p.settle({ status: 'completed', detail: 'exit code: 0' })
+    await new Promise(resolve => setTimeout(resolve, 10))
+    expect(jobsOf(ctx).get(id)).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
+  })
+
   it('stops pumping silently after a forced settlement', async () => {
     const ctx = await harness({ pumpPollMs: 1 })
     const warn = vi.fn()

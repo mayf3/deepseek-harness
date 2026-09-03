@@ -18,8 +18,8 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobAppendOptions, JobEvent, JobEvents, JobHandle, JobKillOptions, JobKind, JobOutcome, JobOutputRead, JobRead,
-  JobSettleCause, JobSpec, JobStatus, JobView, VisibleJobs,
+  JobAppendOptions, JobEvent, JobEvents, JobHandle, JobKillOptions, JobKind, JobOutcome, JobOutputRead, JobOutputSource,
+  JobRead, JobSettleCause, JobSpec, JobStatus, JobView, VisibleJobs,
 } from '@deepseek-ai/dsh-jobs'
 import { JobEventHub, JobLayer } from './events.ts'
 import { startPump } from './pump.ts'
@@ -270,7 +270,7 @@ export class LocalJobRegistry extends JobRegistry {
     )
     if (spec.output !== undefined && spec.output.length > 0) {
       job.pump = startPump(
-        spec.output,
+        spec.output.map(source => this.guardSource(job, source)),
         (text, options) => { this.appendRing(state, ring, text, options, 'pump') },
         this.pumpPollMs,
         Promise.race([producerDone, settled]),
@@ -483,6 +483,28 @@ export class LocalJobRegistry extends JobRegistry {
     }
     if (!ring.append(text, options, this.retainBytes)) return
     if (job !== undefined) this.emitOutput(job)
+  }
+
+  /**
+   * Contain a failing pull source: the first throw is logged, and the source
+   * reads as exhausted from then on, so the job runs to its own settlement
+   * with whatever the ring holds instead of freezing on a pump failure.
+   */
+  private guardSource(job: TrackedJob, source: JobOutputSource): JobOutputSource {
+    let failed = false
+    return {
+      ...source.channel !== undefined ? { channel: source.channel } : {},
+      read: (fromByte) => {
+        if (failed) return { text: '', nextOffset: fromByte, lossy: false }
+        try {
+          return source.read(fromByte)
+        } catch (error: unknown) {
+          failed = true
+          this.selfCtx.logger.warn(`jobs: output source for ${job.id} failed; its stream stops here: ${String(error)}`)
+          return { text: '', nextOffset: fromByte, lossy: false }
+        }
+      },
+    }
   }
 
   /** Announce that one job's ring advanced (append or settlement). */
