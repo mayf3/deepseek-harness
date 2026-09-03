@@ -31,7 +31,7 @@ Web follow adapter 显式选择接收这些进程本地 frame，并为每个 sta
 
 ### 已发布 v1 到 v2 迁移
 
-相邻迁移会校验完整的冻结 v1 产物，按 turn、step、terminal boundary 与精确 message provenance 对 chunk 分组，再为每个 attempt 替换一个 settlement。成功分组的 chunk 移入其 message。未被认领的分组会在最后一个被消费 chunk 的位置变成 `assistant/attempt`。无关的交错事件保持相对顺序，存活事件获得密集 v2 序号。
+相邻迁移会校验完整的冻结 v1 产物，按 turn、step、terminal boundary 与精确 message provenance 对 chunk 分组，再为每个 attempt 替换一个 settlement。成功分组的 chunk 移入其 message。未被认领的分组会在最后一个被消费 chunk 的位置变成 `assistant/attempt`。无关的交错事件保持相对顺序，存活事件获得密集 v2 序号。该迁移边通过 `dsh-llm` 运行时的 `AssistantStreamAccumulator`、`expandAssistantStream` 与 `BlockAssembler` 压缩、展开并重组嵌入 stream，而不持有冻结副本，因为该包拥有 v2 stream 编码。目标校验会自行复核每个迁移后的 `assistant/message` 与其嵌入 stream 是否一致，因此不一致的 v1 日志会作为 unsupported migration 被拒绝并保留源产物，而不是由 installed Session restoration 报告为损坏。日后若某个格式改变 stream 编码，必须把这些 helper 的冻结副本纳入本迁移边。
 
 该迁移边会重映射有限的已声明引用清单：信封 provenance、surface replacement 端点、command source event、compaction range 与 shadowed list，以及 title message list。经过校验的 `session/title-llm-request` 模型可见文本会在源序号命名空间中保持逐字节不变，而它的 `messageSeqs` 字段会迁移到 v2 命名空间；因此目标校验不会根据重映射后的序号重建该文本。指向被消费 chunk 的引用会使迁移失败；它绝不会被重定向到含义不同的 settlement。该迁移边也会拒绝切开 attempt 的继承切点。
 
@@ -47,7 +47,7 @@ Generation 选择与发布遵循[已发布 Session 迁移决策](2026-08-31-rele
 
 紧凑 stream 测试固定 text、reasoning、tool argument、raw chunk、时间戳间隔、格式错误 record 与分离 snapshot 的精确累积和展开。v1 到 v2 测试覆盖成功与失败 attempt、交错、密集序号与引用重映射、源序号 title framing、seed 切点插入与切分拒绝、严格源与目标校验、每行一个事件的 v2 编码、与 backend 兼容的 provenance range、原始与 Zstandard 发布，以及无写入的当前读取。
 
-手工 performance acceptance 会在三轮、100 组 warmup pair 与 600 组 measured pair 下，针对同一批已经解析的物理 row，把静态 catalog routing 与直接 released-v2 restoration 比较；它不比较 v1 与 v2，也不计入 backend I/O。每个 pooled median 与 p95 regression 都必须保持在 5% 以内；已接受运行的最差 p95 regression 为 3.150%。`--smoke` 报告不参与 gate 的诊断 sample。
+合并前的 performance acceptance 在三轮、100 组 warmup pair 与 600 组 measured pair 下，针对同一批已经解析的物理 row，把静态 catalog routing 与直接 released-v2 restoration 比较；它不比较 v1 与 v2，也不计入 backend I/O。每个 pooled median 与 p95 regression 都保持在 5% 预算以内，最差 p95 regression 为 3.150%。
 
 Agent-loop 测试固定先持久后 end 的顺序、中断的可见前缀、失败与重试 attempt、abandonment、usage 与 replay metadata。Session Controller 与 Conversation 测试固定实时瞬态显示、重连 baseline、committed settlement 发布、历史回放以及 Chat 与 Trajectory 一致性；TypeScript 与 Python SDK snapshot 固定外部事件表示。
 

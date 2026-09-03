@@ -13,7 +13,7 @@ import {
   sessionFormatCatalog,
 } from '@deepseek-ai/dsh-session-format-catalog'
 import { readdirSync, type Dirent } from 'node:fs'
-import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
+import { open, mkdir, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
@@ -45,8 +45,10 @@ import {
   ensureJsonlGenerationCurrent,
   JsonlGenerationNewerVersionError,
   JsonlGenerationUnsupportedMigrationError,
+  readStableJsonlFile,
   type EnsureJsonlGenerationResult,
   type JsonlGenerationFormatAdapter,
+  type JsonlPhysicalIdentity,
 } from './generation.ts'
 
 export type { JsonlCompression } from './format.ts'
@@ -106,14 +108,6 @@ interface StoredLog {
   readonly revision: PersistenceRevision
 }
 
-interface FileRevisionIdentity {
-  readonly dev: bigint
-  readonly ino: bigint
-  readonly size: bigint
-  readonly mtimeNs: bigint
-  readonly ctimeNs: bigint
-}
-
 /** One authoritative immutable generation selected from a Session directory. */
 interface ResolvedJsonlGeneration {
   readonly sourcePath: string
@@ -122,7 +116,7 @@ interface ResolvedJsonlGeneration {
 }
 
 /** Build the stat-derived best-effort change token shared by full and lightweight reads. */
-function fileRevision(identity: FileRevisionIdentity): PersistenceRevision {
+function fileRevision(identity: JsonlPhysicalIdentity): PersistenceRevision {
   return SessionPersistenceRevision([
     identity.dev,
     identity.ino,
@@ -381,7 +375,6 @@ class JsonlSessionPersistence extends SessionPersistence {
     const current = await this.ensureCurrentLog(id, signal, selected)
     /* v8 ignore next -- supplying a resolved generation makes absence unreachable. */
     if (current === undefined) throw new SessionPersistenceNotFoundError(id)
-    current.snapshot.zstdBody?.[Symbol.dispose]()
     return this.decodeStoredLog(
       current.path,
       id,
@@ -457,8 +450,8 @@ class JsonlSessionPersistence extends SessionPersistence {
       this.coldLogMemo.set(expectedId, memoized)
       return memoized
     }
-    const { buffer, revision } = await this.readStableFile(path, signal)
-    return this.decodeStoredLog(path, expectedId, buffer, revision, signal)
+    const { bytes, identity } = await readStableJsonlFile(path, signal)
+    return this.decodeStoredLog(path, expectedId, bytes, fileRevision(identity), signal)
   }
 
   /** Decode and memoize one already-stable current physical snapshot. */
@@ -533,7 +526,6 @@ class JsonlSessionPersistence extends SessionPersistence {
     if (selected === undefined) return undefined
     if (selected.sourceVersion === SESSION_FORMAT_VERSION) return selected.sourcePath
     const current = await this.ensureCurrentLog(id, signal)
-    current?.snapshot.zstdBody?.[Symbol.dispose]()
     return current?.path
   }
 
@@ -599,37 +591,6 @@ class JsonlSessionPersistence extends SessionPersistence {
    */
   releaseHandle(handle: JsonlSessionHandle, materialized: boolean): void {
     this.tracker.release(handle, materialized)
-  }
-
-  /**
-   * Read a file's bytes with one bounded stability retry: a writer appending
-   * between stat and readFile yields a torn read, so a changed revision
-   * triggers exactly one re-read. A second change does not loop — the log is
-   * append-only, so the bytes at the retry's own pre-read stat size are a
-   * committed prefix, and the decoders treat anything past a torn cut as
-   * unwritten. A continuous writer therefore delays a read by at most one
-   * extra whole-file read instead of starving it.
-   * @param path - the artifact file to read.
-   * @param signal - optional cancellation for the stat/read work.
-   * @returns the stable bytes (or the committed prefix) and their revision.
-   */
-  private async readStableFile(
-    path: string,
-    signal?: AbortSignal,
-  ): Promise<{ buffer: Buffer; revision: PersistenceRevision }> {
-    signal?.throwIfAborted()
-    let identity = await stat(path, { bigint: true })
-    for (let attempt = 0; ; attempt += 1) {
-      const before = fileRevision(identity)
-      const buffer = await readFile(path, { signal })
-      signal?.throwIfAborted()
-      const after = await stat(path, { bigint: true })
-      if (before === fileRevision(after)) return { buffer, revision: before }
-      if (attempt === 1) {
-        return { buffer: buffer.subarray(0, Number(identity.size)), revision: before }
-      }
-      identity = after
-    }
   }
 
   /** Decode complete frames and retain complete JSONL records from a torn final frame. */

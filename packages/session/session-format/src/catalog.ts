@@ -37,14 +37,10 @@ export function createSessionFormatCatalog(options: SessionFormatCatalogOptions)
     throw new SessionFormatError(`Session format codec v${invalid} is newer than current v${chain.currentVersion}`)
   }
 
-  function inspectVersion(headerValue: unknown): number {
-    return inspectSessionFormatVersion(headerValue)
-  }
-
   function readHeader(headerValue: unknown): SessionFormatHeaderReadResult {
     let storedVersion: number | undefined
     try {
-      storedVersion = inspectVersion(headerValue)
+      storedVersion = inspectSessionFormatVersion(headerValue)
     } catch (error: unknown) {
       return malformed(chain.currentVersion, error)
     }
@@ -92,7 +88,7 @@ export function createSessionFormatCatalog(options: SessionFormatCatalogOptions)
     readonly storedVersion: number
     readonly codec: SessionFormatCodec
   } {
-    const storedVersion = inspectVersion(headerValue)
+    const storedVersion = inspectSessionFormatVersion(headerValue)
     if (storedVersion > chain.currentVersion) {
       throw new SessionFormatUnsupportedMigrationError(
         `stored Session uses newer format v${storedVersion}; this build writes v${chain.currentVersion}`,
@@ -128,8 +124,7 @@ export function createSessionFormatCatalog(options: SessionFormatCatalogOptions)
     if (inspectSessionFormatVersion(artifact.header) !== chain.currentVersion) {
       throw new SessionFormatError(`encodeCurrent requires Session format v${chain.currentVersion}`)
     }
-    const current = chain.migrate(artifact)
-    const encoded = options.encodeCurrentArtifact(current)
+    const encoded = options.encodeCurrentArtifact(artifact)
     const header = snapshotSessionFormatJson(encoded.header, 'encoded current Session header') as SessionFormatJsonObject
     const rows = Object.freeze(encoded.rows.map((row, index) =>
       snapshotSessionFormatJson(row, `encoded current Session row ${index}`) as SessionFormatJsonObject))
@@ -141,7 +136,6 @@ export function createSessionFormatCatalog(options: SessionFormatCatalogOptions)
 
   return Object.freeze({
     currentVersion: chain.currentVersion,
-    inspectVersion,
     readHeader,
     decodeArtifact,
     decodeRecoverableArtifact,

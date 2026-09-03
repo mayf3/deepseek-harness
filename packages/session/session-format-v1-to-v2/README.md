@@ -44,14 +44,6 @@ The migration refuses a reference to a consumed chunk instead of redirecting it 
 
 The v2 physical header requires `isSeeded` and does not store a numeric cut. The codec derives the cut from the last inherited end-seed marker, writes one event per row, range-encodes only `sourceEventSeqs`, and remains neutral to ordinary event vocabulary and payload growth. Strict migration-target validation freezes the released-v2 inventory and rejects unknown types or members. Current restoration instead admits event types known to the installed Session package plus unknown events carrying `ignorable: true`, then delegates payload and stream semantics to the installed current restorer. All paths retain strict header, event-envelope, sequence, and inherited-cut validation.
 
-### Measure catalog-dispatch overhead
-
-```text
-pnpm run benchmark:session-format-v1-to-v2
-```
-
-The manual acceptance runs three repetitions with 100 warmup pairs and 600 alternating measured pairs per case. It measures static catalog-routing overhead against direct released-v2 restoration of the same already parsed physical rows, requiring every pooled median and p95 regression to stay within 5%. It neither compares v1 with v2 nor times backend I/O; representation sizes and absolute migration/replay costs are reported separately without a speedup claim. Add `--smoke` only for a short correctness and reporting pass; smoke timing is non-gating and is not an acceptance result.
-
 -----
 
 <a id="understand-the-implementation"></a>
@@ -68,7 +60,6 @@ The edge first groups v1 chunks by turn, step, terminal finish, and explicit mes
 | [`src/codec.ts`](src/codec.ts) | Released-v2 header, one-event-per-row encoding, provenance ranges, and recoverable prefix decoding |
 | [`src/validation.ts`](src/validation.ts) | Physical v2 envelope/cut validation, exact migration-target policy, and vocabulary-neutral current restoration |
 | [`src/dispositions.ts`](src/dispositions.ts) | Frozen released-v2 event and payload-member inventory |
-| [`scripts/benchmark-session-format-v1-to-v2.ts`](../../../scripts/benchmark-session-format-v1-to-v2.ts) | Repository-only catalog-dispatch, migration, token-meter, size, and memory acceptance report |
 
 </details>
 

@@ -59,7 +59,6 @@ describe('Session format catalog', () => {
       delegationDepth: 0,
     } as const
 
-    expect(catalog.inspectVersion(oldHeader)).toBe(0)
     expect(catalog.readHeader(oldHeader)).toEqual({
       status: 'migration-required',
       storedVersion: 0,

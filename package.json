@@ -50,7 +50,6 @@
     "test:web:perf": "npm run build && npm run test:web:perf:built",
     "test:web:perf:built": "DSH_SNAPSHOT=replay vitest run --config vitest.web.perf.config.ts",
     "test:web:stress": "npm run build && vitest run --config vitest.web-stress.config.ts",
-    "benchmark:session-format-v1-to-v2": "node --expose-gc --import tsx/esm scripts/benchmark-session-format-v1-to-v2.ts",
     "benchmark:npm-resolution": "tsx scripts/benchmark-npm-resolution.ts",
     "benchmark:npm-resolution:next": "tsx scripts/benchmark-next-package-dependency.ts",
     "test:gui": "vitest run packages/client packages/host",

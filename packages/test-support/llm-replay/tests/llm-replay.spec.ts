@@ -28,7 +28,6 @@ import {
   installLlmReplay,
   loadReplayScript,
   loadSessionScripts,
-  migrateSessionSnapshotFixture,
   name,
   parseSessionHeader,
   parseSessionLog,
@@ -1212,7 +1211,7 @@ describe('loadReplayScript', () => {
     writeFileSync(file, source, 'utf8')
 
     expect(loadReplayScript({ file })).toEqual([{ kind: 'chunks', chunks: TEXT_CHUNKS }])
-    expect(JSON.parse(migrateSessionSnapshotFixture(source).split('\n')[0] as string)).toMatchObject({ version: 2 })
+    expect(JSON.parse(prepareSessionSnapshotFixtureForComparison(source).split('\n')[0] as string)).toMatchObject({ version: 2 })
     expect(readFileSync(file, 'utf8')).toBe(source)
   })
 
