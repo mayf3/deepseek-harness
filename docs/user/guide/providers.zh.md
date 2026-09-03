@@ -14,7 +14,7 @@
 
 ## 添加内置提供方
 
-选择**添加提供方**，选取 dsh 自带的提供方，例如 Anthropic、OpenAI、Moonshot Kimi 或智谱 GLM；输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
+选择**添加提供方**，选取 dsh 自带的提供方；列表显示的是提供方 id，例如 `anthropic`、`openai`、Kimi 对应的 `moonshotai`、GLM 对应的 `zai`。输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
 
 通过 OAuth 登录的提供方（例如 Codex）暂不支持。
 
@@ -43,7 +43,7 @@ Provider ID 是永久的，因为请求、已保存会话、模型默认值和�
 自动生成的[插件配置目录](../../config-catalog.zh.md)列出每个插件的所有受支持字段与默认值；[`dsh-llm-pi-ai`](../../config-catalog.zh.md#deepseek-aidsh-llm-pi-ai) 就是本页所配置的那个提供方段落。[`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.zh.md) 和 [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.zh.md) 参考文档负责直接 `settings.yaml` 配置、目录解析、推理控制、凭据与适配器错误。
 
 ::: tip 表单刻意保持精简
-模型页只开放让一条路由得以存在的字段：API 密钥、显示名称、API 地址、API 协议，以及每个模型的 ID、显示名称、上下文窗口和最大输出 token 数。其余所有字段——推理等级、图片输入、请求兼容性开关、请求头、超时、重试策略——都在 `$DSH_HOME/settings.yaml` 中设置，也就是模型页写入的同一份文档。点击设置页顶部的**打开配置文件**即可打开它；适配器会在下一次请求时重新读取，无需重启任何东西。下面各小节介绍多数网关会用到的字段。
+模型页只开放让一条路由得以存在的字段：API 密钥、显示名称、API 地址、API 协议，以及每个模型的 ID、显示名称、上下文窗口和最大输出 token 数。其余所有字段——推理等级、图片输入、请求兼容性开关、请求头、超时、重试策略——都在 `$DSH_HOME/settings.yaml` 中设置，也就是模型页写入的同一份文档。可以直接编辑它；浏览器与服务器在同一台机器时，也可以点击设置页顶部的**打开配置文件**打开它。适配器会在下一次请求时重新读取，无需重启任何东西。下面各小节介绍多数网关会用到的字段。
 :::
 
 ### 图片输入
@@ -99,7 +99,7 @@ llm-pi-ai:
 
 ### 推理等级
 
-对于声明了推理等级的模型，模型选择器会提供**推理等级**菜单。内置提供方的模型从已安装目录继承其等级。手动录入的模型不声明任何等级，因此菜单为空，由端点自身的默认值决定模型是否思考。请在 `$DSH_HOME/settings.yaml` 中用 `reasoningEfforts` 声明等级：
+对于声明了推理等级的模型，模型选择器会提供**推理等级**菜单。内置提供方的模型从已安装目录继承其等级。手动录入的模型不声明任何等级，因此模型菜单里不会出现推理等级项，由端点自身的默认值决定模型是否思考。请在 `$DSH_HOME/settings.yaml` 中用 `reasoningEfforts` 声明等级：
 
 ```yaml
 llm-pi-ai:
@@ -119,7 +119,7 @@ llm-pi-ai:
 
 每个键都是菜单提供的一个等级，其值是在协议上以 `reasoning_effort` 发送的写法，因此 `max: xhigh` 可以为自有一套词汇的网关重命名某个等级。只有 `off` 可以留空，因为对多数端点来说，不思考就是不传该参数。路由的 `reasoning` 是会话尚未选择等级时采用的等级；在选择器中选定某个等级后，它会与模型一起保存为新会话的默认值。
 
-`off` 什么都不发送，这只能让「按请求才思考」的模型停下来。对于「不明确关闭就会思考」的模型——例如 OpenAI 兼容网关后面的 DeepSeek V4——需要 `compat.thinkingFormat: deepseek`：它让 `off` 发送 `thinking: {type: disabled}`，其他每个等级则在 effort 之外再发送 `thinking: {type: enabled}`：
+留空的 `off` 什么都不发送，这只能让「按请求才思考」的模型停下来；给 `off` 一个值，则会把该值作为 `reasoning_effort` 发送。对于「不明确关闭就会思考」的模型——例如 OpenAI 兼容网关后面的 DeepSeek V4——需要 `compat.thinkingFormat: deepseek`：它让 `off` 发送 `thinking: {type: disabled}`，其他每个等级则在 effort 之外再发送 `thinking: {type: enabled}`：
 
 ```yaml
       models:
@@ -183,8 +183,8 @@ llm-pi-ai:
 - **获取可用模型提示既没有 `data` 数组也没有 `models` 对象**：端点返回的列表格式不在探测的读取范围内。请手动输入模型。
 - **密钥与地址都正确，网关却拒绝每一个请求**：它的请求形状与 OpenAI 不同。先在路由上设 `compat.supportsDeveloperRole: false` 与 `compat.maxTokensField: max_tokens`。
 - **只有推理模型失败**：pi-ai 把它们的系统提示词以 `developer` 角色发出，而网关拒绝该角色。设 `compat.supportsDeveloperRole: false`。
-- **手动录入的模型的推理等级菜单为空**：该模型没有声明任何等级。在 `settings.yaml` 中给该模型加上 `reasoningEfforts`。
-- **`off` 无法让 DeepSeek 模型停止思考**：该路由只发送了 `reasoning_effort`。请在模型或路由上设置 `compat.thinkingFormat: deepseek`。
+- **手动录入的模型没有推理等级菜单**：该模型没有声明任何等级。在 `settings.yaml` 中给该模型加上 `reasoningEfforts`。
+- **`off` 无法让 DeepSeek 模型停止思考**：留空的 `off` 不发送任何推理字段，默认思考的端点就继续思考。请在模型或路由上设置 `compat.thinkingFormat: deepseek`。
 - **某个 compat 开关因没有值而被拒绝**：冒号后什么都没写。给它一个值，或删掉该键以沿用已安装 catalog 的值。
 - **图片在发送前被拒绝**：该模型未声明图片模态。请给自定义提供方的模型加上 `input: [text, image]`；在 DeepSeek 自身的路由上，请选择声明了图片能力的模型 `deepseek-v4-flash-vision-exp`。
 - **提供方拒绝了带图片的请求**：该模型声明了其端点实际并不提供的图片能力。请从授予它图片能力的那个列表中移除 `image`——可能是模型的 `input`，也可能是路由的 `defaultInput`——然后开启新会话：附加的图片会留在会话日志里，因此在会话离开它之前，同一个请求会不断重复。
