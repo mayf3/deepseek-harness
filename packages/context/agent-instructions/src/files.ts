@@ -319,6 +319,8 @@ async function discoverInstructionFiles(
  * duplicates are collapsed later, once content is read.
  * @param options - cwd, home, root marker, and candidate configuration.
  * @returns path-deduplicated instruction candidates in model precedence order.
+ * @throws the original root-marker metadata error or cancellation reason when
+ * discovery cannot identify the project root.
  */
 export async function discoverBaselineInstructionFiles(options: DiscoverOptions): Promise<InstructionFile[]> {
   return (await discoverInstructionFiles(options)).map(({ absolutePath, displayPath }) => ({ absolutePath, displayPath }))
@@ -393,6 +395,8 @@ export function dedupInstructionFilesByDirectory(files: LoadedInstructionFile[])
  * @param options - discovery, source-size, byte-budget, and cancellation configuration.
  * @param fileSystem - optional provider used instead of host filesystem reads.
  * @returns rendered baseline context, or undefined when nothing can be loaded.
+ * @throws the original root-marker metadata error or cancellation reason when
+ * discovery cannot identify the project root.
  */
 export async function loadBaselineInstructions(
   options: LoadOptions,
