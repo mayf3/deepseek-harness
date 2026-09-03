@@ -7,7 +7,7 @@
  */
 
 import { createHash, randomBytes } from 'node:crypto'
-import { mkdtempSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { mkdir, open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -37,6 +37,13 @@ export function privateRoot(): string {
   defaultRoot ??= mkdtempSync(join(tmpdir(), DEFAULT_ROOT_PREFIX))
   return defaultRoot
 }
+
+// The spill root is private to this process, so it is removed when the process
+// ends normally; a process killed with SIGKILL cannot run this, and its
+// residue is left to OS temp hygiene.
+process.once('exit', () => {
+  if (defaultRoot !== undefined) rmSync(defaultRoot, { recursive: true, force: true })
+})
 
 // Spill keeps its empty-name policy local so storage backends stay decoupled.
 /* jscpd:ignore-start */

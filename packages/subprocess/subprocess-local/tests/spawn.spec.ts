@@ -1,7 +1,7 @@
-import { mkdtempSync, readFileSync, statSync, unlinkSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, statSync, unlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, describe, expect, it, vi } from 'vitest'
 import {
   childEnv,
   killGroup,
@@ -81,6 +81,10 @@ vi.mock('node:fs', async (importOriginal) => {
 })
 
 const spillDir = mkdtempSync(join(tmpdir(), 'dsh-subprocess-spec-'))
+
+afterAll(() => {
+  rmSync(spillDir, { recursive: true, force: true })
+})
 
 type SpecOverrides = Partial<Parameters<typeof spawnSubprocess>[0]> & {
   stdoutMaxBytes?: number

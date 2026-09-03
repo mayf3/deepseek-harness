@@ -10,7 +10,7 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { randomBytes } from 'node:crypto'
-import { closeSync, mkdtempSync, openSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, mkdtempSync, openSync, rmSync, unlinkSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
@@ -90,6 +90,13 @@ function privateSpillDir(): string {
   defaultSpillDir ??= mkdtempSync(join(tmpdir(), 'dsh-subprocess-'))
   return defaultSpillDir
 }
+
+// The spill directory is private to this process, so it is removed when the
+// process ends normally; a process killed with SIGKILL cannot run this, and
+// its residue is left to OS temp hygiene.
+process.once('exit', () => {
+  if (defaultSpillDir !== undefined) rmSync(defaultSpillDir, { recursive: true, force: true })
+})
 
 /**
  * Collects one stream with a bounded in-memory tail. With a spill cap, on
