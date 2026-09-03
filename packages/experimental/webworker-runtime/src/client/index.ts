@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/client
  */
 import { IMAGE_FILE_NAME } from '../image-layout.ts'
-import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/client'
+import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import { PREVIEW_FIXTURE_MANIFEST_FILE } from '../fixture-manifest.ts'
 import { WorkerTunnel, type TunnelFetch } from './client.ts'
 import { applyIndexInjections } from './apply-injections.ts'

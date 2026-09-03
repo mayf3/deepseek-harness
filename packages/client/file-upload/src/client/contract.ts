@@ -1,3 +1,5 @@
+import type { Context } from '@deepseek-ai/cordis'
+
 /** Browser request body accepted by the background file-upload service. */
 export type FileUploadBody = Blob | ReadableStream<Uint8Array>
 
@@ -32,16 +34,4 @@ export interface FileUploadService {
   >>
 }
 
-/**
- * Fetch-shaped carrier installed by a page that owns its Host transport.
- * @param input - absolute same-origin upload URL.
- * @param init - raw request body, headers, and cancellation signal.
- * @returns the Host response.
- */
-export type FileUploadFetch = (input: URL, init: RequestInit) => Promise<Response>
-
-/** Pre-Cordis hook supplied by a page whose Host runs in another execution context. */
-export interface ClientFileUploadHooks {
-  readonly fetch: FileUploadFetch
-}
-import type { Context } from '@deepseek-ai/cordis'
+export type { ClientFileUploadHooks, FileUploadFetch } from '../types.ts'
