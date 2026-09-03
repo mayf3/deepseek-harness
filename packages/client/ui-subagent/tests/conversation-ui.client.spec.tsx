@@ -63,7 +63,7 @@ function props(
     },
     current: PARENT, phase: 'ready',
     subagentsByParent: value === undefined ? nested : { [PARENT]: value, ...nested },
-    jobsBySession: {},
+
     currentAddress: undefined,
   } satisfies SessionListState
   function useSessions<T>(select: (snapshot: SessionListState) => T): T {
