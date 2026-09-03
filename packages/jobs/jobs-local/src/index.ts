@@ -1,8 +1,8 @@
 /**
  * Process-local provider for the background-job capability seam
- * (`ctx.jobs`). It keeps every record — lifecycle state plus the optional
- * bounded output ring — in memory and hands out fresh snapshots and chunk
- * copies, never live state.
+ * (`ctx.jobs`). It keeps every job — lifecycle state, the bounded output
+ * ring, and the model cursor — in memory and hands out fresh projections and
+ * chunk copies, never live state.
  *
  * Registrations outlive producer and controller fibers. Agent or service
  * disposal cancels live work and awaits compliant producers; a throwing
@@ -13,14 +13,18 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { AnonymousEntries, ScopedLayers, scopeOf } from '@deepseek-ai/dsh-scope'
-import type { ScopeLayer } from '@deepseek-ai/dsh-scope'
+import { ScopedLayers, scopeOf } from '@deepseek-ai/dsh-scope'
+import type { SessionId } from '@deepseek-ai/dsh-session'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { JobRegistry, JobId } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobAppendOptions, JobChannel, JobDoneListener, JobKind, JobOutcome, JobOutputListener, JobRead,
-  JobRecordChunk, JobRecordRead, JobSnapshot, JobStart, JobStatus, JobsChangedListener, RecordingJob, RunningJob,
+  JobAppendOptions, JobEvent, JobEvents, JobHandle, JobKillOptions, JobKind, JobOutcome, JobOutputRead, JobRead,
+  JobSettleCause, JobSpec, JobStatus, JobView, VisibleJobs,
 } from '@deepseek-ai/dsh-jobs'
+import { JobEventHub, JobLayer } from './events.ts'
+import { startPump } from './pump.ts'
+import type { PumpHandle } from './pump.ts'
+import { OutputRing } from './ring.ts'
 
 /** Timeout code that distinguishes a bounded wait from caller cancellation. */
 export const TASK_WAIT_TIMEOUT = 'TASK_WAIT_TIMEOUT'
@@ -28,11 +32,14 @@ export const TASK_WAIT_TIMEOUT = 'TASK_WAIT_TIMEOUT'
 /** Default maximum number of active jobs in one exact-owner bucket. */
 const DEFAULT_MAX_CONCURRENT_TASKS_PER_OWNER = 10
 
-/** Default live record retention per job, in UTF-8 bytes. */
+/** Default live ring retention per job, in UTF-8 bytes. */
 const DEFAULT_RETAIN_BYTES = 256 * 1024
 
-/** Default record retention kept after settlement, in UTF-8 bytes. */
+/** Default ring retention kept after settlement, in UTF-8 bytes. */
 const DEFAULT_SETTLED_RETAIN_BYTES = 16 * 1024
+
+/** Default poll interval for pull sources, in milliseconds. */
+const DEFAULT_PUMP_POLL_MS = 150
 
 /** Configuration for the process-local job registry. */
 export interface Config {
@@ -41,49 +48,28 @@ export interface Config {
    * omission defaults to 10.
    */
   maxConcurrentJobsPerOwner?: number
-  /** Live record retention per job in UTF-8 bytes; omission defaults to 262144. */
+  /** Live ring retention per job in UTF-8 bytes; omission defaults to 262144. */
   retainBytes?: number
-  /** Record retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384. */
+  /** Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384. */
   settledRetainBytes?: number
-}
-
-/** One retained record ring entry; `bytes` caches the chunk's UTF-8 length. */
-interface RingChunk {
-  at: number
-  text: string
-  bytes: number
-  channel?: JobChannel
-  gapBefore?: true
-}
-
-/** The bounded output ring behind one job's declared record. */
-interface RecordState {
-  /** Retained chunks in offset order; offsets stay absolute across eviction. */
-  chunks: RingChunk[]
-  /** Sum of the retained chunks' byte lengths. */
-  retainedBytes: number
-  /** Total UTF-8 bytes ever appended. */
-  total: number
-  /** Offset of the oldest retained byte (equals {@link total} when nothing is retained). */
-  earliest: number
+  /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
+  pumpPollMs?: number
 }
 
 /**
- * Producer-written state shared between the {@link RunningJob} face and the
+ * Producer-written state shared between the {@link JobHandle} and the
  * registered record: the starter call writes through it before the commit,
  * the same object serves the job for its whole life afterwards.
  */
 interface ProducerState {
-  /** Bounded output ring; undefined when the spec declared no record. */
-  record: RecordState | undefined
-  /** Live progress detail until settlement replaces it with the terminal one. */
-  detail: string | undefined
+  /** Live progress line until settlement clears it. */
+  progress: string | undefined
   /** The committed registry record; undefined exactly during the starter call. */
-  job: TrackedTask | undefined
+  job: TrackedJob | undefined
 }
 
-/** The registry's mutable per-job record (never handed out — see {@link LocalJobRegistry.snapshot}). */
-interface TrackedTask {
+/** The registry's mutable per-job record (never handed out — see {@link LocalJobRegistry.view}). */
+interface TrackedJob {
   id: JobId
   kind: JobKind
   label: string
@@ -91,63 +77,36 @@ interface TrackedTask {
   /** Exact lifecycle owner; session-id authorization is derived from it. */
   owner: Agent | undefined
   cancel: (reason?: string) => void
-  readOutput: (() => string) | undefined
   status: JobStatus
-  /** Producer-shared record ring and detail line. */
+  ring: OutputRing
+  /** The model's consuming cursor; {@link VisibleJobs.readAt} never moves it. */
+  modelCursor: number
+  /** Whether the first post-settlement read already handed out `result`. */
+  resultDelivered: boolean
+  /** Producer-shared progress line and commit binding. */
   state: ProducerState
-  output: string | undefined
+  /** Terminal reason; a recorded kill reason is merged in at settlement. */
+  detail: string | undefined
+  result: string | undefined
   startedAt: number
   finishedAt: number | undefined
-  reported: boolean
-  /** Resolves once the terminal snapshot is recorded and listeners notified. */
+  /** Reason recorded by {@link VisibleJobs.kill}, merged into a `killed` settlement's detail. */
+  killReason: string | undefined
+  /** Set once a kill or teardown cancel ran; settlement reports it as the cause. */
+  settleCause: JobSettleCause | undefined
+  /** Resolves once the terminal record is committed and announced. */
   settled: Promise<void>
   /** Resolver for {@link settled}, called by the first effective settlement. */
   markSettled: () => void
-  /** Live waits; settlement with a waiter marks the job reported. */
-  waiters: number
   /** Removable resolvers for live waits; timeout/abort unregister before the job settles. */
   waitResolvers: Set<() => void>
+  /** The registry-owned pump over the spec's pull sources, when it named any. */
+  pump: PumpHandle | undefined
 }
 
 /** True for the three terminal {@link JobStatus} values. */
 function isTerminal(status: JobStatus): boolean {
   return status === 'completed' || status === 'killed' || status === 'failed'
-}
-
-/**
- * The UTF-8-safe tail of `text` no longer than `maxBytes`: the byte cut
- * advances past continuation bytes so the surviving text never starts inside
- * a code point.
- * @param text - the oversized chunk text.
- * @param maxBytes - positive byte budget for the surviving tail.
- * @returns the surviving tail and its exact byte length.
- */
-function utf8Tail(text: string, maxBytes: number): { text: string; bytes: number } {
-  const raw = Buffer.from(text, 'utf8')
-  let start = raw.length - maxBytes
-  // The loop bound proves the index is in range; the assertion only
-  // discharges noUncheckedIndexedAccess.
-  while (start < raw.length && ((raw[start] as number) & 0xC0) === 0x80) start += 1
-  const tail = raw.subarray(start)
-  return { text: tail.toString('utf8'), bytes: tail.length }
-}
-
-/**
- * One scope's contributions: the job controllers attached from it and the
- * completion, change, and record-output listeners registered there. All
- * tables are anonymous because a contribution is identified by its own
- * disposer, never by a name a second registrant could shadow.
- */
-class JobLayer implements ScopeLayer {
-  readonly controllers = new AnonymousEntries<symbol>()
-  readonly listeners = new AnonymousEntries<JobDoneListener>()
-  readonly changed = new AnonymousEntries<JobsChangedListener>()
-  readonly output = new AnonymousEntries<JobOutputListener>()
-
-  isEmpty(): boolean {
-    return this.controllers.isEmpty() && this.listeners.isEmpty() && this.changed.isEmpty()
-      && this.output.isEmpty()
-  }
 }
 
 /**
@@ -172,20 +131,28 @@ export class LocalJobRegistry extends JobRegistry {
       .min(1)
       .max(Number.MAX_SAFE_INTEGER)
       .default(DEFAULT_SETTLED_RETAIN_BYTES),
+    pumpPollMs: z.number()
+      .step(1)
+      .min(1)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(DEFAULT_PUMP_POLL_MS),
   })
 
   /** Schemastery-defaulted active-job limit. */
   private readonly maxConcurrentJobsPerOwner: number
-  /** Schemastery-defaulted live record retention cap. */
+  /** Schemastery-defaulted live ring retention cap. */
   private readonly retainBytes: number
-  /** Schemastery-defaulted settled record retention cap. */
+  /** Schemastery-defaulted settled ring retention cap. */
   private readonly settledRetainBytes: number
-  private store = new Map<JobId, TrackedTask>()
+  /** Schemastery-defaulted pull-source poll interval. */
+  private readonly pumpPollMs: number
+  private store = new Map<JobId, TrackedJob>()
   private counters = new Map<string, number>()
   /**
-   * Surfaces and listeners layered by the scope that registered them, in the
-   * tools-registry shape: a contribution files into its registering context's
-   * scope, and a read unions the global layer with the reader's scope chain.
+   * Controllers and scoped subscriptions layered by the scope that registered
+   * them, in the tools-registry shape: a contribution files into its
+   * registering context's scope, and a read unions the global layer with the
+   * owner's scope chain.
    *
    * The registry is one process-wide instance serving every composition, so a
    * flat table would answer a per-owner question process-wide: one preset's
@@ -195,7 +162,7 @@ export class LocalJobRegistry extends JobRegistry {
    * layer, so change notification is a no-op.
    */
   private readonly layers = new ScopedLayers<JobLayer>(() => new JobLayer(), () => {})
-  private listenersClosed = false
+  private readonly hub: JobEventHub
   /** Owner agents with attached scope cleanup, mapped to the exact disposer. */
   private ownerCleanups = new Map<Agent, () => Promise<void> | void>()
   /** Service context used by detached settlement continuations and teardown. */
@@ -204,15 +171,30 @@ export class LocalJobRegistry extends JobRegistry {
   constructor(ctx: Context, config: Config) {
     super(ctx)
     // Schemastery validates and fills the defaults before constructing the service.
-    this.maxConcurrentJobsPerOwner = (config as Required<Config>).maxConcurrentJobsPerOwner
-    this.retainBytes = (config as Required<Config>).retainBytes
-    this.settledRetainBytes = (config as Required<Config>).settledRetainBytes
+    const resolved = config as Required<Config>
+    this.maxConcurrentJobsPerOwner = resolved.maxConcurrentJobsPerOwner
+    this.retainBytes = resolved.retainBytes
+    this.settledRetainBytes = resolved.settledRetainBytes
+    this.pumpPollMs = resolved.pumpPollMs
     this.selfCtx = ctx
+    this.hub = new JobEventHub(this.layers, message => ctx.logger.warn(message))
     ctx.effect(() => () => this.disposeAll(), 'jobs teardown')
   }
 
-  start(spec: JobStart): JobId {
-    if (!this.servesOwner(spec.owner)) {
+  /**
+   * The event stream bound to the accessing context: a subscription is an
+   * effect of that context, and `{ owners: 'scope' }` names its scope.
+   */
+  get events(): JobEvents {
+    const registrar = this.ctx
+    return {
+      subscribe: (filter, listener) => this.hub.subscribe(registrar, filter, listener),
+    }
+  }
+
+  start(spec: JobSpec): JobId {
+    const owner = this.resolveOwner(spec.owner)
+    if (!this.servesOwner(owner)) {
       throw new Error('background jobs unavailable: no job controller serves this agent (load @deepseek-ai/dsh-tool-jobs in its composition)')
     }
     if (spec.kind.length === 0) throw new Error('invalid job kind: expected a non-empty string')
@@ -221,9 +203,9 @@ export class LocalJobRegistry extends JobRegistry {
       && (!Number.isSafeInteger(spec.outputLimitBytes) || spec.outputLimitBytes <= 0)) {
       throw new Error(`invalid outputLimitBytes: expected a positive safe integer, got ${JSON.stringify(spec.outputLimitBytes)}`)
     }
-    if (spec.owner !== undefined) this.ensureOwnerCleanup(spec.owner)
+    if (owner !== undefined) this.ensureOwnerCleanup(owner)
 
-    const active = this.activeTaskCount(spec.owner)
+    const active = this.activeTaskCount(owner)
     if (active >= this.maxConcurrentJobsPerOwner) {
       throw new Error(
         `background job limit reached for this owner (limit: ${this.maxConcurrentJobsPerOwner}); use job_kill to stop an unneeded job, wait for it to finish, then retry`,
@@ -236,189 +218,90 @@ export class LocalJobRegistry extends JobRegistry {
     const count = (this.counters.get(spec.kind) ?? 0) + 1
     this.counters.set(spec.kind, count)
     const id = JobId(`${spec.kind}-${count}`)
-    const state: ProducerState = { record: undefined, detail: undefined, job: undefined }
-    const face: RunningJob = {
+    const ring = new OutputRing()
+    const state: ProducerState = { progress: undefined, job: undefined }
+    const handle: JobHandle = {
       id,
-      updateDetail: (detail) => { this.updateDetail(state, detail) },
+      append: (text, options) => { this.appendRing(state, ring, text, options, 'producer') },
+      updateProgress: (line) => { this.updateProgress(state, line) },
     }
-    // The declaration decides the face: a plain start never receives `append`.
-    const hooks = spec.record === true ? spec.run(this.recordingFace(face, state)) : spec.run(face)
+    const hooks = spec.run(handle)
 
     let markSettled!: () => void
     const settled = new Promise<void>((resolve) => { markSettled = resolve })
-    const job: TrackedTask = {
+    const job: TrackedJob = {
       id,
       kind: spec.kind,
       label: spec.label,
       outputLimitBytes: spec.outputLimitBytes,
-      owner: spec.owner,
+      owner,
       cancel: hooks.cancel.bind(hooks),
-      readOutput: hooks.readOutput?.bind(hooks),
       status: 'running',
+      ring,
+      modelCursor: 0,
+      resultDelivered: false,
       state,
-      output: undefined,
+      detail: undefined,
+      result: undefined,
       startedAt: Date.now(),
       finishedAt: undefined,
-      reported: false,
+      killReason: undefined,
+      settleCause: undefined,
       settled,
       markSettled,
-      waiters: 0,
       waitResolvers: new Set(),
+      pump: undefined,
     }
     // Binding the shared producer state is the commit: writes staged inside
-    // the starter are already in `state`, and every later handle call reaches
-    // the registered record for its terminal checks and observer signals.
+    // the starter are already in the ring and `state`, and every later handle
+    // call reaches the registered record for its terminal checks and signals.
     state.job = job
     this.store.set(id, job)
 
-    void hooks.done.then(
-      (outcome) => { this.settle(job, outcome) },
-      (error: unknown) => {
+    // The producer's settlement or a registry-forced one ends the pump; the
+    // pump's final drain then lands before this registry trims the ring.
+    const producerDone = hooks.done.then(
+      outcome => outcome,
+      (error: unknown): JobOutcome => {
         // Contain a producer contract violation (`done` rejected) so cleanup and waiters cannot hang.
         this.selfCtx.logger.warn(`jobs: job ${job.id} producer done promise rejected (producer contract violation): ${String(error)}`)
-        this.settle(job, { status: 'failed', detail: String(error) })
+        return { status: 'failed', detail: String(error) }
       },
     )
+    if (spec.output !== undefined && spec.output.length > 0) {
+      job.pump = startPump(
+        spec.output,
+        (text, options) => { this.appendRing(state, ring, text, options, 'pump') },
+        this.pumpPollMs,
+        Promise.race([producerDone, settled]),
+      )
+    }
+    void producerDone.then(async (outcome) => {
+      if (job.pump !== undefined) await job.pump.done
+      this.settle(job, outcome, job.settleCause ?? 'producer')
+    })
     // Registration is complete and cannot fail from here, so the visible set
     // has genuinely changed.
-    this.notifyChanged(job.owner)
+    this.emit({ type: 'registered', job: this.view(job) }, owner)
     return id
   }
 
-  list(caller?: Agent): JobSnapshot[] {
-    const session = caller?.id
-    return [...this.store.values()]
-      .filter(job => job.owner === undefined || job.owner.id === session)
-      .map(job => this.snapshot(job))
-  }
-
-  get(id: JobId, caller?: Agent): JobSnapshot {
-    const job = this.expect(id)
-    this.assertAccess(job, caller)
-    return this.snapshot(job)
-  }
-
-  read(id: JobId, caller?: Agent): JobRead {
-    const job = this.expect(id)
-    this.assertAccess(job, caller)
-    const text = job.readOutput !== undefined
-      ? job.readOutput()
-      : isTerminal(job.status) ? job.output ?? '' : ''
-    if (isTerminal(job.status)) job.reported = true
-    return { text, snapshot: this.snapshot(job) }
-  }
-
-  kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished' {
-    const job = this.expect(id)
-    this.assertAccess(job, caller)
-    if (isTerminal(job.status)) {
-      job.reported = true
-      return 'already-finished'
+  visibleTo(caller?: SessionId): VisibleJobs {
+    const reach = (id: JobId): TrackedJob => {
+      const job = this.expect(id)
+      this.assertAccess(job, caller)
+      return job
     }
-    // Cancel first so a throw leaves both lifecycle and notice state unchanged.
-    job.cancel(reason)
-    job.status = 'stopping'
-    job.reported = true
-    this.notifyChanged(job.owner)
-    return 'requested'
-  }
-
-  async wait(id: JobId, timeoutMs: number, caller?: Agent, signal?: AbortSignal): Promise<JobSnapshot> {
-    const job = this.expect(id)
-    this.assertAccess(job, caller)
-    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-      throw new Error(`invalid wait timeout: expected a positive number of milliseconds, got ${JSON.stringify(timeoutMs)}`)
+    return {
+      list: () => [...this.store.values()]
+        .filter(job => job.owner === undefined || job.owner.id === caller)
+        .map(job => this.view(job)),
+      get: id => this.view(reach(id)),
+      read: id => this.readJob(reach(id)),
+      readAt: (id, from) => this.readAt(reach(id), from),
+      kill: (id, options) => this.killJob(reach(id), options),
+      wait: async (id, timeoutMs, signal) => this.waitJob(reach(id), timeoutMs, signal),
     }
-    if (!isTerminal(job.status)) {
-      if (signal?.aborted) throw new Error('wait aborted')
-      // Abort removes the waiter synchronously so same-tick settlement cannot
-      // suppress a notice for a wait that will reject.
-      job.waiters += 1
-      let counted = true
-      const uncount = (): void => {
-        if (!counted) return
-        counted = false
-        job.waiters -= 1
-      }
-      try {
-        // The scoped deadline distinguishes a successful wait timeout from
-        // caller cancellation and clears its timer on every exit.
-        using d = deadline(signal, timeoutMs, TASK_WAIT_TIMEOUT)
-        await new Promise<void>((resolve, reject) => {
-          const onSettled = (): void => {
-            job.waitResolvers.delete(onSettled)
-            d.signal.removeEventListener('abort', onAbort)
-            resolve()
-          }
-          const onAbort = (): void => {
-            job.waitResolvers.delete(onSettled)
-            // A settled job cannot reach here: settlement releases every waiter
-            // before it announces completion, and each released waiter detaches
-            // this listener in the same synchronous span, so nothing that reacts
-            // to a settlement can abort a wait the settlement already owed.
-            if (timeoutOf(d.signal, TASK_WAIT_TIMEOUT) !== undefined) {
-              resolve()
-            } else {
-              uncount()
-              reject(new Error('wait aborted'))
-            }
-          }
-          job.waitResolvers.add(onSettled)
-          d.signal.addEventListener('abort', onAbort, { once: true })
-        })
-      } finally {
-        uncount()
-      }
-    }
-    if (isTerminal(job.status)) job.reported = true
-    return this.snapshot(job)
-  }
-
-  onJobDone(listener: JobDoneListener): () => void {
-    return this.layers.effect(
-      this.ctx,
-      layer => layer.listeners.append(listener),
-      { label: 'jobs.onJobDone()' },
-    )
-  }
-
-  onJobsChanged(listener: JobsChangedListener): () => void {
-    return this.layers.effect(
-      this.ctx,
-      layer => layer.changed.append(listener),
-      { label: 'jobs.onJobsChanged()' },
-    )
-  }
-
-  readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead {
-    const job = this.expect(id)
-    this.assertAccess(job, caller)
-    if (!Number.isSafeInteger(from) || from < 0) {
-      throw new Error(`invalid record read offset: expected a non-negative safe integer, got ${JSON.stringify(from)}`)
-    }
-    const record = job.state.record
-    if (record === undefined) {
-      throw new Error(`job ${job.id} declared no output record`)
-    }
-    const chunks: JobRecordChunk[] = []
-    for (const chunk of record.chunks) {
-      if (chunk.at + chunk.bytes <= from) continue
-      chunks.push({
-        at: chunk.at,
-        text: chunk.text,
-        ...chunk.channel !== undefined ? { channel: chunk.channel } : {},
-        ...chunk.gapBefore !== undefined ? { gapBefore: chunk.gapBefore } : {},
-      })
-    }
-    return { chunks, next: record.total, lossy: from < record.earliest }
-  }
-
-  onOutput(listener: JobOutputListener): () => void {
-    return this.layers.effect(
-      this.ctx,
-      layer => layer.output.append(listener),
-      { label: 'jobs.onOutput()' },
-    )
   }
 
   attachController(name: string): () => void {
@@ -429,6 +312,24 @@ export class LocalJobRegistry extends JobRegistry {
       layer => layer.controllers.append(token),
       { label: 'jobs.attachController()' },
     )
+  }
+
+  /**
+   * Resolve a spec's owner session to its live Agent. An owned registration
+   * needs the agent registry, and the session must currently have a live
+   * instance: that instance's disposal is what cancels and drops the job.
+   */
+  private resolveOwner(session: SessionId | undefined): Agent | undefined {
+    if (session === undefined) return undefined
+    const agents = this.selfCtx.get('agents')
+    if (agents === undefined) {
+      throw new Error('background job ownership requires the agent registry (load @deepseek-ai/dsh-agent)')
+    }
+    const owner = agents.get(session)
+    if (owner === undefined) {
+      throw new Error(`session "${session}" has no live agent (background job owner must be live)`)
+    }
+    return owner
   }
 
   /**
@@ -454,22 +355,8 @@ export class LocalJobRegistry extends JobRegistry {
     return count
   }
 
-  /**
-   * The completion listeners that own `owner`'s notices: the global layer's
-   * first, then each scoped layer along the owner's chain. A listener outside
-   * that chain belongs to another composition and must not deliver, or the
-   * owner reads one notice per mounted preset.
-   * @param owner - the settled job's owner, or undefined for unowned work.
-   * @returns the listeners to notify, in registration order per layer.
-   */
-  private *listenersFor(owner?: Agent): IterableIterator<JobDoneListener> {
-    yield* this.layers.global.listeners.values()
-    const scope = owner === undefined ? undefined : scopeOf(owner.ctx)
-    for (const layer of this.layers.chainLayers(scope)) yield* layer.listeners.values()
-  }
-
   /** Look up a job or fail loud. */
-  private expect(id: JobId): TrackedTask {
+  private expect(id: JobId): TrackedJob {
     const job = this.store.get(id)
     if (job === undefined) throw new Error(`unknown job ${id}`)
     return job
@@ -478,214 +365,189 @@ export class LocalJobRegistry extends JobRegistry {
   /**
    * The isolation fence: a job with an owner is reachable only by callers
    * whose session id matches (`!== undefined` semantics — an unowned job is
-   * open, and a no-agent caller can never match an owned one).
+   * open, and a caller-less view can never match an owned one).
    */
-  private assertAccess(job: TrackedTask, caller?: Agent): void {
-    if (job.owner !== undefined && job.owner.id !== caller?.id) {
+  private assertAccess(job: TrackedJob, caller: SessionId | undefined): void {
+    if (job.owner !== undefined && job.owner.id !== caller) {
       throw new Error(`job ${job.id} belongs to another session`)
     }
   }
 
-  /** Project a fresh read-only snapshot from the mutable record. */
-  private snapshot(job: TrackedTask): JobSnapshot {
-    const ownerSession = job.owner?.id
-    const record = job.state.record
+  /** Project a fresh read-only view from the mutable record. */
+  private view(job: TrackedJob): JobView {
+    const owner = job.owner?.id
     return {
       id: job.id,
       kind: job.kind,
       label: job.label,
+      ...owner !== undefined ? { owner } : {},
       ...job.outputLimitBytes !== undefined ? { outputLimitBytes: job.outputLimitBytes } : {},
-      ...ownerSession !== undefined ? { ownerSession } : {},
       status: job.status,
-      ...job.state.detail !== undefined ? { detail: job.state.detail } : {},
+      ...job.state.progress !== undefined ? { progress: job.state.progress } : {},
+      ...job.detail !== undefined ? { detail: job.detail } : {},
       startedAt: job.startedAt,
       ...job.finishedAt !== undefined ? { finishedAt: job.finishedAt } : {},
-      reported: job.reported,
-      ...record !== undefined ? { outputTotal: record.total, outputEarliest: record.earliest } : {},
+      output: { total: job.ring.total, earliest: job.ring.earliest },
     }
   }
 
-  /**
-   * The change observers that own `owner`'s updates, resolved exactly like
-   * {@link listenersFor}: the global layer — a host composition's own carrier,
-   * which serves every owner — then each scoped layer along the owner's chain.
-   * An observer outside that chain belongs to another composition and would
-   * otherwise be told about agents it does not compose.
-   * @param owner - the owner whose visible set moved, or undefined for unowned work.
-   * @returns the observers to notify, in registration order per layer.
-   */
-  private *changedFor(owner?: Agent): IterableIterator<JobsChangedListener> {
-    yield* this.layers.global.changed.values()
-    const scope = owner === undefined ? undefined : scopeOf(owner.ctx)
-    for (const layer of this.layers.chainLayers(scope)) yield* layer.changed.values()
+  private emit(event: JobEvent, owner: Agent | undefined): void {
+    this.hub.emit(event, owner)
   }
 
-  /**
-   * Announce that one owner's visible set changed. Each listener is contained
-   * so an observer cannot break a lifecycle commit that already happened.
-   */
-  private notifyChanged(owner: Agent | undefined): void {
-    for (const listener of this.changedFor(owner)) {
-      try {
-        listener(owner)
-      } catch (error: unknown) {
-        this.selfCtx.logger.warn(`jobs: onJobsChanged listener threw: ${String(error)}`)
-      }
-    }
-  }
-
-  /** The record-output observers that own `owner`'s stream signals, resolved like {@link changedFor}. */
-  private *outputFor(owner?: Agent): IterableIterator<JobOutputListener> {
-    yield* this.layers.global.output.values()
-    const scope = owner === undefined ? undefined : scopeOf(owner.ctx)
-    for (const layer of this.layers.chainLayers(scope)) yield* layer.output.values()
-  }
-
-  /** Announce that one job's record advanced (append or settlement), with per-listener containment. */
-  private notifyOutput(job: TrackedTask): void {
-    for (const listener of this.outputFor(job.owner)) {
-      try {
-        listener(job.id)
-      } catch (error: unknown) {
-        this.selfCtx.logger.warn(`jobs: onOutput listener threw: ${String(error)}`)
-      }
-    }
-  }
-
-  /** Install the job's record and extend the producer face with its append. */
-  private recordingFace(face: RunningJob, state: ProducerState): RecordingJob {
-    const record: RecordState = { chunks: [], retainedBytes: 0, total: 0, earliest: 0 }
-    state.record = record
+  /** Consume the ring from the model cursor; the result rides the first read after settlement. */
+  private readJob(job: TrackedJob): JobRead {
+    const read = job.ring.readFrom(job.modelCursor)
+    job.modelCursor = job.ring.total
+    const result = isTerminal(job.status) && !job.resultDelivered ? job.result : undefined
+    if (result !== undefined) job.resultDelivered = true
     return {
-      ...face,
-      append: (text, options) => { this.appendRecord(state, record, text, options) },
+      chunks: read.chunks,
+      lossy: read.lossy,
+      ...result !== undefined ? { result } : {},
+      job: this.view(job),
     }
   }
 
+  private readAt(job: TrackedJob, from: number): JobOutputRead {
+    if (!Number.isSafeInteger(from) || from < 0) {
+      throw new Error(`invalid output read offset: expected a non-negative safe integer, got ${JSON.stringify(from)}`)
+    }
+    return job.ring.readFrom(from)
+  }
+
+  private killJob(job: TrackedJob, options?: JobKillOptions): 'requested' | 'already-finished' {
+    if (isTerminal(job.status)) return 'already-finished'
+    // Cancel first so a throw leaves lifecycle state unchanged.
+    job.cancel(options?.reason)
+    job.status = 'stopping'
+    // Last writer wins on purpose: the detail reports the latest kill intent.
+    if (options?.reason !== undefined) job.killReason = options.reason
+    job.settleCause = 'kill'
+    this.emit({ type: 'stopping', job: this.view(job) }, job.owner)
+    return 'requested'
+  }
+
+  private async waitJob(job: TrackedJob, timeoutMs: number, signal?: AbortSignal): Promise<JobView> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new Error(`invalid wait timeout: expected a positive number of milliseconds, got ${JSON.stringify(timeoutMs)}`)
+    }
+    if (!isTerminal(job.status)) {
+      if (signal?.aborted) throw new Error('wait aborted')
+      // The scoped deadline distinguishes a successful wait timeout from
+      // caller cancellation and clears its timer on every exit.
+      using d = deadline(signal, timeoutMs, TASK_WAIT_TIMEOUT)
+      await new Promise<void>((resolve, reject) => {
+        const onSettled = (): void => {
+          job.waitResolvers.delete(onSettled)
+          d.signal.removeEventListener('abort', onAbort)
+          resolve()
+        }
+        const onAbort = (): void => {
+          job.waitResolvers.delete(onSettled)
+          // A settled job cannot reach here: settlement releases every waiter
+          // before it announces, and each released waiter detaches this
+          // listener in the same synchronous span, so nothing that reacts to a
+          // settlement can abort a wait the settlement already owed.
+          if (timeoutOf(d.signal, TASK_WAIT_TIMEOUT) !== undefined) {
+            resolve()
+          } else {
+            reject(new Error('wait aborted'))
+          }
+        }
+        job.waitResolvers.add(onSettled)
+        d.signal.addEventListener('abort', onAbort, { once: true })
+      })
+    }
+    return this.view(job)
+  }
+
   /**
-   * Append one chunk through a recording producer face. A chunk against a
-   * settled job is logged and dropped; an empty chunk is dropped silently. A
-   * chunk staged inside the starter call is retained and signals no observer —
-   * the registration commit publishes it.
+   * Append one chunk to the ring. A producer chunk against a settled job is
+   * logged and dropped; the registry's own pump drains silently after
+   * settlement (a forced settlement may precede the producer's). A chunk
+   * staged inside the starter call is retained and signals no observer — the
+   * registration commit publishes it.
    */
-  private appendRecord(state: ProducerState, record: RecordState, text: string, options?: JobAppendOptions): void {
+  private appendRing(
+    state: ProducerState,
+    ring: OutputRing,
+    text: string,
+    options: JobAppendOptions | undefined,
+    writer: 'producer' | 'pump',
+  ): void {
     const job = state.job
     if (job !== undefined && isTerminal(job.status)) {
-      this.selfCtx.logger.warn(`jobs: append to settled job ${job.id} dropped`)
+      if (writer === 'producer') this.selfCtx.logger.warn(`jobs: append to settled job ${job.id} dropped`)
       return
     }
-    if (text.length === 0) return
-    const bytes = Buffer.byteLength(text, 'utf8')
-    record.chunks.push({
-      at: record.total,
-      text,
-      bytes,
-      ...options?.channel !== undefined ? { channel: options.channel } : {},
-      ...options?.gapBefore !== undefined ? { gapBefore: options.gapBefore } : {},
-    })
-    record.total += bytes
-    record.retainedBytes += bytes
-    this.trimRecord(record, this.retainBytes)
-    if (job !== undefined) this.notifyOutput(job)
+    if (!ring.append(text, options, this.retainBytes)) return
+    if (job !== undefined) this.emitOutput(job)
+  }
+
+  /** Announce that one job's ring advanced (append or settlement). */
+  private emitOutput(job: TrackedJob): void {
+    const owner = job.owner?.id
+    this.emit({ type: 'output', id: job.id, ...owner !== undefined ? { owner } : {}, total: job.ring.total }, job.owner)
   }
 
   /**
-   * Replace the live detail line through a producer face; a write against a
+   * Replace the live progress line through a producer face; a write against a
    * settled job is logged and dropped. A write staged inside the starter call
-   * seeds the registered snapshot and signals no observer.
+   * seeds the registered projection and signals no observer.
    */
-  private updateDetail(state: ProducerState, detail: string): void {
+  private updateProgress(state: ProducerState, line: string): void {
     const job = state.job
     if (job !== undefined && isTerminal(job.status)) {
-      this.selfCtx.logger.warn(`jobs: detail update on settled job ${job.id} dropped`)
+      this.selfCtx.logger.warn(`jobs: progress update on settled job ${job.id} dropped`)
       return
     }
-    state.detail = detail
-    if (job !== undefined) this.notifyChanged(job.owner)
+    state.progress = line
+    if (job !== undefined) this.emit({ type: 'progress', job: this.view(job) }, job.owner)
   }
 
   /**
-   * Drop retained head chunks until the ring fits `cap`; a single oversized
-   * chunk keeps only its UTF-8-safe tail with a `gapBefore` marker. Offsets
-   * stay absolute: `earliest` advances over everything dropped.
+   * Record the first terminal outcome, release waiters, then announce the
+   * settlement. First-wins preserves a teardown force-failure against late
+   * producer settlement. The settled event follows every released waiter, so
+   * a consumer that claims while waiting always claims before the event.
    */
-  private trimRecord(record: RecordState, cap: number): void {
-    while (record.retainedBytes > cap && record.chunks.length > 1) {
-      const dropped = record.chunks.shift()
-      /* v8 ignore next -- the length guard proves shift() returns a chunk; the check only satisfies noUncheckedIndexedAccess. */
-      if (dropped === undefined) break
-      record.retainedBytes -= dropped.bytes
-    }
-    const single = record.chunks.length === 1 ? record.chunks[0] : undefined
-    if (single !== undefined && single.bytes > cap) {
-      const tail = utf8Tail(single.text, cap)
-      single.at += single.bytes - tail.bytes
-      single.text = tail.text
-      single.bytes = tail.bytes
-      single.gapBefore = true
-      record.retainedBytes = tail.bytes
-    }
-    record.earliest = record.chunks[0]?.at ?? record.total
-  }
-
-  /**
-   * Record the first terminal outcome, release waiters, then announce
-   * completion. First-wins preserves a teardown force-failure against late
-   * producer settlement. Pending waits mark the job reported before listeners
-   * run. Completion is announced last because a reporter may open a model turn
-   * synchronously: every other observer of this settlement must already have
-   * seen the committed record.
-   */
-  private settle(job: TrackedTask, outcome: JobOutcome): void {
+  private settle(job: TrackedJob, outcome: JobOutcome, cause: JobSettleCause): void {
     if (isTerminal(job.status)) return
     job.status = outcome.status
-    // A terminal detail replaces the live progress line; without one the last
-    // progress line stays, still describing what the job was doing.
-    if (outcome.detail !== undefined) job.state.detail = outcome.detail
-    job.output = outcome.output
+    // A killed settlement carries the recorded kill reason in its detail:
+    // producer facts first (`signal: SIGTERM; cancelled by the user`). A job
+    // that outran its kill request (settled `completed`/`failed`) keeps the
+    // producer detail alone — the reason describes a kill that never landed.
+    if (outcome.status === 'killed' && job.killReason !== undefined) {
+      job.detail = outcome.detail !== undefined
+        ? `${outcome.detail}; ${job.killReason}`
+        : job.killReason
+    } else if (outcome.detail !== undefined) {
+      job.detail = outcome.detail
+    }
+    job.state.progress = undefined
+    job.result = outcome.result
     job.finishedAt = Date.now()
-    if (job.waiters > 0) job.reported = true
-    // Settlement ends the record: trim to the settled cap before any observer
-    // reads the terminal snapshot.
-    const record = job.state.record
-    if (record !== undefined) this.trimRecord(record, this.settledRetainBytes)
-    const snapshot = this.snapshot(job)
+    // Settlement ends the stream: trim to the settled cap before any observer
+    // reads the terminal projection.
+    job.ring.trim(this.settledRetainBytes)
     const waitResolvers = [...job.waitResolvers]
     job.waitResolvers.clear()
     for (const resolveWait of waitResolvers) resolveWait()
     job.markSettled()
-    this.notifyChanged(job.owner)
-    // The record stream ends with settlement; the signal follows the committed
-    // visible-set change and precedes completion listeners, which stay last.
-    if (record !== undefined) this.notifyOutput(job)
-    if (this.listenersClosed) return
-    for (const listener of this.listenersFor(job.owner)) {
-      try {
-        const returned = listener(snapshot, job.owner)
-        void Promise.resolve(returned).catch((error: unknown) => {
-          this.selfCtx.logger.warn(`jobs: onJobDone listener rejected for ${job.id}: ${String(error)}`)
-        })
-      } catch (error: unknown) {
-        this.selfCtx.logger.warn(`jobs: onJobDone listener threw for ${job.id}: ${String(error)}`)
-      }
-    }
+    this.emit({ type: 'settled', job: this.view(job), cause }, job.owner)
+    // The ring's stream ends with settlement; the signal follows the committed
+    // settlement so an observer that wakes on it reads the terminal state.
+    this.emitOutput(job)
   }
 
   /**
    * Attach one awaited cleanup through the exact owner's scope. This survives
    * producer reloads and joins agent quiescence; the retained disposer lets
-   * service teardown detach the cross-fiber effect. Fails when the registry is
-   * absent or the owner is not its currently registered instance.
+   * service teardown detach the cross-fiber effect.
    */
   private ensureOwnerCleanup(owner: Agent): void {
-    const ownerId = owner.id
-    const agents = this.selfCtx.get('agents')
-    if (agents === undefined) {
-      throw new Error('background job ownership requires the agent registry (load @deepseek-ai/dsh-agent)')
-    }
-    if (agents.get(ownerId) !== owner) {
-      throw new Error(`agent "${ownerId}" is not the registered agent instance (background job owner must be live)`)
-    }
     if (this.ownerCleanups.has(owner)) return
     // Record only after attach succeeds; a disposing scope rejects new effects.
     const detach = owner.ctx.effect(() => async () => {
@@ -700,31 +562,30 @@ export class LocalJobRegistry extends JobRegistry {
     const owned = [...this.store.values()].filter(job => job.owner === owner)
     this.cancelForTeardown(owned, 'owner disposed')
     await Promise.all(owned.map(job => job.settled))
-    for (const job of owned) this.store.delete(job.id)
-    // Removal is the one visible-set change no per-job record carries, so it
-    // must be announced here or an observer keeps the dropped rows forever.
-    if (owned.length > 0) this.notifyChanged(owner)
+    this.remove(owned)
+  }
+
+  /** Drop settled records and announce each removal, the one visible-set change no per-job record carries. */
+  private remove(jobs: readonly TrackedJob[]): void {
+    for (const job of jobs) {
+      this.store.delete(job.id)
+      this.emit({ type: 'removed', job: this.view(job) }, job.owner)
+    }
   }
 
   /**
-   * Close listeners, cancel live jobs, await settlement, and detach owner
+   * Cancel live jobs, await settlement, drop every record, and detach owner
    * effects. Throwing cancels are force-failed to avoid teardown deadlock.
    */
   private async disposeAll(): Promise<void> {
-    // The flag is the whole guard: each layer entry's undo belongs to the fiber
-    // that registered it, so this service may not drop them on its own way out.
-    this.listenersClosed = true
     const all = [...this.store.values()]
     this.cancelForTeardown(all, 'jobs service disposed')
     await Promise.all(all.map(job => job.settled))
-    // Distinct owners whose records just disappeared. A change observer files
-    // into the layer of the context that registered it, so a consumer mounted
-    // outside this service — the api-proxy carrier registers from the mux
-    // stream — is still reachable here. Without this it keeps the rows it last
-    // received after a registry reload.
-    const emptied = new Set(all.map(job => job.owner))
-    this.store.clear()
-    for (const owner of emptied) this.notifyChanged(owner)
+    // A subscriber mounted outside this service — the job controller's rows
+    // stream registers from its own context — is still reachable here.
+    // Without the removals it keeps the rows it last received after a
+    // registry reload.
+    this.remove(all)
     // Detach cross-fiber owner effects after the shared store is quiescent.
     const ownerCleanups = [...this.ownerCleanups.values()]
     this.ownerCleanups.clear()
@@ -736,28 +597,24 @@ export class LocalJobRegistry extends JobRegistry {
    * force-fails the record and reports a possible orphan; a cancel that returns
    * without settling remains indistinguishable from a slow stop and may stall.
    */
-  private cancelForTeardown(jobs: TrackedTask[], reason: string): void {
+  private cancelForTeardown(jobs: TrackedJob[], reason: string): void {
     for (const job of jobs) {
       if (isTerminal(job.status)) continue
-      // Teardown cancellation is a kill without a caller, so it claims the
-      // terminal report the same way `kill()` does. Nothing will read a notice
-      // for a job whose owner or service is being destroyed, and a waking
-      // reporter would spend a model request per teardown layer. This is
-      // decided before the producer runs: the force-failure below settles the
-      // record too, so a throwing cancel must not be the one path that
-      // announces an unreported completion into a disposing owner.
-      job.reported = true
+      // Whatever settles this job from here on, its owner or the service is
+      // being destroyed: the settlement announces `teardown` so a completion
+      // reporter does not address a reader that no longer exists.
+      job.settleCause = 'teardown'
       try {
         job.cancel(reason)
         job.status = 'stopping'
         // Teardown reaches settlement only after the producer releases, which a
         // slow stop can defer; announcing the transition here is what keeps an
         // observer from showing `running` for that whole window.
-        this.notifyChanged(job.owner)
+        this.emit({ type: 'stopping', job: this.view(job) }, job.owner)
       } catch (error: unknown) {
         const detail = `cancel threw during teardown; work may be orphaned: ${String(error)}`
         this.selfCtx.logger.warn(`jobs: cancel of ${job.id} threw during teardown; job record forced failed and work may be orphaned: ${String(error)}`)
-        this.settle(job, { status: 'failed', detail })
+        this.settle(job, { status: 'failed', detail }, 'teardown')
       }
     }
   }
