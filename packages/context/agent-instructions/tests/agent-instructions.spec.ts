@@ -77,7 +77,7 @@ async function write(path: string, content: string): Promise<void> {
 
 class RecordingFileSystem extends FileSystem {
   entries = new Map<string, { type: FsInfo['type']; content?: string; version?: FsVersion }>()
-  missingOnStat = new Set<string>()
+  missingOnResolve = new Set<string>()
   throwOnStat = new Set<string>()
   throwOnRead = new Set<string>()
   omitSizes = new Set<string>()
@@ -91,6 +91,9 @@ class RecordingFileSystem extends FileSystem {
     // resolve(), not join(): entries are seeded with host join() keys, and on
     // Windows a joined '/'-rooted prefix would not match a resolved drive path.
     const absolute = resolve(opts?.cwd ?? '/', path)
+    if (this.missingOnResolve.has(absolute)) {
+      throw Object.assign(new Error(`not found: ${absolute}`), { code: 'FS_NOT_FOUND' })
+    }
     return { targetKey: FsTargetKey(absolute), displayPath: absolute }
   }
 
@@ -106,9 +109,6 @@ class RecordingFileSystem extends FileSystem {
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
     if (signal !== undefined) this.signals.push(signal)
     signal?.throwIfAborted()
-    if (this.missingOnStat.has(target.targetKey)) {
-      throw Object.assign(new Error(`not found: ${target.displayPath}`), { code: 'FS_NOT_FOUND' })
-    }
     if (this.throwOnStat.has(target.targetKey)) throw new Error(`stat failed: ${target.displayPath}`)
     const entry = this.entries.get(target.targetKey)
     if (entry === undefined) return undefined
@@ -2085,7 +2085,7 @@ describe('workspace context request injection', () => {
     try {
       await ctx.plugin(RecordingFileSystem)
       const fs = ctx.fs as RecordingFileSystem
-      fs.missingOnStat.add(join(cwd, '.git'))
+      fs.missingOnResolve.add(join(cwd, '.git'))
       fs.entries.set(join(root, '.git'), { type: 'directory' })
       fs.entries.set(join(root, 'AGENTS.md'), { type: 'file', content: 'provider parent rule' })
       await mountWorkspaceContextPlugin(ctx, { dshHome: home, maxBytes: 65536 })
