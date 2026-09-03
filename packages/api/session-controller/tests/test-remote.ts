@@ -3,6 +3,7 @@
 import { SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { Context } from '@deepseek-ai/cordis'
 import type { ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
+import type { AdmittedPromptContentPart, AttachmentAdmissionPart } from '@deepseek-ai/dsh-attachment'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import {
   SessionPersistenceNotFoundError,
@@ -233,6 +234,20 @@ function installControllers(
       listProviders: () => {
         const selection = defaults.defaultModelSelection()
         return [{ id: selection.provider, name: selection.provider }]
+      },
+    } as never)
+  }
+  if (ctx.get('attachments') === undefined) {
+    ctx.provide('attachments', {
+      admitPromptContent: async (
+        content: readonly AttachmentAdmissionPart[],
+      ): Promise<AdmittedPromptContentPart[]> => {
+        const admitted: AdmittedPromptContentPart[] = []
+        for (const part of content) {
+          if (part.type === 'image') throw new Error('test did not configure image persistence')
+          admitted.push(part)
+        }
+        return admitted
       },
     } as never)
   }
