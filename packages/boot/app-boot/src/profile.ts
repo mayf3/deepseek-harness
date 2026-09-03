@@ -46,10 +46,21 @@ export const PROFILE_PATCH_FILENAME = 'cordis.patch.yml'
 /** Profile-private package links projected into its pnpm-managed node_modules. */
 const PROFILE_MODULE_FALLBACK_DIR = '.dsh-module-fallback'
 
+/**
+ * When an external bundle's rows mount relative to the built-in tree.
+ * `runtime` (the default) wraps the bundle's inserted rows in a contained
+ * group whose failure is isolated and reported; `boot` mounts them like
+ * built-in rows, so a failure stops the process — the choice for a bundle
+ * that provides a service built-in rows inject.
+ */
+export type BundleStage = 'boot' | 'runtime'
+
 /** The bundle half of the `dsh` manifest section: what a bundle package exports. */
 export interface DshBundleManifest {
   /** The patch layer this bundle exports, relative to its package root. */
   patch: string
+  /** Mount stage the bundle author asks for; the profile's `stages` overrides it. */
+  stage?: BundleStage
 }
 
 /** The profile half of the `dsh` manifest section: what a profile directory composes. */
@@ -58,7 +69,22 @@ export interface DshProfileManifest {
   bundles?: string[]
   /** Whether user patch files reload while this profile remains active. */
   patchReload?: ProfilePatchReload
+  /** Deployer overrides of each external bundle's mount stage, by package name. */
+  stages?: Record<string, BundleStage>
+  /**
+   * Installed packages treated as built-in: not wrapped, not prefixed, and
+   * fatal on failure. For first-party packages linked into a profile during
+   * development, where provenance alone would classify them external.
+   */
+  firstParty?: string[]
 }
+
+/**
+ * Who supplied a bundle layer. `builtin` layers come with the installation
+ * (template bundles) or are declared first-party by the profile; `external`
+ * layers are pnpm-managed dependencies the user installed.
+ */
+export type BundleTrust = 'builtin' | 'external'
 
 /** User patch-file lifecycle selected by a profile. */
 export type ProfilePatchReload = 'live' | 'startup'
@@ -85,6 +111,8 @@ export interface DshManifestSection {
 /** The slice of package.json both profiles and bundles use. */
 export interface ProfileManifest {
   name?: string
+  version?: string
+  description?: string
   dependencies?: Record<string, string>
   peerDependencies?: Record<string, string>
   dsh?: DshManifestSection
@@ -94,10 +122,16 @@ export interface ProfileManifest {
 export interface ProfileLayer {
   /** The bundle's package name, as listed in `dsh.profile.bundles`. */
   packageName: string
+  /** The bundle package's version, as its manifest declares it. */
+  version: string | undefined
   /** Absolute directory of the resolved bundle package. */
   packageDir: string
   /** Absolute path of the bundle's patch file. */
   patchPath: string
+  /** Who supplied the layer; decides isolation, id prefixing, and failure semantics. */
+  trust: BundleTrust
+  /** Effective mount stage: the profile's override, else the bundle's declaration, else `runtime`. */
+  stage: BundleStage
   /** The parsed patch list. */
   patches: PatchOptions[]
 }
@@ -707,6 +741,18 @@ export function writeProfileManifest(dir: string, manifest: ProfileManifest): vo
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, undefined, 2) + '\n')
 }
 
+/**
+ * Validate one bundle stage value read from a manifest; an unknown value is a
+ * misconfiguration and fails at load.
+ */
+function readBundleStage(binName: string, packageName: string, value: unknown): BundleStage {
+  if (value === undefined) return 'runtime'
+  if (value === 'boot' || value === 'runtime') return value
+  throw new Error(
+    `${binName}: bundle ${JSON.stringify(packageName)} declares stage ${JSON.stringify(value)}; expected "boot" or "runtime"`,
+  )
+}
+
 /** Return whether two bundle lists have the same values in the same order. */
 function sameBundles(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
@@ -826,6 +872,9 @@ export function loadProfile(
     )
   }
   const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
+  const dependencies = new Set(Object.keys(manifest.dependencies ?? {}))
+  const firstParty = new Set(manifest.dsh?.profile?.firstParty ?? [])
+  const stages = manifest.dsh?.profile?.stages ?? {}
   const layers = bundles.map((packageName): ProfileLayer => {
     const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
     const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
@@ -834,7 +883,20 @@ export function loadProfile(
       throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
     }
     const patchPath = join(packageDir, declared)
-    return { packageName, packageDir, patchPath, patches: loadOverlayPatches(binName, patchPath) }
+    // Provenance, not the package name, decides trust: a template bundle is
+    // never a dependency, and everything pnpm added is out-of-tree — a fork
+    // that kept a first-party name still lands in `dependencies`.
+    const trust: BundleTrust = dependencies.has(packageName) && !firstParty.has(packageName) ? 'external' : 'builtin'
+    const stage = readBundleStage(binName, packageName, stages[packageName] ?? bundleManifest.dsh?.bundle?.stage)
+    return {
+      packageName,
+      version: bundleManifest.version,
+      packageDir,
+      patchPath,
+      trust,
+      stage,
+      patches: loadOverlayPatches(binName, patchPath),
+    }
   })
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   const patches = options.userLayer !== false && existsSync(patchPath)

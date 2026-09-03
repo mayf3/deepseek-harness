@@ -31,6 +31,8 @@ Call `pluginInventory/list` when a client or settings page needs to show what is
 
 Each row is one non-group Loader entry: its entry id, the exact module specifier, the effective enablement (including disabled ancestor groups), and the current root Fiber phase. `pending` means the entry waits to load, `loading` that it is being read, `active` that it is running, `failed` that its fiber rejected, and `unloading` that it is being torn down; `null` means no live root Fiber exists at all. Structural group rows are skipped.
 
+When the profile launcher composed the tree, each row also says who supplied it: `trust` is `builtin` for a row of the installation's own bundles and `external` for a row of a bundle the user installed, `package` names that bundle with its version and, for an external row, the id the bundle's own patch declared before the launcher prefixed it, and a disabled row carries `disabledBy` — `user` when a user patch file disabled it with a literal `disabled: true`, `composition` for a bundle's own gate or tombstone. A row an isolated external bundle failed to start is gone from the tree; it is still listed, with `fiberPhase: 'failed'` and a `failure` naming the stage and message, from the launcher's failure registry. Without the launcher every row reads `builtin` and none carries a package or failure.
+
 ### Per-preset compositions
 
 With a roster composed, `agentPresets` carries one group per preset in roster order: its id, whether the deployment ships it or the user owns it (`trust`, which clients use to localize shipped names), published display name, whether a session naming no preset composes it, and flattened plugin rows — entry id (null when the file row declares none), module specifier, effective enablement, the row's own `!!js` disabled expression when it carries one, and a root-fiber phase when the composition is live. A preset some session already composed answers from its newest standing generation — even when its file has since broken, because the mount is what those sessions run; one never composed since boot answers from its composition file with disabled gates evaluated against the Loader context, and reading never mounts a preset. `conditional` enablement marks a gate the Host could not evaluate, and a broken preset nothing composed stays listed with its reason and no rows. Without a roster the field is absent.
@@ -97,7 +99,7 @@ None; this package neither assembles nor sends a provider request.
 These limits define what a point-in-time inventory cannot tell a client. They are current package constraints, not a task backlog.
 
 - **Point-in-time state only** — the result contains no durable failure history or subscription; a missing root Fiber is reported as `null`, regardless of why no live root exists.
-- **No provenance or mutation** — the service does not identify which bundle, profile, or override introduced an entry, and it cannot enable, disable, add, or remove plugins in either plane.
+- **No mutation** — the service cannot enable, disable, add, or remove plugins in either plane; provenance stops at the bundle layer, so a row a user patch or a `--patch` overlay inserted carries no package.
 - **Presets appear only with a roster** — a deployment without `dsh-agent-presets` serves Loader entries alone; the `agentPresets` field is absent rather than empty.
 
 <a id="dev-note"></a>

@@ -1288,6 +1288,31 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'profileRuntime',
+    summary: 'Facts and recomposition of the booted profile.',
+    description: 'Facts and recomposition of the booted profile.',
+    methods: [
+      {
+        signature: 'originOf(rowId: string): RowOrigin | undefined',
+        description: 'Where one mounted row came from.',
+        parameters: [{ name: 'rowId', description: 'the row\'s tree-wide id.' }],
+        returns: 'the origin, or undefined for a row no bundle layer inserted (a user or overlay row).',
+      },
+      {
+        signature: 'userDisabledRowIds(): Set<string>',
+        description: 'Row ids the user patch layers disable with a literal `disabled: true`. A `!!js` gate in a user file is a condition, not a user decision, and is left to the composition.',
+        parameters: [],
+        returns: 'the ids, re-read from disk on every call.',
+      },
+      {
+        signature: 'async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>',
+        description: 'Recompose the host tree from the profile\'s layers and the user patch files as they stand now. The root Include re-applies the stack transactionally: a row whose options changed is updated in place, a row that appeared is created, a row that vanished is disposed, and a failure rolls the whole update back with the previous tree still running.',
+        parameters: [{ name: 'options', description: '`reloadBundles` re-reads the profile manifest first, so a bundle enabled or installed since boot joins the stack.' }],
+        throws: ['when the root include is not mounted, or the Loader rejected the update.'],
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -3595,6 +3620,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrandedNumber<B extends string> = number & {\n    readonly [BRAND]: B;\n};',
   },
   {
+    name: 'BundleTrust',
+    declaration: 'export type BundleTrust = \'builtin\' | \'external\';',
+  },
+  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -4689,6 +4718,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResumeAgentOptions',
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+  },
+  {
+    name: 'RowOrigin',
+    declaration: 'export interface RowOrigin {\n    readonly trust: BundleTrust;\n    readonly packageName: string;\n    readonly version?: string;\n    readonly originalId?: string;\n}',
   },
   {
     name: 'RunnerFailureRule',

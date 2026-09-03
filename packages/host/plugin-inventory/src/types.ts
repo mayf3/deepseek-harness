@@ -12,6 +12,30 @@ export type PluginFiberPhase =
   | 'unloading'
   | null
 
+/** Who supplied a Loader row: the installation itself or an installed external bundle. */
+export type PluginTrust = 'builtin' | 'external'
+
+/** Why a row is disabled: the composition's own gate or tombstone, or the user's patch layer. */
+export type PluginDisabledBy = 'composition' | 'user'
+
+/** The package a row belongs to, when a bundle layer inserted it. */
+export interface PluginPackageRef {
+  /** The bundle's package name. */
+  readonly name: string
+  /** The package version, when its manifest declares one. */
+  readonly version?: string
+  /** For an external row: the id the bundle's own patch declared, before prefixing. */
+  readonly originalId?: string
+}
+
+/** A recorded startup failure of a row inside an isolated external bundle. */
+export interface PluginFailure {
+  /** The lifecycle step that failed. */
+  readonly stage: 'import' | 'apply' | 'inject-pending' | 'unknown'
+  /** The failure text. */
+  readonly message: string
+}
+
 /** One non-group Loader entry exposed to trusted clients. */
 export interface PluginInventoryEntry {
   readonly entryId: PluginEntryId
@@ -20,6 +44,14 @@ export interface PluginInventoryEntry {
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
+  /** Who supplied the row; `builtin` when no profile runtime is composed. */
+  readonly trust: PluginTrust
+  /** The bundle package that inserted the row, when one did. */
+  readonly package?: PluginPackageRef
+  /** Present exactly when `enabled` is false. */
+  readonly disabledBy?: PluginDisabledBy
+  /** Present for a row an isolated bundle failed to start. */
+  readonly failure?: PluginFailure
 }
 
 /** Effective enablement of one preset composition row. */

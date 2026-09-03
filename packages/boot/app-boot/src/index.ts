@@ -19,6 +19,7 @@ import { dshHomePath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { createLaunchEnvironmentSnapshot, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/cordis-plugin-hmr'
 import type {} from '@deepseek-ai/dsh-system-prompt'
+import { ContainedGroup, ensurePluginFailures, isContainedEntry } from './contained-group.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -41,6 +42,8 @@ export {
   resolveBundleDir,
   resolveProfileDir,
   writeProfileManifest,
+  type BundleStage,
+  type BundleTrust,
   type DshBundleManifest,
   type DshManifestSection,
   type DshProfileManifest,
@@ -51,6 +54,22 @@ export {
   type ProfilePatchReload,
   type ProfileTemplate,
 } from './profile.ts'
+export {
+  ContainedFailureRegistry, ContainedGroup, ensurePluginFailures, isContainedEntry,
+  type ContainedFailure, type ContainedFailureStage,
+} from './contained-group.ts'
+export {
+  BUNDLE_GROUP_PREFIX, bundleGroupId, composeExternalLayer, CONTAINED_GROUP_MODULE, disableBundle, enableBundle,
+  exportsBundlePatch, externalRowId, isJsDisabled, reconcileInstalledBundles,
+  type BundleReconciliation, type ComposedExternalLayer, type ExternalRowOrigin,
+} from './external-bundles.ts'
+export {
+  ProfileRuntime, type ProfileRuntimeOptions, type RowOrigin,
+} from './profile-runtime.ts'
+export {
+  PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache,
+  type PluginProbe, type PluginProbeRow, type ProbeOptions,
+} from './probe.ts'
 
 /**
  * Resolve the config to boot. Replay swaps a `cordis.yml` basename for
@@ -506,6 +525,15 @@ function groupedDump(
 }
 
 /**
+ * The root Include entry {@link mountRootInclude} created for a context.
+ * @param ctx - the booted root context.
+ * @returns the entry, or undefined before the root include mounted.
+ */
+export function rootIncludeEntry(ctx: Context): Entry | undefined {
+  return bootstrapIncludes.get(ctx)
+}
+
+/**
  * Mount and remember the exact root Include entry used by app boot and user patch-layer HMR.
  * @param ctx - context carrying an initialized Loader service.
  * @param absoluteConfigPath - absolute YAML or JSON configuration path.
@@ -541,6 +569,10 @@ export async function mountRootInclude(
   // by name. Both builtins load through the ambient module pipeline, so neither
   // depends on the included tree's own specifier resolution.
   ctx.loader.builtins.group = Group
+  // `cordis:contained-group`: the group external bundles mount under, whose
+  // rows fail individually and are recorded on the root's failure registry.
+  ctx.loader.builtins['contained-group'] = ContainedGroup
+  ensurePluginFailures(ctx)
   // Pinned id: the bootstrap include is app glue, not a config row, and its
   // id appears in Loader failure chains — a random id would make startup
   // diagnostics unstable across runs (and snapshot fixtures).
@@ -681,6 +713,45 @@ export function installFailLoud(
   return uninstall
 }
 
+/** The slice of `process` {@link installRuntimeGuards} needs. */
+export interface RuntimeGuardProcess {
+  on(event: 'unhandledRejection' | 'uncaughtException', handler: (err: unknown) => void): unknown
+  off(event: 'unhandledRejection' | 'uncaughtException', handler: (err: unknown) => void): unknown
+  exit(code: number): unknown
+}
+
+/**
+ * The post-boot replacement for {@link installFailLoud}. Once the tree is up,
+ * an unhandled rejection is no longer a load failure: it is most likely a
+ * plugin's stray continuation, and exiting would take every session down for
+ * it. The rejection is reported and the process keeps running. An uncaught
+ * exception leaves the process in an unknown state, so it is reported and
+ * the process exits, as Node would — but with the origin named.
+ * @param binName - the diagnostic prefix on each report.
+ * @param report - sink for the report lines.
+ * @param proc - the process slice to register on; defaults to `process`.
+ * @returns a disposer removing both handlers.
+ */
+export function installRuntimeGuards(
+  binName: string,
+  report: (line: string) => void,
+  proc: RuntimeGuardProcess = process,
+): () => void {
+  const onRejection = (err: unknown): void => {
+    report(`${binName}: unhandled rejection after boot (contained; the process keeps running): ${formatActivationError(err)}`)
+  }
+  const onException = (err: unknown): void => {
+    report(`${binName}: uncaught exception after boot; exiting: ${formatActivationError(err)}`)
+    proc.exit(1)
+  }
+  proc.on('unhandledRejection', onRejection)
+  proc.on('uncaughtException', onException)
+  return () => {
+    proc.off('unhandledRejection', onRejection)
+    proc.off('uncaughtException', onException)
+  }
+}
+
 /**
  * After the tree settles, reject entries with no fiber and name every plugin
  * whose module failed to resolve. Disabled entries are the only valid
@@ -689,7 +760,8 @@ export function installFailLoud(
  * @param binName - the diagnostic prefix on the thrown error.
  */
 export function assertEntriesLoaded(ctx: Context, binName: string): void {
-  const failed = [...ctx.loader.entries()].filter(entry => entry.fiber === undefined && !entry.disabled)
+  const failed = [...ctx.loader.entries()]
+    .filter(entry => entry.fiber === undefined && !entry.disabled && !isContainedEntry(entry))
   if (failed.length > 0) {
     const names = failed.map(entry => entry.options.name).join(', ')
     throw new Error(`${binName}: plugin(s) failed to load: ${names}; Cordis startup failed because these plugin(s) could not be resolved (see the error(s) logged above)`)
@@ -710,6 +782,12 @@ function formatActivationError(error: unknown): string {
   return error instanceof Error ? error.stack ?? error.message : String(error)
 }
 
+/** The tree-wide id of the group entry that owns a contained row. */
+function owningGroupId(entry: Entry): string {
+  /* v8 ignore next -- a contained entry is by definition inside a group entry; the fallback keeps the type total */
+  return entry.parent.ctx.fiber.entry?.id ?? ''
+}
+
 /**
  * Reject a settled Loader tree when an enabled entry failed or remains inactive.
  * Plugin failures include the original thrown stack; pending entries name their
@@ -726,15 +804,28 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
   assertEntriesLoaded(ctx, binName)
   const failures: string[] = []
   const rejectionReasons: unknown[] = []
+  const registry = ctx.get('pluginFailures')
+  let builtinPending = false
   for (const entry of ctx.loader.entries()) {
     const fiber = entry.fiber
     if (fiber === undefined || entry.disabled) continue
     const state = fiber.state
-    if (state === FIBER_ACTIVE) continue
+    if (state === FIBER_ACTIVE) {
+      registry?.clear(entry.id)
+      continue
+    }
+    const contained = isContainedEntry(entry)
     if (state === FIBER_FAILED) {
       try {
         await fiber.await()
       } catch (error) {
+        if (contained) {
+          registry?.record({
+            entryId: entry.id, rowId: entry.options.id, moduleName: entry.options.name,
+            groupId: owningGroupId(entry), stage: 'apply', message: formatActivationError(error),
+          })
+          continue
+        }
         rejectionReasons.push(error)
         failures.push(`${entry.options.name}: ${formatActivationError(error)}`)
       }
@@ -743,7 +834,16 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
     if (state === FIBER_PENDING) {
       const missing = Object.keys(fiber.inject).filter(service => fiber.ctx.get(service) === undefined)
       const subject = missing.length === 1 ? 'service' : 'services'
-      failures.push(`${entry.options.name}: pending (waiting for ${subject}: ${missing.join(', ') || 'unknown'})`)
+      const line = `pending (waiting for ${subject}: ${missing.join(', ') || 'unknown'})`
+      if (contained) {
+        registry?.record({
+          entryId: entry.id, rowId: entry.options.id, moduleName: entry.options.name,
+          groupId: owningGroupId(entry), stage: 'inject-pending', message: line,
+        })
+        continue
+      }
+      builtinPending = true
+      failures.push(`${entry.options.name}: ${line}`)
     } else {
       failures.push(`${entry.options.name}: fiber state ${String(state)}`)
     }
@@ -753,8 +853,48 @@ export async function assertEntriesActivated(ctx: Context, binName: string): Pro
       await observeLoaderRejectionCheckpoint(rejectionReasons)
     }
     const noun = failures.length === 1 ? 'entry' : 'entries'
-    throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join('\n')}`)
+    // A contained failure is only harmless while nothing built-in depends on
+    // it: a built-in row left waiting for a service names the isolated
+    // bundles, because one of them is the likely missing provider.
+    const isolated = builtinPending ? registry?.list() ?? [] : []
+    const hint = isolated.length === 0
+      ? ''
+      : `\n${binName}: isolated bundle failure(s) may be the missing provider — `
+        + `check ${[...new Set(isolated.map(failure => failure.groupId))].join(', ')} `
+        + 'or mark that bundle `dsh.bundle.stage: boot` so it fails loud'
+    throw new Error(`${binName}: ${String(failures.length)} ${noun} did not activate\n${failures.join('\n')}${hint}`)
   }
+}
+
+/**
+ * Nested plugin fibers (a `ctx.inject()` continuation inside a plugin) fail
+ * without touching their entry's root fiber, so the activation audit above
+ * cannot see them. Report every failed nested fiber under a built-in entry
+ * through `warn`, one line per fiber. Advisory in this release; it becomes
+ * part of the fatal audit once shipped compositions are known clean.
+ * @param ctx - the settled context whose runtimes to inspect.
+ * @param binName - the diagnostic prefix on each warning.
+ * @param warn - sink for the warning lines; defaults to the context logger.
+ * @returns the number of failed nested fibers reported.
+ */
+export function warnNestedFiberFailures(
+  ctx: Context,
+  binName: string,
+  warn: (line: string) => void = (line) => { ctx.logger.warn(line) },
+): number {
+  let count = 0
+  for (const runtime of ctx.registry.values()) {
+    for (const fiber of runtime.fibers) {
+      // The Loader stamps every fiber created inside an entry's context with
+      // that entry; the entry's own root fiber is the one the entry holds.
+      const owner = fiber.entry
+      if (fiber.state !== FIBER_FAILED || owner === undefined || owner.fiber === fiber) continue
+      if (isContainedEntry(owner)) continue
+      count += 1
+      warn(`${binName}: nested fiber under ${owner.options.name} failed (${runtime.name}); the entry itself stays active`)
+    }
+  }
+  return count
 }
 
 /**

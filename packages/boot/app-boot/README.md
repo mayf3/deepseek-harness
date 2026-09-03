@@ -54,6 +54,10 @@ Your machine-local preferences also live in the Harness home:
 
 Profiles with `patchReload: live` watch both user patch files: a valid edit recomposes without restart, while a rejected edit leaves the last good app running. A `startup` profile installs neither those watchers nor the launcher's watch-only HMR fallback.
 
+A bundle you installed with `dsh plugin` is an **external** bundle: its rows mount under one contained group named `bundle/<package>`, every row id is prefixed `<package>/<id>`, and a row that fails to start is isolated and recorded instead of stopping the process — the group and its other rows stay up, and the plugin list shows the failure. Template bundles are built in and keep failing loud. A bundle that provides a service built-in rows inject must mount like a built-in one: its author declares `dsh.bundle.stage: boot` in `package.json`, or you set `dsh.profile.stages` in the profile manifest, which wins. Even without that, an isolated failure that leaves a built-in row waiting for a service still stops the boot and names the isolated bundle. Two more profile-manifest fields shape this: `dsh.profile.firstParty` lists installed packages treated as built in (a first-party package linked in during development), and `dependencies` versus `dsh.profile.bundles` distinguishes a package that is merely installed from one whose layer is enabled.
+
+After the tree is up the launcher provides `ctx.profileRuntime`, which holds the booted profile's facts, attributes each row to the layer that inserted it, reads which rows the user patch files disable, and recomposes the tree — the same path the patch watchers take, and the one a runtime bundle enable or install uses. Startup's fail-loud rejection guard is uninstalled once the tree is up: an unhandled rejection after boot is reported and contained, an uncaught exception is reported and exits.
+
 ### Previewing the effective configuration
 
 Before you boot, you can print the exact configuration the app will mount: the dump shows the composed entry list with `!!js` expressions verbatim, grouped under comments naming each source file and the patch layers that changed it, as one loadable YAML document. Patches that match no row are reported with their layer label; a missing, unparsable, or invalid config fails the dump.
@@ -81,7 +85,10 @@ This section explains how the outcomes above are realized and points at the code
 ### Design notes
 
 - **Channel-neutral library.** The package carries no loader hooks and no dev-mode surface; the [`dsh` app](../../../apps/cli/README.md) owns its Node source-launch hook and consumes these helpers for the boot sequence, and built consumers use plain Node package resolution.
-- **Two Loader builtins.** `mountRootInclude` registers `cordis:include` and `cordis:group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, and an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name. Both load through the ambient module pipeline rather than the included tree's own specifier resolution.
+- **Three Loader builtins.** `mountRootInclude` registers `cordis:include`, `cordis:group`, and `cordis:contained-group` as Loader builtins: a group row gives one `isolate` realm to a provider and its consumers together, an agent preset outside this workspace cannot resolve `@deepseek-ai/cordis-plugin-group` by name, and the contained group is where external bundles mount. All load through the ambient module pipeline rather than the included tree's own specifier resolution.
+- **External bundles are groups.** The vendored `EntryGroup.update` is all-or-nothing and entry ids are unique per tree, so two external bundles that insert the same id would otherwise make the second silently take over the first's entry. `composeExternalLayer` wraps each `runtime`-stage external layer's inserts in one `cordis:contained-group`, prefixes its ids with the package name, and rewrites the bundle's own patches to the prefixed ids; the group's `create()` records a failed row on the root's `pluginFailures` registry instead of rejecting, and `assertEntriesActivated` exempts recorded rows while still failing a built-in row left pending.
+- **Fail-loud is boot-scoped.** `installFailLoud` exits on any unhandled rejection because during startup one is a load failure; the launcher uninstalls it once the tree is up and installs `installRuntimeGuards`, which reports a rejection and keeps running and exits on an uncaught exception. Nested fibers (a `ctx.inject()` continuation) that fail under a built-in entry are reported by `warnNestedFiberFailures` as advisory lines.
+- **The probe never runs a package in the host.** `probePackage` reads an installed package's manifest here and imports it in a child process, so a package that throws, exits, hangs, or brings its own copy of cordis costs one child and yields a record with the reason.
 - **Profile module fallback.** Bare plugin specifiers resolve through the Loader from the config directory. Plain Node maintains one symlink per package in the installation dependency closure. A packaged executable instead reads each installed export map with Node ESM conditions and writes real proxy packages that re-export virtual module URLs, because an operating-system symlink cannot enter pkg's `/snapshot` tree. Missing exports stay unavailable, malformed maps fail startup, and a cross-process writer lock replaces stale entries without exposing partial proxies. A selected external bundle absent from the installation closure receives a profile-local `.dsh-module-fallback` link; existing pnpm entries win, projected links are excluded from later closure discovery, and cleanup removes only dsh-owned links.
 - **One rejection checkpoint.** `assertEntriesActivated` keeps the exact reasons it folds into the boot diagnostic visible through the next process rejection checkpoint, so `installFailLoud` coalesces Loader's duplicate notification while unrelated unhandled rejections remain fatal.
 - **Two-stage failure labels.** `boot()` distinguishes `host preparation failed` — `prepare` threw before any config-tree entry mounted — from `plugin tree failed to load`, and appends the deepest plugin error's stack so the startup diagnostic preserves the original activation error instead of only the wrap chain.
@@ -94,8 +101,12 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard, activation audit, patch parsing, config dump, harness-source section |
-| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution, module fallback |
+| [`src/index.ts`](src/index.ts) | Boot helpers: config resolution, environment loading, fail-loud guard and runtime guards, activation audit, patch parsing, config dump, harness-source section |
+| [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution with trust and stage, module fallback |
+| [`src/external-bundles.ts`](src/external-bundles.ts) | External layer composition (contained group, id prefixing, patch rewriting) and the manifest operations behind install, enable, and disable |
+| [`src/contained-group.ts`](src/contained-group.ts) | The `cordis:contained-group` builtin and the `pluginFailures` registry |
+| [`src/profile-runtime.ts`](src/profile-runtime.ts) | The `profileRuntime` service: profile facts, row provenance, user-disabled rows, recomposition |
+| [`src/probe.ts`](src/probe.ts) | The child-process package probe and its per-profile cache |
 | — | No runtime invariant companion is published; this presentation adapter owns no durable package-local event stream; boundary and replay tests cover its protocol mapping. |
 
 </details>
@@ -137,6 +148,9 @@ These limits describe when this boot library is a poor fit or needs special care
 - **Snapshot replay swapping is basename-specific** — only a config ending in `cordis.yml` or `cordis.yaml` maps to the sibling `cordis.snapshot.yml`; custom config names require caller-managed selection.
 - **Environment discovery is launch-scoped** — `loadLayeredEnv` reads only the invocation directory and Harness home once; it does not search parents or follow a workspace selected later. `loadEnv` remains the one-directory helper for non-product bins.
 - **A user patch replaces the whole matched config** — an id-targeted patch does not deep-merge, so a profile override restates the bundle fields it keeps.
+- **An external bundle's overrides are not isolated** — a patch it applies to a built-in row edits that row in place, so its effect stays when the bundle's own rows fail and it is the one thing a bundle can break outside its group.
+- **Id prefixing does not rewrite `!!js` literals** — a bundle whose disabled expression compares `e.options.id` to its own unprefixed id keeps the literal; compare `options.name` instead.
+- **The nested-fiber audit is advisory** — a failed `ctx.inject()` continuation under a built-in entry is reported, not fatal, until shipped compositions are known clean.
 
 <a id="dev-note"></a>
 ### Dev Note

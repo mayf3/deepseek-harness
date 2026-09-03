@@ -109,6 +109,8 @@ dsh --profile demo
 
 `dsh plugin --profile demo remove dsh-hello-plugin` removes both the dependency and the layer.
 
+An installed bundle mounts as an external layer: the dump shows its rows inside one group named `bundle/dsh-hello-plugin`, and each row id carries the package prefix, so the row above is `dsh-hello-plugin/hello` in the mounted tree — a user patch that targets it names that id. A row of yours that fails to start is isolated and reported in the plugin list instead of stopping `dsh`; if your bundle provides a service the built-in rows inject, declare `dsh.bundle.stage: boot` so it mounts like a built-in one and fails loud. Prefixing does not rewrite string literals, so a `!!js` disabled expression that compares `e.options.id` to your own id should compare `e.options.name` instead.
+
 ## The loading order
 
 The effective configuration composes over an empty root by applying, in order:

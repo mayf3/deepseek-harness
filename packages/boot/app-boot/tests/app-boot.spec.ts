@@ -411,6 +411,7 @@ describe('installFailLoud', () => {
     installFailLoud(NAME, proc)
     const error = new Error('assembled activation failure')
     const audit = assertEntriesActivated({
+      get: () => undefined,
       loader: {
         entries: () => ['broken-a', 'broken-b'].map(name => ({
           options: { name },
@@ -494,7 +495,7 @@ describe('installFailLoud', () => {
 
 describe('assertEntriesLoaded', () => {
   const ctxWith = (entries: Array<{ fiber?: unknown; disabled?: boolean; options: { name?: string } }>): Context =>
-    ({ loader: { entries: () => entries } }) as unknown as Context
+    ({ loader: { entries: () => entries }, get: () => undefined }) as unknown as Context
 
   it('passes when every enabled entry has a fiber', () => {
     expect(() => { assertEntriesLoaded(ctxWith([
@@ -522,6 +523,7 @@ describe('assertEntriesActivated', () => {
 
   const ctxWith = (entries: Array<{ fiber?: FakeFiber; disabled?: boolean; options: { name: string } }>): Context => ({
     loader: { entries: () => entries },
+    get: () => undefined,
   }) as unknown as Context
 
   const fiber = (

@@ -20,14 +20,20 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   boot,
   composeEntries,
+  composeExternalLayer,
   healProfilesModuleFallback,
   installFailLoud,
+  installRuntimeGuards,
   loadOptionalPatches,
   loadOverlayPatches,
   loadProfile,
   PROFILE_PATCH_FILENAME,
+  ProfileRuntime,
+  rootIncludeEntry,
+  warnNestedFiberFailures,
   watchUserPatches,
   type Profile,
+  type ProfileLayer,
 } from '@deepseek-ai/dsh-app-boot'
 import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { installProxyFromEnvironment } from '@deepseek-ai/dsh-http-proxy'
@@ -144,6 +150,18 @@ function allPatches(composed: ComposedProfile): PatchOptions[] {
 }
 
 /**
+ * The patches one bundle layer contributes. A built-in layer, or an external
+ * layer the profile stages at boot, mounts its patches as written; every other
+ * external layer mounts as one contained, id-prefixed group.
+ * @param layer - the resolved layer.
+ * @returns the layer's patches in application order.
+ */
+export function bundleLayerPatches(layer: ProfileLayer): PatchOptions[] {
+  if (layer.trust === 'external' && layer.stage === 'runtime') return composeExternalLayer(layer).patches
+  return layer.patches
+}
+
+/**
  * Load `name` and compose its effective patch stack: bundle layers in
  * `dsh.profile.bundles` order (a base-backed profile gets the base bundle's
  * platform-gated shell rows), the profile's user layer, the home-level user
@@ -162,7 +180,7 @@ async function composeProfile(
   await healProfilesModuleFallback({ installAnchor: INSTALL_ANCHOR, profile })
   const homePatches = loadOptionalPatches(NAME, homePatchPath()) ?? []
   const overlays = patchFiles.flatMap(file => loadOverlayPatches(NAME, resolve(file)))
-  const bundlePatches = profile.layers.flatMap(layer => layer.patches)
+  const bundlePatches = profile.layers.flatMap(bundleLayerPatches)
   const rows = new Map<string, EntryOptions>()
   for (const row of composeEntries([bundlePatches, profile.patches, homePatches, overlays])) {
     if (typeof row.id === 'string') rows.set(row.id, row)
@@ -218,9 +236,11 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   )
 
   const composed = await composeProfile(options.profile, options.patchFiles)
-  const app: { current?: Context } = {}
+  const app: { current?: Context; runtime?: ProfileRuntime } = {}
   const appReady = createAppReady()
+  let uninstallRuntimeGuards = (): void => {}
   const shutdown = createProcessShutdown(async () => {
+    uninstallRuntimeGuards()
     await app.current?.fiber.dispose()
     await disposeProxy()
   })
@@ -236,7 +256,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // complete; SIGINT is a user interrupt and reports 130.
   process.on('SIGTERM', () => { interrupt(0) })
   process.on('SIGINT', () => { interrupt(130) })
-  installFailLoud(NAME, process, async () => {
+  const uninstallFailLoud = installFailLoud(NAME, process, async () => {
     await app.current?.fiber.dispose()
   })
 
@@ -253,12 +273,15 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
   // objects in place. Reusing one parsed patch object across applications
   // would bake a user override into the bundle's in-memory insert row, so
   // removing the override could never revert the row to the bundle default.
-  const composeLive = (): PatchOptions[] => structuredClone([
-    ...composed.bundlePatches,
-    ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
+  const composeFor = (profile: Profile): PatchOptions[] => structuredClone([
+    ...profile.layers.flatMap(bundleLayerPatches),
+    ...loadOptionalPatches(NAME, profile.patchPath) ?? [],
     ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
     ...composed.overlays,
   ])
+  // Once the profile runtime is mounted its profile is the current one: a
+  // bundle enabled since boot lives only there.
+  const composeLive = (): PatchOptions[] => composeFor(app.runtime?.current ?? composed.profile)
   // Cloned for the same insert-aliasing reason as composeLive: the boot
   // application must not mutate the objects later reloads recompose from.
   const ctx = await boot(NAME, rootConfig, structuredClone(allPatches(composed)), (hostCtx) => {
@@ -275,6 +298,25 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
     })
   })
   app.current = ctx
+  // The tree is up: a later unhandled rejection is a plugin's stray
+  // continuation, not a load failure, and must not take every session down.
+  uninstallFailLoud()
+  uninstallRuntimeGuards = installRuntimeGuards(NAME, (line) => { process.stderr.write(`${line}\n`) })
+  if (!signalShutdown.signal.aborted && ctx.fiber.state === FiberState.ACTIVE && ctx.get('loader') !== undefined) {
+    warnNestedFiberFailures(ctx, NAME, (line) => { process.stderr.write(`${line}\n`) })
+    await ctx.plugin(ProfileRuntime, {
+      profile: composed.profile,
+      loadProfile: () => prepareProfile(options.profile),
+      compose: composeFor,
+      rootEntry: () => rootIncludeEntry(ctx),
+      readUserPatches: () => [
+        ...loadOptionalPatches(NAME, composed.profile.patchPath) ?? [],
+        ...loadOptionalPatches(NAME, homePatchPath()) ?? [],
+      ],
+    })
+    const runtime = ctx.get('profileRuntime')
+    if (runtime !== undefined) app.runtime = runtime
+  }
   // A live-reload profile can dispose the whole tree while post-boot watcher
   // setup is in flight — a signal or appExit. Loader presence and fiber state
   // own liveness; the initial check skips a tree that already exited, and the

@@ -838,6 +838,43 @@ roots(): Agent[]
 
 Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index.ts)
 
+<a id="ctxprofileruntime--profileruntime"></a>
+
+### `ctx.profileRuntime` — `ProfileRuntime`
+
+Facts and recomposition of the booted profile.
+
+```ts cordis-catalog
+/**
+ * Where one mounted row came from.
+ * @param rowId - the row's tree-wide id.
+ * @returns the origin, or undefined for a row no bundle layer inserted (a user or overlay row).
+ */
+originOf(rowId: string): RowOrigin | undefined
+
+/**
+ * Row ids the user patch layers disable with a literal `disabled: true`.
+ * A `!!js` gate in a user file is a condition, not a user decision, and is
+ * left to the composition.
+ * @returns the ids, re-read from disk on every call.
+ */
+userDisabledRowIds(): Set<string>
+
+/**
+ * Recompose the host tree from the profile's layers and the user patch files
+ * as they stand now. The root Include re-applies the stack transactionally:
+ * a row whose options changed is updated in place, a row that appeared is
+ * created, a row that vanished is disposed, and a failure rolls the whole
+ * update back with the previous tree still running.
+ * @param options - `reloadBundles` re-reads the profile manifest first, so a
+ * bundle enabled or installed since boot joins the stack.
+ * @throws when the root include is not mounted, or the Loader rejected the update.
+ */
+async recompose(options: { reloadBundles?: boolean } = {}): Promise<void>
+```
+
+Source: [`packages/boot/app-boot/src/profile-runtime.ts`](../../packages/boot/app-boot/src/profile-runtime.ts)
+
 <a id="agent-events"></a>
 
 ### `agent/*` events

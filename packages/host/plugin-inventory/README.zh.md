@@ -31,6 +31,8 @@ kind: "package-reference"
 
 每一行是一个非组 Loader 条目：其条目 id、精确模块标识、有效启用状态（含被禁用的祖先组）与当前根 Fiber 阶段。`pending` 表示条目等待加载，`loading` 表示正在读取，`active` 表示正在运行，`failed` 表示其 fiber 被拒绝，`unloading` 表示正在拆除；`null` 表示完全不存在存活的根 Fiber。结构性的 group 行会被跳过。
 
+当树由 profile launcher 组合时，每一行还会说明是谁提供的：`trust` 对安装自带组合包的行是 `builtin`，对用户安装的组合包的行是 `external`；`package` 给出该组合包的名称与版本，对外部行还给出组合包自己的 patch 在 launcher 加前缀之前声明的 id；停用的行带 `disabledBy`——用户 patch 文件用字面量 `disabled: true` 停用的是 `user`，组合包自己的门或墓碑是 `composition`。被隔离的外部组合包启动失败的行已经不在树里；它仍从 launcher 的失败注册表列出，`fiberPhase` 为 `'failed'`，并带一个说明阶段与消息的 `failure`。没有 launcher 时每一行都读作 `builtin`，也没有 package 或 failure。
+
 ### 每个预设的组合
 
 组合了 roster 时，`agentPresets` 按 roster 顺序携带每个预设一组：其 id、随部署内置还是用户自建（`trust`，客户端据此本地化内置预设名）、发布的显示名、未指名预设的会话是否组合它，以及压平后的插件行——条目 id（文件行未声明时为 null）、模块标识、有效启用状态、行自带的 `!!js` disabled 表达式（如有），以及组合存活时的根 Fiber 阶段。已有会话组合过的预设由其最新 standing 世代作答——即使其文件事后损坏也是如此，因为挂载才是这些会话实际运行的组合；开机以来从未被组合的预设由其组合文件作答，disabled 门用 Loader 上下文求值，且读取从不挂载预设。`conditional` 表示宿主无法求值的门；无人组合的坏预设保留在列表中，携带原因且没有行。没有 roster 时该字段缺席。
@@ -97,7 +99,7 @@ Typert 生成由 `./typert` 与 `./remote` 导出的 Host 和 Client Remote 产�
 这些限制说明一个点时刻清单无法告诉客户端什么。它们是当前包约束，不是任务积压。
 
 - **仅表示调用当下**——结果不包含持久的失败历史或订阅；只要不存在存活的根 Fiber，就会报告 `null`，而不区分其原因。
-- **无来源与修改能力**——服务不识别条目由哪个 bundle、profile 或 override 引入，也不能在任一平面启用、停用、添加或移除插件。
+- **无修改能力**——服务不能在任一平面启用、停用、添加或移除插件；来源只追溯到组合包层，用户 patch 或 `--patch` overlay 插入的行不带 package。
 - **预设仅随 roster 出现**——未装 `dsh-agent-presets` 的部署只提供 Loader 条目；`agentPresets` 字段缺席而非为空。
 
 <a id="dev-note"></a>

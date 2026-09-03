@@ -63,18 +63,22 @@ describe('PluginInventoryGateway', () => {
         moduleName: 'cordis:active',
         enabled: true,
         fiberPhase: 'active',
+        trust: 'builtin',
       },
       {
         entryId: pendingId,
         moduleName: 'cordis:pending',
         enabled: true,
         fiberPhase: 'pending',
+        trust: 'builtin',
       },
       {
         entryId: disabledId,
         moduleName: 'cordis:not-installed',
         enabled: false,
         fiberPhase: null,
+        trust: 'builtin',
+        disabledBy: 'composition',
       },
     ]))
 
@@ -84,6 +88,8 @@ describe('PluginInventoryGateway', () => {
       moduleName: 'cordis:active',
       enabled: false,
       fiberPhase: null,
+      trust: 'builtin',
+      disabledBy: 'composition',
     })
 
     await ctx.loader.remove(pendingId)

@@ -72,6 +72,9 @@ function stageProfile(home: string, name: string, bundleAnchor: string): Profile
       packageDir: join(bundleAnchor, '..'),
       patchPath: join(bundleAnchor, '..', 'cordis.patch.yml'),
       patches: [],
+      version: undefined,
+      trust: 'builtin',
+      stage: 'runtime',
     }],
     patchPath: join(dir, PROFILE_PATCH_FILENAME),
     patches: [],
@@ -179,6 +182,51 @@ describe('loadProfile', () => {
     const bare = loadProfile('t', 'demo', anchor, home)
     expect(bare.layers).toEqual([])
     expect(bare.patchReload).toBe('live')
+  })
+
+  it('classifies layers by provenance and resolves each bundle\'s mount stage', () => {
+    const anchor = stageInstallation({
+      'in-box': { patch: '[]\n' },
+      'ext-runtime': { patch: '[]\n' },
+      'ext-boot': { patch: '[]\n' },
+      'ext-overridden': { patch: '[]\n' },
+      'ext-first-party': { patch: '[]\n' },
+    })
+    // The bundle author asks for boot stage on one package.
+    const bootManifest = join(anchor, '..', 'node_modules', 'ext-boot', 'package.json')
+    writeFileSync(bootManifest, JSON.stringify({ ...JSON.parse(readFileSync(bootManifest, 'utf8')) as object, dsh: { bundle: { patch: './cordis.patch.yml', stage: 'boot' } } }))
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['in-box', 'ext-runtime', 'ext-boot', 'ext-overridden', 'ext-first-party'])
+    writeProfileManifest(dir, {
+      ...readProfileManifest('t', dir),
+      dependencies: { 'ext-runtime': '0.0.0', 'ext-boot': '0.0.0', 'ext-overridden': '0.0.0', 'ext-first-party': '0.0.0' },
+      dsh: {
+        profile: {
+          bundles: ['in-box', 'ext-runtime', 'ext-boot', 'ext-overridden', 'ext-first-party'],
+          stages: { 'ext-overridden': 'boot' },
+          firstParty: ['ext-first-party'],
+        },
+      },
+    })
+    const profile = loadProfile('t', 'demo', anchor, home)
+    expect(profile.layers.map(layer => [layer.packageName, layer.trust, layer.stage, layer.version])).toEqual([
+      ['in-box', 'builtin', 'runtime', '0.0.0'],
+      ['ext-runtime', 'external', 'runtime', '0.0.0'],
+      ['ext-boot', 'external', 'boot', '0.0.0'],
+      ['ext-overridden', 'external', 'boot', '0.0.0'],
+      ['ext-first-party', 'builtin', 'runtime', '0.0.0'],
+    ])
+  })
+
+  it('fails loud on a stage value it does not know', () => {
+    const anchor = stageInstallation({ 'ext-odd': { patch: '[]\n' } })
+    const oddManifest = join(anchor, '..', 'node_modules', 'ext-odd', 'package.json')
+    writeFileSync(oddManifest, JSON.stringify({ ...JSON.parse(readFileSync(oddManifest, 'utf8')) as object, dsh: { bundle: { patch: './cordis.patch.yml', stage: 'later' } } }))
+    const home = tmp()
+    const dir = resolveProfileDir('demo', home)
+    initProfile(dir, ['ext-odd'])
+    expect(() => loadProfile('t', 'demo', anchor, home)).toThrow('declares stage "later"; expected "boot" or "runtime"')
   })
 
   it('auto-initializes only shipped templates and fails loud otherwise', () => {
@@ -419,6 +467,9 @@ describe('healProfilesModuleFallback', () => {
         packageDir: bundleLink,
         patchPath: join(bundleLink, 'cordis.patch.yml'),
         patches: [],
+        version: undefined,
+        trust: 'builtin' as const,
+        stage: 'runtime' as const,
       }],
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
@@ -464,6 +515,9 @@ describe('healProfilesModuleFallback', () => {
         packageDir,
         patchPath: join(packageDir, 'cordis.patch.yml'),
         patches: [],
+        version: undefined,
+        trust: 'builtin' as const,
+        stage: 'runtime' as const,
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],
@@ -504,6 +558,9 @@ describe('healProfilesModuleFallback', () => {
         packageName,
         patchPath: join(packageDir, 'cordis.patch.yml'),
         patches: [],
+        version: undefined,
+        trust: 'builtin' as const,
+        stage: 'runtime' as const,
       })),
       patchPath: join(dir, PROFILE_PATCH_FILENAME),
       patches: [],

@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-04-boot-scoped-fail-loud-and-package-probe.md
+2026-09-04-boot-scoped-fail-loud-and-package-probe.md: b97bfb57ccda65aa69832db4a9772e03853328a6
+2026-09-04-boot-scoped-fail-loud-and-package-probe.zh.md: 0dffeb0699d8fa847110f33e1579dd4ab1227767

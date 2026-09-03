@@ -378,6 +378,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Discovers preset directories over trusted and user-authored roots and mounts one preset cordis.yml under an agent scope during creation, rejecting a row that never activates or that publishes into the root service realm.',
   },
   {
+    key: 'profileRuntime',
+    pkg: 'app-boot',
+    title: 'Booted profile facts and recomposition',
+    mode: 'core',
+    consumers: ['host-plugin-inventory'],
+    note: 'Provided by the profile launcher after boot: the composed bundle layers with their trust and stage, each row\'s inserting layer, the rows user patch files disable, and the one recomposition path user patch reloads and runtime bundle changes share.',
+  },
+  {
     key: 'commands',
     pkg: 'commands',
     title: 'Human command registry',

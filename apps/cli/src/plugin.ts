@@ -18,9 +18,8 @@ import {
   initProfile,
   PROFILE_TEMPLATES,
   readProfileManifest,
-  resolveBundleDir,
+  reconcileInstalledBundles,
   resolveProfileDir,
-  writeProfileManifest,
   type ProfileManifest,
 } from '@deepseek-ai/dsh-app-boot'
 import { INSTALL_ANCHOR } from './profile-boot.ts'
@@ -28,66 +27,22 @@ import { INSTALL_ANCHOR } from './profile-boot.ts'
 const NAME = 'dsh'
 
 /**
- * Whether a resolved dependency exports a profile patch, i.e. is a bundle.
- * @param packageName - the dependency's package name.
- * @param profileDir - the profile directory (resolution anchor).
- * @returns true when the package manifest declares `dsh.bundle`.
- */
-function exportsPatch(packageName: string, profileDir: string): boolean {
-  let dir: string
-  try {
-    dir = resolveBundleDir(NAME, packageName, INSTALL_ANCHOR, profileDir)
-  } catch {
-    return false // pnpm reported success yet the package is unresolvable — treat as plain
-  }
-  const manifest = readProfileManifest(NAME, dir)
-  return manifest.dsh?.bundle?.patch !== undefined
-}
-
-/**
- * Reconcile `dsh.profile.bundles` against the installed state: pnpm has
- * already written the real installed names (so a git/path/tarball/alias spec
- * on the command line reconciles by its true package name) and materialized
- * the packages. A dependency that resolves to a `dsh.bundle`-declaring
- * package joins the layer stack (appended in dependency order); a
- * dependency-listed name that no longer does — removed, or the installed
- * version dropped the declaration — leaves it. In-box bundles from the
- * profile template are not dependencies and are never touched. Warns once
- * per newly-added bundle-less dependency (a plain library is fine; the
+ * Reconcile `dsh.profile.bundles` against the installed state with the CLI's
+ * install-and-enable semantics: pnpm has already written the real installed
+ * names (so a git/path/tarball/alias spec on the command line reconciles by
+ * its true package name) and materialized the packages, and every newly
+ * installed bundle joins the layer stack. Warns once per newly-added
+ * bundle-less dependency (a plain library or plugin module is fine; the
  * warning is orientation).
  */
 function reconcilePlugins(before: ProfileManifest, profileDir: string): void {
-  const after = readProfileManifest(NAME, profileDir)
-  const beforeDeps = new Set(Object.keys(before.dependencies ?? {}))
-  const dependencies = Object.keys(after.dependencies ?? {})
-  const plugins = after.dsh?.profile?.bundles ?? []
-  let changed = false
-  for (const packageName of dependencies) {
-    const isBundle = exportsPatch(packageName, profileDir)
-    if (isBundle && !plugins.includes(packageName)) {
-      plugins.push(packageName)
-      changed = true
-    } else if (!isBundle && !beforeDeps.has(packageName)) {
-      process.stderr.write(
-        `${NAME}: warning: ${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
-        + '(a later update that gains one activates it automatically)\n',
-      )
-    }
+  const outcome = reconcileInstalledBundles(NAME, profileDir, INSTALL_ANCHOR, before, { autoEnable: true })
+  for (const packageName of outcome.plain) {
+    process.stderr.write(
+      `${NAME}: warning: ${packageName} declares no dsh.bundle — installed as a plain dependency, not a profile layer `
+      + '(a later update that gains one activates it automatically)\n',
+    )
   }
-  const dependencySet = new Set(dependencies)
-  for (const packageName of [...plugins]) {
-    // Only dependency-managed entries are subject to removal; template
-    // bundles (dsh-base and friends) are not dependencies.
-    const wasDependency = beforeDeps.has(packageName) || dependencySet.has(packageName)
-    const stillBundle = dependencySet.has(packageName) && exportsPatch(packageName, profileDir)
-    if (wasDependency && !stillBundle) {
-      plugins.splice(plugins.indexOf(packageName), 1)
-      changed = true
-    }
-  }
-  if (!changed) return
-  after.dsh = { ...after.dsh, profile: { ...after.dsh?.profile, bundles: plugins } }
-  writeProfileManifest(profileDir, after)
 }
 
 /**

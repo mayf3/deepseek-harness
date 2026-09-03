@@ -109,6 +109,8 @@ dsh --profile demo
 
 `dsh plugin --profile demo remove dsh-hello-plugin` 会同时移除依赖和对应的层。
 
+已安装的组合包作为外部层挂载：dump 会把它的行显示在一个名为 `bundle/dsh-hello-plugin` 的组里，每个行 id 带上包名前缀，因此上面那一行在挂载后的树里是 `dsh-hello-plugin/hello`——针对它的用户 patch 要写这个 id。你的某一行启动失败时会被隔离并在插件列表里报告，而不是让 `dsh` 停下；如果你的组合包提供内置行所注入的服务，请声明 `dsh.bundle.stage: boot`，让它像内置行一样挂载并明确失败。前缀不会改写字符串字面量，因此用 `e.options.id` 与自己 id 比较的 `!!js` disabled 表达式应改为比较 `e.options.name`。
+
 ## 加载顺序
 
 生效配置在空根之上按以下顺序逐层组合：
