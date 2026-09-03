@@ -324,10 +324,7 @@ TerminalBlock 的 ANSI、光标重放、宽字符、行数上限、展开、复�
 |---|---|
 | running `write` | 从 `file_path` 与 `content` 生成 intended added-only diff |
 | running `edit` | 从 `file_path`、`old_string`、`new_string` 生成 intended replacement diff |
-| running `str_replace_editor create` | 从 `path` 与 `file_text` 生成 intended added-only diff |
-| running `str_replace_editor str_replace` | 从 `path`、`old_str` 与 `new_str` 生成 intended replacement diff |
 | settled `write`／`edit` success | 从 `meta.diffs` 生成 applied contextual hunks |
-| settled `str_replace_editor` | Generic，因为该工具没有 result presenter |
 | write create 或 applied metadata 缺失、畸形、为空 | 当前 args fallback |
 | error、畸形 args、edit 的 metadata 畸形、Code Dispatch child | Generic |
 
@@ -375,8 +372,6 @@ Deliverables Definition 按 callId 观察 root `tool/call` 与成功 `tool/resul
 |---|---|---|
 | `write` | 任意成功调用 | `file_path` |
 | `edit` | 任意成功调用 | `file_path` |
-| `str_replace_editor` | `create`、`str_replace`、`insert` | `path` |
-| `str_replace_editor` | `view` | 不产生 path |
 | 其他 | 无当前第一方 mutation 语义 | 不产生 path |
 
 失败、interrupted、orphan result、缺失 path 与畸形 args 不产生 deliverable。同一路径保持 first-seen 去重，closing Assistant seq 之后落定的结果继续排除。
@@ -532,8 +527,6 @@ Host registry 允许不同 scope 为同一 tool name 提供不同定义；Sessio
 ### Deliverables
 
 - write/edit 成功产生 `file_path`。
-- str_replace_editor create/str_replace/insert 产生 `path`。
-- str_replace_editor view 不产生 path。
 - failure、interrupted、malformed 与 orphan 不产生 path。
 - first-seen 去重与 closing seq cut 不变。
 

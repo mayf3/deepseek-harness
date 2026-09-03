@@ -51,8 +51,6 @@ function mutationPath(name: string, argsRaw: string): string | null {
       return typeof args.content === 'string' ? pathValue(args.file_path) : null
     case 'edit':
       return validEditArgs(args) ? pathValue(args.file_path) : null
-    case 'str_replace_editor':
-      return editorMutationPath(args)
     default:
       return null
   }
@@ -65,31 +63,6 @@ function validEditArgs(args: Readonly<Record<string, unknown>>): boolean {
     && typeof args.new_string === 'string'
     && args.old_string !== args.new_string
     && (args.replace_all === undefined || typeof args.replace_all === 'boolean')
-}
-
-/** Extract a path only from a complete mutating editor command. */
-function editorMutationPath(args: Readonly<Record<string, unknown>>): string | null {
-  const path = pathValue(args.path)
-  if (path === null) return null
-  switch (args.command) {
-    case 'create':
-      return typeof args.file_text === 'string' ? path : null
-    case 'str_replace':
-      return typeof args.old_str === 'string'
-        && args.old_str.length > 0
-        && (args.new_str === undefined || typeof args.new_str === 'string')
-        ? path
-        : null
-    case 'insert':
-      return typeof args.insert_line === 'number'
-        && Number.isInteger(args.insert_line)
-        && args.insert_line >= 0
-        && typeof args.new_str === 'string'
-        ? path
-        : null
-    default:
-      return null
-  }
 }
 
 /** A non-blank path preserves the exact spelling supplied to the tool. */
@@ -105,10 +78,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * Files produced by one Turn data value.
  *
- * The source is the arguments of successful `write`, `edit`, and mutating
- * `str_replace_editor` calls, not the closing prose: a produced file must be
- * listed whether or not the model remembered to name it. Reads, unsupported
- * tools, malformed calls, and failed results contribute nothing. Paths keep
+ * The source is the arguments of successful `write` and `edit` calls, not the
+ * closing prose: a produced file must be listed whether or not the model
+ * remembered to name it. Reads, unsupported tools, malformed calls, and failed
+ * results contribute nothing. Paths keep
  * first-seen order and appear once, so a file written and then edited in the
  * same turn is one entry.
  *

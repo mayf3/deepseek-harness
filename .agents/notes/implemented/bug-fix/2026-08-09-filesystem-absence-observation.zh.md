@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决策
 
-`dsh-fs` 拥有一个显式观测联合类型：`{ kind: 'present', version: FsVersion } | { kind: 'absent' }`。`fs/observed` 事件携带该联合类型。成功的读取与变更发出存在观测；`read` 的元数据未命中，或 `str_replace_editor` 的 `view`、`str_replace`、`insert` 命令发生元数据未命中时，都会在返回 `FS_NOT_FOUND` 前同步发出缺失观测。其他读取失败不会产生缺失观测。
+`dsh-fs` 拥有一个显式观测联合类型：`{ kind: 'present', version: FsVersion } | { kind: 'absent' }`。`fs/observed` 事件携带该联合类型。成功的读取与变更发出存在观测；`read` 的元数据未命中时，会在返回 `FS_NOT_FOUND` 前同步发出缺失观测。其他读取失败不会产生缺失观测。
 
 `dsh-fs-observation-policy` 按所有者与目标存储三种逻辑状态，既不注入也不调用 `ctx.fs`：映射中无条目即未见，`absent` 表示确认缺失，`present(version)` 是替换/编辑基准。写入把未见和缺失映射到现有 `createIfAbsent` 意图，把存在映射到 `replaceIfVersion`。编辑把未见映射到 `FS_NOT_OBSERVED`，把缺失映射到 `FS_NOT_FOUND`，把存在映射到其版本守卫。成功创建或变更后，系统会用其产生的存在版本取代缺失状态。
 

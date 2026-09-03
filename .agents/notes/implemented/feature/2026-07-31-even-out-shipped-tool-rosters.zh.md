@@ -12,11 +12,11 @@ Status: implemented
 
 ## 决策
 
-那些并非 surface 专属的行移入 [`base.cordis.yml`](../../../../packages/bundle/base/cordis.patch.yml)，另有三行加入：`tool-session-query`、`tool-str-replace-editor` 和 `repeat-tool-reminder`。Web 搜索也一并移入；其[部署决策](2026-07-31-web-default-search.zh.md)负责安全边界，共享 base 则负责与 surface 无关的挂载。两个 surface 组装同一份清单，其中 `glob` 和 `grep` 是固定成员，因为 `dsh-tool-fs-search` 直接 spawn [打包的 ripgrep 二进制](../architecture/2026-08-01-packaged-ripgrep-search.zh.md)。后续决策收窄了这份清单：[session-search 决策](2026-08-02-session-search-not-shipped-default.zh.md)让 `tool-session-query` 保持需显式启用，[单一 editor 决策](../simplification/2026-08-10-default-presets-single-editor.zh.md)从通用 preset 移除 `tool-str-replace-editor`，[仅持久 shell 决策](../simplification/2026-09-03-minimal-profiles-persistent-shell-only.zh.md)则从极简组合移除它。
+那些并非 surface 专属的行移入 [`base.cordis.yml`](../../../../packages/bundle/base/cordis.patch.yml)，另有三行加入：`tool-session-query`、`tool-str-replace-editor` 和 `repeat-tool-reminder`。Web 搜索也一并移入；其[部署决策](2026-07-31-web-default-search.zh.md)负责安全边界，共享 base 则负责与 surface 无关的挂载。两个 surface 组装同一份清单，其中 `glob` 和 `grep` 是固定成员，因为 `dsh-tool-fs-search` 直接 spawn [打包的 ripgrep 二进制](../architecture/2026-08-01-packaged-ripgrep-search.zh.md)。后续决策收窄了这份清单：[session-search 决策](2026-08-02-session-search-not-shipped-default.zh.md)让 `tool-session-query` 保持需显式启用，[单一 editor 决策](../simplification/2026-08-10-default-presets-single-editor.zh.md)从通用 preset 移除 `tool-str-replace-editor`，[仅持久 shell 决策](../simplification/2026-09-03-minimal-profiles-persistent-shell-only.zh.md)从极简组合移除它，随后[完整移除决策](../simplification/2026-09-03-remove-str-replace-editor.zh.md)删除了本记录中的包与共享 base 行。
 
 有两行仍是 surface 专属。`tmux-context` 只在 TUI，因为浏览器 surface 没有终端复用器可描述。`session-reference` 只在 TUI，因为它以 launcher 的进程本地路径驱动共享的 session-query 索引，而浏览器侧边栏会在自己的首次搜索里重建该索引。
 
-**本次工具清单决策当时只做加法。** 落地时两个 surface 均未移除任何工具行，目录对比只发现了新增，别无其他。后续的 session-search 与单一编辑器决策分别负责对应的默认清单例外。共享执行器、沙箱组合与访问默认值独立归属[workspace-write 默认值决策](2026-07-31-workspace-write-surface-default.zh.md)。
+**本次工具清单决策当时只做加法。** 落地时两个 surface 均未移除任何工具行，目录对比只发现了新增，别无其他。后续的 session-search、单一编辑器与完整移除决策分别负责当前对应的例外。共享执行器、沙箱组合与访问默认值独立归属[workspace-write 默认值决策](2026-07-31-workspace-write-surface-default.zh.md)。
 
 ### 什么保持不挂，以及为什么
 

@@ -79,7 +79,6 @@ LEGACY_CUSTOM_DISABLED_ROWS = (
     "tool-goal",
     "tool-ralph",
     "tool-skill",
-    "tool-str-replace-editor",
     "tool-subagent-control",
     "tool-subagent-list-agents",
     "tool-subagent-fork",

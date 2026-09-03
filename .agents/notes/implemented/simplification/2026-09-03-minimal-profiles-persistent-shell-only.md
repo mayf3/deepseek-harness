@@ -14,20 +14,20 @@ The next-generation model's minimal runtime requires one model-facing tool. Leav
 
 The shipped minimal compositions expose exactly one platform-selected persistent shell: `bash` on Linux and macOS, or `pwsh` on Windows. Neither composition mounts `@deepseek-ai/dsh-tool-str-replace-editor`, a filesystem tool, or the `fs-local` service that supported the editor. The fixed complete persona, absence of runtime context and compaction, shell timeout, and launch-specific host services remain unchanged.
 
-The standalone editor package and its consumers outside the two minimal compositions remain supported. A trusted user-authored preset or higher profile patch can mount it explicitly; the shipped `minimal` and `sdk-minimal` defaults never insert it.
+The later [complete-removal decision](2026-09-03-remove-str-replace-editor.md) deletes the standalone editor package and all consumers. This note continues to own the exact one-shell composition of the shipped `minimal` and `sdk-minimal` defaults.
 
-Exact composition tests assert the single tool and the absence of a preset-local filesystem service. The `sdk-minimal` bundle test and built config dump assert that its row and dependency allowlists contain neither `fs-local` nor `dsh-tool-str-replace-editor`. Web and packaged-Python model-visible snapshots pin the one-tool schema roster.
+Exact composition tests assert the single tool and the absence of a preset-local filesystem service. The `sdk-minimal` bundle test and built config dump assert that their row and dependency allowlists contain no unused filesystem provider. Web and packaged-Python model-visible snapshots pin the one-tool schema roster.
 
-This decision partially supersedes the minimal exceptions in [one editor family in general-purpose presets](2026-08-10-default-presets-single-editor.md), [the minimal preset composition](../bug-fix/2026-08-10-minimal-preset-owns-rl-composition.md), [the bare minimal runtime](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md), and [the standalone sdk-minimal profile](../architecture/2026-08-24-standalone-sdk-minimal-profile.md). Those notes retain authority for the independent editor package, prompt ownership, no-compaction behavior, profile launch, and bundle layering.
+This decision partially supersedes the minimal exceptions in [one editor family in general-purpose presets](2026-08-10-default-presets-single-editor.md), [the minimal preset composition](../bug-fix/2026-08-10-minimal-preset-owns-rl-composition.md), [the bare minimal runtime](../feature/2026-08-11-minimal-profiles-bare-two-tool-runtime.md), and [the standalone sdk-minimal profile](../architecture/2026-08-24-standalone-sdk-minimal-profile.md). Those notes retain authority for prompt ownership, no-compaction behavior, profile launch, and bundle layering; the complete-removal decision owns the package deletion.
 
 ## Alternatives considered
 
 **Keep the editor row and hide its schema.** Rejected because a presentation or restriction layer would leave the capability in the minimal composition and make its absence depend on another setting.
 
-**Remove the editor package from the distribution.** Rejected because full profiles and explicit custom compositions remain valid consumers. The requirement concerns the two shipped minimal defaults.
+**Remove the editor package from the distribution.** Rejected at the time because explicit custom compositions were treated as valid consumers. The later complete-removal decision accepts the v41 compatibility break.
 
 **Keep the editor only in `sdk-minimal`.** Rejected because the two minimal paths would present different tool contracts to the same model class, and the packaged SDK path would retain the schema cost and unused filesystem service.
 
 ## Consequences
 
-Minimal agents inspect and modify files through their persistent shell. Their model requests carry one tool schema, and their compositions own no filesystem service. Full profiles, the editor package, and explicit custom compositions keep their existing behavior.
+Minimal agents inspect and modify files through their persistent shell. Their model requests carry one tool schema, and their compositions own no filesystem service. General-purpose profiles keep the native filesystem tools; the obsolete editor package no longer ships.

@@ -202,31 +202,11 @@ describe('produced-file Turn data', () => {
         replace_all: false,
       }),
       result(5, 'edit'),
-      call(6, 'create', 'str_replace_editor', {
-        command: 'create', path: 'notes/new.md', file_path: 'wrong-create.txt', file_text: 'new',
-      }),
-      result(7, 'create'),
-      call(8, 'replace', 'str_replace_editor', {
-        command: 'str_replace', path: 'notes/existing.md', old_str: 'old', new_str: 'new',
-      }),
-      result(9, 'replace'),
-      call(10, 'delete-text', 'str_replace_editor', {
-        command: 'str_replace', path: 'notes/deleted-text.md', old_str: 'remove me',
-      }),
-      result(11, 'delete-text'),
-      call(12, 'insert', 'str_replace_editor', {
-        command: 'insert', path: 'notes/inserted.md', insert_line: 1, new_str: 'line',
-      }),
-      result(13, 'insert'),
     ])
 
     expect(producedForClosing(deliverablesOf(value))).toEqual([
       'out/index.html',
       'out/app.css',
-      'notes/new.md',
-      'notes/existing.md',
-      'notes/deleted-text.md',
-      'notes/inserted.md',
     ])
   })
 
@@ -253,42 +233,6 @@ describe('produced-file Turn data', () => {
       caseName: 'edit has a non-boolean replace_all', name: 'edit',
       args: { file_path: 'edit.txt', old_string: 'old', new_string: 'new', replace_all: 'yes' },
     },
-    {
-      caseName: 'editor create omits file_text', name: 'str_replace_editor',
-      args: { command: 'create', path: 'create.txt' },
-    },
-    {
-      caseName: 'editor create has non-string file_text', name: 'str_replace_editor',
-      args: { command: 'create', path: 'create.txt', file_text: 1 },
-    },
-    {
-      caseName: 'editor replace omits old_str', name: 'str_replace_editor',
-      args: { command: 'str_replace', path: 'replace.txt', new_str: 'new' },
-    },
-    {
-      caseName: 'editor replace has an empty old_str', name: 'str_replace_editor',
-      args: { command: 'str_replace', path: 'replace.txt', old_str: '' },
-    },
-    {
-      caseName: 'editor replace has non-string new_str', name: 'str_replace_editor',
-      args: { command: 'str_replace', path: 'replace.txt', old_str: 'old', new_str: 1 },
-    },
-    {
-      caseName: 'editor insert omits insert_line', name: 'str_replace_editor',
-      args: { command: 'insert', path: 'insert.txt', new_str: 'new' },
-    },
-    {
-      caseName: 'editor insert has a fractional insert_line', name: 'str_replace_editor',
-      args: { command: 'insert', path: 'insert.txt', insert_line: 1.5, new_str: 'new' },
-    },
-    {
-      caseName: 'editor insert has a negative insert_line', name: 'str_replace_editor',
-      args: { command: 'insert', path: 'insert.txt', insert_line: -1, new_str: 'new' },
-    },
-    {
-      caseName: 'editor insert omits new_str', name: 'str_replace_editor',
-      args: { command: 'insert', path: 'insert.txt', insert_line: 1 },
-    },
   ])('ignores a successful result when $caseName', ({ name, args }) => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
@@ -299,12 +243,9 @@ describe('produced-file Turn data', () => {
     expect(producedForClosing(deliverablesOf(value))).toEqual([])
   })
 
-  it('ignores editor views, unsupported tools, failures, interruptions, malformed calls, and orphan results', () => {
-    const replacement = result(25, 'replacement')
+  it('ignores unsupported tools, failures, interruptions, malformed calls, and orphan results', () => {
     const value = assembler([
       at(1, 'turn/start', { turn: 1 }),
-      call(2, 'view', 'str_replace_editor', { command: 'view', path: 'viewed.txt' }),
-      result(3, 'view'),
       call(4, 'read', 'read', { file_path: 'input.txt' }),
       result(5, 'read'),
       call(6, 'unknown', 'custom_edit', { file_path: 'custom.txt', path: 'custom.txt' }),
@@ -326,19 +267,7 @@ describe('produced-file Turn data', () => {
         file_path: '   ', old_string: 'old', new_string: 'new',
       }),
       result(20, 'blank-path'),
-      call(21, 'missing-editor-path', 'str_replace_editor', { command: 'create', file_text: 'x' }),
-      result(22, 'missing-editor-path'),
       result(23, 'orphan'),
-      call(24, 'replacement', 'str_replace_editor', {
-        command: 'insert', path: 'replaced.txt', insert_line: 0, new_str: 'new',
-      }),
-      {
-        ...replacement,
-        event: {
-          ...replacement.event,
-          surfaceOp: { op: 'replace', start: 1, end: 1 },
-        } as SessionEvent,
-      },
       at(26, 'turn/end', { turn: 1, reason: { kind: 'interrupted' } }),
     ])
 

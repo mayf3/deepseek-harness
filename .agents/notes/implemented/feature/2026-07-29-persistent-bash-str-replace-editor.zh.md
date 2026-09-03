@@ -14,11 +14,13 @@ Status: implemented
 
 `@deepseek-ai/dsh-tool-str-replace-editor` 独立消费 `ctx.fs`，注册包含 `view`、`create`、`str_replace` 与 `insert` 的 `str_replace_editor`。它提供带行号文本查看、过滤后的两层目录列表、唯一字面量替换、规范插入边界和有界输出。路径必须为绝对路径；文件查看会保留内容中的制表符，因此复制的文本仍可作为有效的字面量替换输入；变更会保留请求编辑范围之外的制表符；公开 schema 与错误则只使用 `old_str`。命令专属字段接受 `null` 占位参数：当前命令不使用该字段时，执行会将其视为未提供；必填检查保持不变；`view_range: null` 表示查看完整文件；`str_replace.new_str: null` 会被拒绝，只有省略该字段才表示删除。它可以与持久 Bash、一次性 Bash、沙箱 Bash 或无 shell 组合。
 
+后续的[完整移除决策](../simplification/2026-09-03-remove-str-replace-editor.zh.md)取代了前述 editor 部分并删除该包。本 note 只继续负责持久 shell 行为，以及两个能力最初分离的历史理由。
+
 `dsh-system-prompt` 接受 `includeHarnessIdentity: false`，profile 组合同时拥有该配置行与所选 shell 工具配置行。`sdk-minimal` 将该值设为 `false`，且只挂载按平台选择的持久 shell，因此部署可以拥有精确 persona，而不会重复注册提示词或工具。既有默认值不变。
 
-两个插件都进入 Python runtime 闭包。持久 Bash 的闭包还包含 PTY 服务／本地后端，以及该后端要求的沙箱服务。由于 `node-pty` 在 macOS 上会执行原生 `spawn-helper`，每个打包后的 macOS 运行时可执行文件都会携带一个 `-spawn-helper` 伴随文件；Linux 直接使用 `forkpty`。固定版本的 `node-pty` 补丁会先检查 `DSH_NODE_PTY_SPAWN_HELPER`，因此对当前提供非伴随 helper 的外部消费方而言，该变量仍是真正的覆盖项。未设置该覆盖时，补丁会在打包可执行文件的伴随文件存在时解析它，否则在普通 Node 运行中保留上游查找方式。若 helper 缺失或不可执行，macOS 构建器会在发布前失败。
+持久 shell 插件进入 Python runtime 闭包，并携带 PTY 服务／本地后端以及该后端要求的沙箱服务。由于 `node-pty` 在 macOS 上会执行原生 `spawn-helper`，每个打包后的 macOS 运行时可执行文件都会携带一个 `-spawn-helper` 伴随文件；Linux 直接使用 `forkpty`。固定版本的 `node-pty` 补丁会先检查 `DSH_NODE_PTY_SPAWN_HELPER`，因此对当前提供非伴随 helper 的外部消费方而言，该变量仍是真正的覆盖项。未设置该覆盖时，补丁会在打包可执行文件的伴随文件存在时解析它，否则在普通 Node 运行中保留上游查找方式。若 helper 缺失或不可执行，macOS 构建器会在发布前失败。
 
-随附的 [`minimal` agent preset](../../../../packages/preset/agent-presets/presets/minimal/agent.cordis.yml)只为极简模型约定组合持久 shell 插件。其 entry 本地 PTY realm 持有注册表、本地后端和持久 Bash 或 PowerShell 工具。Preset 会固定完整系统提示词、跟随部署的工具呈现模式，省略其他所有面向模型的消费方，并将浏览器、Workspace、持久化、沙箱与权限服务留在共享 Web 宿主上。本地 PTY 后端会在创建 shell 时解析会话的有效沙箱模式。只要该所有者仍有打开的 shell 或仍在进行中的 spawn，另一种权限模式就会在对应的会话事件提交前遭到拒绝。[仅持久 shell 决策](../simplification/2026-09-03-minimal-profiles-persistent-shell-only.zh.md)负责极简组合不包含 editor 的事实；其他组合仍可独立挂载 editor。
+随附的 [`minimal` agent preset](../../../../packages/preset/agent-presets/presets/minimal/agent.cordis.yml)只为极简模型约定组合持久 shell 插件。其 entry 本地 PTY realm 持有注册表、本地后端和持久 Bash 或 PowerShell 工具。Preset 会固定完整系统提示词、跟随部署的工具呈现模式，省略其他所有面向模型的消费方，并将浏览器、Workspace、持久化、沙箱与权限服务留在共享 Web 宿主上。本地 PTY 后端会在创建 shell 时解析会话的有效沙箱模式。只要该所有者仍有打开的 shell 或仍在进行中的 spawn，另一种权限模式就会在对应的会话事件提交前遭到拒绝。[仅持久 shell 决策](../simplification/2026-09-03-minimal-profiles-persistent-shell-only.zh.md)负责精确极简组合；完整移除决策负责发行物不再包含 editor 包。
 
 ## 考虑过的替代方案
 
@@ -34,4 +36,4 @@ Status: implemented
 
 ## 后果
 
-Profile 可以通过配置 persona 和描述复现外部 Agent，而底层包保持通用。持久 Bash 需要拥有它的 Agent 与真实 PTY 后端；shell 退出、超时或取消会丢失状态。编辑器把安全与变更策略委托给挂载的文件系统栈。可为 `null` 的分支增加了命令专属字段的 schema 成本，使未使用的占位参数不会迫使模型重试；执行仍明确保留当前命令的必填与删除语义。minimal Web agent 保留 Web 权限，但必须先关闭持久 shell 才能更改权限模式。运行时 wheel 包的消费方仍无需安装 Node；Linux wheel 包包含一个可执行文件，macOS wheel 包还包含其私有原生 helper。
+Profile 可以通过配置 persona 和描述复现外部 Agent，而持久 shell 包保持通用。持久 Bash 需要拥有它的 Agent 与真实 PTY 后端；shell 退出、超时或取消会丢失状态。minimal Web agent 保留 Web 权限，但必须先关闭持久 shell 才能更改权限模式。运行时 wheel 包的消费方仍无需安装 Node；Linux wheel 包包含一个可执行文件，macOS wheel 包还包含其私有原生 helper。删除 editor 包后，其专属后果不再适用。
