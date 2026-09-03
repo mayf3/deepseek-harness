@@ -55,6 +55,7 @@ The chain validates unique gap-free ordering at construction. A current artifact
 | [`src/chain.ts`](src/chain.ts) | Adjacent plan construction and current bypass |
 | [`src/catalog.ts`](src/catalog.ts) | Physical version dispatch and header classification |
 | [`src/json.ts`](src/json.ts) | Detached lossless JSON snapshots and common coordinate checks |
+| [`src/filename.ts`](src/filename.ts) | Canonical `session[.vN].jsonl` basename shared by persistence, export, and fixtures |
 
 </details>
 

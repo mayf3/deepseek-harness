@@ -32,6 +32,7 @@
     "@deepseek-ai/cordis": "workspace:^"
   },
   "dependencies": {
+    "@deepseek-ai/dsh-session-format": "workspace:^",
     "@deepseek-ai/dsh-session-format-catalog": "workspace:^",
     "koffi": "^3.1.0",
     "@deepseek-ai/schemastery": "workspace:^"

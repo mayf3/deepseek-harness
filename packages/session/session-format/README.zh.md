@@ -55,6 +55,7 @@ const descriptor = catalog.readHeader(physicalHeader)
 | [`src/chain.ts`](src/chain.ts) | 相邻计划构造与当前格式绕过 |
 | [`src/catalog.ts`](src/catalog.ts) | 物理版本分派与标头分类 |
 | [`src/json.ts`](src/json.ts) | 分离的无损 JSON 快照与通用坐标校验 |
+| [`src/filename.ts`](src/filename.ts) | 持久化、导出与 fixture 共用的规范 `session[.vN].jsonl` 文件名 |
 
 </details>
 

@@ -1,3 +1,4 @@
+import { deepFreeze, snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
 import { SessionFormatError } from './error.ts'
 import type {
   SessionFormatArtifact,
@@ -70,63 +71,11 @@ export function inspectSessionFormatVersion(headerValue: unknown): number {
  * @returns an immutable detached JSON snapshot.
  */
 export function snapshotSessionFormatJson(value: unknown, label = 'Session value'): SessionFormatJsonValue {
-  return snapshotValue(value, label, new Set<object>())
-}
-
-function snapshotValue(value: unknown, label: string, ancestors: Set<object>): SessionFormatJsonValue {
-  if (value === null || typeof value === 'string' || typeof value === 'boolean') return value
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value) || Object.is(value, -0)) {
-      throw new SessionFormatError(`${label} contains a number that JSON cannot preserve`)
-    }
-    return value
+  const snapshot = snapshotJsonValue(value)
+  if (snapshot === undefined) {
+    throw new SessionFormatError(`${label} is not lossless JSON`)
   }
-  if (typeof value !== 'object') throw new SessionFormatError(`${label} contains a non-JSON value`)
-  if (ancestors.has(value)) throw new SessionFormatError(`${label} contains a cycle`)
-  ancestors.add(value)
-  try {
-    if (Array.isArray(value)) {
-      if (Reflect.getPrototypeOf(value) !== Array.prototype) {
-        throw new SessionFormatError(`${label} contains a non-intrinsic JSON array`)
-      }
-      const ownKeys = Reflect.ownKeys(value)
-      const expectedKeys = new Set(['length', ...Array.from({ length: value.length }, (_, index) => String(index))])
-      if (ownKeys.some(key => typeof key !== 'string' || !expectedKeys.has(key))) {
-        throw new SessionFormatError(`${label} contains an array property that JSON cannot preserve`)
-      }
-      for (let index = 0; index < value.length; index += 1) {
-        if (!Object.hasOwn(value, index)) throw new SessionFormatError(`${label} contains a sparse array`)
-        const descriptor = Reflect.getOwnPropertyDescriptor(value, String(index)) as PropertyDescriptor
-        if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
-          throw new SessionFormatError(`${label} contains an array member that JSON cannot preserve`)
-        }
-      }
-      return Object.freeze(value.map(member => snapshotValue(member, label, ancestors)))
-    }
-    const prototype = Reflect.getPrototypeOf(value)
-    if (prototype !== Object.prototype && prototype !== null) {
-      throw new SessionFormatError(`${label} contains a non-plain object`)
-    }
-    const output: Record<string, SessionFormatJsonValue> = {}
-    for (const key of Reflect.ownKeys(value)) {
-      if (typeof key !== 'string') {
-        throw new SessionFormatError(`${label} contains a symbol property that JSON cannot preserve`)
-      }
-      const descriptor = Reflect.getOwnPropertyDescriptor(value, key) as PropertyDescriptor
-      if (!descriptor.enumerable || !Object.hasOwn(descriptor, 'value')) {
-        throw new SessionFormatError(`${label} contains a property that JSON cannot preserve`)
-      }
-      Object.defineProperty(output, key, {
-        configurable: true,
-        enumerable: true,
-        value: snapshotValue(descriptor.value, label, ancestors),
-        writable: true,
-      })
-    }
-    return Object.freeze(output)
-  } finally {
-    ancestors.delete(value)
-  }
+  return deepFreeze(snapshot) as SessionFormatJsonValue
 }
 
 /**

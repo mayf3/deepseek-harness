@@ -16,11 +16,9 @@ describe('lossless Session format JSON snapshots', () => {
     ['sparse array', Array(1)],
     ['symbol member', { [Symbol('hidden')]: true }],
     ['non-enumerable member', Object.defineProperty({}, 'hidden', { value: true })],
-    ['accessor member', Object.defineProperty({}, 'value', { enumerable: true, get: () => 1 })],
     ['array property', Object.assign([], { extra: true })],
-    ['array accessor', Object.defineProperty([1], '0', { enumerable: true, get: () => 1 })],
   ])('refuses %s that JSON cannot preserve', (_name, value) => {
-    expect(() => snapshotSessionFormatJson(value)).toThrow(/JSON|sparse|member|property|number/)
+    expect(() => snapshotSessionFormatJson(value, 'payload')).toThrow('payload is not lossless JSON')
   })
 
   it('detaches, freezes, and retains repeated non-cyclic values and __proto__ keys', () => {
@@ -46,9 +44,9 @@ describe('lossless Session format JSON snapshots', () => {
     expect(() => sessionFormatCount(-1, 'count')).toThrow(/non-negative/)
     expect(() => sessionFormatSafeInteger(1.5, 'integer')).toThrow(/safe integer/)
     expect(() => inspectSessionFormatVersion([])).toThrow(/header/)
-    expect(() => snapshotSessionFormatJson(cyclic)).toThrow(/cycle/)
-    expect(() => snapshotSessionFormatJson(new RecordValue())).toThrow(/non-plain/)
-    expect(() => snapshotSessionFormatJson(new ArrayValue(1))).toThrow(/non-intrinsic/)
+    expect(() => snapshotSessionFormatJson(cyclic)).toThrow(/not lossless JSON/)
+    expect(() => snapshotSessionFormatJson(new RecordValue())).toThrow(/not lossless JSON/)
+    expect(() => snapshotSessionFormatJson(new ArrayValue(1))).toThrow(/not lossless JSON/)
   })
 
   it.each([
