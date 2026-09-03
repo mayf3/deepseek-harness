@@ -527,7 +527,7 @@ describe('released event and payload inventory', () => {
       { sourceEventSeqs: [], surfaceOp: 'append' },
       { surfaceOp: null },
       { surfaceOp: { op: 'append', start: 0, end: 1 } },
-      { surfaceOp: { op: 'replace', start: 2, end: 1 } },
+      { surfaceOp: { op: 'replace', start: 3, end: 1 } },
       { surfaceOp: { op: 'replace', start: 1, end: 3 } },
     ]
     for (const metadata of surfaceVariants) {
