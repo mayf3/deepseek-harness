@@ -71,6 +71,22 @@ describe('Session control queue projection', () => {
     await iterator.next()
   })
 
+  it('projects an empty queue for a session without a live agent', async () => {
+    const { ctx, control, inbox } = await harness()
+    inbox.append('next-turn', message('queued'))
+    const cold = ctx.sessions.create(SessionId('cold-session'))
+
+    const abort = new AbortController()
+    const iterator = control.control(abort.signal)[Symbol.asyncIterator]()
+    const opened = await iterator.next()
+    if (opened.done || opened.value.type !== 'baseline') throw new Error('missing baseline')
+    // A cold session has no inbox to project; the live one still does.
+    expect(opened.value.value.queues[cold.id]).toEqual([])
+    expect(opened.value.value.queues['queue-session' as SessionId]).toHaveLength(1)
+    abort.abort()
+    await iterator.next()
+  })
+
   it('projects the prompt rpcId from a user-rpc source and omits it elsewhere', async () => {
     const { control, inbox } = await harness()
     const identified = createUserMessage({
