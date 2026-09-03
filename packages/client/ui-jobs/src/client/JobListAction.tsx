@@ -46,7 +46,7 @@ function isLive(job: SessionJob): boolean {
 
 /** True exactly when the job declared an observation record. */
 function isObservable(job: SessionJob): boolean {
-  return job.outputTotal !== undefined
+  return job.record === true
 }
 
 /** Closed-union exhaustiveness fence for the wire status set. */

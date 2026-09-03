@@ -162,7 +162,7 @@ describe('Session control jobs updates', () => {
     ])
   })
 
-  it('carries outputTotal exactly for record-declaring jobs', async () => {
+  it('flags record-declaring jobs instead of mirroring a byte count the roster never refreshes', async () => {
     const { ctx, agent, control } = await harness(true)
     const abort = new AbortController()
     const collected = collectJobs(control.control(abort.signal), 1, abort)
@@ -178,7 +178,8 @@ describe('Session control jobs updates', () => {
     })
 
     const [frame] = await collected
-    expect(frame?.jobs[0]?.outputTotal).toBe(2)
+    expect(frame?.jobs[0]).toMatchObject({ record: true })
+    expect(frame?.jobs[0]).not.toHaveProperty('outputTotal')
   })
 
   it('fans an unowned change out to every attached session', async () => {

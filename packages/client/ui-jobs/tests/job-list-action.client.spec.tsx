@@ -30,7 +30,7 @@ function job(over: Partial<SessionJob> = {}): SessionJob {
 
 /** A job that declared an observation record, so its row offers a panel. */
 function recordJob(over: Partial<SessionJob> = {}): SessionJob {
-  return job({ outputTotal: 0, ...over })
+  return job({ record: true, ...over })
 }
 
 function props(
@@ -180,7 +180,7 @@ describe('JobListAction observation', () => {
       streaming: false,
     }
     render(<JobListAction {...props(
-      [recordJob({ status: 'killed', finishedAt: 1_700_000_001_000, outputTotal: 240 })],
+      [recordJob({ status: 'killed', finishedAt: 1_700_000_001_000 })],
       undefined,
       { 'bash-1': view },
     )} />)

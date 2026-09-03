@@ -212,6 +212,6 @@ function jobView(job: JobSnapshot): SessionJob {
     ...(job.detail === undefined ? {} : { detail: job.detail }),
     startedAt: job.startedAt,
     ...(job.finishedAt === undefined ? {} : { finishedAt: job.finishedAt }),
-    ...(job.outputTotal === undefined ? {} : { outputTotal: job.outputTotal }),
+    ...(job.outputTotal === undefined ? {} : { record: true as const }),
   }
 }

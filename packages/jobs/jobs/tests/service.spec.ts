@@ -173,6 +173,42 @@ describe('pumpJobOutput', () => {
     }
   })
 
+  it('subscribes to done once and holds one poll timer however long the job runs', async () => {
+    vi.useFakeTimers()
+    try {
+      const { job } = recordingJob()
+      // A thenable stands in for the producer's done promise, and whatever the
+      // pump derives from it counts its own reactions too: a pending promise
+      // retains every reaction until it settles, so a day-long job must not
+      // gain one per poll round.
+      let subscriptions = 0
+      let settle!: () => void
+      const settled = new Promise<void>((resolve) => { settle = resolve })
+      const counting = (promise: Promise<unknown>): Promise<unknown> => ({
+        then(onFulfilled?: (value: unknown) => unknown, onRejected?: (reason: unknown) => unknown) {
+          subscriptions += 1
+          return counting(promise.then(onFulfilled, onRejected))
+        },
+      }) as unknown as Promise<unknown>
+      const done = counting(settled)
+      const { source, offsets } = scriptedSource([])
+      const pump = pumpJobOutput(job, [source], { pollMs: 50, done })
+
+      const rounds = 10_000
+      await vi.advanceTimersByTimeAsync(50 * rounds)
+      expect(offsets).toHaveLength(rounds + 1)
+      expect(subscriptions).toBeLessThanOrEqual(2)
+      expect(vi.getTimerCount()).toBe(1)
+
+      settle()
+      await pump
+      expect(offsets).toHaveLength(rounds + 2)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('marks a lossy source read as a gap so observers see the discontinuity', async () => {
     const { job, appends } = recordingJob()
     const { source } = scriptedSource([{ text: 'tail', lossy: true }])

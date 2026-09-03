@@ -1,5 +1,5 @@
 - list "Background jobs":
   - listitem:
-    - button "Show live output of sleep 45":
-      - text: "bash sleep 45 signal: SIGTERM {{duration}}"
+    - button "Show live output of for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done":
+      - text: "bash for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done signal: SIGTERM {{duration}}"
       - img

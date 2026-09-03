@@ -5,6 +5,9 @@
  * `readOutput` cursor. Observation is strictly best-effort: absent backend
  * offset readers degrade to no observation, and a pump failure is logged and
  * swallowed — the job path is unaffected either way.
+ * The record interleaves stdout and stderr per poll round, not per write:
+ * output the two streams produced inside one `pollMs` window lands stdout
+ * first, so the panel is a live preview, not a terminal-exact transcript.
  *
  * @module @deepseek-ai/dsh-tool-bash/observe
  */

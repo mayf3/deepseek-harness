@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 一 job 一行
 
-session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJob` 行携带生命周期、时长与模型可见的 `detail`，其 `outputTotal` 字段恰在 job 声明了 record 时存在——这个存在性就是行可展开的依据。不存在需要 join 的第二份名册。
+session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJob` 行携带生命周期、时长与模型可见的 `detail`，其 `record` 标志恰在 job 声明了 record 时存在——这个标志就是行可展开的依据。不存在需要 join 的第二份名册。
 
 ### 展开的面板
 

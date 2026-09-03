@@ -18,8 +18,8 @@ The one activity without a job was the foreground workflow mirror. Everything el
 - **There is no `end`.** Job settlement — the producer outcome, a kill, or teardown — is the record's only close: it trims retention to the settled cap and fires the final `onOutput` signal. The dual-settlement pairing (`ActivityHandle.end` first-wins against teardown force-ends) is deleted, not reimplemented.
 - **`readRecord(id, from, caller)`** is the non-consuming multi-reader view (absolute UTF-8 offsets, `lossy` below the retained window), fenced like every other job read; it never marks the job `reported`. The model-facing `readOutput` cursor is untouched — the two projections serve different readers and stay separate by design.
 - **`jobs-local`** absorbs the chunk ring (`retainBytes` 256 KiB live, `settledRetainBytes` 16 KiB settled), and `pumpJobOutput` replaces `pumpActivityOutput` beside the seam. Producers fold the pump's final drain into `hooks.done` so the record holds its last bytes before settlement closes it.
-- **The wire splits by role.** `SessionJob.outputTotal` (present exactly for record jobs) marks a row observable on the session control stream; `job.observe({sessionId?, jobId, from?})` on the `job` namespace of `api-job-controller` streams anchor/output/status frames with the fenced read resolved from the request's session. `api-activity-controller` is deleted; its roster stream is redundant (the jobs frames are the roster) and its observe machinery lives in `api-job-controller` (`observe.ts`, client `ctx.jobOutput`), which resolves its Remote faces in its own apply.
-- **`ui-activity` returns to its upstream name `ui-jobs`** and renders one roster: `jobsBySession` rows, expandable exactly when `outputTotal` is present. The two-roster join is deleted.
+- **The wire splits by role.** `SessionJob.record` (present exactly for record jobs) marks a row observable on the session control stream; `job.observe({sessionId?, jobId, from?})` on the `job` namespace of `api-job-controller` streams anchor/output/status frames with the fenced read resolved from the request's session. `api-activity-controller` is deleted; its roster stream is redundant (the jobs frames are the roster) and its observe machinery lives in `api-job-controller` (`observe.ts`, client `ctx.jobOutput`), which resolves its Remote faces in its own apply.
+- **`ui-activity` returns to its upstream name `ui-jobs`** and renders one roster: `jobsBySession` rows, expandable exactly when `record` is present. The two-roster join is deleted.
 - **Foreground workflow loses its live panel deliberately.** `tool-workflow`'s activity mirror is removed; a foreground run surfaces through its recorded run/member lifecycle events only, and the per-line `workflow/phase` / `workflow/log` narration has no observer until workflow gains `run_in_background` and registers a record job. Jobs stay a pure background registry — no `foreground` mode bit, no model-invisible rows, no run-less rows.
 
 ## Alternatives considered
@@ -29,6 +29,16 @@ The one activity without a job was the foreground workflow mirror. Everything el
 - **Keeping the split with shared implementation** (a common registry library): it removes the duplicated skeleton but keeps the real costs — double registration, terminal-state pairing, correlation, a second wire roster, and a second package family.
 
 The [prior seam note](../feature/2026-08-24-activity-observation-seam.md)'s argument against durable session events and control-stream framing for live output still holds and carries over unchanged: the record is process-local observation state, never a session event, so "model-visible ⟺ logged" is untouched.
+
+## Review corrections
+
+Review of the merged design settled five points that the sections above leave implicit:
+
+- **The pump's wait holds constant resources.** `pumpJobOutput` subscribes to the producer's `done` once and keeps one pending timer; settlement clears the timer and wakes the current wait. Racing the same pending promise every poll round retained a reaction per round until the job ended — a day-long job at the default cadence accumulated over a million closures.
+- **Client disposal waits for carrier quiescence.** The `ctx.jobOutput` effect disposer is async and awaits every open `RemoteStream.dispose()`, because Cordis awaits async disposers and a fiber that reported unloaded while an old iterator was still closing could overlap the next plugin instance under HMR.
+- **The roster flags a record, it does not count bytes.** `SessionJob.record: true` replaced `outputTotal`: `append` commits no roster change (only lifecycle commits fire `onJobsChanged`), so a mirrored count went stale the moment output arrived, and broadcasting the roster per append was rejected as traffic for a number no row needed. The live offsets ride the observation stream's `opened` anchor.
+- **The record is a best-effort live preview.** Producers copy stdout and stderr per poll round, so writes inside one window land stdout first; pipe capture cannot recover the true interleaving (only a PTY or `2>&1` can), and the client concatenates chunks regardless of `channel`. `channel` stays on the wire because it is what makes that limit visible and what a distinct stderr rendering would need.
+- **Web e2e keep-alive is a barrier, not a clock.** The background command holds on a file the test owns in the job's cwd and the scenario kills it explicitly, so no CI stall can settle the job first; each scenario is one test, never a chain of tests sharing a job id.
 
 ## Consequences
 

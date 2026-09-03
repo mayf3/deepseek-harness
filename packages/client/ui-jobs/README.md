@@ -29,7 +29,7 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 ### One row per job
 
-The session control stream's `jobsBySession` mirror is the single roster: each `SessionJob` row carries lifecycle, duration, and the model-visible `detail`, and its `outputTotal` field is present exactly when the job declared a record — that presence is what makes a row expandable. There is no second roster to join.
+The session control stream's `jobsBySession` mirror is the single roster: each `SessionJob` row carries lifecycle, duration, and the model-visible `detail`, and its `record` flag is present exactly when the job declared a record — that flag is what makes a row expandable. There is no second roster to join.
 
 ### The expanded panel
 

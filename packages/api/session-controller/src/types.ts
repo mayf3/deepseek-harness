@@ -489,11 +489,12 @@ export interface SessionJob {
   readonly startedAt: number
   readonly finishedAt?: number
   /**
-   * Total UTF-8 bytes the job's observation record holds so far. Present
-   * exactly when the job declared a record — the row is observable through
-   * the job controller's `job.observe` stream.
+   * Present exactly when the job declared an observation record: the row is
+   * observable through the job controller's `job.observe` stream, whose
+   * `opened` anchor carries the live byte offsets. The roster refreshes on
+   * lifecycle commits only, so it mirrors no byte count.
    */
-  readonly outputTotal?: number
+  readonly record?: true
 }
 
 /** Complete live control baseline emitted once per control stream generation. */

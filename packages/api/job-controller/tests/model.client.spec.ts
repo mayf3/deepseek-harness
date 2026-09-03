@@ -391,6 +391,30 @@ describe('ClientJobOutput observation streams', () => {
     expect(model.getSnapshot().observed[String(ID)]?.error).toBeUndefined()
   })
 
+  it('holds service disposal until every open stream reports quiescence', async () => {
+    const { ctx, output, streams } = bench()
+    output.observe(undefined, ID)
+    output.observe(undefined, 'bash-2' as JobId)
+    for (const { stream } of streams) stream.deferDispose = true
+    await tick()
+
+    let settled = false
+    const disposal = ctx.fiber.dispose().then(() => { settled = true })
+    await tick()
+    // Both carriers were told to stop, but neither iterator has closed yet:
+    // the fiber must still be unloading, or a successor plugin instance could
+    // overlap the old generation's iterator.
+    expect(streams.every(entry => entry.stream.disposed)).toBe(true)
+    expect(settled).toBe(false)
+
+    streams[0]!.stream.releaseDispose()
+    await tick()
+    expect(settled).toBe(false)
+    streams[1]!.stream.releaseDispose()
+    await disposal
+    expect(settled).toBe(true)
+  })
+
   it('records a terminal stream failure and service disposal closes live streams', async () => {
     const { ctx, model, output, streams } = bench()
     output.observe(undefined, ID)
