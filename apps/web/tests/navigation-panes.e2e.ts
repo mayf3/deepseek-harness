@@ -28,7 +28,7 @@ const SEARCH_EXPECTED = join(SNAPSHOT_DIR, 'search-results.expected.md')
 const TERMINAL_EXPECTED = join(SNAPSHOT_DIR, 'terminal-card.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'navigation-panes-web-e2e'
-const EXPORTED_LOG_FILE = 'session.jsonl'
+const EXPORTED_LOG_FILE = `session.v${SESSION_FORMAT_VERSION}.jsonl`
 
 // Turn 1 leads with a distinctive word: the session-title fallback takes the
 // first words of the first message, so the sidebar-search scenario has a
