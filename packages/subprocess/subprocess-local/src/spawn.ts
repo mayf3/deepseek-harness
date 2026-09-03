@@ -52,9 +52,9 @@ export function childEnv(extra?: Readonly<NodeJS.ProcessEnv>): NodeJS.ProcessEnv
   return Object.fromEntries(entries)
 }
 
-/** Injectable knobs so tests can exercise spill and platform behavior deterministically. */
+/** Injectable process, spill, and platform operations. */
 export interface SpawnInternals {
-  /** Node process spawner used by focused option tests. */
+  /** Process spawner (defaults to `node:child_process` `spawn`). */
   spawn?: SpawnProcess
   /** Directory for spill files (defaults to the OS temp dir). */
   spillDir?: string
@@ -286,7 +286,10 @@ export function taskkillProcessTree(pid: number): void {
   // Outcome deliberately unchecked: an already-absent tree (status 128), exit
   // races, and a missing taskkill binary (spawnSync reports, never throws) are
   // as tolerable here as ESRCH is for a POSIX group signal.
-  spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore' })
+  spawnSync('taskkill', ['/PID', String(pid), '/T', '/F'], {
+    stdio: 'ignore',
+    windowsHide: true,
+  })
 }
 
 /**
