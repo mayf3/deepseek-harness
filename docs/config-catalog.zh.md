@@ -2755,7 +2755,7 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-tool-jobs`
 
-需要：`tools` · `jobs` · `agents` · `systemPrompt`
+需要：`tools` · `jobs` · `systemPrompt`
 
 ```ts config-catalog
 /** Configures bounded `job_output` waits and completion-notice delivery. */

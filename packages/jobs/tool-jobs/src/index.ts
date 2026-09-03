@@ -17,6 +17,7 @@ import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-a
 import { JobId } from '@deepseek-ai/dsh-jobs'
 import type { JobView, VisibleJobs } from '@deepseek-ai/dsh-jobs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-agent'
 import { publicJob, renderModelDelta, statusLine } from './render.ts'
 import type { PublicJobSnapshot } from './render.ts'
 
@@ -24,7 +25,7 @@ export { publicJob, renderModelDelta, statusLine } from './render.ts'
 export type { PublicJobSnapshot } from './render.ts'
 
 export const name = 'tool-jobs'
-export const inject = ['tools', 'jobs', 'agents', 'systemPrompt']
+export const inject = ['tools', 'jobs', 'systemPrompt']
 
 /**
  * How an uncollected completion reaches an owner that is already idle: `wakeup`
@@ -282,8 +283,10 @@ export function apply(ctx: Context, config: Config): void {
     if (event.type !== 'settled') return
     const claimed = delivered.delete(event.job.id)
     if (claimed || event.cause === 'teardown' || event.job.owner === undefined) return
-    // Use the exact lifecycle owner; a session whose agent left has no inbox.
-    const owner = ctx.agents.get(event.job.owner)
+    // The destination is the agent registered for the owner session now. An
+    // owned job needed the agent registry to start, so the registry is only
+    // absent here when it left before settlement — and then no inbox is left.
+    const owner = ctx.get('agents')?.get(event.job.owner)
     if (owner === undefined) return
     const message = createUserMessage({
       content: [{

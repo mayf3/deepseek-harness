@@ -498,10 +498,9 @@ const TOOL_PACKAGES: ToolPackage[] = [
     pkg: '@deepseek-ai/dsh-tool-jobs',
     dir: 'tool-jobs',
     source: 'packages/jobs/tool-jobs/src/index.ts',
-    requires: ['ctx.tools', 'ctx.jobs', 'ctx.agents', 'ctx.systemPrompt'],
+    requires: ['ctx.tools', 'ctx.jobs', 'ctx.systemPrompt'],
     writes: ['tool/call', 'tool/result', 'user/message via agent.inject() for background completion notices'],
     async mount(ctx) {
-      await ctx.plugin(AgentRegistry)
       await ctx.plugin(LocalJobRegistry)
       await ctx.plugin(ToolTasks)
     },

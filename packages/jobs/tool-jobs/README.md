@@ -25,7 +25,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Load this plugin in any composition where the agent should start, observe, and stop background jobs: it registers the three tools, attaches the controller producers need, and delivers completion notices. It requires the `ctx.tools`, `ctx.jobs`, `ctx.agents`, and `ctx.systemPrompt` services from the composed harness.
+Load this plugin in any composition where the agent should start, observe, and stop background jobs: it registers the three tools, attaches the controller producers need, and delivers completion notices. It requires the `ctx.tools`, `ctx.jobs`, and `ctx.systemPrompt` services from the composed harness; completion notices resolve their destination through `ctx.agents`, which every composition with owned jobs already provides.
 
 ### The three tools
 

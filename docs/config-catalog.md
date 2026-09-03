@@ -2751,7 +2751,7 @@ Source: [`packages/goal/tool-goal/src/index.ts:25`](../packages/goal/tool-goal/s
 
 ## `@deepseek-ai/dsh-tool-jobs`
 
-Requires: `tools` · `jobs` · `agents` · `systemPrompt`
+Requires: `tools` · `jobs` · `systemPrompt`
 
 ```ts config-catalog
 /** Configures bounded `job_output` waits and completion-notice delivery. */
@@ -2779,7 +2779,7 @@ export interface Config {
 export type CompletionDelivery = 'quiet' | 'wakeup'
 ```
 
-Source: [`packages/jobs/tool-jobs/src/index.ts:37`](../packages/jobs/tool-jobs/src/index.ts)
+Source: [`packages/jobs/tool-jobs/src/index.ts:38`](../packages/jobs/tool-jobs/src/index.ts)
 
 <a id="deepseek-aidsh-tool-lsp"></a>
 
