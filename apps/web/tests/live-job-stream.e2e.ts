@@ -120,7 +120,7 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
 
     // Settlement arrives on the observation stream itself, so the open panel
     // flips without any further interaction; the roster trigger follows.
-    const idle = page.getByRole('button', { name: '1 background job' })
+    const idle = page.getByRole('button', { name: '1 background job', exact: true })
     await idle.waitFor({ timeout: 20_000 })
     await page.getByText('streamed-marker-line').waitFor({ timeout: 10_000 })
 
