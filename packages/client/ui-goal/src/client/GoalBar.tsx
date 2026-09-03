@@ -133,6 +133,8 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
 
   const title = goal.phase === 'blocked' ? goal.blockedReason?.message : undefined
   const label = goal.phase === 'active' ? activeLabel(activation, t) : t(PHASE_LABELS[goal.phase])
+  const showResume = goal.phase === 'paused'
+    || (goal.phase === 'active' && activation === 'disarmed')
   return (
     <div className={css.dock} data-goal-bar>
       <div className={css.bar} title={title}>
@@ -148,14 +150,7 @@ export function GoalBar({ goal, activation, onEdit, onPause, onResume, onClear, 
               </button>
             </Tooltip>
           )}
-          {goal.phase === 'active' && activation === 'disarmed' && (
-            <Tooltip label={t('action.resume')} side="bottom" delayMs={500}>
-              <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onResume) }} aria-label={t('action.resume')}>
-                <IconPlayOutline16 size={14} />
-              </button>
-            </Tooltip>
-          )}
-          {goal.phase === 'paused' && (
+          {showResume && (
             <Tooltip label={t('action.resume')} side="bottom" delayMs={500}>
               <button type="button" className={css.iconBtn} disabled={pending} onClick={() => { void runAction(onResume) }} aria-label={t('action.resume')}>
                 <IconPlayOutline16 size={14} />
