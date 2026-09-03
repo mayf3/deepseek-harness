@@ -450,6 +450,7 @@ describe('normalizeSessionLog', () => {
           null,
           'opaque',
           { type: 'usage', time: 7, time0: 6, dt: [5, 4], usage: { inputTokens: 1, outputTokens: 2 } },
+          { type: 'chunk', time: 8, chunk: { type: 'finish', reason: { kind: 'stop' } } },
         ],
       },
     })
@@ -466,6 +467,7 @@ describe('normalizeSessionLog', () => {
           null,
           'opaque',
           { time: 0, time0: 0, dt: [0, 0] },
+          { type: 'chunk', time: 0, chunk: { type: 'finish', reason: { kind: 'stop' } } },
         ],
       },
     })

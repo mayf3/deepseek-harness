@@ -161,6 +161,16 @@ describe('AssistantStreamAccumulator', () => {
     }).chunk).toMatchObject({ name: '' })
     expect(() => accumulator.push({
       time: 1,
+      chunk: { type: 'tool-call-delta', index: 0, id: 1, argumentsDelta: '{}' } as never,
+    })).toThrow(/id must be a string/)
+    expect(() => accumulator.push({
+      time: 1,
+      chunk: {
+        type: 'tool-call-delta', index: 0, id: ToolCallId('call'), name: 1, argumentsDelta: '{}',
+      } as never,
+    })).toThrow(/name must be a string/)
+    expect(() => accumulator.push({
+      time: 1,
       chunk: {
         type: 'tool-call-delta', index: 0, id: ToolCallId('call'), argumentsDelta: 1,
       } as never,

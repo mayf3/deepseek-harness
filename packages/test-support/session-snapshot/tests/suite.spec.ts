@@ -532,6 +532,8 @@ describe('Session generation filename helpers', () => {
     expect(assertPersistedSessionVersion('session.v1.jsonl', v1)).toBe(1)
     expect(() => assertSessionFixtureVersion('notes.jsonl', v0)).toThrow('not a session fixture name')
     expect(assertSessionFixtureVersion('session.jsonl', '{"type":"session"}\n')).toBe(0)
+    expect(() => assertSessionFixtureVersion('session.v1.jsonl', '{"type":"session"}\n'))
+      .toThrow('a versionless projected Session header is format v0')
     expect(() => assertSessionFixtureVersion('session.jsonl', '')).toThrow('session fixture is empty')
     expect(() => assertSessionFixtureVersion('session.jsonl', '{')).toThrow('session header contains invalid JSON')
     expect(() => assertPersistedSessionVersion('session.1.jsonl', v0)).toThrow('not a canonical Session persistence filename')
