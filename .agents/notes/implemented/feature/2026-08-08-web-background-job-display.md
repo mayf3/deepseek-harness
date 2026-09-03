@@ -66,7 +66,7 @@ The listener is owner-granular rather than task-granular. The only consumer push
 
 `onJobDone` is not a subset of this. It delivers the terminal record with the exact owner `Agent` under first-wins semantics that `dsh-tool-jobs` couples to `reported`; `onJobsChanged` is pure observation with no delivery meaning and marks nothing reported. Listener throws are contained and never awaited, matching `onJobDone`, and each registration is an effect on the calling fiber.
 
-Service disposal deliberately announces nothing. Every `onJobsChanged` registration is an effect on the registry's own fiber, so the listeners are already gone by the time teardown clears the store; an observer learns the registry left through its own disposal, not through a final empty set.
+Service disposal commits one final emptying and announces it: after the registry has cancelled and awaited its jobs, `onJobsChanged` fires once per owner whose visible set the teardown emptied, so a listener registered on a longer-lived fiber sees the final empty set instead of a stale roster (a listener registered on the registry's own fiber is already gone by then).
 
 ### The Session Controller carrier
 
@@ -89,7 +89,7 @@ Two replacement points keep it honest. Each control-stream generation clears the
 
 ### The header action
 
-`@deepseek-ai/dsh-client-ui-jobs` (since merged into `dsh-client-ui-activity`) registers one entry in `conversation.session.header.actions`, ordered after the subagent catalog. Its own README owns the presentation contract; the decisions worth recording here are that the control does not render at all until the session has a task, that the live badge is omitted at zero so a history-only session keeps a quiet entry point, and that settled rows stay visible because a failed task's `detail` is the only place its failure is legible.
+`@deepseek-ai/dsh-client-ui-jobs` registers one entry in `conversation.session.header.actions`, ordered between the preset label and the subagent catalog (`order: 20` against the catalog's 30). Its own README owns the presentation contract; the decisions worth recording here are that the control does not render at all until the session has a task, that the live badge is omitted at zero so a history-only session keeps a quiet entry point, and that settled rows stay visible because a failed task's `detail` is the only place its failure is legible.
 
 A running one-shot background subagent therefore appears both there and in the subagent catalog. The two answer different questions — the catalog navigates into the child's transcript, this list is the only handle a cancellation can ever attach to — and suppressing `kind: 'subagent'` here would leave the cancellation phase with no entry point for exactly those tasks.
 

@@ -3,8 +3,8 @@ import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { JobId, JobRegistry, pumpJobOutput } from '@deepseek-ai/dsh-jobs'
 import type {
-  JobAppendOptions, JobDoneListener, JobOutputListener, JobPumpSource, JobRead, JobRecordRead,
-  JobSnapshot, JobStart, JobsChangedListener, RunningJob,
+  JobAppendOptions, JobDoneListener, JobHooks, JobOutputListener, JobPumpSource, JobRead, JobRecordRead,
+  JobSnapshot, JobStart, JobsChangedListener, PlainJobStart, RecordingJob, RecordingJobStart,
 } from '@deepseek-ai/dsh-jobs'
 
 /**
@@ -71,6 +71,40 @@ class StubJobRegistry extends JobRegistry {
   }
 }
 
+/** Compile-time probe: does the producer face `Face` carry `append`? */
+type HasAppend<Face> = 'append' extends keyof Face ? true : false
+
+describe('JobStart producer faces', () => {
+  it('hands append only to a start that declares a record', () => {
+    const hooks: JobHooks = { cancel() {}, done: new Promise(() => {}) }
+    // The literal's `record` discriminant selects the face `run` receives.
+    const plain: JobStart = {
+      kind: 'bash',
+      label: 'no record',
+      run: (job) => {
+        job.updateDetail('works for every job')
+        return hooks
+      },
+    }
+    const recording: JobStart = {
+      kind: 'bash',
+      label: 'record',
+      record: true,
+      run: (job) => {
+        job.append('lands in the record')
+        return hooks
+      },
+    }
+    // Negative proof: a plain start's face has no `append` at the type level.
+    const plainFace: HasAppend<Parameters<PlainJobStart['run']>[0]> = false
+    const recordingFace: HasAppend<Parameters<RecordingJobStart['run']>[0]> = true
+    expect(plainFace).toBe(false)
+    expect(recordingFace).toBe(true)
+    expect(plain.record).toBeUndefined()
+    expect(recording.record).toBe(true)
+  })
+})
+
 describe('JobRegistry seam', () => {
   it('a concrete subclass registers as ctx.jobs and serves the abstract API', async () => {
     const ctx = new Context()
@@ -109,9 +143,9 @@ describe('JobRegistry seam', () => {
 })
 
 /** Record every append so pump behavior is observable without a registry. */
-function recordingJob(): { job: RunningJob; appends: { text: string; options?: JobAppendOptions }[] } {
+function recordingJob(): { job: RecordingJob; appends: { text: string; options?: JobAppendOptions }[] } {
   const appends: { text: string; options?: JobAppendOptions }[] = []
-  const job: RunningJob = {
+  const job: RecordingJob = {
     id: JobId('bash-1'),
     append(text, options) { appends.push({ text, ...options !== undefined ? { options } : {} }) },
     updateDetail() {},

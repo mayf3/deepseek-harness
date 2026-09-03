@@ -1,10 +1,11 @@
-# Agent Note：会话头部单一任务列表——jobs 与 activity 只在 UI 投影层合并
+# Agent Note: 会话头部单一任务列表——jobs 与 activity 只在 UI 投影层合并
 
-状态：implemented
-
-Superseded：本文描述的双名册 join 已随 activity seam 一并移除——job 行现在就是完整名册；见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
+Status: implemented
+Archived: 2026-09-03
 
 [English](2026-08-25-unified-task-list.md) | 中文
+
+Superseded: 本文描述的双名册 join 已随 activity seam 一并移除——job 行现在就是完整名册；见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
 
 ## 问题
 

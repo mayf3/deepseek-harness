@@ -56,12 +56,8 @@ export interface JobAppendOptions {
   gapBefore?: true
 }
 
-/**
- * Producer declaration passed to {@link JobRegistry.start}. The runtime
- * preflights access and cleanup before invoking {@link run}; the producer owns
- * execution resources while the runtime owns identity and lifecycle state.
- */
-export interface JobStart {
+/** Fields shared by every producer declaration passed to {@link JobRegistry.start}. */
+interface JobStartBase {
   /** Producer kind — also the id prefix (`bash`, `subagent`, …). */
   kind: JobKind
   /** One-line model-facing label (the command; the delegation description). */
@@ -80,15 +76,34 @@ export interface JobStart {
    * open to any caller until service disposal.
    */
   owner?: Agent
+}
+
+/**
+ * A start with the model-facing surfaces only. Its producer face carries no
+ * `append`, so output the registry would have nowhere to keep is
+ * unrepresentable rather than dropped.
+ */
+export interface PlainJobStart extends JobStartBase {
+  record?: undefined
   /**
-   * Declares an observable output record beside the model-facing surfaces:
-   * {@link RunningJob.append} retains chunks in a bounded ring that any number
-   * of observers read at absolute byte offsets through
-   * {@link JobRegistry.readRecord}, and snapshots carry
-   * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
-   * Without the declaration `append` logs and drops.
+   * Start the work after preflight and synchronously return its hooks. Called
+   * once with the job's producer face; a throw leaves nothing registered (the
+   * spent ordinal is skipped), and the producer must clean up any partially
+   * started resources.
+   * @param job - the issued id plus the live-detail writer.
    */
-  record?: true
+  run(job: RunningJob): JobHooks
+}
+
+/**
+ * A start that declares an observable output record beside the model-facing
+ * surfaces: {@link RecordingJob.append} retains chunks in a bounded ring that
+ * any number of observers read at absolute byte offsets through
+ * {@link JobRegistry.readRecord}, and snapshots carry
+ * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
+ */
+export interface RecordingJobStart extends JobStartBase {
+  record: true
   /**
    * Start the work after preflight and synchronously return its hooks. Called
    * once with the job's producer face; a throw leaves nothing registered (the
@@ -96,34 +111,44 @@ export interface JobStart {
    * started resources.
    * @param job - the issued id plus the record append and live-detail writers.
    */
-  run(job: RunningJob): JobHooks
+  run(job: RecordingJob): JobHooks
 }
 
 /**
- * Producer face of one registered job, handed to {@link JobStart.run} and
- * valid for the job's whole life. All methods are synchronous. Writes staged
- * inside the starter call are retained and become visible with the
- * registration commit; after settlement — the producer's own outcome, a kill,
- * or a registry-forced teardown end — both methods log and drop instead of
- * throwing, so a producer's trailing flush cannot break its own teardown path.
+ * Producer declaration passed to {@link JobRegistry.start}, discriminated by
+ * `record`. The runtime preflights access and cleanup before invoking `run`;
+ * the producer owns execution resources while the runtime owns identity and
+ * lifecycle state.
+ */
+export type JobStart = PlainJobStart | RecordingJobStart
+
+/**
+ * Producer face of one registered job, handed to `run` and valid for the
+ * job's whole life. All methods are synchronous. Writes staged inside the
+ * starter call are retained and become visible with the registration commit;
+ * after settlement — the producer's own outcome, a kill, or a registry-forced
+ * teardown end — writes log and drop instead of throwing, so a producer's
+ * trailing flush cannot break its own teardown path.
  */
 export interface RunningJob {
   /** The registry-issued id (`<kind>-N`). */
   readonly id: JobId
   /**
+   * Replace the snapshot's status detail with a live progress line (`3/10`).
+   * @param detail - the new detail line.
+   */
+  updateDetail(detail: string): void
+}
+
+/** Producer face of a {@link RecordingJobStart}: {@link RunningJob} plus the record append. */
+export interface RecordingJob extends RunningJob {
+  /**
    * Append one record chunk. Offsets advance by the chunk's UTF-8 byte
-   * length; an empty chunk is dropped without waking observers. Without a
-   * {@link JobStart.record} declaration the chunk is logged and dropped.
+   * length; an empty chunk is dropped without waking observers.
    * @param text - the chunk text, exactly as produced.
    * @param options - stream label and gap marker.
    */
   append(text: string, options?: JobAppendOptions): void
-  /**
-   * Replace the snapshot's status detail with a live progress line (`3/10`).
-   * Works for every job, with or without a record.
-   * @param detail - the new detail line.
-   */
-  updateDetail(detail: string): void
 }
 
 /** Hooks through which the runtime controls and observes producer work. */

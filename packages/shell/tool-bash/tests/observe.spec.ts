@@ -10,7 +10,7 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import type { JobId, RunningJob } from '@deepseek-ai/dsh-jobs'
+import type { JobId, RecordingJob } from '@deepseek-ai/dsh-jobs'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
@@ -121,8 +121,8 @@ describe('background bash record', () => {
 })
 
 describe('observeProcessRecord', () => {
-  /** A RunningJob face recording appends for pump assertions. */
-  function recordingJob(): { job: RunningJob; appends: string[] } {
+  /** A RecordingJob face recording appends for pump assertions. */
+  function recordingJob(): { job: RecordingJob; appends: string[] } {
     const appends: string[] = []
     return {
       job: {

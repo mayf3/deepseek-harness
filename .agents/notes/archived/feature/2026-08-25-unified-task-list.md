@@ -1,10 +1,11 @@
 # Agent Note: One session-header task list — jobs joined with activities in the UI projection only
 
 Status: implemented
-
-Superseded: the two-roster join described here was removed with the activity seam — the job rows are now the whole roster; see [jobs absorb the record](../architecture/2026-09-01-jobs-absorb-activity-record.md).
+Archived: 2026-09-03
 
 English | [中文](2026-08-25-unified-task-list.zh.md)
+
+Superseded: the two-roster join described here was removed with the activity seam — the job rows are now the whole roster; see [jobs absorb the record](../architecture/2026-09-01-jobs-absorb-activity-record.md).
 
 ## Problem
 
