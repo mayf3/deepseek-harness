@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Superseded: the roster this note put on the session control stream (`jobsBySession`, `onJobsChanged`) now streams from the job controller's `job.rows` into `ctx.jobs` — see [the jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md). The display decisions below (one roster, sections, durations, no kill control) still hold.
+
 Update: the output phase this note deferred now ships as the per-job observation record on `ctx.jobs` — see [jobs absorb the record](../architecture/2026-09-01-jobs-absorb-activity-record.md).
 
 English | [中文](2026-08-08-web-background-job-display.zh.md)
@@ -119,7 +121,7 @@ A running one-shot background subagent therefore appears both there and in the s
 
 The [web e2e scenario](../../../../apps/web/tests/background-job-list.e2e.ts) is the end-to-end proof and runs keyless: a real `run_in_background` bash call registers with `ctx.jobs`, the header count and row appear with no user interaction, and killing the task through the registry flips the open list to its producer detail. It asserts the whole delivery path rather than any single layer.
 
-Below it, [`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts) pins the change feed at all four commit points, its containment of a throwing observer, and its removal on both explicit disposal and fiber teardown; [`control-jobs`](../../../../packages/api/session-controller/tests/control-jobs.host.spec.ts) pins the complete baseline, three change pushes, dropped internal fields, unowned fan-out, no-resume guarantee, registry-absent composition, and the prohibition on consuming model output; and the client suites pin baseline replacement, the last-wins fold, the absent-key representation, removal cleanup, and the component's ordering, duration, and dismissal behavior.
+Below it, [`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts) pins the change feed at all four commit points, its containment of a throwing observer, and its removal on both explicit disposal and fiber teardown; [`rows`](../../../../packages/api/job-controller/tests/rows.host.spec.ts) pins the roster stream that replaced the control-stream fan-out: the complete visible set on open, a refresh after each lifecycle commit and none per append, owner removal, and a clean abort; and the client suites pin baseline replacement, the last-wins fold, the absent-key representation, removal cleanup, and the component's ordering, duration, and dismissal behavior.
 
 ## Consequences
 

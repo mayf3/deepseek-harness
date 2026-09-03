@@ -8,8 +8,9 @@
 
 import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
+import type { JobView } from '@deepseek-ai/dsh-jobs/view'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { JobObserveFrame, JobView } from '../types.ts'
+import type { JobObserveFrame } from '../types.ts'
 
 /** Bounded per-job render tail, in UTF-16 code units. */
 const RENDER_TAIL_LIMIT = 128 * 1024

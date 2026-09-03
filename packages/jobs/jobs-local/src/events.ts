@@ -23,7 +23,9 @@ interface Subscription {
  * by a name a second registrant could shadow.
  */
 export class JobLayer implements ScopeLayer {
+  /** Tokens of the job controllers attached from this scope. */
   readonly controllers = new AnonymousEntries<symbol>()
+  /** The `{ owners: 'scope' }` subscriptions registered from this scope. */
   readonly scoped = new AnonymousEntries<Subscription>()
 
   isEmpty(): boolean {

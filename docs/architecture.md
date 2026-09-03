@@ -129,7 +129,7 @@ New behavior attaches to a documented extension point. Changing the loop itself 
 | Add persistent terminal execution | register a `ctx.terminals` backend plus `dsh-tool-terminal` |
 | Add a human command | register on `ctx.commands`; it dispatches without a model turn |
 | Add background work | register on `ctx.jobs`; `job_*` tools collect or stop it |
-| Stream live output to observers | declare `record: true` on the `ctx.jobs` start; the Web client renders it |
+| Stream live output to observers | name pull `output` sources on the `ctx.jobs` spec or push through its `JobHandle`; the Web client renders the ring |
 | Start a Session from an external webhook | register a trusted rule on `ctx.webhookRuntime` and mount a provider adapter |
 | Add filesystem access or policy | register a `ctx.fs` provider or listen to `fs/*` events |
 | Confine spawned processes | use a `ctx.sandbox` backend; consumers wrap argv before spawning |

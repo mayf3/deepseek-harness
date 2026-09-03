@@ -2,7 +2,7 @@
 
 [English](jobs.md) | 中文
 
-长时间运行的生产方、`ctx.jobs` 与任务控制命令共用的类型。[运行时 Agent Note](../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.zh.md) 负责设计；本页记录 [`packages/jobs/jobs/src/types.ts`](../../packages/jobs/jobs/src/types.ts) 中的确切字段和变体。
+长时间运行的生产方、`ctx.jobs` 与任务控制命令共用的类型。[seam 收敛 Agent Note](../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.zh.md) 负责当前设计，[运行时 Agent Note](../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.zh.md) 记录其起源；本页记录 [`packages/jobs/jobs/src/types.ts`](../../packages/jobs/jobs/src/types.ts) 与客户端安全叶子 [`view.ts`](../../packages/jobs/jobs/src/view.ts) 中的确切字段与变体。
 
 ## ID 与状态
 
@@ -19,63 +19,83 @@ interface JobKindMap {
 }
 ```
 
-`JobStatus` 为 `'running' | 'stopping' | 'completed' | 'killed' | 'failed'`；生产方特有的事实归入 `JobSnapshot.detail`。
+`JobStatus` 为 `'running' | 'stopping' | 'completed' | 'killed' | 'failed'`；生产方特有的事实在运行期间归入 `JobView.progress`，结算后归入 `JobView.detail`。
 
 ## 生产方约定
 
-`JobStart` 声明身份和启动器，并按 `record` 判别：`RecordingJobStart` 收到 `RecordingJob` 面，`PlainJobStart` 收到没有 `append` 的 `RunningJob` 面。运行时会在完成预检后携带该面调用 `run()`，随后提交注册，不再执行可能失败的步骤。生产方拥有执行资源；运行时拥有身份、访问权限和生命周期状态。
+`JobSpec` 声明身份、拥有者会话、可选的拉取式 `output` 源与启动器。运行时会在完成预检后携带该 job 的 `JobHandle` 调用 `run()`，随后提交注册，不再执行可能失败的步骤。生产方拥有执行资源；运行时拥有身份、访问、生命周期状态与输出环。
 
 ```ts type-equiv
 /**
- * A start with the model-facing surfaces only. Its producer face carries no
- * `append`, so output the registry would have nowhere to keep is
- * unrepresentable rather than dropped.
+ * Producer declaration passed to {@link JobRegistry.start}. The runtime
+ * preflights access and cleanup before invoking {@link run}; the producer owns
+ * execution resources while the runtime owns identity, lifecycle state, and
+ * the output ring.
  */
-interface PlainJobStart extends JobStartBase {
-  record?: undefined
+interface JobSpec {
+  /** Producer kind — also the id prefix (`bash`, `subagent`, …). */
+  kind: JobKind
+  /** One-line model-facing label (the command; the delegation description). */
+  label: string
+  /**
+   * Owning session. Access is fenced by it, and the owner's live Agent must be
+   * the one currently registered under that id: its disposal cancels and
+   * awaits the job. Omitting the owner creates an unowned job, open to any
+   * caller until service disposal.
+   */
+  owner?: SessionId
+  /**
+   * Optional UTF-8 byte cap for each complete model-facing completion notice or
+   * output read, including controller status metadata. Independent of ring
+   * retention: it bounds the consuming model surface, never observers.
+   */
+  outputLimitBytes?: number
+  /**
+   * Pull sources the registry pumps into the ring at its own cadence.
+   * Producers that narrate their own progress use {@link JobHandle.append}
+   * instead; a job may use both.
+   */
+  output?: readonly JobOutputSource[]
   /**
    * Start the work after preflight and synchronously return its hooks. Called
    * once with the job's producer face; a throw leaves nothing registered (the
    * spent ordinal is skipped), and the producer must clean up any partially
    * started resources.
-   * @param job - the issued id plus the live-detail writer.
+   * @param job - the issued id plus the ring append and progress writers.
    */
-  run(job: RunningJob): JobHooks
+  run(job: JobHandle): JobHooks
 }
 ```
 
 ```ts type-equiv
 /**
- * A start that declares an observable output record beside the model-facing
- * surfaces: {@link RecordingJob.append} retains chunks in a bounded ring that
- * any number of observers read at absolute byte offsets through
- * {@link JobRegistry.readRecord}, and snapshots carry
- * {@link JobSnapshot.outputTotal} and {@link JobSnapshot.outputEarliest}.
+ * Producer face of one registered job, handed to {@link JobSpec.run} and
+ * valid for the job's whole life. All methods are synchronous. Writes staged
+ * inside the starter call are retained and become visible with the
+ * registration commit; after settlement — the producer's own outcome, a kill,
+ * or a registry-forced teardown end — writes log and drop instead of
+ * throwing, so a producer's trailing flush cannot break its own teardown path.
  */
-interface RecordingJobStart extends JobStartBase {
-  record: true
+interface JobHandle {
+  /** The registry-issued id (`<kind>-N`). */
+  readonly id: JobId
   /**
-   * Start the work after preflight and synchronously return its hooks. Called
-   * once with the job's producer face; a throw leaves nothing registered (the
-   * spent ordinal is skipped), and the producer must clean up any partially
-   * started resources.
-   * @param job - the issued id plus the record append and live-detail writers.
+   * Append one chunk to the output ring. Offsets advance by the chunk's UTF-8
+   * byte length; an empty chunk is dropped without waking observers.
+   * @param text - the chunk text, exactly as produced.
+   * @param options - stream label and gap marker.
    */
-  run(job: RecordingJob): JobHooks
+  append(text: string, options?: JobAppendOptions): void
+  /**
+   * Replace the live progress line (`3/10`, the current phase). Settlement
+   * clears it; the terminal reason travels in {@link JobOutcome.detail}.
+   * @param line - the new progress line.
+   */
+  updateProgress(line: string): void
 }
 ```
 
-```ts type-equiv
-/**
- * Producer declaration passed to {@link JobRegistry.start}, discriminated by
- * `record`. The runtime preflights access and cleanup before invoking `run`;
- * the producer owns execution resources while the runtime owns identity and
- * lifecycle state.
- */
-type JobStart = PlainJobStart | RecordingJobStart
-```
-
-`JobHooks.done` 会在生产方释放其资源后 resolve，而不是仅在工作完成时 resolve。可选的 `readOutput` 用来区分会消费输出的流式任务和仅有最终输出的任务。
+`JobHooks.done` 会在生产方释放其资源后 resolve，而不是仅在工作完成时 resolve。结果是一个值而非流的 job——subagent 的报告、workflow 渲染出的结果——把它作为 `JobOutcome.result` 返回；模型在结算后的第一次读取携带它一次。
 
 ```ts type-equiv
 /** Hooks through which the runtime controls and observes producer work. */
@@ -89,18 +109,9 @@ interface JobHooks {
    * Resolves after the producer releases its resources, not merely when work
    * finishes. Must not reject; the runtime converts a rejection to `failed`.
    * If teardown cancellation throws, the runtime may force-fail only the
-   * registry record without claiming that the work stopped. Settlement also
-   * ends the record: fold any record-filling pump into this promise so the
-   * final drain lands before the registry trims and closes the stream.
+   * registry record without claiming that the work stopped.
    */
   done: Promise<JobOutcome>
-  /**
-   * Consume output produced since the previous call. The producer formats
-   * truncation and spill notices. Absence marks a final-output-only job; each
-   * job has one consuming cursor. Independent of the record: this is the
-   * model-facing projection, {@link JobRegistry.readRecord} the observer one.
-   */
-  readOutput?(): string
 }
 ```
 
@@ -109,74 +120,82 @@ interface JobHooks {
 interface JobOutcome {
   /** How the job ended: finished (`completed`), cancelled (`killed`), or broke (`failed`). */
   status: 'completed' | 'killed' | 'failed'
-  /** Kind-specific detail rendered into status lines ('exit code: 3', 'max-tokens'). */
+  /**
+   * Terminal reason rendered into status lines (`exit code: 3`, `max-tokens`).
+   * When the job settles `killed` after a {@link VisibleJobs.kill} with a
+   * reason, the registry appends that reason.
+   */
   detail?: string
-  /** Final output for jobs without `readOutput`; stream jobs leave it unset. */
-  output?: string
+  /**
+   * Return value for jobs whose result is a value rather than a stream (a
+   * workflow's rendered result, a subagent's report). The output ring carries
+   * the stream; this is handed out once by the model's next {@link VisibleJobs.read}.
+   */
+  result?: string
 }
 ```
 
-## 观测 record
-
-声明 `record: true` 的生产方通过 starter 收到的 `RecordingJob` 面把原始输出流入按 job 划分的有界环形缓冲；任意数量的观察者通过 `readRecord` 按绝对字节偏移读取保留块，不触碰消耗型的模型游标与通知状态。job 结算即封流并把保留量裁剪到结算上限——record 没有独立生命周期。`pumpJobOutput` 以有界节奏把生产方的偏移读取器（subprocess 的 `readFrom` 家族）复制进 record。浏览器经 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.observe` 读取 record，其帧类型列在下方该控制器的 Cordis API 一节。
+拉取源把一个非消耗的偏移读取器——子进程的 `readFrom` 家族——交给注册表。注册表按自己的节奏（`dsh-jobs-local` 的 `pumpPollMs`）泵送每个源，并在结算封环之前再排干一次，因此生产方不需要把任何东西折进 `done`。
 
 ```ts type-equiv
 /**
- * Producer face of one registered job, handed to `run` and valid for the
- * job's whole life. All methods are synchronous. Writes staged inside the
- * starter call are retained and become visible with the registration commit;
- * after settlement — the producer's own outcome, a kill, or a registry-forced
- * teardown end — writes log and drop instead of throwing, so a producer's
- * trailing flush cannot break its own teardown path.
+ * A pull source the registry pumps into the job's output ring — the subprocess
+ * `readFrom` family. The registry owns the cadence and drains every source one
+ * last time before settlement closes the ring, so a producer folds nothing
+ * into its `done`.
  */
-interface RunningJob {
-  /** The registry-issued id (`<kind>-N`). */
-  readonly id: JobId
-  /**
-   * Replace the snapshot's status detail with a live progress line (`3/10`).
-   * @param detail - the new detail line.
-   */
-  updateDetail(detail: string): void
-}
-```
-
-```ts type-equiv
-/** Producer face of a {@link RecordingJobStart}: {@link RunningJob} plus the record append. */
-interface RecordingJob extends RunningJob {
-  /**
-   * Append one record chunk. Offsets advance by the chunk's UTF-8 byte
-   * length; an empty chunk is dropped without waking observers.
-   * @param text - the chunk text, exactly as produced.
-   * @param options - stream label and gap marker.
-   */
-  append(text: string, options?: JobAppendOptions): void
-}
-```
-
-```ts type-equiv
-/** One retained record chunk returned by {@link JobRegistry.readRecord}. */
-interface JobRecordChunk {
-  /** Absolute offset of the chunk's first byte. */
-  at: number
-  /** Chunk text exactly as appended (possibly tail-trimmed by retention). */
-  text: string
-  /** Stream label, when the producer supplied one. */
+interface JobOutputSource {
+  /** Stream label attached to every chunk this source yields. */
   channel?: JobChannel
-  /** Producer-reported loss immediately before this chunk. */
-  gapBefore?: true
+  /**
+   * Read everything captured since `fromByte` without consuming it.
+   * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 first).
+   * @returns the delta text, the next offset, and the lossy flag.
+   */
+  read(fromByte: number): JobSourceRead
 }
 ```
 
 ```ts type-equiv
-/** Result of one non-consuming {@link JobRegistry.readRecord}. */
-interface JobRecordRead {
+/** One incremental read from a {@link JobOutputSource}. */
+interface JobSourceRead {
+  /** Text captured since the requested offset (the whole retained tail when lossy). */
+  text: string
+  /** Whole-stream offset to resume from on the next read. */
+  nextOffset: number
+  /** True when the requested offset slid out of the source's retained window. */
+  lossy: boolean
+}
+```
+
+## 输出环
+
+每个 job 拥有一个有界的环。拉取源被泵入其中，`JobHandle.append` 的推送整块落地；模型通过注册表保管的游标（`VisibleJobs.read`）消耗该环，任意数量的观察者按绝对字节偏移读取它（`VisibleJobs.readAt`），二者互不干扰。`JobChannel` 标记 `stdout`、`stderr` 与 `log`；`log` 是只到达观察者、从不进入模型消耗式读取的生产方叙述。结算即封流并把保留量裁剪到结算上限——环没有独立的生命周期。浏览器通过 [`dsh-api-job-controller`](../../packages/api/job-controller/README.zh.md) 的 Remote 流 `job.rows` 与 `job.observe` 触达名册与环，其帧列于下文的 Cordis API 一节。
+
+```ts type-equiv
+/** One chunk of a job's output ring: absolute offset, text, and its provenance. */
+interface JobChunk {
+  /** Absolute offset of the chunk's first byte; offsets never move once assigned. */
+  readonly at: number
+  /** Chunk text exactly as appended (possibly tail-trimmed by retention). */
+  readonly text: string
+  /** Stream label, when the producer supplied one. */
+  readonly channel?: JobChannel
+  /** Bytes immediately before this chunk were lost, at the producer or to retention. */
+  readonly gapBefore?: true
+}
+```
+
+```ts type-equiv
+/** Result of one non-consuming {@link VisibleJobs.readAt}. */
+interface JobOutputRead {
   /** Retained chunks overlapping `[from, total)`, in offset order. */
-  chunks: readonly JobRecordChunk[]
+  chunks: readonly JobChunk[]
   /**
-   * Offset to resume from — the record's current `outputTotal`. Always a
-   * chunk boundary: appends land whole and trimming only advances chunk
-   * starts, and consumers concatenate `chunks` under that assumption, so a
-   * provider serving partial chunks would silently duplicate text.
+   * Offset to resume from — the ring's current `total`. Always a chunk
+   * boundary: appends land whole and trimming only advances chunk starts, and
+   * consumers concatenate `chunks` under that assumption, so a provider
+   * serving partial chunks would silently duplicate text.
    */
   next: number
   /** True when `from` fell below the oldest retained byte, so bytes are missing before `chunks`. */
@@ -186,78 +205,167 @@ interface JobRecordRead {
 
 ## 消费方视图
 
-快照是每次新建的只读投影。`ownerSession` 携带用于授权的共享 `SessionId`；完成监听器则会另行收到用于生命周期清理的确切拥有者对象。另一个接口已经交付终止状态或承诺交付时，`reported` 会抑制完成通知；排空 owner 或服务的 teardown 取消同样计入。
+`JobView` 是每个读者都消费的唯一投影：模型工具、浏览器名册与观测流。`owner` 携带划定访问边界的会话 id；注册表为生命周期清理解析其背后的活体 `Agent`，从不把该对象交出去。`progress` 是生产方的实时行，结算时清除；`detail` 是终态原因，合并了记录下来的 kill 原因。
 
 ```ts type-equiv
 /**
- * A read-only projection of one job, safe to hand to listeners and tools —
- * a fresh object per call, never live registry state.
+ * Read-only projection of one job — a fresh object per call, never live
+ * registry state. The model tools, the browser roster, and the observation
+ * stream all consume this one shape.
  */
-interface JobSnapshot {
+interface JobView {
   /** The registry-issued id (`<kind>-N`). */
-  id: JobId
+  readonly id: JobId
   /** The producer kind the job was registered with. */
-  kind: JobKind
+  readonly kind: JobKind
   /** The producer-supplied one-line label. */
-  label: string
-  /** Producer-owned cap for complete model-facing notices and output reads. */
-  outputLimitBytes?: number
-  /**
-   * Owner session id used for authorization and correlation; absent for
-   * unowned jobs. Completion listeners receive the exact {@link Agent}
-   * separately through {@link JobDoneListener}.
-   */
-  ownerSession?: SessionId
+  readonly label: string
+  /** Owning session; absent for an unowned job, which every caller can see. */
+  readonly owner?: SessionId
+  /** Producer-owned cap for complete model-facing notices and reads, in UTF-8 bytes. */
+  readonly outputLimitBytes?: number
   /** Current lifecycle state. */
-  status: JobStatus
-  /**
-   * Kind-specific status detail: live progress while the producer updates it
-   * through {@link RunningJob.updateDetail}, the terminal detail once settled.
-   */
-  detail?: string
+  readonly status: JobStatus
+  /** The producer's live progress line (`3/10`, the current phase); cleared at settlement. */
+  readonly progress?: string
+  /** Terminal reason (`exit code: 3`); a recorded kill reason is merged in. */
+  readonly detail?: string
   /** Epoch ms when the job was registered. */
-  startedAt: number
-  /** Epoch ms when the job settled; absent while `running`/`stopping`. */
-  finishedAt?: number
+  readonly startedAt: number
+  /** Epoch ms when the job settled; absent while live. */
+  readonly finishedAt?: number
   /**
-   * True when a kill, read, wait, or teardown cancel has reported or committed
-   * to report the terminal state. Completion reporters suppress redundant
-   * notices when set. Teardown claims it because the owner or service being
-   * destroyed leaves no reader: a reporter that opens a turn on notice would
-   * otherwise spend a model request per teardown layer.
+   * The output ring's absolute coordinates. `total` is the offset the next
+   * chunk starts at (0 while nothing was written); `earliest` is the oldest
+   * retained byte, greater than zero exactly when retention dropped the head.
    */
-  reported: boolean
-  /**
-   * Total UTF-8 bytes ever appended to the record — the offset the next chunk
-   * starts at. Present exactly when the job declared {@link JobStart.record}.
-   */
-  outputTotal?: number
-  /**
-   * Offset of the oldest retained record byte. Greater than zero exactly when
-   * retention dropped the head; a reader starting below it gets a lossy read.
-   * Present exactly when the job declared {@link JobStart.record}.
-   */
-  outputEarliest?: number
+  readonly output: { readonly total: number; readonly earliest: number }
+}
+```
+
+`JobRegistry.visibleTo(caller)` 绑定一个调用方的身份并返回其操作；调用方看得到自己的 job 与所有无主 job，每个操作对该集合之外的 id 抛出。
+
+```ts type-equiv
+/** Output and post-read state returned by the consuming {@link VisibleJobs.read}. */
+interface JobRead {
+  /** Ring chunks appended since the model cursor, in offset order; every channel included. */
+  chunks: readonly JobChunk[]
+  /** True when the cursor fell below the oldest retained byte, so bytes are missing before `chunks`. */
+  lossy: boolean
+  /** The producer's {@link JobOutcome.result}, handed out by the first read after settlement only. */
+  result?: string
+  /** The job's state at read time. */
+  job: JobView
 }
 ```
 
 ```ts type-equiv
-/** Output and post-read state returned by {@link JobRegistry.read}. */
-interface JobRead {
+/**
+ * The operations one caller may perform, bound by {@link JobRegistry.visibleTo}.
+ * A caller sees its own jobs and every unowned job; every method throws for
+ * an id outside that set, without distinguishing unknown from foreign.
+ */
+interface VisibleJobs {
   /**
-   * Stream kinds: the consuming delta since the previous read. Final-output
-   * kinds: empty while live, the terminal {@link JobOutcome.output} (or
-   * empty) once settled — idempotent, never consumed.
+   * List the visible jobs in registration order.
+   * @returns fresh projections.
    */
-  text: string
-  /** The job's state at read time. */
-  snapshot: JobSnapshot
+  list(): JobView[]
+  /**
+   * Project one job without touching its cursor.
+   * @param id - job to look up.
+   * @returns a fresh projection.
+   */
+  get(id: JobId): JobView
+  /**
+   * Consume the ring from the model cursor and advance it to the current
+   * total. After settlement the first read also carries the producer's
+   * result; later reads return only what was appended since.
+   * @param id - job to read.
+   * @returns the chunks since the cursor, the lossy flag, the result once, and the post-read projection.
+   */
+  read(id: JobId): JobRead
+  /**
+   * Read retained ring output from an absolute byte offset without consuming
+   * it. Resume by passing a previous read's `next`; an offset inside a
+   * retained chunk returns that whole chunk (its `at` may precede `from`).
+   * Never moves the model cursor. Throws for a negative or non-integer offset.
+   * @param id - job to read.
+   * @param from - absolute byte offset to read from (0 for the retained head).
+   * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
+   */
+  readAt(id: JobId, from: number): JobOutputRead
+  /**
+   * Request cancellation, then mark the job stopping. A recorded
+   * {@link JobKillOptions.reason} merges into the terminal `detail` when the
+   * job settles `killed`. A producer throw propagates without changing job
+   * state.
+   * @param id - job to cancel.
+   * @param options - cancellation reason.
+   * @returns `requested` for live work, otherwise `already-finished`.
+   */
+  kill(id: JobId, options?: JobKillOptions): 'requested' | 'already-finished'
+  /**
+   * Wait for settlement or timeout without cancelling the job. Caller abort
+   * rejects only while the job is live; after settlement the terminal
+   * projection wins. Throws for an invalid timeout.
+   * @param id - job to wait for.
+   * @param timeoutMs - positive finite wait bound in milliseconds.
+   * @param signal - optional cancellation of the wait itself.
+   * @returns projection at settlement or timeout.
+   */
+  wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>
 }
+```
+
+## 事件
+
+注册表通过一条带过滤的流宣布每次提交。生命周期事件携带其所宣布的提交之后的投影；`settled` 标出原因，完成播报方据此跳过 teardown；`output` 只携带 id 与新的 total，观察者从自己的游标读取，注册表从不推送负载。
+
+```ts type-equiv
+/**
+ * One lifecycle or output event. Lifecycle events carry the job's projection
+ * after the commit they announce; `output` carries only the id and the new
+ * total, so an observer schedules a {@link VisibleJobs.readAt} from its own
+ * cursor and the registry never pushes payloads.
+ */
+type JobEvent =
+  | {
+    /** Registration commit, progress line change, stopping transition, or removal from the visible set. */
+    readonly type: 'registered' | 'progress' | 'stopping' | 'removed'
+    readonly job: JobView
+  }
+  | {
+    readonly type: 'settled'
+    readonly job: JobView
+    readonly cause: JobSettleCause
+  }
+  | {
+    readonly type: 'output'
+    readonly id: JobId
+    /** Owning session, absent for an unowned job. */
+    readonly owner?: SessionId
+    /** The ring's total after the append (or at settlement, which ends the stream). */
+    readonly total: number
+  }
+```
+
+```ts type-equiv
+/**
+ * Who a subscription hears about. `{ owner }` delivers that session's jobs
+ * plus every unowned job (the set that session can see). `{ owners: 'scope' }`
+ * delivers the owners composed under the subscribing context — one registry
+ * serves every composition in the process, and a mount under one preset must
+ * not hear another preset's agents. `{ owners: 'all' }` delivers everything.
+ */
+type JobEventFilter =
+  | { readonly owner: SessionId }
+  | { readonly owners: 'all' | 'scope' }
 ```
 
 ## 服务行为
 
-抽象的 [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition 规定了原子化的 `start`、按调用方划定的 `get` 与 `list`、`read`、非消耗的 `readRecord`、`kill`、有界的 `wait`、故障隔离的 `onJobDone`、`onJobsChanged` 与 `onOutput` 监听器，以及 `attachController`；[`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) 是进程本地的 Service Provider。授权比较 owner 会话；owner 清理与准入使用注册在案的确切 `Agent` 实例。本地 provider 的正安全整数配置 `maxConcurrentJobsPerOwner` 默认 `10`，按确切 owner 统计 `running` 加 `stopping` 记录，无主任务共享一个桶；生产方终态结算释放容量，`retainBytes`（默认 262144）与 `settledRetainBytes`（默认 16384）约束每个已声明 record 的运行期与结算后保留量。参见 [`dsh-jobs`](../../packages/jobs/jobs/README.zh.md)（Service Definition 契约）、[`dsh-jobs-local`](../../packages/jobs/jobs-local/README.zh.md)（注册表生命周期与准入策略）与 [`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.zh.md)（模型侧 Consumer）。
+抽象的 [`JobRegistry`](../../packages/jobs/jobs/src/index.ts) Service Definition 规定了原子化的 `start`、绑定调用方的 `visibleTo`（`list`、`get`、消耗式 `read`、非消耗的 `readAt`、`kill` 与有界的 `wait`）、带过滤的 `events` 流，以及 `attachController`；[`LocalJobRegistry`](../../packages/jobs/jobs-local/src/index.ts) 是进程本地的 Service Provider。授权比较拥有者会话；拥有者清理与准入使用 job 启动时登记在该拥有者会话下的活体 `Agent`。本地提供方的正安全整数配置 `maxConcurrentJobsPerOwner` 默认为 `10`，按精确拥有者统计 `running` 加 `stopping` 记录，无主任务共享一个桶；生产方的终态结算释放容量；`retainBytes`（默认 262144）与 `settledRetainBytes`（默认 16384）约束每个环的运行期与结算后保留量，`pumpPollMs`（默认 150）是拉取节奏。参见 [`dsh-jobs`](../../packages/jobs/jobs/README.zh.md) 了解 Service Definition 约定，[`dsh-jobs-local`](../../packages/jobs/jobs-local/README.zh.md) 了解注册表生命周期与准入策略，[`dsh-tool-jobs`](../../packages/jobs/tool-jobs/README.zh.md) 了解面向模型的 Consumer。
 
 <!-- BEGIN GENERATED cordis-surface (gen-cordis-catalog.ts) — do not edit between markers -->
 
@@ -275,11 +383,21 @@ Host service backing the generated `ctx.remote.job` namespace.
 
 ```ts cordis-catalog
 /**
- * Stream one job's retained record output from an absolute byte offset,
- * then its terminal status once settled and drained. Non-consuming: the
+ * Stream the jobs one session can see — its own plus every unowned job —
+ * as whole-set frames: one on open, then one after each coalesced burst of
+ * lifecycle commits. The stream has no natural end; the carrier closes it.
+ * @param request - the session whose visible set to mirror.
+ * @param signal - cancellation owned by the Remote stream carrier.
+ * @returns the roster frames.
+ */
+@Remote({ mode: 'stream' }) rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame>
+
+/**
+ * Stream one job's retained output from an absolute byte offset, then its
+ * terminal projection once settled and drained. Non-consuming: the
  * model-facing cursor and notice state never observe these reads. The
- * request's session resolves the fenced-read caller; the registry rejects a
- * job the session does not own, a job without a record, or an unknown job.
+ * request's session is the fenced read's caller; the registry rejects a
+ * job the session cannot see and an unknown job.
  * @param request - target job, owning session, and optional resume offset.
  * @param signal - cancellation owned by the Remote stream carrier.
  * @returns anchor, coalesced output frames, and the terminal status.
@@ -293,16 +411,16 @@ Source: [`packages/api/job-controller/src/index.ts`](../../packages/api/job-cont
 
 ### `ctx.jobs` — `JobRegistry` (abstract seam)
 
-Abstract background job registry. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.jobs` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
+Abstract background job registry. Subclass, implement the abstract members, and load the subclass as a plugin — it registers as `ctx.jobs` (one implementation per context; loading a second throws, which is cordis' standard duplicate-service behavior).
 
 Implementations must honor these semantics:
 
-- Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Teardown cancellation also marks the record reported, because a record its owner is being destroyed for has no reader left.
+- Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Such settlements announce `cause: 'teardown'`, because a job whose owner is being destroyed has no reader left.
 - Owned-job access is fenced by the owner's session id. Ids are predictable, so authorization — not secrecy — is the boundary.
-- Settlement is first-wins: one terminal record, released waiters, and one round of contained listener notification, even against a late producer outcome. Completion is announced last, after the record is committed and every other observer of the settlement has seen it, because a reporter may open a model turn synchronously.
-- start refuses work while no attached job controller serves the spec's owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and completion-listener delivery — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition's scope serve exactly the agents composed under it.
-- Record observation never consumes. Any number of readRecord readers hold their own absolute byte offsets; a record read changes no cursor and no notice state, so the model-facing surfaces (the consuming read, completion notices) are unaffected.
-- Record retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement — the producer outcome, a kill, or teardown — trims retention to the settled cap and ends the stream; the record has no separate lifecycle.
+- Settlement is first-wins: one terminal record, released waiters, then one round of contained event delivery, even against a late producer outcome. The `settled` event follows every released waiter, so a consumer that claims a settlement while waiting always claims before the event.
+- start refuses work while no attached job controller serves the spec's owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and event delivery under `{ owners: 'scope' }` — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition's scope serve exactly the agents composed under it.
+- Every job owns one output ring. Pull sources named by the spec are pumped by the registry and drained once more before settlement; pushed appends land whole. The model's consuming cursor and observers' absolute offsets read the same bytes and never disturb each other.
+- Ring retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement trims retention to the settled cap and ends the stream; the ring has no separate lifecycle.
 
 ```ts cordis-catalog
 /**
@@ -310,120 +428,20 @@ Implementations must honor these semantics:
  * admission before starting and atomically registering work. Any preflight
  * rejection leaves no job id or execution resource. A throwing starter
  * leaves nothing registered; after it returns, registration cannot fail.
- * Settlement records the outcome, notifies listeners, and releases waiters.
- * @param spec - job identity, owner, and synchronous starter.
+ * @param spec - job identity, owner, output sources, and synchronous starter.
  * @returns the registry-issued `<kind>-N` id.
  */
-abstract start(spec: JobStart): JobId
+abstract start(spec: JobSpec): JobId
 
 /**
- * List caller-owned and unowned jobs in registration order without exposing
- * another session's labels.
- * @param caller - reading agent; a non-agent caller sees only unowned jobs.
- * @returns fresh snapshots.
+ * Bind the caller's identity once and return its operations. A caller sees
+ * its own jobs and every unowned job; a caller-less view sees unowned jobs
+ * only. The view resolves visibility on every call, so it stays valid as
+ * jobs come and go.
+ * @param caller - the reading session, or undefined for an anonymous caller.
+ * @returns the operations available to that caller.
  */
-abstract list(caller?: Agent): JobSnapshot[]
-
-/**
- * Return a non-consuming snapshot without changing its read cursor or notice
- * state. Throws for an unknown or foreign job.
- * @param id - job to look up.
- * @param caller - reading agent checked against the owner.
- * @returns a fresh snapshot.
- */
-abstract get(id: JobId, caller?: Agent): JobSnapshot
-
-/**
- * Read the next stream delta, or the idempotent final output after settlement.
- * A terminal read marks the job reported. Throws for an unknown or foreign
- * job.
- * @param id - job to read.
- * @param caller - reading agent checked against the owner.
- * @returns output text and the post-read snapshot.
- */
-abstract read(id: JobId, caller?: Agent): JobRead
-
-/**
- * Request cancellation, then mark the job stopping and reported. A producer
- * throw propagates without changing job state. Throws for an unknown or
- * foreign job.
- * @param id - job to cancel.
- * @param caller - killing agent checked against the owner.
- * @param reason - logged reason forwarded to the producer.
- * @returns `requested` for live work, otherwise `already-finished`.
- */
-abstract kill(id: JobId, caller?: Agent, reason?: string): 'requested' | 'already-finished'
-
-/**
- * Wait for settlement or timeout without cancelling the job. Caller abort
- * rejects only while the job is live; after settlement the terminal
- * snapshot wins so a notice suppressed for this waiter is still delivered.
- * Throws for invalid, unknown, or foreign input.
- * @param id - job to wait for.
- * @param timeoutMs - positive finite wait bound in milliseconds.
- * @param caller - waiting agent checked against the owner.
- * @param signal - optional cancellation of the wait itself.
- * @returns snapshot at settlement or timeout.
- */
-abstract wait(id: JobId, timeoutMs: number, caller?: Agent, signal?: AbortSignal): Promise<JobSnapshot>
-
-/**
- * Register an effect-scoped completion listener. It receives the settlements
- * of the owners its registering context's scope covers; each listener is
- * contained; returned promises are observed but not awaited. No listener runs
- * after service disposal.
- * @param listener - receives each terminal snapshot and its exact owner.
- * @returns disposer that unregisters the listener.
- */
-abstract onJobDone(listener: JobDoneListener): () => void
-
-/**
- * Register an effect-scoped observer of visible-set changes. It fires after
- * every commit that changes what {@link list} returns for that owner —
- * registration, every stopping transition (including the one teardown
- * performs before it awaits a slow producer), settlement, owner-disposal
- * removal, and the emptying that service disposal commits — so an observer
- * re-reads rather than accumulating deltas.
- *
- * Delivery is owner-relative on the same terms as {@link onJobDone}: an
- * observer registered from an unscoped context — a host composition's own
- * carrier — sees every owner, while one registered under an agent
- * composition's scope sees exactly the agents composed under it.
- *
- * This is not a superset of {@link onJobDone}: that one delivers the terminal
- * record under first-wins semantics a job controller couples to notice
- * delivery, while this one carries no delivery meaning and marks nothing
- * reported. Listeners are contained and never awaited.
- * @param listener - receives the owner whose visible set changed, or
- *   `undefined` when an unowned job changed and every caller's set did.
- * @returns disposer that unregisters the listener.
- */
-abstract onJobsChanged(listener: JobsChangedListener): () => void
-
-/**
- * Read retained record output from an absolute byte offset without consuming
- * it. Resume by passing a previous read's `next`; a foreign offset inside a
- * retained chunk returns that whole chunk (its `at` may precede `from`).
- * Never marks the job reported. Throws for an unknown or foreign job, a job
- * without a {@link JobStart.record} declaration, or a negative or
- * non-integer offset.
- * @param id - job to read.
- * @param from - absolute byte offset to read from (0 for the retained head).
- * @param caller - reading agent checked against the owner.
- * @returns retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.
- */
-abstract readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead
-
-/**
- * Register an effect-scoped observer of record advancement — one signal per
- * committed append and one at settlement, carrying only the job id. A
- * consumer schedules a {@link readRecord} from its own cursor; the registry
- * never pushes payloads. Delivery is owner-relative on the same terms as
- * {@link onJobsChanged}. Listeners are contained and never awaited.
- * @param listener - receives the id whose record advanced.
- * @returns disposer that unregisters the listener.
- */
-abstract onOutput(listener: JobOutputListener): () => void
+abstract visibleTo(caller?: SessionId): VisibleJobs
 
 /**
  * Attach an effect-scoped controller that can read and stop jobs. It serves the
@@ -435,7 +453,7 @@ abstract onOutput(listener: JobOutputListener): () => void
 abstract attachController(name: string): () => void
 ```
 
-Types: [Agent](core.zh.md)
+Types: [SessionId](core.zh.md)
 
 Source: [`packages/jobs/jobs/src/index.ts`](../../packages/jobs/jobs/src/index.ts)
 <!-- END GENERATED cordis-surface -->
