@@ -41,6 +41,7 @@ export function privateRoot(): string {
 // The spill root is private to this process, so it is removed when the process
 // ends normally; a process killed with SIGKILL cannot run this, and its
 // residue is left to OS temp hygiene.
+/* v8 ignore next 3 -- exit listeners run after the coverage dump; removal is verified by the CI /tmp residue measurement. */
 process.once('exit', () => {
   if (defaultRoot !== undefined) rmSync(defaultRoot, { recursive: true, force: true })
 })
