@@ -151,7 +151,11 @@ export interface ModelCatalog {
 
 /** One client-requested mutation of a still-pending queue item. */
 export type QueueAction =
-  | { readonly kind: 'edit'; readonly content: readonly ContentBlock[] }
+  | {
+    readonly kind: 'edit'
+    /** Non-empty text-only replacement content. */
+    readonly content: readonly ContentBlock[]
+  }
   | { readonly kind: 'remove' }
   | { readonly kind: 'steer' }
 

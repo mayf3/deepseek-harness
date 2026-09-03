@@ -58,6 +58,14 @@ interface SessionReadState {
   readonly events: readonly SessionEvent[]
 }
 
+type PromptContentCandidate =
+  | SessionPromptRequest['content'][number]
+  | Extract<SessionUpdateQueueRequest['action'], { readonly kind: 'edit' }>['content'][number]
+
+function hasPromptContent(content: readonly PromptContentCandidate[]): boolean {
+  return content.some(part => part.type !== 'text' || part.text.trim().length > 0)
+}
+
 /** Implements Session business commands delegated by the Session Controller Remote service. */
 export class SessionCommandController {
   /**
@@ -292,10 +300,7 @@ export class SessionCommandController {
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   async prompt(request: SessionPromptRequest): Promise<SessionPromptValue> {
-    const hasPromptContent = request.content.some(
-      part => part.type !== 'text' || part.text.trim().length > 0,
-    )
-    if (!hasPromptContent) {
+    if (!hasPromptContent(request.content)) {
       throw new RemoteError(
         'gateway/bad-request',
         'prompt content must include non-whitespace text or an attachment',
@@ -417,13 +422,21 @@ export class SessionCommandController {
    * @returns acknowledgement that the queue mutation was applied.
    */
   updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue {
-    if (request.action.kind === 'edit'
-      && request.action.content.some(block => block.type !== 'text')) {
-      throw new RemoteError(
-        'session/attachment-invalid',
-        'queue edits accept text content only',
-        { reason: 'QUEUE_EDIT_NON_TEXT' },
-      )
+    if (request.action.kind === 'edit') {
+      if (request.action.content.some(block => block.type !== 'text')) {
+        throw new RemoteError(
+          'session/attachment-invalid',
+          'queue edits accept text content only',
+          { reason: 'QUEUE_EDIT_NON_TEXT' },
+        )
+      }
+      if (!hasPromptContent(request.action.content)) {
+        throw new RemoteError(
+          'gateway/bad-request',
+          'queue edit content must include non-whitespace text',
+          {},
+        )
+      }
     }
     const agent = this.ctx.agents.get(request.sessionId)
     if (agent === undefined) {
