@@ -1,10 +1,10 @@
-# 持久图片附件
+# 持久附件
 
 [English](attachment.md) | 中文
 
-附件 seam 将二进制图片的所有权与会话日志分离。生产方把经过校验的编码字节交给 [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam)；只有对象完成持久化后，该服务才会发布不可变的内容寻址引用。会话事件和模型可见的 `ImageBlock` 包含该引用及其元数据，绝不包含浏览器对象 URL、宿主临时路径、提供方 URL 或 base64 数据。
+附件 seam 将二进制图片和通用文件的所有权与会话日志分离。生产方把字节交给 [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam)；只有对象完成持久化后，该服务才会发布不可变的内容寻址引用。会话事件和模型可见的附件块包含该引用及其元数据，绝不包含浏览器对象 URL、宿主临时路径、提供方 URL 或 base64 数据。独立的 [`ctx.fileUploads`](#ctxfileuploads--fileuploads) 服务把浏览器文件传输与暂存凭证绑定到接收方 Agent。
 
-未发送的浏览器草稿可以保留在内存中，原生客户端也可以将其暂存于操作系统临时存储。宿主接受用户消息后，会先把消息中的图片移到 `<DSH_HOME>/attachments/v1` 下，再追加用户事件。结构化模型图片输出遵循同样的先持久化、后追加事件规则。
+未发送的浏览器草稿可以保留在内存中，原生客户端也可以将其暂存于操作系统临时存储。浏览器通用文件取得暂存 prompt 凭证前会完成持久化。宿主接受用户消息后，会先把消息中的图片移到 `<DSH_HOME>/attachments/v1` 下，再追加用户事件。结构化模型图片输出遵循同样的先持久化、后追加事件规则。
 
 来源：[`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)
 
@@ -232,4 +232,63 @@ readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: 
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)
+
+<a id="ctxfileuploads--fileuploads"></a>
+
+### `ctx.fileUploads` — `FileUploads`
+
+Host service owning upload storage and Agent-scoped staged receipts.
+
+```ts cordis-catalog
+/**
+ * Register the ordinary-Session resolver used when a raw upload addresses a cold Session.
+ * @param resolve - resolver that returns the exact live Agent or throws a Remote error.
+ * @returns disposer removing this resolver.
+ */
+registerAgentResolver(resolve: AgentResolver): () => void
+
+/**
+ * Persist one encoded upload and stage it under the Agent receiver selected by Typert.
+ * @param agent - receiving Agent resolved from the Remote Agent scope.
+ * @param request - canonical base64 bytes and optional display name.
+ * @param signal - caller cancellation before storage begins.
+ * @returns the staged receipt and durable file reference.
+ */
+@Remote('upload') upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue>
+
+/**
+ * Persist raw chunks for one Session without aggregating the upload.
+ * @param request - Session identity, ordered bytes, cancellation, and optional display name.
+ * @returns the staged receipt and durable file reference.
+ */
+async uploadStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+
+/**
+ * Resolve one staged receipt inside its receiving Agent scope.
+ * @param agent - receiving Agent.
+ * @param receiptId - opaque receipt minted for one completed upload.
+ * @returns durable file reference, or `undefined` for an unknown or foreign receipt.
+ */
+resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined
+
+/**
+ * Bind receipts to an accepted prompt and return a rollback for delivery failure.
+ * @param agent - receiving Agent.
+ * @param receiptIds - distinct staged receipts referenced by the prompt.
+ * @param requestId - prompt identity later observed in queue or history.
+ * @returns rollback restoring every prior binding.
+ */
+bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): () => void
+
+/**
+ * Retire every receipt accepted by one removed queue occurrence.
+ * @param agent - receiving Agent.
+ * @param requestId - prompt identity carried by the queue occurrence.
+ */
+retirePrompt(agent: Agent, requestId: string): void
+```
+
+Types: [Agent](core.zh.md) · [SessionId](core.zh.md)
+
+Source: [`packages/client/file-upload/src/index.ts`](../../packages/client/file-upload/src/index.ts)
 <!-- END GENERATED cordis-surface -->

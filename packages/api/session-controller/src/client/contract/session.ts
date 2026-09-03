@@ -12,7 +12,7 @@ import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
 import type { SessionId, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
-import type { FileUploadReceiptId, PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
+import type { PromptContentPart, QueueAction, SessionRequestId } from '../../types.ts'
 import type { PendingSubmissionAttachment, SessionSnapshot } from './snapshot.ts'
 
 /**
@@ -89,21 +89,6 @@ export interface ISession {
     signal?: AbortSignal,
     requestId?: SessionRequestId,
   ): Promise<RemoteResult<{ accepted: true }>>
-  /**
-   * Persist one browser file verbatim and stage it for a later prompt on this
-   * session. The returned opaque receipt is what a prompt file part cites.
-   * @param data - browser Blob, exact file bytes, or a one-shot byte stream.
-   * @param name - optional display name; the host sanitizes the stored leaf name.
-   * @param signal - optional cancellation for the active upload.
-   * @param onProgress - optional byte-progress observer for background Blob or stream uploads.
-   * @returns the staged-upload receipt and durable file reference, or the business error.
-   */
-  uploadFile(
-    data: Blob | Uint8Array | ReadableStream<Uint8Array>,
-    name?: string,
-    signal?: AbortSignal,
-    onProgress?: (progress: { readonly loaded: number; readonly total?: number }) => void,
-  ): Promise<RemoteResult<{ receiptId: FileUploadReceiptId; file: FileAttachmentRef }>>
   /**
    * Resolve one durable image referenced by this session.
    * @param attachmentId - opaque id found in the folded session log.

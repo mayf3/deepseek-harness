@@ -47,8 +47,7 @@
         "@deepseek-ai/dsh-api-gateway/client"
       ],
       "inject": [
-        "@deepseek-ai/dsh-api-gateway",
-        "@deepseek-ai/dsh-client-file-upload"
+        "@deepseek-ai/dsh-api-gateway"
       ],
       "platform": "web"
     }
@@ -82,6 +81,7 @@
     "@deepseek-ai/dsh-api-gateway": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",
     "@deepseek-ai/dsh-client-connection": "workspace:^",
+    "@deepseek-ai/dsh-client-file-upload": "workspace:^",
     "@deepseek-ai/dsh-commands": "workspace:^",
     "@deepseek-ai/dsh-file-reference": "workspace:^",
     "@deepseek-ai/dsh-jobs": "workspace:^",

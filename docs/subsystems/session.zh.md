@@ -769,15 +769,6 @@ inspect( sessionId: SessionId, signal?: AbortSignal, ): Promise<SessionInspectio
 @Remote('attachment') attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue>
 
 /**
- * Persist one encoded file upload verbatim and stage it for a later prompt
- * on the same Session.
- * @param request - Session identity, base64 payload, and optional display name.
- * @param signal - caller cancellation before storage begins.
- * @returns an opaque per-upload receipt and the durable file reference.
- */
-@Remote('uploadFile') uploadFile(request: SessionUploadFileRequest, signal: AbortSignal): Promise<SessionUploadFileValue>
-
-/**
  * Mutate one still-pending queue occurrence on a live Agent.
  * @param request - Session, queue item, and requested mutation.
  * @returns acknowledgement that the queue mutation was applied.

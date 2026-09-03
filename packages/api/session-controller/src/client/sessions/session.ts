@@ -1,8 +1,7 @@
 // Sessions remain resident after creation so their open Remote sources keep running off-screen.
 
 import type { Context } from '@deepseek-ai/cordis'
-import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import type { FileUploadProgress } from '@deepseek-ai/dsh-client-file-upload/client'
+import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -17,9 +16,7 @@ import type {
   SessionProjectionBaseline,
   SessionQueuedItem,
   SessionRequestId,
-  SessionUploadFileValue,
 } from '../../types.ts'
-import { SESSION_FILE_UPLOAD_PATH } from '../../file-upload-path.ts'
 import type {
   BeginSubmissionInput, PendingSubmissionRetirement, SessionFace, SubmissionHandle,
 } from '../contract/session.ts'
@@ -293,57 +290,6 @@ export class Session implements SessionFace {
       this.notifier.markDirty()
     }
     return result
-  }
-
-  /**
-   * Persist one browser file verbatim and stage it for a later prompt on this
-   * session (ordinary sessions only; subagent conversations refuse).
-   * @param data - exact bytes, a browser Blob, or a one-shot byte stream.
-   * @param name - optional display name; the host sanitizes the stored leaf name.
-   * @param signal - optional cancellation for the active upload.
-   * @param onProgress - optional byte-progress observer for background bodies.
-   * @returns the staged-upload receipt and durable file reference, or the business error.
-   */
-  async uploadFile(
-    data: Blob | Uint8Array | ReadableStream<Uint8Array>,
-    name?: string,
-    signal?: AbortSignal,
-    onProgress?: (progress: FileUploadProgress) => void,
-  ): Promise<RemoteResult<SessionUploadFileValue>> {
-    if (this.address !== undefined) {
-      return {
-        ok: false,
-        error: new RemoteError(
-          'subagent/attachment-invalid',
-          'subagent conversations do not accept file uploads',
-          { reason: 'SUBAGENT_FILE_UNSUPPORTED' },
-        ),
-      }
-    }
-    if (!(data instanceof Uint8Array) && this.actx?.fileUpload.available === true) {
-      const query = new URLSearchParams({ sessionId: this.sessionId })
-      if (name !== undefined) query.set('name', name)
-      const response = await this.actx.fileUpload.post({
-        path: `${SESSION_FILE_UPLOAD_PATH}?${query.toString()}`,
-        body: data,
-        headers: { 'content-type': 'application/octet-stream' },
-        ...(signal === undefined ? {} : { signal }),
-        ...(onProgress === undefined ? {} : { onProgress }),
-      })
-      if (response.status !== 200) {
-        throw new Error(`file upload transport failed with HTTP ${String(response.status)}`)
-      }
-      return parseFileUploadResult(response.body)
-    }
-    if (!(data instanceof Uint8Array) && !(data instanceof Blob)) {
-      throw new Error('stream file upload requires a bound Client file-upload service')
-    }
-    const bytes = data instanceof Uint8Array ? data : new Uint8Array(await data.arrayBuffer())
-    return this.remote.session.uploadFile({
-      sessionId: this.sessionId,
-      data: bytesToBase64(bytes),
-      ...(name === undefined ? {} : { name }),
-    }, signal)
   }
 
   /**
@@ -829,46 +775,6 @@ export class Session implements SessionFace {
       ? { kind: 'session', sessionId: this.sessionId }
       : { kind: 'subagent', ...this.address }
   }
-}
-
-function parseFileUploadResult(body: string): RemoteResult<SessionUploadFileValue> {
-  const value = JSON.parse(body) as unknown
-  if (!isRecord(value) || typeof value.ok !== 'boolean') {
-    throw new TypeError('file upload transport returned an invalid result')
-  }
-  if (!value.ok) {
-    const error = value.error
-    if (!isRecord(error) || typeof error.code !== 'string'
-      || typeof error.message !== 'string' || !isRecord(error.details)) {
-      throw new TypeError('file upload transport returned an invalid failure')
-    }
-    return {
-      ok: false,
-      error: new RemoteError(error.code as never, error.message, error.details as never),
-    }
-  }
-  const result = value.value
-  const file = isRecord(result) ? result.file : undefined
-  if (!isRecord(result) || typeof result.receiptId !== 'string' || !isRecord(file)
-    || typeof file.attachmentId !== 'string' || typeof file.name !== 'string'
-    || typeof file.bytes !== 'number' || !Number.isSafeInteger(file.bytes) || file.bytes < 0) {
-    throw new TypeError('file upload transport returned an invalid receipt')
-  }
-  return {
-    ok: true,
-    value: {
-      receiptId: result.receiptId as SessionUploadFileValue['receiptId'],
-      file: {
-        attachmentId: file.attachmentId as SessionUploadFileValue['file']['attachmentId'],
-        name: file.name,
-        bytes: file.bytes,
-      },
-    },
-  }
-}
-
-function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 /** Run one callback on the next animation frame, or a macrotask where no frame clock exists. */

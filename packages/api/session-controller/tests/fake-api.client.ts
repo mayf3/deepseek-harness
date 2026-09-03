@@ -143,13 +143,6 @@ export class FakeApiClient {
   onPrompt: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onAttachment: (payload: unknown) => Promise<RemoteResult<{ attachment: { attachmentId: never; mediaType: 'image/png'; bytes: number; width: number; height: number }; data: string }>> =
     () => Promise.resolve(ok({ attachment: { attachmentId: 'a' as never, mediaType: 'image/png', bytes: 1, width: 1, height: 1 }, data: 'AA==' }))
-  onUploadFile: (payload: unknown) => Promise<RemoteResult<{
-    receiptId: never
-    file: { attachmentId: never; name: string; bytes: number }
-  }>> = () => Promise.resolve(ok({
-    receiptId: 'r' as never,
-    file: { attachmentId: 'f' as never, name: 'file', bytes: 1 },
-  }))
   onUpdateQueue: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onCancel: (payload: unknown) => Promise<RemoteResult<{ accepted: true }>> = () => Promise.resolve(ok({ accepted: true as const }))
   onOpenWorkspacePath: (payload: unknown) => Promise<RemoteResult<{ opened: true }>> =
@@ -232,7 +225,6 @@ export class FakeApiClient {
         fork: payload => this.record('session.fork', payload, this.onFork(payload)),
         prompt: payload => this.record('session.prompt', payload, this.onPrompt(payload)),
         attachment: payload => this.record('session.attachment', payload, this.onAttachment(payload)),
-        uploadFile: payload => this.record('session.uploadFile', payload, this.onUploadFile(payload)),
         updateQueue: payload => this.record('session.updateQueue', payload, this.onUpdateQueue(payload)),
         cancel: payload => this.record('session.cancel', payload, this.onCancel(payload)),
         openWorkspacePath: payload => this.record(

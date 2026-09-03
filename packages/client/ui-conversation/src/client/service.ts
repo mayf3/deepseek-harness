@@ -16,6 +16,7 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type {
   ISessions, PendingSubmissionRetirement, SessionFace,
 } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -300,11 +301,11 @@ export class ConversationController extends Service implements IConversation {
    * with the prompt); every other file becomes a file draft whose background
    * upload starts immediately and remains owned by this service across Session
    * navigation until completion or explicit removal.
-   * @param session - target session owning staged file uploads.
+   * @param sessionId - target Agent-scope identity.
    * @param files - browser files to register.
    * @returns ordered draft descriptors.
    */
-  createDrafts(session: SessionFace, files: readonly File[]): readonly ComposerAttachment[] {
+  createDrafts(sessionId: SessionId, files: readonly File[]): readonly ComposerAttachment[] {
     return files.map((file) => {
       if (isImageMediaType(file.type)) {
         const attachment = browserDraftAttachment(file)
@@ -318,36 +319,36 @@ export class ConversationController extends Service implements IConversation {
         file,
       }
       this.draftAttachments.set(attachment.id, attachment)
-      this.beginFileUpload(session, attachment)
+      this.beginFileUpload(sessionId, attachment)
       return attachment
     })
   }
 
   /**
    * Restart one failed file upload.
-   * @param session - target session owning staged file uploads.
+   * @param sessionId - target Agent-scope identity.
    * @param id - draft attachment id whose upload previously failed.
    */
-  retryFileUpload(session: SessionFace, id: DraftAttachmentId): void {
+  retryFileUpload(sessionId: SessionId, id: DraftAttachmentId): void {
     const attachment = this.draftAttachments.get(id)
     if (attachment === undefined || attachment.kind !== 'file') return
     if (this.fileUploads.getSnapshot()[id]?.status !== 'error') return
-    this.beginFileUpload(session, attachment)
+    this.beginFileUpload(sessionId, attachment)
   }
 
   /**
    * Stage carried file drafts again for a new Session.
-   * @param session - target Session after a Workspace switch.
+   * @param sessionId - target Agent-scope identity after a Workspace switch.
    * @param ids - carried draft attachment ids.
    */
-  rebindDraftFiles(session: SessionFace, ids: readonly DraftAttachmentId[]): void {
+  rebindDraftFiles(sessionId: SessionId, ids: readonly DraftAttachmentId[]): void {
     for (const id of ids) {
       const attachment = this.draftAttachments.get(id)
-      if (attachment?.kind === 'file') this.beginFileUpload(session, attachment)
+      if (attachment?.kind === 'file') this.beginFileUpload(sessionId, attachment)
     }
   }
 
-  private beginFileUpload(session: SessionFace, attachment: ComposerFileAttachment): void {
+  private beginFileUpload(sessionId: SessionId, attachment: ComposerFileAttachment): void {
     this.fileUploadOperations.get(attachment.id)?.controller.abort()
     const controller = new AbortController()
     this.fileUploads.update((draft) => {
@@ -362,7 +363,10 @@ export class ConversationController extends Service implements IConversation {
       try {
         if (controller.signal.aborted
           || this.fileUploadOperations.get(attachment.id)?.controller !== controller) return
-        const result = await session.uploadFile(
+        const owner = this.requireSessions().scope(sessionId)
+        if (owner === undefined) throw new Error(`conversation: session "${sessionId}" resolved no Agent scope`)
+        const result = await this.ctx.fileUpload.upload(
+          owner,
           attachment.file,
           attachment.file.name === '' ? undefined : attachment.file.name,
           controller.signal,

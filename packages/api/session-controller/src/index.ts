@@ -3,6 +3,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
+import type {} from '@deepseek-ai/dsh-client-file-upload'
 import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
@@ -17,7 +18,6 @@ import { SessionCommandController } from './commands.ts'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
-import { registerSessionFileUploadHttp } from './file-upload-http.ts'
 import {
   ApiSessionList,
   DEFAULT_COLD_BLANK_PROBE_MAX_BYTES,
@@ -55,8 +55,6 @@ import type {
   SessionSelectModelValue,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
-  SessionUploadFileRequest,
-  SessionUploadFileValue,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -95,6 +93,7 @@ export class SessionController extends TypertRemoteService {
     'agentDefaultModel',
     'agents',
     'attachments',
+    'fileUploads',
     'llm',
     'sessions',
     'sessionProjections',
@@ -128,7 +127,11 @@ export class SessionController extends TypertRemoteService {
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
-    registerSessionFileUploadHttp(ctx, this.commands)
+    ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
+      const result = await this.agents.resolveAgent(sessionId)
+      if ('error' in result) throw result.error
+      return result.agent
+    }), 'session-controller: file-upload Agent resolver')
     this.controlState = new SessionControlController(ctx)
     // Registered before history so reverse-order teardown closes every
     // follower before waiting for already-admitted promotions.
@@ -150,7 +153,6 @@ export class SessionController extends TypertRemoteService {
       ctx.emit('api-session/added', this.listState.summaryFor(session))
     })
     ctx.on('session/disposed', (session) => {
-      this.commands.releaseStagedFiles(session.id)
       ctx.emit('api-session/removed', session.id)
     })
     ctx.on('agent/status', ({ agent, status }) => {
@@ -160,10 +162,6 @@ export class SessionController extends TypertRemoteService {
       ctx.emit('api-session/error', agent.id, errorChain(error))
     })
     ctx.on('session/event', (session, event) => {
-      if (event.type === 'user/message' && event.data.source.kind === 'user'
-        && 'rpcId' in event.data.source) {
-        this.commands.retireObservedPrompt(session.id, event.data.source.rpcId)
-      }
       if (event.type === 'request/header') {
         const agent = ctx.agents.get(session.id)
         if (agent?.session === session) this.agents.consumeSelection(
@@ -354,19 +352,6 @@ export class SessionController extends TypertRemoteService {
   @Remote('attachment')
   attachment(request: SessionAttachmentRequest): Promise<SessionAttachmentValue> {
     return this.commands.attachment(request)
-  }
-
-  /**
-   * Persist one encoded file upload verbatim and stage it for a later prompt
-   * on the same Session.
-   * @param request - Session identity, base64 payload, and optional display name.
-   * @param signal - caller cancellation before storage begins.
-   * @returns an opaque per-upload receipt and the durable file reference.
-   */
-  @Remote('uploadFile')
-  uploadFile(request: SessionUploadFileRequest, signal: AbortSignal): Promise<SessionUploadFileValue> {
-    signal.throwIfAborted()
-    return this.commands.uploadFile(request)
   }
 
   /**

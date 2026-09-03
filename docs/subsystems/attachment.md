@@ -1,10 +1,10 @@
-# Durable Image Attachments
+# Durable Attachments
 
 English | [中文](attachment.zh.md)
 
-The attachment seam separates binary image ownership from the session log. A producer gives validated encoded bytes to [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam); the service publishes an immutable content-addressed reference only after the object is durable. Session events and model-visible `ImageBlock`s contain that reference and metadata, never a browser object URL, host temporary path, provider URL, or base64 payload.
+The attachment seam separates binary image and generic-file ownership from the session log. A producer gives bytes to [`ctx.attachments`](#ctxattachments--attachmentstore-abstract-seam); the service publishes an immutable content-addressed reference only after the object is durable. Session events and model-visible attachment blocks contain that reference and metadata, never a browser object URL, host temporary path, provider URL, or base64 payload. The independent [`ctx.fileUploads`](#ctxfileuploads--fileuploads) service binds browser file transfers and staged receipts to the receiving Agent.
 
-Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. Structured model image output follows the same persist-before-event rule.
+Unsent browser drafts may stay in memory and native clients may stage them in operating-system temporary storage. Browser generic files become durable before they receive a staged prompt receipt. Once the host accepts a user message, its images move below `<DSH_HOME>/attachments/v1` before the user event is appended. Structured model image output follows the same persist-before-event rule.
 
 Source: [`packages/attachment/attachment/src/types.ts`](../../packages/attachment/attachment/src/types.ts)
 
@@ -232,4 +232,63 @@ readImageRequest( ref: ImageAttachmentRef, policy: ImageRequestPolicy, signal?: 
 ```
 
 Source: [`packages/attachment/attachment/src/index.ts`](../../packages/attachment/attachment/src/index.ts)
+
+<a id="ctxfileuploads--fileuploads"></a>
+
+### `ctx.fileUploads` — `FileUploads`
+
+Host service owning upload storage and Agent-scoped staged receipts.
+
+```ts cordis-catalog
+/**
+ * Register the ordinary-Session resolver used when a raw upload addresses a cold Session.
+ * @param resolve - resolver that returns the exact live Agent or throws a Remote error.
+ * @returns disposer removing this resolver.
+ */
+registerAgentResolver(resolve: AgentResolver): () => void
+
+/**
+ * Persist one encoded upload and stage it under the Agent receiver selected by Typert.
+ * @param agent - receiving Agent resolved from the Remote Agent scope.
+ * @param request - canonical base64 bytes and optional display name.
+ * @param signal - caller cancellation before storage begins.
+ * @returns the staged receipt and durable file reference.
+ */
+@Remote('upload') upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue>
+
+/**
+ * Persist raw chunks for one Session without aggregating the upload.
+ * @param request - Session identity, ordered bytes, cancellation, and optional display name.
+ * @returns the staged receipt and durable file reference.
+ */
+async uploadStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>
+
+/**
+ * Resolve one staged receipt inside its receiving Agent scope.
+ * @param agent - receiving Agent.
+ * @param receiptId - opaque receipt minted for one completed upload.
+ * @returns durable file reference, or `undefined` for an unknown or foreign receipt.
+ */
+resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined
+
+/**
+ * Bind receipts to an accepted prompt and return a rollback for delivery failure.
+ * @param agent - receiving Agent.
+ * @param receiptIds - distinct staged receipts referenced by the prompt.
+ * @param requestId - prompt identity later observed in queue or history.
+ * @returns rollback restoring every prior binding.
+ */
+bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): () => void
+
+/**
+ * Retire every receipt accepted by one removed queue occurrence.
+ * @param agent - receiving Agent.
+ * @param requestId - prompt identity carried by the queue occurrence.
+ */
+retirePrompt(agent: Agent, requestId: string): void
+```
+
+Types: [Agent](core.md) · [SessionId](core.md)
+
+Source: [`packages/client/file-upload/src/index.ts`](../../packages/client/file-upload/src/index.ts)
 <!-- END GENERATED cordis-surface -->

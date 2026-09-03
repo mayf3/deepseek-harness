@@ -4,9 +4,10 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { AttachmentError, admitEncodedFile, admitPromptContent } from '@deepseek-ai/dsh-attachment'
-import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
+import { AttachmentError, admitPromptContent } from '@deepseek-ai/dsh-attachment'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
+import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
@@ -37,7 +38,6 @@ import type {
   SessionCreateValue,
   SessionForkRequest,
   SessionForkValue,
-  FileUploadReceiptId,
   SessionPromptRequest,
   SessionPromptValue,
   SessionRenameRequest,
@@ -46,8 +46,6 @@ import type {
   SessionSelectModelValue,
   SessionUpdateQueueRequest,
   SessionUpdateQueueValue,
-  SessionUploadFileRequest,
-  SessionUploadFileValue,
   SessionRequestId,
 } from './types.ts'
 
@@ -57,21 +55,8 @@ interface SessionReadState {
   readonly events: readonly SessionEvent[]
 }
 
-interface StagedFileUpload {
-  readonly file: FileAttachmentRef
-  /** Prompt that accepted this receipt; absent until successful admission. */
-  requestId?: SessionRequestId
-}
-
 /** Implements Session business commands delegated by the Session Controller Remote service. */
 export class SessionCommandController {
-  /**
-   * Staged file uploads awaiting a prompt, keyed by Session. Entries are the
-   * prompt-time authority for file references: a prompt may only cite a file
-   * previously uploaded for the same Session in this process.
-   */
-  private readonly stagedFiles = new Map<SessionId, Map<FileUploadReceiptId, StagedFileUpload>>()
-
   /**
    * @param ctx - Host context carrying Agent, model, attachment, title, and Workspace services.
    * @param agents - sole owner of create, resume, and Session-local model selection.
@@ -81,115 +66,7 @@ export class SessionCommandController {
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
-  ) {
-    ctx.inject(['commands'], (commandCtx) => {
-      const resolve: CommandFileReceiptResolver = (agent, receiptId) =>
-        this.resolveStagedFile(agent.id, receiptId as FileUploadReceiptId)
-      commandCtx.effect(
-        () => commandCtx.commands.registerFileReceiptResolver(resolve),
-        'session-controller: command file receipt resolver',
-      )
-    })
-  }
-
-  /**
-   * Persist one browser file upload verbatim and stage it for later prompts.
-   * @param request - Session identity, base64 payload, and optional display name.
-   * @returns an opaque per-upload receipt and the durable file reference.
-   */
-  async uploadFile(request: SessionUploadFileRequest): Promise<SessionUploadFileValue> {
-    const agent = await this.resolveAgent(request.sessionId)
-    return this.commitFileUpload(agent, async () => admitEncodedFile(this.ctx.attachments, {
-      data: request.data,
-      ...(request.name === undefined ? {} : { name: request.name }),
-    }))
-  }
-
-  /**
-   * Persist raw upload chunks without collecting the complete file in memory.
-   * @param request - Session identity, ordered exact bytes, cancellation, and optional display name.
-   * @returns an opaque per-upload receipt and the durable file reference.
-   */
-  async uploadFileStream(request: {
-    readonly sessionId: SessionId
-    readonly data: AsyncIterable<Uint8Array>
-    readonly signal?: AbortSignal
-    readonly name?: string
-  }): Promise<SessionUploadFileValue> {
-    const agent = await this.resolveAgent(request.sessionId)
-    return this.commitFileUpload(agent, async () => this.ctx.attachments.saveFileStream({
-      data: request.data,
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
-      ...(request.name === undefined ? {} : { name: request.name }),
-    }))
-  }
-
-  private async commitFileUpload(
-    agent: Agent,
-    save: () => Promise<FileAttachmentRef>,
-  ): Promise<SessionUploadFileValue> {
-    let file: FileAttachmentRef
-    try {
-      file = await save()
-    } catch (error) {
-      if (error instanceof AttachmentError) {
-        throw new RemoteError('session/attachment-invalid', error.message, { reason: error.code })
-      }
-      throw new RemoteError(
-        'gateway/internal',
-        `failed to store file upload: ${String(error)}`,
-        {},
-        { cause: error },
-      )
-    }
-    if (this.ctx.agents.get(agent.id) !== agent) {
-      throw new RemoteError(
-        'session/not-found',
-        `session "${agent.id}" was disposed before its file upload completed`,
-        { sessionId: agent.id },
-      )
-    }
-    let staged = this.stagedFiles.get(agent.id)
-    if (staged === undefined) {
-      staged = new Map()
-      this.stagedFiles.set(agent.id, staged)
-    }
-    const receiptId = randomUUID() as FileUploadReceiptId
-    staged.set(receiptId, { file })
-    return { receiptId, file }
-  }
-
-  /**
-   * Resolve one staged upload for the same Session without exposing the receipt table.
-   * @param sessionId - receiving Session identity.
-   * @param receiptId - Host-minted upload receipt.
-   * @returns the durable file reference, or `undefined` when the receipt is absent or belongs elsewhere.
-   */
-  resolveStagedFile(sessionId: SessionId, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined {
-    return this.stagedFiles.get(sessionId)?.get(receiptId)?.file
-  }
-
-  /**
-   * Retire file receipts only after their accepted prompt becomes observable.
-   * @param sessionId - Session whose log emitted the prompt.
-   * @param requestId - browser prompt identity echoed by the event.
-   */
-  retireObservedPrompt(sessionId: SessionId, requestId: SessionRequestId): void {
-    const staged = this.stagedFiles.get(sessionId)
-    if (staged === undefined) return
-    for (const [receiptId, upload] of staged) {
-      if (upload.requestId === requestId) staged.delete(receiptId)
-    }
-    if (staged.size === 0) this.stagedFiles.delete(sessionId)
-  }
-
-  /**
-   * Drop one Session's staged uploads (the stored objects remain durable).
-   * @param sessionId - Session leaving the live registry.
-   */
-  releaseStagedFiles(sessionId: SessionId): void {
-    this.stagedFiles.delete(sessionId)
-  }
+  ) {}
 
   /**
    * Create or idempotently adopt one ordinary Session.
@@ -451,11 +328,10 @@ export class SessionCommandController {
             )
           }
         }
-        const staged = this.stagedFiles.get(request.sessionId)
         const durable = await durablePromptContent(
           this.ctx,
           request.content,
-          receiptId => staged?.get(receiptId)?.file,
+          receiptId => this.ctx.fileUploads.resolve(agent, receiptId),
         )
         const message: UserMessage = createUserMessage({ content: durable.content, source })
         if (this.ctx.agents.get(agent.id) !== agent) {
@@ -465,26 +341,12 @@ export class SessionCommandController {
             { sessionId: agent.id },
           )
         }
-        const bound = durable.receiptIds.map((receiptId) => {
-          const upload = staged?.get(receiptId)
-          if (upload === undefined) {
-            throw new RemoteError(
-              'session/attachment-invalid',
-              'File was not uploaded for this session.',
-              { reason: 'FILE_NOT_STAGED' },
-            )
-          }
-          return { upload, previous: upload.requestId }
-        })
-        for (const { upload } of bound) upload.requestId = request.requestId
+        const rollback = this.ctx.fileUploads.bindPrompt(agent, durable.receiptIds, request.requestId)
         try {
           if (request.mode === 'steer') agent.steer(message)
           else agent.followup(message)
         } catch (error) {
-          for (const { upload, previous } of bound) {
-            if (previous === undefined) delete upload.requestId
-            else upload.requestId = previous
-          }
+          rollback()
           throw error
         }
       } catch (error) {
@@ -583,7 +445,7 @@ export class SessionCommandController {
       if (request.action.kind === 'remove') {
         const source = message.source
         if (source.kind === 'user' && 'rpcId' in source) {
-          this.retireObservedPrompt(request.sessionId, source.rpcId)
+          this.ctx.fileUploads.retirePrompt(agent, source.rpcId)
         }
       }
       if (request.action.kind === 'steer') agent.steer(message)

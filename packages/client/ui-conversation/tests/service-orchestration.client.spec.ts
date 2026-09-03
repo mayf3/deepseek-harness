@@ -3,7 +3,7 @@
 // TestSessions mints tagged scopes through the production createScope, so the
 // service's scopeOf/binding path runs against production resolution (no local
 // tag probe).
-import { Context } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { makeTranslate, RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
@@ -14,8 +14,26 @@ import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
+/** Test upload service that preserves each fixture Session's local upload override. */
+class TestFileUpload extends Service {
+  constructor(ctx: Context) {
+    super(ctx, 'fileUpload')
+  }
+
+  upload(owner: Context, ...args: unknown[]): Promise<unknown> {
+    const sessions = this.ctx.get('sessions') as {
+      sessionOf(ctx: Context): object | undefined
+    }
+    const session = sessions.sessionOf(owner) as { uploadFile?: (...input: unknown[]) => Promise<unknown> } | undefined
+    if (session?.uploadFile === undefined) throw new Error('test file upload has no Session override')
+    return session.uploadFile(...args)
+  }
+}
+
 async function bench(maxConcurrentFileUploads = 2) {
   const runtime = await SlotTestRuntime.create()
+  const uploadFiber = runtime.ctx.plugin(TestFileUpload)
+  await uploadFiber.await()
   const prompt = vi.fn((
     _content?: unknown, _mode?: unknown, _signal?: AbortSignal, _rpcId?: string,
   ) => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))
@@ -92,7 +110,7 @@ describe('ConversationController', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:draft-1')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
     try {
-      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([new Uint8Array(4)], 'a.png', { type: 'image/png' }),
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
@@ -112,7 +130,7 @@ describe('ConversationController', () => {
     const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:detached')
     const revoked = vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined)
     try {
-      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([Uint8Array.of(1)], 'detached.png', { type: 'image/png' }),
       ])
       if (attachment === undefined) throw new Error('draft attachment missing')
@@ -141,7 +159,7 @@ describe('ConversationController', () => {
       },
     }))
     ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
-    const drafts = b.root.createDrafts(session, [
+    const drafts = b.root.createDrafts(session.sessionId, [
       new File([Uint8Array.of(1)], 'valid.png', { type: 'image/png' }),
       new File([Uint8Array.of(2)], 'notes.pdf', { type: 'application/pdf' }),
     ])
@@ -169,7 +187,7 @@ describe('ConversationController', () => {
           file: { attachmentId: `file-${name}` as never, name: name ?? 'file', bytes: 1 },
         },
       }))
-    const drafts = b.root.createDrafts(session, [
+    const drafts = b.root.createDrafts(session.sessionId, [
       new File([Uint8Array.of(1)], 'one.txt', { type: 'text/plain' }),
       new File([Uint8Array.of(2)], 'two.txt', { type: 'text/plain' }),
     ])
@@ -212,7 +230,7 @@ describe('ConversationController', () => {
       return gate.promise.finally(() => { active -= 1 })
     })
     ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
-    const drafts = b.root.createDrafts(session, ['one', 'two', 'three', 'four', 'removed'].map(name =>
+    const drafts = b.root.createDrafts(session.sessionId, ['one', 'two', 'three', 'four', 'removed'].map(name =>
       new File([Uint8Array.of(1)], `${name}.txt`, { type: 'text/plain' })))
 
     expect(uploadFile.mock.calls.map(call => call[1])).toEqual(['one.txt', 'two.txt'])
@@ -261,7 +279,7 @@ describe('ConversationController', () => {
       return settled.promise
     })
     ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
-    const [attachment] = b.root.createDrafts(session, [
+    const [attachment] = b.root.createDrafts(session.sessionId, [
       new File([new Uint8Array(8)], 'background.bin', { type: 'application/octet-stream' }),
     ])
     if (attachment === undefined) throw new Error('file draft missing')
@@ -309,7 +327,7 @@ describe('ConversationController', () => {
       })
     })
     ;(source as { uploadFile?: unknown }).uploadFile = sourceUpload
-    const [attachment] = b.root.createDrafts(source, [
+    const [attachment] = b.root.createDrafts(source.sessionId, [
       new File([Uint8Array.of(4)], 'carry.pdf', { type: 'application/pdf' }),
     ])
     if (attachment === undefined) throw new Error('file draft missing')
@@ -324,7 +342,8 @@ describe('ConversationController', () => {
         },
       })),
     }
-    b.root.rebindDraftFiles(target as never, [attachment.id])
+    await b.runtime.sessions.add({ id: 's2', session: target })
+    b.root.rebindDraftFiles(b.runtime.sessions.binding('s2')!.session.sessionId, [attachment.id])
 
     expect(sourceSignal?.aborted).toBe(true)
     await vi.waitFor(() => {
@@ -349,7 +368,7 @@ describe('ConversationController', () => {
       })
     })
     ;(session as { uploadFile?: unknown }).uploadFile = uploadFile
-    const [attachment] = b.root.createDrafts(session, [
+    const [attachment] = b.root.createDrafts(session.sessionId, [
       new File([Uint8Array.of(5)], 'removed.pdf', { type: 'application/pdf' }),
     ])
     if (attachment === undefined) throw new Error('file draft missing')
@@ -378,7 +397,7 @@ describe('ConversationController', () => {
         file: { attachmentId: 'send-file' as never, name: 'sent.pdf', bytes: 1 },
       },
     }))
-    const [attachment] = b.root.createDrafts(session, [
+    const [attachment] = b.root.createDrafts(session.sessionId, [
       new File([Uint8Array.of(6)], 'sent.pdf', { type: 'application/pdf' }),
     ])
     if (attachment === undefined) throw new Error('file draft missing')
@@ -417,7 +436,7 @@ describe('ConversationController', () => {
         })
       },
     )
-    b.root.createDrafts(session, [
+    b.root.createDrafts(session.sessionId, [
       new File([Uint8Array.of(7)], 'dispose.pdf', { type: 'application/pdf' }),
     ])
     await vi.waitFor(() => { expect(uploadSignal).toBeDefined() })
@@ -476,7 +495,7 @@ describe('sendSession submission echo', () => {
   it('registers the echo before serialization and prompts with its identity', async () => {
     const b = await echoBench()
     try {
-      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([Uint8Array.of(1, 2, 3)], 'a.png', { type: 'image/png' }),
       ])
       const session = b.runtime.sessions.binding('s1')!.session
@@ -522,7 +541,7 @@ describe('sendSession submission echo', () => {
           file: { attachmentId: 'mixed-file' as never, name: 'notes.txt', bytes: 1 },
         },
       }))
-      const drafts = b.root.createDrafts(session, [
+      const drafts = b.root.createDrafts(session.sessionId, [
         new File([Uint8Array.of(1)], 'first.png', { type: 'image/png' }),
         new File([Uint8Array.of(2)], 'notes.txt', { type: 'text/plain' }),
         new File([Uint8Array.of(3)], 'last.png', { type: 'image/png' }),
@@ -604,7 +623,7 @@ describe('sendSession submission echo', () => {
       const seedImageUrl = vi.fn(() => true)
       b.runtime.ctx.provide('uiConversation')
       b.runtime.ctx.set('uiConversation', { seedImageUrl })
-      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([Uint8Array.of(9)], 'seeded.png', { type: 'image/png' }),
       ])
       const session = b.runtime.sessions.binding('s1')!.session
@@ -644,7 +663,7 @@ describe('sendSession submission echo', () => {
       b.prompt.mockResolvedValueOnce({
         ok: false, error: new RemoteError('session/attachment-invalid', 'nope', { reason: 'nope' }),
       } as never)
-      const attachments = b.root.createDrafts(session, [
+      const attachments = b.root.createDrafts(session.sessionId, [
         new File([Uint8Array.of(7)], 'kept.png', { type: 'image/png' }),
         new File([Uint8Array.of(8)], 'kept.txt', { type: 'text/plain' }),
       ])
@@ -674,7 +693,7 @@ describe('sendSession submission echo', () => {
     }
     vi.stubGlobal('FileReader', FailingReader)
     try {
-      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [attachment] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([Uint8Array.of(1)], 'broken.png', { type: 'image/png' }),
       ])
       const session = b.runtime.sessions.binding('s1')!.session
@@ -754,12 +773,12 @@ describe('draft image dimension probe', () => {
     }
     vi.stubGlobal('Image', InstantImage)
     try {
-      const [probed] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [probed] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([Uint8Array.of(1)], 'probed.png', { type: 'image/png' }),
       ])
       expect(probed).toMatchObject({ width: 640, height: 480 })
       vi.stubGlobal('Image', undefined)
-      const [unprobed] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session, [
+      const [unprobed] = b.root.createDrafts(b.runtime.sessions.binding('s1')!.session.sessionId, [
         new File([Uint8Array.of(2)], 'unprobed.png', { type: 'image/png' }),
       ])
       expect(unprobed?.kind).toBe('image')

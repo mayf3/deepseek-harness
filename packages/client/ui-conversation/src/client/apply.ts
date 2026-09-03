@@ -44,7 +44,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 
 /** Services required by the Conversation plugin. */
 export const inject = [
-  'slots', 'sessions', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
+  'slots', 'sessions', 'fileUpload', 'uiSession', 'uiWorkspace', 'locale', 'settingsScope',
 ]
 
 /** Conversation runtime configuration. */
@@ -238,11 +238,10 @@ export function apply(ctx: Context, config: Config = Config({})): void {
           const attachmentIds = from.snapshot.attachmentIds
           const next = inputHub.shell(nextId)
           if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
-            const target = sessions.binding(nextId)?.session
-            if (target === undefined) {
+            if (sessions.binding(nextId) === undefined) {
               throw new Error(`ui-conversation: session "${nextId}" resolved no binding`)
             }
-            concreteConversation(ctx).rebindDraftFiles(target, attachmentIds)
+            concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds)
             if (draft !== '') {
               next.setDraft(draft)
               from.setDraft('')
@@ -331,10 +330,9 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       return {
         keyboard: shell,
         addFiles: (files) => {
-          const session = sessions.binding(sessionId)?.session
-          if (session === undefined) return t('file.sessionUnavailable')
+          if (sessions.binding(sessionId) === undefined) return t('file.sessionUnavailable')
           try {
-            const drafts = conversation.createDrafts(session, files)
+            const drafts = conversation.createDrafts(sessionId, files)
             if (!shell.addAttachments(drafts.map(draft => draft.id))) {
               conversation.releaseDraftAttachments(drafts)
             }
@@ -349,8 +347,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
         },
         resolveDraftAttachments: ids => conversation.resolveDraftAttachments(ids),
         retryFileUpload: (id) => {
-          const session = sessions.binding(sessionId)?.session
-          if (session !== undefined) conversation.retryFileUpload(session, id)
+          if (sessions.binding(sessionId) !== undefined) conversation.retryFileUpload(sessionId, id)
         },
         resolveSubmitMode: (running, gesture, steeringAvailable) =>
           submissionPolicy.resolve(running, gesture, steeringAvailable),

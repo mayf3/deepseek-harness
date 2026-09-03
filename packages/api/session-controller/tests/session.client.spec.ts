@@ -1,8 +1,6 @@
 /** Session object lifecycle, event-window transport, commands, and resync behavior. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { Context } from '@deepseek-ai/cordis'
-import type { FileUploadService } from '@deepseek-ai/dsh-client-file-upload/client'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session/types'
 import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
@@ -17,22 +15,11 @@ const PARENT = 'fk-parent' as SessionId
 afterEach(() => {
   vi.unstubAllGlobals()
 })
-
 function makeSession(
   api = new FakeApiClient(),
   options: SessionOptions = {},
 ): { api: FakeApiClient; session: Session } {
   return { api, session: new Session(SID, fakeRemote(api), options) }
-}
-
-function bindFileUpload(
-  session: Session,
-  post: FileUploadService['post'],
-  available = true,
-): void {
-  const ctx = new Context()
-  ctx.reflect.provide('fileUpload', { available, post })
-  session.bindScope(ctx)
 }
 
 function follow(
@@ -56,177 +43,6 @@ function eventSeqs(session: Session): number[] {
 function histResponse(events: SessionEvent[], hasMore = false) {
   return Promise.resolve(ok(historyValue(events, hasMore)))
 }
-
-describe('Session file upload', () => {
-  it('uses the background body carrier, reports progress, and validates its receipt', async () => {
-    const progress = vi.fn()
-    const post = vi.fn(async (request: {
-      path: string
-      body: Blob | ReadableStream<Uint8Array>
-      headers?: Readonly<Record<string, string>>
-      signal?: AbortSignal
-      onProgress?: (progress: { loaded: number; total?: number }) => void
-    }) => {
-      request.onProgress?.({ loaded: 2, total: 4 })
-      return {
-        status: 200,
-        body: JSON.stringify({
-          ok: true,
-          value: {
-            receiptId: 'receipt-1',
-            file: { attachmentId: 'file-1', name: 'notes & refs.pdf', bytes: 4 },
-          },
-        }),
-      }
-    })
-    const { api, session } = makeSession()
-    bindFileUpload(session, post)
-    const abort = new AbortController()
-    const file = new Blob([Uint8Array.of(1, 2, 3, 4)])
-
-    await expect(session.uploadFile(file, 'notes & refs.pdf', abort.signal, progress)).resolves.toEqual({
-      ok: true,
-      value: {
-        receiptId: 'receipt-1',
-        file: { attachmentId: 'file-1', name: 'notes & refs.pdf', bytes: 4 },
-      },
-    })
-    expect(post).toHaveBeenCalledWith(expect.objectContaining({
-      path: '/api/session/uploadFileBinary?sessionId=fk-s1&name=notes+%26+refs.pdf',
-      body: file,
-      headers: { 'content-type': 'application/octet-stream' },
-      signal: abort.signal,
-    }))
-    expect(progress).toHaveBeenCalledWith({ loaded: 2, total: 4 })
-    expect(api.callsOf('session.uploadFile')).toEqual([])
-  })
-
-  it('preserves a background business failure and supports unnamed files without observers', async () => {
-    const post = vi.fn<FileUploadService['post']>(() => Promise.resolve({
-      status: 200,
-      body: JSON.stringify({
-        ok: false,
-        error: { code: 'session/attachment-invalid', message: 'denied', details: { reason: 'NOPE' } },
-      }),
-    }))
-    const { session } = makeSession()
-    bindFileUpload(session, post)
-    await expect(session.uploadFile(new Blob([]))).resolves.toMatchObject({
-      ok: false,
-      error: { code: 'session/attachment-invalid', message: 'denied', details: { reason: 'NOPE' } },
-    })
-    const request = post.mock.calls[0]?.[0]
-    expect(request).toMatchObject({
-      path: '/api/session/uploadFileBinary?sessionId=fk-s1',
-      headers: { 'content-type': 'application/octet-stream' },
-    })
-    expect(request?.body).toBeInstanceOf(Blob)
-  })
-
-  it('keeps byte and Blob fallback uploads on the generated Remote carrier', async () => {
-    const { api, session } = makeSession()
-    await expect(session.uploadFile(Uint8Array.of(0, 0, 0), 'bytes.bin')).resolves.toMatchObject({ ok: true })
-    await expect(session.uploadFile(new Blob([Uint8Array.of(1)]))).resolves.toMatchObject({ ok: true })
-    expect(api.callsOf('session.uploadFile')).toEqual([
-      { sessionId: SID, data: 'AAAA', name: 'bytes.bin' },
-      { sessionId: SID, data: 'AQ==' },
-    ])
-  })
-
-  it('keeps fixture Blob fallback on the Remote and refuses an uncarried stream', async () => {
-    const { api, session } = makeSession()
-    const post = vi.fn<FileUploadService['post']>()
-    bindFileUpload(session, post, false)
-
-    await expect(session.uploadFile(new Blob([Uint8Array.of(1)]), 'fixture.bin'))
-      .resolves.toMatchObject({ ok: true })
-    const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
-    await expect(session.uploadFile(stream, 'stream.bin'))
-      .rejects.toThrow('stream file upload requires a bound Client file-upload service')
-    expect(post).not.toHaveBeenCalled()
-    expect(api.callsOf('session.uploadFile')).toEqual([
-      { sessionId: SID, data: 'AQ==', name: 'fixture.bin' },
-    ])
-  })
-
-  it('hands a one-shot ReadableStream to the scoped file-upload service', async () => {
-    const post = vi.fn(() => Promise.resolve({
-      status: 200,
-      body: JSON.stringify({
-        ok: true,
-        value: {
-          receiptId: 'stream-receipt',
-          file: { attachmentId: 'stream-file', name: 'stream.bin', bytes: 3 },
-        },
-      }),
-    }))
-    const { session } = makeSession()
-    bindFileUpload(session, post)
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(Uint8Array.of(1, 2, 3))
-        controller.close()
-      },
-    })
-    await expect(session.uploadFile(stream, 'stream.bin')).resolves.toMatchObject({ ok: true })
-    expect(post).toHaveBeenCalledWith(expect.objectContaining({
-      path: '/api/session/uploadFileBinary?sessionId=fk-s1&name=stream.bin',
-      body: stream,
-    }))
-  })
-
-  it('refuses a stream when a bare Session has no scoped upload service', async () => {
-    const { session } = makeSession()
-    const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
-    await expect(session.uploadFile(stream)).rejects.toThrow(
-      'stream file upload requires a bound Client file-upload service',
-    )
-  })
-
-  it('folds non-200 and malformed background responses into transport failures', async () => {
-    const bodies: unknown[] = [
-      null,
-      { ok: 'yes' },
-      { ok: false, error: null },
-      { ok: false, error: { code: 1, message: 'x', details: {} } },
-      { ok: false, error: { code: 'x', message: 1, details: {} } },
-      { ok: false, error: { code: 'x', message: 'x', details: null } },
-      { ok: true, value: null },
-      { ok: true, value: { receiptId: 1, file: {} } },
-      { ok: true, value: { receiptId: 'r', file: null } },
-      { ok: true, value: { receiptId: 'r', file: { attachmentId: 1, name: 'x', bytes: 1 } } },
-      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 1, bytes: 1 } } },
-      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: '1' } } },
-      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: 1.5 } } },
-      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: -1 } } },
-    ]
-    for (const body of bodies) {
-      const { session } = makeSession()
-      bindFileUpload(session, () => Promise.resolve({ status: 200, body: JSON.stringify(body) }))
-      await expect(session.uploadFile(new Blob([])))
-        .rejects.toThrow(/file upload transport returned an invalid/)
-    }
-    const { session } = makeSession()
-    bindFileUpload(session, () => Promise.resolve({ status: 503, body: 'unavailable' }))
-    await expect(session.uploadFile(new Blob([])))
-      .rejects.toThrow('file upload transport failed with HTTP 503')
-  })
-
-  it('refuses a direct file upload for a continuable subagent before either carrier runs', async () => {
-    const post = vi.fn()
-    const api = new FakeApiClient()
-    const session = new Session(SID, fakeRemote(api), {
-      address: { parentSessionId: PARENT, childSessionId: SID, mode: 'continuable' },
-    })
-    bindFileUpload(session, post)
-    await expect(session.uploadFile(new Blob([]))).resolves.toMatchObject({
-      ok: false,
-      error: { code: 'subagent/attachment-invalid', details: { reason: 'SUBAGENT_FILE_UNSUPPORTED' } },
-    })
-    expect(post).not.toHaveBeenCalled()
-    expect(api.callsOf('session.uploadFile')).toEqual([])
-  })
-})
 
 describe('Session open', () => {
   it('keeps a bare Session blank until an authoritative lifecycle signal arrives', () => {

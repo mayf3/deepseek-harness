@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import type { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import type { ISession } from '@deepseek-ai/dsh-api-session-controller/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
@@ -28,18 +29,28 @@ function sessionFakeFor() {
     loadOlder: vi.fn<ISession['loadOlder']>(() => Promise.resolve()),
     prompt: vi.fn<ISession['prompt']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
     cancel: vi.fn<ISession['cancel']>(() => Promise.resolve({ ok: true, value: { accepted: true } })),
-    uploadFile: vi.fn<ISession['uploadFile']>(() => Promise.resolve({
-      ok: true,
-      value: {
-        receiptId: 'root-receipt' as never,
-        file: { attachmentId: 'root-file' as never, name: 'draft.pdf', bytes: 1 },
-      },
-    })),
   } satisfies SessionBehaviorOverrides
 }
 
 async function bench() {
   const runtime = await SlotTestRuntime.create()
+  const rootUpload = vi.fn(() => Promise.resolve({
+    ok: true as const,
+    value: {
+      receiptId: 'root-receipt' as never,
+      file: { attachmentId: 'root-file' as never, name: 'draft.pdf', bytes: 1 },
+    },
+  }))
+  const uploads = new Map<SessionId, (...args: unknown[]) => Promise<unknown>>([[ROOT, rootUpload]])
+  runtime.ctx.provide('fileUpload', {
+    available: true,
+    upload: (owner: Context, ...args: unknown[]) => {
+      const id = runtime.sessions.scopeOf(owner)
+      const upload = id === undefined ? undefined : uploads.get(id)
+      if (upload === undefined) throw new Error('test file upload has no Agent-scope fixture')
+      return upload(...args)
+    },
+  } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
   runtime.ctx.provide('uiWorkspace', { connectWorkspace } as never)
@@ -94,7 +105,7 @@ async function bench() {
     conversationApi(id).injected.hooks.conversationViews
   return {
     runtime, feature, slots: runtime.slots, entryOf, conversationApi, headerApi, residentApi, composerApi,
-    inputApi, viewSource, sessionFake, connectWorkspace,
+    inputApi, viewSource, sessionFake, connectWorkspace, rootUpload, uploads,
   }
 }
 
@@ -275,7 +286,7 @@ describe('Conversation inject API', () => {
     expect(b.composerApi(ROOT).addFiles?.([
       new File([Uint8Array.of(1)], 'draft.pdf', { type: 'application/pdf' }),
     ])).toBeNull()
-    await vi.waitFor(() => { expect(b.sessionFake.uploadFile).toHaveBeenCalledOnce() })
+    await vi.waitFor(() => { expect(b.rootUpload).toHaveBeenCalledOnce() })
 
     b.connectWorkspace.mockResolvedValueOnce(ROOT)
     await resident.selectWorkspace('workspace-1' as WorkspaceId)
@@ -283,14 +294,15 @@ describe('Conversation inject API', () => {
     expect(state.getSnapshot().draft).toBe('carry me')
 
     const other = 'other-1' as SessionId
-    const targetUpload = vi.fn<ISession['uploadFile']>(() => Promise.resolve({
+    const targetUpload = vi.fn(() => Promise.resolve({
       ok: true,
       value: {
         receiptId: 'target-receipt' as never,
         file: { attachmentId: 'target-file' as never, name: 'draft.pdf', bytes: 1 },
       },
     }))
-    await b.runtime.sessions.add({ id: other, session: { uploadFile: targetUpload } }, { current: false })
+    b.uploads.set(other, targetUpload)
+    await b.runtime.sessions.add({ id: other, session: {} }, { current: false })
     b.connectWorkspace.mockResolvedValueOnce(other)
     await resident.selectWorkspace('workspace-2' as WorkspaceId)
     expect(b.runtime.sessions.calls).toContainEqual({ method: 'open', args: [other] })

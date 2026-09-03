@@ -1,5 +1,5 @@
 ---
-description: "在浏览器后台上传原始 Blob 与 ReadableStream，包括 Worker 转交、进度和取消。"
+description: "按 Agent scope 上传浏览器文件，提供流式接收、进度、取消和供后续 prompt 使用的暂存凭证。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包让浏览器功能上传 `Blob` 或 `ReadableStream<Uint8Array>`，同时避免在页面线程聚合全部字节。普通服务页面通过专用 Worker 发送每个请求体；Host 位于其他执行上下文中的页面会在 Cordis 启动前提供 Fetch 形式的载体。调用方可以观察已消费字节并取消活动操作。stream 请求体只能消费一次，跨 Worker 边界时会转移所有权。独立的 `?fixture` 页面会报告后台载体不可用，让 Session adapter 继续使用生成的内存 Remote。
+本包让浏览器功能在一个 Agent scope 下存储 `Blob`、精确字节或 `ReadableStream<Uint8Array>`，并取得供后续 prompt 使用的不透明凭证。普通服务页面发送 Blob 和 stream 请求体时，不会在页面线程聚合全部字节；Host 位于其他执行上下文中的页面会在 Cordis 启动前提供 Fetch 形式的载体。调用方可以观察已消费字节并取消活动操作。stream 请求体只能消费一次，跨 Worker 边界时会转移所有权。独立的 `?fixture` 页面通过生成的 Remote 处理可重放的 Blob 与精确字节输入。
 
 ## 目录
 
@@ -25,14 +25,14 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-在注入 `fileUpload` 的消费方之前挂载 Client 插件，再用同源路径和一个原始请求体调用 `ctx.fileUpload.post()`。
+在注入 `fileUpload` 的消费方之前挂载本包，再调用 `ctx.fileUpload.upload(agentContext, body, name, signal, onProgress)`。服务从 `agentContext` 得到 wire identity；调用方不组装上传 URL 或 Remote 请求。
 
 ```yaml
 - id: file-upload
   name: '@deepseek-ai/dsh-client-file-upload'
 ```
 
-本包没有 Cordis 配置字段。`Blob` 在专用 Worker 内通过 XMLHttpRequest 发送，因此服务可以报告浏览器上传进度，并在浏览器提供总量时一并报告。`ReadableStream` 会转移给该 Worker，再增量传入 Fetch；进度只报告已消费字节，不包含总量。`AbortSignal` 会终止专用 Worker，或传递给页面自己提供的载体。
+本包没有 Cordis 配置字段。`Blob` 在专用 Worker 内通过 XMLHttpRequest 发送，因此服务可以报告浏览器上传进度，并在浏览器提供总量时一并报告。`ReadableStream` 会转移给该 Worker，再增量传入 Fetch；进度只报告已消费字节，不包含总量。`AbortSignal` 会终止专用 Worker，或传递给页面自己提供的载体。精确字节与 fixture Blob 输入使用按 scope 寻址的生成 Remote。
 
 -----
 
@@ -42,17 +42,21 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-Client 插件提供可被各级上下文继承的 `ctx.fileUpload` 服务。其提供方只读取一次可选的 Cordis 启动前 `__DSH_FILE_UPLOAD__` 钩子。消费者在选择服务前检查 `ctx.fileUpload.available`。没有该钩子时，每个非 fixture 请求拥有一个短期 Worker，并在完成、失败或取消后释放。存在该钩子时，服务通过页面自己提供的 Fetch 载体发送请求体；Web Worker runtime 会通过请求帧转移 stream 请求体，再以带背压的分片形式交给 Host HTTP bridge。
+Client 插件提供 `ctx.fileUpload`。其 `upload()` 方法通过 Typert 已注册的 `agent` Context adapter 取得调用方身份，组装原始路由请求，并为可重放输入调用生成的按 scope 寻址 Remote 兜底。提供方只读取一次可选的 Cordis 启动前 `__DSH_FILE_UPLOAD__` 钩子。没有该钩子时，每个非 fixture 原始请求拥有一个短期 Worker，并在完成、失败或取消后释放。存在该钩子时，服务通过页面自己提供的 Fetch 载体发送请求体；Web Worker runtime 会通过请求帧转移 stream 请求体，再以带背压的分片形式交给 Host HTTP bridge。
+
+Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编码 Remote 兜底、字节存储、命令凭证解析器与暂存凭证生命周期。凭证表以接收方 Agent 的 Session 对象为键。Session Controller 注册可恢复休眠普通 Agent 的解析器，并在 prompt 准入时消费凭证。
 
 | 文件 | 职责 |
 |---|---|
-| [`src/client/contract.ts`](src/client/contract.ts) | Cordis 服务的请求、响应、进度与页面钩子类型 |
+| [`src/index.ts`](src/index.ts) | Host 流式路由、存储与按 Agent scope 管理的凭证生命周期 |
+| [`src/types.ts`](src/types.ts) | 编码请求、凭证与持久结果类型 |
+| [`src/client/contract.ts`](src/client/contract.ts) | Client 上传、进度与页面钩子类型 |
 | [`src/client/runtime.ts`](src/client/runtime.ts) | 专用 Worker 与页面自有载体实现 |
 | [`src/client/index.ts`](src/client/index.ts) | Client 插件注册与 `ctx.fileUpload` 声明 |
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。每个请求只使用一个已选定载体；fixture 或不支持的浏览器请求会在发送请求体前失败。
+**运行时不变式：** 不发布伴生入口。每个上传凭证只属于一个准确的 Agent scope，每个请求只使用一个已选定载体。没有 scope 的调用和载体不支持的 stream 会在发送请求体前失败。
 
 -----
 
@@ -60,7 +64,7 @@ Client 插件提供可被各级上下文继承的 `ctx.fileUpload` 服务。其�
 ## 进一步探索
 
 - [Connection](../connection/README.zh.md)——认证 RPC、Host 精确路由与 connection generation。
-- [Session Controller](../../api/session-controller/README.zh.md)——原始文件上传路由与按 Session 暂存的凭证。
+- [Session Controller](../../api/session-controller/README.zh.md)——消费暂存凭证的 prompt 准入。
 - [Web Worker runtime](../../experimental/webworker-runtime/README.zh.md)——页面到 Host Worker 的请求隧道。
 - [客户端组地图](../README.zh.md)——浏览器服务与 UI 功能包。
 

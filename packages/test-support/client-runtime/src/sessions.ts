@@ -121,14 +121,6 @@ export class FixtureSession implements SessionFace {
   }
 
   /**
-   * Fail-loud stub; supply `uploadFile` on the fixture's session face to exercise it.
-   * @returns never — always throws.
-   */
-  uploadFile(): never {
-    throw new Error(`test session "${this.sessionId}": uploadFile is not stubbed — supply it on the fixture's session face`)
-  }
-
-  /**
    * Fail-loud stub; supply `updateQueue` on the fixture's session face to exercise it.
    * @returns never — always throws.
    */

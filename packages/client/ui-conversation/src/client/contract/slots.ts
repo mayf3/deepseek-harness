@@ -2,7 +2,7 @@
 import type { ReactNode, RefObject } from 'react'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { FileUploadReceiptId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/client'
 import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {
   MaybeSnapshotSelectorHook, ObservableSnapshot, SnapshotSelectorHook,

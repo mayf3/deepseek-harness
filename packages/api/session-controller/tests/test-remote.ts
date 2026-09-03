@@ -236,6 +236,14 @@ function installControllers(
       },
     } as never)
   }
+  if (ctx.get('fileUploads') === undefined) {
+    ctx.provide('fileUploads', {
+      registerAgentResolver: () => () => {},
+      resolve: () => undefined,
+      bindPrompt: () => () => {},
+      retirePrompt: () => {},
+    } as never)
+  }
   installSessionReadTestServices(ctx)
   const cwd = vi.spyOn(process, 'cwd').mockReturnValue(defaults.cwd)
   let controller: SessionController

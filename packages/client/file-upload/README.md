@@ -1,5 +1,5 @@
 ---
-description: "Background browser uploads for raw Blob and ReadableStream bodies, including worker transfer, progress, and cancellation."
+description: "Agent-scoped browser file uploads with streaming intake, progress, cancellation, and staged receipts for later prompts."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package lets browser features upload a `Blob` or `ReadableStream<Uint8Array>` without aggregating its bytes on the page thread. Served pages send each body through a dedicated Worker; pages whose Host runs in another execution context supply a Fetch-shaped carrier before Cordis boots. Callers can observe consumed bytes and cancel an active operation. A stream body is consumed once and transfers ownership when it crosses a Worker boundary. The standalone `?fixture` page reports the background carrier as unavailable so its Session adapter can keep using the generated in-memory Remote.
+This package lets browser features store a `Blob`, exact bytes, or a `ReadableStream<Uint8Array>` under one Agent scope and receive an opaque receipt for a later prompt. Served pages send Blob and stream bodies without aggregating their bytes on the page thread; pages whose Host runs in another execution context supply a Fetch-shaped carrier before Cordis boots. Callers can observe consumed bytes and cancel an active operation. A stream body is consumed once and transfers ownership when it crosses a Worker boundary. The standalone `?fixture` page uses the generated Remote for replayable Blob and exact-byte inputs.
 
 ## Table of Contents
 
@@ -25,14 +25,14 @@ This package lets browser features upload a `Blob` or `ReadableStream<Uint8Array
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the Client plugin before a consumer that injects `fileUpload`, then call `ctx.fileUpload.post()` with a same-origin path and one raw body.
+Mount the package before a consumer that injects `fileUpload`, then call `ctx.fileUpload.upload(agentContext, body, name, signal, onProgress)`. The service derives the wire identity from `agentContext`; callers do not assemble an upload URL or Remote request.
 
 ```yaml
 - id: file-upload
   name: '@deepseek-ai/dsh-client-file-upload'
 ```
 
-The package has no Cordis configuration fields. A `Blob` uses XMLHttpRequest inside a dedicated Worker so the service can report browser upload progress, including the total when the browser provides it. A `ReadableStream` transfers to that Worker and feeds Fetch incrementally; progress reports consumed bytes without a total. An `AbortSignal` terminates the dedicated Worker or reaches a page-owned carrier.
+The package has no Cordis configuration fields. A `Blob` uses XMLHttpRequest inside a dedicated Worker so the service can report browser upload progress, including the total when the browser provides it. A `ReadableStream` transfers to that Worker and feeds Fetch incrementally; progress reports consumed bytes without a total. An `AbortSignal` terminates the dedicated Worker or reaches a page-owned carrier. Exact bytes and fixture Blob inputs use the scoped generated Remote.
 
 -----
 
@@ -42,17 +42,21 @@ The package has no Cordis configuration fields. A `Blob` uses XMLHttpRequest ins
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Client plugin provides one inherited `ctx.fileUpload` service. Its provider reads the optional pre-Cordis `__DSH_FILE_UPLOAD__` hook once. Consumers inspect `ctx.fileUpload.available` before selecting it. Without a hook, each non-fixture request owns a short-lived Worker and releases it after completion, failure, or cancellation. With the hook, the service sends the body through the page-owned Fetch carrier; the Web Worker runtime transfers stream bodies through its request frame and exposes them to the Host HTTP bridge as backpressured chunks.
+The Client plugin provides `ctx.fileUpload`. Its `upload()` method asks Typert's registered `agent` Context adapter for the caller's identity, assembles the raw route request, and invokes the generated scoped Remote fallback for replayable inputs. The provider reads the optional pre-Cordis `__DSH_FILE_UPLOAD__` hook once. Without a hook, each non-fixture raw request owns a short-lived Worker and releases it after completion, failure, or cancellation. With the hook, the service sends the body through the page-owned Fetch carrier; the Web Worker runtime transfers stream bodies through its request frame and exposes them to the Host HTTP bridge as backpressured chunks.
+
+The Host plugin provides `ctx.fileUploads`. It owns the authenticated streaming route, encoded Remote fallback, byte storage, command receipt resolver, and staged-receipt lifecycle. Receipt tables use the receiving Agent's Session object as their key. The Session Controller registers the resolver that can resume a cold ordinary Agent and consumes receipts during prompt admission.
 
 | File | Role |
 |---|---|
-| [`src/client/contract.ts`](src/client/contract.ts) | Cordis service request, response, progress, and page-hook types |
+| [`src/index.ts`](src/index.ts) | Host streaming route, storage, and Agent-scoped receipt lifecycle |
+| [`src/types.ts`](src/types.ts) | encoded request, receipt, and durable result types |
+| [`src/client/contract.ts`](src/client/contract.ts) | Client upload, progress, and page-hook types |
 | [`src/client/runtime.ts`](src/client/runtime.ts) | Dedicated Worker and page-owned carrier implementations |
 | [`src/client/index.ts`](src/client/index.ts) | Client plugin registration and `ctx.fileUpload` declaration |
 
 </details>
 
-**Runtime invariant:** No companion is published. Each request uses exactly one selected carrier, and fixture or unsupported-browser requests fail before the body is sent.
+**Runtime invariant:** No companion is published. Each upload receipt belongs to one exact Agent scope, and each request uses one selected carrier. Unscoped calls and unsupported stream carriers fail before the body is sent.
 
 -----
 
@@ -60,7 +64,7 @@ The Client plugin provides one inherited `ctx.fileUpload` service. Its provider 
 ## Further Exploration
 
 - [Connection](../connection/README.md) — authenticated RPC, exact Host routes, and connection generations.
-- [Session Controller](../../api/session-controller/README.md) — the raw file-upload route and staged Session receipt.
+- [Session Controller](../../api/session-controller/README.md) — prompt admission that consumes staged receipts.
 - [Web Worker runtime](../../experimental/webworker-runtime/README.md) — the page-to-Host Worker request tunnel.
 - [Client group map](../README.md) — browser services and UI feature packages.
 

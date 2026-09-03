@@ -1,6 +1,5 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { apply as applyHost } from '../src/index.ts'
 import { apply } from '../src/client/index.ts'
 import { fileUploadWorker, FileUploadRuntime } from '../src/client/runtime.ts'
 import type { ClientFileUploadHooks, FileUploadBody } from '../src/client/contract.ts'
@@ -211,10 +210,6 @@ describe('file upload worker body', () => {
 })
 
 describe('file upload service', () => {
-  it('keeps the Host half inert', () => {
-    expect(() => { applyHost() }).not.toThrow()
-  })
-
   it('uses a page-owned Host fetch for Blob and ReadableStream bodies', async () => {
     vi.stubGlobal('location', { origin: 'https://preview.test' })
     const fetch = vi.fn((_url: URL, _init?: RequestInit) =>
@@ -225,7 +220,7 @@ describe('file upload service', () => {
     await fiber
     const blob = new Blob(['opaque'])
     const signal = new AbortController().signal
-    await expect(ctx.fileUpload.post({
+    await expect((ctx.fileUpload as FileUploadRuntime).post({
       path: '/api/upload', body: blob, headers: { 'x-test': 'yes' }, signal,
     })).resolves.toEqual({ status: 202, body: 'accepted' })
     expect(fetch).toHaveBeenLastCalledWith(new URL('https://preview.test/api/upload'), {
@@ -233,7 +228,7 @@ describe('file upload service', () => {
     })
 
     const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
-    await ctx.fileUpload.post({ path: '/stream', body: stream })
+    await (ctx.fileUpload as FileUploadRuntime).post({ path: '/stream', body: stream })
     expect(fetch).toHaveBeenLastCalledWith(new URL('https://preview.test/stream'), {
       method: 'POST', body: stream, duplex: 'half',
     })
@@ -248,7 +243,7 @@ describe('file upload service', () => {
     const fiber = ctx.plugin({ apply })
     await fiber
     const body = new Blob()
-    await ctx.fileUpload.post({ path: '/fallback', body })
+    await (ctx.fileUpload as FileUploadRuntime).post({ path: '/fallback', body })
     expect(fetch).toHaveBeenCalledWith(new URL('http://dsh.internal/fallback'), {
       method: 'POST', body,
     })
@@ -261,7 +256,7 @@ describe('file upload service', () => {
     const fiber = ctx.plugin(FileUploadRuntime)
     await fiber
     expect(ctx.fileUpload.available).toBe(false)
-    await expect(ctx.fileUpload.post({ path: '/upload', body: new Blob() }))
+    await expect((ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob() }))
       .rejects.toThrow('background upload is unavailable in fixture mode')
     await fiber.dispose()
   })
@@ -271,7 +266,7 @@ describe('file upload service', () => {
     const ctx = new Context()
     const fiber = ctx.plugin(FileUploadRuntime)
     await fiber
-    await expect(ctx.fileUpload.post({ path: '/upload', body: new Blob() }))
+    await expect((ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob() }))
       .rejects.toThrow('background upload requires Web Worker support')
     await fiber.dispose()
   })
@@ -294,7 +289,7 @@ describe('file upload service', () => {
     await fiber
     const progress = vi.fn()
     const blob = new Blob(['bytes'])
-    const pending = ctx.fileUpload.post({ path: '/api/upload', body: blob, onProgress: progress })
+    const pending = (ctx.fileUpload as FileUploadRuntime).post({ path: '/api/upload', body: blob, onProgress: progress })
     const worker = FakeWorker.last
     if (worker === undefined) throw new Error('worker missing')
     expect(created).toHaveBeenCalledOnce()
@@ -331,7 +326,7 @@ describe('file upload service', () => {
     const fiber = ctx.plugin(FileUploadRuntime)
     await fiber
     const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
-    const pending = ctx.fileUpload.post({ path: '/stream', body: stream })
+    const pending = (ctx.fileUpload as FileUploadRuntime).post({ path: '/stream', body: stream })
     const worker = FakeWorker.last
     if (worker === undefined) throw new Error('worker missing')
     expect(worker.postMessage).toHaveBeenCalledWith(expect.objectContaining({ body: stream }), [stream])
@@ -356,29 +351,152 @@ describe('file upload service', () => {
     const fiber = ctx.plugin(FileUploadRuntime)
     await fiber
 
-    const reported = ctx.fileUpload.post({ path: '/upload', body: new Blob() })
+    const reported = (ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob() })
     FakeWorker.all[0]?.onmessage?.({ data: { kind: 'error', message: 'network failed' } } as MessageEvent)
     await expect(reported).rejects.toThrow('network failed')
 
-    const errored = ctx.fileUpload.post({ path: '/upload', body: new Blob() })
+    const errored = (ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob() })
     FakeWorker.all[1]?.onerror?.({ message: 'worker crashed' } as ErrorEvent)
     await expect(errored).rejects.toThrow('worker crashed')
 
-    const unnamed = ctx.fileUpload.post({ path: '/upload', body: new Blob() })
+    const unnamed = (ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob() })
     FakeWorker.all[2]?.onerror?.({ message: '' } as ErrorEvent)
     await expect(unnamed).rejects.toThrow('background upload worker failed')
 
     const controller = new AbortController()
-    const aborted = ctx.fileUpload.post({ path: '/upload', body: new Blob(), signal: controller.signal })
+    const aborted = (ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob(), signal: controller.signal })
     controller.abort()
     await expect(aborted).rejects.toMatchObject({ name: 'AbortError' })
     expect(FakeWorker.all[3]?.terminate).toHaveBeenCalledOnce()
 
     const already = new AbortController()
     already.abort()
-    await expect(ctx.fileUpload.post({ path: '/upload', body: new Blob(), signal: already.signal }))
+    await expect((ctx.fileUpload as FileUploadRuntime).post({ path: '/upload', body: new Blob(), signal: already.signal }))
       .rejects.toMatchObject({ name: 'AbortError' })
     expect(FakeWorker.all[4]?.postMessage).not.toHaveBeenCalled()
     await fiber.dispose()
+  })
+})
+
+describe('Agent-scoped file upload', () => {
+  async function scopedService(options: {
+    readonly sessionId?: string
+    readonly remote?: ReturnType<typeof vi.fn>
+  } = {}) {
+    const ctx = new Context()
+    ctx.provide('sessions', {
+      scopeOf: (candidate: Context) => Reflect.get(candidate, 'fixtureSessionId') as string | undefined,
+    } as never)
+    ctx.provide('typert', {
+      contexts: {
+        getClient: (kind: string) => kind === 'agent'
+          ? { identity: (candidate: Context) => Reflect.get(candidate, 'fixtureSessionId') }
+          : undefined,
+      },
+    } as never)
+    const remote = options.remote ?? vi.fn(() => Promise.resolve({
+      ok: true,
+      value: {
+        receiptId: 'remote-receipt',
+        file: { attachmentId: 'remote-file', name: 'file', bytes: 3 },
+      },
+    }))
+    ctx.provide('remote', { fileUploads: { upload: remote } } as never)
+    const fiber = ctx.plugin(FileUploadRuntime)
+    await fiber
+    const owner = options.sessionId === undefined
+      ? ctx
+      : ctx.extend({ fixtureSessionId: options.sessionId })
+    return { ctx, fiber, owner, remote, service: ctx.fileUpload }
+  }
+
+  it('assembles the scoped streaming request and parses progress and receipt fields', async () => {
+    vi.stubGlobal('location', { origin: 'https://preview.test' })
+    const progress = vi.fn()
+    const fetch = vi.fn((_url: URL, init: RequestInit) => {
+      expect(init.body).toBeInstanceOf(Blob)
+      progress({ loaded: 2, total: 4 })
+      return Promise.resolve(new Response(JSON.stringify({
+        ok: true,
+        value: {
+          receiptId: 'receipt-1',
+          file: { attachmentId: 'file-1', name: 'notes & refs.pdf', bytes: 4 },
+        },
+      }), { status: 200 }))
+    })
+    ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = { fetch }
+    const { fiber, owner, service } = await scopedService({ sessionId: 's1' })
+    const signal = new AbortController().signal
+    const file = new Blob(['data'])
+
+    await expect(service.upload(owner, file, 'notes & refs.pdf', signal, progress)).resolves.toEqual({
+      ok: true,
+      value: {
+        receiptId: 'receipt-1',
+        file: { attachmentId: 'file-1', name: 'notes & refs.pdf', bytes: 4 },
+      },
+    })
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://preview.test/api/session/uploadFileBinary?sessionId=s1&name=notes+%26+refs.pdf'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: { 'content-type': 'application/octet-stream' },
+        body: file,
+        signal,
+      }),
+    )
+    await fiber.dispose()
+  })
+
+  it('uses the scoped Remote fallback for exact bytes and fixture Blob bodies', async () => {
+    vi.stubGlobal('location', { origin: 'https://fixture.test', search: '?fixture' })
+    const remote = vi.fn(() => Promise.resolve({
+      ok: true,
+      value: {
+        receiptId: 'remote-receipt',
+        file: { attachmentId: 'remote-file', name: 'bytes.bin', bytes: 3 },
+      },
+    }))
+    const { fiber, owner, service } = await scopedService({ sessionId: 's1', remote })
+    await expect(service.upload(owner, Uint8Array.of(0, 0, 0), 'bytes.bin'))
+      .resolves.toMatchObject({ ok: true })
+    await expect(service.upload(owner, new Blob([Uint8Array.of(1)])))
+      .resolves.toMatchObject({ ok: true })
+    expect(remote.mock.calls).toEqual([
+      [{ data: 'AAAA', name: 'bytes.bin' }, undefined],
+      [{ data: 'AQ==' }, undefined],
+    ])
+    await fiber.dispose()
+  })
+
+  it('rejects an unscoped call, an unavailable stream, and malformed background results', async () => {
+    vi.stubGlobal('location', { origin: 'https://fixture.test', search: '?fixture' })
+    const unscoped = await scopedService()
+    await expect(unscoped.service.upload(unscoped.owner, Uint8Array.of(1)))
+      .rejects.toThrow('fileUpload.upload requires an Agent-scoped context')
+    await unscoped.fiber.dispose()
+
+    const fixture = await scopedService({ sessionId: 's1' })
+    const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
+    await expect(fixture.service.upload(fixture.owner, stream))
+      .rejects.toThrow('stream file upload requires a background carrier')
+    await fixture.fiber.dispose()
+
+    vi.stubGlobal('location', { origin: 'https://preview.test' })
+    const bodies: unknown[] = [
+      null,
+      { ok: 'yes' },
+      { ok: false, error: null },
+      { ok: true, value: { receiptId: 'r', file: { attachmentId: 'a', name: 'x', bytes: -1 } } },
+    ]
+    for (const body of bodies) {
+      ;(globalThis as UploadGlobal).__DSH_FILE_UPLOAD__ = {
+        fetch: () => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })),
+      }
+      const malformed = await scopedService({ sessionId: 's1' })
+      await expect(malformed.service.upload(malformed.owner, new Blob()))
+        .rejects.toThrow(/file upload transport returned an invalid/)
+      await malformed.fiber.dispose()
+    }
   })
 })

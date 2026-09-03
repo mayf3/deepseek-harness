@@ -882,6 +882,48 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'fileUploads',
+    summary: 'Host service owning upload storage and Agent-scoped staged receipts.',
+    description: 'Host service owning upload storage and Agent-scoped staged receipts.',
+    methods: [
+      {
+        signature: 'registerAgentResolver(resolve: AgentResolver): () => void',
+        description: 'Register the ordinary-Session resolver used when a raw upload addresses a cold Session.',
+        parameters: [{ name: 'resolve', description: 'resolver that returns the exact live Agent or throws a Remote error.' }],
+        returns: 'disposer removing this resolver.',
+      },
+      {
+        signature: '@Remote(\'upload\') upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue>',
+        description: 'Persist one encoded upload and stage it under the Agent receiver selected by Typert.',
+        parameters: [{ name: 'agent', description: 'receiving Agent resolved from the Remote Agent scope.' }, { name: 'request', description: 'canonical base64 bytes and optional display name.' }, { name: 'signal', description: 'caller cancellation before storage begins.' }],
+        returns: 'the staged receipt and durable file reference.',
+      },
+      {
+        signature: 'async uploadStream(request: { readonly sessionId: SessionId readonly data: AsyncIterable<Uint8Array> readonly signal?: AbortSignal readonly name?: string }): Promise<FileUploadValue>',
+        description: 'Persist raw chunks for one Session without aggregating the upload.',
+        parameters: [{ name: 'request', description: 'Session identity, ordered bytes, cancellation, and optional display name.' }],
+        returns: 'the staged receipt and durable file reference.',
+      },
+      {
+        signature: 'resolve(agent: Agent, receiptId: FileUploadReceiptId): FileAttachmentRef | undefined',
+        description: 'Resolve one staged receipt inside its receiving Agent scope.',
+        parameters: [{ name: 'agent', description: 'receiving Agent.' }, { name: 'receiptId', description: 'opaque receipt minted for one completed upload.' }],
+        returns: 'durable file reference, or `undefined` for an unknown or foreign receipt.',
+      },
+      {
+        signature: 'bindPrompt(agent: Agent, receiptIds: readonly FileUploadReceiptId[], requestId: string): () => void',
+        description: 'Bind receipts to an accepted prompt and return a rollback for delivery failure.',
+        parameters: [{ name: 'agent', description: 'receiving Agent.' }, { name: 'receiptIds', description: 'distinct staged receipts referenced by the prompt.' }, { name: 'requestId', description: 'prompt identity later observed in queue or history.' }],
+        returns: 'rollback restoring every prior binding.',
+      },
+      {
+        signature: 'retirePrompt(agent: Agent, requestId: string): void',
+        description: 'Retire every receipt accepted by one removed queue occurrence.',
+        parameters: [{ name: 'agent', description: 'receiving Agent.' }, { name: 'requestId', description: 'prompt identity carried by the queue occurrence.' }],
+      },
+    ],
+  },
+  {
     key: 'fs',
     summary: 'Abstract filesystem provider.',
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
@@ -1449,12 +1491,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Read one image proven reachable from the addressed Session log.',
         parameters: [{ name: 'request', description: 'Session and attachment identities used for authorization.' }],
         returns: 'the durable attachment reference and base64-encoded bytes.',
-      },
-      {
-        signature: '@Remote(\'uploadFile\') uploadFile(request: SessionUploadFileRequest, signal: AbortSignal): Promise<SessionUploadFileValue>',
-        description: 'Persist one encoded file upload verbatim and stage it for a later prompt on the same Session.',
-        parameters: [{ name: 'request', description: 'Session identity, base64 payload, and optional display name.' }, { name: 'signal', description: 'caller cancellation before storage begins.' }],
-        returns: 'an opaque per-upload receipt and the durable file reference.',
       },
       {
         signature: '@Remote(\'updateQueue\') updateQueue(request: SessionUpdateQueueRequest): SessionUpdateQueueValue',
@@ -3452,6 +3488,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AgentPresetRow {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly isDefault: boolean;\n    readonly name?: string;\n    readonly description?: string;\n    readonly broken?: string;\n}',
   },
   {
+    name: 'AgentResolver',
+    declaration: 'export type AgentResolver = (sessionId: SessionId) => Promise<Agent>;',
+  },
+  {
     name: 'AgentSetup',
     declaration: 'export type AgentSetup = (agentCtx: Context) => AgentSetupCommit | Promise<AgentSetupCommit | void> | void;',
   },
@@ -3996,6 +4036,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EditGoalRequest {\n    readonly objective?: string;\n    readonly maxGoalRounds?: number;\n}',
   },
   {
+    name: 'EncodedFileUploadRequest',
+    declaration: 'export interface EncodedFileUploadRequest {\n    readonly data: string;\n    readonly name?: string;\n}',
+  },
+  {
     name: 'EncodedImageAttachment',
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
@@ -4030,6 +4074,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FileUploadReceiptId',
     declaration: 'export type FileUploadReceiptId = Branded<\'file-upload-receipt-id\'>;',
+  },
+  {
+    name: 'FileUploadValue',
+    declaration: 'export interface FileUploadValue {\n    readonly receiptId: FileUploadReceiptId;\n    readonly file: FileAttachmentRef;\n}',
   },
   {
     name: 'FinishReason',
@@ -5266,14 +5314,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionUpdateQueueValue',
     declaration: 'export interface SessionUpdateQueueValue {\n    readonly accepted: true;\n}',
-  },
-  {
-    name: 'SessionUploadFileRequest',
-    declaration: 'export interface SessionUploadFileRequest {\n    readonly sessionId: SessionId;\n    readonly data: string;\n    readonly name?: string;\n}',
-  },
-  {
-    name: 'SessionUploadFileValue',
-    declaration: 'export interface SessionUploadFileValue {\n    readonly receiptId: FileUploadReceiptId;\n    readonly file: FileAttachmentRef;\n}',
   },
   {
     name: 'SessionWireEvent',

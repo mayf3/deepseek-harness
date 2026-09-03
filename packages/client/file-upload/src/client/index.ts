@@ -8,20 +8,19 @@ export type {
   FileUploadBody,
   FileUploadFetch,
   FileUploadProgress,
-  FileUploadRequest,
-  FileUploadResponse,
   FileUploadService,
 } from './contract.ts'
+export type { FileUploadReceiptId, FileUploadValue } from '../types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** Browser service for non-aggregating Blob and byte-stream uploads. */
+    /** Agent-scoped browser service for staged file uploads. */
     fileUpload: import('./contract.ts').FileUploadService
   }
 }
 
-/** This transport service has no Cordis dependencies. */
-export const inject: string[] = []
+/** The upload service resolves Agent identity and the generated Remote fallback. */
+export const inject = ['typert', 'remote']
 
 /**
  * Provide the browser background-upload service.
