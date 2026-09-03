@@ -138,11 +138,19 @@ describe('tool-jobs setup', () => {
     expect(() => ctx.jobs.start(producer().spec)).toThrow('no job controller serves this agent')
   })
 
-  it('leaves with the agent registry it resolves owners through', async () => {
-    const { ctx, agentsFiber } = await setup()
-    await agentsFiber.dispose()
-    expect(ctx.tools.get('job_output')).toBeUndefined()
-    expect(() => ctx.jobs.start(producer().spec)).toThrow('no job controller serves this agent')
+  it('serves unowned jobs in a composition without an agent registry', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SystemPrompt)
+    await ctx.plugin(ToolRuntime)
+    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(ToolTasks)
+    const p = producer()
+    ctx.jobs.start(p.spec)
+    p.append('open\n')
+    expect(text(await call(ctx, 'job_output', { job_id: 'bash-1' }))).toBe('open\n[status: running]')
+    p.settle({ status: 'completed' })
+    await tick()
+    expect(text(await call(ctx, 'job_list', {}))).toBe('bash-1 [bash] completed — sleep 60')
   })
 
   it('rejects a config whose default wait exceeds the cap', async () => {
@@ -1024,6 +1032,19 @@ describe('completion notices', () => {
     expect(oldInject).not.toHaveBeenCalled()
     expect(replacementInject).toHaveBeenCalledTimes(1)
     expect(text(await call(ctx, 'job_output', { job_id: 'bash-1' }, replacement))).toBe('(no new output)\n[status: completed]')
+  })
+
+  it('drops the notice when the agent registry left before settlement', async () => {
+    const { ctx, agentsFiber } = await setup()
+    const inject = vi.fn()
+    const owner = fakeAgent(ctx, 'sess-1', { inject })
+    const p = producer({ owner: owner.id })
+    ctx.jobs.start(p.spec)
+
+    await agentsFiber.dispose()
+    p.settle({ status: 'completed' })
+    await tick()
+    expect(inject).not.toHaveBeenCalled()
   })
 
   it('drops the notice when the owner session has no live agent at settlement', async () => {
