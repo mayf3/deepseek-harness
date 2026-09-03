@@ -30,7 +30,7 @@ The public Python client gives the initial profile handshake an independent 30-s
 
 After a successful shutdown response, the Python client closes stdin and waits within the configured shutdown timeout for the `dsh` context to exit and flush durable session state before terminating it. A failed shutdown retains immediate bounded termination. `shutdown_timeout_seconds` bounds each of the shutdown request, EOF grace, and termination-confirmation phases, so a pathological close can approach three times that value before the final kill. This distinction preserves the final accepted turn on Windows, where `terminate()` force-kills the process rather than delivering a catchable signal.
 
-The minimal blackbox uses persistent `pwsh` plus `str_replace_editor` on Windows and owns `minimal/win-x64/model-visible.json`; Linux and macOS retain persistent Bash and the shared `minimal/model-visible.json`. The advanced process/subagent snapshot and restart/durable-log snapshot remain shared across all targets. The shipped [`sdk-minimal` bundle](../../../../packages/bundle/sdk-minimal/README.md) selects the same platform shell pair for the runnable Python tutorial.
+The minimal blackbox uses only persistent `pwsh` on Windows and owns `minimal/win-x64/model-visible.json`; Linux and macOS use only persistent Bash and the shared `minimal/model-visible.json`. The advanced process/subagent snapshot and restart/durable-log snapshot remain shared across all targets. The shipped [`sdk-minimal` bundle](../../../../packages/bundle/sdk-minimal/README.md) selects the same platform shell pair for the runnable Python tutorial.
 
 ## Existing decisions and supersession
 

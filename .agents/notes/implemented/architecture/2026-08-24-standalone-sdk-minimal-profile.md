@@ -22,7 +22,7 @@ The bundle reuses `@deepseek-ai/dsh-sdk-app` for command help, stdin EOF, and bo
 
 ### Explicit composition
 
-The bundle owns one DeepSeek adapter, SDK JSON-RPC serving, the explicit agent core, local subprocess and unrestricted filesystem providers, a platform-selected persistent shell, the string-replace editor, and uncompressed JSONL sessions under `$DSH_HOME/sessions`. Linux and macOS mount Bash; Windows mounts PowerShell. The SDK initialization request owns the model id; `DSH_CONTEXT_WINDOW` supplies fallback capacity for models outside the adapter's advisory catalog. The persona comes from `DSH_SYSTEM_PROMPT`, and the credential from `DEEPSEEK_API_KEY`.
+The bundle owns one DeepSeek adapter, SDK JSON-RPC serving, the explicit agent core, a local subprocess provider, a platform-selected persistent shell, and uncompressed JSONL sessions under `$DSH_HOME/sessions`. Linux and macOS mount Bash; Windows mounts PowerShell. Filesystem tools and providers are absent under the later [persistent-shell-only decision](../simplification/2026-09-03-minimal-profiles-persistent-shell-only.md). The SDK initialization request owns the model id; `DSH_CONTEXT_WINDOW` supplies fallback capacity for models outside the adapter's advisory catalog. The persona comes from `DSH_SYSTEM_PROMPT`, and the credential from `DEEPSEEK_API_KEY`.
 
 Harness identity, runtime context, workspace instructions, skills, model-facing job controls, compaction, settings, managed credentials, telemetry, Web tools, subagents, and every other base row are absent rather than hidden. The profile pins `danger-full-access`, `maxTokensAsSuccess: false`, and startup-only patch loading.
 
@@ -40,7 +40,7 @@ It also supersedes the minimal-overlay realization in [Python SDK runtime throug
 
 ## Verification
 
-The bundle test pins the exact row and dependency roster. Profile-template and config-dump tests pin the one-bundle manifest, startup-only lifecycle, absence of `dsh-base`, and absence of module HMR. The keyless source test boots the real `dsh --profile sdk-minimal` process, completes a turn, and asserts the generated manifest. The installed-wheel minimal scenario owns the complete system prompt and two advertised tools in its committed model-visible snapshot while exercising persistent shell state, editor effects, and JSONL persistence through the packaged executable.
+The bundle test pins the exact row and dependency roster, including the absence of filesystem dependencies. Profile-template and config-dump tests pin the one-bundle manifest, startup-only lifecycle, absence of `dsh-base`, and absence of module HMR. The keyless source test boots the real `dsh --profile sdk-minimal` process, completes a turn, and asserts the generated manifest. The installed-wheel minimal scenario owns the complete system prompt and single advertised shell in its committed model-visible snapshot while exercising persistent shell state and JSONL persistence through the packaged executable.
 
 ## Alternatives considered
 

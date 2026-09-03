@@ -22,7 +22,7 @@ Status: implemented
 
 ### 显式组合
 
-该组合包拥有一个 DeepSeek 适配器、SDK JSON-RPC 服务、显式 agent 核心、本地子进程与不受限文件系统提供方、按平台选择的持久 shell、字符串替换 editor，以及位于 `$DSH_HOME/sessions` 的未压缩 JSONL 会话。Linux 与 macOS 挂载 Bash，Windows 挂载 PowerShell。SDK 初始化请求拥有模型 id；`DSH_CONTEXT_WINDOW` 为不在适配器建议目录中的模型提供后备容量。Persona 来自 `DSH_SYSTEM_PROMPT`，凭据来自 `DEEPSEEK_API_KEY`。
+该组合包拥有一个 DeepSeek 适配器、SDK JSON-RPC 服务、显式 agent 核心、本地子进程提供方、按平台选择的持久 shell，以及位于 `$DSH_HOME/sessions` 的未压缩 JSONL 会话。Linux 与 macOS 挂载 Bash，Windows 挂载 PowerShell。后续的[仅持久 shell 决策](../simplification/2026-09-03-minimal-profiles-persistent-shell-only.zh.md)要求文件系统工具与提供方缺席。SDK 初始化请求拥有模型 id；`DSH_CONTEXT_WINDOW` 为不在适配器建议目录中的模型提供后备容量。Persona 来自 `DSH_SYSTEM_PROMPT`，凭据来自 `DEEPSEEK_API_KEY`。
 
 Harness 身份、运行时上下文、workspace 指令、skills、面向模型的 job 控制、compaction、settings、托管凭据、遥测、Web 工具、subagent 与其他所有 base 配置项均不存在，而不是被隐藏。该 profile 固定使用 `danger-full-access`、`maxTokensAsSuccess: false` 与仅启动时 patch 加载。
 
@@ -40,7 +40,7 @@ Python 运行时继续打包 `dsh-web-app` 与前端产物。`dsh web` 会从已
 
 ## 验证
 
-组合包测试固定确切配置项与依赖清单。Profile 模板与配置 dump 测试固定单组合包 manifest、仅启动时生命周期、`dsh-base` 缺席与模块 HMR 缺席。Keyless 源码测试启动真实 `dsh --profile sdk-minimal` 进程、完成一个回合并断言生成的 manifest。Installed-wheel 极简场景通过已提交的模型可见快照固定完整系统提示词和两个对外公布的工具，同时经由打包可执行程序验证持久 shell 状态、editor 文件效果与 JSONL 持久化。
+组合包测试固定确切配置项与依赖清单，包括文件系统依赖缺席。Profile 模板与配置 dump 测试固定单组合包 manifest、仅启动时生命周期、`dsh-base` 缺席与模块 HMR 缺席。Keyless 源码测试启动真实 `dsh --profile sdk-minimal` 进程、完成一个回合并断言生成的 manifest。Installed-wheel 极简场景通过已提交的模型可见快照固定完整系统提示词和单个对外公布的 shell，同时经由打包可执行程序验证持久 shell 状态与 JSONL 持久化。
 
 ## 考虑过的替代方案
 

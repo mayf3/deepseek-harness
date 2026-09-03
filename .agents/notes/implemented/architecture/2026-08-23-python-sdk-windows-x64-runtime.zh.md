@@ -30,7 +30,7 @@ Windows lane 会创建干净的 Windows 虚拟环境，安装版本精确匹配�
 
 成功收到 shutdown 响应后，Python 客户端会关闭 stdin，并在已配置的 shutdown 超时内等待 `dsh` 上下文退出及刷写持久 session 状态，然后才回退到终止进程。Shutdown 失败时仍立即执行有界终止。`shutdown_timeout_seconds` 会分别限制 shutdown 请求、EOF 宽限与终止确认阶段，因此异常关闭在最终 kill 前可能接近该值的三倍。该区别会保留 Windows 上最后一个已接受轮次；该平台的 `terminate()` 会强制结束进程，而不是发送可捕获信号。
 
-极简黑盒测试在 Windows 上使用持久 `pwsh` 与 `str_replace_editor`，并由 `minimal/win-x64/model-visible.json` 固定预期；Linux 与 macOS 保留持久 Bash 和共享的 `minimal/model-visible.json`。高级进程／subagent 快照与重启／持久日志快照继续由所有目标共享。随附的 [`sdk-minimal` 组合包](../../../../packages/bundle/sdk-minimal/README.zh.md)为可运行 Python 教程选择同一组平台 shell。
+极简黑盒测试在 Windows 上仅使用持久 `pwsh`，并由 `minimal/win-x64/model-visible.json` 固定预期；Linux 与 macOS 仅使用持久 Bash 和共享的 `minimal/model-visible.json`。高级进程／subagent 快照与重启／持久日志快照继续由所有目标共享。随附的 [`sdk-minimal` 组合包](../../../../packages/bundle/sdk-minimal/README.zh.md)为可运行 Python 教程选择同一组平台 shell。
 
 ## Existing decisions and supersession
 

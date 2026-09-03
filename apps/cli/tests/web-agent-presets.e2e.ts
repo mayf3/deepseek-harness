@@ -179,8 +179,8 @@ describe('the shipped Web composition', () => {
   it('leaves the global tool layer empty', () => {
     // Every model-facing tool belongs to a preset, `ask_user_question`
     // included: a tool in the global layer reaches EVERY agent regardless of
-    // which preset composed it, so a two-tool benchmark surface would really
-    // present three. A regression here means an agent-plane row came back to
+    // which preset composed it, so a single-tool benchmark surface would really
+    // present two. A regression here means an agent-plane row came back to
     // the host composition.
     expect(toolNames(ctx)).toEqual([])
   })
@@ -277,7 +277,7 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('composes the exact RL prompt and two tools from `minimal`', async () => {
+  it('composes the exact RL prompt and persistent shell from `minimal`', async () => {
     const handle = await ctx.agents.create({
       sessionId: SessionId('preset-minimal'),
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
@@ -287,11 +287,10 @@ describe('the shipped Web composition', () => {
       expect(assembly.sections).toEqual([
         { name: 'deployment:persona', text: MINIMAL_PROMPT },
       ])
-      expect(assembly.tools.map(tool => tool.name)).toEqual(['bash', 'str_replace_editor'])
+      expect(assembly.tools.map(tool => tool.name)).toEqual(['bash'])
       expect(assembly.tools.find(tool => tool.name === 'bash')?.description).toBe(MINIMAL_BASH_DESCRIPTION)
-      expect(JSON.stringify(assembly.tools.find(tool => tool.name === 'str_replace_editor')?.parameters))
-        .toContain('Absolute path')
       expect(ctx.commands.find(handle.agent, 'goal')).toBeUndefined()
+      expect(ctx.agentPresets.serviceFor(handle.agent, 'fs')).toBeUndefined()
       expect(ctx.agentPresets.serviceFor(handle.agent, 'compaction')).toBeUndefined()
       expect(handle.agent.ctx.get('compaction')).toBeUndefined()
     } finally {
@@ -309,7 +308,7 @@ describe('the shipped Web composition', () => {
       setup: agentCtx => ctx.agentPresets.mount(agentCtx, 'minimal').then(() => undefined),
     })
     try {
-      expect(toolNames(ctx, minimal.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(ctx, minimal.agent)).toEqual(['bash'])
       expect(toolNames(ctx, full.agent).length).toBeGreaterThan(10)
 
       await minimal.dispose()
@@ -460,7 +459,7 @@ describe('the shipped Web composition', () => {
       // stays the preset's choice — minimal mounts no `tool-skill`, so its
       // tool table has no loader even though the global layer is readable.
       expect((await ctx.skills.list({ scope: handle.agent })).map(skill => skill.name)).toContain('dsh-badge')
-      expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(ctx, handle.agent)).toEqual(['bash'])
     } finally {
       await handle.dispose()
     }
@@ -839,7 +838,7 @@ describe('authoring a preset on the shipped composition', () => {
     try {
       // The same tools the shipped `minimal` composes, from a directory copied
       // through the service into a root outside the installed harness.
-      expect(toolNames(authorCtx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(authorCtx, handle.agent)).toEqual(['bash'])
     } finally {
       await handle.dispose()
     }
@@ -874,9 +873,9 @@ describe('the default preset as a user setting', () => {
         setup: agentCtx => ctx.agentPresets.mount(agentCtx).then(() => undefined),
       })
       try {
-        // `mount()` with no id resolves the effective default. Two tools, not
+        // `mount()` with no id resolves the effective default. One tool, not
         // `standard`'s catalog: the setting decided the composition.
-        expect(toolNames(ctx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+        expect(toolNames(ctx, handle.agent)).toEqual(['bash'])
       } finally {
         await handle.dispose()
       }
@@ -901,7 +900,7 @@ describe('a session keeps the preset it was created with', () => {
     try {
       // The api-proxy guard reads exactly this: the header records what the
       // session runs, so naming anything else is a caller error rather than a
-      // switch. Its history was produced under `minimal`'s two tools.
+      // switch. Its history was produced under `minimal`'s single tool.
       expect(handle.agent.session.header.agentPreset).toBe('minimal')
     } finally {
       await handle.dispose()
@@ -963,7 +962,7 @@ describe('a composition that configures its own preset roots', () => {
       setup: agentCtx => rootsCtx.agentPresets.mount(agentCtx, 'team-spec').then(() => undefined),
     })
     try {
-      expect(toolNames(rootsCtx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+      expect(toolNames(rootsCtx, handle.agent)).toEqual(['bash'])
     } finally {
       await handle.dispose()
     }
