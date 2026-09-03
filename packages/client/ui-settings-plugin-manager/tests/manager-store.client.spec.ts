@@ -283,6 +283,29 @@ describe('PluginManagerController', () => {
     expect(state().install.open).toBe(false)
   })
 
+  it('settles an install and a confirmation while reads run beside them', async () => {
+    const addGate = deferred<ReturnType<typeof ok<InstallValue>>>()
+    const dependentsGate = deferred<ReturnType<typeof ok<{ services: never[]; references: never[] }>>>()
+    const { plugins, face, state, controller } = bench({
+      add: vi.fn().mockReturnValueOnce(addGate.promise),
+      dependents: vi.fn().mockReturnValueOnce(dependentsGate.promise),
+    })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec('pkg')
+    face.runInstall()
+    // The Host announces the change before the run answers; the read it triggers must not drop the answer.
+    await controller.load()
+    addGate.resolve(ok({ installed: ['pkg'], enabled: ['pkg'], installedOnly: [], plain: [], jobId: 'j' }))
+    await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
+
+    face.uninstall(BUNDLE.name)
+    await controller.load()
+    dependentsGate.resolve(ok({ services: [], references: [] }))
+    await vi.waitFor(() => { expect(state().confirm?.dependents).toEqual({ services: [], references: [] }) })
+    expect(plugins.list).toHaveBeenCalledTimes(4)
+  })
+
   it('shows the Host log of a failed install, or its message when no chunk arrived', async () => {
     const { face, state, controller, plugins } = bench({
       add: vi.fn()

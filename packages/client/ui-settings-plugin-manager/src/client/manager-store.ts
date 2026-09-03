@@ -310,10 +310,11 @@ export class PluginManagerController {
       }
     this.pendingConfirm = () => this.run(packageName, { packageName }, perform)
     this.patch({ confirm: { action, packageName, dependents: undefined, acknowledged: false } })
-    const generation = this.generation
     const dependents = await this.ctx.remote.plugins.dependents(packageName)
+    // Reads run beside this ask (the Host announces changes while it is
+    // open), so liveness is the confirmation still being this one.
     const confirm = this.getSnapshot().confirm
-    if (generation !== this.generation || confirm?.packageName !== packageName || confirm.action !== action) return
+    if (this.disposed || confirm?.packageName !== packageName || confirm.action !== action) return
     const value: PluginDependents = dependents.ok ? dependents.value : { services: [], references: [] }
     if (action === 'disable' && value.services.length === 0 && value.references.length === 0) {
       this.patch({ confirm: null })
@@ -335,9 +336,11 @@ export class PluginManagerController {
     const spec = install.spec.trim()
     if (install.phase === 'running' || spec === '') return
     this.patchInstall({ phase: 'running', log: '', installed: [] })
-    const generation = this.generation
+    // The Host announces `plugins/changed` while the run is still on the
+    // wire — enabling recomposes before the call answers — and every such
+    // event reads again; those reads must not cancel the run's settlement.
     const result = await this.ctx.remote.plugins.add(spec, { enable: install.enable })
-    if (this.disposed || generation !== this.generation) return
+    if (this.disposed) return
     if (result.ok) {
       this.patchInstall({ phase: 'done', installed: result.value.installed })
     } else {
