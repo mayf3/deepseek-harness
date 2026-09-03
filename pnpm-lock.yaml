@@ -202,6 +202,9 @@ importers:
       '@deepseek-ai/dsh-hooks-codex':
         specifier: workspace:^
         version: link:../../packages/hooks/hooks-codex
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../packages/util/http-proxy
       '@deepseek-ai/dsh-jobs-local':
         specifier: workspace:^
         version: link:../../packages/jobs/jobs-local
@@ -1698,6 +1701,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:^
+        version: link:../../api/session-controller
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:^
         version: link:../../attachment/attachment
@@ -4508,6 +4514,12 @@ importers:
       '@deepseek-ai/dsh-fs-e2b':
         specifier: workspace:^
         version: link:../fs-e2b
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../util/launch-environment
       '@deepseek-ai/dsh-loader-smoke':
         specifier: workspace:^
         version: link:../../test-support/loader-smoke
@@ -6240,6 +6252,9 @@ importers:
       '@deepseek-ai/dsh-home-paths':
         specifier: workspace:^
         version: link:../../util/home-paths
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
@@ -6292,6 +6307,9 @@ importers:
       '@deepseek-ai/dsh-fs':
         specifier: workspace:^
         version: link:../../fs/fs
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
@@ -6559,6 +6577,9 @@ importers:
       '@deepseek-ai/dsh-attachment-local':
         specifier: workspace:^
         version: link:../../attachment/attachment-local
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -6951,6 +6972,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:^
         version: link:../../util/brand
+      '@deepseek-ai/dsh-session-format':
+        specifier: workspace:^
+        version: link:../../session/session-format
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -7168,6 +7192,73 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
+  packages/session/session-format:
+    dependencies:
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../../util/values
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+
+  packages/session/session-format-catalog:
+    dependencies:
+      '@deepseek-ai/dsh-session-format':
+        specifier: workspace:^
+        version: link:../session-format
+      '@deepseek-ai/dsh-session-format-v0-to-v1':
+        specifier: workspace:^
+        version: link:../session-format-v0-to-v1
+      '@deepseek-ai/dsh-session-format-v1-to-v2':
+        specifier: workspace:^
+        version: link:../session-format-v1-to-v2
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+
+  packages/session/session-format-v0-to-v1:
+    dependencies:
+      '@deepseek-ai/dsh-session-format':
+        specifier: workspace:^
+        version: link:../session-format
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../../util/values
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+
+  packages/session/session-format-v1-to-v2:
+    dependencies:
+      '@deepseek-ai/dsh-llm':
+        specifier: workspace:^
+        version: link:../../llm/llm
+      '@deepseek-ai/dsh-session-format':
+        specifier: workspace:^
+        version: link:../session-format
+      '@deepseek-ai/dsh-session-format-v0-to-v1':
+        specifier: workspace:^
+        version: link:../session-format-v0-to-v1
+      '@deepseek-ai/dsh-util-values':
+        specifier: workspace:^
+        version: link:../../util/values
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+
   packages/session/session-log-deepseek:
     dependencies:
       '@deepseek-ai/dsh-brand':
@@ -7217,6 +7308,12 @@ importers:
 
   packages/session/session-persistence-jsonl:
     dependencies:
+      '@deepseek-ai/dsh-session-format':
+        specifier: workspace:^
+        version: link:../session-format
+      '@deepseek-ai/dsh-session-format-catalog':
+        specifier: workspace:^
+        version: link:../session-format-catalog
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
@@ -7230,6 +7327,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-format-v0-to-v1':
+        specifier: workspace:^
+        version: link:../session-format-v0-to-v1
       '@deepseek-ai/dsh-session-persistence':
         specifier: workspace:^
         version: link:../session-persistence
@@ -7360,6 +7460,9 @@ importers:
       '@deepseek-ai/dsh-command-feedback':
         specifier: workspace:^
         version: link:../../feedback/command-feedback
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -8811,6 +8914,12 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../util/launch-environment
 
   packages/subprocess/subprocess-local:
     dependencies:
@@ -9062,6 +9171,9 @@ importers:
 
   packages/test-support/llm-replay:
     dependencies:
+      '@deepseek-ai/dsh-session-format-catalog':
+        specifier: workspace:^
+        version: link:../../session/session-format-catalog
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values
@@ -9100,6 +9212,9 @@ importers:
       '@deepseek-ai/dsh-app-boot':
         specifier: workspace:^
         version: link:../../boot/app-boot
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -9115,9 +9230,15 @@ importers:
       '@deepseek-ai/cordis-plugin-include':
         specifier: workspace:*
         version: link:../../../vendor/include
+      '@deepseek-ai/dsh-llm-replay':
+        specifier: workspace:^
+        version: link:../llm-replay
       '@deepseek-ai/dsh-loader-smoke':
         specifier: workspace:*
         version: link:../loader-smoke
+      '@deepseek-ai/dsh-session-format':
+        specifier: workspace:^
+        version: link:../../session/session-format
       js-yaml:
         specifier: ^4.2.0
         version: 4.2.0
@@ -9137,6 +9258,9 @@ importers:
       '@deepseek-ai/dsh-compaction':
         specifier: workspace:^
         version: link:../../compaction/compaction
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -9301,6 +9425,19 @@ importers:
         specifier: workspace:^
         version: link:../../../vendor/cordis
 
+  packages/util/http-proxy:
+    dependencies:
+      undici:
+        specifier: ^8.10.0
+        version: 8.10.0
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+
   packages/util/launch-environment:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -9426,6 +9563,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
@@ -9451,6 +9591,9 @@ importers:
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:^
         version: link:../../credentials/credentials-local
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
@@ -9473,6 +9616,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
@@ -9489,6 +9635,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
@@ -9713,6 +9862,9 @@ importers:
       '@deepseek-ai/dsh-agent-loop-testkit':
         specifier: workspace:^
         version: link:../../test-support/agent-loop-testkit
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../runtime-diagnostics/invariants
@@ -9897,6 +10049,9 @@ importers:
       '@deepseek-ai/dsh-hooks-codex':
         specifier: workspace:^
         version: link:../../packages/hooks/hooks-codex
+      '@deepseek-ai/dsh-http-proxy':
+        specifier: workspace:^
+        version: link:../../packages/util/http-proxy
       '@deepseek-ai/dsh-invariants':
         specifier: workspace:^
         version: link:../../packages/runtime-diagnostics/invariants

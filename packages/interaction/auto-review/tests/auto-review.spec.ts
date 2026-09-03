@@ -194,6 +194,7 @@ function appendAssistant(
   session.append('assistant/message', {
     turn,
     step,
+    stream: [],
     message: createMessage({
       role: 'assistant',
       content,
@@ -1246,7 +1247,7 @@ describe('cancellation and integration teardown', () => {
     function appendWithMigrationFailure<T extends SessionEventType>(
       type: T,
       data: SessionEventMap[T],
-      ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent] : []
+      ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
     ): SessionEvent<T> {
       const event = append(type, data, ...opts)
       if (type === 'sandbox/mode') throw new Error('migration failed after partial state')

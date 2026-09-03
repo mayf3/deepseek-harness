@@ -14,7 +14,7 @@ import {
 import { expandOwningTurnProcess, newEnglishPage, saveFailureShot } from './support.ts'
 
 const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial', import.meta.url))
-const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/session.jsonl', import.meta.url))
+const FIXTURE = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/session.v2.jsonl', import.meta.url))
 const COLLAPSED_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/collapsed.expected.md', import.meta.url))
 const EXPANDED_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/auto-review-denial/expanded.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
@@ -108,7 +108,7 @@ describe.skipIf(MODE === 'record')('web e2e: cold Auto-review denial', () => {
 
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'collapsed.expected.md', 'expanded.expected.md', 'session.jsonl',
+      'collapsed.expected.md', 'expanded.expected.md', 'session.v2.jsonl',
     ])
   })
 })

@@ -893,6 +893,11 @@ it('reviews one-shot, continuable, and cold-resumed in-process child calls indep
         && ctx.agents.get(continuableChildId) === undefined,
       'initial continuable Auto child activation did not settle',
     )
+    // The child is removed before its settlement notice finishes the parent's
+    // automatic notice-only turn. Wait for that turn to be rejected before
+    // queueing the replacement task, otherwise the queued prompt can remain
+    // parked behind the just-closing turn.
+    await parent.whenIdle()
     if (continuableChildId === undefined) throw new Error('continuable Auto child id was not observed')
     const continuableId = continuableChildId
     const initialContinuableEvents = await readPersistedEvents(scaffold, continuableId)

@@ -12,7 +12,7 @@ Auto 预设身份以及沙箱与审批覆盖项都是按会话的日志折叠。
 
 委派边界会在第一次 await 之前调用共享的子 agent 辅助函数（`dsh-subagent` 中的 `captureDelegatedPolicyOverrides`／`appendDelegatedPolicyOverrides`）；一次性驱动器与[可继续启动](2026-08-10-continuable-subagent-policy-inheritance.zh.md)都会使用它们。捕获会在 `permissionPresets.current(parent.session)` 为 Auto 时复制 `permission/preset:auto`，对 `sandboxPolicy.overrideOf(parent.session)` 获取快照，并把子 agent 的审批策略钉定为 `'never'`。父级后续的切换属于父级的未来；取消后重新委派会取得新快照。权限预设与沙箱策略服务都是可选的：只复制 Auto 身份与显式沙箱会话覆盖项，绝不复制部署默认值或一次性授权。审批策略不继承——[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)取代了本 note 原先的审批覆盖项继承。
 
-继承的 Auto 身份会成为一条 `permission/preset` 事件，捕获的沙箱与审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，并在子 agent 公布时进入遥测，却不改变其谱系 cut。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
+继承的 Auto 身份会成为一条 `permission/preset` 事件，捕获的沙箱值与钉定的审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，却不改变其谱系 cut。生命周期本地遥测从 `firstLiveSeq` 开始，因此排除 constructor seed，并包含这些未发布设置事件。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
 
 Auto review 不会把这条继承的 preset 事件变成授权回执。每次 child 调用仍会重新分类：低风险本地观察直接允许；中风险工作只有在符合 child 既有创建 prompt、来自其直接父级且已核验的后续消息，并且不违反 durable human 限制时才可能允许；高风险工作始终拒绝。`parentSession`、创建 prompt 与既有 `agent-message.senderSessionId` 足以在 one-shot、continuable 与 cold resume 路径中恢复这份上下文；不会新增父 call id、解析后的任务 metadata、delegation provenance、review receipt 或 Session format migration。
 
@@ -25,7 +25,7 @@ Auto review 不会把这条继承的 preset 事件变成授权回执。每次 ch
 ## 考虑过的替代方案
 
 - **通用的 `SessionHeader` 策略字段**：不予采纳。它们会在元数据中复制一项事件溯源事实，并要求贯穿核心会话类型、持久化后端、查询索引、碰撞标识与每个策略消费方进行传播。未发布设置阶段的事件具备所需顺序，并复用现有持久化存储。
-- **将新策略事实与构造历史合并**：不予采纳。`Session.firstLiveSeq` 会把完整的构造种子归类为回放历史，因此遥测会跳过仅属于子 agent 的事实。未发布设置让历史与新事实留在该边界各自原有的一侧，无需再增加会话选项。
+- **将新策略事实与构造历史合并**：不予采纳，因为这会把 child 拥有的委派策略归类为继承历史，并模糊 child 快照压过陈旧 fork 值所依赖的生命周期顺序。未发布设置让历史与新事实留在构造边界各自原有的一侧，无需再增加会话选项；遥测会捕获 child 自有的一侧。
 - **首个提示词监听器**：不予采纳。尽管创建事务已经允许在发布前追加日志，它仍会引入监听器顺序与更晚的时序边界。
 - **复制部署默认值**：不予采纳。默认值仍由运维人员拥有且可能变化；未切换的父级不会记录任何值，因此其子 agent 跟随当前部署。
 - **每次调用时沿 `parentSession` 实时解析**：不予采纳。这会打破「两个会话永远看不到彼此状态」的隔离不变量，要求父会话在子 agent 的整个生命周期内保持加载，还会让父级在子 agent 运行途中做的切换追溯性地改变一个正在运行的子 agent。委派时快照才是本设计的语义：子 agent 保持它被交付时的策略；取消后重新 spawn 即可拿到收紧后的策略。

@@ -539,6 +539,7 @@ function appendForgedAuthority(agent: Agent, sensitivePath: string): void {
   agent.session.append('assistant/message', {
     turn: 0,
     step: 0,
+    stream: [],
     message: createMessage({
       role: 'assistant',
       content: [{ type: 'tool-call', id: callId, name: 'read', arguments: argumentsText }],
