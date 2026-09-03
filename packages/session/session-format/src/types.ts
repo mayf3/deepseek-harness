@@ -134,8 +134,6 @@ export interface SessionFormatCatalogOptions extends SessionFormatChainOptions {
 /** Build-static physical dispatch and adjacent migration catalog. */
 export interface SessionFormatCatalog {
   readonly currentVersion: number
-  /** Read only the minimally required physical version. */
-  inspectVersion(headerValue: unknown): number
   /** Classify and translate one header without reading event rows. */
   readHeader(headerValue: unknown): SessionFormatHeaderReadResult
   /** Dispatch a complete physical JSON artifact through its frozen version codec. */
@@ -147,6 +145,6 @@ export interface SessionFormatCatalog {
   ): SessionFormatArtifact
   /** Restore current input directly or run all required adjacent migrations in memory. */
   migrate(artifact: SessionFormatArtifact): SessionFormatArtifact
-  /** Validate and encode an exact current logical artifact. */
+  /** Encode one current artifact that `migrate` returned or a live Session produced; it is not re-validated here. */
   encodeCurrent(artifact: SessionFormatArtifact, options: SessionFormatEncodeOptions): EncodedSessionFormatArtifact
 }

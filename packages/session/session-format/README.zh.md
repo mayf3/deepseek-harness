@@ -36,7 +36,7 @@ const catalog = createSessionFormatCatalog({ currentVersion, codecs, migrations,
 const descriptor = catalog.readHeader(physicalHeader)
 ```
 
-`createSessionFormatCatalog()` 接收每个受支持版本的一个冻结编解码器、每组相邻版本的一个迁移，以及当前产物与标头还原器。`inspectVersion()` 只读取物理版本以执行方向分派。`readHeader()` 在不读取事件的情况下返回 `current`、`migration-required`、`unsupported` 或 `malformed` 描述符。每个迁移边会先校验自己的目标标头，然后再运行最终的当前标头还原器。正文读取方调用 `decodeArtifact()` 或 `decodeRecoverableArtifact()`，然后调用 `migrate()`；写入方只使用经过校验的当前产物调用 `encodeCurrent()`。
+`createSessionFormatCatalog()` 接收每个受支持版本的一个冻结编解码器、每组相邻版本的一个迁移，以及当前产物与标头还原器。`readHeader()` 在不读取事件的情况下返回 `current`、`migration-required`、`unsupported` 或 `malformed` 描述符。每个迁移边会先校验自己的目标标头，然后再运行最终的当前标头还原器。正文读取方调用 `decodeArtifact()` 或 `decodeRecoverableArtifact()`，然后调用 `migrate()`；写入方只使用经过校验的当前产物调用 `encodeCurrent()`。
 
 可恢复解码器返回已接受的逻辑前缀。编解码器可以丢弃一个格式错误或序号不连续的行及其未提交后缀，但后续成功解码的 `turn/end` 会使原始问题成为致命错误。
 

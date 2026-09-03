@@ -28,7 +28,6 @@ import {
   decompressZstdFrame,
   decompressZstdPrefix,
   scanZstdFrames,
-  type ZstdFrameScan,
 } from './zstd.ts'
 
 /** Parsed JSONL values supplied to the format catalog. */
@@ -68,11 +67,7 @@ export interface EnsureJsonlGenerationOptions {
   readonly signal?: AbortSignal
 }
 
-/**
- * Result of current classification or exclusive publication. A present
- * `snapshot.zstdBody` owns a live decoder: the fused consumer must exhaust it
- * or call its disposer on every exit.
- */
+/** Result of current classification or exclusive publication. */
 export type EnsureJsonlGenerationResult =
   | {
     readonly status: 'current'
@@ -154,17 +149,10 @@ export interface JsonlPhysicalSnapshot {
   readonly identity: JsonlPhysicalIdentity
   readonly headerValue: Record<string, unknown>
   readonly headerRecord: Buffer
-  /** Single-use decoder owner; the fused consumer must dispose it on every exit. */
-  readonly zstdBody?: JsonlZstdBodyFrames
 }
 
-/** Live body-frame iterator plus the structural scan and mandatory decoder disposal. */
-export interface JsonlZstdBodyFrames extends Disposable {
-  readonly frames: Generator<Buffer, void, void>
-  readonly scan: ZstdFrameScan
-}
-
-interface StablePhysicalFile {
+/** Exact bytes of one stable file revision together with the stat identity that proved it stable. */
+export interface StablePhysicalFile {
   readonly bytes: Buffer
   readonly identity: JsonlPhysicalIdentity
 }
@@ -172,18 +160,6 @@ interface StablePhysicalFile {
 interface JsonlPhysicalHeader {
   readonly value: Record<string, unknown>
   readonly record: Buffer
-  readonly zstdBody?: JsonlZstdBodyFrames
-}
-
-class OwnedZstdBodyFrames implements JsonlZstdBodyFrames {
-  constructor(
-    readonly frames: Generator<Buffer, void, void>,
-    readonly scan: ZstdFrameScan,
-  ) {}
-
-  [Symbol.dispose](): void {
-    this.frames.return()
-  }
 }
 
 interface DecodedPhysicalJsonl {
@@ -253,10 +229,20 @@ function fingerprint(value: JsonlPhysicalIdentity, bytes: Buffer): string {
 }
 
 /**
- * Read one stable revision with a single retry. If an append overlaps both
- * reads, return the second read's committed pre-read prefix instead of
- * starving behind a continuous writer.
+ * Read one stable revision of a JSONL file with a single retry. If an append
+ * overlaps both reads, return the second read's committed pre-read prefix
+ * instead of starving behind a continuous writer.
+ * @param path - the generation file to read.
+ * @param signal - optional cancellation for the stat/read work.
+ * @returns the stable bytes (or the committed prefix) and their stat identity.
  */
+export async function readStableJsonlFile(
+  path: string,
+  signal?: AbortSignal,
+): Promise<StablePhysicalFile> {
+  return readStableSnapshot(path, signal, defaultFileSystem)
+}
+
 async function readStableSnapshot(
   path: string,
   signal: AbortSignal | undefined,
@@ -430,11 +416,10 @@ function readRawHeader(bytes: Buffer): JsonlPhysicalHeader {
 
 function readZstdHeader(bytes: Buffer, signal?: AbortSignal): JsonlPhysicalHeader {
   signal?.throwIfAborted()
-  const scan = scanZstdFrames(bytes)
-  const first = scan.frames[0]
+  const first = scanZstdFrames(bytes, 1).frames[0]
   if (first === undefined) throw new Error('empty or header-less Zstandard session log')
   const decoder = createZstdFrameDecoder()
-  const decodedFrames = decoder.decode(bytes, scan.frames)
+  const decodedFrames = decoder.decode(bytes, [first])
   try {
     const decoded = decodedFrames.next()
     /* v8 ignore next -- one complete frame yields once or the decoder throws. */
@@ -444,15 +429,10 @@ function readZstdHeader(bytes: Buffer, signal?: AbortSignal): JsonlPhysicalHeade
     const record = Buffer.from(decoded.value)
     const value = parseJson(record.subarray(0, -1).toString('utf8'), 'header line')
     storedVersion(value)
-    return {
-      value: value as Record<string, unknown>,
-      record,
-      zstdBody: new OwnedZstdBodyFrames(decodedFrames, scan),
-    }
-  } catch (error: unknown) {
+    return { value: value as Record<string, unknown>, record }
+  } finally {
     decodedFrames.return()
     decoder.close()
-    throw error
   }
 }
 
@@ -700,14 +680,12 @@ async function ensureCurrent(
     const quickHeader = readPhysicalHeader(source.bytes, compression, signal)
     const quickVersion = storedVersion(quickHeader.value)
     if (quickVersion !== sourceVersion) {
-      quickHeader.zstdBody?.[Symbol.dispose]()
       throw new Error(
         `resolved JSONL source filename identifies v${sourceVersion}, but its header identifies v${quickVersion}: `
         + sourcePath,
       )
     }
     if (sourceVersion > format.currentVersion) {
-      quickHeader.zstdBody?.[Symbol.dispose]()
       throw new JsonlGenerationNewerVersionError(sourceVersion, format.currentVersion, storedId(quickHeader.value))
     }
     if (sourceVersion === format.currentVersion) {
@@ -715,15 +693,9 @@ async function ensureCurrent(
         status: 'current',
         version: quickVersion,
         path: sourcePath,
-        snapshot: {
-          ...source,
-          headerValue: quickHeader.value,
-          headerRecord: quickHeader.record,
-          ...quickHeader.zstdBody === undefined ? {} : { zstdBody: quickHeader.zstdBody },
-        },
+        snapshot: { ...source, headerValue: quickHeader.value, headerRecord: quickHeader.record },
       }
     }
-    quickHeader.zstdBody?.[Symbol.dispose]()
     const validation = options.validateHistoricalHeader?.(quickHeader.value)
     if (validation !== undefined) await validation
 
