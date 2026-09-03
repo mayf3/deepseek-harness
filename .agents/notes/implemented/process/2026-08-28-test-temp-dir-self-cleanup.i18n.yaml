@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-08-28-test-temp-dir-self-cleanup.md
-2026-08-28-test-temp-dir-self-cleanup.md: d8c7d6ef3efd0538adfc3b6d0269119f61861e08
-2026-08-28-test-temp-dir-self-cleanup.zh.md: 1e811dd820d2e5ede62ae7d4fb523e317d2372e7
+2026-08-28-test-temp-dir-self-cleanup.md: 9d10227e431cd2e8a771f3807f0933ccb084ec4c
+2026-08-28-test-temp-dir-self-cleanup.zh.md: 01cd53b6f191fe0f43d6579557b3c89fcc408a95

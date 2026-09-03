@@ -10,7 +10,7 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { randomBytes } from 'node:crypto'
-import { closeSync, mkdtempSync, openSync, readdirSync, rmdirSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, mkdtempSync, openSync, rmdirSync, unlinkSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
@@ -85,26 +85,24 @@ let defaultSpillDir: string | undefined
  * The default spill location: a private (0700) per-process directory under
  * the OS tmpdir, created lazily. Predictable world-readable paths would let
  * other local users read command output or pre-create symlinks. At a
- * JavaScript-observable process exit the directory is removed while empty
- * (collectors unlink their spill files on dispose); a directory still holding
- * spill files keeps them for external cleanup.
+ * JavaScript-observable process exit the directory is removed only when it
+ * holds no completed spill file (spill files are retained as full-output
+ * recovery artifacts until an external cleanup).
  */
 function privateSpillDir(): string {
   defaultSpillDir ??= mkdtempSync(join(tmpdir(), 'dsh-subprocess-'))
   return defaultSpillDir
 }
 
-// The per-process spill directory is removed at process exit only while it is
-// EMPTY: collectors unlink their spill files on dispose, so a normal exit
-// leaves at most empty residue. A directory still holding spill files keeps
-// them (their content outlives the process), and a SIGKILLed process cannot
-// run this at all; both are left to OS temp hygiene.
-/* v8 ignore next 3 -- exit listeners run after the coverage dump; empty-only removal is verified by the CI /tmp residue measurement. */
+// The per-process spill directory is removed at process exit when it holds no
+// completed spill file: a directory that never spilled is empty and is safe to
+// remove, while a directory holding completed spill files keeps them (their
+// content is retained until an external cleanup). A SIGKILLed process cannot
+// run this at all; its residue is left to OS temp hygiene.
+/* v8 ignore next 4 -- exit listeners run after the coverage dump; removal is verified by the CI /tmp residue measurement. */
 process.once('exit', () => {
   if (defaultSpillDir === undefined) return
-  try {
-    if (readdirSync(defaultSpillDir).length === 0) rmdirSync(defaultSpillDir)
-  } catch { /* best-effort: a Windows-held handle must not change the exit code. */ }
+  try { rmdirSync(defaultSpillDir) } catch { /* best-effort: ENOENT/ENOTEMPTY/EBUSY/EPERM must not change the exit code. */ }
 })
 
 /**
