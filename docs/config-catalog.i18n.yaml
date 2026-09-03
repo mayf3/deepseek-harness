@@ -3,4 +3,4 @@
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/config-catalog.md
 config-catalog.md: 592142fad4d55ee942e06c5434209348dba28cc7
-config-catalog.zh.md: 0094ce529ab7bb9dd066a6116ef831d4a0e46cb0
+config-catalog.zh.md: e8fd677606582d7e3cbdf6de58fa0e0a14b1aaf8

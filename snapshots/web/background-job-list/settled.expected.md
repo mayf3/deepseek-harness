@@ -4,7 +4,4 @@
       - img
       - text: Finished 1
     - button "Clear"
-  - listitem:
-    - button "Show live output of for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done":
-      - text: "bash for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done signal: SIGTERM; cancelled by the user {{duration}}"
-      - img
+  - listitem: "bash for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done signal: SIGTERM; cancelled by the user {{duration}}"
