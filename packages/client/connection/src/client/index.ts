@@ -1,4 +1,4 @@
-/** Browser wire client: Remote transport, connection generations, and background uploads. */
+/** Browser wire client: Remote transport and connection generations. */
 import type { Context } from '@deepseek-ai/cordis'
 import {
   ConnectionController,
@@ -10,10 +10,6 @@ import {
 } from './connection.ts'
 import { createFixtureConnectionRpc } from './fixture.ts'
 import { createWebConnectionRpc, type RpcFetch, type RpcStreamOpen } from './rpc.ts'
-import {
-  createBackgroundUploadTransport,
-  type BackgroundUploadTransport,
-} from './background-upload.ts'
 import { isLoopbackHostname } from '../loopback-hostname.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
 
@@ -54,12 +50,6 @@ export type {
   ClientConnectionRpc, ConnectionRpcFailure, ConnectionRpcResult,
 } from '../rpc.ts'
 export type { RpcFetch } from './rpc.ts'
-export type {
-  BackgroundUploadProgress,
-  BackgroundUploadRequest,
-  BackgroundUploadResponse,
-  BackgroundUploadTransport,
-} from './background-upload.ts'
 
 /** Observable identity and Host facts for the active connection generation. */
 export interface ConnectionGenerationState {
@@ -130,8 +120,6 @@ export interface ConnectionHandle {
   readonly state: ConnectionStateSource
   /** Generic logical RPC channels over the same Connection transport. */
   readonly rpc: ClientConnectionRpc
-  /** Large-body carrier; absent for the in-page fixture transport. */
-  readonly backgroundUploads?: BackgroundUploadTransport
   /** Reset retry progression and replace the current attempt immediately. */
   reconnect(): void
   /**
@@ -195,9 +183,6 @@ export function apply(ctx: Context): void {
   const fixtureRpc = fixture ? createFixtureConnectionRpc() : undefined
   const transport = (globalThis as ClientTransportGlobal).__DSH_TRANSPORT__
   const rpc = fixtureRpc ?? createWebConnectionRpc(transport?.fetch, transport?.openStream)
-  const backgroundUploads = fixtureRpc === undefined
-    ? createBackgroundUploadTransport(transport?.fetch)
-    : undefined
   let generationSource: ConnectionGenerationSource | undefined
   let owner: ConnectionOwner | undefined
   let generationId = 0
@@ -252,7 +237,6 @@ export function apply(ctx: Context): void {
       },
     },
     rpc,
-    ...(backgroundUploads === undefined ? {} : { backgroundUploads }),
     reconnect() {
       owner?.controller.reconnect()
     },

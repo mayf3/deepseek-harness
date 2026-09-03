@@ -12,7 +12,7 @@ Status: implemented
 
 ## 决定
 
-文件与图片使用不同存储方案，并进入同一个有序消息附件列表。图片的规范化附件流水线保持不变。其他被选中的文件进入同一个先进先出的后台上传队列，按字节原样保存且不设类型与大小限制，再在本进程内按同一 Session 暂存。相同字节在 `DSH_HOME/attachments/v1/file-objects/<digest-prefix>/<digest>` 下只有一个规范对象；每条模型可见的只读路径 `DSH_HOME/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是硬链接，因此不同显示名称不会复制内容。该队列可以配置，默认同时运行两项传输。普通 Web 页面把每个正在传输的原始 `File` 交给专用上传 Worker，由它发送原始字节并报告字节进度；Worker-hosted 页面把不透明 `Blob` 克隆给已有的 Host Worker，后者以有界分块读取其 stream。页面线程不读取通用文件字节，也不做 base64 编码或 JSON 序列化。经过认证的 Host 路由显式使用 Connection 的流式请求模式，因此 bridge 会在消费请求体前分发，本地存储则把有界分块写入私有暂存对象并同时计算摘要。接收完成后，内容寻址对象以原子方式发布；取消或失败会移除暂存文件。上传任务和草稿状态属于常驻的 conversation 根，因此切到另一条 Session 不会停止传输，返回原 Session 时仍显示同一张文件卡和当前进度。移除文件卡会跳过排队中的传输或中止正在运行的传输。发送的消息在 `user/message` 里携带结构化的 `FileBlock`（`{ name, bytes, attachmentId }`），不新增会话事件类型。`LlmRuntime` 的请求组装把每个文件块，包括嵌套工具结果中的文件块，投影成确定性 handle 文本，指出文件与其只读保存路径。handle 会要求主 agent 委派文件任务时附上该路径，并在子级执行环境看不到路径时明确报告。提供方不会收到文件字节，模型在需要时用现有文件工具读取存储副本。
+文件与图片使用不同存储方案，并进入同一个有序消息附件列表。图片的规范化附件流水线保持不变。其他被选中的文件进入同一个先进先出的后台上传队列，按字节原样保存且不设类型与大小限制，再在本进程内按同一 Session 暂存。相同字节在 `DSH_HOME/attachments/v1/file-objects/<digest-prefix>/<digest>` 下只有一个规范对象；每条模型可见的只读路径 `DSH_HOME/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是硬链接，因此不同显示名称不会复制内容。该队列可以配置，默认同时运行两项传输。独立的 Client `fileUpload` Cordis 服务接受 `Blob` 和只能使用一次的 `ReadableStream<Uint8Array>` 请求体；Session 从自己的 Agent scope 取得该服务，无需让 `ClientSessions`、`SessionManager` 和构造参数逐层携带上传对象。普通 Web 页面把每个活动请求体交给专用上传 Worker：Blob 请求体通过 XMLHttpRequest 发送并报告包含总量的字节进度，stream 则转移所有权并增量传入 Fetch。Worker-hosted 页面通过页面自有 Fetch 载体把请求体转交给 Host Worker，后者读取有界分片。页面线程不读取通用文件字节，也不做 base64 编码或 JSON 序列化。经过认证的 Host 路由显式使用 Connection 的流式请求模式，因此 bridge 会在消费请求体前分发，本地存储则把有界分片写入私有暂存对象并同时计算摘要。接收完成后，内容寻址对象以原子方式发布；取消或失败会移除暂存文件。上传任务和草稿状态属于常驻的 conversation 根，因此切到另一条 Session 不会停止传输，返回原 Session 时仍显示同一张文件卡和当前进度。移除文件卡会跳过排队中的传输或中止正在运行的传输。发送的消息在 `user/message` 里携带结构化的 `FileBlock`（`{ name, bytes, attachmentId }`），不新增会话事件类型。`LlmRuntime` 的请求组装把每个文件块，包括嵌套工具结果中的文件块，投影成确定性 handle 文本，指出文件与其只读保存路径。handle 会要求主 agent 委派文件任务时附上该路径，并在子级执行环境看不到路径时明确报告。提供方不会收到文件字节，模型在需要时用现有文件工具读取存储副本。
 
 默认模式、激活的 Plan Mode 与 active goal 共用普通 queue、follow-up 和 steer 的附件准入。`/goal` create 和 edit 以及 `/plan` 进入接受同一套有序图片与文件批量；携带附件的控制子命令会在状态变更前拒绝。命令提交引用已完成暂存的文件凭证，不会再次读取或复制通用文件字节。Host 会在持久化任何图片前验证所有文件凭证，原 Agent 已销毁时拒绝发布上传完成凭证，并按 `rpcId` 去重已经存在的 prompt 重试。prompt 凭证在失败恢复期间保持可用，已接受的 queue 或历史 occurrence 被观察后才退休；只被命令使用的凭证保留到 Session 销毁。提交回显在序列化前经 `beginSubmission` 注册，通过 `pendingSubmissions` 携带混合附件，以 `rpcId` 关联，在 queue 或历史观察后只退休一次，并在失败时保留草稿。发送前，composer 把有序附件放进同一条不换行的横向附件栏：图片使用 64 乘 64 像素缩略图，通用文件使用 240 乘 64 像素卡片，带 16 像素圆角、蓝色文档图标、文件名加扩展名与大小，以及悬停或键盘操作时可用的移除按钮。QueueDock 使用相同顺序以及紧凑的缩略图和文件卡。发送后，Chat 把有序附件放进同一个右对齐、可换行的附件区域。只有一张图片时保留图片画廊的大图样式；一条消息含有多个附件时，图片使用 64 乘 64 像素缩略图，文件使用 240 乘 64 像素卡片，文件与图片在可用宽度内共用一行，空间不足时再换行。Trajectory 保持紧凑的用户消息预览，并增加本地化的通用文件数量。回形针、拖拽和粘贴按 MIME 分类；发送会等待每个文件上传完成。continuable 子代理 composer 禁用附件入口，Host 会拒绝收到的任何子会话文件块。
 
@@ -28,6 +28,7 @@ Status: implemented
 - **把目标附件存进 goal 领域。** 拒绝：一条普通的已记录用户消息就能让后续 Goal Round 获得相同历史，无需扩大 goal schema 或把附件复制进 Round 提示词。
 - **任何命令成功都消费附件。** 拒绝：`/goal pause` 或 `/plan off` 会清除无关卡片。只有生产方明确成功才消费附件；无法使用附件的语法形式返回错误。
 - **只在客户端执行声明。** 拒绝：直接 RPC 调用方可以绕过 composer。`CommandRuntime` 在处理器运行前强制检查声明、存储可用性、同一 Session 的文件凭证解析、图片 base64 准入与图片限制。
+- **通过 `ctx.connection` 暴露上传并沿 Session 构造器传递该对象。** 拒绝：Connection 不拥有文件传输，中间对象层也不使用这项依赖。独立 Cordis 服务由 Session 现有的 Agent scope 继承，并允许普通浏览器与 Worker-hosted 页面替换载体，而无需扩大 Connection。
 
 ## 后果
 
@@ -35,6 +36,7 @@ Status: implemented
 - 投影路径只在对应执行环境中有效：无法映射 `DSH_HOME` 的沙箱或远程文件系统会得到显式的无路径 handle，模型会报告无法读取该文件。基于存储的读取兜底被推迟。
 - 暂存上传按 Session 存在 Host 内存里；上传与发送之间 Host 重启会出现 `FILE_NOT_STAGED`，客户端重新添加文件即可。
 - 浏览器到 Host 的传输使用一次不带断点续传偏移的流式 HTTP 请求；连接或 Host 失败后的重试会从第一个字节重新传输整个文件。
+- `ReadableStream` 上传只消费并转移一次 stream；重试必须重新创建 stream，而且在未来 API 允许生产方提供长度前，进度不能报告总量。
 - 命令必须声明接受附件。命令拒绝时保留文本草稿与全部附件卡，供用户重试。
 - 子代理不独立上传文件。主 agent 委派时传递保存路径；只有同机或继承父级历史且执行环境能映射该路径的子级可以读取。
 - 上传的文件尚未进入 `@` 补全；该联动是计划中的后续阶段。
@@ -44,4 +46,4 @@ Status: implemented
 
 ## 测试
 
-单元与集成覆盖原样与流式存储、文件名清洗、声明为 2.19 GiB 的请求通过流式 bridge 且不发生总量缓冲、原始字节与 RPC wire 准入、后台上传并发上限、进度与取消、跨 Session 上传常驻、命令通过文件凭证提交且不再次读取字节、read-only 与 workspace-write 权限下的 native 和 PTC 投影、上传暂存、有序 queue 与 steer 提交、队列转 steer、pending 回显退休与失败恢复、active plan 和 goal 的附件入口、`/plan` 与 `/goal` 混合附件、子代理拒绝、composer 与 Chat 附件布局，以及 Trajectory 文件摘要。keyless `file-upload-round` 快照记录浏览器上传、模型读取文件与答案呈现。
+单元与集成覆盖原样与流式存储、文件名清洗、声明为 2.19 GiB 的请求通过流式 bridge 且不发生总量缓冲、原始字节与 RPC wire 准入、Blob 与可转移 `ReadableStream` 载体、后台上传并发上限、进度与取消、跨 Session 上传常驻、命令通过文件凭证提交且不再次读取字节、read-only 与 workspace-write 权限下的 native 和 PTC 投影、上传暂存、有序 queue 与 steer 提交、队列转 steer、pending 回显退休与失败恢复、active plan 和 goal 的附件入口、`/plan` 与 `/goal` 混合附件、子代理拒绝、composer 与 Chat 附件布局，以及 Trajectory 文件摘要。keyless `file-upload-round` 快照记录浏览器上传、模型读取文件与答案呈现。

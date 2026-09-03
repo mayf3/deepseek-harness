@@ -308,17 +308,17 @@ export function QueueDock({ useSession, updateQueue, notify, loadImage, t }: Que
                     {submission.attachments.map((attachment, index) => attachment.type === 'image'
                       ? (
                         <img
-                          key={`${attachment.previewUrl}:${index}`}
+                          key={`${attachment.value.previewUrl}:${index}`}
                           className={css.thumb}
-                          src={attachment.previewUrl}
+                          src={attachment.value.previewUrl}
                           alt={t('queue.image')}
                         />
                       )
                       : (
                         <QueueFile
-                          key={`${attachment.attachment.attachmentId}:${attachment.attachment.name}:${index}`}
-                          attachment={attachment.attachment}
-                          label={t('queue.file', { name: attachment.attachment.name })}
+                          key={`${attachment.value.attachmentId}:${attachment.value.name}:${index}`}
+                          attachment={attachment.value}
+                          label={t('queue.file', { name: attachment.value.name })}
                         />
                       ))}
                   </span>

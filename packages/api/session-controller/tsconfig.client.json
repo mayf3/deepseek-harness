@@ -16,6 +16,7 @@
     { "path": "../gateway/tsconfig.client.json" },
     { "path": "../../attachment/attachment" },
     { "path": "../../client/connection/tsconfig.client.json" },
+    { "path": "../../client/file-upload" },
     { "path": "../../client/store" },
     { "path": "../../context/file-reference" },
     { "path": "../../core/session" },

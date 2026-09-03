@@ -483,7 +483,10 @@ describe('sendSession submission echo', () => {
       expect(b.beginSubmission).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'queue',
         text: '带图',
-        attachments: [expect.objectContaining({ type: 'image', previewUrl: 'blob:echo-1', name: 'a.png' })],
+        attachments: [{
+          type: 'image',
+          value: expect.objectContaining({ previewUrl: 'blob:echo-1', name: 'a.png' }),
+        }],
       }))
       expect(b.prompt).not.toHaveBeenCalled()
       await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })
@@ -531,9 +534,9 @@ describe('sendSession submission echo', () => {
       expect(b.beginSubmission).toHaveBeenCalledWith(expect.objectContaining({
         mode: 'steer',
         attachments: [
-          expect.objectContaining({ type: 'image', name: 'first.png' }),
-          { type: 'file', attachment: { attachmentId: 'mixed-file', name: 'notes.txt', bytes: 1 } },
-          expect.objectContaining({ type: 'image', name: 'last.png' }),
+          { type: 'image', value: expect.objectContaining({ name: 'first.png' }) },
+          { type: 'file', value: { attachmentId: 'mixed-file', name: 'notes.txt', bytes: 1 } },
+          { type: 'image', value: expect.objectContaining({ name: 'last.png' }) },
         ],
       }))
       await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })

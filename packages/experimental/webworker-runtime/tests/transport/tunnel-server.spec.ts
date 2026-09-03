@@ -98,6 +98,36 @@ describe('worker tunnel Blob requests', () => {
   })
 })
 
+describe('worker tunnel ReadableStream requests', () => {
+  it('streams transferred chunks through the Host Worker route', async () => {
+    const frames: TunnelOutboundFrame[] = []
+    const seen: Uint8Array[] = []
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes(111, 110, 101))
+        controller.enqueue(bytes(116, 119, 111))
+        controller.close()
+      },
+    })
+    const server = new TunnelServer({
+      port: { postMessage: (frame) => { frames.push(frame) } },
+      requestListener: () => Promise.resolve(async (request, response) => {
+        for await (const chunk of request as AsyncIterable<Uint8Array>) seen.push(chunk)
+        const res = response as { writeHead(status: number): void; end(body: string): void }
+        res.writeHead(200)
+        res.end('stored')
+      }),
+    })
+    server.serve(seams(async () => (async function *(): AsyncGenerator { yield undefined })()))
+    server.handleMessage({
+      t: 'req', id: 10, method: 'POST', url: 'http://localhost/upload', headers: {}, body,
+    })
+    await vi.waitFor(() => { expect(frames).toHaveLength(1) })
+    expect(seen.map(chunk => new TextDecoder().decode(chunk))).toEqual(['one', 'two'])
+    expect(frames[0]).toMatchObject({ t: 'res', id: 10, status: 200 })
+  })
+})
+
 describe('worker tunnel logical streams', () => {
   it('drains a pre-boot open through the worker-local Gateway seam', async () => {
     const { server, frames } = harness()

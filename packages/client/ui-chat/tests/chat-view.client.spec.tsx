@@ -1081,7 +1081,9 @@ describe('ChatView', () => {
           placement: 'steering',
           time: 5_500,
           text: '带图纠偏',
-          attachments: [{ type: 'image', previewUrl: 'blob:steer-preview', name: 'steer.png' }],
+          attachments: [{
+            type: 'image', value: { previewUrl: 'blob:steer-preview', name: 'steer.png' },
+          }],
         }],
       },
     )
@@ -1150,8 +1152,10 @@ describe('ChatView', () => {
           time: 7_000,
           text: '',
           attachments: [
-            { type: 'image', previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
-            { type: 'image', previewUrl: 'blob:echo-b' },
+            {
+              type: 'image', value: { previewUrl: 'blob:echo-a', name: 'a.png', width: 4, height: 3 },
+            },
+            { type: 'image', value: { previewUrl: 'blob:echo-b' } },
           ],
         }],
       },
@@ -1190,12 +1194,12 @@ describe('ChatView', () => {
           time: 7_500,
           text: '',
           attachments: [
-            { type: 'image', previewUrl: 'blob:first', name: 'first.png' },
+            { type: 'image', value: { previewUrl: 'blob:first', name: 'first.png' } },
             {
               type: 'file',
-              attachment: { attachmentId: 'file-1' as never, name: 'notes.txt', bytes: 23 },
+              value: { attachmentId: 'file-1' as never, name: 'notes.txt', bytes: 23 },
             },
-            { type: 'image', previewUrl: 'blob:last', name: 'last.png' },
+            { type: 'image', value: { previewUrl: 'blob:last', name: 'last.png' } },
           ],
         }],
       },

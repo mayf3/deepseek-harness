@@ -2,9 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { bytesToBase64, randomUUID } from '@deepseek-ai/dsh-util-crypto'
-import type {
-  BackgroundUploadProgress, BackgroundUploadTransport,
-} from '@deepseek-ai/dsh-client-connection/client'
+import type { FileUploadProgress } from '@deepseek-ai/dsh-client-file-upload/client'
 import type { AttachmentIdType, FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SubagentAddress } from '@deepseek-ai/dsh-subagent/client'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
@@ -76,8 +74,6 @@ export interface SessionOptions {
    * private store (bare object-layer construction).
    */
   projections?: ProjectionValueStore
-  /** Physical large-body carrier supplied by the active browser Connection. */
-  backgroundUploads?: BackgroundUploadTransport
 }
 
 /**
@@ -302,15 +298,17 @@ export class Session implements SessionFace {
   /**
    * Persist one browser file verbatim and stage it for a later prompt on this
    * session (ordinary sessions only; subagent conversations refuse).
-   * @param data - exact file bytes.
+   * @param data - exact bytes, a browser Blob, or a one-shot byte stream.
    * @param name - optional display name; the host sanitizes the stored leaf name.
+   * @param signal - optional cancellation for the active upload.
+   * @param onProgress - optional byte-progress observer for background bodies.
    * @returns the staged-upload receipt and durable file reference, or the business error.
    */
   async uploadFile(
-    data: Blob | Uint8Array,
+    data: Blob | Uint8Array | ReadableStream<Uint8Array>,
     name?: string,
     signal?: AbortSignal,
-    onProgress?: (progress: BackgroundUploadProgress) => void,
+    onProgress?: (progress: FileUploadProgress) => void,
   ): Promise<RemoteResult<SessionUploadFileValue>> {
     if (this.address !== undefined) {
       return {
@@ -322,10 +320,10 @@ export class Session implements SessionFace {
         ),
       }
     }
-    if (data instanceof Blob && this.options.backgroundUploads !== undefined) {
+    if (!(data instanceof Uint8Array) && this.actx?.fileUpload.available === true) {
       const query = new URLSearchParams({ sessionId: this.sessionId })
       if (name !== undefined) query.set('name', name)
-      const response = await this.options.backgroundUploads.post({
+      const response = await this.actx.fileUpload.post({
         path: `${SESSION_FILE_UPLOAD_PATH}?${query.toString()}`,
         body: data,
         headers: { 'content-type': 'application/octet-stream' },
@@ -336,6 +334,9 @@ export class Session implements SessionFace {
         throw new Error(`file upload transport failed with HTTP ${String(response.status)}`)
       }
       return parseFileUploadResult(response.body)
+    }
+    if (!(data instanceof Uint8Array) && !(data instanceof Blob)) {
+      throw new Error('stream file upload requires a bound Client file-upload service')
     }
     const bytes = data instanceof Uint8Array ? data : new Uint8Array(await data.arrayBuffer())
     return this.remote.session.uploadFile({

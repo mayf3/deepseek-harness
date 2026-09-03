@@ -74,6 +74,16 @@ export function createSyntheticExchange(frame: TunnelRequestFrame, sink: Respons
         }
         return
       }
+      if (frame.body instanceof ReadableStream) {
+        for await (const chunk of frame.body) {
+          if (aborted) return
+          if (!(chunk instanceof Uint8Array)) {
+            throw new TypeError('webworker tunnel: request stream produced a non-Uint8Array chunk')
+          }
+          if (chunk.byteLength > 0) yield chunk
+        }
+        return
+      }
       if (aborted || frame.body.byteLength === 0) return
       yield new Uint8Array(frame.body)
     },

@@ -125,10 +125,13 @@ describe('QueueDock', () => {
         time: 1,
         text: '等待上传',
         attachments: [
-          { type: 'image' as const, previewUrl: 'blob:queue-preview', name: 'queue.png' },
+          {
+            type: 'image' as const,
+            value: { previewUrl: 'blob:queue-preview', name: 'queue.png' },
+          },
           {
             type: 'file' as const,
-            attachment: {
+            value: {
               attachmentId: 'file-local' as never,
               name: 'notes.txt',
               bytes: 2447 * 1024 * 1024,

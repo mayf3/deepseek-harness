@@ -2,7 +2,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent/types'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
+import type {} from '@deepseek-ai/dsh-client-connection/client'
+import type {} from '@deepseek-ai/dsh-client-file-upload/client'
 import { createSessionControlStream } from './transport.ts'
 import { ClientSessions } from './sessions/service.ts'
 import type { SessionRemotes } from './sessions/remotes.ts'
@@ -61,7 +62,9 @@ export type {
   OpenState,
   PendingSubmission,
   PendingSubmissionAttachment,
+  PendingSubmissionFileAttachment,
   PendingSubmissionImage,
+  PendingSubmissionImageAttachment,
   PendingSubmissionPlacement,
   PromptError,
   QueuedMessage,
@@ -78,6 +81,7 @@ declare module '@deepseek-ai/cordis' {
 /** Required Remote and Context projection services. */
 export const inject = [
   'connection',
+  'fileUpload',
   'typert',
   'remote',
   'remote.commands',
@@ -90,9 +94,8 @@ export const inject = [
  * @param ctx - Client Cordis context.
  */
 export function apply(ctx: Context): void {
-  const connection = ctx.get('connection') as ConnectionHandle
   const remotes = ctx.remote as unknown as SessionRemotes
-  const sessions = new ClientSessions(ctx, remotes, connection.backgroundUploads)
+  const sessions = new ClientSessions(ctx, remotes)
   ctx.remote.$on('api-session/added', (summary) => { sessions.handleSessionAdded(summary) })
   ctx.remote.$on('api-session/removed', (sessionId) => { sessions.handleSessionRemoved(sessionId) })
   ctx.remote.$on('api-session/status', (sessionId, running) => {

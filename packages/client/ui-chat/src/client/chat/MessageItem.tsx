@@ -282,14 +282,14 @@ export function PendingSubmissionBubble({ submission, renderMessageImages, t }: 
         type: 'image',
         image: {
           preview: {
-            url: attachment.previewUrl,
-            ...(attachment.name === undefined ? {} : { name: attachment.name }),
-            ...(attachment.width === undefined ? {} : { width: attachment.width }),
-            ...(attachment.height === undefined ? {} : { height: attachment.height }),
+            url: attachment.value.previewUrl,
+            ...(attachment.value.name === undefined ? {} : { name: attachment.value.name }),
+            ...(attachment.value.width === undefined ? {} : { width: attachment.value.width }),
+            ...(attachment.value.height === undefined ? {} : { height: attachment.value.height }),
           },
         },
       }
-      : { type: 'file', file: attachment.attachment }),
+      : { type: 'file', file: attachment.value }),
     [submission.attachments],
   )
   return (

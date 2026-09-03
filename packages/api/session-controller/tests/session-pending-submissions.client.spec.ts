@@ -84,14 +84,18 @@ describe('beginSubmission', () => {
     const handle = session.beginSubmission({
       mode: 'queue',
       text: '你好',
-      attachments: [{ type: 'image', previewUrl: 'blob:p1', name: 'a.png', width: 4, height: 3 }],
+      attachments: [{
+        type: 'image', value: { previewUrl: 'blob:p1', name: 'a.png', width: 4, height: 3 },
+      }],
     })
     expect(session.getSnapshot().promptAttempted).toBe(true)
     expect(session.getSnapshot().pendingSubmissions).toMatchObject([{
       requestId: handle.requestId,
       placement: 'transcript',
       text: '你好',
-      attachments: [{ type: 'image', previewUrl: 'blob:p1', name: 'a.png', width: 4, height: 3 }],
+      attachments: [{
+        type: 'image', value: { previewUrl: 'blob:p1', name: 'a.png', width: 4, height: 3 },
+      }],
     }])
   })
 
@@ -168,7 +172,7 @@ describe('observed retirement', () => {
     const handle = session.beginSubmission({
       mode: 'queue',
       text: '发送',
-      attachments: [{ type: 'image', previewUrl: 'blob:p1' }],
+      attachments: [{ type: 'image', value: { previewUrl: 'blob:p1' } }],
       onRetire: retirement => retirements.push(retirement),
     })
     const refs = [imageRef('att-1')]
@@ -188,7 +192,7 @@ describe('observed retirement', () => {
     const handle = session.beginSubmission({
       mode: 'queue',
       text: '排队',
-      attachments: [{ type: 'image', previewUrl: 'blob:p1' }],
+      attachments: [{ type: 'image', value: { previewUrl: 'blob:p1' } }],
       onRetire: retirement => retirements.push(retirement),
     })
     const refs = [imageRef('att-q')]
@@ -210,9 +214,9 @@ describe('observed retirement', () => {
       mode: 'queue',
       text: 'mixed',
       attachments: [
-        { type: 'image', previewUrl: 'blob:first' },
-        { type: 'file', attachment: file },
-        { type: 'image', previewUrl: 'blob:last' },
+        { type: 'image', value: { previewUrl: 'blob:first' } },
+        { type: 'file', value: file },
+        { type: 'image', value: { previewUrl: 'blob:last' } },
       ],
       onRetire: retirement => retirements.push(retirement),
     })

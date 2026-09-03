@@ -31,10 +31,22 @@ export interface PendingSubmissionImage {
   readonly height?: number
 }
 
+/** Image branch of a local submission echo attachment. */
+export interface PendingSubmissionImageAttachment {
+  readonly type: 'image'
+  readonly value: PendingSubmissionImage
+}
+
+/** File branch of a local submission echo attachment. */
+export interface PendingSubmissionFileAttachment {
+  readonly type: 'file'
+  readonly value: FileAttachmentRef
+}
+
 /** One attachment displayed by a local submission echo, in prompt order. */
 export type PendingSubmissionAttachment =
-  | ({ readonly type: 'image' } & PendingSubmissionImage)
-  | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
+  | PendingSubmissionImageAttachment
+  | PendingSubmissionFileAttachment
 
 /** Client surface selected when a local submission begins. */
 export type PendingSubmissionPlacement = 'transcript' | 'queued' | 'steering'

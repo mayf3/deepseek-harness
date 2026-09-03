@@ -246,12 +246,14 @@ export class ConversationController extends Service implements IConversation {
     const pendingAttachments = attachments.map(attachment => attachment.kind === 'image'
       ? {
         type: 'image' as const,
-        previewUrl: attachment.previewUrl,
-        ...(attachment.file.name === '' ? {} : { name: attachment.file.name }),
-        ...(attachment.width === undefined ? {} : { width: attachment.width }),
-        ...(attachment.height === undefined ? {} : { height: attachment.height }),
+        value: {
+          previewUrl: attachment.previewUrl,
+          ...(attachment.file.name === '' ? {} : { name: attachment.file.name }),
+          ...(attachment.width === undefined ? {} : { width: attachment.width }),
+          ...(attachment.height === undefined ? {} : { height: attachment.height }),
+        },
       }
-      : { type: 'file' as const, attachment: uploadFor(attachment).file })
+      : { type: 'file' as const, value: uploadFor(attachment).file })
     const serializeAttachments = (): Promise<Parameters<SessionFace['prompt']>[0]> => Promise.all(
       attachments.map(async attachment => attachment.kind === 'image'
         ? { type: 'image' as const, ...await this.encodeImage(attachment.file) }

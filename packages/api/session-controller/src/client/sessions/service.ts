@@ -32,7 +32,6 @@ import type { AgentContext, ISessions } from '../contract/sessions.ts'
 import { createScope, scopeOf as scopeTagOf } from '../scope.ts'
 import { SessionManager } from './manager.ts'
 import type { SessionRemotes } from './remotes.ts'
-import type { BackgroundUploadTransport } from '@deepseek-ai/dsh-client-connection/client'
 import type { SessionListPhase, SessionSearchResultItem, SubagentCatalogSnapshot } from './manager.ts'
 import type { Session } from './session.ts'
 
@@ -222,7 +221,6 @@ export class ClientSessions implements ISessions {
   constructor(
     private readonly rootCtx: Context,
     remote: SessionRemotes,
-    backgroundUploads?: BackgroundUploadTransport,
   ) {
     this.selection = createSnapshotStore<SessionSelection>(
       {},
@@ -232,7 +230,6 @@ export class ClientSessions implements ISessions {
       remote,
       restored.sessionId,
       restored.subagentAddress,
-      backgroundUploads,
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
