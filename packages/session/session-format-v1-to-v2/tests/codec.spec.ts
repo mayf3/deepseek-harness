@@ -4,6 +4,7 @@ import type {
   SessionFormatEvent,
   SessionFormatJsonObject,
 } from '@deepseek-ai/dsh-session-format'
+import { decodeSeqRanges as decodeCurrentSeqRanges } from '@deepseek-ai/dsh-session'
 import { releasedV2SessionFormatCodec } from '@deepseek-ai/dsh-session-format-v1-to-v2'
 
 const minimalPhysicalHeader = {
@@ -126,6 +127,21 @@ describe('releasedV2SessionFormatCodec rows', () => {
     expect(releasedV2SessionFormatCodec.decodeArtifact(encoded.header, encoded.rows)).toStrictEqual(source)
   })
 
+  it('keeps non-monotonic provenance scalar-only for the current backend reader', () => {
+    const sourceEventSeqs = [4, 5, 1, 2, 3]
+    const source = artifact([
+      feedback(0), feedback(1), feedback(2), feedback(3), feedback(4), feedback(5),
+      userMessage(6, sourceEventSeqs),
+    ])
+
+    const encoded = releasedV2SessionFormatCodec.encodeArtifact(source)
+    const stored = encoded.rows[6]?.['sourceEventSeqs']
+
+    expect(stored).toStrictEqual(sourceEventSeqs)
+    expect(decodeCurrentSeqRanges(stored, 6)).toStrictEqual(sourceEventSeqs)
+    expect(releasedV2SessionFormatCodec.decodeArtifact(encoded.header, encoded.rows)).toStrictEqual(source)
+  })
+
   it('keeps the v2 physical codec vocabulary-neutral for current growth and a future source freeze', () => {
     const source = artifact([
       { type: 'external/required', seq: 0, time: 1, data: { retained: true } },
@@ -164,6 +180,7 @@ describe('releasedV2SessionFormatCodec rows', () => {
     ['scalar at the event', [4], /unique earlier/],
     ['duplicate scalars', [0, 0], /unique earlier/],
     ['overlapping range and scalar', [[0, 1], 1], /unique earlier/],
+    ['non-monotonic range', [3, [0, 2]], /strictly increasing/],
   ])('refuses malformed stored provenance: %s', (_name, sourceEventSeqs, message) => {
     const rows = [feedback(0), feedback(1), feedback(2), feedback(3), {
       ...userMessage(4), sourceEventSeqs,

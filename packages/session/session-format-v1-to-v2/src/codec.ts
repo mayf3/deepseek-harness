@@ -168,6 +168,7 @@ function encodeProvenance(event: SessionFormatEvent): SessionFormatJsonObject {
 function decodeSeqRanges(value: SessionFormatJsonValue, maxEntries: number): readonly number[] {
   if (!Array.isArray(value)) throw new SessionFormatError('sourceEventSeqs must be an array')
   const output: number[] = []
+  let hasRange = false
   for (const entry of value) {
     if (!Array.isArray(entry)) {
       output.push(sessionFormatCount(entry, 'sourceEventSeqs member'))
@@ -180,6 +181,7 @@ function decodeSeqRanges(value: SessionFormatJsonValue, maxEntries: number): rea
       throw new SessionFormatError('sourceEventSeqs range exceeds its event seq')
     }
     for (let current = start; current <= end; current += 1) output.push(current)
+    hasRange = true
   }
   const seen = new Set<number>()
   for (const source of output) {
@@ -188,10 +190,14 @@ function decodeSeqRanges(value: SessionFormatJsonValue, maxEntries: number): rea
     }
     seen.add(source)
   }
+  if (hasRange && output.some((source, index) => index > 0 && source <= (output[index - 1] as number))) {
+    throw new SessionFormatError('sourceEventSeqs ranges must be strictly increasing')
+  }
   return output
 }
 
 function encodeSeqRanges(values: readonly number[]): readonly SessionFormatJsonValue[] {
+  if (values.some((value, index) => index > 0 && value <= (values[index - 1] as number))) return [...values]
   const output: SessionFormatJsonValue[] = []
   for (let index = 0; index < values.length;) {
     const start = values[index] as number

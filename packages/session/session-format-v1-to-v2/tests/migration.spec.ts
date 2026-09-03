@@ -650,6 +650,52 @@ describe('sessionFormatV1ToV2', () => {
     })
   })
 
+  it('preserves source-sequence text in a title request while remapping its references', () => {
+    const framed = 'Generate the session title from this JSON array of human messages:\n'
+      + JSON.stringify([{ seq: 6, text: 'question' }])
+    const source: SessionFormatArtifact = {
+      header: {
+        version: 1, id: 'v1-title-source-seq', createdAt: 1,
+        isSeeded: false, delegationDepth: 0,
+      },
+      inheritedEventCount: 0,
+      events: [
+        event('turn/start', 0, 1, { turn: 1 }),
+        event('step/start', 1, 2, { turn: 1, step: 1 }),
+        event('assistant/chunk', 2, 3, {
+          turn: 1, step: 1, chunk: { type: 'text-delta', index: 0, text: 'hello' },
+        }),
+        event('assistant/chunk', 3, 4, {
+          turn: 1, step: 1, chunk: { type: 'finish', reason: { kind: 'stop' } },
+        }),
+        {
+          ...event('assistant/message', 4, 5, { turn: 1, step: 1, message }),
+          sourceEventSeqs: [2, 3], surfaceOp: 'append',
+        },
+        event('step/end', 5, 6, { turn: 1, step: 1 }),
+        { ...event('user/message', 6, 7, userMessage), surfaceOp: 'append' },
+        event('session/title-llm-request', 7, 8, {
+          titleProvider: 'title-1', messageSeqs: [6], route: { provider: 'mock', model: 'mock' },
+          system: 'title',
+          messages: [{
+            id: 'title-request', role: 'user', content: [{ type: 'text', text: framed }],
+            source: { kind: 'plugin', plugin: 'dsh-session-title-llm' },
+          }],
+          maxTokens: 20,
+        }),
+        event('turn/end', 8, 9, { turn: 1, reason: { kind: 'completed' } }),
+      ],
+    }
+
+    const migrated = sessionFormatV1ToV2.migrate(source)
+    const titleRequest = migrated.events.find(event => event.type === 'session/title-llm-request')
+
+    expect(titleRequest?.data).toMatchObject({
+      messageSeqs: [4],
+      messages: [{ content: [{ text: framed }] }],
+    })
+  })
+
   it('remaps compaction summaries and closes prior-turn groups independently', () => {
     const source: SessionFormatArtifact = {
       header: {

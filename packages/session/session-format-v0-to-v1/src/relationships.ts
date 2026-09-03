@@ -31,6 +31,8 @@ interface ToolLifecycle {
 export interface ReleasedRelationshipExtensions {
   /** Event types that must occur inside the current open step. */
   readonly stepEvents?: ReadonlySet<string>
+  /** Title-request model input was source-validated and preserved across sequence remapping. */
+  readonly preservedSourceTitleRequestText?: true
 }
 
 /**
@@ -221,7 +223,12 @@ export function assertReleasedArtifactRelationships(
       }
       case 'session/title':
       case 'session/title-llm-request':
-        assertTitleSources(artifact.events, event, data)
+        assertTitleSources(
+          artifact.events,
+          event,
+          data,
+          extensions.preservedSourceTitleRequestText !== true,
+        )
         break
       case 'command/run': {
         const id = data['commandId'] as string
@@ -408,6 +415,7 @@ function assertTitleSources(
   events: readonly SessionFormatEvent[],
   event: SessionFormatEvent,
   data: Record<string, SessionFormatJsonValue>,
+  validateFramedText: boolean,
 ): void {
   const seqs = data['messageSeqs'] as readonly number[]
   if (event.type === 'session/title') {
@@ -444,7 +452,8 @@ function assertTitleSources(
       throw new SessionFormatError('session/title-llm-request messages do not represent messageSeqs')
     }
     const framed = content[0]
-    if (framed === undefined || framed['type'] !== 'text' || framed['text'] !== expected) {
+    if (framed === undefined || framed['type'] !== 'text'
+      || validateFramedText && framed['text'] !== expected) {
       throw new SessionFormatError('session/title-llm-request messages do not represent messageSeqs')
     }
   }

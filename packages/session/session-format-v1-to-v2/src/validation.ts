@@ -31,6 +31,7 @@ const LOG_OPTIONAL = ['ignorable'] as const
 const RELEASED_V2_EVENT_TYPE_SET = new Set(RELEASED_V2_EVENT_TYPES)
 const RELEASED_V2_RELATIONSHIP_EXTENSIONS = {
   stepEvents: new Set(['assistant/attempt']),
+  preservedSourceTitleRequestText: true,
 } as const
 
 /**
