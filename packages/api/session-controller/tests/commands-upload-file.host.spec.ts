@@ -126,8 +126,8 @@ describe('Session file uploads', () => {
       .resolves.toMatchObject({ status: 405 })
   })
 
-  it('stages one verbatim upload and cites it from a later prompt as a file block', async () => {
-    const { ctx, controller, uploads, agent, followup, saveFile } = await uploadHarness()
+  it('stages one verbatim upload and preserves its order with an admitted image', async () => {
+    const { ctx, controller, uploads, agent, followup, saveFile, saveImages } = await uploadHarness()
     const receipt = await uploads.upload(agent, { data: 'AAAA', name: 'notes.pdf' }, new AbortController().signal)
     expect(saveFile).toHaveBeenCalledTimes(1)
     expect(receipt.file.name).toBe('notes.pdf')
@@ -148,14 +148,24 @@ describe('Session file uploads', () => {
     expect(commandHandler.mock.calls[0]?.[0]).toMatchObject({
       attachments: [{ type: 'file', attachment: receipt.file }],
     })
+    const image: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'ab'.repeat(32)}`),
+      mediaType: 'image/png',
+      bytes: 3,
+      width: 1,
+      height: 1,
+    }
+    saveImages.mockResolvedValueOnce([image])
     await controller.prompt(promptRequest([
       { type: 'file', receiptId: receipt.receiptId },
+      { type: 'image', mediaType: 'image/png', data: 'AAAA' },
       { type: 'text', text: 'read it' },
     ]))
     expect(followup).toHaveBeenCalledTimes(1)
     const message = followup.mock.calls[0]?.[0] as UserMessage
     expect(message.content).toEqual([
       { type: 'file', attachment: receipt.file },
+      { type: 'image', attachment: image },
       { type: 'text', text: 'read it' },
     ])
   })

@@ -359,6 +359,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ApprovalService: 'approval.md',
   AskUserQuestionRequestEvent: 'user-questions.md',
   AdmittedPromptContentPart: 'attachment.md',
+  AttachmentAdmissionPart: 'attachment.md',
   EncodedFileAttachment: 'attachment.md',
   EncodedImageAttachment: 'attachment.md',
   FileAttachmentRef: 'attachment.md',

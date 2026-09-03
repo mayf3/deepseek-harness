@@ -106,10 +106,16 @@ export type PromptContentPart =
     readonly name?: string
   }
 
-/** Host-admitted prompt content with each uploaded image replaced by its durable reference. */
+/** Host prompt content whose file receipts are resolved and whose image bytes await admission. */
+export type AttachmentAdmissionPart =
+  | PromptContentPart
+  | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
+
+/** Host-admitted prompt content with every attachment represented by its durable reference. */
 export type AdmittedPromptContentPart =
   | { readonly type: 'text'; readonly text: string }
   | { readonly type: 'image'; readonly attachment: ImageAttachmentRef }
+  | { readonly type: 'file'; readonly attachment: FileAttachmentRef }
 
 /** Request to validate and durably commit one image. */
 export interface SaveImageAttachment {

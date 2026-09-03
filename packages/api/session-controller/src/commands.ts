@@ -5,13 +5,15 @@ import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
-import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {
+  AttachmentAdmissionPart, FileAttachmentRef, ImageAttachmentRef,
+} from '@deepseek-ai/dsh-attachment'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
   ReasoningEffortId, createUserMessage, freezeMessage,
 } from '@deepseek-ai/dsh-llm'
-import type { ContentBlock, MessageSource } from '@deepseek-ai/dsh-llm'
+import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 import { SessionQueryError, type SessionObservation } from '@deepseek-ai/dsh-session-query'
@@ -328,12 +330,12 @@ export class SessionCommandController {
             )
           }
         }
-        const durable = await durablePromptContent(
-          this.ctx,
+        const admission = resolvePromptFileReceipts(
           request.content,
           receiptId => this.ctx.fileUploads.resolve(agent, receiptId),
         )
-        const message: UserMessage = createUserMessage({ content: durable.content, source })
+        const content = await this.ctx.attachments.admitPromptContent(admission.content)
+        const message: UserMessage = createUserMessage({ content, source })
         if (this.ctx.agents.get(agent.id) !== agent) {
           throw new RemoteError(
             'session/not-found',
@@ -341,7 +343,7 @@ export class SessionCommandController {
             { sessionId: agent.id },
           )
         }
-        using binding = this.ctx.fileUploads.bindPrompt(agent, durable.receiptIds, request.requestId)
+        using binding = this.ctx.fileUploads.bindPrompt(agent, admission.receiptIds, request.requestId)
         if (request.mode === 'steer') agent.steer(message)
         else agent.followup(message)
         binding.commit()
@@ -520,36 +522,25 @@ export class SessionCommandController {
   }
 }
 
-async function durablePromptContent(
-  ctx: Context,
-  content: readonly SessionPromptRequest['content'][number][],
+function resolvePromptFileReceipts(
+  content: SessionPromptRequest['content'],
   stagedFile: (receiptId: FileUploadReceiptId) => FileAttachmentRef | undefined,
-): Promise<{ readonly content: ContentBlock[]; readonly receiptIds: readonly FileUploadReceiptId[] }> {
-  const files = new Map<FileUploadReceiptId, FileAttachmentRef>()
-  for (const part of content) {
-    if (part.type !== 'file' || files.has(part.receiptId)) continue
-    const file = stagedFile(part.receiptId)
-    if (file === undefined) {
+): { readonly content: AttachmentAdmissionPart[]; readonly receiptIds: readonly FileUploadReceiptId[] } {
+  const receiptIds = new Set<FileUploadReceiptId>()
+  const resolved = content.map((part): AttachmentAdmissionPart => {
+    if (part.type !== 'file') return part
+    const attachment = stagedFile(part.receiptId)
+    if (attachment === undefined) {
       throw new RemoteError(
         'session/attachment-invalid',
         'File was not uploaded for this session.',
         { reason: 'FILE_NOT_STAGED' },
       )
     }
-    files.set(part.receiptId, file)
-  }
-  type NonFilePart = Exclude<SessionPromptRequest['content'][number], { readonly type: 'file' }>
-  const admitted = await ctx.attachments.admitPromptContent(
-    content.filter((part): part is NonFilePart => part.type !== 'file'),
-  )
-  let next = 0
-  const durable = content.map((part) => {
-    if (part.type === 'file') {
-      return { type: 'file' as const, attachment: files.get(part.receiptId) as FileAttachmentRef }
-    }
-    return admitted[next++] as ContentBlock
+    receiptIds.add(part.receiptId)
+    return { type: 'file', attachment }
   })
-  return { content: durable, receiptIds: [...files.keys()] }
+  return { content: resolved, receiptIds: [...receiptIds] }
 }
 
 function hasPromptRequest(agent: Agent, requestId: SessionRequestId): boolean {

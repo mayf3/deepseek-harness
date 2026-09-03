@@ -953,6 +953,11 @@
     },
     {
       "doc": "docs/subsystems/attachment.md",
+      "symbol": "AttachmentAdmissionPart",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
       "symbol": "AdmittedPromptContentPart",
       "source": "packages/attachment/attachment/src/types.ts"
     },

@@ -5,11 +5,11 @@ import { admitEncodedImages } from './admission.ts'
 import { AttachmentError } from './error.ts'
 import type {
   AdmittedPromptContentPart,
+  AttachmentAdmissionPart,
   FileAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
-  PromptContentPart,
   RequestImageAttachment,
   SaveFileAttachment,
   SaveFileStreamAttachment,
@@ -25,6 +25,7 @@ export { requestImageDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,
   AdmittedPromptContentPart,
+  AttachmentAdmissionPart,
   EncodedFileAttachment,
   EncodedImageAttachment,
   FileAttachmentRef,
@@ -102,23 +103,27 @@ export abstract class AttachmentStore extends Service {
   }
 
   /**
-   * Admit one browser prompt and replace each uploaded image with its durable reference.
-   * Text-only prompts do not access attachment storage.
-   * @param content - browser prompt parts in message order.
+   * Admit one Host prompt and replace each uploaded image with its durable reference.
+   * Text and durable file references pass through unchanged. A prompt without image parts performs no storage operation.
+   * @param content - prompt parts in message order after file receipt resolution.
    * @returns admitted prompt parts in the same order as `content`.
    * @throws AttachmentError when the image batch is refused.
    */
   async admitPromptContent(
-    content: readonly PromptContentPart[],
+    content: readonly AttachmentAdmissionPart[],
   ): Promise<AdmittedPromptContentPart[]> {
-    if (content.every(part => part.type === 'text')) {
-      return content.map(part => ({ type: 'text', text: part.text }))
+    if (content.every(part => part.type !== 'image')) {
+      return content.map(part => part.type === 'text'
+        ? { type: 'text', text: part.text }
+        : { type: 'file', attachment: part.attachment })
     }
     const refs = await admitEncodedImages(this, content.filter(part => part.type === 'image'))
     let next = 0
-    return content.map(part => part.type === 'text'
-      ? { type: 'text', text: part.text }
-      : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
+    return content.map((part) => {
+      if (part.type === 'text') return { type: 'text', text: part.text }
+      if (part.type === 'file') return { type: 'file', attachment: part.attachment }
+      return { type: 'image', attachment: refs[next++] as ImageAttachmentRef }
+    })
   }
 
   /**
