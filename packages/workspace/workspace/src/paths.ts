@@ -17,16 +17,16 @@ export function fullyQualifiedWorkspacePath(
   path: string,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  return platform === 'win32'
-    ? win32.isAbsolute(path) && /^(?:[A-Za-z]:[\\/]|[\\/]{2}[^\\/]+[\\/]+[^\\/]+)/.test(path)
-    : posix.isAbsolute(path)
+  if (platform !== 'win32') return posix.isAbsolute(path)
+  const root = win32.parse(path).root
+  return win32.isAbsolute(path) && root !== '\\' && root !== '/'
 }
 
 /**
  * Derive a non-empty default title from a canonical Workspace path.
  * @param path - Canonical Workspace path.
  * @param platform - Host platform; injectable for deterministic path tests.
- * @returns The final segment, or the complete root spelling for a filesystem root.
+ * @returns The final segment when present, otherwise the complete root spelling.
  */
 export function defaultWorkspaceTitle(
   path: string,

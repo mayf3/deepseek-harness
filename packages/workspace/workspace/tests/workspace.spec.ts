@@ -360,8 +360,10 @@ describe('WorkspaceRegistry create and lookup', () => {
   it('accepts fully qualified roots and directories without accepting drive-relative paths', () => {
     expect(fullyQualifiedWorkspacePath('C:\\', 'win32')).toBe(true)
     expect(fullyQualifiedWorkspacePath('C:\\work', 'win32')).toBe(true)
+    expect(fullyQualifiedWorkspacePath('\\\\server\\share', 'win32')).toBe(true)
     expect(defaultWorkspaceTitle('C:\\', 'win32')).toBe('C:\\')
     expect(defaultWorkspaceTitle('C:\\work', 'win32')).toBe('work')
+    expect(defaultWorkspaceTitle('\\\\server\\share', 'win32')).toBe('share')
     expect(fullyQualifiedWorkspacePath('C:', 'win32')).toBe(false)
     expect(fullyQualifiedWorkspacePath('C:work', 'win32')).toBe(false)
     expect(fullyQualifiedWorkspacePath('\\work', 'win32')).toBe(false)

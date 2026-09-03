@@ -16,6 +16,7 @@ describe('Workspace path helpers', () => {
   it('keeps Windows drive-root and directory joins fully qualified', () => {
     expect(resolveWorkspacePath('C:\\', 'src\\a.ts')).toBe('C:\\src\\a.ts')
     expect(resolveWorkspacePath('C:\\work\\', 'src\\a.ts')).toBe('C:\\work\\src\\a.ts')
+    expect(resolveWorkspacePath('C:/work/', 'src/a.ts')).toBe('C:/work/src/a.ts')
   })
 
   it('abbreviates only descendants of a POSIX home', () => {
