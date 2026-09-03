@@ -76,7 +76,6 @@ type FixtureFollowFrame =
       readonly revision: number
       readonly activeAttempt?: {
         readonly attemptId: string
-        readonly startedTime: number
         readonly startedAfterSeq: number
         readonly turn: number
         readonly step: number

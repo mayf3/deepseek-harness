@@ -57,7 +57,7 @@ function start(
   startedAfterSeq = -1,
 ): SessionAssistantStreamFrame {
   return {
-    type: 'start', attemptId, revision: 1, startedTime: 10,
+    type: 'start', attemptId, revision: 1,
     startedAfterSeq: startedAfterSeq === -1 ? -1 : SessionSeq(startedAfterSeq),
     turn: 1, step: 1,
   }
@@ -86,7 +86,6 @@ function baseline(nextIndex = 1): SessionAssistantStreamBaseline {
     revision: nextIndex + 1,
     activeAttempt: {
       attemptId: ATTEMPT,
-      startedTime: 10,
       startedAfterSeq: -1,
       turn: 1,
       step: 1,

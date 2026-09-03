@@ -26,8 +26,7 @@ function startFrames(agent: Agent, turn = 1, step = 1): void {
   agent.ctx.emit('agent/assistant-stream', {
     agent,
     frame: {
-      type: 'start', attemptId: state.attemptId, revision: state.revision,
-      startedTime: Date.now(), turn, step,
+      type: 'start', attemptId: state.attemptId, revision: state.revision, turn, step,
     },
   })
 }

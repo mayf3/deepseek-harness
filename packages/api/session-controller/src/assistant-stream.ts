@@ -11,7 +11,6 @@ import type {
 
 interface MutableAttempt {
   readonly attemptId: SessionAssistantStreamAttempt['attemptId']
-  readonly startedTime: number
   readonly startedAfterSeq: SessionSeqCursor
   readonly turn: number
   readonly step: number
@@ -52,7 +51,6 @@ export class SessionAssistantStreamAccumulator {
       case 'start':
         this.activeAttempt = {
           attemptId: frame.attemptId,
-          startedTime: frame.startedTime,
           startedAfterSeq: durableCursor,
           turn: frame.turn,
           step: frame.step,
@@ -90,7 +88,6 @@ export class SessionAssistantStreamAccumulator {
       ...this.activeAttempt === undefined ? {} : {
         activeAttempt: {
           attemptId: this.activeAttempt.attemptId,
-          startedTime: this.activeAttempt.startedTime,
           startedAfterSeq: this.activeAttempt.startedAfterSeq,
           turn: this.activeAttempt.turn,
           step: this.activeAttempt.step,

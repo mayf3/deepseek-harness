@@ -436,8 +436,6 @@ export interface SessionFollowRequest {
 /** One active assistant attempt in a reconnect opening snapshot. */
 export interface SessionAssistantStreamAttempt {
   readonly attemptId: LlmAttemptId
-  /** Safe-integer wall-clock time copied from the attempt's start frame. */
-  readonly startedTime: number
   /** Last durable Session seq observed when this attempt started. */
   readonly startedAfterSeq: SessionSeqCursor
   readonly turn: number
@@ -460,7 +458,6 @@ export type SessionAssistantStreamFrame =
     readonly type: 'start'
     readonly attemptId: LlmAttemptId
     readonly revision: number
-    readonly startedTime: number
     readonly startedAfterSeq: SessionSeqCursor
     readonly turn: number
     readonly step: number

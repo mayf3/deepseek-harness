@@ -171,7 +171,7 @@ describe('scope tree', () => {
     await b.api.pushFollow(sid('s1'), {
       type: 'assistant-stream',
       frame: {
-        type: 'start', attemptId, revision: 1, startedTime: 1, startedAfterSeq: -1,
+        type: 'start', attemptId, revision: 1, startedAfterSeq: -1,
         turn: 1, step: 1,
       },
     })
@@ -216,7 +216,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 2,
       activeAttempt: {
-        attemptId, startedTime: 1, startedAfterSeq: -1, turn: 1, step: 1,
+        attemptId, startedAfterSeq: -1, turn: 1, step: 1,
         nextIndex: 1,
         stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [], texts: ['a'] }],
       },
@@ -233,7 +233,7 @@ describe('scope tree', () => {
     b.api.assistantStreamBaseline = {
       revision: 3,
       activeAttempt: {
-        attemptId, startedTime: 1, startedAfterSeq: -1, turn: 1, step: 1,
+        attemptId, startedAfterSeq: -1, turn: 1, step: 1,
         nextIndex: 2,
         stream: [{ type: 'text-chunks', time0: 1, index: 0, dt: [1], texts: ['a', 'b'] }],
       },
@@ -298,7 +298,6 @@ describe('scope tree', () => {
       revision: 2,
       activeAttempt: {
         attemptId,
-        startedTime: 20,
         startedAfterSeq: SessionSeq(0),
         turn: 1,
         step: 1,
@@ -373,7 +372,6 @@ describe('scope tree', () => {
       revision: 2,
       activeAttempt: {
         attemptId,
-        startedTime: 20,
         startedAfterSeq: SessionSeq(0),
         turn: 1,
         step: 1,
