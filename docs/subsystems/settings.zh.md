@@ -112,8 +112,8 @@ interface SettingsDescriptor {
   scope?: SettingsScopeId
   /**
    * Whether an owner registered the namespace under this scope. False for a
-   * scope described from the kind alone — a preset no session composed yet —
-   * whose value then carries no composition `base`.
+   * scope no session composed yet, whose value carries no `base` of its own
+   * and resolves over the global instance's composition when one is registered.
    */
   registered: boolean
   /** Serialized schemastery schema (`schema.toJSON()`). */
@@ -173,7 +173,8 @@ interface SettingsDescribeOptions {
   /**
    * Describe every namespace kind under this named scope instead of the
    * global scope. A kind with no registration under the scope is described
-   * from the kind alone, `registered: false`.
+   * over the global instance's composition, else from the kind alone,
+   * `registered: false`.
    */
   scope?: string
 }

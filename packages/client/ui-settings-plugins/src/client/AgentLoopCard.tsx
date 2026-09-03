@@ -34,6 +34,7 @@ export function AgentLoopCard(props: AgentLoopCardProps) {
         label={t('agentLoopMaxParallel')}
         hint={t('agentLoopMaxParallelHint')}
         overriddenLabel={t('overridden')}
+        inheritedLabel={t('inherited')}
         resetLabel={t('reset')}
         invalidLabel={t('invalidNumber')}
         numeric

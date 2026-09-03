@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决定
 
-**一个服务，一份 manifest。** `dsh-host-plugin-manager` 提供 `pluginManager` 与 `plugins` Remote：`list`、`install`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`。每个操作都重新读取 profile manifest，并通过 CLI 所用的同一组 app-boot 助手——`reconcileInstalledBundles`、`enableBundle`、`disableBundle`——写回，因此 CLI 与管理器不可能对这个文件有分歧：`dependencies` 说装了什么，`dsh.profile.bundles` 说启用了什么。profile runtime 按调用解析而非注入，于是 web 组合包的这一行在不经 profile launcher 启动的组合里也能启动，并回答 `plugins/unavailable`。
+**一个服务，一份 manifest。** `dsh-host-plugin-manager` 提供 `pluginManager` 与 `plugins` Remote：`list`、`add`、`uninstall`、`enable`、`disable`、`retry`、`addRow`、`removeRow`、`setRowDisabled`、`dependents`。安装动词与 CLI 一样是 `add`：客户端的命名空间服务把 `install` 与 `remove` 留给自己的成员，挂载会拒绝同名方法。每个操作都重新读取 profile manifest，并通过 CLI 所用的同一组 app-boot 助手——`reconcileInstalledBundles`、`enableBundle`、`disableBundle`——写回，因此 CLI 与管理器不可能对这个文件有分歧：`dependencies` 说装了什么，`dsh.profile.bundles` 说启用了什么。profile runtime 按调用解析而非注入，于是 web 组合包的这一行在不经 profile launcher 启动的组合里也能启动，并回答 `plugins/unavailable`。
 
 **启用就是 Loader 的事务。** `enable` 把组合包放进层列表，在 `healProfilesModuleFallback` 链接好该组合包携带的包之后调用 `profileRuntime.recompose({ reloadBundles: true })`。被拒绝的重新组合——`boot` 阶段而行抛错的组合包——就是 Loader 回滚到原本运行的树；管理器恢复层列表并报告 `plugins/enable-failed`。`runtime` 阶段而行失败的组合包由受控组隔离并逐行报告。由于启动审计不会再跑一次，管理器在在线重新组合之后调用 `recordContainedStates`，而 `ContainedGroup.create` 现在把以 pending 状态完成创建的行记录下来而不是清除——重载会重新创建组里的每一行，等待中的行必须带着记录穿过这一过程。`retry` 是先停用再启用：Loader 的更新不碰未改变的行，只有离开再回来才能重启一条失败的隔离行。
 

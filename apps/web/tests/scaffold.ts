@@ -24,7 +24,7 @@
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -59,7 +59,11 @@ import {
   assertEntriesLoaded,
   composeEntries,
   healProfilesModuleFallback,
+  loadOptionalPatches,
   loadOverlayPatches,
+  loadProfile,
+  ProfileRuntime,
+  writeProfileManifest,
   type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -286,6 +290,18 @@ export interface LaunchOptions {
    * supply private profile layers named by {@link extraOverlayPath}.
    */
   extraInstallAnchors?: string[]
+  /**
+   * Mount a `profileRuntime` over the scaffold profile, so the plugin
+   * manager has a profile to manage. Each package directory is linked into
+   * the profile as an installed dependency (`file:` in its manifest, a
+   * symlink under its `node_modules`); `enabled` lists a bundle in
+   * `dsh.profile.bundles`. The profile applies layer changes at its next
+   * start, so an enable or disable is reported as pending and the booted tree
+   * never recomposes under the scenario.
+   */
+  profileRuntime?: {
+    packages: { dir: string; enabled?: boolean }[]
+  }
   /**
    * Replay fixture (session.jsonl) served by the inserted dsh-llm-replay row
    * in replay/refresh modes; ignored in record mode (the real adapter
@@ -659,6 +675,23 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
       },
     })
     await mkdir(profileDir, { recursive: true })
+    if (options.profileRuntime !== undefined) {
+      const dependencies: Record<string, string> = {}
+      const bundles: string[] = []
+      for (const entry of options.profileRuntime.packages) {
+        const manifest = JSON.parse(await readFile(join(entry.dir, 'package.json'), 'utf8')) as { name: string }
+        dependencies[manifest.name] = `file:${entry.dir}`
+        if (entry.enabled === true) bundles.push(manifest.name)
+        const link = join(profileDir, 'node_modules', manifest.name)
+        await mkdir(dirname(link), { recursive: true })
+        await symlink(entry.dir, link, 'dir')
+      }
+      writeProfileManifest(profileDir, {
+        name: 'dsh-profile-scaffold',
+        dependencies,
+        dsh: { profile: { bundles, patchReload: 'startup' } },
+      })
+    }
     const rootConfig = join(profileDir, 'cordis.yml')
     await writeFile(rootConfig, '[]\n')
     ctx.baseUrl = pathToFileURL(profileDir).href + '/'
@@ -681,12 +714,28 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
     // and a preset resolving package names from its own directory cannot reach
     // `@deepseek-ai/cordis-plugin-group` by name.
     ctx.loader.builtins.group = Group
-    await ctx.loader.create({
+    const rootIncludeId = await ctx.loader.create({
       name: 'cordis:include',
       config: { path: pathToFileURL(rootConfig).href, patches },
     })
     await ctx.loader.await()
     assertEntriesLoaded(ctx, 'web e2e scaffold')
+    if (options.profileRuntime !== undefined) {
+      // The launcher mounts the runtime once the tree is up; the scaffold
+      // profile is read from the harness home this boot pinned. Its
+      // composition stays the scaffold's own: the runtime only ever
+      // recomposes a live-reload profile, and this one applies at startup.
+      const readProfile = (): Profile => loadProfile('dsh', 'scaffold', INSTALL_ANCHOR, harnessHome)
+      const profile = readProfile()
+      await ctx.plugin(ProfileRuntime, {
+        profile,
+        installAnchor: INSTALL_ANCHOR,
+        loadProfile: readProfile,
+        compose: () => patches,
+        rootEntry: () => [...ctx.loader.entries()].find(entry => entry.id === rootIncludeId),
+        readUserPatches: () => loadOptionalPatches('dsh', profile.patchPath) ?? [],
+      })
+    }
     if (options.welcomeNoticePending !== true) {
       await ctx.settings.mutate(WELCOME_NOTICE_SETTINGS_NAMESPACE, [{
         op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: WELCOME_NOTICE_VERSION,

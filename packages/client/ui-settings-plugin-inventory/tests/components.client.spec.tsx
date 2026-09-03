@@ -278,6 +278,38 @@ describe('PluginInventorySettingsTab', () => {
     expect(screen.queryAllByRole('listitem')).toHaveLength(0)
   })
 
+  it('names where a preset row came from and who switched a row off', async () => {
+    render(<PluginInventorySettingsTab {...props(async () => ({
+      entries: [
+        { entryId: 'dormant', moduleName: '@fixture/dormant', enabled: false, fiberPhase: null, disabledBy: 'composition' },
+      ],
+      agentPresets: [{
+        id: 'standard',
+        trust: 'system',
+        isDefault: true,
+        rows: [
+          { entryId: 'extra', moduleName: '@fixture/extra', enabled: false, fiberPhase: null, source: 'user', disabledBy: 'user' },
+          { entryId: 'own', moduleName: '@fixture/own', enabled: true, fiberPhase: null, source: 'preset' },
+        ],
+      }],
+    } as unknown as Snapshot))} />)
+    await screen.findByText(en.presetSubtitle)
+
+    const extra = document.querySelector('[data-plugin-entry="extra"]')
+    expect(extra?.getAttribute('data-plugin-source')).toBe('user')
+    fireEvent.click(screen.getByRole('button', { name: 'extra, Disabled' }))
+    expect(screen.getByText(en.sourceLabel).nextElementSibling?.textContent).toBe(en.sourceUser)
+    expect(screen.getByText(en.disabledByLabel).nextElementSibling?.textContent).toBe(en.disabledByUser)
+
+    fireEvent.click(screen.getByRole('button', { name: 'own, Enabled' }))
+    expect(screen.getByText(en.sourceLabel).nextElementSibling?.textContent).toBe(en.sourcePreset)
+    expect(screen.queryByText(en.disabledByLabel)).toBeNull()
+
+    fireEvent.click(globalToggle())
+    fireEvent.click(screen.getByRole('button', { name: 'dormant, Disabled' }))
+    expect(screen.getByText(en.disabledByLabel).nextElementSibling?.textContent).toBe(en.disabledByComposition)
+  })
+
   it('renders a rosterless deployment as one expanded global list', async () => {
     const view = await renderReady({
       entries: [

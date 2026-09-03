@@ -6,7 +6,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError, stubSettingsScope, type StubSettingsScope } from '@deepseek-ai/dsh-client-test-runtime'
-import { CardForm, numberField, textField } from '../src/client/card-form.ts'
+import { CardForm, linesField, numberField, textField } from '../src/client/card-form.ts'
+import { ScopeSelection } from '../src/client/scoped-form.ts'
 import { AgentLoopCardController, type AgentLoopSettings } from '../src/client/agent-loop-card-controller.ts'
 import { BashCardController, type BashSettings } from '../src/client/bash-card-controller.ts'
 import {
@@ -104,7 +105,7 @@ describe('CardForm', () => {
   it('shows the effective value and stays clean until something is staged', () => {
     const { subject } = form()
 
-    expect(subject.field('timeoutMs')).toEqual({ text: '60000', overridden: false, invalid: false })
+    expect(subject.field('timeoutMs')).toEqual({ text: '60000', overridden: false, inherited: false, invalid: false })
     expect(subject.shell()).toMatchObject({ available: true, writable: true, dirty: false, invalid: false })
   })
 
@@ -123,7 +124,7 @@ describe('CardForm', () => {
 
     subject.actions().edit('timeoutMs', '9000')
 
-    expect(subject.field('timeoutMs')).toEqual({ text: '9000', overridden: true, invalid: false })
+    expect(subject.field('timeoutMs')).toEqual({ text: '9000', overridden: true, inherited: false, invalid: false })
     expect(subject.shell().dirty).toBe(true)
     expect(host.set).not.toHaveBeenCalled()
 
@@ -150,7 +151,7 @@ describe('CardForm', () => {
 
     subject.actions().edit('timeoutMs', 'soon')
 
-    expect(subject.field('timeoutMs')).toEqual({ text: 'soon', overridden: false, invalid: true })
+    expect(subject.field('timeoutMs')).toEqual({ text: 'soon', overridden: false, inherited: false, invalid: true })
     expect(subject.shell()).toMatchObject({ dirty: true, invalid: true })
 
     await subject.save()
@@ -167,7 +168,7 @@ describe('CardForm', () => {
     subject.actions().resetField('timeoutMs')
 
     // The badge previews the save: the field will no longer be overridden.
-    expect(subject.field('timeoutMs')).toEqual({ text: '60000', overridden: false, invalid: false })
+    expect(subject.field('timeoutMs')).toEqual({ text: '60000', overridden: false, inherited: false, invalid: false })
     expect(host.unset).not.toHaveBeenCalled()
 
     await subject.save()
@@ -194,7 +195,7 @@ describe('CardForm', () => {
 
     subject.actions().edit('timeoutMs', '')
 
-    expect(subject.field('timeoutMs')).toEqual({ text: '', overridden: false, invalid: false })
+    expect(subject.field('timeoutMs')).toEqual({ text: '', overridden: false, inherited: false, invalid: false })
     await subject.save()
 
     expect(host.unset.mock.calls).toEqual([['timeoutMs']])
@@ -331,7 +332,7 @@ describe('BashCardController', () => {
   it('projects both fields and saves them in one write pass', async () => {
     const host = stubSettingsScope<BashSettings>()
     acceptWrites(host)
-    const controller = new BashCardController(host.scope)
+    const controller = new BashCardController(new ScopeSelection(), () => host.scope)
     host.publish({
       status: 'ready',
       writable: true,
@@ -363,7 +364,7 @@ describe('BashCardController', () => {
   it('stages a reset and applies it on save', async () => {
     const host = stubSettingsScope<BashSettings>()
     acceptWrites(host)
-    const controller = new BashCardController(host.scope)
+    const controller = new BashCardController(new ScopeSelection(), () => host.scope)
     host.publish({
       status: 'ready',
       writable: true,
@@ -387,7 +388,7 @@ describe('BashCardController', () => {
 
   it('discards staged edits without writing', () => {
     const host = stubSettingsScope<BashSettings>()
-    const controller = new BashCardController(host.scope)
+    const controller = new BashCardController(new ScopeSelection(), () => host.scope)
     host.publish({ status: 'ready', writable: true, value: { timeoutMs: 5_000 }, user: {} })
     const face = controller.inject()
 
@@ -403,7 +404,7 @@ describe('AgentLoopCardController', () => {
   it('saves the only field it owns', async () => {
     const host = stubSettingsScope<AgentLoopSettings>()
     acceptWrites(host)
-    const controller = new AgentLoopCardController(host.scope)
+    const controller = new AgentLoopCardController(new ScopeSelection(), () => host.scope)
     host.publish({
       status: 'ready',
       writable: true,
@@ -425,7 +426,7 @@ describe('AgentLoopCardController', () => {
 
   it('reports a read-only document so the card can disable its controls', () => {
     const host = stubSettingsScope<AgentLoopSettings>()
-    const controller = new AgentLoopCardController(host.scope)
+    const controller = new AgentLoopCardController(new ScopeSelection(), () => host.scope)
 
     host.publish({ status: 'ready', writable: false, value: { maxParallelToolCalls: 10 } })
 
@@ -459,7 +460,7 @@ describe('SubagentModelSelectionCardController', () => {
     const models = modelsApi({
       groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     host.publish({
       status: 'ready', writable: true, revision: 3,
       value: { enabled: false, allowedModels: [] }, user: {},
@@ -490,7 +491,7 @@ describe('SubagentModelSelectionCardController', () => {
 
   it('starts an empty draft when a ready test scope has no decoded value', () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
-    const controller = new SubagentModelSelectionCardController(host.scope, modelsApi().ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, modelsApi().ctx)
     host.publish({ status: 'ready', writable: true, revision: 0, value: undefined })
     const face = controller.inject()
 
@@ -506,7 +507,7 @@ describe('SubagentModelSelectionCardController', () => {
     const models = modelsApi({
       groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     host.publish({ status: 'ready', writable: true, value: { enabled: false, allowedModels: [] }, user: {} })
     const face = controller.inject()
 
@@ -533,7 +534,7 @@ describe('SubagentModelSelectionCardController', () => {
       groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
       failures: [{ id: 'beta', name: 'Beta', message: 'offline' }],
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     host.publish({
       status: 'ready', writable: true, revision: 5,
       value: { enabled: true, allowedModels: [{ provider: 'alpha', model: 'fast' }] }, user: {},
@@ -566,7 +567,7 @@ describe('SubagentModelSelectionCardController', () => {
     const models = modelsApi({
       groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     const face = controller.inject()
     await vi.waitFor(() => { expect(models.models).toHaveBeenCalledOnce() })
 
@@ -586,7 +587,7 @@ describe('SubagentModelSelectionCardController', () => {
   it('reports a directory error and retries it', async () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
     const models = modelsApi({ error: 'offline' })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     host.publish({ status: 'ready', writable: true, value: { enabled: false, allowedModels: [] }, user: {} })
     const face = controller.inject()
     const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
@@ -602,7 +603,7 @@ describe('SubagentModelSelectionCardController', () => {
     const models = modelsApi({
       groups: [{ id: 'alpha', name: 'Alpha API', models: [{ id: 'fast', name: 'Fast' }] }],
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     host.publish({
       status: 'ready', writable: true, revision: 4,
       value: { enabled: false, allowedModels: [] }, user: {},
@@ -636,7 +637,7 @@ describe('SubagentModelSelectionCardController', () => {
     const models = modelsApi({
       groups: [{ id: 'alpha', name: 'Alpha', models: [{ id: 'fast', name: 'Fast' }] }],
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     host.publish({
       status: 'ready', writable: true, revision: 4,
       value: { enabled: false, allowedModels: [] }, user: {},
@@ -673,7 +674,7 @@ describe('SubagentModelSelectionCardController', () => {
       })
       .mockImplementationOnce(() => refreshed.promise)
     const controller = new SubagentModelSelectionCardController(
-      host.scope, ctxWith({ session: { modelCatalog: models } }),
+      new ScopeSelection(), () => host.scope, ctxWith({ session: { modelCatalog: models } }),
     )
     const face = controller.inject()
     const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
@@ -712,7 +713,7 @@ describe('SubagentModelSelectionCardController', () => {
       status: 'ready', writable: true, revision: 4,
       value: { enabled: false, allowedModels: [] }, user: {},
     })
-    const controller = new SubagentModelSelectionCardController(host.scope, models.ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, models.ctx)
     const face = controller.inject()
     face.toggleEnabled()
     await vi.waitFor(() => { expect(face.hooks.subagentModelSelectionCard.getSnapshot().candidates).toHaveLength(1) })
@@ -752,7 +753,7 @@ describe('SubagentModelSelectionCardController', () => {
         },
       })
     const controller = new SubagentModelSelectionCardController(
-      host.scope, ctxWith({ session: { modelCatalog: models } }),
+      new ScopeSelection(), () => host.scope, ctxWith({ session: { modelCatalog: models } }),
     )
     const state = () => controller.inject().hooks.subagentModelSelectionCard.getSnapshot()
     await vi.waitFor(() => { expect(state().candidates[0]?.provider).toBe('alpha') })
@@ -778,7 +779,8 @@ describe('SubagentModelSelectionCardController', () => {
         allowedModels: allowedModels?.op === 'set' ? allowedModels.value as never[] : [],
       } })
     })
-    const controller = new SubagentModelSelectionCardController({ ...host.scope, mutate }, catalog.ctx)
+    const controller = new SubagentModelSelectionCardController(
+      new ScopeSelection(), () => ({ ...host.scope, mutate }), catalog.ctx)
     const face = controller.inject()
 
     face.save()
@@ -807,7 +809,8 @@ describe('SubagentModelSelectionCardController', () => {
 
     const pending = deferred<never>()
     const models = vi.fn(() => pending.promise)
-    const controller = new SubagentModelSelectionCardController(host.scope, ctxWith({ session: { modelCatalog: models } }))
+    const controller = new SubagentModelSelectionCardController(
+      new ScopeSelection(), () => host.scope, ctxWith({ session: { modelCatalog: models } }))
     const face = controller.inject()
     face.toggleEnabled()
     face.retryCatalog()
@@ -818,7 +821,7 @@ describe('SubagentModelSelectionCardController', () => {
 
     const pendingResolve = deferred<never>()
     const resolving = new SubagentModelSelectionCardController(
-      host.scope,
+      new ScopeSelection(), () => host.scope,
       ctxWith({ session: { modelCatalog: () => pendingResolve.promise } }),
     )
     const resolvingFace = resolving.inject()
@@ -832,7 +835,7 @@ describe('SubagentModelSelectionCardController', () => {
 
   it('ignores writes while read-only and scope notifications after disposal', () => {
     const host = stubSettingsScope<SubagentModelSelectionSettings>()
-    const controller = new SubagentModelSelectionCardController(host.scope, modelsApi().ctx)
+    const controller = new SubagentModelSelectionCardController(new ScopeSelection(), () => host.scope, modelsApi().ctx)
     host.publish({ status: 'ready', writable: false, value: { enabled: false, allowedModels: [] }, user: {} })
     const face = controller.inject()
 
@@ -857,7 +860,7 @@ describe('WebSearchCardController', () => {
   it('reads the credential state for the reference the tab names', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     const state = () => controller.inject().hooks.webSearchCard.getSnapshot()
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
 
@@ -873,7 +876,7 @@ describe('WebSearchCardController', () => {
   it('writes the staged key through the credentials domain, never the settings section', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -898,7 +901,7 @@ describe('WebSearchCardController', () => {
   it('keeps the stored key when the draft is left blank', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -913,7 +916,7 @@ describe('WebSearchCardController', () => {
   it('re-reads when the Host reports the watched reference changed', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
     credentials.describe.mockClear()
@@ -937,7 +940,7 @@ describe('WebSearchCardController', () => {
   it('addresses the reference the tab declares rather than the default', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: { apiKeyEnv: 'SEARCH_KEY' }, user: {} })
     const face = controller.inject()
 
@@ -951,7 +954,7 @@ describe('WebSearchCardController', () => {
   it('reports a key the Host did not store as a failed save', async () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const credentials = credentialsApi(false)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     const face = controller.inject()
 
@@ -971,7 +974,7 @@ describe('WebSearchCardController', () => {
     })
     const describe = vi.fn(refusal)
     const set = vi.fn(refusal)
-    const controller = new WebSearchCardController(host.scope, ctxWith({ credentials: { describe, set } }))
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, ctxWith({ credentials: { describe, set } }))
     const face = controller.inject()
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
 
@@ -993,7 +996,7 @@ describe('WebSearchCardController', () => {
       ok: false as const,
       error: new RemoteError('gateway/internal', 'no credential provider', {}),
     }))
-    const controller = new WebSearchCardController(host.scope, ctxWith({
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, ctxWith({
       credentials: { describe, set: vi.fn() },
     }))
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
@@ -1005,7 +1008,7 @@ describe('WebSearchCardController', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     acceptWrites(host)
     const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
+    const controller = new WebSearchCardController(new ScopeSelection(), () => host.scope, credentials.ctx)
     host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
     const face = controller.inject()
 
@@ -1019,6 +1022,68 @@ describe('WebSearchCardController', () => {
   })
 })
 
+describe('CardForm lines field', () => {
+  it('formats a list one entry per line, parses trimmed non-blank lines, and clears on empty', async () => {
+    const host = stubSettingsScope<{ customSkillDirs?: string[] }>()
+    acceptWrites(host)
+    host.publish({
+      status: 'ready', writable: true, value: { customSkillDirs: ['/a', '/b'] }, base: {}, user: {}, revision: 1,
+    })
+    const subject = new CardForm(host.scope, [linesField('customSkillDirs')])
+    expect(subject.field('customSkillDirs').text).toBe('/a\n/b')
+    // A list carrying a non-string entry renders only its strings.
+    host.publish({ value: { customSkillDirs: ['/a', 3] as never } })
+    expect(subject.field('customSkillDirs').text).toBe('/a')
+    host.publish({ value: { customSkillDirs: ['/a', '/b'] } })
+
+    subject.actions().edit('customSkillDirs', ' /c \n\n/d\n')
+    await subject.save()
+    expect(host.set).toHaveBeenCalledWith('customSkillDirs', ['/c', '/d'])
+    expect(subject.shell()).toMatchObject({ dirty: false, failed: false })
+
+    subject.actions().edit('customSkillDirs', '  \n ')
+    await subject.save()
+    expect(host.unset).toHaveBeenCalledWith('customSkillDirs')
+    expect(subject.field('customSkillDirs').text).toBe('')
+    // A stored list that differs from the staged one is a failed save.
+    host.set.mockImplementationOnce((field: string, value: unknown) => {
+      host.publish({ value: { [field]: value }, user: { [field]: ['/other'] } })
+    })
+    subject.actions().edit('customSkillDirs', '/e')
+    await subject.save()
+    expect(subject.shell().failed).toBe(true)
+  })
+
+  it('publishes to subscribers until they leave, and saves through its actions', async () => {
+    const host = stubSettingsScope<{ timeoutMs?: number }>()
+    acceptWrites(host)
+    host.publish({ status: 'ready', writable: true, value: { timeoutMs: 1 }, base: {}, user: {}, revision: 1 })
+    const subject = new CardForm(host.scope, [numberField('timeoutMs')])
+    const listener = vi.fn()
+    const off = subject.subscribe(listener)
+    subject.actions().edit('timeoutMs', '2')
+    expect(listener).toHaveBeenCalledTimes(1)
+    off()
+    subject.actions().save()
+    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledWith('timeoutMs', 2) })
+    expect(listener).toHaveBeenCalledTimes(1)
+  })
+
+  it('resets a named scope\'s field to the inherited value rather than the composition layer', () => {
+    const host = stubSettingsScope<{ timeoutMs?: number }>()
+    host.publish({
+      status: 'ready', writable: true, scope: 'preset/research', registered: true,
+      value: { timeoutMs: 9000 }, base: { timeoutMs: 60000 }, inherited: { timeoutMs: 12000 },
+      user: { timeoutMs: 9000 }, revision: 1,
+    })
+    const subject = new CardForm(host.scope, [numberField('timeoutMs')])
+    expect(subject.shell()).toMatchObject({ scope: 'preset/research', registered: true })
+    expect(subject.hasOverride('timeoutMs')).toBe(true)
+    subject.actions().resetField('timeoutMs')
+    expect(subject.field('timeoutMs')).toEqual({ text: '12000', overridden: false, inherited: false, invalid: false })
+  })
+})
+
 describe('ConfigurablePluginsTabController', () => {
   function settingsApi(namespaces: string[]) {
     const describe = vi.fn(() => Promise.resolve({
@@ -1026,8 +1091,9 @@ describe('ConfigurablePluginsTabController', () => {
       value: {
         writable: true,
         hasDocument: true,
+        scopes: [],
         namespaces: namespaces.map(ns => ({
-          ns, schema: {}, value: {}, applies: 'live' as const, secrets: [], revision: 0,
+          ns, registered: true, schema: {}, value: {}, applies: 'live', secrets: [], revision: 0,
         })),
       },
     }))
@@ -1114,7 +1180,7 @@ describe('ConfigurablePluginsTabController', () => {
     let notify = (): void => {}
     let snapshot: SettingsMirrorSnapshot = {
       status: 'ready' as const,
-      view: { writable: true, hasDocument: true, namespaces: [] },
+      view: { writable: true, hasDocument: true, scopes: [], namespaces: [] },
       error: null,
     }
     const describeFace = {
@@ -1136,6 +1202,7 @@ describe('ConfigurablePluginsTabController', () => {
       view: {
         writable: true,
         hasDocument: true,
+        scopes: [],
         namespaces: [{
           ns: 'bash', registered: true, schema: {}, value: {}, applies: 'live', secrets: [], revision: 1,
         }],
@@ -1156,5 +1223,34 @@ describe('ConfigurablePluginsTabController', () => {
 
     expect(controller.inject().hooks.configurablePlugins.getSnapshot())
       .toEqual({ loaded: true, namespaces: [] })
+  })
+})
+
+describe('SubagentModelSelectionCardController across scopes', () => {
+  it('drops a draft begun under another scope when the selection moves', async () => {
+    const hosts = new Map<string, StubSettingsScope<SubagentModelSelectionSettings>>()
+    const bindScope = (scope: string | undefined) => {
+      const host = stubSettingsScope<SubagentModelSelectionSettings>()
+      hosts.set(scope ?? '', host)
+      host.publish({
+        status: 'ready', writable: true, revision: 1, scope, registered: true,
+        value: { enabled: false, allowedModels: [] }, base: {}, user: {},
+      })
+      return host.scope
+    }
+    const selection = new ScopeSelection()
+    const controller = new SubagentModelSelectionCardController(selection, bindScope, modelsApi().ctx)
+    const face = controller.inject()
+    const state = () => face.hooks.subagentModelSelectionCard.getSnapshot()
+    face.toggleEnabled()
+    expect(state()).toMatchObject({ dirty: true, enabled: true, scope: undefined })
+    selection.select('preset/research')
+    expect(state()).toMatchObject({ dirty: false, enabled: false, scope: 'preset/research', registered: true })
+    // A save on the new scope writes that scope's instance.
+    face.toggleEnabled()
+    expect(state().dirty).toBe(true)
+    await Promise.resolve()
+    expect(hosts.get('')!.mutate).not.toHaveBeenCalled()
+    controller.dispose()
   })
 })

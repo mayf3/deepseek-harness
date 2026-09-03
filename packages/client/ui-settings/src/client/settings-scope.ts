@@ -31,7 +31,7 @@ import type {} from '@deepseek-ai/dsh-api-remotes/types'
 import type {} from '@deepseek-ai/dsh-settings/types'
 import type { SettingsSchemaService } from './schema.ts'
 import type { SettingsScope, SettingsScopeSnapshot, SettingsScopeSpec } from './settings-contract.ts'
-import { SettingsDescribeMirror, type SettingsDescribeFace } from './settings-mirror.ts'
+import type { SettingsDescribeFace, SettingsDescribeMirror, SettingsMirrorRegistry } from './settings-mirror.ts'
 
 /**
  * One namespace's derived view over the shared describe mirror, plus that
@@ -55,8 +55,8 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
   /**
    * @param ctx - the providing plugin's context, whose `remote.settings`
    * namespace carries this scope's writes (reads ride the mirror).
-   * @param spec - namespace identity and optional narrowing decoder.
-   * @param mirror - the shared describe mirror this scope derives from.
+   * @param spec - namespace identity, optional named scope, and optional narrowing decoder.
+   * @param mirror - the describe mirror of the spec's scope this scope derives from.
    * @param persistence - client-selected Host persistence; non-loopback pages may remain process-local.
    * @param schema - settings-owned schema operations.
    */
@@ -75,6 +75,9 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
       revision: undefined,
       writable: false,
       mode: persistence,
+      scope: spec.scope,
+      registered: false,
+      inherited: undefined,
     })
     if (persistence === 'host') {
       this.unsubscribe = mirror.subscribe(() => { this.derive() })
@@ -128,7 +131,11 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
     const generation = ++this.writeGeneration
     return this.enqueue(async () => {
       const revision = expectedRevision ?? this.pendingRevision ?? this.getSnapshot().revision
-      const response = await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision)
+      // The wire method takes an optional trailing scope; the global instance
+      // sends three arguments rather than an explicit undefined.
+      const response = this.spec.scope === undefined
+        ? await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision)
+        : await this.ctx.remote.settings.mutate(this.spec.namespace, ownedOps, revision, this.spec.scope)
       if (!response.ok) {
         await this.recover(generation)
         return
@@ -193,6 +200,8 @@ export class SettingsScopeController<T> implements SettingsScope<T> {
       draft.base = view.base
       draft.user = view.user
       draft.writable = writable
+      draft.registered = view.registered
+      draft.inherited = view.inherited
       if (decoded === undefined) return
       draft.status = 'ready'
       draft.value = decoded
@@ -230,7 +239,7 @@ declare module '@deepseek-ai/cordis' {
  * (`packages/client/tsdown.client.ts`).
  */
 export class SettingsScopeBinder extends Service {
-  private readonly mirror: SettingsDescribeMirror
+  private readonly mirrors: SettingsMirrorRegistry
   private readonly schema: SettingsSchemaService
   private readonly persistence: 'host' | 'memory'
   /**
@@ -242,17 +251,17 @@ export class SettingsScopeBinder extends Service {
 
   /**
    * @param ctx - the providing plugin's context.
-   * @param config - the shared describe mirror every bound scope derives from,
-   * the settings-owned schema operations, and the Host persistence the provider
-   * resolved from `remote.$host`.
+   * @param config - the per-scope describe mirrors every bound scope derives
+   * from, the settings-owned schema operations, and the Host persistence the
+   * provider resolved from `remote.$host`.
    */
   constructor(ctx: Context, config: {
-    mirror: SettingsDescribeMirror
+    mirrors: SettingsMirrorRegistry
     schema: SettingsSchemaService
     persistence: 'host' | 'memory'
   }) {
     super(ctx, 'settingsScope')
-    this.mirror = config.mirror
+    this.mirrors = config.mirrors
     this.schema = config.schema
     this.persistence = config.persistence
     this.owner = ctx
@@ -260,13 +269,15 @@ export class SettingsScopeBinder extends Service {
 
   /**
    * The shared mirror's read/fold face for cross-namespace surfaces (schema
-   * introspection, the served-namespace directory). Per-namespace consumers
-   * use {@link bind}; both derive from the same snapshot, so they can never
-   * disagree about the document.
-   * @returns the describe face over the shared mirror.
+   * introspection, the served-namespace directory, the scope directory).
+   * Per-namespace consumers use {@link bind}; both derive from the same
+   * snapshot, so they can never disagree about the document.
+   * @param scope - a named scope's mirror, created on first use; undefined
+   * answers the global mirror.
+   * @returns the describe face over that scope's mirror.
    */
-  describe(): SettingsDescribeFace {
-    return this.mirror
+  describe(scope?: string): SettingsDescribeFace {
+    return this.mirrors.mirrorFor(scope)
   }
 
   /**
@@ -281,19 +292,20 @@ export class SettingsScopeBinder extends Service {
    */
   bind<T>(spec: SettingsScopeSpec<T>): SettingsScope<T> {
     const ctx = this.ctx
+    const mirror: SettingsDescribeMirror = this.mirrors.mirrorFor(spec.scope)
     const controller = new SettingsScopeController<T>(
       this.owner,
       spec,
-      this.mirror,
+      mirror,
       this.persistence,
       this.schema,
     )
     ctx.effect(() => {
-      void this.mirror.ensure()
+      void mirror.ensure()
       return async () => {
         await controller.dispose()
       }
-    }, `ui-settings: ${spec.namespace} settings scope`)
+    }, `ui-settings: ${spec.namespace} settings scope${spec.scope === undefined ? '' : ` (${spec.scope})`}`)
     return controller
   }
 }

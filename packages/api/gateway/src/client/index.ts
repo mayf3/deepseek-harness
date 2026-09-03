@@ -481,12 +481,20 @@ class ClientRemoteService extends Service implements ClientRemote {
     boundIdentity?: BoundContextIdentity,
   ): PreparedClientInvocation {
     const endpoint = endpointOf(descriptor)
-    const expected = descriptor.parameters.length - (projection?.parameterIndex === undefined ? 0 : 1)
+    const business = descriptor.parameters.filter((_parameter, index) => index !== projection?.parameterIndex)
+    const expected = business.length
+    // A trailing parameter declared `T | undefined` (an optional parameter is
+    // one) may be left off the call, as its generated signature allows; its
+    // wire field is then absent. A caller supplying the AbortSignal names
+    // every business argument first.
+    let required = expected
+    while (required > 0 && business[required - 1]?.acceptsUndefined === true) required -= 1
     const hasCallerSignal = descriptor.cancellation !== undefined && values.length === expected + 1
-    if (values.length !== expected && !hasCallerSignal) {
+    if ((values.length < required || values.length > expected) && !hasCallerSignal) {
+      const count = required === expected ? String(expected) : `${String(required)} to ${String(expected)}`
       const contract = descriptor.cancellation === undefined
-        ? `${String(expected)} argument(s)`
-        : `${String(expected)} business argument(s) plus an optional AbortSignal`
+        ? `${count} argument(s)`
+        : `${count} business argument(s) plus an optional AbortSignal`
       throw new Error(
         `client api: ${endpoint} expected ${contract}, got ${String(values.length)}`,
       )

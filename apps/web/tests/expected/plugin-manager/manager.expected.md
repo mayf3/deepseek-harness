@@ -1,0 +1,127 @@
+- dialog "设置":
+  - navigation:
+    - text: 设置
+    - button "通用设置":
+      - img
+      - text: 通用设置
+    - button "模型":
+      - img
+      - text: 模型
+    - button "插件":
+      - img
+      - text: 插件
+    - button "Agent 预设":
+      - img
+      - text: Agent 预设
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+  - heading "插件" [level=2]
+  - paragraph: 配置和查看本部署已安装的插件。
+  - tablist "插件视图":
+    - tab "插件配置"
+    - tab "插件管理" [selected]
+    - tab "插件列表"
+  - tabpanel "插件管理":
+    - button "刷新"
+    - button "添加插件"
+    - heading "全局插件" [level=3]
+    - paragraph: 按包安装与启停；启用的 bundle 对系统与所有会话生效 · 2 个
+    - list:
+      - listitem:
+        - text: 示例组合包 第三方 Bundle 已停用 @fixture/bundle · 0.0.1
+        - switch "启用 示例组合包"
+        - button "展开 示例组合包":
+          - img
+      - listitem:
+        - text: 示例插件 第三方 插件模块 按行添加 @fixture/plain-plugin · 0.0.1
+        - button "展开 示例插件":
+          - img
+    - heading "会话插件" [level=3]
+    - button "选择要管理的 Agent 预设":
+      - text: 标准模式（默认）
+      - img
+    - paragraph: 按 Agent 预设组成；这里的改动只写入该预设的用户补丁层
+    - list:
+      - listitem:
+        - text: persona @deepseek-ai/dsh-persona
+        - switch "启用行 persona" [checked]
+      - listitem:
+        - text: agent-instructions @deepseek-ai/dsh-agent-instructions
+        - switch "启用行 agent-instructions" [checked]
+      - listitem:
+        - text: tool-bash @deepseek-ai/dsh-tool-bash
+        - switch "启用行 tool-bash" [checked]
+      - listitem:
+        - text: tool-pwsh @deepseek-ai/dsh-tool-pwsh 组合停用
+        - switch "启用行 tool-pwsh"
+      - listitem:
+        - text: tool-fs @deepseek-ai/dsh-tool-fs
+        - switch "启用行 tool-fs" [checked]
+      - listitem:
+        - text: tool-fs-search @deepseek-ai/dsh-tool-fs-search
+        - switch "启用行 tool-fs-search" [checked]
+      - listitem:
+        - text: tool-jobs @deepseek-ai/dsh-tool-jobs
+        - switch "启用行 tool-jobs" [checked]
+      - listitem:
+        - text: skill-filesystem @deepseek-ai/dsh-skill-filesystem
+        - switch "启用行 skill-filesystem" [checked]
+      - listitem:
+        - text: tool-skill @deepseek-ai/dsh-tool-skill
+        - switch "启用行 tool-skill" [checked]
+      - listitem:
+        - text: command-goal @deepseek-ai/dsh-command-goal
+        - switch "启用行 command-goal" [checked]
+      - listitem:
+        - text: tool-goal @deepseek-ai/dsh-tool-goal
+        - switch "启用行 tool-goal" [checked]
+      - listitem:
+        - text: plan-mode @deepseek-ai/dsh-plan-mode
+        - switch "启用行 plan-mode" [checked]
+      - listitem:
+        - text: compaction-basic @deepseek-ai/dsh-compaction-basic
+        - switch "启用行 compaction-basic" [checked]
+      - listitem:
+        - text: command-compact @deepseek-ai/dsh-command-compact
+        - switch "启用行 command-compact" [checked]
+      - listitem:
+        - text: tool-result-pruner @deepseek-ai/dsh-compaction-tool-result-pruner
+        - switch "启用行 tool-result-pruner" [checked]
+      - listitem:
+        - text: tool-subagent-control @deepseek-ai/dsh-tool-subagent-control
+        - switch "启用行 tool-subagent-control" [checked]
+      - listitem:
+        - text: tool-subagent-list-agents @deepseek-ai/dsh-tool-subagent-control/list-agents
+        - switch "启用行 tool-subagent-list-agents" [checked]
+      - listitem:
+        - text: tool-subagent @deepseek-ai/dsh-tool-subagent
+        - switch "启用行 tool-subagent" [checked]
+      - listitem:
+        - text: tool-subagent-fork @deepseek-ai/dsh-tool-subagent
+        - switch "启用行 tool-subagent-fork" [checked]
+      - listitem:
+        - text: tool-subagent-codex @deepseek-ai/dsh-tool-subagent 组合停用
+        - switch "启用行 tool-subagent-codex"
+      - listitem:
+        - text: tool-subagent-claude-code @deepseek-ai/dsh-tool-subagent 组合停用
+        - switch "启用行 tool-subagent-claude-code"
+      - listitem:
+        - text: workflow-worker-thread @deepseek-ai/dsh-workflow-worker-thread
+        - switch "启用行 workflow-worker-thread" [checked]
+      - listitem:
+        - text: tool-workflow @deepseek-ai/dsh-tool-workflow
+        - switch "启用行 tool-workflow" [checked]
+      - listitem:
+        - text: tool-ralph @deepseek-ai/dsh-tool-ralph
+        - switch "启用行 tool-ralph" [checked]
+      - listitem:
+        - text: tool-ask-user @deepseek-ai/dsh-tool-ask-user
+        - switch "启用行 tool-ask-user" [checked]
+      - listitem:
+        - text: tool-todo @deepseek-ai/dsh-tool-todo
+        - switch "启用行 tool-todo" [checked]
+      - listitem:
+        - text: tool-web @deepseek-ai/dsh-tool-web
+        - switch "启用行 tool-web" [checked]

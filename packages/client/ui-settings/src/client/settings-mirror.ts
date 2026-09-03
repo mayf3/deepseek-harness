@@ -21,6 +21,10 @@ export interface SettingsDescribeView {
   writable: boolean
   /** Whether a native settings document exists for the Host to open. */
   hasDocument: boolean
+  /** The named scope the answer describes; absent for the global scope. */
+  scope?: string
+  /** Every named scope the Host knows: registered instances and document sections. */
+  scopes: readonly string[]
 }
 
 /** Mirror state every derived settings surface renders from. */
@@ -80,10 +84,13 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
    * @param ctx - the providing plugin's context, whose `remote.settings`
    * namespace answers the describe read.
    * @param persistence - client-selected Host persistence; non-loopback pages may remain process-local.
+   * @param scope - the named settings scope this mirror describes, such as
+   * `preset/<id>`; undefined mirrors the global scope.
    */
   constructor(
     private readonly ctx: ClientContext,
     private readonly persistence: 'host' | 'memory' = 'host',
+    readonly scope?: string,
   ) {
     this.store = createSnapshotStore<SettingsMirrorSnapshot>({
       status: persistence === 'host' ? 'idle' : 'unavailable',
@@ -180,7 +187,11 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
         const generation = ++this.generation
         let outcome: { view: SettingsDescribeView } | { failure: string }
         try {
-          const response = await this.ctx.remote.settings.describe()
+          // The wire method takes an optional trailing scope; the global read
+          // sends no argument rather than an explicit undefined.
+          const response = this.scope === undefined
+            ? await this.ctx.remote.settings.describe()
+            : await this.ctx.remote.settings.describe(this.scope)
           outcome = response.ok
             ? { view: response.value }
             : { failure: response.error.message }
@@ -209,5 +220,78 @@ export class SettingsDescribeMirror implements SettingsDescribeFace {
 
   private shouldRerun(): boolean {
     return this.rerun
+  }
+}
+
+/**
+ * One mirror per settings scope: the global mirror every existing consumer
+ * derives from, plus one per named scope created the first time a consumer
+ * binds it. Scoped mirrors are kept for the page's lifetime — the set of
+ * scopes is the set of presets, which is small and stable.
+ *
+ * Invalidation routes by the scope a `settings/document-updated` event
+ * names: a global commit re-resolves every instance (a named scope inherits
+ * the global section), so it reloads every mirror; a scoped commit changes
+ * that scope alone.
+ */
+export class SettingsMirrorRegistry {
+  /** The global mirror, created eagerly so the first consumer costs no wait. */
+  readonly global: SettingsDescribeMirror
+  private readonly scoped = new Map<string, SettingsDescribeMirror>()
+
+  /**
+   * @param ctx - the providing plugin's context, whose `remote.settings`
+   * namespace answers every describe read.
+   * @param persistence - client-selected Host persistence, shared by every mirror.
+   */
+  constructor(
+    private readonly ctx: ClientContext,
+    private readonly persistence: 'host' | 'memory',
+  ) {
+    this.global = new SettingsDescribeMirror(ctx, persistence)
+  }
+
+  /**
+   * The mirror describing one scope, creating a named scope's mirror on first use.
+   * @param scope - the named scope; undefined answers the global mirror.
+   * @returns the mirror.
+   */
+  mirrorFor(scope?: string): SettingsDescribeMirror {
+    if (scope === undefined) return this.global
+    let mirror = this.scoped.get(scope)
+    if (mirror === undefined) {
+      mirror = new SettingsDescribeMirror(this.ctx, this.persistence, scope)
+      this.scoped.set(scope, mirror)
+    }
+    return mirror
+  }
+
+  /**
+   * The named scopes a mirror has been created for, in creation order.
+   * @returns the scope ids.
+   */
+  scopes(): string[] {
+    return [...this.scoped.keys()]
+  }
+
+  /**
+   * Reload after a document commit. A global commit reaches every scope's
+   * resolved value, so every mirror reloads; a scoped commit reloads that
+   * scope's mirror alone — an unmirrored scope has nothing to refresh.
+   * @param scope - the scope the commit named; undefined for the global section.
+   * @returns settlement after the affected mirrors reflect the commit.
+   */
+  invalidate(scope?: string): Promise<void> {
+    if (scope !== undefined) return this.scoped.get(scope)?.load() ?? Promise.resolve()
+    return this.reload()
+  }
+
+  /**
+   * Reload every mirror, as a (re)connect requires.
+   * @returns settlement after every mirror reflects the Host.
+   */
+  reload(): Promise<void> {
+    return Promise.all([this.global.load(), ...[...this.scoped.values()].map(mirror => mirror.load())])
+      .then(() => undefined)
   }
 }

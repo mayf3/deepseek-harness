@@ -71,7 +71,7 @@ namespace 是一种设置的 kind，一次注册是它在某个 scope 下的一�
 
 ### 配置界面
 
-`describe()` 在全局 scope 下为每个 namespace kind 返回一条 descriptor，`describe({ scope })` 在某个具名 scope 下为每个 kind 返回一条：序列化 schema、解析值、分离的 `base` 与 `user` 层（字段出现在 `user` 中即标记为用户覆盖；scoped descriptor 的 `user` 是该 scope 自己的分节）、生效时机、该分节的 revision、`registered`（该 scope 下是否有 owner 注册了此 namespace——尚无会话组合过的 scope 仅由 kind 描述，没有 `base`），以及 scoped descriptor 的 `inherited`——该 scope 不带自己分节时解析出的值。`scopes()` 列出所有有 namespace 注册于其下的具名 scope。每个协议接口都必须传入 `redactSecrets: true`：它从每一层剥离 `role('secret')` 字段，并把它们枚举为 `{ path, set }` slot，让页面可以渲染只写输入而不接触任何机密。`documentPath` 与 `prepareDocument()` 在提供方拥有用户可编辑文件时把它暴露给原生编辑器。
+`describe()` 在全局 scope 下为每个 namespace kind 返回一条 descriptor，`describe({ scope })` 在某个具名 scope 下为每个 kind 返回一条：序列化 schema、解析值、分离的 `base` 与 `user` 层（字段出现在 `user` 中即标记为用户覆盖；scoped descriptor 的 `user` 是该 scope 自己的分节）、生效时机、该分节的 revision、`registered`（该 scope 下是否有 owner 注册了此 namespace——尚无会话组合过的 scope 没有自己的 `base`，有全局实例时在其组合之上解析，否则仅由 kind 描述；描述从不抛错，各层都无法满足 schema 时描述为空分节），以及 scoped descriptor 的 `inherited`——该 scope 不带自己分节时解析出的值。`scopes()` 列出所有有 namespace 注册于其下的具名 scope。每个协议接口都必须传入 `redactSecrets: true`：它从每一层剥离 `role('secret')` 字段，并把它们枚举为 `{ path, set }` slot，让页面可以渲染只写输入而不接触任何机密。`documentPath` 与 `prepareDocument()` 在提供方拥有用户可编辑文件时把它暴露给原生编辑器。
 
 ### 事件与失败
 

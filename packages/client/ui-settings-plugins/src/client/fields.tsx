@@ -20,10 +20,14 @@ export interface FieldProps {
   text: string
   /** True when saving would leave a user-layer entry for this field. */
   overridden: boolean
+  /** True when a named scope takes this field's value from the global user layer. */
+  inherited: boolean
   /** True when the draft is not a value this field accepts. */
   invalid: boolean
   /** Copy for the overridden badge. */
   overriddenLabel: string
+  /** Copy for the inherited badge. */
+  inheritedLabel: string
   /** Copy for the reset control. */
   resetLabel: string
   /** Copy shown in place of the hint while the draft is invalid. */
@@ -39,7 +43,7 @@ export interface FieldProps {
 /**
  * A staged value field. `numeric` only hints the keypad: which drafts a field
  * accepts is decided by its spec, so the control never silently rewrites what
- * the user typed.
+ * the user typed. `multiline` renders a text area for line-list fields.
  * @param props - the field's copy, its staged text, and the edit actions.
  * @returns the labelled control.
  */
@@ -48,7 +52,10 @@ export function ValueField(props: FieldProps & {
   numeric?: boolean
   /** Placeholder shown while the draft is empty. */
   placeholder?: string
+  /** Render a text area: the draft holds one entry per line. */
+  multiline?: boolean
 }) {
+  const invalidProps = props.invalid ? { 'aria-invalid': true as const } : {}
   return (
     <div className={css.field}>
       <div className={css.head}>
@@ -67,19 +74,36 @@ export function ValueField(props: FieldProps & {
               </button>
             </span>
           )
-          : null}
+          : props.inherited
+            ? <span className={css.badges}><span className={css.badgeMuted}>{props.inheritedLabel}</span></span>
+            : null}
       </div>
-      <input
-        id={props.id}
-        className={props.invalid ? css.inputInvalid : css.input}
-        type="text"
-        {...props.numeric === true ? { inputMode: 'numeric' as const } : {}}
-        {...props.invalid ? { 'aria-invalid': true } : {}}
-        value={props.text}
-        placeholder={props.placeholder ?? ''}
-        disabled={props.disabled}
-        onChange={(event) => { props.onEdit(event.target.value) }}
-      />
+      {props.multiline === true
+        ? (
+          <textarea
+            id={props.id}
+            className={props.invalid ? css.textareaInvalid : css.textarea}
+            rows={3}
+            {...invalidProps}
+            value={props.text}
+            placeholder={props.placeholder ?? ''}
+            disabled={props.disabled}
+            onChange={(event) => { props.onEdit(event.target.value) }}
+          />
+        )
+        : (
+          <input
+            id={props.id}
+            className={props.invalid ? css.inputInvalid : css.input}
+            type="text"
+            {...props.numeric === true ? { inputMode: 'numeric' as const } : {}}
+            {...invalidProps}
+            value={props.text}
+            placeholder={props.placeholder ?? ''}
+            disabled={props.disabled}
+            onChange={(event) => { props.onEdit(event.target.value) }}
+          />
+        )}
       <p className={props.invalid ? css.invalid : css.hint}>
         {props.invalid ? props.invalidLabel : props.hint}
       </p>

@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 一份包视图说了什么
 
-`plugins/list` 为 profile 知道的每个包返回一份视图：模板组合包与已安装的组合包，以及其他每个已安装的依赖。视图携带 manifest 事实（名字、版本、标题、描述、`engines.dsh`），这个包是什么（`bundle`、`plugin` 或 `library`），谁提供它（`builtin` 或 `external`），它的行何时挂载（`boot` 或 `runtime`），是否已安装与已启用，以及折叠出的 `status`：已启用的组合包按活跃行的多少是 `running`、`partial` 或 `failed`；已安装但不在层列表中的组合包是 `disabled`；探针拒绝时是 `not-enableable` 并附原因；在启动时才应用变更的 profile 上 manifest 与在线树不一致时是 `restart-required`；库或插件模块是 `plain`，它们被添加进组合而不是被启用。组合包已组合时行来自在线树——阶段、被谁停用，以及隔离行记录的失败——否则来自探针记录，并带上 launcher 将加的前缀 id。`addable` 列出包在 `dsh.plugins` 里声明的模块，各自带默认配置与探针的判定。
+`plugins/list` 为 profile 知道的每个包返回一份视图：模板组合包与已安装的组合包，以及其他每个已安装的依赖。视图携带 manifest 事实（名字、版本、标题、描述、`engines.dsh`），这个包是什么（`bundle`、`plugin` 或 `library`），谁提供它（`builtin` 或 `external`），它的行何时挂载（`boot` 或 `runtime`），是否已安装与已启用，以及折叠出的 `status`：已启用的组合包按活跃行的多少是 `running`、`partial` 或 `failed`；已安装但不在层列表中的组合包是 `disabled`；探针拒绝时是 `not-enableable` 并附原因；在启动时才应用变更的 profile 上 manifest 与在线树不一致时是 `restart-required`；库或插件模块是 `plain`，它们被添加进组合而不是被启用。组合包已组合时行来自在线树——阶段、被谁停用，以及隔离行记录的失败——否则来自探针记录，并带上 launcher 将加的前缀 id。`addable` 列出包在 `dsh.plugins` 里声明的模块，各自带默认配置与探针的判定；插件模块还以 `.` 列出它的主导出——`addRow` 无需声明即接受的那一项。
 
 ### 安装与启用
 
-`plugins/install` 接受一个 pnpm spec——registry 名字、`github:` 或 git URL、tarball、绝对路径——在 profile 目录运行 `pnpm add`，记录 pnpm 写进 `dependencies` 的内容，在子进程里探测每个新包，并让新组合包保持停用，除非调用方要求 `enable`。pnpm 的输出以带本次 `jobId` 的 `plugins/install-log` 分块到达；最后一块携带退出码。非零退出、spawn 失败或超时都以 `plugins/install-failed` 与日志尾部让调用失败。
+`plugins/add` 接受一个 pnpm spec——registry 名字、`github:` 或 git URL、tarball、绝对路径——在 profile 目录运行 `pnpm add`，记录 pnpm 写进 `dependencies` 的内容，在子进程里探测每个新包，并让新组合包保持停用，除非调用方要求 `enable`。pnpm 的输出以带本次 `jobId` 的 `plugins/install-log` 分块到达；最后一块携带退出码。非零退出、spawn 失败或超时都以 `plugins/install-failed` 与日志尾部让调用失败。
 
 `plugins/enable` 把已安装的组合包放进层列表，并在 live profile 上经 profile runtime 带着它重新组合树。这次重新组合就是 Loader 自己的事务：树拒绝的组合包——`boot` 阶段而行抛错的组合包——回滚，层列表恢复，调用以点名原因的 `plugins/enable-failed` 失败，而原本运行的树继续运行。`runtime` 阶段而行失败的组合包则被隔离：调用成功，视图报告该行的失败，`plugins/retry` 从头重新组合它。`plugins/disable` 是反向操作；模板组合包不是依赖，无法停用。在 `patchReload` 为 `startup` 的 profile 上，两者只写 manifest 并报告 `effect: 'restart'`。
 
@@ -116,7 +116,7 @@ Typert 生成 `./typert` 与 `./remote` 暴露的宿主与客户端 Remote 工�
 
 这些限制界定管理器不会为客户端做什么。它们是当前包的约束，不是任务清单。
 
-- **更新已加载的包需要重启**——Node 按 URL 缓存 ESM 模块，hoisted 安装下路径不变；经 `install` 做的 `pnpm update` 改写了文件，但运行中的树在进程重启前一直用旧模块。
+- **更新已加载的包需要重启**——Node 按 URL 缓存 ESM 模块，hoisted 安装下路径不变；经 `add` 做的 `pnpm update` 改写了文件，但运行中的树在进程重启前一直用旧模块。
 - **依赖检测止于注入**——注册型依赖（工具、LLM 适配器）没有 `inject` 边，因此 `dependents` 无法点名只读取该包所注册内容的行。
 - **preset 的行不在线组合**——管理器写入 preset 的层；之后创建的会话组合它，已在运行的会话保持其代际。
 - **尚无 `engines.dsh` 检查**——该范围只被报告，不对运行中的 harness 版本强制执行。

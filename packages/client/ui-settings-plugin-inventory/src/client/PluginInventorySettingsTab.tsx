@@ -51,6 +51,12 @@ function phaseLabel(phase: PluginFiberPhase, t: Translate): string {
   return phase === null ? t('unobserved') : t(PHASE_KEYS[phase])
 }
 
+/** The fact naming who switched a row off, when something did. */
+function disabledByFact(disabledBy: 'user' | 'composition' | undefined, t: Translate): (readonly [string, ReactNode])[] {
+  if (disabledBy === undefined) return []
+  return [[t('disabledByLabel'), t(disabledBy === 'user' ? 'disabledByUser' : 'disabledByComposition')] as const]
+}
+
 /** Compact a module specifier without guessing whether its Loader id was generated. */
 function moduleShortName(moduleName: string): string {
   const unscoped = moduleName.startsWith('@') ? moduleName.slice(moduleName.indexOf('/') + 1) : moduleName
@@ -81,10 +87,12 @@ function presetLabel(preset: AgentPresetGroup, t: Translate, presetName: (preset
 }
 
 /** One expandable plugin card; the caller owns the trailing status content. */
-function PluginCard({ rowKey, moduleName, entryId, trailing, ariaLabel, failed, expanded, onToggle, children }: {
+function PluginCard({ rowKey, moduleName, entryId, source, trailing, ariaLabel, failed, expanded, onToggle, children }: {
   readonly rowKey: string
   readonly moduleName: string
   readonly entryId: string | null
+  /** Which layer inserted a preset row: its composition, or the user's patch file. */
+  readonly source?: 'preset' | 'user'
   readonly trailing: ReactNode
   readonly ariaLabel: string
   readonly failed: boolean
@@ -99,6 +107,7 @@ function PluginCard({ rowKey, moduleName, entryId, trailing, ariaLabel, failed, 
       className={css.card}
       data-plugin-entry={entryId ?? undefined}
       data-plugin-module={moduleName}
+      data-plugin-source={source}
       data-failed={failed ? 'true' : undefined}
       data-open={open ? 'true' : undefined}
     >
@@ -255,6 +264,7 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
         rowKey={key}
         moduleName={row.moduleName}
         entryId={row.entryId}
+        source={row.source}
         failed={failed}
         expanded={expanded}
         onToggle={toggleRow}
@@ -274,7 +284,9 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
           entryId={row.entryId}
           facts={[
             [t('fromPreset'), presetName(preset)],
+            [t('sourceLabel'), t(row.source === 'user' ? 'sourceUser' : 'sourcePreset')],
             [t('configuration'), stateText],
+            ...disabledByFact(row.disabledBy, t),
             ...row.fiberPhase === null ? [] : [[t('runtime'), phaseLabel(row.fiberPhase, t)] as const],
             ...row.condition === undefined ? [] : [[t('condition'), <code key="condition">{row.condition}</code>] as const],
           ]}
@@ -336,6 +348,7 @@ export function PluginInventorySettingsTab({ list, presetName, t }: PluginInvent
             ]
             : [
               [t('configuration'), t(entry.enabled ? 'enabledTag' : 'disabledTag')],
+              ...disabledByFact(entry.disabledBy, t),
               ...entry.enabled ? [[t('runtime'), phaseLabel(entry.fiberPhase, t)] as const] : [],
             ]}
         />

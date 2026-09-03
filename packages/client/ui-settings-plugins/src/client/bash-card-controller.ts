@@ -1,8 +1,8 @@
 /** The shell card's staged form over the `bash` settings namespace. */
 
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import type { SettingsScope } from '@deepseek-ai/dsh-client-ui-settings/client'
-import { CardForm, numberField, type CardActions, type CardFieldState, type CardShell } from './card-form.ts'
+import { numberField, type CardActions, type CardFieldState, type CardShell } from './card-form.ts'
+import { ScopedCardForms, type BindScope, type ScopeSelection } from './scoped-form.ts'
 
 /**
  * Namespace of the shell capability. Spelled here rather than imported: a
@@ -35,14 +35,17 @@ export interface BashCardFace extends CardActions {
   }
 }
 
-/** Bridges the `bash` scope onto the shell card's staged form. */
+/** Bridges the `bash` namespace, under the selected scope, onto the shell card's staged form. */
 export class BashCardController {
-  private readonly form: CardForm<BashSettings>
+  private readonly form: ScopedCardForms<BashSettings>
   private readonly store: SnapshotStore<BashCardState>
 
-  /** @param scope - the bound settings scope for the `bash` namespace. */
-  constructor(scope: SettingsScope<BashSettings>) {
-    this.form = new CardForm(scope, [numberField('timeoutMs'), numberField('maxOutputBytes')])
+  /**
+   * @param selection - the scope selection shared with the tab.
+   * @param bindScope - binds the `bash` namespace under one scope.
+   */
+  constructor(selection: ScopeSelection, bindScope: BindScope<BashSettings>) {
+    this.form = new ScopedCardForms(selection, bindScope, [numberField('timeoutMs'), numberField('maxOutputBytes')])
     this.store = this.form.bind(() => this.projection())
   }
 

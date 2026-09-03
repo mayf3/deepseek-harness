@@ -31,12 +31,32 @@ export interface SettingsScopeSnapshot<T> {
   writable: boolean
   /** `host` syncs with the Host document; `memory` keeps a remote browser process-local. */
   mode: 'host' | 'memory'
+  /** The named scope this scope reads, such as `preset/<id>`; undefined for the global instance. */
+  scope: string | undefined
+  /**
+   * Whether a live Host plugin registered the namespace under this scope.
+   * False under a named scope no composition has mounted the plugin in: the
+   * section can still be written, and takes effect once one does.
+   */
+  registered: boolean
+  /**
+   * Under a named scope, the value the scope resolves WITHOUT its own user
+   * section — what a field reverts to once cleared. Undefined for the global
+   * instance, whose fallback is {@link base}.
+   */
+  inherited: unknown
 }
 
 /** Domain-owned description of one settings namespace consumed by a browser plugin. */
 export interface SettingsScopeSpec<T> {
   /** Settings namespace registered by the owning Host plugin. */
   namespace: string
+  /**
+   * Named settings scope to read and write, such as `preset/<id>`; undefined
+   * binds the global instance. A named scope resolves over the global
+   * section, and its writes land in the document's `scopes.<id>` tree.
+   */
+  scope?: string
   /**
    * Narrow one wire section; undefined keeps the last accepted value. The
    * default validates the section against the namespace's own serialized wire

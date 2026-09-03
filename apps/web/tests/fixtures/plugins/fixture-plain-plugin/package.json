@@ -1,0 +1,11 @@
+{
+  "name": "@fixture/plain-plugin",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Web e2e fixture: a plain plugin module with no bundle, added to a composition per row.",
+  "type": "module",
+  "main": "index.js",
+  "dsh": {
+    "title": "示例插件"
+  }
+}

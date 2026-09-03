@@ -56,6 +56,12 @@ export interface CardFieldState {
    * reporting a state the pending edit already contradicts.
    */
   overridden: boolean
+  /**
+   * Under a named scope, whether the field's value comes from the GLOBAL user
+   * layer rather than this scope's own: not overridden here, overridden
+   * there. Always false for the global instance.
+   */
+  inherited: boolean
   /** Whether the draft is not a value this field accepts, which blocks saving. */
   invalid: boolean
 }
@@ -64,6 +70,14 @@ export interface CardFieldState {
 export interface CardShell {
   /** False while the namespace is not served to this client; the card renders nothing. */
   available: boolean
+  /** The named scope the form edits, such as `preset/<id>`; undefined for the global instance. */
+  scope: string | undefined
+  /**
+   * Whether a live Host plugin registered the namespace under the form's
+   * scope. False under a named scope whose composition does not mount the
+   * plugin: edits are stored and take effect once one does.
+   */
+  registered: boolean
   /** Whether the Host document accepts writes. */
   writable: boolean
   /** Whether the form holds edits that a save would write. */
@@ -146,6 +160,25 @@ export function textField(field: string): CardFieldSpec {
 }
 
 /**
+ * A list of lines. Each non-blank line is one entry; blank lines are dropped
+ * and every line is trimmed. An empty draft clears the field.
+ * @param field - field name inside the namespace section.
+ * @returns the field's conversion spec.
+ */
+export function linesField(field: string): CardFieldSpec {
+  return {
+    field,
+    format: value => Array.isArray(value)
+      ? value.flatMap(entry => typeof entry === 'string' ? [entry] : []).join('\n')
+      : '',
+    parse: (text) => {
+      const lines = text.split('\n').map(line => line.trim()).filter(line => line !== '')
+      return lines.length === 0 ? { kind: 'clear' } : { kind: 'set', value: lines }
+    },
+  }
+}
+
+/**
  * Stages one card's edits over one settings namespace and writes them on save.
  *
  * The form publishes through a snapshot store because slot components read
@@ -176,13 +209,31 @@ export class CardForm<T> {
   }
 
   /**
+   * The settings scope this form stages over, for reads and writes outside the staged fields.
+   * @returns the bound settings scope.
+   */
+  scopeOf(): SettingsScope<T> {
+    return this.scope
+  }
+
+  /**
+   * Observe the form: the scope moved or a draft changed.
+   * @param listener - invoked after each change.
+   * @returns the disposer removing this listener.
+   */
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
+  /**
    * Publish a projection of this form, rebuilt whenever the scope or a draft changes.
    * @param project - build the card's state from the form's current reads.
    * @returns the store the card's component reads through its bound selector.
    */
   bind<S>(project: () => S): SnapshotStore<S> {
     const store = createSnapshotStore(project())
-    this.listeners.add(() => { store.set(project()) })
+    this.subscribe(() => { store.set(project()) })
     return store
   }
 
@@ -195,6 +246,8 @@ export class CardForm<T> {
     const plan = this.plan()
     return {
       available: snapshot.status === 'ready',
+      scope: snapshot.scope,
+      registered: snapshot.registered,
       writable: snapshot.writable,
       dirty: plan.length > 0,
       invalid: plan.some(item => item.run === undefined),
@@ -211,18 +264,31 @@ export class CardForm<T> {
   field(field: string): CardFieldState {
     const staged = this.staged.get(field)
     if (this.secretSpecs.has(field)) {
-      return { text: staged?.text ?? '', overridden: false, invalid: false }
+      return { text: staged?.text ?? '', overridden: false, inherited: false, invalid: false }
     }
     const spec = this.spec(field)
     if (staged === undefined) {
-      return { text: spec.format(this.sectionValue(field)), overridden: this.stored(field), invalid: false }
+      return {
+        text: spec.format(this.sectionValue(field)), overridden: this.stored(field), inherited: false, invalid: false,
+      }
     }
     const write = staged.clear ? { kind: 'clear' as const } : spec.parse(staged.text)
     return {
       text: staged.text,
       overridden: write?.kind === 'set',
+      inherited: false,
       invalid: write === undefined,
     }
+  }
+
+  /**
+   * Whether the form's user layer carries the field — for a named scope, that
+   * scope's own section. Presence, not value, is what marks an override.
+   * @param field - field name inside the namespace section.
+   * @returns whether the layer holds an entry for it.
+   */
+  hasOverride(field: string): boolean {
+    return this.stored(field)
   }
 
   /**
@@ -233,7 +299,7 @@ export class CardForm<T> {
     return {
       edit: (field, text) => { this.stage(field, { text, clear: false }) },
       resetField: (field) => {
-        this.stage(field, { text: this.spec(field).format(this.baseValue(field)), clear: true })
+        this.stage(field, { text: this.spec(field).format(this.fallbackValue(field)), clear: true })
       },
       save: () => { void this.save() },
       discard: () => {
@@ -307,7 +373,11 @@ export class CardForm<T> {
 
   private async store(field: string, value: unknown): Promise<boolean> {
     await this.scope.set(field, value)
-    return this.userLayer()?.[field] === value
+    const stored = this.userLayer()?.[field]
+    // A list lands as a copy; compare it by content.
+    return Array.isArray(value) && Array.isArray(stored)
+      ? value.length === stored.length && value.every((entry, index) => entry === stored[index])
+      : stored === value
   }
 
   private stage(field: string, edit: StagedEdit): void {
@@ -332,8 +402,14 @@ export class CardForm<T> {
     return (this.snapshotOf().value as Record<string, unknown> | undefined)?.[field]
   }
 
-  private baseValue(field: string): unknown {
-    return (this.snapshotOf().base as Record<string, unknown> | undefined)?.[field]
+  /**
+   * What the field reverts to once cleared: under a named scope the value the
+   * scope inherits (global user layer over composition), else the composition layer.
+   */
+  private fallbackValue(field: string): unknown {
+    const snapshot = this.snapshotOf()
+    const layer = (snapshot.inherited ?? snapshot.base) as Record<string, unknown> | undefined
+    return layer?.[field]
   }
 
   private userLayer(): Record<string, unknown> | undefined {

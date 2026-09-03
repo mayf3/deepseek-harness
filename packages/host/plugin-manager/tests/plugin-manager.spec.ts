@@ -234,7 +234,7 @@ describe('PluginManager', () => {
     const { manager } = await bootProfile(staged)
     expect(manager.typertRemote).toMatchObject({ serviceKey: 'pluginManager', namespace: 'plugins' })
     expect(remoteMethods(manager).map(marker => marker.method)).toEqual([
-      'list', 'install', 'uninstall', 'enable', 'disable', 'retry', 'addRow', 'removeRow', 'setRowDisabled', 'dependents',
+      'list', 'add', 'uninstall', 'enable', 'disable', 'retry', 'addRow', 'removeRow', 'setRowDisabled', 'dependents',
     ])
   })
 
@@ -269,6 +269,9 @@ describe('PluginManager', () => {
       // Rows come from the probe while the bundle is not composed, prefixed the way the launcher will prefix them.
       expect(bundle?.rows).toEqual([{ entryId: 'ext-bundle/hello', originalId: 'hello', moduleName: 'cordis:good', enabled: true, phase: null }])
       expect(bundle?.addable).toEqual([{ moduleName: 'ext-bundle/extra.js', declaredName: './extra.js', title: 'Extra', ok: true }])
+      // A plugin module offers its main export as `.`, the entry addRow accepts without a declaration.
+      expect(views[2]?.addable).toMatchObject([{ moduleName: 'ext-plugin', declaredName: '.', ok: true }])
+      expect(views[1]?.addable).toEqual([])
       expect(bundle?.probedAt).toEqual(expect.any(String) as string)
       expect(readProbeCache(staged.profileDir, 'ext-bundle', '1.0.0')?.kind).toBe('bundle')
     })
@@ -407,14 +410,14 @@ describe('PluginManager', () => {
     })
   })
 
-  describe('install', () => {
+  describe('add', () => {
     it('runs pnpm add, records the dependency, probes the package, and leaves it disabled', async () => {
       const staged = await stageHome()
       stagePackage(staged.profileDir, 'ext-new', { patch: BUNDLE_ONE_ROW })
       const calls: string[][] = []
       const { manager, changes, log } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
 
-      const result = await manager.install('github:acme/ext-new')
+      const result = await manager.add('github:acme/ext-new')
 
       expect(calls).toEqual([['pnpm', 'add', 'github:acme/ext-new']])
       // The fake pnpm records the spec itself as the dependency name, which
@@ -432,7 +435,7 @@ describe('PluginManager', () => {
       stagePackage(staged.profileDir, 'ext-new', { patch: BUNDLE_ONE_ROW })
       const { ctx, manager, changes } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
 
-      const result = await manager.install('ext-new', { enable: true })
+      const result = await manager.add('ext-new', { enable: true })
 
       expect(result).toMatchObject({ installed: ['ext-new'], enabled: ['ext-new'], installedOnly: [], plain: [] })
       expect(manifestOf(staged.profileDir).dsh.profile.bundles).toEqual(['ext-new'])
@@ -447,7 +450,7 @@ describe('PluginManager', () => {
       stagePackage(staged.profileDir, 'ext-lib', { main: 'export const x = 1\n' })
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
 
-      expect(await manager.install('ext-lib')).toMatchObject({ installed: ['ext-lib'], plain: ['ext-lib'], installedOnly: [] })
+      expect(await manager.add('ext-lib')).toMatchObject({ installed: ['ext-lib'], plain: ['ext-lib'], installedOnly: [] })
       expect((await manager.list()).find(view => view.name === 'ext-lib')?.status).toBe('plain')
       await manager.uninstall('ext-lib')
       expect((await manager.list()).some(view => view.name === 'ext-lib')).toBe(false)
@@ -464,26 +467,26 @@ describe('PluginManager', () => {
         return { code: 0 }
       }) })
 
-      expect(await manager.install('ext-new')).toMatchObject({ installed: ['ext-new'], installedOnly: ['ext-new'] })
+      expect(await manager.add('ext-new')).toMatchObject({ installed: ['ext-new'], installedOnly: ['ext-new'] })
     })
 
     it('fails loud on a non-zero exit, a spawn error, a timeout, and an empty spec', async () => {
       const staged = await stageHome()
       const exits = await bootProfile(staged, { spawn: fakePnpm(staged.profileDir, () => ({ code: 1, stderr: 'ERR_PNPM_NO_MATCHING_VERSION\n' })) })
-      await expect(exits.manager.install('nope')).rejects.toMatchObject({
+      await expect(exits.manager.add('nope')).rejects.toMatchObject({
         code: 'plugins/install-failed', details: { spec: 'nope', exitCode: 1, log: 'ERR_PNPM_NO_MATCHING_VERSION\n' },
       })
       expect(exits.log.at(-1)).toMatchObject({ exitCode: 1 })
-      await expect(exits.manager.install('  ')).rejects.toMatchObject({ code: 'gateway/bad-request' })
+      await expect(exits.manager.add('  ')).rejects.toMatchObject({ code: 'gateway/bad-request' })
 
       const erroringHome = await stageHome()
       const erroring = await bootProfile(erroringHome, { spawn: fakePnpm(erroringHome.profileDir, () => ({ code: null, error: 'spawn pnpm ENOENT' })) })
-      await expect(erroring.manager.install('x')).rejects.toMatchObject({ code: 'plugins/install-failed', details: { exitCode: null } })
+      await expect(erroring.manager.add('x')).rejects.toMatchObject({ code: 'plugins/install-failed', details: { exitCode: null } })
       expect(erroring.log.some(chunk => chunk.text.includes('ENOENT'))).toBe(true)
 
       const hangingHome = await stageHome()
       const hanging = await bootProfile(hangingHome, { spawn: fakePnpm(hangingHome.profileDir, () => ({ code: null, hang: true })) })
-      await expect(hanging.manager.install('x')).rejects.toMatchObject({ code: 'plugins/install-failed' })
+      await expect(hanging.manager.add('x')).rejects.toMatchObject({ code: 'plugins/install-failed' })
       expect(hanging.log.some(chunk => chunk.text.includes('timed out'))).toBe(true)
     })
 
@@ -492,7 +495,7 @@ describe('PluginManager', () => {
       const { manager } = await bootProfile(staged, {
         spawn: fakePnpm(staged.profileDir, () => ({ code: 2, stdout: 'a'.repeat(300), stderr: 'b'.repeat(300) })),
       }, { installLogTailBytes: 256 })
-      await expect(manager.install('x')).rejects.toMatchObject({ details: { log: 'b'.repeat(300) } })
+      await expect(manager.add('x')).rejects.toMatchObject({ details: { log: 'b'.repeat(300) } })
     })
   })
 

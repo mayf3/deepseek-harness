@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-client-ui-settings-plugins` is the **Plugins** settings section of the dsh web client: users edit host-plane plugin configuration on its **Plugin configuration** tab, and feature plugins contribute their own pages through `settings.plugins.tab`. This package's own tab shows one expandable card per Host plugin whose configuration a user owns: a card shows the plugin's name and what it governs, and expanding it reveals hand-written controls bound to that plugin's settings namespace, each field marking whether the user overrode it and offering a reset back to the value the deployment composed. Cards stage edits locally and write only on save, with every write fenced by the namespace revision the form read.
+`dsh-client-ui-settings-plugins` is the **Plugins** settings section of the dsh web client: users edit host-plane plugin configuration on its **Plugin configuration** tab, and feature plugins contribute their own pages through `settings.plugins.tab`. This package's own tab shows one expandable card per Host plugin whose configuration a user owns: a card shows the plugin's name and what it governs, and expanding it reveals hand-written controls bound to that plugin's settings namespace, each field marking whether the user overrode it and offering a reset back to the value the deployment composed. One switch above the cards chooses the scope every card edits — the values shared by all agent presets, or one preset's own — and under a preset a field marks whether it inherits the shared value. Cards stage edits locally per scope and write only on save, with every write fenced by the namespace revision the form read.
 
 ## Table of Contents
 
@@ -25,7 +25,11 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent model selection (`subagent-model-selection`), and the DeepSeek search provider (`web-search-deepseek`).
+Open the Plugins section in Settings and select the **Plugin configuration** tab to edit the host-plane plugins this deployment composes. The cards appear in this order: the shell executor (`bash`), the agent loop's tool-call parallelism (`agent-loop`), subagent model selection (`subagent-model-selection`), the DeepSeek search provider (`web-search-deepseek`), and the filesystem skill provider's extra roots (`skill-filesystem`).
+
+### Choosing the scope
+
+The **Applies to** switch above the cards selects the settings scope every card edits: **All presets** is the global instance of each namespace, and each agent preset in the roster is that preset's named scope (`preset/<id>`). Under a preset, a field the preset does not override shows **Inherited** when the shared user layer carries it, a reset stages the inherited value rather than the composition default, and a card whose plugin the preset does not compose says so — its values are stored and take effect once a preset composes the plugin. Drafts belong to the scope they were typed under and survive a switch. A roster the Host refuses leaves the global instance editable and says the presets could not be listed.
 
 ### What appears here
 

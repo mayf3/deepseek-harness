@@ -357,3 +357,44 @@ describe('describe', () => {
     expect(standard).toMatchObject({ registered: false, value: { theme: 'dark', fontSize: 14 }, user: { fontSize: 'huge' } })
   })
 })
+
+describe('describing a scope no instance registered', () => {
+  interface RoutedConfig {
+    provider: string
+    model: string
+  }
+  const RoutedSchema: z<RoutedConfig> = z.object({
+    provider: z.string().required(),
+    model: z.string().default('flash'),
+  })
+
+  it('resolves over the global instance\'s composition base, so a required field the base supplies never throws', async () => {
+    const { ctx, provider } = await boot({ scopes: { 'preset/research': { routed: { model: 'pro' } } } })
+    await registerIn(ctx, undefined, 'routed', RoutedSchema as never, { provider: 'deepseek' } as never)
+
+    const [research] = provider.describe({ scope: 'preset/research' })
+    expect(research).toMatchObject({
+      ns: 'routed',
+      scope: 'preset/research',
+      registered: false,
+      value: { provider: 'deepseek', model: 'pro' },
+      inherited: { provider: 'deepseek', model: 'flash' },
+      user: { model: 'pro' },
+    })
+    expect(research?.base).toBeUndefined()
+  })
+
+  it('resolves from the kind alone without a global instance, and a schema the defaults cannot satisfy describes as an empty section', async () => {
+    const { ctx, provider } = await boot({ scopes: { 'preset/other': { routed: { model: 'pro' } } } })
+    await registerIn(ctx, 'preset/standard', 'routed', RoutedSchema as never, { provider: 'deepseek' } as never)
+    // Another preset's composition is not the global one: the required field
+    // has no source there, and the description is the empty section rather than a throw.
+    expect(provider.describe({ scope: 'preset/other' })[0]).toMatchObject({
+      registered: false, value: {}, user: { model: 'pro' },
+    })
+    expect(provider.describe()[0]).toMatchObject({ registered: false, value: {} })
+    expect(provider.describe({ scope: 'preset/standard' })[0]).toMatchObject({
+      registered: true, value: { provider: 'deepseek', model: 'flash' },
+    })
+  })
+})

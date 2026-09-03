@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
-import { SettingsDescribeMirror, type SettingsDescribeView } from '../src/client/settings-mirror.ts'
+import {
+  SettingsDescribeMirror, SettingsMirrorRegistry, type SettingsDescribeView,
+} from '../src/client/settings-mirror.ts'
 
 /** What a Remote call answers with: no carrier envelope, and a typed failure. */
 type Answer<T> =
@@ -25,8 +27,11 @@ function view(ns: string, revision = 0): SettingsNamespaceView {
   return { ns, registered: true, schema: {}, value: { field: ns }, applies: 'live', secrets: [], revision }
 }
 
-function described(namespaces: SettingsNamespaceView[]): Answer<SettingsDescribeView> {
-  return ok({ writable: true, hasDocument: true, namespaces })
+function described(namespaces: SettingsNamespaceView[], scope?: string): Answer<SettingsDescribeView> {
+  return ok({
+    writable: true, hasDocument: true, namespaces,
+    ...scope === undefined ? { scopes: [] } : { scope, scopes: [scope] },
+  })
 }
 
 function deferred<T>() {
@@ -215,5 +220,70 @@ describe('SettingsDescribeMirror', () => {
     await loading
     expect(describeCall).toHaveBeenCalledTimes(2)
     expect(mirror.namespace('theme')?.revision).toBe(2)
+  })
+})
+
+describe('SettingsDescribeMirror failure text', () => {
+  it('records a rejection that is not an Error by its string form', async () => {
+    const describeCall = vi.fn().mockRejectedValueOnce('offline')
+    const mirror = new SettingsDescribeMirror(ctxWith(describeCall))
+    await mirror.load()
+    expect(mirror.getSnapshot()).toMatchObject({ status: 'idle', error: 'offline' })
+  })
+})
+
+describe('SettingsDescribeMirror under a named scope', () => {
+  it('reads the scope it was created for, and the global mirror sends no argument', async () => {
+    const describeCall = vi.fn((scope?: string) => Promise.resolve(
+      described([view(scope === undefined ? 'global-theme' : 'scoped-theme', 2)], scope)))
+    const global = new SettingsDescribeMirror(ctxWith(describeCall))
+    const scoped = new SettingsDescribeMirror(ctxWith(describeCall), 'host', 'preset/research')
+    await Promise.all([global.load(), scoped.load()])
+    expect(describeCall.mock.calls).toEqual([[], ['preset/research']])
+    expect(global.scope).toBeUndefined()
+    expect(scoped.scope).toBe('preset/research')
+    expect(global.namespace('global-theme')?.revision).toBe(2)
+    expect(scoped.getSnapshot().view).toMatchObject({ scope: 'preset/research', scopes: ['preset/research'] })
+  })
+})
+
+describe('SettingsMirrorRegistry', () => {
+  function registry(persistence: 'host' | 'memory' = 'host') {
+    const describeCall = vi.fn((scope?: string) => Promise.resolve(described([view(scope ?? 'global')], scope)))
+    return { describeCall, mirrors: new SettingsMirrorRegistry(ctxWith(describeCall), persistence) }
+  }
+
+  it('creates one mirror per named scope on first use and keeps it', () => {
+    const { mirrors } = registry()
+    expect(mirrors.mirrorFor()).toBe(mirrors.global)
+    const research = mirrors.mirrorFor('preset/research')
+    expect(research.scope).toBe('preset/research')
+    expect(mirrors.mirrorFor('preset/research')).toBe(research)
+    expect(mirrors.scopes()).toEqual(['preset/research'])
+  })
+
+  it('routes a scoped commit to that scope alone and a global commit to every mirror', async () => {
+    const { describeCall, mirrors } = registry()
+    mirrors.mirrorFor('preset/research')
+    mirrors.mirrorFor('preset/code')
+    await mirrors.invalidate('preset/research')
+    expect(describeCall.mock.calls).toEqual([['preset/research']])
+    // An unmirrored scope has nothing to refresh.
+    await mirrors.invalidate('preset/unknown')
+    expect(describeCall).toHaveBeenCalledTimes(1)
+    await mirrors.invalidate()
+    expect(describeCall.mock.calls.slice(1)).toEqual([[], ['preset/research'], ['preset/code']])
+    await mirrors.reload()
+    expect(describeCall).toHaveBeenCalledTimes(7)
+    expect(mirrors.mirrorFor('preset/code').namespace('preset/code')).toBeDefined()
+  })
+
+  it('keeps every mirror process-local in memory mode', async () => {
+    const { describeCall, mirrors } = registry('memory')
+    mirrors.mirrorFor('preset/research')
+    await mirrors.reload()
+    await mirrors.invalidate('preset/research')
+    expect(describeCall).not.toHaveBeenCalled()
+    expect(mirrors.mirrorFor('preset/research').getSnapshot().status).toBe('unavailable')
   })
 })

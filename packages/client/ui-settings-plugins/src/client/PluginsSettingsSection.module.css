@@ -83,3 +83,68 @@
   font-size: 13px;
   color: var(--dsw-alias-label-tertiary);
 }
+
+/* Configurable tab: the scope switch above the card list. */
+
+.configurable {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.scopeRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.scopeLabel {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.scopeSwitcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 320px;
+  height: 30px;
+  padding: 0 10px 0 12px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 999px;
+  corner-shape: round;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.scopeSwitcher:hover {
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.scopeSwitcher:focus-visible {
+  outline: 2px solid var(--dsw-alias-brand-primary);
+  outline-offset: 1px;
+}
+
+.scopeSwitcherLabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scopeChevron {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.scopeHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}

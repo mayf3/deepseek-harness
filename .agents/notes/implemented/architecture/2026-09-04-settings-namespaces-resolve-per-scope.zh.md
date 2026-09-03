@@ -16,7 +16,7 @@ settings seam 每个进程只允许注册一次命名空间。这对只存在一
 
 **四层。** 一个 instance 按顺序解析 schema 默认值、自己的组合 `base`、文档的全局段、以及其 scope 的段（`scopes.<id>.<ns>`），沿用既有的字段级合并。全局写入重新解析该 kind 的每个 instance，各自按自身解析值门控，因此覆盖了被改字段的 scope 不会被打扰；scoped 写入只提交那个 instance。revision 按段记录，与注册分离，于是为尚无注册的 scope——还没有会话组合过的 preset——写入的段与其它段同样被版本化；只要 kind 存在，这样的写入就被接受并由共享 schema 判定。`scopes` 是保留的命名空间。
 
-**按 scope 描述。** `describe()` 在全局 scope 下每个 kind 回答一条描述符；`describe({ scope })` 在某个具名 scope 下每个 kind 回答一条，附带 `registered`、该 scope 自己的 `user` 段，以及 `inherited`——没有该段时的值——让界面能把字段标为已覆盖、继承或默认。controller 的 `describe(scope?)` 与三个写入动词接受同样的可选尾随 `scope`，两个事件都把 scope 作为尾随参数携带、全局 instance 时缺席，这让每个既有监听器与转发事件载体保持不变。
+**按 scope 描述。** `describe()` 在全局 scope 下每个 kind 回答一条描述符；`describe({ scope })` 在某个具名 scope 下每个 kind 回答一条，附带 `registered`、该 scope 自己的 `user` 段，以及 `inherited`——没有该段时的值——让界面能把字段标为已覆盖、继承或默认。没有注册者的 scope 在全局实例的组合 base 之上解析——schema 可能要求只有组合才提供的字段——而描述从不抛错：schema 拒绝的层按其下的层描述，直到空分区。controller 的 `describe(scope?)` 与三个写入动词接受同样的可选尾随 `scope`，两个事件都把 scope 作为尾随参数携带、全局 instance 时缺席，这让每个既有监听器与转发事件载体保持不变。
 
 **`skill-filesystem` 是第一个消费方。** 它的 `customSkillDirs` 以组合值为 base 经 `installSection` 解析；变化会替换 provider 的根目录并让目录失效，于是一个人可以在进程运行中从 settings 文档为某个 preset 添加一个根目录。
 

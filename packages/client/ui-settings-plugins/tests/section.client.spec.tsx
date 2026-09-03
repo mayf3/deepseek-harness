@@ -10,6 +10,10 @@ import { BashCard } from '../src/client/BashCard.tsx'
 import type { BashCardProps } from '../src/client/BashCard.tsx'
 import { ConfigurablePluginsTab } from '../src/client/ConfigurablePluginsTab.tsx'
 import type { ConfigurablePluginsTabProps } from '../src/client/ConfigurablePluginsTab.tsx'
+import { SkillFilesystemCard } from '../src/client/SkillFilesystemCard.tsx'
+import type { SkillFilesystemCardProps } from '../src/client/SkillFilesystemCard.tsx'
+import type { SkillFilesystemCardState } from '../src/client/skill-filesystem-card-controller.ts'
+import type { ScopeSwitcherState } from '../src/client/scope-switcher.ts'
 import { PluginsSettingsSection } from '../src/client/PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionProps, PluginsSettingsTabEntry } from '../src/client/PluginsSettingsSection.tsx'
 import { SubagentModelSelectionCard } from '../src/client/SubagentModelSelectionCard.tsx'
@@ -26,10 +30,13 @@ import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
 
-const t = (key: keyof typeof en) => en[key]
+const t = (key: keyof typeof en, params?: Record<string, string>) =>
+  Object.entries(params ?? {}).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, value), en[key])
 
 const settled: CardShell = {
   available: true,
+  scope: undefined,
+  registered: true,
   writable: true,
   dirty: false,
   invalid: false,
@@ -38,7 +45,7 @@ const settled: CardShell = {
 }
 
 function field(text: string, rest: Partial<CardFieldState> = {}): CardFieldState {
-  return { text, overridden: false, invalid: false, ...rest }
+  return { text, overridden: false, inherited: false, invalid: false, ...rest }
 }
 
 function cardActions() {
@@ -56,17 +63,42 @@ function renderSection(rows: readonly PluginsSettingsTabEntry[]) {
   render(<PluginsSettingsSection {...props} />)
 }
 
-function renderConfigurable(namespaces: string[], cards: Record<string, string> = {}, loaded = true) {
+function renderConfigurable(
+  namespaces: string[],
+  cards: Record<string, string> = {},
+  loaded = true,
+  switcher: Partial<ScopeSwitcherState> = {},
+) {
   const store = createSnapshotStore<ConfigurablePluginsTabState>({ loaded, namespaces })
+  const switcherStore = createSnapshotStore<ScopeSwitcherState>({
+    scope: undefined, presets: [], extraScopes: [], status: 'ready', ...switcher,
+  })
+  const actions = { ensureScopes: vi.fn(), selectScope: vi.fn() }
   const props = {
     t,
+    ...actions,
+    presetName: (preset: { id: string; name?: string }) => preset.name ?? preset.id,
     useConfigurablePlugins: bindSnapshotSelector(store),
+    useScopeSwitcher: bindSnapshotSelector(switcherStore),
     renderSlot: (_name: string, _owner: object, opts?: { entryKey?: string }) => {
       const card = opts?.entryKey === undefined ? undefined : cards[opts.entryKey]
       return card === undefined ? null : <li>{card}</li>
     },
   } as unknown as ConfigurablePluginsTabProps
   render(<ConfigurablePluginsTab {...props} />)
+  return actions
+}
+
+function renderSkillFilesystemCard(state: Partial<SkillFilesystemCardState> = {}) {
+  const store = createSnapshotStore<SkillFilesystemCardState>({
+    ...settled,
+    customSkillDirs: field(''),
+    ...state,
+  })
+  const actions = cardActions()
+  const props = { ...actions, t, useSkillFilesystemCard: bindSnapshotSelector(store) } as unknown as SkillFilesystemCardProps
+  render(<SkillFilesystemCard {...props} />)
+  return actions
 }
 
 function renderBashCard(state: Partial<BashCardState> = {}) {
@@ -203,6 +235,88 @@ describe('ConfigurablePluginsTab', () => {
 
     expect(screen.getAllByRole('listitem').map(item => item.textContent)).toEqual(['shell', 'loop'])
     expect(screen.queryByText(en.empty)).toBeNull()
+  })
+})
+
+describe('ConfigurablePluginsTab scope switch', () => {
+  it('asks for the roster once mounted and offers the global instance plus every preset', () => {
+    const actions = renderConfigurable([], {}, true, {
+      presets: [
+        { id: 'standard', trust: 'system', name: '标准模式', isDefault: true },
+        { id: 'research', trust: 'user', name: 'Research', isDefault: false },
+        { id: 'broken', trust: 'user', isDefault: false, broken: 'bad yaml' },
+      ],
+      extraScopes: ['preset/deleted'],
+    })
+    expect(actions.ensureScopes).toHaveBeenCalledTimes(1)
+    const trigger = screen.getByRole('button', { name: en.scopeSwitcherLabel })
+    expect(trigger.textContent).toBe(en.scopeGlobal)
+    expect(trigger.getAttribute('data-settings-scope')).toBe('global')
+    expect(screen.getByText(en.scopeHintGlobal)).toBeTruthy()
+
+    fireEvent.click(trigger)
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(screen.queryByRole('menuitem')).toBeNull()
+    fireEvent.click(trigger)
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Research' }))
+    expect(actions.selectScope).toHaveBeenCalledWith('preset/research')
+    fireEvent.click(trigger)
+    expect(screen.getByRole('menuitem', { name: '标准模式 (default)' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'broken (failed to load)' })).toBeTruthy()
+    expect(screen.getByRole('menuitem', { name: 'preset/deleted' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('menuitem', { name: en.scopeGlobal }))
+    expect(actions.selectScope).toHaveBeenLastCalledWith(null)
+  })
+
+  it('names the selected scope, keeps an unlisted one visible by id, and reports a roster failure', () => {
+    renderConfigurable([], {}, true, {
+      scope: 'preset/research',
+      presets: [{ id: 'research', trust: 'user', name: 'Research', isDefault: false }],
+    })
+    const trigger = screen.getByRole('button', { name: en.scopeSwitcherLabel })
+    expect(trigger.textContent).toBe('Research')
+    expect(trigger.getAttribute('data-settings-scope')).toBe('preset/research')
+    expect(screen.getByText(en.scopeHintPreset)).toBeTruthy()
+    cleanup()
+
+    renderConfigurable([], {}, true, { scope: 'preset/gone', status: 'error' })
+    expect(screen.getByRole('button', { name: en.scopeSwitcherLabel }).textContent).toBe('preset/gone')
+    expect(screen.getByText(en.scopeRosterFailed)).toBeTruthy()
+  })
+})
+
+describe('SkillFilesystemCard', () => {
+  it('edits the roots as one entry per line and marks an inherited value', () => {
+    const actions = renderSkillFilesystemCard({
+      scope: 'preset/research',
+      registered: false,
+      customSkillDirs: field('/a\n/b', { inherited: true }),
+    })
+    fireEvent.click(screen.getByRole('button', { name: `${en.expand}: ${en.skillFilesystemTitle}` }))
+    const roots = screen.getByLabelText(en.skillFilesystemCustomSkillDirs) as HTMLTextAreaElement
+    expect(roots.tagName).toBe('TEXTAREA')
+    expect(roots.value).toBe('/a\n/b')
+    expect(screen.getByText(en.inherited)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.reset })).toBeNull()
+    expect(screen.getByText(en.notMounted)).toBeTruthy()
+    fireEvent.change(roots, { target: { value: '/c' } })
+    expect(actions.edit).toHaveBeenCalledWith('customSkillDirs', '/c')
+  })
+
+  it('offers the reset for an overridden root list and no inherited badge for the global instance', () => {
+    const actions = renderSkillFilesystemCard({ customSkillDirs: field('/a', { overridden: true }) })
+    fireEvent.click(screen.getByRole('button', { name: `${en.expand}: ${en.skillFilesystemTitle}` }))
+    expect(screen.getByText(en.overridden)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: en.reset }))
+    expect(actions.resetField).toHaveBeenCalledWith('customSkillDirs')
+    expect(screen.queryByText(en.inherited)).toBeNull()
+    expect(screen.queryByText(en.notMounted)).toBeNull()
+  })
+
+  it('marks an invalid root draft on the text area', () => {
+    renderSkillFilesystemCard({ customSkillDirs: field('?', { invalid: true }) })
+    fireEvent.click(screen.getByRole('button', { name: `${en.expand}: ${en.skillFilesystemTitle}` }))
+    expect(screen.getByLabelText(en.skillFilesystemCustomSkillDirs).getAttribute('aria-invalid')).toBe('true')
   })
 })
 

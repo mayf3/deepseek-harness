@@ -1,0 +1,5 @@
+# Web e2e fixture bundle: one inert row, so enabling it changes the profile
+# manifest without composing anything the scaffold tree would notice.
+- insert:
+    - id: fixture-row
+      name: '@fixture/bundle'

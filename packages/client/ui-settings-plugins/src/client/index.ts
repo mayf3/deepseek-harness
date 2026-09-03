@@ -20,16 +20,25 @@ import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: the ctx.remote Context merge and the forwarded-event key face.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only: pulls the 'settings.agentPreset' LocaleNamespaceMap merge, whose
+// dictionaries the shipped-preset name resolution below reads.
+import type {} from '@deepseek-ai/dsh-client-ui-agent-preset/client'
+// Inline-safe shared fold: shipped ids map to dictionary keys in one home.
+import { presetDisplayText } from '@deepseek-ai/dsh-agent-presets/display'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
+import { SkillFilesystemCard } from './SkillFilesystemCard.tsx'
 import { SubagentModelSelectionCard } from './SubagentModelSelectionCard.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
 import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import { ConfigurablePluginsTabController } from './tab-store.ts'
+import { ScopeSelection } from './scoped-form.ts'
+import { ScopeSwitcherController, type PresetScopeRow } from './scope-switcher.ts'
+import { SKILL_FILESYSTEM_NS, SkillFilesystemCardController } from './skill-filesystem-card-controller.ts'
 import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
@@ -39,6 +48,8 @@ import { en, zh } from './locales.ts'
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
 export type { ConfigurablePluginsTabProps } from './ConfigurablePluginsTab.tsx'
 export type { ConfigurablePluginsTabFace, ConfigurablePluginsTabState } from './tab-store.ts'
+export type { BindScope, ScopeSelectionState } from './scoped-form.ts'
+export type { PresetScopeRow, ScopeSwitcherFace, ScopeSwitcherState } from './scope-switcher.ts'
 export type { PluginCardProps } from './PluginCard.tsx'
 export type { SettingsPluginItemOwnerProps } from './slot-contract.ts'
 export type { FieldProps } from './fields.tsx'
@@ -47,6 +58,7 @@ export type {
 } from './card-form.ts'
 export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-controller.ts'
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
+export type { SkillFilesystemCardFace, SkillFilesystemCardState } from './skill-filesystem-card-controller.ts'
 export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
 
 /** Dictionary namespace owned by this plugin. */
@@ -54,7 +66,7 @@ const NS = 'settings.plugins'
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.credentials', 'remote.session', 'settingsScope',
+  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.credentials', 'remote.session', 'settingsScope',
 ]
 
 /**
@@ -65,13 +77,30 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-plugins: section dictionaries')
 
-  const bash = new BashCardController(ctx.settingsScope.bind({ namespace: SHELL_NS }))
-  const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
-  const webSearch = new WebSearchCardController(
-    ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), ctx)
+  // One scope selection over every card: the global instance, or one
+  // preset's named scope. A card binds its namespace under a scope the first
+  // time that scope is selected.
+  const selection = new ScopeSelection()
+  const bindScope = <T>(namespace: string) => (scope: string | undefined) =>
+    ctx.settingsScope.bind<T>({ namespace, ...scope === undefined ? {} : { scope } })
+  const bash = new BashCardController(selection, bindScope(SHELL_NS))
+  const agentLoop = new AgentLoopCardController(selection, bindScope(AGENT_LOOP_NS))
+  const webSearch = new WebSearchCardController(selection, bindScope(WEB_SEARCH_NS), ctx)
   const subagentModelSelection = new SubagentModelSelectionCardController(
-    ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
-    ctx,
+    selection, bindScope(SUBAGENT_MODEL_SELECTION_NS), ctx)
+  const skillFilesystem = new SkillFilesystemCardController(selection, bindScope(SKILL_FILESYSTEM_NS))
+
+  // A refused or failed roster is the switch's state to report; the Host's
+  // message belongs to the transport, not to a scope picker.
+  const roster = (): Promise<readonly PresetScopeRow[] | undefined> => ctx.remote.agentPresets.list()
+    .then(result => result.ok ? result.value.presets : undefined, () => undefined)
+  const agentPresetCopy = ctx.locale.bind('settings.agentPreset')
+  const switcher = new ScopeSwitcherController(
+    selection, ctx.settingsScope.describe(), roster, preset => presetDisplayText(preset, agentPresetCopy).name)
+  ctx.effect(() => () => { switcher.dispose() }, 'ui-settings-plugins: scope switch')
+  ctx.effect(
+    () => ctx.on('connection/reset', () => { switcher.reset() }),
+    'ui-settings-plugins: scope roster generation',
   )
 
   // The credential a card reports is not part of any settings section, so its
@@ -160,7 +189,11 @@ export function apply(ctx: ClientContext): void {
     order: 0,
     label: () => t('configurableTab'),
     locale: NS,
-    inject: () => configurable.inject(),
+    inject: () => {
+      const tab = configurable.inject()
+      const scope = switcher.inject()
+      return { ...tab, ...scope, hooks: { ...tab.hooks, ...scope.hooks } }
+    },
     children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
   }, ConfigurablePluginsTab))
 
@@ -189,5 +222,11 @@ export function apply(ctx: ClientContext): void {
       locale: NS,
       inject: () => webSearch.inject(),
     }, WebSearchCard)
+    yield ctx.slots.register({
+      name: 'settings.plugin.item',
+      key: SKILL_FILESYSTEM_NS,
+      locale: NS,
+      inject: () => skillFilesystem.inject(),
+    }, SkillFilesystemCard)
   })
 }

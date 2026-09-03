@@ -243,7 +243,7 @@ export class PluginManager extends TypertRemoteService {
       cordisSameCopy: probe?.cordisSameCopy ?? null,
       rows,
       overrides: probe?.overrides ?? [],
-      addable: (probe?.addable ?? []).map(entry => addableView(name, entry)),
+      addable: addableViews(name, probe),
       ...optional('probedAt', probe?.checkedAt),
       liveReload,
     }
@@ -360,8 +360,8 @@ export class PluginManager extends TypertRemoteService {
    * or the run times out, `plugins/enable-failed` when enabling was asked
    * for and the tree rejected the bundle.
    */
-  @Remote('install')
-  async install(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
+  @Remote('add')
+  async add(spec: string, options?: { enable?: boolean }): Promise<PluginInstallResult> {
     const runtime = this.runtime()
     if (spec.trim().length === 0) {
       throw new RemoteError('gateway/bad-request', 'plugin-manager: the package spec must not be empty', {})
@@ -839,6 +839,24 @@ function derivedRowId(packageName: string, declared: string): string {
 }
 
 /** The wire view of one probed addable module. */
+/**
+ * The modules a package offers a composition: what it declares in
+ * `dsh.plugins`, and — for a plugin module — its main export as `.`, the
+ * implicit entry {@link PluginManager.addRow} accepts without a declaration.
+ */
+function addableViews(packageName: string, probe: PluginProbe | undefined): PluginPackageAddableView[] {
+  const declared = (probe?.addable ?? []).map(entry => addableView(packageName, entry))
+  if (probe?.kind !== 'plugin' || declared.some(entry => entry.declaredName === '.')) return declared
+  return [{
+    moduleName: packageName,
+    declaredName: '.',
+    ...optional('title', probe.title),
+    ok: probe.ok,
+    ...optional('error', probe.reason),
+    ...optional('configSchema', probe.configSchema as JsonValue | undefined),
+  }, ...declared]
+}
+
 function addableView(packageName: string, entry: PluginProbe['addable'][number]): PluginPackageAddableView {
   return {
     moduleName: moduleSpecifier(packageName, entry.name),

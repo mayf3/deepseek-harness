@@ -124,8 +124,8 @@ export interface SettingsDescriptor {
   scope?: SettingsScopeId
   /**
    * Whether an owner registered the namespace under this scope. False for a
-   * scope described from the kind alone — a preset no session composed yet —
-   * whose value then carries no composition `base`.
+   * scope no session composed yet, whose value carries no `base` of its own
+   * and resolves over the global instance's composition when one is registered.
    */
   registered: boolean
   /** Serialized schemastery schema (`schema.toJSON()`). */
@@ -168,7 +168,8 @@ export interface SettingsDescribeOptions {
   /**
    * Describe every namespace kind under this named scope instead of the
    * global scope. A kind with no registration under the scope is described
-   * from the kind alone, `registered: false`.
+   * over the global instance's composition, else from the kind alone,
+   * `registered: false`.
    */
   scope?: string
 }
@@ -645,14 +646,17 @@ export abstract class SettingsProvider extends Service {
   private describeKind(kind: SettingsKind, scope: SettingsScopeId | undefined, redact: boolean): SettingsDescriptor {
     const registration = kind.instances.get(instanceKey(scope))
     const user = this.sectionOrUndefined(kind.ns, scope)
-    // An unregistered scope resolves from the kind alone; a stored section
-    // the schema refuses, or a malformed one, is described as the layers
-    // below it, so the read stays total the way a registered kind's last
-    // good value keeps it.
-    const value = registration?.resolved ?? this.resolveSafely(kind, undefined, this.userLayerOrUndefined(kind.ns, scope))
+    // An unregistered scope resolves over the composition layer it inherits
+    // — the global instance's, when one is registered — because a schema may
+    // require what only a composition supplies; without one it resolves from
+    // the kind alone. A stored section the schema refuses, or a malformed one,
+    // is described as the layers below it, so the read stays total the way a
+    // registered kind's last good value keeps it.
+    const composed = registration ?? kind.instances.get(instanceKey(undefined))
+    const value = registration?.resolved ?? this.resolveSafely(kind, composed?.base, this.userLayerOrUndefined(kind.ns, scope))
     const inherited = scope === undefined
       ? undefined
-      : this.resolveSafely(kind, registration?.base, this.userLayerOrUndefined(kind.ns, undefined))
+      : this.resolveSafely(kind, composed?.base, this.userLayerOrUndefined(kind.ns, undefined))
     const base = registration?.base === undefined ? undefined : structuredClone(registration.base)
     const detachedUser = user === undefined ? undefined : structuredClone(user)
     const descriptor: SettingsDescriptor = {
@@ -687,7 +691,18 @@ export abstract class SettingsProvider extends Service {
     } catch {
       // The stored section is malformed for this schema; `publish` already
       // warned. Describing the layers beneath it keeps the read total.
+    }
+    try {
       return deepFreeze(this.resolve(kind.schema, base, undefined, undefined))
+    } catch {
+      // Not even the composition layer satisfies the schema — a required
+      // field no instance supplies. The defaults alone are the last total
+      // answer; a schema that refuses those describes as an empty section.
+    }
+    try {
+      return deepFreeze(this.resolve(kind.schema, undefined, undefined, undefined))
+    } catch {
+      return deepFreeze({})
     }
   }
 
