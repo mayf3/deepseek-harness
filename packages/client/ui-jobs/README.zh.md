@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 一 job 一行
 
-session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJob` 行携带生命周期、时长与模型可见的 `detail`，其 `outputTotal` 字段恰在 job 声明了 record 时存在——这个存在性就是行可展开的依据。不存在需要 join 的第二份名册。
+session control 流的 `jobsBySession` 镜像是唯一名册：每个 `SessionJob` 行携带生命周期、时长与模型可见的 `detail`，其 `record` 标志恰在 job 声明了 record 时存在——这个标志就是行可展开的依据。不存在需要 join 的第二份名册。
 
 运行中的 job 行还带一个两击式停止控件：首击武装、三秒内的确认击调用 `ctx.jobOutput.kill`，行状态经 jobs 帧收敛（先 `stopping`，再入已结束分组）。该 kill 不认领终态报告，任务的 owner agent 因此照常收到标准完成通知——模型被明确告知用户停止了它的任务，而不是留给它去猜（[决策](../../../.agents/notes/implemented/feature/2026-08-26-human-job-kill.zh.md)）。
 

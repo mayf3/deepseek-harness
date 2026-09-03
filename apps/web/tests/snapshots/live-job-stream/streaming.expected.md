@@ -1,10 +1,8 @@
 - list "Background jobs":
   - listitem:
-    - button "Hide live output of printf 'streamed-%s\\n' marker-line; sleep 45" [expanded]:
-      - text: printf 'streamed-%s\n' marker-line; sleep 45 bash {{duration}}
+    - button "Hide live output of printf 'streamed-%s\\n' marker-line; for _ in $(seq 1 3000); do [ -e .live-job-stream.release ] && break; sleep 0.2; done" [expanded]:
+      - text: printf 'streamed-%s\n' marker-line; for _ in $(seq 1 3000); do [ -e .live-job-stream.release ] && break; sleep 0.2; done {{duration}} bash running
       - img
-    - button "Stop task printf 'streamed-%s\\n' marker-line; sleep 45":
-      - img
-    - text: $ printf 'streamed-%s\n' marker-line; sleep 45
+    - text: $ printf 'streamed-%s\n' marker-line; for _ in $(seq 1 3000); do [ -e .live-job-stream.release ] && break; sleep 0.2; done
     - button "Copy"
     - text: streamed-marker-line

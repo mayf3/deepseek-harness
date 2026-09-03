@@ -60,6 +60,14 @@ export interface JobPumpOptions {
  * `gapBefore`, so the discontinuity stays visible to observers. Fold the
  * returned promise into the producer's `JobHooks.done` chain so the final
  * drain lands before settlement trims and closes the record.
+ *
+ * Each round drains the sources in array order, so bytes two sources
+ * produced inside one poll window land in that order, not in the order they
+ * were written; the record is a best-effort live view whose cross-source
+ * reordering is bounded by `pollMs`, not a terminal transcript.
+ *
+ * The wait holds constant resources however long the job runs: one
+ * subscription on `done` for the whole run and one pending timer at a time.
  * @param job - the running job's producer face receiving the copied chunks.
  * @param sources - producer streams, each pumped at its own offset.
  * @param options - poll cadence and the producer's settlement promise.
@@ -91,18 +99,24 @@ export async function pumpJobOutput(
     }
   }
   let settled = false
-  const settlement = options.done.then(() => { settled = true }, () => { settled = true })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let wake: (() => void) | undefined
+  const finish = (): void => {
+    settled = true
+    // Clear the pending poll so a finished pump holds no timer for up to one
+    // interval, and release the current wait so the final drain runs at once.
+    if (timer !== undefined) clearTimeout(timer)
+    wake?.()
+  }
+  void options.done.then(finish, finish)
   while (!settled) {
     drain()
-    await Promise.race([
-      new Promise<void>((resolve) => {
-        const timer = setTimeout(resolve, options.pollMs)
-        // The settlement branch wins the race; clear the loser so a finished
-        // pump holds no pending timer for up to one poll interval.
-        void settlement.then(() => { clearTimeout(timer); resolve() })
-      }),
-      settlement,
-    ])
+    await new Promise<void>((resolve) => {
+      wake = resolve
+      timer = setTimeout(resolve, options.pollMs)
+    })
+    wake = undefined
+    timer = undefined
   }
   drain()
 }

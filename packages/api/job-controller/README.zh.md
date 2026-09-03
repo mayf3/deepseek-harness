@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-api-job-controller` 拥有 Host 的 `ctx.jobController` 服务与生成的 Client `ctx.remote.job` namespace。它的 Remote 流 `job.observe` 从绝对字节偏移发送声明了 record 的 job 的保留输出，Remote `job.kill` 替人停止一个 job；Client 半侧安装 `ctx.jobOutput`——按 job 引用计数的观测与 kill 服务，会话头部任务列表渲染其累积视图。名册不在这里：`SessionJob` 行仍随 [`dsh-api-session-controller`](../session-controller/README.zh.md) 拥有的会话控制流到达，行上的 `outputTotal` 说明本控制器是否有东西可流。
+`@deepseek-ai/dsh-api-job-controller` 拥有 Host 的 `ctx.jobController` 服务与生成的 Client `ctx.remote.job` namespace。它的 Remote 流 `job.observe` 从绝对字节偏移发送声明了 record 的 job 的保留输出，Remote `job.kill` 替人停止一个 job；Client 半侧安装 `ctx.jobOutput`——按 job 引用计数的观测与 kill 服务，会话头部任务列表渲染其累积视图。名册不在这里：`SessionJob` 行仍随 [`dsh-api-session-controller`](../session-controller/README.zh.md) 拥有的会话控制流到达，行上的 `record` 说明本控制器是否有东西可流。
 
 ## 目录
 
@@ -52,6 +52,7 @@ Client 入口在 `ClientJobOutputModel` 之上提供 `ClientJobOutput`（`ctx.jo
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- record 是尽力而为的实时预览，不是终端转录：生产者按轮询轮次复制 stdout 与 stderr，同一轮询窗口内两条流的写入先 stdout 后到达 record，客户端拼接 chunk 时也不区分 `channel`。
 - 流是进程本地的：Host 重启丢失全部 record，续读的观测随后锚定在空注册表上。
 - 按 session 的围栏由注册表读取强制；Remote 层本身服务任何已连接浏览器，与会话控制流对 `jobsBySession` 的广播一致。
 

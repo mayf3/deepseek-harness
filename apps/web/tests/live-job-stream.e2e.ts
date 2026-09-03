@@ -2,7 +2,7 @@
 // arrives over the session control stream, expanding it opens the record
 // observation stream, and the panel shows the process's real output while it
 // is still running. No model call is involved.
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 import type { Browser, Page } from 'playwright'
@@ -24,9 +24,12 @@ const STREAMING_EXPECTED = join(SNAPSHOT_DIR, 'streaming.expected.md')
 const SETTLED_EXPECTED = join(SNAPSHOT_DIR, 'settled.expected.md')
 const MODE = webSnapshotMode()
 const SEED_ID = 'live-job-stream-web-e2e'
-// One fixed line of early output, then silence long enough that the streaming
-// assertions never race the process exiting; the test kills it explicitly.
-const COMMAND = "printf 'streamed-%s\\n' marker-line; sleep 45"
+// One fixed line of early output, then a hold on a barrier file the test owns
+// in the job's cwd: the process never exits on its own, so no CI stall can
+// settle it before the scenario kills it. The bounded loop only caps an
+// orphan's lifetime if the runner dies before `afterAll` releases the barrier.
+const RELEASE = '.live-job-stream.release'
+const COMMAND = `printf 'streamed-%s\\n' marker-line; for _ in $(seq 1 3000); do [ -e ${RELEASE} ] && break; sleep 0.2; done`
 
 /**
  * Wait for opening a session to publish its live Agent.
@@ -50,7 +53,6 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
   let page: Page
   let tripwire: ReturnType<typeof watchConsole>
   let agent: Agent
-  let jobId: JobId
 
   beforeAll(async () => {
     scaffold = await launchWebScaffold({})
@@ -74,12 +76,14 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
   }, 120_000)
 
   afterAll(async () => {
+    if (scaffold !== undefined) await writeFile(join(scaffold.workspaceCwd, RELEASE), '')
     await browser?.close()
     await scaffold?.close()
   })
 
-  it('streams a running background command\'s real output into the expanded panel', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-live-job-streaming'))
+  it('streams a running job\'s real output into the expanded panel, then settles it in place on kill', async () => {
+    let phase = 'streaming'
+    onTestFailed(() => saveFailureShot(page, `web-e2e-live-job-${phase}`))
     const trigger = page.getByRole('button', { name: '1 background job running' })
     expect(await trigger.count()).toBe(0)
 
@@ -93,7 +97,7 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     const reported = started.content.map(block => block.type === 'text' ? block.text : '').join('')
     const matched = /\bbash-\d+\b/.exec(reported)
     if (matched === null) throw new Error(`background bash reported no job id: ${reported}`)
-    jobId = JobId(matched[0])
+    const jobId = JobId(matched[0])
 
     // The job row reaches the header over the session control stream.
     await trigger.waitFor({ timeout: 15_000 })
@@ -106,14 +110,12 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     await expand.click()
     await page.getByText('streamed-marker-line').waitFor({ timeout: 15_000 })
 
-    const snapshot = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(STREAMING_EXPECTED, snapshot, MODE)
+    const streaming = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(STREAMING_EXPECTED, streaming, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-  }, 60_000)
 
-  it('settles the open panel when the job is killed, keeping the streamed tail', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-live-job-settled'))
+    phase = 'settled'
     expect(scaffold.ctx.jobs.kill(jobId, agent, { reason: 'web e2e cancellation' })).toBe('requested')
 
     // Settlement arrives on the observation stream itself, so the open panel
@@ -122,11 +124,11 @@ describe.skipIf(MODE === 'record')('web e2e: live job stream', () => {
     await idle.waitFor({ timeout: 20_000 })
     await page.getByText('streamed-marker-line').waitFor({ timeout: 10_000 })
 
-    const snapshot = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
-    await compareOrRefreshGolden(SETTLED_EXPECTED, snapshot, MODE)
+    const settled = await captureStableAria(page, '[class*="menu"]', scaffold.workspaceCwd)
+    await compareOrRefreshGolden(SETTLED_EXPECTED, settled, MODE)
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
-  }, 60_000)
+  }, 90_000)
 
   it('keeps its snapshot inventory closed', async () => {
     await assertFixtureInventory(SNAPSHOT_DIR, ['settled.expected.md', 'streaming.expected.md'])

@@ -29,7 +29,7 @@ Load the plugin through the web-app manifest; it renders nothing until the sessi
 
 ### One row per job
 
-The session control stream's `jobsBySession` mirror is the single roster: each `SessionJob` row carries lifecycle, duration, and the model-visible `detail`, and its `outputTotal` field is present exactly when the job declared a record — that presence is what makes a row expandable. There is no second roster to join.
+The session control stream's `jobsBySession` mirror is the single roster: each `SessionJob` row carries lifecycle, duration, and the model-visible `detail`, and its `record` flag is present exactly when the job declared a record — that flag is what makes a row expandable. There is no second roster to join.
 
 Running job rows also carry a two-press stop control: the first press arms it, the confirming press within three seconds calls `ctx.jobOutput.kill`, and the row converges through the jobs frames (`stopping`, then the settled section). The kill leaves the terminal report unclaimed, so the owning agent still receives the standard completion notice — the model is told the user stopped its task rather than left to infer it ([decision](../../../.agents/notes/implemented/feature/2026-08-26-human-job-kill.md)).
 

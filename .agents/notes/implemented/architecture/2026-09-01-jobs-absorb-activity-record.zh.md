@@ -18,8 +18,8 @@ Status: implemented
 - **没有 `end`。** job 结算——生产者 outcome、kill 或 teardown——是 record 唯一的关闭：裁剪到结算保留量并发出最后一个 `onOutput` 信号。双结算配对（`ActivityHandle.end` 与 teardown 强结的 first-wins 对账）被删除，而非重新实现。
 - **`readRecord(id, from, caller)`** 是非消耗多读者视图（绝对 UTF-8 偏移，低于保留窗口为 `lossy`），围栏与其他 job 读取一致；永不置 `reported`。模型面的 `readOutput` 游标原样保留——两个投影服务不同读者，刻意保持分离。
 - **`jobs-local`** 吸收块环（`retainBytes` 运行期 256 KiB，`settledRetainBytes` 结算后 16 KiB），`pumpJobOutput` 在 seam 旁替换 `pumpActivityOutput`。生产者把 pump 的末次排空折进 `hooks.done`，让 record 在结算关闭前握有最后的字节。
-- **wire 按角色拆分。** `SessionJob.outputTotal`（恰在 record job 上存在）在会话控制流上标记行可观测；`api-job-controller` 的 `job` 命名空间上的 `job.observe({sessionId?, jobId, from?})` 流式发送 anchor/output/status 帧，围栏读取者由请求的 session 解析。`api-activity-controller` 删除；其名册流是冗余的（jobs 帧就是名册），observe 机制位于 `api-job-controller`（`observe.ts`，客户端 `ctx.jobOutput`），它在自己的 apply 里解析所依赖的 Remote 面。
-- **`ui-activity` 改回上游名字 `ui-jobs`**，渲染单一名册：`jobsBySession` 行，恰在 `outputTotal` 存在时可展开。双名册 join 被删除。
+- **wire 按角色拆分。** `SessionJob.record`（恰在 record job 上存在）在会话控制流上标记行可观测；`api-job-controller` 的 `job` 命名空间上的 `job.observe({sessionId?, jobId, from?})` 流式发送 anchor/output/status 帧，围栏读取者由请求的 session 解析。`api-activity-controller` 删除；其名册流是冗余的（jobs 帧就是名册），observe 机制位于 `api-job-controller`（`observe.ts`，客户端 `ctx.jobOutput`），它在自己的 apply 里解析所依赖的 Remote 面。
+- **`ui-activity` 改回上游名字 `ui-jobs`**，渲染单一名册：`jobsBySession` 行，恰在 `record` 存在时可展开。双名册 join 被删除。
 - **前台 workflow 有意失去实时面板。** `tool-workflow` 的 activity 镜像被移除；前台 run 只通过已记录的 run/member 生命周期事件呈现，逐行的 `workflow/phase` / `workflow/log` 叙述在 workflow 获得 `run_in_background` 并登记 record job 之前没有观察者。jobs 保持纯后台注册表——没有 `foreground` 模式位、没有模型不可见行、没有无 run 行。
 
 ## 曾考虑的替代方案
@@ -29,6 +29,16 @@ Status: implemented
 - **保留拆分但共享实现**（公共注册表库）：它消除重复骨架，但保留真正的成本——双重登记、终态配对、correlation、第二条 wire 名册与第二个包族。
 
 [先前 seam note](../feature/2026-08-24-activity-observation-seam.zh.md) 反对用持久会话事件或 control 流承载实时输出的论证仍然成立并原样沿用：record 是进程本地观测状态，从不是会话事件，「模型可见 ⟺ 已记录」不受影响。
+
+## 评审修正
+
+对已合并设计的评审确定了上文各节未言明的五点：
+
+- **泵的等待资源恒定。** `pumpJobOutput` 对生产者的 `done` 只订阅一次，同一时刻只保留一个待触发的 timer；结算清掉 timer 并唤醒当前等待。此前每个轮询轮次都对同一个 pending promise 赛跑，每轮留下一个 reaction 直到任务结束——默认节奏下跑一天的任务会累积上百万个闭包。
+- **客户端卸载等待载体静止。** `ctx.jobOutput` 的 effect disposer 是异步的，await 每条打开的 `RemoteStream.dispose()`：Cordis 会 await 异步 disposer，而一个在旧 iterator 仍在关闭时就宣告卸载完成的 fiber，在 HMR 下可能与下一个插件实例重叠。
+- **名册标记 record，不计字节。** `SessionJob.record: true` 取代了 `outputTotal`：`append` 不提交名册变更（只有生命周期提交触发 `onJobsChanged`），镜像的计数在输出到达的瞬间就陈旧了；而为一个没有任何行需要的数字按 append 广播整份名册被否决。实时偏移随观测流的 `opened` 锚帧到达。
+- **record 是尽力而为的实时预览。** 生产者按轮询轮次复制 stdout 与 stderr，同一窗口内的写入先 stdout 落地；pipe 捕获无法还原真实交错（只有 PTY 或 `2>&1` 可以），客户端拼接 chunk 时也不区分 `channel`。`channel` 留在 wire 上，因为它正是让这一限制可见、也是将来区分渲染 stderr 所需要的东西。
+- **Web e2e 的保活是 barrier 而非时钟。** 后台命令守在测试拥有的、位于 job cwd 的文件上，由场景显式 kill，因此 CI 卡顿不可能先把任务结算掉；每个场景是一个测试，绝不是共享 job id 的测试链。
 
 ## 后果
 

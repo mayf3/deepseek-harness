@@ -91,13 +91,15 @@ export class ClientJobOutput extends Service implements IJobOutput {
   ) {
     super(ctx, 'jobOutput')
     this.state = model
-    ctx.effect(() => () => {
+    ctx.effect(() => async () => {
       const open = [...this.entries.values()]
       this.entries.clear()
-      for (const entry of open) {
-        entry.stopped = true
-        void entry.dispose()
-      }
+      for (const entry of open) entry.stopped = true
+      // Cordis awaits an async disposer, so the fiber stays unloading until
+      // every carrier iterator has closed and a successor plugin instance
+      // cannot overlap one. A carrier whose teardown fails is stopped all the
+      // same; its failure has no consumer here.
+      await Promise.allSettled(open.map(entry => entry.dispose()))
     }, 'job-controller.client.observations')
   }
 

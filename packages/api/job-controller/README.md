@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`@deepseek-ai/dsh-api-job-controller` owns the Host `ctx.jobController` service and the generated Client `ctx.remote.job` namespace. Its Remote stream `job.observe` delivers a record-declaring job's retained output from an absolute byte offset, and its `job.kill` Remote stops one job on a human's behalf; the Client half installs `ctx.jobOutput`, the reference-counted per-job observation and kill service whose accumulated views the session-header job list renders. The roster itself is not here: `SessionJob` rows still ride the session control stream owned by [`dsh-api-session-controller`](../session-controller/README.md), and a row's `outputTotal` says whether this controller has anything to stream for it.
+`@deepseek-ai/dsh-api-job-controller` owns the Host `ctx.jobController` service and the generated Client `ctx.remote.job` namespace. Its Remote stream `job.observe` delivers a record-declaring job's retained output from an absolute byte offset, and its `job.kill` Remote stops one job on a human's behalf; the Client half installs `ctx.jobOutput`, the reference-counted per-job observation and kill service whose accumulated views the session-header job list renders. The roster itself is not here: `SessionJob` rows still ride the session control stream owned by [`dsh-api-session-controller`](../session-controller/README.md), and a row's `record` says whether this controller has anything to stream for it.
 
 ## Table of Contents
 
@@ -52,6 +52,7 @@ No direct effect; observation reads never touch model requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+- The record is a best-effort live preview, not a terminal transcript: producers copy stdout and stderr per poll round, so the two streams' writes inside one poll window reach the record stdout first, and the client concatenates chunks regardless of `channel`.
 - The stream is process-local: a Host restart loses every record, and a resumed observation then anchors on an empty registry.
 - Per-session fencing is enforced by the registry read; the Remote layer itself serves any connected browser, matching the session control stream's `jobsBySession` broadcast.
 
