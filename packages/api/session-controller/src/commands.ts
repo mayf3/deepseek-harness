@@ -287,11 +287,21 @@ export class SessionCommandController {
   }
 
   /**
-   * Admit one browser prompt after explicit Agent resume and image validation.
+   * Reject empty content, then admit one prompt after Agent and attachment validation.
    * @param request - Session identity, prompt content, source metadata, and delivery mode.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
   async prompt(request: SessionPromptRequest): Promise<SessionPromptValue> {
+    const hasPromptContent = request.content.some(
+      part => part.type !== 'text' || part.text.trim().length > 0,
+    )
+    if (!hasPromptContent) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'prompt content must include non-whitespace text or an attachment',
+        {},
+      )
+    }
     const clientTimeZone = request.clientTimeZone === undefined
       ? undefined
       : canonicalClientTimeZone(request.clientTimeZone)
