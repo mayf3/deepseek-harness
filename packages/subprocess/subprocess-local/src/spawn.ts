@@ -10,7 +10,7 @@
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process'
 import type { Readable } from 'node:stream'
 import { randomBytes } from 'node:crypto'
-import { closeSync, mkdtempSync, openSync, rmSync, unlinkSync, writeSync } from 'node:fs'
+import { closeSync, mkdtempSync, openSync, readdirSync, rmdirSync, unlinkSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as sleepMs } from 'node:timers/promises'
@@ -91,12 +91,17 @@ function privateSpillDir(): string {
   return defaultSpillDir
 }
 
-// The spill directory is private to this process, so it is removed when the
-// process ends normally; a process killed with SIGKILL cannot run this, and
-// its residue is left to OS temp hygiene.
-/* v8 ignore next 3 -- exit listeners run after the coverage dump; removal is verified by the CI /tmp residue measurement. */
+// The per-process spill directory is removed at process exit only while it is
+// EMPTY: collectors unlink their spill files on dispose, so a normal exit
+// leaves at most empty residue. A directory still holding spill files keeps
+// them (their content outlives the process), and a SIGKILLed process cannot
+// run this at all; both are left to OS temp hygiene.
+/* v8 ignore next 3 -- exit listeners run after the coverage dump; empty-only removal is verified by the CI /tmp residue measurement. */
 process.once('exit', () => {
-  if (defaultSpillDir !== undefined) rmSync(defaultSpillDir, { recursive: true, force: true })
+  if (defaultSpillDir === undefined) return
+  try {
+    if (readdirSync(defaultSpillDir).length === 0) rmdirSync(defaultSpillDir)
+  } catch { /* best-effort: a Windows-held handle must not change the exit code. */ }
 })
 
 /**

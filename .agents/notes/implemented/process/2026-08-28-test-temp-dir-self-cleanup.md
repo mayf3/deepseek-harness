@@ -15,7 +15,7 @@ Retrofit removal of every `dsh-*` temp dir a spec file creates, at the owning te
 - Spec files that created dirs without removing any now track each created root in a module-level list and delete the list in `afterEach`/`afterAll` (`rm`/`rmSync` with `recursive: true, force: true`), the convention already used across the session packages. Root-creating helpers (`tmp()`, `tempDir()`, `fakeLauncher()`, harness functions) register the root at creation, so every caller is covered at one point.
 - Module-scope fixture dirs shared by a whole file (executor spill dirs) are removed in `afterAll` after the last test.
 - The file list came from the observed-residue inventory on the CI host (a template histogram of current `/tmp/dsh-*` dirs): only spec files whose dirs actually appeared were leak sources. Files that already remove their dirs (agent-team, tool-subagent, list-children, hooks coverage cases) were confirmed clean on the normal-exit path and left unchanged.
-- Product per-process spill roots (`privateSpillDir` in `dsh-subprocess-local/spawn`, `privateRoot` in `dsh-spill-local/store`) register a `process.once('exit')` handler that removes the memoized directory, so every process that used the spawn/spill path cleans up on normal exit.
+- Product cleanup is limited to the per-process spill directory of `dsh-subprocess-local/spawn` (`privateSpillDir`): it is removed at a JavaScript-observable process exit while it is EMPTY — collectors unlink their spill files on dispose, so a normal exit leaves at most empty residue, and a directory still holding spill files keeps them (their content may outlive the process). The removal is best-effort (a Windows-held handle must not change the exit code). `dsh-spill-local`'s default root is deliberately NOT exit-deleted: it is covered by the package's own 30-day startup sweep, and the retention decision in the 2026-07-17 local-spill-startup-cleanup note forbids deleting fresh spill artifacts that resumed or forked sessions may still reference.
 
 ## Verification
 
@@ -34,6 +34,6 @@ Not chosen: the files that leak each create roots through their own small helper
 
 ## Consequences
 
-- Bought: on normal completion — including failed tests — a spec's `dsh-*` dirs are removed at teardown, and per-process spill roots are removed when their process exits normally.
+- Bought: on normal completion — including failed tests — a spec's `dsh-*` dirs are removed at teardown; the empty per-process spill directory of `dsh-subprocess-local` is removed at a JavaScript-observable process exit.
 - Cost: a process killed with SIGKILL (a cancelled run, a timeout kill) cannot run any in-process teardown; its in-flight residue remains. The machine-side timer stays as the backstop for that path.
-- Cost: dirs created by a spawned child are covered only when the test knows their paths; product-owned per-process roots are covered by the exit handler in the process that created them.
+- Cost: dirs created by a spawned child are covered only when the test knows their paths; product-owned spill dirs holding spill files, and `dsh-spill-local`'s default root, keep their files per the existing retention policy and are cleaned by that package's own sweep.
