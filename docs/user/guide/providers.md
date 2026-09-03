@@ -26,7 +26,13 @@ Choose **Add a custom provider** for a company gateway, self-hosted server, or p
 
 The Provider ID is permanent because requests, saved sessions, model defaults, and credential references use it. To rename a provider, add a new provider and delete the old one. The display name, base URL, protocol, credential, and models remain editable.
 
-Under **Model catalog**, choose **Fetch available models** to query the base URL and credential currently shown in the form. Selecting candidates updates the draft; the provider is not stored until you save. Catalog providers use their installed catalog without a network request.
+### Discover models
+
+Under **Model catalog**, choose **Fetch available models** to ask the endpoint what it serves. The request goes to the base URL and API protocol currently in the form, with the key typed there or, for a saved provider, the stored one: `openai-completions` and `openai-responses` call `GET /models` with bearer auth, and `anthropic-messages` calls Anthropic's native `GET /v1/models`, whether the base URL is written with or without a trailing `/v1`. The reply may be OpenAI's `data` array or the enriched `models` object some gateways return; either way each candidate arrives with its id and, when the endpoint reports them, a display name, context window, and max output tokens.
+
+The reply opens a searchable picker rather than writing anything. Search matches ids and display names, **Select all** adds the visible results, **Deselect all** clears every selection including hidden ones, and **Add selected** copies the chosen candidates into the model list. The provider is not stored until you save or create it, so a fetch is safe to repeat while drafting.
+
+A catalog provider is answered from the installed catalog without a network request, even when its base URL points at a gateway. To see what a gateway actually serves under a catalog protocol, fetch through a custom provider with the same base URL, or enter the gateway's ids by hand.
 
 ::: tip The form is deliberately small
 The Models page exposes only what a route needs to exist: the API key, display name, base URL, API protocol, and for each model its id, display name, context window, and max output tokens. Every other field — reasoning effort levels, image input, request-compatibility switches, headers, timeouts, retry policy — is set in `$DSH_HOME/settings.yaml`, the same document the page writes. Open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need, and the [generated configuration reference](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) lists them all.
@@ -172,6 +178,7 @@ If a saved default names a provider that was deleted, the composer displays **Se
 - **`MISSING_CREDENTIAL`** — Store the provider key through the Models page or supply the referenced environment variable.
 - **`UNKNOWN_MODEL`** — Select a configured model or add the missing model to the custom provider.
 - **Fetching available models returns 401** — Check the key. Model discovery calls the OpenAI-compatible `GET /models` endpoint; enter models manually for endpoints that do not provide it.
+- **Fetching available models reports neither a `data` array nor a `models` object** — The endpoint's listing is in a format discovery does not read. Enter the models by hand.
 - **The gateway refuses every request although the key and URL are right** — Its request shape differs from OpenAI's. Start with `compat.supportsDeveloperRole: false` and `compat.maxTokensField: max_tokens` on the route.
 - **Only reasoning models fail** — pi-ai sends their system prompt as the `developer` role, which the gateway rejects. Set `compat.supportsDeveloperRole: false`.
 - **The Effort menu is empty for a model you entered by hand** — It declares no levels. Add `reasoningEfforts` to the model in `settings.yaml`.
