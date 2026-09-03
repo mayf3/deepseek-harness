@@ -12,7 +12,7 @@ Treating a failed read as permission to create also exposes a second boundary. B
 
 ## Decision
 
-`dsh-fs` owns an explicit observation union: `{ kind: 'present', version: FsVersion } | { kind: 'absent' }`. The `fs/observed` event carries that union. Successful reads and mutations emit present; a metadata miss from `read` emits absent synchronously before returning `FS_NOT_FOUND`. Other read failures do not manufacture absence.
+`dsh-fs` owns an explicit observation union: `{ kind: 'present', version: FsVersion } | { kind: 'absent' }`. The `fs/observed` event carries that union. Successful reads and mutations emit present; a metadata miss from `read` or the `str_replace_editor` `view`, `str_replace`, or `insert` command emits absent synchronously before returning `FS_NOT_FOUND`. Other read failures do not manufacture absence.
 
 `dsh-fs-observation-policy` stores three logical states per owner and target without injecting or calling `ctx.fs`: missing map entry is unseen, `absent` is confirmed absence, and `present(version)` is a replacement/edit basis. Write maps unseen and absent to the existing `createIfAbsent` intent and present to `replaceIfVersion`. Edit maps unseen to `FS_NOT_OBSERVED`, absent to `FS_NOT_FOUND`, and present to its version guard. A successful create or mutation replaces absence with its produced present version.
 

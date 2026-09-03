@@ -335,6 +335,7 @@ describe('the shipped Web composition', () => {
       ]))
       // And it keeps the standard agent's own tools rather than replacing them.
       expect(tools).toEqual(expect.arrayContaining(['bash', 'read', 'edit', 'skill']))
+      expect(tools).not.toContain('str_replace_editor')
       expect(ctx.commands.find(handle.agent, 'goal')).toBeDefined()
 
       // The preset's own authoring skill registers into ITS layer of the host
@@ -362,8 +363,10 @@ describe('the shipped Web composition', () => {
       // the capabilities — so the assembly is what carries the claim.
       const assembly = await ctx.systemPrompt.assemble({ scope: coded.agent })
       expect(assembly.tools.map(tool => tool.name)).toEqual(['run_code'])
+      expect(toolNames(ctx, coded.agent)).not.toContain('str_replace_editor')
       expect(ctx.commands.find(coded.agent, 'goal')).toBeDefined()
       const sdk = assembly.sections.find(section => section.name === 'tools:sdk')?.text ?? ''
+      expect(sdk).not.toContain('str_replace_editor')
       expect(sdk).toContain('web_search')
 
       // The presentation is this agent's alone: the deployment default is

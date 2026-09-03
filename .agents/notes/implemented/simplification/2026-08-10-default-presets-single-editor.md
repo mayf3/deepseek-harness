@@ -10,16 +10,16 @@ The `standard`, `code`, and `cordis` presets exposed both the `read`/`write`/`ed
 
 ## Decision
 
-The `standard`, `code`, and `cordis` preset configurations mount `dsh-tool-fs` and `dsh-tool-fs-search`, but do not mount the standalone editor. PTC mode therefore omits that editor schema from both its registry and generated SDK. The later [persistent-shell-only decision](2026-09-03-minimal-profiles-persistent-shell-only.md) removes the editor from the shipped `minimal` and `sdk-minimal` compositions. The [complete-removal decision](2026-09-03-remove-str-replace-editor.md) subsequently deletes the standalone package and its runtime support.
+The `standard`, `code`, and `cordis` preset configurations mount `dsh-tool-fs` and `dsh-tool-fs-search`, but do not mount `dsh-tool-str-replace-editor`. PTC mode therefore omits `str_replace_editor` from both its registry and generated SDK. The later [persistent-shell-only decision](2026-09-03-minimal-profiles-persistent-shell-only.md) removes the editor from the shipped `minimal` and `sdk-minimal` compositions. Deployments and user-authored presets may still mount the plugin explicitly.
 
-This decision originally narrowed only the preset roster. The later complete-removal decision owns the package and Python runtime deletion. The earlier [shared-roster decision](../feature/2026-07-31-even-out-shipped-tool-rosters.md) continues to own why surface-neutral tools live in preset composition; this note owns the earlier preset exception.
+This decision narrows the preset roster rather than removing the tool package or its Python runtime support. The earlier [shared-roster decision](../feature/2026-07-31-even-out-shipped-tool-rosters.md) continues to own why surface-neutral tools live in preset composition; this note owns the editor exception.
 
 ## Alternatives considered
 
 **Keep both editing interfaces in the general-purpose presets.** Rejected because the overlapping model-visible schemas increase tool choice without supplying a separate default operation.
 
-**Remove the editor package from the distribution.** Rejected at the time because explicit deployments were treated as valid consumers. The later complete-removal decision accepts that compatibility break for v41.
+**Remove the `str_replace_editor` package from the distribution.** Rejected because explicit deployments remain valid consumers of the standalone plugin.
 
 ## Consequences
 
-General-purpose agents use `read`, `write`, and `edit` for filesystem mutations, while minimal agents use their persistent shell. The complete-removal decision now guarantees the obsolete editor cannot be mounted from the distribution.
+General-purpose agents use `read`, `write`, and `edit` for filesystem mutations, while minimal agents use their persistent shell. Preset composition tests pin `str_replace_editor`'s absence from every shipped preset and the PTC mode SDK.

@@ -324,7 +324,10 @@ Standard and persistent providers sharing the same tool name are a special compa
 |---|---|
 | running `write` | intended added-only diff from `file_path` and `content` |
 | running `edit` | intended replacement diff from `file_path`, `old_string`, and `new_string` |
+| running `str_replace_editor create` | intended added-only diff from `path` and `file_text` |
+| running `str_replace_editor str_replace` | intended replacement diff from `path`, `old_str`, and `new_str` |
 | successful settled `write`/`edit` | applied contextual hunks from `meta.diffs` |
+| settled `str_replace_editor` | Generic, because the tool defines no result presenter |
 | write create or missing/malformed/empty applied metadata | current argument fallback |
 | error, malformed arguments, edit with malformed metadata, or Code Dispatch child | Generic |
 
@@ -372,6 +375,8 @@ The Deliverables Definition observes root `tool/call` and successful `tool/resul
 |---|---|---|
 | `write` | any successful call | `file_path` |
 | `edit` | any successful call | `file_path` |
+| `str_replace_editor` | `create`, `str_replace`, or `insert` | `path` |
+| `str_replace_editor` | `view` | produces no path |
 | Other | no current first-party mutation semantics | produces no path |
 
 Failures, interruptions, orphan results, missing paths, and malformed arguments produce no deliverable. Paths retain first-seen deduplication, and results settled after the closing Assistant seq remain excluded.
@@ -527,6 +532,8 @@ This change does not promise to preserve differences expressed only through a Ho
 ### Deliverables
 
 - Successful write/edit calls produce `file_path`.
+- str_replace_editor create/str_replace/insert calls produce `path`.
+- str_replace_editor view produces no path.
 - failure, interruption, malformed input, and orphan results produce no path.
 - First-seen deduplication and the closing-seq cutoff remain unchanged.
 
