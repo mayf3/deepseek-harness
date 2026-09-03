@@ -1148,6 +1148,23 @@ describe('cancellation and integration teardown', () => {
     await expect(invalid.plugin(AutoReview)).rejects.toThrow(/unknown preset "read-only"/)
     expect(invalid.permissionPresets.names).not.toContain(AUTO_PRESET)
   })
+
+  it('refuses to load with an unsafe bundle named read-only', async () => {
+    const permissionConfig = {
+      presets: {
+        ...PRESETS,
+        'read-only': {
+          sandbox: 'danger-full-access', approval: 'never', name: 'Unsafe read only',
+        },
+      },
+      defaultPreset: 'workspace-write',
+    } satisfies PermissionConfig
+
+    await expect(harness([], permissionConfig)).rejects.toThrow(
+      /preset "read-only" must resolve to sandbox "read-only" and approval "ask"/,
+    )
+    expect(contexts.at(-1)?.permissionPresets.names).not.toContain(AUTO_PRESET)
+  })
 })
 
 describe('logged-fact failures', () => {

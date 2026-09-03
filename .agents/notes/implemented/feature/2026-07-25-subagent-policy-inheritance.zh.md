@@ -6,13 +6,13 @@ Status: implemented
 
 ## 问题
 
-沙箱与审批覆盖项都是按会话的日志折叠。进程内 subagent 会获得一个新会话，因此 spawn 子 agent（智能体）过去会回退到部署默认值，fork 子 agent 则只能看到其已完成轮次前缀中的切换。因此，委派可能放宽已经切换到 `read-only` 的父级。
+Auto 预设身份以及沙箱与审批覆盖项都是按会话的日志折叠。进程内 subagent 会获得一个新会话，因此 spawn 子 agent（智能体）过去会回退到部署默认值，fork 子 agent 则只能看到其已完成轮次前缀中的切换。因此，委派可能放宽已经切换到 `read-only` 的父级，或静默丢失父级的 Auto 身份。
 
 ## 决策
 
-委派边界在第一次 await 之前，经由共享的子 agent 辅助函数（`dsh-subagent` 中的 `captureDelegatedPolicyOverrides`／`appendDelegatedPolicyOverrides`）对 `sandboxPolicy.overrideOf(parent.session)` 获取快照；一次性驱动器与[可继续启动](2026-08-10-continuable-subagent-policy-inheritance.zh.md)都会调用这些辅助函数。父级后续的切换属于父级的未来；取消后重新委派会取得新快照。沙箱策略服务为可选，仅复制显式会话覆盖项，绝不复制部署默认值或一次性授权。审批策略不继承：同一次捕获会把每个子 agent 钉定为 `'never'`——[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)取代了本 note 原先的审批覆盖项继承。
+委派边界会在第一次 await 之前调用共享的子 agent 辅助函数（`dsh-subagent` 中的 `captureDelegatedPolicyOverrides`／`appendDelegatedPolicyOverrides`）；一次性驱动器与[可继续启动](2026-08-10-continuable-subagent-policy-inheritance.zh.md)都会使用它们。捕获会在 `permissionPresets.current(parent.session)` 为 Auto 时复制 `permission/preset:auto`，对 `sandboxPolicy.overrideOf(parent.session)` 获取快照，并把子 agent 的审批策略钉定为 `'never'`。父级后续的切换属于父级的未来；取消后重新委派会取得新快照。权限预设与沙箱策略服务都是可选的：只复制 Auto 身份与显式沙箱会话覆盖项，绝不复制部署默认值或一次性授权。审批策略不继承——[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)取代了本 note 原先的审批覆盖项继承。
 
-每个捕获值都会成为子 agent 工厂在未发布设置阶段追加的一条带来源标记的 `sandbox/mode` 或 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，并在子 agent 公布时进入遥测，却不改变其谱系 cut。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
+继承的 Auto 身份会成为一条 `permission/preset` 事件，捕获的沙箱与审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，并在子 agent 公布时进入遥测，却不改变其谱系 cut。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
 
 普通的会话追加会在发布前校验继承事件，持久化层则在会话公布时捕获完整的未发布日志。因此，任何已物化的子 agent 日志都会在首批数据中存下继承事件；不存在第二套策略存储、schema 字段或查询索引。`source: 'delegation'` 标记让审批叙述能够区分继承与子 agent 侧的用户切换。
 
@@ -31,6 +31,6 @@ Status: implemented
 
 ## 后果
 
-- spawn、fork 和嵌套的进程内子 agent 会保留父级显式的沙箱覆盖项，并被钉定为 `'never'` 审批。聚焦测试套件证明真实文件系统拒绝、陈旧 fork 优先级、委派时捕获、实时事件边界、默认值省略与上下文释放。
+- spawn、fork 和嵌套的进程内子 agent 会在父级选中 Auto 时保留其身份，保留父级显式的沙箱覆盖项，并被钉定为 `'never'` 审批。聚焦测试套件证明 Auto 身份、真实文件系统拒绝、陈旧 fork 优先级、委派时捕获、实时事件边界、默认值省略与上下文释放。
 - 无密钥 headless 快照是组装后应用层面的回归测试：只有父级是 `read-only`，部署默认值是 `workspace-write`；若移除捕获，子 agent 的持久化事件与被拒的磁盘写入这两项检查都会失败。
-- 每次委派最多增加两条仅日志事件。两个策略服务的可选 peer 类型由 `dsh-subagent` 拥有——其共享辅助函数持有 `ctx.get` 消费；未组合任一服务的组合保持原有行为。进程外子 agent 仍采用自身的部署策略，正在运行的子 agent 不跟随父级后续切换。
+- 每次委派最多增加三条仅日志事件。权限预设、沙箱策略与审批这三项服务的可选 peer 类型由 `dsh-subagent` 拥有——其共享辅助函数持有 `ctx.get` 消费；未组合这些服务的组合保持原有行为。进程外子 agent 仍采用自身的部署策略，正在运行的子 agent 不跟随父级后续切换。

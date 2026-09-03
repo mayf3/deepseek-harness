@@ -22,7 +22,7 @@ shipped Web 组合是唯一受支持的宿主。Headless 保留既有 Workspace 
 
 ## 审查请求与决定
 
-Auto 插件以前置方式注册一个 `tools/pre-execute` 监听器，并为每次原生调用与每次实际开始的 PTC inner call 最多尝试一次直接 reviewer 请求。必需的日志事实无法形成完整请求时，它会在联系提供方前拒绝调用。它会委派外层 `run_code` 传输，因为程序文本不能代替其 inner call 的实际效果。重复调用会独立接受审查；不存在缓存、grant、批量决定或重试层。
+Auto 插件以前置方式注册一个 `tools/pre-execute` 监听器，并为每次原生调用与每次实际开始的 PTC inner call 最多尝试一次直接 reviewer 请求。必需的日志事实无法形成完整请求时，它会在联系提供方前拒绝调用。它会委派外层 `run_code` 传输，只审查 inner dispatch。在 shipped worker-thread 后端中，程序文本本身能以与 bash 相当的宿主权限访问 Node API，因此不经过工具 binding 的文件系统、进程、网络或其他 Node 直接效果不会被审查；这是明确记录的覆盖限制，而不是隔离保证。重复调用会独立接受审查；不存在缓存、grant、批量决定或重试层。
 
 reviewer 使用最新记录在 `request/header` 中的提供方与模型。其不可变请求包含五个分区：固定 `REVIEW_POLICY`；只含 Session `cwd` 的 `ENVIRONMENT`；当前 `PROJECT_INSTRUCTIONS`；`FILTERED_HISTORY`；以及精确的 `PENDING_ACTION`。生成的 LLM 请求不携带主 Session 的 `sessionId`，项目指令与历史条目也不携带事件 `seq` 坐标。原生动作使用匹配的已记录 `tool/call` 与最新已记录工具 schema。PTC 动作使用匹配的 `tool/code-dispatch-start`；该事件会在策略前快照 inner tool 的名称、描述、参数 schema 与规范化参数。事实缺失、含糊或不一致时会拒绝调用，而不会查询 live 注册表。
 
@@ -34,7 +34,7 @@ Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工�
 
 调用方取消沿用普通 Tool 的结算优先级：late allow 后观察到的取消会转为规范的 dispatch 前取消，而已经结算的拒绝或技术失败仍保持 Auto 拒绝。被拒绝的 PTC inner call 保留既有 `ToolCallError` 与程序 `catch` 行为，因此被处理的拒绝不会转成外层 `run_code` 失败。允许决定不产生事件、原因或持久 grant。
 
-发布与资源释放均以拒绝方式关闭。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入该 Session 时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 会先关闭新的 Auto 选择与审查准入，并在改变任何预设前捕获正在退出 Auto 的精确 Session 对象身份。监听器会先检查该退役集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放执行。integration 随后通过普通预设写入器把这些会话切换到 Read Only，中止并等待在途审查，最后才移除监听器与 Auto 注册。若有 Session 无法迁移，integration 仍会中止并排空审查，但会保留两项已关闭的注册，使新的 Auto 选择失败，并让退役会话的调用被拒绝，而不是留下未经审查的执行窗口。
+发布与资源释放均以拒绝方式关闭。在发布任一注册前，integration 要求配置的 `read-only` 预设精确解析为沙箱 `read-only` 加审批策略 `ask`。存储的 Auto 会话只有在 Auto 注册为 live 状态并准入该 Session 时才能发布；服务不会把它改写为 Full access。资源释放期间，integration 会先关闭新的 Auto 选择与审查准入，并在改变任何预设前捕获正在退出 Auto 的精确 Session 对象身份。监听器会先检查该退役集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放执行。integration 随后通过普通预设写入器把这些会话切换到 Read Only，中止并等待在途审查，最后才移除监听器与 Auto 注册。若有 Session 无法迁移，integration 仍会中止并排空审查，但会保留两项已关闭的注册，使新的 Auto 选择失败，并让退役会话的调用被拒绝，而不是留下未经审查的执行窗口。
 
 ## 验证
 
@@ -48,7 +48,7 @@ Auto 拒绝会向主 agent 提供固定消息，其中会指明被拒绝的工�
 
 **审查完整 transcript 或 live 进程状态。** 未采用，因为 assistant 推理、工具结果、Git 状态、环境值与可变注册表可能提供无关或可伪造的授权，并使回放与执行不一致。已记录的五分区请求为每项接受的事实保留单一来源，并在无法重建时以拒绝方式关闭。
 
-**只审查外层 `run_code` 调用。** 未采用，因为程序文本不能标识精确的 inner tool、schema、参数或实际开始的调度调用。逐项审查 inner dispatch 可以保留普通 PTC catch 与结算语义，同时授权真实效果。
+**只审查外层 `run_code` 调用。** 未采用，因为程序文本不能标识精确的 inner tool、schema、参数或实际开始的调度调用。逐项审查 inner dispatch 可以为经工具产生的效果保留普通 PTC catch 与结算语义；它不会审查 worker-thread 程序文本直接产生的 Node 效果。
 
 **增加缓存 grant、重试、策略配置、审计事件或人工 fallback。** 第一个版本不采用，因为每项机制都会在单次二元调用决定之外增加持久授权、恢复或优先级规则。重复动作会重新接受审查，提供方或协议失败则会被拒绝。
 

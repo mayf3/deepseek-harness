@@ -70,7 +70,7 @@ DSH_AUTO_REVIEW_CERTIFICATION=1 pnpm exec vitest run --config vitest.e2e.config.
 
 Auto 拒绝使用固定模型可见消息，其中会指明被拒绝的工具并说明其主体未执行。其 `AutoReviewDeniedError`／`AUTO_REVIEW_DENIED` 身份与可选 raw reason 通过普通原生或 PTC 结构化错误字段传播。Web 树会在 keyed Tool 视图分派前识别该身份并渲染通用拒绝卡，因此专用或外部 Tool 视图都不能遮住拒绝结论。展示层只在渲染工具卡时归一化原因。
 
-发布与资源释放都以拒绝方式关闭。持久 Auto 会话在 live Auto 注册缺失时不能发布。资源释放在修改任何预设前，会先捕获所有正在退出 Auto 的精确 Session 对象身份。监听器会先检查该集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放 Tool 执行。插件随后关闭新准入，通过普通预设写入器把这些已捕获会话切换到 Read Only，再中止并等待在途审查。如果全部迁移成功，资源释放会移除监听器与 Auto 注册；如果任一迁移失败，Cordis 会报告清理错误并让两者保留在已关闭状态，使退役会话的后续调用继续被拒绝、新的 Auto 选择继续失败。
+发布与资源释放都以拒绝方式关闭。发布前，integration 要求配置的 `read-only` 预设精确解析为沙箱 `read-only` 加审批策略 `ask`；同名但映射到其他组合的条目会被拒绝。持久 Auto 会话在 live Auto 注册缺失时不能发布。资源释放在修改任何预设前，会先捕获所有正在退出 Auto 的精确 Session 对象身份。监听器会先检查该集合，再派生当前权限状态，因此即使部分迁移已经追加 `permission/preset` 或 `sandbox/mode`，也不能重新开放 Tool 执行。插件随后关闭新准入，通过普通预设写入器把这些已捕获会话切换到 Read Only，再中止并等待在途审查。如果全部迁移成功，资源释放会移除监听器与 Auto 注册；如果任一迁移失败，Cordis 会报告清理错误并让两者保留在已关闭状态，使退役会话的后续调用继续被拒绝、新的 Auto 选择继续失败。
 
 ### 源码地图
 
@@ -118,6 +118,7 @@ Auto 中的每次原生调用与每次已经开始的 PTC inner call 都会进�
 以下限制界定实验性 Auto 预设及其受支持部署。
 
 - **审查是概率判断，不是隔离**——获准调用以完整宿主访问权限执行，因此 reviewer 可能不安全地放行，也可能产生不必要的拒绝。
+- **worker-thread 程序的直接效果不会被审查**——Auto 会委派外层 `run_code` 传输，只审查其 PTC inner call。shipped worker-thread 后端允许程序文本以与 bash 相当的宿主权限访问 Node API，因此直接产生的文件系统、进程、网络或其他 Node 效果都发生在 Auto review 之外。
 - **支持范围限于 shipped Web 当前会话**——Headless、General Settings、未来会话默认值、任意宿主组合与 out-of-process child 都不暴露 Auto。
 - **reviewer 只接收已记录的授权事实**——它不检查 Git 状态、环境变量、assistant 推理、工具结果或 live Tool 注册表；缺失必需事实时会拒绝调用。
 - **没有策略定制或 fallback**——v1 只有一份固定策略，没有缓存、grant、独立重试层、审计事件或人工 fallback。

@@ -496,7 +496,10 @@ export function apply(ctx: Context): void {
   // Failed disposal keeps the closed listener installed after this plugin
   // context deactivates, so retain the dependency instance for that cancellation path.
   const permissionPresets = ctx.permissionPresets
-  permissionPresets.resolve('read-only')
+  const readOnly = permissionPresets.resolve('read-only')
+  if (readOnly.sandbox !== 'read-only' || readOnly.approval !== 'ask') {
+    throw new Error('auto-review: preset "read-only" must resolve to sandbox "read-only" and approval "ask"')
+  }
   let accepting = true
   const active = new Set<ActiveReview>()
   const retiring = new Set<Agent['session']>()
