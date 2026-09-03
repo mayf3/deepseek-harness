@@ -1,11 +1,11 @@
 /**
  * GoalBar: the goal indicator docked above the message composer (input dock
  * strip). A present goal shows a goal glyph, a phase label, the truncated
- * objective, and icon actions — resume when paused, edit (inline form in the
- * same strip), and clear. Goal creation lives on the `/goal` command, not
- * here: loading (undefined), no goal (null), and complete goals render
- * nothing. Live state arrives as the projected whole snapshot; the verbs are
- * the injected face.
+ * objective, and icon actions — resume when active-disarmed or paused, edit
+ * (inline form in the same strip), and clear. Goal creation lives on the
+ * `/goal` command, not here: loading (undefined), no goal (null), and complete
+ * goals render nothing. Durable state arrives as the projected whole snapshot;
+ * process-local activation arrives through the injected live read and event.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
