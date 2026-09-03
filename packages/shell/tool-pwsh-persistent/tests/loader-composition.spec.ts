@@ -99,7 +99,10 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
       // PSReadLine + Defender) inside the tool deadline; a 60s bound on the
       // fully loaded self-hosted Windows pool is exceeded often enough to
       // reset the session mid-test (2026-09-01, two runs ~62s each). 300s
-      // matches the product default so cold start no longer races the budget.
+      // matches the dsh-tool-pwsh-persistent product default; the
+      // dsh-terminal-bash value bounds one send plus the complete startup
+      // sequence, so it covers the same cold start (its 30s product default
+      // would not).
       '    timeoutMs: 300000',
       '    disposeGraceMs: 500',
       "- name: '@deepseek-ai/dsh-tool-pwsh-persistent'",
@@ -171,5 +174,5 @@ describe.skipIf(!hasPwsh)('persistent pwsh through a real cordis.yml Loader comp
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next pwsh call starts from the workspace')
     expect(text(await execute('after-exit', 'Write-Output "$PWD"'))).toBe(root)
-  }, 300_000)
+  }, 120_000)
 })
