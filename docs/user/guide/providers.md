@@ -12,9 +12,9 @@ Open **Settings → Models**. The DeepSeek card exposes one API-key field; enter
 
 Keys are write-only. The page receives a redacted descriptor after saving, never the literal secret. The key is stored in `$DSH_HOME/.credentials.yaml`, while settings retain only its credential reference.
 
-## Add a catalog provider
+## Add a built-in provider
 
-Choose **Add provider**, select a provider such as Anthropic or OpenAI, enter its API key, and save. The installed catalog supplies the endpoint, protocol, and model list.
+Choose **Add provider** and pick a provider dsh ships with, such as Anthropic, OpenAI, Moonshot Kimi, or Zhipu GLM; enter its API key and save. The installed catalog supplies the endpoint, protocol, and model list.
 
 Providers with native authentication need their native credentials instead. Bedrock, Vertex, Azure, and Codex use AWS credentials and a region, an ADC project, an `api-version`, and OAuth respectively; filling only the API-key field does not configure them.
 
@@ -32,7 +32,7 @@ Under **Model catalog**, choose **Fetch available models** to ask the endpoint w
 
 The reply opens a searchable picker rather than writing anything. Search matches ids and display names, **Select all** adds the visible results, **Deselect all** clears every selection including hidden ones, and **Add selected** copies the chosen candidates into the model list. The provider is not stored until you save or create it, so a fetch is safe to repeat while drafting.
 
-A catalog provider is answered from the installed catalog without a network request, even when its base URL points at a gateway. To see what a gateway actually serves under a catalog protocol, fetch through a custom provider with the same base URL, or enter the gateway's ids by hand.
+A built-in provider is answered from the installed catalog without a network request, even when its base URL points at a gateway. To see what a gateway actually serves under a built-in provider's protocol, fetch through a custom provider with the same base URL, or enter the gateway's ids by hand.
 
 ::: tip The form is deliberately small
 The Models page exposes only what a route needs to exist: the API key, display name, base URL, API protocol, and for each model its id, display name, context window, and max output tokens. Every other field — reasoning effort levels, image input, request-compatibility switches, headers, timeouts, retry policy — is set in `$DSH_HOME/settings.yaml`, the same document the page writes. Open it with **Open configuration file** in the Settings header; the adapters re-read it on the next request, so nothing needs a restart. The subsections below cover the fields most gateways need, and the [generated configuration reference](../../config-catalog.md#deepseek-aidsh-llm-pi-ai) lists them all.
@@ -74,7 +74,7 @@ llm-pi-ai:
         - id: second-model
 ```
 
-`defaultInput` is a fallback, not an override, and defaults to `[text]`: on a catalog provider it answers only for models the catalog does not describe, so it never removes images from a catalog model that has them. Narrow one of those with that model's own `input`. A catalog provider has no `models` list to put it in, so write it under `modelOverrides`, keyed by model id:
+`defaultInput` is a fallback, not an override, and defaults to `[text]`: on a built-in provider it answers only for models its catalog does not describe, so it never removes images from a catalog model that has them. Narrow one of those with that model's own `input`. A built-in provider has no `models` list to put it in, so write it under `modelOverrides`, keyed by model id:
 
 ```yaml
 llm-pi-ai:
@@ -91,7 +91,7 @@ Both fields state a claim about your endpoint rather than checking it. A model t
 
 ### Reasoning effort
 
-The model picker offers an **Effort** menu for a model that declares reasoning levels. A catalog model inherits its levels from the installed catalog. A model you enter by hand declares none, so the menu is empty and the endpoint's own default decides whether the model thinks. Declare the levels with `reasoningEfforts` in `$DSH_HOME/settings.yaml`:
+The model picker offers an **Effort** menu for a model that declares reasoning levels. A built-in provider's models inherit their levels from the installed catalog. A model you enter by hand declares none, so the menu is empty and the endpoint's own default decides whether the model thinks. Declare the levels with `reasoningEfforts` in `$DSH_HOME/settings.yaml`:
 
 ```yaml
 llm-pi-ai:
@@ -124,7 +124,7 @@ Each key is a level the menu offers, and its value is the spelling sent on the w
             max: max
 ```
 
-A catalog model whose gateway does not reason loses its levels with `reasoningEfforts: false` under `modelOverrides`; selecting an effort for it is then refused as `UNSUPPORTED_REASONING_EFFORT`. DeepSeek's own route needs none of this: its models already offer `off`, `low`, `high`, and `max`, and `llm-deepseek.reasoningEffort` sets the default the picker starts from:
+A built-in provider's model whose gateway does not reason loses its levels with `reasoningEfforts: false` under `modelOverrides`; selecting an effort for it is then refused as `UNSUPPORTED_REASONING_EFFORT`. DeepSeek's own route needs none of this: its models already offer `off`, `low`, `high`, and `max`, and `llm-deepseek.reasoningEffort` sets the default the picker starts from:
 
 ```yaml
 llm-deepseek:

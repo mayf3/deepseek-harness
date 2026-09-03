@@ -12,9 +12,9 @@
 
 密钥是只写的。保存后，页面只会收到脱敏描述符，永远不会收到明文密钥。密钥存储在 `$DSH_HOME/.credentials.yaml` 中，settings 只保留它的凭据引用。
 
-## 添加目录提供方
+## 添加内置提供方
 
-选择**添加提供方**，选取 Anthropic 或 OpenAI 等提供方，输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
+选择**添加提供方**，选取 dsh 自带的提供方，例如 Anthropic、OpenAI、Moonshot Kimi 或智谱 GLM；输入其 API 密钥并保存。已安装目录会提供端点、协议和模型列表。
 
 使用原生认证的提供方需要各自的原生凭据。Bedrock、Vertex、Azure 和 Codex 分别使用 AWS 凭据与区域、ADC 项目、`api-version` 和 OAuth；只填写 API 密钥字段无法完成配置。
 
@@ -32,7 +32,7 @@ Provider ID 是永久的，因为请求、已保存会话、模型默认值和�
 
 响应会打开一个可搜索的选择框，而不是直接写入任何内容。搜索同时匹配 ID 和显示名称，**全选**只加入可见结果，**取消全选**清空包括隐藏项在内的全部勾选，**添加所选**把选中的候选复制进模型列表。保存或创建之前提供方不会被存储，因此起草时可以放心重复探测。
 
-目录提供方一律由已安装目录作答，不发起网络请求，即使其 API 地址指向网关也是如此。要查看网关在目录协议下实际提供的模型，请用同一 API 地址通过自定义提供方探测，或手动录入网关的模型 ID。
+内置提供方一律由已安装目录作答，不发起网络请求，即使其 API 地址指向网关也是如此。要查看网关在内置提供方的协议下实际提供的模型，请用同一 API 地址通过自定义提供方探测，或手动录入网关的模型 ID。
 
 ::: tip 表单刻意保持精简
 模型页只开放让一条路由得以存在的字段：API 密钥、显示名称、API 地址、API 协议，以及每个模型的 ID、显示名称、上下文窗口和最大输出 token 数。其余所有字段——推理等级、图片输入、请求兼容性开关、请求头、超时、重试策略——都在 `$DSH_HOME/settings.yaml` 中设置，也就是模型页写入的同一份文档。点击设置页顶部的**打开配置文件**即可打开它；适配器会在下一次请求时重新读取，无需重启任何东西。下面各小节介绍多数网关会用到的字段，[生成的配置参考](../../config-catalog.zh.md#deepseek-aidsh-llm-pi-ai)则列出全部字段。
@@ -74,7 +74,7 @@ llm-pi-ai:
         - id: second-model
 ```
 
-`defaultInput` 是回退值而不是覆盖值，默认为 `[text]`：在目录提供方上，它只为目录未描述的模型作答，因此绝不会把目录中本就具备图片能力的模型的该能力去掉。要收窄这类模型，请用它自己的 `input`。目录提供方没有可供填写的 `models` 列表，因此写在 `modelOverrides` 下，以模型 id 为键：
+`defaultInput` 是回退值而不是覆盖值，默认为 `[text]`：在内置提供方上，它只为其目录未描述的模型作答，因此绝不会把目录中本就具备图片能力的模型的该能力去掉。要收窄这类模型，请用它自己的 `input`。内置提供方没有可供填写的 `models` 列表，因此写在 `modelOverrides` 下，以模型 id 为键：
 
 ```yaml
 llm-pi-ai:
@@ -91,7 +91,7 @@ llm-pi-ai:
 
 ### 推理等级
 
-对于声明了推理等级的模型，模型选择器会提供**推理等级**菜单。目录模型从已安装目录继承其等级。手动录入的模型不声明任何等级，因此菜单为空，由端点自身的默认值决定模型是否思考。请在 `$DSH_HOME/settings.yaml` 中用 `reasoningEfforts` 声明等级：
+对于声明了推理等级的模型，模型选择器会提供**推理等级**菜单。内置提供方的模型从已安装目录继承其等级。手动录入的模型不声明任何等级，因此菜单为空，由端点自身的默认值决定模型是否思考。请在 `$DSH_HOME/settings.yaml` 中用 `reasoningEfforts` 声明等级：
 
 ```yaml
 llm-pi-ai:
@@ -124,7 +124,7 @@ llm-pi-ai:
             max: max
 ```
 
-网关并不提供推理能力的目录模型，可在 `modelOverrides` 下用 `reasoningEfforts: false` 去掉其等级；之后再为它选择等级会被拒绝并报 `UNSUPPORTED_REASONING_EFFORT`。DeepSeek 自身的路由不需要以上任何配置：其模型已经提供 `off`、`low`、`high` 和 `max`，`llm-deepseek.reasoningEffort` 设置选择器的起始默认值：
+网关并不提供推理能力的内置提供方模型，可在 `modelOverrides` 下用 `reasoningEfforts: false` 去掉其等级；之后再为它选择等级会被拒绝并报 `UNSUPPORTED_REASONING_EFFORT`。DeepSeek 自身的路由不需要以上任何配置：其模型已经提供 `off`、`low`、`high` 和 `max`，`llm-deepseek.reasoningEffort` 设置选择器的起始默认值：
 
 ```yaml
 llm-deepseek:
