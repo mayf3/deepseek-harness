@@ -1,12 +1,15 @@
 /** Durable attachment storage seam (`ctx.attachments`). @module @deepseek-ai/dsh-attachment */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import { admitEncodedImages } from './admission.ts'
 import { AttachmentError } from './error.ts'
 import type {
+  AdmittedPromptContentPart,
   FileAttachmentRef,
   ImageAttachmentLimits,
   ImageAttachmentRef,
   ImageRequestPolicy,
+  PromptContentPart,
   RequestImageAttachment,
   SaveFileAttachment,
   SaveFileStreamAttachment,
@@ -17,7 +20,7 @@ import type {
 export { AttachmentId, ImageVariantId } from './brand.ts'
 export { AttachmentError, isAttachmentError, isImageAdmissionError } from './error.ts'
 export type { AttachmentErrorCode, ImageAdmissionErrorCode } from './error.ts'
-export { admitEncodedFile, admitEncodedImages, admitPromptContent } from './admission.ts'
+export { admitEncodedFile, admitEncodedImages } from './admission.ts'
 export { requestImageDimensions } from './request-projection.ts'
 export type {
   AttachmentId as AttachmentIdType,
@@ -96,6 +99,26 @@ export abstract class AttachmentStore extends Service {
     const refs: ImageAttachmentRef[] = []
     for (const input of inputs) refs.push(await this.saveImage(input))
     return refs
+  }
+
+  /**
+   * Admit one browser prompt and replace each uploaded image with its durable reference.
+   * Text-only prompts do not access attachment storage.
+   * @param content - browser prompt parts in message order.
+   * @returns admitted prompt parts in the same order as `content`.
+   * @throws AttachmentError when the image batch is refused.
+   */
+  async admitPromptContent(
+    content: readonly PromptContentPart[],
+  ): Promise<AdmittedPromptContentPart[]> {
+    if (content.every(part => part.type === 'text')) {
+      return content.map(part => ({ type: 'text', text: part.text }))
+    }
+    const refs = await admitEncodedImages(this, content.filter(part => part.type === 'image'))
+    let next = 0
+    return content.map(part => part.type === 'text'
+      ? { type: 'text', text: part.text }
+      : { type: 'image', attachment: refs[next++] as ImageAttachmentRef })
   }
 
   /**

@@ -94,7 +94,7 @@ export interface EncodedImageAttachment {
 /**
  * Browser-submitted prompt content accepted by Host prompt endpoints; the
  * accepting Host promotes image parts to durable references through
- * `admitPromptContent` before any message is created, so a wire caller can
+ * `ctx.attachments.admitPromptContent()` before any message is created, so a wire caller can
  * never cite an attachment it did not upload.
  */
 export type PromptContentPart =

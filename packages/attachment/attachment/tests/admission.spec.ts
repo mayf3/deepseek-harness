@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
-import { admitEncodedFile, admitEncodedImages, admitPromptContent } from '@deepseek-ai/dsh-attachment'
+import AttachmentStore, { admitEncodedFile, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, SaveImageAttachment } from '@deepseek-ai/dsh-attachment/types'
 
 const PNG = 'AAAA' // canonical base64, 3 bytes
 
 /** Delegation double: records the exact saveImages batch and answers ordered refs. */
 function storeOf() {
-  const store = {
+  const mocks = {
     saveImages: vi.fn((inputs: readonly SaveImageAttachment[]) => Promise.resolve(inputs.map((input, index): ImageAttachmentRef => ({
       attachmentId: `att-${index + 1}` as ImageAttachmentRef['attachmentId'],
       mediaType: input.mediaType,
@@ -17,7 +16,8 @@ function storeOf() {
       ...input.name === undefined ? {} : { name: input.name },
     })))),
   }
-  return { store: store as unknown as AttachmentStore, mocks: store }
+  const store = Object.setPrototypeOf(mocks, AttachmentStore.prototype) as AttachmentStore
+  return { store, mocks }
 }
 
 describe('admitEncodedImages', () => {
@@ -103,17 +103,19 @@ describe('admitEncodedFile', () => {
   })
 })
 
-describe('admitPromptContent', () => {
+describe('AttachmentStore.admitPromptContent', () => {
   it('converts text-only prompts without touching the attachment store', async () => {
-    const store = { saveImages: () => { throw new Error('text-only prompts must not reach the store') } }
-    await expect(admitPromptContent(store as unknown as AttachmentStore, [
+    const store = Object.setPrototypeOf({
+      saveImages: () => { throw new Error('text-only prompts must not reach the store') },
+    }, AttachmentStore.prototype) as AttachmentStore
+    await expect(store.admitPromptContent([
       { type: 'text', text: 'hello' },
     ])).resolves.toEqual([{ type: 'text', text: 'hello' }])
   })
 
   it('replaces image parts with admitted references in part order', async () => {
     const { store } = storeOf()
-    await expect(admitPromptContent(store, [
+    await expect(store.admitPromptContent([
       { type: 'image', mediaType: 'image/png', data: 'AQ==' },
       { type: 'text', text: 'between' },
       { type: 'image', mediaType: 'image/png', data: 'Ag==' },

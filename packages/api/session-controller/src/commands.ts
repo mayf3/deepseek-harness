@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
-import { AttachmentError, admitPromptContent } from '@deepseek-ai/dsh-attachment'
+import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { FileAttachmentRef, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
@@ -543,8 +543,7 @@ async function durablePromptContent(
     files.set(part.receiptId, file)
   }
   type NonFilePart = Exclude<SessionPromptRequest['content'][number], { readonly type: 'file' }>
-  const admitted = await admitPromptContent(
-    ctx.attachments,
+  const admitted = await ctx.attachments.admitPromptContent(
     content.filter((part): part is NonFilePart => part.type !== 'file'),
   )
   let next = 0

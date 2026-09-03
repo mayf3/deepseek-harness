@@ -1,7 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { Inbox } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import AttachmentStore, { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type {
   FileAttachmentRef, ImageAttachmentRef, SaveFileAttachment, SaveFileStreamAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -68,7 +68,10 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
   })
   const saveImages = vi.fn((): Promise<readonly ImageAttachmentRef[]> =>
     Promise.reject(new Error('fixture did not expect image persistence')))
-  ctx.provide('attachments', { saveFile, saveFileStream, saveImages } as never)
+  ctx.provide('attachments', Object.setPrototypeOf(
+    { saveFile, saveFileStream, saveImages },
+    AttachmentStore.prototype,
+  ) as never)
   let uploadRoute: ((request: Request) => Promise<Response>) | undefined
   ctx.provide('connection', {
     fetch: {
