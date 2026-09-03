@@ -1,34 +1,36 @@
 /**
- * Job Controller client half: installs `ctx.jobOutput` over the generated
- * `job` Remote namespace. The plugin resolves both Remote faces it drives
- * while its own context is current, because observation (re)opens run on
- * caller stacks — a React event, a carrier retry — whose dynamic context has
- * not declared `remote.job`.
+ * Job Controller client half: installs `ctx.jobs` over the generated `job`
+ * Remote namespace. The plugin resolves both Remote faces it drives while its
+ * own context is current, because stream (re)opens run on caller stacks — a
+ * React event, a carrier retry — whose dynamic context has not declared
+ * `remote.job`.
  * @module @deepseek-ai/dsh-api-job-controller/client
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { ClientJobOutputModel } from './model.ts'
-import { ClientJobOutput } from './service.ts'
-import type { JobObserveRemote } from './service.ts'
+import { ClientJobsModel } from './model.ts'
+import { ClientJobs } from './service.ts'
+import type { JobsRemote } from './service.ts'
 
-export { ClientJobOutputModel } from './model.ts'
-export type { JobOutputSnapshot, JobOutputSource, ObservedJob } from './model.ts'
-export { ClientJobOutput } from './service.ts'
-export type { IJobOutput, JobObserveRemote, JobRemote } from './service.ts'
-export type { JobObserveFrame, JobObserveRequest, JobObserveStatus, JobWireChunk } from '../types.ts'
+export { ClientJobsModel } from './model.ts'
+export type { JobsSnapshot, JobsSource, ObservedJob } from './model.ts'
+export { ClientJobs } from './service.ts'
+export type { IJobs, JobRemote, JobsRemote } from './service.ts'
+export type {
+  JobChunk, JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest, JobView,
+} from '../types.ts'
 
 /** Required Client Remote services. */
 export const inject = ['remote', 'remote.job']
 
 /**
- * Install the client job-output service.
+ * Install the client jobs service.
  * @param ctx - Client root Context.
  */
 export function apply(ctx: Context): void {
-  const remotes = ctx.remote as unknown as JobObserveRemote
-  new ClientJobOutput(ctx, {
+  const remotes = ctx.remote as unknown as JobsRemote
+  new ClientJobs(ctx, {
     $stream: options => remotes.$stream(options),
     job: remotes.job,
-  }, new ClientJobOutputModel())
+  }, new ClientJobsModel())
 }

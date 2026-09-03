@@ -1,18 +1,18 @@
 /**
- * Host job Remote owner: streams one background job's observation record to
- * browsers over the generated `job` namespace. The roster itself rides the
- * session control stream (`jobsBySession`, owned by `dsh-api-session-controller`);
- * this controller carries only the non-consuming record output.
+ * Host job Remote owner: streams the background-job roster one session can
+ * see and one job's retained output to browsers over the generated `job`
+ * namespace. Both streams are projections of `ctx.jobs`; the model's
+ * consuming cursor and notice state never observe them.
  * @module @deepseek-ai/dsh-api-job-controller
  */
 
 import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import type {} from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-jobs'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import { observeJobRecord } from './observe.ts'
-import type { JobObserveFrame, JobObserveRequest } from './types.ts'
+import { observeJobOutput } from './observe.ts'
+import { streamJobRows } from './rows.ts'
+import type { JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest } from './types.ts'
 
 export type * from './types.ts'
 
@@ -23,7 +23,7 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-/** Default coalescing window between record reads, in milliseconds. */
+/** Default coalescing window between reads, in milliseconds. */
 const DEFAULT_OBSERVE_FLUSH_MS = 100
 
 /** Default soft byte budget per output frame. */
@@ -31,7 +31,7 @@ const DEFAULT_OBSERVE_MAX_FRAME_BYTES = 64 * 1024
 
 /** Job Controller deployment policy. */
 export interface Config {
-  /** Coalescing window after new record output before an observation read, in milliseconds (default 100). */
+  /** Coalescing window after a registry commit before the next rows or output read, in milliseconds (default 100). */
   readonly observeFlushMs?: number
   /** Soft byte budget per observation output frame (default 65536); one larger chunk ships whole. */
   readonly observeMaxFrameBytes?: number
@@ -39,7 +39,7 @@ export interface Config {
 
 /** Host service backing the generated `ctx.remote.job` namespace. */
 export class JobController extends TypertRemoteService {
-  static inject = ['agents', 'jobs', 'typert']
+  static inject = ['jobs', 'typert']
 
   static Config: z<Config> = z.object({
     observeFlushMs: z.natural().min(1).default(DEFAULT_OBSERVE_FLUSH_MS),
@@ -50,7 +50,7 @@ export class JobController extends TypertRemoteService {
   private readonly observeMaxFrameBytes: number
 
   /**
-   * @param ctx - Host context carrying the live Agent registry and the job registry.
+   * @param ctx - Host context carrying the job registry.
    * @param config - observation cadence and framing policy.
    */
   constructor(ctx: Context, config: Config) {
@@ -63,22 +63,33 @@ export class JobController extends TypertRemoteService {
   }
 
   /**
-   * Stream one job's retained record output from an absolute byte offset,
-   * then its terminal status once settled and drained. Non-consuming: the
+   * Stream the jobs one session can see — its own plus every unowned job —
+   * as whole-set frames: one on open, then one after each coalesced burst of
+   * lifecycle commits. The stream has no natural end; the carrier closes it.
+   * @param request - the session whose visible set to mirror.
+   * @param signal - cancellation owned by the Remote stream carrier.
+   * @returns the roster frames.
+   */
+  @Remote({ mode: 'stream' })
+  rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame> {
+    return streamJobRows(this.ctx.jobs, request, { flushMs: this.observeFlushMs }, signal)
+  }
+
+  /**
+   * Stream one job's retained output from an absolute byte offset, then its
+   * terminal projection once settled and drained. Non-consuming: the
    * model-facing cursor and notice state never observe these reads. The
-   * request's session resolves the fenced-read caller; the registry rejects a
-   * job the session does not own, a job without a record, or an unknown job.
+   * request's session is the fenced read's caller; the registry rejects a
+   * job the session cannot see and an unknown job.
    * @param request - target job, owning session, and optional resume offset.
    * @param signal - cancellation owned by the Remote stream carrier.
    * @returns anchor, coalesced output frames, and the terminal status.
    */
   @Remote({ mode: 'stream' })
   observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame> {
-    const caller = request.sessionId === undefined ? undefined : this.ctx.agents.get(request.sessionId)
-    return observeJobRecord(this.ctx.jobs, request, {
+    return observeJobOutput(this.ctx.jobs, request, {
       flushMs: this.observeFlushMs,
       maxFrameBytes: this.observeMaxFrameBytes,
-      caller,
     }, signal)
   }
 }
