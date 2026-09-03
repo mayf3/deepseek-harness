@@ -1,5 +1,6 @@
 import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { apply as applyHost } from '../src/index.ts'
 import { apply } from '../src/client/index.ts'
 import { fileUploadWorker, FileUploadRuntime } from '../src/client/runtime.ts'
 import type { ClientFileUploadHooks, FileUploadBody } from '../src/client/contract.ts'
@@ -94,6 +95,29 @@ describe('file upload worker body', () => {
     })
   })
 
+  it('propagates cancellation from the fetch body to the source stream', async () => {
+    const posted: unknown[] = []
+    const scope = {
+      onmessage: null as ((event: MessageEvent) => void) | null,
+      postMessage: (message: unknown) => { posted.push(message) },
+    }
+    const cancel = vi.fn()
+    const source = new ReadableStream<Uint8Array>({ cancel })
+    fileUploadWorker(
+      scope,
+      () => { throw new Error('unused') },
+      async (_url, init) => {
+        await (init.body as ReadableStream<Uint8Array>).cancel('fetch stopped')
+        return new Response('cancelled')
+      },
+    )
+    scope.onmessage?.({ data: { url: '/upload', body: source, headers: {} } } as never)
+    await vi.waitFor(() => {
+      expect(cancel).toHaveBeenCalledWith('fetch stopped')
+      expect(posted.at(-1)).toEqual({ kind: 'complete', status: 200, body: 'cancelled' })
+    })
+  })
+
   it('reports invalid bodies, stream chunks, and fetch failures', async () => {
     const posted: unknown[] = []
     const scope = {
@@ -130,9 +154,25 @@ describe('file upload worker body', () => {
     await vi.waitFor(() => {
       expect(posted.at(-1)).toEqual({ kind: 'error', message: 'offline' })
     })
+
+    const failedSource = new ReadableStream<Uint8Array>({
+      start(controller) { controller.error('source failed') },
+    })
+    fileUploadWorker(
+      scope,
+      () => { throw new Error('unused') },
+      async (_url, init) => {
+        await (init.body as ReadableStream<Uint8Array>).getReader().read()
+        return new Response()
+      },
+    )
+    scope.onmessage?.({ data: { url: '/upload', body: failedSource, headers: {} } } as never)
+    await vi.waitFor(() => {
+      expect(posted.at(-1)).toEqual({ kind: 'error', message: 'source failed' })
+    })
   })
 
-  it('uses Worker globals when the emitted body supplies no test seams', () => {
+  it('uses Worker globals when the emitted body supplies no test seams', async () => {
     const posted: unknown[] = []
     const scope = {
       onmessage: null as ((event: MessageEvent) => void) | null,
@@ -154,10 +194,27 @@ describe('file upload worker body', () => {
     fileUploadWorker()
     scope.onmessage?.({ data: { url: '/upload', body: new Blob(), headers: {} } } as MessageEvent)
     expect(xhr.send).toHaveBeenCalledOnce()
+
+    const fetch = vi.fn(async (_url: string, init: RequestInit) => {
+      await new Response(init.body).arrayBuffer()
+      return new Response(null, { status: 204 })
+    })
+    vi.stubGlobal('fetch', fetch)
+    fileUploadWorker()
+    const stream = new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
+    scope.onmessage?.({ data: { url: '/stream', body: stream, headers: {} } } as MessageEvent)
+    await vi.waitFor(() => {
+      expect(fetch).toHaveBeenCalledOnce()
+      expect(posted.at(-1)).toEqual({ kind: 'complete', status: 204, body: '' })
+    })
   })
 })
 
 describe('file upload service', () => {
+  it('keeps the Host half inert', () => {
+    expect(() => { applyHost() }).not.toThrow()
+  })
+
   it('uses a page-owned Host fetch for Blob and ReadableStream bodies', async () => {
     vi.stubGlobal('location', { origin: 'https://preview.test' })
     const fetch = vi.fn((_url: URL, _init?: RequestInit) =>
@@ -246,10 +303,14 @@ describe('file upload service', () => {
       url: 'https://harness.test/api/upload', body: blob, headers: {},
     })
     worker.onmessage?.({ data: { kind: 'progress', loaded: 4, total: 5 } } as MessageEvent)
+    worker.onmessage?.({ data: { kind: 'progress', loaded: 6 } } as MessageEvent)
     worker.onmessage?.({ data: { kind: 'complete', status: 200, body: 'done' } } as MessageEvent)
     worker.onmessage?.({ data: { kind: 'complete', status: 500, body: 'late' } } as MessageEvent)
     await expect(pending).resolves.toEqual({ status: 200, body: 'done' })
-    expect(progress).toHaveBeenCalledWith({ loaded: 4, total: 5 })
+    expect(progress.mock.calls).toEqual([
+      [{ loaded: 4, total: 5 }],
+      [{ loaded: 6 }],
+    ])
     expect(worker.terminate).toHaveBeenCalledOnce()
     await fiber.dispose()
   })

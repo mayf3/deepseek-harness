@@ -66,6 +66,10 @@ async function mount(initialGeneration?: ConnectionGeneration): Promise<Bench> {
     start: () => ({ stop: () => {} }),
   }
   ctx.reflect.provide('connection', connection)
+  ctx.reflect.provide('fileUpload', {
+    available: true,
+    post: () => Promise.reject(new Error('unexpected file upload')),
+  })
   ctx.reflect.provide('remote', {
     ...remote,
     $stream: <Item>(options: RemoteStreamOptions<Item>) => (
