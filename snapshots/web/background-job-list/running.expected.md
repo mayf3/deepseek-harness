@@ -1,5 +1,7 @@
 - list "Background jobs":
   - listitem:
     - button "Show live output of for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done":
-      - text: for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done {{duration}} bash running
+      - text: for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done bash {{duration}}
+      - img
+    - button "Stop task for _ in $(seq 1 3000); do [ -e .background-job-list.release ] && break; sleep 0.2; done":
       - img
