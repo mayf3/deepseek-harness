@@ -4,6 +4,7 @@ import AttachmentStore, {
   AttachmentError,
   AttachmentId,
   ImageVariantId,
+  isAttachmentError,
   isImageAdmissionError,
   type ImageAttachmentRef,
   type ImageMediaType,
@@ -186,5 +187,16 @@ describe('isImageAdmissionError', () => {
     expect(isImageAdmissionError(new AttachmentError('corrupt object', 'ATTACHMENT_CORRUPT'))).toBe(false)
     expect(isImageAdmissionError(new AttachmentError('disk failed', 'ATTACHMENT_WRITE_FAILED'))).toBe(false)
     expect(isImageAdmissionError(new Error('unknown failure'))).toBe(false)
+  })
+})
+
+describe('isAttachmentError', () => {
+  it('recognizes attachment failures from another package installation by code', () => {
+    expect(isAttachmentError(new AttachmentError('bad base64', 'INVALID_FILE_BASE64'))).toBe(true)
+    expect(isAttachmentError(Object.assign(new Error('foreign storage error'), {
+      code: 'ATTACHMENT_WRITE_FAILED',
+    }))).toBe(true)
+    expect(isAttachmentError(Object.assign(new Error('other failure'), { code: 'OTHER' }))).toBe(false)
+    expect(isAttachmentError({ code: 'ATTACHMENT_WRITE_FAILED' })).toBe(false)
   })
 })

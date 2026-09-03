@@ -203,7 +203,7 @@ Source: [`packages/api/gateway/src/index.ts:119`](../packages/api/gateway/src/in
 
 ## `@deepseek-ai/dsh-api-session-controller`
 
-Requires: `agentDefaultModel` · `agents` · `attachments` · `llm` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
+Requires: `agentDefaultModel` · `agents` · `attachments` · `fileUploads` · `llm` · `sessions` · `sessionProjections` · `sessionQuery` · `typert` · `workspaceRegistry`
 
 ```ts config-catalog
 /** Session Controller deployment policy. */
@@ -217,7 +217,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:75`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:73`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -3337,7 +3337,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-api-remotes` — requires `typertGateway` ([`packages/api/remotes/src/index.ts`](../packages/api/remotes/src/index.ts))
 - `@deepseek-ai/dsh-api-workspace-controller` — requires `typert` · `workspaceRegistry` ([`packages/api/workspace-controller/src/index.ts`](../packages/api/workspace-controller/src/index.ts))
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
-- `@deepseek-ai/dsh-client-file-upload` ([`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts))
+- `@deepseek-ai/dsh-client-file-upload` — requires `agents` · `attachments` · `commands` · `connection` ([`packages/client/file-upload/src/index.ts`](../packages/client/file-upload/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))

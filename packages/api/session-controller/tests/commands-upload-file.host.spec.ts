@@ -248,13 +248,13 @@ describe('Session file uploads', () => {
 
   it('retires accepted receipts after their rpcId becomes observable', async () => {
     const { controller, uploads, agent } = await uploadHarness()
-    uploads.retirePrompt(agent, 'not-staged' as SessionRequestId)
+    uploads.retirePrompt(agent, 'not-staged')
     const receipt = await uploads.upload(agent, { data: 'AAAA' }, new AbortController().signal)
     await controller.prompt(promptRequest([{ type: 'file', receiptId: receipt.receiptId }]))
     expect(uploads.resolve(agent, receipt.receiptId)).toEqual(receipt.file)
-    uploads.retirePrompt(agent, 'other-request' as SessionRequestId)
+    uploads.retirePrompt(agent, 'other-request')
     expect(uploads.resolve(agent, receipt.receiptId)).toEqual(receipt.file)
-    uploads.retirePrompt(agent, 'req-1' as SessionRequestId)
+    uploads.retirePrompt(agent, 'req-1')
     expect(uploads.resolve(agent, receipt.receiptId)).toBeUndefined()
   })
 
@@ -337,7 +337,7 @@ describe('Session file uploads', () => {
       requestId: 'req-2' as SessionRequestId,
     })
     await vi.waitFor(() => { expect(saveImages).toHaveBeenCalledOnce() })
-    uploads.retirePrompt(agent, 'req-1' as SessionRequestId)
+    uploads.retirePrompt(agent, 'req-1')
     admitted.resolve([{
       attachmentId: AttachmentId('admitted-image'), mediaType: 'image/png', bytes: 3, width: 1, height: 1,
     }])
@@ -355,7 +355,7 @@ describe('Session file uploads', () => {
       ...promptRequest([{ type: 'file', receiptId: receipt.receiptId }]),
       requestId: 'req-2' as SessionRequestId,
     })).rejects.toMatchObject({ code: 'session/agent-busy' })
-    uploads.retirePrompt(agent, 'req-1' as SessionRequestId)
+    uploads.retirePrompt(agent, 'req-1')
     expect(uploads.resolve(agent, receipt.receiptId)).toBeUndefined()
   })
 
@@ -366,7 +366,7 @@ describe('Session file uploads', () => {
     await expect(controller.prompt(promptRequest([
       { type: 'file', receiptId: receipt.receiptId },
     ]))).rejects.toMatchObject({ code: 'session/agent-busy' })
-    uploads.retirePrompt(agent, 'req-1' as SessionRequestId)
+    uploads.retirePrompt(agent, 'req-1')
     expect(uploads.resolve(agent, receipt.receiptId)).toEqual(receipt.file)
   })
 

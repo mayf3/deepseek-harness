@@ -390,7 +390,7 @@ describe('Agent-scoped file upload', () => {
     ctx.provide('typert', {
       contexts: {
         getClient: (kind: string) => kind === 'agent'
-          ? { identity: (candidate: Context) => Reflect.get(candidate, 'fixtureSessionId') }
+          ? { identity: (candidate: Context) => Reflect.get(candidate, 'fixtureSessionId') as string | undefined }
           : undefined,
       },
     } as never)

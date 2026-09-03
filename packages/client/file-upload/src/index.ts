@@ -3,9 +3,9 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { AttachmentError, admitEncodedFile } from '@deepseek-ai/dsh-attachment'
+import { admitEncodedFile, isAttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import type { HostConnectionHandle } from '@deepseek-ai/dsh-client-connection'
+import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -57,7 +57,7 @@ export class FileUploads extends TypertRemoteService {
       'file-upload: command file receipt resolver',
     )
     ctx.effect(
-      () => (ctx.connection as HostConnectionHandle).fetch.register({
+      () => ctx.connection.fetch.register({
         path: FILE_UPLOAD_PATH,
         methods: ['POST'],
         requestBody: 'streaming',
@@ -168,7 +168,7 @@ export class FileUploads extends TypertRemoteService {
     try {
       file = await save()
     } catch (error) {
-      if (error instanceof AttachmentError) {
+      if (isAttachmentError(error)) {
         throw new RemoteError('session/attachment-invalid' as never, error.message, { reason: error.code } as never)
       }
       throw new RemoteError(
