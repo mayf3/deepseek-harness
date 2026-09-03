@@ -25,7 +25,7 @@ Mount `dsh-subprocess-local` in any composition that runs child processes on the
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the provider beside its consumers and start processes exactly as the subprocess service specifies; this package decides only how those processes run on the host.
+Mount the provider beside its consumers and start processes exactly as the subprocess service specifies; this package decides only how those processes run on the host. On Windows, non-terminal children start with their console windows hidden so background commands do not take focus.
 
 ### Mounting the provider
 
