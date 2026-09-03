@@ -20,7 +20,7 @@ import {
 } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import type { JsonlCompression } from './format.ts'
-import { logSuffix } from './format.ts'
+import { generationLogFilename, logSuffix } from './format.ts'
 import { publishNewFileWin32 } from './win32.ts'
 import {
   compressZstdFrame,
@@ -445,10 +445,6 @@ function readPhysicalHeader(
   return readRawHeader(bytes)
 }
 
-function generationFilename(version: number, suffix: string): string {
-  return version === 0 ? `session${suffix}` : `session.v${version}${suffix}`
-}
-
 function assertGenerationPaths(
   sourcePath: string,
   sourceVersion: number,
@@ -456,9 +452,8 @@ function assertGenerationPaths(
   currentVersion: number,
   compression: JsonlCompression,
 ): string {
-  const suffix = logSuffix(compression)
-  const expectedSource = generationFilename(sourceVersion, suffix)
-  const expectedCurrent = generationFilename(currentVersion, suffix)
+  const expectedSource = generationLogFilename(sourceVersion, compression)
+  const expectedCurrent = generationLogFilename(currentVersion, compression)
   if (basename(sourcePath) !== expectedSource) {
     throw new Error(`resolved JSONL source path must end with "${expectedSource}": ${sourcePath}`)
   }
@@ -468,7 +463,7 @@ function assertGenerationPaths(
   if (dirname(sourcePath) !== dirname(currentPath)) {
     throw new Error('source and current JSONL generations must share one Session directory')
   }
-  return suffix
+  return logSuffix(compression)
 }
 
 async function syncDirectory(path: string, internals: JsonlGenerationInternals): Promise<void> {

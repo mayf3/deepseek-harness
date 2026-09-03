@@ -19,6 +19,9 @@
     },
     {
       "path": "../session-format"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

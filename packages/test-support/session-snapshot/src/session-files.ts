@@ -1,6 +1,7 @@
 /** Immutable Session-generation filenames used by recorded-session fixtures. */
 
 import { basename, dirname } from 'node:path'
+import { parseSessionFormatLogFilename, sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
 
 /** One canonical recorded-session fixture filename. */
 export interface SessionFixtureFile {
@@ -23,7 +24,6 @@ export interface PersistedSessionFile {
 }
 
 const FIXTURE_FILE = /^session(?:\.([1-9]\d*))?(?:\.v([1-9]\d*))?\.jsonl$/u
-const PERSISTED_FILE = /^session(?:\.v([1-9]\d*))?\.jsonl(\.zstd)?$/u
 
 function nonNegativeSafeInteger(value: number, label: string): void {
   if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
@@ -182,8 +182,7 @@ export function persistedSessionFilename(
   version: number,
   compression: 'raw' | 'zstd' = 'raw',
 ): string {
-  nonNegativeSafeInteger(version, 'Session format version')
-  return `session${version === 0 ? '' : `.v${version}`}.jsonl${compression === 'zstd' ? '.zstd' : ''}`
+  return `${sessionFormatLogFilename(version)}${compression === 'zstd' ? '.zstd' : ''}`
 }
 
 /**
@@ -193,15 +192,10 @@ export function persistedSessionFilename(
  * @returns Its generation and compression, or `undefined` for noise and noncanonical names.
  */
 export function parsePersistedSessionFilename(name: string): PersistedSessionFile | undefined {
-  const match = PERSISTED_FILE.exec(name)
-  if (match === null) return undefined
-  const version = match[1] === undefined ? 0 : Number(match[1])
-  if (!Number.isSafeInteger(version)) return undefined
-  return {
-    version,
-    compression: match[2] === undefined ? 'raw' : 'zstd',
-    name,
-  }
+  const compression = name.endsWith('.zstd') ? 'zstd' : 'raw'
+  const version = parseSessionFormatLogFilename(compression === 'zstd' ? name.slice(0, -'.zstd'.length) : name)
+  if (version === undefined) return undefined
+  return { version, compression, name }
 }
 
 /**

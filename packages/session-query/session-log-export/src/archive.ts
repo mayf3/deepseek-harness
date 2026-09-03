@@ -26,6 +26,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { AttachmentStore, ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { SessionLineageNode, SessionQueryEngine } from '@deepseek-ai/dsh-session-query'
 import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session'
+import { sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
 import type { SessionEvent, SessionHeader, SessionId, SessionStore } from '@deepseek-ai/dsh-session'
 import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
@@ -94,7 +95,7 @@ export type SessionLogZipEntry =
   | { readonly path: string; readonly data: Uint8Array }
 
 /** The current generation's canonical base filename for every exported session log. */
-export const SESSION_LOG_FILENAME = `session.v${SESSION_FORMAT_VERSION}.jsonl`
+export const SESSION_LOG_FILENAME = sessionFormatLogFilename(SESSION_FORMAT_VERSION)
 
 /**
  * Serialize one session's logical log as canonical JSONL text: the header

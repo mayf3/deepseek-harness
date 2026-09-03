@@ -20,6 +20,7 @@ import type {
   SessionLogOffset as SessionLogOffsetType,
   StorageRecord,
 } from '@deepseek-ai/dsh-session'
+import { parseSessionFormatLogFilename, sessionFormatLogFilename } from '@deepseek-ai/dsh-session-format'
 import {
   SessionFormatUnsupportedError,
   sessionFormatVersionRefusal,
@@ -35,7 +36,11 @@ export type JsonlCompression = 'zstd' | 'none'
  * @returns `.jsonl.zstd` for Zstandard or `.jsonl` for plaintext.
  */
 export function logSuffix(compression: JsonlCompression): '.jsonl.zstd' | '.jsonl' {
-  return compression === 'zstd' ? '.jsonl.zstd' : '.jsonl'
+  return `.jsonl${compressionSuffix(compression)}`
+}
+
+function compressionSuffix(compression: JsonlCompression): '.zstd' | '' {
+  return compression === 'zstd' ? '.zstd' : ''
 }
 
 /**
@@ -47,11 +52,7 @@ export function logSuffix(compression: JsonlCompression): '.jsonl.zstd' | '.json
  * @returns the generation filename inside one Session directory.
  */
 export function generationLogFilename(version: number, compression: JsonlCompression): string {
-  if (!Number.isSafeInteger(version) || version < 0 || Object.is(version, -0)) {
-    throw new TypeError('session log generation version must be a non-negative safe integer')
-  }
-  const generation = version === 0 ? '' : `.v${version}`
-  return `session${generation}${logSuffix(compression)}`
+  return `${sessionFormatLogFilename(version)}${compressionSuffix(compression)}`
 }
 
 /**
@@ -66,12 +67,9 @@ export function parseGenerationLogFilename(
   filename: string,
   compression: JsonlCompression,
 ): number | undefined {
-  const suffix = logSuffix(compression)
-  if (filename === `session${suffix}`) return 0
-  const match = new RegExp(`^session\\.v([1-9][0-9]*)${suffix.replaceAll('.', '\\.')}$`).exec(filename)
-  if (match === null) return undefined
-  const version = Number(match[1])
-  return Number.isSafeInteger(version) ? version : undefined
+  const suffix = compressionSuffix(compression)
+  if (!filename.endsWith(suffix)) return undefined
+  return parseSessionFormatLogFilename(filename.slice(0, filename.length - suffix.length))
 }
 
 /**
