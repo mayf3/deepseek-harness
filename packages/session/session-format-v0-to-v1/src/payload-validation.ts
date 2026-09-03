@@ -793,7 +793,6 @@ function shadowedValue(data: JsonRecord, eventSeq: number, label: string): void 
   const range = exactRecord(data['shadowedRange'], `${label} shadowedRange`, ['start', 'end'])
   const start = earlierSeq(range['start'], eventSeq, `${label} shadowedRange start`)
   const end = earlierSeq(range['end'], eventSeq, `${label} shadowedRange end`)
-  if (start > end) throw new SessionFormatError(`${label} shadowedRange is inverted`)
   const seqs = seqArray(data['shadowedSeqs'], eventSeq, `${label} shadowedSeqs`, true)
   if (seqs[0] !== start || seqs.at(-1) !== end) {
     throw new SessionFormatError(`${label} shadowedRange must match shadowedSeqs endpoints`)
