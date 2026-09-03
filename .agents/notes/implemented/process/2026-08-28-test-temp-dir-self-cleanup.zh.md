@@ -15,7 +15,7 @@ Status: implemented
 - 创建目录但从不删除的 spec 文件，现在把每个创建的 root 记入模块级列表，并在 `afterEach`/`afterAll` 里删除（`rm`/`rmSync` 带 `recursive: true, force: true`）——与 session 包既有的 `roots.splice(0)` 约定一致。创建 root 的 helper（`tmp()`、`tempDir()`、`fakeLauncher()`、harness 函数）在创建处登记，一个点覆盖全部调用方。
 - 整文件共享的模块级 fixture 目录（executor spill 目录）在最后一个测试之后的 `afterAll` 里删除。
 - 目标文件清单来自 CI 主机上的残留实测清单（当前 `/tmp/dsh-*` 目录的模板直方图）：只有目录确实出现在残留里的 spec 文件才是泄漏源。已有删除逻辑的文件（agent-team、tool-subagent、list-children、hooks coverage cases）确认在正常结束路径上本来干净，不改。
-- 产品侧清理限定在 `dsh-subprocess-local/spawn` 的每进程 spill 目录（`privateSpillDir`）：在 JavaScript 可观察的进程退出时仅当目录**为空**才删除——collector 在 dispose 时删除自己的 spill 文件，因此正常退出最多留下空目录残留；仍持有 spill 文件的目录会保留（其内容可能比进程更长命）。删除是 best-effort（Windows 上被占用的句柄不得改变退出码）。`dsh-spill-local` 的默认 root **刻意不做**退出删除：该 root 由包自带的 30 天启动 sweep 覆盖，且 2026-07-17 local-spill-startup-cleanup note 的保留策略禁止删除 resume/fork 会话仍可能引用的新 spill 产物。
+- 产品侧清理限定在 `dsh-subprocess-local/spawn` 的每进程 spill 目录（`privateSpillDir`）：在 JavaScript 可观察的进程退出时仅当目录**为空**才删除——collector 在 dispose 时删除自己的 spill 文件，因此正常退出最多留下空目录残留；仍持有 spill 文件的目录会保留（其内容可能比进程更长命）。删除是 best-effort（Windows 上被占用的句柄不得改变退出码）。`dsh-spill-local` 的默认 root **刻意不做**退出删除：该 root 由包自带的 30 天启动 sweep 覆盖，且[保留策略 note](../architecture/2026-07-17-local-spill-startup-cleanup.zh.md)禁止删除 resume/fork 会话仍可能引用的新 spill 产物。
 
 ## Verification
 

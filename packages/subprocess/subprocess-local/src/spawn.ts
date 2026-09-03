@@ -84,7 +84,10 @@ let defaultSpillDir: string | undefined
 /**
  * The default spill location: a private (0700) per-process directory under
  * the OS tmpdir, created lazily. Predictable world-readable paths would let
- * other local users read command output or pre-create symlinks.
+ * other local users read command output or pre-create symlinks. At a
+ * JavaScript-observable process exit the directory is removed while empty
+ * (collectors unlink their spill files on dispose); a directory still holding
+ * spill files keeps them for external cleanup.
  */
 function privateSpillDir(): string {
   defaultSpillDir ??= mkdtempSync(join(tmpdir(), 'dsh-subprocess-'))
