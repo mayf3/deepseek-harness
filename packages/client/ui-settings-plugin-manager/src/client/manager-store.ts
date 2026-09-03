@@ -341,10 +341,12 @@ export class PluginManagerController {
     if (result.ok) {
       this.patchInstall({ phase: 'done', installed: result.value.installed })
     } else {
-      // Streamed chunks already show the run; otherwise the Host's captured
-      // log, or its message when pnpm never started.
+      // The Host's reason follows whatever streamed: pnpm's captured log when
+      // no chunk arrived, else the refusal that followed a successful pnpm
+      // run — a bundle the tree rejected, a probe that refused it.
       const current = this.getSnapshot().install.log
-      const log = current === '' ? detailOf(result.error, 'log') ?? result.error.message : current
+      const reason = detailOf(result.error, 'reason') ?? detailOf(result.error, 'log') ?? result.error.message
+      const log = current === '' || current.endsWith(reason) ? (current === '' ? reason : current) : `${current}\n${reason}`
       this.patchInstall({ phase: 'failed', log })
     }
     void this.load()

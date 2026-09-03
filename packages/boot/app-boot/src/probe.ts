@@ -8,8 +8,9 @@
  */
 
 import { spawn } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { loadOverlayPatches } from './index.ts'
 import { readProfileManifest, resolveBundleDir, type ProfileManifest } from './profile.ts'
@@ -220,7 +221,12 @@ export async function probePackage(options: ProbeOptions): Promise<PluginProbe> 
   const hasMain = manifest.main !== undefined || manifest.exports !== undefined
   const report = await runChild(options, packageDir, hasMain ? options.packageName : '', declaredAddable.map(entry => entry.name))
   const harnessCordis = resolveHarnessCordis()
-  const cordisSameCopy = report.cordis === null || harnessCordis === undefined ? null : report.cordis === harnessCordis
+  // Compared by package directory, not by entry file: a source launch
+  // resolves the harness's copy to its TypeScript entry while the child, a
+  // plain Node process, resolves the same package's built entry.
+  const cordisSameCopy = report.cordis === null || harnessCordis === undefined
+    ? null
+    : cordisPackageDir(report.cordis) === cordisPackageDir(harnessCordis)
   const kind: PluginProbe['kind'] = declaredBundle !== undefined ? 'bundle' : report.main.isPlugin ? 'plugin' : 'library'
   const addable: PluginProbeAddable[] = declaredAddable.map((entry) => {
     // The child reports every declared name; a missing report is a child
@@ -272,6 +278,35 @@ function resolveHarnessCordis(): string | undefined {
     // harness itself always resolves its own peer.
     /* v8 ignore next */
     return undefined
+  }
+}
+
+/**
+ * The real directory of the `@deepseek-ai/cordis` package a resolved entry
+ * URL belongs to: the nearest ancestor whose manifest carries that name.
+ * @param url - a `file:` URL of one cordis entry module.
+ * @returns the package directory with symlinks resolved, or the entry path
+ * itself when no such manifest is found above it.
+ */
+function cordisPackageDir(url: string): string {
+  let dir = dirname(fileURLToPath(url))
+  for (;;) {
+    const manifest = join(dir, 'package.json')
+    if (existsSync(manifest)) {
+      let name: unknown
+      try {
+        name = (JSON.parse(readFileSync(manifest, 'utf8')) as { name?: unknown }).name
+      } catch {
+        // A manifest Node's resolver did not read — an unrelated ancestor's,
+        // malformed — is not cordis's; keep climbing.
+        /* v8 ignore next */
+        name = undefined
+      }
+      if (name === '@deepseek-ai/cordis') return realpathSync(dir)
+    }
+    const parent = dirname(dir)
+    if (parent === dir) return fileURLToPath(url)
+    dir = parent
   }
 }
 

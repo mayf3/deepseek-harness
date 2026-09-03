@@ -288,7 +288,8 @@ describe('PluginManagerController', () => {
       add: vi.fn()
         .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'ERR_PNPM' }))
         .mockResolvedValueOnce(refused('gateway/internal', 'offline'))
-        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'ignored' })),
+        .mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'tail' }))
+        .mockResolvedValueOnce(refused('plugins/enable-failed', 'plugin-manager: x rejected', { packageName: 'x', reason: 'the tree rejected it' })),
     })
     await controller.load()
     face.openInstall()
@@ -303,7 +304,14 @@ describe('PluginManagerController', () => {
     controller.appendLog({ jobId: 'j', spec: 'x', stream: 'stderr', text: 'streamed' })
     await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(3) })
     await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
-    expect(state().install.log).toBe('streamed')
+    // The Host's captured log follows what streamed; a refusal after a clean
+    // pnpm run follows it with its reason.
+    expect(state().install.log).toBe('streamed\ntail')
+    face.runInstall()
+    controller.appendLog({ jobId: 'j', spec: 'x', stream: 'stdout', text: 'Done' })
+    await vi.waitFor(() => { expect(plugins.add).toHaveBeenCalledTimes(4) })
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    expect(state().install.log).toBe('Done\nthe tree rejected it')
   })
 
   it('drops every late settlement after disposal', async () => {

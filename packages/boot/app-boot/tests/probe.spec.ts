@@ -3,9 +3,10 @@
  * a child process, and the per-profile cache.
  */
 
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { PLUGIN_PROBE_DIR, probePackage, readProbeCache, writeProbeCache, type PluginProbe } from '../src/index.ts'
 
@@ -120,6 +121,16 @@ describe('probePackage', () => {
           'node_modules/@deepseek-ai/cordis/index.js': 'export const Context = class {}\n',
         },
       },
+      // A copy whose manifest carries another name still resolves as cordis
+      // for Node; with no cordis manifest above its entry, the entry itself
+      // stands for the copy, which is not the harness's.
+      'renamed-cordis': {
+        main: 'export function apply() {}\n',
+        files: {
+          'node_modules/@deepseek-ai/cordis/package.json': JSON.stringify({ name: 'not-cordis', version: '0.0.0', type: 'module', main: './index.js' }),
+          'node_modules/@deepseek-ai/cordis/index.js': 'export const Context = class {}\n',
+        },
+      },
     })
     const broken = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'broken' })
     expect(broken.ok).toBe(false)
@@ -130,6 +141,21 @@ describe('probePackage', () => {
     expect(own.cordisSameCopy).toBe(false)
     expect(own.ok).toBe(false)
     expect(own.reason).toContain('own copy of @deepseek-ai/cordis')
+    const renamed = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'renamed-cordis' })
+    expect(renamed.cordisSameCopy).toBe(false)
+  })
+
+  it('recognizes the harness copy of cordis by its package directory, whichever entry each side resolved', async () => {
+    // The staged package reaches cordis through a symlink to the harness's
+    // own package; the child resolves its built entry, this process (under
+    // the test runner's source aliases) its TypeScript entry.
+    const { profileDir, installAnchor } = stage({ 'shared-cordis': { main: 'export function apply() {}\n' } })
+    const harnessCordis = fileURLToPath(new URL('../../../../vendor/cordis', import.meta.url))
+    mkdirSync(join(profileDir, 'node_modules', 'shared-cordis', 'node_modules', '@deepseek-ai'), { recursive: true })
+    symlinkSync(harnessCordis, join(profileDir, 'node_modules', 'shared-cordis', 'node_modules', '@deepseek-ai', 'cordis'), 'dir')
+    const shared = await probePackage({ binName: NAME, profileDir, installAnchor, packageName: 'shared-cordis' })
+    expect(shared.cordisSameCopy).toBe(true)
+    expect(shared.ok).toBe(true)
   })
 
   it('probes a package with the minimal manifest and no main export', async () => {
