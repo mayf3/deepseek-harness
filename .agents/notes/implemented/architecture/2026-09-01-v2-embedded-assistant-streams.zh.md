@@ -39,7 +39,7 @@ v2 物理 header 要求 `isSeeded`，且不存储数值切点。带 seed 的产�
 
 新建 subagent 子项的 constructor seed 与继承的父项前缀完全相同。`Session` 会追加 tagged cut marker，随后 subagent setup 再追加子项持有的 descriptor 与 delegated policy。原 descriptor-seed helper 会被删除，因此 descriptor 绝不会计入继承内容，cold resume 则重放已经持久化的子项 setup。曾把 untagged marker 放在 descriptor 后面的历史 snapshot fixture 会在源处修正；当前比较仍会暴露 marker 数量与序号引用。
 
-`dsh_session_log` request extension 会把外层 schema 升至版本 2，因为它的 Session header 投影会用必需的 `isSeeded` 取代 `seedLength`。其中的 `sessionFormatVersion` 成员仍用于标识嵌入的逻辑 Session generation。
+`dsh_session_log` request extension 的外层 schema 保持版本 1：它的 Session header 投影仍从逻辑 inherited cut 推导 `seedLength`，只有其中的 `sessionFormatVersion` 成员标识嵌入的逻辑 Session generation。projection unit 同样保持各自的 `stateVersion`；projection cache 把每个 checkpoint 绑定到 Session format generation，因此 generation 变化不需要提升 unit 版本。
 
 Generation 选择与发布遵循[已发布 Session 迁移决策](2026-08-31-released-session-format-migrations.zh.md)：源路径、字节与 inode 保持不变，只发布最终具名版本 successor；保留 predecessor 不提供 fallback 或 downgrade 支持。
 

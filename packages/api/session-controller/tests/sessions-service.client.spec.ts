@@ -12,7 +12,7 @@ import type { SessionId } from '@deepseek-ai/dsh-api-remotes/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
 import { RemoteStreamCarrierError } from '@deepseek-ai/dsh-api-gateway/client'
-import { SessionSeq } from '@deepseek-ai/dsh-session/types'
+import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import { ClientSessions, SessionCreateError } from '../src/client/sessions/service.ts'
 import { scopeOf } from '../src/client/scope.ts'
 import type { SessionFollowFrame } from '../src/types.ts'
@@ -547,7 +547,7 @@ describe('Agent scope disposal lifecycle', () => {
                     value: {
                       type: 'snapshot',
                       header: {
-                        version: 2,
+                        version: SESSION_FORMAT_VERSION,
                         id: request.address.kind === 'session'
                           ? request.address.sessionId
                           : request.address.childSessionId,
@@ -623,7 +623,7 @@ describe('Agent scope disposal lifecycle', () => {
                     done: false,
                     value: {
                       type: 'snapshot',
-                      header: { version: 2, id: sessionId, createdAt: 0, isSeeded: false },
+                      header: { version: SESSION_FORMAT_VERSION, id: sessionId, createdAt: 0, isSeeded: false },
                       cursor: -1,
                       records: [],
                       hasMore: false,

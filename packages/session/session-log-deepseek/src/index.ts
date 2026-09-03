@@ -59,7 +59,7 @@ function wireHeader(session: Session): DeepSeekSessionLogWireHeader {
     createdAt: header.createdAt,
     ...header.cwd === undefined ? {} : { cwd: header.cwd },
     ...header.parentSession === undefined ? {} : { parentSession: String(header.parentSession) },
-    isSeeded: header.isSeeded,
+    ...header.isSeeded ? { seedLength: Number(session.inheritedEventCount) } : {},
     ...header.origin === undefined ? {} : { origin: header.origin },
     ...header.delegationDepth === undefined ? {} : { delegationDepth: header.delegationDepth },
     ...header.agentPreset === undefined ? {} : { agentPreset: header.agentPreset },
@@ -147,7 +147,7 @@ export function apply(ctx: Context, config: Config): void {
       if (throughSeq === undefined) return undefined
       const suffix = session.snapshotEvents(SessionLogOffset(afterSeq + 1))
       const value: DeepSeekSessionLogExtension = {
-        version: 2,
+        version: 1,
         sessionFormatVersion: session.header.version,
         session: wireHeader(session),
         afterSeq: Number(afterSeq),

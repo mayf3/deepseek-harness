@@ -182,7 +182,7 @@ describe('llm-deepseek real dynamic composition', () => {
       }
     }
     expect(request.dsh_session_log).toMatchObject({
-      version: 2,
+      version: 1,
       session: { id: 'extension-composition-enabled' },
       afterSeq: -1,
       throughSeq: 0,

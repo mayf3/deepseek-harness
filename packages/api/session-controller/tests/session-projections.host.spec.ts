@@ -154,7 +154,7 @@ describe('session.history projections block', () => {
     const snapshot = await opening(remote(ctx), child.id)
 
     expect(snapshot.header).toEqual({
-      version: 2,
+      version: SESSION_FORMAT_VERSION,
       id: child.id,
       createdAt: child.header.createdAt,
       cwd: '/workspace',

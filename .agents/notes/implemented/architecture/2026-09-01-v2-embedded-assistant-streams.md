@@ -39,7 +39,7 @@ The v2 physical header requires `isSeeded` and stores no numeric cut. A seeded a
 
 A fresh subagent child's constructor seed is exactly the inherited parent prefix. `Session` appends the tagged cut marker, then subagent setup appends the child-owned descriptor and delegated policies. The former descriptor-seed helper is removed, so a descriptor is never counted as inherited and cold resume replays the persisted child-owned setup. Historical snapshot fixtures that placed an untagged marker after the descriptor are corrected at their source; current comparison keeps marker count and sequence references visible.
 
-The `dsh_session_log` request extension increments its outer schema to version 2 because its Session header projection replaces `seedLength` with required `isSeeded`. Its `sessionFormatVersion` member continues to identify the embedded logical Session generation.
+The `dsh_session_log` request extension keeps its own outer schema at version 1: its Session header projection still derives `seedLength` from the logical inherited cut, and only its `sessionFormatVersion` member identifies the embedded logical Session generation. Projection units likewise keep their `stateVersion`; the projection cache binds every checkpoint to the Session format generation, so a generation change never needs a unit version bump.
 
 Generation selection and publication follow the [released Session migration decision](2026-08-31-released-session-format-migrations.md): the source path, bytes, and inode remain unchanged, only the final version-named successor is published, and retained predecessors provide neither fallback nor downgrade support.
 

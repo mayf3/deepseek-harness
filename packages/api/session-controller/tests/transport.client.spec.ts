@@ -6,6 +6,7 @@ import {
 } from '@deepseek-ai/dsh-api-gateway/client'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { LlmAttemptId } from '@deepseek-ai/dsh-llm'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import {
   createSessionControlStream,
@@ -54,7 +55,7 @@ function snapshot(
   return {
     type: 'snapshot',
     header: {
-      version: 2,
+      version: SESSION_FORMAT_VERSION,
       id: ADDRESS.kind === 'session' ? ADDRESS.sessionId : ADDRESS.childSessionId,
       createdAt: 0,
       isSeeded: false,
@@ -181,7 +182,7 @@ describe('Session Client stream adapters', () => {
       frames: [{
         type: 'snapshot',
         header: {
-          version: 2,
+          version: SESSION_FORMAT_VERSION,
           id: ADDRESS.sessionId,
           createdAt: 0,
           isSeeded: false,
