@@ -161,3 +161,12 @@ export function errorChain(value: unknown): string {
 export function isHarnessError(value: unknown): value is HarnessError {
   return value instanceof HarnessError
 }
+
+/**
+ * Canonical code for a request an image-capable route cannot send until the
+ * agent loop advances the session's durable `image/offload` watermark. The
+ * failure's `offloadImages` names how many more of the oldest retained
+ * occurrences must be offloaded; the loop appends the advance and rebuilds the
+ * request, so the model never receives an unlogged projection.
+ */
+export const IMAGE_OFFLOAD_REQUIRED_CODE = 'IMAGE_OFFLOAD_REQUIRED'

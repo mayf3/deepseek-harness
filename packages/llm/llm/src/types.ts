@@ -48,6 +48,13 @@ export interface LlmFailure {
   readonly providerRetryAfterMs?: number
   /** Opaque provider-issued request identifier for diagnostics. */
   readonly requestId?: ProviderRequestId
+  /**
+   * With code `IMAGE_OFFLOAD_REQUIRED`: how many more of the oldest retained
+   * image occurrences the route needs offloaded before the same request fits
+   * its exact byte accounting. The agent loop advances the durable watermark
+   * by this count and rebuilds the request.
+   */
+  readonly offloadImages?: number
 }
 
 /** Plain text visible to the end user. */
@@ -72,6 +79,12 @@ export interface ImageBlock {
   type: 'image'
   /** Immutable bytes and intrinsic display metadata owned by the attachment service. */
   attachment: ImageAttachmentRef
+  /**
+   * Set by surface derivation when the occurrence lies at or before the
+   * session's durable `image/offload` watermark: every route sends its
+   * placeholder text instead of the image. Never stored in a logged message.
+   */
+  offloaded?: true
 }
 
 /** A tool invocation requested by the model. */
@@ -172,10 +185,11 @@ export interface LlmImageRequestPrice {
 export interface LlmImageRequestPricing {
   /**
    * Price every image occurrence of one request projection.
-   * @param images - durable image references in request order, one entry per occurrence.
+   * @param images - surface image blocks in request order, one entry per occurrence; an `offloaded` block
+   *   is priced as its placeholder text.
    * @returns one price per occurrence, aligned by index with `images`.
    */
-  priceImages(images: readonly ImageAttachmentRef[]): readonly LlmImageRequestPrice[]
+  priceImages(images: readonly ImageBlock[]): readonly LlmImageRequestPrice[]
 }
 
 /** Display metadata for one registered provider route. */
@@ -301,6 +315,30 @@ export interface LlmModelContext {
   contextWindow: number
 }
 
+/**
+ * Request-image budget one exact image-capable route declares, so the agent
+ * loop can advance the session's durable `image/offload` watermark before
+ * dispatch from logged facts alone. Byte accounting clamps each occurrence's
+ * normalized byte count to {@link versionMaxBytes} and, for the `base64`
+ * representation, expands it to its encoded length. A route whose exact
+ * request accounting still exceeds the budget fails the request with
+ * `IMAGE_OFFLOAD_REQUIRED` naming the additional occurrences to offload.
+ */
+export interface LlmImageRequestBudget {
+  /** Whether the route accounts raw file bytes or inline base64 length. */
+  representation: 'raw' | 'base64'
+  /** Accumulated represented image bytes the route accepts; absent leaves bytes unbounded. */
+  maxBytes?: number
+  /** Image occurrences the route accepts; absent leaves the count unbounded. */
+  maxImages?: number
+  /** Represented bytes removed as one deterministic advance step; absent removes the minimum. */
+  byteQuantum?: number
+  /** Occurrences removed as one deterministic advance step; absent removes the minimum. */
+  countQuantum?: number
+  /** Encoded-byte target of the route's derived request version; absent accounts normalized bytes. */
+  versionMaxBytes?: number
+}
+
 /** Display metadata for one adapter-owned reasoning effort. */
 export interface LlmReasoningEffortInfo {
   /** Opaque stable value accepted by {@link GenerateOptions.reasoningEffort}. */
@@ -330,6 +368,8 @@ export interface LlmResolvedModelInfo extends LlmModelInfo {
   defaultMaxTokens?: number
   /** Adapter-owned selectable reasoning levels when exposed. */
   reasoning?: LlmModelReasoningInfo
+  /** Request-image budget the route enforces; absent for routes that never offload. */
+  imageRequest?: LlmImageRequestBudget
 }
 
 /**

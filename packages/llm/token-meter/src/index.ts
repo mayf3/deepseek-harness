@@ -10,6 +10,7 @@ import { BlockAssembler } from '@deepseek-ai/dsh-llm'
 import type { LlmImageRequestPricing, Message, TokenUsage } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type {
+  ImageOccurrencePosition,
   EpochHeader,
   Session,
   SessionEvent,
@@ -47,6 +48,8 @@ interface MeasurementAnchor {
   readonly header: EpochHeader | undefined
   /** Surface snapshot the anchored request was derived from. */
   readonly nodes: readonly MeterSurfaceNode[]
+  /** Offload watermark the anchored request was derived under. */
+  readonly watermark: ImageOccurrencePosition | undefined
   /** Fixed-heuristic price of the call's provider output. */
   readonly assistantTokens: number
   /** Provider usage of the call, when it reported one under a known header. */
@@ -57,6 +60,8 @@ interface ReplayState {
   consumedEvents: SessionLogOffsetType
   header: EpochHeader | undefined
   surface: MeterSurfaceNode[]
+  /** Durable `image/offload` watermark in force after the consumed events. */
+  watermark: ImageOccurrencePosition | undefined
   stepStart: { turn: number; step: number; nodes: readonly MeterSurfaceNode[] } | undefined
   anchor: MeasurementAnchor | undefined
 }
@@ -142,7 +147,7 @@ export class TokenMeter extends Service {
       ? state.header
       : canonicalHeader(requestHeader)
     const pricing = this._routeImagePricing(header)
-    const surface = priceSurface(state.surface, pricing)
+    const surface = priceSurface(state.surface, pricing, state.watermark)
     const anchor = state.anchor
 
     let baseline: TokenMeasurementBaseline
@@ -151,7 +156,7 @@ export class TokenMeter extends Service {
       // Matching headers share one route, so the anchored snapshot reprices
       // under the same pricing as the current surface and the signed delta
       // compares like with like.
-      const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing).surfaceTokens
+      const anchorSurfaceTokens = priceSurface(anchor.nodes, pricing, anchor.watermark).surfaceTokens
         + anchor.assistantTokens
       const estimatedAnchorTokens = estimateHeader(header) + anchorSurfaceTokens
       const usage = anchor.usage
@@ -207,6 +212,7 @@ export class TokenMeter extends Service {
         consumedEvents: SessionLogOffset(0),
         header: undefined,
         surface: [],
+        watermark: undefined,
         stepStart: undefined,
         anchor: undefined,
       }
@@ -229,12 +235,16 @@ export class TokenMeter extends Service {
    */
   private _foldEvent(session: Session, state: ReplayState, event: SessionEvent): void {
     let nextHeader = state.header
+    let nextWatermark = state.watermark
     let nextStepStart = state.stepStart
     let nextAnchor = state.anchor
 
     switch (event.type) {
       case 'request/header':
         nextHeader = canonicalHeader(event.data.header)
+        break
+      case 'image/offload':
+        nextWatermark = event.data.watermark
         break
       case 'step/start':
         if (state.stepStart !== undefined) {
@@ -275,6 +285,7 @@ export class TokenMeter extends Service {
         nextAnchor = {
           header: nextHeader,
           nodes: stepStart.nodes,
+          watermark: nextWatermark,
           assistantTokens: this._estimateProviderAssistant(session, event, eventTokens),
           usage: event.data.usage,
         }
@@ -282,6 +293,7 @@ export class TokenMeter extends Service {
         nextAnchor = {
           header: nextHeader,
           nodes: stepStart.nodes,
+          watermark: nextWatermark,
           assistantTokens: eventTokens,
           usage: undefined,
         }
@@ -289,6 +301,7 @@ export class TokenMeter extends Service {
     }
 
     state.header = nextHeader
+    state.watermark = nextWatermark
     state.stepStart = nextStepStart
     if (plan !== undefined) {
       commitSurfaceTokens(state.surface, plan)

@@ -106,6 +106,17 @@ interface SessionEventMap {
    */
   'request/context': RequestContext
   /**
+   * Advances the durable image offload watermark before a request in step
+   * `step` of turn `turn` is dispatched. Every image occurrence positioned at
+   * or before `watermark` derives with `offloaded: true`, so each route sends
+   * its placeholder text instead of the image; occurrences after it stay
+   * retained. The watermark only advances: each event names a position
+   * strictly after the previous one, and no later budget, route change, or
+   * compaction moves it back. It is a log-only event that changes the derived
+   * surface, so a build that does not know the type refuses the log.
+   */
+  'image/offload': { turn: number; step: number; watermark: ImageOccurrencePosition }
+  /**
    * Marks the end of a constructor seed. Events before it have smaller seq
    * values and came from the seed (resume, fork, or replay); this lifecycle
    * produced none of them. This log-only event is the durable projection of
@@ -172,6 +183,26 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+}
+```
+
+### 图片 offload 事件：`image/offload`
+
+当已准备路由的请求图片预算被表层上保留的图片出现位置超过，或 adapter 以 `IMAGE_OFFLOAD_REQUIRED` 让一次尝试失败时，agent loop 会在 step 内、`request/header` 之后、派生请求之前追加 `image/offload`。其 `watermark` 指向最后一个被省略的出现位置；`deriveMessages()` 把位于它及之前的每个出现位置标为 `offloaded: true`，每条路由把这些标记渲染为占位文本。`Session.append` 与 seed 拒绝畸形、指向日志之外事件或没有严格越过前一条的水位，`session.imageOffloadWatermark()` 折叠最新值。它和 `request/header` 一样不是 `SurfaceEventType`；与之不同的是它改变派生表层，因此读取时必须识别（[决定](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
+
+```ts type-equiv
+/**
+ * Durable position of one image occurrence on the model-visible surface: the
+ * seq of the event carrying it and the block path inside that event's
+ * content (the top-level block index, followed by the index inside a
+ * tool-result block). Positions order by seq, then by path, so a newer
+ * event always lies after an older one regardless of surface replacements.
+ */
+interface ImageOccurrencePosition {
+  /** Seq of the `user/message` or `tool/result` event carrying the occurrence. */
+  seq: SessionSeq
+  /** Block index path inside that event's message content. */
+  path: number[]
 }
 ```
 
@@ -534,6 +565,13 @@ declare class Session {
    */
   requestContext(): RequestContext | undefined;
   /**
+   * The durable image offload watermark in force: every image occurrence
+   * positioned at or before it derives as offloaded. Undefined until the
+   * first `image/offload` event.
+   * @returns the frozen latest watermark, or undefined when nothing is offloaded.
+   */
+  imageOffloadWatermark(): ImageOccurrencePosition | undefined;
+  /**
    * Derive the LLM message history by walking the ordered sequences of
    * message-producing events maintained by `surfaceOp` markers. The
    * surface is the single source of derived history: every message-producing
@@ -544,7 +582,9 @@ declare class Session {
    *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
+   * {@link SessionSurface.replaceGeneration}) or an `image/offload` advance
+   * rebuilds, and image occurrences at or before the watermark derive with
+   * `offloaded: true` ({@link markImageOffload}). The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
    * Their content reuses the already frozen durable event data, so the cache

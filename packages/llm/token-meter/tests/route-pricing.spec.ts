@@ -165,6 +165,32 @@ describe('route-aware image pricing', () => {
     expect(unknownRoute.nodes[0]!.tokens).toBe(estimateMessage(message))
   })
 
+  it('prices occurrences at or before the image/offload watermark as the route placeholder', async () => {
+    const placeholder = '[offloaded]'
+    const watermarkPricing: LlmImageRequestPricing = {
+      priceImages: images => images.map(block => (block.offloaded === true
+        ? { visualTokens: 0, text: placeholder }
+        : { visualTokens: VISUAL_TOKENS, text: HANDLE_TEXT })),
+    }
+    const { meter, session } = await harness(() => watermarkPricing)
+    session.append('turn/start', { turn: 1 })
+    const older = imageMessage('older')
+    const newer = imageMessage('newer')
+    const olderSeq = session.append('user/message', older, { surfaceOp: 'append' }).seq
+    session.append('user/message', newer, { surfaceOp: 'append' })
+    session.append('request/header', { header: header('vision'), reason: 'initial' })
+    const before = meter.measure(session)
+    expect(before.nodes.map(node => node.tokens)).toEqual([routedMessageTokens(older), routedMessageTokens(newer)])
+
+    session.append('step/start', { turn: 1, step: 1 })
+    session.append('image/offload', { turn: 1, step: 1, watermark: { seq: olderSeq, path: [1] } })
+    const after = meter.measure(session)
+    const imageFree = estimateMessage({ ...older, content: older.content.filter(block => block.type !== 'image') })
+    expect(after.nodes[0]!.tokens).toBe(imageFree + estimateContent([{ type: 'text', text: placeholder }]))
+    expect(after.nodes[1]!.tokens).toBe(routedMessageTokens(newer))
+    expect(after.totalTokens).toBeLessThan(before.totalTokens)
+  })
+
   it('fails loud when a route answers a mismatched occurrence count', async () => {
     const broken: LlmImageRequestPricing = { priceImages: () => [] }
     const { meter, session } = await harness(() => broken)

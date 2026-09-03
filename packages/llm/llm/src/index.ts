@@ -15,6 +15,7 @@ import type {
   LlmDiscoveredModel,
   LlmFailure,
   LlmImageRequestPricing,
+  LlmImageRequestBudget,
   LlmModelContext,
   LlmModelDiscoveryRequest,
   LlmModelInfo,
@@ -77,6 +78,8 @@ export interface LlmErrorOptions extends ErrorOptions {
   providerRetryAfterMs?: number
   /** Non-empty opaque provider request id. */
   requestId?: ProviderRequestId
+  /** Positive count of additional oldest retained image occurrences to offload; only with `IMAGE_OFFLOAD_REQUIRED`. */
+  offloadImages?: number
 }
 
 /**
@@ -107,6 +110,10 @@ export class LlmError extends HarnessError {
       && (typeof options.requestId !== 'string' || options.requestId.length === 0)) {
       throw new Error('LlmError requestId must be a non-empty string')
     }
+    if (options?.offloadImages !== undefined
+      && (!Number.isSafeInteger(options.offloadImages) || options.offloadImages <= 0)) {
+      throw new Error('LlmError offloadImages must be a positive safe integer')
+    }
     super(message, code, options)
     this.name = 'LlmError'
     this.failure = Object.freeze({
@@ -115,6 +122,7 @@ export class LlmError extends HarnessError {
       ...options?.status === undefined ? {} : { status: options.status },
       ...options?.providerRetryAfterMs === undefined ? {} : { providerRetryAfterMs: options.providerRetryAfterMs },
       ...options?.requestId === undefined ? {} : { requestId: options.requestId },
+      ...options?.offloadImages === undefined ? {} : { offloadImages: options.offloadImages },
     })
   }
 }
@@ -164,6 +172,8 @@ export interface PreparedLlmCall {
   readonly context?: LlmModelContext
   /** Exact model modalities captured with the adapter dispatch generation. */
   readonly inputModalities?: readonly ModelModality[]
+  /** Detached request-image budget the route enforces, when it declares one. */
+  readonly imageRequest?: LlmImageRequestBudget
   /** Config fields materialized by the captured adapter rather than proposed by the caller. */
   readonly adapterDefaults: LlmCallConfigAdapterDefaults
   /**
@@ -665,6 +675,33 @@ export class LlmRuntime extends TypertRemoteService {
     return modalities === undefined ? undefined : [...modalities]
   }
 
+  /** Validate and detach one adapter-declared request-image budget. */
+  private detachedImageRequest(
+    budget: LlmImageRequestBudget | undefined,
+    provider: string,
+    model: string,
+  ): LlmImageRequestBudget | undefined {
+    if (budget === undefined) return undefined
+    const positive = (value: number | undefined): boolean => value === undefined
+      || (Number.isSafeInteger(value) && value > 0)
+    if (!positive(budget.maxBytes) || !positive(budget.maxImages)
+      || !positive(budget.byteQuantum) || !positive(budget.countQuantum)
+      || !positive(budget.versionMaxBytes)) {
+      throw new LlmError(
+        `adapter returned invalid request-image budget for provider "${provider}" model "${model}"`,
+        'INVALID_MODEL_IMAGE_BUDGET',
+      )
+    }
+    return {
+      representation: budget.representation,
+      ...budget.maxBytes === undefined ? {} : { maxBytes: budget.maxBytes },
+      ...budget.maxImages === undefined ? {} : { maxImages: budget.maxImages },
+      ...budget.byteQuantum === undefined ? {} : { byteQuantum: budget.byteQuantum },
+      ...budget.countQuantum === undefined ? {} : { countQuantum: budget.countQuantum },
+      ...budget.versionMaxBytes === undefined ? {} : { versionMaxBytes: budget.versionMaxBytes },
+    }
+  }
+
   /**
    * Discover models advertised by one registered provider. Catalog membership
    * is advisory and never changes routing or request validation.
@@ -765,6 +802,7 @@ export class LlmRuntime extends TypertRemoteService {
         'INVALID_MODEL_MAX_TOKENS',
       )
     }
+    const imageRequest = this.detachedImageRequest(resolved.imageRequest, provider, model)
     const info: LlmResolvedModelInfo = {
       provider,
       id: model,
@@ -773,6 +811,7 @@ export class LlmRuntime extends TypertRemoteService {
       ...inputModalities === undefined ? {} : { inputModalities },
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
+      ...imageRequest === undefined ? {} : { imageRequest },
     }
     const reasoning = resolved.reasoning
     if (reasoning === undefined) return info
@@ -913,6 +952,9 @@ export class LlmRuntime extends TypertRemoteService {
       ...modelInfo.inputModalities === undefined
         ? {}
         : { inputModalities: Object.freeze([...modelInfo.inputModalities]) },
+      ...modelInfo.imageRequest === undefined
+        ? {}
+        : { imageRequest: deepFreeze(structuredClone(modelInfo.imageRequest)) },
       stream: (options: GenerateOptions): AsyncIterable<StreamChunk> => {
         if (dispatched) {
           throw new LlmError('a prepared LLM call can only be dispatched once', 'INVALID_PREPARED_CALL')

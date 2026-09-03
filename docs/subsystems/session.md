@@ -106,6 +106,17 @@ interface SessionEventMap {
    */
   'request/context': RequestContext
   /**
+   * Advances the durable image offload watermark before a request in step
+   * `step` of turn `turn` is dispatched. Every image occurrence positioned at
+   * or before `watermark` derives with `offloaded: true`, so each route sends
+   * its placeholder text instead of the image; occurrences after it stay
+   * retained. The watermark only advances: each event names a position
+   * strictly after the previous one, and no later budget, route change, or
+   * compaction moves it back. It is a log-only event that changes the derived
+   * surface, so a build that does not know the type refuses the log.
+   */
+  'image/offload': { turn: number; step: number; watermark: ImageOccurrencePosition }
+  /**
    * Marks the end of a constructor seed. Events before it have smaller seq
    * values and came from the seed (resume, fork, or replay); this lifecycle
    * produced none of them. This log-only event is the durable projection of
@@ -172,6 +183,26 @@ interface RequestContext {
   model: string
   /** Maximum combined request and response context in tokens, when advertised. */
   contextWindow?: number
+}
+```
+
+### The image offload event: `image/offload`
+
+The agent loop appends `image/offload` inside a step, after `request/header` and before deriving the request, when the prepared route's request-image budget is exceeded by the surface's retained image occurrences, or when an adapter fails an attempt with `IMAGE_OFFLOAD_REQUIRED`. Its `watermark` names the last offloaded occurrence; `deriveMessages()` marks every occurrence positioned at or before it `offloaded: true`, and each route renders those marks as placeholder text. `Session.append` and seeding reject a watermark that is malformed, names an event outside the log, or does not advance strictly past the previous one, and `session.imageOffloadWatermark()` folds the latest. Like `request/header`, it is not a `SurfaceEventType`; unlike it, it changes the derived surface, so it stays required-on-read ([decision](../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.md)).
+
+```ts type-equiv
+/**
+ * Durable position of one image occurrence on the model-visible surface: the
+ * seq of the event carrying it and the block path inside that event's
+ * content (the top-level block index, followed by the index inside a
+ * tool-result block). Positions order by seq, then by path, so a newer
+ * event always lies after an older one regardless of surface replacements.
+ */
+interface ImageOccurrencePosition {
+  /** Seq of the `user/message` or `tool/result` event carrying the occurrence. */
+  seq: SessionSeq
+  /** Block index path inside that event's message content. */
+  path: number[]
 }
 ```
 
@@ -532,6 +563,13 @@ declare class Session {
    */
   requestContext(): RequestContext | undefined;
   /**
+   * The durable image offload watermark in force: every image occurrence
+   * positioned at or before it derives as offloaded. Undefined until the
+   * first `image/offload` event.
+   * @returns the frozen latest watermark, or undefined when nothing is offloaded.
+   */
+  imageOffloadWatermark(): ImageOccurrencePosition | undefined;
+  /**
    * Derive the LLM message history by walking the ordered sequences of
    * message-producing events maintained by `surfaceOp` markers. The
    * surface is the single source of derived history: every message-producing
@@ -542,7 +580,9 @@ declare class Session {
    *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
+   * {@link SessionSurface.replaceGeneration}) or an `image/offload` advance
+   * rebuilds, and image occurrences at or before the watermark derive with
+   * `offloaded: true` ({@link markImageOffload}). The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
    * Their content reuses the already frozen durable event data, so the cache

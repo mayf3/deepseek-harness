@@ -8,7 +8,9 @@
  * @module @deepseek-ai/dsh-token-meter/route-pricing
  */
 
-import type { LlmImageRequestPricing } from '@deepseek-ai/dsh-llm'
+import type { ImageBlock, LlmImageRequestPricing } from '@deepseek-ai/dsh-llm'
+import { compareImagePositions } from '@deepseek-ai/dsh-session'
+import type { ImageOccurrencePosition } from '@deepseek-ai/dsh-session'
 import { estimateContent } from './estimate.ts'
 import type { MeterSurfaceNode } from './surface-fold.ts'
 import type { TokenSurfaceNode } from './types.ts'
@@ -22,9 +24,12 @@ export interface PricedSurface {
 }
 
 /**
- * Price one ordered surface under a route's request-image pricing.
+ * Price one ordered surface under a route's request-image pricing. Every
+ * occurrence positioned at or before `watermark` is priced as the route's
+ * offloaded placeholder, exactly as the derived surface sends it.
  * @param nodes - the fold's current or snapshotted surface, in model-visible order.
  * @param pricing - the routed model's image pricing, or undefined to keep the fixed heuristic.
+ * @param watermark - the durable `image/offload` watermark in force for this surface, if any.
  * @returns detached public nodes and their route-priced total.
  * @throws when the pricing answers a different occurrence count than it was
  *   asked — misalignment would silently misprice nodes, so it must fail loud.
@@ -32,8 +37,15 @@ export interface PricedSurface {
 export function priceSurface(
   nodes: readonly MeterSurfaceNode[],
   pricing: LlmImageRequestPricing | undefined,
+  watermark?: ImageOccurrencePosition,
 ): PricedSurface {
-  const images = pricing === undefined ? [] : nodes.flatMap(node => node.images)
+  const images: ImageBlock[] = pricing === undefined
+    ? []
+    : nodes.flatMap(node => node.images.map(({ attachment, path }) => (
+      watermark !== undefined && compareImagePositions({ seq: node.seq, path: [...path] }, watermark) <= 0
+        ? { type: 'image' as const, attachment, offloaded: true as const }
+        : { type: 'image' as const, attachment }
+    )))
   if (pricing === undefined || images.length === 0) {
     let surfaceTokens = 0
     const publicNodes = nodes.map((node) => {

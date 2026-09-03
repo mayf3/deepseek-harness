@@ -243,6 +243,20 @@ export interface RequestContext {
 }
 
 /**
+ * Durable position of one image occurrence on the model-visible surface: the
+ * seq of the event carrying it and the block path inside that event's
+ * content (the top-level block index, followed by the index inside a
+ * tool-result block). Positions order by seq, then by path, so a newer
+ * event always lies after an older one regardless of surface replacements.
+ */
+export interface ImageOccurrencePosition {
+  /** Seq of the `user/message` or `tool/result` event carrying the occurrence. */
+  seq: SessionSeq
+  /** Block index path inside that event's message content. */
+  path: number[]
+}
+
+/**
  * Why a `request/header` snapshot was appended: `'initial'` — the log's first
  * header (a new conversation); `'resume'` — a loop instance's first request
  * over a log that already has header events (process restart, fork seed);
@@ -339,6 +353,17 @@ export interface SessionEventMap {
    * changes. It does not participate in request reconstruction or header equality.
    */
   'request/context': RequestContext
+  /**
+   * Advances the durable image offload watermark before a request in step
+   * `step` of turn `turn` is dispatched. Every image occurrence positioned at
+   * or before `watermark` derives with `offloaded: true`, so each route sends
+   * its placeholder text instead of the image; occurrences after it stay
+   * retained. The watermark only advances: each event names a position
+   * strictly after the previous one, and no later budget, route change, or
+   * compaction moves it back. It is a log-only event that changes the derived
+   * surface, so a build that does not know the type refuses the log.
+   */
+  'image/offload': { turn: number; step: number; watermark: ImageOccurrencePosition }
   /**
    * Marks the end of a constructor seed. Events before it have smaller seq
    * values and came from the seed (resume, fork, or replay); this lifecycle

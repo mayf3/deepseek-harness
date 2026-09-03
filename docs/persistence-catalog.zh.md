@@ -476,6 +476,28 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/hooks/hook-protocol/src/types.ts:31`](../packages/hooks/hook-protocol/src/types.ts)
 
+### `image/*`
+
+<a id="imageoffload--log-only"></a>
+
+#### `image/offload` — log-only
+
+```ts persistence-catalog
+/**
+ * Advances the durable image offload watermark before a request in step
+ * `step` of turn `turn` is dispatched. Every image occurrence positioned at
+ * or before `watermark` derives with `offloaded: true`, so each route sends
+ * its placeholder text instead of the image; occurrences after it stay
+ * retained. The watermark only advances: each event names a position
+ * strictly after the previous one, and no later budget, route change, or
+ * compaction moves it back. It is a log-only event that changes the derived
+ * surface, so a build that does not know the type refuses the log.
+ */
+'image/offload': { turn: number; step: number; watermark: ImageOccurrencePosition }
+```
+
+来源：[`packages/core/session/src/types.ts:366`](../packages/core/session/src/types.ts)
+
 ### `llm/*`
 
 <a id="llmretry--log-only"></a>

@@ -18,9 +18,18 @@
 
 import { deriveEventMessage } from '@deepseek-ai/dsh-session'
 import type { SessionSeq, SurfaceEvent } from '@deepseek-ai/dsh-session'
-import type { ContentBlock, Message } from '@deepseek-ai/dsh-llm'
+import { visitImageBlocks } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ImageBlockPath, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { estimateMessage, estimateStructuralBlock } from './estimate.ts'
+
+/** One durable image occurrence of a surface node, positioned for the offload watermark. */
+export interface MeterImageOccurrence {
+  /** Durable normalized attachment reference of the occurrence. */
+  readonly attachment: ImageAttachmentRef
+  /** Block path of the occurrence inside the node's message content. */
+  readonly path: ImageBlockPath
+}
 
 /** One priced surface node with the image occurrences route pricing replaces. */
 export interface MeterSurfaceNode {
@@ -31,7 +40,7 @@ export interface MeterSurfaceNode {
   /** Fixed-heuristic price with every image occurrence's structural price removed. */
   readonly imageFreeTokens: number
   /** Durable image occurrences in message order; empty for image-free nodes. */
-  readonly images: readonly ImageAttachmentRef[]
+  readonly images: readonly MeterImageOccurrence[]
 }
 
 /** One validated surface transition that has not mutated the priced surface yet. */
@@ -46,17 +55,13 @@ export interface SurfaceTokenPlan {
   readonly target: 'append' | { readonly startIdx: number; readonly endIdx: number }
 }
 
-/** Collect image occurrences recursively and total their structural prices. */
-function collectImages(blocks: readonly ContentBlock[], images: ImageAttachmentRef[]): number {
+/** Collect image occurrences with their block paths and total their structural prices. */
+function collectImages(blocks: readonly ContentBlock[], images: MeterImageOccurrence[]): number {
   let structuralTokens = 0
-  for (const block of blocks) {
-    if (block.type === 'image') {
-      images.push(block.attachment)
-      structuralTokens += estimateStructuralBlock(block)
-    } else if (block.type === 'tool-result') {
-      structuralTokens += collectImages(block.content, images)
-    }
-  }
+  visitImageBlocks(blocks, (block, path) => {
+    images.push({ attachment: block.attachment, path })
+    structuralTokens += estimateStructuralBlock(block)
+  })
   return structuralTokens
 }
 
@@ -64,7 +69,7 @@ function collectImages(blocks: readonly ContentBlock[], images: ImageAttachmentR
 function analyzeNode(seq: SessionSeq, message: Message | null): MeterSurfaceNode {
   if (message === null) return { seq, heuristicTokens: 0, imageFreeTokens: 0, images: [] }
   const heuristicTokens = estimateMessage(message)
-  const images: ImageAttachmentRef[] = []
+  const images: MeterImageOccurrence[] = []
   const imageStructuralTokens = collectImages(message.content, images)
   return {
     seq,

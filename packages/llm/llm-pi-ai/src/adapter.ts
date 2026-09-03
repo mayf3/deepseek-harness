@@ -306,6 +306,15 @@ export class PiAiAdapter extends LlmAdapter {
       inputModalities: [...resolvedModel.input],
       context: { contextWindow: resolvedModel.contextWindow },
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
+      ...resolvedModel.input.includes('image')
+        ? {
+          imageRequest: {
+            representation: 'base64' as const,
+            maxBytes: profile.maxRequestImageBytes,
+            versionMaxBytes: profile.requestImageMaxBytes,
+          },
+        }
+        : {},
       ...reasoningInfo(resolvedModel, defaultLevel),
     }
   }

@@ -1338,3 +1338,33 @@ describe('LlmRuntime', () => {
     expect(ctx.llm.listProviders()).toEqual([])
   })
 })
+
+describe('request-image budget metadata', () => {
+  it('detaches a valid budget onto the prepared call and rejects a non-positive field', async () => {
+    class BudgetAdapter extends LlmAdapter {
+      constructor(private readonly budget: Record<string, unknown>) {
+        super()
+      }
+
+      override resolveModel(provider: string, model: string) {
+        return Promise.resolve({ provider, id: model, name: model, imageRequest: this.budget as never })
+      }
+
+      async * stream(): AsyncIterable<never> {
+        throw new Error('unused')
+      }
+    }
+    const ctx = new Context()
+    const llm = new LlmRuntime(ctx)
+    const full = { representation: 'raw', maxBytes: 8, maxImages: 3, byteQuantum: 4, countQuantum: 2, versionMaxBytes: 5 }
+    llm.registerAdapter(['good'], new BudgetAdapter(full))
+    llm.registerAdapter(['bare'], new BudgetAdapter({ representation: 'base64' }))
+    llm.registerAdapter(['bad'], new BudgetAdapter({ representation: 'base64', maxImages: 0 }))
+    const prepared = await llm.prepareCall({ provider: 'good', model: 'm' })
+    expect(prepared.imageRequest).toEqual(full)
+    expect((await llm.prepareCall({ provider: 'bare', model: 'm' })).imageRequest).toEqual({ representation: 'base64' })
+    expect(Object.isFrozen(prepared.imageRequest)).toBe(true)
+    await expect(llm.prepareCall({ provider: 'bad', model: 'm' })).rejects.toMatchObject({ code: 'INVALID_MODEL_IMAGE_BUDGET' })
+    expect(() => new LlmError('x', 'y', { offloadImages: 0 })).toThrow('offloadImages must be a positive safe integer')
+  })
+})

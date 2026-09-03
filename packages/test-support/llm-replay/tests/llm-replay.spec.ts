@@ -1380,10 +1380,45 @@ describe('apply (the plugin entry)', () => {
       width: 640,
       height: 480,
     } as never
-    const priced = pricing?.priceImages([ref, ref])
-    expect(priced?.map(price => price.visualTokens)).toEqual([384, 384])
-    expect(priced?.every(price => price.text.includes('640x480px'))).toBe(true)
+    const priced = pricing?.priceImages([
+      { type: 'image', attachment: ref },
+      { type: 'image', attachment: ref, offloaded: true },
+    ])
+    expect(priced?.map(price => price.visualTokens)).toEqual([384, 0])
+    expect(priced?.[0]?.text).toContain('640x480px')
+    expect(priced?.[1]?.text).toContain('image omitted to fit request image limits')
     expect(ctx.llm.imageRequestPricing('deepseek', 'plain')).toBeUndefined()
+  })
+
+  it('declares a base64 request-image budget only for models that configure it', async () => {
+    writeFileSync(file, sessionJsonl(TEXT_CHUNKS.map((c, i) => chunkEvent(SessionSeq(i + 1), 1, 1, c))), 'utf8')
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    installLlmReplay(ctx, {
+      file,
+      providers: [{
+        id: 'deepseek',
+        models: [
+          { id: 'vision', inputModalities: ['text', 'image'], imageRequestMaxBytes: 4096 },
+          { id: 'plain' },
+        ],
+      }],
+    })
+    await expect(ctx.llm.resolveModelInfo('deepseek', 'vision')).resolves.toMatchObject({
+      imageRequest: { representation: 'base64', maxBytes: 4096 },
+    })
+    expect((await ctx.llm.resolveModelInfo('deepseek', 'plain')).imageRequest).toBeUndefined()
+  })
+
+  it.each([
+    [{ id: 'm', inputModalities: ['text', 'image'], imageRequestMaxBytes: 0 }, 'must be a positive safe integer'],
+    [{ id: 'm', imageRequestMaxBytes: 4096 }, 'requires inputModalities to include "image"'],
+  ])('rejects an invalid imageRequestMaxBytes during load: %j', (model, reason) => {
+    const ctx = new Context()
+    const providers = [{ id: 'm', models: [model] }] as unknown as NonNullable<Config['providers']>
+    expect(() => { apply(ctx, { file, providers }) }).toThrow(
+      `llm-replay: provider "m" model "m" imageRequestMaxBytes ${reason}`,
+    )
   })
 
   it('rejects imageRequestTokens on a model without the image modality during load', () => {

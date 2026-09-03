@@ -83,6 +83,8 @@ session.deriveMessages()         // the derived model history
 
 `request/header` 存储非历史请求 envelope 的完整规范快照，原因为 `initial`、`resume`、`change` 或 `series`。显式消息序列起点或表层替换会在 envelope 不变时写入 `series` 快照；同时发生变化时使用 `startsSeries: true`。同一序列内的步骤、重试与普通后续轮次继承最新快照。`adapterDefaults` 区分由适配器解析的值与显式设置，`foldRequestHeader()` 选择最新快照。这种自包含记录以每个消息序列增加存储为代价，支持局部窗口渲染与精确重建；细节由[可重建请求 Agent Note](../../../.agents/notes/implemented/architecture/2026-07-05-reconstructable-requests.zh.md)负责。
 
+`image/offload` 记录 agent loop 在路由请求图片预算被超过时于分派前推进的持久图片 offload 水位：一个以事件序号加块路径指向最后一个被省略出现位置的 `ImageOccurrencePosition`。派生把位于水位及之前的每个出现位置标为 `offloaded: true`，于是每条路由发送其占位文本而不是图片；位置只会推进，`Session.append` 与 seed 都拒绝畸形或不推进的水位。该事件改变派生表层，因此读取时必须识别：不认识该类型的构建拒绝这份日志，而不是带着模型从未见过的图片重放（[决定](../../../.agents/notes/implemented/architecture/2026-09-02-image-offload-watermark.zh.md)）。
+
 ### 源码地图
 
 | 文件 | 职责 |
@@ -91,6 +93,7 @@ session.deriveMessages()         // the derived model history
 | [`src/types.ts`](src/types.ts) | `SessionEventMap`、`SessionEvent`、`UserMessage`、`SessionHeader`、`TurnEndReasonMap` |
 | [`src/surface.ts`](src/surface.ts) | 有序 surface 投影、替换校验、`deriveEventMessage` |
 | [`src/request-header.ts`](src/request-header.ts) | `request/header` 折叠与重建 |
+| [`src/image-offload.ts`](src/image-offload.ts) | `image/offload` 水位校验、折叠与表层标记 |
 | [`dsh-util-values`](../../util/values/README.zh.md) | 共享无损 JSON 校验与分离式快照 |
 | [`src/chunk-rows.ts`](src/chunk-rows.ts) | 供持久化后端使用的共享紧凑行存储编解码器 |
 | [`src/repair.ts`](src/repair.ts) | 崩溃遗留日志的冷修复 |
@@ -106,7 +109,7 @@ session.deriveMessages()         // the derived model history
 
 ### 请求头
 
-循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、渲染后的系统提示词、组装后的工具 schema）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。
+循环在每个循环实例边界及变更时记录完整规范 `request/header` 快照（调用配置、适配器默认值、渲染后的系统提示词、组装后的工具 schema）；`foldRequestHeader(events)` 通过选择最新快照来重建它，使每个对话请求都成为日志的纯函数。路由元数据（`request/context`）是独立的已记录状态，仅在提供方、模型或容量变化时追加。图片 offload 水位（`image/offload`）是持久的表层状态：位于水位及之前的每个图片出现位置派生时带 `offloaded: true`，每条事件必须严格越过前一条，`session.imageOffloadWatermark()` 折叠最新位置。
 
 </details>
 

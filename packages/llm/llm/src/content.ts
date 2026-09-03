@@ -1,6 +1,6 @@
 /** Content-block structure helpers. @module @deepseek-ai/dsh-llm/content */
 
-import type { ContentBlock } from './types.ts'
+import type { ContentBlock, ImageBlock, LlmImageRequestBudget } from './types.ts'
 import type { Message } from './message.ts'
 import type { AttachmentStore, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
@@ -131,58 +131,117 @@ function base64Length(bytes: number): number {
   return Math.ceil(bytes / 3) * 4
 }
 
-/** Byte accounting and quantized removal policy for one request representation. */
-export interface RequestImageOffloadPolicy {
-  /** Image count accepted by the route; omission leaves count unbounded. */
-  maxImages?: number
-  /** Accumulated image bytes accepted by the route; omission leaves bytes unbounded. */
-  maxBytes?: number
-  /** Number of excess images removed as one deterministic step. */
-  countQuantum?: number
-  /** Number of excess bytes removed as one deterministic step. */
-  byteQuantum?: number
-  /** Whether byte accounting uses raw file bytes or inline base64 length. */
-  representation: 'raw' | 'base64'
-  /** Resolve the encoded request-version length; omission uses normalized attachment bytes. */
-  byteLength?: (ref: ImageAttachmentRef) => number
-  /** Build the model-visible replacement for each omitted attachment. */
-  placeholder: (ref: ImageAttachmentRef) => string
+/**
+ * Block index path of one image occurrence inside message content: the
+ * top-level block index alone, or that index followed by the position inside
+ * a tool-result block's content. Paths compare lexicographically in message
+ * order.
+ */
+export type ImageBlockPath = readonly number[]
+
+/**
+ * Compare two block paths in message order.
+ * @param a - first path.
+ * @param b - second path.
+ * @returns negative, zero, or positive as `a` sorts before, at, or after `b`.
+ */
+export function compareImageBlockPaths(a: ImageBlockPath, b: ImageBlockPath): number {
+  const length = Math.min(a.length, b.length)
+  for (let index = 0; index < length; index += 1) {
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- index is below both lengths
+    const delta = a[index]! - b[index]!
+    if (delta !== 0) return delta
+  }
+  return a.length - b.length
 }
 
-/** Collect represented image lengths in request and nested-block order. */
-function collectImageLengths(
-  blocks: readonly ContentBlock[],
-  lengths: number[],
-  policy: RequestImageOffloadPolicy,
+/**
+ * Visit every image occurrence of typed content in message order, including
+ * nested tool-result content, with the block path that identifies it. This is
+ * the one image walk shared by surface derivation, watermark planning, and
+ * pricing, so no consumer can diverge on nesting depth or occurrence order.
+ * @param content - typed model content blocks.
+ * @param visit - called once per occurrence with the block and its path.
+ */
+export function visitImageBlocks(
+  content: readonly ContentBlock[],
+  visit: (block: ImageBlock, path: ImageBlockPath) => void,
 ): void {
-  for (const block of blocks) {
+  for (const [index, block] of content.entries()) {
     if (block.type === 'image') {
-      const bytes = policy.byteLength === undefined
-        ? block.attachment.bytes
-        : policy.byteLength(block.attachment)
-      lengths.push(policy.representation === 'base64' ? base64Length(bytes) : bytes)
+      visit(block, [index])
     } else if (block.type === 'tool-result') {
-      collectImageLengths(block.content, lengths, policy)
+      for (const [nested, inner] of block.content.entries()) {
+        if (inner.type === 'image') visit(inner, [index, nested])
+      }
     }
   }
 }
 
-/** Replace the first `remaining.count` image occurrences without mutating durable messages. */
-function replaceOldestImages(
+/**
+ * Represented byte length of one image occurrence under a route budget: the
+ * normalized byte count clamped to the route's request-version target, then
+ * base64-expanded for an inline representation.
+ * @param bytes - normalized attachment byte count.
+ * @param budget - route representation and request-version target.
+ * @returns the byte length the route's request accounting charges.
+ */
+export function representedImageBytes(
+  bytes: number,
+  budget: Pick<LlmImageRequestBudget, 'representation' | 'versionMaxBytes'>,
+): number {
+  const clamped = budget.versionMaxBytes === undefined ? bytes : Math.min(bytes, budget.versionMaxBytes)
+  return budget.representation === 'base64' ? base64Length(clamped) : clamped
+}
+
+/**
+ * Mark image occurrences as offloaded without mutating durable content.
+ * @param content - typed model content blocks.
+ * @param offloaded - whether the occurrence at `path` lies at or before the watermark.
+ * @returns the original array when nothing changes, otherwise a copy whose marked blocks carry `offloaded: true`.
+ */
+export function markOffloadedImages(
+  content: readonly ContentBlock[],
+  offloaded: (path: ImageBlockPath) => boolean,
+): readonly ContentBlock[] {
+  let next: ContentBlock[] | undefined
+  for (const [index, block] of content.entries()) {
+    if (block.type === 'image') {
+      if (block.offloaded !== true && offloaded([index])) {
+        next ??= content.slice(0, index)
+        next.push({ ...block, offloaded: true })
+        continue
+      }
+    } else if (block.type === 'tool-result') {
+      const inner = markOffloadedImages(
+        block.content,
+        path => offloaded([index, ...path]),
+      )
+      if (inner !== block.content) {
+        next ??= content.slice(0, index)
+        next.push({ ...block, content: inner as ContentBlock[] })
+        continue
+      }
+    }
+    next?.push(block)
+  }
+  return next ?? content
+}
+
+/** Replace every offloaded occurrence, including nested tool results, with its placeholder. */
+function replaceOffloadedImages(
   blocks: readonly ContentBlock[],
-  remaining: { count: number },
   placeholder: (ref: ImageAttachmentRef) => string,
 ): ContentBlock[] {
   let next: ContentBlock[] | undefined
   for (const [index, block] of blocks.entries()) {
-    if (block.type === 'image' && remaining.count > 0) {
-      remaining.count -= 1
+    if (block.type === 'image' && block.offloaded === true) {
       next ??= blocks.slice(0, index)
       next.push({ type: 'text', text: placeholder(block.attachment) })
       continue
     }
     if (block.type === 'tool-result') {
-      const content = replaceOldestImages(block.content, remaining, placeholder)
+      const content = replaceOffloadedImages(block.content, placeholder)
       if (content !== block.content) {
         next ??= blocks.slice(0, index)
         next.push({ ...block, content })
@@ -192,6 +251,90 @@ function replaceOldestImages(
     next?.push(block)
   }
   return next ?? blocks as ContentBlock[]
+}
+
+/**
+ * Project the surface's offloaded occurrences into deterministic text for one
+ * request. The offloaded set is a durable surface fact, so every route sends
+ * the same set; only the placeholder text is route-owned.
+ * @param messages - derived request history.
+ * @param placeholder - build the model-visible replacement for one offloaded attachment.
+ * @returns the original list when nothing is offloaded, otherwise shallow message copies with placeholders.
+ */
+export function projectOffloadedImages(
+  messages: readonly Message[],
+  placeholder: (ref: ImageAttachmentRef) => string,
+): readonly Message[] {
+  return messages.map((message) => {
+    const content = replaceOffloadedImages(message.content, placeholder)
+    return content === message.content ? message : { ...message, content }
+  })
+}
+
+/**
+ * Number of oldest retained image occurrences one route budget removes, in
+ * whole count and byte quanta, once the budget is exceeded. The result depends
+ * only on the represented lengths, so the agent loop plans the durable
+ * watermark from logged facts and an adapter names the same count when its
+ * exact accounting still overflows.
+ * @param lengths - represented byte length of every retained occurrence, oldest first.
+ * @param budget - count/byte budgets and removal quanta; unbounded when absent.
+ * @returns how many leading occurrences to offload.
+ */
+export function offloadedImagePrefixCount(
+  lengths: readonly number[],
+  budget: Pick<LlmImageRequestBudget, 'maxImages' | 'maxBytes' | 'countQuantum' | 'byteQuantum'>,
+): number {
+  const total = lengths.reduce((sum, bytes) => sum + bytes, 0)
+  const excessCount = budget.maxImages === undefined ? 0 : Math.max(0, lengths.length - budget.maxImages)
+  const excessBytes = budget.maxBytes === undefined ? 0 : Math.max(0, total - budget.maxBytes)
+  if (excessCount === 0 && excessBytes === 0) return 0
+  const countQuantum = budget.countQuantum ?? 1
+  const byteQuantum = budget.byteQuantum ?? 1
+  const removeCount = excessCount === 0 ? 0 : Math.ceil(excessCount / countQuantum) * countQuantum
+  const removeBytes = excessBytes === 0 ? 0 : Math.ceil(excessBytes / byteQuantum) * byteQuantum
+  let count = 0
+  let removedBytes = 0
+  for (const imageBytes of lengths) {
+    const byteTargetMet = removeBytes === 0
+      || (byteQuantum === 1 ? removedBytes >= removeBytes : removedBytes > removeBytes)
+    if (count >= removeCount && byteTargetMet) break
+    removedBytes += imageBytes
+    count += 1
+  }
+  return count
+}
+
+/** One retained image occurrence the watermark planner may offload. */
+export interface RetainedImageOccurrence<Position> {
+  /** Durable position of the occurrence, used as the watermark when it becomes the last offloaded one. */
+  position: Position
+  /** Normalized attachment byte count. */
+  bytes: number
+}
+
+/**
+ * Plan the next durable watermark for one route budget: with the retained
+ * occurrences oldest first, the budget removes a whole-quantum prefix and the
+ * last removed occurrence's position becomes the watermark. Under a 128 MiB
+ * bound with a 64 MiB quantum, 129 retained one-megabyte images offload the
+ * oldest 65 so 64 MiB remain, and the watermark then holds until the retained
+ * total again exceeds the bound.
+ * @param retained - retained occurrences in log order, oldest first.
+ * @param budget - route representation, budgets, and removal quanta.
+ * @returns the position of the last occurrence to offload, or undefined when the budget holds.
+ */
+export function planImageOffload<Position>(
+  retained: readonly RetainedImageOccurrence<Position>[],
+  budget: LlmImageRequestBudget,
+): Position | undefined {
+  const count = offloadedImagePrefixCount(
+    retained.map(occurrence => representedImageBytes(occurrence.bytes, budget)),
+    budget,
+  )
+  if (count === 0) return undefined
+  // oxlint-disable-next-line typescript/no-non-null-assertion -- the prefix count never exceeds the retained length
+  return retained[count - 1]!.position
 }
 
 /** Replace every image occurrence, including nested tool results, for a text-only model. */
@@ -225,65 +368,6 @@ export function projectImagesForTextModel(messages: readonly Message[]): readonl
   if (!messages.some(message => contentHasImage(message.content))) return messages
   return messages.map((message) => {
     const content = replaceImagesForTextModel(message.content)
-    return content === message.content ? message : { ...message, content }
-  })
-}
-
-/**
- * Number of oldest image occurrences one request projection removes, in whole
- * count and byte quanta, once a route budget is exceeded. The result depends
- * only on the represented lengths, so provider request pricing reproduces the
- * exact serialization decision without building the projected messages.
- * @param lengths - represented byte length of every occurrence, in request order.
- * @param policy - count/byte budgets and removal quanta; unbounded when absent.
- * @returns how many leading occurrences the projection replaces with placeholders.
- */
-export function offloadedImagePrefixCount(
-  lengths: readonly number[],
-  policy: Pick<RequestImageOffloadPolicy, 'maxImages' | 'maxBytes' | 'countQuantum' | 'byteQuantum'>,
-): number {
-  const total = lengths.reduce((sum, bytes) => sum + bytes, 0)
-  const excessCount = policy.maxImages === undefined ? 0 : Math.max(0, lengths.length - policy.maxImages)
-  const excessBytes = policy.maxBytes === undefined ? 0 : Math.max(0, total - policy.maxBytes)
-  if (excessCount === 0 && excessBytes === 0) return 0
-  const countQuantum = policy.countQuantum ?? 1
-  const byteQuantum = policy.byteQuantum ?? 1
-  const removeCount = excessCount === 0 ? 0 : Math.ceil(excessCount / countQuantum) * countQuantum
-  const removeBytes = excessBytes === 0 ? 0 : Math.ceil(excessBytes / byteQuantum) * byteQuantum
-  let count = 0
-  let removedBytes = 0
-  for (const imageBytes of lengths) {
-    const byteTargetMet = removeBytes === 0
-      || (byteQuantum === 1 ? removedBytes >= removeBytes : removedBytes > removeBytes)
-    if (count >= removeCount && byteTargetMet) break
-    removedBytes += imageBytes
-    count += 1
-  }
-  return count
-}
-
-/**
- * Return a deterministic transient projection whose oldest images are replaced
- * in whole count and byte quanta after a route budget is exceeded. The target
- * depends only on complete durable history: at 129 one-megabyte images under
- * a 128 MiB bound with a 64 MiB quantum, the oldest 65 images are removed so
- * 64 MiB remain; that removed prefix stays fixed until total history exceeds
- * 192 MiB.
- * @param messages - complete request history, oldest first.
- * @param policy - route representation, budgets, and removal quanta.
- * @returns original messages below both bounds, otherwise shallow copies with deterministic placeholders.
- */
-export function offloadRequestImagesWithPolicy(
-  messages: readonly Message[],
-  policy: RequestImageOffloadPolicy,
-): readonly Message[] {
-  const lengths: number[] = []
-  for (const message of messages) collectImageLengths(message.content, lengths, policy)
-  const count = offloadedImagePrefixCount(lengths, policy)
-  if (count === 0) return messages
-  const remaining = { count }
-  return messages.map((message) => {
-    const content = replaceOldestImages(message.content, remaining, policy.placeholder)
     return content === message.content ? message : { ...message, content }
   })
 }

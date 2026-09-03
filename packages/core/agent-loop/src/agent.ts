@@ -16,19 +16,22 @@ import type {
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
 import { Inbox, agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
-import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmCallConfig, LlmImageRequestBudget, PreparedLlmCall, RetainedImageOccurrence } from '@deepseek-ai/dsh-llm'
 import {
   BlockAssembler,
+  IMAGE_OFFLOAD_REQUIRED_CODE,
   LlmError,
   createAssistantMessage,
   errorChain,
   markAgentLoopRequest,
+  planImageOffload,
+  visitImageBlocks,
 } from '@deepseek-ai/dsh-llm'
 import { deepFreeze } from '@deepseek-ai/dsh-util-values'
 import type { Scope } from '@deepseek-ai/dsh-scope'
 import { createScope } from '@deepseek-ai/dsh-scope'
-import type { EpochHeader, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
-import { canonicalHeader, headerEquals } from '@deepseek-ai/dsh-session'
+import type { EpochHeader, ImageOccurrencePosition, RequestContext, Session, SessionId, SessionSeq, TurnEndReason, UserMessage } from '@deepseek-ai/dsh-session'
+import { canonicalHeader, compareImagePositions, headerEquals } from '@deepseek-ai/dsh-session'
 import { joinContextSections, renderContextSections, renderPrompt } from '@deepseek-ai/dsh-system-prompt'
 import type { PromptAssembly } from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-session-projection'
@@ -352,7 +355,6 @@ export class ReactLoopAgent implements Agent {
         step,
         assembly.tools,
         system,
-        this.session.deriveMessages(),
         startsRequestSeries,
         surfaceGeneration,
         signal,
@@ -388,6 +390,12 @@ export class ReactLoopAgent implements Agent {
         throw error
       }
       const finish = assembler.finish
+      if (finish.kind === 'error'
+        && finish.failure.code === IMAGE_OFFLOAD_REQUIRED_CODE
+        && finish.failure.offloadImages !== undefined
+        && this.advanceImageOffload(turn, step, finish.failure.offloadImages)) {
+        continue
+      }
       if (finish.kind === 'error' || finish.kind === 'aborted') {
         const action = await this.dispatch.waterfall(
           'agent/request-error', {
@@ -446,7 +454,6 @@ export class ReactLoopAgent implements Agent {
     step: number,
     tools: GenerateOptions['tools'] & object,
     system: string,
-    boundaryMessages: Message[],
     startsRequestSeries: boolean,
     surfaceGeneration: number,
     signal: AbortSignal,
@@ -530,16 +537,63 @@ export class ReactLoopAgent implements Agent {
       || previousContext.contextWindow !== requestContext.contextWindow) {
       session.append('request/context', requestContext)
     }
+    if (preparedCall?.imageRequest !== undefined) {
+      this.planImageOffload(turn, step, preparedCall.imageRequest)
+    }
     signal.throwIfAborted()
 
     const request = markAgentLoopRequest(deepFreeze({
       ...header.config,
-      messages: boundaryMessages,
+      messages: session.deriveMessages(),
       ...header.system !== undefined ? { system: header.system } : {},
       ...header.tools !== undefined ? { tools: header.tools } : {},
       sessionId: this.session.id,
       signal,
     }))
     return { request, ...preparedCall === undefined ? {} : { preparedCall } }
+  }
+
+  /**
+   * Every image occurrence the surface still sends, in log order (oldest
+   * first), with the durable position an `image/offload` advance would name.
+   */
+  private retainedImageOccurrences(): RetainedImageOccurrence<ImageOccurrencePosition>[] {
+    const { session } = this
+    const watermark = session.imageOffloadWatermark()
+    const retained: RetainedImageOccurrence<ImageOccurrencePosition>[] = []
+    for (const seq of session.surface.nodes) {
+      // oxlint-disable-next-line typescript/no-non-null-assertion -- surface nodes index the durable log
+      const message = session.deriveEventMessage(session.eventAt(seq)!)
+      if (message === null) continue
+      visitImageBlocks(message.content, (block, path) => {
+        const position = { seq, path: [...path] }
+        if (watermark !== undefined && compareImagePositions(position, watermark) <= 0) return
+        retained.push({ position, bytes: block.attachment.bytes })
+      })
+    }
+    return retained.sort((a, b) => compareImagePositions(a.position, b.position))
+  }
+
+  /**
+   * Advance the durable watermark when the route budget is exceeded by the
+   * retained occurrences, so the request derived next carries the offloaded
+   * set the log records.
+   */
+  private planImageOffload(turn: number, step: number, budget: LlmImageRequestBudget): void {
+    const watermark = planImageOffload(this.retainedImageOccurrences(), budget)
+    if (watermark !== undefined) this.session.append('image/offload', { turn, step, watermark })
+  }
+
+  /**
+   * Advance the watermark past the `count` oldest retained occurrences an
+   * adapter's exact accounting still cannot send.
+   * @returns whether any occurrence remained to offload, so the step can rebuild the request.
+   */
+  private advanceImageOffload(turn: number, step: number, count: number): boolean {
+    const retained = this.retainedImageOccurrences()
+    const last = retained[Math.min(count, retained.length) - 1]
+    if (last === undefined) return false
+    this.session.append('image/offload', { turn, step, watermark: last.position })
+    return true
   }
 }

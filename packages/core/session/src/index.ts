@@ -15,10 +15,11 @@ import type { Scoped } from '@deepseek-ai/dsh-scope'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq } from './types.ts'
 import type { TypertLookup } from '@deepseek-ai/dsh-typert-protocol'
-import type { CreateSessionOptions, EpochHeader, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SurfaceIntent, SurfaceEventType } from './types.ts'
+import type { CreateSessionOptions, EpochHeader, ImageOccurrencePosition, PrepareSessionOptions, RequestContext, SessionEvent, SessionEventMap, SessionEventType, SessionHeader, SessionId, SurfaceIntent, SurfaceEventType } from './types.ts'
 import { deriveEventMessage, SurfaceManager } from './surface.ts'
 import type { SessionSurface } from './surface.ts'
 import { foldRequestHeader } from './request-header.ts'
+import { assertImageOffloadAdvance, markImageOffload } from './image-offload.ts'
 
 export * from './types.ts'
 export { SessionPreparation } from './preparation.ts'
@@ -30,6 +31,7 @@ export type { ChunkRow, StorageRecord } from './chunk-rows.ts'
 export type { SessionSurface, SurfaceFoldReplacement, SurfaceFoldResult } from './surface.ts'
 export { deriveEventMessage, foldSurface, isAppendSurfaceEvent, isReplacementSurfaceEvent, isSurfaceEvent, isSurfaceEligibleType } from './surface.ts'
 export { canonicalHeader, foldRequestHeader, headerEquals } from './request-header.ts'
+export { assertImageOffloadAdvance, compareImagePositions, foldImageOffloadWatermark, markImageOffload } from './image-offload.ts'
 export { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -424,6 +426,8 @@ const attachments = new WeakMap<Session, SessionEntry>()
  */
 export class Session {
   private log: SessionEvent[] = []
+  /** Watermark in force after the last accepted `image/offload` event. */
+  private imageOffloadFold: ImageOccurrencePosition | undefined
   /** Single incremental owner of surface acceptance and projection state. */
   private readonly surfaceManager = new SurfaceManager(this.log)
 
@@ -538,6 +542,9 @@ export class Session {
         }
         assertSessionEventEnvelope(snapshot, index)
         assertSupportedRequestHeader(snapshot.type, snapshot.data, `seed event at index ${index}`)
+        if (snapshot.type === 'image/offload') {
+          assertImageOffloadAdvance(snapshot.data, this.log.length, this.imageOffloadFold, `seed event at index ${index}`)
+        }
         if (snapshot.seq !== index) {
           throw new Error(`seed event at index ${index} has seq ${snapshot.seq} (expected ${index}); seed must be contiguous from 0`)
         }
@@ -550,6 +557,7 @@ export class Session {
           throw new Error(`invalid seed event at index ${index}: ${error instanceof Error ? error.message : 'invalid surface metadata'}`)
         }
         this.log.push(mode === 'restore' ? freezeRestoredObject(snapshot) : deepFreeze(snapshot))
+        this.foldImageOffload(snapshot)
       }
     }
     this.firstLiveSeq = SessionLogOffset(this.log.length)
@@ -680,6 +688,9 @@ export class Session {
       throw new Error(`session event "${type}" carries non-JSON-serializable data`)
     }
     assertSupportedRequestHeader(type, dataSnapshot, `session event "${type}"`)
+    if (type === 'image/offload') {
+      assertImageOffloadAdvance(dataSnapshot, this.log.length, this.imageOffloadFold, `session event "${type}"`)
+    }
     const surfaceMetadataSnapshot = snapshotJsonValue(surfaceMetadata)
     if (surfaceMetadataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable surface metadata`)
@@ -705,6 +716,7 @@ export class Session {
         callbacks = collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/event', ...callbackArgs])
       }
       this.log.push(event as SessionEvent)
+      this.foldImageOffload(event as SessionEvent)
       this.eventsSnapshot = undefined
       if (callbacks !== undefined && entry !== undefined) {
         invokeContainedSessionObservers(entry.emitCtx, 'session/event', entry.id, callbackArgs, callbacks)
@@ -762,12 +774,29 @@ export class Session {
     return this.contextFold
   }
 
+  /** Record an accepted `image/offload` event as the watermark in force. */
+  private foldImageOffload(event: SessionEvent): void {
+    if (event.type === 'image/offload') this.imageOffloadFold = event.data.watermark
+  }
+
+  /**
+   * The durable image offload watermark in force: every image occurrence
+   * positioned at or before it derives as offloaded. Undefined until the
+   * first `image/offload` event.
+   * @returns the frozen latest watermark, or undefined when nothing is offloaded.
+   */
+  imageOffloadWatermark(): ImageOccurrencePosition | undefined {
+    return this.imageOffloadFold
+  }
+
   /** The derived-message cache: frozen projections, extended per unseen node. */
   private derived: Message[] = []
   /** Surface position (nodes projected) the cache has reached. */
   private derivedNodes = 0
   /** {@link SurfaceManager.replaceGeneration} the cache was built under. */
   private derivedGeneration = 0
+  /** Watermark the cache was built under; an advance rebuilds every node. */
+  private derivedWatermark: ImageOccurrencePosition | undefined
 
   /**
    * Derive the LLM message history by walking the ordered sequences of
@@ -780,7 +809,9 @@ export class Session {
    *
    * CACHED: each surface node is projected exactly once, when first seen — a
    * call costs O(new nodes), and a surface rewrite (a `replace`;
-   * {@link SessionSurface.replaceGeneration}) rebuilds. The returned array is
+   * {@link SessionSurface.replaceGeneration}) or an `image/offload` advance
+   * rebuilds, and image occurrences at or before the watermark derive with
+   * `offloaded: true` ({@link markImageOffload}). The returned array is
    * a fresh snapshot per call (later appends never grow an array a caller
    * already holds); the `Message` objects in it are SHARED and **deep-frozen**.
    * Their content reuses the already frozen durable event data, so the cache
@@ -791,10 +822,12 @@ export class Session {
     const surface = this.surface
     const nodes = surface.nodes
     const generation = surface.replaceGeneration
-    if (generation !== this.derivedGeneration) {
+    const watermark = this.imageOffloadFold
+    if (generation !== this.derivedGeneration || watermark !== this.derivedWatermark) {
       this.derived = []
       this.derivedNodes = 0
       this.derivedGeneration = generation
+      this.derivedWatermark = watermark
     }
     for (const seq of nodes.slice(this.derivedNodes)) {
       // Surface sequences are built from this.log — seq is always a valid
@@ -804,10 +837,16 @@ export class Session {
       // A surface node is one of the five message-producing types, but an
       // empty-content assistant/message (a max-tokens step that hosts only
       // usage) derives to null and must not enter the transcript.
-      if (msg) this.derived.push(msg)
+      if (msg) this.derived.push(this.markImageOffload(msg, seq, watermark))
     }
     this.derivedNodes = nodes.length
     return [...this.derived]
+  }
+
+  /** Apply the watermark to one derived node, freezing any marked copy like the durable original. */
+  private markImageOffload(message: Message, seq: SessionSeq, watermark: ImageOccurrencePosition | undefined): Message {
+    const marked = markImageOffload(message, seq, watermark)
+    return marked === message ? message : deepFreeze(marked)
   }
 
   /**

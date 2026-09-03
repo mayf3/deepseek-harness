@@ -3,30 +3,26 @@ import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { AttachmentStore, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import {
   ToolCallId,
+  compareImageBlockPaths,
   createUserMessage,
+  markOffloadedImages,
   offloadedImageText,
   offloadedImagePrefixCount,
-  offloadRequestImagesWithPolicy,
+  planImageOffload,
   projectImagesForTextModel,
+  projectOffloadedImages,
+  representedImageBytes,
   resolveImageAttachmentAccess,
   requestImageHandleText,
+  visitImageBlocks,
 } from '../src/index.ts'
-import type { ContentBlock, Message } from '../src/index.ts'
+import type { ContentBlock, ImageBlockPath } from '../src/index.ts'
 
 const source = { kind: 'plugin' as const, plugin: 'test' }
 
 const OMITTED = '[omitted]'
 
-function offloadBase64(messages: readonly Message[], maxBytes: number | undefined): readonly Message[] {
-  return offloadRequestImagesWithPolicy(messages, {
-    representation: 'base64',
-    ...maxBytes === undefined ? {} : { maxBytes },
-    byteQuantum: 1,
-    placeholder: () => OMITTED,
-  })
-}
-
-function image(bytes: number): Extract<ContentBlock, { type: 'image' }> {
+function image(bytes: number, offloaded?: true): Extract<ContentBlock, { type: 'image' }> {
   return {
     type: 'image',
     attachment: {
@@ -36,78 +32,109 @@ function image(bytes: number): Extract<ContentBlock, { type: 'image' }> {
       width: 1,
       height: 1,
     },
+    ...offloaded === undefined ? {} : { offloaded },
   }
 }
 
-describe('base64 request-image offload', () => {
-  it('preserves every image when no payload bound is configured', () => {
-    const messages = [createUserMessage({ content: [image(300)], source })]
-    expect(offloadBase64(messages, undefined)).toBe(messages)
+describe('visitImageBlocks', () => {
+  it('visits top-level and nested tool-result occurrences with their block paths', () => {
+    const seen: ImageBlockPath[] = []
+    visitImageBlocks([
+      { type: 'text', text: 'before' },
+      image(1),
+      { type: 'tool-result', toolCallId: ToolCallId('shot'), content: [{ type: 'text', text: 'x' }, image(2)] },
+      image(3),
+    ], (block, path) => seen.push([...path, block.attachment.bytes]))
+    expect(seen).toEqual([[1, 1], [2, 1, 2], [3, 3]])
+  })
+})
+
+describe('compareImageBlockPaths', () => {
+  it('orders paths lexicographically in message order', () => {
+    expect(compareImageBlockPaths([1], [2])).toBeLessThan(0)
+    expect(compareImageBlockPaths([2, 0], [2])).toBeGreaterThan(0)
+    expect(compareImageBlockPaths([2, 1], [2, 1])).toBe(0)
+    expect(compareImageBlockPaths([2, 1], [2, 3])).toBeLessThan(0)
+  })
+})
+
+describe('representedImageBytes', () => {
+  it('clamps to the request-version target and expands inline representations', () => {
+    expect(representedImageBytes(100, { representation: 'raw' })).toBe(100)
+    expect(representedImageBytes(100, { representation: 'raw', versionMaxBytes: 60 })).toBe(60)
+    expect(representedImageBytes(3, { representation: 'base64' })).toBe(4)
+    expect(representedImageBytes(4, { representation: 'base64', versionMaxBytes: 60 })).toBe(8)
+  })
+})
+
+describe('markOffloadedImages', () => {
+  it('returns the original content when nothing lies at or before the watermark', () => {
+    const content: ContentBlock[] = [
+      { type: 'text', text: 'before' },
+      image(1),
+      { type: 'tool-result', toolCallId: ToolCallId('shot'), content: [image(2)] },
+    ]
+    expect(markOffloadedImages(content, () => false)).toBe(content)
   })
 
-  it('preserves the original request when its base64 payload fits exactly', () => {
-    const messages = [createUserMessage({ content: [image(3), image(3)], source })]
-    expect(offloadBase64(messages, 8)).toBe(messages)
-  })
-
-  it('keeps five 3 MiB images at 20 MiB and offloads the oldest after one more raw byte', () => {
-    const rawImageBytes = 3 * 1024 * 1024
-    const maxRequestImageBytes = 20 * 1024 * 1024
-    const exact = [createUserMessage({
-      content: Array.from({ length: 5 }, () => image(rawImageBytes)),
-      source,
-    })]
-    expect(offloadBase64(exact, maxRequestImageBytes)).toBe(exact)
-
-    const over = [createUserMessage({
-      content: [image(rawImageBytes + 1), ...Array.from({ length: 4 }, () => image(rawImageBytes))],
-      source,
-    })]
-    expect(offloadBase64(over, maxRequestImageBytes)[0]?.content).toEqual([
-      { type: 'text', text: OMITTED },
-      ...Array.from({ length: 4 }, () => image(rawImageBytes)),
+  it('marks matching top-level and nested occurrences without mutating durable content', () => {
+    const nested = image(2)
+    const content: ContentBlock[] = [
+      image(1),
+      { type: 'text', text: 'between' },
+      { type: 'tool-result', toolCallId: ToolCallId('shot'), content: [nested, image(3)] },
+      image(4),
+    ]
+    const marked = markOffloadedImages(content, path => compareImageBlockPaths(path, [2, 0]) <= 0)
+    expect(marked).toEqual([
+      image(1, true),
+      { type: 'text', text: 'between' },
+      { type: 'tool-result', toolCallId: ToolCallId('shot'), content: [image(2, true), image(3)] },
+      image(4),
     ])
+    expect(content[0]).toEqual(image(1))
+    expect(nested).toEqual(image(2))
   })
 
-  it('replaces the oldest nested occurrences without mutating durable messages', () => {
-    const shared = image(3)
+  it('leaves an already marked occurrence untouched', () => {
+    const content = [image(1, true)]
+    expect(markOffloadedImages(content, () => true)).toBe(content)
+  })
+})
+
+describe('projectOffloadedImages', () => {
+  it('keeps messages without offloaded occurrences by identity', () => {
+    const messages = [createUserMessage({ content: [image(300)], source })]
+    const projected = projectOffloadedImages(messages, () => OMITTED)
+    expect(projected[0]).toBe(messages[0])
+  })
+
+  it('replaces marked top-level and nested occurrences with route placeholders', () => {
     const messages = [
       createUserMessage({
-        content: [{
-          type: 'tool-result',
-          toolCallId: ToolCallId('shot'),
-          content: [shared],
-        }],
+        content: [{ type: 'tool-result', toolCallId: ToolCallId('shot'), content: [image(3, true)] }],
         source,
       }),
-      createUserMessage({ content: [shared, image(3)], source }),
+      createUserMessage({ content: [image(3, true), image(3)], source }),
     ]
-
-    const fitted = offloadBase64(messages, 8)
-    expect(fitted).not.toBe(messages)
-    expect(fitted[0]?.content).toEqual([{
+    const projected = projectOffloadedImages(messages, ref => `${OMITTED}:${ref.bytes}`)
+    expect(projected[0]?.content).toEqual([{
       type: 'tool-result',
       toolCallId: ToolCallId('shot'),
-      content: [{ type: 'text', text: OMITTED }],
+      content: [{ type: 'text', text: `${OMITTED}:3` }],
     }])
-    expect(fitted[1]?.content).toEqual([shared, image(3)])
-    expect(messages[0]?.content[0]).toMatchObject({ type: 'tool-result', content: [shared] })
+    expect(projected[1]?.content).toEqual([{ type: 'text', text: `${OMITTED}:3` }, image(3)])
+    expect(messages[1]?.content[0]).toEqual(image(3, true))
   })
 
-  it('replaces a single image that cannot fit', () => {
-    const messages = [createUserMessage({ content: [image(300)], source })]
-    expect(offloadBase64(messages, 8)[0]?.content)
-      .toEqual([{ type: 'text', text: OMITTED }])
-  })
-
-  it('keeps unchanged nested content while replacing a later image', () => {
+  it('keeps unchanged nested content while replacing a later occurrence', () => {
     const nested = {
       type: 'tool-result' as const,
       toolCallId: ToolCallId('text-only'),
       content: [{ type: 'text' as const, text: 'kept' }],
     }
-    const messages = [createUserMessage({ content: [nested, image(3)], source })]
-    expect(offloadBase64(messages, 1)[0]?.content).toEqual([
+    const messages = [createUserMessage({ content: [nested, image(3, true)], source })]
+    expect(projectOffloadedImages(messages, () => OMITTED)[0]?.content).toEqual([
       nested,
       { type: 'text', text: OMITTED },
     ])
@@ -127,67 +154,26 @@ describe('offloadedImagePrefixCount', () => {
   })
 })
 
-describe('offloadRequestImagesWithPolicy', () => {
-  it('drops 129 MiB to 64 MiB and keeps the removed prefix stable through 192 MiB', () => {
-    const mib = 1024 * 1024
-    const project = (count: number) => offloadRequestImagesWithPolicy([
-      createUserMessage({ content: Array.from({ length: count }, () => image(mib)), source }),
-    ], {
-      representation: 'raw',
-      maxBytes: 128 * mib,
-      byteQuantum: 64 * mib,
-      placeholder: () => OMITTED,
-    })[0]?.content
+describe('planImageOffload', () => {
+  const mib = 1024 * 1024
+  const retained = (count: number) => Array.from({ length: count }, (_, index) => ({ position: index, bytes: mib }))
 
-    expect(project(128)?.filter(block => block.type === 'image')).toHaveLength(128)
-    expect(project(129)?.filter(block => block.type === 'text')).toHaveLength(65)
-    expect(project(192)?.filter(block => block.type === 'text')).toHaveLength(65)
-    expect(project(193)?.filter(block => block.type === 'text')).toHaveLength(129)
+  it('drops 129 retained MiB to 64 MiB and holds until the retained total exceeds the bound again', () => {
+    const budget = { representation: 'raw' as const, maxBytes: 128 * mib, byteQuantum: 64 * mib }
+    expect(planImageOffload(retained(128), budget)).toBeUndefined()
+    expect(planImageOffload(retained(129), budget)).toBe(64)
+    expect(planImageOffload(retained(64), budget)).toBeUndefined()
   })
 
-  it('rounds a count excess up to a 20-image removal step', () => {
-    const projected = offloadRequestImagesWithPolicy([
-      createUserMessage({ content: Array.from({ length: 601 }, () => image(1)), source }),
-    ], {
-      representation: 'raw',
-      maxImages: 600,
-      countQuantum: 20,
-      placeholder: () => OMITTED,
-    })
-    expect(projected[0]?.content.filter(block => block.type === 'text')).toHaveLength(20)
-    expect(projected[0]?.content.filter(block => block.type === 'image')).toHaveLength(581)
+  it('rounds a count excess up to a 20-image advance', () => {
+    const budget = { representation: 'raw' as const, maxImages: 600, countQuantum: 20 }
+    expect(planImageOffload(retained(601), budget)).toBe(19)
   })
 
-  it('uses route-owned request byte lengths when supplied', () => {
-    const messages = [createUserMessage({ content: [image(100), image(100)], source })]
-    const projected = offloadRequestImagesWithPolicy(messages, {
-      representation: 'raw',
-      maxBytes: 3,
-      byteLength: () => 2,
-      placeholder: () => OMITTED,
-    })
-    expect(projected[0]?.content).toEqual([
-      { type: 'text', text: OMITTED },
-      image(100),
-    ])
-  })
-
-  it('builds a distinct placeholder from each omitted attachment', () => {
-    const first = image(3)
-    const second = image(3)
-    first.attachment = { ...first.attachment, name: 'first.png' }
-    second.attachment = { ...second.attachment, name: 'second.png' }
-    const projected = offloadRequestImagesWithPolicy([
-      createUserMessage({ content: [first, second], source }),
-    ], {
-      representation: 'raw',
-      maxBytes: 3,
-      placeholder: ref => `omitted:${ref.name}`,
-    })
-    expect(projected[0]?.content).toEqual([
-      { type: 'text', text: 'omitted:first.png' },
-      second,
-    ])
+  it('accounts inline representations by base64 length after the version clamp', () => {
+    const budget = { representation: 'base64' as const, maxBytes: 8, versionMaxBytes: 3 }
+    expect(planImageOffload([{ position: 'a', bytes: 3 }, { position: 'b', bytes: 3 }], budget)).toBeUndefined()
+    expect(planImageOffload([{ position: 'a', bytes: 300 }, { position: 'b', bytes: 3 }, { position: 'c', bytes: 3 }], budget)).toBe('a')
   })
 })
 

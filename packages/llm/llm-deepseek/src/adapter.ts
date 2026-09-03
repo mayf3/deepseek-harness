@@ -8,7 +8,7 @@
  * @module dsh-llm-deepseek/adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
 import type {
   ContentBlock,
   GenerateOptions,
@@ -19,8 +19,7 @@ import type {
   LlmResolvedModelInfo,
   ModelModality,
   ResolvedRetryPolicy,
-  StreamChunk,
-} from '@deepseek-ai/dsh-llm'
+  StreamChunk, LlmImageRequestBudget } from '@deepseek-ai/dsh-llm'
 import type {
   AttachmentId,
   AttachmentStore,
@@ -205,8 +204,23 @@ function collectImageRefs(
   refs: Map<AttachmentId, ImageAttachmentRef>,
 ): void {
   for (const block of content) {
-    if (block.type === 'image') refs.set(block.attachment.attachmentId, block.attachment)
-    else if (block.type === 'tool-result') collectImageRefs(block.content, refs)
+    if (block.type === 'image') {
+      if (block.offloaded !== true) refs.set(block.attachment.attachmentId, block.attachment)
+    } else if (block.type === 'tool-result') {
+      collectImageRefs(block.content, refs)
+    }
+  }
+}
+
+/** The file-mode request-image budget one image-capable catalog route declares to the agent loop. */
+function imageRequestBudget(connection: DeepSeekConnectionOptions, model: DeepSeekCatalogModel): LlmImageRequestBudget {
+  return {
+    representation: 'raw',
+    maxBytes: connection.maxRequestFilesBytes,
+    maxImages: connection.maxImagesPerRequest,
+    byteQuantum: connection.imageOffloadByteQuantum,
+    countQuantum: connection.imageOffloadCountQuantum,
+    versionMaxBytes: resolveRequestImagePolicy(model).maxBytes,
   }
 }
 
@@ -407,6 +421,9 @@ export class DeepSeekAdapter extends LlmAdapter {
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,
+      ...configured?.inputModalities?.includes('image') === true
+        ? { imageRequest: imageRequestBudget(connection, configured) }
+        : {},
       ...connection.defaults.thinking === 'disabled'
         ? {
           reasoning: {
@@ -544,21 +561,13 @@ export class DeepSeekAdapter extends LlmAdapter {
 
     const fileConnection = { baseURL: connection.baseURL, apiKey }
     const model = connection.models.find(entry => entry.id === options.model)
-    const policy = model === undefined ? undefined : resolveRequestImagePolicy(model)
     const resolveImageAccess = attachments === undefined
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
     const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
-    const requestMessages = policy === undefined ? options.messages : offloadRequestImagesWithPolicy(options.messages, {
-      representation: 'raw',
-      maxBytes: connection.maxRequestFilesBytes,
-      maxImages: connection.maxImagesPerRequest,
-      byteQuantum: connection.imageOffloadByteQuantum,
-      countQuantum: connection.imageOffloadCountQuantum,
-      byteLength: ref => Math.min(ref.bytes, policy.maxBytes),
-      placeholder: ref => offloadedImageText(ref, resolveImageAccess?.(ref)),
-    })
-    const requestOptions = requestMessages === options.messages ? options : { ...options, messages: [...requestMessages] }
+    // The offloaded set is a durable surface fact carried by each image block;
+    // serialization projects it and only retained occurrences are prepared.
+    const requestOptions = options
     const requestImages = attachments === undefined || model === undefined
       ? new Map<AttachmentId, RequestImageAttachment>()
       : await prepareRequestImages(requestOptions, attachments, model, signal)
