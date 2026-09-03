@@ -32,11 +32,10 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellRunResult, ShellProcess } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
-import { processOutcome } from './background.ts'
-import { observeProcessRecord } from './observe.ts'
-import { renderPwshProcessRead, renderPwshResult } from './render.ts'
+import { processOutcome, processSources } from './background.ts'
+import { renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
 declare module '@deepseek-ai/dsh-jobs' {
@@ -53,18 +52,11 @@ export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
-  /** Poll cadence for copying background output into the job record, in milliseconds (default 150). */
-  recordPollMs?: number
 }
 
 /** Runtime configuration schema for the pwsh tool plugin. */
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
-  recordPollMs: z.number()
-    .step(1)
-    .min(1)
-    .max(Number.MAX_SAFE_INTEGER)
-    .default(150),
 })
 /* jscpd:ignore-end */
 
@@ -203,7 +195,6 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
-  const recordPollMs = config.recordPollMs ?? 150
   const defaultMode = ctx.shell.sandboxMode
   const escalationModes: readonly SandboxMode[] = defaultMode === undefined ? [] : ESCALATION_TARGETS
   const sandboxPolicy: SandboxPolicyService | undefined = defaultMode === undefined ? undefined : ctx.get('sandboxPolicy')
@@ -387,20 +378,21 @@ export function apply(ctx: Context, config: Config = {}): void {
           error.name = 'AbortError'
           throw error
         }
+        // The registry pumps the process's non-consuming readers into the
+        // job's ring; the sources bind lazily because the process is spawned
+        // only once admission has passed.
+        let proc: ShellProcess | undefined
         const id = jobs.start({
           kind: 'pwsh',
           label: args.command,
-          ...exec.agent ? { owner: exec.agent } : {},
-          record: true,
-          run: (job) => {
-            const proc = ctx.shell.start(ctx.shell.resolve(request))
-            // The pump's final drain is folded into `done` so the record holds
-            // its last bytes before settlement trims and closes it.
-            const observed = observeProcessRecord(ctx, job, proc, recordPollMs)
+          ...exec.agent ? { owner: exec.agent.id } : {},
+          output: processSources(() => proc),
+          run: () => {
+            const started = ctx.shell.start(ctx.shell.resolve(request))
+            proc = started
             return {
-              cancel: () => void proc.kill(),
-              done: observed.then(() => proc.done).then(() => processOutcome(proc)),
-              readOutput: () => renderPwshProcessRead(proc.readOutput(), proc.sandbox, escalationModes),
+              cancel: () => void started.kill(),
+              done: started.done.then(() => processOutcome(started, escalationModes)),
             }
           },
         })

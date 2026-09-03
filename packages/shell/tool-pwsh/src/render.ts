@@ -10,7 +10,7 @@
  * @module @deepseek-ai/dsh-tool-pwsh/render
  */
 
-import type { ShellProcessRead, ShellSandboxInfo, CollectedOutput } from '@deepseek-ai/dsh-shell'
+import type { ShellSandboxInfo, CollectedOutput } from '@deepseek-ai/dsh-shell'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 
@@ -80,34 +80,4 @@ export function renderPwshResult(
   return body + markers.join('\n')
 }
 
-/**
- * Shape one background-process read into the `job_output` delta the model
- * sees: the incremental delta, plus the lossy-read notice (with full-stream
- * spill paths) when in-memory truncation dropped unread bytes.
- * @param read - one incremental read from the process handle.
- * @param sandbox - settled sandbox facts, when this was a confined process.
- * @param escalationModes - escalation targets advertised by this composition.
- * @returns the delta text with any loss or sandbox notice appended.
- */
-export function renderPwshProcessRead(
-  read: ShellProcessRead,
-  sandbox?: ShellSandboxInfo,
-  escalationModes: readonly SandboxMode[] = [],
-): string {
-  const notices: string[] = []
-  if (read.lossy) {
-    const paths = [read.stdoutSpillPath, read.stderrSpillPath].filter((path): path is string => path !== undefined)
-    notices.push(`[some output was dropped from memory; full output: ${paths.length > 0 ? paths.join(', ') : '(unavailable)'}]`)
-  }
-  if (sandbox?.runnerFailed) {
-    notices.push(`[sandbox: the sandbox runner itself failed under ${sandbox.mode} mode — the command did not run; this is a sandbox problem, not a command failure]`)
-  } else if (sandbox?.denied) {
-    notices.push(sandboxDenialMarker(sandbox.mode))
-    if (escalationModes.length > 0) {
-      notices.push(escalationHintMarker('command'))
-    }
-  }
-  if (notices.length === 0) return read.delta
-  return `${read.delta}${read.delta.length > 0 && !read.delta.endsWith('\n') ? '\n' : ''}${notices.join('\n')}`
-}
 /* jscpd:ignore-end */
