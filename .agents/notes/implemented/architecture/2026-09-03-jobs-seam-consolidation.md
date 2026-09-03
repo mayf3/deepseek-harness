@@ -1,0 +1,33 @@
+# Agent Note: One output ring, one projection, one event stream for background jobs
+
+Status: implemented
+
+English | [中文](2026-09-03-jobs-seam-consolidation.zh.md)
+
+## Problem
+
+The job seam had grown by accretion. Producers declared their output twice — a consuming `readOutput` hook the model read and an optional `record: true` ring observers read — and the registry kept two vocabularies for one job (`JobSnapshot` for the model, `SessionJob` on the session control stream, `JobWireChunk` on the observation wire). Three listener families (`onJobDone`, `onJobsChanged`, `onOutput`) delivered overlapping facts with different owner filters, and the registry itself tracked `reported`, a bit that only the model-facing tool could interpret. Review of the merged design called the interface layer the weakest part: a reader could not tell which of `read`, `readRecord`, `JobStart`, `RecordingJob`, and `updateDetail` was the contract and which was an accident of history.
+
+## Decision
+
+- **One ring per job.** `JobSpec` replaces `JobStart`: a spec names optional pull `output` sources (`JobOutputSource`, the subprocess `readFrom` family) that the registry pumps at its own cadence (`pumpPollMs` on `dsh-jobs-local`), and every producer receives a `JobHandle` whose `append` pushes chunks into the same ring. The model's consuming read and every observer's absolute-offset read serve the same bytes; `readOutput` and the `record` discriminator are gone. Shell producers hand the registry their `observed` offset readers and fold sandbox facts into the terminal `detail`; the terminal producer adapts its consuming send reader through a byte-counting source; the subagent returns its answer as `JobOutcome.result`, which the first read after settlement carries once.
+- **Two cursors, one storage.** `VisibleJobs.read(id)` is the stateful model cursor; `VisibleJobs.readAt(id, from)` is the stateless observer read. Model reads exclude `log` chunks (producer narration for observers) and render stdout, then one `[stderr]` section, exactly as the shell tools always did.
+- **`updateProgress` replaces `updateDetail`.** `JobView.progress` is the live line and is cleared at settlement; `JobView.detail` is the terminal reason, with the model's `job_kill` reason merged in.
+- **One projection.** `JobView` (client-safe leaf `@deepseek-ai/dsh-jobs/view`) is what the model tools, the browser roster, and the observation frames consume; `owner` is the session id, never the `Agent`.
+- **One caller-bound view.** `JobRegistry.visibleTo(caller?)` binds a session once and returns `list`, `get`, `read`, `readAt`, `kill`, and `wait`; every method throws for an id outside the caller's set without distinguishing unknown from foreign.
+- **One event stream.** `events.subscribe(filter, listener)` with `{ owner }`, `{ owners: 'scope' }`, or `{ owners: 'all' }` replaces the three listener families. `settled` names its cause (`producer`, `kill`, `teardown`); `output` carries only the id and the new total.
+- **The notice ledger moves to `dsh-tool-jobs`.** The registry no longer tracks `reported`. The tool claims a job when a wait starts (and withdraws on timeout or abort) and when `job_kill` is accepted; the settlement event drops the entry, teardown settlements and unowned jobs are skipped, and the destination is the agent registered for the owner session at settlement.
+- **The roster leaves the session control stream.** `dsh-api-job-controller` owns `job.rows({ sessionId })` — whole-set frames after each coalesced burst of lifecycle commits, never per append — beside `job.observe`, and its client installs `ctx.jobs` (`watchRows`, `observe`, one snapshot). `dsh-api-session-controller` carries queues and projections only; `ui-jobs` watches its session's roster while mounted, and a row is expandable while live or once it left retained output behind.
+
+`attachController` and the owner-relative `servesOwner` gate stay as they were; whether a producer may offer `run_in_background` without a mounted controller is deferred, since the gap predates this change.
+
+## Alternatives considered
+
+- **Keep three listeners with a shared owner filter.** It preserves the accreted names but not the property reviewers asked for — one place to learn what the registry announces — and `onJobDone`'s exact-owner delivery is what forced the registry to keep an `Agent` in every projection.
+- **Keep `reported` in the registry.** Only the tool knows which deliveries reach the model (a wait's tool result, a kill's acknowledgement); the registry could only approximate it, and the approximation was the source of the double-notice and missed-notice bugs the review listed.
+- **Keep the roster on the session control stream.** It saved one Remote stream but coupled the session controller to the job registry and mirrored a `record` flag the ring's byte count now answers directly (`output.total`).
+- **Serve `log` chunks to the model too.** Producer narration is for observers; the model already receives the same facts through `progress` and the terminal `detail`.
+
+## Consequences
+
+The model-visible text is unchanged: status lines, tool descriptions and schemas, and notice wording are byte-identical, and the only new model-visible fact is the kill reason a `killed` status line now carries. A producer that needs to stream output picks pull sources or `append`; it never formats a consuming delta. The Web client renders every live job as expandable, so a job that never writes shows an empty running panel instead of a static row. `JobKindMap` merges are host-side, so a browser program types `JobView.kind` as the kinds it knows and treats the rest as opaque strings, which is all the roster does with it.

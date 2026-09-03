@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Superseded：本文放在会话控制流上的名册（`jobsBySession`、`onJobsChanged`）现在从 job 控制器的 `job.rows` 流入 `ctx.jobs`——见 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)。下文的展示决策（单一名册、分组、时长、没有 kill 控件）仍然成立。
+
 Update：本文推迟的输出阶段现已作为 `ctx.jobs` 上的逐 job 观测 record 交付——见 [jobs 吸收 record](../architecture/2026-09-01-jobs-absorb-activity-record.zh.md)。
 
 [English](2026-08-08-web-background-job-display.md) | 中文
@@ -119,7 +121,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 [web e2e 场景](../../../../apps/web/tests/background-job-list.e2e.ts)是端到端的证据，且无需密钥：一次真实的 `run_in_background` bash 调用注册进 `ctx.jobs`，header 的计数与行在没有任何用户操作的情况下出现，通过注册表杀掉该任务后打开着的列表翻到生产者给出的 detail。它断言的是整条投递链路，而不是其中某一层。
 
-在它之下，[`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts) 钉住变更订阅的全部四个提交点、对抛错观察者的包容，以及显式销毁与 fiber 拆除两条路径上的注销；[`control-jobs`](../../../../packages/api/session-controller/tests/control-jobs.host.spec.ts) 钉住完整 baseline、三次变更推送、被丢弃的内部字段、无主扇出、不 resume 的保证、没有注册表的组合，以及不得消费模型输出；客户端各套件钉住 baseline 替换、last-wins 折叠、缺失键表示、移除清理，以及组件的排序、时长与关闭行为。
+在它之下，[`jobs-local`](../../../../packages/jobs/jobs-local/tests/jobs.spec.ts) 钉住变更订阅的全部四个提交点、对抛错观察者的包容，以及显式销毁与 fiber 拆除两条路径上的注销；[`rows`](../../../../packages/api/job-controller/tests/rows.host.spec.ts) 钉住取代控制流扇出的名册流：打开时的完整可见集、每次生命周期提交后刷新一次且追加不刷新、拥有者移除，以及干净的中止；客户端各套件钉住 baseline 替换、last-wins 折叠、缺失键表示、移除清理，以及组件的排序、时长与关闭行为。
 
 ## 影响
 

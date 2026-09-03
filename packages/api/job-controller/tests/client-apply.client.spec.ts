@@ -4,7 +4,7 @@ import { RemoteStream, type RemoteStreamOptions } from '@deepseek-ai/dsh-api-gat
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { afterEach, describe, expect, it } from 'vitest'
 import * as JobClient from '../src/client/index.ts'
-import type { JobObserveFrame } from '../src/types.ts'
+import type { JobObserveFrame, JobRowsFrame } from '../src/types.ts'
 
 const contexts = new Set<Context>()
 
@@ -14,10 +14,11 @@ afterEach(async () => {
 })
 
 /** Mount the client half over a captured `remote.job` namespace and a real Gateway stream carrier. */
-async function mount(): Promise<{ ctx: Context; observeCalls: unknown[]; killCalls: unknown[] }> {
+async function mount(): Promise<{ ctx: Context; observeCalls: unknown[]; rowsCalls: unknown[]; killCalls: unknown[] }> {
   const ctx = new Context()
   contexts.add(ctx)
   const observeCalls: unknown[] = []
+  const rowsCalls: unknown[] = []
   const killCalls: unknown[] = []
   const connection: ConnectionHandle = {
     isLoopback: true,
@@ -29,7 +30,11 @@ async function mount(): Promise<{ ctx: Context; observeCalls: unknown[]; killCal
     start: () => ({ stop: () => {} }),
   }
   const job = {
-    // The fake stream never yields; opening and releasing must leave no view behind.
+    // The fake streams never yield; opening and releasing must leave no state behind.
+    rows: (request: unknown) => {
+      rowsCalls.push(request)
+      return (async function* (): AsyncGenerator<JobRowsFrame> {})()
+    },
     observe: (request: unknown) => {
       observeCalls.push(request)
       return (async function* (): AsyncGenerator<JobObserveFrame> {})()
@@ -45,7 +50,7 @@ async function mount(): Promise<{ ctx: Context; observeCalls: unknown[]; killCal
   })
   ctx.reflect.provide('remote.job', job)
   await ctx.plugin(JobClient)
-  return { ctx, observeCalls, killCalls }
+  return { ctx, observeCalls, rowsCalls, killCalls }
 }
 
 async function flush(): Promise<void> {
@@ -57,20 +62,23 @@ describe('Job Controller Client apply', () => {
     expect(JobClient.inject).toEqual(['remote', 'remote.job'])
   })
 
-  it('installs ctx.jobOutput over the captured job namespace', async () => {
-    const { ctx, observeCalls } = await mount()
-    expect(ctx.jobOutput).toBeDefined()
-    const stop = ctx.jobOutput.observe('session-1' as SessionId, 'bash-1' as never)
+  it('installs ctx.jobs over the captured job namespace', async () => {
+    const { ctx, observeCalls, rowsCalls } = await mount()
+    expect(ctx.jobs).toBeDefined()
+    const stopRows = ctx.jobs.watchRows('session-1' as SessionId)
+    const stopObserve = ctx.jobs.observe('session-1' as SessionId, 'bash-1' as never)
     await flush()
+    expect(rowsCalls).toEqual([{ sessionId: 'session-1' }])
     expect(observeCalls).toEqual([{ sessionId: 'session-1', jobId: 'bash-1' }])
-    stop()
+    stopRows()
+    stopObserve()
     await flush()
-    expect(ctx.jobOutput.state.getSnapshot().observed).toEqual({})
+    expect(ctx.jobs.state.getSnapshot()).toEqual({ rows: {}, observed: {} })
   })
 
   it('forwards a kill to the job namespace with the row\'s session', async () => {
     const { ctx, killCalls } = await mount()
-    await expect(ctx.jobOutput.kill('session-1' as SessionId, 'bash-1' as never))
+    await expect(ctx.jobs.kill('session-1' as SessionId, 'bash-1' as never))
       .resolves.toEqual({ ok: true, value: { outcome: 'requested' } })
     expect(killCalls).toEqual([{ sessionId: 'session-1', jobId: 'bash-1' }])
   })

@@ -9,7 +9,6 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm/types'
 import type { ChunkRow } from '@deepseek-ai/dsh-session/chunk-rows'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
-import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 
@@ -479,28 +478,9 @@ export interface SessionQueuedItem {
   }
 }
 
-/** Browser-safe background-job row. */
-export interface SessionJob {
-  readonly id: JobId
-  readonly kind: string
-  readonly label: string
-  readonly status: 'running' | 'stopping' | 'completed' | 'killed' | 'failed'
-  readonly detail?: string
-  readonly startedAt: number
-  readonly finishedAt?: number
-  /**
-   * Present exactly when the job declared an observation record: the row is
-   * observable through the job controller's `job.observe` stream, whose
-   * `opened` anchor carries the live byte offsets. The roster refreshes on
-   * lifecycle commits only, so it mirrors no byte count.
-   */
-  readonly record?: true
-}
-
 /** Complete live control baseline emitted once per control stream generation. */
 export interface SessionControlBaseline {
   readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>
-  readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>
   readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>
 }
 
@@ -516,7 +496,6 @@ export interface SessionProjectionUpdate {
 export type SessionControlFrame =
   | { readonly type: 'baseline'; readonly value: SessionControlBaseline }
   | { readonly type: 'queue'; readonly sessionId: SessionId; readonly items: readonly SessionQueuedItem[] }
-  | { readonly type: 'jobs'; readonly sessionId: SessionId; readonly jobs: readonly SessionJob[] }
   | ({ readonly type: 'projection' } & SessionProjectionUpdate)
 
 

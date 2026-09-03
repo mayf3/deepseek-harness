@@ -187,7 +187,7 @@ describe('list lifecycle', () => {
     frame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {},
+        queues: {},
         projections: { [S1]: { asOfSeq: 2, values: {} } },
       },
     })
@@ -200,7 +200,7 @@ describe('list lifecycle', () => {
     frame({
       type: 'baseline',
       value: {
-        queues: {}, jobs: {},
+        queues: {},
         projections: { [S1]: { asOfSeq: 2, values: { title: 'Durable' } } },
       },
     })
@@ -917,66 +917,5 @@ describe('completed reminder', () => {
     gate.resolve(ok({ items: [summary(S1), summary(S2, { updatedAt: 200 })] as never[] }))
     await refresh
     expect(entry(manager, S2)?.completed).toBe(true)
-  })
-})
-
-describe('background-job mirror', () => {
-  const view = (over: Partial<{ id: string; status: string; label: string }> = {}) => ({
-    id: 'bash-1', kind: 'bash', label: 'pnpm run build', status: 'running', startedAt: 5, ...over,
-  })
-  const tasksFrame = (
-    sessionId: SessionId,
-    jobs: unknown[],
-  ): Extract<SessionControlFrame, { type: 'jobs' }> => ({
-    type: 'jobs', sessionId, jobs: jobs as never,
-  })
-
-  it('mirrors the whole set last-wins, keyed per session, with no Session instance needed', () => {
-    const manager = makeManager()
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    manager.handleControlFrame(tasksFrame(S2, [view({ id: 'pwsh-1', label: 'other' })]))
-    const first = manager.getListSnapshot().jobsBySession
-    expect(first[S1]).toEqual([view()])
-    expect(first[S2]?.[0]?.label).toBe('other')
-
-    // Last-wins: the newer whole set replaces, it does not merge.
-    manager.handleControlFrame(tasksFrame(S1, [view({ status: 'completed' })]))
-    expect(manager.getListSnapshot().jobsBySession[S1]).toEqual([view({ status: 'completed' })])
-  })
-
-  it('stores an emptied set as an absent key so absence and [] read alike', () => {
-    const manager = makeManager()
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(true)
-    manager.handleControlFrame(tasksFrame(S1, []))
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('clears the mirror when the next control baseline has no jobs', () => {
-    const manager = makeManager()
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    manager.handleControlFrame({
-      type: 'baseline',
-      value: { queues: {}, jobs: {}, projections: {} },
-    })
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('drops the rows when the session is removed, whichever stream lands first', () => {
-    const manager = makeManager()
-    manager.handleSessionAdded(summary(S1, { blank: true }))
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    manager.handleSessionRemoved(S1)
-    expect(S1 in manager.getListSnapshot().jobsBySession).toBe(false)
-  })
-
-  it('notifies list subscribers so an open header re-renders without a poll', async () => {
-    const manager = makeManager()
-    const seen = vi.fn()
-    manager.subscribe(seen)
-    manager.handleControlFrame(tasksFrame(S1, [view()]))
-    // The notifier batches on a microtask; the frame itself is already applied.
-    await Promise.resolve()
-    expect(seen).toHaveBeenCalled()
   })
 })

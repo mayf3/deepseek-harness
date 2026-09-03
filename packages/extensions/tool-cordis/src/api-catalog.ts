@@ -1039,15 +1039,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Host service backing the generated `ctx.remote.job` namespace.',
     methods: [
       {
+        signature: '@Remote({ mode: \'stream\' }) rows(request: JobRowsRequest, signal: AbortSignal): AsyncIterable<JobRowsFrame>',
+        description: 'Stream the jobs one session can see — its own plus every unowned job — as whole-set frames: one on open, then one after each coalesced burst of lifecycle commits. The stream has no natural end; the carrier closes it.',
+        parameters: [{ name: 'request', description: 'the session whose visible set to mirror.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
+        returns: 'the roster frames.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) observe(request: JobObserveRequest, signal: AbortSignal): AsyncIterable<JobObserveFrame>',
-        description: 'Stream one job\'s retained record output from an absolute byte offset, then its terminal status once settled and drained. Non-consuming: the model-facing cursor and notice state never observe these reads. The request\'s session resolves the fenced-read caller; the registry rejects a job the session does not own, a job without a record, or an unknown job.',
+        description: 'Stream one job\'s retained output from an absolute byte offset, then its terminal projection once settled and drained. Non-consuming: the model-facing cursor and notice state never observe these reads. The request\'s session is the fenced read\'s caller; the registry rejects a job the session cannot see and an unknown job.',
         parameters: [{ name: 'request', description: 'target job, owning session, and optional resume offset.' }, { name: 'signal', description: 'cancellation owned by the Remote stream carrier.' }],
         returns: 'anchor, coalesced output frames, and the terminal status.',
       },
       {
         signature: '@Remote(\'kill\') kill(request: JobKillRequest): JobKillValue',
-        description: 'Kill one background job on a human\'s behalf, leaving the terminal report unclaimed so the owning agent still receives the completion notice. The request\'s session resolves the live agent for the fenced lookup, and the subagent ownership fence applies exactly as it does to `session.cancel`.',
-        parameters: [{ name: 'request', description: 'Session whose task list carries the job, and the job id.' }],
+        description: 'Kill one background job on a human\'s behalf. The request\'s session is the fenced read\'s caller, so the job must be one that session can see; the subagent ownership fence applies exactly as it does to `session.cancel`. The kill records `cancelled by the user` as its reason and claims nothing in the model-facing notice ledger, so the owning agent still receives the completion notice.',
+        parameters: [{ name: 'request', description: 'Session whose job list carries the job, and the job id.' }],
         returns: 'the registry\'s admission of the kill request.',
       },
     ],
@@ -1055,67 +1061,24 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'jobs',
     summary: 'Abstract background job registry.',
-    description: 'Abstract background job registry. Subclass, implement the abstract methods, and load the subclass as a plugin — it registers as `ctx.jobs` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Teardown cancellation also marks the record reported, because a record its owner is being destroyed for has no reader left.\n- Owned-job access is fenced by the owner\'s session id. Ids are predictable, so authorization — not secrecy — is the boundary.\n- Settlement is first-wins: one terminal record, released waiters, and one round of contained listener notification, even against a late producer outcome. Completion is announced last, after the record is committed and every other observer of the settlement has seen it, because a reporter may open a model turn synchronously.\n- start refuses work while no attached job controller serves the spec\'s owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and completion-listener delivery — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition\'s scope serve exactly the agents composed under it.\n- Record observation never consumes. Any number of readRecord readers hold their own absolute byte offsets; a record read changes no cursor and no notice state, so the model-facing surfaces (the consuming read, completion notices) are unaffected.\n- Record retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement — the producer outcome, a kill, or teardown — trims retention to the settled cap and ends the stream; the record has no separate lifecycle.',
+    description: 'Abstract background job registry. Subclass, implement the abstract members, and load the subclass as a plugin — it registers as `ctx.jobs` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Registrations outlive producer and controller fibers. Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record. Such settlements announce `cause: \'teardown\'`, because a job whose owner is being destroyed has no reader left.\n- Owned-job access is fenced by the owner\'s session id. Ids are predictable, so authorization — not secrecy — is the boundary.\n- Settlement is first-wins: one terminal record, released waiters, then one round of contained event delivery, even against a late producer outcome. The `settled` event follows every released waiter, so a consumer that claims a settlement while waiting always claims before the event.\n- start refuses work while no attached job controller serves the spec\'s owner, so a producer cannot start work that owner cannot collect or stop. One registry serves every composition in the process, so this question — and event delivery under `{ owners: \'scope\' }` — is owner-relative rather than process-wide: registrations made from an unscoped context serve every owner, and registrations made under an agent composition\'s scope serve exactly the agents composed under it.\n- Every job owns one output ring. Pull sources named by the spec are pumped by the registry and drained once more before settlement; pushed appends land whole. The model\'s consuming cursor and observers\' absolute offsets read the same bytes and never disturb each other.\n- Ring retention is bounded. Appends past the live cap drop the oldest retained bytes; a reader below the retained window gets a lossy read, never an error. Settlement trims retention to the settled cap and ends the stream; the ring has no separate lifecycle.',
     methods: [
       {
-        signature: 'abstract start(spec: JobStart): JobId',
-        description: 'Preflight access, validation, owner cleanup, and implementation-owned admission before starting and atomically registering work. Any preflight rejection leaves no job id or execution resource. A throwing starter leaves nothing registered; after it returns, registration cannot fail. Settlement records the outcome, notifies listeners, and releases waiters.',
-        parameters: [{ name: 'spec', description: 'job identity, owner, and synchronous starter.' }],
+        signature: 'abstract readonly events: JobEvents',
+        description: 'Lifecycle and output events, filtered per subscription.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract start(spec: JobSpec): JobId',
+        description: 'Preflight access, validation, owner cleanup, and implementation-owned admission before starting and atomically registering work. Any preflight rejection leaves no job id or execution resource. A throwing starter leaves nothing registered; after it returns, registration cannot fail.',
+        parameters: [{ name: 'spec', description: 'job identity, owner, output sources, and synchronous starter.' }],
         returns: 'the registry-issued `<kind>-N` id.',
       },
       {
-        signature: 'abstract list(caller?: Agent): JobSnapshot[]',
-        description: 'List caller-owned and unowned jobs in registration order without exposing another session\'s labels.',
-        parameters: [{ name: 'caller', description: 'reading agent; a non-agent caller sees only unowned jobs.' }],
-        returns: 'fresh snapshots.',
-      },
-      {
-        signature: 'abstract get(id: JobId, caller?: Agent): JobSnapshot',
-        description: 'Return a non-consuming snapshot without changing its read cursor or notice state. Throws for an unknown or foreign job.',
-        parameters: [{ name: 'id', description: 'job to look up.' }, { name: 'caller', description: 'reading agent checked against the owner.' }],
-        returns: 'a fresh snapshot.',
-      },
-      {
-        signature: 'abstract read(id: JobId, caller?: Agent): JobRead',
-        description: 'Read the next stream delta, or the idempotent final output after settlement. A terminal read marks the job reported. Throws for an unknown or foreign job.',
-        parameters: [{ name: 'id', description: 'job to read.' }, { name: 'caller', description: 'reading agent checked against the owner.' }],
-        returns: 'output text and the post-read snapshot.',
-      },
-      {
-        signature: 'abstract kill(id: JobId, caller?: Agent, options?: JobKillOptions): \'requested\' | \'already-finished\'',
-        description: 'Request cancellation, then mark the job stopping. By default the kill also claims the terminal report (JobKillOptions.reported); a kill with `reported: false` leaves the settlement notice due instead. A recorded JobKillOptions.reason merges into the terminal `detail` when the job settles `killed`. A producer throw propagates without changing job state. Throws for an unknown or foreign job.',
-        parameters: [{ name: 'id', description: 'job to cancel.' }, { name: 'caller', description: 'killing agent checked against the owner.' }, { name: 'options', description: 'cancellation reason and terminal-report claim.' }],
-        returns: '`requested` for live work, otherwise `already-finished`.',
-      },
-      {
-        signature: 'abstract wait(id: JobId, timeoutMs: number, caller?: Agent, signal?: AbortSignal): Promise<JobSnapshot>',
-        description: 'Wait for settlement or timeout without cancelling the job. Caller abort rejects only while the job is live; after settlement the terminal snapshot wins so a notice suppressed for this waiter is still delivered. Throws for invalid, unknown, or foreign input.',
-        parameters: [{ name: 'id', description: 'job to wait for.' }, { name: 'timeoutMs', description: 'positive finite wait bound in milliseconds.' }, { name: 'caller', description: 'waiting agent checked against the owner.' }, { name: 'signal', description: 'optional cancellation of the wait itself.' }],
-        returns: 'snapshot at settlement or timeout.',
-      },
-      {
-        signature: 'abstract onJobDone(listener: JobDoneListener): () => void',
-        description: 'Register an effect-scoped completion listener. It receives the settlements of the owners its registering context\'s scope covers; each listener is contained; returned promises are observed but not awaited. No listener runs after service disposal.',
-        parameters: [{ name: 'listener', description: 'receives each terminal snapshot and its exact owner.' }],
-        returns: 'disposer that unregisters the listener.',
-      },
-      {
-        signature: 'abstract onJobsChanged(listener: JobsChangedListener): () => void',
-        description: 'Register an effect-scoped observer of visible-set changes. It fires after every commit that changes what list returns for that owner — registration, every stopping transition (including the one teardown performs before it awaits a slow producer), settlement, owner-disposal removal, and the emptying that service disposal commits — so an observer re-reads rather than accumulating deltas.\n\nDelivery is owner-relative on the same terms as onJobDone: an observer registered from an unscoped context — a host composition\'s own carrier — sees every owner, while one registered under an agent composition\'s scope sees exactly the agents composed under it.\n\nThis is not a superset of onJobDone: that one delivers the terminal record under first-wins semantics a job controller couples to notice delivery, while this one carries no delivery meaning and marks nothing reported. Listeners are contained and never awaited.',
-        parameters: [{ name: 'listener', description: 'receives the owner whose visible set changed, or `undefined` when an unowned job changed and every caller\'s set did.' }],
-        returns: 'disposer that unregisters the listener.',
-      },
-      {
-        signature: 'abstract readRecord(id: JobId, from: number, caller?: Agent): JobRecordRead',
-        description: 'Read retained record output from an absolute byte offset without consuming it. Resume by passing a previous read\'s `next`; a foreign offset inside a retained chunk returns that whole chunk (its `at` may precede `from`). Never marks the job reported. Throws for an unknown or foreign job, a job without a JobStart.record declaration, or a negative or non-integer offset.',
-        parameters: [{ name: 'id', description: 'job to read.' }, { name: 'from', description: 'absolute byte offset to read from (0 for the retained head).' }, { name: 'caller', description: 'reading agent checked against the owner.' }],
-        returns: 'retained chunks overlapping `[from, total)`, the resume offset, and the lossy flag.',
-      },
-      {
-        signature: 'abstract onOutput(listener: JobOutputListener): () => void',
-        description: 'Register an effect-scoped observer of record advancement — one signal per committed append and one at settlement, carrying only the job id. A consumer schedules a readRecord from its own cursor; the registry never pushes payloads. Delivery is owner-relative on the same terms as onJobsChanged. Listeners are contained and never awaited.',
-        parameters: [{ name: 'listener', description: 'receives the id whose record advanced.' }],
-        returns: 'disposer that unregisters the listener.',
+        signature: 'abstract visibleTo(caller?: SessionId): VisibleJobs',
+        description: 'Bind the caller\'s identity once and return its operations. A caller sees its own jobs and every unowned job; a caller-less view sees unowned jobs only. The view resolves visibility on every call, so it stays valid as jobs come and go.',
+        parameters: [{ name: 'caller', description: 'the reading session, or undefined for an anonymous caller.' }],
+        returns: 'the operations available to that caller.',
       },
       {
         signature: 'abstract attachController(name: string): () => void',
@@ -4175,15 +4138,35 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'JobChannel',
-    declaration: 'export type JobChannel = \'stdout\' | \'stderr\';',
+    declaration: 'export type JobChannel = \'stdout\' | \'stderr\' | \'log\';',
   },
   {
-    name: 'JobDoneListener',
-    declaration: 'export type JobDoneListener = (snapshot: JobSnapshot, owner: Agent | undefined) => void | PromiseLike<void>;',
+    name: 'JobChunk',
+    declaration: 'export interface JobChunk {\n    readonly at: number;\n    readonly text: string;\n    readonly channel?: JobChannel;\n    readonly gapBefore?: true;\n}',
+  },
+  {
+    name: 'JobEvent',
+    declaration: 'export type JobEvent = {\n    readonly type: \'registered\' | \'progress\' | \'stopping\' | \'removed\';\n    readonly job: JobView;\n} | {\n    readonly type: \'settled\';\n    readonly job: JobView;\n    readonly cause: JobSettleCause;\n} | {\n    readonly type: \'output\';\n    readonly id: JobId;\n    readonly owner?: SessionId;\n    readonly total: number;\n};',
+  },
+  {
+    name: 'JobEventFilter',
+    declaration: 'export type JobEventFilter = {\n    readonly owner: SessionId;\n} | {\n    readonly owners: \'all\' | \'scope\';\n};',
+  },
+  {
+    name: 'JobEventListener',
+    declaration: 'export type JobEventListener = (event: JobEvent) => void;',
+  },
+  {
+    name: 'JobEvents',
+    declaration: 'export interface JobEvents {\n    subscribe(filter: JobEventFilter, listener: JobEventListener): () => void;\n}',
+  },
+  {
+    name: 'JobHandle',
+    declaration: 'export interface JobHandle {\n    readonly id: JobId;\n    append(text: string, options?: JobAppendOptions): void;\n    updateProgress(line: string): void;\n}',
   },
   {
     name: 'JobHooks',
-    declaration: 'export interface JobHooks {\n    cancel(reason?: string): void;\n    done: Promise<JobOutcome>;\n    readOutput?(): string;\n}',
+    declaration: 'export interface JobHooks {\n    cancel(reason?: string): void;\n    done: Promise<JobOutcome>;\n}',
   },
   {
     name: 'JobId',
@@ -4191,7 +4174,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'JobKillOptions',
-    declaration: 'export interface JobKillOptions {\n    reason?: string;\n    reported?: boolean;\n}',
+    declaration: 'export interface JobKillOptions {\n    reason?: string;\n}',
   },
   {
     name: 'JobKillRequest',
@@ -4211,55 +4194,55 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'JobObserveFrame',
-    declaration: 'export type JobObserveFrame = {\n    readonly type: \'opened\';\n    readonly jobId: JobId;\n    readonly from: number;\n    readonly earliest: number;\n    readonly total: number;\n    readonly status: JobObserveStatus;\n    readonly detail?: string;\n} | {\n    readonly type: \'output\';\n    readonly chunks: readonly JobWireChunk[];\n    readonly next: number;\n    readonly lossy?: true;\n} | {\n    readonly type: \'status\';\n    readonly status: JobObserveStatus;\n    readonly detail?: string;\n    readonly finishedAt?: number;\n};',
+    declaration: 'export type JobObserveFrame = {\n    readonly type: \'opened\';\n    readonly job: JobView;\n    readonly from: number;\n} | {\n    readonly type: \'output\';\n    readonly chunks: readonly JobChunk[];\n    readonly next: number;\n    readonly lossy?: true;\n} | {\n    readonly type: \'status\';\n    readonly job: JobView;\n};',
   },
   {
     name: 'JobObserveRequest',
     declaration: 'export interface JobObserveRequest {\n    readonly sessionId?: SessionId;\n    readonly jobId: JobId;\n    readonly from?: number;\n}',
   },
   {
-    name: 'JobObserveStatus',
-    declaration: 'export type JobObserveStatus = \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';',
-  },
-  {
     name: 'JobOutcome',
-    declaration: 'export interface JobOutcome {\n    status: \'completed\' | \'killed\' | \'failed\';\n    detail?: string;\n    output?: string;\n}',
+    declaration: 'export interface JobOutcome {\n    status: \'completed\' | \'killed\' | \'failed\';\n    detail?: string;\n    result?: string;\n}',
   },
   {
-    name: 'JobOutputListener',
-    declaration: 'export type JobOutputListener = (id: JobId) => void;',
+    name: 'JobOutputRead',
+    declaration: 'export interface JobOutputRead {\n    chunks: readonly JobChunk[];\n    next: number;\n    lossy: boolean;\n}',
+  },
+  {
+    name: 'JobOutputSource',
+    declaration: 'export interface JobOutputSource {\n    channel?: JobChannel;\n    read(fromByte: number): JobSourceRead;\n}',
   },
   {
     name: 'JobRead',
-    declaration: 'export interface JobRead {\n    text: string;\n    snapshot: JobSnapshot;\n}',
+    declaration: 'export interface JobRead {\n    chunks: readonly JobChunk[];\n    lossy: boolean;\n    result?: string;\n    job: JobView;\n}',
   },
   {
-    name: 'JobRecordChunk',
-    declaration: 'export interface JobRecordChunk {\n    at: number;\n    text: string;\n    channel?: JobChannel;\n    gapBefore?: true;\n}',
+    name: 'JobRowsFrame',
+    declaration: 'export interface JobRowsFrame {\n    readonly type: \'rows\';\n    readonly jobs: readonly JobView[];\n}',
   },
   {
-    name: 'JobRecordRead',
-    declaration: 'export interface JobRecordRead {\n    chunks: readonly JobRecordChunk[];\n    next: number;\n    lossy: boolean;\n}',
+    name: 'JobRowsRequest',
+    declaration: 'export interface JobRowsRequest {\n    readonly sessionId: SessionId;\n}',
   },
   {
-    name: 'JobsChangedListener',
-    declaration: 'export type JobsChangedListener = (owner: Agent | undefined) => void;',
+    name: 'JobSettleCause',
+    declaration: 'export type JobSettleCause = \'producer\' | \'kill\' | \'teardown\';',
   },
   {
-    name: 'JobSnapshot',
-    declaration: 'export interface JobSnapshot {\n    id: JobId;\n    kind: JobKind;\n    label: string;\n    outputLimitBytes?: number;\n    ownerSession?: SessionId;\n    status: JobStatus;\n    detail?: string;\n    startedAt: number;\n    finishedAt?: number;\n    reported: boolean;\n    outputTotal?: number;\n    outputEarliest?: number;\n}',
+    name: 'JobSourceRead',
+    declaration: 'export interface JobSourceRead {\n    text: string;\n    nextOffset: number;\n    lossy: boolean;\n}',
   },
   {
-    name: 'JobStart',
-    declaration: 'export type JobStart = PlainJobStart | RecordingJobStart;',
+    name: 'JobSpec',
+    declaration: 'export interface JobSpec {\n    kind: JobKind;\n    label: string;\n    owner?: SessionId;\n    outputLimitBytes?: number;\n    output?: readonly JobOutputSource[];\n    run(job: JobHandle): JobHooks;\n}',
   },
   {
     name: 'JobStatus',
     declaration: 'export type JobStatus = \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';',
   },
   {
-    name: 'JobWireChunk',
-    declaration: 'export interface JobWireChunk {\n    readonly at: number;\n    readonly text: string;\n    readonly channel?: string;\n    readonly gapBefore?: true;\n}',
+    name: 'JobView',
+    declaration: 'export interface JobView {\n    readonly id: JobId;\n    readonly kind: JobKind;\n    readonly label: string;\n    readonly owner?: SessionId;\n    readonly outputLimitBytes?: number;\n    readonly status: JobStatus;\n    readonly progress?: string;\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly output: {\n        readonly total: number;\n        readonly earliest: number;\n    };\n}',
   },
   {
     name: 'JsonSchemaNode',
@@ -4550,10 +4533,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
-    name: 'PlainJobStart',
-    declaration: 'export interface PlainJobStart extends JobStartBase {\n    record?: undefined;\n    run(job: RunningJob): JobHooks;\n}',
-  },
-  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
@@ -4674,14 +4653,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ReasoningEffortId = Branded<\'ReasoningEffortId\'>;',
   },
   {
-    name: 'RecordingJob',
-    declaration: 'export interface RecordingJob extends RunningJob {\n    append(text: string, options?: JobAppendOptions): void;\n}',
-  },
-  {
-    name: 'RecordingJobStart',
-    declaration: 'export interface RecordingJobStart extends JobStartBase {\n    record: true;\n    run(job: RecordingJob): JobHooks;\n}',
-  },
-  {
     name: 'RedactedSecret',
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
@@ -4760,10 +4731,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
-  },
-  {
-    name: 'RunningJob',
-    declaration: 'export interface RunningJob {\n    readonly id: JobId;\n    updateDetail(detail: string): void;\n}',
   },
   {
     name: 'SandboxEnforcement',
@@ -4875,11 +4842,11 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SessionControlBaseline',
-    declaration: 'export interface SessionControlBaseline {\n    readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>;\n    readonly jobs: Readonly<Record<SessionId, readonly SessionJob[]>>;\n    readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>;\n}',
+    declaration: 'export interface SessionControlBaseline {\n    readonly queues: Readonly<Record<SessionId, readonly SessionQueuedItem[]>>;\n    readonly projections: Readonly<Record<SessionId, SessionProjectionBaseline>>;\n}',
   },
   {
     name: 'SessionControlFrame',
-    declaration: 'export type SessionControlFrame = {\n    readonly type: \'baseline\';\n    readonly value: SessionControlBaseline;\n} | {\n    readonly type: \'queue\';\n    readonly sessionId: SessionId;\n    readonly items: readonly SessionQueuedItem[];\n} | {\n    readonly type: \'jobs\';\n    readonly sessionId: SessionId;\n    readonly jobs: readonly SessionJob[];\n} | ({\n    readonly type: \'projection\';\n} & SessionProjectionUpdate);',
+    declaration: 'export type SessionControlFrame = {\n    readonly type: \'baseline\';\n    readonly value: SessionControlBaseline;\n} | {\n    readonly type: \'queue\';\n    readonly sessionId: SessionId;\n    readonly items: readonly SessionQueuedItem[];\n} | ({\n    readonly type: \'projection\';\n} & SessionProjectionUpdate);',
   },
   {
     name: 'SessionCreateRequest',
@@ -5008,10 +4975,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionInspection',
     declaration: 'export interface SessionInspection extends SessionStorageMetadata {\n    readonly events: readonly SessionEvent[];\n}',
-  },
-  {
-    name: 'SessionJob',
-    declaration: 'export interface SessionJob {\n    readonly id: JobId;\n    readonly kind: string;\n    readonly label: string;\n    readonly status: \'running\' | \'stopping\' | \'completed\' | \'killed\' | \'failed\';\n    readonly detail?: string;\n    readonly startedAt: number;\n    readonly finishedAt?: number;\n    readonly record?: true;\n}',
   },
   {
     name: 'SessionLineageNode',
@@ -6032,6 +5995,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'VerifiedWebhookDelivery',
     declaration: 'export interface VerifiedWebhookDelivery<K extends string = string> {\n    readonly kind: K;\n    readonly source: WebhookSourceId;\n    readonly deliveryId: WebhookDeliveryId;\n    readonly event: WebhookEventOf<K>;\n    readonly receivedAt: number;\n}',
+  },
+  {
+    name: 'VisibleJobs',
+    declaration: 'export interface VisibleJobs {\n    list(): JobView[];\n    get(id: JobId): JobView;\n    read(id: JobId): JobRead;\n    readAt(id: JobId, from: number): JobOutputRead;\n    kill(id: JobId, options?: JobKillOptions): \'requested\' | \'already-finished\';\n    wait(id: JobId, timeoutMs: number, signal?: AbortSignal): Promise<JobView>;\n}',
   },
   {
     name: 'WebBootBatch',

@@ -19,6 +19,7 @@ import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
@@ -825,6 +826,16 @@ describe('processOutcome', () => {
   it('defensively reads a null exit code as 0 (handle shapes from other executors)', () => {
     expect(processOutcome(settled({ exitCode: null })))
       .toEqual({ status: 'completed', detail: 'exit code: 0' })
+  })
+
+  it('appends sandbox facts to the terminal detail', () => {
+    const denied = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }), ['workspace-write'])
+    expect(denied.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')} ${escalationHintMarker('command')}`)
+    const deniedWithoutEscalation = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }))
+    expect(deniedWithoutEscalation.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')}`)
+    const runnerFailed = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: false, runnerFailed: true } }))
+    expect(runnerFailed.detail).toContain('the sandbox runner itself failed under read-only mode')
+    expect(processOutcome(settled({ sandbox: { mode: 'read-only', denied: false } })).detail).toBe('exit code: 0')
   })
 })
 

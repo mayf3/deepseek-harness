@@ -1,9 +1,10 @@
 /**
  * Model-facing `job_output`, `job_list`, and `job_kill` tools over
  * `ctx.jobs`. Loading the plugin attaches the controller required by
- * producers. It also delivers unreported completions to the owning agent:
- * injected into a busy owner's next step, or opening a turn on an idle one
- * under the default `wakeup` delivery, bounded per owner.
+ * producers. It also delivers completions the model has not already
+ * collected to the owning agent: injected into a busy owner's next step, or
+ * opening a turn on an idle one under the default `wakeup` delivery, bounded
+ * per owner.
  * @module @deepseek-ai/dsh-tool-jobs
  */
 
@@ -14,14 +15,19 @@ import { TextRetainer } from '@deepseek-ai/dsh-output-retention'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { GenericCallView, ToolDefinition, ToolExecution } from '@deepseek-ai/dsh-tools'
 import { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
+import type { JobView, VisibleJobs } from '@deepseek-ai/dsh-jobs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { publicJob, renderModelDelta, statusLine } from './render.ts'
+import type { PublicJobSnapshot } from './render.ts'
+
+export { publicJob, renderModelDelta, statusLine } from './render.ts'
+export type { PublicJobSnapshot } from './render.ts'
 
 export const name = 'tool-jobs'
-export const inject = ['tools', 'jobs', 'systemPrompt']
+export const inject = ['tools', 'jobs', 'agents', 'systemPrompt']
 
 /**
- * How an unreported completion reaches an owner that is already idle: `wakeup`
+ * How an uncollected completion reaches an owner that is already idle: `wakeup`
  * opens a turn for it, `quiet` leaves it pending until something else wakes the
  * owner. A busy owner is injected either way.
  */
@@ -51,17 +57,6 @@ export const Config: z<Config> = z.object({
   maxConsecutiveWakes: z.number().min(1).default(3),
 })
 
-/** Task state safe for model-authored programs; ownership/bookkeeping fields are omitted. */
-export interface PublicJobSnapshot {
-  id: string
-  kind: string
-  label: string
-  status: JobSnapshot['status']
-  detail?: string
-  startedAt: number
-  finishedAt?: number
-}
-
 /** Shared schema for job-control outputs. */
 const PUBLIC_TASK_SCHEMA = {
   type: 'object',
@@ -80,30 +75,6 @@ const PUBLIC_TASK_SCHEMA = {
     finishedAt: { type: 'integer' },
   },
 } as const
-
-/** Remove job ownership and notification bookkeeping from a registry snapshot. */
-function publicJob(snapshot: JobSnapshot): PublicJobSnapshot {
-  return {
-    id: snapshot.id,
-    kind: snapshot.kind,
-    label: snapshot.label,
-    status: snapshot.status,
-    ...snapshot.detail !== undefined ? { detail: snapshot.detail } : {},
-    startedAt: snapshot.startedAt,
-    ...snapshot.finishedAt !== undefined ? { finishedAt: snapshot.finishedAt } : {},
-  }
-}
-
-/**
- * Render generic status with optional producer detail.
- * @param snapshot - job state to render.
- * @returns a bracketed status line.
- */
-export function statusLine(snapshot: Pick<JobSnapshot, 'status' | 'detail'>): string {
-  return snapshot.detail !== undefined
-    ? `[status: ${snapshot.status}, ${snapshot.detail}]`
-    : `[status: ${snapshot.status}]`
-}
 
 const encoder = new TextEncoder()
 
@@ -135,19 +106,19 @@ function fitWithSuffix(
 
 /**
  * One-line account of a settled job for the `notice` form's collapsed row.
- * @param snapshot - the settled job.
+ * @param job - the settled job.
  * @returns its kind, label, and status, bounded like every notice summary.
  */
-function completionSummary(snapshot: JobSnapshot): string {
-  return boundContextSummary(`${snapshot.kind} ${snapshot.label} ${statusLine(snapshot)}`)
+function completionSummary(job: JobView): string {
+  return boundContextSummary(`${job.kind} ${job.label} ${statusLine(publicJob(job))}`)
 }
 
-function fitCompletionNotice(snapshot: JobSnapshot): string {
-  const prefix = `background job ${snapshot.id}`
-  const detail = ` (${snapshot.kind}: ${snapshot.label}) finished ${statusLine(snapshot)}`
+function fitCompletionNotice(job: JobView): string {
+  const prefix = `background job ${job.id}`
+  const detail = ` (${job.kind}: ${job.label}) finished ${statusLine(publicJob(job))}`
   const action = '\nDone; job_output.'
   const complete = `${prefix}${detail}. Read its output with job_output.`
-  const maxBytes = snapshot.outputLimitBytes
+  const maxBytes = job.outputLimitBytes
   if (maxBytes === undefined || encoder.encode(complete).byteLength <= maxBytes) return complete
   const omitted = '\n[notice truncated]'
   const fixed = `${prefix}${omitted}${action}`
@@ -181,11 +152,12 @@ function boundSingleText(content: readonly ContentBlock[], maxBytes: number): Co
   }]
 }
 
+/** The producer's cap for the job a `job_output` or `job_kill` call names, when it is visible to the caller. */
 function visibleOutputLimit(ctx: Context, exec: ToolExecution): number | undefined {
   if (exec.name !== 'job_output' && exec.name !== 'job_kill') return undefined
   const jobId = (exec.arguments as { job_id?: unknown } | null | undefined)?.job_id
   if (typeof jobId !== 'string' || jobId.length === 0) return undefined
-  return ctx.jobs.list(exec.agent).find(snapshot => snapshot.id === jobId)?.outputLimitBytes
+  return ctx.jobs.visibleTo(exec.agent?.id).list().find(job => job.id === jobId)?.outputLimitBytes
 }
 
 /** Validate the non-empty constraint that ParameterSchemaSpec cannot express. */
@@ -199,6 +171,21 @@ function validateJobId(value: string): JobId {
 /** Pending presentation shared by the three generic job controls. */
 function presentTaskCall(title: string, kind: 'read' | 'execute', rawInput?: string): GenericCallView {
   return { card: 'generic', title, kind, ...rawInput !== undefined ? { rawInput } : {} }
+}
+
+/** True for the three terminal statuses. */
+function isTerminal(job: JobView): boolean {
+  return job.status === 'completed' || job.status === 'killed' || job.status === 'failed'
+}
+
+/** The consuming read as the model sees it: the delta, then the result once, then the status line. */
+function readBody(jobs: VisibleJobs, id: JobId): { text: string; job: PublicJobSnapshot } {
+  const read = jobs.read(id)
+  const delta = renderModelDelta(read.chunks, read.lossy)
+  const text = read.result === undefined
+    ? delta
+    : `${delta}${delta.length > 0 && !delta.endsWith('\n') ? '\n' : ''}${read.result}`
+  return { text, job: publicJob(read.job) }
 }
 
 export function apply(ctx: Context, config: Config): void {
@@ -265,28 +252,49 @@ export function apply(ctx: Context, config: Config): void {
     text: 'Track every background job id you start. You are notified in-session when a job finishes — do not busy-poll or sleep on one; keep working on independent steps and do not duplicate a running job\'s work. Before giving a final answer, collect every still-relevant job with job_output (set wait: true only when you are genuinely blocked on it), and job_kill jobs that stopped mattering.',
   })
 
-  // Use the exact lifecycle owner; reusable ids could resolve to a replacement.
+  // Jobs whose terminal state this plugin already handed to the model through
+  // a tool result: a terminal `job_output`, a wait that returned it, or a
+  // `job_kill` it requested. A wait claims when it starts, not when it
+  // returns — settlement releases waiters before it announces, but their
+  // continuations run after the event — and withdraws the claim if the job
+  // outlives the wait. The settlement event drops the entry, so the ledger
+  // holds only live jobs the model already touched.
+  const delivered = new Set<JobId>()
+  const claim = (id: JobId): (() => void) => {
+    delivered.add(id)
+    return () => { delivered.delete(id) }
+  }
+
   // A busy owner is injected: the notice waits in its next-step inbox, which
   // the turn cannot close over, so jobs settling together cost one step. An
   // idle owner is woken instead, because an unclaimed notice is a completion
   // the model never learns about. Either way, disposal before the claim
-  // discards it with the owner, and teardown settlements arrive `reported`.
+  // discards it with the owner, and a teardown settlement has no reader left.
   //
-  // The registry routes each settlement to the listeners its owner's scope
-  // chain reaches, so a mount under one preset never sees another preset's
-  // agents; this listener owns delivery, not the choice of whom to deliver to.
-  ctx.jobs.onJobDone((snapshot, owner) => {
-    if (snapshot.reported || owner === undefined) return
+  // The registry routes each settlement to the scope this plugin was mounted
+  // under, so a mount under one preset never sees another preset's agents;
+  // this listener owns delivery, not the choice of whom to deliver to.
+  ctx.jobs.events.subscribe({ owners: 'scope' }, (event) => {
+    if (event.type === 'removed') {
+      delivered.delete(event.job.id)
+      return
+    }
+    if (event.type !== 'settled') return
+    const claimed = delivered.delete(event.job.id)
+    if (claimed || event.cause === 'teardown' || event.job.owner === undefined) return
+    // Use the exact lifecycle owner; a session whose agent left has no inbox.
+    const owner = ctx.agents.get(event.job.owner)
+    if (owner === undefined) return
     const message = createUserMessage({
       content: [{
         type: 'text',
-        text: fitCompletionNotice(snapshot),
+        text: fitCompletionNotice(event.job),
       }],
       source: {
         kind: 'plugin',
         plugin: 'tool-jobs',
         form: 'notice',
-        summary: completionSummary(snapshot),
+        summary: completionSummary(event.job),
       },
     })
     const spent = spentWakes.get(owner) ?? 0
@@ -328,12 +336,19 @@ export function apply(ctx: Context, config: Config): void {
     },
     async execute(args, exec) {
       const id = validateJobId(args.job_id)
+      const jobs = ctx.jobs.visibleTo(exec.agent?.id)
       if (args.wait === true) {
         const timeout = Math.min(args.timeout_ms ?? waitDefault, waitCap)
-        await ctx.jobs.wait(id, timeout, exec.agent, exec.signal)
+        const withdraw = claim(id)
+        try {
+          const view = await jobs.wait(id, timeout, exec.signal)
+          if (!isTerminal(view)) withdraw()
+        } catch (error: unknown) {
+          withdraw()
+          throw error
+        }
       }
-      const read = ctx.jobs.read(id, exec.agent)
-      return { text: read.text, job: publicJob(read.snapshot) }
+      return readBody(jobs, id)
     },
     presentCall: args => presentTaskCall(`Read output from background job ${args.job_id}`, 'read', args.job_id),
   }))
@@ -352,7 +367,7 @@ export function apply(ctx: Context, config: Config): void {
       }],
     },
     execute(_args, exec) {
-      const jobs = ctx.jobs.list(exec.agent)
+      const jobs = ctx.jobs.visibleTo(exec.agent?.id).list()
       return Promise.resolve(jobs.map(publicJob))
     },
     presentCall: () => presentTaskCall('List background jobs', 'read'),
@@ -388,14 +403,16 @@ export function apply(ctx: Context, config: Config): void {
     },
     execute(args, exec) {
       const id = validateJobId(args.job_id)
-      // The model's own kill claims the terminal report: this tool result is
-      // its delivery, so the settlement notice stays suppressed (the default).
-      const result = ctx.jobs.kill(id, exec.agent, args.reason === undefined ? {} : { reason: args.reason })
-      // A snapshot describes current state without consuming pending output.
-      const snapshot = publicJob(ctx.jobs.get(id, exec.agent))
+      const jobs = ctx.jobs.visibleTo(exec.agent?.id)
+      const result = jobs.kill(id, args.reason === undefined ? {} : { reason: args.reason })
+      // The model's own kill is its delivery: the settlement notice would only
+      // repeat what this tool result already said.
+      if (result === 'requested') claim(id)
+      // A projection describes current state without consuming pending output.
+      const job = publicJob(jobs.get(id))
       return Promise.resolve({
         outcome: result === 'already-finished' ? 'already-finished' as const : 'cancellation-requested' as const,
-        job: snapshot,
+        job,
       })
     },
     presentCall: args => presentTaskCall(`Kill background job ${args.job_id}`, 'execute', args.job_id),

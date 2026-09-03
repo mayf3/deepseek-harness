@@ -19,8 +19,10 @@ function headerEntryIds(ctx: Context): (string | undefined)[] {
     .map(entry => entry.options.id)
 }
 
-/** Observation requests handed to the stubbed job-output control. */
+/** Observation requests handed to the stubbed jobs service. */
 const observed: [string | undefined, string][] = []
+/** Roster watches handed to the stubbed jobs service. */
+const watched: string[] = []
 
 /** Job ids the stubbed bound session was asked to kill, and its scripted result. */
 const kills: [string, string][] = []
@@ -36,8 +38,12 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
     },
   } as never, () => null)
-  ctx.provide('jobOutput', {
-    state: { getSnapshot: () => ({ observed: {} }), subscribe: () => () => {} },
+  ctx.provide('jobs', {
+    state: { getSnapshot: () => ({ rows: {}, observed: {} }), subscribe: () => () => {} },
+    watchRows: (sessionId: string) => {
+      watched.push(sessionId)
+      return () => {}
+    },
     observe: (sessionId: string | undefined, id: string) => {
       observed.push([sessionId, id])
       return () => {}
@@ -64,22 +70,26 @@ async function bench(): Promise<{ ctx: Context; fiber: ReturnType<Context['plugi
 
 describe('ui-jobs browser half', () => {
   it('declares the services it binds', () => {
-    expect(inject).toEqual(['jobOutput', 'slots', 'locale'])
+    expect(inject).toEqual(['jobs', 'slots', 'locale'])
   })
 
-  it('exposes the output source and observation control through the inject face', async () => {
+  it('exposes the jobs source and the roster, observation, and kill controls through the inject face', async () => {
     const { ctx } = await bench()
     const entry = ctx.slots
       .entries('conversation.session.header.actions')
       .find(candidate => candidate.options.id === 'job-list')
     const face = (entry as unknown as {
       inject: () => {
-        hooks: { jobOutput: unknown }
+        hooks: { jobs: unknown }
+        watchRows: (sessionId: string) => () => void
         observe: (sessionId: string | undefined, id: string) => () => void
         killJob: (sessionId: string, jobId: string) => Promise<boolean>
       }
     }).inject()
-    expect(face.hooks.jobOutput).toBeDefined()
+    expect(face.hooks.jobs).toBeDefined()
+    const release = face.watchRows('session')
+    expect(watched).toEqual(['session'])
+    release()
     const stopper = face.observe('session', 'bash-1')
     expect(observed).toEqual([['session', 'bash-1']])
     stopper()

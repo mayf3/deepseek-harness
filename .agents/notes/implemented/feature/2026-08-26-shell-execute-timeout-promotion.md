@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Update: with the [jobs seam consolidation](../architecture/2026-09-03-jobs-seam-consolidation.md) the promoted job feeds the registry's output ring through pull sources that start at the observed streams' current ends. The promoted result still carries the output so far through one consuming read; the ring holds only bytes produced after the promotion, so neither the model's next `job_output` nor the Web panel repeats that output.
+
 English | [中文](2026-08-26-shell-execute-timeout-promotion.zh.md)
 
 ## Problem

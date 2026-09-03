@@ -2,6 +2,8 @@
 
 状态：已实现
 
+Update：随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)，被提升的 job 通过从观测流当前末尾开始的拉取源填充注册表的输出环。提升结果仍通过一次消耗式读取携带迄今为止的输出；环只保有提升之后产生的字节，因此模型的下一次 `job_output` 与 Web 面板都不会重复这段输出。
+
 [English](2026-08-26-shell-execute-timeout-promotion.md) | 中文
 
 ## 问题

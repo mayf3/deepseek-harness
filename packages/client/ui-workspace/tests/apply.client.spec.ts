@@ -47,7 +47,7 @@ async function bench() {
     list: {
       getSnapshot: () => ({
         ids: [], byId: {}, current: undefined, phase: 'ready',
-        subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+        subagentsByParent: {}, currentAddress: undefined,
       }),
       subscribe,
     },

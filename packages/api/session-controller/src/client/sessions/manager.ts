@@ -10,7 +10,6 @@ import type {
   SessionControlFrame,
   SessionQueuedItem,
   SessionSummary,
-  SessionJob as JobView,
 } from '../../types.ts'
 import { mergeOrderedBaseline } from '../ordered-baseline.ts'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
@@ -56,8 +55,6 @@ export interface SessionListSnapshot {
   phase: SessionListPhase
   error: RemoteFailure | null
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
-  /** Background jobs per session; an absent key is an empty set. */
-  jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
   currentAddress: SubagentAddress | undefined
 }
 
@@ -126,12 +123,6 @@ export class SessionManager {
   private readonly catalogStale = new Set<SessionId>()
   private readonly openCatalogs = new Set<SessionId>()
   private readonly catalogDebounce = new Map<SessionId, ReturnType<typeof setTimeout>>()
-  /**
-   * Background jobs per session, last-wins from Session Controller's control
-   * stream. An empty set is stored as an absent key, so absence and `[]` are
-   * one representation.
-   */
-  private readonly jobsBySession = new Map<SessionId, readonly JobView[]>()
 
   private selected: SessionId | undefined
 
@@ -669,12 +660,6 @@ export class SessionManager {
       this.notifier.markDirty()
       return
     }
-    if (frame.type === 'jobs') {
-      if (frame.jobs.length === 0) this.jobsBySession.delete(frame.sessionId)
-      else this.jobsBySession.set(frame.sessionId, frame.jobs)
-      this.notifier.markDirty()
-      return
-    }
     this.queues.set(frame.sessionId, frame.items)
     this.sessions.get(frame.sessionId)?.handleControlFrame(frame)
   }
@@ -683,11 +668,6 @@ export class SessionManager {
     this.queues.clear()
     for (const [sessionId, items] of Object.entries(baseline.queues)) {
       this.queues.set(sessionId as SessionId, items)
-    }
-
-    this.jobsBySession.clear()
-    for (const [sessionId, jobs] of Object.entries(baseline.jobs)) {
-      if (jobs.length > 0) this.jobsBySession.set(sessionId as SessionId, jobs)
     }
 
     for (const [sessionId, block] of Object.entries(baseline.projections)) {
@@ -739,7 +719,6 @@ export class SessionManager {
     if (durableSubagent) this.sessions.get(sessionId)?.handleRunning(false)
     else this.sessions.get(sessionId)?.handleRemoved()
     this.queues.delete(sessionId)
-    this.jobsBySession.delete(sessionId)
     if (!durableSubagent) this.projectionStores.delete(sessionId)
     const inflightCatalog = this.catalogInflight.get(sessionId)
     if (inflightCatalog !== undefined) {
@@ -951,7 +930,6 @@ export class SessionManager {
       phase: this.listPhase,
       error: this.listError,
       subagentsByParent: Object.fromEntries(this.catalogs),
-      jobsBySession: Object.fromEntries(this.jobsBySession),
       currentAddress: current === undefined ? undefined : this.addresses.get(current),
     }
   }

@@ -2,6 +2,8 @@
 
 状态：已实现
 
+Update：随 [jobs seam 收敛](../architecture/2026-09-03-jobs-seam-consolidation.zh.md)，该运行注册的是 `JobSpec`（没有 `record` 标志），通过 `JobHandle.append` 与 `updateProgress` 叙述进度，并把渲染后的值作为 `JobOutcome.result` 返回，模型在结算后的第一次读取携带它一次。
+
 [English](2026-09-01-workflow-run-in-background.md) | 中文
 
 ## 问题

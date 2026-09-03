@@ -1,5 +1,5 @@
 ---
-description: "Host 与 Client 的 job 控制：把一个后台任务的输出 record 流式送到浏览器，不触碰模型的消耗型游标，并替人停止一个 job。"
+description: "Host 与 Client 的 job 控制：把一个会话看得到的名册与一个 job 的保留输出镜像到浏览器，不触碰模型的消耗型游标，并代人类停止一个 job。"
 kind: "package-reference"
 ---
 # Job Controller
@@ -8,7 +8,7 @@ kind: "package-reference"
 
 ## 概述
 
-`@deepseek-ai/dsh-api-job-controller` 拥有 Host 的 `ctx.jobController` 服务与生成的 Client `ctx.remote.job` namespace。它的 Remote 流 `job.observe` 从绝对字节偏移发送声明了 record 的 job 的保留输出，Remote `job.kill` 替人停止一个 job；Client 半侧安装 `ctx.jobOutput`——按 job 引用计数的观测与 kill 服务，会话头部任务列表渲染其累积视图。名册不在这里：`SessionJob` 行仍随 [`dsh-api-session-controller`](../session-controller/README.zh.md) 拥有的会话控制流到达，行上的 `record` 说明本控制器是否有东西可流。
+`@deepseek-ai/dsh-api-job-controller` 拥有 Host 的 `ctx.jobController` 服务与生成的 Client `ctx.remote.job` namespace。它的两条 Remote 流都是 `ctx.jobs` 的投影：`job.rows` 以整集帧镜像一个会话看得到的 job；`job.observe` 从绝对字节偏移发送一个 job 的保留输出；它唯一的命令 `job.kill` 代人类停止一个 job。Client 半侧安装 `ctx.jobs`——按引用计数的服务，会话头部任务列表渲染其名册与累积视图，其停止控件调用它的 `kill`。两条流都不触碰模型的消耗型游标与完成播报台账，人类 kill 也不在台账里认领任何东西。
 
 ## 目录
 
@@ -22,17 +22,17 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Host 控制器要求活体 Agent 注册表与 job 注册表（已发布组合里是 `dsh-jobs-local`），缺少任一则不加载。`job.observe({ sessionId?, jobId, from? })` 由请求的 session 解析围栏读取者——无主 job 不需要 session——先产出一个 `opened` 锚帧，再是聚合的 `output` 帧，job 结算且 record 排干后产出一个终态 `status`，随后流正常关闭。record 读取是非消耗的：模型侧 `job_output` 游标与完成播报状态永远观察不到它们。session 不拥有的 job、没有 record 的 job 或未知 job 会拒绝该流。重连方把上一帧的 `next` 作为 `from` 续读；低于最老保留字节的 `from` 得到带 `lossy` 的首帧而非错误。
+Host 控制器要求活体 Agent 注册表与 job 注册表（已发布组合里是 `dsh-jobs-local`），缺少任一则不加载。`job.rows({ sessionId })` 产出该会话可见的集合——自己的 job 加上所有无主 job——打开时一次，之后每一轮聚合过的生命周期提交（注册、进度、停止中、结算、移除）后再一次；输出追加从不刷新名册，因为结算后的投影已经带着最终字节数。`job.observe({ sessionId?, jobId, from? })` 经 `visibleTo(sessionId)` 读取——无主 job 不需要 session——先产出一个携带 job 投影的 `opened` 锚帧，再是聚合的 `output` 帧，job 结算且环排干后产出一个终态 `status`，随后流正常关闭。两种读取都是非消耗的：模型侧 `job_output` 游标与完成播报状态永远观察不到它们。
 
-`job.kill({ sessionId, jobId })` 以 `cancelled by the user` 为理由取消一个 job，并把终态报告留给 owner 不予认领，因此拥有它的 agent 的完成播报仍然待发；它回答 `{ outcome: 'requested' }` 或 `{ outcome: 'already-finished' }`，未知或他人的 job 以 `job/not-found` 拒绝，subagent 拥有的活体 session 适用 Session Controller 的所有权栅栏（`session/agent-busy`）。
+`job.kill({ sessionId, jobId })` 以 `cancelled by the user` 为原因取消一个该会话看得到的 job，注册表把该原因合并进被杀 job 的 detail。它不在模型的播报台账里认领任何东西——台账在 `dsh-tool-jobs` 里，只有模型自己的 `job_kill` 与等待会认领——因此拥有者 agent 的完成通知照常送达，并带上原因。它回答 `{ outcome: 'requested' }` 或 `{ outcome: 'already-finished' }`，对该会话看不到的 id 以 `job/not-found` 拒绝，并与 `session.cancel` 一样施加 subagent 所有权围栏。
 
-Client 入口在 `ClientJobOutputModel` 之上提供 `ClientJobOutput`（`ctx.jobOutput`）。`kill(sessionId, jobId)` 转发到 `job.kill` 并把 Remote 结果原样交给调用方判定是否受理。`observe(sessionId, jobId)` 不论多少查看器展开同一 job 都只开一条 Gateway 流，按 job 保留有界的渲染尾部并用 `gapBefore` 标记淘汰或续读缺口，把终态或流失败记到视图上，最后一个查看器释放后丢弃视图。插件在自己的上下文仍是当前上下文时解析 Gateway 流工厂与 `job` namespace，因为观测的（重）开启跑在未声明 `remote.job` 的调用栈上。
+Client 入口在 `ClientJobsModel` 之上提供 `ClientJobs`（`ctx.jobs`）。`kill(sessionId, jobId)` 转发到 `job.kill` 并把 Remote 结果交给调用方判定准入。`watchRows(sessionId)` 不论多少查看器持有都只为每个被关注的会话开一条名册流，最后一个释放后丢弃行；重连后的首帧已经是完整事实。`observe(sessionId, jobId)` 不论多少查看器展开同一 job 都只开一条 Gateway 流，按 job 保留有界的渲染尾部并用 `gapBefore` 标记淘汰或续读缺口，在终态帧上关闭视图或把流失败记到视图上，最后一个查看器释放后丢弃视图。插件在自己的上下文仍是当前上下文时解析 Gateway 流工厂与 `job` namespace，因为流的（重）开启跑在未声明 `remote.job` 的调用栈上。
 
 ### 配置
 
 | 字段 | 默认值 | 含义 |
 |---|---:|---|
-| `observeFlushMs` | `100` | 新 record 输出到一次观测读取之间的聚合窗口，毫秒 |
+| `observeFlushMs` | `100` | 注册表提交到下一次名册或输出读取之间的聚合窗口，毫秒 |
 | `observeMaxFrameBytes` | `65,536` | 每个观测输出帧的软字节预算；更大的单块整块发送 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-job-controller)是所有受支持字段及其 JSDoc 的完整来源。
@@ -52,9 +52,9 @@ Client 入口在 `ClientJobOutputModel` 之上提供 `ClientJobOutput`（`ctx.jo
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- record 是尽力而为的实时预览，不是终端转录：生产者按轮询轮次复制 stdout 与 stderr，同一轮询窗口内两条流的写入先 stdout 后到达 record，客户端拼接 chunk 时也不区分 `channel`。
-- 流是进程本地的：Host 重启丢失全部 record，续读的观测随后锚定在空注册表上。
-- 按 session 的围栏由注册表读取强制；Remote 层本身服务任何已连接浏览器，与会话控制流对 `jobsBySession` 的广播一致。
+- 环是尽力而为的实时预览，不是终端转录：生产者的拉取源按轮询轮次复制，同一轮询窗口内两条流的写入先 stdout 落地，客户端拼接 chunk 时也不区分 `channel`。
+- 两条流都是进程本地的：Host 重启丢失全部环与名册，续读的观测随后锚定在空注册表上，重开的名册从空开始。
+- 按 session 的围栏由注册表的 `visibleTo` 读取强制；Remote 层本身服务任何已连接浏览器。
 
 <a id="dev-note"></a>
 ### 开发备注
@@ -66,4 +66,4 @@ Client 入口在 `ClientJobOutputModel` 之上提供 `ClientJobOutput`（`ctx.jo
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。控制器是 `ctx.jobs` 读取的无状态投影；本流转发的偏移关系由注册表自己的 `@deepseek-ai/dsh-jobs/invariant` 拥有。
+**运行时不变式：** 不发布伴生入口。控制器是 `ctx.jobs` 读取的无状态投影；这些流转发的偏移关系由注册表自己的 `@deepseek-ai/dsh-jobs/invariant` 拥有。

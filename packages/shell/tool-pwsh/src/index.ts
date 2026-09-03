@@ -32,10 +32,9 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import { ESCALATION_TARGETS, approveEscalation, validateEscalationArgs } from '@deepseek-ai/dsh-sandbox'
 import type { SandboxPolicyService } from '@deepseek-ai/dsh-sandbox-policy'
-import type { ShellRunResult } from '@deepseek-ai/dsh-shell'
+import type { ShellProcess, ShellRunResult } from '@deepseek-ai/dsh-shell'
 import { parseExitStatus } from '@deepseek-ai/dsh-shell'
-import { processOutcome } from './background.ts'
-import { observeProcessRecord } from './observe.ts'
+import { observedOffsets, processOutcome, processSources } from './background.ts'
 import { renderPwshProcessRead, renderPwshPromoted, renderPwshResult } from './render.ts'
 import type { RenderablePwshResult } from './render.ts'
 
@@ -53,8 +52,6 @@ export const inject = ['tools', 'shell', 'systemPrompt', 'shellEnv']
 export interface Config {
   /** Expose `run_in_background` (default true); disabled calls are also rejected. */
   enableRunInBackground?: boolean
-  /** Poll cadence for copying background output into the job record, in milliseconds (default 150). */
-  recordPollMs?: number
   /**
    * Move a foreground command that reaches its timeout into the background as
    * a job instead of killing it (default true). Requires background execution:
@@ -67,11 +64,6 @@ export interface Config {
 /** Runtime configuration schema for the pwsh tool plugin. */
 export const Config: z<Config> = z.object({
   enableRunInBackground: z.boolean().default(true),
-  recordPollMs: z.number()
-    .step(1)
-    .min(1)
-    .max(Number.MAX_SAFE_INTEGER)
-    .default(150),
   promoteOnTimeout: z.boolean().default(true),
 })
 /* jscpd:ignore-end */
@@ -218,7 +210,6 @@ const BACKGROUND_OUTPUT_PROPERTIES = {
 /* jscpd:ignore-start -- deliberate mirror of dsh-tool-bash's apply() preamble (pwsh-tool-and-executor Agent Note). */
 export function apply(ctx: Context, config: Config = {}): void {
   const backgroundEnabled = config.enableRunInBackground ?? true
-  const recordPollMs = config.recordPollMs ?? 150
   // Promotion needs the whole background surface: the job tools to collect and
   // stop the promoted work, and the registry itself at execution time.
   const promoteOnTimeout = (config.promoteOnTimeout ?? true) && backgroundEnabled
@@ -422,20 +413,20 @@ export function apply(ctx: Context, config: Config = {}): void {
           error.name = 'AbortError'
           throw error
         }
+        // The process spawns inside the starter, after admission; the pull
+        // sources bind to it lazily and the registry pumps them into the ring.
+        let proc: ShellProcess | undefined
         const id = jobs.start({
           kind: 'pwsh',
           label: args.command,
-          ...exec.agent ? { owner: exec.agent } : {},
-          record: true,
-          run: (job) => {
-            const proc = ctx.shell.execute(ctx.shell.resolve({ ...request, onExpiry: 'none' }))
-            // The pump's final drain is folded into `done` so the record holds
-            // its last bytes before settlement trims and closes it.
-            const observed = observeProcessRecord(ctx, job, proc, recordPollMs)
+          ...exec.agent ? { owner: exec.agent.id } : {},
+          output: processSources(() => proc),
+          run: () => {
+            const started = ctx.shell.execute(ctx.shell.resolve({ ...request, onExpiry: 'none' }))
+            proc = started
             return {
-              cancel: () => void proc.kill(),
-              done: observed.then(() => proc.done).then(() => processOutcome(proc)),
-              readOutput: () => renderPwshProcessRead(proc.readOutput(), proc.sandbox, escalationModes),
+              cancel: () => void started.kill(),
+              done: started.done.then(() => processOutcome(started, escalationModes)),
             }
           },
         })
@@ -457,21 +448,18 @@ export function apply(ctx: Context, config: Config = {}): void {
           // treats an unanswered offer as declined.
           let promoted: JobId | undefined
           try {
+            // The promoted result below carries the output so far through one
+            // consuming read; the ring starts at the streams' current ends, so
+            // `job_output` continues exactly where this result stops.
             promoted = jobs.start({
               kind: 'pwsh',
               label: args.command,
-              ...exec.agent ? { owner: exec.agent } : {},
-              record: true,
-              run: (job) => {
-                // The pump's final drain is folded into `done` so the record
-                // holds its last bytes before settlement trims and closes it.
-                const observed = observeProcessRecord(ctx, job, foreground, recordPollMs)
-                return {
-                  cancel: () => void foreground.kill(),
-                  done: observed.then(() => foreground.done).then(() => processOutcome(foreground)),
-                  readOutput: () => renderPwshProcessRead(foreground.readOutput(), foreground.sandbox, escalationModes),
-                }
-              },
+              ...exec.agent ? { owner: exec.agent.id } : {},
+              output: processSources(() => foreground, observedOffsets(foreground)),
+              run: () => ({
+                cancel: () => void foreground.kill(),
+                done: foreground.done.then(() => processOutcome(foreground, escalationModes)),
+              }),
             })
           } catch (error) {
             // Admission or controller preflight refused the promotion: fall
@@ -481,7 +469,7 @@ export function apply(ctx: Context, config: Config = {}): void {
           if (promoted !== undefined) {
             offer.accept()
             // One consuming read seeds the result with the output so far; the
-            // job's cursor continues exactly after it, no repeat and no gap.
+            // ring began at the same point, so no repeat and no gap.
             return {
               kind: 'promoted' as const,
               jobId: promoted,

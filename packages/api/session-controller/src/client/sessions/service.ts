@@ -20,7 +20,6 @@ import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { SESSION_SEARCH_RESULT_LIMIT } from '../../types.ts'
-import type { SessionJob as JobView } from '../../types.ts'
 import type { SessionProjectionMap } from '@deepseek-ai/dsh-session-projection/types'
 import {
   createSnapshotStore, type SnapshotStore,
@@ -76,12 +75,6 @@ export interface SessionListState {
   phase: SessionListPhase
   /** Direct durable catalogs keyed by their selected parent address. */
   subagentsByParent: Readonly<Record<SessionId, SubagentCatalogSnapshot>>
-  /**
-   * Background jobs each session can see, mirrored last-wins from Session
-   * Controller's control baseline and `jobs` frames. A missing key is an empty
-   * set, so consumers read absence rather than a sentinel.
-   */
-  jobsBySession: Readonly<Record<SessionId, readonly JobView[]>>
   /** Current session's catalog-derived address, absent on ordinary navigation. */
   currentAddress: SubagentAddress | undefined
 }
@@ -233,7 +226,7 @@ export class ClientSessions implements ISessions {
     )
     this.list = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'pending',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      subagentsByParent: {}, currentAddress: undefined,
     })
     // The manager owns wire truth; the store is its projection. Manager
     // notifications are already microtask-batched.
@@ -576,7 +569,7 @@ export class ClientSessions implements ISessions {
   /** Project the manager's list snapshot into the store (title derivation is display-only). */
   private projectList(): void {
     const {
-      items, current, phase, subagentsByParent, jobsBySession, currentAddress,
+      items, current, phase, subagentsByParent, currentAddress,
     } = this.manager.getListSnapshot()
     const ids: SessionId[] = []
     const byId: Record<SessionId, SessionSummary> = {}
@@ -642,7 +635,7 @@ export class ClientSessions implements ISessions {
         ...(currentAddress === undefined ? {} : { subagentAddress: currentAddress }),
       })
     }
-    this.list.set({ ids, byId, current, phase, subagentsByParent, jobsBySession, currentAddress })
+    this.list.set({ ids, byId, current, phase, subagentsByParent, currentAddress })
     this.pruneScopes()
   }
 

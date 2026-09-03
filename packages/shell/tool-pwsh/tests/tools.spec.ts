@@ -30,6 +30,7 @@ import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcess, She
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import { turnBoundaryProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import { escalationHintMarker, sandboxDenialMarker } from '@deepseek-ai/dsh-sandbox'
 import * as ToolPwsh from '@deepseek-ai/dsh-tool-pwsh'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import type { ShellProcessRead } from '@deepseek-ai/dsh-shell'
@@ -98,18 +99,18 @@ function runResult(stdout: string, overrides?: Partial<ShellRunResult>): ShellRu
 
 /** A settled successful background handle; overrides script failure shapes. */
 function fakeProcess(delta = 'bg-ok\n'): ShellProcess {
-  let consumed = false
   return {
     status: 'completed',
     exitCode: 0,
     signal: null,
     done: Promise.resolve(),
-    readOutput: () => {
-      if (consumed) return { delta: '', lossy: false }
-      consumed = true
-      return { delta, lossy: false }
-    },
+    readOutput: () => ({ delta: '', lossy: false }),
     kill: () => false,
+    // ASCII only: the observed offsets are string indexes.
+    observed: {
+      stdout: { readFrom: (fromByte: number) => ({ text: delta.slice(fromByte), nextOffset: delta.length, lossy: false }) },
+      stderr: { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) },
+    },
   }
 }
 
@@ -1098,5 +1099,15 @@ describe('processOutcome', () => {
   it('defensively reads a null exit code as 0 (handle shapes from other executors)', () => {
     expect(processOutcome(settled({ exitCode: null })))
       .toEqual({ status: 'completed', detail: 'exit code: 0' })
+  })
+
+  it('appends sandbox facts to the terminal detail', () => {
+    const denied = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }), ['workspace-write'])
+    expect(denied.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')} ${escalationHintMarker('command')}`)
+    const deniedWithoutEscalation = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: true } }))
+    expect(deniedWithoutEscalation.detail).toBe(`exit code: 1; ${sandboxDenialMarker('read-only')}`)
+    const runnerFailed = processOutcome(settled({ exitCode: 1, sandbox: { mode: 'read-only', denied: false, runnerFailed: true } }))
+    expect(runnerFailed.detail).toContain('the sandbox runner itself failed under read-only mode')
+    expect(processOutcome(settled({ sandbox: { mode: 'read-only', denied: false } })).detail).toBe('exit code: 0')
   })
 })

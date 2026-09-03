@@ -39,7 +39,7 @@ While the script runs, the parent turn waits: the tool starts the run, awaits it
 
 ### Background runs
 
-`run_in_background: true` returns `{ kind: 'background', jobId, runId }` immediately: the run is registered on `ctx.jobs` as an owned `workflow` job with an observation record (`record: true`), so the session-header job list streams its `phase()`, `log()`, and member lifecycle lines live, and the row's detail tracks the current phase. No tool-step signal reaches the run — `job_kill`, the list's stop control, and owner teardown are what cancel it. Settlement is the job's settlement: a completed run carries the same rendered return value to the completion notice (and `job_output`), a cancelled run settles `killed` with the kill reason, and a failed run settles `failed` with the script's failure message. Without a live job registry and a controller serving the caller the call fails, naming the missing composition pieces.
+`run_in_background: true` returns `{ kind: 'background', jobId, runId }` immediately: the run is registered on `ctx.jobs` as an owned `workflow` job, so the session-header job list streams its `phase()`, `log()`, and member lifecycle lines live from the job's output ring, and the row's progress line tracks the current phase. No tool-step signal reaches the run — `job_kill`, the list's stop control, and owner teardown are what cancel it. Settlement is the job's settlement: a completed run carries the same rendered return value as the job's result (the completion notice announces it, the model's first `job_output` after settlement carries it once), a cancelled run settles `killed` with the kill reason, and a failed run settles `failed` with the script's failure message. Without a live job registry and a controller serving the caller the call fails, naming the missing composition pieces.
 
 ### Config
 
@@ -71,7 +71,7 @@ The consumer owns the model-facing schema, the `tool:<toolName>` system-prompt g
 
 ### Background lifecycle
 
-A background call registers the run through `jobs.start` inside the job starter, so a synchronous engine rejection registers nothing and admission preflight runs before the engine spawns. The job's `done` chains from `run.result`: dispose (a disposal failure is warned, never rejected into the registry), stop the mirrors, then map the stop reason onto the job outcome. The record mirror (`src/record.ts`) subscribes `workflow/phase`, `workflow/log`, and member events once per plugin and routes them into the tracked runs' `RunningJob` faces; a straggling event after settlement finds no tracked run, and an append against a settled job drops inside the registry.
+A background call registers the run through `jobs.start` inside the job starter, so a synchronous engine rejection registers nothing and admission preflight runs before the engine spawns. The job's `done` chains from `run.result`: dispose (a disposal failure is warned, never rejected into the registry), stop the mirrors, then map the stop reason onto the job outcome. The ring mirror (`src/record.ts`) subscribes `workflow/phase`, `workflow/log`, and member events once per plugin and routes them into the tracked runs' `JobHandle` faces (`append` for lines, `updateProgress` for the phase); a straggling event after settlement finds no tracked run, and an append against a settled job drops inside the registry.
 
 ### Durable session records
 
@@ -88,7 +88,7 @@ Decided up front per the [render-intent Agent Note](../../../.agents/notes/imple
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: tool registration, run lifecycle, background job registration, recorder wiring |
-| [`src/record.ts`](src/record.ts) | Background runs' live-progress mirror into the job observation record |
+| [`src/record.ts`](src/record.ts) | Background runs' live-progress mirror into the job's output ring |
 | [`src/types.ts`](src/types.ts) | The four log-only record event payloads and their `SessionEventMap` declaration |
 | [`src/invariant.ts`](src/invariant.ts) | Invariant companion: durable workflow-record protocol validation |
 

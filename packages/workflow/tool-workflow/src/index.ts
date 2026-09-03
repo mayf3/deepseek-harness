@@ -4,9 +4,9 @@
  * parsing, execution, caps, and cancellation live behind `ctx.workflowEngine`
  * (`@deepseek-ai/dsh-workflow`), so a hardened engine swaps in without touching what the model
  * sees. Foreground execution awaits `run.result` and always disposes the run; non-completed reasons
- * become tool errors. `run_in_background: true` instead registers the run as an owned `ctx.jobs`
- * observation-record job and returns its id immediately — the record streams live progress, and the
- * run's value arrives with the job's completion notice. Presentation is an args-only generic card
+ * become tool errors. `run_in_background: true` instead registers the run as an owned `ctx.jobs` job
+ * and returns its id immediately — the job's output ring streams live progress, and the run's value
+ * arrives with the job's completion notice. Presentation is an args-only generic card
  * titled from `meta.name`. Explicit-ask usage guidance is registered as the tool's own prompt
  * section rather than deployment persona prose.
  * @module @deepseek-ai/dsh-tool-workflow
@@ -220,7 +220,7 @@ function stopReasonError(result: WorkflowResult): string | undefined {
 
 /**
  * Map a settled background run onto the job outcome vocabulary. A completed
- * run carries the rendered return value as the job's final output; a
+ * run carries the rendered return value as the job's result; a
  * cancelled run leaves the detail to the registry's kill-reason merge (the
  * cancel reason it forwarded is the same string); an errored run fails with
  * the script's failure message.
@@ -231,7 +231,7 @@ function jobOutcomeOf(result: WorkflowResult, name: string, maxChars: number): J
       return {
         status: 'completed',
         detail: `${result.agentsStarted} agent${result.agentsStarted === 1 ? '' : 's'}`,
-        output: renderResult(name, result.agentsStarted, result.value as JsonValue, maxChars),
+        result: renderResult(name, result.agentsStarted, result.value as JsonValue, maxChars),
       }
     case 'cancelled':
       return { status: 'killed' }
@@ -255,12 +255,12 @@ function renderResult(name: string, agentsStarted: number, value: JsonValue, max
 }
 
 /**
- * Register a background run as an owned observation-record job. The engine
- * run is started inside the job starter with no tool-step signal — the run
- * belongs to the job, so a registry kill or owner teardown is what cancels
- * it — and its settlement is the job's settlement: dispose, stop the
- * mirrors, then map the stop reason onto the job outcome (a completed run's
- * rendered return value rides `output` to the completion notice).
+ * Register a background run as an owned job. The engine run is started
+ * inside the job starter with no tool-step signal — the run belongs to the
+ * job, so a registry kill or owner teardown is what cancels it — and its
+ * settlement is the job's settlement: dispose, stop the mirrors, then map the
+ * stop reason onto the job outcome (a completed run's rendered return value
+ * rides `result` to the model's first read after settlement).
  * @param ctx - plugin context (engine, optional jobs registry, logger).
  * @param args - the validated tool call.
  * @param parent - the calling agent; owns the job.
@@ -283,8 +283,7 @@ function startBackgroundRun(
   const jobId = jobs.start({
     kind: 'workflow',
     label: args.meta.name,
-    owner: parent,
-    record: true,
+    owner: parent.id,
     run: (job) => {
       // A synchronous engine rejection (META_INVALID/SCRIPT_PARSE) propagates
       // out of the starter, so the registry registers nothing and the model

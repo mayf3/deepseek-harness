@@ -39,7 +39,7 @@ kind: "package-reference"
 
 ### 后台运行
 
-`run_in_background: true` 会立刻返回 `{ kind: 'background', jobId, runId }`：运行以自有 `workflow` 任务身份注册到 `ctx.jobs` 并声明观察 record（`record: true`），会话头部任务列表由此实时流式呈现其 `phase()`、`log()` 与成员生命周期行，行的 detail 跟随当前 phase。工具步骤的信号不会到达该运行——取消它的是 `job_kill`、列表的停止控件与 owner 释放。结算即任务结算：完成的运行把同样渲染的返回值带到完成播报（与 `job_output`），被取消的运行以 kill 原因结算 `killed`，失败的运行以脚本失败消息结算 `failed`。没有活体任务注册表与服务调用方的 controller 时，调用会失败并点名缺失的组合件。
+`run_in_background: true` 会立刻返回 `{ kind: 'background', jobId, runId }`：运行以自有 `workflow` 任务身份注册到 `ctx.jobs`，会话头部任务列表因此从该任务的输出环实时流式显示它的 `phase()`、`log()` 与成员生命周期行，行的进度行跟随当前阶段。没有任何工具步骤信号到达该运行——`job_kill`、列表里的停止控件与 owner 拆除才是取消它的途径。结算即任务的结算：完成的运行把同一份渲染后的返回值作为任务的 result 交出（完成通知宣布它，模型结算后的第一次 `job_output` 携带它一次），被取消的运行以 kill 原因结算为 `killed`，失败的运行以脚本的失败信息结算为 `failed`。没有活体任务注册表与服务于调用方的控制器时调用失败，并点名缺失的组合部件。
 
 ### 配置
 
@@ -71,7 +71,7 @@ kind: "package-reference"
 
 ### 后台生命周期
 
-后台调用在任务 starter 内经 `jobs.start` 注册运行，因此引擎的同步拒绝什么都不会注册，准入预检也先于引擎生成执行。任务的 `done` 从 `run.result` 链起：先 dispose（释放失败只告警，绝不 reject 进注册表），再停掉镜像，最后把结束原因映射到任务结局。record 镜像（`src/record.ts`）按插件订阅一次 `workflow/phase`、`workflow/log` 与成员事件，并把它们路由进被跟踪运行的 `RunningJob` 面；结算后迟到的事件找不到被跟踪的运行，对已结算任务的 append 会在注册表内丢弃。
+后台调用在任务 starter 内经 `jobs.start` 注册运行，因此引擎的同步拒绝什么都不会注册，准入预检也先于引擎生成执行。任务的 `done` 链接自 `run.result`：先 dispose（释放失败只告警，绝不 reject 进注册表），再停止镜像，然后把停止原因映射到任务结果。环镜像（`src/record.ts`）按插件订阅一次 `workflow/phase`、`workflow/log` 与成员事件，并把它们路由进被跟踪运行的 `JobHandle` 面（`append` 写行，`updateProgress` 写阶段）；结算后的零星事件找不到被跟踪的运行，对已结算任务的 append 则在注册表内丢弃。
 
 ### 持久会话记录
 
@@ -88,7 +88,7 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：工具注册、运行生命周期、后台任务注册、记录器接线 |
-| [`src/record.ts`](src/record.ts) | 后台运行进任务观察 record 的实时进度镜像 |
+| [`src/record.ts`](src/record.ts) | 后台运行进任务输出环的实时进度镜像 |
 | [`src/types.ts`](src/types.ts) | 四个 log-only 记录事件 payload 及其 `SessionEventMap` 声明 |
 | [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：持久工作流记录协议校验 |
 

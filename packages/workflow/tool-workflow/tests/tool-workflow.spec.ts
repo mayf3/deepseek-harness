@@ -11,6 +11,7 @@ import type {
   WorkflowRunId as WorkflowRunIdType, WorkflowStartRequest,
 } from '@deepseek-ai/dsh-workflow'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import type { JobId } from '@deepseek-ai/dsh-jobs'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
@@ -455,12 +456,12 @@ describe('dsh-tool-workflow', () => {
       return { ctx, engine, parent, session }
     }
 
-    /** The record's retained text from offset 0, read as the owner. */
-    function retained(ctx: Context, jobId: Parameters<Context['jobs']['readRecord']>[0], owner: Agent): string {
-      return ctx.jobs.readRecord(jobId, 0, owner).chunks.map(chunk => chunk.text).join('')
+    /** The ring's retained text from offset 0, read as the owner. */
+    function retained(ctx: Context, jobId: JobId, owner: Agent): string {
+      return ctx.jobs.visibleTo(owner.id).readAt(jobId, 0).chunks.map(chunk => chunk.text).join('')
     }
 
-    it('registers an owned record job, mirrors progress into it, and settles with the rendered value', async () => {
+    it('registers an owned job, mirrors progress into its ring, and settles with the rendered value', async () => {
       const { ctx, engine, parent, session } = await setupBackground()
       const result = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       expect(result.isError).toBe(false)
@@ -471,9 +472,10 @@ describe('dsh-tool-workflow', () => {
       // The engine run carries no tool-step signal: the job owns cancellation.
       expect(engine.requests[0]!.signal).toBeUndefined()
 
-      const job = ctx.jobs.get('workflow-1' as never, parent)
-      expect(job).toMatchObject({ kind: 'workflow', label: 'audit', status: 'running', ownerSession: parent.id })
-      expect(job.outputTotal).toBe(0)
+      const jobs = ctx.jobs.visibleTo(parent.id)
+      const job = jobs.get('workflow-1' as never)
+      expect(job).toMatchObject({ kind: 'workflow', label: 'audit', status: 'running', owner: parent.id })
+      expect(job.output.total).toBe(0)
 
       const runId = WorkflowRunId('run-1')
       engine.phase(runId, 'Scan')
@@ -481,15 +483,16 @@ describe('dsh-tool-workflow', () => {
       engine.agentStart(runId, { seq: 1, label: 'scan a.ts', phase: 'Scan', childId: SessionId('child-1') })
       engine.agentEnd(runId, { seq: 1, label: 'scan a.ts', phase: 'Scan', childId: SessionId('child-1'), outcome: 'completed' })
       expect(retained(ctx, job.id, parent)).toBe('▸ Scan\n3/10 found\nagent #1 scan a.ts started\nagent #1 completed\n')
-      expect(ctx.jobs.get(job.id, parent).detail).toBe('Scan')
+      expect(jobs.get(job.id).progress).toBe('Scan')
 
       engine.settleRun(runId, { value: { findings: 2 }, stopReason: 'completed', agentsStarted: 4 })
-      await vi.waitFor(() => { expect(ctx.jobs.get(job.id, parent).status).toBe('completed') })
-      const settled = ctx.jobs.get(job.id, parent)
+      await vi.waitFor(() => { expect(jobs.get(job.id).status).toBe('completed') })
+      const settled = jobs.get(job.id)
       expect(settled.detail).toBe('4 agents')
-      const read = ctx.jobs.read(job.id, parent)
-      expect(read.text).toContain('workflow "audit" completed (4 agents)')
-      expect(read.text).toContain('"findings": 2')
+      expect(settled.progress).toBeUndefined()
+      const read = jobs.read(job.id)
+      expect(read.result).toContain('workflow "audit" completed (4 agents)')
+      expect(read.result).toContain('"findings": 2')
       expect(engine.disposed).toBe(1)
       // The durable session record still brackets the background run.
       expect(session.snapshotEvents().map(event => event.type)).toEqual([
@@ -504,20 +507,21 @@ describe('dsh-tool-workflow', () => {
       const { ctx, engine, parent } = await setupBackground()
       const result = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       if (result.isError) throw new Error('expected background acceptance')
-      const jobId = (result.value as { jobId: string }).jobId as Parameters<Context['jobs']['kill']>[0]
-      expect(ctx.jobs.kill(jobId, parent, { reason: 'operator stop' })).toBe('requested')
+      const jobs = ctx.jobs.visibleTo(parent.id)
+      const jobId = (result.value as { jobId: string }).jobId as JobId
+      expect(jobs.kill(jobId, { reason: 'operator stop' })).toBe('requested')
       expect(engine.cancels).toEqual(['operator stop'])
-      await vi.waitFor(() => { expect(ctx.jobs.get(jobId, parent).status).toBe('killed') })
-      expect(ctx.jobs.get(jobId, parent).detail).toBe('operator stop')
+      await vi.waitFor(() => { expect(jobs.get(jobId).status).toBe('killed') })
+      expect(jobs.get(jobId).detail).toBe('operator stop')
       expect(engine.disposed).toBe(1)
 
       // A reasonless kill falls back to the producer's default cancel reason.
       const second = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       if (second.isError) throw new Error('expected background acceptance')
-      const secondId = (second.value as { jobId: string }).jobId as Parameters<Context['jobs']['kill']>[0]
-      expect(ctx.jobs.kill(secondId, parent)).toBe('requested')
+      const secondId = (second.value as { jobId: string }).jobId as JobId
+      expect(jobs.kill(secondId)).toBe('requested')
       expect(engine.cancels).toEqual(['operator stop', 'background workflow job killed'])
-      await vi.waitFor(() => { expect(ctx.jobs.get(secondId, parent).status).toBe('killed') })
+      await vi.waitFor(() => { expect(jobs.get(secondId).status).toBe('killed') })
     })
 
     it('a run that stops with an error fails the job with the script failure', async () => {
@@ -526,18 +530,19 @@ describe('dsh-tool-workflow', () => {
       if (result.isError) throw new Error('expected background acceptance')
       expect(engine.requests[0]).toMatchObject({ args: { files: ['a.ts'] } })
       engine.settleRun(WorkflowRunId('run-1'), { value: null, stopReason: 'error', error: 'script exploded', agentsStarted: 2 })
-      await vi.waitFor(() => { expect(ctx.jobs.get('workflow-1' as never, parent).status).toBe('failed') })
-      expect(ctx.jobs.get('workflow-1' as never, parent).detail).toBe('script exploded')
+      const jobs = ctx.jobs.visibleTo(parent.id)
+      await vi.waitFor(() => { expect(jobs.get('workflow-1' as never).status).toBe('failed') })
+      expect(jobs.get('workflow-1' as never).detail).toBe('script exploded')
 
       // A failure without a message falls back to the unknown-error detail.
       const second = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       if (second.isError) throw new Error('expected background acceptance')
       engine.settleRun(WorkflowRunId('run-2'), { value: null, stopReason: 'error', agentsStarted: 0 })
-      await vi.waitFor(() => { expect(ctx.jobs.get('workflow-2' as never, parent).status).toBe('failed') })
-      expect(ctx.jobs.get('workflow-2' as never, parent).detail).toBe('unknown error')
+      await vi.waitFor(() => { expect(jobs.get('workflow-2' as never).status).toBe('failed') })
+      expect(jobs.get('workflow-2' as never).detail).toBe('unknown error')
     })
 
-    it('a nested transport call mirrors the record but records no session events, and a dispose failure still settles', async () => {
+    it('a nested transport call mirrors the ring but records no session events, and a dispose failure still settles', async () => {
       const { ctx, engine, parent, session } = await setupBackground()
       engine.disposeError = new Error('worker already gone')
       const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
@@ -548,8 +553,9 @@ describe('dsh-tool-workflow', () => {
       )
       if (result.isError) throw new Error('expected background acceptance')
       engine.settleRun(WorkflowRunId('run-1'), { value: 'ok', stopReason: 'completed', agentsStarted: 1 })
-      await vi.waitFor(() => { expect(ctx.jobs.get('workflow-1' as never, parent).status).toBe('completed') })
-      expect(ctx.jobs.get('workflow-1' as never, parent).detail).toBe('1 agent')
+      const jobs = ctx.jobs.visibleTo(parent.id)
+      await vi.waitFor(() => { expect(jobs.get('workflow-1' as never).status).toBe('completed') })
+      expect(jobs.get('workflow-1' as never).detail).toBe('1 agent')
       expect(warn.mock.calls.map(args => String(args[0])).join('\n')).toContain('dispose failed')
       expect(session.snapshotEvents()).toEqual([])
     })
@@ -560,7 +566,7 @@ describe('dsh-tool-workflow', () => {
       const result = await execute(ctx, { script: SCRIPT, meta: META, run_in_background: true }, { agent: parent })
       expect(result.isError).toBe(true)
       expect((result.content[0] as { text: string }).text).toContain('META_INVALID')
-      expect(ctx.jobs.list(parent)).toEqual([])
+      expect(ctx.jobs.visibleTo(parent.id).list()).toEqual([])
     })
 
     it('fails loud without a job registry', async () => {
@@ -650,13 +656,14 @@ describe('dsh-tool-workflow', () => {
       }, { agent: parent })
       expect(result.isError).toBe(false)
       if (result.isError) throw new Error('expected background acceptance')
-      const { jobId } = result.value as { jobId: Parameters<Context['jobs']['get']>[0] }
+      const { jobId } = result.value as { jobId: JobId }
+      const jobs = ctx.jobs.visibleTo(parent.id)
 
-      await vi.waitFor(() => { expect(ctx.jobs.get(jobId, parent).status).toBe('completed') }, { timeout: 10_000 })
-      expect(ctx.jobs.get(jobId, parent).detail).toBe('0 agents')
-      const record = ctx.jobs.readRecord(jobId, 0, parent).chunks.map(chunk => chunk.text).join('')
-      expect(record).toContain('halfway')
-      expect(ctx.jobs.read(jobId, parent).text).toContain('"ok": true')
+      await vi.waitFor(() => { expect(jobs.get(jobId).status).toBe('completed') }, { timeout: 10_000 })
+      expect(jobs.get(jobId).detail).toBe('0 agents')
+      const ring = jobs.readAt(jobId, 0).chunks.map(chunk => chunk.text).join('')
+      expect(ring).toContain('halfway')
+      expect(jobs.read(jobId).result).toContain('"ok": true')
     }, 15_000)
   })
 })

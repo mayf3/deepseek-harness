@@ -1,8 +1,9 @@
 /**
- * The `ctx.jobOutput` client service: reference-counted per-job observation
- * streams over `job.observe`, so overlapping viewers of one job share one
- * stream and resume from the model's cursor across reconnects, plus the
- * human kill passthrough over `job.kill`.
+ * The `ctx.jobs` client service: reference-counted streams over the `job`
+ * namespace — one `job.rows` roster stream per watched session and one
+ * `job.observe` stream per observed job — so overlapping viewers share a
+ * stream, rosters resume whole after a reconnect, and observations resume
+ * from the model's cursor, plus the human kill passthrough over `job.kill`.
  * @module @deepseek-ai/dsh-api-job-controller/client/service
  */
 
@@ -11,11 +12,18 @@ import { RemoteStreamCarrierError, type ClientRemote } from '@deepseek-ai/dsh-ap
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { JobKillRequest, JobKillValue, JobObserveFrame, JobObserveRequest } from '../types.ts'
-import type { ClientJobOutputModel, JobOutputSource } from './model.ts'
+import type { JobKillRequest, JobKillValue, JobObserveFrame, JobObserveRequest, JobRowsFrame, JobRowsRequest } from '../types.ts'
+import type { ClientJobsModel, JobsSource } from './model.ts'
 
-/** The generated `job` namespace face the observation runner drives. */
+/** The generated `job` namespace face the stream runners drive. */
 export interface JobRemote {
+  /**
+   * Open one roster generation.
+   * @param request - the session whose visible set to mirror.
+   * @param signal - generation cancellation.
+   * @returns the whole-set frame sequence of one generation.
+   */
+  rows(request: JobRowsRequest, signal?: AbortSignal): AsyncIterable<JobRowsFrame>
   /**
    * Open one observation generation.
    * @param request - target job, owning session, and optional resume offset.
@@ -31,18 +39,25 @@ export interface JobRemote {
   kill(request: JobKillRequest): Promise<RemoteResult<JobKillValue>>
 }
 
-/** Remote faces the observation runner drives: the Gateway stream factory and the `job` namespace. */
-export interface JobObserveRemote {
+/** Remote faces the runners drive: the Gateway stream factory and the `job` namespace. */
+export interface JobsRemote {
   readonly $stream: ClientRemote['$stream']
   readonly job: JobRemote
 }
 
-/** The job-output client service face. */
-export interface IJobOutput {
-  /** Per-job observation state. */
-  readonly state: JobOutputSource
+/** The client jobs service face. */
+export interface IJobs {
+  /** Rosters and per-job observation state. */
+  readonly state: JobsSource
   /**
-   * Start observing one job's live record; reference-counted, so two viewers
+   * Keep one session's roster current; reference-counted, so two watchers of
+   * the same session share one stream and the rows leave with the last.
+   * @param sessionId - the session whose visible jobs to mirror.
+   * @returns stop function releasing this watcher's reference.
+   */
+  watchRows(sessionId: SessionId): () => void
+  /**
+   * Start observing one job's live output; reference-counted, so two viewers
    * of the same job share one stream.
    * @param sessionId - owning session used for the fenced read; undefined for an unowned job.
    * @param id - job to observe.
@@ -50,18 +65,18 @@ export interface IJobOutput {
    */
   observe(sessionId: SessionId | undefined, id: JobId): () => void
   /**
-   * Kill one background job from a session's task list. Pure RPC passthrough:
-   * row state converges through the jobs control frames, and the caller (the
-   * task-list control) owns error presentation.
-   * @param sessionId - session whose task list carries the job.
+   * Kill one background job from a session's job list. Pure RPC passthrough:
+   * row state converges through the roster stream, and the caller (the
+   * job-list control) owns error presentation.
+   * @param sessionId - session whose job list carries the job.
    * @param id - the job row's registry id.
    * @returns the registry's admission, or the business/transport failure.
    */
   kill(sessionId: SessionId, id: JobId): Promise<RemoteResult<JobKillValue>>
 }
 
-/** One reference-counted observation stream. */
-interface ObservationEntry {
+/** One reference-counted stream. */
+interface StreamEntry {
   refs: number
   stopped: boolean
   dispose: () => Promise<void>
@@ -69,83 +84,143 @@ interface ObservationEntry {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
-    /** React-free client job-record observation control. */
-    jobOutput: IJobOutput
+    /** React-free client job rosters and observation control. */
+    jobs: IJobs
   }
 }
 
-/** Owns the bare job-output snapshot and per-job observation streams. */
-export class ClientJobOutput extends Service implements IJobOutput {
-  readonly state: JobOutputSource
-  private readonly entries = new Map<string, ObservationEntry>()
+/** Owns the bare jobs snapshot and the per-session and per-job streams. */
+export class ClientJobs extends Service implements IJobs {
+  readonly state: JobsSource
+  private readonly rowsEntries = new Map<string, StreamEntry>()
+  private readonly observations = new Map<string, StreamEntry>()
 
   /**
    * @param ctx - client root Context.
    * @param remote - the Gateway stream factory plus the generated `job` namespace, both resolved by the caller.
-   * @param model - shared client job-output model.
+   * @param model - shared client jobs model.
    */
   constructor(
     ctx: Context,
-    private readonly remote: JobObserveRemote,
-    private readonly model: ClientJobOutputModel,
+    private readonly remote: JobsRemote,
+    private readonly model: ClientJobsModel,
   ) {
-    super(ctx, 'jobOutput')
+    super(ctx, 'jobs')
     this.state = model
     ctx.effect(() => async () => {
-      const open = [...this.entries.values()]
-      this.entries.clear()
+      const open = [...this.rowsEntries.values(), ...this.observations.values()]
+      this.rowsEntries.clear()
+      this.observations.clear()
       for (const entry of open) entry.stopped = true
       // Cordis awaits an async disposer, so the fiber stays unloading until
       // every carrier iterator has closed and a successor plugin instance
       // cannot overlap one. A carrier whose teardown fails is stopped all the
       // same; its failure has no consumer here.
       await Promise.allSettled(open.map(entry => entry.dispose()))
-    }, 'job-controller.client.observations')
+    }, 'job-controller.client.streams')
   }
 
   kill(sessionId: SessionId, id: JobId): Promise<RemoteResult<JobKillValue>> {
     return this.remote.job.kill({ sessionId, jobId: id })
   }
 
+  watchRows(sessionId: SessionId): () => void {
+    return this.acquire(
+      this.rowsEntries,
+      String(sessionId),
+      () => this.startRows(sessionId),
+      () => { this.model.rowsDropped(sessionId) },
+    )
+  }
+
   observe(sessionId: SessionId | undefined, id: JobId): () => void {
-    const key = String(id)
-    const existing = this.entries.get(key)
+    return this.acquire(
+      this.observations,
+      String(id),
+      () => this.startObservation(sessionId, id),
+      () => { this.model.observeStopped(id) },
+    )
+  }
+
+  /** Share the live entry under `key` or start one, and hand back its release. */
+  private acquire(
+    entries: Map<string, StreamEntry>,
+    key: string,
+    start: () => StreamEntry,
+    cleared: () => void,
+  ): () => void {
+    const existing = entries.get(key)
     if (existing !== undefined && !existing.stopped) {
       existing.refs += 1
-      return this.releaser(key, existing)
+      return this.releaser(entries, key, existing, cleared)
     }
-    const entry = this.startObservation(sessionId, id)
-    this.entries.set(key, entry)
-    return this.releaser(key, entry)
+    const entry = start()
+    entries.set(key, entry)
+    return this.releaser(entries, key, entry, cleared)
   }
 
   /**
    * Release closures bind the exact entry they were minted for, never the
-   * map's current occupant: a later `observe()` on the same id may have
-   * replaced a stopped entry, and decrementing or disposing through the key
-   * alone would tear down that newer stream's references.
+   * map's current occupant: a later acquire on the same key may have replaced
+   * a stopped entry, and decrementing or disposing through the key alone
+   * would tear down that newer stream's references.
    */
-  private releaser(key: string, entry: ObservationEntry): () => void {
+  private releaser(entries: Map<string, StreamEntry>, key: string, entry: StreamEntry, cleared: () => void): () => void {
     let released = false
     return () => {
       if (released) return
       released = true
       entry.refs -= 1
       if (entry.refs > 0) return
-      if (this.entries.get(key) === entry) this.entries.delete(key)
+      if (entries.get(key) === entry) entries.delete(key)
       entry.stopped = true
       void entry.dispose().then(() => {
-        // Clear the view only while no successor observation holds the key:
-        // a re-expand inside the dispose round-trip already re-anchored the
-        // model, and a stale clear would blank its panel for good.
-        if (this.entries.has(key)) return
-        // The key is the stringified branded id this releaser was minted for.
-        this.model.observeStopped(key as JobId)
+        // Clear the state only while no successor holds the key: a re-acquire
+        // inside the dispose round-trip already refilled the model, and a
+        // stale clear would blank it for good.
+        if (entries.has(key)) return
+        cleared()
       })
     }
   }
 
-  private startObservation(sessionId: SessionId | undefined, id: JobId): ObservationEntry {
+  private startRows(sessionId: SessionId): StreamEntry {
+    const name = `job rows ${String(sessionId)}`
+    const stream = this.remote.$stream<JobRowsFrame>({
+      name,
+      open: signal => this.remote.job.rows({ sessionId }, signal),
+      // The roster has no natural end while it is watched: an end after the
+      // first frame is a carrier interruption (a Host reload closes the
+      // generation) and the next generation's whole set loses nothing. An end
+      // before the first frame is terminal.
+      ended: accepted => accepted
+        ? new RemoteStreamCarrierError(`${name} ended before release`)
+        : new Error(`${name} ended before its first frame`),
+    })
+    const entry: StreamEntry = {
+      refs: 1,
+      stopped: false,
+      dispose: () => stream.dispose(),
+    }
+    void (async () => {
+      try {
+        for await (const item of stream) {
+          this.model.rowsReplaced(sessionId, item.value.jobs)
+          item.accept()
+        }
+      } catch {
+        // A terminal stream failure leaves nothing current to show; the model
+        // drops the roster rather than keeping a stale set on screen.
+        if (!entry.stopped) this.model.rowsDropped(sessionId)
+      } finally {
+        entry.stopped = true
+        void entry.dispose()
+      }
+    })()
+    return entry
+  }
+
+  private startObservation(sessionId: SessionId | undefined, id: JobId): StreamEntry {
     const name = `job observation ${String(id)}`
     const stream = this.remote.$stream<JobObserveFrame>({
       name,
@@ -167,7 +242,7 @@ export class ClientJobOutput extends Service implements IJobOutput {
         ? new RemoteStreamCarrierError(`${name} ended before settlement`)
         : new Error(`${name} ended before its anchor`),
     })
-    const entry: ObservationEntry = {
+    const entry: StreamEntry = {
       refs: 1,
       stopped: false,
       dispose: () => stream.dispose(),
@@ -187,7 +262,7 @@ export class ClientJobOutput extends Service implements IJobOutput {
           }
           // Terminal status: leave the loop before the generation end is
           // classified, then close the stream for good.
-          this.model.observeStatus(id, frame)
+          this.model.observeSettled(id)
           break
         }
       } catch (error) {

@@ -375,7 +375,7 @@ describe('DetailsPanel Output section (search)', () => {
     if (selection !== null) chat.actions.select(selection)
     const sessions = createSnapshotStore<SessionListState>({
       ids: [], byId: {}, current: undefined, phase: 'ready',
-      subagentsByParent: {}, jobsBySession: {}, currentAddress: undefined,
+      subagentsByParent: {}, currentAddress: undefined,
     })
     const session = createSnapshotStore(sessionSnapshot(SID))
     const conversation = createSnapshotStore(conversationSnapshot())

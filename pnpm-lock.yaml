@@ -839,9 +839,6 @@ importers:
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:^
         version: link:../../context/file-reference
-      '@deepseek-ai/dsh-jobs':
-        specifier: workspace:^
-        version: link:../../jobs/jobs
       '@deepseek-ai/dsh-llm':
         specifier: workspace:^
         version: link:../../llm/llm
@@ -2566,9 +2563,6 @@ importers:
       '@deepseek-ai/dsh-api-job-controller':
         specifier: workspace:^
         version: link:../../api/job-controller
-      '@deepseek-ai/dsh-api-session-controller':
-        specifier: workspace:^
-        version: link:../../api/session-controller
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale

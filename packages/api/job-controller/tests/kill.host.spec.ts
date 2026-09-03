@@ -69,23 +69,25 @@ describe('JobController.kill', () => {
   it('kills an owned running job without claiming the terminal report', async () => {
     const { ctx, session, agent, controller } = await harness()
     const task = producer('pnpm run watch')
-    const id = ctx.jobs.start({ ...task.spec, owner: agent })
+    const id = ctx.jobs.start({ ...task.spec, owner: agent.id })
 
     expect(controller.kill({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'requested' })
     expect(task.cancels).toEqual(['cancelled by the user'])
-    // The unclaimed report is the whole point: the completion notice stays due.
-    expect(ctx.jobs.get(id, agent)).toMatchObject({ status: 'stopping', reported: false })
+    // The kill reason is recorded for the killed detail; the notice ledger
+    // lives in tool-jobs, which never learns of this kill, so the completion
+    // notice stays due.
+    expect(ctx.jobs.visibleTo(agent.id).get(id)).toMatchObject({ status: 'stopping' })
   })
 
   it('reports an already-finished job instead of failing', async () => {
     const { ctx, session, agent, controller } = await harness()
     const task = producer()
-    const id = ctx.jobs.start({ ...task.spec, owner: agent })
+    const id = ctx.jobs.start({ ...task.spec, owner: agent.id })
     task.settle({ status: 'completed', detail: 'exit code: 0' })
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(controller.kill({ sessionId: session.id, jobId: id })).toEqual({ outcome: 'already-finished' })
-    expect(ctx.jobs.get(id, agent).reported).toBe(false)
+    expect(ctx.jobs.visibleTo(agent.id).get(id).status).toBe('completed')
   })
 
   it('kills an unowned job from a session without a live agent', async () => {
@@ -106,13 +108,13 @@ describe('JobController.kill', () => {
   it('rejects a foreign session\'s job as job/not-found', async () => {
     const { ctx, agent, controller } = await harness()
     const task = producer()
-    const id = ctx.jobs.start({ ...task.spec, owner: agent })
-    // The other session has no live agent, so the owned job is out of reach.
+    const id = ctx.jobs.start({ ...task.spec, owner: agent.id })
+    // The other session cannot see the owned job.
     const other = ctx.sessions.create()
 
     expect(failureCode(() => controller.kill({ sessionId: other.id, jobId: id })))
       .toBe('job/not-found')
-    expect(ctx.jobs.get(id, agent).status).toBe('running')
+    expect(ctx.jobs.visibleTo(agent.id).get(id).status).toBe('running')
   })
 
   it('propagates a producer cancel throw instead of masking it as job/not-found', async () => {
@@ -120,7 +122,7 @@ describe('JobController.kill', () => {
     const id = ctx.jobs.start({
       kind: 'bash',
       label: 'flaky cancel',
-      owner: agent,
+      owner: agent.id,
       run: () => ({
         cancel: () => { throw new Error('cancel boom') },
         done: new Promise(() => {}),
@@ -129,7 +131,7 @@ describe('JobController.kill', () => {
     // The registry contract: a producer throw propagates with job state
     // unchanged — the Remote must not rewrite it into a lookup failure.
     expect(() => controller.kill({ sessionId: session.id, jobId: id })).toThrow('cancel boom')
-    expect(ctx.jobs.get(id, agent)).toMatchObject({ status: 'running', reported: false })
+    expect(ctx.jobs.visibleTo(agent.id).get(id).status).toBe('running')
   })
 
   it('rejects a subagent-owned live session with the ownership fence', async () => {
@@ -137,10 +139,10 @@ describe('JobController.kill', () => {
     const child = ctx.sessions.create(undefined, { meta: { origin: 'subagent' } })
     const childAgent = registerAgent(ctx, child)
     const task = producer('child work')
-    const id = ctx.jobs.start({ ...task.spec, owner: childAgent })
+    const id = ctx.jobs.start({ ...task.spec, owner: childAgent.id })
 
     expect(failureCode(() => controller.kill({ sessionId: child.id, jobId: id })))
       .toBe('session/agent-busy')
-    expect(ctx.jobs.get(id, childAgent).status).toBe('running')
+    expect(ctx.jobs.visibleTo(childAgent.id).get(id).status).toBe('running')
   })
 })

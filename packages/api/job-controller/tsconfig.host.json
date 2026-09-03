@@ -8,29 +8,17 @@
   "files": [
     "src/index.ts",
     "src/observe.ts",
-    "src/types.ts"
+    "src/rows.ts",
+    "src/types.ts",
+    "src/wake.ts"
   ],
   "references": [
-    {
-      "path": "../../../vendor/cordis"
-    },
-    {
-      "path": "../session-controller/tsconfig.host.json"
-    },
-    {
-      "path": "../../../vendor/schemastery"
-    },
-    {
-      "path": "../../core/agent"
-    },
-    {
-      "path": "../../core/session"
-    },
-    {
-      "path": "../../jobs/jobs"
-    },
-    {
-      "path": "../../typert/protocol"
-    }
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../session-controller/tsconfig.host.json" },
+    { "path": "../../core/agent" },
+    { "path": "../../core/session" },
+    { "path": "../../jobs/jobs" },
+    { "path": "../../typert/protocol" }
   ]
 }

@@ -83,11 +83,11 @@ async function setup() {
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(LocalJobRegistry)
+  await ctx.plugin(LocalJobRegistry, { pumpPollMs: 5 })
   await ctx.plugin(ToolTasks)
   await ctx.plugin(BashEnvPlugin)
   await ctx.plugin(FakePwsh)
-  await ctx.plugin(ToolPwsh, { recordPollMs: 5 })
+  await ctx.plugin(ToolPwsh)
   return { ctx, pwsh: ctx.shell as FakePwsh }
 }
 
@@ -95,7 +95,7 @@ let callCounter = 0
 function call(ctx: Context, args: Record<string, unknown>) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: ToolCallId(`pwsh-observe-${++callCounter}`),
+    callId: ToolCallId(`pwsh-background-${++callCounter}`),
     name: 'pwsh',
     arguments: args,
   })
@@ -111,8 +111,8 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
   throw new Error('condition not reached before timeout')
 }
 
-describe('background pwsh record', () => {
-  it('streams observed channels into the job record and settles with the mapped outcome', async () => {
+describe('background pwsh output', () => {
+  it('streams observed channels into the job ring and settles with the mapped outcome', async () => {
     const { ctx, pwsh } = await setup()
     const stdout = { text: '' }
     const stderr = { text: '' }
@@ -120,30 +120,31 @@ describe('background pwsh record', () => {
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Get-Progress', description: 'test command', run_in_background: true })
-    const job = ctx.jobs.list()[0]
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
     expect(job).toBeDefined()
     expect(job!.kind).toBe('pwsh')
-    expect(job!.outputTotal).toBe(0)
+    expect(job!.output).toEqual({ total: 0, earliest: 0 })
 
     stdout.text = 'progress-line\n'
     stderr.text = 'warn-line\n'
     await until(() => {
-      const chunks = ctx.jobs.readRecord(job!.id, 0).chunks
+      const chunks = jobs.readAt(job!.id, 0).chunks
       return chunks.some(chunk => chunk.text.includes('progress-line'))
         && chunks.some(chunk => chunk.text.includes('warn-line'))
         ? true
         : undefined
     })
-    const chunks = ctx.jobs.readRecord(job!.id, 0).chunks
+    const chunks = jobs.readAt(job!.id, 0).chunks
     expect(chunks.find(chunk => chunk.text.includes('progress-line'))?.channel).toBe('stdout')
     expect(chunks.find(chunk => chunk.text.includes('warn-line'))?.channel).toBe('stderr')
 
     scripted.finish()
-    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
-    expect(ctx.jobs.get(job!.id).detail).toBe('exit code: 0')
+    await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
+    expect(jobs.get(job!.id).detail).toBe('exit code: 0')
   })
 
-  it('a pump failure warns and never fakes a terminal state onto the running job', async () => {
+  it('a failing reader warns once and never fakes a terminal state onto the running job', async () => {
     const { ctx, pwsh } = await setup()
     const warn = vi.fn()
     ctx.logger.warn = warn as never
@@ -163,40 +164,43 @@ describe('background pwsh record', () => {
     }
     pwsh.backgroundHandler = () => proc
     await call(ctx, { command: 'Get-Broken', description: 'test command', run_in_background: true })
-    const job = ctx.jobs.list()[0]
-    await until(() => warn.mock.calls.some(args => String(args[0]).includes('record observation pump')) ? true : undefined)
-    // The pump already failed; the job must wait for real settlement rather
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
+    await until(() => warn.mock.calls.some(args => String(args[0]).includes('output source for')) ? true : undefined)
+    // The reader already failed; the job must wait for real settlement rather
     // than freezing a fake terminal state onto the running process.
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(ctx.jobs.get(job!.id).status).toBe('running')
+    expect(jobs.get(job!.id).status).toBe('running')
+    expect(warn).toHaveBeenCalledTimes(1)
     proc.status = 'completed'
     proc.exitCode = 0
     resolveDone()
-    await until(() => ctx.jobs.get(job!.id).status !== 'running' ? true : undefined)
-    expect(ctx.jobs.get(job!.id)).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
+    await until(() => jobs.get(job!.id).status !== 'running' ? true : undefined)
+    expect(jobs.get(job!.id)).toMatchObject({ status: 'completed', detail: 'exit code: 0' })
   })
 
-  it('a backend without observed readers still yields a status-only record', async () => {
+  it('a backend without observed readers still settles with an empty ring', async () => {
     const { ctx, pwsh } = await setup()
     const scripted = observableProcess()
     pwsh.backgroundHandler = () => scripted.proc
 
     await call(ctx, { command: 'Start-Job', description: 'test command', run_in_background: true })
-    const job = ctx.jobs.list()[0]
-    expect(ctx.jobs.readRecord(job!.id, 0).chunks).toEqual([])
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
+    expect(jobs.readAt(job!.id, 0).chunks).toEqual([])
 
     scripted.finish()
-    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
-    expect(ctx.jobs.get(job!.id).outputTotal).toBe(0)
+    await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
+    expect(jobs.get(job!.id).output).toEqual({ total: 0, earliest: 0 })
   })
 })
 
-describe('owned background record (pwsh)', () => {
-  it('keeps an owned background run record under the owning session', async () => {
+describe('owned background output (pwsh)', () => {
+  it('keeps an owned background run under the owning session', async () => {
     const { ctx, pwsh } = await setup()
     const owner = {
-      id: SessionId('pwsh-observe-owner'),
-      session: { id: SessionId('pwsh-observe-owner'), header: { cwd: process.cwd() } },
+      id: SessionId('pwsh-background-owner'),
+      session: { id: SessionId('pwsh-background-owner'), header: { cwd: process.cwd() } },
       status: 'idle',
       ctx,
     } as unknown as Agent
@@ -205,18 +209,19 @@ describe('owned background record (pwsh)', () => {
     pwsh.backgroundHandler = () => scripted.proc
     await ctx.tools.execute({
       signal: testToolSignal,
-      callId: ToolCallId('pwsh-observe-owned'),
+      callId: ToolCallId('pwsh-background-owned'),
       name: 'pwsh',
       arguments: { command: 'Get-Slow', description: 'test command', run_in_background: true },
       agent: owner,
     })
-    const job = ctx.jobs.list(owner)[0]
+    const owned = ctx.jobs.visibleTo(owner.id)
+    const job = owned.list()[0]
     expect(job).toBeDefined()
-    expect(job!.ownerSession).toBe(owner.id)
-    expect(() => ctx.jobs.readRecord(job!.id, 0)).toThrow(/belongs to another session/)
-    expect(ctx.jobs.readRecord(job!.id, 0, owner).chunks).toEqual([])
+    expect(job!.owner).toBe(owner.id)
+    expect(() => ctx.jobs.visibleTo().readAt(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(owned.readAt(job!.id, 0).chunks).toEqual([])
     scripted.finish()
-    await until(() => ctx.jobs.get(job!.id, owner).status === 'completed' ? true : undefined)
+    await until(() => owned.get(job!.id).status === 'completed' ? true : undefined)
   })
 })
 
@@ -266,13 +271,13 @@ describe('foreground timeout promotion (pwsh)', () => {
     expect(body).toContain('read newer output with job_output, stop it with job_kill')
     expect(scripted.offer.accepted).toBe(true)
 
-    const job = ctx.jobs.list()[0]
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
     expect(job).toMatchObject({ id: 'pwsh-1', kind: 'pwsh', status: 'running' })
-    expect(job!.outputTotal).toBeDefined()
-    // The consuming cursor continued past the promoted output.
-    expect(ctx.jobs.read(job!.id).text).toBe('')
+    // The ring starts where the promoted result stopped: the next read repeats nothing.
+    expect(jobs.read(job!.id).chunks).toEqual([])
     scripted.finish()
-    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
+    await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
   })
 
   it('promotes under the calling agent and stops the promoted job through the registry kill', async () => {
@@ -312,15 +317,16 @@ describe('foreground timeout promotion (pwsh)', () => {
       agent: owner,
     })
     expect((result.content[0] as { text: string }).text).toContain('moved to background job')
-    const job = ctx.jobs.list(owner)[0]
+    const owned = ctx.jobs.visibleTo(owner.id)
+    const job = owned.list()[0]
     expect(job).toBeDefined()
-    expect(job!.ownerSession).toBe(owner.id)
+    expect(job!.owner).toBe(owner.id)
 
-    expect(ctx.jobs.kill(job!.id, owner, { reason: 'test cleanup' })).toBe('requested')
+    expect(owned.kill(job!.id, { reason: 'test cleanup' })).toBe('requested')
     await until(() => killed ? true : undefined)
     const settled = await until(() => {
-      const snapshot = ctx.jobs.get(job!.id, owner)
-      return snapshot.status === 'killed' ? snapshot : undefined
+      const view = owned.get(job!.id)
+      return view.status === 'killed' ? view : undefined
     })
     expect(settled.detail).toBe('signal: SIGTERM; test cleanup')
   })
@@ -335,7 +341,7 @@ describe('foreground timeout promotion (pwsh)', () => {
     await ctx.plugin(LocalJobRegistry)
     await ctx.plugin(BashEnvPlugin)
     await ctx.plugin(FakePwsh)
-    await ctx.plugin(ToolPwsh, { recordPollMs: 5 })
+    await ctx.plugin(ToolPwsh)
     const pwsh = ctx.shell as FakePwsh
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
     const scripted = promotableExecution('')

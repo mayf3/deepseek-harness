@@ -1,5 +1,5 @@
 ---
-description: "后台任务注册表约定，供组合、实现或排查后台工作的用户与维护者阅读：id、归属、生命周期与完成监听器。"
+description: "后台任务注册表约定，供组合、实现或排查后台工作的用户与维护者阅读：id、归属、生命周期、输出环与事件流。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-jobs` 让工具可以把长时间工作注册为后台任务：工作获得稳定的 `<kind>-N` id，在 agent 继续推进的同时保持运行，拥有它的 agent 可以随时读取输出、带超时等待或请求取消。任务属于启动它的 agent 会话，因此一个 agent 的工作永远不会被另一个 agent 看到；完成以会话内通知而非轮询的方式送达给拥有者。生产方还可以声明按 job 划分的观测 record：一条追加式的有界输出流，任意数量的观察者（Web 客户端）按绝对字节偏移读取，不触碰模型侧的消耗型游标。本包只提供约定：进程本地注册表位于 `dsh-jobs-local`，模型侧控制与完成通知位于 `dsh-tool-jobs`。加载一个实现才能获得后台任务；没有实现时 `ctx.jobs` 不存在，`start()` 无法运行。
+`dsh-jobs` 让工具可以把长时间工作注册为后台任务：工作获得稳定的 `<kind>-N` id，在 agent 继续推进的同时保持运行，拥有它的 agent 可以随时读取输出、带超时等待或请求取消。任务属于启动它的 agent 会话，因此一个 agent 的工作永远不会被另一个 agent 看到；完成以会话内通知而非轮询的方式送达给拥有者。每个 job 拥有一个有界的输出环：注册表把生产方的拉取源泵入其中并接受推送的追加，模型通过注册表保管的游标消耗它，任意数量的观察者（Web 客户端）按绝对字节偏移读取它而不触碰该游标。
 
 ## 目录
 
@@ -29,9 +29,9 @@ kind: "package-reference"
 
 ### 后台任务提供什么
 
-生产方以 kind 和一行标签注册工作；注册表返回 `<kind>-N` id，例如 `bash-1`。拥有任务的任何一方都可以读取输出、列出任务、带超时等待结算或请求取消——每次调用都返回任务状态的全新快照，从 `running`、`stopping` 到终止态的 `completed`、`killed` 或 `failed`。任务结算时，拥有它的 agent 会通过 `dsh-tool-jobs` 转成会话内通知的完成监听器得到通知，因此无需轮询。生产方还可以附加可选的字节上限，让每次完整的模型侧输出读取或完成通知保持有界。
+生产方以 kind 和一行标签注册工作；注册表返回 `<kind>-N` id，例如 `bash-1`。拥有任务的任何一方都可以读取输出、列出任务、带超时等待结算或请求取消——每次调用都返回任务状态的全新投影，从 `running`、`stopping` 到终止态的 `completed`、`killed` 或 `failed`。任务结算时，注册表的事件流宣布它，`dsh-tool-jobs` 把结算变成会话内通知，因此无需轮询。生产方可以附加一个可选的字节上限，让每次完整的模型侧读取或通知保持有界。
 
-声明 `record: true` 的生产方还会通过 starter 收到的 `RecordingJob` 面（未声明的 start 收到的是没有 `append` 的普通 `RunningJob` 面）把原始输出流入该 job 的有界 record：观察者按绝对字节偏移读取保留块并在推进时收到信号，结束 job 的结算同时封流，`updateDetail` 把实时进度行发布进每个快照。record 对模型不可见：读取不消耗任何东西，也永不触碰通知状态。
+生产方通过在 spec 上声明拉取源——由注册表按自己的节奏泵送的非消耗偏移读取器——或经 starter 收到的 `JobHandle` 推送块来流式输出；二者都落入该 job 的有界环，其中 `stdout` 与 `stderr` 块到达模型，`log` 块只到达观察者。观察者按绝对字节偏移读取保留块并在推进时收到信号；结束 job 的结算同时封流，在此之前 `updateProgress` 把实时进度行发布进每个投影。观测对模型不可见：`readAt` 不消耗任何东西，也从不触碰通知状态。
 
 ### 归属边界
 
@@ -69,7 +69,7 @@ kind: "package-reference"
 - **约定与实现分属不同包。** `JobRegistry` 是抽象 Cordis 服务；直接加载该类会抛出异常，因此错误配置的组合会在加载时失败，而不是注册一个空的 `ctx.jobs`。
 - **每进程一个注册表，按所有者给出答案。** 一个实例服务进程内的每套组合，因此注册与投递都相对注册方所在 scope：从不带 scope 的上下文注册的控制器或监听器服务于每个所有者；在某套 agent 组合的 scope 下注册的，恰好服务于该组合下组合出的 agent。
 - **访问以所有者的会话 id 为界。** id 可预测，因此是授权——而非保密——构成边界。
-- **结算首次优先，完成最后宣布。** 一条终止记录、释放的等待方，以及一轮受到隔离的监听器通知；完成在记录提交且该结算的所有其他观察者都已看到之后才宣布，因为报告方可能同步开启一个模型轮次。
+- **结算首次优先，其事件跟在每个被释放的等待方之后。** 一条终止记录、释放的等待方，然后是一轮受到隔离的事件投递；在等待中认领结算的消费方因此总是在事件之前认领，`dsh-tool-jobs` 永远不会播报模型已经收走的完成。
 - **注册的存续期长于生产方与控制器 fiber。** 所有者与服务释放会取消正在运行的工作并等待守约的生产方；抛出异常的销毁取消只强制失败记录。
 
 ### 源码地图
@@ -77,14 +77,14 @@ kind: "package-reference"
 | 文件 | 职责 |
 |---|---|
 | [`src/index.ts`](src/index.ts) | 插件入口：抽象 `JobRegistry` 服务及其约定 |
-| [`src/types.ts`](src/types.ts) | 共享词汇：`JobKindMap`、`JobStart`、`JobHooks`、`RunningJob`、`RecordingJob`、`JobSnapshot`、监听器类型 |
+| [`src/types.ts`](src/types.ts) | 共享词汇：`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`VisibleJobs`、`JobEvent` 与读取结果 |
+| [`src/view.ts`](src/view.ts) | 客户端安全叶子：`JobView`、`JobChunk`、`JobStatus` 与可合并扩展的 `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` 带类型标记的标识符，无需 agent 依赖即可导入 |
-| [`src/pump.ts`](src/pump.ts) | `pumpJobOutput`：把生产方偏移读取器复制进 job record 的轮询泵 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验快照标识、状态、时间戳、所有者与 record 偏移字段 |
+| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验注册表交出的每个投影——标识、状态、时间戳、所有者与环偏移 |
 
 ### 服务操作
 
-每个操作都是已注册任务之上的薄投影：`get` 与 `list` 返回非消费式快照，`read` 推进唯一的流游标，`readRecord` 按绝对偏移读取保留的 record 块且不消耗任何东西，`kill` 在改变状态前调用生产方取消（默认认领终态报告；没有模型可见渠道的调用方传 `reported: false`，完成通知因此仍欠着投递，其记录的原因会合入 `killed` 结算的 detail），`wait` 阻塞至超时，`start()` 在调用生产方 `run()` 一次之前预检访问、校验与准入，同时拒绝任何没有已附加控制器服务的所有者；监听器按所有者粒度观察终止记录、可见集变化与 record 推进，`attachController` 把控制器可用性限定在其 effect 生命周期内。确切签名与行为见 [`src/index.ts`](src/index.ts) 的 JSDoc 与生成的 [`ctx.jobs` cordis 接口面](../../../docs/subsystems/jobs.zh.md)。
+每个操作都是已注册任务之上的薄投影，由 `visibleTo` 绑定到一个调用方：`list` 与 `get` 返回全新投影，`read` 推进模型游标并在结算后把生产方的 result 交出一次，`readAt` 按绝对偏移读取保留块且不消耗任何东西，`kill` 在改变状态前调用生产方取消并为终态 `detail` 记录原因，`wait` 阻塞至超时，`start()` 在调用生产方 `run()` 一次之前预检访问、校验与准入，同时拒绝任何没有已附加控制器服务的所有者；`events.subscribe` 按所有者、scope 或进程粒度投递注册、进度、停止中、结算、移除与输出提交。
 
 </details>
 
@@ -95,12 +95,13 @@ kind: "package-reference"
 
 当包级约定不够用时阅读以下页面。它们从任务类型逐步进入随附实现、模型侧控制与设计记录。
 
-- [后台任务运行时子系统](../../../docs/subsystems/jobs.zh.md)——任务类型、快照字段与 `ctx.jobs` 的 cordis 接口面。
+- [后台任务运行时子系统](../../../docs/subsystems/jobs.zh.md)——任务类型、投影字段与 `ctx.jobs` 的 cordis 接口面。
 - [jobs 组映射](../README.zh.md)——同级组页面及其包表格。
 - [进程本地注册表](../jobs-local/README.zh.md)——在本进程中运行任务的随附实现。
 - [模型侧任务控制](../tool-jobs/README.zh.md)——`job_output`、`job_list` 与 `job_kill` 工具及完成通知。
 - [通用长时间运行工具运行时 Agent Note](../../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.zh.md)——后台任务运行时背后的设计。
 - [任务注册表 seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-26-job-registry-seam.zh.md)——按所有者隔离的注册表约定及其理由。
+- [jobs seam 收敛 Agent Note](../../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.zh.md)——一个输出环、一个投影、一条事件流。
 
 -----
 
@@ -120,8 +121,8 @@ kind: "package-reference"
 
 这些限制说明约定何时不合适。它们是当前包约束，不是任务积压。
 
-- **约定是进程内的**——`JobStart.run()` 传入回调和确切的 `Agent` 对象；持久化或跨进程后端必须先重塑身份、重启、所有权与观察语义，才能实现此 seam。
-- **流输出只有一个消费游标**——它属于模型；独立观察者改用非消耗的 `readRecord` 读取 job 声明的 record。
+- **约定是进程内的**——`JobSpec.run()` 传入回调，注册表解析拥有者会话背后的活体 `Agent`；持久化或跨进程后端必须先重塑身份、重启、所有权与观察语义，才能实现此 seam。
+- **模型游标是唯一的消耗式读取**——独立观察者使用非消耗的 `readAt`，从不移动它。
 - **前台工作无法转为后台**——生产方在启动前选择前台或后台。
 
 <a id="dev-note"></a>

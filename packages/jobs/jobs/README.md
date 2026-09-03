@@ -1,5 +1,5 @@
 ---
-description: "The background-job registry contract for users and maintainers composing, implementing, or debugging background work: ids, ownership, lifecycle, and completion listeners."
+description: "The background-job registry contract for users and maintainers composing, implementing, or debugging background work: ids, ownership, lifecycle, the output ring, and the event stream."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-jobs` lets tools run long work as background jobs: the work gets a stable `<kind>-N` id, keeps running while the agent moves on, and the owning agent can read its output, wait for it with a timeout, or request cancellation at any time. Jobs belong to the agent session that started them, so one agent's work is never visible to another, and completion reaches the owner as an in-session notice rather than by polling. A producer can also declare a per-job observation record: an append-only bounded output stream that any number of observers (the Web client) read at absolute byte offsets without touching the model-facing consuming cursor. This package ships the contract only: the process-local registry lives in `dsh-jobs-local`, and the model-facing controls and completion notices live in `dsh-tool-jobs`. Load an implementation to get background jobs; without one, `ctx.jobs` does not exist and `start()` cannot run.
+`dsh-jobs` lets tools run long work as background jobs: the work gets a stable `<kind>-N` id, keeps running while the agent moves on, and the owning agent can read its output, wait for it with a timeout, or request cancellation at any time. Jobs belong to the agent session that started them, so one agent's work is never visible to another, and completion reaches the owner as an in-session notice rather than by polling. Every job owns one bounded output ring: the registry pumps the producer's pull sources into it and accepts pushed appends, the model consumes it through a registry-kept cursor, and any number of observers (the Web client) read it at absolute byte offsets without touching that cursor.
 
 ## Table of Contents
 
@@ -29,9 +29,9 @@ Use this package when you are composing a background-job capability or writing a
 
 ### What a background job gives you
 
-A producer registers work with a kind and a one-line label; the registry returns a `<kind>-N` id such as `bash-1`. Anyone who owns the job can read output, list jobs, wait up to a timeout for settlement, and request cancellation — each call returns a fresh snapshot of the job's status, from `running` and `stopping` to the terminal `completed`, `killed`, or `failed`. When a job settles, the owning agent is notified through the completion listener that `dsh-tool-jobs` turns into an in-session notice, so no polling is needed. A producer may attach an optional byte cap so each complete model-facing output read or completion notice stays bounded.
+A producer registers work with a kind and a one-line label; the registry returns a `<kind>-N` id such as `bash-1`. Anyone who owns the job can read output, list jobs, wait up to a timeout for settlement, and request cancellation — each call returns a fresh projection of the job's status, from `running` and `stopping` to the terminal `completed`, `killed`, or `failed`. When a job settles, the registry's event stream announces it and `dsh-tool-jobs` turns the settlement into an in-session notice, so no polling is needed. A producer may attach an optional byte cap so each complete model-facing read or notice stays bounded.
 
-A producer that declares `record: true` additionally streams raw output into the job's bounded record through the `RecordingJob` face its starter receives — a start without the declaration receives the plain `RunningJob` face, which has no `append`: observers read retained chunks at absolute byte offsets and get signaled on advancement, the settlement that ends the job also ends the stream, and `updateDetail` publishes a live progress line into every snapshot. The record is invisible to the model: reads consume nothing and never touch notice state.
+A producer streams output by naming pull sources on its spec — non-consuming offset readers the registry pumps at its own cadence — or by pushing chunks through the `JobHandle` its starter receives; both land in the job's bounded ring, where `stdout` and `stderr` chunks reach the model and `log` chunks reach observers only. Observers read retained chunks at absolute byte offsets and are signaled on advancement; the settlement that ends the job also ends the stream, and `updateProgress` publishes a live progress line into every projection until then. Observation is invisible to the model: `readAt` consumes nothing and never touches notice state.
 
 ### The ownership boundary
 
@@ -69,7 +69,7 @@ This section explains the design decisions behind the contract and points at the
 - **Contract and implementation are separate packages.** `JobRegistry` is an abstract Cordis service; loading the class directly throws, so a misconfigured composition fails at load instead of registering an empty `ctx.jobs`.
 - **One registry per process, owner-relative answers.** One instance serves every composition in the process, so registrations and deliveries are relative to the registering scope: a controller or listener registered from an unscoped context serves every owner; one registered under an agent composition's scope serves exactly the agents composed under it.
 - **Access is fenced by the owner's session id.** Ids are predictable, so authorization — not secrecy — is the boundary.
-- **Settlement is first-wins, and completion is announced last.** One terminal record, released waiters, and one round of contained listener notification; completion is announced after the record is committed and every other observer has seen it, because a reporter may open a model turn synchronously.
+- **Settlement is first-wins, and its event follows every released waiter.** One terminal record, released waiters, then one round of contained event delivery; a consumer that claims a settlement while waiting therefore always claims before the event, so `dsh-tool-jobs` never announces a completion the model already collected.
 - **Registrations outlive producer and controller fibers.** Owner and service disposal cancel live work and await compliant producers; a throwing teardown cancel force-fails only the record.
 
 ### Source map
@@ -77,14 +77,14 @@ This section explains the design decisions behind the contract and points at the
 | File | Role |
 |---|---|
 | [`src/index.ts`](src/index.ts) | Plugin entry: the abstract `JobRegistry` service and its contract |
-| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobKindMap`, `JobStart`, `JobHooks`, `RunningJob`, `RecordingJob`, `JobSnapshot`, listener types |
+| [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobSpec`, `JobHandle`, `JobHooks`, `JobOutcome`, `VisibleJobs`, `JobEvent`, and the read results |
+| [`src/view.ts`](src/view.ts) | Client-safe leaf: `JobView`, `JobChunk`, `JobStatus`, and the merge-extensible `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
-| [`src/pump.ts`](src/pump.ts) | `pumpJobOutput`: poll pump copying producer offset-readers into a job record |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: validates snapshot identity, status, timestamps, owner, and record-offset fields |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: validates every projection the registry hands out — identity, status, timestamps, owner, and ring offsets |
 
 ### Service operations
 
-Every operation is a thin projection over the registered jobs: `get` and `list` return non-consuming snapshots, `read` advances the single stream cursor, `readRecord` reads retained record chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status (claiming the terminal report by default; a caller with no model-visible channel passes `reported: false` so the completion notice stays due, and its recorded reason merges into a `killed` settlement's detail), `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; listeners observe terminal records, visible-set changes, and record advancement at owner granularity, and `attachController` scopes controller availability to its effect lifetime. Exact signatures and behavior live in the JSDoc on [`src/index.ts`](src/index.ts) and the generated [`ctx.jobs` cordis surface](../../../docs/subsystems/jobs.md).
+Every operation is a thin projection over the registered jobs, bound to one caller by `visibleTo`: `list` and `get` return fresh projections, `read` advances the model's cursor and hands out the producer's result once after settlement, `readAt` reads retained chunks at an absolute offset without consuming anything, `kill` invokes producer cancellation before changing status and records the reason for the terminal `detail`, `wait` blocks up to a timeout, and `start()` preflights access, validation, and admission before invoking the producer's `run()` once while refusing any owner no attached controller serves; `events.subscribe` delivers registration, progress, stopping, settlement, removal, and output commits at owner, scope, or process granularity.
 
 </details>
 
@@ -95,12 +95,13 @@ Every operation is a thin projection over the registered jobs: `get` and `list` 
 
 Read these pages when the package-level contract is not enough. They move from the job types to the shipped implementation, the model-facing controls, and the design records.
 
-- [Background task runtime subsystem](../../../docs/subsystems/jobs.md) — the job types, snapshot fields, and `ctx.jobs` cordis surface.
+- [Background task runtime subsystem](../../../docs/subsystems/jobs.md) — the job types, projection fields, and `ctx.jobs` cordis surface.
 - [jobs group map](../README.md) — the sibling group page and its package table.
 - [Process-local registry](../jobs-local/README.md) — the shipped implementation that runs jobs in this process.
 - [Model-facing job controls](../tool-jobs/README.md) — the `job_output`, `job_list`, and `job_kill` tools and completion notices.
 - [Generic long-running tool runtime Agent Note](../../../.agents/notes/implemented/architecture/2026-06-20-generic-long-running-tool-runtime.md) — the design behind the background-job runtime.
 - [job-registry seam Agent Note](../../../.agents/notes/implemented/architecture/2026-07-26-job-registry-seam.md) — the owner-fenced registry contract and its rationale.
+- [Jobs seam consolidation Agent Note](../../../.agents/notes/implemented/architecture/2026-09-03-jobs-seam-consolidation.md) — one output ring, one projection, one event stream.
 
 -----
 
@@ -120,8 +121,8 @@ No direct invalidation; the named consumers own any request-prefix changes.
 
 These limits define when the contract is a poor fit. They are current package constraints, not a task backlog.
 
-- **The contract is in-process** — `JobStart.run()` passes callbacks and exact `Agent` objects; a durable or cross-process backend must reshape identity, restart, ownership, and observation semantics before it can implement this seam.
-- **Stream output has one consuming cursor** — the model owns it; independent observers read the job's declared record through the non-consuming `readRecord` instead.
+- **The contract is in-process** — `JobSpec.run()` passes callbacks and the registry resolves the live `Agent` behind the owner session; a durable or cross-process backend must reshape identity, restart, ownership, and observation semantics before it can implement this seam.
+- **The model's cursor is the only consuming read** — independent observers use the non-consuming `readAt` and never move it.
 - **Foreground work cannot be promoted** — producers choose foreground or background before starting.
 
 <a id="dev-note"></a>

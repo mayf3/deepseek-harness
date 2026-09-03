@@ -10,32 +10,32 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
-import type { JobId, RecordingJob } from '@deepseek-ai/dsh-jobs'
+import type { JobId } from '@deepseek-ai/dsh-jobs'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import type { ShellProcess } from '@deepseek-ai/dsh-shell'
 import { LocalBashExecutor } from '@deepseek-ai/dsh-bash-local'
 import LocalSubprocessRuntime from '@deepseek-ai/dsh-subprocess-local'
 import * as ToolBash from '@deepseek-ai/dsh-tool-bash'
-import { observeProcessRecord } from '../src/observe.ts'
+import { observedOffsets, processSources } from '../src/background.ts'
 import { renderPromoted } from '../src/render.ts'
 import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 
 const testToolSignal = new AbortController().signal
-const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-observe-spec-'))
+const spillDir = mkdtempSync(join(tmpdir(), 'dsh-tool-bash-background-spec-'))
 
-/** Job harness with a fast record pump for tests. */
+/** Job harness with a fast registry pump for tests. */
 async function setup() {
   const ctx = new Context()
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
   await ctx.plugin(AgentRegistry)
-  await ctx.plugin(LocalJobRegistry)
+  await ctx.plugin(LocalJobRegistry, { pumpPollMs: 25 })
   await ctx.plugin(ToolTasks)
   await ctx.plugin(LocalSubprocessRuntime)
   ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
   await ctx.plugin(BashEnvPlugin)
   await ctx.plugin(LocalBashExecutor, { timeoutMs: 10_000, graceMs: 200 })
-  await ctx.plugin(ToolBash, { recordPollMs: 25 })
+  await ctx.plugin(ToolBash)
   return ctx
 }
 
@@ -43,7 +43,7 @@ let callCounter = 0
 function call(ctx: Context, args: Record<string, unknown>) {
   return ctx.tools.execute({
     signal: testToolSignal,
-    callId: ToolCallId(`observe-call-${++callCounter}`),
+    callId: ToolCallId(`background-call-${++callCounter}`),
     name: 'bash',
     arguments: args,
   })
@@ -64,11 +64,11 @@ async function until<T>(read: () => T | undefined, timeoutMs = 5_000): Promise<T
 }
 
 function retainedText(ctx: Context, id: JobId, caller?: Agent): string {
-  return ctx.jobs.readRecord(id, 0, caller).chunks.map(chunk => chunk.text).join('')
+  return ctx.jobs.visibleTo(caller?.id).readAt(id, 0).chunks.map(chunk => chunk.text).join('')
 }
 
-describe('background bash record', () => {
-  it('streams a background run into the job record with live output and settlement', async () => {
+describe('background bash output', () => {
+  it('streams a background run into the job ring with live output and settlement', async () => {
     const ctx = await setup()
     const ack = await call(ctx, {
       command: 'printf "line-1\\n"; sleep 0.4; printf "line-2\\n"',
@@ -76,34 +76,33 @@ describe('background bash record', () => {
       run_in_background: true,
     })
     expect(text(ack)).toContain('started background job')
-    const job = ctx.jobs.list()[0]
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
     expect(job).toBeDefined()
-    expect(job!.outputTotal).toBeDefined()
 
-    // Live output appears in the record while the command is still running.
+    // Live output appears in the ring while the command is still running.
     await until(() => retainedText(ctx, job!.id).includes('line-1') ? true : undefined)
-    expect(ctx.jobs.get(job!.id).status).toBe('running')
+    expect(jobs.get(job!.id).status).toBe('running')
 
-    // Settlement ends the record with the job; the trailing bytes are drained first.
-    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
-    expect(ctx.jobs.get(job!.id).detail).toBe('exit code: 0')
+    // Settlement ends the ring with the job; the trailing bytes are drained first.
+    await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
+    expect(jobs.get(job!.id).detail).toBe('exit code: 0')
     expect(retainedText(ctx, job!.id)).toContain('line-2')
 
-    // The model-facing consuming cursor still delivers everything: observation stole nothing.
-    const collected = await until(() => {
-      const read = ctx.jobs.read(job!.id)
-      return read.text.includes('line-1') ? read.text : undefined
-    })
-    expect(collected).toContain('line-2')
+    // The model-facing consuming cursor reads the same bytes: observation stole nothing.
+    const consumed = jobs.read(job!.id).chunks.map(chunk => chunk.text).join('')
+    expect(consumed).toContain('line-1')
+    expect(consumed).toContain('line-2')
   })
 
-  it('a killed background job ends its record with the killed settlement', async () => {
+  it('a killed background job settles killed with the kill reason merged into its detail', async () => {
     const ctx = await setup()
     await call(ctx, { command: 'sleep 60', description: 'test command', run_in_background: true })
-    const job = ctx.jobs.list()[0]
-    ctx.jobs.kill(job!.id, undefined, { reason: 'test cleanup' })
-    await until(() => ctx.jobs.get(job!.id).status === 'killed' ? true : undefined)
-    expect(ctx.jobs.get(job!.id).detail).toMatch(/signal|killed before exit/)
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
+    jobs.kill(job!.id, { reason: 'test cleanup' })
+    await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
+    expect(jobs.get(job!.id).detail).toMatch(/(signal|killed before exit).*; test cleanup$/)
   })
 
   it('labels stderr chunks with their channel', async () => {
@@ -113,80 +112,59 @@ describe('background bash record', () => {
       description: 'test command',
       run_in_background: true,
     })
-    const job = ctx.jobs.list()[0]
-    await until(() => ctx.jobs.get(job!.id).status === 'completed' ? true : undefined)
-    const chunks = ctx.jobs.readRecord(job!.id, 0).chunks
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
+    await until(() => jobs.get(job!.id).status === 'completed' ? true : undefined)
+    const chunks = jobs.readAt(job!.id, 0).chunks
     expect(chunks.find(chunk => chunk.text.includes('out-line'))?.channel).toBe('stdout')
     expect(chunks.find(chunk => chunk.text.includes('err-line'))?.channel).toBe('stderr')
   })
 })
 
-describe('observeProcessRecord', () => {
-  /** A RecordingJob face recording appends for pump assertions. */
-  function recordingJob(): { job: RecordingJob; appends: string[] } {
-    const appends: string[] = []
-    return {
-      job: {
-        id: 'bash-1' as JobId,
-        append(chunk) { appends.push(chunk) },
-        updateDetail() {},
-      },
-      appends,
-    }
-  }
-
-  it('degrades to no observation when the backend exposes no offset readers', async () => {
-    const ctx = new Context()
-    const { job, appends } = recordingJob()
-    const proc = { done: Promise.resolve() } as unknown as ShellProcess
-    await observeProcessRecord(ctx, job, proc, 25)
-    expect(appends).toEqual([])
+describe('processSources', () => {
+  it('reads nothing while the process is not spawned yet and when the backend exposes no readers', () => {
+    const spawned: { proc?: ShellProcess } = {}
+    const [stdout, stderr] = processSources(() => spawned.proc)
+    expect(stdout!.channel).toBe('stdout')
+    expect(stderr!.channel).toBe('stderr')
+    expect(stdout!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
+    spawned.proc = { done: Promise.resolve() } as unknown as ShellProcess
+    expect(stderr!.read(3)).toEqual({ text: '', nextOffset: 3, lossy: false })
   })
 
-  it('contains a pump failure with a warning; the job path is unaffected', async () => {
-    const ctx = new Context()
-    const warn = vi.fn()
-    ctx.logger.warn = warn as never
-    const { job } = recordingJob()
+  it('forwards each read to the matching stream reader once the process exists', () => {
+    const reads: number[] = []
     const proc = {
-      done: new Promise<void>((resolve) => { setTimeout(resolve, 10) }),
       observed: {
-        stdout: { readFrom() { throw new Error('reader boom') } },
+        stdout: { readFrom: (from: number) => { reads.push(from); return { text: 'out', nextOffset: from + 3, lossy: false } } },
       },
     } as unknown as ShellProcess
-    await observeProcessRecord(ctx, job, proc, 5)
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('record observation pump for bash-1 failed'))
+    const [stdout, stderr] = processSources(() => proc)
+    expect(stdout!.read(2)).toEqual({ text: 'out', nextOffset: 5, lossy: false })
+    expect(reads).toEqual([2])
+    // A missing stderr reader is an absent stream, not an error.
+    expect(stderr!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
   })
-})
 
-describe('owned background record', () => {
-  it('fences an owned background run record under the owning session', async () => {
-    const ctx = await setup()
-    const owner = {
-      id: SessionId('observe-owner'),
-      session: { id: SessionId('observe-owner'), header: { cwd: process.cwd() } },
-      status: 'idle',
-      ctx,
-    } as unknown as Agent
-    ctx.agents.register(owner)
-    await ctx.tools.execute({
-      signal: testToolSignal,
-      callId: ToolCallId('observe-owned-1'),
-      name: 'bash',
-      arguments: { command: 'echo owned', description: 'test command', run_in_background: true },
-      agent: owner,
-    })
-    const job = ctx.jobs.list(owner)[0]
-    expect(job).toBeDefined()
-    expect(job!.ownerSession).toBe(owner.id)
-    await until(() => ctx.jobs.get(job!.id, owner).status === 'completed' ? true : undefined)
-    expect(() => retainedText(ctx, job!.id)).toThrow(/belongs to another session/)
-    await until(() => retainedText(ctx, job!.id, owner).includes('owned') ? true : undefined)
+  it('starts a promoted process\'s sources at the offsets already handed to the model', () => {
+    const reads: number[] = []
+    const proc = {
+      observed: {
+        stdout: { readFrom: (from: number) => { reads.push(from); return { text: '', nextOffset: Math.max(from, 40), lossy: false } } },
+      },
+    } as unknown as ShellProcess
+    const from = observedOffsets(proc)
+    expect(from).toEqual({ stdout: 40, stderr: 0 })
+    const [stdout, stderr] = processSources(() => proc, from)
+    // The pump's first read (offset 0) lands at the stream's end, never before it.
+    expect(stdout!.read(0)).toEqual({ text: '', nextOffset: 40, lossy: false })
+    expect(reads).toEqual([0, 40])
+    expect(stderr!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
   })
 })
 
 describe('foreground timeout promotion', () => {
-  it('moves a timed-out foreground command into a record job with its output so far', async () => {
+  it('moves a timed-out foreground command into a job whose ring starts after the output so far', async () => {
     const ctx = await setup()
     const result = await call(ctx, {
       command: 'printf "early-output\\n"; sleep 30',
@@ -201,20 +179,17 @@ describe('foreground timeout promotion', () => {
     expect(body).toContain('read newer output with job_output, stop it with job_kill')
     expect(body.indexOf('early-output')).toBeLessThan(body.indexOf('[still running'))
 
-    const job = ctx.jobs.list()[0]
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
     expect(job).toMatchObject({ id: 'bash-1', kind: 'bash', status: 'running', label: 'printf "early-output\\n"; sleep 30' })
 
-    // The promoted job declares a record like any background run, and the
-    // record keeps the whole stream — including the pre-promotion line the
-    // consuming cursor already delivered.
-    expect(job!.outputTotal).toBeDefined()
-    await until(() => retainedText(ctx, job!.id).includes('early-output') ? true : undefined)
-
-    // The job's consuming cursor continues after the promoted result's output:
-    // no repeat of the early line, and the job stays killable.
-    expect(ctx.jobs.read(job!.id).text).not.toContain('early-output')
-    expect(ctx.jobs.kill(job!.id, undefined, { reason: 'test cleanup' })).toBe('requested')
-    await until(() => ctx.jobs.get(job!.id).status === 'killed' ? true : undefined)
+    // The ring starts where the promoted result stopped: the model's next
+    // read repeats nothing, and observers never see the promoted line twice.
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(retainedText(ctx, job!.id)).not.toContain('early-output')
+    expect(jobs.read(job!.id).chunks).toEqual([])
+    expect(jobs.kill(job!.id, { reason: 'test cleanup' })).toBe('requested')
+    await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
   })
 
   it('promotes under the calling agent so the job is fenced to its session', async () => {
@@ -228,18 +203,19 @@ describe('foreground timeout promotion', () => {
     ctx.agents.register(owner)
     const result = await ctx.tools.execute({
       signal: testToolSignal,
-      callId: ToolCallId('observe-promote-owned'),
+      callId: ToolCallId('background-promote-owned'),
       name: 'bash',
       arguments: { command: 'printf "held\\n"; sleep 30', description: 'test command', timeoutMs: 250 },
       agent: owner,
     })
     expect(text(result)).toContain('moved to background job')
-    const job = ctx.jobs.list(owner)[0]
+    const owned = ctx.jobs.visibleTo(owner.id)
+    const job = owned.list()[0]
     expect(job).toBeDefined()
-    expect(job!.ownerSession).toBe(owner.id)
-    expect(() => ctx.jobs.readRecord(job!.id, 0)).toThrow(/belongs to another session/)
-    expect(ctx.jobs.kill(job!.id, owner, { reason: 'test cleanup' })).toBe('requested')
-    await until(() => ctx.jobs.get(job!.id, owner).status === 'killed' ? true : undefined)
+    expect(job!.owner).toBe(owner.id)
+    expect(() => ctx.jobs.visibleTo().readAt(job!.id, 0)).toThrow(/belongs to another session/)
+    expect(owned.kill(job!.id, { reason: 'test cleanup' })).toBe('requested')
+    await until(() => owned.get(job!.id).status === 'killed' ? true : undefined)
   })
 
   it('falls back to the timeout kill when the job admission refuses the promotion', async () => {
@@ -277,7 +253,7 @@ describe('foreground timeout promotion', () => {
     await ctx.plugin(SystemPrompt)
     await ctx.plugin(ToolRuntime)
     await ctx.plugin(AgentRegistry)
-    await ctx.plugin(LocalJobRegistry)
+    await ctx.plugin(LocalJobRegistry, { pumpPollMs: 25 })
     await ctx.plugin(ToolTasks)
     await ctx.plugin(LocalSubprocessRuntime)
     ;(ctx.subprocess as LocalSubprocessRuntime).internals = { spillDir }
@@ -286,7 +262,7 @@ describe('foreground timeout promotion', () => {
     await ctx.plugin(ToolBash, { promoteOnTimeout: false })
     const result = await call(ctx, { command: 'sleep 30', description: 'test command', timeoutMs: 250 })
     expect(text(result)).toContain('[timed out after 250ms]')
-    expect(ctx.jobs.list()).toEqual([])
+    expect(ctx.jobs.visibleTo().list()).toEqual([])
     const description = ctx.tools.get('bash')?.description ?? ''
     expect(description).not.toContain('moves to the background')
   })
@@ -311,5 +287,32 @@ describe('renderPromoted', () => {
       .toContain('partial\n[still running after 250ms; moved to background job bash-7]')
     expect(renderPromoted({ jobId: 'bash-7', timeoutMs: 250, output: 'line\n' }))
       .toContain('line\n[still running after 250ms')
+  })
+})
+
+describe('owned background output', () => {
+  it('fences an owned background run under the owning session', async () => {
+    const ctx = await setup()
+    const owner = {
+      id: SessionId('background-owner'),
+      session: { id: SessionId('background-owner'), header: { cwd: process.cwd() } },
+      status: 'idle',
+      ctx,
+    } as unknown as Agent
+    ctx.agents.register(owner)
+    await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('background-owned-1'),
+      name: 'bash',
+      arguments: { command: 'echo owned', description: 'test command', run_in_background: true },
+      agent: owner,
+    })
+    const owned = ctx.jobs.visibleTo(owner.id)
+    const job = owned.list()[0]
+    expect(job).toBeDefined()
+    expect(job!.owner).toBe(owner.id)
+    await until(() => owned.get(job!.id).status === 'completed' ? true : undefined)
+    expect(() => retainedText(ctx, job!.id)).toThrow(/belongs to another session/)
+    await until(() => retainedText(ctx, job!.id, owner).includes('owned') ? true : undefined)
   })
 })

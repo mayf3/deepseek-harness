@@ -2,6 +2,8 @@
 
 Status: implemented
 
+Superseded：下文描述的 record 声明（`JobStart.record`、`RecordingJob`、`readRecord`、`pumpJobOutput`）与拆分的线路（会话控制流上的 `SessionJob.record`、`ctx.jobOutput`）已收敛为一个输出环、`VisibleJobs` 与 `ctx.jobs`——见 [jobs seam 收敛](2026-09-03-jobs-seam-consolidation.zh.md)。把独立 activity seam 吸收进 `ctx.jobs` 的论证仍然成立。
+
 [English](2026-09-01-jobs-absorb-activity-record.md) | 中文
 
 ## 问题
