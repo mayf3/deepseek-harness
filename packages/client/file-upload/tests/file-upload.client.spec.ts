@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { apply } from '../src/client/index.ts'
 import { fileUploadWorker, FileUploadRuntime } from '../src/client/runtime.ts'
-import type { ClientFileUploadHooks } from '../src/client/contract.ts'
+import type { ClientFileUploadHooks, FileUploadBody } from '../src/client/contract.ts'
 
 interface UploadGlobal {
   __DSH_FILE_UPLOAD__?: ClientFileUploadHooks
@@ -20,7 +20,7 @@ describe('file upload worker body', () => {
     const scope: {
       onmessage: ((event: MessageEvent<{
         url: string
-        body: Blob
+        body: FileUploadBody
         headers: Readonly<Record<string, string>>
       }>) => void) | null
       postMessage(message: unknown): void

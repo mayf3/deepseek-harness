@@ -102,7 +102,7 @@ describe('Session file upload', () => {
   })
 
   it('preserves a background business failure and supports unnamed files without observers', async () => {
-    const post = vi.fn((_request: { readonly body: Blob }) => Promise.resolve({
+    const post = vi.fn<FileUploadService['post']>(() => Promise.resolve({
       status: 200,
       body: JSON.stringify({
         ok: false,
