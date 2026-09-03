@@ -6,7 +6,9 @@
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { makeTranslate, RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
-import type { QueuedMessage } from '@deepseek-ai/dsh-api-session-controller/client'
+import type {
+  BeginSubmissionInput, PendingSubmissionRetirement, QueuedMessage,
+} from '@deepseek-ai/dsh-api-session-controller/client'
 import { ComposerBlockRegistry } from '../src/client/input/blocks.ts'
 import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController } from '../src/client/service.ts'
@@ -453,9 +455,9 @@ describe('sendSession submission echo', () => {
   /** Bench with an observable beginSubmission on the session face. */
   async function echoBench() {
     const b = await bench()
-    const retire: { onRetire?: ((retirement: unknown) => void) | undefined } = {}
+    const retire: { onRetire?: ((retirement: PendingSubmissionRetirement) => void) | undefined } = {}
     const abandon = vi.fn()
-    const beginSubmission = vi.fn((input: { onRetire?: (retirement: unknown) => void }) => {
+    const beginSubmission = vi.fn((input: BeginSubmissionInput) => {
       retire.onRetire = input.onRetire
       return { requestId: 'req-echo' as never, abandon }
     })
@@ -480,14 +482,12 @@ describe('sendSession submission echo', () => {
       const session = b.runtime.sessions.binding('s1')!.session
       const sending = b.root.sendSession(session, '带图', [attachment!.id], 'queue')
       // Synchronous: the echo is registered before any encoding starts.
-      expect(b.beginSubmission).toHaveBeenCalledWith(expect.objectContaining({
-        mode: 'queue',
-        text: '带图',
-        attachments: [{
-          type: 'image',
-          value: expect.objectContaining({ previewUrl: 'blob:echo-1', name: 'a.png' }),
-        }],
-      }))
+      const echo = b.beginSubmission.mock.calls[0]?.[0]
+      expect(echo?.mode).toBe('queue')
+      expect(echo?.text).toBe('带图')
+      expect(echo?.attachments).toHaveLength(1)
+      expect(echo?.attachments[0]?.type).toBe('image')
+      expect(echo?.attachments[0]?.value).toMatchObject({ previewUrl: 'blob:echo-1', name: 'a.png' })
       expect(b.prompt).not.toHaveBeenCalled()
       await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })
       expect(b.prompt).toHaveBeenCalledWith(
@@ -531,14 +531,15 @@ describe('sendSession submission echo', () => {
         expect(b.root.fileUploads.getSnapshot()[drafts[1]!.id]?.status).toBe('ready')
       })
       const sending = b.root.sendSession(session, 'ordered', drafts.map(draft => draft.id), 'steer')
-      expect(b.beginSubmission).toHaveBeenCalledWith(expect.objectContaining({
-        mode: 'steer',
-        attachments: [
-          { type: 'image', value: expect.objectContaining({ name: 'first.png' }) },
-          { type: 'file', value: { attachmentId: 'mixed-file', name: 'notes.txt', bytes: 1 } },
-          { type: 'image', value: expect.objectContaining({ name: 'last.png' }) },
-        ],
-      }))
+      const echo = b.beginSubmission.mock.calls[0]?.[0]
+      expect(echo?.mode).toBe('steer')
+      expect(echo?.attachments.map(attachment => attachment.type === 'image'
+        ? { type: attachment.type, name: attachment.value.name }
+        : { type: attachment.type, value: attachment.value })).toEqual([
+        { type: 'image', name: 'first.png' },
+        { type: 'file', value: { attachmentId: 'mixed-file', name: 'notes.txt', bytes: 1 } },
+        { type: 'image', name: 'last.png' },
+      ])
       await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })
       expect(b.prompt.mock.calls[0]?.[0]).toEqual([
         { type: 'image', mediaType: 'image/png', data: expect.any(String) as string, name: 'first.png' },
@@ -549,9 +550,21 @@ describe('sendSession submission echo', () => {
       b.retire.onRetire?.({
         reason: 'observed',
         attachments: [
-          { attachmentId: 'image-first', mediaType: 'image/png' },
-          { attachmentId: 'mixed-file', name: 'notes.txt', bytes: 1 },
-          { attachmentId: 'image-last', mediaType: 'image/png' },
+          {
+            attachmentId: 'image-first' as never,
+            mediaType: 'image/png',
+            bytes: 1,
+            width: 1,
+            height: 1,
+          },
+          { attachmentId: 'mixed-file' as never, name: 'notes.txt', bytes: 1 },
+          {
+            attachmentId: 'image-last' as never,
+            mediaType: 'image/png',
+            bytes: 1,
+            width: 1,
+            height: 1,
+          },
         ],
       })
       await expect(sending).resolves.toEqual({ kind: 'success' })
@@ -598,7 +611,11 @@ describe('sendSession submission echo', () => {
       const sending = b.root.sendSession(session, '', [attachment!.id], 'queue')
       await vi.waitFor(() => { expect(b.prompt).toHaveBeenCalledOnce() })
       const ref = {
-        attachmentId: 'att-1', mediaType: 'image/png', bytes: 1, width: 1, height: 1,
+        attachmentId: 'att-1' as never,
+        mediaType: 'image/png' as const,
+        bytes: 1,
+        width: 1,
+        height: 1,
       }
       b.retire.onRetire?.({ reason: 'observed', attachments: [ref] })
       await expect(sending).resolves.toEqual({ kind: 'success' })

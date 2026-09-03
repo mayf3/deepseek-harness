@@ -124,7 +124,7 @@ describe('file upload worker body', () => {
     fileUploadWorker(
       scope,
       () => { throw new Error('unused') },
-      () => Promise.reject('offline'),
+      () => Promise.reject(new Error('offline')),
     )
     scope.onmessage?.({ data: { url: '/upload', body, headers: {} } } as never)
     await vi.waitFor(() => {
@@ -190,9 +190,10 @@ describe('file upload service', () => {
     const ctx = new Context()
     const fiber = ctx.plugin({ apply })
     await fiber
-    await ctx.fileUpload.post({ path: '/fallback', body: new Blob() })
+    const body = new Blob()
+    await ctx.fileUpload.post({ path: '/fallback', body })
     expect(fetch).toHaveBeenCalledWith(new URL('http://dsh.internal/fallback'), {
-      method: 'POST', body: expect.any(Blob),
+      method: 'POST', body,
     })
     await fiber.dispose()
   })

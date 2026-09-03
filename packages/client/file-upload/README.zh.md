@@ -52,6 +52,8 @@ Client 插件提供可被各级上下文继承的 `ctx.fileUpload` 服务。其�
 
 </details>
 
+**运行时不变式：** 不发布伴生入口。每个请求只使用一个已选定载体；fixture 或不支持的浏览器请求会在发送请求体前失败。
+
 -----
 
 <a id="further-exploration"></a>

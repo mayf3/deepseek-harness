@@ -52,6 +52,8 @@ The Client plugin provides one inherited `ctx.fileUpload` service. Its provider 
 
 </details>
 
+**Runtime invariant:** No companion is published. Each request uses exactly one selected carrier, and fixture or unsupported-browser requests fail before the body is sent.
+
 -----
 
 <a id="further-exploration"></a>
