@@ -1177,20 +1177,30 @@ function normalizeAria(snapshot: string, workspaceCwd: string, age: boolean): st
  * @param selector - the region locator selector.
  * @param workspaceCwd - normalization input.
  * @param options - `normalizeAge` collapses relative-time buckets to `{{age}}`
- *   for a region whose rows are dated from live wall-clock state.
+ *   for a region whose rows are dated from live wall-clock state;
+ *   `replacements` tokenizes scenario-owned values before generic normalization.
  * @returns the stable normalized snapshot.
  */
 export async function captureStableAria(
   page: Page,
   selector: string,
   workspaceCwd: string,
-  options: { normalizeAge?: boolean } = {},
+  options: {
+    normalizeAge?: boolean
+    replacements?: readonly (readonly [value: string, token: string])[]
+  } = {},
 ): Promise<string> {
   const region = page.locator(selector).first()
   const age = options.normalizeAge === true
-  let previous = normalizeAria(await region.ariaSnapshot(), workspaceCwd, age)
+  const normalize = (snapshot: string): string => {
+    for (const [value, token] of options.replacements ?? []) {
+      snapshot = snapshot.split(value).join(token)
+    }
+    return normalizeAria(snapshot, workspaceCwd, age)
+  }
+  let previous = normalize(await region.ariaSnapshot())
   await expect.poll(async () => {
-    const current = normalizeAria(await region.ariaSnapshot(), workspaceCwd, age)
+    const current = normalize(await region.ariaSnapshot())
     const stable = current === previous
     previous = current
     return stable
