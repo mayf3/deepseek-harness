@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-session-format-v0-to-v1` 解码完整的已发布 v0 JSONL 记录语言，并把它转换为共享布局的 v1 格式。除把 `version: 0` 改为 `version: 1` 外，该迁移边会保留经过校验的标头与事件事实；它也会应用 v0 持久化曾接受的有限旧格式规范化。该包冻结 v0 读取器、严格的 v1 迁移目标校验器，以及不冻结事件词表的 v1 物理编解码器，使后续迁移边无需导入最新 Session 表示即可复用它。
+`dsh-session-format-v0-to-v1` 解码完整的已发布 v0 JSONL 记录语言，并把它转换为共享布局的 v1 格式。除把 `version: 0` 改为 `version: 1` 外，该迁移边会保留经过校验的标头与事件事实；它也会应用 v0 持久化曾接受的有限旧格式规范化。该包冻结 v0 读取器、严格的 v1 迁移目标校验器，以及不冻结事件词表的 v1 物理编解码器，使后续迁移边无需导入最新 Session 表示即可复用它。它的大部分源码是冻结的已发布 v0/v1 事件词表而不是恒等转换本身：`payload-validation.ts` 与 `relationships.ts` 钉住每种第一方事件类型的 payload 成员与生命周期配对，使畸形历史日志在已安装的 current 恢复器运行之前就以「不支持的迁移」被拒绝并保留源文件，也使后续重构已发布事件的迁移边无需导入当前 Session 包即可信任其形状。
 
 ## 目录
 
@@ -56,6 +56,8 @@ Alpha 迁移边会拒绝冻结清单之外的所有事件类型，包括带有 `
 |---|---|
 | [`src/codec.ts`](src/codec.ts) | 冻结的 v0/v1 物理标头、打包行与来源序号范围 |
 | [`src/dispositions.ts`](src/dispositions.ts) | 已发布 v0 事件与 payload 成员清单 |
+| [`src/payload-validation.ts`](src/payload-validation.ts) | 每种已发布 v0/v1 事件类型的冻结嵌套 payload 语义 |
+| [`src/relationships.ts`](src/relationships.ts) | 冻结的跨事件配对：轮次、步骤、工具开始与结果、重试、压缩、标题 |
 | [`src/migration.ts`](src/migration.ts) | 恒等迁移边与旧格式规范化 |
 | [`src/validation.ts`](src/validation.ts) | 精确的源与目标校验 |
 
