@@ -3,7 +3,7 @@
 // TestSessions mints tagged scopes through the production createScope, so the
 // service's scopeOf/binding path runs against production resolution (no local
 // tag probe).
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { makeTranslate, RemoteError, SlotTestRuntime } from '@deepseek-ai/dsh-client-test-runtime'
 import type {
@@ -14,26 +14,16 @@ import { InputHub } from '../src/client/input/hub.ts'
 import { ConversationController } from '../src/client/service.ts'
 import { zh } from '../src/client/locales.ts'
 
-/** Test upload service that preserves each fixture Session's local upload override. */
-class TestFileUpload extends Service {
-  constructor(ctx: Context) {
-    super(ctx, 'fileUpload')
-  }
-
-  upload(owner: Context, ...args: unknown[]): Promise<unknown> {
-    const sessions = this.ctx.get('sessions') as {
-      sessionOf(ctx: Context): object | undefined
-    }
-    const session = sessions.sessionOf(owner) as { uploadFile?: (...input: unknown[]) => Promise<unknown> } | undefined
+async function bench(maxConcurrentFileUploads = 2) {
+  const runtime = await SlotTestRuntime.create()
+  runtime.fileUpload.available = true
+  runtime.fileUpload.upload = (owner: Context, ...args: unknown[]) => {
+    const session = runtime.sessions.sessionOf(owner) as {
+      uploadFile?: (...input: unknown[]) => Promise<unknown>
+    } | undefined
     if (session?.uploadFile === undefined) throw new Error('test file upload has no Session override')
     return session.uploadFile(...args)
   }
-}
-
-async function bench(maxConcurrentFileUploads = 2) {
-  const runtime = await SlotTestRuntime.create()
-  const uploadFiber = runtime.ctx.plugin(TestFileUpload)
-  await uploadFiber.await()
   const prompt = vi.fn((
     _content?: unknown, _mode?: unknown, _signal?: AbortSignal, _rpcId?: string,
   ) => Promise.resolve({ ok: true as const, value: { accepted: true as const } }))

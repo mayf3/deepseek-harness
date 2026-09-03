@@ -42,15 +42,13 @@ async function bench() {
     },
   }))
   const uploads = new Map<SessionId, (...args: unknown[]) => Promise<unknown>>([[ROOT, rootUpload]])
-  runtime.ctx.provide('fileUpload', {
-    available: true,
-    upload: (owner: Context, ...args: unknown[]) => {
-      const id = runtime.sessions.scopeOf(owner)
-      const upload = id === undefined ? undefined : uploads.get(id)
-      if (upload === undefined) throw new Error('test file upload has no Agent-scope fixture')
-      return upload(...args)
-    },
-  } as never)
+  runtime.fileUpload.available = true
+  runtime.fileUpload.upload = (owner: Context, ...args: unknown[]) => {
+    const id = runtime.sessions.scopeOf(owner)
+    const upload = id === undefined ? undefined : uploads.get(id)
+    if (upload === undefined) throw new Error('test file upload has no Agent-scope fixture')
+    return upload(...args)
+  }
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const connectWorkspace = vi.fn(async () => ROOT)
   runtime.ctx.provide('uiWorkspace', { connectWorkspace } as never)
