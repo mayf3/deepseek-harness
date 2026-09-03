@@ -28,7 +28,7 @@ import type {
   SessionId,
   SessionSeqCursor,
 } from '@deepseek-ai/dsh-session/types'
-import { SessionSeq } from '@deepseek-ai/dsh-session/types'
+import { SESSION_FORMAT_VERSION, SessionSeq } from '@deepseek-ai/dsh-session/types'
 import type { JsonValue } from '@deepseek-ai/dsh-util-values'
 import type { TodoItem } from '@deepseek-ai/dsh-tool-todo/client'
 // Type-only: the brand constructor is host-side; the fixture casts at its
@@ -3328,7 +3328,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       yield {
         type: 'snapshot',
         header: {
-          version: 2,
+          version: SESSION_FORMAT_VERSION,
           id: sessionId,
           createdAt: summary.updatedAt,
           ...(summary.cwd === undefined ? {} : { cwd: summary.cwd }),

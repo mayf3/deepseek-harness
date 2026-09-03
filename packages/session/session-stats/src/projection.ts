@@ -133,7 +133,7 @@ function usageOutputTokens(usage: unknown): number | null {
 /** The `sessionStats` unit registered on `ctx.sessionProjections` (exported for the unit spec). */
 export const sessionStatsProjectionDefinition = {
   key: 'sessionStats',
-  stateVersion: 2,
+  stateVersion: 1,
   stateSchema: sessionStatsStateSchema,
   init: () => ({
     turns: 0,

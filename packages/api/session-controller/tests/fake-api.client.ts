@@ -28,6 +28,7 @@ import {
   type RemoteStreamOptions,
 } from '@deepseek-ai/dsh-api-gateway/client'
 import type { SessionRemotes } from '../src/client/sessions/remotes.ts'
+import { SESSION_FORMAT_VERSION } from '@deepseek-ai/dsh-session/types'
 import { historyRecordLastSeq } from '../src/client/sessions/history-records.ts'
 
 const AVAILABLE_STREAM_CONNECTION = {
@@ -392,7 +393,7 @@ export class FakeApiClient {
       yield {
         type: 'snapshot',
         header: {
-          version: 2,
+          version: SESSION_FORMAT_VERSION,
           id: sessionId,
           createdAt: 0,
           isSeeded: false,
