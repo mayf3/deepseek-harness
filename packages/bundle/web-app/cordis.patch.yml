@@ -208,9 +208,6 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
-    - id: ui-settings-plugin-inventory
-      name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
-
     # Plugin management: install, enable, disable, retry, and compose the
     # profile's packages. Without a profile runtime it reports itself unavailable.
     - id: ui-settings-plugin-manager

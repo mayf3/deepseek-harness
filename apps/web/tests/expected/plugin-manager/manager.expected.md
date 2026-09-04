@@ -22,106 +22,111 @@
   - tablist "插件视图":
     - tab "插件配置"
     - tab "插件管理" [selected]
-    - tab "插件列表"
   - tabpanel "插件管理":
+    - paragraph: 插件包整体启停；插件安装后可加入到某个预设。
     - button "刷新"
     - button "添加插件"
-    - heading "全局插件" [level=3]
-    - paragraph: 按包安装与启停；启用的 bundle 对系统与所有会话生效 · 2 个
+    - heading "已安装" [level=3]
+    - text: 2 个
+    - paragraph: 对所有会话生效的插件包，以及可加入预设的插件
     - list:
       - listitem:
-        - text: 示例组合包 第三方 Bundle 已停用 @fixture/bundle · 0.0.1
+        - text: "示例组合包 插件包 已停用 Web e2e fixture: a bundle whose one row is an inert plugin."
+        - button "卸载 示例组合包": 卸载
         - switch "启用 示例组合包"
         - button "展开 示例组合包":
           - img
       - listitem:
-        - text: 示例插件 第三方 插件模块 按行添加 @fixture/plain-plugin · 0.0.1
+        - text: "示例插件 插件 Web e2e fixture: a plain plugin module with no bundle, added to a composition per row."
+        - button "卸载 示例插件": 卸载
+        - button "加入到…"
         - button "展开 示例插件":
           - img
     - heading "会话插件" [level=3]
     - button "选择要管理的 Agent 预设":
       - text: 标准模式（默认）
       - img
-    - paragraph: 按 Agent 预设组成；这里的改动只写入该预设的用户补丁层
+    - paragraph: 这个预设的会话会用到的插件；改动只影响它
     - list:
       - listitem:
-        - text: persona @deepseek-ai/dsh-persona
-        - switch "启用行 persona" [checked]
+        - text: 人设 助手的身份与语气
+        - switch "启用 人设" [checked]
       - listitem:
-        - text: agent-instructions @deepseek-ai/dsh-agent-instructions
-        - switch "启用行 agent-instructions" [checked]
+        - text: 项目指令 读取 AGENTS.md 等项目说明
+        - switch "启用 项目指令" [checked]
       - listitem:
-        - text: tool-bash @deepseek-ai/dsh-tool-bash
-        - switch "启用行 tool-bash" [checked]
+        - text: 终端 运行 shell 命令
+        - switch "启用 终端" [checked]
       - listitem:
-        - text: tool-pwsh @deepseek-ai/dsh-tool-pwsh 组合停用
-        - switch "启用行 tool-pwsh"
+        - text: PowerShell 终端 未启用 在 Windows 上运行 PowerShell
+        - switch "启用 PowerShell 终端" [disabled]
       - listitem:
-        - text: tool-fs @deepseek-ai/dsh-tool-fs
-        - switch "启用行 tool-fs" [checked]
+        - text: 文件读写 读取、创建和修改文件
+        - switch "启用 文件读写" [checked]
       - listitem:
-        - text: tool-fs-search @deepseek-ai/dsh-tool-fs-search
-        - switch "启用行 tool-fs-search" [checked]
+        - text: 文件搜索 按名称和内容查找文件
+        - switch "启用 文件搜索" [checked]
       - listitem:
-        - text: tool-jobs @deepseek-ai/dsh-tool-jobs
-        - switch "启用行 tool-jobs" [checked]
+        - text: 后台任务 启动和查看长时间运行的命令
+        - switch "启用 后台任务" [checked]
       - listitem:
-        - text: skill-filesystem @deepseek-ai/dsh-skill-filesystem
-        - switch "启用行 skill-filesystem" [checked]
+        - text: 技能 从本地目录加载技能
+        - switch "启用 技能" [checked]
       - listitem:
-        - text: tool-skill @deepseek-ai/dsh-tool-skill
-        - switch "启用行 tool-skill" [checked]
+        - text: 技能调用 让助手调用技能
+        - switch "启用 技能调用" [checked]
       - listitem:
-        - text: command-goal @deepseek-ai/dsh-command-goal
-        - switch "启用行 command-goal" [checked]
+        - text: 目标命令 /goal 命令
+        - switch "启用 目标命令" [checked]
       - listitem:
-        - text: tool-goal @deepseek-ai/dsh-tool-goal
-        - switch "启用行 tool-goal" [checked]
+        - text: 目标 记录并跟踪当前目标
+        - switch "启用 目标" [checked]
       - listitem:
-        - text: plan-mode @deepseek-ai/dsh-plan-mode
-        - switch "启用行 plan-mode" [checked]
+        - text: 计划模式 先规划再动手
+        - switch "启用 计划模式" [checked]
       - listitem:
-        - text: compaction-basic @deepseek-ai/dsh-compaction-basic
-        - switch "启用行 compaction-basic" [checked]
+        - text: 上下文压缩 对话过长时自动整理
+        - switch "启用 上下文压缩" [checked]
       - listitem:
-        - text: command-compact @deepseek-ai/dsh-command-compact
-        - switch "启用行 command-compact" [checked]
+        - text: 压缩命令 /compact 命令
+        - switch "启用 压缩命令" [checked]
       - listitem:
-        - text: tool-result-pruner @deepseek-ai/dsh-compaction-tool-result-pruner
-        - switch "启用行 tool-result-pruner" [checked]
+        - text: 工具结果裁剪 丢弃过时的工具输出
+        - switch "启用 工具结果裁剪" [checked]
       - listitem:
-        - text: tool-subagent-control @deepseek-ai/dsh-tool-subagent-control
-        - switch "启用行 tool-subagent-control" [checked]
+        - text: 子代理控制 查看和管理子代理
+        - switch "启用 子代理控制" [checked]
       - listitem:
-        - text: tool-subagent-list-agents @deepseek-ai/dsh-tool-subagent-control/list-agents
-        - switch "启用行 tool-subagent-list-agents" [checked]
+        - text: 子代理列表 列出正在运行的子代理
+        - switch "启用 子代理列表" [checked]
       - listitem:
-        - text: tool-subagent @deepseek-ai/dsh-tool-subagent
-        - switch "启用行 tool-subagent" [checked]
+        - text: 子代理 把任务分派给并行的助手
+        - switch "启用 子代理" [checked]
       - listitem:
-        - text: tool-subagent-fork @deepseek-ai/dsh-tool-subagent
-        - switch "启用行 tool-subagent-fork" [checked]
+        - text: 分支子代理 复制当前上下文继续任务
+        - switch "启用 分支子代理" [checked]
       - listitem:
-        - text: tool-subagent-codex @deepseek-ai/dsh-tool-subagent 组合停用
-        - switch "启用行 tool-subagent-codex"
+        - text: Codex 子代理 未启用 把任务交给 Codex 执行
+        - switch "启用 Codex 子代理" [disabled]
       - listitem:
-        - text: tool-subagent-claude-code @deepseek-ai/dsh-tool-subagent 组合停用
-        - switch "启用行 tool-subagent-claude-code"
+        - text: Claude Code 子代理 未启用 把任务交给 Claude Code 执行
+        - switch "启用 Claude Code 子代理" [disabled]
       - listitem:
-        - text: workflow-worker-thread @deepseek-ai/dsh-workflow-worker-thread
-        - switch "启用行 workflow-worker-thread" [checked]
+        - text: 工作流引擎 在后台线程运行工作流
+        - switch "启用 工作流引擎" [checked]
       - listitem:
-        - text: tool-workflow @deepseek-ai/dsh-tool-workflow
-        - switch "启用行 tool-workflow" [checked]
+        - text: 工作流 编排多步骤任务
+        - switch "启用 工作流" [checked]
       - listitem:
-        - text: tool-ralph @deepseek-ai/dsh-tool-ralph
-        - switch "启用行 tool-ralph" [checked]
+        - text: Ralph 循环 反复执行直到完成
+        - switch "启用 Ralph 循环" [checked]
       - listitem:
-        - text: tool-ask-user @deepseek-ai/dsh-tool-ask-user
-        - switch "启用行 tool-ask-user" [checked]
+        - text: 向用户提问 需要时向你确认
+        - switch "启用 向用户提问" [checked]
       - listitem:
-        - text: tool-todo @deepseek-ai/dsh-tool-todo
-        - switch "启用行 tool-todo" [checked]
+        - text: 待办 维护任务清单
+        - switch "启用 待办" [checked]
       - listitem:
-        - text: tool-web @deepseek-ai/dsh-tool-web
-        - switch "启用行 tool-web" [checked]
+        - text: 网页 搜索和抓取网页
+        - switch "启用 网页" [checked]
+    - paragraph: 改动即时保存；已经打开的会话继续用原来的组合，新会话生效。

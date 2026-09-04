@@ -12,6 +12,7 @@ import type {
   PluginEnableResult,
   PluginInstallLogChunk,
   PluginInstallRejection,
+  PluginInstallResult,
   PluginInventorySnapshot,
   PluginPackageView,
   PluginRowTarget,
@@ -50,19 +51,24 @@ export interface InstallState {
   readonly log: string
   /** Dependencies the last run added and kept, once it finished. */
   readonly installed: readonly string[]
+  /** Bundles the run enabled at once. */
+  readonly enabled: readonly string[]
+  /** Bundles the run installed and left off. */
+  readonly installedOnly: readonly string[]
+  /** Plugin modules the run installed, which join a composition per row. */
+  readonly plain: readonly string[]
   /** Packages pnpm added that the Host removed again, each with its reason. */
   readonly removed: readonly PluginInstallRejection[]
   /** The Host's refusal, when the run failed before or after pnpm. */
   readonly failure: { readonly code: string; readonly reason: string } | null
 }
 
-/** A destructive action waiting for the user's acknowledgement. */
+/** A destructive action waiting for the user's confirmation. */
 export interface ConfirmState {
   readonly action: 'uninstall' | 'disable'
   readonly packageName: string
   /** What the action would strand; undefined while the Host is asked. */
   readonly dependents: PluginDependents | undefined
-  readonly acknowledged: boolean
 }
 
 /** What the tab renders. */
@@ -71,6 +77,8 @@ export interface PluginManagerState {
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
   readonly packages: readonly PluginPackageView[]
   readonly presets: readonly PresetGroup[]
+  /** Module names of the rows the host tree carries, for the **Add to…** menu's "added" marks. */
+  readonly globalModules: readonly string[]
   /** The preset whose composition the session group shows; null picks the default. */
   readonly selectedPreset: string | null
   /** Package names and row keys with an action crossing the wire. */
@@ -101,7 +109,6 @@ export interface PluginManagerFace {
   retry: (packageName: string) => void
   /** Ask before removing a package from the profile. */
   uninstall: (packageName: string) => void
-  acknowledgeConfirm: (acknowledged: boolean) => void
   confirm: () => void
   cancelConfirm: () => void
   /** Add a row naming one of a package's modules — by its declared name, `.` for the main export — to a user layer. */
@@ -144,7 +151,9 @@ export function rowKey(target: PluginRowTarget, rowId: string): string {
   return `${target.kind === 'global' ? 'global' : `preset:${target.preset}`}:${rowId}`
 }
 
-const IDLE_INSTALL: InstallState = { open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], removed: [], failure: null }
+const IDLE_INSTALL: InstallState = {
+  open: false, spec: '', enable: true, phase: 'idle', log: '', installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null,
+}
 
 /** Reads and mutates the profile's plugins through the `plugins` and `pluginInventory` Remotes. */
 export class PluginManagerController {
@@ -165,7 +174,7 @@ export class PluginManagerController {
     private readonly presetName: (preset: PresetGroup) => string,
   ) {
     this.store = createSnapshotStore<PluginManagerState>({
-      status: 'idle', packages: [], presets: [], selectedPreset: null, busy: [], notice: null,
+      status: 'idle', packages: [], presets: [], globalModules: [], selectedPreset: null, busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null,
     })
   }
@@ -208,10 +217,6 @@ export class PluginManagerController {
         })
       },
       uninstall: (packageName) => { void this.askConfirm('uninstall', packageName) },
-      acknowledgeConfirm: (acknowledged) => {
-        const confirm = this.getSnapshot().confirm
-        if (confirm !== null) this.patch({ confirm: { ...confirm, acknowledged } })
-      },
       confirm: () => { void this.confirm() },
       cancelConfirm: () => { this.pendingConfirm = undefined; this.patch({ confirm: null }) },
       addRow: (packageName, declaredName, target) => {
@@ -282,6 +287,7 @@ export class PluginManagerController {
           status: 'ready',
           packages: packages.value,
           presets: inventory.ok ? inventory.value.agentPresets ?? [] : this.getSnapshot().presets,
+          globalModules: inventory.ok ? inventory.value.entries.map(entry => entry.moduleName) : this.getSnapshot().globalModules,
         })
       } while (this.shouldRerun())
     } finally {
@@ -306,7 +312,8 @@ export class PluginManagerController {
   /**
    * Open the confirmation for a destructive action, asking the Host what it
    * would strand. A disable with nothing depending on the bundle needs no
-   * confirmation and runs at once.
+   * confirmation and runs at once; every other confirmation runs its action
+   * through `confirm` once the dependents are listed.
    */
   private async askConfirm(action: ConfirmState['action'], packageName: string): Promise<void> {
     const perform = action === 'uninstall'
@@ -318,7 +325,7 @@ export class PluginManagerController {
         this.effect(await this.ctx.remote.plugins.disable(packageName), packageName)
       }
     this.pendingConfirm = () => this.run(packageName, { packageName }, perform)
-    this.patch({ confirm: { action, packageName, dependents: undefined, acknowledged: false } })
+    this.patch({ confirm: { action, packageName, dependents: undefined } })
     const dependents = await this.ctx.remote.plugins.dependents(packageName)
     // Reads run beside this ask (the Host announces changes while it is
     // open), so liveness is the confirmation still being this one.
@@ -344,14 +351,14 @@ export class PluginManagerController {
     const install = this.getSnapshot().install
     const spec = install.spec.trim()
     if (install.phase === 'running' || spec === '') return
-    this.patchInstall({ phase: 'running', log: '', installed: [], removed: [], failure: null })
+    this.patchInstall({ phase: 'running', log: '', installed: [], enabled: [], installedOnly: [], plain: [], removed: [], failure: null })
     // The Host announces `plugins/changed` while the run is still on the
     // wire — enabling recomposes before the call answers — and every such
     // event reads again; those reads must not cancel the run's settlement.
     const result = await this.ctx.remote.plugins.add(spec, { enable: install.enable })
     if (this.disposed) return
     if (result.ok) {
-      this.patchInstall({ phase: 'done', installed: result.value.installed, removed: result.value.removed })
+      this.patchInstall({ phase: 'done', ...outcomeOf(result.value) })
     } else {
       // The Host's reason follows whatever streamed: pnpm's captured log when
       // no chunk arrived, else the refusal that followed a successful pnpm
@@ -409,6 +416,17 @@ export class PluginManagerController {
 
   private patchInstall(next: Partial<InstallState>): void {
     this.patch({ install: { ...this.getSnapshot().install, ...next } })
+  }
+}
+
+/** The lists one finished install run reports, as the dialog's state carries them. */
+function outcomeOf(result: PluginInstallResult): Pick<InstallState, 'installed' | 'enabled' | 'installedOnly' | 'plain' | 'removed'> {
+  return {
+    installed: result.installed,
+    enabled: result.enabled,
+    installedOnly: result.installedOnly,
+    plain: result.plain,
+    removed: result.removed,
   }
 }
 

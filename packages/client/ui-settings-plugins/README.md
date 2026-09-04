@@ -73,7 +73,6 @@ Saving writes staged fields through the client settings scope, which fences each
 These pages cover the settings base, the inventory tab, and the durable seams behind the cards.
 
 - [ui-settings](../ui-settings/README.md) — the domain base declaring `settings.plugins.tab` and the settings scope.
-- [ui-settings-plugin-inventory](../ui-settings-plugin-inventory/README.md) — the read-only Plugin list tab in the same section.
 - [settings](../../settings/README.md) — the durable user-settings seam and its file provider.
 - [credentials](../../credentials/README.md) — the credential-reference seam secret fields write through.
 - [ui-settings-general](../ui-settings-general/README.md) — the settings shell hosting this section.

@@ -1,18 +1,21 @@
 /**
- * The Manage plugins tab: the profile's packages as cards with their switch,
- * rows, and actions; the selected agent preset's composition with per-row
- * switches; the install dialog streaming pnpm's output; and the confirmation
- * a destructive action waits on, listing what it would strand.
+ * The Manage plugins tab: the profile's installed packages as cards — a
+ * plugin pack with its switch, a plugin with its **Add to…** menu, uninstall
+ * beside the switch — with the built-in packs folded away; the selected
+ * agent preset's composition as a grid of cards with one switch each; the
+ * install dialog streaming pnpm's output behind a fold; and the confirmation
+ * a destructive action waits on, naming what still uses the package. Entry
+ * ids, module names, and probe facts stay off the page.
  */
 
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useId, useState, type ReactNode } from 'react'
 import clsx from 'clsx'
-import type { PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
+import type { PluginInstallRejection, PluginPackageView, PluginRowTarget } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  Button, IconChevronDownOutline14, Menu, Modal,
+  Button, IconChevronDownOutline14, IconRefreshOutline16, Menu, Modal, type MenuItem,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { PluginManagerLocaleKey } from './locales.ts'
+import { zh, type PluginManagerLocaleKey } from './locales.ts'
 import type {
   ConfirmState, InstallState, ManagerNotice, PluginManagerFace, PresetGroup, PresetRow,
 } from './manager-store.ts'
@@ -37,26 +40,92 @@ const PHASE_KEYS = {
   unloading: 'rowPhaseUnloading',
 } satisfies Record<RowPhase, PluginManagerLocaleKey>
 
-const STATUS_KEYS = {
-  'running': 'statusRunning',
-  'partial': 'statusPartial',
-  'failed': 'statusFailed',
-  'disabled': 'statusDisabled',
-  'not-enableable': 'statusNotEnableable',
-  'restart-required': 'statusRestartRequired',
-  'plain': 'statusPlain',
-} satisfies Record<PluginPackageView['status'], PluginManagerLocaleKey>
+/** The four states a card shows; a `plain` package shows none. */
+type CardStatus = 'running' | 'disabled' | 'restart' | 'problem'
 
-const KIND_KEYS = {
-  bundle: 'bundleTag',
-  plugin: 'pluginTag',
-  library: 'libraryTag',
-} satisfies Record<PluginPackageView['kind'], PluginManagerLocaleKey>
+const STATUS_OF = {
+  'running': 'running',
+  'partial': 'problem',
+  'failed': 'problem',
+  'not-enableable': 'problem',
+  'disabled': 'disabled',
+  'restart-required': 'restart',
+  'plain': null,
+} satisfies Record<PluginPackageView['status'], CardStatus | null>
+
+const STATUS_KEYS = {
+  running: 'statusRunning',
+  disabled: 'statusDisabled',
+  restart: 'statusRestart',
+  problem: 'statusProblem',
+} satisfies Record<CardStatus, PluginManagerLocaleKey>
+
+/** The scope every harness module is published under. */
+const FIRST_PARTY_SCOPE = '@deepseek-ai/'
 
 /** Compact a package name to what a person calls it. */
 function shortName(name: string): string {
   const unscoped = name.startsWith('@') ? name.slice(name.indexOf('/') + 1) : name
   return unscoped.replace(/^dsh-(?:host-|client-)?/, '')
+}
+
+/** The dictionary key for one slug, when the dictionary carries it. */
+function copyKey(kind: 'name' | 'desc', slug: string): PluginManagerLocaleKey | undefined {
+  const key = `${kind}.${slug}`
+  return key in zh ? key as PluginManagerLocaleKey : undefined
+}
+
+/**
+ * Display copy of one harness module: by the composition row id first (four
+ * subagent rows share one module), then by the unscoped module name without
+ * its `dsh-` prefix. Every `name.<slug>` key has its `desc.<slug>` partner.
+ * Undefined for a module outside the harness scope or one the dictionary
+ * does not name.
+ */
+function harnessCopy(t: Translate, moduleName: string, rowId: string | null): { title: string; description: string } | undefined {
+  if (!moduleName.startsWith(FIRST_PARTY_SCOPE)) return undefined
+  const slugs = [...rowId === null ? [] : [rowId], moduleName.slice(FIRST_PARTY_SCOPE.length).replace(/^dsh-/, '')]
+  for (const slug of slugs) {
+    const name = copyKey('name', slug)
+    if (name === undefined) continue
+    return { title: t(name), description: t(`desc.${slug}` as PluginManagerLocaleKey) }
+  }
+  return undefined
+}
+
+/** The installed package a module belongs to: the package itself or one of its subpaths. */
+function packageOf(moduleName: string, packages: readonly PluginPackageView[]): PluginPackageView | undefined {
+  return packages.find(pkg => moduleName === pkg.name || moduleName.startsWith(`${pkg.name}/`))
+}
+
+/** The row id a tree entry id ends in: what a user layer addresses. */
+function rowIdOf(entryId: string | null): string | null {
+  return entryId === null ? null : entryId.slice(entryId.lastIndexOf(':') + 1)
+}
+
+/** What a person calls one tree entry: its harness name, else its row id. */
+function rowLabel(t: Translate, entryId: string): string {
+  const id = rowIdOf(entryId) as string
+  const key = copyKey('name', id)
+  return key === undefined ? id : t(key)
+}
+
+/** What one preset row shows: a title, a one-liner, and whether it is third-party. */
+function presetRowCopy(
+  row: PresetRow, packages: readonly PluginPackageView[], t: Translate,
+): { title: string; description?: string; external: boolean } {
+  const pkg = packageOf(row.moduleName, packages)
+  if (pkg !== undefined) {
+    const addable = pkg.addable.find(entry => entry.moduleName === row.moduleName)
+    return {
+      title: addable?.title ?? pkg.title ?? shortName(pkg.name),
+      ...pkg.description === undefined ? {} : { description: pkg.description },
+      external: pkg.trust === 'external',
+    }
+  }
+  const harness = harnessCopy(t, row.moduleName, rowIdOf(row.entryId))
+  if (harness !== undefined) return { ...harness, external: false }
+  return { title: shortName(row.moduleName), description: row.moduleName, external: !row.moduleName.startsWith(FIRST_PARTY_SCOPE) }
 }
 
 /** The roster row shown when the switcher has no explicit choice. */
@@ -104,13 +173,64 @@ function Switch({ checked, label, disabled, title, onChange }: {
   )
 }
 
-/** One package: its header with the switch, and its details once expanded. */
-function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, onSetEnabled, onRetry, onUninstall, onAddRow }: {
+/** A quiet text action in a card head: grey until hovered. */
+function QuietButton({ label, disabled, danger, onClick, children }: {
+  readonly label: string
+  readonly disabled: boolean
+  readonly danger?: boolean
+  readonly onClick: () => void
+  readonly children: ReactNode
+}): ReactNode {
+  return (
+    <button
+      type="button"
+      className={css.quietButton}
+      data-danger={danger === true ? 'true' : undefined}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** One **Add to…** choice, carried through the menu as its item id. */
+interface AddChoice {
+  readonly declaredName: string
+  readonly target: PluginRowTarget
+}
+
+/** The **Add to…** menu entries of one addable module; each id carries the choice it makes. */
+function addTargets(
+  entry: PluginPackageView['addable'][number], presets: readonly PresetGroup[], globalModules: readonly string[],
+  t: Translate, presetName: (preset: PresetGroup) => string,
+): MenuItem[] {
+  const choice = (target: PluginRowTarget): string => JSON.stringify({ declaredName: entry.declaredName, target } satisfies AddChoice)
+  const inGlobal = globalModules.includes(entry.moduleName)
+  return [
+    { id: choice({ kind: 'global' }), label: t(inGlobal ? 'addToGlobalAdded' : 'addToGlobal'), disabled: inGlobal },
+    ...presets.map((preset) => {
+      const added = preset.rows.some(row => row.source === 'user' && row.moduleName === entry.moduleName)
+      return {
+        id: choice({ kind: 'preset', preset: preset.id }),
+        label: t(added ? 'addToPresetAdded' : 'addToPreset', { name: presetName(preset) }),
+        disabled: added || preset.broken !== undefined,
+      }
+    }),
+  ]
+}
+
+/** One managed package: its head with the switch or the add menu, and its details once expanded. */
+function PackageCard({
+  pkg, t, busy, open, presets, globalModules, presetName, onToggleOpen, onSetEnabled, onRetry, onUninstall, onAddRow,
+}: {
   readonly pkg: PluginPackageView
   readonly t: Translate
   readonly busy: boolean
   readonly open: boolean
   readonly presets: readonly PresetGroup[]
+  readonly globalModules: readonly string[]
   readonly presetName: (preset: PresetGroup) => string
   readonly onToggleOpen: () => void
   readonly onSetEnabled: (enabled: boolean) => void
@@ -118,17 +238,22 @@ function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, on
   readonly onUninstall: () => void
   readonly onAddRow: (declaredName: string, target: PluginRowTarget) => void
 }): ReactNode {
-  const [addMenu, setAddMenu] = useState<string | null>(null)
+  const [addMenu, setAddMenu] = useState(false)
   const title = pkg.title ?? shortName(pkg.name)
   const bundle = pkg.kind === 'bundle'
-  const locked = pkg.trust === 'builtin'
+  const status: CardStatus | null = bundle ? STATUS_OF[pkg.status] : pkg.reason === undefined ? null : 'problem'
+  const kindKey: PluginManagerLocaleKey = bundle ? 'kindBundle' : pkg.kind === 'plugin' ? 'kindPlugin' : 'kindLibrary'
   const detailId = `plugin-package-${encodeURIComponent(pkg.name)}`
-  const targets = [
-    { id: 'global', label: t('addToGlobal') },
-    ...presets.map(preset => ({ id: `preset:${preset.id}`, label: t('addToPreset', { name: presetName(preset) }) })),
-  ]
-  const targetOf = (id: string): PluginRowTarget =>
-    id === 'global' ? { kind: 'global' } : { kind: 'preset', preset: id.slice('preset:'.length) }
+  const addable = pkg.addable.filter(entry => entry.ok)
+  const [single] = addable
+  const menuItems: MenuItem[] = single !== undefined && addable.length === 1
+    ? addTargets(single, presets, globalModules, t, presetName)
+    : addable.map(entry => ({
+      id: entry.moduleName,
+      label: entry.title ?? entry.declaredName,
+      submenu: addTargets(entry, presets, globalModules, t, presetName),
+    }))
+  const retryable = bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
   return (
     <li
       className={css.card}
@@ -138,27 +263,59 @@ function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, on
     >
       <div className={css.cardHead}>
         <div className={css.cardMain}>
-          <div className={css.cardTitleRow}>
+          <div className={css.titleRow}>
             <span className={css.cardTitle}>{title}</span>
-            <Tag kind={pkg.trust}>{t(pkg.trust === 'builtin' ? 'builtinTag' : 'externalTag')}</Tag>
-            <Tag kind={pkg.kind}>{t(KIND_KEYS[pkg.kind])}</Tag>
-            {pkg.stage === 'boot' ? <Tag kind="boot">{t('stageBootTag')}</Tag> : null}
-            <Tag kind={pkg.status}>{t(STATUS_KEYS[pkg.status])}</Tag>
+            <Tag kind="kind">{t(kindKey)}</Tag>
+            {status === null ? null : <Tag kind={status}>{t(STATUS_KEYS[status])}</Tag>}
           </div>
-          <span className={css.cardName}>{pkg.name}{pkg.version === undefined ? '' : ` · ${pkg.version}`}</span>
+          {pkg.description === undefined ? null : <span className={css.cardDesc}>{pkg.description}</span>}
         </div>
         <div className={css.cardEnd}>
+          {retryable
+            ? <QuietButton label={t('retryPackage')} disabled={busy} onClick={onRetry}>{t('retryPackage')}</QuietButton>
+            : null}
+          {pkg.installed
+            ? <QuietButton label={t('uninstallLabel', { name: title })} disabled={busy} danger onClick={onUninstall}>{t('uninstall')}</QuietButton>
+            : null}
           {bundle
             ? (
               <Switch
                 checked={pkg.enabled}
                 label={t('enableToggle', { name: title })}
-                disabled={busy || locked || (!pkg.enabled && pkg.status === 'not-enableable')}
-                {...locked ? { title: t('builtinLocked') } : {}}
+                disabled={busy || (!pkg.enabled && pkg.status === 'not-enableable')}
                 onChange={onSetEnabled}
               />
             )
             : null}
+          {menuItems.length === 0
+            ? null
+            : (
+              <Menu
+                open={addMenu}
+                onClose={() => { setAddMenu(false) }}
+                items={menuItems}
+                onSelect={(id) => {
+                  setAddMenu(false)
+                  // Only a leaf carries a choice; a submenu parent's id is its module name.
+                  const choice = JSON.parse(id) as AddChoice
+                  onAddRow(choice.declaredName, choice.target)
+                }}
+                align="end"
+                portal
+                anchor={(
+                  <button
+                    type="button"
+                    className={css.addButton}
+                    aria-haspopup="menu"
+                    aria-expanded={addMenu}
+                    disabled={busy}
+                    onClick={() => { setAddMenu(current => !current) }}
+                  >
+                    {t('addTo')}
+                  </button>
+                )}
+              />
+            )}
           <button
             type="button"
             className={css.iconButton}
@@ -174,34 +331,28 @@ function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, on
       {open
         ? (
           <div className={css.cardBody} id={detailId}>
-            {pkg.description === undefined ? null : <p className={css.cardDescription}>{pkg.description}</p>}
             {pkg.reason === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {pkg.reason}</p>}
             <dl className={css.facts}>
-              <dt>{t('packageLabel')}</dt>
-              <dd>{pkg.name}</dd>
-              {pkg.enginesDsh === undefined ? null : <><dt>{t('enginesLabel')}</dt><dd>{pkg.enginesDsh}</dd></>}
-              <dt>{t('cordisLabel')}</dt>
-              <dd>{t(pkg.cordisSameCopy === null ? 'cordisUnknown' : pkg.cordisSameCopy ? 'cordisSame' : 'cordisForeign')}</dd>
-              {pkg.probedAt === undefined ? null : <><dt>{t('probedAtLabel')}</dt><dd>{pkg.probedAt}</dd></>}
-              {pkg.overrides.length === 0 ? null : <><dt>{t('overridesLabel')}</dt><dd>{pkg.overrides.join(', ')}</dd></>}
+              {pkg.version === undefined ? null : <><dt>{t('versionLabel')}</dt><dd>{pkg.version}</dd></>}
+              <dt>{t('sourceLabel')}</dt>
+              <dd>{t('sourceExternal')}</dd>
             </dl>
             {bundle
               ? (
                 <>
-                  <p className={css.groupSub}>{t('rowsLabel')}</p>
+                  <p className={css.subLabel}>{t('partsLabel')}</p>
                   {pkg.rows.length === 0
-                    ? <p className={css.status}>{t('rowsEmpty')}</p>
+                    ? <p className={css.status}>{t('partsEmpty')}</p>
                     : (
-                      <ul className={css.rows}>
+                      <ul className={css.parts}>
                         {pkg.rows.map(row => (
-                          <li key={row.entryId} className={css.row} data-plugin-row={row.entryId}>
+                          <li key={row.entryId} className={css.part} data-plugin-row={row.entryId}>
                             {row.enabled && row.phase !== null ? <PhaseDot phase={row.phase} t={t} /> : null}
-                            <span className={css.rowId}>{row.rowId}</span>
-                            <span className={css.rowModule}>{row.moduleName}</span>
+                            <span className={css.partName}>{row.rowId}</span>
                             {row.enabled
                               ? null
-                              : <Tag kind="disabled">{t(row.disabledBy === 'user' ? 'rowDisabledByUser' : 'rowDisabledByComposition')}</Tag>}
-                            {row.failure === undefined ? null : <p className={css.rowFailure}>{row.failure.message}</p>}
+                              : <Tag kind="disabled">{t(row.disabledBy === 'user' ? 'partDisabledByUser' : 'partDisabledByComposition')}</Tag>}
+                            {row.failure === undefined ? null : <p className={css.partFailure}>{row.failure.message}</p>}
                           </li>
                         ))}
                       </ul>
@@ -209,61 +360,6 @@ function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, on
                 </>
               )
               : null}
-            {pkg.addable.length === 0
-              ? null
-              : (
-                <>
-                  <p className={css.groupSub}>{t('addableLabel')}</p>
-                  <ul className={css.rows}>
-                    {pkg.addable.map(entry => (
-                      <li key={entry.moduleName} className={css.row} data-plugin-addable={entry.moduleName}>
-                        <span className={css.rowId}>{entry.title ?? entry.declaredName}</span>
-                        <span className={css.rowModule}>{entry.moduleName}</span>
-                        {entry.ok
-                          ? (
-                            <Menu
-                              open={addMenu === entry.moduleName}
-                              onClose={() => { setAddMenu(null) }}
-                              items={targets}
-                              onSelect={(id) => {
-                                setAddMenu(null)
-                                onAddRow(entry.declaredName, targetOf(id))
-                              }}
-                              align="end"
-                              portal
-                              anchor={(
-                                <button
-                                  type="button"
-                                  className={css.linkButton}
-                                  aria-haspopup="menu"
-                                  aria-expanded={addMenu === entry.moduleName}
-                                  disabled={busy}
-                                  onClick={() => { setAddMenu(current => current === entry.moduleName ? null : entry.moduleName) }}
-                                >
-                                  {t('addTo')}
-                                </button>
-                              )}
-                            />
-                          )
-                          : <Tag kind="failed">{t('addableNotOk')}</Tag>}
-                        {entry.error === undefined ? null : <p className={css.rowFailure}>{entry.error}</p>}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            <div className={css.actions}>
-              {bundle && pkg.enabled && (pkg.status === 'failed' || pkg.status === 'partial')
-                ? <button type="button" className={css.linkButton} disabled={busy} onClick={onRetry}>{t('retryPackage')}</button>
-                : null}
-              {pkg.installed && !locked
-                ? (
-                  <button type="button" className={css.linkButton} data-danger="true" disabled={busy} onClick={onUninstall}>
-                    {t('uninstall')}
-                  </button>
-                )
-                : null}
-            </div>
           </div>
         )
         : null}
@@ -271,60 +367,107 @@ function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, on
   )
 }
 
-/** One row of the selected preset's composition, with its switch. */
-function PresetRowItem({ preset, row, t, busy, onSetDisabled, onRemove }: {
+/** One built-in package: shown on request, its pack switch locked, never expanded. */
+function BuiltinCard({ pkg, t }: { readonly pkg: PluginPackageView; readonly t: Translate }): ReactNode {
+  const title = pkg.title ?? shortName(pkg.name)
+  const status = pkg.kind === 'bundle' ? STATUS_OF[pkg.status] : null
+  return (
+    <li className={css.card} data-plugin-package={pkg.name} data-plugin-status={pkg.status}>
+      <div className={clsx(css.cardHead, css.cardHeadStatic)}>
+        <div className={css.cardMain}>
+          <div className={css.titleRow}>
+            <span className={css.cardTitle}>{title}</span>
+            <Tag kind="kind">{t(pkg.kind === 'bundle' ? 'kindBuiltinBundle' : pkg.kind === 'plugin' ? 'kindPlugin' : 'kindLibrary')}</Tag>
+            {status === null ? null : <Tag kind={status}>{t(STATUS_KEYS[status])}</Tag>}
+          </div>
+          <span className={css.cardDesc}>{pkg.description ?? pkg.name}</span>
+        </div>
+        {pkg.kind === 'bundle'
+          ? (
+            <div className={css.cardEnd}>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={pkg.enabled}
+                aria-label={t('enableToggle', { name: title })}
+                title={t('builtinLocked')}
+                className={clsx(css.switch, pkg.enabled && css.switchOn)}
+                disabled
+              >
+                <span className={css.thumb} />
+              </button>
+            </div>
+          )
+          : null}
+      </div>
+    </li>
+  )
+}
+
+/** One row of the selected preset's composition, as a card with its switch. */
+function PresetCard({ preset, row, packages, t, busy, onSetDisabled, onRemove }: {
   readonly preset: PresetGroup
   readonly row: PresetRow
+  readonly packages: readonly PluginPackageView[]
   readonly t: Translate
   readonly busy: boolean
   readonly onSetDisabled: (rowId: string, disabled: boolean) => void
   readonly onRemove: (rowId: string) => void
 }): ReactNode {
-  const id = row.entryId
+  const id = rowIdOf(row.entryId)
+  const copy = presetRowCopy(row, packages, t)
   const failed = row.fiberPhase === 'failed'
-  const enabled = row.enabled === true
+  const off = row.enabled === false
+  const lockedOff = off && row.disabledBy === 'composition'
+  const stateTag = failed
+    ? <Tag kind="problem">{t('rowStateFailed')}</Tag>
+    : off
+      ? <Tag kind="disabled">{t(row.disabledBy === 'user' ? 'rowStateDisabledByUser' : 'rowStateDisabledByComposition')}</Tag>
+      : row.enabled === 'conditional' ? <Tag kind="muted">{t('rowStateConditional')}</Tag> : null
   return (
-    <li className={css.row} data-preset-row={id ?? undefined} data-plugin-source={row.source}>
-      {enabled && !failed && row.fiberPhase !== null ? <PhaseDot phase={row.fiberPhase} t={t} /> : null}
-      <span className={css.rowId}>{id ?? shortName(row.moduleName)}</span>
-      <span className={css.rowModule}>{row.moduleName}</span>
-      {row.source === 'user' ? <Tag kind="user">{t('rowSourceUser')}</Tag> : null}
-      {failed ? <Tag kind="failed">{t('rowPhaseFailed')}</Tag> : null}
-      {row.enabled === 'conditional' ? <Tag kind="conditional">{t('rowConditional')}</Tag> : null}
-      {row.enabled === false
-        ? <Tag kind="disabled">{t(row.disabledBy === 'user' ? 'rowDisabledByUser' : 'rowDisabledByComposition')}</Tag>
-        : null}
-      {id === null
-        ? <span className={css.rowModule} title={t('rowNoId')}>{t('rowNoId')}</span>
-        : (
-          <>
-            <Switch
-              checked={row.enabled !== false}
-              label={t('rowToggle', { id })}
-              disabled={busy || preset.broken !== undefined}
-              onChange={(checked) => { onSetDisabled(id, !checked) }}
-            />
-            {row.source === 'user'
-              ? (
-                <button
-                  type="button"
-                  className={css.linkButton}
-                  data-danger="true"
-                  aria-label={t('rowRemove', { id })}
-                  disabled={busy}
-                  onClick={() => { onRemove(id) }}
-                >
-                  {t('rowRemove', { id: '' }).trim()}
-                </button>
-              )
-              : null}
-          </>
-        )}
+    <li className={css.presetCard} data-preset-row={row.entryId ?? undefined} data-plugin-source={row.source}>
+      <div className={css.cardMain}>
+        <div className={css.titleRow}>
+          <span className={css.cardTitle}>{copy.title}</span>
+          {copy.external ? <Tag kind="external">{t('thirdPartyTag')}</Tag> : null}
+          {stateTag}
+        </div>
+        {copy.description === undefined ? null : <span className={css.cardDesc}>{copy.description}</span>}
+      </div>
+      <div className={css.cardEnd}>
+        {id === null
+          ? <span className={css.rowNote} title={t('rowNoId')}>{t('rowNoId')}</span>
+          : (
+            <>
+              {row.source === 'user'
+                ? (
+                  <QuietButton label={t('rowRemoveLabel', { name: copy.title })} disabled={busy} danger onClick={() => { onRemove(id) }}>
+                    {t('rowRemove')}
+                  </QuietButton>
+                )
+                : null}
+              <Switch
+                checked={row.enabled !== false}
+                label={t('rowToggle', { name: copy.title })}
+                disabled={busy || preset.broken !== undefined || lockedOff}
+                {...lockedOff ? { title: t('rowLockedByComposition') } : {}}
+                onChange={(checked) => { onSetDisabled(id, !checked) }}
+              />
+            </>
+          )}
+      </div>
     </li>
   )
 }
 
-/** The install dialog: the spec, the enable choice, and pnpm's output. */
+/** The sentence for one package the Host removed again after the install. */
+function removedText(entry: PluginInstallRejection, t: Translate): string {
+  return entry.reason.startsWith('row ')
+    ? t('installRemovedConflict', { name: entry.name, reason: entry.reason })
+    : t('installRemovedLibrary', { name: entry.name })
+}
+
+/** The install dialog: the spec, the enable choice, the run's progress, and pnpm's output behind a fold. */
 function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun }: {
   readonly install: InstallState
   readonly t: Translate
@@ -334,6 +477,17 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
   readonly onRun: () => void
 }): ReactNode {
   const running = install.phase === 'running'
+  const exampleId = useId()
+  const outcomes: string[] = install.phase !== 'done'
+    ? []
+    : install.installed.length === 0 && install.removed.length === 0
+      ? [t('installDoneNothing')]
+      : install.installed.map(name => t(
+        install.enabled.includes(name)
+          ? 'installDoneEnabled'
+          : install.installedOnly.includes(name) ? 'installDoneBundle' : install.plain.includes(name) ? 'installDonePlugin' : 'installDoneOther',
+        { name },
+      ))
   return (
     <Modal
       open={install.open}
@@ -344,9 +498,7 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
       footer={(
         <>
           <Button variant="outline" disabled={running} onClick={onClose}>{t(install.phase === 'idle' ? 'cancel' : 'installClose')}</Button>
-          <Button variant="primary" disabled={running || install.spec.trim() === ''} onClick={onRun}>
-            {t(running ? 'installRunning' : 'installRun')}
-          </Button>
+          <Button variant="primary" disabled={running || install.spec.trim() === ''} onClick={onRun}>{t('installRun')}</Button>
         </>
       )}
     >
@@ -357,85 +509,83 @@ function InstallDialog({ install, t, onClose, onEditSpec, onToggleEnable, onRun 
             type="text"
             value={install.spec}
             placeholder={t('installSpecPlaceholder')}
+            aria-describedby={exampleId}
             disabled={running}
             onChange={(event) => { onEditSpec(event.currentTarget.value) }}
           />
         </label>
+        <span id={exampleId} className={css.installExample}>{t('installExample')}</span>
         <label className={css.installOption}>
           <input type="checkbox" checked={install.enable} disabled={running} onChange={onToggleEnable} />
           <span>{t('installEnable')}</span>
         </label>
-        {install.phase === 'done'
-          ? (
-            <p className={css.status} role="status">
-              {install.installed.length === 0 ? t('installDoneNothing') : t('installDone', { names: install.installed.join(', ') })}
-            </p>
-          )
+        {running
+          ? <p className={css.progress} role="status"><span className={css.spinner} aria-hidden="true" />{t('installRunning', { spec: install.spec.trim() })}</p>
           : null}
-        {install.phase === 'done' && install.removed.length > 0
-          ? (
-            <ul className={css.removedList} aria-label={t('installRemovedLabel')}>
-              {install.removed.map(entry => (
-                <li key={entry.name} className={css.reason}>{t('installRemoved', { name: entry.name, reason: entry.reason })}</li>
-              ))}
-            </ul>
-          )
+        {outcomes.map(line => <p key={line} className={css.result} role="status">{line}</p>)}
+        {install.phase === 'done'
+          ? install.removed.map(entry => <p key={entry.name} className={css.resultWarn} role="status">{removedText(entry, t)}</p>)
           : null}
         {install.phase === 'failed'
           ? <p className={css.reason} role="alert">{install.failure === null ? t('installFailed') : refusalText(install.failure, t)}</p>
           : null}
-        {install.log === '' && install.phase === 'idle'
+        {install.log === ''
           ? null
-          : <pre className={css.log} aria-label={t('installLogLabel')} aria-live="polite">{install.log}</pre>}
+          : (
+            <details className={css.logFold} open={install.phase === 'failed'}>
+              <summary>{t('installLogToggle')}</summary>
+              <pre className={css.log} aria-label={t('installLogLabel')} aria-live="polite">{install.log}</pre>
+            </details>
+          )}
       </div>
     </Modal>
   )
 }
 
-/** The confirmation a destructive action waits on, listing what it would strand. */
-function ConfirmDialog({ confirm, t, presets, presetName, onAcknowledge, onConfirm, onCancel }: {
+/** The confirmation a destructive action waits on, naming what still uses the package. */
+function ConfirmDialog({ confirm, t, packages, presets, presetName, onConfirm, onCancel }: {
   readonly confirm: ConfirmState
   readonly t: Translate
+  readonly packages: readonly PluginPackageView[]
   readonly presets: readonly PresetGroup[]
   readonly presetName: (preset: PresetGroup) => string
-  readonly onAcknowledge: (acknowledged: boolean) => void
   readonly onConfirm: () => void
   readonly onCancel: () => void
 }): ReactNode {
-  const name = shortName(confirm.packageName)
-  const targetText = (target: PluginRowTarget): string => {
-    if (target.kind === 'global') return t('targetGlobal')
-    const preset = presets.find(candidate => candidate.id === target.preset)
-    return t('targetPreset', { name: preset === undefined ? target.preset : presetName(preset) })
-  }
+  const pkg = packages.find(candidate => candidate.name === confirm.packageName)
+  const name = pkg?.title ?? shortName(confirm.packageName)
   const dependents = confirm.dependents
   const lines = dependents === undefined
     ? []
     : [
-      ...dependents.services.map(service => t('dependentService', {
-        service: service.service, provider: service.providedBy, rows: service.injectedBy.join(', '),
-      })),
-      ...dependents.references.map(reference => t('dependentReference', {
-        row: reference.rowId, target: targetText(reference.target), module: reference.moduleName,
-      })),
+      ...dependents.services.map(service => t('dependentService', { rows: service.injectedBy.map(id => rowLabel(t, id)).join(', ') })),
+      ...dependents.references.map((reference) => {
+        const owner = packageOf(reference.moduleName, packages)
+        const row = owner === undefined ? reference.rowId : owner.title ?? shortName(owner.name)
+        if (reference.target.kind === 'global') return t('dependentReferenceGlobal', { row })
+        const target = reference.target.preset
+        const preset = presets.find(candidate => candidate.id === target)
+        return t('dependentReferencePreset', { name: preset === undefined ? target : presetName(preset), row })
+      }),
     ]
+  const uninstall = confirm.action === 'uninstall'
   return (
     <Modal
       open
       onClose={onCancel}
-      title={t(confirm.action === 'uninstall' ? 'confirmUninstallTitle' : 'confirmDisableTitle', { name })}
+      title={t(uninstall ? 'confirmUninstallTitle' : 'confirmDisableTitle', { name })}
       closeLabel={t('close')}
-      description={t(confirm.action === 'uninstall' ? 'confirmUninstallDescription' : 'confirmDisableDescription')}
+      description={t(uninstall ? 'confirmUninstallDescription' : 'confirmDisableDescription')}
       footer={(
         <>
           <Button variant="outline" onClick={onCancel}>{t('cancel')}</Button>
-          <Button variant="primary" disabled={dependents === undefined || !confirm.acknowledged} onClick={onConfirm}>
-            {t('confirm')}
+          <Button variant="primary" className={css.dangerButton} disabled={dependents === undefined} onClick={onConfirm}>
+            {t(uninstall ? 'confirmUninstall' : 'confirmDisable')}
           </Button>
         </>
       )}
     >
-      {dependents === undefined ? <p className={css.status}>{t('loading')}</p> : null}
+      {dependents === undefined ? <p className={css.status}>{t('confirmChecking')}</p> : null}
       {lines.length > 0
         ? (
           <>
@@ -444,10 +594,6 @@ function ConfirmDialog({ confirm, t, presets, presetName, onAcknowledge, onConfi
           </>
         )
         : null}
-      <label className={css.installOption}>
-        <input type="checkbox" checked={confirm.acknowledged} onChange={(event) => { onAcknowledge(event.currentTarget.checked) }} />
-        <span>{t('acknowledge')}</span>
-      </label>
     </Modal>
   )
 }
@@ -477,23 +623,31 @@ function refusalText(failure: { readonly code: string; readonly reason: string }
   }
 }
 
-/** Render the plugin manager: packages first, then the selected preset's composition. */
+/** Render the plugin manager: installed packages first, then the selected preset's composition. */
 export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): ReactNode {
   const { t, presetName, ensure } = props
   const state = props.usePluginManager(snapshot => snapshot)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [switcherOpen, setSwitcherOpen] = useState(false)
+  const [showBuiltin, setShowBuiltin] = useState(false)
   useEffect(() => { ensure() }, [ensure])
 
   const selected = state.presets.find(preset => preset.id === state.selectedPreset) ?? fallbackPreset(state.presets)
+  const managed = state.packages.filter(pkg => pkg.trust !== 'builtin')
+  const builtins = state.packages.filter(pkg => pkg.trust === 'builtin')
   const restartPending = state.packages.filter(pkg => pkg.status === 'restart-required').map(pkg => pkg.title ?? shortName(pkg.name))
   const loaded = state.status === 'ready' || state.status === 'error'
 
   return (
     <div className={css.section} aria-busy={state.status === 'loading'}>
       <div className={css.toolbar}>
-        <Button variant="outline" size="sm" disabled={!loaded} onClick={props.refresh}>{t('refresh')}</Button>
-        <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+        <p className={css.hint}>{t('hint')}</p>
+        <div className={css.toolbarEnd}>
+          <button type="button" className={css.iconButton} aria-label={t('refresh')} title={t('refresh')} disabled={!loaded} onClick={props.refresh}>
+            <span className={css.iconWrap} aria-hidden="true"><IconRefreshOutline16 /></span>
+          </button>
+          <Button variant="primary" size="sm" disabled={!loaded} onClick={props.openInstall}>{t('addPlugin')}</Button>
+        </div>
       </div>
       {state.status === 'loading' ? <p className={css.status}>{t('loading')}</p> : null}
       {state.status === 'unavailable' ? <p className={css.status} role="status">{t('unavailable')}</p> : null}
@@ -521,17 +675,15 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
           <>
             <section className={css.group} data-plugin-scope="global">
               <div className={css.groupTitleRow}>
-                <h3 className={css.groupTitle}>{t('globalTitle')}</h3>
+                <h3 className={css.groupTitle}>{t('installedTitle')}</h3>
+                <span className={css.count} data-plugin-count={managed.length}>{`${String(managed.length)} ${t('countUnit')}`}</span>
               </div>
-              <p className={css.groupSub}>
-                {t('globalSubtitle')}
-                <span data-plugin-count={state.packages.length}>{` · ${String(state.packages.length)} ${t('countUnit')}`}</span>
-              </p>
-              {state.packages.length === 0
+              <p className={css.groupSub}>{t('installedSubtitle')}</p>
+              {managed.length === 0
                 ? <p className={css.empty}>{t('empty')}</p>
                 : (
                   <ul className={css.cards}>
-                    {state.packages.map(pkg => (
+                    {managed.map(pkg => (
                       <PackageCard
                         key={pkg.name}
                         pkg={pkg}
@@ -539,6 +691,7 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                         busy={state.busy.includes(pkg.name)}
                         open={expanded === pkg.name}
                         presets={state.presets}
+                        globalModules={state.globalModules}
                         presetName={presetName}
                         onToggleOpen={() => { setExpanded(current => current === pkg.name ? null : pkg.name) }}
                         onSetEnabled={(enabled) => { props.setEnabled(pkg.name, enabled) }}
@@ -548,6 +701,21 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                       />
                     ))}
                   </ul>
+                )}
+              {builtins.length === 0
+                ? null
+                : (
+                  <>
+                    <p className={css.builtinNote} data-builtin-count={builtins.length}>
+                      <span>{t('builtinHidden', { count: String(builtins.length), names: builtins.map(pkg => pkg.title ?? shortName(pkg.name)).join(', ') })}</span>
+                      <button type="button" className={css.linkButton} aria-expanded={showBuiltin} onClick={() => { setShowBuiltin(current => !current) }}>
+                        {t(showBuiltin ? 'builtinHide' : 'builtinShow')}
+                      </button>
+                    </p>
+                    {showBuiltin
+                      ? <ul className={css.cards} data-plugin-builtins="">{builtins.map(pkg => <BuiltinCard key={pkg.name} pkg={pkg} t={t} />)}</ul>
+                      : null}
+                  </>
                 )}
             </section>
             <section className={css.group} data-plugin-scope="preset" data-preset-id={selected?.id}>
@@ -591,19 +759,23 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
                   : selected.rows.length === 0
                     ? <p className={css.empty}>{t('presetRowsEmpty')}</p>
                     : (
-                      <ul className={css.rows}>
-                        {selected.rows.map((row, index) => (
-                          <PresetRowItem
-                            key={`${row.entryId ?? row.moduleName}:${String(index)}`}
-                            preset={selected}
-                            row={row}
-                            t={t}
-                            busy={row.entryId !== null && state.busy.includes(rowKey({ kind: 'preset', preset: selected.id }, row.entryId))}
-                            onSetDisabled={(rowId, disabled) => { props.setRowDisabled({ kind: 'preset', preset: selected.id }, rowId, disabled) }}
-                            onRemove={(rowId) => { props.removeRow({ kind: 'preset', preset: selected.id }, rowId) }}
-                          />
-                        ))}
-                      </ul>
+                      <>
+                        <ul className={css.presetCards}>
+                          {selected.rows.map((row, index) => (
+                            <PresetCard
+                              key={`${row.entryId ?? row.moduleName}:${String(index)}`}
+                              preset={selected}
+                              row={row}
+                              packages={state.packages}
+                              t={t}
+                              busy={row.entryId !== null && state.busy.includes(rowKey({ kind: 'preset', preset: selected.id }, rowIdOf(row.entryId) as string))}
+                              onSetDisabled={(rowId, disabled) => { props.setRowDisabled({ kind: 'preset', preset: selected.id }, rowId, disabled) }}
+                              onRemove={(rowId) => { props.removeRow({ kind: 'preset', preset: selected.id }, rowId) }}
+                            />
+                          ))}
+                        </ul>
+                        <p className={css.presetNote}>{t('presetNote')}</p>
+                      </>
                     )}
             </section>
           </>
@@ -623,9 +795,9 @@ export function PluginManagerSettingsTab(props: PluginManagerSettingsTabProps): 
           <ConfirmDialog
             confirm={state.confirm}
             t={t}
+            packages={state.packages}
             presets={state.presets}
             presetName={presetName}
-            onAcknowledge={props.acknowledgeConfirm}
             onConfirm={props.confirm}
             onCancel={props.cancelConfirm}
           />

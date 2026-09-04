@@ -22,7 +22,6 @@
   - tablist "插件视图":
     - tab "插件配置" [selected]
     - tab "插件管理"
-    - tab "插件列表"
   - tabpanel "插件配置":
     - text: 生效范围
     - button "选择这些设置生效的 Agent 预设":

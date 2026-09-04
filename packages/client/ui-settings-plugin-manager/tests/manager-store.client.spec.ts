@@ -31,6 +31,11 @@ const STANDARD: PresetGroup = {
   rows: [{ entryId: 'bash', moduleName: '@deepseek-ai/dsh-tool-bash', enabled: true, fiberPhase: null, source: 'preset' }],
 }
 
+/** One host-tree row the inventory lists, as far as the store reads it. */
+const GLOBAL_ENTRY = {
+  entryId: 'include:ui-settings', moduleName: '@deepseek-ai/dsh-client-ui-settings', enabled: true, fiberPhase: 'active', trust: 'builtin',
+} as const
+
 /** What one install run answers. */
 type InstallValue = {
   installed: string[]
@@ -70,7 +75,7 @@ function bench(overrides: Partial<Record<string, ReturnType<typeof vi.fn>>> = {}
     dependents: vi.fn(() => Promise.resolve(ok({ services: [], references: [] }))),
     ...overrides,
   }
-  const inventory = { list: vi.fn(() => Promise.resolve(ok({ entries: [], agentPresets: [STANDARD] }))) }
+  const inventory = { list: vi.fn(() => Promise.resolve(ok({ entries: [GLOBAL_ENTRY], agentPresets: [STANDARD] }))) }
   const ctx = { remote: { plugins, pluginInventory: inventory } } as never
   const controller = new PluginManagerController(ctx, preset => preset.name ?? preset.id)
   const face = controller.inject()
@@ -91,7 +96,7 @@ describe('PluginManagerController', () => {
     await mid
     // The in-flight read reran once for the load that landed mid-read.
     expect(plugins.list).toHaveBeenCalledTimes(2)
-    expect(state()).toMatchObject({ status: 'ready', packages: [BUNDLE], presets: [STANDARD] })
+    expect(state()).toMatchObject({ status: 'ready', packages: [BUNDLE], presets: [STANDARD], globalModules: [GLOBAL_ENTRY.moduleName] })
     face.ensure()
     expect(plugins.list).toHaveBeenCalledTimes(2)
     face.refresh()
@@ -116,12 +121,13 @@ describe('PluginManagerController', () => {
     expect(plugins.list).toHaveBeenCalledTimes(3)
   })
 
-  it('keeps the held presets when the inventory read is refused', async () => {
+  it('keeps the held presets and host-tree modules when the inventory read is refused', async () => {
     const { inventory, controller, state } = bench()
     await controller.load()
     inventory.list.mockResolvedValueOnce(refused('gateway/internal', 'boom') as never)
     await controller.load()
     expect(state().presets).toEqual([STANDARD])
+    expect(state().globalModules).toEqual([GLOBAL_ENTRY.moduleName])
   })
 
   it('enables a bundle, marks it busy meanwhile, and says when a restart is needed', async () => {
@@ -169,10 +175,8 @@ describe('PluginManagerController', () => {
       references: [],
     }) as never)
     face.setEnabled(BUNDLE.name, false)
-    expect(state().confirm).toEqual({ action: 'disable', packageName: BUNDLE.name, dependents: undefined, acknowledged: false })
+    expect(state().confirm).toEqual({ action: 'disable', packageName: BUNDLE.name, dependents: undefined })
     await vi.waitFor(() => { expect(state().confirm?.dependents).toBeDefined() })
-    face.acknowledgeConfirm(true)
-    expect(state().confirm?.acknowledged).toBe(true)
     face.confirm()
     expect(state().confirm).toBeNull()
     await vi.waitFor(() => { expect(plugins.disable).toHaveBeenCalledTimes(2) })
@@ -191,12 +195,9 @@ describe('PluginManagerController', () => {
 
     face.uninstall(BUNDLE.name)
     await vi.waitFor(() => { expect(state().confirm?.dependents).toBeDefined() })
-    face.acknowledgeConfirm(true)
     face.confirm()
     await vi.waitFor(() => { expect(plugins.uninstall).toHaveBeenCalledWith(BUNDLE.name) })
     await vi.waitFor(() => { expect(state().notice).toEqual({ kind: 'done', packageName: BUNDLE.name }) })
-    // An acknowledgement with no confirmation open is ignored.
-    face.acknowledgeConfirm(true)
     expect(state().confirm).toBeNull()
   })
 
@@ -280,10 +281,18 @@ describe('PluginManagerController', () => {
     controller.appendLog({ jobId: 'j1', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'Progress\n' })
     controller.appendLog({ jobId: 'j2', spec: 'other', stream: 'stdout', text: 'not mine' })
     expect(state().install.log).toBe('Progress\n')
-    gate.resolve(ok({ installed: ['dsh-better-sidebar'], removed: [{ name: 'lib', reason: 'not a plugin' }], enabled: [], installedOnly: [], plain: [], jobId: 'j1' }))
+    gate.resolve(ok({
+      installed: ['dsh-better-sidebar', 'dsh-tool-foo'], removed: [{ name: 'lib', reason: 'not a plugin' }],
+      enabled: [], installedOnly: ['dsh-better-sidebar'], plain: ['dsh-tool-foo'], jobId: 'j1',
+    }))
     await vi.waitFor(() => { expect(state().install.phase).toBe('done') })
-    expect(state().install.installed).toEqual(['dsh-better-sidebar'])
-    expect(state().install.removed).toEqual([{ name: 'lib', reason: 'not a plugin' }])
+    expect(state().install).toMatchObject({
+      installed: ['dsh-better-sidebar', 'dsh-tool-foo'],
+      enabled: [],
+      installedOnly: ['dsh-better-sidebar'],
+      plain: ['dsh-tool-foo'],
+      removed: [{ name: 'lib', reason: 'not a plugin' }],
+    })
     controller.appendLog({ jobId: 'j1', spec: 'dsh-better-sidebar', stream: 'stdout', text: 'late', exitCode: 0 })
     expect(state().install.log).toBe('Progress\n')
     await vi.waitFor(() => { expect(plugins.list).toHaveBeenCalledTimes(2) })
@@ -395,5 +404,18 @@ describe('PluginManagerController', () => {
     await Promise.resolve()
     await Promise.resolve()
     expect(state()).toBe(before)
+  })
+
+  it('keeps a streamed log that already ends with the Host reason', async () => {
+    const { face, state, controller } = bench({
+      add: vi.fn().mockResolvedValueOnce(refused('plugins/install-failed', 'exit 1', { spec: 'x', exitCode: 1, log: 'same tail' })),
+    })
+    await controller.load()
+    face.openInstall()
+    face.editInstallSpec('x')
+    face.runInstall()
+    controller.appendLog({ jobId: 'j', spec: 'x', stream: 'stderr', text: 'same tail' })
+    await vi.waitFor(() => { expect(state().install.phase).toBe('failed') })
+    expect(state().install.log).toBe('same tail')
   })
 })
