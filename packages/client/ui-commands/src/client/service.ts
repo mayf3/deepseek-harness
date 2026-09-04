@@ -21,7 +21,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import { rankByName } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
   CandidateRequest, ClientSessionContext, CommandClaim, PickOutcome, InputTriggerCandidate, InputTriggerPick,
-  SubmitEnvelope, SubmitImageAttachment, SubmitOutcome,
+  SubmitAttachment, SubmitEnvelope, SubmitOutcome,
 } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type { CommandContribution, CommandDecoration, CommandUiContract } from './contract.ts'
 import type { CommandDescriptor } from './directory.ts'
@@ -249,10 +249,10 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * bare host commands act on the bare token only; leadingInput claims
    * args-tolerant.
    *
-   * Envelope policy: an enter submission carrying images resolves only
-   * through a command declaring image acceptance. Every other command route —
+   * Envelope policy: an enter submission carrying attachments resolves only
+   * through a command declaring attachment acceptance. Every other command route —
    * popup, non-accepting claim, bare detached execute — throws the refusal
-   * so the machine surfaces one composer notice and the draft and images
+   * so the machine surfaces one composer notice and the draft and attachments
    * stay in place; nothing executes and nothing is dropped.
    */
   private async matchEnter(
@@ -268,13 +268,13 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     const bare = ws === -1
     const name = token.slice(1)
     if (name === '') return undefined
-    const refuseImages = (): never => {
-      throw new Error(this.t('notice.imagesUnsupported', { command: name }))
+    const refuseAttachments = (): never => {
+      throw new Error(this.t('notice.attachmentsUnsupported', { command: name }))
     }
     const contribution = this.live.contributions.get(name)
     if (contribution !== undefined && contribution.available(session)) {
       if (!bare) return undefined
-      if (envelope.images > 0) refuseImages()
+      if (envelope.attachments > 0) refuseAttachments()
       this.openPopup(name, contribution.ui, session, { via: 'enter', token })
       return 'handled'
     }
@@ -286,17 +286,17 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     if (bare) {
       const decoration = this.live.decorations.get(name)
       if (decoration !== undefined && decoration.available(session)) {
-        if (envelope.images > 0) refuseImages()
+        if (envelope.attachments > 0) refuseAttachments()
         this.openPopup(name, decoration.ui, session, { via: 'enter', token })
         return 'handled'
       }
     }
     if (desc.input !== undefined) {
-      if (envelope.images > 0 && desc.input.images !== true) refuseImages()
+      if (envelope.attachments > 0 && desc.input.attachments !== true) refuseAttachments()
       return { claim: this.leadingClaim(desc, session) }
     }
     if (!bare) return undefined
-    if (envelope.images > 0) refuseImages()
+    if (envelope.attachments > 0) refuseAttachments()
     this.consumeVia(session.sessionId, { via: 'enter', token })
     this.runDetached(desc, session, trimmed)
     return 'handled'
@@ -320,8 +320,8 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
     return {
       token,
       ...(desc.input !== undefined ? { hint: desc.input.hint } : {}),
-      ...(desc.input?.images === true ? { images: true } : {}),
-      submit: (args, _actx, images) => this.execute(session, token + args, images),
+      ...(desc.input?.attachments === true ? { attachments: true } : {}),
+      submit: (args, _actx, attachments) => this.execute(session, token + args, attachments),
     }
   }
 
@@ -333,21 +333,21 @@ export class CommandUiRuntime extends Service implements CommandUiContract {
    * executor durably logged the lifecycle (`command/run`/`command/done`) and
    * the outcome renders as a persistent flow node — the composer never
    * echoes it. A handler error result reports an error outcome so the
-   * composer keeps the submission (draft and images) for correction.
+   * composer keeps the draft and attachments for correction.
    * A refused call throws.
    */
   private async execute(
     session: ClientSessionContext,
     line: string,
-    images: readonly SubmitImageAttachment[] = [],
+    attachments: readonly SubmitAttachment[] = [],
   ): Promise<SubmitOutcome> {
-    const result = await this.ctx.remote.commands.execute(session.sessionId, line, images)
+    const result = await this.ctx.remote.commands.execute(session.sessionId, line, attachments)
     if (!result.ok) throw new Error(`command.execute failed: ${result.error.code}: ${result.error.message}`)
     if (result.value === undefined) return { kind: 'error', text: `unknown or malformed command: ${line}` }
     this.notifyExecuted(session.sessionId, submittedCommandName(line), result.value.result)
-    // An image-carrying submission consumed its images only on handler
-    // success; an error outcome keeps draft and images in the composer.
-    if (images.length > 0 && result.value.result.kind === 'error') {
+    // A submission consumes its attachments only after handler success; an
+    // error outcome keeps the draft and attachments in the composer.
+    if (attachments.length > 0 && result.value.result.kind === 'error') {
       return { kind: 'error', text: result.value.result.text }
     }
     return { kind: 'success' }

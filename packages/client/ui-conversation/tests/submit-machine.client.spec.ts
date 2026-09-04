@@ -170,9 +170,9 @@ describe('submit-machine: adjudication outcomes', () => {
 describe('submit-machine: claimed lifecycle', () => {
   it('the claim event enters claimed and snapshots hint and images bits', () => {
     const m = new SubmitMachine()
-    m.dispatch({ type: 'claim', claim: { ...claimOf('goal', 'set a goal'), images: true } })
+    m.dispatch({ type: 'claim', claim: { ...claimOf('goal', 'set a goal'), attachments: true } })
     expect(m.state.phase).toBe('claimed')
-    expect(m.state.claim).toMatchObject({ token: '/goal ', hint: 'set a goal', images: true })
+    expect(m.state.claim).toMatchObject({ token: '/goal ', hint: 'set a goal', attachments: true })
   })
 
   it('claimed overwrites in place — no stack', () => {

@@ -1062,3 +1062,29 @@ describe('small branch tails', () => {
     expect(view.container.textContent).toBe('1 轮 · 1 步| 输入 0 tok · 输出 10 tok')
   })
 })
+
+describe('user file attachments', () => {
+  it('renders one card per durable file block with its name and compact size', () => {
+    const view = render(
+      <MessageItem
+        t={t}
+        node={{
+          kind: 'user',
+          seq: 1,
+          time: 1_000,
+          content: [
+            { type: 'file', attachment: { attachmentId: 'sha256:cd', name: 'notes.pdf', bytes: 3 * 1024 * 1024 + 200 * 1024 } },
+            { type: 'file', attachment: { attachmentId: 'sha256:ef', name: 'tiny.txt', bytes: 12 } },
+            { type: 'file', attachment: { attachmentId: 'sha256:aa', name: 'mid.csv', bytes: 500 * 1024 } },
+            { type: 'text', text: 'summarize these' },
+          ] as never,
+          source: null,
+        }}
+      />,
+    )
+    expect(view.getByTitle('notes.pdf').textContent).toContain('3.2MB')
+    expect(view.getByTitle('tiny.txt').textContent).toContain('12B')
+    expect(view.getByTitle('mid.csv').textContent).toContain('500KB')
+    expect(view.getByText('summarize these')).toBeTruthy()
+  })
+})
