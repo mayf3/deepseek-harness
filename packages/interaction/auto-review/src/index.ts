@@ -544,7 +544,7 @@ async function readDecision(stream: AsyncIterable<StreamChunk>): Promise<AutoRev
   return parseDecision(final.text)
 }
 
-/** Private deterministic fixed-LLM risk-classifier seam for one frozen pending action. */
+/** Private fixed-LLM risk-classifier seam for one frozen pending action. */
 async function classifyRisk(
   ctx: Context,
   agent: Agent,
