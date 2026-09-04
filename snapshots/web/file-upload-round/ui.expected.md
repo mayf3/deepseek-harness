@@ -38,7 +38,7 @@
   - img
   - text: Ran for {{duration}}
 - text: {{clock}}
-- textbox "Message or run a task... / commands, @ files or sessions"
+- textbox "Message or run a task, run / commands, @ files or sessions"
 - button "Commands":
   - img
 - button "Add attachment":
