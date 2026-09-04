@@ -12,13 +12,13 @@ Status: implemented
 
 `jobs/` 如今是一个 bash 三件套形态的三包能力家族：
 
-- **`@deepseek-ai/dsh-jobs`（Service Definition）**——抽象的 `JobRegistry extends Service`，拥有 `ctx.jobs`、九个方法的约定（`start`、`list`、`get`、`read`、`kill`、`wait`、`onJobDone`、`onJobsChanged`、`attachController`）、全部词汇类型（`JobId`、`JobKindMap`、`JobStart`、`JobHooks`、`JobOutcome`、`JobSnapshot`、`JobRead`、`JobDoneListener`），以及快照不变式配套插件。类级 JSDoc 陈述了每个 Service Provider 都必须兑现的语义：注册的存续期长于生产方与控制器的 fiber，有所有者的访问以会话为界，结算遵循首次结果优先且监听器错误被隔离，并且当没有任何已附加的任务控制器服务于 spec 的所有者时 `start` 拒绝启动工作（控制器与监听器按 scope 分层，因此一个进程级注册表能逐所有者地回答这两个问题）。
+- **`@deepseek-ai/dsh-jobs`（Service Definition）**——抽象的 `JobRegistry extends Service`，拥有 `ctx.jobs`、约定（`start`、绑定调用方的 `visibleTo` 视图及其 `list`、`get`、`read`、`readAt`、`kill`、`wait`、`events` 事件流，以及 `attachController`）、全部词汇类型（`JobId`、`JobKindMap`、`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`JobView`、`JobRead`、`JobEvent`），以及投影不变式配套插件。类级 JSDoc 陈述了每个 Service Provider 都必须兑现的语义：注册的存续期长于生产方与控制器的 fiber，有所有者的访问以会话为界，结算遵循首次结果优先且监听器错误被隔离，并且当没有任何已附加的任务控制器服务于 spec 的所有者时 `start` 拒绝启动工作（控制器与事件订阅按 scope 分层，因此一个进程级注册表能逐所有者地回答这两个问题）。
 - **`@deepseek-ai/dsh-jobs-local`（Service Provider）**——`LocalJobRegistry`，即进程内注册表：内存存储、按 kind 划分的 id 计数器、等待方簿记、`TASK_WAIT_TIMEOUT` deadline 代码、所有者清理 effect、强制失败的拆除，以及默认值为 10 且可配置的准入策略。准入从同一组记录中按确切 owner 派生 `running` 加 `stopping` 容量，并为无 owner 任务使用一个共享桶；它不新增公开计数或第二个状态 owner。`dsh-timeout` 依赖与由 Schemastery 管理的 Service Provider 配置都位于此包；Service Definition 包不含任何提供方依赖。
 - **`@deepseek-ai/dsh-tool-jobs`（Consumer）**——保持不变；它注入 `'jobs'`，从不导入提供方类型。
 
 各组合在原先加载 `dsh-jobs` 的位置改为加载 `dsh-jobs-local`：`dsh-base`、`sdk-minimal`、各测试 harness，以及工具目录生成器的启动流程。生产方的配置错误诊断信息（「background jobs unavailable: load …」）点名 `dsh-jobs`——即声明缺失的 `ctx.jobs` 服务的 Service Definition 包；Service Definition 包自身的 API（其 README 与直接挂载防线）会指向各 Service Provider，因此当另一个后端日后成为推荐默认时，生产方的消息依旧正确。生产方、`JobKindMap` 声明合并和控制器仍然只导入 `@deepseek-ai/dsh-jobs`。
 
-该 seam 保持进程内约定语义不变：`JobStart.run()` 仍然传入回调和确切的 `Agent` 对象，因此持久化或跨进程后端在能满足此 Service Definition 之前仍有设计工作要做（身份、重启、所有权、观察）。这次拆分把该项未来工作移出了每个 Consumer 的依赖图；它并不预先设计后端。
+该 seam 保持进程内约定语义不变：`JobSpec.run()` 仍然返回进程内钩子并经进程内的 `JobHandle` 推送输出，`JobSpec.owner` 指向一个由注册表在进程内解析其存活 `Agent` 的会话，因此持久化或跨进程后端在能满足此 Service Definition 之前仍有设计工作要做（身份、重启、所有权、观察）。这次拆分把该项未来工作移出了每个 Consumer 的依赖图；它并不预先设计后端。
 
 ## 曾考虑的替代方案
 

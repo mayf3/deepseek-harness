@@ -16,7 +16,7 @@ Status: implemented
 
 [通用任务运行时决策](../architecture/2026-06-20-generic-long-running-tool-runtime.zh.md)拥有共享 Task 生命周期与控制 API；本记录只拥有进程内准入策略。
 
-`start()` 在现有任务控制器、任务字段与存活 owner 检查之后、`JobStart.run()` 之前执行准入。它从注册表当前记录派生活动数量，而不保存另一份计数：
+`start()` 在现有任务控制器、任务字段与存活 owner 检查之后、`JobSpec.run()` 之前执行准入。它从注册表当前记录派生活动数量，而不保存另一份计数：
 
 | 记录 | 占用容量 | 释放事实 |
 |---|---:|---|

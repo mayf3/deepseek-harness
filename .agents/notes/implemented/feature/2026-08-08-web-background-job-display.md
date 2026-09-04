@@ -68,7 +68,7 @@ The listener is owner-granular rather than task-granular. The only consumer push
 
 `onJobDone` is not a subset of this. It delivers the terminal record with the exact owner `Agent` under first-wins semantics that `dsh-tool-jobs` couples to `reported`; `onJobsChanged` is pure observation with no delivery meaning and marks nothing reported. Listener throws are contained and never awaited, matching `onJobDone`, and each registration is an effect on the calling fiber.
 
-Service disposal commits one final emptying and announces it: after the registry has cancelled and awaited its jobs, `onJobsChanged` fires once per owner whose visible set the teardown emptied, so a listener registered on a longer-lived fiber sees the final empty set instead of a stale roster (a listener registered on the registry's own fiber is already gone by then).
+Service disposal announces each removal: after the registry has cancelled and awaited its jobs, it drops every record and emits one `removed` event per job, so a subscriber on a longer-lived fiber sees the roster empty out instead of keeping a stale set (a subscriber on the registry's own fiber is already gone by then).
 
 ### The Session Controller carrier
 
