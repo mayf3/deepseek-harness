@@ -537,8 +537,6 @@ export type SessionControlFrame =
   | { readonly type: 'queue'; readonly sessionId: SessionId; readonly items: readonly SessionQueuedItem[] }
   | ({ readonly type: 'projection' } & SessionProjectionUpdate)
 
-
-
 declare module '@deepseek-ai/cordis' {
   interface Events {
     /**
