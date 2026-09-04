@@ -88,24 +88,51 @@ function foldedApprovalPolicy(ctx: Context, id: SessionId, events: readonly Sess
 }
 
 describe('continuable policy inheritance', () => {
-  it('persists Auto identity for a DSH in-process child', { timeout: 20_000 }, async () => {
-    const { ctx, parent } = await setup([textResponse('child done')])
+  it.each(['auto', 'danger-full-access'] as const)(
+    'persists the parent %s identity for a DSH in-process child',
+    { timeout: 20_000 },
+    async (preset) => {
+      const { ctx, parent } = await setup([textResponse('child done')])
+      parent.session.append('permission/preset', { preset })
+      setSandboxMode(parent.session, 'danger-full-access')
+      ctx.provide('permissionPresets', {
+        current: (session: Session) => session === parent.session ? preset : 'custom',
+      } as never)
+
+      const started = await ctx.subagents.startContinuable(startSpec(parent))
+      await waitNoActivation(ctx, started.childId)
+
+      const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
+      expect(loaded.events.filter(event => event.type === 'permission/preset')).toMatchObject([
+        { data: { preset } },
+      ])
+      expect(policyEvents(loaded.events)).toMatchObject([
+        { type: 'sandbox/mode', data: { mode: 'danger-full-access', source: 'delegation' } },
+        { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
+      ])
+    },
+  )
+
+  it('places delegated Full access after an Auto fork prefix', { timeout: 20_000 }, async () => {
+    const { ctx, parent } = await setup([textResponse('parent turn'), textResponse('forked child')])
     parent.session.append('permission/preset', { preset: 'auto' })
     setSandboxMode(parent.session, 'danger-full-access')
+    parent.followup(createUserMessage({
+      content: [{ type: 'text', text: 'parent work' }],
+      source: { kind: 'user' },
+    }))
+    await parent.whenIdle()
+    parent.session.append('permission/preset', { preset: 'danger-full-access' })
     ctx.provide('permissionPresets', {
-      current: (session: Session) => session === parent.session ? 'auto' : 'custom',
+      current: (session: Session) => session === parent.session ? 'danger-full-access' : 'custom',
     } as never)
 
-    const started = await ctx.subagents.startContinuable(startSpec(parent))
+    const started = await ctx.subagents.startContinuable(startSpec(parent, 'fork'))
     await waitNoActivation(ctx, started.childId)
-
     const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
     expect(loaded.events.filter(event => event.type === 'permission/preset')).toMatchObject([
       { data: { preset: 'auto' } },
-    ])
-    expect(policyEvents(loaded.events)).toMatchObject([
-      { type: 'sandbox/mode', data: { mode: 'danger-full-access', source: 'delegation' } },
-      { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
+      { data: { preset: 'danger-full-access' } },
     ])
   })
 

@@ -90,7 +90,7 @@ describe('PermissionCatalogDirectory', () => {
     directory.dispose()
   })
 
-  it('retains the identical public snapshot when same-generation refreshes fail', async () => {
+  it('clears the public snapshot when the winning same-generation refresh fails', async () => {
     const ctx = new Context()
     installConnection(ctx, 1)
     let response: 'success' | 'rpc-failure' | 'throw' = 'success'
@@ -111,17 +111,18 @@ describe('PermissionCatalogDirectory', () => {
     })
     const directory = new PermissionCatalogDirectory(ctx)
     await expect(directory.load()).resolves.toEqual(FIRST)
-    const complete = directory.store.getSnapshot()
-
     response = 'rpc-failure'
     remote.emit('permission-presets/catalog-changed', [])
-    await expect(directory.load()).resolves.toEqual(FIRST)
-    expect(directory.store.getSnapshot()).toBe(complete)
+    await expect(directory.load()).rejects.toThrow('catalog/unavailable: catalog unavailable')
+    expect(directory.store.getSnapshot()).toEqual({ value: null })
 
-    response = 'throw'
+    response = 'success'
     remote.emit('permission-presets/catalog-changed', [])
     await expect(directory.load()).resolves.toEqual(FIRST)
-    expect(directory.store.getSnapshot()).toBe(complete)
+    response = 'throw'
+    remote.emit('permission-presets/catalog-changed', [])
+    await expect(directory.load()).rejects.toThrow('raw catalog failure')
+    expect(directory.store.getSnapshot()).toEqual({ value: null })
     directory.dispose()
   })
 

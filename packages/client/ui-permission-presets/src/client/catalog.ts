@@ -117,6 +117,7 @@ export class PermissionCatalogDirectory {
       .catch((error: unknown) => {
         if (!this.accepts(epoch, generationId)) return
         this.failure = error instanceof Error ? error : new Error(String(error))
+        this.store.set({ value: null })
       })
       .finally(() => {
         if (this.pending === operation) this.pending = undefined

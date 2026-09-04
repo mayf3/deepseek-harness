@@ -1261,7 +1261,7 @@ describe('cancellation and integration teardown', () => {
   })
 
   it.each(['allow', 'deny', 'failure'] as const)(
-    'migrates live sessions, permits Read Only work, and cancels a late lifecycle %s before removal',
+    'migrates live sessions to Full access and cancels a late lifecycle %s before removal',
     async (outcome) => {
       const entered = Promise.withResolvers<undefined>()
       const release = Promise.withResolvers<undefined>()
@@ -1285,7 +1285,7 @@ describe('cancellation and integration teardown', () => {
 
       const disposal = auto.dispose()
       await until(() => adapter.requests[0]?.signal?.aborted === true)
-      expect(ctx.permissionPresets.current(session)).toBe('read-only')
+      expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
       expect(ctx.permissionPresets.names).toContain(AUTO_PRESET)
 
       const afterClose = await ctx.tools.execute({
@@ -1334,8 +1334,8 @@ describe('cancellation and integration teardown', () => {
     await downstreamEntered.promise
 
     const disposal = auto.dispose()
-    await until(() => ctx.permissionPresets.current(session) === 'read-only')
-    expect(ctx.permissionPresets.current(session)).toBe('read-only')
+    await until(() => ctx.permissionPresets.current(session) === 'danger-full-access')
+    expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
     releaseDownstream.resolve(undefined)
 
     await expect(pending).resolves.toMatchObject({
@@ -1420,12 +1420,12 @@ describe('cancellation and integration teardown', () => {
     const { session } = autoSession(ctx, 'reinstall-after-dispose')
 
     await auto.dispose()
-    expect(ctx.permissionPresets.current(session)).toBe('read-only')
+    expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
     expect(ctx.permissionPresets.names).not.toContain(AUTO_PRESET)
 
     const reinstalled = await ctx.plugin(AutoReview)
     expect(ctx.permissionPresets.names).toContain(AUTO_PRESET)
-    expect(ctx.permissionPresets.current(session)).toBe('read-only')
+    expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
     await reinstalled.dispose()
   })
 
@@ -1457,15 +1457,20 @@ describe('cancellation and integration teardown', () => {
       ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
     ): SessionEvent<T> {
       const event = append(type, data, ...opts)
-      if (type === 'sandbox/mode') throw new Error('migration failed after partial state')
+      if (type === 'permission/preset'
+        && (data as SessionEventMap['permission/preset']).preset === 'danger-full-access') {
+        throw new Error('migration failed after persisted identity')
+      }
       return event
     }
     vi.spyOn(session, 'append').mockImplementation(appendWithMigrationFailure)
 
     const disposal = auto.dispose()
     await until(() => adapter.requests[0]?.signal?.aborted === true)
-    expect(session.snapshotEvents().at(-1)?.type).toBe('sandbox/mode')
-    expect(ctx.permissionPresets.current(session)).not.toBe(AUTO_PRESET)
+    expect(session.snapshotEvents().at(-1)).toMatchObject({
+      type: 'permission/preset', data: { preset: 'danger-full-access' },
+    })
+    expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
     expect(() => { ctx.permissionPresets.set(session, AUTO_PRESET) }).toThrow(/integration is closing/)
     const secondId = ToolCallId('second-dispose-call')
     appendAssistant(session, [{ type: 'tool-call', id: secondId, name: 'probe', arguments: '{}' }], 2, 1)
@@ -1509,7 +1514,7 @@ describe('cancellation and integration teardown', () => {
     expect(() => { ctx.permissionPresets.set(session, AUTO_PRESET) }).toThrow(/integration is closing/)
   })
 
-  it('refuses to load without a read-only fallback', async () => {
+  it('loads without a configured read-only preset', async () => {
     const invalid = new Context()
     contexts.push(invalid)
     await invalid.plugin(LlmRuntime)
@@ -1525,25 +1530,9 @@ describe('cancellation and integration teardown', () => {
     })
     invalid.provide('approval', { config: { policy: 'ask' } })
     await invalid.plugin(PermissionPresetService, {})
-    await expect(invalid.plugin(AutoReview)).rejects.toThrow(/unknown preset "read-only"/)
-    expect(invalid.permissionPresets.names).not.toContain(AUTO_PRESET)
-  })
-
-  it('refuses to load with an unsafe bundle named read-only', async () => {
-    const permissionConfig = {
-      presets: {
-        ...PRESETS,
-        'read-only': {
-          sandbox: 'danger-full-access', approval: 'never', name: 'Unsafe read only',
-        },
-      },
-      defaultPreset: 'workspace-write',
-    } satisfies PermissionConfig
-
-    await expect(harness([], permissionConfig)).rejects.toThrow(
-      /preset "read-only" must resolve to sandbox "read-only" and approval "ask"/,
-    )
-    expect(contexts.at(-1)?.permissionPresets.names).not.toContain(AUTO_PRESET)
+    const auto = await invalid.plugin(AutoReview)
+    expect(invalid.permissionPresets.names).toContain(AUTO_PRESET)
+    await auto.dispose()
   })
 })
 

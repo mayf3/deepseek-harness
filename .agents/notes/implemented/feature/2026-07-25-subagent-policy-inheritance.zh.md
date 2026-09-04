@@ -6,13 +6,13 @@ Status: implemented
 
 ## 问题
 
-Auto 预设身份以及沙箱与审批覆盖项都是按会话的日志折叠。进程内 subagent 会获得一个新会话，因此 spawn 子 agent（智能体）过去会回退到部署默认值，fork 子 agent 则只能看到其已完成轮次前缀中的切换。因此，委派可能放宽已经切换到 `read-only` 的父级，或静默丢失父级的 Auto 身份。
+Auto 或 Full access 预设身份以及沙箱与审批覆盖项都是按会话的日志折叠。进程内 subagent 会获得一个新会话，因此 spawn 子 agent（智能体）过去会回退到部署默认值，fork 子 agent 则只能看到其已完成轮次前缀中的切换。因此，委派可能放宽已经切换到 `read-only` 的父级，或在 Auto 与 Full access 共用同一旋钮组合时静默保留陈旧身份。
 
 ## 决策
 
-委派边界会在第一次 await 之前调用共享的子 agent 辅助函数（`dsh-subagent` 中的 `captureDelegatedPolicyOverrides`／`appendDelegatedPolicyOverrides`）；一次性驱动器与[可继续启动](2026-08-10-continuable-subagent-policy-inheritance.zh.md)都会使用它们。捕获会在 `permissionPresets.current(parent.session)` 为 Auto 时复制 `permission/preset:auto`，对 `sandboxPolicy.overrideOf(parent.session)` 获取快照，并把子 agent 的审批策略钉定为 `'never'`。父级后续的切换属于父级的未来；取消后重新委派会取得新快照。权限预设与沙箱策略服务都是可选的：只复制 Auto 身份与显式沙箱会话覆盖项，绝不复制部署默认值或一次性授权。审批策略不继承——[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)取代了本 note 原先的审批覆盖项继承。
+委派边界会在第一次 await 之前调用共享的子 agent 辅助函数（`dsh-subagent` 中的 `captureDelegatedPolicyOverrides`／`appendDelegatedPolicyOverrides`）；一次性驱动器与[可继续启动](2026-08-10-continuable-subagent-policy-inheritance.zh.md)都会使用它们。当 `permissionPresets.current(parent.session)` 为 `auto` 或 `danger-full-access` 时，捕获会复制当前 `permission/preset` 身份，同时对 `sandboxPolicy.overrideOf(parent.session)` 获取快照，并把子 agent 的审批策略钉定为 `'never'`。父级后续的切换属于父级的未来；取消后重新委派会取得新快照。权限预设与沙箱策略服务都是可选的：只复制 Auto／Full access 共用旋钮组合的身份与显式沙箱会话覆盖项，绝不复制部署默认值或一次性授权。审批策略不继承——[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)取代了本 note 原先的审批覆盖项继承。
 
-继承的 Auto 身份会成为一条 `permission/preset` 事件，捕获的沙箱值与钉定的审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，却不改变其谱系 cut。生命周期本地遥测从 `firstLiveSeq` 开始，因此排除 constructor seed，并包含这些未发布设置事件。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
+继承的 Auto 或 Full access 身份会成为一条 `permission/preset` 事件，捕获的沙箱值与钉定的审批值则会在子 agent 工厂的未发布设置阶段成为带来源标记的 `sandbox/mode` 与 `approval/policy` 事件。会话构造函数已把 `Session.firstLiveSeq` 固定在 constructor seed 之后，而 `Session.inheritedEventCount` 保留精确的 fork 前缀长度，因此继承事实会排在 fork 历史之后，却不改变其谱系 cut。生命周期本地遥测从 `firstLiveSeq` 开始，因此排除 constructor seed，并包含这些未发布设置事件。因此，既有的末事件胜出折叠会让委派快照压过陈旧的 fork 历史，并让子 agent 后续的切换压过该快照。孙代 agent 会折叠其父级已记录的状态，因此无需另一套继承机制即可组合此规则。
 
 Auto review 不会把这条继承的 preset 事件变成授权回执。每次 child 调用仍会重新分类：低风险本地观察直接允许；中风险工作只有在符合 child 既有创建 prompt、来自其直接父级且已核验的后续消息，并且不违反 durable human 限制时才可能允许；高风险工作始终拒绝。`parentSession`、创建 prompt 与既有 `agent-message.senderSessionId` 足以在 one-shot、continuable 与 cold resume 路径中恢复这份上下文；不会新增父 call id、解析后的任务 metadata、delegation provenance、review receipt 或 Session format migration。
 

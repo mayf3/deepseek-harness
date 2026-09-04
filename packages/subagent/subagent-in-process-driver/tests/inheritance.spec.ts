@@ -82,22 +82,48 @@ function toolResultTexts(agent: Agent): string[] {
 }
 
 describe('in-process policy inheritance', () => {
-  it('records Auto identity before publishing a DSH in-process child', async () => {
+  it.each(['auto', 'danger-full-access'] as const)(
+    'records the parent %s identity before publishing a DSH in-process child',
+    async (preset) => {
+      const { ctx, parent } = await setupWalled([textResponse('child done')])
+      parent.session.append('permission/preset', { preset })
+      setSandboxMode(parent.session, 'danger-full-access')
+      ctx.provide('permissionPresets', {
+        current: (session: Session) => session === parent.session ? preset : 'custom',
+      } as never)
+
+      const run = await startInProcessRun(spawnRequest(parent), {})
+      try {
+        await run.result
+        const child = run.localAgent as Agent
+        expect(child.session.snapshotEvents().slice(0, 3)).toMatchObject([
+          { type: 'permission/preset', seq: 0, data: { preset } },
+          { type: 'sandbox/mode', seq: 1, data: { mode: 'danger-full-access', source: 'delegation' } },
+          { type: 'approval/policy', seq: 2, data: { policy: 'never', source: 'delegation' } },
+        ])
+      } finally {
+        await run.dispose()
+      }
+    },
+  )
+
+  it('places delegated Full access after an Auto fork prefix', async () => {
     const { ctx, parent } = await setupWalled([textResponse('child done')])
     parent.session.append('permission/preset', { preset: 'auto' })
     setSandboxMode(parent.session, 'danger-full-access')
+    const seed = parent.session.snapshotEvents()
+    parent.session.append('permission/preset', { preset: 'danger-full-access' })
     ctx.provide('permissionPresets', {
-      current: (session: Session) => session === parent.session ? 'auto' : 'custom',
+      current: (session: Session) => session === parent.session ? 'danger-full-access' : 'custom',
     } as never)
 
-    const run = await startInProcessRun(spawnRequest(parent), {})
+    const run = await startInProcessRun(spawnRequest(parent), { seed })
     try {
       await run.result
       const child = run.localAgent as Agent
-      expect(child.session.snapshotEvents().slice(0, 3)).toMatchObject([
-        { type: 'permission/preset', seq: 0, data: { preset: 'auto' } },
-        { type: 'sandbox/mode', seq: 1, data: { mode: 'danger-full-access', source: 'delegation' } },
-        { type: 'approval/policy', seq: 2, data: { policy: 'never', source: 'delegation' } },
+      expect(child.session.snapshotEvents().filter(event => event.type === 'permission/preset')).toMatchObject([
+        { data: { preset: 'auto' } },
+        { data: { preset: 'danger-full-access' } },
       ])
     } finally {
       await run.dispose()

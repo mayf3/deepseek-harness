@@ -220,8 +220,8 @@ export function applyChildComposition(
 
 /** Policy seeded onto a child session's log at the delegation boundary. */
 export interface DelegatedPolicyOverrides {
-  /** The Auto preset identity when the parent currently runs in Auto. */
-  readonly autoPreset: 'auto' | undefined
+  /** The shared-bundle preset identity when the parent currently runs in Auto or Full access. */
+  readonly permissionPreset: 'auto' | 'danger-full-access' | undefined
   /** The parent session's explicit sandbox-mode override, or `undefined` without one. */
   readonly sandboxMode: SandboxMode | undefined
   /**
@@ -235,17 +235,18 @@ export interface DelegatedPolicyOverrides {
 /**
  * Capture the permission state to seed into one delegation. Call synchronously before
  * the child start's first await: a later parent switch belongs to the
- * parent's future, not to this child. Auto identity is inherited only through
- * the in-process DSH path. Only the parent session's explicit sandbox override
- * is captured — never deployment defaults or one-shot grants — and the
- * approval policy is pinned to `'never'` regardless of the parent's own policy.
+ * parent's future, not to this child. Auto and Full access identities are
+ * inherited only through the in-process DSH path so either can replace a stale
+ * same-bundle fork value. Only the parent session's explicit sandbox override
+ * is captured — never deployment defaults or one-shot grants — and the approval
+ * policy is pinned to `'never'` regardless of the parent's own policy.
  * @param parent - the delegating parent agent.
  * @returns the sandbox override (or `undefined` without one) and the approval pin.
  */
 export function captureDelegatedPolicyOverrides(parent: Agent): DelegatedPolicyOverrides {
   const preset = parent.ctx.get('permissionPresets')?.current(parent.session)
   return {
-    autoPreset: preset === 'auto' ? 'auto' : undefined,
+    permissionPreset: preset === 'auto' || preset === 'danger-full-access' ? preset : undefined,
     sandboxMode: parent.ctx.get('sandboxPolicy')?.overrideOf(parent.session),
     approvalPolicy: parent.ctx.get('approval') === undefined ? undefined : 'never',
   }
@@ -264,8 +265,8 @@ export function appendDelegatedPolicyOverrides(
   childSession: Session,
   overrides: DelegatedPolicyOverrides,
 ): void {
-  if (overrides.autoPreset !== undefined) {
-    childSession.append('permission/preset', { preset: overrides.autoPreset })
+  if (overrides.permissionPreset !== undefined) {
+    childSession.append('permission/preset', { preset: overrides.permissionPreset })
   }
   if (overrides.sandboxMode !== undefined) {
     childSession.append('sandbox/mode', { mode: overrides.sandboxMode, source: 'delegation' })

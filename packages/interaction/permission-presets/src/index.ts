@@ -402,7 +402,7 @@ export class PermissionPresetService extends TypertRemoteService {
     this.apply(session, name, (policy) => { setApprovalPolicy(session, policy) })
   }
 
-  /** Apply one preset; Auto teardown confines first so each durable prefix is safe. */
+  /** Apply one preset through its durable identity and canonical knob setters. */
   private apply(session: Session, name: string, setApproval: (policy: ApprovalPolicy) => void): void {
     const spec = this.resolve(name)
     if (name === AUTO_PRESET) this.autoAdmit?.()
@@ -415,11 +415,6 @@ export class PermissionPresetService extends TypertRemoteService {
       if (spec.approval !== (knobs.approval ?? this.ctx.approval.config.policy ?? 'ask')) {
         setApproval(spec.approval)
       }
-    }
-    if (current === AUTO_PRESET && name === 'read-only') {
-      updateKnobs()
-      session.append('permission/preset', { preset: name })
-      return
     }
     if (current !== name) session.append('permission/preset', { preset: name })
     updateKnobs()

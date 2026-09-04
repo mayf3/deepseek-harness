@@ -3,11 +3,6 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore, {
   Session,
   SessionId,
-  type SessionEvent,
-  type SessionEventMap,
-  type SessionEventType,
-  type SurfaceEventType,
-  type SurfaceIntent,
 } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { SandboxMode } from '@deepseek-ai/dsh-sandbox'
@@ -189,77 +184,29 @@ describe('PermissionPresetService', () => {
     expect(session.snapshotEvents()).toEqual([])
   })
 
-  it('makes every failed Auto-to-Read-Only prefix restart safely while other switches stay preset-first', async () => {
+  it('records shared-bundle Auto and Full access switches by preset identity only', async () => {
     const config = { presets: {
       'read-only': { sandbox: 'read-only', approval: 'ask' },
       'workspace-write': { sandbox: 'workspace-write', approval: 'ask' },
       'danger-full-access': { sandbox: 'danger-full-access', approval: 'never' },
     } } satisfies Config
-    const prefixes = [
-      [['sandbox/mode', { mode: 'read-only' }]],
-      [
-        ['sandbox/mode', { mode: 'read-only' }],
-        ['approval/policy', { policy: 'ask' }],
-      ],
-      [
-        ['sandbox/mode', { mode: 'read-only' }],
-        ['approval/policy', { policy: 'ask' }],
-        ['permission/preset', { preset: 'read-only' }],
-      ],
-    ]
+    const ctx = await mounted({ config })
+    await mountAuto(ctx)
+    const session = freshSession('shared-bundle-switch')
+    ctx.permissionPresets.set(session, AUTO_PRESET)
+    const baselineLength = session.snapshotEvents().length
 
-    for (const [index, expectedPrefix] of prefixes.entries()) {
-      const ctx = await mounted({ config })
-      await mountAuto(ctx)
-      const source = freshSession(`auto-read-only-prefix-${index + 1}`)
-      ctx.permissionPresets.set(source, AUTO_PRESET)
-      const baselineLength = source.snapshotEvents().length
-      const append = source.append.bind(source)
-      let writes = 0
-      function appendThenFail<T extends SessionEventType>(
-        type: T,
-        data: SessionEventMap[T],
-        ...opts: T extends SurfaceEventType ? [opts: SurfaceIntent<T>] : []
-      ): SessionEvent<T> {
-        const event = append(type, data, ...opts)
-        writes += 1
-        if (writes === index + 1) throw new Error(`failed after migration write ${writes}`)
-        return event
-      }
-      vi.spyOn(source, 'append').mockImplementation(appendThenFail)
-
-      expect(() => {
-        ctx.permissionPresets.set(source, 'read-only')
-      })
-        .toThrow(`failed after migration write ${index + 1}`)
-      expect(source.snapshotEvents().slice(baselineLength).map(event => [event.type, event.data]))
-        .toEqual(expectedPrefix)
-
-      const seed = source.snapshotEvents()
-      const restarted = await mounted({ config })
-      if (index < 2) {
-        expect(() => restarted.sessions.create(
-          SessionId(`auto-read-only-prefix-${index + 1}-without-auto`),
-          { seed },
-        )).toThrow(/cannot restore preset "auto"/)
-        await mountAuto(restarted)
-      }
-      const resumed = restarted.sessions.create(
-        SessionId(`auto-read-only-prefix-${index + 1}-resumed`),
-        { seed },
-      )
-      expect(restarted.sessionProjections.stateOf(resumed, 'permissions')).toMatchObject({
-        sandbox: 'read-only',
-      })
-      expect(restarted.permissionPresets.current(resumed)).not.toBe('danger-full-access')
-    }
-
-    const ordinary = await mounted({ config })
-    const session = freshSession('ordinary-preset-first')
-    ordinary.permissionPresets.set(session, 'danger-full-access')
-    expect(session.snapshotEvents().map(event => event.type)).toEqual([
-      'permission/preset', 'sandbox/mode', 'approval/policy',
+    ctx.permissionPresets.set(session, 'danger-full-access')
+    expect(session.snapshotEvents().slice(baselineLength).map(event => [event.type, event.data])).toEqual([
+      ['permission/preset', { preset: 'danger-full-access' }],
     ])
+    expect(ctx.permissionPresets.current(session)).toBe('danger-full-access')
+
+    ctx.permissionPresets.set(session, AUTO_PRESET)
+    expect(session.snapshotEvents().slice(baselineLength + 1).map(event => [event.type, event.data])).toEqual([
+      ['permission/preset', { preset: AUTO_PRESET }],
+    ])
+    expect(ctx.permissionPresets.current(session)).toBe(AUTO_PRESET)
   })
 
   it('current() derives from the effective knobs: composition defaults hit workspace-write, a switch hits its preset', async () => {

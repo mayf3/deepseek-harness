@@ -83,7 +83,7 @@ The observable behavior is covered in [Use this package](#use-this-package); thi
 
 ### Write path
 
-`set()` resolves the preset and synchronously runs Auto admission when applicable. Ordinary transitions append `permission/preset` only when the effective preset changes, then write each changed knob through its canonical setter — `setSandboxMode` from `dsh-sandbox-policy` and `setApprovalPolicy` from `dsh-user-approval` — so the selection event preserves user intent when two presets share a bundle. Auto-to-Read-Only teardown is the exception: it writes sandbox `read-only`, approval `ask`, and then `permission/preset: read-only`, so every durable failure prefix either retains the Auto identity or is already sandbox-confined across restart. A net-zero selection appends nothing.
+`set()` resolves the preset and synchronously runs Auto admission when applicable. Transitions append `permission/preset` only when the effective preset changes, then write each changed knob through its canonical setter — `setSandboxMode` from `dsh-sandbox-policy` and `setApprovalPolicy` from `dsh-user-approval`. The selection event therefore preserves user intent when two presets share a bundle: switching between Auto and Full access records only the new identity because their sandbox and approval values already match. A net-zero selection appends nothing.
 
 ### Read side and `custom`
 

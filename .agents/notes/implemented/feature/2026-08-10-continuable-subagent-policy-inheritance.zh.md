@@ -10,7 +10,7 @@ Status: implemented
 
 ## 决策
 
-捕获／追加这对函数从一次性驱动器移入该 seam 的共享子 agent 模块（`dsh-subagent/src/child-agent.ts`），即声明的共享子级组合唯一归属之处：`captureDelegatedPolicyOverrides(parent)` 会在 `permissionPresets.current(parent.session)` 为 Auto 时复制 Auto 身份，通过可选的 `ctx.get` 对 `sandboxPolicy.overrideOf(parent.session)` 建立快照，并把子级审批策略钉定为 `'never'`（[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)）；`appendDelegatedPolicyOverrides(childSession, overrides)` 则追加 `permission/preset:auto` 以及带来源标记的沙箱与审批事件。一次性驱动器与继续执行管理器都调用它们，因此两条路径不会出现偏差。
+捕获／追加这对函数从一次性驱动器移入该 seam 的共享子 agent 模块（`dsh-subagent/src/child-agent.ts`），即声明的共享子级组合唯一归属之处：`captureDelegatedPolicyOverrides(parent)` 会在 `permissionPresets.current(parent.session)` 为 `auto` 或 `danger-full-access` 时复制当前身份，通过可选的 `ctx.get` 对 `sandboxPolicy.overrideOf(parent.session)` 建立快照，并把子级审批策略钉定为 `'never'`（[审批钉定决策](2026-08-10-subagent-approval-pinned-never.zh.md)）；`appendDelegatedPolicyOverrides(childSession, overrides)` 则追加该 `permission/preset` 以及带来源标记的沙箱与审批事件。一次性驱动器与继续执行管理器都调用它们，因此两条路径不会出现偏差。
 
 `startContinuable` 在其第一次 await（`prepareContinuable`）之前完成捕获，沿用与一次性路径相同的「父级后续切换属于父级的未来」边界。快照放在 `MaterializeInputs.create` 中传递，因此只有全新物化会在未发布的设置阶段、排在任何 fork 种子之后追加这些事件。冷恢复（cold resume）不传入 `create` 输入，也不追加任何内容：持久化的子日志已经携带委派事件，而回放该日志本身就是状态。子 agent 的生效策略由持久化子日志拥有，而不是当前 Activation，也不是发起恢复的父级，因此父级在驻留纪元（residency epoch）之间的切换绝不会追溯性地改变一个持久化子 agent。
 

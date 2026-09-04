@@ -732,7 +732,7 @@ it('routes one browser-authored Auto request through the same model before a rea
   const switched = await remote<{ result: { kind: string; text?: string } }>(
     scaffold,
     'commands/execute',
-    { agentId: sessionId, line: '/permission auto', images: [] },
+    { agentId: sessionId, line: '/permission auto', submittedAttachments: [] },
   )
   expect(switched.result).toEqual({ kind: 'success', text: 'preset auto' })
 
@@ -834,7 +834,7 @@ it('reviews one-shot, continuable, and cold-resumed in-process child calls indep
   await remote(scaffold, 'commands/execute', {
     agentId: parentId,
     line: '/permission auto',
-    images: [],
+    submittedAttachments: [],
   })
   const parent = ctx.agents.get(parentId)
   if (parent === undefined) throw new Error('shipped child Auto parent was not published')
@@ -1054,12 +1054,12 @@ it('withdraws Auto on shipped Loader unload and does not restore migrated live s
     await autoEntry.update({ disabled: true })
     await ctx.loader.await()
     expect(ctx.permissionPresets.names).not.toContain('auto')
-    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('read-only')
+    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('danger-full-access')
 
     await autoEntry.update({ disabled: false })
     await ctx.loader.await()
     expect(ctx.permissionPresets.names).toContain('auto')
-    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('read-only')
+    expect(ctx.permissionPresets.current(handle.agent.session)).toBe('danger-full-access')
   } finally {
     await handle.dispose()
   }
