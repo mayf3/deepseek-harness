@@ -265,14 +265,14 @@ export function appendDelegatedPolicyOverrides(
   childSession: Session,
   overrides: DelegatedPolicyOverrides,
 ): void {
-  if (overrides.permissionPreset !== undefined) {
-    childSession.append('permission/preset', { preset: overrides.permissionPreset })
-  }
   if (overrides.sandboxMode !== undefined) {
     childSession.append('sandbox/mode', { mode: overrides.sandboxMode, source: 'delegation' })
   }
   if (overrides.approvalPolicy !== undefined) {
     childSession.append('approval/policy', { policy: overrides.approvalPolicy, source: 'delegation' })
+  }
+  if (overrides.permissionPreset !== undefined) {
+    childSession.append('permission/preset', { preset: overrides.permissionPreset })
   }
 }
 

@@ -17,6 +17,7 @@
 {"type":"session/end-seed","data":{"inherited":true}}
 {"type":"sandbox/mode","data":{"mode":"danger-full-access","source":"delegation"}}
 {"type":"approval/policy","data":{"policy":"never","source":"delegation"}}
+{"type":"permission/preset","data":{"preset":"danger-full-access"}}
 {"type":"agent/inbox/spliced","data":{"target":"next-turn","start":0,"inserted":[{"content":[{"type":"text","text":"What is the project codeword mentioned earlier in this conversation? Reply with exactly that one word and nothing else."}],"source":{"kind":"user"},"role":"user","id":"{{message:8}}"}]}}
 {"type":"turn/start","data":{"turn":2}}
 {"type":"agent/inbox/spliced","data":{"target":"next-turn","start":0,"removedCount":1,"inserted":[]}}

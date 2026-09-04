@@ -2509,20 +2509,6 @@
       "payload": {
         "sessionId": "{{child-1}}",
         "event": {
-          "type": "permission/preset",
-          "seq": 2,
-          "time": 0,
-          "data": {
-            "preset": "danger-full-access"
-          }
-        }
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{child-1}}",
-        "event": {
           "type": "agent/inbox/spliced",
           "seq": 3,
           "time": 0,
@@ -3144,20 +3130,6 @@
       "payload": {
         "parentSessionId": "{{parent}}",
         "childSessionId": "{{child-2}}"
-      }
-    },
-    {
-      "method": "session.event",
-      "payload": {
-        "sessionId": "{{child-2}}",
-        "event": {
-          "type": "permission/preset",
-          "seq": 2,
-          "time": 0,
-          "data": {
-            "preset": "danger-full-access"
-          }
-        }
       }
     },
     {

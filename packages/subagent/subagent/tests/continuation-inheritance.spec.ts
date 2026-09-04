@@ -103,12 +103,14 @@ describe('continuable policy inheritance', () => {
       await waitNoActivation(ctx, started.childId)
 
       const loaded = await loadStoredSession(ctx.sessionPersistence, started.childId)
-      expect(loaded.events.filter(event => event.type === 'permission/preset')).toMatchObject([
-        { data: { preset } },
-      ])
-      expect(policyEvents(loaded.events)).toMatchObject([
+      expect(loaded.events.filter(event =>
+        event.type === 'sandbox/mode'
+        || event.type === 'approval/policy'
+        || event.type === 'permission/preset',
+      )).toMatchObject([
         { type: 'sandbox/mode', data: { mode: 'danger-full-access', source: 'delegation' } },
         { type: 'approval/policy', data: { policy: 'never', source: 'delegation' } },
+        { type: 'permission/preset', data: { preset } },
       ])
     },
   )

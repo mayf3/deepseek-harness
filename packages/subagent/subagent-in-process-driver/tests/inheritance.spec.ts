@@ -97,9 +97,9 @@ describe('in-process policy inheritance', () => {
         await run.result
         const child = run.localAgent as Agent
         expect(child.session.snapshotEvents().slice(0, 3)).toMatchObject([
-          { type: 'permission/preset', seq: 0, data: { preset } },
-          { type: 'sandbox/mode', seq: 1, data: { mode: 'danger-full-access', source: 'delegation' } },
-          { type: 'approval/policy', seq: 2, data: { policy: 'never', source: 'delegation' } },
+          { type: 'sandbox/mode', seq: 0, data: { mode: 'danger-full-access', source: 'delegation' } },
+          { type: 'approval/policy', seq: 1, data: { policy: 'never', source: 'delegation' } },
+          { type: 'permission/preset', seq: 2, data: { preset } },
         ])
       } finally {
         await run.dispose()
