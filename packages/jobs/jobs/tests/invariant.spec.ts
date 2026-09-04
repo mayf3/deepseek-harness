@@ -2,22 +2,14 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import JobRegistry, { JobId } from '@deepseek-ai/dsh-jobs'
-import type { JobEventListener, JobView } from '@deepseek-ai/dsh-jobs'
+import type { JobEvent, JobEventListener, JobView } from '@deepseek-ai/dsh-jobs'
 import * as JobsInvariant from '@deepseek-ai/dsh-jobs/invariant'
 import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 
-const BASE: JobView = {
-  id: JobId('bash-1'),
-  kind: 'bash',
-  label: 'compile',
-  status: 'completed',
-  startedAt: 10,
-  finishedAt: 20,
-  output: { total: 0, earliest: 0 },
-}
+const ID = JobId('bash-1')
 
 const RUNNING: JobView = {
-  id: JobId('bash-1'),
+  id: ID,
   kind: 'bash',
   label: 'compile',
   status: 'running',
@@ -25,20 +17,24 @@ const RUNNING: JobView = {
   output: { total: 0, earliest: 0 },
 }
 
-const TERMINAL_WITHOUT_FINISH: JobView = {
-  id: JobId('bash-1'),
-  kind: 'bash',
-  label: 'compile',
-  status: 'completed',
-  startedAt: 10,
-  output: { total: 0, earliest: 0 },
-}
+const DONE: JobView = { ...RUNNING, status: 'completed', finishedAt: 20 }
 
-async function setup(seed: JobView[] = []): Promise<(job: unknown) => void> {
+/**
+ * A stub registry whose reads come from a map the test edits: the companion
+ * compares every announced projection against these reads.
+ */
+async function setup() {
   const ctx = new Context()
+  const reads = new Map<string, JobView>()
   let listener: JobEventListener | undefined
   const probe = {
-    visibleTo: () => ({ list: () => seed }),
+    visibleTo: (caller?: SessionId) => ({
+      get: (id: JobId) => {
+        const view = reads.get(String(id))
+        if (view === undefined || view.owner !== caller) throw new Error(`unknown job ${String(id)}`)
+        return view
+      },
+    }),
     events: {
       subscribe(_filter: unknown, value: JobEventListener) {
         listener = value
@@ -52,54 +48,143 @@ async function setup(seed: JobView[] = []): Promise<(job: unknown) => void> {
     apply(child: Context) { child.provide('jobs', probe) },
   })
   await ctx.plugin(JobsInvariant)
-  if (listener === undefined) throw new Error('job invariant did not subscribe to settlements')
-  return (job) => { listener!({ type: 'settled', job: job as JobView, cause: 'producer' }) }
+  if (listener === undefined) throw new Error('job invariant did not subscribe to the event stream')
+  const emit = (event: JobEvent): void => { listener!(event) }
+  const read = (view: JobView | undefined): void => {
+    if (view === undefined) reads.delete(String(ID))
+    else reads.set(String(view.id), view)
+  }
+  return { emit, read }
 }
 
 describe('job-registry invariants', () => {
-  it('accepts coherent current and terminal projections', async () => {
-    const notify = await setup([RUNNING])
-    expect(() => { notify(BASE) }).not.toThrow()
-    expect(() => { notify({ ...BASE, id: JobId('subagent-2'), kind: 'subagent', owner: SessionId('owner') }) })
-      .not.toThrow()
-    expect(() => { notify({ ...BASE, output: { total: 8, earliest: 4 } }) }).not.toThrow()
+  it('accepts one job announced from registration to removal, each event agreeing with the read', async () => {
+    const { emit, read } = await setup()
+    read(RUNNING)
+    emit({ type: 'registered', job: RUNNING })
+    read({ ...RUNNING, progress: '1/2' })
+    emit({ type: 'progress', job: { ...RUNNING, progress: '1/2' } })
+    read({ ...RUNNING, progress: '1/2', output: { total: 4, earliest: 0 } })
+    emit({ type: 'output', id: ID, total: 4 })
+    read({ ...RUNNING, status: 'stopping', output: { total: 4, earliest: 0 } })
+    emit({ type: 'stopping', job: { ...RUNNING, status: 'stopping', output: { total: 4, earliest: 0 } } })
+    read({ ...DONE, status: 'killed', output: { total: 4, earliest: 0 } })
+    emit({ type: 'settled', job: { ...DONE, status: 'killed', output: { total: 4, earliest: 0 } }, cause: 'kill' })
+    emit({ type: 'output', id: ID, total: 4 })
+    read(undefined)
+    expect(() => { emit({ type: 'removed', job: { ...DONE, status: 'killed', output: { total: 4, earliest: 0 } } }) }).not.toThrow()
   })
 
-  it('ignores non-settlement events', async () => {
-    const ctx = new Context()
-    let listener: JobEventListener | undefined
-    const probe = {
-      visibleTo: () => ({ list: () => [] }),
-      events: { subscribe(_filter: unknown, value: JobEventListener) { listener = value; return () => {} } },
-    } as unknown as JobRegistry
-    await ctx.plugin(InvariantRegistry)
-    await ctx.plugin({ name: 'job-invariant-probe', apply(child: Context) { child.provide('jobs', probe) } })
-    await ctx.plugin(JobsInvariant)
-    expect(() => { listener!({ type: 'registered', job: { ...BASE, label: '' } }) }).not.toThrow()
+  it('adopts a job first seen through a later event, so a companion mounted late raises nothing', async () => {
+    const { emit, read } = await setup()
+    read({ ...RUNNING, progress: '3/4' })
+    expect(() => { emit({ type: 'progress', job: { ...RUNNING, progress: '3/4' } }) }).not.toThrow()
+    read(DONE)
+    expect(() => { emit({ type: 'settled', job: DONE, cause: 'producer' }) }).not.toThrow()
+    read(undefined)
+    expect(() => { emit({ type: 'removed', job: DONE }) }).not.toThrow()
+  })
+
+  it('accepts an unowned job read through the unowned view and an owned job through its owner', async () => {
+    const { emit, read } = await setup()
+    const owner = SessionId('owner')
+    const owned: JobView = { ...RUNNING, id: JobId('subagent-2'), kind: 'subagent', owner }
+    read(RUNNING)
+    read(owned)
+    expect(() => { emit({ type: 'registered', job: RUNNING }) }).not.toThrow()
+    expect(() => { emit({ type: 'registered', job: owned }) }).not.toThrow()
+    expect(() => { emit({ type: 'output', id: owned.id, owner, total: 0 }) }).not.toThrow()
   })
 
   it.each([
-    [{ ...BASE, id: JobId('-1'), kind: '' }, /positive ordinal/],
-    [{ ...BASE, id: JobId('other-1') }, /must be "bash-" followed by a positive ordinal/],
-    [{ ...BASE, id: JobId('bash-x') }, /positive ordinal/],
-    [{ ...BASE, id: JobId('bash-0') }, /positive ordinal/],
-    [{ ...BASE, startedAt: -1 }, /startedAt must be a non-negative epoch integer/],
-    [{ ...BASE, startedAt: 0.5 }, /startedAt must be a non-negative epoch integer/],
-    [{ ...BASE, status: 'running' }, /finishedAt must be present exactly for a terminal status/],
-    [TERMINAL_WITHOUT_FINISH, /finishedAt must be present exactly for a terminal status/],
-    [{ ...BASE, finishedAt: 9 }, /no earlier than startedAt/],
-    [{ ...BASE, finishedAt: 20.5 }, /no earlier than startedAt/],
-    [{ ...BASE, progress: '3/10' }, /progress must be cleared once settled/],
-    [{ ...BASE, output: { total: 8, earliest: 9 } }, /0 <= earliest <= total/],
-    [{ ...BASE, output: { total: 8.5, earliest: 0 } }, /0 <= earliest <= total/],
-    [{ ...BASE, output: { total: 8, earliest: 0.5 } }, /0 <= earliest <= total/],
-    [{ ...BASE, output: { total: 8, earliest: -1 } }, /0 <= earliest <= total/],
-  ] as const)('rejects an incoherent registry projection', async (job, message) => {
-    const notify = await setup()
-    expect(() => { notify(job) }).toThrow(message)
-  })
-
-  it('rejects an incoherent projection already present at installation', async () => {
-    await expect(setup([{ ...BASE, label: '' }])).rejects.toThrow(/label must be non-empty/)
-  })
+    ['registered after an earlier event for the same id', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'output', id: ID, total: 0 })
+      emit({ type: 'registered', job: RUNNING })
+    }, /registered announced for job bash-1 after earlier events/],
+    ['registered twice', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'registered', job: RUNNING })
+      emit({ type: 'registered', job: RUNNING })
+    }, /registered announced for job bash-1 after earlier events/],
+    ['registered with a terminal status', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'registered', job: DONE })
+    }, /must announce a live status without finishedAt/],
+    ['progress after settlement', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'progress', job: { ...DONE, progress: 'late' } })
+    }, /progress announced for job bash-1 after its settlement/],
+    ['stopping with a terminal status', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'stopping', job: DONE })
+    }, /stopping announced for job bash-1 with a terminal status/],
+    ['settled twice', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'settled', job: DONE, cause: 'producer' })
+    }, /settled announced twice for job bash-1/],
+    ['settled with a live status', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'settled', job: { ...RUNNING, finishedAt: 20 }, cause: 'producer' })
+    }, /must announce a terminal status, got "running"/],
+    ['settled without finishedAt', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'settled', job: { ...RUNNING, status: 'completed' }, cause: 'producer' })
+    }, /finishedAt no earlier than startedAt/],
+    ['settled before it started', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'settled', job: { ...DONE, finishedAt: 9 }, cause: 'producer' })
+    }, /finishedAt no earlier than startedAt/],
+    ['settled with a progress line', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'settled', job: { ...DONE, progress: '9/10' }, cause: 'producer' })
+    }, /must announce a cleared progress line/],
+    ['settled while the registry still reads it live', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'settled', job: DONE, cause: 'producer' })
+    }, /announces completed at 20 while the registry reads running at undefined/],
+    ['removed before settlement', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'registered', job: RUNNING })
+      read(undefined)
+      emit({ type: 'removed', job: RUNNING })
+    }, /removed announced for job bash-1 before its settlement/],
+    ['removed while the registry still returns the job', ({ emit, read }) => {
+      read(DONE)
+      emit({ type: 'settled', job: DONE, cause: 'producer' })
+      emit({ type: 'removed', job: DONE })
+    }, /removed announced for job bash-1 that the registry still returns/],
+    ['output ahead of the read total', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'output', id: ID, total: 8 })
+    }, /output announced for job bash-1 at total 8 ahead of the registry's 0/],
+    ['output for a job the registry no longer returns', ({ emit }) => {
+      emit({ type: 'output', id: ID, total: 0 })
+    }, /output announced for job bash-1 that the registry no longer returns/],
+    ['a lifecycle event for a job the registry does not return', ({ emit }) => {
+      emit({ type: 'registered', job: RUNNING })
+    }, /registered announced for job bash-1 that the registry does not return/],
+    ['an announced label the registry does not read', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'registered', job: { ...RUNNING, label: 'link' } })
+    }, /announces label "link" while the registry reads "compile"/],
+    ['an announced owner the registry does not read', ({ emit, read }) => {
+      read({ ...RUNNING, owner: SessionId('alice') })
+      emit({ type: 'registered', job: { ...RUNNING, owner: SessionId('alice') } })
+      read({ ...RUNNING, owner: SessionId('alice'), startedAt: 11 })
+      emit({ type: 'progress', job: { ...RUNNING, owner: SessionId('alice'), progress: 'x' } })
+    }, /announces startedAt 10 while the registry reads 11/],
+    ['an announced output total ahead of the read', ({ emit, read }) => {
+      read(RUNNING)
+      emit({ type: 'registered', job: { ...RUNNING, output: { total: 2, earliest: 0 } } })
+    }, /announces output total 2 ahead of the registry's 0/],
+  ] as const satisfies readonly (readonly [string, (probe: Awaited<ReturnType<typeof setup>>) => void, RegExp])[])(
+    'rejects %s',
+    async (_name, script, message) => {
+      const probe = await setup()
+      expect(() => { script(probe) }).toThrow(message)
+    },
+  )
 })

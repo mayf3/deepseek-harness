@@ -64,4 +64,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The controller is a stateless projection of `ctx.jobs` reads; the registry's own `@deepseek-ai/dsh-jobs/invariant` owns the offset relations these streams forward.
+**Runtime invariant:** No companion is published. The controller is a stateless projection of `ctx.jobs` reads; the registry's own `@deepseek-ai/dsh-jobs/invariant` owns the event protocol and event-versus-read relations these streams forward.

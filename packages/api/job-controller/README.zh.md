@@ -64,4 +64,4 @@ Client 入口在 `ClientJobsModel` 之上提供 `ClientJobs`（`ctx.jobs`）。`
 
 </details>
 
-**运行时不变式：** 不发布伴生入口。控制器是 `ctx.jobs` 读取的无状态投影；这些流转发的偏移关系由注册表自己的 `@deepseek-ai/dsh-jobs/invariant` 拥有。
+**运行时不变式：** 不发布伴生入口。控制器是 `ctx.jobs` 读取的无状态投影；这些流转发的事件协议与事件对读取的关系由注册表自己的 `@deepseek-ai/dsh-jobs/invariant` 拥有。

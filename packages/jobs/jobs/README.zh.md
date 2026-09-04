@@ -80,7 +80,7 @@ kind: "package-reference"
 | [`src/types.ts`](src/types.ts) | 共享词汇：`JobSpec`、`JobHandle`、`JobHooks`、`JobOutcome`、`VisibleJobs`、`JobEvent` 与读取结果 |
 | [`src/view.ts`](src/view.ts) | 客户端安全叶子：`JobView`、`JobChunk`、`JobStatus` 与可合并扩展的 `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` 带类型标记的标识符，无需 agent 依赖即可导入 |
-| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验注册表交出的每个投影——标识、状态、时间戳、所有者与环偏移 |
+| [`src/invariant.ts`](src/invariant.ts) | 不变式伴生插件：校验每个 job 的事件协议（先 registered、恰一次结算、最后 removed）以及每个通告的投影与注册表自身读取的一致性 |
 
 ### 服务操作
 
