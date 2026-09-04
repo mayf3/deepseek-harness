@@ -4,16 +4,15 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
-import { brandString } from '@deepseek-ai/dsh-brand'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import { Remote, RemoteError, TypertRemoteService, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { Remote, RemoteError, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { handleFileUploadHttp } from './http-route.ts'
 import { FILE_UPLOAD_PATH } from './protocol.ts'
 import type { EncodedFileUploadRequest, FileUploadReceiptId, FileUploadValue } from './types.ts'
 
-export { FILE_UPLOAD_PATH } from './protocol.ts'
 export type * from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -37,13 +36,6 @@ export interface PromptFileBinding extends Disposable {
   /** Keep the receipt bindings until queue or history observation retires them. */
   commit(): void
 }
-
-type FileUploadHttpResult =
-  | { readonly ok: true; readonly value: FileUploadValue }
-  | {
-    readonly ok: false
-    readonly error: { readonly code: string; readonly message: string; readonly details: object }
-  }
 
 class PromptFileBindingGuard implements PromptFileBinding {
   private settled = false
@@ -259,73 +251,6 @@ export class FileUploads extends TypertRemoteService {
       if (upload.requestId === requestId) staged.delete(receiptId)
     }
     if (staged.size === 0) this.stagedFiles.delete(session)
-  }
-}
-
-/**
- * Handle one authenticated raw-byte upload.
- * @param service - Host upload service receiving streamed bytes.
- * @param request - authenticated HTTP request from Connection.
- * @returns JSON result using HTTP status 200 after request validation.
- */
-export async function handleFileUploadHttp(service: FileUploads, request: Request): Promise<Response> {
-  if (request.method !== 'POST') {
-    return new Response(null, { status: 405, headers: { allow: 'POST' } })
-  }
-  const mediaType = request.headers.get('content-type')?.split(';', 1)[0]?.trim().toLowerCase()
-  if (mediaType !== 'application/octet-stream') {
-    return new Response('content type must be application/octet-stream', { status: 415 })
-  }
-  const url = new URL(request.url)
-  const sessionId = url.searchParams.get('sessionId')
-  if (sessionId === null || sessionId === '') {
-    return new Response('sessionId is required', { status: 400 })
-  }
-  const name = url.searchParams.get('name') ?? undefined
-  let result: FileUploadHttpResult
-  try {
-    result = {
-      ok: true,
-      value: await service.uploadStream({
-        sessionId: brandString<SessionId>(sessionId),
-        data: requestBodyChunks(request.body),
-        signal: request.signal,
-        ...(name === undefined ? {} : { name }),
-      }),
-    }
-  } catch (error) {
-    const failure = remoteErrorOf(error)
-    result = {
-      ok: false,
-      error: failure !== undefined
-        ? { code: failure.code, message: failure.message, details: failure.details }
-        : {
-          code: 'gateway/internal',
-          message: error instanceof Error ? error.message : String(error),
-          details: {},
-        },
-    }
-  }
-  return new Response(JSON.stringify(result), {
-    status: 200,
-    headers: {
-      'content-type': 'application/json; charset=utf-8',
-      'cache-control': 'no-store',
-    },
-  })
-}
-
-async function* requestBodyChunks(body: ReadableStream<Uint8Array> | null): AsyncIterable<Uint8Array> {
-  if (body === null) return
-  const reader = body.getReader()
-  try {
-    while (true) {
-      const chunk = await reader.read()
-      if (chunk.done) return
-      yield chunk.value
-    }
-  } finally {
-    reader.releaseLock()
   }
 }
 

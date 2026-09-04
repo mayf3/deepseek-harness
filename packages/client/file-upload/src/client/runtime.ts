@@ -6,13 +6,10 @@ import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteResult } from '@deepseek-ai/dsh-typert-protocol'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { FILE_UPLOAD_PATH } from '../protocol.ts'
-import type { EncodedFileUploadRequest, FileUploadValue } from '../types.ts'
 import type {
-  ClientFileUploadHooks,
-  FileUploadBody,
-  FileUploadFetch,
-  FileUploadService,
-} from './contract.ts'
+  ClientFileUploadHooks, EncodedFileUploadRequest, FileUploadFetch, FileUploadValue,
+} from '../types.ts'
+import type { FileUploadBody, FileUploadService } from './contract.ts'
 
 interface FileUploadRequest {
   readonly path: string

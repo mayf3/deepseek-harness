@@ -2,7 +2,8 @@ import { runInNewContext } from 'node:vm'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import { FileUploads, handleFileUploadHttp } from '@deepseek-ai/dsh-client-file-upload'
+import { handleFileUploadHttp } from '../src/http-route.ts'
+import type { FileUploads } from '../src/index.ts'
 
 function request(input: {
   method?: string

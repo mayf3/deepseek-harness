@@ -33,5 +33,3 @@ export interface FileUploadService {
     onProgress?: (progress: FileUploadProgress) => void,
   ): Promise<RemoteResult<FileUploadValue>>
 }
-
-export type { ClientFileUploadHooks, FileUploadFetch } from '../types.ts'
