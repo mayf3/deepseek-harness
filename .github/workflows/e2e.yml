@@ -60,9 +60,9 @@ jobs:
     if: >-
       github.event_name != 'pull_request'
       || !(github.event.pull_request.head.repo.fork || github.event.pull_request.user.login == 'dependabot[bot]')
-    # Profile e2e files can each own several complete dsh subprocess trees, so
-    # four file workers preserve process/PTY headroom. Tests retain 120s/test
-    # and retry 2; 45m still bounds retry storms against a slow API.
+    # Credentialed e2e files share one provider key, so run files serially to
+    # avoid cross-file quota contention. Tests retain 120s/test and retry 2;
+    # 45m still bounds retry storms against a slow API.
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
@@ -118,7 +118,7 @@ jobs:
           DEEPSEEK_BASE_URL: https://api.deepseek.com
           DSH_AUTO_REVIEW_CERTIFICATION: '1'
           DSH_AUTO_REVIEW_CERTIFICATION_REPORT: ${{ runner.temp }}/auto-review-certification-report.json
-          DSH_E2E_MAX_WORKERS: 4
+          DSH_E2E_MAX_WORKERS: 1
           DSH_EXAMPLE_MODE: lib
         run: pnpm run test:e2e
 
