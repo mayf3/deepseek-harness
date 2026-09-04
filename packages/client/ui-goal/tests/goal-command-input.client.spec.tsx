@@ -133,5 +133,8 @@ describe('goal command input projection', () => {
 
     expect(bubble.textContent).toBe('/goal ship it')
     expect(within(bubble).queryByRole('button')).toBeNull()
+    // The executed command token reads as a reference chip; the objective stays plain text.
+    const chips = [...bubble.querySelectorAll('[data-ref-chip]')]
+    expect(chips.map(chip => [chip.getAttribute('data-ref-chip'), chip.textContent])).toEqual([['command', '/goal']])
   })
 })

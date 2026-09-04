@@ -347,6 +347,14 @@ describe('decorations: scanTextRefs', () => {
     expect(scanTextRefs('/research @goal', lexicon)).toEqual([])
   })
 
+  it('a "/" token continued by a path never matches, even when the name is on the lexicon', () => {
+    expect(scanTextRefs('/goal/x /goal/ /goal.md', lexicon)).toEqual([])
+  })
+
+  it('a "/" token may end at trailing punctuation before whitespace', () => {
+    expect(scanTextRefs('/goal。 then', lexicon)).toEqual([{ start: 0, end: 5, trigger: '/' }])
+  })
+
   it('word boundary: a trigger glued to text never matches', () => {
     expect(scanTextRefs('x/goal y@research', lexicon)).toEqual([])
   })

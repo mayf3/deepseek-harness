@@ -12,7 +12,7 @@ import type {
   PartialAssistant, RunningToolCall, TurnNavigationItem,
 } from '../contract/snapshot.ts'
 import { TURN_PROCESS_INDEPENDENT_KINDS } from '../contract/turn-process.ts'
-import { sessionRecallLabels } from './event-projection.ts'
+import { sessionRecallLabels, skillInvocationName } from './event-projection.ts'
 import { sameTurnNavigationItem, turnNavigationItem } from './turn-navigation.ts'
 import { ChatTurnProcessProjector } from './turn-process-presentation.ts'
 
@@ -506,6 +506,84 @@ class ReferenceLabelProjector {
   }
 }
 
+function withSkillNames(
+  node: ChatConversationViewNode,
+  names: readonly string[],
+): ChatConversationViewNode {
+  const candidate = node as ChatNode
+  if (candidate.kind !== 'user' && candidate.kind !== 'steering') return node
+  const current = candidate.data.skillNames ?? EMPTY_KEYS
+  const hasNames = Object.hasOwn(candidate.data, 'skillNames')
+  if (sameReferences(current, names) && hasNames === (names.length > 0)) return node
+  const data: Record<string, unknown> = { ...candidate.data }
+  if (names.length === 0) delete data.skillNames
+  else data.skillNames = names
+  return { ...candidate, data }
+}
+
+/**
+ * Skill names each direct message's step loaded, keyed by message Node key.
+ *
+ * A step's `skill-invocation` injections follow the direct messages the host
+ * scanned for `/name` gestures and precede the step's first non-message Node
+ * (the assistant step, a Turn error, a command); every Node of another kind
+ * therefore closes the batch. Names attach to every direct message of the
+ * batch: the bubble decorates only the tokens its own text carries.
+ * @param nodes - every materialized Chat Node, in any order.
+ * @returns the loaded skill names per direct message key; absent for none.
+ */
+function skillNamesByMessage(nodes: readonly ChatConversationViewNode[]): Map<string, readonly string[]> {
+  const ordered = [...nodes].sort((left, right) => left.anchorSeq - right.anchorSeq)
+  const result = new Map<string, readonly string[]>()
+  let batchMessages: string[] = []
+  let batchNames: string[] = []
+  const flush = (): void => {
+    if (batchNames.length > 0) for (const key of batchMessages) result.set(key, batchNames)
+    batchMessages = []
+    batchNames = []
+  }
+  for (const node of ordered) {
+    const candidate = node as ChatNode
+    if (candidate.kind === 'user' || candidate.kind === 'steering') {
+      batchMessages.push(node.key)
+      continue
+    }
+    if (candidate.kind !== 'context') {
+      flush()
+      continue
+    }
+    const name = skillInvocationName(candidate.data.source)
+    if (name !== null && !batchNames.includes(name)) batchNames.push(name)
+  }
+  flush()
+  return result
+}
+
+/** Attaches each direct message's step-loaded skill names to its Node. */
+class SkillNameProjector {
+  replace(nodes: readonly ChatConversationViewNode[]): readonly ChatConversationViewNode[] {
+    const names = skillNamesByMessage(nodes)
+    return nodes.map(node => withSkillNames(node, names.get(node.key) ?? EMPTY_KEYS))
+  }
+
+  apply(
+    upserts: readonly ChatConversationViewNode[],
+    store: ChatNodeStore,
+  ): readonly ChatConversationViewNode[] {
+    const byKey = new Map(upserts.map(node => [node.key, node]))
+    const all = new Map(store.values().map(node => [node.key, node]))
+    for (const [key, node] of byKey) all.set(key, node)
+    const names = skillNamesByMessage([...all.values()])
+    for (const [key, node] of all) {
+      const candidate = node as ChatNode
+      if (candidate.kind !== 'user' && candidate.kind !== 'steering') continue
+      const next = withSkillNames(node, names.get(key) ?? EMPTY_KEYS)
+      if (next !== node || byKey.has(key)) byKey.set(key, next)
+    }
+    return [...byKey.values()]
+  }
+}
+
 interface LegacyContribution {
   readonly anchorSeq: number
   readonly nodes: readonly ConversationNode[]
@@ -756,6 +834,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
   private readonly navigation = new MutableTurnNavigationIndex()
   private readonly legacy = new LegacySliceBuilder()
   private readonly referenceLabels = new ReferenceLabelProjector()
+  private readonly skillNames = new SkillNameProjector()
   private order: readonly string[] = EMPTY_KEYS
   /** Last published timeline: a Turn boundary can land without a new node. */
   private timeline: ConversationTimelineSnapshot | null = null
@@ -769,7 +848,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     readonly nodes: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
   }): ChatSnapshot {
-    const nodes = this.referenceLabels.replace(input.nodes)
+    const nodes = this.skillNames.replace(this.referenceLabels.replace(input.nodes))
     this.store.replace(nodes)
     this.order = orderedVisibleChatNodes(nodes).map(node => node.key)
     this.locations.rebuild(this.order, this.store)
@@ -785,7 +864,7 @@ export class ChatSnapshotBuilder implements ConversationViewBuilder<ChatConversa
     readonly upserts: readonly ChatConversationViewNode[]
     readonly timeline: ConversationTimelineSnapshot
   }): ChatSnapshot {
-    const upserts = this.referenceLabels.apply(input.upserts, this.store)
+    const upserts = this.skillNames.apply(this.referenceLabels.apply(input.upserts, this.store), this.store)
     const processTurns = new Set<number>()
     let structural = false
     const contentOnly: ChatConversationViewNode[] = []

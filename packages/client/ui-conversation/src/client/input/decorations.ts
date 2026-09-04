@@ -23,12 +23,20 @@ export interface TextRefRange {
 /** Token matcher: a trigger char at line start or after whitespace, then a word-ish name (never crosses \n). */
 const TEXT_REF_RE = /(^|\s)([/@])([\w-]+)/g
 const FOLDER_REF_RE = /(^|\s)(@(?:"[^"\n]*\/|[^\s"]+\/))/g
+/**
+ * What may follow a `/name` token: whitespace or the draft end, optionally
+ * after trailing sentence punctuation. The host skill gesture
+ * (`dsh-tool-skill`) is whitespace-bounded, so `/nfs-hg/xxx` or `/plan.md`
+ * is a path, never a reference.
+ */
+const SLASH_TOKEN_END_RE = /^[.,;:!?，。；：！？]*(?:\s|$)/
 
 /**
  * Scan the draft for plain-text reference tokens against the hot lexicons.
  * Word-boundary discipline: the trigger must sit at the draft
  * start or after whitespace ('x/name' never matches); the name must be an
- * exact lexicon member.
+ * exact lexicon member; a `/name` token must end at whitespace, the draft
+ * end, or trailing sentence punctuation ('/name/x' is a path).
  * @param draft - draft text.
  * @param lexicon - per-trigger name lists (a missing trigger scans nothing).
  * @returns matched ranges in draft order.
@@ -44,6 +52,7 @@ export function scanTextRefs(
     while ((m = TEXT_REF_RE.exec(draft)) !== null) {
       const trigger = m[2] as '/' | '@'
       const name = m[3] ?? ''
+      if (trigger === '/' && !SLASH_TOKEN_END_RE.test(draft.slice(m.index + m[0].length))) continue
       if (lexicon.get(trigger)?.includes(name)) {
         const start = m.index + (m[1]?.length ?? 0)
         out.push({ start, end: start + 1 + name.length, trigger })
