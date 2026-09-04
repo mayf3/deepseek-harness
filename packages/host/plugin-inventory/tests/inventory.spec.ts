@@ -3,6 +3,7 @@ import { Context, FiberState, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
+import { ensurePluginFailures, type ProfileRuntime } from '@deepseek-ai/dsh-app-boot'
 import PluginInventoryGateway from '../src/index.ts'
 
 const contexts: Context[] = []
@@ -94,6 +95,48 @@ describe('PluginInventoryGateway', () => {
 
     await ctx.loader.remove(pendingId)
     expect((await inventory.list()).entries.some(entry => entry.entryId === pendingId)).toBe(false)
+  })
+
+  it('attributes rows to their bundle through the profile runtime and lists recorded failures', async () => {
+    const { ctx, inventory } = await harness()
+    const versioned = await ctx.loader.create({ id: 'versioned', name: 'cordis:active' })
+    const bare = await ctx.loader.create({ id: 'bare', name: 'cordis:active' })
+    const off = await ctx.loader.create({ id: 'off', name: 'cordis:active', disabled: true })
+    const origins = new Map([
+      ['versioned', { trust: 'external', packageName: 'ext', version: '1.2.3' }],
+      ['bare', { trust: 'external', packageName: 'ext' }],
+      ['off', { trust: 'external', packageName: 'ext' }],
+      ['gone', { trust: 'external', packageName: 'ext' }],
+    ] as const)
+    ctx.provide('profileRuntime', {
+      originOf: (rowId: string) => origins.get(rowId as never),
+      userDisabledRowIds: () => new Set(['off']),
+    } as Partial<ProfileRuntime> as never)
+    const registry = ensurePluginFailures(ctx)
+    registry.record({ entryId: 'gone', rowId: 'gone', moduleName: 'cordis:throws', groupId: 'bundle/ext', stage: 'apply', message: 'boom' })
+    // A record of a row that later mounted rides on the live entry and is not listed twice.
+    registry.record({ entryId: bare, rowId: 'bare', moduleName: 'cordis:active', groupId: 'bundle/ext', stage: 'import', message: 'stale' })
+    registry.record({
+      entryId: 'conflict:bundle/late:versioned', rowId: 'versioned', moduleName: 'late', groupId: 'bundle/late',
+      packageName: 'late', stage: 'conflict', message: 'row "versioned" is already declared by ext',
+    })
+    registry.record({
+      entryId: 'conflict:/home/cordis.patch.yml:bare', rowId: 'bare', moduleName: 'mine', groupId: '/home/cordis.patch.yml',
+      stage: 'conflict', message: 'row "bare" is already declared by ext',
+    })
+
+    const { entries } = await inventory.list()
+    expect(entries).toEqual([
+      { entryId: versioned, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', trust: 'external', package: { name: 'ext', version: '1.2.3' } },
+      { entryId: bare, moduleName: 'cordis:active', enabled: true, fiberPhase: 'active', trust: 'external', package: { name: 'ext' }, failure: { stage: 'import', message: 'stale' } },
+      { entryId: off, moduleName: 'cordis:active', enabled: false, fiberPhase: null, trust: 'external', package: { name: 'ext' }, disabledBy: 'user' },
+      // A failed row the tree no longer holds is attributed through the runtime.
+      { entryId: 'gone', moduleName: 'cordis:throws', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'ext' }, failure: { stage: 'apply', message: 'boom' } },
+      // A conflict names the bundle that lost the id; the runtime would name the owner.
+      { entryId: 'conflict:bundle/late:versioned', moduleName: 'late', enabled: true, fiberPhase: 'failed', trust: 'external', package: { name: 'late' }, failure: { stage: 'conflict', message: 'row "versioned" is already declared by ext' } },
+      // A user-layer conflict belongs to no package.
+      { entryId: 'conflict:/home/cordis.patch.yml:bare', moduleName: 'mine', enabled: true, fiberPhase: 'failed', trust: 'external', failure: { stage: 'conflict', message: 'row "bare" is already declared by ext' } },
+    ])
   })
 
   it('carries each composed preset with root-fiber states mapped to phases', async () => {

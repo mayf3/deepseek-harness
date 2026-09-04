@@ -15,10 +15,9 @@ import type { ChildProcess } from 'node:child_process'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
-  boot, bundleLayerPatches, loadOptionalPatches, loadProfile, ProfileRuntime, readProbeCache, rootIncludeEntry,
-  type Profile,
+  boot, composeProfileStack, recordRowConflicts, loadOptionalPatches, loadProfile, ProfileRuntime, readProbeCache, rootIncludeEntry,
+  type ComposedStack, type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { remoteMethods, RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import PluginManager, {
@@ -194,12 +193,14 @@ interface Booted {
 /** Boot the profile the way the launcher does, then mount the manager over it. */
 async function bootProfile(staged: StagedHome, internals: PluginManagerInternals = {}, config: Partial<PluginManager['config']> = {}): Promise<Booted> {
   const load = (): Profile => loadProfile(NAME, 'web', staged.anchor, staged.home)
-  const composeFor = (profile: Profile): PatchOptions[] => structuredClone([
-    ...profile.layers.flatMap(bundleLayerPatches),
-    ...loadOptionalPatches(NAME, profile.patchPath) ?? [],
-  ])
+  const composeFor = (profile: Profile): ComposedStack => {
+    const stack = composeProfileStack(NAME, profile.layers, [
+      { label: profile.patchPath, patches: loadOptionalPatches(NAME, profile.patchPath) ?? [] },
+    ])
+    return { ...stack, patches: structuredClone(stack.patches) }
+  }
   const profile = load()
-  const ctx = await boot(NAME, join(staged.profileDir, 'cordis.yml'), composeFor(profile), prepare)
+  const ctx = await boot(NAME, join(staged.profileDir, 'cordis.yml'), composeFor(profile).patches, prepare)
   contexts.push(ctx)
   await ctx.plugin(ProfileRuntime, {
     profile,
@@ -209,6 +210,8 @@ async function bootProfile(staged: StagedHome, internals: PluginManagerInternals
     rootEntry: () => rootIncludeEntry(ctx),
     readUserPatches: () => loadOptionalPatches(NAME, profile.patchPath) ?? [],
   })
+  // As the launcher does after boot: the runtime records conflicts only on its own recompositions.
+  recordRowConflicts(ctx, composeFor(profile).conflicts)
   class TestManager extends PluginManager {
     constructor(context: Context, managerConfig: PluginManager['config']) {
       super(context, managerConfig, internals)
@@ -266,8 +269,8 @@ describe('PluginManager', () => {
       ])
       const bundle = views[0]
       expect(bundle).toMatchObject({ version: '1.0.0', title: 'Title of ext-bundle', description: 'staged ext-bundle', stage: 'runtime', liveReload: true })
-      // Rows come from the probe while the bundle is not composed, prefixed the way the launcher will prefix them.
-      expect(bundle?.rows).toEqual([{ entryId: 'ext-bundle/hello', originalId: 'hello', moduleName: 'cordis:good', enabled: true, phase: null }])
+      // Rows come from the probe while the bundle is not composed, under the ids the patch declares.
+      expect(bundle?.rows).toEqual([{ entryId: 'hello', rowId: 'hello', moduleName: 'cordis:good', enabled: true, phase: null }])
       expect(bundle?.addable).toEqual([{ moduleName: 'ext-bundle/extra.js', declaredName: './extra.js', title: 'Extra', ok: true }])
       expect(bundle?.probedAt).toEqual(expect.any(String) as string)
       expect(readProbeCache(staged.profileDir, 'ext-bundle', '1.0.0')?.kind).toBe('bundle')
@@ -287,9 +290,33 @@ describe('PluginManager', () => {
       expect(view).toMatchObject({ name: 'ext-mixed', status: 'partial', enabled: true })
       expect(view?.reason).toContain('boom at apply')
       expect(view?.rows.map(row => [row.entryId, row.phase, row.failure?.stage])).toEqual([
-        ['include:ext-mixed/ok', 'active', undefined],
-        ['include:ext-mixed/bad', 'failed', 'apply'],
+        ['include:ok', 'active', undefined],
+        ['include:bad', 'failed', 'apply'],
       ])
+    })
+
+    it('lists a bundle left out by an id conflict as failed, with the conflict as its row', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-one', { patch: BUNDLE_ONE_ROW })
+      addDependency(staged.profileDir, 'ext-one')
+      stagePackage(staged.profileDir, 'ext-two', { patch: BUNDLE_ONE_ROW })
+      addDependency(staged.profileDir, 'ext-two')
+      const manifest = manifestOf(staged.profileDir)
+      manifest.dsh.profile.bundles.push('ext-one', 'ext-two')
+      writeFileSync(join(staged.profileDir, 'package.json'), JSON.stringify(manifest, null, 2))
+      const { ctx, manager } = await bootProfile(staged)
+
+      const views = await manager.list()
+
+      expect(entryIds(ctx)).toContain('include:hello')
+      expect(views.find(view => view.name === 'ext-one')).toMatchObject({ status: 'running' })
+      const two = views.find(view => view.name === 'ext-two')
+      expect(two).toMatchObject({ status: 'failed', enabled: true })
+      expect(two?.reason).toContain('already declared by ext-one')
+      expect(two?.rows).toEqual([{
+        entryId: 'conflict:bundle/ext-two:hello', rowId: 'hello', moduleName: 'cordis:good', enabled: true, phase: 'failed',
+        failure: { stage: 'conflict', message: 'row "hello" is already declared by ext-one' },
+      }])
     })
 
     it('reports a package the probe refuses as not enableable, and a stale layer as restart-required', async () => {
@@ -363,25 +390,25 @@ describe('PluginManager', () => {
       const { manager } = await bootProfile(staged)
       await manager.enable('ext-off')
       await manager.enable('ext-waiting')
-      await manager.setRowDisabled({ kind: 'global' }, 'ext-off/b', true)
+      await manager.setRowDisabled({ kind: 'global' }, 'b', true)
 
       const views = await manager.list()
 
       const off = views.find(view => view.name === 'ext-off')
       expect(off).toMatchObject({ status: 'running' })
-      expect(off?.rows.map(row => [row.originalId, row.enabled, row.disabledBy, row.phase])).toEqual([
+      expect(off?.rows.map(row => [row.rowId, row.enabled, row.disabledBy, row.phase])).toEqual([
         ['a', false, 'composition', null],
         ['b', false, 'user', null],
       ])
-      await manager.setRowDisabled({ kind: 'global' }, 'ext-off/b', true)
+      await manager.setRowDisabled({ kind: 'global' }, 'b', true)
       const waiting = views.find(view => view.name === 'ext-waiting')
       expect(waiting).toMatchObject({ status: 'failed', reason: expect.stringContaining('fixtureSvc') as string })
-      expect(waiting?.rows).toEqual([expect.objectContaining({ entryId: 'include:ext-waiting/w', phase: 'pending', failure: expect.objectContaining({ stage: 'inject-pending' }) as object })])
+      expect(waiting?.rows).toEqual([expect.objectContaining({ entryId: 'include:w', phase: 'pending', failure: expect.objectContaining({ stage: 'inject-pending' }) as object })])
       // Another bundle's recorded failure is not this one's row.
       expect(off?.rows.some(row => row.failure !== undefined)).toBe(false)
     })
 
-    it('reads anonymous and gated probe rows, unprefixed for a first-party package', async () => {
+    it('reads anonymous and gated probe rows', async () => {
       const staged = await stageHome()
       stagePackage(staged.profileDir, 'ext-anon', { patch: '- insert:\n    - name: cordis:good\n    - id: gated\n      name: cordis:good\n      disabled: true\n' })
       addDependency(staged.profileDir, 'ext-anon')
@@ -395,8 +422,8 @@ describe('PluginManager', () => {
       const views = await manager.list()
 
       expect(views.find(view => view.name === 'ext-anon')?.rows).toEqual([
-        { entryId: 'cordis:good', moduleName: 'cordis:good', enabled: true, phase: null },
-        { entryId: 'ext-anon/gated', originalId: 'gated', moduleName: 'cordis:good', enabled: false, disabledBy: 'composition', phase: null },
+        { entryId: 'cordis:good', rowId: 'cordis:good', moduleName: 'cordis:good', enabled: true, phase: null },
+        { entryId: 'gated', rowId: 'gated', moduleName: 'cordis:good', enabled: false, disabledBy: 'composition', phase: null },
       ])
       await manager.enable('fp-bundle')
       const firstParty = (await manager.list()).find(view => view.name === 'fp-bundle')
@@ -436,7 +463,7 @@ describe('PluginManager', () => {
 
       expect(result).toMatchObject({ installed: ['ext-new'], enabled: ['ext-new'], installedOnly: [], plain: [] })
       expect(manifestOf(staged.profileDir).dsh.profile.bundles).toEqual(['ext-new'])
-      expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:bundle/ext-new', 'include:ext-new/hello']))
+      expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:bundle/ext-new', 'include:hello']))
       expect(readProbeCache(staged.profileDir, 'ext-new')).toBeDefined()
       expect(changes.map(change => change.reason)).toEqual(['enable', 'install'])
       expect((await manager.list()).find(view => view.name === 'ext-new')?.status).toBe('running')
@@ -504,10 +531,10 @@ describe('PluginManager', () => {
       const { ctx, manager, changes } = await bootProfile(staged)
 
       expect(await manager.enable('ext-bundle')).toEqual({ changed: true, effect: 'live' })
-      expect(entryIds(ctx)).toContain('include:ext-bundle/hello')
+      expect(entryIds(ctx)).toContain('include:hello')
       expect(await manager.enable('ext-bundle')).toEqual({ changed: false, effect: 'live' })
       expect(await manager.disable('ext-bundle')).toEqual({ changed: true, effect: 'live' })
-      expect(entryIds(ctx)).not.toContain('include:ext-bundle/hello')
+      expect(entryIds(ctx)).not.toContain('include:hello')
       expect(await manager.disable('ext-bundle')).toEqual({ changed: false, effect: 'live' })
       expect(changes.map(change => [change.reason, change.packageName])).toEqual([
         ['enable', 'ext-bundle'], ['enable', 'ext-bundle'], ['disable', 'ext-bundle'], ['disable', 'ext-bundle'],
@@ -522,7 +549,7 @@ describe('PluginManager', () => {
 
       expect(await manager.enable('ext-bundle')).toEqual({ changed: true, effect: 'restart' })
       expect(manifestOf(staged.profileDir).dsh.profile.bundles).toEqual(['ext-bundle'])
-      expect(entryIds(ctx)).not.toContain('include:ext-bundle/hello')
+      expect(entryIds(ctx)).not.toContain('include:hello')
       expect(await manager.disable('ext-bundle')).toEqual({ changed: true, effect: 'restart' })
     })
 
@@ -559,7 +586,7 @@ describe('PluginManager', () => {
       })
 
       expect(manifestOf(staged.profileDir).dsh.profile.bundles).toEqual(['ext-fine'])
-      expect(entryIds(ctx)).toContain('include:ext-fine/hello')
+      expect(entryIds(ctx)).toContain('include:hello')
       expect(entryIds(ctx)).not.toContain('include:bad')
     })
 
@@ -706,7 +733,7 @@ describe('PluginManager', () => {
 
       const dependents = await manager.dependents('ext-provider')
 
-      expect(dependents.services).toEqual([{ service: 'fixtureSvc', providedBy: 'include:ext-provider/svc', injectedBy: ['include:needs-svc'] }])
+      expect(dependents.services).toEqual([{ service: 'fixtureSvc', providedBy: 'include:svc', injectedBy: ['include:needs-svc'] }])
       expect(dependents.references.map(reference => reference.rowId)).toEqual(['ref', 'nested-ref'])
       expect(dependents.references[0]).toEqual({ target: { kind: 'global' }, rowId: 'ref', moduleName: 'ext-provider/tools/x.js' })
     })
@@ -729,14 +756,14 @@ describe('PluginManager', () => {
       const { ctx, manager, changes } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
       await manager.enable('ext-bundle')
       await manager.addRow('ext-bundle', { kind: 'global' }, { module: './extra.js' })
-      expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:ext-bundle/hello', 'include:ext-bundle/extra.js']))
+      expect(entryIds(ctx)).toEqual(expect.arrayContaining(['include:hello', 'include:ext-bundle/extra.js']))
       expect(existsSync(join(staged.profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(true)
 
       await manager.uninstall('ext-bundle')
 
       expect(calls).toEqual([['pnpm', 'remove', 'ext-bundle']])
       expect(manifestOf(staged.profileDir)).toMatchObject({ dependencies: {}, dsh: { profile: { bundles: [] } } })
-      expect(entryIds(ctx)).not.toContain('include:ext-bundle/hello')
+      expect(entryIds(ctx)).not.toContain('include:hello')
       expect(entryIds(ctx)).not.toContain('include:ext-bundle/extra.js')
       expect(readFileSync(join(staged.profileDir, 'cordis.patch.yml'), 'utf8')).toBe('[]\n')
       expect(existsSync(join(staged.profileDir, '.dsh-plugins', 'ext-bundle.json'))).toBe(false)

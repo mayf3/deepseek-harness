@@ -26,7 +26,7 @@
 
 各层按此顺序应用在空条目列表之上：先按 profile 列出的顺序应用每个组合包，然后是 profile 的 `cordis.patch.yml`，然后是 home 级的那份，最后是任意 `--patch` overlay。一条 patch 按 id 定位某个条目并替换其整个 config，或插入新条目。
 
-用 `dsh plugin` 装进 profile 的组合包是外部的。它的行挂在一个受控组 `bundle/<package>` 下，id 带 `<package>/<id>` 前缀；启动失败的行被隔离并在插件列表里报告，而内置行仍然让启动失败。提供内置行所注入服务的组合包用 `dsh.bundle.stage: boot` 退出隔离；隔离的失败若让某个内置行停在等待状态，启动仍会失败并点名该组合包。安装一个包和启用它的层是两件事：`dependencies` 记录安装，`dsh.profile.bundles` 记录已启用的层。`plugins` Remote（`dsh-host-plugin-manager`）在运行时经 `profileRuntime` 完成这两件事，并向 profile 的用户层或某个 agent preset 的用户层（`.agent-presets/<id>/cordis.patch.yml`）添加行；每个 preset 都接受这样一层施加在其组合之上。
+用 `dsh plugin` 装进 profile 的组合包是外部的。它的行挂在一个受控组 `bundle/<package>` 下，id 保持 patch 声明的样子；启动失败的行被隔离并在插件列表里报告，而内置行仍然让启动失败。行 id 共用一个命名空间：内置层先占有自己的 id，组合包或用户层插入已被占用的 id 时被排除并报告为冲突。提供内置行所注入服务的组合包用 `dsh.bundle.stage: boot` 退出隔离；隔离的失败若让某个内置行停在等待状态，启动仍会失败并点名该组合包。安装一个包和启用它的层是两件事：`dependencies` 记录安装，`dsh.profile.bundles` 记录已启用的层。`plugins` Remote（`dsh-host-plugin-manager`）在运行时经 `profileRuntime` 完成这两件事，并向 profile 的用户层或某个 agent preset 的用户层（`.agent-presets/<id>/cordis.patch.yml`）添加行；每个 preset 都接受这样一层施加在其组合之上。
 
 自定义 profile 默认实时重载 patch。随附的 `web` profile 使用实时重载；`headless`、`sdk`、`sdk-minimal` 和 `acp` 则只在启动时应用一次所有配置层，因为一次性应用或 stdio 应用拥有工作之后，替换其依赖会破坏该生命周期。
 
