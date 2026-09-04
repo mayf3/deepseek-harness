@@ -55,7 +55,7 @@ The tool executes `pwsh -Command <command>` and returns the combined output. Com
 
 ### Timeout promotion
 
-A foreground command that reaches its timeout is not killed by default: the executor offers the still-running process back, the tool registers it as a background job, and the call returns the job id with the output captured so far — the job's consuming cursor continues exactly after it. The promoted result reads `[still running after <timeoutMs>ms; moved to background job <id>]` plus the job hand-off guidance, and the run is mirrored into `ctx.activities` like any background call, so the Web task list streams it (stop control included). Promotion is strictly best-effort: `promoteOnTimeout: false`, a missing job registry, or a refused job admission all fall back to the plain timeout kill, and the tool description advertises the semantics only when they hold.
+A foreground command that reaches its timeout is not killed by default: the executor offers the still-running process back, the tool registers it as a background job, and the call returns the job id with the output captured so far — the job's consuming cursor continues exactly after it. The promoted result reads `[still running after <timeoutMs>ms; moved to background job <id>]` plus the job hand-off guidance, and the run's observed streams feed the job registry's output ring from their current offsets like any background call, so the Web task list streams it through `job.rows` and `job.observe` (stop control included). Promotion is strictly best-effort: `promoteOnTimeout: false`, a missing job registry, or a refused job admission all fall back to the plain timeout kill, and the tool description advertises the semantics only when they hold.
 
 ### Windows-specific sandbox behavior
 

@@ -38,7 +38,7 @@ console.log(result.exitCode, result.stdout.text)
 
 ### Background processes
 
-Resolve the request with `onExpiry: 'none'` and keep the handle: no deadline is armed, and the process runs until killed or finished. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Kill the process group with `kill()` (returns `false` once it has finished) and await `done` for settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` optionally exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor (the activity observation plane) — and is absent when a backend cannot expose offset reads.
+Resolve the request with `onExpiry: 'none'` and keep the handle: no deadline is armed, and the process runs until killed or finished. Read output incrementally with `readOutput()` — consecutive reads never repeat output, and lossy reads point at full-stream spill files. Kill the process group with `kill()` (returns `false` once it has finished) and await `done` for settlement. Job ids, ownership, polling, and notices belong to the generic `ctx.jobs` runtime, where the tool layer registers the handle. `ShellProcess.observed` exposes non-consuming offset readers over the same captured streams — for observers independent of the consuming cursor, such as the job registry's pull sources — including the `spawn failed: …` note a rejected spawn leaves on stderr.
 
 ### Timeout promotion offers
 

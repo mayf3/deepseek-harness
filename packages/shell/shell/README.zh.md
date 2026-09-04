@@ -38,7 +38,7 @@ console.log(result.exitCode, result.stdout.text)
 
 ### 后台进程
 
-以 `onExpiry: 'none'` 解析请求并保留句柄：不布置任何 deadline，进程一直跑到被 kill 或自行结束。用 `readOutput()` 增量读取输出——连续读取绝不会重复交付，有损读取会指向完整流的 spill 文件。用 `kill()` 终止进程组（进程结束后返回 `false`），并等待 `done` 结算。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。`ShellProcess.observed` 可选地在同一份捕获流上暴露非消费的偏移读取器——供独立于消费游标的观察者使用（activity 观察面）——后端无法提供偏移读取时缺席。
+以 `onExpiry: 'none'` 解析请求并保留句柄：不布置任何 deadline，进程一直跑到被 kill 或自行结束。用 `readOutput()` 增量读取输出——连续读取绝不会重复交付，有损读取会指向完整流的 spill 文件。用 `kill()` 终止进程组（进程结束后返回 `false`），并等待 `done` 结算。job id、所有权、轮询与通知属于通用 `ctx.jobs` 运行时，工具层会把句柄注册进去。`ShellProcess.observed` 在同一份捕获流上暴露非消费的偏移读取器——供独立于消费游标的观察者使用，例如任务注册表的拉取源——包括被拒绝的 spawn 留在 stderr 上的 `spawn failed: …` 提示。
 
 ### 超时转移 offer
 
