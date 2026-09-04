@@ -9,10 +9,12 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
-import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type Include from '@deepseek-ai/cordis-plugin-include'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
-import { composeExternalLayer, isJsDisabled } from './external-bundles.ts'
+import { claimLayerIds, type ComposedStack } from './compose-stack.ts'
+import { recordRowConflicts } from './contained-group.ts'
+import { isJsDisabled } from './external-bundles.ts'
 import type { BundleTrust, Profile, ProfileLayer, ProfilePatchReload } from './profile.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -30,8 +32,6 @@ export interface RowOrigin {
   readonly packageName: string
   /** The package's version, when its manifest declares one. */
   readonly version?: string
-  /** For an external row: the id the bundle's own patch declared, before prefixing. */
-  readonly originalId?: string
 }
 
 /** What the launcher hands the service. */
@@ -42,21 +42,12 @@ export interface ProfileRuntimeOptions {
   installAnchor: string
   /** Re-read the profile from disk, re-resolving its bundle layers. */
   loadProfile: () => Profile
-  /** The complete patch stack for a profile: bundle layers, user layers, overlays. */
-  compose: (profile: Profile) => PatchOptions[]
+  /** The complete patch stack for a profile — bundle layers, user layers, overlays — with the rows it left out. */
+  compose: (profile: Profile) => ComposedStack
   /** The root Include entry, once mounted. */
   rootEntry: () => Entry | undefined
   /** The user patch layers as they stand on disk (profile file, then home file). */
   readUserPatches: () => PatchOptions[]
-}
-
-/** Collect every id a patch list inserts, recursing into inserted groups. */
-function insertedIds(patches: readonly PatchOptions[], into: Set<string>): void {
-  const visit = (row: EntryOptions): void => {
-    if (typeof row.id === 'string') into.add(row.id)
-    if (row.group && Array.isArray(row.config)) (row.config as EntryOptions[]).forEach(visit)
-  }
-  for (const patch of patches) patch.insert?.forEach(visit)
 }
 
 /** Facts and recomposition of the booted profile. */
@@ -106,8 +97,8 @@ export class ProfileRuntime extends Service {
 
   /**
    * Where one mounted row came from.
-   * @param rowId - the row's tree-wide id.
-   * @returns the origin, or undefined for a row no bundle layer inserted (a user or overlay row).
+   * @param rowId - the row's id as the composition declares it.
+   * @returns the origin, or undefined for a row no bundle layer owns (a user or overlay row, or a bundle left out by a conflict).
    */
   originOf(rowId: string): RowOrigin | undefined {
     this.origins ??= this.computeOrigins()
@@ -134,7 +125,8 @@ export class ProfileRuntime extends Service {
    * as they stand now. The root Include re-applies the stack transactionally:
    * a row whose options changed is updated in place, a row that appeared is
    * created, a row that vanished is disposed, and a failure rolls the whole
-   * update back with the previous tree still running.
+   * update back with the previous tree still running. The rows the stack left
+   * out replace the failure registry's conflict records once the update holds.
    * @param options - `reloadBundles` re-reads the profile manifest first, so a
    * bundle enabled or installed since boot joins the stack.
    * @throws when the root include is not mounted, or the Loader rejected the update.
@@ -147,27 +139,24 @@ export class ProfileRuntime extends Service {
       this.origins = undefined
     }
     const { patches: _previousPatches, ...includeConfig } = entry.options.config as Include.Config
+    const stack = this.options.compose(this.profile)
     await entry.update({
       config: {
         ...includeConfig,
-        patches: this.options.compose(this.profile),
+        patches: stack.patches,
       },
     })
+    recordRowConflicts(this.ctx, stack.conflicts)
   }
 
   private computeOrigins(): Map<string, RowOrigin> {
     const origins = new Map<string, RowOrigin>()
-    for (const layer of this.profile.layers) {
-      const base = { trust: layer.trust, packageName: layer.packageName, ...layer.version === undefined ? {} : { version: layer.version } }
-      if (layer.trust === 'external' && layer.stage === 'runtime') {
-        for (const [id, origin] of composeExternalLayer(layer).rows) {
-          origins.set(id, { ...base, originalId: origin.originalId })
-        }
-        continue
-      }
-      const ids = new Set<string>()
-      insertedIds(layer.patches, ids)
-      for (const id of ids) origins.set(id, base)
+    for (const [id, layer] of claimLayerIds(this.profile.layers).owners) {
+      origins.set(id, {
+        trust: layer.trust,
+        packageName: layer.packageName,
+        ...layer.version === undefined ? {} : { version: layer.version },
+      })
     }
     return origins
   }

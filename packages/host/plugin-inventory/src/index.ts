@@ -27,11 +27,10 @@ function pluginEntryId(value: string): PluginEntryId {
 }
 
 /** The wire view of a row's package origin. */
-function packageRef(origin: { packageName: string; version?: string; originalId?: string }): PluginPackageRef {
+function packageRef(origin: { packageName: string; version?: string }): PluginPackageRef {
   return {
     name: origin.packageName,
     ...origin.version === undefined ? {} : { version: origin.version },
-    ...origin.originalId === undefined ? {} : { originalId: origin.originalId },
   }
 }
 
@@ -105,7 +104,11 @@ export class PluginInventoryGateway extends TypertRemoteService {
     // registry is its only record, and the list must still show it.
     for (const failure of failures?.list() ?? []) {
       if (listed.has(failure.entryId)) continue
-      const origin = runtime?.originOf(failure.rowId)
+      // A conflict record names the bundle that lost the id; asking the
+      // runtime would name the layer that owns it.
+      const origin = failure.stage === 'conflict'
+        ? failure.packageName === undefined ? undefined : { trust: 'external' as const, packageName: failure.packageName }
+        : runtime?.originOf(failure.rowId)
       entries.push({
         entryId: pluginEntryId(failure.entryId),
         moduleName: failure.moduleName,

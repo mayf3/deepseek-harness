@@ -27,7 +27,6 @@ import {
   bundleGroupId,
   disableBundle,
   enableBundle,
-  externalRowId,
   healProfilesModuleFallback,
   layerTrust,
   loadProfile,
@@ -220,7 +219,7 @@ export class PluginManager extends TypertRemoteService {
       ?? (manifest.dsh?.profile?.stages?.[name] ?? packageManifest?.dsh?.bundle?.stage ?? 'runtime')
     const kind = probe?.kind ?? (layer !== undefined || packageManifest?.dsh?.bundle !== undefined ? 'bundle' : 'library')
     const composed = layer !== undefined
-    const rows = composed ? this.composedRows(runtime, name) : this.probedRows(name, trust, probe)
+    const rows = composed ? this.composedRows(runtime, name) : this.probedRows(probe)
     const status = this.status({ kind, installed, enabled, composed, liveReload, probe, probeFailure, rows })
     const reason = probeFailure ?? probe?.reason ?? (status === 'restart-required'
       ? 'the profile applies layer changes at its next start'
@@ -279,11 +278,10 @@ export class PluginManager extends TypertRemoteService {
     const listed = new Set<string>()
     for (const { entry, rowId } of this.ownedEntries(runtime, name)) {
       listed.add(entry.id)
-      const origin = runtime.originOf(rowId)
       const failure = failures?.get(entry.id)
       rows.push({
         entryId: entry.id,
-        ...optional('originalId', origin?.originalId),
+        rowId,
         moduleName: entry.options.name,
         enabled: !entry.disabled,
         ...entry.disabled ? { disabledBy: userDisabled.has(rowId) ? 'user' as const : 'composition' as const } : {},
@@ -294,11 +292,12 @@ export class PluginManager extends TypertRemoteService {
     /* v8 ignore next -- the root include provides the registry on every boot; the guard answers its optional type */
     for (const failure of failures?.list() ?? []) {
       if (listed.has(failure.entryId)) continue
-      const origin = runtime.originOf(failure.rowId)
-      if (origin?.packageName !== name) continue
+      // A conflict record names its bundle: the id's owner is the other layer.
+      const owner = failure.packageName ?? runtime.originOf(failure.rowId)?.packageName
+      if (owner !== name) continue
       rows.push({
         entryId: failure.entryId,
-        ...optional('originalId', origin.originalId),
+        rowId: failure.rowId,
         moduleName: failure.moduleName,
         enabled: true,
         phase: 'failed',
@@ -321,10 +320,10 @@ export class PluginManager extends TypertRemoteService {
   }
 
   /** The rows a bundle would contribute, from its probe record, when it is not composed. */
-  private probedRows(name: string, trust: PluginPackageView['trust'], probe: PluginProbe | undefined): PluginPackageRowView[] {
+  private probedRows(probe: PluginProbe | undefined): PluginPackageRowView[] {
     return (probe?.rows ?? []).map(row => ({
-      entryId: row.id === undefined ? row.name : trust === 'external' ? externalRowId(name, row.id) : row.id,
-      ...optional('originalId', row.id),
+      entryId: row.id ?? row.name,
+      rowId: row.id ?? row.name,
       moduleName: row.name,
       enabled: !row.gated,
       ...row.gated ? { disabledBy: 'composition' as const } : {},

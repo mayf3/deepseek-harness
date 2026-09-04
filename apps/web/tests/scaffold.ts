@@ -64,7 +64,7 @@ import {
   loadProfile,
   ProfileRuntime,
   writeProfileManifest,
-  type Profile,
+  type ComposedStack, type Profile,
 } from '@deepseek-ai/dsh-app-boot'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
@@ -731,7 +731,7 @@ export async function launchWebScaffold(options: LaunchOptions = {}): Promise<We
         profile,
         installAnchor: INSTALL_ANCHOR,
         loadProfile: readProfile,
-        compose: () => patches,
+        compose: (): ComposedStack => ({ patches, layers: [{ label: 'scaffold', patches }], conflicts: [], skippedBundles: [] }),
         rootEntry: () => [...ctx.loader.entries()].find(entry => entry.id === rootIncludeId),
         readUserPatches: () => loadOptionalPatches('dsh', profile.patchPath) ?? [],
       })

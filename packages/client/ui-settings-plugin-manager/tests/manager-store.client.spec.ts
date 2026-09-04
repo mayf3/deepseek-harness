@@ -32,7 +32,7 @@ const STANDARD: PresetGroup = {
 }
 
 /** What one install run answers. */
-type InstallValue = { installed: string[]; enabled: never[]; installedOnly: never[]; plain: never[]; jobId: string }
+type InstallValue = { installed: string[]; enabled: string[]; installedOnly: string[]; plain: string[]; jobId: string }
 
 function ok<T>(value: T) {
   return { ok: true as const, value }

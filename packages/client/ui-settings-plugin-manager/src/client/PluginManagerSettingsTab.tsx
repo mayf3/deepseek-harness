@@ -196,7 +196,7 @@ function PackageCard({ pkg, t, busy, open, presets, presetName, onToggleOpen, on
                         {pkg.rows.map(row => (
                           <li key={row.entryId} className={css.row} data-plugin-row={row.entryId}>
                             {row.enabled && row.phase !== null ? <PhaseDot phase={row.phase} t={t} /> : null}
-                            <span className={css.rowId}>{row.originalId ?? row.entryId}</span>
+                            <span className={css.rowId}>{row.rowId}</span>
                             <span className={css.rowModule}>{row.moduleName}</span>
                             {row.enabled
                               ? null

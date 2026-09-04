@@ -41,10 +41,10 @@ export type PluginRowPhase = 'pending' | 'loading' | 'active' | 'failed' | 'unlo
 
 /** One row a bundle contributes to the host tree, as the tree runs it. */
 export interface PluginPackageRowView {
-  /** The row's tree-wide id, prefixed for an isolated bundle. */
+  /** The row's tree-wide id, as `Entry.id` spells it (`include:<row id>` under the root include). */
   readonly entryId: string
-  /** The id the bundle's own patch declared, when the launcher prefixed it. */
-  readonly originalId?: string
+  /** The row id as the composition declares it — what a user patch or a row action targets. */
+  readonly rowId: string
   /** Module specifier the row names. */
   readonly moduleName: string
   /** Effective enablement, including a disabled owning group. */

@@ -155,10 +155,10 @@ describe('PluginManagerSettingsTab', () => {
         probedAt: '2026-09-04T00:00:00Z',
         overrides: ['ui-sidebar'],
         rows: [
-          { entryId: 'dsh-better-sidebar/better-sidebar', originalId: 'better-sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active' },
-          { entryId: 'dsh-better-sidebar/off', moduleName: 'dsh-better-sidebar/off', enabled: false, disabledBy: 'user', phase: null },
-          { entryId: 'dsh-better-sidebar/gated', moduleName: 'dsh-better-sidebar/gated', enabled: false, disabledBy: 'composition', phase: null },
-          { entryId: 'dsh-better-sidebar/crash', moduleName: 'dsh-better-sidebar/crash', enabled: true, phase: 'failed', failure: { stage: 'apply', message: 'boom' } },
+          { entryId: 'include:better-sidebar', rowId: 'better-sidebar', moduleName: 'dsh-better-sidebar', enabled: true, phase: 'active' },
+          { entryId: 'include:off', rowId: 'off', moduleName: 'dsh-better-sidebar/off', enabled: false, disabledBy: 'user', phase: null },
+          { entryId: 'include:gated', rowId: 'gated', moduleName: 'dsh-better-sidebar/gated', enabled: false, disabledBy: 'composition', phase: null },
+          { entryId: 'include:crash', rowId: 'crash', moduleName: 'dsh-better-sidebar/crash', enabled: true, phase: 'failed', failure: { stage: 'apply', message: 'boom' } },
         ],
         addable: [
           { moduleName: 'dsh-better-sidebar/tool', declaredName: './tool', title: 'Sidebar tool', ok: true },
@@ -176,8 +176,8 @@ describe('PluginManagerSettingsTab', () => {
     expect(screen.getByText('2026-09-04T00:00:00Z')).toBeTruthy()
     expect(screen.getByText('ui-sidebar')).toBeTruthy()
     expect(screen.getByRole('img', { name: en.rowPhaseActive })).toBeTruthy()
-    // A prefixed row shows the id its bundle declared.
-    expect(document.querySelector('[data-plugin-row="dsh-better-sidebar/better-sidebar"]')?.textContent).toContain('better-sidebar')
+    // A row shows the id its bundle declared, not the tree-wide entry id.
+    expect(document.querySelector('[data-plugin-row="include:better-sidebar"]')?.textContent).toContain('better-sidebar')
     expect(screen.getByText(en.rowDisabledByUser)).toBeTruthy()
     expect(screen.getByText(en.rowDisabledByComposition)).toBeTruthy()
     expect(screen.getByText('boom')).toBeTruthy()

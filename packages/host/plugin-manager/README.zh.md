@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 一份包视图说了什么
 
-`plugins/list` 为 profile 知道的每个包返回一份视图：模板组合包与已安装的组合包，以及其他每个已安装的依赖。视图携带 manifest 事实（名字、版本、标题、描述、`engines.dsh`），这个包是什么（`bundle`、`plugin` 或 `library`），谁提供它（`builtin` 或 `external`），它的行何时挂载（`boot` 或 `runtime`），是否已安装与已启用，以及折叠出的 `status`：已启用的组合包按活跃行的多少是 `running`、`partial` 或 `failed`；已安装但不在层列表中的组合包是 `disabled`；探针拒绝时是 `not-enableable` 并附原因；在启动时才应用变更的 profile 上 manifest 与在线树不一致时是 `restart-required`；库或插件模块是 `plain`，它们被添加进组合而不是被启用。组合包已组合时行来自在线树——阶段、被谁停用，以及隔离行记录的失败——否则来自探针记录，并带上 launcher 将加的前缀 id。`addable` 列出包在 `dsh.plugins` 里声明的模块，各自带默认配置与探针的判定；插件模块还以 `.` 列出它的主导出——`addRow` 无需声明即接受的那一项。
+`plugins/list` 为 profile 知道的每个包返回一份视图：模板组合包与已安装的组合包，以及其他每个已安装的依赖。视图携带 manifest 事实（名字、版本、标题、描述、`engines.dsh`），这个包是什么（`bundle`、`plugin` 或 `library`），谁提供它（`builtin` 或 `external`），它的行何时挂载（`boot` 或 `runtime`），是否已安装与已启用，以及折叠出的 `status`：已启用的组合包按活跃行的多少是 `running`、`partial` 或 `failed`；已安装但不在层列表中的组合包是 `disabled`；探针拒绝时是 `not-enableable` 并附原因；在启动时才应用变更的 profile 上 manifest 与在线树不一致时是 `restart-required`；库或插件模块是 `plain`，它们被添加进组合而不是被启用。组合包已组合时行来自在线树——阶段、被谁停用，以及隔离行记录的失败——否则来自探针记录，id 保持各自 patch 声明的样子。`addable` 列出包在 `dsh.plugins` 里声明的模块，各自带默认配置与探针的判定；插件模块还以 `.` 列出它的主导出——`addRow` 无需声明即接受的那一项。
 
 ### 安装与启用
 
