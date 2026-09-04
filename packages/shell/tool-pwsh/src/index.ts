@@ -517,7 +517,7 @@ export function apply(ctx: Context, config: Config = {}): void {
       const raw = block.text
       const isBackground = typeof args === 'object' && args !== null && (args as { run_in_background?: unknown }).run_in_background === true
       const isPromoted = (result as { value?: { kind?: unknown } }).value?.kind === 'promoted'
-      // Background acknowledgements and errors have no terminal exit status.
+      // Background acknowledgements, promotions, and errors have no terminal exit status.
       if (isBackground || isPromoted || result.isError) {
         return { card: 'generic', content: [{ type: 'text', text: `\`\`\`console\n${raw.replace(/\n+$/, '')}\n\`\`\`` }] }
       }

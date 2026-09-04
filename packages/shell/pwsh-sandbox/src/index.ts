@@ -154,7 +154,6 @@ export class SandboxPwshExecutor extends PwshLocalExecutor {
     return ex
   }
 
-
   /**
    * Stamp per-process sandbox facts before `done` settles. Full-access
    * processes have no facts; signal deaths are not denials.

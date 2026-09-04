@@ -81,10 +81,11 @@ export function renderPromoted(promoted: { jobId: string; timeoutMs: number; out
 }
 
 /**
- * Shape one background-process read into the `job_output` delta the model
- * sees: the incremental delta, plus the lossy-read notice (with full-stream
- * spill paths) when in-memory truncation dropped unread bytes. Empty-delta
- * rendering (`(no new output)`) is the generic job controller's job.
+ * Shape the one consuming read a timeout promotion embeds in its result: the
+ * output produced so far, plus the lossy-read notice (with full-stream spill
+ * paths) when in-memory truncation dropped unread bytes and the sandbox
+ * notices. Later `job_output` reads come from the registry's ring, not from
+ * this renderer.
  * @param read - one incremental read from the process handle.
  * @param sandbox - settled sandbox facts, when this was a confined process.
  * @param escalationModes - escalation targets advertised by this composition.
