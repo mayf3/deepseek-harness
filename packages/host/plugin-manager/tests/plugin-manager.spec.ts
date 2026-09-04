@@ -435,6 +435,114 @@ describe('PluginManager', () => {
   })
 
   describe('install', () => {
+    it('removes a package that is neither a bundle nor a plugin module and says why', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-lib', { main: 'export const answer = 42\n' })
+      const calls: string[][] = []
+      const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
+
+      const result = await manager.install('ext-lib')
+
+      expect(result).toMatchObject({
+        installed: [], plain: [], installedOnly: [],
+        removed: [{ name: 'ext-lib', reason: 'declares neither a dsh bundle nor a plugin module' }],
+      })
+      expect(calls).toEqual([['pnpm', 'add', 'ext-lib'], ['pnpm', 'remove', 'ext-lib']])
+      expect(manifestOf(staged.profileDir).dependencies).not.toHaveProperty('ext-lib')
+      expect(existsSync(join(staged.profileDir, '.dsh-plugins', 'ext-lib.json'))).toBe(false)
+      expect((await manager.list()).some(view => view.name === 'ext-lib')).toBe(false)
+    })
+
+    it('removes an installed bundle whose row id another layer already owns', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-one', { patch: BUNDLE_ONE_ROW })
+      addDependency(staged.profileDir, 'ext-one')
+      const manifest = manifestOf(staged.profileDir)
+      manifest.dsh.profile.bundles.push('ext-one')
+      writeFileSync(join(staged.profileDir, 'package.json'), JSON.stringify(manifest, null, 2))
+      stagePackage(staged.profileDir, 'ext-two', { patch: BUNDLE_ONE_ROW })
+      const calls: string[][] = []
+      const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
+
+      const result = await manager.install('ext-two', { enable: true })
+
+      expect(result).toMatchObject({
+        installed: [], enabled: [], installedOnly: [],
+        removed: [{ name: 'ext-two', reason: 'row "hello" is already declared by ext-one' }],
+      })
+      expect(calls).toEqual([['pnpm', 'add', 'ext-two'], ['pnpm', 'remove', 'ext-two']])
+      expect(manifestOf(staged.profileDir)).toMatchObject({ dsh: { profile: { bundles: expect.not.arrayContaining(['ext-two']) as string[] } } })
+      expect(manifestOf(staged.profileDir).dependencies).not.toHaveProperty('ext-two')
+    })
+
+    it('keeps a package whose probe refused it, for the view to explain', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-broken', { patch: BUNDLE_ONE_ROW, main: 'throw new Error("no import for you")\n' })
+      const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
+
+      const result = await manager.install('ext-broken')
+
+      expect(result).toMatchObject({ installed: ['ext-broken'], removed: [] })
+      expect((await manager.list()).find(view => view.name === 'ext-broken')).toMatchObject({ status: 'not-enableable' })
+    })
+
+    it('restores the manifest when pnpm fails after writing it', async () => {
+      const staged = await stageHome()
+      const manifestPath = join(staged.profileDir, 'package.json')
+      const before = readFileSync(manifestPath, 'utf8')
+      const { manager } = await bootProfile(staged, { spawn: fakePnpm(staged.profileDir, (args) => {
+        addDependency(staged.profileDir, args[1] ?? 'ext-ghost')
+        return { code: 1, stderr: 'ERR_PNPM_FETCH_404\n' }
+      }) })
+
+      await expect(manager.install('ext-ghost')).rejects.toMatchObject({ code: 'plugins/install-failed' })
+
+      expect(readFileSync(manifestPath, 'utf8')).toBe(before)
+    })
+
+    it('refuses a second mutation while one is still running', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-slow', { patch: BUNDLE_ONE_ROW })
+      let release = (): void => {}
+      const gate = new Promise<void>((resolve) => { release = resolve })
+      const spawn: SpawnLike = (_command, args) => {
+        const child = new EventEmitter() as EventEmitter & { stdout: PassThrough; stderr: PassThrough; kill: () => boolean }
+        child.stdout = new PassThrough()
+        child.stderr = new PassThrough()
+        child.kill = () => true
+        void gate.then(() => {
+          addDependency(staged.profileDir, args[1] ?? 'ext-slow')
+          child.emit('close', 0)
+        })
+        return child as unknown as ChildProcess
+      }
+      const { manager } = await bootProfile(staged, { spawn })
+
+      const first = manager.install('ext-slow')
+      await expect(manager.enable('ext-slow')).rejects.toMatchObject({
+        code: 'plugins/busy', details: { operation: 'enable', active: { operation: 'install', subject: 'ext-slow' } },
+      })
+      release()
+      await expect(first).resolves.toMatchObject({ installed: ['ext-slow'] })
+      // The lock is released with the run: the refused call now goes through.
+      await expect(manager.enable('ext-slow')).resolves.toMatchObject({ changed: true })
+    })
+
+    it('refuses to change node_modules while a session is running', async () => {
+      const staged = await stageHome()
+      stagePackage(staged.profileDir, 'ext-bundle', { patch: BUNDLE_ONE_ROW })
+      addDependency(staged.profileDir, 'ext-bundle')
+      const calls: string[][] = []
+      const { ctx, manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir, calls) })
+      ctx.provide('agents', { list: () => [{ status: 'running' }, { status: 'idle' }] } as never)
+
+      await expect(manager.install('ext-new')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'install', running: 1 } })
+      await expect(manager.uninstall('ext-bundle')).rejects.toMatchObject({ code: 'plugins/agents-running', details: { operation: 'uninstall' } })
+      expect(calls).toEqual([])
+      // Enabling recomposes the tree without touching node_modules.
+      await expect(manager.enable('ext-bundle')).resolves.toMatchObject({ changed: true })
+    })
+
     it('runs pnpm add, records the dependency, probes the package, and leaves it disabled', async () => {
       const staged = await stageHome()
       stagePackage(staged.profileDir, 'ext-new', { patch: BUNDLE_ONE_ROW })
@@ -446,7 +554,7 @@ describe('PluginManager', () => {
       expect(calls).toEqual([['pnpm', 'add', 'github:acme/ext-new']])
       // The fake pnpm records the spec itself as the dependency name, which
       // resolves to nothing: a plain dependency whose probe cannot run.
-      expect(result).toEqual({ installed: ['github:acme/ext-new'], enabled: [], installedOnly: [], plain: ['github:acme/ext-new'], jobId: expect.any(String) as string })
+      expect(result).toEqual({ installed: ['github:acme/ext-new'], removed: [], enabled: [], installedOnly: [], plain: ['github:acme/ext-new'], jobId: expect.any(String) as string })
       expect(log.map(chunk => [chunk.stream, chunk.text, chunk.exitCode])).toEqual([
         ['stdout', '+ github:acme/ext-new 1.0.0\n', undefined],
         ['stdout', '', 0],
@@ -469,12 +577,12 @@ describe('PluginManager', () => {
       expect((await manager.list()).find(view => view.name === 'ext-new')?.status).toBe('running')
     })
 
-    it('reports a plain dependency and a non-zero exit with the log tail', async () => {
+    it('reports a plugin module as plain and uninstalls it', async () => {
       const staged = await stageHome()
-      stagePackage(staged.profileDir, 'ext-lib', { main: 'export const x = 1\n' })
+      stagePackage(staged.profileDir, 'ext-lib', { main: 'export function apply() {}\n' })
       const { manager } = await bootProfile(staged, { spawn: recordingPnpm(staged.profileDir) })
 
-      expect(await manager.install('ext-lib')).toMatchObject({ installed: ['ext-lib'], plain: ['ext-lib'], installedOnly: [] })
+      expect(await manager.install('ext-lib')).toMatchObject({ installed: ['ext-lib'], plain: ['ext-lib'], installedOnly: [], removed: [] })
       expect((await manager.list()).find(view => view.name === 'ext-lib')?.status).toBe('plain')
       await manager.uninstall('ext-lib')
       expect((await manager.list()).some(view => view.name === 'ext-lib')).toBe(false)

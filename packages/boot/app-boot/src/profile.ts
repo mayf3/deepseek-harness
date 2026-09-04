@@ -850,6 +850,41 @@ export function resolveBundleDir(
 }
 
 /**
+ * Resolve one bundle into the layer it contributes: its directory through
+ * the two resolution anchors, its patch list, its trust from the profile
+ * manifest, and its stage from the profile's `dsh.profile.stages` override or
+ * its own `dsh.bundle.stage`.
+ * @param binName - the diagnostic prefix on thrown errors.
+ * @param manifest - the profile manifest, for trust and stage overrides.
+ * @param packageName - the bundle package.
+ * @param installAnchor - absolute path of the dsh app's package.json (first resolution anchor).
+ * @param dir - the profile directory (second resolution anchor).
+ * @returns the resolved layer.
+ * @throws when the package cannot be resolved, declares no `dsh.bundle`, or names an unknown stage.
+ */
+export function resolveProfileLayer(
+  binName: string, manifest: ProfileManifest, packageName: string, installAnchor: string, dir: string,
+): ProfileLayer {
+  const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
+  const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
+  const declared = bundleManifest.dsh?.bundle?.patch
+  if (declared === undefined) {
+    throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
+  }
+  const patchPath = join(packageDir, declared)
+  const stages = manifest.dsh?.profile?.stages ?? {}
+  return {
+    packageName,
+    version: bundleManifest.version,
+    packageDir,
+    patchPath,
+    trust: layerTrust(manifest, packageName),
+    stage: readBundleStage(binName, packageName, stages[packageName] ?? bundleManifest.dsh?.bundle?.stage),
+    patches: loadOverlayPatches(binName, patchPath),
+  }
+}
+
+/**
  * Load a profile: resolve every `dsh.profile.bundles` entry to its patch
  * layer and parse the profile's own patch file. A listed bundle without a
  * `dsh.bundle` manifest fails loud — naming a bundle-less package as a layer
@@ -887,27 +922,7 @@ export function loadProfile(
     )
   }
   const patchReload = rawPatchReload ?? DEFAULT_PROFILE_PATCH_RELOAD
-  const stages = manifest.dsh?.profile?.stages ?? {}
-  const layers = bundles.map((packageName): ProfileLayer => {
-    const packageDir = resolveBundleDir(binName, packageName, installAnchor, dir)
-    const bundleManifest = JSON.parse(readFileSync(join(packageDir, 'package.json'), 'utf8')) as ProfileManifest
-    const declared = bundleManifest.dsh?.bundle?.patch
-    if (declared === undefined) {
-      throw new Error(`${binName}: profile bundle ${JSON.stringify(packageName)} declares no dsh.bundle in its package.json`)
-    }
-    const patchPath = join(packageDir, declared)
-    const trust = layerTrust(manifest, packageName)
-    const stage = readBundleStage(binName, packageName, stages[packageName] ?? bundleManifest.dsh?.bundle?.stage)
-    return {
-      packageName,
-      version: bundleManifest.version,
-      packageDir,
-      patchPath,
-      trust,
-      stage,
-      patches: loadOverlayPatches(binName, patchPath),
-    }
-  })
+  const layers = bundles.map(packageName => resolveProfileLayer(binName, manifest, packageName, installAnchor, dir))
   const patchPath = join(dir, PROFILE_PATCH_FILENAME)
   const patches = options.userLayer !== false && existsSync(patchPath)
     ? loadOverlayPatches(binName, patchPath)

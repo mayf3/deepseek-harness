@@ -184,6 +184,9 @@ importers:
       '@deepseek-ai/dsh-fs-local':
         specifier: workspace:^
         version: link:../../packages/fs/fs-local
+      '@deepseek-ai/dsh-global-tool-mask':
+        specifier: workspace:^
+        version: link:../../packages/preset/global-tool-mask
       '@deepseek-ai/dsh-goal':
         specifier: workspace:^
         version: link:../../packages/goal/goal
@@ -295,9 +298,6 @@ importers:
       '@deepseek-ai/dsh-tool-ralph':
         specifier: workspace:^
         version: link:../../packages/workflow/tool-ralph
-      '@deepseek-ai/dsh-global-tool-mask':
-        specifier: workspace:^
-        version: link:../../packages/preset/global-tool-mask
       '@deepseek-ai/dsh-tool-skill':
         specifier: workspace:^
         version: link:../../packages/skill/tool-skill
@@ -5835,6 +5835,9 @@ importers:
       '@deepseek-ai/cordis-plugin-loader':
         specifier: workspace:^
         version: link:../../../vendor/loader
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
       '@deepseek-ai/dsh-agent-presets':
         specifier: workspace:^
         version: link:../../preset/agent-presets
@@ -6660,22 +6663,6 @@ importers:
         specifier: workspace:^
         version: link:../../typert/protocol
 
-  packages/preset/persona:
-    dependencies:
-      '@deepseek-ai/schemastery':
-        specifier: link:../../../vendor/schemastery
-        version: link:../../../vendor/schemastery
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-scope':
-        specifier: workspace:^
-        version: link:../../core/scope
-      '@deepseek-ai/dsh-system-prompt':
-        specifier: workspace:^
-        version: link:../../core/system-prompt
-
   packages/preset/global-tool-mask:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -6694,6 +6681,22 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+
+  packages/preset/persona:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-scope':
+        specifier: workspace:^
+        version: link:../../core/scope
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
 
   packages/runtime-diagnostics/invariants:
     dependencies:

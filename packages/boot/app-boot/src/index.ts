@@ -44,6 +44,7 @@ export {
   readProfileManifest,
   resolveBundleDir,
   resolveProfileDir,
+  resolveProfileLayer,
   writeProfileManifest,
   type BundleStage,
   type BundleTrust,
