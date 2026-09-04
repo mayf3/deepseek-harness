@@ -181,6 +181,22 @@ describe('observeJobOutput', () => {
     await noisy.settle({ status: 'completed' })
   })
 
+  it("closes with the removed job's terminal projection when the owner's teardown drops it mid-observation", async () => {
+    const ctx = await harness()
+    const owner = registerAgent(ctx, 'observer-owner')
+    const job = startJob(ctx, { label: 'torn down', owner: owner.id })
+    job.append('partial')
+    const { frames, done } = observed(ctx, { jobId: job.id, sessionId: owner.id })
+    await wait(20)
+    // Teardown cancels, settles, and removes the record within one microtask
+    // chain; the generation wakes on the removal and closes without a read.
+    await owner.disposeScope()
+    await done
+    expect(frames.map(frame => frame.type)).toEqual(['opened', 'output', 'status'])
+    expect(frames.at(-1)).toMatchObject({ type: 'status', job: { id: job.id, status: 'killed' } })
+    expect(() => ctx.jobs.visibleTo(owner.id).get(job.id)).toThrow(/unknown job/)
+  })
+
   it('stops cleanly on abort while waiting for output', async () => {
     const ctx = await harness()
     const job = startJob(ctx, { label: 'idle' })

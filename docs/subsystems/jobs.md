@@ -150,7 +150,7 @@ interface JobOutputSource {
   /**
    * Read everything captured since `fromByte` without consuming it.
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 first).
-   * @returns the delta text, the next offset, and the lossy flag.
+   * @returns the delta text, the next offset, the lossy flag, and the spill path when one exists.
    */
   read(fromByte: number): JobSourceRead
 }
@@ -165,6 +165,8 @@ interface JobSourceRead {
   nextOffset: number
   /** True when the requested offset slid out of the source's retained window. */
   lossy: boolean
+  /** Path to a file holding the complete stream, when the source keeps one and this read is lossy. */
+  spillPath?: string
 }
 ```
 
@@ -183,6 +185,8 @@ interface JobChunk {
   readonly channel?: JobChannel
   /** Bytes immediately before this chunk were lost, at the producer or to retention. */
   readonly gapBefore?: true
+  /** Host path of a file holding the complete stream before the gap, when the producer keeps one; present only with `gapBefore`. */
+  readonly spillPath?: string
 }
 ```
 
@@ -216,8 +220,12 @@ interface JobOutputRead {
 interface JobView {
   /** The registry-issued id (`<kind>-N`). */
   readonly id: JobId
-  /** The producer kind the job was registered with. */
-  readonly kind: JobKind
+  /**
+   * The producer kind the job was registered with: a Host-registered
+   * `JobKind`, carried as an open string because a browser bundle or a Remote
+   * codec sees only the `JobKindMap` merges its own program compiles.
+   */
+  readonly kind: string
   /** The producer-supplied one-line label. */
   readonly label: string
   /** Owning session; absent for an unowned job, which every caller can see. */

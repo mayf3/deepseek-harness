@@ -137,7 +137,7 @@ if (result.timedOut) console.log('timed out after', result.timeoutMs)
 - **自身不提供隔离**——命令以 harness 进程的权限运行；需要隔离的部署组合 `dsh-bash-sandbox`，每次调用的 allow/deny/ask 策略则属于工具的 `pre-execute` waterfall。
 - **没有持久 shell 或 PTY**——每次调用都启动全新的非登录 `bash -c`；仅持久化 cwd 与交互式终端会话均继续延期，直到真实工作流需要它们。
 - **仅支持 POSIX**——`bash` 二进制已硬编码，底层服务的进程组语义也是 POSIX 的；不支持 Windows。
-- **后台 spawn 失败提示只交付一次**——subprocess 服务不会为从未真正运行的进程缓冲任何输出，因此执行器把 `spawn failed: …` 注入恰好一个 `readOutput()` 增量；丢弃了该增量的读取方无法再恢复它。
+- **后台 spawn 失败提示就是整条 stderr 流**——subprocess 服务不会为从未真正运行的进程缓冲任何输出，因此执行器把 `spawn failed: …` 作为 observed stderr 流提供（偏移读取方按各自偏移重读），并只折入恰好一个 `readOutput()` 增量；丢弃了该增量的消耗式读取方只能经 `observed.stderr` 恢复它。
 
 <a id="dev-note"></a>
 ### 开发备注

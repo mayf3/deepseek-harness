@@ -22,7 +22,7 @@ import LocalJobRegistry from '@deepseek-ai/dsh-jobs-local'
 import * as ToolTasks from '@deepseek-ai/dsh-tool-jobs'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
+import { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from '@deepseek-ai/dsh-session'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import type { ApprovalOutcome } from '@deepseek-ai/dsh-user-approval'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
@@ -36,6 +36,9 @@ import * as BashEnvPlugin from '@deepseek-ai/dsh-shell-env'
 import type { ShellProcessRead } from '@deepseek-ai/dsh-shell'
 import { processOutcome } from '../src/background.ts'
 import { renderPwshProcessRead, renderPwshResult } from '../src/render.ts'
+
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
 
 const testToolSignal = new AbortController().signal
 
@@ -124,6 +127,7 @@ function killableProcess(): ShellProcess {
     signal: null,
     done,
     readOutput: () => ({ delta: '', lossy: false }),
+    observed: { stdout: silentReader, stderr: silentReader },
     kill: () => {
       if (proc.status !== 'running') return false
       proc.status = 'killed'
@@ -264,7 +268,7 @@ function sandboxAgent(
     ...ctx === undefined ? {} : { ctx: ctx.plugin(() => {}).ctx },
     session: {
       id,
-      header: { version: 0, id, createdAt: 0, isSeeded: false },
+      header: { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false },
       inheritedEventCount: SessionLogOffset(0),
       firstLiveSeq: SessionLogOffset(0),
       get seq() { return SessionLogOffset(events.length) },
@@ -302,7 +306,7 @@ function registerFakeAgent(ctx: Context, sessionId: string): Agent {
     ctx: scopeFiber.ctx,
     session: {
       id,
-      header: { version: 0, id, createdAt: 0, isSeeded: false },
+      header: { version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false },
       inheritedEventCount: SessionLogOffset(0),
       firstLiveSeq: SessionLogOffset(0),
       seq: SessionLogOffset(0),
@@ -1076,6 +1080,7 @@ describe('processOutcome', () => {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
       ...over,
     }

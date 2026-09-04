@@ -64,13 +64,12 @@ export interface ObservedOffsets {
 
 /**
  * The current end of each observed stream: where a pull source starts so the
- * ring holds only what the model has not already been handed. A stream
- * without a reader reports 0.
+ * ring holds only what the model has not already been handed.
  * @param proc - the running process.
  * @returns the per-stream end offsets.
  */
 export function observedOffsets(proc: ShellProcess): ObservedOffsets {
-  const end = (channel: 'stdout' | 'stderr'): number => proc.observed?.[channel]?.readFrom(0).nextOffset ?? 0
+  const end = (channel: 'stdout' | 'stderr'): number => proc.observed[channel].readFrom(0).nextOffset
   return { stdout: end('stdout'), stderr: end('stderr') }
 }
 
@@ -79,8 +78,9 @@ export function observedOffsets(proc: ShellProcess): ObservedOffsets {
  * starting at `from`: 0 for a fresh background run, the offsets a promotion
  * already handed the model for a promoted one. They bind lazily because the
  * process is spawned inside the starter, after the registry admitted the job;
- * a backend without offset readers degrades to no observation rather than an
- * error, and the pump keeps the model's consuming cursor untouched.
+ * a read before the spawn yields nothing, and the pump keeps the model's
+ * consuming cursor untouched. A rejected spawn's stderr reader carries the
+ * provider's `spawn failed: …` note.
  * @param proc - the started process, once the starter has spawned it.
  * @param from - per-stream offsets the sources start pulling at.
  * @returns one source per stream, stdout first.
@@ -93,8 +93,8 @@ export function processSources(
     channel,
     read: (fromByte) => {
       const start = Math.max(fromByte, from[channel])
-      const reader = proc()?.observed?.[channel]
-      return reader === undefined ? { text: '', nextOffset: start, lossy: false } : reader.readFrom(start)
+      const live = proc()
+      return live === undefined ? { text: '', nextOffset: start, lossy: false } : live.observed[channel].readFrom(start)
     },
   })
   return [source('stdout'), source('stderr')]

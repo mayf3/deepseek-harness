@@ -80,7 +80,7 @@ This section explains the design decisions behind the contract and points at the
 | [`src/types.ts`](src/types.ts) | Shared vocabulary: `JobSpec`, `JobHandle`, `JobHooks`, `JobOutcome`, `VisibleJobs`, `JobEvent`, and the read results |
 | [`src/view.ts`](src/view.ts) | Client-safe leaf: `JobView`, `JobChunk`, `JobStatus`, and the merge-extensible `JobKindMap` |
 | [`src/brand.ts`](src/brand.ts) | `JobId` branded identifier, importable without the agent dependency |
-| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: validates every projection the registry hands out — identity, status, timestamps, owner, and ring offsets |
+| [`src/invariant.ts`](src/invariant.ts) | Invariant companion: checks the announced event protocol per job (registered first, one settlement, removal last) and each announced projection against the registry's own read |
 
 ### Service operations
 

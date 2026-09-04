@@ -16,13 +16,15 @@ export type { CollectedOutput, DshEnvironment, DshEnvironmentKey, SubprocessOutp
 /**
  * Non-consuming offset readers over a background process's captured streams,
  * for observers independent of the consuming {@link ShellProcess.readOutput}
- * cursor. A stream is absent when its backend cannot expose offset reads.
+ * cursor. Every background process exposes both streams; a spawn that
+ * rejected produced no process output, so its stderr reader serves the
+ * `spawn failed: …` note as the whole stream.
  */
 export interface ShellObservedStreams {
-  /** Offset reader over captured stdout, when the backend exposes one. */
-  stdout?: SubprocessOutputReader
-  /** Offset reader over captured stderr, when the backend exposes one. */
-  stderr?: SubprocessOutputReader
+  /** Offset reader over captured stdout. */
+  stdout: SubprocessOutputReader
+  /** Offset reader over captured stderr (the spawn-failure note after a rejected spawn). */
+  stderr: SubprocessOutputReader
 }
 
 /**
@@ -201,11 +203,11 @@ export interface ShellProcess {
   readOutput(): ShellProcessRead
   /**
    * Non-consuming offset readers over the same captured streams the consuming
-   * {@link readOutput} cursor drains. Independent observers read here at their
-   * own offsets without stealing bytes from `readOutput`. Absent when the
-   * backend cannot expose offset reads; observers then see no stream.
+   * {@link readOutput} cursor drains, including the spawn-failure note a
+   * rejected spawn leaves on stderr. Independent observers read here at their
+   * own offsets without stealing bytes from `readOutput`.
    */
-  observed?: ShellObservedStreams
+  observed: ShellObservedStreams
   /**
    * Kill the process group. Returns false when it had already finished
    * (no-op); idempotent.

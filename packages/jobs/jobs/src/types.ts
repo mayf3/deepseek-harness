@@ -38,6 +38,8 @@ export interface JobSourceRead {
   nextOffset: number
   /** True when the requested offset slid out of the source's retained window. */
   lossy: boolean
+  /** Path to a file holding the complete stream, when the source keeps one and this read is lossy. */
+  spillPath?: string
 }
 
 /**
@@ -52,7 +54,7 @@ export interface JobOutputSource {
   /**
    * Read everything captured since `fromByte` without consuming it.
    * @param fromByte - whole-stream offset to resume from (a prior read's `nextOffset`; 0 first).
-   * @returns the delta text, the next offset, and the lossy flag.
+   * @returns the delta text, the next offset, the lossy flag, and the spill path when one exists.
    */
   read(fromByte: number): JobSourceRead
 }
@@ -67,6 +69,8 @@ export interface JobAppendOptions {
    * silent splice.
    */
   gapBefore?: true
+  /** Path to a file holding the complete stream the gap can be recovered from; meaningful with `gapBefore`. */
+  spillPath?: string
 }
 
 /**
@@ -296,8 +300,9 @@ export type JobEventListener = (event: JobEvent) => void
 export interface JobEvents {
   /**
    * Register an effect-scoped listener. Events are dispatched synchronously
-   * after the commit they announce; a `settled` event follows the release of
-   * every waiter. No listener runs after service disposal.
+   * after the commit they announce; a job's first event is `registered`, and
+   * a `settled` event follows the release of every waiter. No listener runs
+   * after service disposal.
    * @param filter - which owners' events to deliver.
    * @param listener - receives each matching event.
    * @returns disposer that unregisters the listener.

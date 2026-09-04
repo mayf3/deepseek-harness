@@ -200,6 +200,44 @@ describe('spawn construction (pure, every platform)', () => {
   })
 })
 
+describe('background spawn failure (fake backend, every platform)', () => {
+  /** A subprocess service whose spawn rejects the way a missing pwsh does. */
+  class RejectingSubprocessRuntime extends SubprocessRuntime {
+    override async resolveExecutable(command: string): Promise<string> { return command }
+    override spawnTerminal(): Promise<never> { throw new Error('pwsh spawns pipes, never terminals') }
+    private readonly reader: SubprocessOutputReader = {
+      readFrom: () => ({ text: '', lossy: false, nextOffset: 0 }),
+    }
+    override spawn(): SubprocessHandle {
+      return {
+        pid: -1,
+        stdin: undefined,
+        stdout: undefined,
+        stderr: undefined,
+        collected: { stdout: this.reader, stderr: this.reader },
+        done: Promise.reject(new Error('spawn pwsh ENOENT')),
+        terminate: () => {},
+        waitForExit: async () => true,
+      }
+    }
+  }
+
+  it('serves the note as the whole observed stderr stream and folds it into one consuming delta', async () => {
+    const ctx = new Context()
+    new RejectingSubprocessRuntime(ctx)
+    await ctx.plugin(PwshLocalExecutor)
+    const proc = ctx.shell.execute(ctx.shell.resolve({ command: 'Write-Output hi', onExpiry: 'none' }))
+    await expect(proc.done).resolves.toBeUndefined()
+    expect(proc.status).toBe('killed')
+    const note = 'spawn failed: Error: spawn pwsh ENOENT'
+    expect(proc.observed.stderr.readFrom(0)).toEqual({ text: note, nextOffset: Buffer.byteLength(note), lossy: false })
+    expect(proc.observed.stderr.readFrom(Buffer.byteLength(note))).toEqual({ text: '', nextOffset: Buffer.byteLength(note), lossy: false })
+    expect(proc.observed.stdout.readFrom(0).text).toBe('')
+    expect(proc.readOutput().delta).toBe(`[stderr]\n${note}`)
+    expect(proc.readOutput().delta).toBe('')
+  })
+})
+
 describe.skipIf(!hasPwsh)('PwshLocalExecutor.run', () => {
   it('resolves with output and the effective timeout', { timeout: 15_000 }, async () => {
     const { bash } = await setup({ timeoutMs: 10_000 })

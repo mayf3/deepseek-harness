@@ -9,6 +9,9 @@ import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellRunResult } 
 import * as tmuxContext from '@deepseek-ai/dsh-tmux-context'
 import type { Config } from '@deepseek-ai/dsh-tmux-context'
 
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
+
 const SIGNAL = new AbortController().signal
 
 /** One `#{...}`-joined tmux reading line for the eight queried fields. */
@@ -75,6 +78,7 @@ class FakeBash extends ShellExecutor {
       signal: null,
       done: Promise.resolve(),
       readOutput: () => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: () => false,
       promotion: Promise.resolve(undefined),
       result: () => this.runError ? Promise.reject(this.runError) : Promise.resolve(this.result),

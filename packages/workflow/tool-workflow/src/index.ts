@@ -443,9 +443,7 @@ export function apply(ctx: Context, config: Config): void {
       const recordsRun = exec.parent === undefined
       // The shipped worker-thread engine publishes member events from later
       // worker messages, after start() returns and this run record is active.
-      if (recordsRun) {
-        recorder.start(parent.session, run)
-      }
+      if (recordsRun) recorder.start(parent.session, run)
 
       // Bridge the tool's abort signal to the run: if the parent step is aborted while the
       // script is in flight, cancel the whole run. The signal also enters the engine directly, but
@@ -480,9 +478,7 @@ export function apply(ctx: Context, config: Config): void {
             recorder.finish(run.id, result.stopReason)
           }
         } finally {
-          if (recordsRun) {
-            recorder.abandon(run.id)
-          }
+          if (recordsRun) recorder.abandon(run.id)
         }
       }
     },

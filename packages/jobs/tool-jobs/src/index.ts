@@ -258,12 +258,22 @@ export function apply(ctx: Context, config: Config): void {
   // `job_kill` it requested. A wait claims when it starts, not when it
   // returns — settlement releases waiters before it announces, but their
   // continuations run after the event — and withdraws the claim if the job
-  // outlives the wait. The settlement event drops the entry, so the ledger
-  // holds only live jobs the model already touched.
-  const delivered = new Set<JobId>()
+  // outlives the wait. Claims are counted per call, so a timed-out wait
+  // withdraws only its own claim while a concurrent wait on the same job
+  // keeps the settlement covered. The settlement event drops the entry, so
+  // the ledger holds only live jobs the model already touched.
+  const claims = new Map<JobId, number>()
   const claim = (id: JobId): (() => void) => {
-    delivered.add(id)
-    return () => { delivered.delete(id) }
+    claims.set(id, (claims.get(id) ?? 0) + 1)
+    return () => {
+      // A withdraw runs only for a wait that returned or rejected while the
+      // job was live, so its own claim is still counted here; the fallback
+      // only discharges the Map's optional read.
+      /* v8 ignore next -- settlement hands every waiter the terminal view before dropping the entry; such waits never withdraw. */
+      const remaining = (claims.get(id) ?? 1) - 1
+      if (remaining > 0) claims.set(id, remaining)
+      else claims.delete(id)
+    }
   }
 
   // A busy owner is injected: the notice waits in its next-step inbox, which
@@ -277,11 +287,11 @@ export function apply(ctx: Context, config: Config): void {
   // this listener owns delivery, not the choice of whom to deliver to.
   ctx.jobs.events.subscribe({ owners: 'scope' }, (event) => {
     if (event.type === 'removed') {
-      delivered.delete(event.job.id)
+      claims.delete(event.job.id)
       return
     }
     if (event.type !== 'settled') return
-    const claimed = delivered.delete(event.job.id)
+    const claimed = claims.delete(event.job.id)
     if (claimed || event.cause === 'teardown' || event.job.owner === undefined) return
     // The destination is the agent registered for the owner session now. An
     // owned job needed the agent registry to start, so the registry is only

@@ -68,7 +68,7 @@ abstract onJobsChanged(listener: JobsChangedListener): () => void
 
 `onJobDone` 不是它的子集。后者按 first-wins 语义投递终态记录和确切的 owner `Agent`，`dsh-tool-jobs` 把这套语义与 `reported` 绑在一起；`onJobsChanged` 是纯观察，不含任何投递含义，也不把任何东西标为已上报。监听器抛错被包住且从不 await，与 `onJobDone` 一致，每次注册都是调用方 fiber 上的 effect。
 
-服务销毁会提交最后一次清空并通告它：注册表取消并等完自己的 job 之后，`onJobsChanged` 对每个可见集被 teardown 清空的 owner 触发一次，因此注册在更长命 fiber 上的监听器看到的是最终空集而不是陈旧名册（注册在注册表自身 fiber 上的监听器此时早已消失）。
+服务销毁逐条通告移除：注册表取消并等完自己的 job 之后，丢弃每条记录并对每个 job 发出一个 `removed` 事件，因此注册在更长命 fiber 上的订阅者看到名册逐条清空而不是留着陈旧集合（注册在注册表自身 fiber 上的订阅者此时早已消失）。
 
 ### Session Controller 载体
 

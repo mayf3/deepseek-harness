@@ -1,7 +1,7 @@
 /** Per-job observation generations: anchor, coalesced output, terminal status. */
 
 import type { JobId } from '@deepseek-ai/dsh-jobs/brand'
-import type { JobChunk, JobRegistry, JobStatus } from '@deepseek-ai/dsh-jobs'
+import type { JobChunk, JobRegistry, JobStatus, JobView } from '@deepseek-ai/dsh-jobs'
 import type { JobObserveFrame, JobObserveRequest } from './types.ts'
 import { OutputWaiter, sleep } from './wake.ts'
 
@@ -25,7 +25,9 @@ function isTerminal(status: JobStatus): boolean {
  * Stream one job's retained output from an absolute offset: one `opened`
  * anchor, coalesced `output` frames as the ring advances, then one terminal
  * `status` after the settled job is drained, after which the generation
- * closes normally. Reads are non-consuming — the model-facing cursor and
+ * closes normally. A removal announced mid-generation (the owner's teardown)
+ * closes it with the removed job's terminal projection instead of a failed
+ * read. Reads are non-consuming — the model-facing cursor and
  * notice state never observe them; reconnecting callers resume by passing
  * the last frame's `next` as `from`. The request's session is the fenced
  * read's caller: the registry rejects a job the session cannot see and an
@@ -50,11 +52,17 @@ export async function* observeJobOutput(
   // than value-importing the registry package's constructor.
   const id = String(request.jobId) as JobId
   const waiter = new OutputWaiter()
+  // A removal announced during the generation: the owner's teardown settled
+  // and dropped the record, so the projection it announced is the last word
+  // and the read after the flush window would only find an unknown id.
+  let removed: JobView | undefined
   // Subscribe before the first read so an append between the anchor read and
   // the wait cannot be missed.
   const unsubscribe = registry.events.subscribe({ owners: 'all' }, (event) => {
     const changed = event.type === 'output' ? event.id : event.job.id
-    if (changed === id) waiter.wake()
+    if (changed !== id) return
+    if (event.type === 'removed') removed = event.job
+    waiter.wake()
   })
   try {
     const visible = registry.visibleTo(request.sessionId)
@@ -62,6 +70,10 @@ export async function* observeJobOutput(
     let cursor = request.from ?? job.output.earliest
     yield { type: 'opened', job, from: cursor }
     while (!signal.aborted) {
+      if (removed !== undefined) {
+        yield { type: 'status', job: removed }
+        return
+      }
       const read = visible.readAt(id, cursor)
       if (read.chunks.length > 0 || read.lossy) {
         yield* outputFrames(read.chunks, read.next, read.lossy, options.maxFrameBytes)

@@ -368,15 +368,24 @@ export class PwshLocalExecutor extends ShellExecutor {
       // eslint-disable-next-line prefer-promise-reject-errors
       : Promise.reject(spawnThrow())
 
-    // A spawn failure produces no process output, so the subprocess service has nothing
-    // to buffer; the note is delivered exactly once through the read path, and
-    // the retained error is the result() projection's rejection.
-    let spawnFailure: { error: unknown } | undefined
-    let spawnFailureNote: string | undefined
+    // A spawn failure produces no process output, so the subprocess service has
+    // nothing to buffer: once the spawn rejected, the note is the whole stderr
+    // stream for every reader. The observed reader serves it at offset 0, the
+    // consuming read folds it in exactly once, and the retained error is the
+    // result() projection's rejection.
+    let spawnFailure: { error: unknown; note: string } | undefined
+    let spawnFailureReported = false
     const consumeSpawnFailure = (): string => {
-      const note = spawnFailureNote ?? ''
-      spawnFailureNote = undefined
-      return note
+      if (spawnFailure === undefined || spawnFailureReported) return ''
+      spawnFailureReported = true
+      return spawnFailure.note
+    }
+    const observedStderr: SubprocessOutputReader = {
+      readFrom: (fromByte) => {
+        if (spawnFailure === undefined) return collected.stderr.readFrom(fromByte)
+        const note = Buffer.from(spawnFailure.note, 'utf8')
+        return { text: note.subarray(Math.min(fromByte, note.length)).toString('utf8'), nextOffset: note.length, lossy: false }
+      },
     }
 
     let stdoutOffset = 0
@@ -386,7 +395,7 @@ export class PwshLocalExecutor extends ShellExecutor {
       status: 'running',
       exitCode: null,
       signal: null,
-      observed: collected,
+      observed: { stdout: collected.stdout, stderr: observedStderr },
       promotion,
       done: spawned.then((outcome) => {
         // Any signal termination is killed, including a command signaling itself.
@@ -399,11 +408,10 @@ export class PwshLocalExecutor extends ShellExecutor {
         disarm()
         settlePromotion(undefined)
       }, (error: unknown) => {
-        // Spawn failures settle the handle as killed and surface through the read path.
+        // Spawn failures settle the handle as killed and surface on stderr for every reader.
         proc.status = 'killed'
-        spawnFailure = { error }
-        spawnFailureNote = `spawn failed: ${String(error)}`
-        this.onProcessDone(proc, spawnFailureNote, true, error)
+        spawnFailure = { error, note: `spawn failed: ${String(error)}` }
+        this.onProcessDone(proc, spawnFailure.note, true, error)
         disarm()
         settlePromotion(undefined)
       }),

@@ -3,6 +3,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { ShellExecutor } from '@deepseek-ai/dsh-shell'
 import type { ShellExecRequest, ShellExecSpec, ShellExecution, ShellProcessRead } from '@deepseek-ai/dsh-shell'
 
+/** Empty offset readers for fakes that never produce output. */
+const silentReader = { readFrom: (fromByte: number) => ({ text: '', nextOffset: fromByte, lossy: false }) }
+
 /**
  * Minimal concrete executor: canned foreground results, a hand-built process
  * handle. The seam is TASK-FREE (execute returns a live handle;
@@ -29,6 +32,7 @@ class StubExecutor extends ShellExecutor {
       signal: null,
       done: Promise.resolve(),
       readOutput: (): ShellProcessRead => ({ delta: '', lossy: false }),
+      observed: { stdout: silentReader, stderr: silentReader },
       kill: (): boolean => {
         if (proc.status !== 'running') return false
         proc.status = 'killed'

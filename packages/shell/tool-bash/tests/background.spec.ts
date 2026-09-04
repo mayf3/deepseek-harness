@@ -105,6 +105,27 @@ describe('background bash output', () => {
     expect(jobs.get(job!.id).detail).toMatch(/(signal|killed before exit).*; test cleanup$/)
   })
 
+  it('a background spawn failure reaches the model as the stderr note master rendered', async () => {
+    const ctx = await setup()
+    const started = await call(ctx, {
+      command: 'true',
+      description: 'test command',
+      workdir: '/nonexistent-dsh',
+      run_in_background: true,
+    })
+    expect(text(started)).toMatch(/^started background job bash-\d+$/)
+    const jobs = ctx.jobs.visibleTo()
+    const job = jobs.list()[0]
+    await until(() => jobs.get(job!.id).status === 'killed' ? true : undefined)
+    const read = text(await ctx.tools.execute({
+      signal: testToolSignal,
+      callId: ToolCallId('background-spawn-failure-read'),
+      name: 'job_output',
+      arguments: { job_id: String(job!.id) },
+    }))
+    expect(read).toMatch(/^\[stderr\]\nspawn failed: .*\n\[status: killed, killed before exit\]$/s)
+  })
+
   it('labels stderr chunks with their channel', async () => {
     const ctx = await setup()
     await call(ctx, {
@@ -122,28 +143,34 @@ describe('background bash output', () => {
 })
 
 describe('processSources', () => {
-  it('reads nothing while the process is not spawned yet and when the backend exposes no readers', () => {
-    const spawned: { proc?: ShellProcess } = {}
-    const [stdout, stderr] = processSources(() => spawned.proc)
+  it('reads nothing while the process is not spawned yet', () => {
+    const [stdout, stderr] = processSources(() => undefined)
     expect(stdout!.channel).toBe('stdout')
     expect(stderr!.channel).toBe('stderr')
     expect(stdout!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
-    spawned.proc = { done: Promise.resolve() } as unknown as ShellProcess
     expect(stderr!.read(3)).toEqual({ text: '', nextOffset: 3, lossy: false })
   })
 
-  it('forwards each read to the matching stream reader once the process exists', () => {
-    const reads: number[] = []
-    const proc = {
-      observed: {
-        stdout: { readFrom: (from: number) => { reads.push(from); return { text: 'out', nextOffset: from + 3, lossy: false } } },
-      },
-    } as unknown as ShellProcess
+  it('forwards each read to the matching stream reader at its own offset once the process exists', () => {
+    const reads: { channel: string; from: number }[] = []
+    const reader = (channel: string, text: string) => ({
+      readFrom: (from: number) => { reads.push({ channel, from }); return { text, nextOffset: from + text.length, lossy: false } },
+    })
+    const proc = { observed: { stdout: reader('stdout', 'out'), stderr: reader('stderr', 'err!') } } as unknown as ShellProcess
     const [stdout, stderr] = processSources(() => proc)
     expect(stdout!.read(2)).toEqual({ text: 'out', nextOffset: 5, lossy: false })
-    expect(reads).toEqual([2])
-    // A missing stderr reader is an absent stream, not an error.
-    expect(stderr!.read(0)).toEqual({ text: '', nextOffset: 0, lossy: false })
+    expect(stderr!.read(7)).toEqual({ text: 'err!', nextOffset: 11, lossy: false })
+    expect(reads).toEqual([{ channel: 'stdout', from: 2 }, { channel: 'stderr', from: 7 }])
+  })
+
+  it("passes a lossy read's spill file through, so the model's notice can name it", () => {
+    const proc = {
+      observed: {
+        stderr: { readFrom: (from: number) => ({ text: 'tail', nextOffset: from + 4, lossy: true, spillPath: '/spill/err.log' }) },
+      },
+    } as unknown as ShellProcess
+    const [, stderr] = processSources(() => proc)
+    expect(stderr!.read(0)).toEqual({ text: 'tail', nextOffset: 4, lossy: true, spillPath: '/spill/err.log' })
   })
 
   it('starts a promoted process\'s sources at the offsets already handed to the model', () => {
@@ -151,6 +178,7 @@ describe('processSources', () => {
     const proc = {
       observed: {
         stdout: { readFrom: (from: number) => { reads.push(from); return { text: '', nextOffset: Math.max(from, 40), lossy: false } } },
+        stderr: { readFrom: (from: number) => ({ text: '', nextOffset: from, lossy: false }) },
       },
     } as unknown as ShellProcess
     const from = observedOffsets(proc)

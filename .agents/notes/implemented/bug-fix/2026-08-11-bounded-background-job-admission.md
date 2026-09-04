@@ -16,7 +16,7 @@ The process-local job registry already owns the exact job owner and the authorit
 
 The [generic job runtime decision](../architecture/2026-06-20-generic-long-running-tool-runtime.md) owns the shared Task lifecycle and control API; this note owns the process-local admission policy.
 
-`start()` performs admission after the existing task-controller, task-field, and live-owner checks and before `JobStart.run()`. It derives the active count from the registry's current records instead of storing another counter:
+`start()` performs admission after the existing task-controller, task-field, and live-owner checks and before `JobSpec.run()`. It derives the active count from the registry's current records instead of storing another counter:
 
 | Record | Occupies capacity | Release fact |
 |---|---:|---|
