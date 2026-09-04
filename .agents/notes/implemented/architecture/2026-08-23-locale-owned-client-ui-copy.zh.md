@@ -10,7 +10,7 @@ typed locale namespace 与双语字典对等性可以证明已注册字典完整
 
 ## Decision
 
-**所有产品编写的 client UI 措辞都由 locale 字典持有。** 可见文本、无障碍名称、tooltip、placeholder、空状态、状态标签、单位和格式模板必须经 typed `t` 席位或已本地化 prop 到达展示层。由用户、模型、提供方、插件、wire 对端或操作系统编写的值仍是数据并原样渲染；协议 tag、工具名称、路径、URL、JSON/JavaScript 字面量和稳定内部 id 不翻译。
+**所有产品编写的 client UI 措辞都由 locale 字典持有。** 可见文本、无障碍名称、tooltip、placeholder、空状态、状态标签、单位和格式模板必须经 typed `t` 席位或已本地化 prop 到达展示层。由用户、模型、提供方、外部插件、wire 对端或操作系统编写的值仍是数据并原样渲染；协议 tag、工具名称、路径、URL、JSON/JavaScript 字面量和稳定内部 id 不翻译。经 wire 传输的第一方产品文案仍是产品措辞：命令 UI 只有在命令名和规范英文原文都匹配后才翻译内置 Host 说明，从而保留会话作用域内的同名覆盖与第三方说明。
 
 **Cordis-free 原子组件要求完整的本地化文案 prop，且自身不持有语言回落值。** `MarkdownText`、`JsonTree`、`TerminalBlock`、`DiffBlock`、`ReadBlock`、`SearchBlock`、`WebBlock`、`CodeBlock`、`JsonBlock`、`HoverCard` 与 `ConnectionIndicator` 的 chrome 均由功能渲染点传入。这样既保留原子组件包的运行时独立性，也让遗漏成为类型错误，而不是静默选择中文或英文。共享用词进入 `common` namespace；功能专属短语留在决定其语义的功能侧。
 
@@ -22,7 +22,7 @@ typed locale namespace 与双语字典对等性可以证明已注册字典完整
 
 ## Verification
 
-AST 检查自身的 Vitest spec 固定直接 JSX、模板分支、语义文案 prop、label 数据、格式化函数返回值、locale key 调用、结构属性和字典 owner。locale 字典对等性固定 `zh`/`en` key 一致。client 组件测试同时覆盖直接翻译席位与 locale prop 适配器；组装 web 回放和规定的真实服务器 GIF 在实际 trajectory 界面上展示发布的语言切换。
+AST 检查自身的 Vitest spec 固定直接 JSX、模板分支、语义文案 prop、label 数据、格式化函数返回值、locale key 调用、结构属性和字典 owner。locale 字典对等性固定 `zh`/`en` key 一致。client 组件测试覆盖直接翻译席位、locale prop 适配器及实时 locale 切换前后的命令说明。组装 web 回放固定中文内置命令菜单，规定的真实服务器 GIF 则在实际 trajectory 界面上展示发布的语言切换。
 
 ## Alternatives considered
 

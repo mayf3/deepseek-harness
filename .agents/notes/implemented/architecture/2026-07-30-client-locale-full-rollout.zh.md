@@ -18,7 +18,7 @@ typed locale 标准席位（`locale:` 注册声明 → 框架注入强类型 `t`
 
 **zero-Cordis 原子组件（ui-primitives）通过必填 prop 接收文案。** `HoverCard`、结构化工具块、JSON/Markdown 渲染器、`ConnectionIndicator` 和 modal chrome 均保持运行时独立；已本地化插件从自己的 `t` 席位传入完整的字典驱动 label 对象，对缓存敏感的对象按 `t` 身份 memo。移除带语言默认值以及完整 prop 清单由 [locale 归属文案决策](2026-08-23-locale-owned-client-ui-copy.zh.md)负责。
 
-**所有产品编写的 UI 短语都翻译。** client 兜底文案、设计 label、trajectory 检查面、无障碍名称和格式化单位均按 [locale 归属文案决策](2026-08-23-locale-owned-client-ui-copy.zh.md)进入字典。用户/模型/提供方/wire 文本以及协议或代码 token 仍作为数据原样呈现。不依赖框架的 boot 标记仍早于 locale 服务运行；本地化应用激活后会替换其中的产品文案。
+**所有产品编写的 UI 短语都翻译。** client 兜底文案、设计 label、trajectory 检查面、无障碍名称和格式化单位均按 [locale 归属文案决策](2026-08-23-locale-owned-client-ui-copy.zh.md)进入字典。用户/模型/提供方文本、外部编写的插件或 wire 文本以及协议或代码 token 仍作为数据原样呈现。经 wire 传输不会使第一方产品文案变成外部文本：命令 UI 会先用确切命令名与规范英文原文识别每个内置 Host 说明，再进行翻译。不依赖框架的 boot 标记仍早于 locale 服务运行；本地化应用激活后会替换其中的产品文案。
 
 **派生层不让展示文本承担身份。** ui-workspace 的 `relativeTime` 返回结构化 `{unit, n}`，由渲染组合字典模板；blank 会话标题和未分组 label 从 `blank` 标志/`workspaceId` 缺席派生，内部值保持为空或稳定；**搜索态 blank 行一律排除**（双语标题无法与单语查询稳定匹配）。日期不引 Intl：格式模板进字典（消息时钟 `clock.md`/`clock.ymd`，workspace hover `date.ymd`），格式化函数接收 `t` 参数。
 

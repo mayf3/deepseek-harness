@@ -124,9 +124,9 @@ None; this package neither assembles nor sends a provider request.
 <a id="known-limitations-and-deferred-work"></a>
 
 
-These limits define where localization is incomplete or frozen at registration time. They are current package constraints, not a task backlog.
+These limits define where localization requires explicit consumer support. They are current package constraints, not a task backlog.
 
-- **Registry-held text reads its translation once** — copy captured at registration time outside the slot render path (e.g. the `/model` command description in the command registry) keeps the language it was registered under until re-registration; slot-rendered copy follows switches live.
+- **Non-slot registries must retain a resolver** — `LocaleRuntime` refreshes subscribed render paths, but a consumer that stores the result of `t(...)` instead of a resolver keeps that language until re-registration. The command registry stores description resolvers so its rows follow language changes.
 - **Language packs own language-specific behavior** — the registry supplies selection, persistence, browser matching, key fallback, and `<html lang>`; it does not add plural rules or bidirectional layout.
 
 <a id="dev-note"></a>

@@ -10,7 +10,7 @@ Typed locale namespaces and bilingual dictionary parity proved that registered d
 
 ## Decision
 
-**Locale dictionaries own all product-authored client UI wording.** Visible text, accessibility names, tooltips, placeholders, empty states, status labels, units, and formatting templates reach presentation through a typed `t` seat or an already-localized prop. A value authored by a user, model, provider, plugin, wire peer, or operating system remains data and renders verbatim; protocol tags, tool names, paths, URLs, JSON/JavaScript literals, and stable internal ids are not translated.
+**Locale dictionaries own all product-authored client UI wording.** Visible text, accessibility names, tooltips, placeholders, empty states, status labels, units, and formatting templates reach presentation through a typed `t` seat or an already-localized prop. A value authored by a user, model, provider, external plugin, wire peer, or operating system remains data and renders verbatim; protocol tags, tool names, paths, URLs, JSON/JavaScript literals, and stable internal ids are not translated. First-party product copy transported over the wire remains product wording: the command UI translates a built-in Host description only after its command name and canonical English source both match, which preserves scoped shadows and third-party descriptions.
 
 **Cordis-free primitives require complete localized copy props and own no language fallback.** `MarkdownText`, `JsonTree`, `TerminalBlock`, `DiffBlock`, `ReadBlock`, `SearchBlock`, `WebBlock`, `CodeBlock`, `JsonBlock`, `HoverCard`, and `ConnectionIndicator` receive their chrome from the feature render site. This preserves the primitive package's runtime independence while making omission a type error instead of silently selecting Chinese or English. Shared words live in the `common` namespace; feature-specific phrases stay with the feature that decides their meaning.
 
@@ -22,7 +22,7 @@ The product-authored error and design-literal exclusions, primitive defaults, an
 
 ## Verification
 
-The AST check's own Vitest spec pins direct JSX, template branches, semantic copy props, label data, formatter returns, locale-key calls, structural attributes, and dictionary owners. Locale dictionary parity pins identical `zh`/`en` keys. Client component suites exercise both direct translated seats and locale-prop adapters, and the assembled web replay plus the required real-server GIF demonstrate the shipped locale switch on the actual trajectory surface.
+The AST check's own Vitest spec pins direct JSX, template branches, semantic copy props, label data, formatter returns, locale-key calls, structural attributes, and dictionary owners. Locale dictionary parity pins identical `zh`/`en` keys. Client component suites exercise direct translated seats, locale-prop adapters, and command descriptions across a live locale change. The assembled web replay pins the Chinese built-in command menu, while the required real-server GIF demonstrates the shipped locale switch on the actual trajectory surface.
 
 ## Alternatives considered
 
