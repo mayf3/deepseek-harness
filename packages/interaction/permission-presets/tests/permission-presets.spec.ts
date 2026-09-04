@@ -228,7 +228,9 @@ describe('PermissionPresetService', () => {
       }
       vi.spyOn(source, 'append').mockImplementation(appendThenFail)
 
-      expect(() => ctx.permissionPresets.set(source, 'read-only'))
+      expect(() => {
+        ctx.permissionPresets.set(source, 'read-only')
+      })
         .toThrow(`failed after migration write ${index + 1}`)
       expect(source.snapshotEvents().slice(baselineLength).map(event => [event.type, event.data]))
         .toEqual(expectedPrefix)
