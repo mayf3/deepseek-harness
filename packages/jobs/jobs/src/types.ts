@@ -296,8 +296,9 @@ export type JobEventListener = (event: JobEvent) => void
 export interface JobEvents {
   /**
    * Register an effect-scoped listener. Events are dispatched synchronously
-   * after the commit they announce; a `settled` event follows the release of
-   * every waiter. No listener runs after service disposal.
+   * after the commit they announce; a job's first event is `registered`, and
+   * a `settled` event follows the release of every waiter. No listener runs
+   * after service disposal.
    * @param filter - which owners' events to deliver.
    * @param listener - receives each matching event.
    * @returns disposer that unregisters the listener.

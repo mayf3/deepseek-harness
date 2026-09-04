@@ -1194,6 +1194,22 @@ describe('LocalJobRegistry output ring', () => {
     expect(() => jobsOf(ctx).readAt(JobId('bash-99'), 0)).toThrow(/unknown job/)
   })
 
+  it('announces registration before the pump drains a source that is readable at once', async () => {
+    const ctx = await harness({ pumpPollMs: 5 })
+    const events = collect(ctx)
+    const source: JobOutputSource = {
+      read: from => from === 0 ? { text: 'boot', nextOffset: 4, lossy: false } : { text: '', nextOffset: from, lossy: false },
+    }
+    const p = producer({ output: [source] })
+    const id = ctx.jobs.start(p.spec)
+    // The pump's first drain runs synchronously inside start(); the job's
+    // first event is still its registration.
+    expect(events.slice(0, 2).map(event => event.type)).toEqual(['registered', 'output'])
+    expect(jobsOf(ctx).readAt(id, 0).chunks.map(chunk => chunk.text)).toEqual(['boot'])
+    p.settle({ status: 'completed' })
+    await tick()
+  })
+
   it('evicts whole head chunks past the live cap and flags stale readers lossy', async () => {
     const ctx = await harness({ retainBytes: 8 })
     const p = producer()
@@ -1212,7 +1228,7 @@ describe('LocalJobRegistry output ring', () => {
     expect(jobsOf(ctx).read(id).lossy).toBe(true)
   })
 
-  it('settlement trims to the settled cap, ends the stream, and drops later writes', async () => {
+  it('settlement keeps the unconsumed stream for the model; the terminal read trims to the settled cap, ends the stream, and later writes drop', async () => {
     const ctx = await harness({ retainBytes: 1024, settledRetainBytes: 4 })
     const warn = vi.fn()
     ctx.logger.warn = warn as never
@@ -1223,7 +1239,14 @@ describe('LocalJobRegistry output ring', () => {
     p.settle({ status: 'completed', detail: 'exit code: 0' })
     await tick()
     expect(outputs.map(event => event.type === 'output' ? event.total : -1)).toEqual([8, 8])
-    expect(jobsOf(ctx).get(id)).toMatchObject({ status: 'completed', detail: 'exit code: 0', output: { total: 8, earliest: 4 } })
+    // Nothing the model has not read is trimmed at settlement: a job that
+    // finishes before its first read still hands over everything the live
+    // cap retained, and observers see the same bytes.
+    expect(jobsOf(ctx).get(id)).toMatchObject({ status: 'completed', detail: 'exit code: 0', output: { total: 8, earliest: 0 } })
+    expect(jobsOf(ctx).readAt(id, 0)).toMatchObject({ lossy: false, chunks: [{ at: 0, text: 'abcdefgh' }] })
+    expect(jobsOf(ctx).read(id)).toMatchObject({ lossy: false, chunks: [{ at: 0, text: 'abcdefgh' }] })
+    // The terminal read consumed the stream: retention drops to the settled cap.
+    expect(jobsOf(ctx).get(id).output).toEqual({ total: 8, earliest: 4 })
     const read = jobsOf(ctx).readAt(id, 0)
     expect(read.lossy).toBe(true)
     expect(read.chunks).toEqual([{ at: 4, text: 'efgh', gapBefore: true }])
@@ -1236,6 +1259,19 @@ describe('LocalJobRegistry output ring', () => {
     ])
     expect(outputs).toHaveLength(2)
     expect(jobsOf(ctx).get(id).progress).toBeUndefined()
+  })
+
+  it('a settlement after the model consumed the stream trims to the settled cap at once', async () => {
+    const ctx = await harness({ retainBytes: 1024, settledRetainBytes: 4 })
+    const p = producer()
+    const id = ctx.jobs.start(p.spec)
+    p.job().append('abcdefgh')
+    expect(jobsOf(ctx).read(id).chunks).toEqual([{ at: 0, text: 'abcdefgh' }])
+    p.settle({ status: 'completed' })
+    await tick()
+    expect(jobsOf(ctx).get(id).output).toEqual({ total: 8, earliest: 4 })
+    // The cursor sits at the end: nothing new, and nothing lost behind it.
+    expect(jobsOf(ctx).read(id)).toMatchObject({ chunks: [], lossy: false })
   })
 
   it('settlement clears the progress line; the terminal detail is the outcome alone', async () => {

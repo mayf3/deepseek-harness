@@ -50,7 +50,11 @@ export interface Config {
   maxConcurrentJobsPerOwner?: number
   /** Live ring retention per job in UTF-8 bytes; omission defaults to 262144. */
   retainBytes?: number
-  /** Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384. */
+  /**
+   * Ring retention kept after a job settles, in UTF-8 bytes; omission defaults to 16384.
+   * Settlement keeps every byte the model cursor has not consumed on top of
+   * this cap; the first terminal model read then trims to it.
+   */
   settledRetainBytes?: number
   /** Poll interval for a job's pull sources, in milliseconds; omission defaults to 150. */
   pumpPollMs?: number
@@ -257,6 +261,11 @@ export class LocalJobRegistry extends JobRegistry {
     // call reaches the registered record for its terminal checks and signals.
     state.job = job
     this.store.set(id, job)
+    // Registration is complete and cannot fail from here, so the visible set
+    // has genuinely changed. The announcement precedes the pump because the
+    // pump drains its sources once synchronously, and that drain may append
+    // and announce output: a job's first event is always `registered`.
+    this.emit({ type: 'registered', job: this.view(job) }, owner)
 
     // The producer's settlement or a registry-forced one ends the pump; the
     // pump's final drain then lands before this registry trims the ring.
@@ -280,9 +289,6 @@ export class LocalJobRegistry extends JobRegistry {
       if (job.pump !== undefined) await job.pump.done
       this.settle(job, outcome, job.settleCause ?? 'producer')
     })
-    // Registration is complete and cannot fail from here, so the visible set
-    // has genuinely changed.
-    this.emit({ type: 'registered', job: this.view(job) }, owner)
     return id
   }
 
@@ -395,12 +401,17 @@ export class LocalJobRegistry extends JobRegistry {
     this.hub.emit(event, owner)
   }
 
-  /** Consume the ring from the model cursor; the result rides the first read after settlement. */
+  /**
+   * Consume the ring from the model cursor; the result rides the first read
+   * after settlement. A terminal read is the point the settled stream drops
+   * to the settled cap: settlement kept every unconsumed byte for it.
+   */
   private readJob(job: TrackedJob): JobRead {
     const read = job.ring.readFrom(job.modelCursor)
     job.modelCursor = job.ring.total
     const result = isTerminal(job.status) && !job.resultDelivered ? job.result : undefined
     if (result !== undefined) job.resultDelivered = true
+    if (isTerminal(job.status)) job.ring.trim(this.settledRetainBytes)
     return {
       chunks: read.chunks,
       lossy: read.lossy,
@@ -552,8 +563,10 @@ export class LocalJobRegistry extends JobRegistry {
     job.result = outcome.result
     job.finishedAt = Date.now()
     // Settlement ends the stream: trim to the settled cap before any observer
-    // reads the terminal projection.
-    job.ring.trim(this.settledRetainBytes)
+    // reads the terminal projection, but never below the bytes the model
+    // cursor has not consumed. A job that finishes before its first model
+    // read keeps everything the live cap retained until that read.
+    job.ring.trim(Math.max(this.settledRetainBytes, job.ring.total - job.modelCursor))
     const waitResolvers = [...job.waitResolvers]
     job.waitResolvers.clear()
     for (const resolveWait of waitResolvers) resolveWait()
